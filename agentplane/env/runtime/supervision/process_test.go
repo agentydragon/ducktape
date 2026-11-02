@@ -153,6 +153,34 @@ func TestSystemdUnconfirmedStartSurvivesLaterManagerObservations(t *testing.T) {
 	}
 }
 
+func TestSystemdExitOutcomeSurvivesUnitCollection(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		observed bool
+		code     int
+		err      error
+		want     SystemdExitState
+	}{
+		{name: "observed", observed: true, code: 23, want: SystemdExitObserved},
+		{name: "unknown", code: -1, err: errors.New("exit unavailable"), want: SystemdExitUnknown},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p := &Process{}
+			p.observeSystemd("native.service", "invocation", "/test", SystemdUnitSnapshot{InvocationID: "invocation"}, nil)
+			p.observeSystemdExit(test.code, test.observed, test.err)
+			p.observeSystemd("native.service", "invocation", "/test", SystemdUnitSnapshot{LoadState: "not-found"}, nil)
+			var got SystemdObservation
+			p.ObserveSystemd(func(observation SystemdObservation) { got = observation })
+			if got.ExitState != test.want || got.ExitCode != test.code || got.Snapshot.LoadState != "not-found" {
+				t.Fatalf("exit observation = %+v", got)
+			}
+			if test.err != nil && got.ExitError != test.err.Error() {
+				t.Fatalf("exit observation error = %q, want %q", got.ExitError, test.err)
+			}
+		})
+	}
+}
+
 func TestSubprocessNativeStartFailureRollsBack(t *testing.T) {
 	process, err := NewSubprocessSupervisor(nil).NewProcess(ProcessConfig{
 		Command:   []string{"/run/agentplane-missing-native-command"},

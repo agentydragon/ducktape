@@ -177,7 +177,7 @@ func (p *ManagedProcess) BackendDescription() string {
 	}
 	observation := status.Systemd
 	unit := observation.Snapshot
-	return fmt.Sprintf("%s: last_observed_revision=%d start_state=%s start_error=%s expected_invocation=%s observed_invocation=%s cgroup=%s active=%s sub=%s unit_job=%d main_pid=%d exec_pid=%d exec_code=%d exec_status=%d result=%s error=%s", observation.Unit, observation.Revision, observation.StartState, observation.StartError, observation.ExpectedInvocationID, unit.InvocationID, observation.CapturedControlGroup, unit.ActiveState, unit.SubState, unit.JobID, unit.MainPID, unit.ExecMainPID, unit.ExecMainCode, unit.ExecMainStatus, unit.Result, observation.Error)
+	return fmt.Sprintf("%s: last_observed_revision=%d start_state=%s start_error=%s expected_invocation=%s observed_invocation=%s cgroup=%s active=%s sub=%s unit_job=%d main_pid=%d exec_pid=%d exec_code=%d exec_status=%d result=%s error=%s exit_state=%s exit_code=%d exit_error=%s", observation.Unit, observation.Revision, observation.StartState, observation.StartError, observation.ExpectedInvocationID, unit.InvocationID, observation.CapturedControlGroup, unit.ActiveState, unit.SubState, unit.JobID, unit.MainPID, unit.ExecMainPID, unit.ExecMainCode, unit.ExecMainStatus, unit.Result, observation.Error, observation.ExitState, observation.ExitCode, observation.ExitError)
 }
 
 // ID is the immutable identity of this native launch.

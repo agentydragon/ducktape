@@ -237,6 +237,19 @@ func (p *Process) observeSystemdStart(unit string, state SystemdStartState, err 
 	})
 }
 
+func (p *Process) observeSystemdExit(code int, observed bool, err error) {
+	p.updateSystemd(func(observation *SystemdObservation) {
+		observation.ExitState = SystemdExitUnknown
+		if observed {
+			observation.ExitState = SystemdExitObserved
+		}
+		observation.ExitCode = code
+		if err != nil {
+			observation.ExitError = err.Error()
+		}
+	})
+}
+
 func (p *Process) updateSystemd(update func(*SystemdObservation)) {
 	p.mu.Lock()
 	previous := p.systemd

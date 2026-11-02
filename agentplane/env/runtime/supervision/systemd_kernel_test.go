@@ -123,7 +123,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		observationMu.Lock()
 		observed := latest
 		observationMu.Unlock()
-		if observed.Unit != unitName || observed.Revision < 2 || observed.StartState != SystemdStartAccepted || observed.ExpectedInvocationID == "" || observed.CapturedControlGroup == "" {
+		if observed.Unit != unitName || observed.Revision < 2 || observed.StartState != SystemdStartAccepted || observed.ExpectedInvocationID == "" || observed.CapturedControlGroup == "" || observed.ExitState != SystemdExitObserved || observed.ExitCode != 0 {
 			t.Fatalf("systemd observations did not retain attempt identity: %+v", observed)
 		}
 		want := fmt.Sprintf("out:%d:%d:%s\nhome:/explicit/proof-home\ninput:verbatim input\n", launcher.AgentUID, launcher.AgentGID, dir)

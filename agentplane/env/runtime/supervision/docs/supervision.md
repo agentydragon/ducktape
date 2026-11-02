@@ -25,7 +25,9 @@ fences any instance it returns before releasing the finalizer. Owners check rema
 intents before acknowledging cleanup; a reader observing leader exit cannot hide a failed fence.
 VM native-process status also carries the latest typed systemd observation for that attempt,
 including start-request acceptance or an unconfirmed reply, the expected and observed invocation IDs
-and captured cgroup. A lost start reply remains unconfirmed after later manager observations.
+and captured cgroup. A lost start reply remains unconfirmed after later manager observations. The
+observed exit code or unknown-exit error is retained separately from later unit snapshots and is
+published before waiting for the domain fence.
 Workspace-helper diagnostics
 read this status rather than issuing a second manager query. A manager read error retains the last
 snapshot and marks it stale with the error. Observations may lag the manager; they are diagnostic

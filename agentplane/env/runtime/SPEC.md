@@ -115,8 +115,9 @@ retains its independent process supervisor.
 Native supervision retains systemd manager references, exact invocation IDs and cgroup paths until
 the corresponding process-domain fences are proven.
 The process controller publishes the latest attempt-scoped systemd observation for VM-native
-processes, including a persistent unconfirmed start-reply state. A failed manager read preserves the previous snapshot and records the error; the
-observation is diagnostic and cannot establish a successful start, exit, or domain fence.
+processes, including a persistent unconfirmed start-reply state and a retained observed or unknown
+exit outcome. A failed manager read preserves the previous snapshot and records the error; these
+observations do not establish a process-domain fence.
 
 The VM management unit is `agentplane-environment-runtime.service`. Runtime keeps its legacy scope
 identity; Host uses `harness-host` and Codex transient units use `execution-service`. All bind to

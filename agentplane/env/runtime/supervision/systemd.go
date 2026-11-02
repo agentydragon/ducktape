@@ -484,12 +484,15 @@ func (b *systemdBackend) reap(p *Process) {
 	}
 
 	cancel()
-	fenceErr := b.fenceUntilCertain(p)
-	_ = p.CloseStdin()
-	b.release()
 	if !statusObserved {
 		observationErr = errors.Join(observationErr, errors.New("native systemd exit status was not observed"))
 	}
+	// Exit evidence is useful while the domain fence is still pending. It must
+	// never be interpreted as proof that descendants have been removed.
+	p.observeSystemdExit(code, statusObserved, observationErr)
+	fenceErr := b.fenceUntilCertain(p)
+	_ = p.CloseStdin()
+	b.release()
 	p.completeWith(code, errors.Join(observationErr, fenceErr))
 }
 

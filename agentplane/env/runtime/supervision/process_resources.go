@@ -65,6 +65,30 @@ type SystemdObservation struct {
 	CapturedControlGroup string
 	Snapshot             SystemdUnitSnapshot
 	Error                string
+	ExitState            SystemdExitState
+	ExitCode             int
+	ExitError            string
+}
+
+type SystemdExitState uint8
+
+const (
+	SystemdExitPending SystemdExitState = iota
+	SystemdExitObserved
+	SystemdExitUnknown
+)
+
+func (state SystemdExitState) String() string {
+	switch state {
+	case SystemdExitPending:
+		return "pending"
+	case SystemdExitObserved:
+		return "observed"
+	case SystemdExitUnknown:
+		return "unknown"
+	default:
+		return "invalid"
+	}
 }
 
 // SystemdStartState records the reply to a single start request. A lost reply

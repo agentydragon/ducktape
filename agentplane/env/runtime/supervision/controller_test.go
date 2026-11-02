@@ -401,11 +401,15 @@ func TestProcessControllerRetainsSystemdObservationsAcrossFence(t *testing.T) {
 		if current.Systemd.Error != "manager disconnected" || current.Systemd.Snapshot.ActiveState != "failed" {
 			t.Fatalf("newest observation = %+v", current.Systemd)
 		}
+		observe(SystemdObservation{Revision: 4, Unit: "old.service", ExitState: SystemdExitObserved, ExitCode: 23})
+		waitProcessStatus(t, f, id, "exit observation before cleanup", func(status Status) bool {
+			return status.Systemd.ExitState == SystemdExitObserved && status.Systemd.ExitCode == 23
+		})
 		done <- nil
 		close(done)
 		stopping := waitProcessStatus(t, f, id, "fence pending", func(status Status) bool { return status.Phase == Stopping })
 		<-stopEntered
-		if stopping.Systemd.Revision != 3 {
+		if stopping.Systemd.Revision != 4 || stopping.Systemd.ExitCode != 23 {
 			t.Fatalf("observation lost before fence: %+v", stopping)
 		}
 		desired, err := f.state.Get(f.ctx, resourceFor(processTestNamespace, id, DesiredState{}).Metadata())
@@ -414,12 +418,12 @@ func TestProcessControllerRetainsSystemdObservationsAcrossFence(t *testing.T) {
 		}
 		release.Do(func() { close(releaseStop) })
 		exited := waitProcessStatus(t, f, id, "fenced", func(status Status) bool { return status.Phase == Exited })
-		if exited.Systemd.Revision != 3 || starts.Load() != 1 {
+		if exited.Systemd.Revision != 4 || starts.Load() != 1 {
 			t.Fatalf("terminal status=%+v starts=%d", exited, starts.Load())
 		}
 		f.publishRequest(t, id, processTestRequestSpec{Active: false, Generation: 1, Revision: 2})
 		synctest.Wait()
-		observe(SystemdObservation{Revision: 4, Unit: "stale.service"})
+		observe(SystemdObservation{Revision: 5, Unit: "stale.service"})
 		synctest.Wait()
 		if _, found := f.status(t, id); found {
 			t.Fatal("stale observation recreated retired process status")
