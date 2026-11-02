@@ -34,7 +34,7 @@ missing terminal receipt. Neither journal exposes a numeric `ExecMainStatus`
 for the reporter's exit; the systemd result and command receipts are the
 observed evidence.
 
-## Candidate change
+## Repair
 
 Query the same seven units' properties and the same five units' definitions in
 two batched systemctl calls. The manager clock query remains separate. Required
@@ -52,9 +52,27 @@ are unchanged.
 
 ## Validation
 
-Pending hosted validation of the candidate reporter with the existing guest-log
-checks and the unchanged VM scenario target. Inspect the raw console, all seven
-property blocks, all five unit definitions, journal section, required command
-statuses, service result, OOM containment and cleanup receipts before selecting
-the change. A passing unit parser test alone does not establish the producer
-repair.
+Fresh RBE invocation
+[`4ef89740-adbd-4462-8cc6-b1507999bc50`](https://app.buildbuddy.io/invocation/4ef89740-adbd-4462-8cc6-b1507999bc50)
+passed both `test_guest_logs` (15.550s) and the unchanged `test_vm` target
+(429.862s). The latter completed the real OOM containment and successful
+follow-up, guest-shutdown validation, complete retained-baseline cleanup and
+release of all three workspace loop devices. Its infrastructure baseline was
+cold; this is not an aged warm-baseline experiment.
+
+The OOM guest's raw console and native journal contain all seven expected
+`Id=` property blocks, all five unit definitions, all required section receipts
+and a complete required report. Its optional critical-chain and blame probes
+still returned 143, demonstrating that optional timeouts remain visible without
+invalidating completed required collection. Systemd recorded service start at
+guest monotonic 46.970245s and successful deactivation at 60.450927s, with
+2.102 guest CPU seconds. The first optional probe's journal message was recorded
+at 56.072725s, after the required completion receipt in the serial stream.
+These guest journal clocks are separate from host CRI receipt times.
+
+BuildBuddy records base commit `f551411f922a5f71398617c1d51b13fa832dc4d7`;
+`bbr` mirrored the uncommitted reporter patch for this run. The resulting
+batched command arguments and completion-before-optional order are present in
+the artifacts. Commit `744755014987570633de41688daf3db9a6fcc1ab` contains the
+same reporter bytes. Formatting and the unchanged property/definition-roster
+comparison passed. Exact-head PR CI is separate from this fresh test invocation.
