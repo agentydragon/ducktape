@@ -529,9 +529,30 @@ func TestClosePublicationFailureKeepsAdmissionClosed(t *testing.T) {
 }
 
 func TestMissingAdmissionStateRejectsDurableWork(t *testing.T) {
-	r, s := lifecycleTestSession(t)
+	workspace := t.TempDir()
+	proxy := modelConfigServer(t)
+	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
+	config.expectCloseError = true
+	r := newSessionTestRuntime(t, config)
+	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+		t.Fatal(err)
+	}
+	s := r.sessions.Get("session-1")
 	restore := removeAdmissionState(t, r)
 	defer restore()
+	// The deferred test-only restoration permits cleanup, but must not clear the
+	// Runtime failure raised when admission accounting could not be published.
+	t.Cleanup(func() {
+		if err := closeRuntimeForTest(t, r); !state.IsNotFoundError(err) {
+			t.Errorf("Close after missing admission accounting = %v, want original failure", err)
+		}
+		owner, err := openEnvironmentOwner(r.config.StateDir)
+		if err != nil {
+			t.Errorf("settled cleanup retained the environment owner: %v", err)
+			return
+		}
+		_ = owner.Close()
+	})
 	if facts, err := r.facts(); err == nil {
 		t.Fatalf("missing accounting returned facts: %v", facts)
 	}
