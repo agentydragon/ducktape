@@ -14,10 +14,12 @@ import (
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -25,6 +27,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/util/workqueue"
@@ -186,6 +189,78 @@ func TestAdmissionIsDurableAndIdempotent(t *testing.T) {
 		if row.State != QueueState {
 			t.Fatalf("accepted command was unexpectedly cancelled: %+v", row)
 		}
+	}
+}
+
+func TestWakeAssessmentRoundTripsForDispatchAndOpening(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t, 3)
+	uid := uuid.NewString()
+	dispatch, err := store.Enqueue(ctx, "wake-receipt-session", "sandbox-wake-receipt", uid,
+		input("wake-receipt-command", "hello"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opening, err := store.OpenSession(ctx, "wake-receipt-opening", "sandbox-wake-receipt", uid,
+		&sessionpb.SessionSpec{}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, got := range map[string]*environmentpb.WakeAssessment{
+		"dispatch": dispatch.WakeAssessment,
+		"opening":  opening.WakeAssessment,
+	} {
+		if got.GetState() != environmentpb.WakeState_WAKE_STATE_NOT_EVALUATED {
+			t.Fatalf("initial %s wake state = %s", name, got.GetState())
+		}
+	}
+	owner, err := store.ClaimSandboxOwner(ctx, uid, "wake-receipt-lease", 1, "wake-receipt-replica", 0)
+	if err != nil || owner == nil {
+		t.Fatalf("claim Sandbox owner: %+v %v", owner, err)
+	}
+	blocker := &environmentpb.DeliveryBlocker{Kind: environmentpb.DeliveryBlockerKind_DELIVERY_BLOCKER_KIND_ENVIRONMENT_SUSPENDED}
+	assessment := &environmentpb.WakeAssessment{
+		State:      environmentpb.WakeState_WAKE_STATE_DENIED,
+		Reason:     environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED,
+		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(7),
+	}
+	if err := store.SetDeliveryAssessment(ctx, dispatch.CommandID, *owner, false, blocker, assessment); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetDeliveryAssessment(ctx, opening.SessionID, *owner, true, blocker, assessment); err != nil {
+		t.Fatal(err)
+	}
+	gotDispatch, err := store.GetDispatch(ctx, dispatch.CommandID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := store.ListDispatches(ctx, dispatch.SessionID, "", nil)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("list dispatches: %d rows, %v", len(rows), err)
+	}
+	gotOpening, err := store.GetOpening(ctx, opening.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, got := range map[string]struct {
+		blocker    *environmentpb.DeliveryBlocker
+		assessment *environmentpb.WakeAssessment
+	}{
+		"get dispatch":  {gotDispatch.DeliveryBlocker, gotDispatch.WakeAssessment},
+		"list dispatch": {rows[0].DeliveryBlocker, rows[0].WakeAssessment},
+		"opening":       {gotOpening.DeliveryBlocker, gotOpening.WakeAssessment},
+	} {
+		if !proto.Equal(got.blocker, blocker) || !proto.Equal(got.assessment, assessment) {
+			t.Fatalf("%s assessment: blocker=%v wake=%v", name, got.blocker, got.assessment)
+		}
+	}
+	wireDispatch, err := DescribeDispatch(gotDispatch)
+	if err != nil || !proto.Equal(wireDispatch.GetWakeAssessment(), assessment) || !proto.Equal(wireDispatch.GetDeliveryBlocker(), blocker) {
+		t.Fatalf("dispatch projection: %+v %v", wireDispatch, err)
+	}
+	wireOpening, err := DescribeOpening(gotOpening)
+	if err != nil || !proto.Equal(wireOpening.GetWakeAssessment(), assessment) || !proto.Equal(wireOpening.GetDeliveryBlocker(), blocker) {
+		t.Fatalf("opening projection: %+v %v", wireOpening, err)
 	}
 }
 
@@ -516,6 +591,23 @@ func (w *blockedDispatchWatch) Send(*dispatcherpb.WatchDispatchesResponse) error
 	return nil
 }
 
+type channelWatch struct {
+	grpc.ServerStream
+	ctx    context.Context
+	frames chan *dispatcherpb.WatchDispatchesResponse
+}
+
+func (w *channelWatch) Context() context.Context { return w.ctx }
+
+func (w *channelWatch) Send(frame *dispatcherpb.WatchDispatchesResponse) error {
+	select {
+	case w.frames <- frame:
+		return nil
+	case <-w.ctx.Done():
+		return w.ctx.Err()
+	}
+}
+
 func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
 	ctx := admitted(t)
 	store := testStore(t, 5)
@@ -547,6 +639,99 @@ func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
 	}
 	if want := []string{"watch-a", "watch-c", "caught-up"}; !slices.Equal(got, want) {
 		t.Fatalf("frames %v, want %v", got, want)
+	}
+}
+
+func TestWatchDispatchesPublishesWakeOnlyReceiptChanges(t *testing.T) {
+	base := admitted(t)
+	store := testStore(t, 3)
+	uid := uuid.NewString()
+	dispatch, err := store.Enqueue(base, "watch-wake-session", "sandbox-wake-watch", uid,
+		input("watch-wake-command", "hello"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := store.ClaimSandboxOwner(base, uid, "watch-wake-lease", 1, "watch-wake-replica", 0)
+	if err != nil || owner == nil {
+		t.Fatalf("claim Sandbox owner: %+v %v", owner, err)
+	}
+	hub := NewWatchHub(integrationDatabase.URL)
+	listenerCtx, cancelListener := context.WithCancel(context.Background())
+	listenerDone := make(chan error, 1)
+	go func() { listenerDone <- hub.Run(listenerCtx) }()
+	t.Cleanup(func() {
+		cancelListener()
+		select {
+		case <-listenerDone:
+		case <-time.After(5 * time.Second):
+			t.Error("PostgreSQL watch listener did not stop")
+		}
+	})
+	deadline := time.After(5 * time.Second)
+	for !hub.Connected() {
+		select {
+		case err := <-listenerDone:
+			t.Fatalf("listener stopped before subscription: %v", err)
+		case <-deadline:
+			t.Fatal("listener did not subscribe")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	watchCtx, cancelWatch := context.WithCancel(base)
+	defer cancelWatch()
+	service := &Service{
+		Store: store, DispatcherCallers: configuredDispatcherCallers(), Hub: hub, WatchLease: time.Minute,
+	}
+	stream := &channelWatch{ctx: watchCtx, frames: make(chan *dispatcherpb.WatchDispatchesResponse, 8)}
+	watchDone := make(chan error, 1)
+	go func() {
+		watchDone <- service.WatchDispatches(&dispatcherpb.WatchDispatchesRequest{Filter: &dispatcherpb.DispatchFilter{
+			Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: dispatch.SessionID},
+		}}, stream)
+	}()
+	receive := func() *dispatcherpb.WatchDispatchesResponse {
+		t.Helper()
+		select {
+		case frame := <-stream.frames:
+			return frame
+		case err := <-watchDone:
+			t.Fatalf("watch stopped before expected frame: %v", err)
+			return nil
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for watch frame")
+			return nil
+		}
+	}
+	first := receive().GetDispatch()
+	if first == nil || first.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER ||
+		first.GetWakeAssessment().GetState() != environmentpb.WakeState_WAKE_STATE_NOT_EVALUATED {
+		t.Fatalf("initial watch receipt: %+v", first)
+	}
+	if receive().GetCaughtUp() == nil {
+		t.Fatal("watch did not send CaughtUp after initial receipt")
+	}
+	blocker := &environmentpb.DeliveryBlocker{Kind: environmentpb.DeliveryBlockerKind_DELIVERY_BLOCKER_KIND_ENVIRONMENT_SUSPENDED}
+	assessment := &environmentpb.WakeAssessment{
+		State:      environmentpb.WakeState_WAKE_STATE_DENIED,
+		Reason:     environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED,
+		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(11),
+	}
+	if err := store.SetDeliveryAssessment(base, dispatch.CommandID, *owner, false, blocker, assessment); err != nil {
+		t.Fatal(err)
+	}
+	updated := receive().GetDispatch()
+	if updated == nil || updated.GetState() != first.GetState() || updated.GetReason() != first.GetReason() ||
+		!proto.Equal(updated.GetDeliveryBlocker(), blocker) || !proto.Equal(updated.GetWakeAssessment(), assessment) {
+		t.Fatalf("wake-only watch update: %+v", updated)
+	}
+	cancelWatch()
+	select {
+	case err := <-watchDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("WatchDispatches() = %v, want cancellation", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("watch did not stop after caller cancellation")
 	}
 }
 
