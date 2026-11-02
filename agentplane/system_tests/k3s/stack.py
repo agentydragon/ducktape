@@ -425,6 +425,11 @@ class K3s:
         containerd one image at a time. Blob digests are preserved, and a blob containerd
         already holds (an earlier image's, or on a recycled runner the last stack's) is not streamed again."""
         self.prune_unused_images()
+        layers = self.data_dir / "agent/containerd/io.containerd.snapshotter.v1.overlayfs"
+        filesystem = os.statvfs(layers)
+        # Sweep after imports consume half the starting headroom. Native filesystem
+        # checks avoid per-image CRI round trips.
+        prune_below_bytes = filesystem.f_bavail * filesystem.f_frsize // 2
         for image, layout in images.items():
             with tracer.start_as_current_span("system_test.image.import", attributes={"image": image}):
                 index = json.loads((layout / "index.json").read_text())
@@ -434,10 +439,11 @@ class K3s:
                 stored = self._stored_blobs()
                 missing = {name: blobs[name] for name in blobs.keys() - stored}
                 self._import_layout(index["manifests"], missing)
-            # Retargeting a fixture tag leaves its old CRI config-ID alias behind. Reclaim it
-            # when importing new blobs grows the store; unchanged cached imports need no sweep.
+            # Retargeting a fixture tag leaves its old CRI config-ID alias behind.
             if missing:
-                self.prune_unused_images()
+                filesystem = os.statvfs(layers)
+                if filesystem.f_bavail * filesystem.f_frsize < prune_below_bytes:
+                    self.prune_unused_images()
         # Retargeting to a fully cached version can also leave an old alias, without growing
         # the store during the group. Reclaim those aliases before yielding to the fixture.
         self.prune_unused_images()

@@ -53,7 +53,8 @@ the source base was `6d14473a8f0fdda01a7b4f226a2cf92bbece99d7` plus the experime
 ## Repair and follow-up
 
 Remove only untagged, unpinned CRI images not referenced by any existing container, before imports,
-after imports adding new blobs, at group completion, and while the kubelet is stopped during a cold rebuild. Preserve tagged
+at group completion, when new imports consume half the group's starting filesystem headroom,
+and while the kubelet is stopped during a cold rebuild. Preserve tagged
 and digest-named caches, current pinned images, and container-used IDs. Verify removal by rereading
 the CRI inventory, tolerating another collector removing an ID concurrently but surfacing survivors.
 Keep filesystem, kubelet and image inventories in undeclared outputs so another failure retains
@@ -62,5 +63,9 @@ fleet reliability from one controlled pair or from cached CI results.
 
 Sweeping after every cached import cost 8.51 seconds across 22 calls in Dispatcher and 12.00 seconds
 across 26 calls in MCP Actions in the [initial validation](https://app.buildbuddy.io/invocation/4aec62a2-89b2-4296-a4fe-b81ce4352e62).
-Group boundaries and new-blob imports select the sweeps; unchanged cached imports do not need an
-individual sweep because they do not grow the store.
+Checking only new-blob imports still spent 8.65/9.55 seconds across 16/17 calls in a
+[cold validation](https://app.buildbuddy.io/invocation/ee1c2f6e-b13c-42b7-a785-868e92c68e87).
+The final frequency uses native `statvfs` headroom checks within an import group, with CRI sweeps
+at group boundaries and when transient growth consumes half the starting free space. A single
+image still needs enough space to unpack, as it did with per-image cleanup; this does not expand
+the filesystem or discard current pinned images.
