@@ -20,7 +20,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
-	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/workload_auth/grpc"
 	"github.com/google/uuid"
@@ -40,7 +40,7 @@ const (
 )
 
 type delegatedBackend struct {
-	discoverypb.UnimplementedEnvironmentDiscoveryServer
+	environmentpb.UnimplementedEnvironmentServiceServer
 	dispatcherpb.UnimplementedSessionDispatcherServer
 	historypb.UnimplementedHistoryServiceServer
 	testing        *testing.T
@@ -50,8 +50,8 @@ type delegatedBackend struct {
 	gotSubmit      *dispatcherpb.SubmitInputRequest
 	submitCalls    int
 	interruptCalls int
-	gotList        *discoverypb.ListEnvironmentsRequest
-	gotGet         *discoverypb.GetEnvironmentRequest
+	gotList        *environmentpb.ListEnvironmentsRequest
+	gotGet         *environmentpb.GetEnvironmentRequest
 	lookup         *dispatcherpb.Dispatch
 	lookupErr      error
 	cancels        int
@@ -61,16 +61,16 @@ type delegatedBackend struct {
 	readEvents     func(*historypb.ReadSessionEventsRequest) (*historypb.ReadSessionEventsResponse, error)
 }
 
-func (b *delegatedBackend) ListEnvironments(ctx context.Context, request *discoverypb.ListEnvironmentsRequest) (*discoverypb.ListEnvironmentsResponse, error) {
+func (b *delegatedBackend) ListEnvironments(ctx context.Context, request *environmentpb.ListEnvironmentsRequest) (*environmentpb.ListEnvironmentsResponse, error) {
 	b.assertCaller(ctx, testRequestID, testExecutionID)
-	b.gotList = proto.Clone(request).(*discoverypb.ListEnvironmentsRequest)
-	return &discoverypb.ListEnvironmentsResponse{Items: []*discoverypb.EnvironmentDescriptor{{Target: &discoverypb.TargetHandle{Namespace: testCallerNamespace, Name: "sandbox-one", Uid: "sandbox-uid-1"}}}}, nil
+	b.gotList = proto.Clone(request).(*environmentpb.ListEnvironmentsRequest)
+	return &environmentpb.ListEnvironmentsResponse{Items: []*environmentpb.EnvironmentDescriptor{{Target: &environmentpb.TargetHandle{Namespace: testCallerNamespace, Name: "sandbox-one", Uid: "sandbox-uid-1"}}}}, nil
 }
 
-func (b *delegatedBackend) GetEnvironment(ctx context.Context, request *discoverypb.GetEnvironmentRequest) (*discoverypb.EnvironmentDescriptor, error) {
+func (b *delegatedBackend) GetEnvironment(ctx context.Context, request *environmentpb.GetEnvironmentRequest) (*environmentpb.EnvironmentDescriptor, error) {
 	b.assertCaller(ctx, testRequestID, testExecutionID)
-	b.gotGet = proto.Clone(request).(*discoverypb.GetEnvironmentRequest)
-	return &discoverypb.EnvironmentDescriptor{Target: proto.Clone(request.GetTarget()).(*discoverypb.TargetHandle)}, nil
+	b.gotGet = proto.Clone(request).(*environmentpb.GetEnvironmentRequest)
+	return &environmentpb.EnvironmentDescriptor{Target: proto.Clone(request.GetTarget()).(*environmentpb.TargetHandle)}, nil
 }
 
 func (b *delegatedBackend) GetSessionOpening(ctx context.Context, request *dispatcherpb.GetSessionOpeningRequest) (*dispatcherpb.GetSessionOpeningResponse, error) {
@@ -200,7 +200,7 @@ func newDelegatedExecutorForGroup(t *testing.T, backend *delegatedBackend, group
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	discoverypb.RegisterEnvironmentDiscoveryServer(server, backend)
+	environmentpb.RegisterEnvironmentServiceServer(server, backend)
 	dispatcherpb.RegisterSessionDispatcherServer(server, backend)
 	historypb.RegisterHistoryServiceServer(server, backend)
 	go func() { _ = server.Serve(listener) }()
@@ -218,7 +218,7 @@ func newDelegatedExecutorForGroup(t *testing.T, backend *delegatedBackend, group
 	}
 	t.Cleanup(func() { _ = connection.Close() })
 	executor, err := NewExecutor(group, catalog.SessionDelegationBinding{Description: "forwards caller"},
-		discoverypb.NewEnvironmentDiscoveryClient(connection), dispatcherpb.NewSessionDispatcherClient(connection), historypb.NewHistoryServiceClient(connection))
+		environmentpb.NewEnvironmentServiceClient(connection), dispatcherpb.NewSessionDispatcherClient(connection), historypb.NewHistoryServiceClient(connection))
 	if err != nil {
 		t.Fatal(err)
 	}

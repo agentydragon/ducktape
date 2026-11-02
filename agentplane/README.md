@@ -14,7 +14,7 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
 - [MCP edge](mcp_edge/README.md): external Connection/OAuth authority and `/mcp`; forwards authenticated Actions calls over gRPC.
 - [Runner Gateway](runner_gateway/README.md): one process providing runner state observation,
   authorized live Runner proxy, [Session Dispatcher](runner_gateway/dispatcher/README.md) durable queue,
-  and read-only EnvironmentDiscovery.
+  and read-only EnvironmentService.
   New serving Pods run the queue migration before starting ([deployment](runner_gateway/README.md#deployment)).
 - [History Service](history_service/README.md): retained Session history, read by the
   integration app and the Notification service.
@@ -73,7 +73,7 @@ flowchart LR
     app[Integration API]
     subgraph services[Agentplane services]
         direction TB
-        gw[Runner Gateway: Dispatcher, EnvironmentDiscovery, proxy and observation]
+        gw[Runner Gateway: Dispatcher, EnvironmentService, proxy and observation]
         sandboxctl[Sandbox Controller]
         policy[Policy Controller]
         hs[History Service]
@@ -150,7 +150,7 @@ flowchart LR
     edge -->|authenticated ActionService gRPC| actions
     notif -->|Action history: gRPC| actions
     actions -->|Session commands: broker or delegated caller, gRPC| gw
-    actions -->|caller-delegated EnvironmentDiscovery list/get: gRPC| gw
+    actions -->|caller-delegated EnvironmentService list/get: gRPC| gw
     actions -->|Session reads: broker or delegated caller, gRPC| hs
     app -->|gRPC| egress
     app --> electric
@@ -188,10 +188,10 @@ flowchart LR
     gw -->|mTLS Runner and Executor gRPC| vmruntime
     runner -.->|dials SessionJournalIngress.Push| sidecar
     sidecar -.->|outbound ingress route| hs
-    agent -.->|Session and EnvironmentDiscovery gRPC through HTTPS_PROXY/CONNECT| sidecar
+    agent -.->|Session and EnvironmentService gRPC through HTTPS_PROXY/CONNECT| sidecar
     guest -.->|dials SessionJournalIngress.Push| relay
     relay -.->|outbound ingress route| hs
-    guest_agent -.->|Session and EnvironmentDiscovery gRPC through HTTPS_PROXY/CONNECT| relay
+    guest_agent -.->|Session and EnvironmentService gRPC through HTTPS_PROXY/CONNECT| relay
     egress -.->|allowlisted gRPC methods, substituted Sandbox bearer| gw
 
     egress --> llm

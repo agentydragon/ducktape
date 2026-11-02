@@ -17,7 +17,7 @@ import (
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
-	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	sessionclient "github.com/agentydragon/ducktape/agentplane/session_client"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/workload_auth/grpc"
 	"github.com/google/uuid"
@@ -30,18 +30,18 @@ import (
 // Executor forwards the identity recorded when an Action was admitted. Its destination clients use only
 // Actions' projected audience credentials plus that explicit, per-call delegation envelope.
 type Executor struct {
-	group      string
-	binding    catalog.SessionDelegationBinding
-	discovery  discoverypb.EnvironmentDiscoveryClient
-	dispatcher dispatcherpb.SessionDispatcherClient
-	history    historypb.HistoryServiceClient
-	inputs     contract.Inputs
+	group       string
+	binding     catalog.SessionDelegationBinding
+	environment environmentpb.EnvironmentServiceClient
+	dispatcher  dispatcherpb.SessionDispatcherClient
+	history     historypb.HistoryServiceClient
+	inputs      contract.Inputs
 }
 
 func NewExecutor(
 	group string,
 	binding catalog.SessionDelegationBinding,
-	discovery discoverypb.EnvironmentDiscoveryClient,
+	environment environmentpb.EnvironmentServiceClient,
 	dispatcher dispatcherpb.SessionDispatcherClient,
 	history historypb.HistoryServiceClient,
 ) (*Executor, error) {
@@ -49,7 +49,7 @@ func NewExecutor(
 	if err != nil {
 		return nil, err
 	}
-	return &Executor{group: group, binding: binding, discovery: discovery, dispatcher: dispatcher, history: history, inputs: inputs}, nil
+	return &Executor{group: group, binding: binding, environment: environment, dispatcher: dispatcher, history: history, inputs: inputs}, nil
 }
 
 // Actions are only the implemented, reviewed operations belonging to this ActionGroup.
@@ -118,9 +118,9 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		if args.After != nil {
 			pageToken = *args.After
 		}
-		response, err := e.discovery.ListEnvironments(ctx, &discoverypb.ListEnvironmentsRequest{Limit: uint32(args.Limit), PageToken: pageToken})
+		response, err := e.environment.ListEnvironments(ctx, &environmentpb.ListEnvironmentsRequest{Limit: uint32(args.Limit), PageToken: pageToken})
 		if err != nil {
-			return nil, readFailure("Environment Discovery", err)
+			return nil, readFailure("Environment Service", err)
 		}
 		return protoResult(response)
 	case "get":
@@ -271,14 +271,14 @@ func (e *Executor) getEnvironment(ctx context.Context, request store.ExecutionRe
 	if err != nil {
 		return nil, err
 	}
-	response, err := e.discovery.GetEnvironment(ctx, &discoverypb.GetEnvironmentRequest{Target: &discoverypb.TargetHandle{
+	response, err := e.environment.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &environmentpb.TargetHandle{
 		Namespace: args.Target.Namespace, Name: args.Target.Name, Uid: args.Target.UID,
 	}})
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return nil, refuse("target_not_found", "the exact environment incarnation is no longer available")
 		}
-		return nil, readFailure("Environment Discovery", err)
+		return nil, readFailure("Environment Service", err)
 	}
 	return protoResult(response)
 }

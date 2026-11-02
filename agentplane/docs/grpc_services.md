@@ -78,7 +78,7 @@ remains available. `Admitted` returns a typed direct or delegated admission, whi
 legacy `Caller` accessor stays Pod-bound and is not populated for delegated requests. The
 `workload_auth/grpc` client reads its destination token for each call and has no ordinary Bearer
 fallback. These shared primitives do not opt a production method or client into delegation by
-themselves. The Runner Gateway's explicitly configured method list includes EnvironmentDiscovery
+themselves. The Runner Gateway's explicitly configured method list includes EnvironmentService
 reads; Action Service adapter integration remains separate.
 
 ## Errors

@@ -1,11 +1,11 @@
 # Existing environment discovery
 
-`EnvironmentDiscovery` is the read-only inventory surface for existing managed Sandboxes. It is a
+`EnvironmentService` is the read-only inventory surface for existing managed Sandboxes. It is a
 separate gRPC service from the Session Dispatcher, co-hosted by the Runner Gateway on its existing
 listener. Its method paths are:
 
-- `/agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments`
-- `/agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment`
+- `/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments`
+- `/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment`
 
 Both methods accept direct TokenReview-verified ServiceAccount credentials and the explicitly
 configured Actions delegation. Delegated calls use the existing Dispatcher audience and are opted

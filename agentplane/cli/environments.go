@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -17,12 +17,12 @@ import (
 
 const maxEnvironmentPage = 100
 
-type environmentDiscovery struct {
+type environmentConnection struct {
 	connection *grpc.ClientConn
-	client     discoverypb.EnvironmentDiscoveryClient
+	client     environmentpb.EnvironmentServiceClient
 }
 
-func (a *app) connectEnvironmentDiscovery() (*environmentDiscovery, error) {
+func (a *app) connectEnvironment() (*environmentConnection, error) {
 	const urlVariable, credentialVariable = "AGENTPLANE_SESSIONS_URL", "AGENTPLANE_SESSIONS_CREDENTIAL"
 	base, credential := a.getenv(urlVariable), a.getenv(credentialVariable)
 	if base == "" || credential == "" {
@@ -58,7 +58,7 @@ func (a *app) connectEnvironmentDiscovery() (*environmentDiscovery, error) {
 	if err != nil {
 		return nil, usageFailure("%s is not a valid gRPC endpoint", urlVariable)
 	}
-	return &environmentDiscovery{connection: connection, client: discoverypb.NewEnvironmentDiscoveryClient(connection)}, nil
+	return &environmentConnection{connection: connection, client: environmentpb.NewEnvironmentServiceClient(connection)}, nil
 }
 
 func (a *app) environmentsCommand() *cobra.Command {
@@ -67,9 +67,9 @@ func (a *app) environmentsCommand() *cobra.Command {
 		a.listEnvironmentsCommand(), a.getEnvironmentCommand())
 }
 
-func (a *app) environmentCommand(fn func(context.Context, discoverypb.EnvironmentDiscoveryClient, []string) error) func(*cobra.Command, []string) error {
+func (a *app) environmentCommand(fn func(context.Context, environmentpb.EnvironmentServiceClient, []string) error) func(*cobra.Command, []string) error {
 	return func(_ *cobra.Command, args []string) error {
-		connected, err := a.connectEnvironmentDiscovery()
+		connected, err := a.connectEnvironment()
 		if err != nil {
 			return err
 		}
@@ -91,11 +91,11 @@ Use the complete target namespace/name/UID from a result with environments get. 
 Sandbox-owned account lookup returns no continuation token. Workspace paths and runtime choices are
 deployment-configured offers; custom templates without a published mapping remain unavailable.`,
 		Args: cobra.NoArgs,
-		RunE: a.environmentCommand(func(ctx context.Context, client discoverypb.EnvironmentDiscoveryClient, _ []string) error {
+		RunE: a.environmentCommand(func(ctx context.Context, client environmentpb.EnvironmentServiceClient, _ []string) error {
 			if limit < 1 || limit > maxEnvironmentPage {
 				return usageFailure("--limit must be between 1 and %d", maxEnvironmentPage)
 			}
-			response, err := client.ListEnvironments(ctx, &discoverypb.ListEnvironmentsRequest{Limit: uint32(limit), PageToken: pageToken})
+			response, err := client.ListEnvironments(ctx, &environmentpb.ListEnvironmentsRequest{Limit: uint32(limit), PageToken: pageToken})
 			if err != nil {
 				return grpcFailure(ctx, err)
 			}
@@ -113,9 +113,9 @@ func (a *app) getEnvironmentCommand() *cobra.Command {
 		Short: "Refresh one exact environment incarnation",
 		Long:  "Fetches the current readiness and configured runtime facts only if the Sandbox UID and execution account still match.",
 		Args:  cobra.ExactArgs(3),
-		RunE: a.environmentCommand(func(ctx context.Context, client discoverypb.EnvironmentDiscoveryClient, args []string) error {
-			response, err := client.GetEnvironment(ctx, &discoverypb.GetEnvironmentRequest{
-				Target: &discoverypb.TargetHandle{Namespace: args[0], Name: args[1], Uid: args[2]},
+		RunE: a.environmentCommand(func(ctx context.Context, client environmentpb.EnvironmentServiceClient, args []string) error {
+			response, err := client.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{
+				Target: &environmentpb.TargetHandle{Namespace: args[0], Name: args[1], Uid: args[2]},
 			})
 			if err != nil {
 				return grpcFailure(ctx, err)
@@ -125,7 +125,7 @@ func (a *app) getEnvironmentCommand() *cobra.Command {
 	}
 }
 
-func (a *app) showEnvironmentPage(response *discoverypb.ListEnvironmentsResponse) error {
+func (a *app) showEnvironmentPage(response *environmentpb.ListEnvironmentsResponse) error {
 	if a.asJSON {
 		return a.writeProtoJSON(response)
 	}
@@ -140,7 +140,7 @@ func (a *app) showEnvironmentPage(response *discoverypb.ListEnvironmentsResponse
 	return nil
 }
 
-func (a *app) showEnvironment(environment *discoverypb.EnvironmentDescriptor) error {
+func (a *app) showEnvironment(environment *environmentpb.EnvironmentDescriptor) error {
 	if a.asJSON {
 		return a.writeProtoJSON(environment)
 	}
@@ -161,7 +161,7 @@ func (a *app) writeProtoJSON(message proto.Message) error {
 	return nil
 }
 
-func environmentText(environment *discoverypb.EnvironmentDescriptor) string {
+func environmentText(environment *environmentpb.EnvironmentDescriptor) string {
 	var output strings.Builder
 	target := environment.GetTarget()
 	fmt.Fprintf(&output, "%s/%s uid=%s readiness=%s", target.GetNamespace(), target.GetName(), target.GetUid(), environment.GetReadiness().GetState())
@@ -170,7 +170,7 @@ func environmentText(environment *discoverypb.EnvironmentDescriptor) string {
 	fmt.Fprintf(&output, " mode=%s resume=%s wake_on_send=%t", environment.GetOperatingMode(), environment.GetResume(), environment.GetWakeOnSend())
 	workspace := environment.GetWorkspace()
 	fmt.Fprintf(&output, " workspace=%s", workspace.GetAvailability())
-	if workspace.GetAvailability() == discoverypb.Availability_AVAILABILITY_CONFIGURED {
+	if workspace.GetAvailability() == environmentpb.Availability_AVAILABILITY_CONFIGURED {
 		fmt.Fprintf(&output, " root=%s provenance=%s root_enforced=%t creates_missing_cwd=%t", workspace.GetRoot(), workspace.GetProvenance(), workspace.GetRootEnforced(), workspace.GetCreatesMissingCwd())
 	}
 	fmt.Fprintf(&output, " configurations=%s", environment.GetConfigurationsAvailability())
