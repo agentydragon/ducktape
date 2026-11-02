@@ -238,8 +238,8 @@ class AnalysisCategoryView(BaseModel):
     color: str
 
 
-class SpendTransactionRow(BaseModel):
-    """A read-only explanation plus named, typed Plaid source fields."""
+class SpendTransaction(BaseModel):
+    """Named Plaid source and normalized fields for one transaction."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -253,7 +253,19 @@ class SpendTransactionRow(BaseModel):
     amount_minor_units: int
     currency: str
     pending: bool
-    allowance_in_scope: bool
+    pfc_primary: str | None
+    pfc_detailed: str | None
+    merchant_category_code: str | None
+    counterparties: list[PlaidCounterparty] = Field(default_factory=list)
+    details: PlaidTransactionDetails = Field(default_factory=PlaidTransactionDetails)
+
+
+class AllowanceTransactionEffect(BaseModel):
+    """The allowance accounting decision associated with a transaction."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    in_scope: bool
     disposition: Disposition | None
     rule_number: int | None = Field(
         default=None, description="1-based position in the ordered rule list; the first match governs."
@@ -264,16 +276,28 @@ class SpendTransactionRow(BaseModel):
         default=None,
         description="Resolved accounting kind: excluded for a confirmed reversal, else the rule's kind or null.",
     )
-    allowance_minor_units: int
+    amount_minor_units: int
     pace_effects: list[PaceEffect]
-    statement_minor_units: int | None
-    statement_reason: StatementReason | None
-    pfc_primary: str | None
-    pfc_detailed: str | None
-    merchant_category_code: str | None
     category: AnalysisCategoryView | None = None
-    counterparties: list[PlaidCounterparty] = Field(default_factory=list)
-    details: PlaidTransactionDetails = Field(default_factory=PlaidTransactionDetails)
+
+
+class CardStatementEffect(BaseModel):
+    """The card statement accounting effect associated with a transaction."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    amount_minor_units: int | None
+    reason: StatementReason | None
+
+
+class SpendTransactionRow(BaseModel):
+    """A transaction and its separate allowance and card statement effects."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    transaction: SpendTransaction
+    allowance: AllowanceTransactionEffect
+    statement: CardStatementEffect
 
 
 class ExcludedFlowSummary(BaseModel):

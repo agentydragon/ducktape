@@ -45,14 +45,17 @@ from finance.plaid.spend.configuration import SpendConfiguration
 from finance.plaid.spend.models import (
     AlertState,
     AllowanceConfigurationView,
+    AllowanceTransactionEffect,
     AnalysisCategoryView,
     CardConfigurationView,
+    CardStatementEffect,
     CardView,
     ExcludedFlowSummary,
     PaceEffect,
     PlaidTransactionDetails,
     ProvisionalCardPeriod,
     SpendConfigurationView,
+    SpendTransaction,
     SpendTransactionRow,
     SpendTransactionsView,
     SpendView,
@@ -89,17 +92,17 @@ def summarize_excluded_flows(rows: list[SpendTransactionRow]) -> list[ExcludedFl
     groups: dict[tuple[str, str], list[SpendTransactionRow]] = defaultdict(list)
     uncategorized = AnalysisCategoryView(id="uncategorized", label="Uncategorized", color="#64748B")
     for row in rows:
-        if row.disposition == Disposition.EXCLUDED:
-            category = row.category or uncategorized
-            groups[category.id, row.currency].append(row)
+        if row.allowance.disposition == Disposition.EXCLUDED:
+            category = row.allowance.category or uncategorized
+            groups[category.id, row.transaction.currency].append(row)
     return [
         ExcludedFlowSummary(
-            category=group[0].category or uncategorized,
+            category=group[0].allowance.category or uncategorized,
             currency=currency,
-            debit_minor_units=sum(max(row.amount_minor_units, 0) for row in group),
-            credit_minor_units=sum(max(-row.amount_minor_units, 0) for row in group),
+            debit_minor_units=sum(max(row.transaction.amount_minor_units, 0) for row in group),
+            credit_minor_units=sum(max(-row.transaction.amount_minor_units, 0) for row in group),
             transaction_count=len(group),
-            pending_count=sum(row.pending for row in group),
+            pending_count=sum(row.transaction.pending for row in group),
         )
         for (_, currency), group in sorted(groups.items())
     ]
@@ -470,41 +473,49 @@ class SpendService:
                 )
             rows.append(
                 SpendTransactionRow(
-                    date=day,
-                    plaid_date=transaction.date,
-                    account_label=labels.get(transaction.account_id, "Account"),
-                    name=transaction.name,
-                    merchant_name=transaction.merchant_name,
-                    amount_minor_units=_amount_minor_units(transaction.amount, currency),
-                    currency=currency,
-                    pending=transaction.pending,
-                    allowance_in_scope=transaction.account_id in allowance_ids,
-                    disposition=decision.disposition if decision else None,
-                    rule_number=decision.rule_number if decision else None,
-                    rule=decision.rule if decision else None,
-                    reversal_pair=decision.reversal_pair if decision else None,
-                    effective_kind=decision.effective_kind if decision else None,
-                    allowance_minor_units=decision.allowance_minor_units if decision else 0,
-                    pace_effects=[
-                        PaceEffect(
-                            period_id=period_id,
-                            amount_minor_units=decision.pace_effects_minor_units.get(period_id, 0) if decision else 0,
-                        )
-                        for period_id in PeriodId
-                        if period_id.rolling_days is not None
-                    ],
-                    statement_minor_units=statement[1]
-                    if statement
-                    else 0
-                    if statement_reason == StatementReason.OUTSIDE_CYCLE
-                    else None,
-                    statement_reason=statement_reason,
-                    pfc_primary=transaction.pfc_primary,
-                    pfc_detailed=transaction.pfc_detailed,
-                    merchant_category_code=transaction.merchant_category_code,
-                    category=category,
-                    counterparties=transaction.counterparties or [],
-                    details=details,
+                    transaction=SpendTransaction(
+                        date=day,
+                        plaid_date=transaction.date,
+                        account_label=labels.get(transaction.account_id, "Account"),
+                        name=transaction.name,
+                        merchant_name=transaction.merchant_name,
+                        amount_minor_units=_amount_minor_units(transaction.amount, currency),
+                        currency=currency,
+                        pending=transaction.pending,
+                        pfc_primary=transaction.pfc_primary,
+                        pfc_detailed=transaction.pfc_detailed,
+                        merchant_category_code=transaction.merchant_category_code,
+                        counterparties=transaction.counterparties or [],
+                        details=details,
+                    ),
+                    allowance=AllowanceTransactionEffect(
+                        in_scope=transaction.account_id in allowance_ids,
+                        disposition=decision.disposition if decision else None,
+                        rule_number=decision.rule_number if decision else None,
+                        rule=decision.rule if decision else None,
+                        reversal_pair=decision.reversal_pair if decision else None,
+                        effective_kind=decision.effective_kind if decision else None,
+                        amount_minor_units=decision.allowance_minor_units if decision else 0,
+                        pace_effects=[
+                            PaceEffect(
+                                period_id=period_id,
+                                amount_minor_units=decision.pace_effects_minor_units.get(period_id, 0)
+                                if decision
+                                else 0,
+                            )
+                            for period_id in PeriodId
+                            if period_id.rolling_days is not None
+                        ],
+                        category=category,
+                    ),
+                    statement=CardStatementEffect(
+                        amount_minor_units=statement[1]
+                        if statement
+                        else 0
+                        if statement_reason == StatementReason.OUTSIDE_CYCLE
+                        else None,
+                        reason=statement_reason,
+                    ),
                 )
             )
 
@@ -512,14 +523,14 @@ class SpendService:
             add_row(decision.transaction, decision)
         for transaction in card_rows:
             add_row(transaction, None)
-        rows.sort(key=lambda row: (row.date, abs(row.amount_minor_units)), reverse=True)
+        rows.sort(key=lambda row: (row.transaction.date, abs(row.transaction.amount_minor_units)), reverse=True)
         unmatched_rows = [
             row
             for row in rows
-            if row.allowance_in_scope
-            and row.disposition == Disposition.COUNTED
-            and row.amount_minor_units > 0
-            and (row.effective_kind is None or row.effective_kind == Kind.REVIEW)
+            if row.allowance.in_scope
+            and row.allowance.disposition == Disposition.COUNTED
+            and row.transaction.amount_minor_units > 0
+            and (row.allowance.effective_kind is None or row.allowance.effective_kind == Kind.REVIEW)
         ]
         return SpendTransactionsView(
             generated_at=view.generated_at,
@@ -527,9 +538,9 @@ class SpendService:
             period=report_period,
             summary=TransactionPeriodSummary(
                 transaction_count=len(rows),
-                net_allowance_spend_minor_units=sum(row.allowance_minor_units for row in rows),
+                net_allowance_spend_minor_units=sum(row.allowance.amount_minor_units for row in rows),
                 unmatched_charge_count=len(unmatched_rows),
-                unmatched_charge_minor_units=sum(row.allowance_minor_units for row in unmatched_rows),
+                unmatched_charge_minor_units=sum(row.allowance.amount_minor_units for row in unmatched_rows),
                 excluded_flows=summarize_excluded_flows(rows),
             ),
             allowance=view.allowance,
