@@ -25,13 +25,27 @@ func (c *Controller) Settings() controller.QSettings {
 		Inputs: []controller.Input{
 			{Namespace: c.host.namespace, Type: DesiredStateType, Kind: controller.InputQPrimary},
 			{Namespace: c.host.namespace, Type: observationType, Kind: controller.InputQMapped},
+			{Namespace: c.host.namespace, Type: SystemdScopeStatusType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: StatusType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(1)),
 	}
 }
 
-func (c *Controller) MapInput(_ context.Context, _ *zap.Logger, _ controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
+func (c *Controller) MapInput(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
+	if ptr.Type() == SystemdScopeStatusType {
+		processes, err := safe.ReaderList[*typed.Resource[DesiredState, resourceExtension[DesiredState]]](ctx, r, resource.NewMetadata(c.host.namespace, DesiredStateType, "", resource.VersionUndefined))
+		if err != nil {
+			return nil, err
+		}
+		var mapped []resource.Pointer
+		for process := range processes.All() {
+			if string(process.TypedSpec().SystemdScope) == ptr.ID() {
+				mapped = append(mapped, process.Metadata())
+			}
+		}
+		return mapped, nil
+	}
 	if ptr.Type() != observationType {
 		return nil, nil
 	}
@@ -118,6 +132,15 @@ func (c *Controller) Reconcile(ctx context.Context, _ *zap.Logger, r controller.
 		}
 		if !desiredResource.Metadata().Finalizers().Has(c.Name()) {
 			return errors.New("process finalizer disappeared before launch")
+		}
+		if current.Phase == Pending && desired.SystemdScope != "" {
+			scope, found, err := ReadSystemdScopeStatus(ctx, r, c.host.namespace, desired.SystemdScope)
+			if err != nil {
+				return err
+			}
+			if !found || !scope.Ready {
+				return write()
+			}
 		}
 		if current.Phase == Pending {
 			current.Phase = Starting

@@ -79,7 +79,9 @@ Every launch allocates one UUID before `StartTransientUnit`. A lost reply or can
 cleanup of that same identity. An uncertain launch never creates a second unit to retry its effects.
 Native effects remain subject to journal reconciliation.
 
-`PrepareForOwner` takes an explicit service unit, lifetime directory and scope ID. Runtime uses
+`DeclareSystemdScope` publishes COSI intent with an explicit service unit, lifetime directory and
+scope ID. The scope controller prepares the marker, configures the slice and fences stale units
+before publishing ready status; the process controller gates launches on that status. Runtime uses
 `environment-runtime`. Native harnesses use `harness` and Execution uses `execution-service`; their
 native scopes remain independent. All three bind their native units to
 `agentplane-environment-runtime.service` and require its invocation marker under
@@ -103,13 +105,13 @@ requires its kernel check. An empty path on its own proves nothing. Exact invoca
 unresolved starts after transport loss keep admission blocked. A packaged service's empty cgroup
 does not prove cleanup of the separately managed native units owned by that service.
 
-Runtime opens the COSI backing database and holds its exclusive lock before preparing native
-supervision. Each component's launcher
+Runtime opens the COSI backing database and holds its exclusive lock before declaring native
+supervision scopes. Each component's scope controller
 discovers old units in its scope derived from the Sandbox UID, state directory and explicit scope ID,
 verifies their expected slice, and fences them before admitting new native work. Other scopes are
 untouched.
 
-The database lock excludes a second Runtime before its VM launcher can fence units; the VM path does
+The database lock excludes a second Runtime before its VM scope controller can fence units; the VM path does
 not take a separate owner flock. COSI controller outputs arbitrate within each Runtime's engine,
 not between those engines. Neither the database lock nor a COSI resource alone proves that a
 surviving native process has stopped.

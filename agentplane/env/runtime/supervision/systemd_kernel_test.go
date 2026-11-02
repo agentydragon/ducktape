@@ -14,8 +14,14 @@ import (
 	"time"
 
 	systemd "github.com/coreos/go-systemd/v22/dbus"
+	"github.com/cosi-project/runtime/pkg/controller/runtime"
+	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 	"github.com/godbus/dbus/v5"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 func TestMain(m *testing.M) {
@@ -52,8 +58,9 @@ func TestSystemdKernelFixture(t *testing.T) {
 	runtimeOwner := SystemdOwner{
 		Unit: "agentplane-environment-runtime.service", LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: SystemdEnvironmentRuntimeScopeID,
 	}
-	supervisor, err := launcher.PrepareForOwner(stateDir, sandboxUID, runtimeOwner)
-	if err != nil {
+	supervisor := reconcileKernelSystemdScope(t, launcher, stateDir, sandboxUID, runtimeOwner)
+	// These cases deliberately inject stale markers and uncertain launch replies.
+	if err := launcher.configureScope(stateDir, sandboxUID, runtimeOwner); err != nil {
 		t.Fatal(err)
 	}
 	dir, err := os.MkdirTemp("/tmp", "systemd-proof-")
@@ -222,9 +229,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 			defer FenceSystemdUnit(context.Background(), conn, name, SystemdFence{Ordered: true})
 		}
 		recovered := *launcher
-		if _, err := recovered.PrepareForOwner(stateDir, sandboxUID, runtimeOwner); err != nil {
-			t.Fatal(err)
-		}
+		reconcileKernelSystemdScope(t, &recovered, stateDir, sandboxUID, runtimeOwner)
 		assertSystemdProofEmpty(t, ctx, conn, ownedName)
 		props, err := conn.GetUnitPropertiesContext(ctx, unrelatedName)
 		if err != nil {
@@ -493,4 +498,36 @@ func systemdErrorKind(err error) string {
 		return "dbus_error=" + remote.Name
 	}
 	return fmt.Sprintf("error_type=%T", err)
+}
+
+func reconcileKernelSystemdScope(t *testing.T, launcher *SystemdLauncher, stateDir, sandboxUID string, owner SystemdOwner) *Supervisor {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
+	defer cancel()
+	store := state.WrapCore(namespaced.NewState(inmem.Build))
+	var workers sync.WaitGroup
+	host := NewHost(ctx, store, "systemd-kernel-proof", RuntimeDomain, &workers, func(err error) { t.Error(err) })
+	supervisor, err := host.DeclareSystemdScope(ctx, launcher, stateDir, sandboxUID, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := runtime.NewRuntime(store, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.RegisterQController(host.SystemdScopeController()); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- engine.Run(ctx) }()
+	_, err = store.WatchFor(ctx, resourceFor(host.namespace, string(owner.ScopeID), SystemdScopeStatus{}).Metadata(), state.WithCondition(func(res resource.Resource) (bool, error) {
+		status, _, err := ReadSystemdScopeStatus(ctx, store, host.namespace, owner.ScopeID)
+		return status.Ready, err
+	}))
+	cancel()
+	runErr := <-done
+	if err != nil || runErr != nil {
+		t.Fatalf("scope reconciliation: wait=%v engine=%v", err, runErr)
+	}
+	return supervisor
 }

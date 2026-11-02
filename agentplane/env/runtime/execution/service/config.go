@@ -25,20 +25,10 @@ type Config struct {
 	Environment      map[string]string
 	Backend          string
 	Readiness        codexexecserver.Readiness
-	Systemd          *SystemdConfig
 	// ProcessHost binds native systemd work to Runtime's process finalizers.
 	ProcessHost       *supervision.Host
+	Supervisor        *supervision.Supervisor
 	ProcessGeneration uint64
-}
-
-type SystemdConfig struct {
-	AgentUID          uint32
-	AgentGID          uint32
-	BlockDevices      []string
-	AggregateLimits   supervision.ResourceLimits
-	ProcessLimits     supervision.ResourceLimits
-	OwnerUnit         string
-	LifetimeDirectory string
 }
 
 // Resolve supplies the executor's compatible default readiness windows and validates the
@@ -77,18 +67,12 @@ func (c Config) validate() error {
 	}
 	switch c.Backend {
 	case "companion":
-		if !filepath.IsAbs(c.ContainerSocket) || c.Systemd != nil || c.Binary != "" || c.WorkingDirectory != "" {
+		if !filepath.IsAbs(c.ContainerSocket) || c.Supervisor != nil || c.Binary != "" || c.WorkingDirectory != "" {
 			return errors.New("companion execution requires an absolute ownership socket; its process configuration belongs to the companion")
 		}
 	case "systemd":
-		if c.Systemd == nil {
-			return errors.New("systemd execution requires explicit resource limits")
-		}
-		if c.Systemd.OwnerUnit == "" || c.Systemd.LifetimeDirectory == "" {
-			return errors.New("systemd execution requires an explicit owner unit and lifetime directory")
-		}
-		if !filepath.IsAbs(c.Systemd.LifetimeDirectory) {
-			return errors.New("systemd execution owner lifetime directory must be absolute")
+		if c.Supervisor == nil || c.ProcessHost == nil {
+			return errors.New("systemd execution requires Runtime's reconciled scope and process host")
 		}
 	default:
 		return fmt.Errorf("unknown execution backend %q", c.Backend)

@@ -15,9 +15,14 @@ import (
 )
 
 func TestRuntimeOpensDatabaseBeforePreparingSupervision(t *testing.T) {
+	t.Setenv("INVOCATION_ID", "0123456789abcdef0123456789abcdef")
 	config := lifecycleConfig(t, "", t.TempDir(), nil, "/bin/false")
 	config.Supervision = "systemd"
-	config.VMProcessLauncher = &supervision.SystemdLauncher{}
+	limits := supervision.ResourceLimits{CPUQuotaMicros: 100000, MemoryMaxBytes: 1024, PidsMax: 10, ReadBPS: 1, WriteBPS: 1, ReadIOPS: 1, WriteIOPS: 1}
+	config.VMProcessLauncher = &supervision.SystemdLauncher{
+		Slice: supervision.WorkloadSlice, AgentUID: 1000, AgentGID: 1000,
+		BlockDevices: []string{"/test-device"}, AggregateLimits: limits, ProcessLimits: limits,
+	}
 	preparations := 0
 	deps := runtimeDeps{prepareSupervisor: func(_ Config, owner *os.File) (*supervision.Supervisor, error) {
 		preparations++
@@ -35,6 +40,11 @@ func TestRuntimeOpensDatabaseBeforePreparingSupervision(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = r.Close(context.Background()) })
+	for _, scope := range []supervision.SystemdScopeID{RuntimeScopeID, HarnessScopeID} {
+		if status, found, err := supervision.ReadSystemdScopeStatus(t.Context(), r.lifecycleState, lifecycle.Namespace, scope); err != nil || found {
+			t.Fatalf("scope reconciled before engine startup: scope=%q status=%+v found=%t err=%v", scope, status, found, err)
+		}
+	}
 	if r.owner != nil {
 		t.Fatal("systemd Runtime acquired an additional owner fence")
 	}

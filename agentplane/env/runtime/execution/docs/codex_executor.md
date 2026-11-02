@@ -136,7 +136,7 @@ and Sandbox-hosted app-server with isolated tools remain explicit transitional o
   effects remain uncertain and are never replayed. Host asks Runtime for in-process Execution
   readiness to gate the shared app-server. Runtime verifies native protocol readiness before
   publishing the in-process adapter.
-- Startup fences previous executor work before opening Session stores. Quiesce fences the executor
+- Startup fences previous executor work before admitting a replacement native executor. Quiesce fences the executor
   before journal seals; shutdown fences it before releasing state ownership. VM startup fences prior
   owned systemd units before admitting work. Runtime coordinates component shutdown so Host native
   drain and the Execution fence complete before Host stops. Pod ownership

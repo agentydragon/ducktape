@@ -29,6 +29,7 @@ const (
 )
 
 type DesiredState struct {
+	SystemdScope  SystemdScopeID
 	Domain        Domain
 	Owner         string
 	Generation    uint64
@@ -160,7 +161,6 @@ func (value Status) DeepCopy() Status      { return value }
 const hostOwner = "supervision-host"
 
 type resourceSpec[T any] interface {
-	comparable
 	typed.DeepCopyable[T]
 	resourceType() resource.Type
 }
@@ -188,7 +188,10 @@ func writeResource[T resourceSpec[T]](ctx context.Context, writer controller.Wri
 	})
 }
 
-func publishResource[T resourceSpec[T]](ctx context.Context, store state.State, namespace resource.Namespace, id string, value T) error {
+func publishResource[T interface {
+	resourceSpec[T]
+	comparable
+}](ctx context.Context, store state.State, namespace resource.Namespace, id string, value T) error {
 	return cosi.Publish(ctx, store, resourceFor(namespace, id, value), value, hostOwner)
 }
 

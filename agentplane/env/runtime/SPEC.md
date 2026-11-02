@@ -135,6 +135,10 @@ Abnormal Pod Runtime exit requires the outer container fence. VM native units bi
 `agentplane-environment-runtime.service` and `/run/agentplane-environment-runtime-lifetime` with its
 exact invocation. Runtime's management scope identity remains separate from harness/Execution scope
 IDs. Every scope identity includes the state directory, Sandbox UID and explicit scope ID.
+Runtime declares volatile COSI systemd scopes only after opening its lifecycle store. The scope
+controller prepares the invocation marker, applies the aggregate budget and inventories/fences stale
+units before publishing readiness. Each process waits for its own scope's ready status. Readiness is
+latched for that owner lifetime: controller restarts and Execution retries cannot fence its live units.
 The Runtime unit holds state/workspace mounts until native cleanup and accepted bootstrap
 settle; its stop timeout is unlimited, while the lifecycle fence deadline is 150 seconds.
 
