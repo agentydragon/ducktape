@@ -205,14 +205,12 @@ async def _assert_sample_frame_ratios(view: VisualPage) -> None:
     assert all(abs(ratio - 1.6) < 0.03 for ratio in ratios), ratios
 
 
-async def test_generated_gallery_layout(visual: VisualHarness, tmp_path: Path, case_id: str) -> None:
+async def test_generated_gallery_layout(visual: VisualHarness, tmp_path: Path) -> None:
     bundle, high_slug = _gallery_bundle(tmp_path)
     index_url = (bundle / "index.html").absolute().as_uri()
     detail_url = (bundle / "tests" / high_slug / "index.html").absolute().as_uri()
 
-    async with visual.open(
-        viewport=Viewport(width=1440, height=1000), case_id=case_id, trace_checkpoint="desktop"
-    ) as view:
+    async with visual.open(viewport=Viewport(width=1440, height=1000), trace_checkpoint="desktop") as view:
         await view.page.goto(index_url, wait_until="load")
         await expect(view.page.locator("h2").first).to_contain_text("Mixed dimensions and statuses")
         await expect(view.page.locator(".assets .sample-frame")).to_have_count(2)
@@ -250,9 +248,7 @@ async def test_generated_gallery_layout(visual: VisualHarness, tmp_path: Path, c
         await _assert_sample_frame_ratios(view)
         await view.capture("gallery-detail-desktop", full_page=True)
 
-    async with visual.open(
-        viewport=Viewport(width=412, height=915), case_id=case_id, trace_checkpoint="mobile"
-    ) as view:
+    async with visual.open(viewport=Viewport(width=412, height=915), trace_checkpoint="mobile") as view:
         await view.page.goto(detail_url, wait_until="load")
         columns = await view.page.locator(f'figure[id="{_asset_key("dashboard.png").path}"] .pair').evaluate(
             "pair => getComputedStyle(pair).gridTemplateColumns.split(' ').length"

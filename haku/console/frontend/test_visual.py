@@ -19,20 +19,13 @@ pytestmark = [pytest.mark.asyncio(loop_scope="session"), pytest.mark.parametrize
 
 @asynccontextmanager
 async def _fixture(
-    visual: VisualHarness,
-    fixture_id: str,
-    color_scheme: Literal["light", "dark"],
-    *,
-    width: int,
-    height: int,
-    case_id: str,
+    visual: VisualHarness, fixture_id: str, color_scheme: Literal["light", "dark"], *, width: int, height: int
 ) -> AsyncIterator[VisualPage]:
     async with visual.open(
         fixture_id,
         viewport=Viewport(width=width, height=height, device_scale_factor=2),
         color_scheme=color_scheme,
         window_globals={"__FIXTURE__": fixture_id, "__COLOR_SCHEME__": color_scheme},
-        case_id=case_id,
     ) as view:
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context=fixture_id)
@@ -56,10 +49,10 @@ def console_viewport() -> Viewport:
 
 @pytest_asyncio.fixture(loop_scope="session")
 async def console_view(
-    visual: VisualHarness, color_scheme: Literal["light", "dark"], console_viewport: Viewport, case_id: str
+    visual: VisualHarness, color_scheme: Literal["light", "dark"], console_viewport: Viewport
 ) -> AsyncIterator[VisualPage]:
     async with _fixture(
-        visual, "console", color_scheme, width=console_viewport.width, height=console_viewport.height, case_id=case_id
+        visual, "console", color_scheme, width=console_viewport.width, height=console_viewport.height
     ) as view:
         await _shell_ready(view)
         yield view
@@ -72,16 +65,16 @@ async def test_console_responsive(console_view: VisualPage) -> None:
     await console_view.capture()
 
 
-async def test_capability_request(visual: VisualHarness, color_scheme: Literal["light", "dark"], case_id: str) -> None:
-    async with _fixture(visual, "capability-request", color_scheme, width=1200, height=800, case_id=case_id) as view:
+async def test_capability_request(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
+    async with _fixture(visual, "capability-request", color_scheme, width=1200, height=800) as view:
         await view.page.wait_for_selector(".haku-shell-drawer [aria-label='Capability requests']", state="visible")
         await expect(view.page.locator(".haku-shell-drawer button:has-text('Approve'):disabled")).to_have_count(0)
         await _park_pointer(view)
         await view.capture()
 
 
-async def test_not_found(visual: VisualHarness, color_scheme: Literal["light", "dark"], case_id: str) -> None:
-    async with _fixture(visual, "not-found", color_scheme, width=900, height=600, case_id=case_id) as view:
+async def test_not_found(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
+    async with _fixture(visual, "not-found", color_scheme, width=900, height=600) as view:
         await view.page.wait_for_selector(":text('Page not found')", state="attached")
         await _shell_ready(view)
         await view.capture()
@@ -94,15 +87,10 @@ def settings_viewport() -> Viewport:
 
 @pytest_asyncio.fixture(loop_scope="session")
 async def settings_view(
-    visual: VisualHarness, color_scheme: Literal["light", "dark"], settings_viewport: Viewport, case_id: str
+    visual: VisualHarness, color_scheme: Literal["light", "dark"], settings_viewport: Viewport
 ) -> AsyncIterator[VisualPage]:
     async with _fixture(
-        visual,
-        "settings",
-        color_scheme,
-        width=settings_viewport.width,
-        height=settings_viewport.height,
-        case_id=case_id,
+        visual, "settings", color_scheme, width=settings_viewport.width, height=settings_viewport.height
     ) as view:
         await _shell_ready(view)
         await view.page.wait_for_selector("[aria-label='Loading Agents']", state="hidden")
@@ -127,8 +115,8 @@ async def test_settings_tab(settings_view: VisualPage, tab: str, ready_text: str
     await settings_view.capture()
 
 
-async def test_session_expiring(visual: VisualHarness, color_scheme: Literal["light", "dark"], case_id: str) -> None:
-    async with _fixture(visual, "session-expiring", color_scheme, width=600, height=420, case_id=case_id) as view:
+async def test_session_expiring(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
+    async with _fixture(visual, "session-expiring", color_scheme, width=600, height=420) as view:
         await view.page.locator("[aria-label='Session expiring soon']").click()
         await view.page.wait_for_selector("[aria-label='Console session']", state="visible")
         await _park_pointer(view)
