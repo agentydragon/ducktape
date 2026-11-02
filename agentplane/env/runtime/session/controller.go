@@ -307,6 +307,9 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 				sealingPending = true
 			}
 		}
+		// The seal worker may have settled admission since the initial status
+		// read. Publish the cutoff and its seal proof from the same reconcile.
+		current.AdmissionClosed = s.admissionClosed()
 		current.Sealed = false
 		current.SealUID = ""
 		current.SealCursor = 0
@@ -314,7 +317,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		current.AcknowledgementPresent = false
 		current.AcknowledgementSealed = false
 		current.AcknowledgementCursor = 0
-		if seal := s.journal.SealState(); seal != nil && !sealingPending && current.Phase == Halted && current.ProcessStopped && inspected && fenceReady && desiredState.SealUID != "" && seal.IncarnationUID == desiredState.SealUID {
+		if seal := s.journal.SealState(); seal != nil && !sealingPending && current.AdmissionClosed && current.Phase == Halted && current.ProcessStopped && inspected && fenceReady && desiredState.SealUID != "" && seal.IncarnationUID == desiredState.SealUID {
 			current.Sealed = true
 			current.SealUID = seal.IncarnationUID
 			current.SealCursor = seal.Cursor
