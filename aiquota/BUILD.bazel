@@ -45,6 +45,7 @@ py_library(
         "//aiquota/providers:codex_lib",
         "//aiquota/providers:openai_platform_lib",
         "//aiquota/providers:zai_lib",
+        "//aiquota/render:view_model_lib",
         "@pypi//platformdirs",
     ],
 )
@@ -55,7 +56,7 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        ":models",
+        "//aiquota/render:view_model_lib",
         "@pypi//httpx",
     ],
 )
@@ -84,7 +85,6 @@ py_library(
         ":config",
         "//aiquota/render:human_lib",
         "//aiquota/render:tmux_lib",
-        "//aiquota/render:view_model_lib",
         "@pypi//rich",
         "@pypi//typer",
     ],
@@ -291,6 +291,7 @@ py_test(
         ":models",
         "//:conftest",
         "//aiquota/providers:base",
+        "//aiquota/render:view_model_lib",
         "@pypi//pytest_bazel",
     ],
 )
@@ -300,9 +301,9 @@ py_test(
     srcs = ["test_remote.py"],
     imports = [".."],
     deps = [
-        ":models",
         ":remote",
         "//:conftest",
+        "//aiquota/render:view_model_lib",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
         "@pypi//respx",

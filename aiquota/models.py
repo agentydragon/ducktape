@@ -109,6 +109,17 @@ class FetchSuccess(BaseModel):
         return sorted(windows, key=lambda window: (window.window_seconds, window.name is not None, window.name or ""))
 
 
+def is_substantive(result: FetchSuccess) -> bool:
+    """Whether a success contains data worth retaining and displaying."""
+    return bool(
+        result.windows
+        or result.available_reset_credits is not None
+        or result.paid_credits is not None
+        or result.platform_credits is not None
+        or result.prepaid_balance is not None
+    )
+
+
 class FetchError(BaseModel):
     kind: Literal["error"] = "error"
     error: str

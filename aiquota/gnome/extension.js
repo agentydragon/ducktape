@@ -89,63 +89,10 @@ function formatAge(seconds) {
   return sharedFormatAge(seconds);
 }
 
-// Pick the state to render: prefer the latest fetch, but fall back to the
-// last successful snapshot (windows + extraSpend + reset credits) when the latest call
-// returned nothing usable. `staleAge` is null when no fallback was needed.
+// The server selects the display snapshot; the desktop only formats its age.
 function effectiveState(state) {
-  if (
-    state.windows.length > 0 ||
-    state.availableResetCredits != null ||
-    state.paidCredits != null ||
-    state.platformCredits != null ||
-    state.prepaidBalance != null
-  ) {
-    const staleAge = state.error && state.lastFetch != null ? Math.max(0, (nowMs() - state.lastFetch) / 1000) : null;
-    return {
-      windows: state.windows,
-      extraSpend: state.extraSpend,
-      paidCredits: state.paidCredits,
-      platformCredits: state.platformCredits,
-      prepaidBalance: state.prepaidBalance,
-      availableResetCredits: state.availableResetCredits,
-      availableResetCreditExpiries: state.availableResetCreditExpiries,
-      resetCreditExpiryLookupFailed: state.resetCreditExpiryLookupFailed,
-      staleAge,
-    };
-  }
-  const snap = state.lastSuccess;
-  if (
-    !snap ||
-    (snap.windows.length === 0 &&
-      snap.availableResetCredits == null &&
-      snap.paidCredits == null &&
-      snap.platformCredits == null &&
-      snap.prepaidBalance == null)
-  ) {
-    return {
-      windows: [],
-      extraSpend: null,
-      paidCredits: null,
-      platformCredits: null,
-      prepaidBalance: null,
-      availableResetCredits: null,
-      availableResetCreditExpiries: [],
-      resetCreditExpiryLookupFailed: false,
-      staleAge: null,
-    };
-  }
-  const ageSeconds = snap.fetchedAt != null ? Math.max(0, (nowMs() - snap.fetchedAt) / 1000) : null;
-  return {
-    windows: snap.windows,
-    extraSpend: snap.extraSpend,
-    paidCredits: snap.paidCredits,
-    platformCredits: snap.platformCredits,
-    prepaidBalance: snap.prepaidBalance,
-    availableResetCredits: snap.availableResetCredits,
-    availableResetCreditExpiries: snap.availableResetCreditExpiries,
-    resetCreditExpiryLookupFailed: snap.resetCreditExpiryLookupFailed,
-    staleAge: ageSeconds,
-  };
+  const staleAge = state.staleSince != null ? Math.max(0, (nowMs() - state.staleSince) / 1000) : null;
+  return { ...state, staleAge };
 }
 
 function formatCheckFailure(error, lastCheck, haveWindows) {
@@ -242,6 +189,7 @@ function emptyProviderState() {
     paidCredits: null,
     platformCredits: null,
     prepaidBalance: null,
+    prepaidStaleSince: null,
     availableResetCredits: null,
     availableResetCreditExpiries: [],
     resetCreditExpiryLookupFailed: false,
@@ -250,9 +198,7 @@ function emptyProviderState() {
     paidCreditsActive: false,
     // Peak-burn schedule from the Python view model; null when the provider has none.
     burn: null,
-    // Last successful fetch — populated when the most recent attempt failed
-    // but a prior good snapshot exists. {windows, extraSpend, fetchedAt}.
-    lastSuccess: null,
+    staleSince: null,
   };
 }
 
@@ -785,24 +731,6 @@ const QuotaIndicator = GObject.registerClass(
       };
     }
 
-    _mapLastSuccess(snap) {
-      // snap = SuccessfulProviderFetch = {fetched_at, result: FetchSuccess}.
-      if (!snap?.result) return null;
-      return {
-        windows: (snap.result.windows ?? [])
-          .map((window) => this._mapWindow(window))
-          .filter((window) => window.display),
-        extraSpend: this._mapExtraSpend(snap.result.extra_spend),
-        paidCredits: snap.result.paid_credits ?? null,
-        platformCredits: snap.result.platform_credits ?? null,
-        prepaidBalance: snap.result.prepaid_balance ?? null,
-        availableResetCredits: snap.result.available_reset_credits ?? null,
-        availableResetCreditExpiries: snap.result.available_reset_credit_expiries ?? [],
-        resetCreditExpiryLookupFailed: snap.result.reset_credit_expiry_lookup_failed === true,
-        fetchedAt: snap.fetched_at ? new Date(snap.fetched_at).getTime() : null,
-      };
-    }
-
     _loadViewData(data) {
       const providerIds = new Set(
         (Array.isArray(data.providers) ? data.providers : [])
@@ -817,44 +745,33 @@ const QuotaIndicator = GObject.registerClass(
           p.state = emptyProviderState();
           continue;
         }
-        // last_output.result is a tagged union: kind="success" carries window
-        // data, kind="error" carries the error string.
-        const result = pq.last_output?.result ?? {};
-        const isSuccess = result.kind === "success";
-        const lastSuccess = this._mapLastSuccess(pq.last_success);
-        const displayWindows = (pq.display_windows ?? []).map((window) => this._mapWindow(window));
-        const currentUsable =
-          isSuccess &&
-          (result.windows?.length ||
-            result.available_reset_credits != null ||
-            result.paid_credits != null ||
-            result.platform_credits != null ||
-            result.prepaid_balance != null);
-        if (lastSuccess && !currentUsable) {
-          lastSuccess.windows = displayWindows;
-          lastSuccess.platformCredits = pq.display_platform_credits ?? null;
-        }
+        const selected = pq.display;
+        const result = selected.result;
+        const lastResult = pq.last_output?.result;
         const lastCheck = pq.last_output?.fetched_at ? new Date(pq.last_output.fetched_at).getTime() : fetchedAt;
         p.state = {
-          windows: currentUsable ? displayWindows : [],
-          lastFetch: isSuccess ? lastCheck : (lastSuccess?.fetchedAt ?? null),
+          windows: (pq.display_windows ?? []).map((window) => this._mapWindow(window)),
+          staleSince:
+            selected.source === "last_success" && selected.observed_at
+              ? new Date(selected.observed_at).getTime()
+              : null,
+          lastFetch: selected.observed_at ? new Date(selected.observed_at).getTime() : null,
           lastCheck,
-          error: isSuccess ? null : (result.error ?? null),
-          extraSpend: isSuccess ? this._mapExtraSpend(result.extra_spend) : null,
-          paidCredits: isSuccess ? (result.paid_credits ?? null) : null,
-          platformCredits: isSuccess && currentUsable ? (pq.display_platform_credits ?? null) : null,
-          prepaidBalance: isSuccess ? (result.prepaid_balance ?? null) : null,
-          availableResetCredits: isSuccess ? (result.available_reset_credits ?? null) : null,
-          availableResetCreditExpiries: isSuccess ? (result.available_reset_credit_expiries ?? []) : [],
-          resetCreditExpiryLookupFailed: isSuccess && result.reset_credit_expiry_lookup_failed === true,
-          // Derived policy bits from the Python view model — single source of truth.
+          error: lastResult?.kind === "error" ? lastResult.error : null,
+          extraSpend: this._mapExtraSpend(result?.extra_spend),
+          paidCredits: result?.paid_credits ?? null,
+          platformCredits: pq.display_platform_credits ?? null,
+          prepaidBalance: selected.prepaid_balance ?? null,
+          prepaidStaleSince: selected.prepaid_stale_since ? new Date(selected.prepaid_stale_since).getTime() : null,
+          availableResetCredits: result?.available_reset_credits ?? null,
+          availableResetCreditExpiries: result?.available_reset_credit_expiries ?? [],
+          resetCreditExpiryLookupFailed: result?.reset_credit_expiry_lookup_failed === true,
           currentlyOverPlan: pq.currently_over_plan === true,
           extraStatus: pq.extra_status ?? "none",
           paidCreditsActive: pq.paid_credits_active === true,
           burn: pq.burn ?? null,
           summaryTint: pq.summary_tint ?? "unknown",
           summaryIndex: pq.summary_index ?? null,
-          lastSuccess,
         };
       }
       const needsRebuild = this._providers.some((p) => {
@@ -1019,7 +936,13 @@ const QuotaIndicator = GObject.registerClass(
           ].join("\n")
         : formatPrepaidBalance(effective.prepaidBalance);
       item.visible = text != null;
-      if (text != null) item._summaryLabel.set_text(text);
+      if (text != null) {
+        const age =
+          !credits && effective.prepaidStaleSince != null
+            ? ` (stale ${formatAge(Math.max(0, (nowMs() - effective.prepaidStaleSince) / 1000))})`
+            : "";
+        item._summaryLabel.set_text(text + age);
+      }
     }
 
     _renderBurnRow(item, burn) {

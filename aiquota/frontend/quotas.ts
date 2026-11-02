@@ -1,16 +1,6 @@
 import type { ExtraSpend, FetchSuccess, PaidCredits, ProviderView, WindowView } from "./schema";
 
-/**
- * The `/v1/quotas` payload and the one reading of it every surface performs.
- *
- * Types come from the API's own OpenAPI document (`//aiquota/frontend:schema`), so the wire
- * contract is the Pydantic models rather than a hand-kept copy of them.
- *
- * `effectiveQuota` is the "what do we actually show" step: a failed refresh with a good prior
- * snapshot displays the stale numbers rather than "no data", because stale-but-real beats
- * nothing — the same resolution `aiquota/render/human.py` and the GNOME popup make.
- */
-
+/** Render the server-selected quota snapshot and its freshness. */
 export type PrepaidBalance = NonNullable<FetchSuccess["prepaid_balance"]>;
 export type EffectiveQuota = {
   windows: WindowView[];
@@ -18,6 +8,7 @@ export type EffectiveQuota = {
   paidCredits: PaidCredits | null;
   platformCredits: FetchSuccess["platform_credits"];
   prepaidBalance: PrepaidBalance | null;
+  prepaidStaleSince: string | null;
   resetCredits: number | null;
   resetCreditExpiries: string[];
   resetCreditExpiryLookupFailed: boolean;
@@ -27,55 +18,19 @@ export type EffectiveQuota = {
 };
 
 export function effectiveQuota(provider: ProviderView): EffectiveQuota {
-  const result = provider.last_output.result;
-  const error = result.kind === "error" ? result.error : null;
-  if (
-    result.kind === "success" &&
-    (result.windows?.length ||
-      result.available_reset_credits != null ||
-      result.paid_credits != null ||
-      result.platform_credits != null ||
-      result.prepaid_balance != null)
-  ) {
-    return {
-      ...shown(result),
-      platformCredits: provider.display_platform_credits ?? null,
-      windows: provider.display_windows,
-      staleSince: null,
-      error,
-    };
-  }
-  const fallback = provider.last_success;
-  if (fallback)
-    return {
-      ...shown(fallback.result),
-      platformCredits: provider.display_platform_credits ?? null,
-      windows: provider.display_windows,
-      staleSince: fallback.fetched_at,
-      error,
-    };
+  const result = provider.display.result;
+  const error = provider.last_output.result.kind === "error" ? provider.last_output.result.error : null;
   return {
-    windows: [],
-    extraSpend: null,
-    paidCredits: null,
-    platformCredits: null,
-    prepaidBalance: null,
-    resetCredits: null,
-    resetCreditExpiries: [],
-    resetCreditExpiryLookupFailed: false,
-    staleSince: null,
+    windows: provider.display_windows,
+    extraSpend: result?.extra_spend ?? null,
+    paidCredits: result?.paid_credits ?? null,
+    platformCredits: provider.display_platform_credits ?? null,
+    prepaidBalance: provider.display.prepaid_balance ?? null,
+    prepaidStaleSince: provider.display.prepaid_stale_since ?? null,
+    resetCredits: result?.available_reset_credits ?? null,
+    resetCreditExpiries: result?.available_reset_credit_expiries ?? [],
+    resetCreditExpiryLookupFailed: result?.reset_credit_expiry_lookup_failed ?? false,
+    staleSince: provider.display.source === "last_success" ? provider.display.observed_at : null,
     error,
-  };
-}
-
-function shown(result: FetchSuccess): Omit<EffectiveQuota, "staleSince" | "error" | "windows"> {
-  return {
-    extraSpend: result.extra_spend ?? null,
-    paidCredits: result.paid_credits ?? null,
-    platformCredits: result.platform_credits ?? null,
-    prepaidBalance: result.prepaid_balance ?? null,
-    resetCredits: result.available_reset_credits ?? null,
-    resetCreditExpiries: result.available_reset_credit_expiries ?? [],
-    resetCreditExpiryLookupFailed: result.reset_credit_expiry_lookup_failed ?? false,
   };
 }
