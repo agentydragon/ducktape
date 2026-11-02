@@ -106,7 +106,7 @@ pub struct OwnerInitializationCoverageRefusal {
 }
 
 #[derive(Debug, Clone)]
-pub struct InitializationEffects {
+pub struct InitializationEffects<'a> {
     pub ordinal: SourceUnitOrdinal,
     pub reads: BTreeMap<EffectCell, InitializationEffectEvidence>,
     pub writes: BTreeMap<EffectCell, InitializationEffectEvidence>,
@@ -115,12 +115,14 @@ pub struct InitializationEffects {
     pub unknown_coverage: BTreeSet<UnknownEffectCoverage>,
     pub dataflow_opacity: BTreeSet<DataflowOpacityCause>,
     pub incomplete_execution: bool,
-    pub execution_losses: Vec<ExecutionPrecisionLoss>,
+    /// The report sweep borrows the retained statement ledger rather than
+    /// duplicating every loss and its source/proof evidence for the chunk.
+    pub execution_losses: &'a [ExecutionPrecisionLoss],
     pub opaque_heap: bool,
     pub owner_coverage_refusal: Option<OwnerInitializationCoverageRefusal>,
 }
 
-impl InitializationEffects {
+impl InitializationEffects<'_> {
     pub fn has_havoc(&self) -> bool {
         !self.unknown_coverage.is_empty()
             || !self.dataflow_opacity.is_empty()
@@ -146,7 +148,7 @@ impl StatementFacts {
             && !(self.kind == StatementKind::Export && self.declares_direct_function)
     }
 
-    pub fn initialization_effects(&self) -> InitializationEffects {
+    pub fn initialization_effects(&self) -> InitializationEffects<'_> {
         let mut effects = InitializationEffects {
             ordinal: self.ordinal,
             reads: BTreeMap::new(),
@@ -155,7 +157,7 @@ impl StatementFacts {
             unknown_coverage: BTreeSet::new(),
             dataflow_opacity: self.havoc.clone(),
             incomplete_execution: false,
-            execution_losses: Vec::new(),
+            execution_losses: &[],
             opaque_heap: self.heap_contents.opaque,
             owner_coverage_refusal: None,
         };
@@ -238,7 +240,7 @@ impl StatementFacts {
                 previous.global_may_access_count += 1;
             }
             effects.incomplete_execution = !calls.complete;
-            effects.execution_losses = calls.precision_losses.clone();
+            effects.execution_losses = &calls.precision_losses;
             effects.opaque_heap |= calls.heap_contents.opaque;
             effects
                 .allocates

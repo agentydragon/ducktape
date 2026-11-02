@@ -149,13 +149,13 @@ pub struct EffectOpacity<'a> {
     pub owner_coverage_refusal: Option<&'a OwnerInitializationCoverageRefusal>,
 }
 
-impl<'a> From<&'a InitializationEffects> for EffectOpacity<'a> {
-    fn from(effects: &'a InitializationEffects) -> Self {
+impl<'a> From<&'a InitializationEffects<'_>> for EffectOpacity<'a> {
+    fn from(effects: &'a InitializationEffects<'_>) -> Self {
         Self {
             unknown_coverage: &effects.unknown_coverage,
             dataflow_opacity: &effects.dataflow_opacity,
             incomplete_execution: effects.incomplete_execution,
-            execution_losses: &effects.execution_losses,
+            execution_losses: effects.execution_losses,
             opaque_heap: effects.opaque_heap,
             owner_coverage_refusal: effects.owner_coverage_refusal.as_ref(),
         }
@@ -164,8 +164,8 @@ impl<'a> From<&'a InitializationEffects> for EffectOpacity<'a> {
 
 struct EffectConflictCells<'a> {
     cells: &'a BTreeMap<EffectCell, bool>,
-    first: &'a InitializationEffects,
-    later: &'a InitializationEffects,
+    first: &'a InitializationEffects<'a>,
+    later: &'a InitializationEffects<'a>,
 }
 
 impl EffectConflictCells<'_> {
@@ -504,8 +504,8 @@ pub fn effect_translation_validate<E>(
 }
 
 fn observed_conflict(
-    a: &InitializationEffects,
-    b: &InitializationEffects,
+    a: &InitializationEffects<'_>,
+    b: &InitializationEffects<'_>,
     cell: &EffectCell,
 ) -> bool {
     let observed = |value: Option<&InitializationEffectEvidence>| {
