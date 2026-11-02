@@ -107,6 +107,27 @@ fn only_scc(report: &Value) -> &Value {
     scc
 }
 
+fn proposal_bindings(proposal: &Value) -> Vec<String> {
+    let mut bindings: Vec<String> = ["a", "b"]
+        .iter()
+        .map(|end| {
+            proposal[end]["binding"]
+                .as_str()
+                .expect("binding")
+                .to_owned()
+        })
+        .collect();
+    bindings.sort();
+    bindings
+}
+
+fn proposal_inventory(report: &Value) -> Vec<Vec<String>> {
+    array(report, "proposals")
+        .iter()
+        .map(proposal_bindings)
+        .collect()
+}
+
 /// `(kind, reason)` of every blocking-edge row of an SCC pairs cannot break.
 fn blocking_rows(scc: &Value) -> Vec<(String, String)> {
     assert_eq!(scc["verdict"], "pairs_cannot_break", "{scc:#}");
@@ -148,22 +169,22 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
     let draft_path = rejected.report_root.join("commutations.yaml");
     let report = propose_rejected(&rejected, &["--out", draft_path.to_str().unwrap()]);
 
-    // The at-init `trace` read through `globalThis.record` also orders
-    // `beta` after `trace`'s initializer: a derived conflict, reported with
-    // the gate's cause and never drafted.
-    for candidate in array(&report, "rejected") {
-        assert_eq!(candidate["reason"], "known_conflict", "{candidate:#}");
-        assert_eq!(
-            candidate["conflicts"][0]["conflict"]["rule"], "binding_timeline",
-            "{candidate:#}"
-        );
-    }
-    // Both sequenced arcs of the two-module cycle are candidates. Only
-    // `gamma -> beta` is alone on its arc; `beta -> alpha` shares the other
-    // arc with the at-init reads of `trace` through `globalThis.record`, so
-    // inerting it cannot break the SCC.
-    let [first, second] = array(&report, "proposals") else {
-        panic!("two proposals: {report:#}");
+    assert_eq!(report["totals"]["proposals"], 3, "{report:#}");
+    assert_eq!(report["totals"]["rejected"], 0, "{report:#}");
+    assert_eq!(report["totals"]["needs_co_location"], 2, "{report:#}");
+    assert!(array(&report, "rejected").is_empty(), "{report:#}");
+    let proposals = array(&report, "proposals");
+    assert_eq!(
+        proposal_inventory(&report),
+        vec![
+            vec!["beta".to_owned(), "gamma".to_owned()],
+            vec!["beta".to_owned(), "trace".to_owned()],
+            vec!["alpha".to_owned(), "beta".to_owned()],
+        ],
+        "complete ranked proposal inventory: {report:#}"
+    );
+    let [first, second, third] = proposals else {
+        panic!("three proposals: {report:#}");
     };
     assert_eq!(first["rank"], 1);
     assert_eq!(first["rank_reason"], "single_pair_cut");
@@ -172,33 +193,63 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
     assert_eq!(second["rank"], 2);
     assert_eq!(second["rank_reason"], "partial_cut");
     assert_eq!(second["single_pair_cut"], false);
-    let bindings = |proposal: &Value| -> Vec<String> {
-        let mut bindings: Vec<String> = ["a", "b"]
-            .iter()
-            .map(|end| {
-                proposal[end]["binding"]
-                    .as_str()
-                    .expect("binding")
-                    .to_owned()
-            })
-            .collect();
-        bindings.sort();
-        bindings
+    assert_eq!(second["cut_edges"], serde_json::json!([0]));
+    assert_eq!(second["remaining_module_pair_edges"], 3);
+    assert_eq!(third["rank"], 3);
+    assert_eq!(third["rank_reason"], "partial_cut");
+    assert_eq!(third["single_pair_cut"], false);
+    assert_eq!(third["cut_edges"], serde_json::json!([0]));
+    assert_eq!(third["remaining_module_pair_edges"], 3);
+
+    // Rank 2 is only a candidate to inert the callback's possible `trace`
+    // observation. The two eager-use edges remain co-location requirements;
+    // this proposal does not establish that `trace` can move past beta's call.
+    let [trace_inerted] = array(second, "inerted_edges") else {
+        panic!("one inerted trace edge: {second:#}");
     };
-    assert_eq!(bindings(first), ["beta", "gamma"]);
-    assert_eq!(bindings(second), ["alpha", "beta"]);
-    for proposal in [first, second] {
+    assert_eq!(
+        trace_inerted["explanation"],
+        serde_json::json!({
+            "rule": "binding_timeline",
+            "binding": "trace",
+            "order": "reader_after_writer",
+            "source": {
+                "kind": "fallback",
+                "reason": { "path": "opaque_callback_invocation" }
+            },
+            "target": { "kind": "observed" }
+        })
+    );
+    let needs = array(&report, "needs_co_location");
+    assert_eq!(needs.len(), 2, "{report:#}");
+    let positions: Vec<Value> = needs
+        .iter()
+        .map(|need| {
+            assert_eq!(need["edge"]["kind"], "eager_use", "{need:#}");
+            assert_eq!(need["edge"]["binding"], "trace", "{need:#}");
+            assert_eq!(need["edge"]["from_binding"], "beta", "{need:#}");
+            need["edge"]["explanation"]["position"].clone()
+        })
+        .collect();
+    assert_eq!(
+        positions,
+        vec![
+            serde_json::json!({ "kind": "promoted_at_init", "callee_source_unit": "unit:1" }),
+            serde_json::json!({ "kind": "unresolved_at_init_call" }),
+        ],
+        "eager-use causes remain visible: {report:#}"
+    );
+
+    for proposal in [first, second, third] {
         assert_eq!(proposal["scc_id"], 0);
-        let modules: Vec<&str> = ["a", "b"]
-            .iter()
-            .map(|end| proposal[end]["module"].as_str().expect("module"))
-            .collect();
-        assert!(
-            modules.contains(&"probes/outer") && modules.contains(&"probes/inner"),
-            "{proposal:#}"
-        );
         for end in ["a", "b"] {
             let endpoint = &proposal[end];
+            let expected_module = match endpoint["binding"].as_str().expect("binding") {
+                "trace" | "alpha" | "gamma" => "probes/outer",
+                "beta" => "probes/inner",
+                other => panic!("unexpected endpoint {other}: {proposal:#}"),
+            };
+            assert_eq!(endpoint["module"], expected_module, "{proposal:#}");
             // Without `--modules` every endpoint is a synthesized, proven
             // `source_match` claiming the declared binding.
             assert_eq!(endpoint["selector_origin"], "synthesized_source_match");
@@ -215,7 +266,11 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
         let [inerted] = array(proposal, "inerted_edges") else {
             panic!("one inerted edge: {proposal:#}");
         };
-        assert_eq!(inerted["explanation"]["rule"], "strict_chain");
+        if proposal["rank"] == 2 {
+            assert_eq!(inerted["explanation"]["rule"], "binding_timeline");
+        } else {
+            assert_eq!(inerted["explanation"]["rule"], "strict_chain");
+        }
         assert_eq!(proposal["entry"]["note"], Value::Null);
     }
 
@@ -225,12 +280,17 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
     let drafted = draft_pairs(&report);
     assert_eq!(
         drafted.len(),
-        2,
+        3,
         "the draft lists every proposal in rank order"
     );
+    for (drafted_entry, proposal) in drafted.iter().zip(proposals) {
+        let entry: CommutingStatementsContract =
+            serde_json::from_value(proposal["entry"].clone()).expect("entry is a contract");
+        assert_eq!(drafted_entry, &entry);
+    }
+
     let first_entry: CommutingStatementsContract =
         serde_json::from_value(first["entry"].clone()).expect("entry is a contract");
-    assert_eq!(drafted[0], first_entry);
 
     // Positive anchor: the single-pair cut alone clears the cycle under the
     // gate and the emitted bundle preserves the entry output.
@@ -250,19 +310,27 @@ fn limit_keeps_the_best_proposals_and_counts_the_rest() {
     let rejected = run_rejection_fixture(opaque_split(vec![]));
     let all = propose_rejected(&rejected, &["--all"]);
     let every = array(&all, "proposals");
-    assert_eq!(every.len(), 2, "{all:#}");
-    assert_eq!(all["totals"]["proposals"], 2);
+    assert_eq!(every.len(), 3, "{all:#}");
+    assert_eq!(
+        proposal_inventory(&all),
+        vec![
+            vec!["beta".to_owned(), "gamma".to_owned()],
+            vec!["beta".to_owned(), "trace".to_owned()],
+            vec!["alpha".to_owned(), "beta".to_owned()],
+        ]
+    );
+    assert_eq!(all["totals"]["proposals"], 3);
     let limited = propose_rejected(&rejected, &["--limit", "1"]);
     let [kept] = array(&limited, "proposals") else {
         panic!("one proposal: {limited:#}");
     };
     assert_eq!(kept["entry"], every[0]["entry"]);
-    assert_eq!(limited["totals"]["proposals"], 2);
+    assert_eq!(limited["totals"]["proposals"], 3);
     assert_eq!(draft_pairs(&limited).len(), 1);
-    // The pair past the limit shares one endpoint with the kept pair; its
-    // other declared-binding endpoint is assumed, not proven.
+    // Both remaining proposals leave an endpoint outside the kept pair
+    // unproven: `trace` and `alpha` are not selected by the kept `beta/gamma`.
     assert_eq!(only_scc(&all)["unproven_endpoints"], 0);
-    assert_eq!(only_scc(&limited)["unproven_endpoints"], 1);
+    assert_eq!(only_scc(&limited)["unproven_endpoints"], 2);
 }
 
 /// The source unit of a comma-list declarator is the declarator, not the
@@ -290,22 +358,36 @@ fn comma_list_declarator_excerpt_is_the_declarator() {
     );
     let report = propose_rejected(&rejected, &[]);
     let proposals = array(&report, "proposals");
-    assert!(!proposals.is_empty(), "{report:#}");
+    assert_eq!(proposals.len(), 3, "{report:#}");
+    assert_eq!(
+        proposal_inventory(&report),
+        vec![
+            vec!["beta".to_owned(), "gamma".to_owned()],
+            vec!["beta".to_owned(), "trace".to_owned()],
+            vec!["alpha".to_owned(), "beta".to_owned()],
+        ]
+    );
     let mut excerpted = Vec::new();
     for endpoint in proposals.iter().flat_map(|p| [&p["a"], &p["b"]]) {
         let binding = endpoint["binding"].as_str().expect("binding");
-        let value = match binding {
-            "alpha" => "A",
-            "beta" => "B",
-            "gamma" => "C",
+        let expected = match binding {
+            "trace" => "const trace = [];".to_owned(),
+            "alpha" => "alpha = (globalThis.record(\"alpha\"), \"A\")".to_owned(),
+            "beta" => "beta = (globalThis.record(\"beta\"), \"B\")".to_owned(),
+            "gamma" => "gamma = (globalThis.record(\"gamma\"), \"C\")".to_owned(),
             other => panic!("unexpected endpoint {other}: {endpoint:#}"),
         };
-        let expected = format!("{binding} = (globalThis.record(\"{binding}\"), \"{value}\")");
-        assert_eq!(endpoint["excerpt"], expected.as_str(), "{endpoint:#}");
+        assert_eq!(
+            endpoint["excerpt"].as_str(),
+            Some(expected.as_str()),
+            "{endpoint:#}"
+        );
         excerpted.push(binding);
     }
     assert!(
-        excerpted.iter().any(|binding| *binding != "alpha"),
+        excerpted
+            .iter()
+            .any(|binding| matches!(*binding, "beta" | "gamma")),
         "a declarator after the first is excerpted: {report:#}"
     );
 }
@@ -523,21 +605,32 @@ fn tree_spec_members_are_proposed_as_resolved_members() {
         &["--modules", modules.to_str().unwrap()],
     );
     let proposals = array(&report, "proposals");
-    assert!(!proposals.is_empty(), "{report:#}");
+    assert_eq!(proposals.len(), 3, "{report:#}");
+    assert_eq!(
+        proposal_inventory(&report),
+        vec![
+            vec!["beta".to_owned(), "gamma".to_owned()],
+            vec!["beta".to_owned(), "trace".to_owned()],
+            vec!["alpha".to_owned(), "beta".to_owned()],
+        ]
+    );
     for (proposal, end) in proposals.iter().flat_map(|p| [(p, "a"), (p, "b")]) {
         assert_eq!(
             proposal[end]["selector_origin"], "resolved_member",
             "{proposal:#}"
         );
         let member = &proposal["entry"][end]["resolved_member"];
-        assert!(
-            ["Probes/Outer", "Probes/Inner"].contains(&member["module"].as_str().expect("module")),
+        let binding = proposal[end]["binding"].as_str().expect("binding");
+        let expected_module = match binding {
+            "trace" | "alpha" | "gamma" => "Probes/Outer",
+            "beta" => "Probes/Inner",
+            other => panic!("unexpected binding {other}: {proposal:#}"),
+        };
+        assert_eq!(
+            member["module"], expected_module,
             "authored spelling, not the canonical path: {proposal:#}"
         );
-        assert!(
-            ["alpha", "beta", "gamma"].contains(&member["name"].as_str().expect("name")),
-            "{proposal:#}"
-        );
+        assert_eq!(member["name"], binding, "{proposal:#}");
     }
 }
 

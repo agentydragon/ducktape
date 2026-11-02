@@ -34,6 +34,26 @@ fixture's callback or object exports caused that getter classification was not
 supported: it remained after the fixture exported only primitive results and
 was confirmed in a filtered baseline run.
 
+The CLI fixture now pins the complete three-proposal inventory after the
+callback-provenance correction: `beta/gamma` is the rank-1 single-pair cut,
+`trace/beta` is rank 2 with a partial cut of the `binding_timeline` edge whose
+source is `opaque_callback_invocation` fallback and target is observed, and
+`alpha/beta` is rank 3 with a partial strict-chain cut. The `trace/beta` row is
+only a candidate for removing that possible callback observation. The report
+still contains two `eager_use` co-location reasons from `beta` to `trace`
+(`promoted_at_init` and `unresolved_at_init_call`), so it does not establish
+that moving the `trace` allocation past beta's consuming call is safe. The
+runtime acceptance assertion remains on the rank-1 `beta/gamma` pair, and the
+CLI tests assert that both eager-use reasons remain.
+
+The first hosted failure summary exposed only the proposer budget target. The
+full check inventory and target log also showed failures in
+`propose_commutations_cli_test`, caused by its old two-proposal expectation and
+the new `trace` endpoint in source excerpts and resolved tree members. A
+first-failure API result is not a complete CI failure inventory; inspect the
+full check list and relevant job logs before concluding that only one target
+failed.
+
 No canonical graph, downstream payoff, or residual-component claim was
 measured. The earlier private batch witnesses remain classification examples
 in the original SCC only; their membership in the reported remaining cyclic
