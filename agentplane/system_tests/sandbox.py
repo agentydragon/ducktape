@@ -224,6 +224,9 @@ async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: s
                     )
                     if view is None:
                         if delete_requested:
+                            # A removed watch item may also mean the caller lost visibility. Verify
+                            # Kubernetes has removed this exact incarnation before reusing its name.
+                            await _wait_for_sandbox_deletion(cluster, name, uid)
                             cleanup.add_event("deleted")
                             return
                         continue
@@ -246,6 +249,17 @@ async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: s
             except Exception as diagnostic_error:
                 error.add_note(f"Sandbox cleanup diagnostics failed: {diagnostic_error!r}")
             raise
+
+
+async def _wait_for_sandbox_deletion(cluster: Cluster, name: str, uid: str) -> None:
+    while True:
+        raw = await cluster.kubectl("get", "sandboxes", name, "--ignore-not-found", "-o", "json")
+        if not raw:
+            return
+        observed_uid = json.loads(raw)["metadata"]["uid"]
+        if observed_uid != uid:
+            raise SandboxNotReadyError(f"{name} has been replaced: expected {uid}, observed {observed_uid}")
+        await asyncio.sleep(0.25)
 
 
 async def _write_cleanup_diagnostics(cluster: Cluster, client: Client, name: str, uid: str, last_snapshot: Any) -> str:

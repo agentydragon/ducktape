@@ -1,6 +1,7 @@
 """Sandbox lifecycle helpers wait for authoritative state and bound cleanup."""
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from typing import cast
 from unittest.mock import AsyncMock, call, create_autospec
@@ -189,8 +190,11 @@ async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluste
             closed = True
 
     client.sandbox_snapshots.return_value = snapshots()
+    # The caller-scoped Environment watch can remove an item before Kubernetes finishes deletion.
+    cast(AsyncMock, cluster.kubectl).side_effect = [json.dumps({"metadata": {"uid": uid}}), ""]
 
     await suspend_and_delete(cluster, client, "owned-test-sandbox", uid)
+    assert cast(AsyncMock, cluster.kubectl).await_count == 2
 
     assert client.mock_calls == [
         call.suspend_sandbox(
@@ -203,6 +207,21 @@ async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluste
     ]
     assert closed
     assert deletion_observed
+
+
+async def test_cleanup_fences_replacement_after_inventory_removal(cluster: Cluster) -> None:
+    client = create_autospec(Client, instance=True)
+    uid = str(uuid4())
+
+    async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
+        yield [_environment("owned-test-sandbox", uid, ready=False, operating_mode="OPERATING_MODE_SUSPENDED")]
+        yield []
+
+    client.sandbox_snapshots.return_value = snapshots()
+    cast(AsyncMock, cluster.kubectl).side_effect = [json.dumps({"metadata": {"uid": str(uuid4())}})]
+    with pytest.raises(SandboxNotReadyError, match="has been replaced"):
+        await suspend_and_delete(cluster, client, "owned-test-sandbox", uid)
+    client.delete_sandbox.assert_awaited_once_with(_target("owned-test-sandbox", uid))
 
 
 async def test_cleanup_does_not_delete_a_replacement_sandbox(cluster: Cluster) -> None:
