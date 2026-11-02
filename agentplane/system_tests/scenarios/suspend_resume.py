@@ -386,7 +386,7 @@ class _ResumeRun:
             cwd=cwd,
             instructions=instructions,
         )
-        snapshot = await self.client.runner_status(self.view.target.name)
+        snapshot = await self.client.runner_status(self.view.target.name, self.view.target.uid)
         self.initial_boot_id = snapshot.environment_runtime_boot_id
         reserved = next(row for row in snapshot.sessions if row.session_id == str(agent.thread_id))
         assert not reserved.HasField("process_id"), "OpenSession unexpectedly started a native harness"
@@ -398,7 +398,7 @@ class _ResumeRun:
         assert seed.input_confirmed, f"{session_pb2.Harness.Name(harness)} did not confirm the seed input"
         agent = self.agents[harness]
         self.seeded_history[harness] = await _history(self.client, agent.thread_id, completed_turns=1)
-        snapshot = await self.client.runner_status(self.view.target.name)
+        snapshot = await self.client.runner_status(self.view.target.name, self.view.target.uid)
         ready = next(row for row in snapshot.sessions if row.session_id == str(agent.thread_id))
         assert ready.execution_state == session_pb2.SESSION_EXECUTION_STATE_READY
         assert ready.HasField("process_id")
@@ -449,7 +449,7 @@ class _ResumeRun:
             self.checks.append("same_sandbox_new_incarnation_same_volumes")
             async for attempt in environment_runtime_startup_retries():
                 with attempt:
-                    snapshot = await self.client.runner_status(self.view.target.name)
+                    snapshot = await self.client.runner_status(self.view.target.name, self.view.target.uid)
             assert snapshot.environment_runtime_boot_id != self.initial_boot_id
             assert {row.session_id for row in snapshot.sessions} == set(self.native_session_ids)
             for row in snapshot.sessions:

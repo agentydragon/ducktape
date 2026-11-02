@@ -241,8 +241,9 @@ async def test_runner_status_decodes_proto_json_and_preserves_optional_and_64_bi
 
     observed: list[str] = []
     async with _app(status, requests=observed) as (client, _):
-        result = await client.runner_status("test-sandbox")
+        result = await client.runner_status("test-sandbox", "sandbox-uid")
 
+    assert "GET /sandboxes/test-sandbox/runner-status?sandbox_uid=sandbox-uid HTTP/1.1" in observed[0]
     (process,) = result.processes
     (session,) = result.sessions
     assert process.pid == 9223372036854775807
@@ -265,7 +266,7 @@ async def test_runner_status_rejects_unknown_proto_json_fields() -> None:
 
     async with _app(status) as (client, _):
         with pytest.raises(ParseError, match="new_field"):
-            await client.runner_status("test-sandbox")
+            await client.runner_status("test-sandbox", "sandbox-uid")
 
 
 async def _proxy_denied(after: int, writer: asyncio.StreamWriter) -> None:

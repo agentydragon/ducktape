@@ -532,7 +532,7 @@ function EnvironmentRuntimeDiagnostics({
     }
     let current = true;
     setState({ kind: "loading" });
-    void getEnvironmentRuntimeStatus(sandboxName).then(
+    void getEnvironmentRuntimeStatus(sandboxName, sandboxUID).then(
       (value) => {
         if (current) setState({ kind: "available", value, observedAt: new Date().toISOString() });
       },

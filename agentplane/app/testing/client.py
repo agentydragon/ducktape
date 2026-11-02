@@ -153,8 +153,8 @@ class Client:
         response = await self._json("GET", path, params={"target.uid": target.uid})
         return ParseDict(response, environment_service_pb2.EnvironmentDescriptor())
 
-    async def runner_status(self, name: str) -> session_pb2.EnvironmentRuntimeStatus:
-        response = await self._json("GET", f"/sandboxes/{name}/runner-status")
+    async def runner_status(self, name: str, uid: str) -> session_pb2.EnvironmentRuntimeStatus:
+        response = await self._json("GET", f"/sandboxes/{name}/runner-status", params={"sandbox_uid": uid})
         return ParseDict(response, session_pb2.EnvironmentRuntimeStatus())
 
     async def sandbox_snapshots(self) -> AsyncGenerator[list[environment_service_pb2.EnvironmentDescriptor]]:

@@ -276,7 +276,7 @@ async def codex_tool_oom(
             _assert_native_service_cgroup(before.cgroup, "agentplane-executors.slice")
             assert before.max > 0
             assert before.swap_max == before.oom_group == before.oom_group_kill == 0
-            original = await client.runner_status(view.target.name)
+            original = await client.runner_status(view.target.name, view.target.uid)
             evidence["runner_before"] = MessageToDict(
                 original, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
             )
@@ -305,7 +305,7 @@ async def codex_tool_oom(
             assert execution.exit_code == 137
 
             # Inspect the Runner before a follow-up could lazily start a replacement harness.
-            survived = await client.runner_status(view.target.name)
+            survived = await client.runner_status(view.target.name, view.target.uid)
             evidence["runner_after_oom"] = MessageToDict(
                 survived, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
             )
@@ -338,7 +338,7 @@ async def codex_tool_oom(
             )
             assert execution.status is wire.CommandExecutionStatus.COMPLETED
             assert execution.exit_code == 0
-            final = await client.runner_status(view.target.name)
+            final = await client.runner_status(view.target.name, view.target.uid)
             evidence["runner_after_followup"] = MessageToDict(
                 final, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
             )

@@ -56,7 +56,7 @@ type threadSandboxInventory interface {
 }
 
 type threadEnvironmentRuntimeStatusReader interface {
-	EnvironmentRuntimeStatus(context.Context, string) (*sessionpb.EnvironmentRuntimeStatus, error)
+	EnvironmentRuntimeStatus(context.Context, *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error)
 }
 
 type (
@@ -614,7 +614,7 @@ func ensureThreadArchivable(ctx context.Context, thread threads.Thread, summary 
 	if environmentRuntime == nil {
 		return errors.New("Environment Runtime status is unavailable")
 	}
-	status, err := environmentRuntime.EnvironmentRuntimeStatus(ctx, summary.Sandbox)
+	status, err := environmentRuntime.EnvironmentRuntimeStatus(ctx, sandbox)
 	if err != nil {
 		return err
 	}

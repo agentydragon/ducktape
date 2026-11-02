@@ -165,6 +165,7 @@ message GetSessionOpeningRequest {
 
 message GetEnvironmentRuntimeStatusRequest {
   string name = 1;
+  string sandbox_uid = 2;
 }
 
 message OpenSessionResponse {

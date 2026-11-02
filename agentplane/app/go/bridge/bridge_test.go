@@ -26,10 +26,12 @@ type fakeSandboxGetter struct {
 	sandbox *environmentpb.EnvironmentDescriptor
 	err     error
 	name    string
+	uid     string
 }
 
-func (f *fakeSandboxGetter) Get(_ context.Context, name string) (*environmentpb.EnvironmentDescriptor, error) {
+func (f *fakeSandboxGetter) GetExactUID(_ context.Context, name, uid string) (*environmentpb.EnvironmentDescriptor, error) {
 	f.name = name
+	f.uid = uid
 	return f.sandbox, f.err
 }
 
@@ -202,19 +204,26 @@ func TestRunnerRoutesUseCurrentSandboxIdentityAndReturnProxiedValues(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessions, err := bridge.ListSessions(context.Background(), sandbox.GetTarget().GetName())
+	sessions, err := bridge.ListSessions(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid())
 	if err != nil || !proto.Equal(&sessionpb.ListSessionsResponse{Sessions: sessions}, list) {
 		t.Fatalf("ListSessions = %v, %v", sessions, err)
 	}
 	if getter.name != sandbox.GetTarget().GetName() || runner.got != sandbox {
 		t.Fatalf("sandbox lookup/proxy identity = %q / %p, want %q / %p", getter.name, runner.got, sandbox.GetTarget().GetName(), sandbox)
 	}
-	gotStatus, err := bridge.EnvironmentRuntimeStatus(context.Background(), sandbox.GetTarget().GetName())
+	gotStatus, err := bridge.EnvironmentRuntimeStatus(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid())
 	if err != nil || !proto.Equal(gotStatus, status) {
 		t.Fatalf("EnvironmentRuntimeStatus = %v, %v", gotStatus, err)
 	}
+	if getter.uid != "sandbox-uid" || runner.got.GetTarget().GetUid() != "sandbox-uid" {
+		t.Fatalf("runtime status lost UID: lookup=%q target=%v", getter.uid, runner.got.GetTarget())
+	}
+	getter.sandbox = &environmentpb.EnvironmentDescriptor{Target: &environmentpb.TargetHandle{Name: sandbox.GetTarget().GetName(), Uid: "replacement", Namespace: sandbox.GetTarget().GetNamespace()}}
+	if _, err := bridge.EnvironmentRuntimeStatus(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid()); err == nil {
+		t.Fatal("same-name replacement was proxied")
+	}
 	getter.sandbox = &environmentpb.EnvironmentDescriptor{Target: &environmentpb.TargetHandle{Name: sandbox.GetTarget().GetName(), Namespace: sandbox.GetTarget().GetNamespace()}}
-	if _, err := bridge.ListSessions(context.Background(), sandbox.GetTarget().GetName()); err == nil {
+	if _, err := bridge.ListSessions(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid()); err == nil {
 		t.Fatal("Sandbox without UID was proxied")
 	}
 }

@@ -223,9 +223,11 @@ func (f *threadReadInventoryFake) GetExactUID(_ context.Context, name, uid strin
 type threadReadEnvironmentRuntimeFake struct {
 	status *sessionpb.EnvironmentRuntimeStatus
 	err    error
+	target *environmentpb.TargetHandle
 }
 
-func (f *threadReadEnvironmentRuntimeFake) EnvironmentRuntimeStatus(context.Context, string) (*sessionpb.EnvironmentRuntimeStatus, error) {
+func (f *threadReadEnvironmentRuntimeFake) EnvironmentRuntimeStatus(_ context.Context, sandbox *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error) {
+	f.target = sandbox.GetTarget()
 	return f.status, f.err
 }
 
@@ -509,6 +511,9 @@ func TestEnsureThreadArchivableRejectsBusyEnvironmentRuntime(t *testing.T) {
 	}
 	if inventory.exactName != "sandbox" || inventory.exactUID != "sandbox-uid" {
 		t.Fatalf("archive lookup identity = %q/%q, want exact Sandbox UID", inventory.exactName, inventory.exactUID)
+	}
+	if environmentRuntime.target.GetUid() != "sandbox-uid" {
+		t.Fatalf("runtime status target = %v, want exact Sandbox UID", environmentRuntime.target)
 	}
 	environmentRuntime.status.Sessions[0].Busy = false
 	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox", SandboxUID: "sandbox-uid"}, inventory, environmentRuntime); err != nil {

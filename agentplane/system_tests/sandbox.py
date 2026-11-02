@@ -269,7 +269,7 @@ async def _write_cleanup_diagnostics(cluster: Cluster, client: Client, name: str
             diagnostic[f"{key}_error"] = repr(error)
 
     observed = next((row for row in last_snapshot or [] if row.target.name == name and row.target.uid == uid), None)
-    state_operations = [app_state("runner_status", lambda: client.runner_status(name))]
+    state_operations = [app_state("runner_status", lambda: client.runner_status(name, uid))]
     if observed is not None:
         state_operations.append(app_state("app_sandbox", lambda: client.get_environment(observed.target)))
     await asyncio.gather(*state_operations)

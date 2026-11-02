@@ -359,7 +359,7 @@ func run(ctx context.Context, config Config) error {
 	if err := registerThreadMetadataGateway(server, app); err != nil {
 		return fmt.Errorf("register Thread metadata facade: %w", err)
 	}
-	if err := RegisterThreadReadRoutes(server, threadStore, history, environments, appBridge); err != nil {
+	if err := RegisterThreadReadRoutes(server, threadStore, history, environments, runner); err != nil {
 		return fmt.Errorf("register Thread routes: %w", err)
 	}
 	RegisterOperatorRoutes(server, policies, federator, actionClient, actionCallbackHTTP, config.ActionFederation.ServiceURL)

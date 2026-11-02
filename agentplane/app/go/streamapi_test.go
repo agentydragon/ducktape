@@ -1281,6 +1281,25 @@ func TestLiveSandboxStreamsShareThreadReadsAcrossViewers(t *testing.T) {
 	f.awaitProducerStopped(t)
 }
 
+func TestEnvironmentListForwardsPagination(t *testing.T) {
+	authentication := newStreamTestAuth(t)
+	server := NewHTTPServer(authentication)
+	var gotPath, gotQuery string
+	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, request *http.Request, _ context.Context, path, _ string) error {
+		gotPath, gotQuery = path, request.URL.RawQuery
+		w.WriteHeader(http.StatusOK)
+		return nil
+	}}
+	RegisterStreamingRoutes(server, StreamingDependencies{DispatcherHTTP: upstream})
+	request := httptest.NewRequest(http.MethodGet, "/upstream/environments/v1/environments?limit=17&page_token=opaque", nil)
+	request.Header.Set("Authorization", "Bearer accepted")
+	response := httptest.NewRecorder()
+	server.Handler(authentication).ServeHTTP(response, request)
+	if response.Code != http.StatusOK || gotPath != "v1/environments" || gotQuery != "limit=17&page_token=opaque" {
+		t.Fatalf("list = %d, forwarded %q?%s", response.Code, gotPath, gotQuery)
+	}
+}
+
 func TestEnvironmentWatchRequiresAppCallerAndForwardsOnlyInventory(t *testing.T) {
 	authentication := newStreamTestAuth(t)
 	server := NewHTTPServer(authentication)

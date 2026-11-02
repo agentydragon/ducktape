@@ -106,6 +106,7 @@ type StreamingDependencies struct {
 // operator-facing HTTP facades. The server owns the shared auth/session middleware and drain gate.
 func RegisterStreamingRoutes(server *HTTPServer, dependencies StreamingDependencies) {
 	routes := newStreamingRoutes(server, dependencies)
+	server.RegisterRawRoute("GET /upstream/environments/v1/environments", http.HandlerFunc(routes.environmentList), false)
 	server.RegisterRawRoute("GET /upstream/environments/v1/environments:watch", http.HandlerFunc(routes.environmentWatch), false)
 	server.RegisterRawRoute("GET /upstream/environments/v1/environments/{namespace}/{name}", http.HandlerFunc(routes.environmentGet), false)
 	server.RegisterRawRoute("GET /live/sandboxes/{name}", http.HandlerFunc(routes.liveSandbox), false)
@@ -679,6 +680,11 @@ func (r *streamingRoutes) environmentFacade(w http.ResponseWriter, request *http
 	}
 	defer cancel()
 	r.forwardFacade(w, request, ctx, r.deps.DispatcherHTTP, path, "")
+}
+
+// environmentList forwards the service's pagination parameters without assembling pages in the app.
+func (r *streamingRoutes) environmentList(w http.ResponseWriter, request *http.Request) {
+	r.environmentFacade(w, request, "v1/environments")
 }
 
 // environmentWatch allows either an authenticated app service caller or an operator session.

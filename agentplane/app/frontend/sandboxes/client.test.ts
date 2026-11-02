@@ -89,11 +89,11 @@ it("reads the AppService runner status as the existing generated EnvironmentRunt
   );
   vi.stubGlobal("fetch", fetchMock);
 
-  const status = await getEnvironmentRuntimeStatus("test");
+  const status = await getEnvironmentRuntimeStatus("test", "sandbox-uid");
 
   expect(fetchMock).toHaveBeenCalledTimes(1);
   const [url, init] = fetchMock.mock.calls[0]!;
-  expect(url).toBe("/sandboxes/test/runner-status");
+  expect(url).toBe("/sandboxes/test/runner-status?sandbox_uid=sandbox-uid");
   expect(new Headers(init.headers).get("Accept")).toBe("application/json");
   expect(status.environmentRuntimeBootId).toBe("fixture-boot");
   expect(status.lifecycle?.desiredMode).toBe(EnvironmentRuntimeLifecycleMode.QUIESCING);
@@ -110,8 +110,8 @@ it("keeps runner status errors readable across old and generated AppService resp
     .mockResolvedValueOnce(Response.json({ code: 14, message: "Runner is unavailable" }, { status: 503 }));
   vi.stubGlobal("fetch", fetchMock);
 
-  await expect(getEnvironmentRuntimeStatus("test")).rejects.toMatchObject({ status: 503 });
-  await expect(getEnvironmentRuntimeStatus("test")).rejects.toMatchObject({ status: 503, code: 14 });
+  await expect(getEnvironmentRuntimeStatus("test", "sandbox-uid")).rejects.toMatchObject({ status: 503 });
+  await expect(getEnvironmentRuntimeStatus("test", "sandbox-uid")).rejects.toMatchObject({ status: 503, code: 14 });
 });
 
 it.each([1, 2, 4, 8, 13, 14, 15])("keeps gRPC outcome %s uncertain", (code) => {

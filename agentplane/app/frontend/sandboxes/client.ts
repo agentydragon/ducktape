@@ -106,11 +106,17 @@ export function sessionOpeningNotVisible(error: unknown): boolean {
   );
 }
 
-export async function getEnvironmentRuntimeStatus(sandbox: string): Promise<EnvironmentRuntimeStatus> {
-  const request = create(GetEnvironmentRuntimeStatusRequestSchema, { name: sandbox });
-  const response = await fetchWithLogin(`/sandboxes/${encodeURIComponent(request.name)}/runner-status`, {
-    headers: { Accept: "application/json" },
-  });
+export async function getEnvironmentRuntimeStatus(
+  sandbox: string,
+  sandboxUID: string
+): Promise<EnvironmentRuntimeStatus> {
+  const request = create(GetEnvironmentRuntimeStatusRequestSchema, { name: sandbox, sandboxUid: sandboxUID });
+  const response = await fetchWithLogin(
+    `/sandboxes/${encodeURIComponent(request.name)}/runner-status?sandbox_uid=${encodeURIComponent(request.sandboxUid)}`,
+    {
+      headers: { Accept: "application/json" },
+    }
+  );
   const text = await response.text();
   let body: unknown;
   try {
