@@ -16,46 +16,16 @@
       "title": "Decouple Haku\u2019s schema build from an experimental service implementation"
     },
     {
-      "id": "C",
-      "priority": "Medium",
-      "category": "Dead target candidate",
-      "title": "Remove unused agent documentation filegroups"
-    },
-    {
       "id": "D",
       "priority": "Medium",
       "category": "Dead target candidate",
       "title": "Drop the unused Plaid migration wrapper, not the migrations"
     },
     {
-      "id": "E",
-      "priority": "Medium",
-      "category": "Dead target candidate",
-      "title": "Retire the unused JDK test fa\u00e7ade and archive together"
-    },
-    {
       "id": "F",
       "priority": "Medium",
       "category": "Dead target candidate",
       "title": "Remove orphaned manifest and schema group wrappers"
-    },
-    {
-      "id": "G",
-      "priority": "Medium",
-      "category": "Redundant indirection",
-      "title": "Collapse the calibration catalog\u2019s double filegroup"
-    },
-    {
-      "id": "H",
-      "priority": "Low",
-      "category": "Redundant indirection",
-      "title": "Use exported source labels for singleton manifest wrappers"
-    },
-    {
-      "id": "I",
-      "priority": "Medium",
-      "category": "Naming",
-      "title": "Make Bazel labels identify the module they build"
     },
     {
       "id": "J",
@@ -95,35 +65,42 @@
     "status": "succeeded",
     "result_nodes": 3209,
     "no_incoming_rule_edges": [
-      "//agentplane/egress/docs:agents",
-      "//agentplane/notification_service/docs:agents",
       "//finance/plaid/db:migrations",
       "//cluster/schemas:schemas",
       "//haku/runtime/x/managed_agent/self_hosted:deploy_manifests",
-      "//third_party/jdk:keytool",
-      "//third_party/jdk:cacerts",
       "//cluster/docs/inference/runs/2026-10-13_rugged_coding:frozen_humaneval_plus_inputs"
     ],
-    "visual_bundle_consumers_per_target": 10,
-    "notable_direct_consumers": {
-      "//finance/augur/api:public_fixture_calibration_catalog": [
-        "//finance/augur/api:server_test",
-        "//finance/augur/api:test_calibration_endpoint",
-        "//finance/augur:browser_shell_test",
-        "//finance/augur:dev",
-        "//finance/augur:visual_test"
-      ],
-      "//cluster/k8s/agentplane-staging:app_config_manifest": [
-        "//agentplane/app/go:staging_config_test"
-      ],
-      "//cluster/k8s/flux/flux-system:source_watcher_crd_bundle": [
-        "//cluster/cdk8s/providers/source_watcher:_artifactgenerator_crd"
-      ]
-    }
+    "visual_bundle_consumers_per_target": 10
   },
   "limitations": [
     "No automatic conclusion of dead code from no in-repo consumers",
     "External consumers and dynamically constructed labels not exhaustively known",
-    "No refactor tested or applied"
+    "Remaining recommendations have not been implemented or validated by this audit"
+  ],
+  "burndown_updated_utc": "2026-11-02T02:02:37Z",
+  "dispatched_in_progress": [
+    {
+      "id": "E",
+      "pull_requests": [
+        13648
+      ],
+      "status_at_update": "open"
+    },
+    {
+      "id": "H",
+      "pull_requests": [
+        13643,
+        13644
+      ],
+      "status_at_update": "open"
+    },
+    {
+      "id": "I",
+      "pull_requests": [
+        13645,
+        13646
+      ],
+      "status_at_update": "open"
+    }
   ]
 }
