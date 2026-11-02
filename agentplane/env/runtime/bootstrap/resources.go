@@ -15,7 +15,7 @@ import (
 
 const (
 	InputType      = "BootstrapInputs.agentplane"
-	RuntimeType    = "BootstrapRuntimes.agentplane"
+	StatusType     = "BootstrapStatuses.agentplane"
 	OperationType  = "BootstrapOperationResults.agentplane"
 	SelectionType  = "BootstrapSelections.agentplane"
 	ControllerName = "bootstrap-lifecycle"
@@ -44,7 +44,7 @@ const (
 	Interrupted
 )
 
-type Runtime struct {
+type Status struct {
 	Phase Phase
 	Error string
 }
@@ -87,8 +87,8 @@ func ReadInput(ctx context.Context, reader controller.Reader) (Input, bool, erro
 	return componentRead[Input](ctx, reader, ResourceID)
 }
 
-func ReadRuntime(ctx context.Context, reader controller.Reader) (Runtime, bool, error) {
-	return componentRead[Runtime](ctx, reader, ResourceID)
+func ReadStatus(ctx context.Context, reader controller.Reader) (Status, bool, error) {
+	return componentRead[Status](ctx, reader, ResourceID)
 }
 
 func ReadSelection(ctx context.Context, reader controller.Reader) (Selection, bool, error) {
@@ -101,8 +101,8 @@ func isTerminal(phase Phase) bool {
 
 func (Input) resourceType() resource.Type               { return InputType }
 func (value Input) DeepCopy() Input                     { return value }
-func (Runtime) resourceType() resource.Type             { return RuntimeType }
-func (value Runtime) DeepCopy() Runtime                 { return value }
+func (Status) resourceType() resource.Type              { return StatusType }
+func (value Status) DeepCopy() Status                   { return value }
 func (Selection) resourceType() resource.Type           { return SelectionType }
 func (value Selection) DeepCopy() Selection             { return value }
 func (operationResult) resourceType() resource.Type     { return OperationType }

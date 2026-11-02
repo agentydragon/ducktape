@@ -15,7 +15,7 @@ import (
 
 const (
 	InputType      = "CodexAppServerInputs.agentplane"
-	RuntimeType    = "CodexAppServerRuntimes.agentplane"
+	StatusType     = "CodexAppServerStatuses.agentplane"
 	OperationType  = "CodexAppServerOperationResults.agentplane"
 	ControllerName = "codex-app-server-lifecycle"
 	ResourceID     = "codex-app-server"
@@ -38,7 +38,7 @@ const (
 	Draining
 )
 
-type Runtime struct {
+type Status struct {
 	Phase                   Phase
 	Generation              uint64
 	Attempt                 uint64
@@ -87,13 +87,13 @@ func ReadInput(ctx context.Context, reader controller.Reader) (Input, bool, erro
 	return componentRead[Input](ctx, reader, ResourceID)
 }
 
-func ReadRuntime(ctx context.Context, reader controller.Reader) (Runtime, bool, error) {
-	return componentRead[Runtime](ctx, reader, ResourceID)
+func ReadStatus(ctx context.Context, reader controller.Reader) (Status, bool, error) {
+	return componentRead[Status](ctx, reader, ResourceID)
 }
 
 func (Input) resourceType() resource.Type               { return InputType }
 func (value Input) DeepCopy() Input                     { return value }
-func (Runtime) resourceType() resource.Type             { return RuntimeType }
-func (value Runtime) DeepCopy() Runtime                 { return value }
+func (Status) resourceType() resource.Type              { return StatusType }
+func (value Status) DeepCopy() Status                   { return value }
 func (operationResult) resourceType() resource.Type     { return OperationType }
 func (value operationResult) DeepCopy() operationResult { return value }

@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	executionInputType  = "EmbeddedExecutionInputs.agentplane"
-	executionResourceID = "embedded-execution"
+	executionInputType  = "ExecutionInputs.agentplane"
+	executionResourceID = "execution"
 )
 
 type executionInput struct {
@@ -67,7 +67,7 @@ const (
 // A generation is fenced only after all forwarded calls join and the service
 // proves its native process domain empty. An uncertain fence leaves the old
 // owner retained and the controller terminal.
-type executionState struct {
+type executionStatus struct {
 	UID              string
 	Phase            executionPhase
 	Generation       uint64
@@ -79,8 +79,8 @@ type executionState struct {
 	LossBinding      uint64
 }
 
-func (value executionInput) DeepCopy() executionInput { return value }
-func (value executionState) DeepCopy() executionState { return value }
+func (value executionInput) DeepCopy() executionInput   { return value }
+func (value executionStatus) DeepCopy() executionStatus { return value }
 
 type executionExtension[T any] struct{}
 
@@ -90,8 +90,8 @@ func (executionExtension[T]) ResourceDefinition() spec.ResourceDefinitionSpec {
 	switch any(value).(type) {
 	case executionInput:
 		typ = executionInputType
-	case executionState:
-		typ = lifecycle.EmbeddedExecutionRuntimeType
+	case executionStatus:
+		typ = lifecycle.ExecutionStatusType
 	}
 	return spec.ResourceDefinitionSpec{Type: typ, DefaultNamespace: lifecycle.Namespace}
 }
@@ -102,9 +102,9 @@ func executionInputResource(value executionInput) *typed.Resource[executionInput
 	)
 }
 
-func executionStateResource(value executionState) *typed.Resource[executionState, executionExtension[executionState]] {
-	return typed.NewResource[executionState, executionExtension[executionState]](
-		resource.NewMetadata(lifecycle.Namespace, lifecycle.EmbeddedExecutionRuntimeType, executionResourceID, resource.VersionUndefined), value,
+func executionStatusResource(value executionStatus) *typed.Resource[executionStatus, executionExtension[executionStatus]] {
+	return typed.NewResource[executionStatus, executionExtension[executionStatus]](
+		resource.NewMetadata(lifecycle.Namespace, lifecycle.ExecutionStatusType, executionResourceID, resource.VersionUndefined), value,
 	)
 }
 
@@ -157,7 +157,7 @@ func (h *executionLifecycle) cancelStart() {
 }
 
 func (h *executionLifecycle) initialize(ctx context.Context) error {
-	return cosi.Publish(ctx, h.state, executionInputResource(executionInput{}), executionInput{}, "embedded-execution-host")
+	return cosi.Publish(ctx, h.state, executionInputResource(executionInput{}), executionInput{}, "execution-host")
 }
 
 func (h *executionLifecycle) request(ctx context.Context, uid string) (uint64, error) {
@@ -171,10 +171,10 @@ func (h *executionLifecycle) request(ctx context.Context, uid string) (uint64, e
 		return 0, err
 	}
 	if !found {
-		return 0, errors.New("embedded Execution input is not initialized")
+		return 0, errors.New("Execution input is not initialized")
 	}
 	if uid != "" && input.UID == uid {
-		current, _, err := cosi.Read(ctx, h.state, executionStateResource(executionState{}))
+		current, _, err := cosi.Read(ctx, h.state, executionStatusResource(executionStatus{}))
 		if err != nil {
 			return 0, err
 		}
@@ -195,13 +195,13 @@ func (h *executionLifecycle) request(ctx context.Context, uid string) (uint64, e
 		h.activeDemands[input.Demand] = struct{}{}
 		h.mu.Unlock()
 	}
-	err = cosi.Publish(ctx, h.state, executionInputResource(input), input, "embedded-execution-host")
+	err = cosi.Publish(ctx, h.state, executionInputResource(input), input, "execution-host")
 	if err != nil {
 		h.mu.Lock()
 		delete(h.startContexts, input.Demand)
 		delete(h.activeDemands, input.Demand)
 		h.mu.Unlock()
-		h.failTerminal(fmt.Errorf("publish embedded Execution intent: %w", err))
+		h.failTerminal(fmt.Errorf("publish Execution intent: %w", err))
 	}
 	if uid == "" {
 		h.cancelStart()
@@ -222,15 +222,15 @@ func (h *executionLifecycle) publishCompletion(update func(*executionInput) bool
 	published := false
 	if err == nil && found {
 		if update(&input) {
-			err = cosi.Publish(ctx, h.state, executionInputResource(input), input, "embedded-execution-host")
+			err = cosi.Publish(ctx, h.state, executionInputResource(input), input, "execution-host")
 			published = err == nil
 		}
 	} else if err == nil {
-		err = errors.New("embedded Execution input disappeared during lifecycle effect")
+		err = errors.New("Execution input disappeared during lifecycle effect")
 	}
 	h.inputMu.Unlock()
 	if err != nil {
-		h.failTerminal(fmt.Errorf("publish embedded Execution completion: %w", err))
+		h.failTerminal(fmt.Errorf("publish Execution completion: %w", err))
 	}
 	return published
 }
@@ -466,7 +466,7 @@ func (h *executionLifecycle) wait(ctx context.Context, uid string, demand uint64
 		if err := h.terminalError(); err != nil {
 			return err
 		}
-		current, _, err := cosi.Read(ctx, h.state, executionStateResource(executionState{}))
+		current, _, err := cosi.Read(ctx, h.state, executionStatusResource(executionStatus{}))
 		if err != nil {
 			return err
 		}
@@ -512,15 +512,15 @@ func (h *executionLifecycle) wait(ctx context.Context, uid string, demand uint64
 
 type executionController struct{ host *executionLifecycle }
 
-func (*executionController) Name() string { return "embedded-execution-lifecycle" }
+func (*executionController) Name() string { return "execution-lifecycle" }
 
 func (*executionController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
 			{Namespace: lifecycle.Namespace, Type: executionInputType, Kind: controller.InputQPrimary},
-			{Namespace: lifecycle.Namespace, Type: lifecycle.EmbeddedExecutionRuntimeType, Kind: controller.InputQMapped},
+			{Namespace: lifecycle.Namespace, Type: lifecycle.ExecutionStatusType, Kind: controller.InputQMapped},
 		},
-		Outputs:     []controller.Output{{Type: lifecycle.EmbeddedExecutionRuntimeType, Kind: controller.OutputExclusive}},
+		Outputs:     []controller.Output{{Type: lifecycle.ExecutionStatusType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(1)),
 	}
 }
@@ -537,19 +537,19 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	input, found, err := cosi.Read(ctx, r, executionInputResource(executionInput{}))
 	if err != nil || !found {
 		if err != nil {
-			h.failTerminal(fmt.Errorf("read embedded Execution input: %w", err))
+			h.failTerminal(fmt.Errorf("read Execution input: %w", err))
 		}
 		return err
 	}
-	current, _, err := cosi.Read(ctx, r, executionStateResource(executionState{}))
+	current, _, err := cosi.Read(ctx, r, executionStatusResource(executionStatus{}))
 	if err != nil {
-		h.failTerminal(fmt.Errorf("read embedded Execution state: %w", err))
+		h.failTerminal(fmt.Errorf("read Execution status: %w", err))
 		return err
 	}
 	write := func() error {
-		changed, err := cosi.Write(ctx, r, executionStateResource(current), current)
+		changed, err := cosi.Write(ctx, r, executionStatusResource(current), current)
 		if err != nil {
-			h.failTerminal(fmt.Errorf("write embedded Execution state: %w", err))
+			h.failTerminal(fmt.Errorf("write Execution status: %w", err))
 		}
 		if changed {
 			h.r.changed()

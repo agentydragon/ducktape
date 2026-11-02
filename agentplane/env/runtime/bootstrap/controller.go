@@ -21,10 +21,10 @@ func (*LifecycleController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
 			{Namespace: lifecycle.Namespace, Type: InputType, Kind: controller.InputQPrimary},
-			{Namespace: lifecycle.Namespace, Type: RuntimeType, Kind: controller.InputQMapped},
+			{Namespace: lifecycle.Namespace, Type: StatusType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: OperationType, Kind: controller.InputQMapped},
 		},
-		Outputs:     []controller.Output{{Type: RuntimeType, Kind: controller.OutputExclusive}},
+		Outputs:     []controller.Output{{Type: StatusType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(1)),
 	}
 }
@@ -32,7 +32,7 @@ func (*LifecycleController) Settings() controller.QSettings {
 func (*LifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
 	input := resource.NewMetadata(lifecycle.Namespace, InputType, ResourceID, resource.VersionUndefined)
 	switch ptr.Type() {
-	case InputType, RuntimeType:
+	case InputType, StatusType:
 		return []resource.Pointer{input}, nil
 	case OperationType:
 		result, found, err := componentRead[operationResult](ctx, r, ptr.ID())
@@ -54,7 +54,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	if err != nil || !found {
 		return err
 	}
-	current, _, err := componentRead[Runtime](ctx, r, ptr.ID())
+	current, _, err := componentRead[Status](ctx, r, ptr.ID())
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		return write()
 	}
 	if current.Phase == Dormant {
-		current = Runtime{Phase: Running}
+		current = Status{Phase: Running}
 		if err := write(); err != nil {
 			return err
 		}
@@ -88,15 +88,15 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	return nil
 }
 
-func outcome(err error) Runtime {
+func outcome(err error) Status {
 	if err == nil {
-		return Runtime{Phase: Succeeded}
+		return Status{Phase: Succeeded}
 	}
 	if errors.Is(err, ErrInterrupted) {
-		return Runtime{Phase: Interrupted, Error: err.Error()}
+		return Status{Phase: Interrupted, Error: err.Error()}
 	}
 	if status.Code(err) == codes.AlreadyExists {
-		return Runtime{Phase: Failed, Error: selectionConflict}
+		return Status{Phase: Failed, Error: selectionConflict}
 	}
-	return Runtime{Phase: Failed, Error: err.Error()}
+	return Status{Phase: Failed, Error: err.Error()}
 }

@@ -26,7 +26,7 @@ func harnessHostFenceMatches(applied harnesshostlifecycle.HostIntentStatus, inte
 func (*harnessHostLifecycleController) Name() string { return harnessHostControllerName }
 func (*harnessHostLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{harnesshostlifecycle.DesiredStateType, harnesshostlifecycle.HostIntentStatusType, harnessHostInputType, session.DrainInputType, session.LifecycleStatusType, journalSealType, ingressAckType, codexappserver.RuntimeType, supervision.DesiredStateType, supervision.StatusType} {
+	for _, kind := range []string{harnesshostlifecycle.DesiredStateType, harnesshostlifecycle.HostIntentStatusType, harnessHostInputType, session.DrainInputType, session.LifecycleStatusType, journalSealType, ingressAckType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
 		inputs = append(inputs, controller.Input{Namespace: harnesshostlifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -160,14 +160,14 @@ func (c *harnessHostLifecycleController) reconcile(ctx context.Context, r contro
 		}
 	}
 	if c.l.runner.codexAppServer != nil {
-		runtime, found, err := codexappserver.ReadRuntime(ctx, r)
+		runtime, found, err := codexappserver.ReadStatus(ctx, r)
 		if err != nil {
 			return err
 		}
 		if runtime.StopError != "" {
 			current.Error = runtime.StopError
 			current.Blocker = harnesshostlifecycle.Blocker{
-				Kind: harnesshostlifecycle.CodexAppServerPending, ResourceType: codexappserver.RuntimeType,
+				Kind: harnesshostlifecycle.CodexAppServerPending, ResourceType: codexappserver.StatusType,
 				Error: runtime.StopError, ResourceID: codexappserver.ResourceID,
 				ProcessID: runtime.ProcessID, ResourcePresent: found,
 			}
@@ -175,7 +175,7 @@ func (c *harnessHostLifecycleController) reconcile(ctx context.Context, r contro
 		}
 		if !found || runtime.Phase != codexappserver.Stopped {
 			current.Blocker = harnesshostlifecycle.Blocker{
-				Kind: harnesshostlifecycle.CodexAppServerPending, ResourceType: codexappserver.RuntimeType,
+				Kind: harnesshostlifecycle.CodexAppServerPending, ResourceType: codexappserver.StatusType,
 				ResourceID: codexappserver.ResourceID, ProcessID: runtime.ProcessID, ResourcePresent: found,
 			}
 			return write()
