@@ -1,7 +1,8 @@
-"""Ruida .rd binary file writer.
+"""Ruida .rd format primitives and job serialization.
 
-Generates scrambled binary .rd files that Ruida laser controllers understand.
-Supports 128 layers (vs LightBurn's 30-layer UI limit).
+Generates scrambled binary .rd files that Ruida laser controllers understand,
+with up to 128 layers. Byte-level scrambling and unscrambling are available for
+inspecting encoded files; parsing complete .rd jobs is not implemented.
 
 The .rd format uses a byte-level scramble and 7-bit variable-length integer
 encoding. See jnweiger/ruida-laser for format research and reference impl.
@@ -44,6 +45,11 @@ def unscramble_byte(b: int) -> int:
 
 def scramble_bytes(data: bytes) -> bytes:
     return bytes(scramble_byte(b) for b in data)
+
+
+def unscramble_bytes(data: bytes) -> bytes:
+    """Decode the byte-level scramble of a Ruida .rd file."""
+    return bytes(unscramble_byte(b) for b in data)
 
 
 def encode_number(value_mm: float, length: int = 5, scale: int = 1000) -> bytes:

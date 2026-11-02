@@ -1,6 +1,6 @@
 import pytest_bazel
 
-from laser.ruida.rd_writer import (
+from laser.ruida.rd_format import (
     RdJob,
     RdLayer,
     RdRect,
@@ -9,6 +9,7 @@ from laser.ruida.rd_writer import (
     encode_percent,
     scramble_byte,
     unscramble_byte,
+    unscramble_bytes,
 )
 
 
@@ -24,6 +25,7 @@ def test_scramble_known_values():
     assert scramble_byte(0x00) == 0x89
     # 0xFF -> swap bits -> 0xFF -> XOR 0x88 -> 0x77 -> +1 -> 0x78
     assert scramble_byte(0xFF) == 0x78
+    assert unscramble_bytes(bytes([0x89, 0x78])) == bytes([0x00, 0xFF])
 
 
 def test_encode_number_100mm():
@@ -68,8 +70,8 @@ def test_unscrambled_structure():
         layers=[RdLayer(index=0, min_power_pct=50, max_power_pct=80, speed_mm_s=30)],
         rects=[RdRect(layer_index=0, x_mm=5, y_mm=5, width_mm=20, height_mm=20)],
     )
-    # Get raw unscrambled bytes for inspection
-    raw = job._header() + job._body() + job._trailer()
+    # Inspect the actual serialized file through the byte-level decoder.
+    raw = unscramble_bytes(job.to_bytes())
 
     # Should start with D8 12 (red light on)
     assert raw[0:2] == bytes([0xD8, 0x12])
@@ -90,7 +92,7 @@ def test_60_layers():
     assert len(data) > 0
 
     # Verify raw structure has all 60 layers referenced
-    raw = job._header() + job._body() + job._trailer()
+    raw = unscramble_bytes(job.to_bytes())
     # Layer 59 (0x3B) should appear in the header as a layer byte
     assert bytes([59]) in raw
 
@@ -104,7 +106,7 @@ def test_multi_rect_per_layer():
             RdRect(layer_index=0, x_mm=20, y_mm=0, width_mm=10, height_mm=10),
         ],
     )
-    raw = job._header() + job._body() + job._trailer()
+    raw = unscramble_bytes(job.to_bytes())
 
     # Count move commands (0x88) — should be 2 (one per rect)
     move_count = sum(1 for i in range(len(raw)) if raw[i] == 0x88)
