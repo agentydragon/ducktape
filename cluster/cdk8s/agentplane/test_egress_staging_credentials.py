@@ -117,7 +117,7 @@ def test_quest_bearer_is_only_substituted_for_read_only_operations(scratch_chart
             "type": "egress",
             "hosts": ["quest.allegedly.works"],
             "methods": ["POST"],
-            "paths": ["/guest/getPscsWithAvailability"],
+            "paths": ["/guest/getPscsWithAvailability", "/api/getOpenEorders"],
             "credentialRef": {"name": "quest-read"},
         },
     ]
