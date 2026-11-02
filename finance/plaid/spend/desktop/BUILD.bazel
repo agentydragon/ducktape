@@ -70,6 +70,7 @@ py_test(
     srcs = ["test_daemon.py"],
     deps = [
         ":daemon",
+        ":oauth",
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
