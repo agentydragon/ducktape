@@ -185,17 +185,6 @@ async def test_spending_decision_render(
 ) -> None:
     await page.set_viewport_size({"width": width, "height": height})
 
-    async def serve_pre_activation_history(route: Route) -> None:
-        response = await route.fetch()
-        transactions = await response.json()
-        if transactions["requested_period_id"] == "rolling_30d":
-            historical = next(row for row in transactions["rows"] if row["name"] == "EXAMPLE TRAVEL PURCHASE")
-            historical["date"] = "2026-09-24"
-            historical["disposition"] = "pace_only"
-            historical["allowance_minor_units"] = 0
-        await route.fulfill(response=response, json=transactions)
-
-    await page.route("**/api/v1/transactions*", serve_pre_activation_history)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.locator("canvas[aria-label]").wait_for()
     await page.get_by_text("$200", exact=True).wait_for()
@@ -238,7 +227,7 @@ async def test_spending_decision_render(
     await view.capture(normal.removesuffix(".png"), label=f"{width}px available", full_page=True, animations="disabled")
     await page.get_by_text("30 days", exact=True).click()
     await expect(page.locator("#spending-history-summary")).to_have_text(
-        "$500 flexible spending over 30 days; average $17 per day; leash reference $23 per day."
+        "$550 flexible spending over 30 days; average $18 per day; leash reference $23 per day."
     )
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
@@ -438,7 +427,7 @@ async def test_transaction_explanations_render(
     await expect(rows.get_by_text("Other currency", exact=True)).to_have_count(1)
     await expect(page.get_by_text("can still be real cash flows", exact=False)).to_be_visible()
     if width >= 992:
-        await expect(rows.locator("tbody tr")).to_have_count(11)
+        await expect(rows.locator("tbody tr")).to_have_count(12)
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     image = f"transactions-{width}.png"

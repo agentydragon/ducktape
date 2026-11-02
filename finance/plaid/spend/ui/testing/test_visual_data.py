@@ -81,6 +81,16 @@ def test_allowance_balance_matches_current_cycle() -> None:
     assert allowance.daily_reference_minor_units == round_minor_units(daily_reference(allowance.monthly_minor_units), 0)
 
 
+def test_pre_activation_purchase_informs_pace_without_allowance_debt() -> None:
+    view = transactions.view(PeriodId.ROLLING_30D)
+    assert view.allowance is not None
+    history = [row for row in view.rows if row.date < view.allowance.activation_at]
+    assert len(history) == 1
+    assert history[0].disposition == Disposition.PACE_ONLY
+    assert history[0].allowance_minor_units == 0
+    assert any(effect.amount_minor_units > 0 for effect in history[0].pace_effects)
+
+
 def test_sustainability_copies_validate() -> None:
     variants: tuple[sustainability.Variant, ...] = (
         "ready",

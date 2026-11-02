@@ -270,6 +270,21 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             category=AnalysisCategoryView(id="travel", label="Holiday travel", color="#7C3AED"),
         ),
         _checking_row(
+            when=date(2026, 9, 20),
+            name="EXAMPLE PURCHASE BEFORE ACTIVATION",
+            amount_minor_units=5000,
+            disposition=Disposition.PACE_ONLY,
+            effective_kind=Kind.FLEXIBLE,
+            rule=Rule(condition=NamePrefix(field="name", prefix="EXAMPLE PURCHASE"), kind=Kind.FLEXIBLE),
+            pace_effects=[
+                PaceEffect(period_id=PeriodId.ROLLING_7D, amount_minor_units=0),
+                PaceEffect(period_id=PeriodId.ROLLING_30D, amount_minor_units=5000),
+            ],
+            pfc_primary="GENERAL_MERCHANDISE",
+            pfc_detailed="GENERAL_MERCHANDISE_OTHER",
+            category=_UNCLASSIFIED,
+        ),
+        _checking_row(
             when=date(2026, 10, 10),
             name="EXAMPLE OWN TRANSFER DEBIT",
             amount_minor_units=12_500,

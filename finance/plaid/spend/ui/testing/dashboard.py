@@ -126,7 +126,7 @@ def allowance(warmup: bool = False, estimate_period_id: EstimatePeriodId | None 
                 observed_daily_minor_units=None if warmup else observed,
                 unmatched_charges=UnmatchedCharges(count=0 if warmup else 1, amount_minor_units=0 if warmup else 1500),
             )
-            for period_id, observed in ((PeriodId.ROLLING_7D, 1250), (PeriodId.ROLLING_30D, 1666))
+            for period_id, observed in ((PeriodId.ROLLING_7D, 1250), (PeriodId.ROLLING_30D, 1833))
         ],
         forecast=ForecastView(
             basis_period=Period.for_id(estimate_period_id, today),
