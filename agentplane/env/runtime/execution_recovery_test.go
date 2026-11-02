@@ -62,11 +62,19 @@ func newExecutionControllerRuntime(t *testing.T, start func(context.Context, Con
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	store := state.WrapCore(namespaced.NewState(inmem.Build))
+	environment, err := NewEnvironmentState(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := environment.AdoptIncarnation("incarnation"); err != nil {
+		t.Fatal(err)
+	}
 	engine, err := cosiruntime.NewRuntime(store, zap.NewNop())
 	if err != nil {
 		t.Fatal(err)
 	}
 	r := &Runtime{
+		state:          environment,
 		config:         Config{CodexExecServer: &codexexecserver.Config{URL: "ws://127.0.0.1:1"}},
 		desired:        lifecycle.EnvironmentDesired{Mode: lifecycle.Running, IncarnationUID: "incarnation", Generation: 1},
 		lifecycleState: store, changes: make(chan struct{}), fatal: make(chan error, 1),
@@ -654,5 +662,62 @@ func TestExecutionControllerDoesNotPublishStaleSameUIDStart(t *testing.T) {
 	current := waitExecutionStatus(t, r, func(s executionStatus) bool { return s.Phase == executionReady && s.Demand == input.Demand })
 	if current.Generation != 2 || current.FencedGeneration != 1 || starts.Load() != 2 {
 		t.Fatalf("stale start served a newer epoch: state=%+v starts=%d", current, starts.Load())
+	}
+}
+
+func TestExecutionLossRecoversWhileRunningPreparationClosesSessionAdmission(t *testing.T) {
+	var starts atomic.Int32
+	handles := make(chan *controllerExecutionHandle, 2)
+	r := newExecutionControllerRuntime(t, func(context.Context, Config, string) (executionHandle, error) {
+		starts.Add(1)
+		handle := newControllerExecutionHandle(nil)
+		handles <- handle
+		return handle, nil
+	})
+	if err := r.startExecutionForUID(t.Context(), "incarnation"); err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	if r.admissionOpen {
+		r.mu.Unlock()
+		t.Fatal("test requires pending Running preparation")
+	}
+	r.mu.Unlock()
+	first := <-handles
+	first.exited <- childExit{}
+	current := waitExecutionStatus(t, r, func(value executionStatus) bool { return value.Phase == executionReady && value.Generation == 2 })
+	if starts.Load() != 2 || current.FencedGeneration != 1 {
+		t.Fatalf("recovery during preparation: starts=%d status=%+v", starts.Load(), current)
+	}
+}
+
+func TestDurableQuiesceSealRevokesExecutionRecoveryBeforeDesiredPublication(t *testing.T) {
+	var starts atomic.Int32
+	handles := make(chan *controllerExecutionHandle, 2)
+	r := newExecutionControllerRuntime(t, func(context.Context, Config, string) (executionHandle, error) {
+		starts.Add(1)
+		handle := newControllerExecutionHandle(nil)
+		handles <- handle
+		return handle, nil
+	})
+	if err := r.startExecutionForUID(t.Context(), "incarnation"); err != nil {
+		t.Fatal(err)
+	}
+	first := <-handles
+	if err := r.state.EnterLameduck(); err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	mode := r.desired.Mode
+	r.mu.Unlock()
+	if mode != lifecycle.Running {
+		t.Fatal("test requires Quiesce seal before desired publication")
+	}
+	first.exited <- childExit{}
+	current := waitExecutionStatus(t, r, func(value executionStatus) bool {
+		return value.Phase == executionStopped && value.FencedGeneration == value.Generation
+	})
+	if starts.Load() != 1 || !current.AwaitDemand {
+		t.Fatalf("sealed lifetime recovered before desired publication: starts=%d status=%+v", starts.Load(), current)
 	}
 }

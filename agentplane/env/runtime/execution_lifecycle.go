@@ -337,7 +337,7 @@ func (h *executionLifecycle) launch(uid string, demand, generation uint64, recov
 			return
 		}
 		h.r.mu.Lock()
-		allowed := !h.r.closing && (!recovery || h.r.admissionOpen && h.r.desired.Mode == lifecycle.Running && h.r.desired.IncarnationUID == uid && h.r.desired.Generation == lossBinding)
+		allowed := !h.r.closing && !h.r.failed && (!recovery || h.r.executionRecoveryAllowedLocked(uid, lossBinding))
 		h.r.mu.Unlock()
 		if !allowed {
 			h.completeStart(generation, uid, demand, nil, nil, nil, true)
@@ -356,7 +356,7 @@ func (h *executionLifecycle) launch(uid string, demand, generation uint64, recov
 		}
 		if err == nil && handle != nil {
 			h.r.mu.Lock()
-			stale := h.r.closing || recovery && (!h.r.admissionOpen || h.r.desired.Mode != lifecycle.Running || h.r.desired.IncarnationUID != uid || h.r.desired.Generation != lossBinding)
+			stale := h.r.closing || h.r.failed || recovery && !h.r.executionRecoveryAllowedLocked(uid, lossBinding)
 			h.r.mu.Unlock()
 			latest, latestFound, readErr := cosi.Read(context.Background(), h.state, executionSignalResource(executionSignal{}))
 			if readErr != nil {
@@ -631,7 +631,7 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				current.Error = loss.Error
 			}
 			h.r.mu.Lock()
-			if !h.r.admissionOpen || h.r.desired.Mode != lifecycle.Running || h.r.desired.IncarnationUID != loss.UID {
+			if !h.r.executionRecoveryAllowedLocked(loss.UID, 0) {
 				current.AwaitDemand = true
 			} else {
 				current.LossBinding = h.r.desired.Generation
@@ -664,7 +664,7 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				current.Phase, current.FencedGeneration = executionStopped, current.Generation
 				if current.Lost {
 					h.r.mu.Lock()
-					allowed := !h.r.closing && h.r.admissionOpen && h.r.desired.Mode == lifecycle.Running && h.r.desired.IncarnationUID == current.UID && h.r.desired.Generation == current.LossBinding
+					allowed := h.r.executionRecoveryAllowedLocked(current.UID, current.LossBinding)
 					h.r.mu.Unlock()
 					if !allowed {
 						current.AwaitDemand = true
@@ -718,7 +718,7 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		recovery := current.Lost && input.UID == current.UID && input.Demand == current.Demand
 		if recovery {
 			h.r.mu.Lock()
-			allowed := !h.r.closing && h.r.admissionOpen && h.r.desired.Mode == lifecycle.Running && h.r.desired.IncarnationUID == input.UID && h.r.desired.Generation == current.LossBinding
+			allowed := h.r.executionRecoveryAllowedLocked(input.UID, current.LossBinding)
 			h.r.mu.Unlock()
 			if !allowed {
 				// Quiescing or closing consumed this loss. A later RUNNING
@@ -738,4 +738,11 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		return nil
 	}
 	return write()
+}
+
+// Execution already owns an admitted native lifetime while Session preparation
+// keeps its admission gate closed. A durable seal revokes recovery immediately,
+// including the interval before Quiescing desired state is published.
+func (r *Runtime) executionRecoveryAllowedLocked(uid string, generation uint64) bool {
+	return !r.closing && !r.failed && !r.state.Lameduck() && r.desired.Mode == lifecycle.Running && r.desired.IncarnationUID == uid && (generation == 0 || r.desired.Generation == generation)
 }
