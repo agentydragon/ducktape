@@ -48,7 +48,13 @@
       "status": "merged_visual_differences_investigated",
       "pull_request": 13652,
       "visual_capture_fix_pull_request": 13689,
-      "visual_identity_guard_pull_request": 13692
+      "visual_identity_guard_pull_request": 13692,
+      "visual_identity_guard_status": "open",
+      "related_output_protocol_pull_request": 13720,
+      "related_output_protocol_status": "merged",
+      "related_output_cutover_pull_request": 13730,
+      "related_output_cutover_status": "open",
+      "related_output_cutover_head": "d4c8abb21461248b9ba92e85d90de44427b31782"
     },
     {
       "id": "M",
@@ -82,6 +88,6 @@
     "External consumers and dynamically constructed labels not exhaustively known",
     "The original audit did not implement its recommendations; status fields record subsequent work"
   ],
-  "burndown_updated_utc": "2026-11-02T03:46:56Z",
+  "burndown_updated_utc": "2026-11-02T06:43:45Z",
   "dispatched_in_progress": []
 }
