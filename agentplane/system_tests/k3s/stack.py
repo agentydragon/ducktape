@@ -115,6 +115,7 @@ def _reset_previous_stack(data_dir: Path) -> None:
     binaries; reset the rest."""
     if not data_dir.exists():
         return
+    _record_baseline_transition("reset_begin", data_dir)
     targets = [line.split()[1] for line in Path("/proc/mounts").read_text().splitlines()]
     for target in reversed(targets):
         if target.startswith(("/var/lib/kubelet/", "/run/k3s/", "/run/netns/")):
@@ -136,6 +137,7 @@ def _reset_previous_stack(data_dir: Path) -> None:
     for root in [*Path("/sys/fs/cgroup").glob("kubepods*"), *Path("/sys/fs/cgroup").glob("*/kubepods*")]:
         for directory, _, _ in root.walk(top_down=False):
             directory.rmdir()
+    _record_baseline_transition("reset_end", data_dir)
 
 
 def _archive_json(archive: tarfile.TarFile, name: str, value: object) -> None:
@@ -559,12 +561,45 @@ _BASELINE_MARKER = _BASELINE_ROOT / "server.json"
 _RETAINED_LOG_LIMIT = 8 * 1024 * 1024
 
 
+def _record_baseline_transition(stage: str, data_dir: Path) -> None:
+    """Keep the ownership and filesystem evidence needed to explain a later failed attach.
+
+    The record lives outside the data directory that a cold start deletes. It is diagnostic only:
+    the marker and the exact process identity still determine which server may be stopped.
+    """
+    if not _BASELINE_ROOT.exists():
+        return
+    marker = None
+    if _BASELINE_MARKER.exists():
+        try:
+            marker = json.loads(_BASELINE_MARKER.read_text())
+        except OSError, json.JSONDecodeError:
+            marker = {"unreadable": True}
+    identity = marker.get("identity") if isinstance(marker, dict) else None
+    pid = identity.get("pid") if isinstance(identity, dict) else None
+    event = {
+        "time": time.time(),
+        "stage": stage,
+        "pid": os.getpid(),
+        "target": os.environ.get("TEST_TARGET"),
+        "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
+        "marker": marker,
+        "marked_process_start_ticks": _baseline_process_start(int(pid)) if pid is not None else None,
+        "containerd_config_exists": (data_dir / "agent/etc/containerd/config.toml").exists(),
+        "cni_config_dir_exists": (data_dir / "agent/etc/cni/net.d").exists(),
+        "server_tls_dir_exists": (data_dir / "server/tls").exists(),
+    }
+    with (_BASELINE_ROOT / "transitions.jsonl").open("a") as output:
+        output.write(json.dumps(event, sort_keys=True) + "\n")
+
+
 def _capture_retained_logs(data_dir: Path, outputs: Path) -> None:
     """Retain bounded daemon logs even when attaching to or stopping the baseline fails."""
     sources = {
         "k3s-retained.log": _BASELINE_ROOT / "k3s.log",
         "containerd-retained.log": data_dir / "agent/containerd/containerd.log",
         "containerd-teardown-retained.log": _BASELINE_ROOT / "containerd-teardown.log",
+        "baseline-transitions.jsonl": _BASELINE_ROOT / "transitions.jsonl",
     }
     for name, source in sources.items():
         try:
@@ -646,6 +681,7 @@ def _baseline_write_marker(marker: dict[str, Any]) -> None:
 
 
 def _baseline_stop_owned(k3s: K3s, previous: dict[str, Any]) -> None:
+    _record_baseline_transition("stop_owned_begin", k3s.data_dir)
     identity = previous["identity"]
     current_boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
     if current_boot != identity["boot_id"]:
@@ -667,6 +703,7 @@ def _baseline_stop_owned(k3s: K3s, previous: dict[str, Any]) -> None:
                     raise RuntimeError(f"owned k3s process {pid} is still alive")
     k3s.log_path = _BASELINE_ROOT / "k3s.log"
     k3s.cleanup_stopped()
+    _record_baseline_transition("stop_owned_end", k3s.data_dir)
 
 
 def _baseline_stop_previous() -> None:

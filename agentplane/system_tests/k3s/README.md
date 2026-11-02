@@ -41,7 +41,8 @@ Setup, each image import and teardown use the same OpenTelemetry tracer as the s
 writing completed spans immediately to `test-spans.jsonl` in undeclared outputs. The test log prints
 a summary derived from these spans. See [trace artifacts](../README.md) for stage coverage.
 Retained baselines also publish bounded tails of the k3s, containerd and containerd teardown logs
-as `*-retained.log`, including when baseline attachment fails. Dispatcher failure diagnostics include
+as `*-retained.log`, plus `baseline-transitions.jsonl` with reset/stop ownership and file-state evidence,
+including when baseline attachment fails. Dispatcher failure diagnostics include
 CRI image status and containerd image references before the failed Sandbox is deleted.
 
 Every stack exposes the fixture-owned OTLP receiver at the production Alloy service name, so

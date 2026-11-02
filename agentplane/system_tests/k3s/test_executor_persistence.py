@@ -31,6 +31,7 @@ def test_retained_daemon_logs_are_bounded_and_survive_a_missing_log(
     baseline = tmp_path / "baseline"
     baseline.mkdir()
     (baseline / "k3s.log").write_text("earlier log\nrecent log\n")
+    (baseline / "transitions.jsonl").write_text("older event\nnewer event\n")
     data = tmp_path / "data"
     containerd = data / "agent/containerd"
     containerd.mkdir(parents=True)
@@ -44,6 +45,7 @@ def test_retained_daemon_logs_are_bounded_and_survive_a_missing_log(
 
     assert (outputs / "k3s-retained.log").read_text() == "recent log\n"
     assert (outputs / "containerd-retained.log").read_text() == "inerd tail\n"
+    assert (outputs / "baseline-transitions.jsonl").read_text() == "ewer event\n"
     assert not (outputs / "containerd-teardown-retained.log").exists()
 
 
