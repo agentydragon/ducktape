@@ -64,6 +64,13 @@ pub(super) struct ProgramPoint {
     path: Vec<(NativeProgramPointKind, usize)>,
 }
 
+/// The ordered caller has already read its callee and arguments. The call
+/// transfer must use these snapshots rather than evaluate their source again.
+pub(super) struct CallOperands {
+    pub(super) targets: Values,
+    pub(super) arguments: Vec<Values>,
+}
+
 pub(super) enum RuntimeOperation {
     Heap(HeapOperation),
     Evaluate {
@@ -88,6 +95,7 @@ pub(super) enum RuntimeOperation {
         environment: Context,
         captures: Context,
         outcome: Box<Outcome>,
+        operands: Option<Box<CallOperands>>,
     },
     Callbacks(CallbackOperation),
     Model(ModelOperation),
@@ -102,6 +110,12 @@ pub(super) enum RuntimeValue {
         refusal: Option<OwnerInitializationCoverageRefusalReason>,
     },
     Outcome(Box<Outcome>),
+    Call {
+        outcome: Box<Outcome>,
+        /// None means this path has no result transfer. An ordered caller
+        /// must truncate, preserving effects already performed.
+        values: Option<Values>,
+    },
     Callbacks(CallbackResult),
     Model(ModelResult),
 }
@@ -522,9 +536,16 @@ impl RuntimeRules<'_, '_> {
                 environment,
                 captures,
                 mut outcome,
+                operands,
             } => {
-                executor.execute_call_transfer(&call, &environment, &captures, &mut outcome);
-                RuntimeValue::Outcome(outcome)
+                let values = executor.execute_call_transfer(
+                    &call,
+                    &environment,
+                    &captures,
+                    &mut outcome,
+                    operands.map(|operands| *operands),
+                );
+                RuntimeValue::Call { outcome, values }
             }
             RuntimeOperation::Model(operation) => {
                 RuntimeValue::Model(runtime_models::dispatch(&mut executor, operation))
