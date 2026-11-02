@@ -41,15 +41,24 @@ mutation-time checks.
 
 ## Snapshot reads and watches
 
+`EnvironmentDescriptor` is the canonical environment view for all service reads and watch frames. It
+keeps caller-facing target, execution account, readiness, resume, workspace, and runtime guidance,
+and directly carries Sandbox creation time, binding, raw status, lifecycle phase, preset, autosuspend
+policy and blockers, plus the current incarnation Pod projection. Shared Kubernetes submessages
+(`SandboxBinding`, `SandboxPod`, `SandboxPhase`, and `AutosuspendBlocker`) keep their existing shapes;
+the response does not nest a second Sandbox representation.
+
 `GetEnvironment` returns the current descriptor without waiting for a condition.
 `WatchEnvironment` sends an initial `WatchEnvironmentResponse.environment` and subsequent complete
 snapshots when descriptor facts change. Changes only to `observed_at` or unprojected Kubernetes
 metadata do not emit a new snapshot. There is no readiness predicate or server-side readiness wait.
 
 Observation depends on the control plane, not on a connection to the environment Runtime;
-suspended targets remain observable. Target and execution-ServiceAccount watches are established
-before reading the initial snapshot. Kubernetes collection resource versions bridge list/watch
-setup; notifications trigger uncached reads and the same live UID/ownership checks as get.
+suspended targets remain observable. Target, execution-ServiceAccount, and namespace Pod watches are
+established before reading the initial snapshot. Kubernetes collection resource versions bridge
+list/watch setup; notifications trigger uncached reads and the same live UID/ownership checks as get.
+Pod facts are included only when name, namespace, and UID match the Sandbox's currently reported
+incarnation, so a stale same-name Pod is never returned as current.
 An already admitted stream never follows a replacement target or execution account.
 
 This is a current-state subscription, not retained transition history. Intermediate states may be
@@ -57,23 +66,27 @@ coalesced. Reconnecting starts with a current snapshot and has no cursor. Source
 or failure ends the RPC with `UNAVAILABLE`; a client must reconnect to refresh its observation.
 Missing, replaced or no-longer-accessible targets end with `NOT_FOUND`; deletion does so for ordinary callers. Last observations
 remain observations of their recorded time; silence or disconnection does not assert readiness.
-Client cancellation ends the stream and both source watches. Server writes have a five-second
+Client cancellation ends the stream and all source watches. Server writes have a five-second
 backpressure bound. A blocked write ends the RPC with `DEADLINE_EXCEEDED` and is not retried.
 
 ## Collection watch
 
-`WatchEnvironments` begins with the caller-visible Sandbox set in bounded snapshot chunks followed
-by `snapshot_complete`. A client replaces its prior set only after completion, including for an
+`WatchEnvironments` begins with the caller-visible EnvironmentDescriptor set in bounded
+`EnvironmentChunk.environments` snapshot chunks followed by `snapshot_complete`. A client replaces
+its prior set only after completion, including for an
 empty snapshot; it discards incomplete snapshots on disconnect. After the initial snapshot, `upsert`
-replaces one Sandbox and `removed` removes the given namespace, name, and UID. A same-name
+replaces one complete EnvironmentDescriptor and `removed` removes the given namespace, name, and UID. A same-name
 replacement removes the prior UID before upserting the new one. Visibility loss also removes an item.
-Intermediate changes may be coalesced. Reconnecting starts a fresh snapshot; there is no replay cursor
-or transition history. The assembled view draws from multiple Kubernetes resources and does not
+Intermediate changes may be coalesced; changes to `observed_at` alone do not cause an upsert.
+Reconnecting starts a fresh snapshot; there is no replay cursor or transition history. The assembled
+view draws from multiple Kubernetes resources and does not
 promise a globally atomic point-in-time read.
 
 The service starts Sandbox, account, and Pod watches before reading the initial snapshot, and
-rereads affected Sandboxes on notifications. It indexes current incarnation Pod names, including VM
-Pods; unrelated Pod events do not reread the inventory. Ordinary callers see only their exact live
+rereads affected Sandboxes on notifications. Broad readers observe account changes because the
+descriptor includes the current controller-owned execution account; ordinary collection watches
+scope account events to the caller's same-name target. It indexes current incarnation Pod names,
+including VM Pods; unrelated Pod events do not reread the inventory. Ordinary callers see only their exact live
 owned target; explicitly granted direct readers see all targets, including creation and deletion
 before or after the account exists. A missing or stale Pod is never substituted for the
 controller-reported incarnation. Source loss ends the stream with `UNAVAILABLE`; the client
@@ -85,8 +98,10 @@ the stream; a successful review leaves it open. A stalled send is bounded by fiv
 
 - `target` is the Sandbox object's immutable identity; a runner Pod or VM incarnation UID is separate.
 - `execution_account` is resolved from the live controller-owned ServiceAccount.
-- Readiness and operating state come from the current Sandbox status; `observed_at` records when the
-  descriptor was assembled.
+- `status` is the full current Sandbox status, and `pod` is the exact live incarnation Pod when one
+  exists. Phase, readiness, operating mode, stop stage, wake setting, and runtime incarnation UID
+  are derived convenience facts retained alongside the raw projection for existing callers.
+- `observed_at` records when the descriptor was assembled and is not itself a watched fact.
 - Explicit-resume eligibility includes a denial reason and is evaluated for the effective caller
   against its exact live ServiceAccount identity, the Sandbox `resumePolicy`, and applicable direct
   operator authority. It is independent of automatic wake-on-send policy. Deleting environments

@@ -66,6 +66,7 @@ ts_library(
     deps = [
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/proto:sandboxes_pb",
+        "//agentplane/sandboxes/environments:environment_service_pb",
     ],
 )
 

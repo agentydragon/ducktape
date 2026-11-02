@@ -1,5 +1,10 @@
 import { toJson } from "@bufbuild/protobuf";
-import { SandboxPhase, SandboxSchema, type Sandbox } from "../../proto/sandboxes_pb";
+import { SandboxPhase } from "../../proto/sandboxes_pb";
+import {
+  EnvironmentDescriptorSchema,
+  OperatingMode,
+  type EnvironmentDescriptor,
+} from "../../sandboxes/environments/environment_service_pb";
 import { readySandbox } from "./testing/sandbox";
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
@@ -45,7 +50,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-function sandbox(name: string, overrides: Partial<Sandbox> = {}): Sandbox {
+function sandbox(name: string, overrides: Partial<EnvironmentDescriptor> = {}): EnvironmentDescriptor {
   const uid = `00000000-0000-4000-8000-${name.padStart(12, "0").slice(-12)}`;
   return Object.assign(readySandbox(name, uid), overrides);
 }
@@ -93,19 +98,20 @@ async function pushThreadChange(stream: ThreadWatchEnd, connected = true): Promi
 
 async function pushSandboxChanges(
   stream: { served: ServedWatch[]; pathname: string },
-  upserts: Sandbox[],
-  removed: Sandbox[] = []
+  upserts: EnvironmentDescriptor[],
+  removed: EnvironmentDescriptor[] = []
 ): Promise<void> {
   await act(async () => {
     const watch = latestOn(stream.served, stream.pathname);
-    for (const row of upserts) watch.send({ upsert: toJson(SandboxSchema, row) });
-    for (const row of removed) watch.send({ removed: { namespace: row.namespace, name: row.name, uid: row.uid } });
+    for (const row of upserts) watch.send({ upsert: toJson(EnvironmentDescriptorSchema, row) });
+    for (const row of removed)
+      watch.send({ removed: { namespace: row.target!.namespace, name: row.target!.name, uid: row.target!.uid } });
   });
 }
 
 async function render(
   threads: ThreadView[],
-  sandboxes: Record<string, Sandbox>,
+  sandboxes: Record<string, EnvironmentDescriptor>,
   options: {
     initialPath?: string;
     settingsOpen?: boolean;
@@ -151,7 +157,9 @@ async function render(
       if (reconnected(served, stream)) return;
       if (pathname === "/upstream/environments/v1/environments:watch") {
         stream.send({
-          snapshot: { sandboxes: Object.values(sandboxes).map((sandbox) => toJson(SandboxSchema, sandbox)) },
+          snapshot: {
+            environments: Object.values(sandboxes).map((sandbox) => toJson(EnvironmentDescriptorSchema, sandbox)),
+          },
         });
         stream.send({ snapshotComplete: {} });
         return;
@@ -283,7 +291,7 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   await pushThreadChange(stream);
   await pushSandboxChanges(sandboxStream, [
     sandbox("test-sandbox", {
-      operatingMode: "Suspended",
+      operatingMode: OperatingMode.SUSPENDED,
       phase: SandboxPhase.SUSPENDED,
       pod: undefined,
       status: {},
@@ -369,7 +377,11 @@ it("groups threads by sandbox, showing each group's state, name and visible thre
     ],
     {
       "demo-a1b2": sandbox("demo-a1b2"),
-      "prod-x7f2": sandbox("prod-x7f2", { operatingMode: "Suspended", phase: SandboxPhase.SUSPENDED, pod: undefined }),
+      "prod-x7f2": sandbox("prod-x7f2", {
+        operatingMode: OperatingMode.SUSPENDED,
+        phase: SandboxPhase.SUSPENDED,
+        pod: undefined,
+      }),
     }
   );
 
@@ -404,23 +416,27 @@ it("opens retained Thread history even when its Sandbox is gone", async () => {
 
 it.each([
   ["a running Pod", {}, "ready"],
-  ["a suspended Sandbox", { operatingMode: "Suspended", phase: SandboxPhase.SUSPENDED, pod: undefined }, "suspended"],
+  [
+    "a suspended Sandbox",
+    { operatingMode: OperatingMode.SUSPENDED, phase: SandboxPhase.SUSPENDED, pod: undefined },
+    "suspended",
+  ],
   ["a running Sandbox with no Pod yet", { phase: SandboxPhase.CREATING, pod: undefined }, "pending"],
   ["a Sandbox being deleted", { phase: SandboxPhase.TEARING_DOWN }, "gone"],
 ] as const)("marks a group's Sandbox by its status: %s", async (_name, overrides, status) => {
   const box = sandbox("test-marked", overrides);
-  await render([], { [box.name]: box });
+  await render([], { [box.target!.name]: box });
   expect(container.querySelector(`.agentplane-thread-list-state-icon[data-status='${status}']`)).not.toBeNull();
 });
 
 it("renders only a suspended Sandbox's name in its icon's gray, not the link blue", async () => {
   const running = sandbox("test-running");
   const suspended = sandbox("test-suspended", {
-    operatingMode: "Suspended",
+    operatingMode: OperatingMode.SUSPENDED,
     phase: SandboxPhase.SUSPENDED,
     pod: undefined,
   });
-  await render([], { [running.name]: running, [suspended.name]: suspended });
+  await render([], { [running.target!.name]: running, [suspended.target!.name]: suspended });
   const link = (name: string): HTMLElement => {
     const node = container.querySelector<HTMLElement>(`a[href="/sandboxes/${name}"]`);
     if (!node) throw new Error(`missing Sandbox link ${name}`);
@@ -449,7 +465,7 @@ it("dims only the rows of threads whose harness is stopped", async () => {
 
 it("opens the details of a provisioning Sandbox with no Threads", async () => {
   const pending = sandbox("test-provisioning", { pod: undefined });
-  await render([], { [pending.name]: pending });
+  await render([], { [pending.target!.name]: pending });
   expect(container.textContent).toContain("0 threads");
   expect(container.querySelector(".agentplane-thread-list-state-icon[data-status='pending']")).not.toBeNull();
   const link = container.querySelector('a[href="/sandboxes/test-provisioning"]');

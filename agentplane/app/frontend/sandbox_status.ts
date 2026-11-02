@@ -1,21 +1,15 @@
 /** Presentation of Kubernetes' raw Sandbox and Pod status objects. */
-import { SandboxPhase, type Sandbox } from "../../proto/sandboxes_pb";
-import type { SandboxView } from "./schema";
+import { SandboxPhase } from "../../proto/sandboxes_pb";
+import { OperatingMode, type EnvironmentDescriptor } from "../../sandboxes/environments/environment_service_pb";
 import { durationLabel } from "./format_time";
 import type { SandboxStatusKind } from "./status_mark";
 
-/** The live inventory uses the Sandbox proto; the detail endpoint still uses its app presentation view. */
-export type SandboxStatusSource = Sandbox | SandboxView;
+export type SandboxStatusSource = EnvironmentDescriptor;
 
 type RawObject = Record<string, unknown>;
 
-function isSandboxView(sandbox: SandboxStatusSource): sandbox is SandboxView {
-  return typeof sandbox.phase === "string";
-}
-
 /** The controller's lifecycle phase, normalized without deriving it from the requested operating mode. */
 export function sandboxPhase(sandbox: SandboxStatusSource): string {
-  if (isSandboxView(sandbox)) return sandbox.phase;
   switch (sandbox.phase) {
     case SandboxPhase.UNSPECIFIED:
       return "Unspecified";
@@ -37,16 +31,22 @@ export function sandboxPhase(sandbox: SandboxStatusSource): string {
 }
 
 export function sandboxOperatingMode(sandbox: SandboxStatusSource): string | null {
-  return isSandboxView(sandbox) ? (sandbox.operating_mode ?? null) : (sandbox.operatingMode ?? null);
+  switch (sandbox.operatingMode) {
+    case OperatingMode.RUNNING:
+      return "Running";
+    case OperatingMode.SUSPENDED:
+      return "Suspended";
+    default:
+      return null;
+  }
 }
 
 export function sandboxWakeOnSend(sandbox: SandboxStatusSource): boolean {
-  return isSandboxView(sandbox) ? (sandbox.wake_on_send ?? false) : sandbox.wakeOnSend;
+  return sandbox.wakeOnSend;
 }
 
 /** Converts a present protobuf Duration to seconds while keeping absent and zero durations distinct. */
 export function sandboxIdleSuspendAfterSeconds(sandbox: SandboxStatusSource): number | null {
-  if (isSandboxView(sandbox)) return sandbox.idle_suspend_after_seconds ?? null;
   const duration = sandbox.idleSuspendAfter;
   return duration === undefined ? null : Number(duration.seconds) + duration.nanos / 1_000_000_000;
 }
@@ -118,21 +118,6 @@ function sandboxStatusObject(sandbox: SandboxStatusSource): RawObject | null {
 }
 
 function sandboxPodFields(sandbox: SandboxStatusSource): PodFields | null {
-  if (isSandboxView(sandbox)) {
-    const pod = sandbox.pod;
-    return pod
-      ? {
-          deleting: pod.deleting,
-          ownerReferences: pod.owner_references.map((owner) => ({
-            apiVersion: owner.api_version,
-            kind: owner.kind,
-            uid: owner.uid,
-            controller: owner.controller,
-          })),
-          status: rawObject(pod.status),
-        }
-      : null;
-  }
   const pod = sandbox.pod;
   return pod
     ? {
@@ -195,7 +180,7 @@ export function sandboxStarting(sandbox: SandboxStatusSource): boolean {
 
 /** Why a Sandbox is suspended, as the views word it; null while it runs and until the controller reports. */
 export function suspensionReason(sandbox: SandboxStatusSource): "idle" | "on request" | null {
-  const suspendedBy = isSandboxView(sandbox) ? sandbox.suspended_by : (sandbox.suspendedBy ?? null);
+  const suspendedBy = sandbox.suspendedBy;
   switch (suspendedBy) {
     case "Idle":
       return "idle";
@@ -305,7 +290,7 @@ export function sandboxStatusDetail(sandbox: SandboxStatusSource): string {
     const status = pod.status;
     lines.push(`Pod: ${podPhase(sandbox) ?? "phase unknown"}${pod.deleting ? " · deleting" : ""}`);
     const controllers = pod.ownerReferences.filter((owner) => owner.controller);
-    if (controllers.length !== 1 || controllers[0]?.uid !== sandbox.uid) {
+    if (controllers.length !== 1 || controllers[0]?.uid !== sandbox.target?.uid) {
       lines.push("Pod controller identity does not match this Sandbox");
     }
     lines.push(...rawConditions(status).map((condition) => `Pod condition · ${conditionLine(condition)}`));

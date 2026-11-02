@@ -140,7 +140,7 @@ class Agent:
         dispatcher: SessionDispatcherClient,
         *,
         sandbox: str,
-        sandbox_uid: UUID,
+        sandbox_uid: UUID | str,
         harness: session_pb2.Harness,
         model: str,
         instructions: str = "",

@@ -1,4 +1,4 @@
-import type { Sandbox } from "../../../proto/sandboxes_pb";
+import type { EnvironmentDescriptor } from "../../../sandboxes/environments/environment_service_pb";
 import { ActionIcon, Anchor, Button, Group, Menu, Popover, Select, Stack, Text, UnstyledButton } from "@mantine/core";
 import type { LangfuseSearchSettings, ThreadView, TraceSearchSettings } from "../schema";
 import { IconDotsVertical, IconHistory } from "../icons";
@@ -189,7 +189,7 @@ interface ConversationBodyProps {
   onStatusChange: (status: ThreadTabTitleStatus) => void;
   traceSearch: TraceSearchSettings | null;
   langfuseSearch: LangfuseSearchSettings | null;
-  sandbox?: Sandbox;
+  sandbox?: EnvironmentDescriptor;
 }
 
 function ConversationBody({
@@ -238,7 +238,9 @@ function ConversationBody({
   const threadsLive = useRequiredThreadsLive();
   const sandboxesLive = useRequiredSandboxesLive();
   const inventoryFresh = sandboxInventoryFresh(sandboxesLive);
-  const currentSandbox = sandboxesLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread.sandbox);
+  const currentSandbox = sandboxesLive.snapshot?.sandboxes.find(
+    (candidate) => candidate.target?.name === thread.sandbox
+  );
   const status = threadStatusFromSnapshot(
     threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId),
     currentSandbox,
@@ -450,8 +452,8 @@ function ConversationBody({
                       llmTraceScope === "session"
                         ? langfuseSessionTraceUrl(langfuseSearch, thread.id)
                         : langfuseSandboxTraceUrl(langfuseSearch, {
-                            namespace: sandbox!.serviceAccount?.namespace ?? "",
-                            serviceAccount: sandbox!.serviceAccount?.name ?? "",
+                            namespace: sandbox!.executionAccount?.namespace ?? "",
+                            serviceAccount: sandbox!.executionAccount?.name ?? "",
                           })
                     }
                     target="_blank"
@@ -494,7 +496,7 @@ export interface ThreadConversationProps {
   onStatusChange: (status: ThreadTabTitleStatus) => void;
   traceSearch: TraceSearchSettings | null;
   langfuseSearch: LangfuseSearchSettings | null;
-  sandbox?: Sandbox;
+  sandbox?: EnvironmentDescriptor;
 }
 
 export function ThreadConversation({

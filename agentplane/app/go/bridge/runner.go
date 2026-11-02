@@ -5,10 +5,10 @@ import (
 	"errors"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 )
 
 // GatewayRunnerProxy invokes informational Runner RPCs through the named
@@ -26,21 +26,22 @@ func NewGatewayRunnerProxy(config RunnerConfig) (*GatewayRunnerProxy, error) {
 	return &GatewayRunnerProxy{config: config}, nil
 }
 
-func (r *GatewayRunnerProxy) withClient(ctx context.Context, sandbox *sandboxespb.Sandbox, call func(context.Context, environmentruntimepb.EnvironmentRuntimeClient) error) error {
-	if sandbox == nil || sandbox.GetName() == "" || sandbox.GetUid() == "" || sandbox.GetNamespace() == "" || sandbox.GetNamespace() != r.config.Namespace {
+func (r *GatewayRunnerProxy) withClient(ctx context.Context, sandbox *environmentpb.EnvironmentDescriptor, call func(context.Context, environmentruntimepb.EnvironmentRuntimeClient) error) error {
+	targetHandle := sandbox.GetTarget()
+	if targetHandle == nil || targetHandle.GetName() == "" || targetHandle.GetUid() == "" || targetHandle.GetNamespace() == "" || targetHandle.GetNamespace() != r.config.Namespace {
 		return errors.New("complete Sandbox identity in the configured namespace is required")
 	}
-	target := environmentruntimeclient.ExpandTarget(r.config.TargetTemplate, sandbox.GetName(), sandbox.GetNamespace())
+	target := environmentruntimeclient.ExpandTarget(r.config.TargetTemplate, targetHandle.GetName(), targetHandle.GetNamespace())
 	err := environmentruntimeclient.WithClient(ctx, environmentruntimeclient.Config{
 		Target: target, TokenFile: r.config.TokenFile, Timeout: r.config.Timeout,
-		SandboxName: sandbox.GetName(), SandboxUID: sandbox.GetUid(), SandboxNamespace: sandbox.GetNamespace(),
+		SandboxName: targetHandle.GetName(), SandboxUID: targetHandle.GetUid(), SandboxNamespace: targetHandle.GetNamespace(),
 		ReplaceOutgoingMetadata: true,
 	}, call)
 	return translatedRPCError(err)
 }
 
 // ListSessions returns all durable Sessions retained by the connected runner.
-func (r *GatewayRunnerProxy) ListSessions(ctx context.Context, sandbox *sandboxespb.Sandbox) (*sessionpb.ListSessionsResponse, error) {
+func (r *GatewayRunnerProxy) ListSessions(ctx context.Context, sandbox *environmentpb.EnvironmentDescriptor) (*sessionpb.ListSessionsResponse, error) {
 	var response *sessionpb.ListSessionsResponse
 	err := r.withClient(ctx, sandbox, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
 		var err error
@@ -51,7 +52,7 @@ func (r *GatewayRunnerProxy) ListSessions(ctx context.Context, sandbox *sandboxe
 }
 
 // EnvironmentRuntimeStatus returns the live informational status of the connected runner.
-func (r *GatewayRunnerProxy) EnvironmentRuntimeStatus(ctx context.Context, sandbox *sandboxespb.Sandbox) (*sessionpb.EnvironmentRuntimeStatus, error) {
+func (r *GatewayRunnerProxy) EnvironmentRuntimeStatus(ctx context.Context, sandbox *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	var response *sessionpb.EnvironmentRuntimeStatus
 	err := r.withClient(ctx, sandbox, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
 		var err error

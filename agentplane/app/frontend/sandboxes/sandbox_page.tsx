@@ -1,5 +1,5 @@
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
-import type { SandboxView, ThreadView } from "../schema";
+import type { ThreadView } from "../schema";
 import { NotificationStatus } from "../notification_status";
 import {
   ActionIcon,
@@ -24,7 +24,7 @@ import { findThread, getThread } from "../threads/client";
 import { getSessionOpening, openSession, sessionOpeningRejected, sessionOpeningNotVisible } from "./client";
 import { ActionPolicySection } from "../actions/policy";
 import { EgressLog } from "./egress";
-import { liveSandboxUrl, type SandboxSnapshot } from "./live";
+import { liveSandboxUrl, sandboxInventoryFresh, useRequiredSandboxesLive, type SandboxSnapshot } from "./live";
 import { MarkGlyph } from "../mark_glyph";
 import { ConfirmDelete, deletable, DELETE_NEEDS_SUSPENDED, SuspendResume } from "./lifecycle";
 import { useLive } from "../live";
@@ -108,25 +108,32 @@ export function SandboxPage({
     setPendingOpen(attempt);
   }
   const [launching, setLaunching] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [includeArchived, setIncludeArchived] = useState(false);
 
   const live = useLive<SandboxSnapshot>(liveSandboxUrl(name, includeArchived), `Sandbox ${name}`);
-  const sandbox: SandboxView | null = live.snapshot?.sandbox ?? null;
+  const inventory = useRequiredSandboxesLive();
+  const candidate = inventory.snapshot?.sandboxes.find((item) => item.target?.name === name);
+  // Never combine policy or thread data from an old incarnation with its same-name replacement.
+  const matches =
+    sandboxInventoryFresh(inventory) && !!candidate && candidate.target?.uid === live.snapshot?.sandbox_uid;
+  const sandbox = matches ? candidate : null;
+  const deleted = sandboxInventoryFresh(inventory) && !candidate && live.snapshot?.sandbox_uid === null;
+  const detail = matches || deleted ? live.snapshot : null;
   const vmConsoleAvailable = hasVmConsole(sandbox);
   const tab: Tab =
     isTab(requestedTab) && (requestedTab !== "console" || vmConsoleAvailable) ? requestedTab : DEFAULT_TAB;
-  const threadListing = live.snapshot?.threads ?? [];
+  const threadListing = detail?.threads ?? [];
   const threadsUnavailable = Array.isArray(threadListing) ? null : threadListing.code;
   const threads = Array.isArray(threadListing) ? threadListing : [];
   const ready = sandboxReady(sandbox);
-  const canWakeForThread = sandboxSuspended(sandbox) && sandbox?.wake_on_send === true;
+  const canWakeForThread = sandboxSuspended(sandbox) && sandbox?.wakeOnSend === true;
   const threadUnavailableReason = pendingOpen
     ? "An earlier thread open attempt is unconfirmed. Check opening status before creating another thread."
     : !sandbox
-      ? live.snapshot === null
-        ? "Waiting for Sandbox status to load."
-        : "This Sandbox no longer exists."
+      ? deleted
+        ? "This Sandbox no longer exists."
+        : "Waiting for Sandbox status to load."
       : !ready && !canWakeForThread
         ? sandboxSuspended(sandbox)
           ? "The Sandbox is suspended. Resume it or enable wake on send before creating a thread."
@@ -159,7 +166,11 @@ export function SandboxPage({
   // No re-read after an action: the change reaches the API server, and the watch behind the
   // stream brings the sandbox's new state back on its own.
   async function act(action: "suspend" | "resume"): Promise<void> {
-    const { error: failure } = await api.POST(`/sandboxes/{name}/${action}`, { params: { path: { name } } });
+    if (!sandbox?.target) return;
+    const { error: failure } = await api.POST(`/sandboxes/{name}/${action}`, {
+      params: { path: { name } },
+      body: { uid: sandbox.target.uid },
+    });
     setError(failure ? displayableError(failure) : null);
   }
 
@@ -172,8 +183,8 @@ export function SandboxPage({
   }
 
   /** Deleting leaves nothing to look at, so a deleted sandbox takes the view back to the list. */
-  async function remove(): Promise<void> {
-    const { error: failure } = await api.DELETE("/sandboxes/{name}", { params: { path: { name } } });
+  async function remove(uid: string): Promise<void> {
+    const { error: failure } = await api.DELETE("/sandboxes/{name}", { params: { path: { name } }, body: { uid } });
     if (!failure) {
       onBack();
       return;
@@ -193,7 +204,7 @@ export function SandboxPage({
     let openingAccepted = false;
     try {
       const opening = await withinSessionCreate(threadId, () =>
-        openSession(name, sandbox.uid, threadId, spec, setupScript)
+        openSession(name, sandbox.target!.uid, threadId, spec, setupScript)
       );
       if (!opening.sessionId) throw new Error("Open returned without a Session ID");
       openingAccepted = true;
@@ -344,8 +355,8 @@ export function SandboxPage({
                 <Menu.Item
                   component="a"
                   href={langfuseSandboxTraceUrl(langfuseSearch, {
-                    namespace: sandbox.service_account.namespace,
-                    serviceAccount: sandbox.service_account.name,
+                    namespace: sandbox.executionAccount?.namespace ?? sandbox.target!.namespace,
+                    serviceAccount: sandbox.executionAccount?.name ?? sandbox.target!.name,
                   })}
                   target="_blank"
                   rel="noreferrer"
@@ -358,7 +369,7 @@ export function SandboxPage({
                 color="red"
                 leftSection={<IconTrash size={15} />}
                 disabled={!deletable(sandbox)}
-                onClick={() => setConfirmingDelete(true)}
+                onClick={() => setConfirmingDelete(sandbox.target!.uid)}
               >
                 Delete
                 {!deletable(sandbox) && (
@@ -374,10 +385,10 @@ export function SandboxPage({
       {confirmingDelete && (
         <ConfirmDelete
           name={name}
-          onCancel={() => setConfirmingDelete(false)}
+          onCancel={() => setConfirmingDelete(null)}
           onConfirm={() => {
-            setConfirmingDelete(false);
-            void remove();
+            void remove(confirmingDelete);
+            setConfirmingDelete(null);
           }}
         />
       )}
@@ -386,7 +397,7 @@ export function SandboxPage({
           {error}
         </Alert>
       )}
-      {live.snapshot !== null && sandbox === null && (
+      {deleted && (
         <Alert color="red" role="alert">
           There is no sandbox {name} any more.
         </Alert>
@@ -445,8 +456,8 @@ export function SandboxPage({
         </Tabs.Panel>
         <Tabs.Panel value="policy" pt="sm">
           <Stack gap="md">
-            <PolicyBindingsSection sandbox={name} bindings={live.snapshot?.bindings ?? null} />
-            <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />
+            <PolicyBindingsSection sandbox={name} bindings={detail?.bindings ?? null} />
+            <ActionPolicySection policy={detail?.action_policy ?? null} />
           </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="status" pt="sm">
@@ -491,7 +502,7 @@ export function SandboxPage({
                 onError={setError}
               />
             </div>
-            {live.snapshot !== null && visibleThreads.length === 0 && !threadsUnavailable ? (
+            {detail !== null && visibleThreads.length === 0 && !threadsUnavailable ? (
               <Text c="dimmed">No threads yet.</Text>
             ) : (
               <SandboxThreadsTable

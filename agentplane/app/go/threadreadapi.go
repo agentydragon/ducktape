@@ -16,12 +16,11 @@ import (
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/httperror"
-	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -52,7 +51,8 @@ type threadReadHistory interface {
 }
 
 type threadSandboxInventory interface {
-	Get(context.Context, string) (*sandboxespb.Sandbox, error)
+	Get(context.Context, string) (*environmentpb.EnvironmentDescriptor, error)
+	GetExactUID(context.Context, string, string) (*environmentpb.EnvironmentDescriptor, error)
 }
 
 type threadEnvironmentRuntimeStatusReader interface {
@@ -592,10 +592,15 @@ func ensureThreadArchivable(ctx context.Context, thread threads.Thread, summary 
 	if inventory == nil {
 		return errors.New("Sandbox inventory is unavailable")
 	}
-	sandbox, err := inventory.Get(ctx, summary.Sandbox)
+	var sandbox *environmentpb.EnvironmentDescriptor
+	var err error
+	if summary.SandboxUID != "" {
+		sandbox, err = inventory.GetExactUID(ctx, summary.Sandbox, summary.SandboxUID)
+	} else {
+		sandbox, err = inventory.Get(ctx, summary.Sandbox)
+	}
 	if err != nil {
-		var missing *sandboxes.SandboxNotFoundError
-		if errors.As(err, &missing) {
+		if summary.SandboxUID == "" && status.Code(err) == codes.NotFound {
 			return nil // A deleted Sandbox has no running harness to keep visible.
 		}
 		return err
@@ -626,23 +631,9 @@ var (
 	errThreadBusy                      = errors.New("finish or interrupt active work before archiving this thread")
 )
 
-func threadSandboxReady(sandbox *sandboxespb.Sandbox) bool {
-	if sandbox.GetOperatingMode() != "Running" || sandbox.GetStatus() == nil {
-		return false
-	}
-
-	conditions, ok := sandbox.GetStatus().AsMap()["conditions"].([]any)
-	if !ok {
-		return false
-	}
-	for _, item := range conditions {
-		condition, ok := item.(map[string]any)
-		if !ok || condition["type"] != "Ready" || condition["status"] != "True" {
-			continue
-		}
-		return true
-	}
-	return false
+func threadSandboxReady(sandbox *environmentpb.EnvironmentDescriptor) bool {
+	return sandbox != nil && sandbox.GetOperatingMode() == environmentpb.OperatingMode_OPERATING_MODE_RUNNING &&
+		sandbox.GetReadiness().GetState() == environmentpb.ReadinessState_READINESS_STATE_READY
 }
 
 func threadReadHTTPError(err error) error {

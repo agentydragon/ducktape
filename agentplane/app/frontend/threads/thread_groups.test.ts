@@ -1,13 +1,14 @@
 import { expect, it } from "vitest";
 
 import type { ThreadView } from "../schema";
-import { SandboxPhase, type Sandbox } from "../../../proto/sandboxes_pb";
+import { SandboxPhase } from "../../../proto/sandboxes_pb";
+import { OperatingMode, type EnvironmentDescriptor } from "../../../sandboxes/environments/environment_service_pb";
 import { testSandbox } from "../testing/sandbox";
 import { groupThreads } from "./thread_groups";
 
-function sandbox(name: string, overrides: Partial<Sandbox> = {}): Sandbox {
+function sandbox(name: string, overrides: Partial<EnvironmentDescriptor> = {}): EnvironmentDescriptor {
   const value = testSandbox(name, `00000000-0000-4000-8000-${name.padStart(12, "0")}`);
-  value.operatingMode = "Running";
+  value.operatingMode = OperatingMode.RUNNING;
   value.phase = SandboxPhase.CREATING;
   return Object.assign(value, overrides);
 }
@@ -42,14 +43,14 @@ it("groups threads by sandbox, newest thread first fixing each group's order", (
   const oldest = threadView({ id: "t-oldest", sandbox: "sb-a" });
   const sandboxes = {
     "sb-a": sandbox("sb-a"),
-    "sb-b": sandbox("sb-b", { operatingMode: "Suspended", phase: SandboxPhase.SUSPENDED }),
+    "sb-b": sandbox("sb-b", { operatingMode: OperatingMode.SUSPENDED, phase: SandboxPhase.SUSPENDED }),
   };
 
   const groups = groupThreads([newest, middle, oldest], sandboxes, false, null);
 
   expect(groups.map((group) => group.sandboxName)).toEqual(["sb-b", "sb-a"]);
   expect(groups[1].threads).toEqual([middle, oldest]);
-  expect(groups[0].sandbox?.operatingMode).toBe("Suspended");
+  expect(groups[0].sandbox?.operatingMode).toBe(OperatingMode.SUSPENDED);
 });
 
 it("hides archived Threads without hiding their existing Sandbox", () => {

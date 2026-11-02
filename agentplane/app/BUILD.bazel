@@ -79,6 +79,7 @@ py_proto_library_with_mypy_stubs(
 )
 
 # gazelle:resolve py agentplane.action_service.action_service_pb2 //agentplane/action_service:action_service_pb2
+# gazelle:resolve py agentplane.sandboxes.environments.environment_service_pb2 //agentplane/sandboxes/environments:environment_service_pb2
 
 # No test here is small, and none of that is about the tests being slow: on the CI executor image
 # they are killed at a small target's 60s with the budget spent fetching inputs rather than running
@@ -157,7 +158,9 @@ py_test(
         "//agentplane/app/testing:fake_action_service",
         "//agentplane/app/testing:replication_process",
         "//agentplane/history_service:client",
+        "//agentplane/sandboxes/environments:environment_service_pb2",
         "@pypi//httpx",
+        "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pyjwt",
         "@pypi//pytest",
@@ -177,10 +180,12 @@ py_test(
         "//:conftest",
         "//agentplane/app/testing:models",
         "//agentplane/app/testing:replication_process",
+        "//agentplane/sandboxes/environments:environment_service_pb2",
         "//agentplane/sandboxes/testing:kubernetes",
         "//util:net",
         "//util/testing:postgres",
         "@pypi//httpx",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -334,12 +339,15 @@ py_test(
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:models",
         "//agentplane/app/testing:replication_process",
+        "//agentplane/app/testing:runner_gateway",
         "//agentplane/app/testing:thread_test_support",
         "//agentplane/egress:decisions",
         "//agentplane/egress:egress_admin_pb2_grpc",
         "//agentplane/grpc:serving",
         "//agentplane/history_service:client",
         "//agentplane/history_service/testing:history",
+        "//agentplane/runner_gateway/testing:gateway_process",
+        "//agentplane/sandboxes/environments:environment_service_pb2",
         "//agentplane/sandboxes/testing:sandbox_namespace",
         "//agentplane/testing:kubernetes_apiserver",
         "@pypi//grpcio",

@@ -98,6 +98,8 @@ ts_library(
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend/threads:client",
+        "//agentplane/proto:sandboxes_pb",
+        "//agentplane/sandboxes/environments:environment_service_pb",
         "//util/frontend:help_tooltip",
         "//util/frontend:json_view",
     ],
@@ -129,6 +131,7 @@ ts_library(
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:policy",
         "//agentplane/proto:sandboxes_pb",
+        "//agentplane/sandboxes/environments:environment_service_pb",
     ],
 )
 
@@ -285,8 +288,11 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/testing:langfuse_search",
         "//agentplane/app/frontend/testing:model_catalog",
         "//agentplane/app/frontend/testing:runner_status",
+        "//agentplane/app/frontend/testing:sandbox",
         "//agentplane/app/frontend/testing:watch",
         "//agentplane/app/frontend/threads:client",
+        "//agentplane/proto:sandboxes_pb",
+        "//agentplane/sandboxes/environments:environment_service_pb",
     ],
 )
 
@@ -312,6 +318,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/testing:sandbox",
         "//agentplane/app/frontend/testing:watch",
         "//agentplane/proto:sandboxes_pb",
+        "//agentplane/sandboxes/environments:environment_service_pb",
     ],
 )
 
@@ -367,12 +374,15 @@ agentplane_vitest_test(
     srcs = ["live.test.tsx"],
     deps = [
         ":live",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/testing:sandbox",
         "//agentplane/app/frontend/testing:watch",
+        "//agentplane/sandboxes/environments:environment_service_pb",
     ],
 )
 

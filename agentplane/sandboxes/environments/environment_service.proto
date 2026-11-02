@@ -7,7 +7,9 @@ option go_package = "github.com/agentydragon/ducktape/agentplane/sandboxes/envir
 import "agentplane/proto/environment_lifecycle.proto";
 import "agentplane/proto/sandboxes.proto";
 import "google/api/annotations.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
 // EnvironmentService discovers existing managed environments and authorizes explicit lifecycle changes.
@@ -56,18 +58,18 @@ message ListEnvironmentsResponse {
 
 message WatchEnvironmentsResponse {
   // Snapshot chunks replace the previous view only when snapshot_complete arrives. Afterwards,
-  // upserts replace one Sandbox and removals remove the named UID. Reconnect starts a new snapshot.
+  // upserts replace one EnvironmentDescriptor and removals remove the named UID. Reconnect starts a new snapshot.
   oneof frame {
-    SandboxChunk snapshot = 1;
+    EnvironmentChunk snapshot = 1;
     google.protobuf.Empty snapshot_complete = 2;
-    agentplane.proto.Sandbox upsert = 3;
+    EnvironmentDescriptor upsert = 3;
     // Deleted or no longer visible; the UID fences same-name replacement.
     TargetHandle removed = 4;
   }
 }
 
-message SandboxChunk {
-  repeated agentplane.proto.Sandbox sandboxes = 1;
+message EnvironmentChunk {
+  repeated EnvironmentDescriptor environments = 1;
 }
 
 message GetEnvironmentRequest {
@@ -166,6 +168,18 @@ message EnvironmentDescriptor {
   // The observed generation and opaque precondition used by ResumeEnvironment.
   int64 wake_generation = 16;
   string resume_token = 17;
+  // Full Sandbox projection used for operator diagnostics and exact live-incarnation inspection.
+  // The environment-facing identity and state facts above are not repeated here.
+  google.protobuf.Timestamp created_at = 18;
+  agentplane.proto.SandboxBinding binding = 19;
+  agentplane.proto.SandboxPod pod = 20;
+  google.protobuf.Struct status = 21;
+  agentplane.proto.SandboxPhase phase = 22;
+  optional string preset = 23;
+  google.protobuf.Duration idle_suspend_after = 24;
+  optional string suspended_by = 25;
+  google.protobuf.Timestamp idle_suspend_at = 26;
+  repeated agentplane.proto.AutosuspendBlocker autosuspend_blockers = 27;
 }
 
 message ResumeEnvironmentRequest {

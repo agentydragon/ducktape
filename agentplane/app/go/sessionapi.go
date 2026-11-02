@@ -14,9 +14,9 @@ import (
 	appbridge "github.com/agentydragon/ducktape/agentplane/app/go/bridge"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"github.com/google/uuid"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc/codes"
@@ -29,6 +29,10 @@ import (
 type sessionOpener interface {
 	OpenSession(context.Context, string, string, uuid.UUID, *sessionpb.SessionSpec, *string) (*dispatcherpb.SessionOpening, error)
 	SessionOpening(context.Context, string, uuid.UUID) (*dispatcherpb.SessionOpening, error)
+}
+
+type sessionEnvironmentReader interface {
+	GetExact(context.Context, *environmentpb.TargetHandle) (*environmentpb.EnvironmentDescriptor, error)
 }
 
 type threadOpener interface {
@@ -88,12 +92,11 @@ func (s *appService) OpenSession(ctx context.Context, request *apppb.OpenSession
 			return nil, status.Error(codes.InvalidArgument, "setup_script must be a string or null")
 		}
 	}
-	sandbox, err := s.inventory.Get(ctx, request.GetName())
+	sandbox, err := s.environments.GetExact(ctx, &environmentpb.TargetHandle{
+		Namespace: s.config.SandboxNamespace, Name: request.GetName(), Uid: request.GetSandboxUid(),
+	})
 	if err != nil {
 		return nil, sessionRPCError(err)
-	}
-	if sandbox.GetUid() != request.GetSandboxUid() {
-		return nil, status.Error(codes.Aborted, "Sandbox identity changed")
 	}
 	defaults, setupScript, err := sessionDefaults(s.config, sandbox, request.GetSetupScript() != nil, setupScript)
 	if err != nil {
@@ -207,7 +210,7 @@ func sessionGatewayError(_ context.Context, _ *gatewayruntime.ServeMux, _ gatewa
 	_ = json.NewEncoder(w).Encode(map[string]any{"code": int32(st.Code()), "message": st.Message(), "detail": st.Message()})
 }
 
-func sessionDefaults(config Config, sandbox *sandboxespb.Sandbox, setupWasSet bool, requestedSetup *string) (*sessionpb.SessionSpec, *string, error) {
+func sessionDefaults(config Config, sandbox *environmentpb.EnvironmentDescriptor, setupWasSet bool, requestedSetup *string) (*sessionpb.SessionSpec, *string, error) {
 	defaults := &sessionpb.SessionSpec{}
 	var setupScript *string
 	if presetName := sandbox.GetPreset(); presetName != "" {

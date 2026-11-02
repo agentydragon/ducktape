@@ -10,7 +10,6 @@ import (
 	"time"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -24,12 +23,12 @@ import (
 )
 
 type fakeSandboxGetter struct {
-	sandbox *sandboxespb.Sandbox
+	sandbox *environmentpb.EnvironmentDescriptor
 	err     error
 	name    string
 }
 
-func (f *fakeSandboxGetter) Get(_ context.Context, name string) (*sandboxespb.Sandbox, error) {
+func (f *fakeSandboxGetter) Get(_ context.Context, name string) (*environmentpb.EnvironmentDescriptor, error) {
 	f.name = name
 	return f.sandbox, f.err
 }
@@ -59,15 +58,15 @@ type fakeRunner struct {
 	list   *sessionpb.ListSessionsResponse
 	status *sessionpb.EnvironmentRuntimeStatus
 	err    error
-	got    *sandboxespb.Sandbox
+	got    *environmentpb.EnvironmentDescriptor
 }
 
-func (f *fakeRunner) ListSessions(_ context.Context, sandbox *sandboxespb.Sandbox) (*sessionpb.ListSessionsResponse, error) {
+func (f *fakeRunner) ListSessions(_ context.Context, sandbox *environmentpb.EnvironmentDescriptor) (*sessionpb.ListSessionsResponse, error) {
 	f.got = sandbox
 	return f.list, f.err
 }
 
-func (f *fakeRunner) EnvironmentRuntimeStatus(_ context.Context, sandbox *sandboxespb.Sandbox) (*sessionpb.EnvironmentRuntimeStatus, error) {
+func (f *fakeRunner) EnvironmentRuntimeStatus(_ context.Context, sandbox *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	f.got = sandbox
 	return f.status, f.err
 }
@@ -194,7 +193,7 @@ func TestSessionOpeningHidesWrongSandboxAndSession(t *testing.T) {
 }
 
 func TestRunnerRoutesUseCurrentSandboxIdentityAndReturnProxiedValues(t *testing.T) {
-	sandbox := &sandboxespb.Sandbox{Name: "operator-sandbox", Uid: "sandbox-uid", Namespace: "operators"}
+	sandbox := &environmentpb.EnvironmentDescriptor{Target: &environmentpb.TargetHandle{Name: "operator-sandbox", Uid: "sandbox-uid", Namespace: "operators"}}
 	list := &sessionpb.ListSessionsResponse{Sessions: []*sessionpb.SessionSummary{{SessionId: uuid.NewString()}}}
 	status := &sessionpb.EnvironmentRuntimeStatus{EnvironmentRuntimeBootId: "boot-1"}
 	runner := &fakeRunner{list: list, status: status}
@@ -203,19 +202,19 @@ func TestRunnerRoutesUseCurrentSandboxIdentityAndReturnProxiedValues(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessions, err := bridge.ListSessions(context.Background(), sandbox.GetName())
+	sessions, err := bridge.ListSessions(context.Background(), sandbox.GetTarget().GetName())
 	if err != nil || !proto.Equal(&sessionpb.ListSessionsResponse{Sessions: sessions}, list) {
 		t.Fatalf("ListSessions = %v, %v", sessions, err)
 	}
-	if getter.name != sandbox.GetName() || runner.got != sandbox {
-		t.Fatalf("sandbox lookup/proxy identity = %q / %p, want %q / %p", getter.name, runner.got, sandbox.GetName(), sandbox)
+	if getter.name != sandbox.GetTarget().GetName() || runner.got != sandbox {
+		t.Fatalf("sandbox lookup/proxy identity = %q / %p, want %q / %p", getter.name, runner.got, sandbox.GetTarget().GetName(), sandbox)
 	}
-	gotStatus, err := bridge.EnvironmentRuntimeStatus(context.Background(), sandbox.GetName())
+	gotStatus, err := bridge.EnvironmentRuntimeStatus(context.Background(), sandbox.GetTarget().GetName())
 	if err != nil || !proto.Equal(gotStatus, status) {
 		t.Fatalf("EnvironmentRuntimeStatus = %v, %v", gotStatus, err)
 	}
-	getter.sandbox = &sandboxespb.Sandbox{Name: sandbox.GetName(), Namespace: sandbox.GetNamespace()}
-	if _, err := bridge.ListSessions(context.Background(), sandbox.GetName()); err == nil {
+	getter.sandbox = &environmentpb.EnvironmentDescriptor{Target: &environmentpb.TargetHandle{Name: sandbox.GetTarget().GetName(), Namespace: sandbox.GetTarget().GetNamespace()}}
+	if _, err := bridge.ListSessions(context.Background(), sandbox.GetTarget().GetName()); err == nil {
 		t.Fatal("Sandbox without UID was proxied")
 	}
 }
@@ -277,7 +276,7 @@ func TestGatewayRunnerProxyBindsCurrentSandboxMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sandbox := &sandboxespb.Sandbox{Name: "operator-sandbox", Uid: "sandbox-uid", Namespace: "operators"}
+	sandbox := &environmentpb.EnvironmentDescriptor{Target: &environmentpb.TargetHandle{Name: "operator-sandbox", Uid: "sandbox-uid", Namespace: "operators"}}
 	listed, err := proxy.ListSessions(context.Background(), sandbox)
 	if err != nil || listed.GetSessions()[0].GetSessionId() != "durable-session" {
 		t.Fatalf("ListSessions = %v, %v", listed, err)

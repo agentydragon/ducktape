@@ -9,10 +9,9 @@ from uuid import uuid4
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
-from agentplane.app.testing.models import SandboxView
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.sandbox_resource import OperatingMode
+from agentplane.sandboxes.environments import environment_service_pb2
 from agentplane.system_tests.agent import WORKING_DIRECTORY, Agent, scripted_turn_with_admission_and_history
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running
@@ -61,7 +60,7 @@ async def _ready_certificate(
         assert base64.b64decode(issued[0]["status"]["certificate"]) == base64.b64decode(secret["data"]["tls.crt"])
 
 
-async def _wait_suspended(client: Client, name: str) -> None:
+async def _wait_suspended(client: Client, target: environment_service_pb2.TargetHandle) -> None:
     with tracer.start_as_current_span("system_test.sandbox.suspend"):
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(REQUEST_SECONDS),
@@ -70,22 +69,28 @@ async def _wait_suspended(client: Client, name: str) -> None:
             reraise=True,
         ):
             with attempt:
-                view = await client.sandbox(name)
-                assert view.operating_mode is OperatingMode.SUSPENDED
-                assert view.pod is None
+                view = await client.get_environment(target)
+                assert view.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
+                assert not view.HasField("pod")
 
 
 async def _open_agent(
     client: Client,
     dispatcher: SessionDispatcherClient,
-    view: SandboxView,
+    view: environment_service_pb2.EnvironmentDescriptor,
     harness: session_pb2.Harness,
     model_name: str,
     *,
     cwd: str = WORKING_DIRECTORY,
 ) -> Agent:
     agent = await Agent.open(
-        client, dispatcher, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model_name, cwd=cwd
+        client,
+        dispatcher,
+        sandbox=view.target.name,
+        sandbox_uid=view.target.uid,
+        harness=harness,
+        model=model_name,
+        cwd=cwd,
     )
     await client.wait_for_thread_feed(agent.thread_id, timeout_s=REQUEST_SECONDS)
     return agent
@@ -142,10 +147,15 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
     scripted: ScriptedUpstream,
 ) -> None:
     view = await sandbox(f"systest-runner-pod-{uuid4().hex[:8]}", template=POD_TEMPLATE)
-    assert view.pod is not None
+    assert view.HasField("pod")
     old_pod_uid, old_credential_id = await _identity(cluster, view.pod.name)
     await _ready_certificate(
-        cluster, f"runner-{old_credential_id}", view.name, str(view.uid), old_credential_id, view.namespace
+        cluster,
+        f"runner-{old_credential_id}",
+        view.target.name,
+        str(view.target.uid),
+        old_credential_id,
+        view.target.namespace,
     )
 
     agent = await _open_agent(client, dispatcher, view, harness, offered_model)
@@ -162,17 +172,22 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
     )
     assert "POD_MTLS_OK" in "\n".join(turn.tool_outputs)
 
-    await client.suspend_sandbox(view.name)
-    await _wait_suspended(client, view.name)
-    await client.resume_sandbox(view.name)
-    resumed = await wait_until_running(client, view.name, expected_uid=view.uid)
-    assert resumed.uid == view.uid
-    assert resumed.pod is not None
+    await client.suspend_sandbox(view.target.name, uid=view.target.uid)
+    await _wait_suspended(client, view.target)
+    await client.resume_sandbox(view.target.name, uid=view.target.uid)
+    resumed = await wait_until_running(client, view.target)
+    assert resumed.target.uid == view.target.uid
+    assert resumed.HasField("pod")
     new_pod_uid, new_credential_id = await _identity(cluster, resumed.pod.name)
     assert new_pod_uid != old_pod_uid
     assert new_credential_id != old_credential_id
     await _ready_certificate(
-        cluster, f"runner-{new_credential_id}", resumed.name, str(resumed.uid), new_credential_id, resumed.namespace
+        cluster,
+        f"runner-{new_credential_id}",
+        resumed.target.name,
+        str(resumed.target.uid),
+        new_credential_id,
+        resumed.target.namespace,
     )
 
     resumed_model = scripted.model(resumed.pod.name, harness)
@@ -193,12 +208,14 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
     assert len(history_after) > len(history_before)
 
 
-async def check_vm_runner_certificate(cluster: Cluster, view: SandboxView) -> tuple[str, str]:
-    assert view.pod is not None
+async def check_vm_runner_certificate(
+    cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor
+) -> tuple[str, str]:
+    assert view.HasField("pod")
     identity = await _identity(cluster, view.pod.name)
     _, credential_id = identity
     await _ready_certificate(
-        cluster, f"runner-{credential_id}", view.name, str(view.uid), credential_id, view.namespace
+        cluster, f"runner-{credential_id}", view.target.name, str(view.target.uid), credential_id, view.target.namespace
     )
     return identity
 

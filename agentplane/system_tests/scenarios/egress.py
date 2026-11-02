@@ -32,12 +32,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
-from agentplane.app.testing.models import SandboxView
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.decisions import Decision, Outcome
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
+from agentplane.sandboxes.environments import environment_service_pb2
 from agentplane.system_tests import probe_credential, runtime_grant
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.cluster import Cluster
@@ -140,7 +140,9 @@ async def a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     Nothing here tells the agent the placeholder. If it comes back as the account, discovery worked.
     """
     view = await sandbox(f"systest-probe-{harness}", policies=[probe_credential.POLICY_SET, GITHUB_CLONE])
-    agent = await Agent.open(client, dispatcher, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model)
+    agent = await Agent.open(
+        client, dispatcher, sandbox=view.target.name, sandbox_uid=view.target.uid, harness=harness, model=model
+    )
     turn = await agent.run(_probe(f"http://egress.{cluster.namespace}.svc.cluster.local/v1/rules"))
     probe = turn.report(Probe)
 
@@ -153,12 +155,12 @@ async def a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     )
     assert probe.unlisted_refused, f"{UNLISTED_HOST} was reachable:\n{turn.transcript}"
 
-    admitted = await _decision_for(client, view.name, probe_credential.HOST)
+    admitted = await _decision_for(client, view.target.name, probe_credential.HOST)
     assert admitted.outcome is Outcome.ALLOW, f"{admitted!r}"
     assert admitted.policy == probe_credential.POLICY_SET, f"{admitted!r}"
     assert admitted.substituted, f"the API call was admitted with no credential substituted: {admitted!r}"
 
-    refused = await _decision_for(client, view.name, UNLISTED_HOST)
+    refused = await _decision_for(client, view.target.name, UNLISTED_HOST)
     assert refused.outcome is Outcome.DENY, f"{refused!r}"
     assert refused.reason == "no-rule", f"{refused!r}"
 
@@ -167,7 +169,7 @@ async def the_model_call_itself_goes_through_the_proxy(
     cluster: Cluster,
     client: Client,
     dispatcher: SessionDispatcherClient,
-    view: SandboxView,
+    view: environment_service_pb2.EnvironmentDescriptor,
     harness: session_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
@@ -186,17 +188,17 @@ async def the_model_call_itself_goes_through_the_proxy(
     The sandbox names no policy. `basic` reaching the ingress anyway is what the app's
     default PolicySets are for.
     """
-    assert view.pod is not None
+    assert view.HasField("pod")
     model = scripted.model(view.pod.name, harness)
     agent = await Agent.open(
-        client, dispatcher, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=offered_model
+        client, dispatcher, sandbox=view.target.name, sandbox_uid=view.target.uid, harness=harness, model=offered_model
     )
     async with asyncio.TaskGroup() as turns:
         answered = turns.create_task(agent.run("Reply with the single word: ok."))
         await model.reply(await model.request(), Text("ok"))
     turn = answered.result()
 
-    served = await _decision_for(client, view.name, f"llm-ingress.{cluster.namespace}.svc.cluster.local")
+    served = await _decision_for(client, view.target.name, f"llm-ingress.{cluster.namespace}.svc.cluster.local")
     assert served.outcome is Outcome.ALLOW, f"{served!r}\n{turn.transcript}"
     assert served.policy == BASIC_POLICY, f"the model call was admitted by another policy: {served!r}"
     assert served.substituted, (
@@ -205,17 +207,27 @@ async def the_model_call_itself_goes_through_the_proxy(
     )
 
 
-async def _kubectl_create_binding(cluster: Cluster, sandbox: SandboxView, policy_set: str) -> None:
+async def _kubectl_create_binding(
+    cluster: Cluster, sandbox: environment_service_pb2.EnvironmentDescriptor, policy_set: str
+) -> None:
     body = {
         "apiVersion": f"{GROUP}/{VERSION}",
         "kind": "PolicyBinding",
         "metadata": {
-            "generateName": f"{sandbox.name}-",
+            "generateName": f"{sandbox.target.name}-",
             "ownerReferences": [
-                {"apiVersion": SANDBOX_API_VERSION, "kind": SANDBOX_KIND, "name": sandbox.name, "uid": str(sandbox.uid)}
+                {
+                    "apiVersion": SANDBOX_API_VERSION,
+                    "kind": SANDBOX_KIND,
+                    "name": sandbox.target.name,
+                    "uid": str(sandbox.target.uid),
+                }
             ],
         },
-        "spec": {"subject": sandbox.service_account.model_dump(), "policySets": [policy_set]},
+        "spec": {
+            "subject": {"namespace": sandbox.execution_account.namespace, "name": sandbox.execution_account.name},
+            "policySets": [policy_set],
+        },
     }
     with tracer.start_as_current_span(
         "system_test.egress.policy_binding.apply", record_exception=False, set_status_on_exception=False
@@ -242,15 +254,15 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
     """Binding at runtime is a live grant, not a restart: one sandbox, refused and then admitted."""
     host, path = await _granted_request(cluster)
     view = await sandbox(f"systest-bind-{harness}")
-    assert view.pod is not None
+    assert view.HasField("pod")
     model = scripted.model(view.pod.name, harness)
     agent = await Agent.open(
-        client, dispatcher, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=offered_model
+        client, dispatcher, sandbox=view.target.name, sandbox_uid=view.target.uid, harness=harness, model=offered_model
     )
     command = f"curl -sS -o /dev/null -w '%{{http_code}}\\n' http://{host}{path}"
 
     await agent.run_shell(model, command)
-    refused = await _decision_for(client, view.name, host)
+    refused = await _decision_for(client, view.target.name, host)
     assert refused.outcome is Outcome.DENY, f"an unbound sandbox was admitted: {refused!r}"
 
     # The app's grant route needs an operator login, which this agent-token suite does not hold, so
@@ -264,7 +276,7 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
             with attempt:
                 after = datetime.now(UTC)
                 turn = await agent.run_shell(model, command)
-                admitted = await _decision_for(client, view.name, host, after=after)
+                admitted = await _decision_for(client, view.target.name, host, after=after)
                 assert admitted.outcome is Outcome.ALLOW, f"{admitted!r}\n{turn.transcript}"
                 assert admitted.policy == runtime_grant.POLICY_SET, f"{admitted!r}"
 

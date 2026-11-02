@@ -1,5 +1,6 @@
 import { ActionIcon, Button, Group, Menu, Stack, Table, Text } from "@mantine/core";
-import type { SandboxView, ThreadView, TraceSearchSettings } from "../schema";
+import type { ThreadView, TraceSearchSettings } from "../schema";
+import type { EnvironmentDescriptor } from "../../../sandboxes/environments/environment_service_pb";
 import { IconDotsVertical } from "../icons";
 import type { JSX } from "react";
 
@@ -40,7 +41,7 @@ export function SandboxThreadsTable({
   onArchive,
 }: {
   threads: ThreadView[];
-  sandbox: SandboxView | null;
+  sandbox: EnvironmentDescriptor | null;
   traceSearch: TraceSearchSettings | null;
   /** Whether the snapshot's Thread states are being kept current. */
   fresh: boolean;

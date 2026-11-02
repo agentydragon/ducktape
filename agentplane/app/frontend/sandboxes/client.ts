@@ -126,6 +126,6 @@ export async function getEnvironmentRuntimeStatus(sandbox: string): Promise<Envi
 }
 
 /** Asks for the Sandbox to run; the watch behind the live streams brings back the change. */
-export async function resumeSandbox(name: string): Promise<void> {
-  ok(await api.POST("/sandboxes/{name}/resume", { params: { path: { name } } }));
+export async function resumeSandbox(name: string, uid: string): Promise<void> {
+  ok(await api.POST("/sandboxes/{name}/resume", { params: { path: { name } }, body: { uid } }));
 }

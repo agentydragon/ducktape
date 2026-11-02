@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import shlex
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from agentplane.app.testing.client import Client
 from agentplane.env.runtime.harness import Harness
@@ -31,8 +31,8 @@ async def fresh_vm_session_workspace_is_created_for_harness_identity(client: Cli
     workspace = f"{WORKSPACE_ROOT}/{session_id}"
     absent, _ = await run_setup(
         client,
-        sandbox_name=view.name,
-        sandbox_uid=view.uid,
+        sandbox_name=view.target.name,
+        sandbox_uid=UUID(view.target.uid),
         session_id=preflight_session_id,
         harness=harness,
         model=model,
@@ -73,8 +73,8 @@ async def fresh_vm_session_workspace_is_created_for_harness_identity(client: Cli
     )
     output, stderr = await run_setup(
         client,
-        sandbox_name=view.name,
-        sandbox_uid=view.uid,
+        sandbox_name=view.target.name,
+        sandbox_uid=UUID(view.target.uid),
         session_id=session_id,
         harness=harness,
         model=model,
@@ -86,9 +86,9 @@ async def fresh_vm_session_workspace_is_created_for_harness_identity(client: Cli
     assert f"git_owner={AGENT_UID}:{AGENT_GID} git_top={workspace}" in output, stderr
 
     evidence = {
-        "namespace": view.namespace,
-        "sandbox": view.name,
-        "sandbox_uid": str(view.uid),
+        "namespace": view.target.namespace,
+        "sandbox": view.target.name,
+        "sandbox_uid": str(view.target.uid),
         "template": VM_TEMPLATE,
         "harness": "codex",
         "harness_uid": AGENT_UID,

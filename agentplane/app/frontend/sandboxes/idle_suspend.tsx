@@ -57,9 +57,9 @@ export function IdleSuspendInput({
     setSaving(true);
     const idleSuspendAfterSeconds = idleSeconds(draft);
     const { error: failure } = await api.PATCH("/sandboxes/{name}/idle-suspend", {
-      params: { path: { name: sandbox.name } },
+      params: { path: { name: sandbox.target!.name } },
       body: {
-        uid: sandbox.uid,
+        uid: sandbox.target!.uid,
         ...(idleSuspendAfterSeconds === null ? {} : { idle_suspend_after_seconds: idleSuspendAfterSeconds }),
       },
     });
@@ -70,7 +70,7 @@ export function IdleSuspendInput({
 
   return (
     <NumberInput
-      aria-label={"Idle suspend minutes for " + sandbox.name}
+      aria-label={"Idle suspend minutes for " + sandbox.target!.name}
       placeholder="Never"
       min={1}
       allowNegative={false}

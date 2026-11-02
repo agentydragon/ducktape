@@ -3,7 +3,6 @@ package main
 import (
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
-	appbridge "github.com/agentydragon/ducktape/agentplane/app/go/bridge"
 )
 
 // appService implements the app-owned browser API in process. The HTTP gateway
@@ -11,7 +10,7 @@ import (
 type appService struct {
 	apppb.UnimplementedAppServiceServer
 	config           Config
-	inventory        appbridge.SandboxGetter
+	environments     sessionEnvironmentReader
 	bridge           sessionOpener
 	runnerStatus     runnerStatusReader
 	threadWriter     threadOpener

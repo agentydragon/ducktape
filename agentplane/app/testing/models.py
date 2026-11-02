@@ -15,7 +15,6 @@ from agentplane.egress.decisions import Decision
 from agentplane.egress.resources import Target
 from agentplane.env.runtime.harness import Harness
 from agentplane.policy_sets import ConditionStatus
-from agentplane.sandbox_resource import AutosuspendBlockerReason, OperatingMode, SuspendedBy
 from agentplane.subjects import ServiceAccountRef
 
 SUBSET_ROW_LIMIT = 200
@@ -34,22 +33,6 @@ class NewSandbox(BaseModel):
     bootstrap: str = Field(default="", max_length=65_536)
     wake_on_send: bool = False
     idle_suspend_after_seconds: int | None = Field(default=None, ge=MIN_IDLE_SUSPEND_AFTER_SECONDS)
-
-
-class SandboxPhase(StrEnum):
-    UNSPECIFIED = "Unspecified"
-    CREATING = "Creating"
-    RUNNING = "Running"
-    SUSPENDING = "Suspending"
-    SUSPENDED = "Suspended"
-    QUIESCING = "Quiescing"
-    TEARING_DOWN = "Tearing down"
-
-
-class SandboxBinding(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    bootstrap: str
 
 
 class CredentialView(BaseModel):
@@ -123,67 +106,6 @@ class BindingView(BaseModel):
     conditions: list[ConditionView]
     policy_sets: list[PolicySetView]
     missing_policy_sets: list[str]
-
-
-class OwnerReferenceView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    api_version: str
-    kind: str
-    name: str
-    uid: str
-    controller: bool
-
-
-class PodView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str
-    namespace: str
-    uid: str
-    deleting: bool
-    owner_references: list[OwnerReferenceView]
-    node_name: str | None = None
-    status: dict[str, object] | None = None
-
-
-class AutosuspendBlocker(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    reason: AutosuspendBlockerReason
-    session_id: str | None
-
-
-class SandboxView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str
-    uid: UUID
-    namespace: str
-    created_at: datetime
-    operating_mode: OperatingMode | None = None
-    status: dict[str, object] | None = None
-    service_account: ServiceAccountRef
-    binding: SandboxBinding | None = None
-    preset: str | None = None
-    wake_on_send: bool = False
-    idle_suspend_after_seconds: int | None = None
-    suspended_by: SuspendedBy | None = None
-    idle_suspend_at: datetime | None = None
-    autosuspend_blockers: list[AutosuspendBlocker] = Field(default_factory=list)
-    phase: SandboxPhase
-    pod: PodView | None = None
-
-
-def sandbox_is_ready(view: SandboxView) -> bool:
-    """Whether the public Sandbox view reports a running incarnation with a Ready condition."""
-    if view.operating_mode is not OperatingMode.RUNNING:
-        return False
-    conditions = (view.status or {}).get("conditions")
-    return isinstance(conditions, list) and any(
-        isinstance(condition, dict) and condition.get("type") == "Ready" and condition.get("status") == "True"
-        for condition in conditions
-    )
 
 
 class ThreadView(BaseModel):

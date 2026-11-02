@@ -17,7 +17,9 @@ from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags, Trace
 
 from agentplane.app.testing import client as client_module
 from agentplane.app.testing.client import Client, SessionStreamError
+from agentplane.app.testing.models import NewSandbox
 from agentplane.proto import event_log_pb2, session_pb2
+from agentplane.sandboxes.environments import environment_service_pb2
 
 # A server answers one connection per call: `(after, writer)`. Raw sockets, because what is under
 # test is how the client reads a connection that dies, which an ASGI transport cannot produce.
@@ -338,8 +340,8 @@ async def test_sandbox_subscription_assembles_proto_snapshot_chunks() -> None:
     async def snapshots(after: int, writer: asyncio.StreamWriter) -> None:
         del after
         body = (
-            b'{"result":{"snapshot":{"sandboxes":[{"name":"one","uid":"u1"}]}}}\n'
-            b'{"result":{"snapshot":{"sandboxes":[{"name":"two","uid":"u2"}]}}}\n'
+            b'{"result":{"snapshot":{"environments":[{"target":{"namespace":"ns","name":"one","uid":"u1"}}]}}}\n'
+            b'{"result":{"snapshot":{"environments":[{"target":{"namespace":"ns","name":"two","uid":"u2"}}]}}}\n'
             b'{"result":{"snapshotComplete":{}}}\n'
         )
         await _respond(writer, "200 OK", body, "application/x-ndjson")
@@ -347,7 +349,7 @@ async def test_sandbox_subscription_assembles_proto_snapshot_chunks() -> None:
     async with _app(snapshots) as (client, _):
         updates = client.sandbox_snapshots()
         snapshot = await anext(updates)
-        assert [(row.name, row.uid) for row in snapshot] == [("one", "u1"), ("two", "u2")]
+        assert [(row.target.name, row.target.uid) for row in snapshot] == [("one", "u1"), ("two", "u2")]
         with pytest.raises(RuntimeError, match="inventory stream ended"):
             await anext(updates)
 
@@ -357,27 +359,32 @@ async def test_sandbox_subscription_applies_upserts_and_uid_fenced_removals() ->
         await _respond(
             writer,
             "200 OK",
-            b'{"result":{"snapshot":{"sandboxes":[{"namespace":"ns","name":"box","uid":"old"}]}}}\n'
+            b'{"result":{"snapshot":{"environments":[{"target":{"namespace":"ns","name":"box","uid":"old"}}]}}}\n'
             b'{"result":{"snapshotComplete":{}}}\n'
-            b'{"result":{"upsert":{"namespace":"ns","name":"box","uid":"new"}}}\n'
+            b'{"result":{"upsert":{"target":{"namespace":"ns","name":"box","uid":"new"}}}}\n'
             b'{"result":{"removed":{"namespace":"ns","name":"box","uid":"old"}}}\n'
-            b'{"result":{"upsert":{"namespace":"ns","name":"other","uid":"u2"}}}\n'
+            b'{"result":{"upsert":{"target":{"namespace":"ns","name":"other","uid":"u2"}}}}\n'
             b'{"result":{"removed":{"namespace":"ns","name":"box","uid":"new"}}}\n',
             "application/x-ndjson",
         )
 
     async with _app(updates) as (client, _):
         stream = client.sandbox_snapshots()
-        assert [(row.name, row.uid) for row in await anext(stream)] == [("box", "old")]
-        assert [(row.name, row.uid) for row in await anext(stream)] == [("box", "new")]
-        assert [(row.name, row.uid) for row in await anext(stream)] == [("box", "new"), ("other", "u2")]
-        assert [(row.name, row.uid) for row in await anext(stream)] == [("other", "u2")]
+        assert [(row.target.name, row.target.uid) for row in await anext(stream)] == [("box", "old")]
+        assert [(row.target.name, row.target.uid) for row in await anext(stream)] == [("box", "new")]
+        assert [(row.target.name, row.target.uid) for row in await anext(stream)] == [("box", "new"), ("other", "u2")]
+        assert [(row.target.name, row.target.uid) for row in await anext(stream)] == [("other", "u2")]
         await stream.aclose()
 
 
 async def test_sandbox_subscription_rejects_an_update_before_initial_snapshot() -> None:
     async def early(_after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(writer, "200 OK", b'{"result":{"upsert":{"name":"too-early"}}}\n', "application/x-ndjson")
+        await _respond(
+            writer,
+            "200 OK",
+            b'{"result":{"upsert":{"target":{"namespace":"ns","name":"too-early","uid":"u"}}}}\n',
+            "application/x-ndjson",
+        )
 
     async with _app(early) as (client, _):
         with pytest.raises(RuntimeError, match="before snapshot completion"):
@@ -398,6 +405,87 @@ async def test_sandbox_subscription_does_not_retry_any_authorization_refusal(sta
         with pytest.raises(httpx.HTTPStatusError):
             await anext(client.sandbox_snapshots())
     assert requests == 1
+
+
+async def test_get_environment_uses_the_exact_generated_route_and_uid_query() -> None:
+    observed: list[str] = []
+
+    async def descriptor(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "200 OK",
+            b'{"target":{"namespace":"test-ns","name":"box","uid":"target-uid"},'
+            b'"operatingMode":"OPERATING_MODE_RUNNING",'
+            b'"readiness":{"state":"READINESS_STATE_READY"}}',
+            "application/json",
+        )
+
+    async with _app(descriptor, requests=observed) as (client, _):
+        target = environment_service_pb2.TargetHandle(namespace="test-ns", name="box", uid="target-uid")
+        environment = await client.get_environment(target)
+
+    assert environment.target == target
+    assert environment.operating_mode == environment_service_pb2.OPERATING_MODE_RUNNING
+    assert environment.readiness.state == environment_service_pb2.READINESS_STATE_READY
+    assert "GET /upstream/environments/v1/environments/test-ns/box?target.uid=target-uid HTTP/1.1" in observed[0]
+
+
+async def test_create_sandbox_captures_the_exact_complete_ack_without_retrying() -> None:
+    observed: list[str] = []
+    uid = uuid4()
+
+    async def created(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "201 Created",
+            json.dumps({"namespace": "test-ns", "name": "box", "uid": str(uid)}).encode(),
+            "application/json",
+        )
+
+    async with _app(created, requests=observed) as (client, _):
+        target = await client.create_sandbox(NewSandbox(name="box", template="test-template"))
+
+    assert target == environment_service_pb2.TargetHandle(namespace="test-ns", name="box", uid=str(uid))
+    assert client.opened_sandbox_uids == {uid}
+    assert len(observed) == 1
+    assert "POST /sandboxes HTTP/1.1" in observed[0]
+
+
+async def test_sandbox_mutations_carry_the_expected_uid() -> None:
+    observed: list[str] = []
+    uid = uuid4()
+
+    async def accepted(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(writer, "204 No Content")
+
+    async with _app(accepted, accepted, accepted, requests=observed) as (client, _):
+        await client.suspend_sandbox("box", uid=uid)
+        await client.resume_sandbox("box", uid=uid)
+        await client.delete_sandbox("box", uid=uid)
+
+    paths_and_methods = [request.split("\r\n", 1)[0] for request in observed]
+    assert paths_and_methods == [
+        "POST /sandboxes/box/suspend HTTP/1.1",
+        "POST /sandboxes/box/resume HTTP/1.1",
+        "DELETE /sandboxes/box HTTP/1.1",
+    ]
+    assert [json.loads(request.split("\r\n\r\n", 1)[1]) for request in observed] == [{"uid": str(uid)}] * 3
+
+
+async def test_environment_target_keeps_the_expected_uid_fence() -> None:
+    async def replacement(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "200 OK",
+            b'{"result":{"snapshot":{"environments":[{"target":{"namespace":"test-ns",'
+            b'"name":"box","uid":"replacement-uid"}}]}}}\n'
+            b'{"result":{"snapshotComplete":{}}}\n',
+            "application/x-ndjson",
+        )
+
+    async with _app(replacement) as (client, _):
+        with pytest.raises(LookupError, match="was replaced"):
+            await client.environment_target("box", expected_uid="expected-uid")
 
 
 if __name__ == "__main__":

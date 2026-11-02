@@ -1,7 +1,9 @@
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
-import type { Sandbox } from "../../../proto/sandboxes_pb";
-import { WatchEnvironmentsResponseSchema } from "../../../sandboxes/environments/environment_service_pb";
+import {
+  WatchEnvironmentsResponseSchema,
+  type EnvironmentDescriptor,
+} from "../../../sandboxes/environments/environment_service_pb";
 import { followWatch } from "../watch_stream";
 import { type StreamConnection } from "../stream_reader";
 import { useStreamStatus } from "../stream_status";
@@ -9,12 +11,12 @@ import { useStreamStatus } from "../stream_status";
 import { type Live, type WatchHealth } from "../live";
 
 import type { ActionPolicyUnavailable, ActionPolicyView } from "../actions/client";
-import type { SandboxView, ThreadView } from "../schema";
+import type { ThreadView } from "../schema";
 import type { BindingView, Decision } from "./client";
 
-export type SandboxesSnapshot = { sandboxes: Sandbox[]; watch: WatchHealth };
+export type SandboxesSnapshot = { sandboxes: EnvironmentDescriptor[]; watch: WatchHealth };
 export type SandboxSnapshot = {
-  sandbox: SandboxView | null;
+  sandbox_uid: string | null;
   bindings: BindingView[];
   action_policy: ActionPolicyView | ActionPolicyUnavailable | null;
   threads: ThreadView[] | { kind: "unavailable"; code: string };
@@ -44,11 +46,11 @@ export function SandboxesLiveProvider({ children }: { children: ReactNode }): JS
   const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
   useEffect(() => {
     const key = (namespace: string, name: string): string => `${namespace}\0${name}`;
-    let pending: Map<string, Sandbox> | null = new Map();
-    let current = new Map<string, Sandbox>();
+    let pending: Map<string, EnvironmentDescriptor> | null = new Map();
+    let current = new Map<string, EnvironmentDescriptor>();
     const publish = (): void => {
       const sandboxes = Array.from(current.values()).sort(
-        (a, b) => a.namespace.localeCompare(b.namespace) || a.name.localeCompare(b.name)
+        (a, b) => a.target!.namespace.localeCompare(b.target!.namespace) || a.target!.name.localeCompare(b.target!.name)
       );
       setSnapshot({ sandboxes, watch: { healthy: true, failing: {} } });
     };
@@ -62,8 +64,12 @@ export function SandboxesLiveProvider({ children }: { children: ReactNode }): JS
         switch (frame.frame.case) {
           case "snapshot":
             if (pending === null) throw new Error("Unexpected inventory snapshot chunk");
-            for (const sandbox of frame.frame.value.sandboxes)
-              pending.set(key(sandbox.namespace, sandbox.name), sandbox);
+            for (const sandbox of frame.frame.value.environments) {
+              const target = sandbox.target;
+              if (!target?.namespace || !target.name || !target.uid)
+                throw new Error("Environment missing target identity");
+              pending.set(key(target.namespace, target.name), sandbox);
+            }
             break;
           case "snapshotComplete":
             if (pending === null) throw new Error("Unexpected inventory snapshot completion");
@@ -75,7 +81,10 @@ export function SandboxesLiveProvider({ children }: { children: ReactNode }): JS
           case "upsert": {
             if (pending !== null) throw new Error("Inventory update before snapshot completion");
             const sandbox = frame.frame.value;
-            current.set(key(sandbox.namespace, sandbox.name), sandbox);
+            const target = sandbox.target;
+            if (!target?.namespace || !target.name || !target.uid)
+              throw new Error("Environment missing target identity");
+            current.set(key(target.namespace, target.name), sandbox);
             publish();
             break;
           }
@@ -83,7 +92,7 @@ export function SandboxesLiveProvider({ children }: { children: ReactNode }): JS
             if (pending !== null) throw new Error("Inventory removal before snapshot completion");
             const removed = frame.frame.value;
             const itemKey = key(removed.namespace, removed.name);
-            if (current.get(itemKey)?.uid === removed.uid) {
+            if (current.get(itemKey)?.target?.uid === removed.uid) {
               current.delete(itemKey);
               publish();
             }

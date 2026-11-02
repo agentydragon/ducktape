@@ -422,7 +422,6 @@ flowchart TD
     PLATFORM_GUIDANCE_OWNERSHIP_DESIGN[Later decision: platform-guidance ownership and composition]
     PLATFORM_GUIDANCE_SINGLE_OWNER[Later refactor: one platform-guidance owner]
     PLATFORM_GUIDANCE_OWNERSHIP_DESIGN --> PLATFORM_GUIDANCE_SINGLE_OWNER
-    APP_ENVIRONMENT_DISCOVERY[Later: app inventory through backend Discovery]
     SESSION_TOOL_SURFACE_CONVERGENCE_DESIGN[Later decision: compare Agentplane tool surfaces]
     ACTION_PROTO_CONTRACT_DESIGN[Later decision: protobuf wrapper Actions and generated schemas]
     ENVIRONMENT_SHARED_ACCOUNT[Deferred: shared-SA environment identity]
@@ -573,22 +572,6 @@ Preserve frozen instructions for existing Sessions, additive caller instructions
 base prompts. Exit with both native and central workflows using the common owner and the redundant
 ownership removed. Owner placement and distribution remain design choices; this item does not
 require a new service and does not block current reliability or delegation work.
-
-### `APP_ENVIRONMENT_DISCOVERY` — use backend Discovery for the integration app
-
-**In progress, 2026-11-02 13:19 UTC: collection watch in #13864 and app/frontend cutover in #13878.**
-Replace the app's duplicated environment inventory/configuration composition with backend
-Discovery used by CLI/MCP. The proposed collection watch grants an explicit broad reader access
-without broadening ordinary callers; it does not by itself replace app list/get, detail streams,
-or their other consumers. Reconcile the collection's Sandbox protobuf with the existing
-`EnvironmentDescriptor` list/get contract, including operator diagnostics and exact-UID reads,
-before migrating each caller. Preserve caller authorization and test the backend without the app.
-
-The [eventual app/backend boundary](environment_app_backend_boundary.md) describes the remaining
-responsibilities in `app/go/sandboxes` and their separate ownership decisions. Those decisions do
-not gate completion of the Discovery cutover. Its [frontend Sandbox view TODO](environment_app_backend_boundary.md#todo-remove-the-redundant-frontend-sandbox-view)
-tracks reconciling the overlapping inventory representations and migrating any remaining consumers
-to generated contracts.
 
 ### `SESSION_TOOL_SURFACE_CONVERGENCE_DESIGN` — review a common Agentplane tool surface
 

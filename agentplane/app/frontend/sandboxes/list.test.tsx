@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
-import type { NewSandboxDefaults, SandboxView } from "../schema";
+import type { NewSandboxDefaults } from "../schema";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
@@ -16,10 +16,15 @@ import { sandboxSummary } from "../sandbox_status";
 import { clone, create, toJson } from "@bufbuild/protobuf";
 import { DurationSchema } from "@bufbuild/protobuf/wkt";
 import { testSandbox } from "../testing/sandbox";
-import { SandboxPhase, SandboxSchema, type Sandbox } from "../../../proto/sandboxes_pb";
+import { SandboxPhase } from "../../../proto/sandboxes_pb";
+import {
+  EnvironmentDescriptorSchema,
+  OperatingMode,
+  type EnvironmentDescriptor,
+} from "../../../sandboxes/environments/environment_service_pb";
 import { serveEventStreams } from "../testing/watch";
 
-const liveSandboxData = vi.hoisted(() => ({ snapshot: null as { sandboxes: Sandbox[] } | null }));
+const liveSandboxData = vi.hoisted(() => ({ snapshot: null as { sandboxes: EnvironmentDescriptor[] } | null }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
@@ -33,27 +38,13 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-const CREATED: SandboxView = {
+const CREATED = {
+  namespace: "agentplane-test",
   name: "test-created-sandbox",
   uid: "00000000-0000-4000-8000-000000000001",
-  namespace: "agentplane-test",
-  created_at: "2026-01-01T00:00:00Z",
-  operating_mode: "Running",
-  service_account: { namespace: "agentplane-test", name: "test-created-sandbox" },
-  binding: null,
-  status: {},
-  phase: "Creating",
-  pod: null,
-  wake_on_send: false,
-  idle_suspend_after_seconds: null,
-  preset: null,
-  idle_suspend_at: null,
-  autosuspend_blockers: [],
-  suspended_by: null,
 };
-
 const CREATED_INVENTORY = testSandbox(CREATED.name, CREATED.uid);
-CREATED_INVENTORY.operatingMode = "Running";
+CREATED_INVENTORY.operatingMode = OperatingMode.RUNNING;
 CREATED_INVENTORY.phase = SandboxPhase.CREATING;
 
 // What the app serves when its configuration leaves the new-Sandbox defaults unset.
@@ -64,7 +55,11 @@ async function render(newSandboxDefaults: NewSandboxDefaults = UNSET_DEFAULTS) {
     (stream) => {
       if (liveSandboxData.snapshot !== null) {
         stream.send({
-          snapshot: { sandboxes: liveSandboxData.snapshot.sandboxes.map((sandbox) => toJson(SandboxSchema, sandbox)) },
+          snapshot: {
+            environments: liveSandboxData.snapshot.sandboxes.map((sandbox) =>
+              toJson(EnvironmentDescriptorSchema, sandbox)
+            ),
+          },
         });
         stream.send({ snapshotComplete: {} });
       }
@@ -235,13 +230,19 @@ it("keeps the creation form and reports rejection without navigating", async () 
 });
 
 it("lets a suspended sandbox be deleted", () => {
-  const suspended: SandboxView = { ...CREATED, operating_mode: "Suspended", phase: "Suspended" };
+  const suspended = Object.assign(clone(EnvironmentDescriptorSchema, CREATED_INVENTORY), {
+    operatingMode: OperatingMode.SUSPENDED,
+    phase: SandboxPhase.SUSPENDED,
+  });
   expect(sandboxSummary(suspended)).toEqual({ label: "Suspended", kind: "suspended" });
   expect(deletable(suspended)).toBe(true);
 });
 
 it("keeps lifecycle actions unavailable until the controller reports a mode", async () => {
-  const unknown: SandboxView = { ...CREATED, operating_mode: null, phase: "Unspecified" };
+  const unknown = Object.assign(clone(EnvironmentDescriptorSchema, CREATED_INVENTORY), {
+    operatingMode: OperatingMode.UNSPECIFIED,
+    phase: SandboxPhase.UNSPECIFIED,
+  });
   const onAct = vi.fn();
   const container = document.createElement("div");
   document.body.append(container);
@@ -315,7 +316,7 @@ it("starts a new Sandbox with the app's wake and idle suspension defaults whatev
 
 it("shows existing wake policy and updates the displayed Sandbox incarnation", async () => {
   liveSandboxData.snapshot = {
-    sandboxes: [Object.assign(clone(SandboxSchema, CREATED_INVENTORY), { wakeOnSend: true })],
+    sandboxes: [Object.assign(clone(EnvironmentDescriptorSchema, CREATED_INVENTORY), { wakeOnSend: true })],
   };
   const { container } = await render();
   const checkbox = container.querySelector<HTMLInputElement>(
@@ -339,7 +340,7 @@ it("shows existing wake policy and updates the displayed Sandbox incarnation", a
 
 it("clears the pending wake policy when the request fails at the transport", async () => {
   liveSandboxData.snapshot = {
-    sandboxes: [Object.assign(clone(SandboxSchema, CREATED_INVENTORY), { wakeOnSend: false })],
+    sandboxes: [Object.assign(clone(EnvironmentDescriptorSchema, CREATED_INVENTORY), { wakeOnSend: false })],
   };
   const { container } = await render();
   const checkbox = container.querySelector<HTMLInputElement>(
@@ -395,7 +396,7 @@ async function press(element: HTMLElement, key: string): Promise<void> {
 it("shows a Sandbox's idle suspension time and saves an edit to the incarnation shown", async () => {
   liveSandboxData.snapshot = {
     sandboxes: [
-      Object.assign(clone(SandboxSchema, CREATED_INVENTORY), {
+      Object.assign(clone(EnvironmentDescriptorSchema, CREATED_INVENTORY), {
         idleSuspendAfter: create(DurationSchema, { seconds: 1800n }),
       }),
     ],
@@ -419,7 +420,7 @@ it("shows a Sandbox's idle suspension time and saves an edit to the incarnation 
 it("turns idle suspension off when the time is cleared", async () => {
   liveSandboxData.snapshot = {
     sandboxes: [
-      Object.assign(clone(SandboxSchema, CREATED_INVENTORY), {
+      Object.assign(clone(EnvironmentDescriptorSchema, CREATED_INVENTORY), {
         idleSuspendAfter: create(DurationSchema, { seconds: 1800n }),
       }),
     ],
@@ -442,7 +443,7 @@ it("turns idle suspension off when the time is cleared", async () => {
 it("puts back the stored idle suspension time and reports a refused edit", async () => {
   liveSandboxData.snapshot = {
     sandboxes: [
-      Object.assign(clone(SandboxSchema, CREATED_INVENTORY), {
+      Object.assign(clone(EnvironmentDescriptorSchema, CREATED_INVENTORY), {
         idleSuspendAfter: create(DurationSchema, { seconds: 1800n }),
       }),
     ],

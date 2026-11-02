@@ -1,5 +1,5 @@
 import { toJson } from "@bufbuild/protobuf";
-import { SandboxSchema } from "../../../proto/sandboxes_pb";
+import { EnvironmentDescriptorSchema } from "../../../sandboxes/environments/environment_service_pb";
 import { readySandbox } from "../testing/sandbox";
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
@@ -38,7 +38,7 @@ SANDBOX.pod = undefined;
 
 function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "name">): ThreadView {
   return {
-    sandbox: SANDBOX.name,
+    sandbox: SANDBOX.target!.name,
     harness: "HARNESS_CLAUDE",
     model: "test-model",
     cwd: "/work",
@@ -78,7 +78,7 @@ async function render(): Promise<string[]> {
         return;
       }
       if (pathname === "/upstream/environments/v1/environments:watch") {
-        stream.send({ snapshot: { sandboxes: [toJson(SandboxSchema, SANDBOX)] } });
+        stream.send({ snapshot: { environments: [toJson(EnvironmentDescriptorSchema, SANDBOX)] } });
         stream.send({ snapshotComplete: {} });
         return;
       }

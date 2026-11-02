@@ -18,11 +18,18 @@ execution ServiceAccount has that exact identity; explicitly configured direct r
 not establish access. A target handle is the Sandbox namespace, name, and UID; get returns
 `NOT_FOUND` for an absent or replaced target, and for a deleting or foreign target for ordinary callers.
 
+`EnvironmentDescriptor` is the canonical service projection: it carries the caller-facing inventory
+facts plus Sandbox creation time, binding, raw status, phase, preset, autosuspend policy/blockers,
+and the current Pod projection. It reuses the existing Kubernetes submessages and does not nest a
+second Sandbox message. `ListEnvironments`, `GetEnvironment`, and both watches return this same
+projection.
+
 `GetEnvironment` returns the current descriptor immediately. `WatchEnvironment` accepts the same
 exact target and sends a current descriptor followed by changed snapshots. It observes Kubernetes
 state even while the target is suspended, with no connection to its Runtime. Each snapshot repeats
-the live target and execution-account checks. Metadata changes and observation timestamps alone
-do not emit duplicate snapshots.
+the live target and execution-account checks and observes Sandbox, ServiceAccount, and Pod changes.
+The Pod is included only when its name, namespace, and UID match the reported incarnation. Metadata
+changes and observation timestamps alone do not emit duplicate snapshots.
 
 The watch is a current-state subscription: intermediate states may be coalesced, and reconnection
 starts with a fresh snapshot. Target deletion/replacement or loss of access ends it with `NOT_FOUND`;
@@ -72,8 +79,10 @@ boundary, this path is guidance on the mounted workspace volume; the Runner's ex
 remain authoritative. The target's workspace volume is shared by its Sessions; a distinct cwd is
 workflow organization, not isolation.
 
-`WatchEnvironments` sends an initial caller-visible inventory in bounded chunks and a completion
-marker, followed by per-Sandbox upserts and UID-fenced removals. Reconnection starts a new snapshot;
+`WatchEnvironments` sends an initial caller-visible inventory of complete EnvironmentDescriptors in
+bounded `EnvironmentChunk.environments` chunks and a completion marker, followed by descriptor
+upserts and UID-fenced removals. Sandbox, execution-account, and relevant Pod changes update the
+projection; changes to observation timestamps alone do not emit an update. Reconnection starts a new snapshot;
 intermediate changes may be coalesced. Direct ServiceAccounts named by the Gateway's
 `environment_readers` setting can read all Sandboxes; the grant does not authorize writes and is
 not inherited by delegated callers. Ordinary callers remain restricted to their exact owned Sandbox.

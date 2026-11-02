@@ -178,6 +178,16 @@ func run(ctx context.Context, config Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Session Dispatcher: %w", err)
 	}
+	environmentConn, err := bearer.Dial(config.SessionDispatcherTarget, config.SessionDispatcherTokenFile,
+		time.Duration(config.SessionDispatcherRequestTimeoutSecs*float64(time.Second)))
+	if err != nil {
+		return fmt.Errorf("configure Environment Service client: %w", err)
+	}
+	defer environmentConn.Close()
+	environments, err := sandboxes.NewEnvironmentReader(config.SandboxNamespace, environmentpb.NewEnvironmentServiceClient(environmentConn))
+	if err != nil {
+		return fmt.Errorf("configure Environment Service reader: %w", err)
+	}
 	environmentClient, err := bridge.NewEnvironmentClient(bridge.EnvironmentConfig{
 		Target: config.SessionDispatcherTarget, TokenFile: config.SessionDispatcherTokenFile,
 		Timeout: time.Duration(config.SessionDispatcherRequestTimeoutSecs * float64(time.Second)),
@@ -185,7 +195,7 @@ func run(ctx context.Context, config Config) error {
 	if err != nil {
 		return fmt.Errorf("configure EnvironmentService: %w", err)
 	}
-	appBridge, err := bridge.New(inventory, runner, dispatcher)
+	appBridge, err := bridge.New(environments, runner, dispatcher)
 	if err != nil {
 		return fmt.Errorf("configure Runner bridge: %w", err)
 	}
@@ -328,7 +338,7 @@ func run(ctx context.Context, config Config) error {
 
 	server := NewHTTPServer(appAuth)
 	app := &appService{
-		config: config, inventory: inventory, bridge: appBridge, runnerStatus: appBridge,
+		config: config, environments: environments, bridge: appBridge, runnerStatus: appBridge,
 		threadWriter: threadStore, threadReader: threadStore,
 		updates: wakeupHub, updatesConnected: wakeupHub.Connected, drainDone: server.DrainDone(),
 	}
@@ -339,7 +349,7 @@ func run(ctx context.Context, config Config) error {
 		return fmt.Errorf("register core routes: %w", err)
 	}
 	RegisterSandboxRoutes(server, config, inventory, environmentClient)
-	RegisterPolicyRoutes(server, config, inventory, policies)
+	RegisterPolicyRoutes(server, config, environments, policies)
 	if err := RegisterSessionRoutes(server, app); err != nil {
 		return fmt.Errorf("register Session opening facade: %w", err)
 	}
@@ -349,7 +359,7 @@ func run(ctx context.Context, config Config) error {
 	if err := registerThreadMetadataGateway(server, app); err != nil {
 		return fmt.Errorf("register Thread metadata facade: %w", err)
 	}
-	if err := RegisterThreadReadRoutes(server, threadStore, history, inventory, appBridge); err != nil {
+	if err := RegisterThreadReadRoutes(server, threadStore, history, environments, appBridge); err != nil {
 		return fmt.Errorf("register Thread routes: %w", err)
 	}
 	RegisterOperatorRoutes(server, policies, federator, actionClient, actionCallbackHTTP, config.ActionFederation.ServiceURL)
@@ -357,7 +367,7 @@ func run(ctx context.Context, config Config) error {
 	server.RegisterRawRoute("POST /telemetry/v1/traces", traceRelayHandler(), true)
 	RegisterStreamingRoutes(server, StreamingDependencies{
 		Auth: appAuth, Updates: wakeupHub, UpdatesConnected: wakeupHub.Connected,
-		Live: liveIndex, Sandboxes: inventory, Threads: threadStore, History: history, HistoryFollower: historyReaderClient,
+		Live: liveIndex, Sandboxes: environments, Threads: threadStore, History: history, HistoryFollower: historyReaderClient,
 		ActionPolicy: actionClient, Federator: federator,
 		ActionServiceURL: config.ActionFederation.ServiceURL,
 		DispatcherHTTP:   dispatcherGateway, ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,

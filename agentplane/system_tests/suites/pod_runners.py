@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from agentplane.app.testing.client import Client
-from agentplane.app.testing.models import SandboxView
 from agentplane.proto import session_pb2
+from agentplane.sandboxes.environments import environment_service_pb2
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.scenario import open_resources
 from agentplane.system_tests.tracing import tracer
@@ -19,10 +19,10 @@ from agentplane.system_tests.tracing import tracer
 
 @dataclass(frozen=True)
 class Pair:
-    claude: SandboxView
-    codex: SandboxView
+    claude: environment_service_pb2.EnvironmentDescriptor
+    codex: environment_service_pb2.EnvironmentDescriptor
 
-    def for_harness(self, harness: session_pb2.Harness) -> SandboxView:
+    def for_harness(self, harness: session_pb2.Harness) -> environment_service_pb2.EnvironmentDescriptor:
         match harness:
             case session_pb2.HARNESS_CLAUDE:
                 return self.claude
@@ -42,11 +42,11 @@ class _Slot:
 
     async def verify_identity(self) -> None:
         for previous in (self.pair.claude, self.pair.codex):
-            current = await self.client.sandbox(previous.name)
-            assert current.uid == previous.uid
-            assert current.pod is not None
-            assert previous.pod is not None
-            assert current.pod.uid == previous.pod.uid, f"shared runner was replaced: {previous.name}"
+            current = await self.client.get_environment(previous.target)
+            assert current.target.uid == previous.target.uid
+            assert current.HasField("pod")
+            assert previous.HasField("pod")
+            assert current.pod.uid == previous.pod.uid, f"shared runner was replaced: {previous.target.name}"
 
 
 @asynccontextmanager

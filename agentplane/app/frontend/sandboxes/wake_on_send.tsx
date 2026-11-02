@@ -32,8 +32,8 @@ export function WakeOnSendCheckbox({
     setSaving(true);
     const failure = await api
       .PATCH("/sandboxes/{name}/wake-policy", {
-        params: { path: { name: sandbox.name } },
-        body: { uid: sandbox.uid, wake_on_send: wakeOnSend },
+        params: { path: { name: sandbox.target!.name } },
+        body: { uid: sandbox.target!.uid, wake_on_send: wakeOnSend },
       })
       .then(
         ({ error }) => error,
@@ -47,7 +47,7 @@ export function WakeOnSendCheckbox({
   return (
     <Checkbox
       label={label}
-      aria-label={"Wake on message for " + sandbox.name}
+      aria-label={"Wake on message for " + sandbox.target!.name}
       checked={requested ?? stored}
       disabled={disabled || saving}
       onChange={(event) => void save(event.currentTarget.checked)}

@@ -14,6 +14,7 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -150,13 +151,17 @@ func (a *Access) listPolicySnapshot(
 // independent bindings so each expiry and later revocation belongs to its own grant.
 func (a *Access) Grant(
 	ctx context.Context,
-	sandbox *sandboxespb.Sandbox,
+	sandbox *environmentpb.EnvironmentDescriptor,
 	policySets []string,
 	expiresAt *metav1.Time,
 ) (*BindingView, error) {
-	if sandbox == nil || sandbox.GetName() == "" || sandbox.GetUid() == "" ||
-		sandbox.GetServiceAccount() == nil || sandbox.GetServiceAccount().GetNamespace() == "" ||
-		sandbox.GetServiceAccount().GetName() == "" {
+	var target *environmentpb.TargetHandle
+	var account *environmentpb.AccountHandle
+	if sandbox != nil {
+		target, account = sandbox.GetTarget(), sandbox.GetExecutionAccount()
+	}
+	if target == nil || target.GetNamespace() != a.namespace || target.GetName() == "" || target.GetUid() == "" ||
+		account == nil || account.GetNamespace() == "" || account.GetName() == "" {
 		return nil, errors.New("Sandbox name, UID, and ServiceAccount are required")
 	}
 	if err := a.requireKnownPolicySets(ctx, policySets); err != nil {
@@ -167,16 +172,16 @@ func (a *Access) Grant(
 	binding := &policyapi.PolicyBinding{
 		TypeMeta: metav1.TypeMeta{APIVersion: policyapi.SchemeGroupVersion.String(), Kind: "PolicyBinding"},
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: a.namespace, GenerateName: sandbox.GetName() + "-",
+			Namespace: a.namespace, GenerateName: target.GetName() + "-",
 			OwnerReferences: []metav1.OwnerReference{{
 				APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind,
-				Name: sandbox.GetName(), UID: types.UID(sandbox.GetUid()),
+				Name: target.GetName(), UID: types.UID(target.GetUid()),
 				Controller: &controller, BlockOwnerDeletion: &blockOwnerDeletion,
 			}},
 		},
 		Spec: policyapi.PolicyBindingSpec{
 			Subject: policyapi.ServiceAccountRef{
-				Namespace: sandbox.GetServiceAccount().GetNamespace(), Name: sandbox.GetServiceAccount().GetName(),
+				Namespace: account.GetNamespace(), Name: account.GetName(),
 			},
 			PolicySets: append([]string(nil), policySets...), ExpiresAt: expiresAt,
 		},
@@ -184,7 +189,7 @@ func (a *Access) Grant(
 	if err := a.objects.Create(ctx, binding); err != nil {
 		return nil, err
 	}
-	views, err := a.BindingsFor(ctx, sandbox.GetServiceAccount())
+	views, err := a.BindingsFor(ctx, &sandboxespb.ServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()})
 	if err != nil {
 		return nil, err
 	}

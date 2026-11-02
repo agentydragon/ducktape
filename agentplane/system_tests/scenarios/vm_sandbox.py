@@ -9,6 +9,7 @@ import shutil
 import sys
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel
@@ -174,7 +175,7 @@ async def vm_sandbox_turn(
     template: str,
 ) -> None:
     view = await sandbox(f"systest-vm-{harness}", template=template)
-    assert view.pod is not None
+    assert view.HasField("pod")
     identity = await runner_credentials.check_vm_runner_certificate(cluster, view)
     if template == SUPERVISION_TEMPLATE:
         async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.1), reraise=True):
@@ -183,15 +184,18 @@ async def vm_sandbox_turn(
                 assert systemd_supervision_passed(view.pod.uid), "Missing this VM's supervisor check receipt"
     model = scripted.model(view.pod.name, harness)
     with tracer.start_as_current_span(
-        "system_test.session.open", attributes={"harness": session_pb2.Harness.Name(harness), "sandbox.name": view.name}
+        "system_test.session.open",
+        attributes={"harness": session_pb2.Harness.Name(harness), "sandbox.name": view.target.name},
     ):
-        agent = await session_setup_is_supervised(client, dispatcher, view.name, view.uid, harness, offered_model)
+        agent = await session_setup_is_supervised(
+            client, dispatcher, view.target.name, UUID(view.target.uid), harness, offered_model
+        )
     with tracer.start_as_current_span("system_test.turn"):
         turn, _, _ = await scripted_turn_with_admission_and_history(
             client,
             agent,
             model=model,
-            command_id=f"vm-{view.uid}",
+            command_id=f"vm-{view.target.uid}",
             prompt=PING,
             shell_command=VM_SUPERVISION_PROBE,
             shell_call_id="vm-supervision",
@@ -247,19 +251,19 @@ async def codex_tool_oom(
     native_profile: bool,
 ) -> None:
     view = await sandbox("systest-vm-codex-oom", template=OOM_TEMPLATE)
-    assert view.pod is not None
+    assert view.HasField("pod")
     model = scripted.model(view.pod.name, session_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)
     evidence: dict[str, Any] = {}
     try:
         with tracer.start_as_current_span(
-            "system_test.session.open", attributes={"harness": "HARNESS_CODEX", "sandbox.name": view.name}
+            "system_test.session.open", attributes={"harness": "HARNESS_CODEX", "sandbox.name": view.target.name}
         ):
             agent = await Agent.open(
                 client,
                 dispatcher,
-                sandbox=view.name,
-                sandbox_uid=view.uid,
+                sandbox=view.target.name,
+                sandbox_uid=view.target.uid,
                 harness=session_pb2.HARNESS_CODEX,
                 model=offered_model,
                 cwd=VM_WORKING_DIRECTORY,
@@ -273,7 +277,7 @@ async def codex_tool_oom(
             _assert_native_service_cgroup(before.cgroup, "agentplane-executors.slice")
             assert before.max > 0
             assert before.swap_max == before.oom_group == before.oom_group_kill == 0
-            original = await client.runner_status(view.name)
+            original = await client.runner_status(view.target.name)
             evidence["runner_before"] = MessageToDict(
                 original, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
             )
@@ -302,7 +306,7 @@ async def codex_tool_oom(
             assert execution.exit_code == 137
 
             # Inspect the Runner before a follow-up could lazily start a replacement harness.
-            survived = await client.runner_status(view.name)
+            survived = await client.runner_status(view.target.name)
             evidence["runner_after_oom"] = MessageToDict(
                 survived, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
             )
@@ -335,22 +339,24 @@ async def codex_tool_oom(
             )
             assert execution.status is wire.CommandExecutionStatus.COMPLETED
             assert execution.exit_code == 0
-            final = await client.runner_status(view.name)
+            final = await client.runner_status(view.target.name)
             evidence["runner_after_followup"] = MessageToDict(
                 final, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
             )
             assert final.environment_runtime_boot_id == original.environment_runtime_boot_id
             assert list(final.processes) == list(original.processes)
             assert final.sessions[0].native_session_id == session.native_session_id
-            current = await client.sandbox(view.name)
-            assert current.pod is not None
+            current = await client.get_environment(view.target)
+            assert current.HasField("pod")
             assert current.pod.uid == view.pod.uid
             evidence["passed"] = True
     finally:
         scenario_failed = sys.exc_info()[0] is not None
         try:
             if native_profile:
-                evidence["native_profile"] = str(await _capture_native_profile(cluster, view.name, str(view.uid)))
+                evidence["native_profile"] = str(
+                    await _capture_native_profile(cluster, view.target.name, str(view.target.uid))
+                )
         except Exception as error:
             evidence["native_profile_error"] = repr(error)
             if not scenario_failed:

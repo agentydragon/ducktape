@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import { toJson } from "@bufbuild/protobuf";
+import { EnvironmentDescriptorSchema } from "../../../sandboxes/environments/environment_service_pb";
+import { testSandbox } from "../testing/sandbox";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -17,7 +20,9 @@ function Inventory() {
   const { snapshot } = useRequiredSandboxesLive();
   return (
     <span>
-      {snapshot === null ? "waiting" : snapshot.sandboxes.map((sandbox) => `${sandbox.name}:${sandbox.uid}`).join(",")}
+      {snapshot === null
+        ? "waiting"
+        : snapshot.sandboxes.map((sandbox) => `${sandbox.target!.name}:${sandbox.target!.uid}`).join(",")}
     </span>
   );
 }
@@ -42,7 +47,7 @@ it("publishes a complete snapshot then applies upserts and UID-fenced removals",
   );
   expect(container.textContent).toBe("waiting");
   await act(async () => {
-    watch?.send({ snapshot: { sandboxes: [{ name: "box", uid: "old" }] } });
+    watch?.send({ snapshot: { environments: [toJson(EnvironmentDescriptorSchema, testSandbox("box", "old"))] } });
   });
   expect(container.textContent).toBe("waiting");
   await act(async () => {
@@ -50,19 +55,19 @@ it("publishes a complete snapshot then applies upserts and UID-fenced removals",
   });
   expect(container.textContent).toBe("box:old");
   await act(async () => {
-    watch?.send({ upsert: { name: "box", uid: "new" } });
+    watch?.send({ upsert: toJson(EnvironmentDescriptorSchema, testSandbox("box", "new")) });
   });
   expect(container.textContent).toBe("box:new");
   await act(async () => {
-    watch?.send({ removed: { name: "box", uid: "old" } });
+    watch?.send({ removed: { namespace: "agentplane-test", name: "box", uid: "old" } });
   });
   expect(container.textContent).toBe("box:new");
   await act(async () => {
-    watch?.send({ upsert: { name: "second", uid: "u2" } });
+    watch?.send({ upsert: toJson(EnvironmentDescriptorSchema, testSandbox("second", "u2")) });
   });
   expect(container.textContent).toBe("box:new,second:u2");
   await act(async () => {
-    watch?.send({ removed: { name: "box", uid: "new" } });
+    watch?.send({ removed: { namespace: "agentplane-test", name: "box", uid: "new" } });
   });
   expect(container.textContent).toBe("second:u2");
   await act(async () => root.unmount());
@@ -88,7 +93,7 @@ it("retains the previous inventory until a reconnect snapshot is complete", asyn
     )
   );
   await act(async () => {
-    watches[0]?.send({ snapshot: { sandboxes: [{ name: "old", uid: "u1" }] } });
+    watches[0]?.send({ snapshot: { environments: [toJson(EnvironmentDescriptorSchema, testSandbox("old", "u1"))] } });
     watches[0]?.send({ snapshotComplete: {} });
   });
   expect(container.textContent).toBe("old:u1");
@@ -100,7 +105,7 @@ it("retains the previous inventory until a reconnect snapshot is complete", asyn
   });
   expect(watches).toHaveLength(2);
   await act(async () => {
-    watches[1]?.send({ snapshot: { sandboxes: [{ name: "new", uid: "u2" }] } });
+    watches[1]?.send({ snapshot: { environments: [toJson(EnvironmentDescriptorSchema, testSandbox("new", "u2"))] } });
   });
   expect(container.textContent).toBe("old:u1");
   await act(async () => {

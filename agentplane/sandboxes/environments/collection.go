@@ -7,10 +7,9 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
-	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
-	sandboxview "github.com/agentydragon/ducktape/agentplane/sandboxes/view"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -20,7 +19,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -35,7 +33,7 @@ const (
 	podSource
 )
 
-// WatchEnvironments sends one initial snapshot followed by coalesced per-Sandbox changes.
+// WatchEnvironments sends one initial snapshot followed by coalesced descriptor changes.
 func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamingServer[environmentpb.WatchEnvironmentsResponse]) error {
 	ctx := stream.Context()
 	identity, err := caller(ctx)
@@ -56,15 +54,12 @@ func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamin
 		return err
 	}
 	defer sandboxes.Stop()
-	var accountEvents <-chan watch.Event
-	if !broad {
-		accounts, err := s.watchCollection(ctx, &corev1.ServiceAccountList{}, target)
-		if err != nil {
-			return err
-		}
-		defer accounts.Stop()
-		accountEvents = accounts.ResultChan()
+	accounts, err := s.watchCollection(ctx, &corev1.ServiceAccountList{}, target)
+	if err != nil {
+		return err
 	}
+	defer accounts.Stop()
+	accountEvents := accounts.ResultChan()
 	// A VM Pod may not have the Sandbox's name. Index each current incarnation by Pod name.
 	pods, err := s.watchCollection(ctx, &corev1.PodList{}, &environmentpb.TargetHandle{Namespace: s.namespace})
 	if err != nil {
@@ -99,13 +94,13 @@ func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamin
 	if err != nil {
 		return err
 	}
-	previous := make(map[string]*sandboxpb.Sandbox, len(current))
+	previous := make(map[string]*environmentpb.EnvironmentDescriptor, len(current))
 	for _, item := range current {
-		previous[item.Name] = item
+		previous[item.GetTarget().GetName()] = item
 	}
 	for start := 0; start < len(current); start += collectionChunk {
 		end := min(start+collectionChunk, len(current))
-		if err := sendCollection(ctx, stream, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_Snapshot{Snapshot: &environmentpb.SandboxChunk{Sandboxes: current[start:end]}}}); err != nil {
+		if err := sendCollection(ctx, stream, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_Snapshot{Snapshot: &environmentpb.EnvironmentChunk{Environments: current[start:end]}}}); err != nil {
 			return err
 		}
 	}
@@ -122,14 +117,14 @@ func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamin
 		}
 		index(name, podName)
 		old := previous[name]
-		if old != nil && (item == nil || old.Uid != item.Uid) {
-			if err := sendCollection(ctx, stream, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_Removed{Removed: &environmentpb.TargetHandle{Namespace: old.Namespace, Name: old.Name, Uid: old.Uid}}}); err != nil {
+		if old != nil && (item == nil || old.GetTarget().GetUid() != item.GetTarget().GetUid()) {
+			if err := sendCollection(ctx, stream, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_Removed{Removed: proto.Clone(old.GetTarget()).(*environmentpb.TargetHandle)}}); err != nil {
 				return err
 			}
 			delete(previous, name)
 			old = nil
 		}
-		if item != nil && !proto.Equal(old, item) {
+		if item != nil && !environmentDescriptorsEqual(old, item) {
 			if err := sendCollection(ctx, stream, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_Upsert{Upsert: item}}); err != nil {
 				return err
 			}
@@ -186,6 +181,17 @@ func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamin
 	}
 }
 
+func environmentDescriptorsEqual(left, right *environmentpb.EnvironmentDescriptor) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	leftWithoutObservedAt := proto.Clone(left).(*environmentpb.EnvironmentDescriptor)
+	rightWithoutObservedAt := proto.Clone(right).(*environmentpb.EnvironmentDescriptor)
+	leftWithoutObservedAt.ObservedAt = nil
+	rightWithoutObservedAt.ObservedAt = nil
+	return proto.Equal(leftWithoutObservedAt, rightWithoutObservedAt)
+}
+
 func sendCollection(ctx context.Context, stream grpc.ServerStreamingServer[environmentpb.WatchEnvironmentsResponse], frame *environmentpb.WatchEnvironmentsResponse) error {
 	if err := auth.RevalidateStream(ctx); err != nil {
 		return err
@@ -213,7 +219,7 @@ func (s *Service) watchCollection(ctx context.Context, objects client.ObjectList
 	return result, nil
 }
 
-func (s *Service) collection(ctx context.Context, identity auth.ServiceAccountPrincipal, broad bool) ([]*sandboxpb.Sandbox, error) {
+func (s *Service) collection(ctx context.Context, identity auth.ServiceAccountPrincipal, broad bool) ([]*environmentpb.EnvironmentDescriptor, error) {
 	var resources []sandboxapi.Sandbox
 	if broad {
 		var list sandboxapi.SandboxList
@@ -224,7 +230,7 @@ func (s *Service) collection(ctx context.Context, identity auth.ServiceAccountPr
 	} else {
 		v, err := s.sandboxes.Get(ctx, identity.Account.Name)
 		if status.Code(err) == codes.NotFound {
-			return []*sandboxpb.Sandbox{}, nil
+			return []*environmentpb.EnvironmentDescriptor{}, nil
 		}
 		if err != nil {
 			return nil, watchFailure(ctx, err)
@@ -234,27 +240,31 @@ func (s *Service) collection(ctx context.Context, identity auth.ServiceAccountPr
 			return nil, watchFailure(ctx, err)
 		}
 		if !found || !callerMatches(identity, execution) {
-			return []*sandboxpb.Sandbox{}, nil
+			return []*environmentpb.EnvironmentDescriptor{}, nil
 		}
 		resources = []sandboxapi.Sandbox{*v.Resource}
 	}
 	sort.Slice(resources, func(i, j int) bool { return resources[i].Name < resources[j].Name })
-	result := make([]*sandboxpb.Sandbox, 0, len(resources))
+	result := make([]*environmentpb.EnvironmentDescriptor, 0, len(resources))
 	for i := range resources {
 		resource := &resources[i]
-		var pod *corev1.Pod
-		if resource.Status.Incarnation != nil {
-			pod = &corev1.Pod{}
-			err := s.objects.Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: resource.Status.Incarnation.Name}, pod)
-			if apierrors.IsNotFound(err) {
-				pod = nil
-			} else if err != nil {
-				return nil, watchFailure(ctx, err)
-			}
-		}
-		value, err := sandboxview.View(resource, pod)
+		execution, found, err := s.sandboxes.ExecutionAccount(ctx, sandboxreader.Identity{Namespace: resource.Namespace, Name: resource.Name, UID: string(resource.UID)})
 		if err != nil {
 			return nil, watchFailure(ctx, err)
+		}
+		if !broad && (!found || !callerMatches(identity, execution)) {
+			continue
+		}
+		value, err := s.describe(ctx, resource, execution, identity)
+		if err != nil {
+			return nil, watchFailure(ctx, err)
+		}
+		_, _, visible, err := s.revalidateDescriptor(ctx, value, identity, broad)
+		if err != nil {
+			return nil, watchFailure(ctx, err)
+		}
+		if !visible {
+			continue
 		}
 		result = append(result, value)
 	}
@@ -263,7 +273,7 @@ func (s *Service) collection(ctx context.Context, identity auth.ServiceAccountPr
 
 // collectionItem rereads only the Sandbox affected by a source event. The returned Pod name is
 // tracked even when the item is not currently visible, so a later incarnation event can reconcile it.
-func (s *Service) collectionItem(ctx context.Context, identity auth.ServiceAccountPrincipal, broad bool, name string) (*sandboxpb.Sandbox, string, error) {
+func (s *Service) collectionItem(ctx context.Context, identity auth.ServiceAccountPrincipal, broad bool, name string) (*environmentpb.EnvironmentDescriptor, string, error) {
 	if !broad && name != identity.Account.Name {
 		return nil, "", nil
 	}
@@ -279,28 +289,23 @@ func (s *Service) collectionItem(ctx context.Context, identity auth.ServiceAccou
 	if resource.Status.Incarnation != nil {
 		podName = resource.Status.Incarnation.Name
 	}
-	if !broad {
-		execution, found, err := s.sandboxes.ExecutionAccount(ctx, v.Identity)
-		if err != nil {
-			return nil, "", watchFailure(ctx, err)
-		}
-		if !found || !callerMatches(identity, execution) {
-			return nil, podName, nil
-		}
-	}
-	var pod *corev1.Pod
-	if podName != "" {
-		pod = &corev1.Pod{}
-		err := s.objects.Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: podName}, pod)
-		if apierrors.IsNotFound(err) {
-			pod = nil
-		} else if err != nil {
-			return nil, "", watchFailure(ctx, err)
-		}
-	}
-	item, err := sandboxview.View(resource, pod)
+	execution, found, err := s.sandboxes.ExecutionAccount(ctx, v.Identity)
 	if err != nil {
 		return nil, "", watchFailure(ctx, err)
+	}
+	if !broad && (!found || !callerMatches(identity, execution)) {
+		return nil, podName, nil
+	}
+	item, err := s.describe(ctx, resource, execution, identity)
+	if err != nil {
+		return nil, "", watchFailure(ctx, err)
+	}
+	_, _, visible, err := s.revalidateDescriptor(ctx, item, identity, broad)
+	if err != nil {
+		return nil, "", watchFailure(ctx, err)
+	}
+	if !visible {
+		return nil, podName, nil
 	}
 	return item, podName, nil
 }

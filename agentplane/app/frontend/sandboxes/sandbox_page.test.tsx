@@ -1,6 +1,9 @@
 // @vitest-environment happy-dom
+import { SandboxPhase } from "../../../proto/sandboxes_pb";
+import { OperatingMode } from "../../../sandboxes/environments/environment_service_pb";
+import { readySandbox as makeReadySandbox } from "../testing/sandbox";
 import { MantineProvider } from "@mantine/core";
-import type { LangfuseSearchSettings, SandboxView, ThreadView, TraceSearchSettings } from "../schema";
+import type { LangfuseSearchSettings, ThreadView, TraceSearchSettings } from "../schema";
 import {
   TEST_REASONING_EFFORTS,
   testModelCatalog,
@@ -41,40 +44,7 @@ const live = vi.hoisted(
   () =>
     ({
       snapshot: {
-        sandbox: {
-          name: "startup-test",
-          uid: "00000000-0000-4000-8000-000000000001",
-          namespace: "agentplane-test",
-          created_at: "2026-01-01T00:00:00Z",
-          operating_mode: "Running",
-          wake_on_send: false,
-          service_account: { namespace: "agentplane-test", name: "startup-test" },
-          binding: null,
-          preset: "test-preset",
-          idle_suspend_after_seconds: null,
-          idle_suspend_at: null,
-          suspended_by: null,
-          autosuspend_blockers: [],
-          status: { conditions: [{ type: "Ready", status: "True" }] },
-          phase: "Running",
-          pod: {
-            name: "startup-test",
-            namespace: "agentplane-test",
-            uid: "test-pod-1",
-            deleting: false,
-            node_name: "test-node",
-            owner_references: [
-              {
-                api_version: "agentplane.allegedly.works/v1alpha1",
-                kind: "Sandbox",
-                name: "startup-test",
-                uid: "00000000-0000-4000-8000-000000000001",
-                controller: true,
-              },
-            ],
-            status: { phase: "Running", podIP: "10.0.0.1", conditions: [{ type: "Ready", status: "True" }] },
-          },
-        },
+        sandbox_uid: "00000000-0000-4000-8000-000000000001",
         threads: [] as SandboxSnapshot["threads"],
         bindings: [],
         action_policy: null,
@@ -92,10 +62,23 @@ const live = vi.hoisted(
 );
 vi.mock("../live", async (importOriginal) => ({
   ...(await importOriginal<typeof LiveModule>()),
-  useLive: () => live,
+  useLive: (url: string) =>
+    url.includes("/other-test?")
+      ? { ...live, snapshot: { ...live.snapshot, sandbox_uid: "00000000-0000-4000-8000-000000000002" } }
+      : live,
 }));
 
-const readySandbox = live.snapshot.sandbox as SandboxView;
+const readySandbox = makeReadySandbox("startup-test", "00000000-0000-4000-8000-000000000001");
+readySandbox.preset = "test-preset";
+const inventory = {
+  snapshot: { sandboxes: [readySandbox], watch: { healthy: true, failing: {} } },
+  health: { healthy: true, failing: {} },
+  stream: { standing: "current" },
+};
+vi.mock("./live", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./live")>()),
+  useRequiredSandboxesLive: () => inventory,
+}));
 const mutableSnapshot = live.snapshot as SandboxSnapshot;
 const readyPod = readySandbox.pod;
 const readyStatus = readySandbox.status;
@@ -123,15 +106,18 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.useRealTimers();
+  vi.restoreAllMocks();
   live.snapshot.threads = [];
-  readySandbox.operating_mode = "Running";
-  readySandbox.phase = "Running";
+  readySandbox.operatingMode = OperatingMode.RUNNING;
+  readySandbox.phase = SandboxPhase.RUNNING;
   readySandbox.pod = readyPod;
   readySandbox.status = readyStatus;
-  mutableSnapshot.sandbox = readySandbox;
+  readySandbox.target!.uid = "00000000-0000-4000-8000-000000000001";
+  mutableSnapshot.sandbox_uid = readySandbox.target!.uid;
+  inventory.snapshot.sandboxes = [readySandbox];
   sessionStorage.clear();
   rerender = async () => {};
-  (live.snapshot.sandbox as SandboxView).binding = null;
+  readySandbox.binding = undefined;
   presetDefaults = { ...DEFAULT_PRESET_DEFAULTS };
   modelCatalogResponse = null;
   centralSamplerEnabled = false;
@@ -212,6 +198,8 @@ async function render(
       })
     )
 ): Promise<ReturnType<typeof vi.fn>> {
+  if (routeNavigation)
+    inventory.snapshot.sandboxes.push(makeReadySandbox("other-test", "00000000-0000-4000-8000-000000000002"));
   // The Egress log panel stays mounted behind its tab and follows a stream that these tests never feed.
   serveEventStreams(() => undefined);
   fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
@@ -360,6 +348,14 @@ async function choose(label: string, value: string): Promise<void> {
   await act(async () => option.click());
 }
 
+it("does not join an old detail frame to a same-name replacement", async () => {
+  mutableSnapshot.sandbox_uid = "00000000-0000-4000-8000-000000000099";
+  live.snapshot.threads = [thread({ id: "old-thread", name: "Old incarnation thread" })];
+  await render(async () => Response.json([]));
+  expect(container.textContent).not.toContain("Old incarnation thread");
+  expect(container.textContent).not.toContain("There is no sandbox startup-test any more.");
+});
+
 it("resets the creation form when navigating directly between sandbox routes", async () => {
   await render(async () => Response.json([]), undefined, false, true);
   await act(async () => newThread().click());
@@ -416,7 +412,7 @@ it("saves the wake policy from the Status tab", async () => {
 
     expect(patch).toHaveBeenCalledWith("/sandboxes/{name}/wake-policy", {
       params: { path: { name: "startup-test" } },
-      body: { uid: readySandbox.uid, wake_on_send: true },
+      body: { uid: readySandbox.target!.uid, wake_on_send: true },
     });
   } finally {
     patch.mockRestore();
@@ -533,9 +529,9 @@ it("refreshes the runner snapshot and replaces old process and Session details",
 });
 
 it("reports suspended Runtime diagnostics without a read or wake request", async () => {
-  readySandbox.operating_mode = "Suspended";
-  readySandbox.phase = "Suspended";
-  readySandbox.pod = null;
+  readySandbox.operatingMode = OperatingMode.SUSPENDED;
+  readySandbox.phase = SandboxPhase.SUSPENDED;
+  readySandbox.pod = undefined;
   await render(async () => Response.json([]));
   await act(async () => tab("Status").click());
   await vi.waitFor(() =>
@@ -664,9 +660,9 @@ it("keeps retained History Threads visible through ready to suspended with no ru
   expect(createThreadButton().disabled).toBe(false);
   expect(sessionStatus("Previously active thread")).toBe("Turn running · Runner feed active · harness running");
 
-  readySandbox.operating_mode = "Suspended";
-  readySandbox.phase = "Suspended";
-  readySandbox.pod = null;
+  readySandbox.operatingMode = OperatingMode.SUSPENDED;
+  readySandbox.phase = SandboxPhase.SUSPENDED;
+  readySandbox.pod = undefined;
   await rerender();
 
   const retainedRow = () =>
@@ -684,13 +680,13 @@ it("keeps retained History Threads visible through ready to suspended with no ru
   expect((await createThreadTooltip())?.textContent).toContain("Resume it or enable wake on send");
   expect(sessions).not.toHaveBeenCalled();
 
-  readySandbox.wake_on_send = true;
+  readySandbox.wakeOnSend = true;
   await rerender();
   expect(container.textContent).toContain("Creating a thread will wake the Sandbox.");
   expect(createThreadButton().disabled).toBe(false);
   expect(sessions).not.toHaveBeenCalled();
 
-  readySandbox.wake_on_send = false;
+  readySandbox.wakeOnSend = false;
   await rerender();
   expect(createThreadButton().disabled).toBe(true);
 
@@ -701,7 +697,8 @@ it("keeps retained History Threads visible through ready to suspended with no ru
   await act(async () => menuButton.click());
 
   // History outlives the Sandbox row itself. Removing the Sandbox must not hide authored Threads.
-  mutableSnapshot.sandbox = null;
+  mutableSnapshot.sandbox_uid = null;
+  inventory.snapshot.sandboxes = [];
   await rerender();
   expect(retainedRow()).toBeDefined();
 
@@ -1031,14 +1028,28 @@ it("offers Delete in the actions menu only for a suspended Sandbox", async () =>
   expect(deleteItem().textContent).toContain("Suspend the sandbox before deleting it");
   await act(async () => menuButton.click());
 
-  readySandbox.operating_mode = "Suspended";
-  readySandbox.phase = "Suspended";
-  readySandbox.pod = null;
+  readySandbox.operatingMode = OperatingMode.SUSPENDED;
+  readySandbox.phase = SandboxPhase.SUSPENDED;
+  readySandbox.pod = undefined;
   await rerender();
   await act(async () => menuButton.click());
   expect(deleteItem().disabled).toBe(false);
   await act(async () => deleteItem().click());
   expect(document.body.textContent).toContain("Delete startup-test?");
+  const deleted = vi.spyOn(api, "DELETE").mockResolvedValue({ response: new Response(null, { status: 204 }) } as never);
+  // The confirmation belongs to the incarnation originally selected, even if its name is reused.
+  readySandbox.target!.uid = "00000000-0000-4000-8000-000000000099";
+  mutableSnapshot.sandbox_uid = readySandbox.target!.uid;
+  await rerender();
+  const confirm = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
+    (button) => button.textContent === "Delete"
+  );
+  if (!confirm) throw new Error("Missing delete confirmation");
+  await act(async () => confirm.click());
+  expect(deleted).toHaveBeenCalledWith("/sandboxes/{name}", {
+    params: { path: { name: "startup-test" } },
+    body: { uid: "00000000-0000-4000-8000-000000000001" },
+  });
 });
 
 it("links the Sandbox and its Threads to their scoped Grafana trace searches", async () => {

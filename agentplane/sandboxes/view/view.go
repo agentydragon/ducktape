@@ -6,19 +6,56 @@ import (
 
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const PresetLabel = "agentplane.allegedly.works/preset"
 
-func sandboxView(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*sandboxespb.Sandbox, error) {
-	view := &sandboxespb.Sandbox{
-		Name: resource.Name, Uid: string(resource.UID), Namespace: resource.Namespace,
-		ServiceAccount:      &sandboxespb.ServiceAccount{Namespace: resource.Namespace, Name: resource.Name},
+// View builds the shared Sandbox portion of an EnvironmentDescriptor. The Pod is included only
+// when it is the currently reported incarnation, so stale same-name Pods never look current.
+func View(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*environmentpb.EnvironmentDescriptor, error) {
+	if resource == nil {
+		return nil, fmt.Errorf("Sandbox is required")
+	}
+	incarnation := resource.Status.Incarnation
+	if pod != nil && (incarnation == nil || pod.Name != incarnation.Name || pod.Namespace != resource.Namespace ||
+		string(pod.UID) != incarnation.UID) {
+		pod = nil
+	}
+	return sandboxView(resource, pod)
+}
+
+func sandboxView(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*environmentpb.EnvironmentDescriptor, error) {
+	readiness := &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_NOT_READY}
+	condition := meta.FindStatusCondition(resource.Status.Conditions, sandboxapi.ConditionReady)
+	if condition == nil {
+		readiness.Reason = "ReadyConditionUnavailable"
+	} else {
+		readiness.Detail = condition.Message
+		readiness.Reason = condition.Reason
+		if condition.Status == metav1.ConditionTrue {
+			readiness.State = environmentpb.ReadinessState_READINESS_STATE_READY
+		}
+	}
+	mode := environmentpb.OperatingMode_OPERATING_MODE_UNSPECIFIED
+	switch resource.Status.OperatingMode {
+	case sandboxapi.OperatingModeRunning:
+		mode = environmentpb.OperatingMode_OPERATING_MODE_RUNNING
+	case sandboxapi.OperatingModeSuspended:
+		mode = environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED
+	}
+	view := &environmentpb.EnvironmentDescriptor{
+		Target:              &environmentpb.TargetHandle{Namespace: resource.Namespace, Name: resource.Name, Uid: string(resource.UID)},
+		Readiness:           readiness,
+		Template:            resource.Spec.Template,
+		OperatingMode:       mode,
+		StopStage:           string(resource.Status.StopStage),
 		WakeOnSend:          resource.Spec.WakeOnSend,
 		Phase:               sandboxPhase(resource),
 		AutosuspendBlockers: make([]*sandboxespb.AutosuspendBlocker, 0, len(resource.Status.IdleSuspendBlockers)),
@@ -37,10 +74,6 @@ func sandboxView(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*sandboxespb.Sa
 	if preset, ok := resource.Labels[PresetLabel]; ok {
 		view.Preset = &preset
 	}
-	if resource.Status.OperatingMode != "" {
-		mode := string(resource.Status.OperatingMode)
-		view.OperatingMode = &mode
-	}
 	if resource.Status.SuspendedBy != nil {
 		suspendedBy := string(*resource.Status.SuspendedBy)
 		view.SuspendedBy = &suspendedBy
@@ -50,6 +83,9 @@ func sandboxView(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*sandboxespb.Sa
 	}
 	if resource.Spec.IdleSuspendAfter != nil {
 		view.IdleSuspendAfter = durationpb.New(resource.Spec.IdleSuspendAfter.Duration)
+	}
+	if resource.Status.Incarnation != nil {
+		view.RuntimeIncarnationUid = resource.Status.Incarnation.UID
 	}
 	statusValue, err := jsonValue(resource.Status)
 	if err != nil {
@@ -62,27 +98,13 @@ func sandboxView(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*sandboxespb.Sa
 	if err != nil {
 		return nil, fmt.Errorf("encode Sandbox status: %w", err)
 	}
-	if pod != nil && resource.Status.Incarnation != nil && string(pod.UID) == resource.Status.Incarnation.UID {
+	if pod != nil {
 		view.Pod, err = sandboxPodView(pod)
 		if err != nil {
 			return nil, err
 		}
 	}
 	return view, nil
-}
-
-// View projects one Sandbox and its Pod only when the Pod is the Sandbox's currently reported
-// incarnation. It is shared by direct inventory reads and cached live snapshots.
-func View(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*sandboxespb.Sandbox, error) {
-	if resource == nil {
-		return nil, fmt.Errorf("Sandbox is required")
-	}
-	incarnation := resource.Status.Incarnation
-	if pod != nil && (incarnation == nil || pod.Name != incarnation.Name || pod.Namespace != resource.Namespace ||
-		string(pod.UID) != incarnation.UID) {
-		pod = nil
-	}
-	return sandboxView(resource, pod)
 }
 
 func sandboxPodView(pod *corev1.Pod) (*sandboxespb.SandboxPod, error) {

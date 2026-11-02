@@ -1,5 +1,5 @@
 import type { ThreadView } from "../schema";
-import type { Sandbox } from "../../../proto/sandboxes_pb";
+import type { EnvironmentDescriptor } from "../../../sandboxes/environments/environment_service_pb";
 
 /**
  * A flat newest-first Thread list folded into Sandbox groups, including Sandboxes without
@@ -9,7 +9,7 @@ import type { Sandbox } from "../../../proto/sandboxes_pb";
 export interface ThreadGroup {
   sandboxName: string;
   /** The Sandbox's live view, or null once it no longer exists. */
-  sandbox: Sandbox | null;
+  sandbox: EnvironmentDescriptor | null;
   /** Newest first, matching the API's own order. */
   threads: ThreadView[];
 }
@@ -21,7 +21,7 @@ export interface ThreadGroup {
  */
 export function groupThreads(
   threads: ThreadView[],
-  sandboxes: Record<string, Sandbox>,
+  sandboxes: Record<string, EnvironmentDescriptor>,
   includeArchived: boolean,
   openThreadId: string | null
 ): ThreadGroup[] {
@@ -36,8 +36,8 @@ export function groupThreads(
     group.threads.push(thread);
   }
   for (const sandbox of Object.values(sandboxes)) {
-    if (!groups.has(sandbox.name)) {
-      groups.set(sandbox.name, { sandboxName: sandbox.name, sandbox, threads: [] });
+    if (!groups.has(sandbox.target!.name)) {
+      groups.set(sandbox.target!.name, { sandboxName: sandbox.target!.name, sandbox, threads: [] });
     }
   }
   return [...groups.values()];

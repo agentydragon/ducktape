@@ -2,7 +2,7 @@ import { Box, Group, Stack, Text } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
 import type { ThreadView } from "../schema";
-import type { Sandbox } from "../../../proto/sandboxes_pb";
+import type { EnvironmentDescriptor } from "../../../sandboxes/environments/environment_service_pb";
 import { displayableError } from "../client";
 import { getThread } from "./client";
 import { harnessBehavior } from "../harness_behavior";
@@ -29,19 +29,19 @@ import "./conversation.css";
 /** Why the thread's sandbox cannot take commands, as the inventory last reported it; the composer's
  * dot says only "Sandbox unavailable". An absence reads as a deletion only from a current inventory:
  * a stale or dropped stream may not have seen the sandbox since. */
-function suspendedSandboxLabel(sandbox: Sandbox): string {
+function suspendedSandboxLabel(sandbox: EnvironmentDescriptor): string {
   const reason = suspensionReason(sandbox);
   return reason === null ? "Sandbox is suspended." : `Sandbox is suspended (${reason}).`;
 }
 
-function sandboxComposerPlaceholder(sandbox: Sandbox | undefined, inventoryFresh: boolean): string {
+function sandboxComposerPlaceholder(sandbox: EnvironmentDescriptor | undefined, inventoryFresh: boolean): string {
   if (!sandbox || !inventoryFresh || !sandboxSuspended(sandbox)) return DEFAULT_COMPOSER_PLACEHOLDER;
   return sandbox.wakeOnSend
     ? `${suspendedSandboxLabel(sandbox)} Wake on message is on; submitted commands will queue while it wakes. ${DEFAULT_COMPOSER_PLACEHOLDER}`
     : `${suspendedSandboxLabel(sandbox)} Wake on message is off; submitted commands stay queued until you resume it manually.`;
 }
 
-function sandboxNotice(sandbox: Sandbox | undefined, inventoryFresh: boolean): string | null {
+function sandboxNotice(sandbox: EnvironmentDescriptor | undefined, inventoryFresh: boolean): string | null {
   if (sandbox === undefined) {
     return inventoryFresh
       ? "Sandbox no longer exists. Showing archived Thread history; controls are disabled."
@@ -71,7 +71,7 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
   const environment = useRequiredSandboxesLive();
   const inventoryFresh = sandboxInventoryFresh(environment);
   // The top bar and the composer read the one Sandbox row, so they cannot disagree about it.
-  const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
+  const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.target?.name === thread?.sandbox);
   const topbarStatus = threadStatusFromSnapshot(snapshotThread, sandbox, snapshotFresh(threadsLive) && inventoryFresh);
   const [error, setError] = useState<string | null>(null);
   const frontendConfig = useFrontendConfig();
@@ -176,8 +176,10 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
               canResumeSandbox={canResumeSandbox}
               composerPlaceholder={composerPlaceholder}
               onResumeSandbox={() => {
-                if (canResumeSandbox && thread) {
-                  void resumeSandbox(thread.sandbox).catch((reason: unknown) => setError(displayableError(reason)));
+                if (canResumeSandbox && thread && sandbox?.target) {
+                  void resumeSandbox(thread.sandbox, sandbox.target.uid).catch((reason: unknown) =>
+                    setError(displayableError(reason))
+                  );
                 }
               }}
               onStatusChange={setTabStatus}

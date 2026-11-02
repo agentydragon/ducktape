@@ -13,9 +13,11 @@ import json
 import logging
 import time
 from collections.abc import AsyncGenerator
+from contextlib import aclosing
 from http import HTTPStatus
 from types import TracebackType
 from typing import Any, Self
+from urllib.parse import quote
 from uuid import UUID
 
 import httpx
@@ -28,13 +30,12 @@ from agentplane.app.testing.models import (
     DecisionsSnapshot,
     DecisionsUnavailable,
     NewSandbox,
-    SandboxView,
     ThreadMetadata,
     ThreadView,
     thread_view_from_proto_json,
 )
 from agentplane.egress.decisions import Decision
-from agentplane.proto import event_log_pb2, sandboxes_pb2, session_pb2
+from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandboxes.environments import environment_service_pb2
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
@@ -124,22 +125,91 @@ class Client:
         response = await self._json("GET", "/upstream/app-config/v1/presets")
         return ParseDict(response, app_service_pb2.ListSandboxPresetsResponse())
 
-    async def create_sandbox(self, spec: NewSandbox) -> SandboxView:
-        return SandboxView.model_validate(
-            await self._json("POST", "/sandboxes", json=spec.model_dump(exclude_unset=True))
-        )
+    async def create_sandbox(self, spec: NewSandbox) -> environment_service_pb2.TargetHandle:
+        """Create once and return the exact incarnation acknowledged by the app."""
+        response = await self._json("POST", "/sandboxes", json=spec.model_dump(exclude_unset=True))
+        if not isinstance(response, dict) or not isinstance(response.get("name"), str) or not response.get("name"):
+            raise RuntimeError("Sandbox creation acknowledgement did not include a name")
+        if response["name"] != spec.name:
+            raise RuntimeError(f"Sandbox creation acknowledged unexpected name {response['name']!r}")
+        namespace = response.get("namespace")
+        if not isinstance(namespace, str) or not namespace:
+            raise RuntimeError("Sandbox creation acknowledgement did not include a namespace")
+        uid = response.get("uid")
+        if not isinstance(uid, str) or not uid:
+            raise RuntimeError("Sandbox creation acknowledgement did not include a UID")
+        try:
+            self.opened_sandbox_uids.add(UUID(uid))
+        except ValueError as error:
+            raise RuntimeError(f"Sandbox creation acknowledged invalid UID {uid!r}") from error
+        return environment_service_pb2.TargetHandle(namespace=namespace, name=response["name"], uid=uid)
 
-    async def sandbox(self, name: str) -> SandboxView:
-        return SandboxView.model_validate(await self._json("GET", f"/sandboxes/{name}"))
+    async def get_environment(
+        self, target: environment_service_pb2.TargetHandle
+    ) -> environment_service_pb2.EnvironmentDescriptor:
+        """Read one authorized Sandbox target, fenced by its UID."""
+        if not target.namespace or not target.name or not target.uid:
+            raise ValueError("complete EnvironmentService target handle is required")
+        path = (
+            f"/upstream/environments/v1/environments/{quote(target.namespace, safe='')}/{quote(target.name, safe='')}"
+        )
+        response = await self._json("GET", path, params={"target.uid": target.uid})
+        return ParseDict(response, environment_service_pb2.EnvironmentDescriptor())
+
+    async def get_environment_by_name(
+        self, name: str, *, expected_uid: UUID | str
+    ) -> environment_service_pb2.EnvironmentDescriptor:
+        """Resolve a known target only through authorized inventory, then perform its UID-fenced Get."""
+        target = await self.environment_target(name, expected_uid=expected_uid)
+        return await self.get_environment(target)
+
+    async def environment_target(
+        self, name: str, *, expected_uid: UUID | str | None = None
+    ) -> environment_service_pb2.TargetHandle:
+        """Resolve a name only through caller-authorized inventory, retaining a known UID fence."""
+        async with asyncio.timeout(REQUEST_SECONDS), aclosing(self.sandbox_snapshots()) as snapshots:
+            async for snapshot in snapshots:
+                named = [environment.target for environment in snapshot if environment.target.name == name]
+                if expected_uid is not None:
+                    matches = [target for target in named if target.uid == str(expected_uid)]
+                    if not matches:
+                        if named:
+                            observed_uids = ", ".join(target.uid for target in named)
+                            raise LookupError(
+                                f"EnvironmentService target {name!r} was replaced: "
+                                f"expected {expected_uid}, observed {observed_uids}"
+                            )
+                        continue
+                else:
+                    matches = named
+                if len(matches) > 1:
+                    raise LookupError(f"EnvironmentService inventory has multiple targets named {name!r}")
+                if not matches:
+                    continue
+                target = environment_service_pb2.TargetHandle()
+                target.CopyFrom(matches[0])
+                return target
+        raise LookupError(f"EnvironmentService inventory ended before target {name!r} was observed")
 
     async def runner_status(self, name: str) -> session_pb2.EnvironmentRuntimeStatus:
         response = await self._json("GET", f"/sandboxes/{name}/runner-status")
         return ParseDict(response, session_pb2.EnvironmentRuntimeStatus())
 
-    async def sandbox_snapshots(self) -> AsyncGenerator[list[sandboxes_pb2.Sandbox]]:
+    async def sandbox_snapshots(self) -> AsyncGenerator[list[environment_service_pb2.EnvironmentDescriptor]]:
         """Yield complete inventories reconstructed from the EnvironmentService watch."""
-        pending: dict[tuple[str, str], sandboxes_pb2.Sandbox] | None = {}
-        current: dict[tuple[str, str], sandboxes_pb2.Sandbox] = {}
+        pending: dict[tuple[str, str], environment_service_pb2.EnvironmentDescriptor] | None = {}
+        current: dict[tuple[str, str], environment_service_pb2.EnvironmentDescriptor] = {}
+
+        def key(environment: environment_service_pb2.EnvironmentDescriptor) -> tuple[str, str]:
+            if (
+                not environment.HasField("target")
+                or not environment.target.namespace
+                or not environment.target.name
+                or not environment.target.uid
+            ):
+                raise RuntimeError("EnvironmentService returned a descriptor without its target")
+            return environment.target.namespace, environment.target.name
+
         async with self._http.stream(
             "GET",
             "/upstream/environments/v1/environments:watch",
@@ -158,8 +228,8 @@ class Client:
                     case "snapshot":
                         if pending is None:
                             raise RuntimeError("unexpected inventory snapshot chunk")
-                        for row in frame.snapshot.sandboxes:
-                            pending[(row.namespace, row.name)] = row
+                        for environment in frame.snapshot.environments:
+                            pending[key(environment)] = environment
                     case "snapshot_complete":
                         if pending is None:
                             raise RuntimeError("unexpected inventory snapshot completion")
@@ -168,30 +238,30 @@ class Client:
                     case "upsert":
                         if pending is not None:
                             raise RuntimeError("inventory update before snapshot completion")
-                        row = frame.upsert
-                        current[(row.namespace, row.name)] = row
+                        environment = frame.upsert
+                        current[key(environment)] = environment
                         yield [current[key] for key in sorted(current)]
                     case "removed":
                         if pending is not None:
                             raise RuntimeError("inventory removal before snapshot completion")
                         removed = frame.removed
-                        key = (removed.namespace, removed.name)
-                        previous = current.get(key)
-                        if previous is not None and previous.uid == removed.uid:
-                            del current[key]
+                        removed_key = (removed.namespace, removed.name)
+                        previous = current.get(removed_key)
+                        if previous is not None and previous.target.uid == removed.uid:
+                            del current[removed_key]
                             yield [current[key] for key in sorted(current)]
                     case _:
                         raise RuntimeError("Environment watch returned an empty frame")
         raise RuntimeError("the Sandbox inventory stream ended")
 
-    async def suspend_sandbox(self, name: str) -> None:
-        await self._json("POST", f"/sandboxes/{name}/suspend")
+    async def suspend_sandbox(self, name: str, *, uid: UUID | str) -> None:
+        await self._json("POST", f"/sandboxes/{name}/suspend", json={"uid": str(uid)})
 
-    async def resume_sandbox(self, name: str) -> None:
-        await self._json("POST", f"/sandboxes/{name}/resume")
+    async def resume_sandbox(self, name: str, *, uid: UUID | str) -> None:
+        await self._json("POST", f"/sandboxes/{name}/resume", json={"uid": str(uid)})
 
-    async def delete_sandbox(self, name: str) -> None:
-        await self._json("DELETE", f"/sandboxes/{name}")
+    async def delete_sandbox(self, name: str, *, uid: UUID) -> None:
+        await self._json("DELETE", f"/sandboxes/{name}", json={"uid": str(uid)})
 
     async def bindings(self, name: str) -> list[BindingView]:
         return [BindingView.model_validate(row) for row in await self._json("GET", f"/sandboxes/{name}/egress")]
@@ -218,7 +288,7 @@ class Client:
         name: str,
         session_id: UUID,
         *,
-        sandbox_uid: UUID,
+        sandbox_uid: UUID | str,
         overrides: dict[str, object] | None = None,
         setup_script: str | None = None,
     ) -> None:
@@ -236,7 +306,7 @@ class Client:
         name: str,
         session_id: UUID,
         *,
-        sandbox_uid: UUID,
+        sandbox_uid: UUID | str,
         overrides: dict[str, object] | None = None,
         setup_script: str | None = None,
     ) -> session_dispatcher_pb2.SessionOpening:

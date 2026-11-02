@@ -16,7 +16,6 @@ go_library(
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/grpc/bearer",
         "//agentplane/observability",
-        "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/sandboxes/api",
@@ -37,7 +36,6 @@ go_test(
     embed = [":bridge"],
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
-        "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/sandboxes/api",

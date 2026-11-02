@@ -26,8 +26,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	sandboxview "github.com/agentydragon/ducktape/agentplane/sandboxes/view"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -35,8 +34,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 const (
@@ -64,7 +63,8 @@ type streamLiveInventory interface {
 }
 
 type streamSandboxInventory interface {
-	Get(context.Context, string) (*sandboxespb.Sandbox, error)
+	Get(context.Context, string) (*environmentpb.EnvironmentDescriptor, error)
+	GetExactUID(context.Context, string, string) (*environmentpb.EnvironmentDescriptor, error)
 }
 
 type streamHistoryStore interface {
@@ -107,6 +107,7 @@ type StreamingDependencies struct {
 func RegisterStreamingRoutes(server *HTTPServer, dependencies StreamingDependencies) {
 	routes := newStreamingRoutes(server, dependencies)
 	server.RegisterRawRoute("GET /upstream/environments/v1/environments:watch", http.HandlerFunc(routes.environmentWatch), false)
+	server.RegisterRawRoute("GET /upstream/environments/v1/environments/{namespace}/{name}", http.HandlerFunc(routes.environmentGet), false)
 	server.RegisterRawRoute("GET /live/sandboxes/{name}", http.HandlerFunc(routes.liveSandbox), false)
 	server.RegisterRawRoute("GET /live/sandboxes/{name}/egress/decisions", http.HandlerFunc(routes.liveDecisions), false)
 	server.RegisterRawRoute("GET /threads/{thread_id}/events/stream", http.HandlerFunc(routes.threadEvents), false)
@@ -151,7 +152,7 @@ type kindFailureView struct {
 }
 
 type liveSandboxFrame struct {
-	Sandbox          *SandboxView               `json:"sandbox"`
+	SandboxUID       *string                    `json:"sandbox_uid"`
 	Bindings         []policyaccess.BindingView `json:"bindings"`
 	ActionPolicy     any                        `json:"action_policy"`
 	Threads          any                        `json:"threads"`
@@ -198,7 +199,7 @@ type sandboxDetailKey struct {
 
 // sandboxDetail is the viewer-independent part of a /live/sandboxes/{name} frame.
 type sandboxDetail struct {
-	sandbox          *SandboxView
+	sandboxUID       *string
 	subject          *sandboxespb.ServiceAccount
 	bindings         []policyaccess.BindingView
 	policyGeneration uint64
@@ -208,7 +209,7 @@ type sandboxDetail struct {
 }
 
 func (r *streamingRoutes) liveSandbox(w http.ResponseWriter, request *http.Request) {
-	if r.deps.Live == nil || r.deps.Threads == nil || r.deps.History == nil {
+	if r.deps.Live == nil || r.deps.Sandboxes == nil || r.deps.Threads == nil || r.deps.History == nil {
 		writeDetailError(w, http.StatusServiceUnavailable, "live sandbox view is unavailable")
 		return
 	}
@@ -230,7 +231,7 @@ func (r *streamingRoutes) liveSandbox(w http.ResponseWriter, request *http.Reque
 	hasCachedPolicy := false
 	streamLiveFrames(r, w, ctx, frames, func(detail sandboxDetail) ([]byte, error) {
 		var actionPolicy any
-		if detail.sandbox != nil {
+		if detail.subject != nil {
 			if hasCachedPolicy && cachedGeneration == detail.policyGeneration && proto.Equal(cachedSubject, detail.subject) {
 				actionPolicy = cachedPolicy
 			} else {
@@ -246,7 +247,7 @@ func (r *streamingRoutes) liveSandbox(w http.ResponseWriter, request *http.Reque
 			}
 		}
 		return json.Marshal(liveSandboxFrame{
-			Sandbox: detail.sandbox, Bindings: nonNilBindingViews(detail.bindings), ActionPolicy: actionPolicy,
+			SandboxUID: detail.sandboxUID, Bindings: nonNilBindingViews(detail.bindings), ActionPolicy: actionPolicy,
 			Threads: detail.threads, UpdatesConnected: detail.updatesConnected, Watch: detail.watch,
 		})
 	})
@@ -264,6 +265,8 @@ func (r *streamingRoutes) produceSandboxDetail(ctx context.Context, key sandboxD
 	defer stopUpdates()
 	var threadsView any
 	var threadsUID types.UID
+	var sandboxUID string
+	resolvedSandbox := false
 	threadsStale := true
 	for {
 		snapshot, err := r.deps.Live.Snapshot(ctx)
@@ -271,24 +274,29 @@ func (r *streamingRoutes) produceSandboxDetail(ctx context.Context, key sandboxD
 			return err
 		}
 		detail := sandboxDetail{policyGeneration: snapshot.PolicyGeneration, watch: healthView(snapshot.Watch)}
-		resource, pod := snapshotSandbox(snapshot, key.name)
+		descriptor, nextUID, resolved, getErr := resolveStreamEnvironment(ctx, r.deps.Sandboxes, snapshot, key.name, sandboxUID, resolvedSandbox)
+		if getErr != nil {
+			return getErr
+		}
+		sandboxUID, resolvedSandbox = nextUID, resolved
 		var uid types.UID
-		if resource != nil {
-			projected, err := sandboxview.View(resource, pod)
-			if err != nil {
-				return err
+		if descriptor != nil {
+			target := descriptor.GetTarget()
+			if target == nil || target.GetName() != key.name || target.GetUid() == "" {
+				return fmt.Errorf("Environment %q has incomplete or mismatched identity", key.name)
 			}
-			row := sandboxView(projected)
-			detail.sandbox = &row
-			detail.subject = projected.GetServiceAccount()
-			detail.bindings, err = policyaccess.BindingsFromSnapshot(snapshot.PolicyBindings, snapshot.PolicySets, snapshot.EgressCredentials, detail.subject)
-			if err != nil {
-				return err
+			uid = types.UID(target.GetUid())
+			detail.sandboxUID = &target.Uid
+			if account := descriptor.GetExecutionAccount(); account != nil {
+				detail.subject = &sandboxespb.ServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}
+				detail.bindings, err = policyaccess.BindingsFromSnapshot(snapshot.PolicyBindings, snapshot.PolicySets, snapshot.EgressCredentials, detail.subject)
+				if err != nil {
+					return err
+				}
 			}
-			uid = resource.UID
 		}
 		if _, listed := threadsView.([]threadView); threadsStale || !listed || uid != threadsUID {
-			if threadsView, err = r.sandboxThreads(ctx, resource, key.includeArchived); err != nil {
+			if threadsView, err = r.sandboxThreads(ctx, key.name, string(uid), key.includeArchived); err != nil {
 				return err
 			}
 			threadsUID = uid
@@ -314,6 +322,52 @@ func (r *streamingRoutes) updatesConnected() bool {
 	return r.deps.UpdatesConnected != nil && r.deps.UpdatesConnected()
 }
 
+// resolveStreamEnvironment uses the inventory list only to discover a name's UID. Once known,
+// refreshes read that exact target; only removal or replacement resolves the name again.
+func resolveStreamEnvironment(
+	ctx context.Context,
+	inventory streamSandboxInventory,
+	snapshot liveinventory.Snapshot,
+	name, knownUID string,
+	resolved bool,
+) (*environmentpb.EnvironmentDescriptor, string, bool, error) {
+	var descriptor *environmentpb.EnvironmentDescriptor
+	var err error
+	if !resolved || (knownUID == "" && snapshotHasSandbox(snapshot, name)) {
+		descriptor, err = inventory.Get(ctx, name)
+	} else if knownUID != "" {
+		descriptor, err = inventory.GetExactUID(ctx, name, knownUID)
+		if status.Code(err) == codes.NotFound {
+			descriptor, err = inventory.Get(ctx, name)
+		}
+	}
+	if status.Code(err) == codes.NotFound {
+		return nil, "", true, nil
+	}
+	if err != nil {
+		return nil, knownUID, resolved, err
+	}
+	if descriptor == nil {
+		return nil, "", true, nil
+	}
+	target := descriptor.GetTarget()
+	if target == nil || target.GetName() != name || target.GetUid() == "" {
+		return nil, knownUID, resolved, fmt.Errorf("Environment %q has incomplete or mismatched identity", name)
+	}
+	return descriptor, target.GetUid(), true, nil
+}
+
+// A local Sandbox event is only a hint that a name may have appeared. Descriptor data and UID
+// always come from EnvironmentService.
+func snapshotHasSandbox(snapshot liveinventory.Snapshot, name string) bool {
+	for index := range snapshot.Sandboxes {
+		if snapshot.Sandboxes[index].Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // waitLiveChange waits for a Kubernetes change or a thread update, or for ctx to end. It reports whether a thread
 // update arrived, and whether ctx ended.
 func waitLiveChange(ctx context.Context, liveChanges, threadUpdates <-chan struct{}) (threadsChanged, ended bool) {
@@ -333,7 +387,7 @@ func waitLiveChange(ctx context.Context, liveChanges, threadUpdates <-chan struc
 }
 
 func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Request) {
-	if r.deps.Live == nil || r.deps.Egress == nil {
+	if r.deps.Live == nil || r.deps.Sandboxes == nil || r.deps.Egress == nil {
 		writeDetailError(w, http.StatusServiceUnavailable, "egress decision stream is unavailable")
 		return
 	}
@@ -342,6 +396,8 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 	changes, unsubscribe := r.deps.Live.Subscribe()
 	defer unsubscribe()
 	name := request.PathValue("name")
+	var sandboxUID string
+	resolvedSandbox := false
 	if err := startSSE(w); err != nil {
 		return
 	}
@@ -350,8 +406,25 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 		if err != nil {
 			return
 		}
-		resource, pod := snapshotSandbox(snapshot, name)
-		if resource == nil {
+		descriptor, nextUID, resolved, getErr := resolveStreamEnvironment(ctx, r.deps.Sandboxes, snapshot, name, sandboxUID, resolvedSandbox)
+		sandboxUID, resolvedSandbox = nextUID, resolved
+		if getErr != nil || descriptor == nil {
+			if getErr != nil {
+				if writeSSE(w, "snapshot", liveDecisionsFrame{Watching: false, Decisions: decisionsUnavailable{Detail: grpcFailure(getErr)}}, nil) != nil {
+					return
+				}
+			} else if writeSSE(w, "snapshot", liveDecisionsFrame{Watching: false, Decisions: decisionsUnavailable{Detail: "no sandbox " + name}}, nil) != nil {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-changes:
+				continue
+			}
+		}
+		account := descriptor.GetExecutionAccount()
+		if account == nil {
 			if writeSSE(w, "snapshot", liveDecisionsFrame{Watching: false, Decisions: decisionsUnavailable{Detail: "no sandbox " + name}}, nil) != nil {
 				return
 			}
@@ -362,12 +435,8 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 				continue
 			}
 		}
-		projected, err := sandboxview.View(resource, pod)
-		if err != nil {
-			return
-		}
 		watchCtx, stopWatch := context.WithCancel(ctx)
-		stream, err := r.deps.Egress.WatchDecisions(watchCtx, decisionsRequest(projected.GetServiceAccount()))
+		stream, err := r.deps.Egress.WatchDecisions(watchCtx, decisionsRequest(&sandboxespb.ServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}))
 		if err != nil {
 			stopWatch()
 			if writeSSE(w, "snapshot", liveDecisionsFrame{Watching: false, Decisions: decisionsUnavailable{Detail: grpcFailure(err)}}, nil) != nil {
@@ -474,11 +543,10 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 	}
 }
 
-func (r *streamingRoutes) sandboxThreads(ctx context.Context, sandbox *sandboxapi.Sandbox, includeArchived bool) (any, error) {
-	if sandbox == nil || sandbox.UID == "" {
+func (r *streamingRoutes) sandboxThreads(ctx context.Context, name, sandboxUID string, includeArchived bool) (any, error) {
+	if name == "" || sandboxUID == "" {
 		return []threadView{}, nil
 	}
-	sandboxUID := string(sandbox.UID)
 	listing := threadListing{SandboxUID: &sandboxUID, IncludeArchived: includeArchived}
 	var all []threadView
 	var token *string
@@ -500,30 +568,6 @@ func (r *streamingRoutes) sandboxThreads(ctx context.Context, sandbox *sandboxap
 		}
 		token = page.NextPageToken
 	}
-}
-
-func snapshotSandbox(snapshot liveinventory.Snapshot, name string) (*sandboxapi.Sandbox, *corev1.Pod) {
-	var resource *sandboxapi.Sandbox
-	for i := range snapshot.Sandboxes {
-		if snapshot.Sandboxes[i].Name == name {
-			resource = &snapshot.Sandboxes[i]
-			break
-		}
-	}
-	if resource == nil {
-		return nil, nil
-	}
-	incarnation := resource.Status.Incarnation
-	if incarnation == nil {
-		return resource, nil
-	}
-	for i := range snapshot.Pods {
-		pod := &snapshot.Pods[i]
-		if pod.Namespace == resource.Namespace && pod.Name == incarnation.Name && string(pod.UID) == incarnation.UID {
-			return resource, pod
-		}
-	}
-	return resource, nil
 }
 
 func healthView(health watchhealth.Status) watchHealthView {
@@ -612,28 +656,47 @@ func (r *streamingRoutes) operatorLifetime(request *http.Request) (context.Conte
 	return ctx, cancel, nil
 }
 
-// environmentWatch allows either an authenticated app service caller or an operator session.
-// It forwards only the inventory watch, using the app's explicitly granted service identity.
-func (r *streamingRoutes) environmentWatch(w http.ResponseWriter, request *http.Request) {
+// environmentLifetime allows either an authenticated app service caller or an operator session.
+// Operator sessions remain tied to logout; service callers remain tied to the request and drain.
+func (r *streamingRoutes) environmentLifetime(request *http.Request) (context.Context, context.CancelFunc, error) {
+	caller, _ := auth.CallerFromContext(request.Context())
+	if caller.Kind == auth.CallerOperator {
+		return r.operatorLifetime(request)
+	}
+	ctx, cancel := r.requestLifetime(request)
+	return ctx, cancel, nil
+}
+
+func (r *streamingRoutes) environmentFacade(w http.ResponseWriter, request *http.Request, path string) {
 	if r.deps.DispatcherHTTP == nil {
 		writeDetailError(w, http.StatusServiceUnavailable, "Environment Service is not configured")
 		return
 	}
-	var ctx context.Context
-	var cancel context.CancelFunc
-	caller, _ := auth.CallerFromContext(request.Context())
-	if caller.Kind == auth.CallerOperator {
-		var err error
-		ctx, cancel, err = r.operatorLifetime(request)
-		if err != nil {
-			writeDetailError(w, http.StatusForbidden, "operator login required")
-			return
-		}
-	} else {
-		ctx, cancel = r.requestLifetime(request)
+	ctx, cancel, err := r.environmentLifetime(request)
+	if err != nil {
+		writeDetailError(w, http.StatusForbidden, "operator login required")
+		return
 	}
 	defer cancel()
-	r.forwardFacade(w, request, ctx, r.deps.DispatcherHTTP, "v1/environments:watch", "")
+	r.forwardFacade(w, request, ctx, r.deps.DispatcherHTTP, path, "")
+}
+
+// environmentWatch allows either an authenticated app service caller or an operator session.
+// It forwards only the inventory watch, using the app's explicitly granted service identity.
+func (r *streamingRoutes) environmentWatch(w http.ResponseWriter, request *http.Request) {
+	r.environmentFacade(w, request, "v1/environments:watch")
+}
+
+// environmentGet maps the explicit public target path to the generated EnvironmentService
+// GetEnvironment facade. The route is intentionally two path segments, never an upstream path
+// wildcard; TargetHandle UID remains in the query string for the generated handler.
+func (r *streamingRoutes) environmentGet(w http.ResponseWriter, request *http.Request) {
+	namespace, name := request.PathValue("namespace"), request.PathValue("name")
+	if len(validation.IsDNS1123Label(namespace)) > 0 || len(validation.IsDNS1123Subdomain(name)) > 0 {
+		http.NotFound(w, request)
+		return
+	}
+	r.environmentFacade(w, request, "v1/environments/"+namespace+"/"+name)
 }
 
 func (r *streamingRoutes) dispatcher(w http.ResponseWriter, request *http.Request) {
@@ -758,7 +821,12 @@ func (r *streamingRoutes) sandboxNotifications(w http.ResponseWriter, request *h
 		_ = sandboxHTTPErrorToRaw(w, err)
 		return
 	}
-	stream, err := r.deps.Notifications.WatchSandboxNotifications(ctx, &notifications_operatorpb.WatchSandboxNotificationsRequest{Namespace: sandbox.GetNamespace(), Name: sandbox.GetName(), Uid: sandbox.GetUid()})
+	target := sandbox.GetTarget()
+	if target == nil || target.GetName() != request.PathValue("name") || target.GetUid() == "" {
+		writeDetailError(w, http.StatusServiceUnavailable, "Environment identity is incomplete")
+		return
+	}
+	stream, err := r.deps.Notifications.WatchSandboxNotifications(ctx, &notifications_operatorpb.WatchSandboxNotificationsRequest{Namespace: target.GetNamespace(), Name: target.GetName(), Uid: target.GetUid()})
 	if err != nil {
 		writeGRPCOpenError(w, err)
 		return
@@ -888,7 +956,12 @@ func (r *streamingRoutes) console(w http.ResponseWriter, request *http.Request) 
 	if err := startSSE(w); err != nil {
 		return
 	}
-	console, err := r.deps.Console.Open(ctx, sandbox.GetNamespace(), sandbox.GetName())
+	target := sandbox.GetTarget()
+	if target == nil || target.GetName() != request.PathValue("name") || target.GetUid() == "" {
+		writeDetailError(w, http.StatusServiceUnavailable, "Environment identity is incomplete")
+		return
+	}
+	console, err := r.deps.Console.Open(ctx, target.GetNamespace(), target.GetName())
 	if err != nil {
 		var unavailable *sandboxes.ConsoleUnavailableError
 		if errors.As(err, &unavailable) {

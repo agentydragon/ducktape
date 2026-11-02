@@ -25,11 +25,12 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.action_service import action_service_pb2, operator_action_service_pb2
 from agentplane.action_service.policies.resources import ACTION_RULE_TYPE, ACTIONS_READY_CONDITION
 from agentplane.app.testing.client import Client
-from agentplane.app.testing.models import ActionPolicyView, CallerGrantView, SandboxView
+from agentplane.app.testing.models import ActionPolicyView, CallerGrantView
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.sandboxes.environments import environment_service_pb2
 from agentplane.system_tests import mcp_servers
 from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, WORKING_DIRECTORY, Agent
 from agentplane.system_tests.cluster import Cluster
@@ -113,15 +114,20 @@ class ScriptedAgent:
         cls,
         client: Client,
         dispatcher: SessionDispatcherClient,
-        sandbox: SandboxView,
+        sandbox: environment_service_pb2.EnvironmentDescriptor,
         *,
         harness: session_pb2.Harness,
         model: str,
         upstream: ScriptedUpstream,
     ) -> ScriptedAgent:
-        assert sandbox.pod is not None
+        assert sandbox.HasField("pod")
         agent = await Agent.open(
-            client, dispatcher, sandbox=sandbox.name, sandbox_uid=sandbox.uid, harness=harness, model=model
+            client,
+            dispatcher,
+            sandbox=sandbox.target.name,
+            sandbox_uid=sandbox.target.uid,
+            harness=harness,
+            model=model,
         )
         return cls(agent=agent, model=upstream.model(sandbox.pod.name, harness))
 
@@ -167,19 +173,23 @@ class PolicyObjects:
         rules = [{"type": ACTION_RULE_TYPE, "policy": policy} for policy in auto_approve]
         return await self._create("PolicySet", POLICY_SETS_PLURAL, name, {"rules": rules})
 
-    async def create_binding(self, name: str, *, sandbox: SandboxView, policy_sets: list[str]) -> str:
-        subject = {"namespace": sandbox.service_account.namespace, "name": sandbox.service_account.name}
+    async def create_binding(
+        self, name: str, *, sandbox: environment_service_pb2.EnvironmentDescriptor, policy_sets: list[str]
+    ) -> str:
+        subject = {"namespace": sandbox.execution_account.namespace, "name": sandbox.execution_account.name}
         return await self._create(
             "PolicyBinding", POLICY_BINDINGS_PLURAL, name, {"subject": subject, "policySets": policy_sets}
         )
 
-    async def bind(self, sandbox: SandboxView, name: str, auto_approve: list[dict[str, Any]]) -> tuple[str, str]:
+    async def bind(
+        self, sandbox: environment_service_pb2.EnvironmentDescriptor, name: str, auto_approve: list[dict[str, Any]]
+    ) -> tuple[str, str]:
         """One set bound to `sandbox`'s ServiceAccount, the binding ActionsReady: the set's and the
         binding's names."""
         suffix = uuid4().hex[:8]
         set_name = await self.create_policy_set(f"systest-{name}-{suffix}", auto_approve)
         binding_name = await self.create_binding(
-            f"{sandbox.name}-{name}-{suffix}", sandbox=sandbox, policy_sets=[set_name]
+            f"{sandbox.target.name}-{name}-{suffix}", sandbox=sandbox, policy_sets=[set_name]
         )
         await self.wait_actions_ready(binding_name)
         return set_name, binding_name
@@ -530,11 +540,13 @@ async def policy_binding_auto_approves_the_bound_sandbox(
     await _decide_pending(operator_bff, expired.id, action_service_pb2.VERDICT_DENY)
 
 
-async def _wait_unbound(operator_bff: httpx.AsyncClient, sandbox: SandboxView, binding_name: str) -> None:
+async def _wait_unbound(
+    operator_bff: httpx.AsyncClient, sandbox: environment_service_pb2.EnvironmentDescriptor, binding_name: str
+) -> None:
     """Until the Action Service no longer resolves `binding_name` for the Sandbox's ServiceAccount:
     a deleted binding has no condition left to acknowledge, so ask the service itself."""
     with tracer.start_as_current_span("system_test.mcp.policy_unbound"):
-        account = sandbox.service_account
+        account = sandbox.execution_account
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(POLICY_READY_SECONDS),
             wait=wait_fixed(1),
@@ -600,8 +612,8 @@ async def launcher_drives_only_the_sandbox_it_launched(
     deleted = False
     try:
         view = await wait_until_running(client, name, expected_uid=UUID(target["uid"]))
-        assert str(view.uid) == target["uid"]
-        assert view.pod is not None
+        assert str(view.target.uid) == target["uid"]
+        assert view.HasField("pod")
         # The Action Service holds the grant once it acknowledges the binding.
         await policy_objects.wait_actions_ready(f"{name}.launcher")
 
@@ -720,7 +732,7 @@ async def launcher_drives_only_the_sandbox_it_launched(
         assert refused.decision.provider == "action_policy_set"
         assert refused.decision.policy_evidence.matched.policy_set == f"{name}.launcher"
 
-        await suspend_and_delete(cluster, client, name, view.uid)
+        await suspend_and_delete(cluster, client, name, UUID(view.target.uid))
         deleted = True
         await _wait_unbound(operator_bff, launcher_view, f"{name}.launcher")
         revoked = await launcher.submit(

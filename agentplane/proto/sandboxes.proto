@@ -5,7 +5,6 @@ package agentplane.proto;
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/struct.proto";
-import "google/protobuf/timestamp.proto";
 
 message ServiceAccount {
   string namespace = 1;
@@ -48,15 +47,6 @@ message SandboxBinding {
   string bootstrap = 2;
 }
 
-// Kubernetes names/status vocabulary is preserved, not recast as runner state.
-message OwnerReference {
-  string api_version = 1;
-  string kind = 2;
-  string name = 3;
-  string uid = 4;
-  bool controller = 5;
-}
-
 message SandboxPod {
   string name = 1;
   string namespace = 2;
@@ -67,37 +57,19 @@ message SandboxPod {
   optional string node_name = 7;
 }
 
+// Kubernetes names/status vocabulary is preserved, not recast as runner state.
+message OwnerReference {
+  string api_version = 1;
+  string kind = 2;
+  string name = 3;
+  string uid = 4;
+  bool controller = 5;
+}
+
 // One live fact keeping the Sandbox from being considered idle for autosuspend.
 message AutosuspendBlocker {
   string reason = 1;
   optional string session_id = 2;
-}
-
-message Sandbox {
-  reserved 3, 6, 7, 10, 11, 12, 13, 17, 18, 19;
-  reserved "state", "conditions", "node_name", "kubernetes_grants", "kubernetes_grants_ready",
-      "kubernetes_grant_error", "launch_grants_pending", "initializing", "deleting", "teardown";
-
-  string name = 1;
-  string uid = 2;
-  google.protobuf.Timestamp created_at = 4;
-  // Absent until the Sandbox Controller reports its effective mode.
-  optional string operating_mode = 5;
-  ServiceAccount service_account = 8;
-  SandboxBinding binding = 9;
-  SandboxPod pod = 14;
-  string namespace = 15;
-  google.protobuf.Struct status = 16;
-  SandboxPhase phase = 20;
-  optional string preset = 21;
-  bool wake_on_send = 22;
-  // How long its runner must stay idle before the controller suspends the Sandbox; absent, never.
-  google.protobuf.Duration idle_suspend_after = 23;
-  // Why the Sandbox is suspended, `Idle` or `Requested`; absent while it runs.
-  optional string suspended_by = 24;
-  // Controller-clock deadline for the next idle suspension attempt; absent when no timer runs.
-  google.protobuf.Timestamp idle_suspend_at = 25;
-  repeated AutosuspendBlocker autosuspend_blockers = 26;
 }
 
 // Where the Sandbox is in its lifecycle, derived from what the Sandbox Controller records: whether

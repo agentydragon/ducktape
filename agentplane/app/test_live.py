@@ -10,6 +10,7 @@ import grpc
 import httpx
 import pytest
 import pytest_bazel
+from google.protobuf.json_format import ParseDict
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -17,13 +18,16 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.models import DecisionsSnapshot, DecisionsUnavailable
-from agentplane.app.testing.replication_process import AppProcess, SandboxesAccess, app_process
+from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
+from agentplane.app.testing.runner_gateway import APP, DISPATCHER_AUDIENCE, GATEWAY, GATEWAY_AUDIENCE
 from agentplane.app.testing.thread_test_support import ThreadHTTP
 from agentplane.egress import egress_admin_pb2_grpc
 from agentplane.egress.decisions import Outcome
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
+from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
+from agentplane.sandboxes.environments import environment_service_pb2
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
@@ -68,6 +72,31 @@ async def app_config(
             "egress_admin_url": f"http://127.0.0.1:{port}",
             "egress_admin_token_file": str(egress_token_file),
         }
+
+
+@pytest.fixture
+async def gateway_service(
+    namespace: SandboxNamespace, api_server: KubernetesApiServer, dispatcher_database_url: str, tmp_path: Path
+) -> AsyncIterator[GatewayProcess]:
+    gateway_token_file = tmp_path / "runner-gateway-token"
+    gateway_token_file.write_text(await api_server.workload_token(GATEWAY, [GATEWAY_AUDIENCE]))
+    async with run_gateway(
+        api_server.kubeconfig,
+        database_url=dispatcher_database_url,
+        namespace=namespace.name,
+        dispatcher_callers=(APP,),
+        gateway_callers=(APP, GATEWAY),
+        environment_readers=(APP,),
+        dispatcher_audience=DISPATCHER_AUDIENCE,
+        gateway_audience=GATEWAY_AUDIENCE,
+        runner_proxy_token_file=gateway_token_file,
+    ) as service:
+        yield service
+
+
+@pytest.fixture
+def namespace_gateway(gateway_service: GatewayProcess, app_token_file: Path) -> GatewayAccess:
+    return GatewayAccess(gateway_service.target, app_token_file)
 
 
 async def _snapshots(response: httpx.Response) -> AsyncIterator[str]:
@@ -115,13 +144,14 @@ async def test_threads_the_history_service_cannot_list_are_said_so_in_the_frame(
     api_server: KubernetesApiServer,
     app_config: dict[str, object],
     refused_address: str,
+    namespace_gateway: GatewayAccess,
 ) -> None:
     async with (
         app_process(
             db_url,
             history_client,
             sandboxes=SandboxesAccess(api_server.kubeconfig, namespace.name),
-            gateway=None,
+            gateway=namespace_gateway,
             config=app_config | {"history_service_target": refused_address, "history_service_request_timeout_s": 0.5},
         ) as app,
         httpx.AsyncClient(base_url=app.url, cookies=app.cookies, headers={"Origin": app.url}) as http,
@@ -129,7 +159,14 @@ async def test_threads_the_history_service_cannot_list_are_said_so_in_the_frame(
         http.stream("GET", "/live/sandboxes/runner-1") as response,
     ):
         snapshot = json.loads(await anext(_snapshots(response)))
-        assert snapshot["sandbox"]["name"] == "runner-1"
+        environment_response = await http.get(
+            f"/upstream/environments/v1/environments/{namespace.name}/runner-1",
+            params={"target.uid": snapshot["sandbox_uid"]},
+        )
+        assert environment_response.status_code == 200, environment_response.text
+        environment = ParseDict(environment_response.json(), environment_service_pb2.EnvironmentDescriptor())
+        assert environment.target.name == "runner-1"
+        assert environment.target.uid == snapshot["sandbox_uid"]
         assert snapshot["threads"] == {"kind": "unavailable", "code": "UNAVAILABLE"}
 
 
@@ -141,13 +178,14 @@ async def test_thread_metadata_watch_follows_replica_commits(
     history_client: HistoryServiceClient,
     api_server: KubernetesApiServer,
     app_config: dict[str, object],
+    namespace_gateway: GatewayAccess,
 ) -> None:
     async with (
         app_process(
             db_url,
             history_client,
             sandboxes=SandboxesAccess(api_server.kubeconfig, namespace.name),
-            gateway=None,
+            gateway=namespace_gateway,
             config=app_config,
         ) as replica,
         httpx.AsyncClient(base_url=replica.url, cookies=replica.cookies, headers={"Origin": replica.url}) as other,
@@ -202,6 +240,7 @@ async def test_thread_metadata_watch_reports_listener_loss_and_reconnect(
     history_client: HistoryServiceClient,
     namespace: SandboxNamespace,
     app_config: dict[str, object],
+    namespace_gateway: GatewayAccess,
 ) -> None:
     database_url, reconnect = database_reconnect_gate
     async with (
@@ -209,7 +248,7 @@ async def test_thread_metadata_watch_reports_listener_loss_and_reconnect(
             database_url,
             history_client,
             sandboxes=SandboxesAccess(namespace.kubeconfig, namespace.name),
-            gateway=None,
+            gateway=namespace_gateway,
             config=app_config,
         ) as app,
         httpx.AsyncClient(base_url=app.url, cookies=app.cookies, headers={"Origin": app.url}) as http,

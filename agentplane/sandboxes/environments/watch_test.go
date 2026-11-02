@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
@@ -222,6 +221,59 @@ func TestWatchEnvironmentSendsCurrentStateUpdatesAndFreshReconnectSnapshot(t *te
 	}
 }
 
+func TestWatchEnvironmentCoalescesCurrentPodStatusAndFencesReplacement(t *testing.T) {
+	f := newWatchFixture(t)
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "vm-launcher", Namespace: f.target.Namespace},
+		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "runner", Image: "test"}}},
+	}
+	if err := f.objects.Create(f.ctx, pod); err != nil {
+		t.Fatal(err)
+	}
+	sandbox := f.sandbox(t)
+	sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: pod.Name, UID: string(pod.UID)}
+	if err := f.objects.Status().Update(f.ctx, sandbox); err != nil {
+		t.Fatal(err)
+	}
+	stream, err := f.rpc.WatchEnvironment(f.ctx, &environmentpb.WatchEnvironmentRequest{Target: f.target})
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial, err := stream.Recv()
+	if err != nil || initial.GetEnvironment().GetPod().GetUid() != string(pod.UID) {
+		t.Fatalf("initial Pod snapshot = %v, %v", initial, err)
+	}
+	pod.Status.Phase = corev1.PodRunning
+	if err := f.objects.Status().Update(f.ctx, pod); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := stream.Recv()
+	if err != nil || updated.GetEnvironment().GetPod().GetStatus().AsMap()["phase"] != "Running" {
+		t.Fatalf("Pod status snapshot = %v, %v", updated, err)
+	}
+	if err := f.objects.Delete(f.ctx, pod); err != nil {
+		t.Fatal(err)
+	}
+	removedPod, err := stream.Recv()
+	if err != nil || removedPod.GetEnvironment().GetPod() != nil || removedPod.GetEnvironment().GetRuntimeIncarnationUid() != string(pod.UID) {
+		t.Fatalf("deleted current Pod snapshot = %v, %v", removedPod, err)
+	}
+	replacement := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: pod.Name, Namespace: pod.Namespace},
+		Spec:       pod.Spec,
+	}
+	if err := f.objects.Create(f.ctx, replacement); err != nil {
+		t.Fatal(err)
+	}
+	if replacement.UID == pod.UID {
+		t.Fatal("replacement Pod reused the previous UID")
+	}
+	got, err := f.rpc.GetEnvironment(f.ctx, &environmentpb.GetEnvironmentRequest{Target: f.target})
+	if err != nil || got.GetPod() != nil {
+		t.Fatalf("same-name replacement GetEnvironment = %v, %v, want no current Pod", got, err)
+	}
+}
+
 func TestWatchEnvironmentEndsWhenTargetOrExecutionAccountIsNoLongerAccessible(t *testing.T) {
 	for _, change := range []string{"replace target", "delete target", "replace execution account", "remove account owner"} {
 		t.Run(change, func(t *testing.T) {
@@ -313,10 +365,10 @@ func TestWatchEnvironmentDelegationUsesTheEffectiveCaller(t *testing.T) {
 	}
 }
 
-func TestWatchEnvironmentClosesBothSourcesOnWatchLoss(t *testing.T) {
+func TestWatchEnvironmentClosesAllSourcesOnWatchLoss(t *testing.T) {
 	for _, failure := range []string{"closed", "expired", "opening second watch"} {
 		t.Run(failure, func(t *testing.T) {
-			sources := make(chan *watch.RaceFreeFakeWatcher, 2)
+			sources := make(chan *watch.RaceFreeFakeWatcher, 3)
 			objects := interceptor.NewClient(baseReader(t), interceptor.Funcs{
 				Watch: func(_ context.Context, _ client.WithWatch, object client.ObjectList, _ ...client.ListOption) (watch.Interface, error) {
 					if _, second := object.(*corev1.ServiceAccountList); second && failure == "opening second watch" {
@@ -345,12 +397,20 @@ func TestWatchEnvironmentClosesBothSourcesOnWatchLoss(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			var first *watch.RaceFreeFakeWatcher
-			select {
-			case first = <-sources:
-			case <-ctx.Done():
-				t.Fatal("first Kubernetes watch was not opened")
+			wantSources := 3
+			if failure == "opening second watch" {
+				wantSources = 1
 			}
+			opened := make([]*watch.RaceFreeFakeWatcher, 0, wantSources)
+			for i := 0; i < wantSources; i++ {
+				select {
+				case source := <-sources:
+					opened = append(opened, source)
+				case <-ctx.Done():
+					t.Fatalf("only %d Kubernetes watches were opened", len(opened))
+				}
+			}
+			first := opened[0]
 			switch failure {
 			case "closed":
 				first.Stop()
@@ -361,26 +421,19 @@ func TestWatchEnvironmentClosesBothSourcesOnWatchLoss(t *testing.T) {
 				if _, err := stream.Recv(); status.Code(err) != codes.Unavailable {
 					t.Fatalf("lost watch = %v, want Unavailable", err)
 				}
-				var second *watch.RaceFreeFakeWatcher
-				select {
-				case second = <-sources:
-				case <-ctx.Done():
-					t.Fatal("second Kubernetes watch was not opened")
-				}
-				if !second.IsStopped() {
-					t.Fatal("second source was not stopped when watch ended")
-				}
 			}
-			if !first.IsStopped() {
-				t.Fatal("first source was not stopped when watch ended")
+			for index, source := range opened {
+				if !source.IsStopped() {
+					t.Fatalf("source %d was not stopped when watch ended", index)
+				}
 			}
 		})
 	}
 }
 
-func receiveCollection(t *testing.T, stream grpc.ServerStreamingClient[environmentpb.WatchEnvironmentsResponse]) []*sandboxespb.Sandbox {
+func receiveCollection(t *testing.T, stream grpc.ServerStreamingClient[environmentpb.WatchEnvironmentsResponse]) []*environmentpb.EnvironmentDescriptor {
 	t.Helper()
-	var found []*sandboxespb.Sandbox
+	var found []*environmentpb.EnvironmentDescriptor
 	for {
 		frame, err := stream.Recv()
 		if err != nil {
@@ -388,7 +441,7 @@ func receiveCollection(t *testing.T, stream grpc.ServerStreamingClient[environme
 		}
 		switch value := frame.Frame.(type) {
 		case *environmentpb.WatchEnvironmentsResponse_Snapshot:
-			found = append(found, value.Snapshot.Sandboxes...)
+			found = append(found, value.Snapshot.Environments...)
 		case *environmentpb.WatchEnvironmentsResponse_SnapshotComplete:
 			return found
 		default:
@@ -410,7 +463,7 @@ func TestWatchEnvironmentsScopesAndIncludesSandboxesWithoutAccounts(t *testing.T
 		t.Fatal(err)
 	}
 	ownRows := receiveCollection(t, own)
-	if len(ownRows) != 1 || ownRows[0].GetName() != sandboxName {
+	if len(ownRows) != 1 || ownRows[0].GetTarget().GetName() != sandboxName {
 		t.Fatalf("own snapshot = %v", ownRows)
 	}
 	all, err := f.rpc.WatchEnvironments(f.readerCtx, &emptypb.Empty{})
@@ -418,7 +471,7 @@ func TestWatchEnvironmentsScopesAndIncludesSandboxesWithoutAccounts(t *testing.T
 		t.Fatal(err)
 	}
 	allRows := receiveCollection(t, all)
-	if len(allRows) != 2 || allRows[0].GetName() != "other" || allRows[1].GetName() != sandboxName {
+	if len(allRows) != 2 || allRows[0].GetTarget().GetName() != "other" || allRows[1].GetTarget().GetName() != sandboxName {
 		t.Fatalf("reader snapshot = %v", allRows)
 	}
 	if err := f.objects.Delete(f.ctx, other); err != nil {
@@ -439,6 +492,19 @@ func TestCollectionWatchUpsertsAndRemovesOnAccountLoss(t *testing.T) {
 	initial := receiveCollection(t, stream)
 	if len(initial) != 1 {
 		t.Fatalf("initial = %v", initial)
+	}
+	var metadataSandbox sandboxapi.Sandbox
+	if err := f.objects.Get(f.ctx, types.NamespacedName{Namespace: f.target.Namespace, Name: f.target.Name}, &metadataSandbox); err != nil {
+		t.Fatal(err)
+	}
+	metadataSandbox.Annotations = map[string]string{"test.example/ignored": "changed"}
+	if err := f.objects.Update(f.ctx, &metadataSandbox); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-f.metadataRead:
+	case <-f.ctx.Done():
+		t.Fatal("collection watch did not reread the metadata-only update")
 	}
 	sandbox := f.sandbox(t)
 	sandbox.Spec.WakeOnSend = true
@@ -464,6 +530,43 @@ func TestCollectionWatchUpsertsAndRemovesOnAccountLoss(t *testing.T) {
 	}
 }
 
+func TestCollectionWatchTracksExecutionAccountChangesForBroadReaders(t *testing.T) {
+	f := newWatchFixture(t)
+	stream, err := f.rpc.WatchEnvironments(f.readerCtx, &emptypb.Empty{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := receiveCollection(t, stream)
+	if len(initial) != 1 || initial[0].GetExecutionAccount().GetUid() == "" {
+		t.Fatalf("initial broad-reader snapshot = %v", initial)
+	}
+	initialAccountUID := initial[0].GetExecutionAccount().GetUid()
+	var account corev1.ServiceAccount
+	key := types.NamespacedName{Namespace: f.target.Namespace, Name: f.target.Name}
+	if err := f.objects.Get(f.ctx, key, &account); err != nil {
+		t.Fatal(err)
+	}
+	account.OwnerReferences = nil
+	if err := f.objects.Update(f.ctx, &account); err != nil {
+		t.Fatal(err)
+	}
+	lost, err := stream.Recv()
+	if err != nil || lost.GetUpsert() == nil || lost.GetUpsert().GetExecutionAccount() != nil {
+		t.Fatalf("broad-reader account-loss update = %v, %v", lost, err)
+	}
+	if err := f.objects.Get(f.ctx, key, &account); err != nil {
+		t.Fatal(err)
+	}
+	account.OwnerReferences = executionAccountObject(types.UID(f.target.Uid)).OwnerReferences
+	if err := f.objects.Update(f.ctx, &account); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := stream.Recv()
+	if err != nil || restored.GetUpsert().GetExecutionAccount().GetUid() != initialAccountUID {
+		t.Fatalf("broad-reader account-restored update = %v, %v", restored, err)
+	}
+}
+
 func TestCollectionWatchRevalidatesIdleCredentialWithoutRenewal(t *testing.T) {
 	f := newWatchFixture(t)
 	stream, err := f.rpc.WatchEnvironments(f.readerCtx, &emptypb.Empty{})
@@ -485,7 +588,7 @@ func TestCollectionWatchRevalidatesIdleCredentialWithoutRenewal(t *testing.T) {
 		t.Fatal(err)
 	}
 	frame, err := stream.Recv()
-	if err != nil || frame.GetUpsert().GetUid() != string(other.UID) {
+	if err != nil || frame.GetUpsert().GetTarget().GetUid() != string(other.UID) {
 		t.Fatalf("stream did not remain open: %v, %v", frame, err)
 	}
 	f.reviews.revoked.Store(true)
@@ -549,7 +652,7 @@ func TestCollectionWatchFencesSameNameReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	updated, err := stream.Recv()
-	if err != nil || updated.GetUpsert().GetUid() != string(replacement.UID) || replacement.UID == old.UID {
+	if err != nil || updated.GetUpsert().GetTarget().GetUid() != string(replacement.UID) || replacement.UID == old.UID {
 		t.Fatalf("replacement = %v, %v (old uid %s)", updated, err, old.UID)
 	}
 }

@@ -204,6 +204,7 @@ ts_library(
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/proto:sandboxes_pb",
+        "//agentplane/sandboxes/environments:environment_service_pb",
     ],
 )
 
@@ -247,6 +248,7 @@ ts_library(
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/proto:sandboxes_pb",
+        "//agentplane/sandboxes/environments:environment_service_pb",
         "//util/frontend/transcript:retained_disclosures",
     ],
 )
@@ -284,6 +286,7 @@ ts_library(
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/proto:sandboxes_pb",
+        "//agentplane/sandboxes/environments:environment_service_pb",
     ],
 )
 
@@ -337,6 +340,7 @@ agentplane_vitest_test(
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:event_pb",
         "//agentplane/proto:sandboxes_pb",
+        "//agentplane/sandboxes/environments:environment_service_pb",
         "//util/frontend/transcript:retained_disclosures",
     ],
 )
@@ -608,6 +612,7 @@ ts_library(
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/proto:sandboxes_pb",
+        "//agentplane/sandboxes/environments:environment_service_pb",
     ],
 )
 
@@ -623,6 +628,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/testing:sandbox",
         "//agentplane/proto:sandboxes_pb",
+        "//agentplane/sandboxes/environments:environment_service_pb",
     ],
 )
 
@@ -710,6 +716,7 @@ ts_library(
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend:trace_search",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/sandboxes/environments:environment_service_pb",
     ],
 )
 
@@ -753,6 +760,7 @@ ts_library(
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/proto:sandboxes_pb",
+        "//agentplane/sandboxes/environments:environment_service_pb",
     ],
 )
 
@@ -780,6 +788,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/testing:sandbox",
         "//agentplane/app/frontend/testing:watch",
         "//agentplane/proto:sandboxes_pb",
+        "//agentplane/sandboxes/environments:environment_service_pb",
     ],
 )
 

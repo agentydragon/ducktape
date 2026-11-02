@@ -13,13 +13,13 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	sandboxview "github.com/agentydragon/ducktape/agentplane/sandboxes/view"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -67,42 +67,6 @@ func New(
 	}, nil
 }
 
-// ListSandboxes lists Sandbox resources and joins only the Pod UID reported as each Sandbox's
-// current incarnation.
-func (a *Access) ListSandboxes(ctx context.Context) ([]*sandboxespb.Sandbox, error) {
-	var sandboxes sandboxapi.SandboxList
-	if err := a.objects.List(ctx, &sandboxes, client.InNamespace(a.namespace)); err != nil {
-		return nil, fmt.Errorf("list Sandboxes: %w", err)
-	}
-	var pods corev1PodList
-	if err := a.objects.List(ctx, &pods, client.InNamespace(a.namespace)); err != nil {
-		return nil, fmt.Errorf("list Sandbox Pods: %w", err)
-	}
-	podsByName := make(map[string]*corev1Pod, len(pods.Items))
-	for index := range pods.Items {
-		pod := &pods.Items[index]
-		podsByName[pod.Name] = pod
-	}
-	views := make([]*sandboxespb.Sandbox, 0, len(sandboxes.Items))
-	for index := range sandboxes.Items {
-		resource := &sandboxes.Items[index]
-		var pod *corev1Pod
-		if incarnation := resource.Status.Incarnation; incarnation != nil {
-			candidate := podsByName[incarnation.Name]
-			if candidate != nil && string(candidate.UID) == incarnation.UID {
-				pod = candidate
-			}
-		}
-		view, err := sandboxview.View(resource, pod)
-		if err != nil {
-			return nil, fmt.Errorf("view Sandbox %q: %w", resource.Name, err)
-		}
-		views = append(views, view)
-	}
-	sort.Slice(views, func(i, j int) bool { return views[i].Name < views[j].Name })
-	return views, nil
-}
-
 // ListTemplates returns the sorted names of templates in the Sandbox namespace.
 func (a *Access) ListTemplates(ctx context.Context) ([]string, error) {
 	var templates sandboxapi.SandboxTemplateList
@@ -117,29 +81,9 @@ func (a *Access) ListTemplates(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
-// Get returns one Sandbox view and its reported Pod incarnation, if the Pod still has that UID.
-func (a *Access) Get(ctx context.Context, name string) (*sandboxespb.Sandbox, error) {
-	resource, err := a.read(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-	var pod *corev1Pod
-	if incarnation := resource.Status.Incarnation; incarnation != nil {
-		candidate := &corev1Pod{}
-		err := a.objects.Get(ctx, types.NamespacedName{Namespace: a.namespace, Name: incarnation.Name}, candidate)
-		if err != nil && !apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("read Sandbox incarnation Pod: %w", err)
-		}
-		if err == nil && string(candidate.UID) == incarnation.UID {
-			pod = candidate
-		}
-	}
-	return sandboxview.View(resource, pod)
-}
-
 // Create validates and creates a running Sandbox, applying the process defaults and recording an
 // immutable caller/request intent so an identical retry is idempotent.
-func (a *Access) Create(ctx context.Context, request *sandboxespb.CreateSandboxRequest) (*sandboxespb.Sandbox, error) {
+func (a *Access) Create(ctx context.Context, request *sandboxespb.CreateSandboxRequest) (*environmentpb.TargetHandle, error) {
 	if err := validateCreate(request); err != nil {
 		return nil, err
 	}
@@ -150,7 +94,7 @@ func (a *Access) Create(ctx context.Context, request *sandboxespb.CreateSandboxR
 	if existing, err := a.retry(ctx, request.GetName(), intent); err != nil {
 		return nil, err
 	} else if existing != nil {
-		return a.Get(ctx, request.GetName())
+		return environmentTarget(existing), nil
 	}
 
 	policySets := make(map[string]struct{}, len(a.defaultPolicySet)+len(request.GetPolicySets()))
@@ -166,6 +110,7 @@ func (a *Access) Create(ctx context.Context, request *sandboxespb.CreateSandboxR
 	}
 
 	resource := sandboxForCreate(request, a.namespace, policySetNames, intent)
+	created := resource
 	if err := a.objects.Create(ctx, resource); err != nil {
 		existing, retryErr := a.retry(ctx, request.GetName(), intent)
 		if retryErr != nil {
@@ -174,17 +119,21 @@ func (a *Access) Create(ctx context.Context, request *sandboxespb.CreateSandboxR
 		if existing == nil {
 			return nil, err
 		}
+		created = existing
 	}
-	return a.Get(ctx, request.GetName())
+	return environmentTarget(created), nil
+}
+
+func environmentTarget(resource *sandboxapi.Sandbox) *environmentpb.TargetHandle {
+	return &environmentpb.TargetHandle{Namespace: resource.Namespace, Name: resource.Name, Uid: string(resource.UID)}
 }
 
 // Suspend requests that the exact current Sandbox stop. It does not wait for controller status.
-func (a *Access) Suspend(ctx context.Context, name string) error {
-	view, err := a.Get(ctx, name)
-	if err != nil {
-		return err
+func (a *Access) Suspend(ctx context.Context, name, uid string) error {
+	if uid == "" {
+		return &InvalidSandboxError{Reason: "Sandbox UID is required"}
 	}
-	return a.setStopped(ctx, name, view.GetUid())
+	return a.setStopped(ctx, name, uid)
 }
 
 // SetWakeOnSend changes the durable wake policy on the UID selected by the caller.
@@ -234,12 +183,10 @@ func (a *Access) SetIdleSuspendAfter(ctx context.Context, name, uid string, valu
 
 // Delete begins teardown of the exact current Sandbox. Running Sandboxes are refused; repeated
 // requests against a Sandbox already deleting are idempotent.
-func (a *Access) Delete(ctx context.Context, name string) error {
-	view, err := a.Get(ctx, name)
-	if err != nil {
-		return err
+func (a *Access) Delete(ctx context.Context, name, uid string) error {
+	if uid == "" {
+		return &InvalidSandboxError{Reason: "Sandbox UID is required"}
 	}
-	uid := view.GetUid()
 	return a.retryConflict(func() error {
 		resource, err := a.incarnation(ctx, name, uid)
 		if err != nil {
@@ -541,8 +488,3 @@ func sameDuration(first, second *metav1.Duration) bool {
 	}
 	return first.Duration == second.Duration
 }
-
-type (
-	corev1Pod     = corev1.Pod
-	corev1PodList = corev1.PodList
-)

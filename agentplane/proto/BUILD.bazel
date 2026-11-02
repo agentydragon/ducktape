@@ -179,7 +179,6 @@ proto_library(
     deps = [
         "@protobuf//:duration_proto",
         "@protobuf//:struct_proto",
-        "@protobuf//:timestamp_proto",
     ],
 )
 

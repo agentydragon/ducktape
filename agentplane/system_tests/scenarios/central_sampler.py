@@ -4,7 +4,7 @@ import asyncio
 import json
 from contextlib import aclosing
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import grpc
 import pytest
@@ -16,7 +16,7 @@ from agentplane.history_service import history_service_pb2
 from agentplane.native.codex.testing import responses_sse
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
-from agentplane.sandbox_resource import OperatingMode
+from agentplane.sandboxes.environments import environment_service_pb2
 from agentplane.system_tests.central_sampler import MODEL, CentralStack, capture_sampler_diagnostics, central_stack
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
@@ -482,6 +482,9 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
     first_command_id, resumed_command_id = str(uuid4()), str(uuid4())
     cwd = executor.cwd
     async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
+        target = environment_service_pb2.TargetHandle(
+            namespace=cluster.namespace, name=deployed.sandbox, uid=deployed.sandbox_uid
+        )
         model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
         session_spec = session_pb2.SessionSpec(harness=session_pb2.HARNESS_CENTRAL_SAMPLER, cwd=cwd, model=MODEL)
@@ -542,18 +545,21 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         await _wait_for_execution_progress(deployed, session_id, "process", "running")
 
         previous_incarnation = deployed.incarnation_uid
-        await client.suspend_sandbox(deployed.sandbox)
+        await client.suspend_sandbox(deployed.sandbox, uid=deployed.sandbox_uid)
         async with asyncio.timeout(SANDBOX_READY_SECONDS):
             while True:
-                suspended = await client.sandbox(deployed.sandbox)
-                if suspended.operating_mode is OperatingMode.SUSPENDED and suspended.pod is None:
+                suspended = await client.get_environment(target)
+                if (
+                    suspended.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
+                    and not suspended.HasField("pod")
+                ):
                     break
                 await asyncio.sleep(0.2)
 
-        await client.resume_sandbox(deployed.sandbox)
-        resumed = await wait_until_running(client, deployed.sandbox, expected_uid=UUID(deployed.sandbox_uid))
-        assert str(resumed.uid) == deployed.sandbox_uid
-        assert resumed.pod is not None
+        await client.resume_sandbox(deployed.sandbox, uid=deployed.sandbox_uid)
+        resumed = await wait_until_running(client, target)
+        assert resumed.target.uid == deployed.sandbox_uid
+        assert resumed.HasField("pod")
         assert resumed.pod.uid != previous_incarnation
 
         submitted = await deployed.dispatcher.SubmitInput(

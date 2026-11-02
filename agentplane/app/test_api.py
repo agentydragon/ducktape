@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import errno
+import json
 import socket
 
 import httpx
 import pytest
 import pytest_bazel
+from google.protobuf.json_format import ParseDict
 
 from agentplane.app.sandbox_models import NewSandboxDefaults
-from agentplane.app.testing.models import SandboxView, ThreadView
+from agentplane.app.testing.models import ThreadView
 from agentplane.app.testing.replication_process import AppProcess, spawn_go_app
+from agentplane.sandboxes.environments import environment_service_pb2
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from util.net import listen_tcp
 from util.testing.postgres import DatabaseNames, create_temporary_database
@@ -40,13 +43,30 @@ async def test_go_app_serves_a_parent_owned_listener(
         assert listener.socket.getsockname() == (listener.host, listener.port)
 
 
-async def test_go_app_serves_sandbox_and_thread_views_using_the_shared_models(http: httpx.AsyncClient) -> None:
-    sandboxes_response = await http.get("/sandboxes")
-    assert sandboxes_response.status_code == 200, sandboxes_response.text
-    sandboxes = [SandboxView.model_validate(row) for row in sandboxes_response.json()]
-    assert [sandbox.name for sandbox in sandboxes] == ["test-runner"]
-    assert sandboxes[0].operating_mode == "Running"
-    assert sandboxes[0].pod is not None
+async def test_go_app_serves_environment_and_thread_views_from_generated_contract(http: httpx.AsyncClient) -> None:
+    environments: list[environment_service_pb2.EnvironmentDescriptor] = []
+    async with http.stream(
+        "GET", "/upstream/environments/v1/environments:watch", headers={"Accept": "application/x-ndjson"}
+    ) as response:
+        assert response.status_code == 200
+        async for line in response.aiter_lines():
+            if not line:
+                continue
+            frame = ParseDict(json.loads(line)["result"], environment_service_pb2.WatchEnvironmentsResponse())
+            if frame.WhichOneof("frame") == "snapshot":
+                environments.extend(frame.snapshot.environments)
+            elif frame.WhichOneof("frame") == "snapshot_complete":
+                break
+    (target,) = [row.target for row in environments if row.target.name == "test-runner"]
+    environment_response = await http.get(
+        f"/upstream/environments/v1/environments/{target.namespace}/{target.name}", params={"target.uid": target.uid}
+    )
+    assert environment_response.status_code == 200, environment_response.text
+    environment = ParseDict(environment_response.json(), environment_service_pb2.EnvironmentDescriptor())
+    assert environment.target == target
+    assert environment.operating_mode == environment_service_pb2.OPERATING_MODE_RUNNING
+    assert environment.HasField("pod")
+    assert environment.readiness.state == environment_service_pb2.READINESS_STATE_READY
 
     templates = await http.get("/sandboxes/templates")
     assert templates.status_code == 200, templates.text
@@ -61,13 +81,9 @@ async def test_go_app_serves_sandbox_and_thread_views_using_the_shared_models(ht
 async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(http: httpx.AsyncClient) -> None:
     response = await http.post("/sandboxes", json={"name": "created", "template": "test-template"})
     assert response.status_code == 201, response.text
-    created = SandboxView.model_validate(response.json())
-    assert created.name == "created"
-    assert created.operating_mode is None
-    assert created.pod is None
-    assert created.wake_on_send is False
-    assert (await http.get("/sandboxes/created")).status_code == 200
-    assert (await http.get("/sandboxes/missing")).status_code == 404
+    assert response.json()["namespace"]
+    assert response.json()["name"] == "created"
+    assert response.json()["uid"]
 
     invalid = await http.post("/sandboxes", json={"name": "missing-template"})
     assert invalid.status_code == 422
@@ -87,9 +103,10 @@ async def test_go_openapi_tracks_selected_python_http_contract_fields(http: http
     assert "/models" not in paths
     assert "/presets" not in paths
 
-    for model, schema_name in ((SandboxView, "SandboxView"), (ThreadView, "ThreadView")):
+    for model, schema_name in ((ThreadView, "ThreadView"),):
         properties = schemas[schema_name]["properties"]
         assert model.model_fields.keys() <= properties.keys()
+    assert "SandboxView" not in schemas
 
     form_properties = schemas["SandboxFormOutputBody"]["properties"]
     assert {"policy_sets", "new_sandbox_defaults"} <= form_properties.keys()
@@ -131,7 +148,9 @@ async def test_go_app_exposes_configured_browser_views_over_http(http: httpx.Asy
 
 async def test_protected_go_routes_reject_requests_without_a_workload_token(app: AppProcess) -> None:
     async with httpx.AsyncClient(base_url=app.url) as anonymous:
-        response = await anonymous.get("/sandboxes")
+        response = await anonymous.get(
+            "/upstream/environments/v1/environments/test-ns/box", params={"target.uid": "expected-uid"}
+        )
 
     assert response.status_code == 401
 

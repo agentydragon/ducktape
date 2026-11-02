@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/httperror"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
@@ -18,65 +17,14 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
-// SandboxView is the browser contract for the Kubernetes Sandbox and its current Pod incarnation.
-type SandboxView struct {
-	Name                    string                   `json:"name"`
-	UID                     string                   `json:"uid"`
-	Namespace               string                   `json:"namespace"`
-	CreatedAt               time.Time                `json:"created_at"`
-	OperatingMode           *string                  `json:"operating_mode"`
-	Status                  map[string]any           `json:"status"`
-	ServiceAccount          SandboxServiceAccount    `json:"service_account"`
-	Binding                 *SandboxBinding          `json:"binding"`
-	Preset                  *string                  `json:"preset"`
-	WakeOnSend              bool                     `json:"wake_on_send"`
-	IdleSuspendAfterSeconds *int64                   `json:"idle_suspend_after_seconds"`
-	IdleSuspendAt           *time.Time               `json:"idle_suspend_at"`
-	SuspendedBy             *string                  `json:"suspended_by"`
-	AutosuspendBlockers     []AutosuspendBlockerView `json:"autosuspend_blockers" nullable:"false"`
-	Phase                   string                   `json:"phase"`
-	Pod                     *SandboxPodView          `json:"pod"`
-}
-
-type AutosuspendBlockerView struct {
-	Reason    string  `json:"reason" enum:"ActiveTurn,PendingCommand,Setup,Activation,Bootstrap,Admission,ExecutorRelay"`
-	SessionID *string `json:"session_id" nullable:"true"`
-}
-
-type SandboxServiceAccount struct {
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
-}
-
-type SandboxBinding struct {
-	_         struct{} `nullable:"true"`
-	Bootstrap string   `json:"bootstrap"`
-}
-
-type SandboxPodView struct {
-	_               struct{}                `nullable:"true"`
-	Name            string                  `json:"name"`
-	Namespace       string                  `json:"namespace"`
-	UID             string                  `json:"uid"`
-	Deleting        bool                    `json:"deleting"`
-	OwnerReferences []SandboxOwnerReference `json:"owner_references" nullable:"false"`
-	NodeName        *string                 `json:"node_name"`
-	Status          map[string]any          `json:"status"`
-}
-
-type SandboxOwnerReference struct {
-	APIVersion string `json:"api_version"`
-	Kind       string `json:"kind"`
-	Name       string `json:"name"`
-	UID        string `json:"uid"`
-	Controller bool   `json:"controller"`
-}
-
 type (
-	sandboxListOutput struct {
-		Body []SandboxView `nullable:"false"`
+	sandboxOutput struct {
+		Body struct {
+			Namespace string `json:"namespace" required:"true"`
+			Name      string `json:"name" required:"true"`
+			UID       string `json:"uid" required:"true"`
+		}
 	}
-	sandboxOutput          struct{ Body SandboxView }
 	sandboxTemplatesOutput struct {
 		Body []string `nullable:"false"`
 	}
@@ -102,7 +50,7 @@ type newSandboxInput struct {
 type sandboxWakePolicyInput struct {
 	Name string `path:"name" minLength:"1" maxLength:"57" pattern:"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"`
 	Body struct {
-		UID        string `json:"uid" format:"uuid"`
+		UID        string `json:"uid" format:"uuid" required:"true"`
 		WakeOnSend bool   `json:"wake_on_send"`
 	}
 }
@@ -110,8 +58,22 @@ type sandboxWakePolicyInput struct {
 type sandboxIdleSuspendInput struct {
 	Name string `path:"name" minLength:"1" maxLength:"57" pattern:"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"`
 	Body struct {
-		UID                     string `json:"uid" format:"uuid"`
+		UID                     string `json:"uid" format:"uuid" required:"true"`
 		IdleSuspendAfterSeconds *int64 `json:"idle_suspend_after_seconds,omitempty" minimum:"60" maximum:"9223372036"`
+	}
+}
+
+type sandboxDeleteInput struct {
+	Name string `path:"name" minLength:"1" maxLength:"57" pattern:"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"`
+	Body struct {
+		UID string `json:"uid" minLength:"1" required:"true"`
+	}
+}
+
+type sandboxLifecycleInput struct {
+	Name string `path:"name" minLength:"1" maxLength:"57" pattern:"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"`
+	Body struct {
+		UID string `json:"uid" minLength:"1" required:"true"`
 	}
 }
 
@@ -119,27 +81,10 @@ type environmentResumer interface {
 	ResumeEnvironment(context.Context, *environmentpb.ResumeEnvironmentRequest) (*environmentpb.ResumeEnvironmentResponse, error)
 }
 
-type sandboxLifecycleInventory interface {
-	Get(context.Context, string) (*sandboxespb.Sandbox, error)
-}
-
-// RegisterSandboxRoutes installs inventory and lifecycle routes; explicit resume calls EnvironmentService.
+// RegisterSandboxRoutes installs Sandbox creation and lifecycle routes. Readable Sandbox state is
+// served by the caller-authorized EnvironmentService facade.
 func RegisterSandboxRoutes(server *HTTPServer, config Config, inventory *sandboxes.Access, environmentClient environmentResumer) {
 	api := server.ProtectedAPI()
-	huma.Register[struct{}, sandboxListOutput](api, huma.Operation{
-		OperationID: "listSandboxes", Method: http.MethodGet, Path: "/sandboxes", Tags: []string{"sandboxes"},
-		Summary: "List Sandboxes in the configured namespace",
-	}, func(ctx context.Context, _ *struct{}) (*sandboxListOutput, error) {
-		values, err := inventory.ListSandboxes(ctx)
-		if err != nil {
-			return nil, sandboxHTTPError(err)
-		}
-		views := make([]SandboxView, 0, len(values))
-		for _, value := range values {
-			views = append(views, sandboxView(value))
-		}
-		return &sandboxListOutput{Body: views}, nil
-	})
 	huma.Register[struct{}, sandboxTemplatesOutput](api, huma.Operation{
 		OperationID: "listSandboxTemplates", Method: http.MethodGet, Path: "/sandboxes/templates", Tags: []string{"sandboxes"},
 		Summary: "List templates available for a new Sandbox",
@@ -175,23 +120,13 @@ func RegisterSandboxRoutes(server *HTTPServer, config Config, inventory *sandbox
 		if err != nil {
 			return nil, sandboxHTTPError(err)
 		}
-		return &sandboxOutput{Body: sandboxView(value)}, nil
+		return sandboxCreatedOutput(value), nil
 	})
-	huma.Register[sandboxNameInput, sandboxOutput](api, huma.Operation{
-		OperationID: "getSandbox", Method: http.MethodGet, Path: "/sandboxes/{name}", Tags: []string{"sandboxes"},
-		Summary: "Get one Sandbox and its current Pod incarnation",
-	}, func(ctx context.Context, input *sandboxNameInput) (*sandboxOutput, error) {
-		value, err := inventory.Get(ctx, input.Name)
-		if err != nil {
-			return nil, sandboxHTTPError(err)
-		}
-		return &sandboxOutput{Body: sandboxView(value)}, nil
+	registerSandboxMutation(api, "suspendSandbox", "suspend", http.MethodPost, func(ctx context.Context, name, uid string) error {
+		return inventory.Suspend(ctx, name, uid)
 	})
-	registerSandboxMutation(api, "suspendSandbox", "suspend", http.MethodPost, func(ctx context.Context, name string) error {
-		return inventory.Suspend(ctx, name)
-	})
-	registerSandboxMutation(api, "resumeSandbox", "resume", http.MethodPost, func(ctx context.Context, name string) error {
-		return requestSandboxResume(ctx, config.SandboxNamespace, name, inventory, environmentClient)
+	registerSandboxMutation(api, "resumeSandbox", "resume", http.MethodPost, func(ctx context.Context, name, uid string) error {
+		return requestSandboxResume(ctx, config.SandboxNamespace, name, uid, environmentClient)
 	})
 	huma.Register[sandboxWakePolicyInput, struct{}](api, huma.Operation{
 		OperationID: "setSandboxWakePolicy", Method: http.MethodPatch, Path: "/sandboxes/{name}/wake-policy", Tags: []string{"sandboxes"},
@@ -218,35 +153,28 @@ func RegisterSandboxRoutes(server *HTTPServer, config Config, inventory *sandbox
 		}
 		return nil, nil
 	})
-	registerSandboxMutation(api, "deleteSandbox", "", http.MethodDelete, func(ctx context.Context, name string) error {
-		return inventory.Delete(ctx, name)
+	huma.Register[sandboxDeleteInput, struct{}](api, huma.Operation{
+		OperationID: "deleteSandbox", Method: http.MethodDelete, Path: "/sandboxes/{name}", Tags: []string{"sandboxes"},
+		Summary: "Begin teardown of the exact Sandbox incarnation", DefaultStatus: http.StatusNoContent,
+	}, func(ctx context.Context, input *sandboxDeleteInput) (*struct{}, error) {
+		if err := inventory.Delete(ctx, input.Name, input.Body.UID); err != nil {
+			return nil, sandboxHTTPError(err)
+		}
+		return nil, nil
 	})
 }
 
-func requestSandboxResume(
-	ctx context.Context,
-	namespace string,
-	name string,
-	inventory sandboxLifecycleInventory,
-	environmentClient environmentResumer,
-) error {
-	if inventory == nil || environmentClient == nil {
-		return errors.New("Sandbox inventory and EnvironmentService are unavailable")
+func requestSandboxResume(ctx context.Context, namespace, name, uid string, environmentClient environmentResumer) error {
+	if environmentClient == nil || namespace == "" || name == "" || uid == "" {
+		return errors.New("EnvironmentService or Sandbox identity is unavailable")
 	}
-	current, err := inventory.Get(ctx, name)
-	if err != nil {
-		return err
-	}
-	if current.GetNamespace() != namespace || current.GetName() != name || current.GetUid() == "" {
-		return errors.New("current Sandbox identity is incomplete")
-	}
-	target := &environmentpb.TargetHandle{Namespace: namespace, Name: name, Uid: current.GetUid()}
+	target := &environmentpb.TargetHandle{Namespace: namespace, Name: name, Uid: uid}
 	response, err := environmentClient.ResumeEnvironment(ctx, &environmentpb.ResumeEnvironmentRequest{Target: target})
 	if err != nil {
 		return err
 	}
 	if response == nil || response.GetTarget() == nil || response.GetTarget().GetNamespace() != namespace ||
-		response.GetTarget().GetName() != name || response.GetTarget().GetUid() != current.GetUid() {
+		response.GetTarget().GetName() != name || response.GetTarget().GetUid() != uid {
 		return errors.New("EnvironmentService returned a different Sandbox identity")
 	}
 	if response.GetOutcome() == environmentpb.ResumeOutcome_RESUME_OUTCOME_STATE_CHANGED {
@@ -259,96 +187,29 @@ func requestSandboxResume(
 	return nil
 }
 
-func registerSandboxMutation(api huma.API, operationID, suffix string, method string, change func(context.Context, string) error) {
+func sandboxCreatedOutput(value *environmentpb.TargetHandle) *sandboxOutput {
+	output := &sandboxOutput{}
+	if value != nil {
+		output.Body.Namespace = value.GetNamespace()
+		output.Body.Name = value.GetName()
+		output.Body.UID = value.GetUid()
+	}
+	return output
+}
+
+func registerSandboxMutation(api huma.API, operationID, suffix string, method string, change func(context.Context, string, string) error) {
 	path := "/sandboxes/{name}"
 	if suffix != "" {
 		path += "/" + suffix
 	}
-	huma.Register[sandboxNameInput, struct{}](api, huma.Operation{
+	huma.Register[sandboxLifecycleInput, struct{}](api, huma.Operation{
 		OperationID: operationID, Method: method, Path: path, Tags: []string{"sandboxes"}, DefaultStatus: http.StatusNoContent,
-	}, func(ctx context.Context, input *sandboxNameInput) (*struct{}, error) {
-		if err := change(ctx, input.Name); err != nil {
+	}, func(ctx context.Context, input *sandboxLifecycleInput) (*struct{}, error) {
+		if err := change(ctx, input.Name, input.Body.UID); err != nil {
 			return nil, sandboxHTTPError(err)
 		}
 		return nil, nil
 	})
-}
-
-func sandboxView(value *sandboxespb.Sandbox) SandboxView {
-	view := SandboxView{
-		Name: value.GetName(), UID: value.GetUid(), Namespace: value.GetNamespace(),
-		ServiceAccount: SandboxServiceAccount{}, WakeOnSend: value.GetWakeOnSend(),
-		Phase: sandboxPhaseView(value.GetPhase()), Status: map[string]any{},
-		AutosuspendBlockers: make([]AutosuspendBlockerView, 0, len(value.GetAutosuspendBlockers())),
-	}
-	for _, blocker := range value.GetAutosuspendBlockers() {
-		view.AutosuspendBlockers = append(view.AutosuspendBlockers, AutosuspendBlockerView{
-			Reason: blocker.GetReason(), SessionID: blocker.SessionId,
-		})
-	}
-	if value.CreatedAt != nil && value.CreatedAt.IsValid() {
-		view.CreatedAt = value.CreatedAt.AsTime()
-	}
-	if value.IdleSuspendAt != nil && value.IdleSuspendAt.IsValid() {
-		at := value.IdleSuspendAt.AsTime()
-		view.IdleSuspendAt = &at
-	}
-	if account := value.GetServiceAccount(); account != nil {
-		view.ServiceAccount = SandboxServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}
-	}
-	if binding := value.GetBinding(); binding != nil {
-		view.Binding = &SandboxBinding{Bootstrap: binding.GetBootstrap()}
-	}
-	if value.Preset != nil {
-		preset := value.GetPreset()
-		view.Preset = &preset
-	}
-	if value.OperatingMode != nil {
-		mode := value.GetOperatingMode()
-		view.OperatingMode = &mode
-	}
-	if value.SuspendedBy != nil {
-		suspendedBy := value.GetSuspendedBy()
-		view.SuspendedBy = &suspendedBy
-	}
-	if duration := value.GetIdleSuspendAfter(); duration != nil {
-		seconds := int64(duration.AsDuration().Seconds())
-		view.IdleSuspendAfterSeconds = &seconds
-	}
-	if status := value.GetStatus(); status != nil {
-		view.Status = status.AsMap()
-		if _, ok := view.Status["conditions"]; !ok {
-			view.Status["conditions"] = []any{}
-		}
-	}
-	if pod := value.GetPod(); pod != nil {
-		podView := &SandboxPodView{
-			Name: pod.GetName(), Namespace: pod.GetNamespace(), UID: pod.GetUid(), Deleting: pod.GetDeleting(),
-			NodeName: pod.NodeName, Status: map[string]any{}, OwnerReferences: make([]SandboxOwnerReference, 0, len(pod.GetOwnerReferences())),
-		}
-		if pod.GetStatus() != nil {
-			podView.Status = pod.GetStatus().AsMap()
-		}
-		for _, owner := range pod.GetOwnerReferences() {
-			podView.OwnerReferences = append(podView.OwnerReferences, SandboxOwnerReference{
-				APIVersion: owner.GetApiVersion(), Kind: owner.GetKind(), Name: owner.GetName(), UID: owner.GetUid(), Controller: owner.GetController(),
-			})
-		}
-		view.Pod = podView
-	}
-	return view
-}
-
-func sandboxPhaseView(phase sandboxespb.SandboxPhase) string {
-	return map[sandboxespb.SandboxPhase]string{
-		sandboxespb.SandboxPhase_SANDBOX_PHASE_UNSPECIFIED:  "Unspecified",
-		sandboxespb.SandboxPhase_SANDBOX_PHASE_CREATING:     "Creating",
-		sandboxespb.SandboxPhase_SANDBOX_PHASE_RUNNING:      "Running",
-		sandboxespb.SandboxPhase_SANDBOX_PHASE_SUSPENDING:   "Suspending",
-		sandboxespb.SandboxPhase_SANDBOX_PHASE_SUSPENDED:    "Suspended",
-		sandboxespb.SandboxPhase_SANDBOX_PHASE_QUIESCING:    "Quiescing",
-		sandboxespb.SandboxPhase_SANDBOX_PHASE_TEARING_DOWN: "Tearing down",
-	}[phase]
 }
 
 func sandboxHTTPError(err error) error {
@@ -362,6 +223,7 @@ func classifySandboxError(err error) error {
 	var running *sandboxes.SandboxRunningError
 	var modeUnknown *sandboxes.SandboxModeUnknownError
 	var tearingDown *sandboxes.SandboxTearingDownError
+	var quiescing *sandboxes.SandboxQuiescingError
 	switch {
 	case errors.As(err, &notFound), apierrors.IsNotFound(err):
 		return huma.Error404NotFound(err.Error())
@@ -369,6 +231,8 @@ func classifySandboxError(err error) error {
 		return huma.Error422UnprocessableEntity(err.Error())
 	case errors.As(err, &conflict), errors.As(err, &running), errors.As(err, &modeUnknown), errors.As(err, &tearingDown):
 		return huma.Error409Conflict(err.Error())
+	case errors.As(err, &quiescing):
+		return huma.Error503ServiceUnavailable(err.Error())
 	default:
 		switch grpcstatus.Code(err) {
 		case codes.NotFound:

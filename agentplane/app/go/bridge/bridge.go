@@ -11,19 +11,18 @@ import (
 	"unicode/utf8"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-// SandboxGetter returns the caller-visible Sandbox record. Implementations must
-// read the current Kubernetes object, including its current UID and namespace.
+// SandboxGetter returns the caller-authorized descriptor for the current name.
 type SandboxGetter interface {
-	Get(context.Context, string) (*sandboxespb.Sandbox, error)
+	Get(context.Context, string) (*environmentpb.EnvironmentDescriptor, error)
 }
 
 // Dispatcher is the narrow unary surface used by the RunnerBridge.
@@ -36,8 +35,8 @@ type Dispatcher interface {
 // Service. The concrete GatewayRunnerProxy binds all four identity values on
 // every call.
 type RunnerProxy interface {
-	ListSessions(context.Context, *sandboxespb.Sandbox) (*sessionpb.ListSessionsResponse, error)
-	EnvironmentRuntimeStatus(context.Context, *sandboxespb.Sandbox) (*sessionpb.EnvironmentRuntimeStatus, error)
+	ListSessions(context.Context, *environmentpb.EnvironmentDescriptor) (*sessionpb.ListSessionsResponse, error)
+	EnvironmentRuntimeStatus(context.Context, *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error)
 }
 
 // RunnerBridge joins the app's Sandbox identity, Dispatcher and Runner services.
@@ -139,7 +138,7 @@ func (b *RunnerBridge) EnvironmentRuntimeStatus(ctx context.Context, sandboxName
 	return b.runner.EnvironmentRuntimeStatus(ctx, sandbox)
 }
 
-func (b *RunnerBridge) currentSandbox(ctx context.Context, name string) (*sandboxespb.Sandbox, error) {
+func (b *RunnerBridge) currentSandbox(ctx context.Context, name string) (*environmentpb.EnvironmentDescriptor, error) {
 	if name == "" {
 		return nil, errors.New("Sandbox name is required")
 	}
@@ -147,7 +146,8 @@ func (b *RunnerBridge) currentSandbox(ctx context.Context, name string) (*sandbo
 	if err != nil {
 		return nil, err
 	}
-	if sandbox == nil || sandbox.GetName() != name || sandbox.GetUid() == "" || sandbox.GetNamespace() == "" {
+	if sandbox == nil || sandbox.GetTarget() == nil || sandbox.GetTarget().GetName() != name ||
+		sandbox.GetTarget().GetUid() == "" || sandbox.GetTarget().GetNamespace() == "" {
 		return nil, fmt.Errorf("Sandbox %q has incomplete or mismatched identity", name)
 	}
 	return sandbox, nil

@@ -23,7 +23,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -34,7 +34,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 func TestWriteSSEPreservesEventIDAndJSONData(t *testing.T) {
@@ -110,6 +109,56 @@ type streamTestLive struct {
 	changes   chan struct{}
 }
 
+type streamTestEnvironments struct {
+	mu         sync.Mutex
+	descriptor *environmentpb.EnvironmentDescriptor
+	err        error
+	nameGets   int
+	exactGets  int
+}
+
+func (f *streamTestEnvironments) Get(_ context.Context, name string) (*environmentpb.EnvironmentDescriptor, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nameGets++
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.descriptor == nil || f.descriptor.GetTarget().GetName() != name {
+		return nil, status.Error(codes.NotFound, "Environment not found")
+	}
+	return proto.Clone(f.descriptor).(*environmentpb.EnvironmentDescriptor), nil
+}
+
+func (f *streamTestEnvironments) GetExactUID(_ context.Context, name, uid string) (*environmentpb.EnvironmentDescriptor, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.exactGets++
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.descriptor == nil || f.descriptor.GetTarget().GetName() != name || f.descriptor.GetTarget().GetUid() != uid {
+		return nil, status.Error(codes.NotFound, "Environment target UID is no longer current")
+	}
+	return proto.Clone(f.descriptor).(*environmentpb.EnvironmentDescriptor), nil
+}
+
+func (f *streamTestEnvironments) set(descriptor *environmentpb.EnvironmentDescriptor) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if descriptor == nil {
+		f.descriptor = nil
+		return
+	}
+	f.descriptor = proto.Clone(descriptor).(*environmentpb.EnvironmentDescriptor)
+}
+
+func (f *streamTestEnvironments) readCounts() (nameGets, exactGets int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.nameGets, f.exactGets
+}
+
 func (f *streamTestLive) Snapshot(context.Context) (liveinventory.Snapshot, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -149,10 +198,7 @@ func TestSandboxThreadsUseCurrentSandboxUID(t *testing.T) {
 		Threads: store,
 		History: history,
 	}}
-	replacement := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
-		Name: "reused-name", UID: currentUID,
-	}}
-	got, err := routes.sandboxThreads(context.Background(), replacement, true)
+	got, err := routes.sandboxThreads(context.Background(), "reused-name", currentUID, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,11 +207,14 @@ func TestSandboxThreadsUseCurrentSandboxUID(t *testing.T) {
 		t.Fatalf("replacement Sandbox threads = %+v, want only %s", views, currentID)
 	}
 
-	for _, sandbox := range []*sandboxapi.Sandbox{
-		nil,
-		{ObjectMeta: metav1.ObjectMeta{Name: "reused-name"}},
+	for _, identity := range []struct {
+		name string
+		uid  string
+	}{
+		{},
+		{name: "reused-name"},
 	} {
-		got, err := routes.sandboxThreads(context.Background(), sandbox, true)
+		got, err := routes.sandboxThreads(context.Background(), identity.name, identity.uid, true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -204,7 +253,7 @@ func (f *decisionTestWatcher) WatchDecisions(_ context.Context, request *egress_
 
 func TestEgressDecisionStreamSnapshotsUpdatesAndDisconnect(t *testing.T) {
 	live := &streamTestLive{
-		snapshots: []liveinventory.Snapshot{{Sandboxes: []sandboxapi.Sandbox{{ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo", UID: "sandbox-uid"}}}}},
+		snapshots: []liveinventory.Snapshot{{}},
 		changes:   make(chan struct{}),
 	}
 	watcher := &decisionTestWatcher{stream: &decisionTestStream{
@@ -215,7 +264,8 @@ func TestEgressDecisionStreamSnapshotsUpdatesAndDisconnect(t *testing.T) {
 		err: status.Error(codes.Unavailable, "watch broke"),
 	}}
 	server := NewHTTPServer(nil)
-	routes := &streamingRoutes{server: server, deps: StreamingDependencies{Live: live, Egress: watcher}}
+	environments := &streamTestEnvironments{descriptor: testEnvironment("tools", "demo", "sandbox-uid", "tools", "demo")}
+	routes := &streamingRoutes{server: server, deps: StreamingDependencies{Live: live, Sandboxes: environments, Egress: watcher}}
 	ctx, cancel := context.WithCancel(context.Background())
 	request := httptest.NewRequest(http.MethodGet, "/live/sandboxes/demo/egress/decisions", nil).WithContext(ctx)
 	request.SetPathValue("name", "demo")
@@ -1098,18 +1148,20 @@ func (f *countingThreadStore) pageCount() int {
 	return f.pages
 }
 
-func liveFramesSnapshot(idleSuspendAt *metav1.Time) liveinventory.Snapshot {
-	return liveinventory.Snapshot{
-		Sandboxes: []sandboxapi.Sandbox{{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo", UID: types.UID(liveFramesSandboxUID)},
-			Status:     sandboxapi.SandboxStatus{IdleSuspendAt: idleSuspendAt},
-		}},
-		Watch: watchhealth.Status{Available: true, Synced: true},
+func liveFramesSnapshot() liveinventory.Snapshot {
+	return liveinventory.Snapshot{Watch: watchhealth.Status{Available: true, Synced: true}}
+}
+
+func testEnvironment(namespace, name, uid, accountNamespace, accountName string) *environmentpb.EnvironmentDescriptor {
+	return &environmentpb.EnvironmentDescriptor{
+		Target:           &environmentpb.TargetHandle{Namespace: namespace, Name: name, Uid: uid},
+		ExecutionAccount: &environmentpb.AccountHandle{Namespace: accountNamespace, Name: accountName},
 	}
 }
 
 type liveFramesFixture struct {
 	live    *countingLive
+	envs    *streamTestEnvironments
 	store   *countingThreadStore
 	updates *streamTestChanges
 	routes  *streamingRoutes
@@ -1118,7 +1170,8 @@ type liveFramesFixture struct {
 func newLiveFramesFixture() *liveFramesFixture {
 	summary := historydata.FoldSummary{Present: true, Sandbox: "demo", SandboxUID: liveFramesSandboxUID}
 	f := &liveFramesFixture{
-		live:    &countingLive{snapshot: liveFramesSnapshot(nil), unsubscribed: make(chan struct{}, 8)},
+		live:    &countingLive{snapshot: liveFramesSnapshot(), unsubscribed: make(chan struct{}, 8)},
+		envs:    &streamTestEnvironments{descriptor: testEnvironment("tools", "demo", liveFramesSandboxUID, "tools", "demo")},
 		store:   &countingThreadStore{rows: []threads.Thread{{ID: liveFramesFirstThread}}},
 		updates: &streamTestChanges{changes: make(chan struct{}, 1), unsubscribed: make(chan struct{}, 8)},
 	}
@@ -1128,7 +1181,7 @@ func newLiveFramesFixture() *liveFramesFixture {
 		sandboxUIDs: map[uuid.UUID]string{liveFramesFirstThread: liveFramesSandboxUID, liveFramesSecondThread: liveFramesSandboxUID},
 	}
 	f.routes = newStreamingRoutes(NewHTTPServer(nil), StreamingDependencies{
-		Live: f.live, Threads: f.store, History: history, Updates: f.updates,
+		Live: f.live, Sandboxes: f.envs, Threads: f.store, History: history, Updates: f.updates,
 	})
 	return f
 }
@@ -1182,18 +1235,46 @@ func TestLiveSandboxStreamsShareThreadReadsAcrossViewers(t *testing.T) {
 		return request
 	}, 2)
 
+	waitForEveryStream(t, responses, `"sandbox_uid":"`+liveFramesSandboxUID+`"`)
 	waitForEveryStream(t, responses, liveFramesFirstThread.String())
 	f.assertReads(t, "initial frame", 1, 1)
 
-	deadline := metav1.NewTime(time.Date(2026, 10, 20, 1, 4, 3, 0, time.UTC))
-	f.live.change(liveFramesSnapshot(&deadline))
-	waitForEveryStream(t, responses, `"idle_suspend_at":"2026-10-20T01:04:03Z"`)
+	changed := liveFramesSnapshot()
+	changed.Watch.Failing = map[watchhealth.Kind]watchhealth.Failure{"pods": {Error: "test failure", Since: time.Date(2026, 10, 20, 1, 4, 3, 0, time.UTC)}}
+	f.live.change(changed)
+	waitForEveryStream(t, responses, `"pods":{"error":"test failure"`)
 	f.assertReads(t, "Kubernetes-only change", 2, 1)
+	if nameGets, exactGets := f.envs.readCounts(); nameGets != 1 || exactGets != 1 {
+		t.Fatalf("steady-state Environment reads = name %d exact %d, want name 1 exact 1", nameGets, exactGets)
+	}
 
 	f.store.setRows(threads.Thread{ID: liveFramesSecondThread}, threads.Thread{ID: liveFramesFirstThread})
 	f.updates.changes <- struct{}{}
 	waitForEveryStream(t, responses, liveFramesSecondThread.String())
 	f.assertReads(t, "thread update", 3, 2)
+	if nameGets, exactGets := f.envs.readCounts(); nameGets != 1 || exactGets != 2 {
+		t.Fatalf("thread-update Environment reads = name %d exact %d, want name 1 exact 2", nameGets, exactGets)
+	}
+
+	const replacementUID = "44444444-4444-4444-8444-444444444444"
+	f.envs.set(testEnvironment("tools", "demo", replacementUID, "tools", "demo"))
+	f.live.change(changed)
+	waitForEveryStream(t, responses, `"sandbox_uid":"`+replacementUID+`"`)
+	for _, response := range responses {
+		body := response.String()
+		index := strings.LastIndex(body, `"sandbox_uid":"`+replacementUID+`"`)
+		frame := ""
+		if index >= 0 {
+			frame = body[index:]
+		}
+		if index < 0 || !strings.Contains(frame, `"threads":[]`) || strings.Contains(frame, liveFramesFirstThread.String()) || strings.Contains(frame, liveFramesSecondThread.String()) {
+			t.Fatalf("replacement frame reused prior Sandbox threads: %s", frame)
+		}
+	}
+	f.assertReads(t, "same-name Environment replacement", 4, 3)
+	if nameGets, exactGets := f.envs.readCounts(); nameGets != 2 || exactGets != 3 {
+		t.Fatalf("replacement Environment reads = name %d exact %d, want name 2 exact 3", nameGets, exactGets)
+	}
 
 	cancel()
 	wait()
@@ -1225,5 +1306,112 @@ func TestEnvironmentWatchRequiresAppCallerAndForwardsOnlyInventory(t *testing.T)
 	server.Handler(authentication).ServeHTTP(response, request)
 	if response.Code != http.StatusOK || gotPath != "v1/environments:watch" {
 		t.Fatalf("watch = %d, path = %q", response.Code, gotPath)
+	}
+}
+
+func TestEnvironmentGetRequiresAppCallerAndForwardsOnlyTarget(t *testing.T) {
+	authentication := newStreamTestAuth(t)
+	server := NewHTTPServer(authentication)
+	var gotMethod, gotPath, gotQuery string
+	var calls int
+	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, request *http.Request, _ context.Context, path, bearer string) error {
+		calls++
+		gotMethod, gotPath, gotQuery = request.Method, path, request.URL.RawQuery
+		if bearer != "" {
+			t.Fatalf("unexpected forwarded bearer: %q", bearer)
+		}
+		w.WriteHeader(http.StatusOK)
+		return nil
+	}}
+	RegisterStreamingRoutes(server, StreamingDependencies{DispatcherHTTP: upstream})
+	path := "/upstream/environments/v1/environments/team-a/sandbox-1?target.uid=22222222-2222-4222-8222-222222222222"
+	unauthenticated := httptest.NewRecorder()
+	server.Handler(authentication).ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, path, nil))
+	if unauthenticated.Code != http.StatusUnauthorized || calls != 0 {
+		t.Fatalf("anonymous get = %d, upstream calls = %d", unauthenticated.Code, calls)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	request.Header.Set("Authorization", "Bearer accepted")
+	response := httptest.NewRecorder()
+	server.Handler(authentication).ServeHTTP(response, request)
+	if response.Code != http.StatusOK || calls != 1 {
+		t.Fatalf("authenticated get = %d, upstream calls = %d", response.Code, calls)
+	}
+	if gotMethod != http.MethodGet || gotPath != "v1/environments/team-a/sandbox-1" ||
+		gotQuery != "target.uid=22222222-2222-4222-8222-222222222222" {
+		t.Fatalf("forwarded get = %s %s?%s", gotMethod, gotPath, gotQuery)
+	}
+}
+
+func TestEnvironmentGetDoesNotExposeWildcardOrWatchRoutes(t *testing.T) {
+	authentication := newStreamTestAuth(t)
+	server := NewHTTPServer(authentication)
+	calls := 0
+	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, _ *http.Request, _ context.Context, _, _ string) error {
+		calls++
+		w.WriteHeader(http.StatusOK)
+		return nil
+	}}
+	RegisterStreamingRoutes(server, StreamingDependencies{DispatcherHTTP: upstream})
+	handler := server.Handler(authentication)
+	for _, path := range []string{
+		"/upstream/environments/v1/environments/team-a/sandbox-1/extra",
+		"/upstream/environments/v1/environments/team-a/sandbox-1:watch",
+		"/upstream/environments/v1/environments/team-a/sandbox-1:watch/extra",
+	} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.Header.Set("Authorization", "Bearer accepted")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusNotFound {
+			t.Errorf("GET %s = %d, want 404", path, response.Code)
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("wildcard or WatchEnvironment paths reached upstream %d times", calls)
+	}
+}
+
+func TestEnvironmentGetCancelsUpstreamWithRequest(t *testing.T) {
+	authentication := newStreamTestAuth(t)
+	server := NewHTTPServer(authentication)
+	started := make(chan context.Context, 1)
+	canceled := make(chan error, 1)
+	upstream := &streamTestUpstream{forward: func(_ http.ResponseWriter, _ *http.Request, ctx context.Context, _, _ string) error {
+		started <- ctx
+		<-ctx.Done()
+		canceled <- ctx.Err()
+		return ctx.Err()
+	}}
+	RegisterStreamingRoutes(server, StreamingDependencies{DispatcherHTTP: upstream})
+	ctx, cancel := context.WithCancel(context.Background())
+	request := httptest.NewRequest(http.MethodGet, "/upstream/environments/v1/environments/team-a/sandbox-1?target.uid=uid", nil).WithContext(ctx)
+	request.Header.Set("Authorization", "Bearer accepted")
+	response := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		server.Handler(authentication).ServeHTTP(response, request)
+		close(done)
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("EnvironmentService Get did not reach upstream")
+	}
+	cancel()
+	select {
+	case err := <-canceled:
+		if err != context.Canceled {
+			t.Fatalf("upstream context error = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("request cancellation did not reach EnvironmentService Get")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("EnvironmentService Get did not finish after request cancellation")
 	}
 }
