@@ -1,110 +1,17 @@
 # Hosted RBE k3s persistence spike (2026-11-01)
 
-## PostgreSQL extension
+## PostgreSQL reuse: no measured benefit, removed
 
-The manual full-Pod spike now also retains PostgreSQL in `systest-infrastructure`. Application
-namespaces and Pods remain disposable. Once application teardown finishes, the spike writes an
-actual SQL sentinel, drops and recreates the fixture-owned service databases and roles, and checks
-that the databases have new OIDs and no user relations. It verifies PostgreSQL's Pod, container and
-SQL server identity before accepting a clean seed. Services apply their normal migrations on every
-action. PostgreSQL's manifests, bootstrap configuration, image index and persistence helper code
-participate in the baseline fingerprint.
+Retaining PostgreSQL while recreating its seven service databases passed all 13 cases in each of
+five completed actions, but showed no overall timing benefit. The final warm pair took
+243.190/230.097 s, with setup 45.001/42.998 s, versus the k3s/PKI-only pair's 233.994/220.454 s
+and setup 42.572/39.954 s. PostgreSQL verification took about 1 s and database reset 3–4 s;
+LLM ingress readiness still took 23–25 s. These selected small samples do not establish a causal
+regression. The PostgreSQL reuse implementation was removed; the retained baseline is k3s/PKI only.
 
-The preceding k3s/PKI-only experiment's two warm actions spent 0.245/2.047 s importing PostgreSQL's
-image and 8.243/4.179 s in its Deployment readiness span. Those spans are part of setup and can
-overlap other work; they are not additive savings. Database reset and verification introduce their
-own work. The experiment therefore checks SQL isolation, process reuse and full-action cost alongside
-the existing 13 cases.
-
-The final seeded pair
-([7729cdcc](https://app.buildbuddy.io/invocation/7729cdcc-b174-488a-85ef-71c26683d01b)) reused both
-CPU families' PostgreSQL servers successfully. Both actions passed the same 13 case identities as
-the previous full-suite experiments and completed cleanup:
-
-| Warm action      |    Setup | PostgreSQL verification | Database reset | TestRunner wall |
-| ---------------- | -------: | ----------------------: | -------------: | --------------: |
-| Family 25, run 1 | 45.001 s |                 0.954 s |        3.998 s |       243.190 s |
-| Family 26, run 2 | 42.998 s |                 0.965 s |        3.178 s |       230.097 s |
-
-Each warm action retained its corresponding `53a7c42f` seed's exact k3s, PKI and PostgreSQL process
-identities. Its initial database OIDs matched the seed's post-reset OIDs, with zero user relations.
-Its own teardown then changed all seven OIDs again, removed the sentinel and kept the same server.
-The application namespace, root Certificate, root Secret and collector namespace UIDs were distinct
-across all five completed PostgreSQL actions. Native predecessor metadata joins each final action
-to its corresponding cold seed. All five actions use the same baseline fingerprint and source
-`59a66d10cad8e9f672a5471ced8de756e1af01cb`; subsequent local edits were investigation Markdown only.
-
-There is no demonstrated overall speedup: the prior k3s/PKI-only warm pair took 233.994/220.454 s,
-with setup 42.572/39.954 s. PostgreSQL verification became cheap, but current LLM ingress readiness
-waits were 24.780/22.617 s, and manifest application took 7.560/6.566 s. The old serialized PostgreSQL
-and LLM readiness waits together took 23.391/21.301 s. These are driver wait spans; the Deployments
-were already applied together, so sequential waits do not establish sequential service startup or
-an independent saving from removing the PostgreSQL wait. Actual startup overlap needs Pod-level
-timestamps. The selected small samples do not establish either a causal regression or a production
-benefit. Retention works, but this extension remains manual while its benefit is unproven.
-
-The first completed PostgreSQL action at source `59a66d10cad8e9f672a5471ced8de756e1af01cb`
-([4f786186](https://app.buildbuddy.io/invocation/4f786186-304c-42a5-8309-c10c16b71413)) passed all 13
-cases and completed cleanup. It rebuilt the baseline under the existing family-26 snapshot key;
-the changed fingerprint, rather than a new recycling key, selected cold startup. Setup took
-76.348 s, including 8.447 s PostgreSQL preparation. Database reset and verification took 2.099 s.
-The before/after SQL evidence retained the same Pod, container, system identifier, postmaster start
-time and zero restart count; all seven database OIDs changed, user relation counts were zero and
-the sentinel was absent. Raw artifacts are under the scratch root's `postgres/4f786186/`.
-
-Two earlier build attempts, `f99f2c83-3d02-420e-83ae-8bb242c0f204` and
-`4b5dc00b-0227-4751-b00e-99e2d0e8016a`, stopped at `mypy` return annotations. Bazel reported zero
-executed tests and one skipped target in each; neither produced a completed test result or runtime
-artifacts. At that point, their provisional execution rows did not establish whether a worker started.
-Later native lineage establishes that `4b5dc00b`'s test task did execute and complete, despite
-the missing Bazel test result. Both attempts are excluded from the completed runtime comparison.
-The corrected run explicitly built the
-changed `:stack` and `:postgres_persistence` libraries and passed their Ruff/mypy aspects alongside
-the full suite.
-
-The next concurrent pair
-([53a7c42f](https://app.buildbuddy.io/invocation/53a7c42f-8154-4854-937d-d23726112e7d)) passed all
-13 cases in each action, with cleanup complete, but both outcomes were cold under the same current
-fingerprint `395a9b4a...`. Family 25 resumed its earlier k3s/PKI-only seed. Family 26 resumed the
-older `4b5dc00b` seed rather than `4f786186`, even though the successful action had completed before
-this pair began. The fingerprint rejected the incompatible baseline safely.
-Run 1 took 301.371 s, with 92.149 s setup, 15.516 s PostgreSQL preparation and 3.117 s database reset.
-Run 2 took 269.736 s, with 79.196 s setup, 8.588 s PostgreSQL preparation and 2.267 s database reset.
-These action intervals overlapped for 269.557 s.
-
-This exposes a snapshot publication/selection boundary. Public BuildBuddy code completes the action
-before saving the VM snapshot; action completion and `savedRemoteSnapshot=true` do not establish
-when the remote master manifest was written
-([executor lifecycle](https://github.com/buildbuddy-io/buildbuddy/blob/acaf608b95780c2b0681b0205182c38bf5b6237d/enterprise/server/remote_execution/executor/executor.go#L314-L324)).
-Both historical family-26 snapshots were eventually readable through read-only Action Cache queries.
-`newest` reads the visible master rather than comparing all task completion times; its version
-counter is per resumed VM lineage, not a global freshness ordering. Available metadata lacks the
-manifest fetch source and snapshot-write completion clock. It cannot distinguish delayed/out-of-order
-publication, an existing local manifest or a stale remote read. The hosted source version is also
-unconfirmed. Supporting diagnostic evidence is in `postgres/freshness-diagnosis.md` under the
-scratch root. These misses are retained in the result set rather than counted as warm runs.
-
-The archived `4f786186` snapshot's task timestamp is 15.955 s after native execution completion;
-the two `53a7c42f` snapshots' task timestamps are 40.232/19.183 s later. Public code assigns this
-timestamp after VM pause/stop/unmount and before remote artifact/master upload
-([save lifecycle](https://github.com/buildbuddy-io/buildbuddy/blob/acaf608b95780c2b0681b0205182c38bf5b6237d/enterprise/server/remote_execution/containers/firecracker/firecracker.go#L3748-L3782)).
-These within-action offsets use executor clocks. They expose post-execution work, without isolating
-total snapshot-save time or bytes. The nominal gap between `4f786186`'s save marker and the next
-worker's execution start also spans hosts with unknown clock skew and does not prove that the remote
-master was ready at lookup. Native worker completion should not be presented as snapshot completion.
-
-Reproduce from the source above with:
-
-```sh
-bbr test --config=rbe --config=ci --test_tag_filters=-live_openai_api --nocache_test_results --test_output=all //agentplane/system_tests/k3s:postgres_persistence //agentplane/system_tests/k3s:stack //agentplane/system_tests/suites:test_pod_persistence_spike
-bbr test --config=rbe --config=ci --test_tag_filters=-live_openai_api --nocache_test_results --test_output=all --runs_per_test=2 //agentplane/system_tests/suites:test_pod_persistence_spike
-```
-
-The two-run command was executed twice; the first pair was cold and the second warm. Raw native
-responses, JUnit, SQL identity/OID outputs and traces are under the scratch root's `postgres/`;
-`postgres/evidence.json` records exact source, action IDs, clocks and artifact hashes. Snapshot
-publication/selection misses are separate from the SQL isolation and reuse proof. Ordinary CI at
-the tested source passed its required checks; production enablement remains deferred.
+[Trial results](https://app.buildbuddy.io/invocation/7729cdcc-b174-488a-85ef-71c26683d01b) and
+[full historical evidence](https://github.com/agentydragon/ducktape/blob/c57ec9ebe9d81271c5a295c37407d6daa8f00ff0/agentplane/debug/k3s_persistence_spike.md)
+record the experiment at implementation source `59a66d10cad8e9f672a5471ced8de756e1af01cb`.
 
 ## Prior continuation: automatic baseline refresh
 
@@ -119,7 +26,7 @@ BuildBuddy's public implementation rejects updates to a restored local-only test
 applying its save policy, so `always` alone is insufficient. Remote snapshots are required for this
 refresh strategy. `newest` requests remote-master reads without caching that fetched master locally;
 an existing local manifest can still be used. It does not guarantee the globally latest completed
-test's seed, as the PostgreSQL continuation above demonstrates. This is based on
+test's seed; snapshot publication happens after action completion. This is based on
 [save gates](https://github.com/buildbuddy-io/buildbuddy/blob/acaf608b95780c2b0681b0205182c38bf5b6237d/enterprise/server/remote_execution/containers/firecracker/firecracker.go#L1439-L1527)
 and [manifest selection](https://github.com/buildbuddy-io/buildbuddy/blob/acaf608b95780c2b0681b0205182c38bf5b6237d/enterprise/server/remote_execution/snaploader/snaploader.go#L503-L566);
 the hosted deployment version is unconfirmed. The probes below verify the observed hosted behavior.

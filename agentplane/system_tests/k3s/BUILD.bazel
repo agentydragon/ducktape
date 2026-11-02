@@ -269,7 +269,6 @@ py_library(
         ":certificates",
         ":guest_logs",
         ":iptables_rule",
-        ":postgres_persistence",
         ":process_traces",
         ":rendered_fixture",
         ":vm_sandboxes",
@@ -473,17 +472,6 @@ genrule(
         "@nodejs_linux_amd64//:bin/node",
     ],
     visibility = ["//agentplane/system_tests:__subpackages__"],
-)
-
-py_library(
-    name = "postgres_persistence",
-    srcs = ["postgres_persistence.py"],
-    deps = [
-        ":certificates",
-        ":rendered_fixture",
-        "//agentplane/system_tests:tracing",
-        "@pypi//pyyaml",
-    ],
 )
 
 py_library(
