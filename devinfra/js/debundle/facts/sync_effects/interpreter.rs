@@ -2,7 +2,7 @@
 
 use super::super::allocation_transfer::AllocationContext;
 use super::super::local_operations::{LocalBinding, LocalBody};
-use super::super::local_transfer::{self, LocalContext, LocalFrame};
+use super::super::local_transfer::{self, EvaluatedCallee, LocalContext, LocalFrame};
 use super::super::value_model::{
     AbstractValue, ArrayIteration, CallSite, CaptureInterner, Captured, CapturedContext, Context,
     DenseArray, FrozenNamespaceProof, LexicalCaptures, LexicalCellId, MemberKey, OwnPropertyShape,
@@ -1314,11 +1314,15 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     fn call(
         &mut self,
         frame: &mut LocalFrame,
-        callee: &Values,
+        callee: &EvaluatedCallee,
         arguments: &[Values],
         span: Span,
     ) -> Option<super::super::allocation_transfer::AllocationValue> {
-        let mut reached = callee.clone();
+        let targets = callee.targets();
+        let mut reached = targets.clone();
+        if let Some(receiver) = callee.receiver() {
+            reached.extend(receiver.iter().cloned());
+        }
         reached.extend(arguments.iter().flatten().cloned());
         frame
             .borrowed_records
@@ -1340,7 +1344,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 ..Outcome::default()
             }),
             operands: Some(Box::new(CallOperands {
-                targets: callee.clone(),
+                callee: callee.clone(),
                 arguments: arguments.to_vec(),
             })),
         });
@@ -1354,7 +1358,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         let complete = outcome.complete && !outcome.unknown_call;
         let missing_result = complete && matches!(transfer, CallTransfer::EffectsOnly);
         if (!complete || matches!(transfer, CallTransfer::UnsupportedOperands))
-            && callee.iter().any(|value| {
+            && targets.iter().any(|value| {
                 matches!(
                     value,
                     AbstractValue::Value(Value::Top) | AbstractValue::SymbolicInput(_)
@@ -1430,7 +1434,20 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             MemberKey::Static,
             span.into(),
         );
-        let call = Call::member_read(self.owner, Some(self.callable), callee, span);
+        let lookup = self.executor.inputs.index.callables[&self.callable]
+            .calls
+            .iter()
+            .find(|call| call.kind == CallKind::AccessorCalleeLookup && call.span == span);
+        let call = match lookup {
+            Some(lookup)
+                if self.executor.callee_lookup_is_certified(lookup)
+                    || (property == "push"
+                        && self.executor.dense_array_push_receiver(receivers).is_some()) =>
+            {
+                lookup.clone()
+            }
+            _ => Call::member_read(self.owner, Some(self.callable), callee, span),
+        };
         // Retain established native, array and borrowed-record read proofs.
         // The receiver is only a declarative cell, so the value projection
         // cannot replay receiver code. Its judgment stays opaque; execution
@@ -2663,12 +2680,25 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         Some((*object, self.state.dense_arrays.get(object)?.clone()))
     }
 
+    fn dense_array_push_receiver(&self, receiver: &Values) -> Option<u32> {
+        let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
+            receiver.iter().collect::<Vec<_>>().as_slice()
+        else {
+            return None;
+        };
+        (self.state.dense_arrays.contains_key(object)
+            && self.state.object_accessors_are_settled(object)
+            && self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS))
+        .then_some(*object)
+    }
+
     fn execute_dense_array_push(
         &mut self,
         callee: &ValueExpr,
         args: &[Values],
         env: &Context,
         captures: &Context,
+        prepared_receiver: Option<&Values>,
     ) -> bool {
         let ValueExpr::Member(receiver, Some(method), MemberKey::Static, _) = callee else {
             return false;
@@ -2681,25 +2711,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return false;
         }
-        let receiver = self.evaluate(receiver, env, captures);
-        let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
-            receiver.iter().collect::<Vec<_>>().as_slice()
-        else {
+        let receiver = prepared_receiver
+            .cloned()
+            .unwrap_or_else(|| self.evaluate(receiver, env, captures));
+        let Some(object) = self.dense_array_push_receiver(&receiver) else {
             return false;
         };
-        if !self.state.dense_arrays.contains_key(object)
-            || !self.state.object_accessors_are_settled(object)
-            || !self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS)
-        {
-            return false;
-        }
         // An intact ordinary array has its own writable length, and the
         // guarded prototypes cannot intercept the appended primitive slots.
         // Preserve its contained callbacks, but invalidate the precise array
         // contents after this real mutation. No descriptor replacement or
         // getter installation occurred. Refuse exact array snapshots without
         // claiming a fresh value or modeling how often this site executed.
-        if self.state.unknown_array_contents.insert(*object) {
+        if self.state.unknown_array_contents.insert(object) {
             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
         }
         true
@@ -8527,7 +8551,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .iter()
                 .all(|binding| self.state.active_cells.contains_key(binding))
             && body.free_reads().iter().all(|binding| {
-                env.contains_key(binding) || self.inputs.top_bindings.contains(binding)
+                env.contains_key(binding)
+                    || self.inputs.top_bindings.contains(binding)
+                    || (!self.inputs.flow.is_declared(binding)
+                        && !self.inputs.shadowed.contains(binding.0.as_ref())
+                        && NativeIntrinsic::for_global_binding(binding.0.as_ref()).is_some_and(
+                            |intrinsic| {
+                                self.native_guard_intact(
+                                    NativeIntegrityGuard::NativeCallIdentity,
+                                    &[IntrinsicSlot::Global(intrinsic)],
+                                )
+                            },
+                        ))
             })
         {
             // Keep existing record/input and array-iteration write proofs on
@@ -8808,6 +8843,31 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         transfer_complete
     }
 
+    fn method_receiver_is_unused(&self, targets: &Values) -> bool {
+        self.inputs.index.dynamic_scope_owners.is_empty()
+            && !targets.is_empty()
+            && targets.iter().all(|target| {
+                let key = match target {
+                    AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                    | AbstractValue::Closure(key, _) => key,
+                    _ => return false,
+                };
+                self.inputs.index.callables.get(key).is_some_and(|body| {
+                    !body.opaque
+                        && !body.generator
+                        && body.calls.is_empty()
+                        && !body.reads.iter().any(|id| id.0.as_ref() == "arguments")
+                        && self
+                            .inputs
+                            .index
+                            .callables
+                            .values()
+                            .filter(|nested| nested.owner == body.owner)
+                            .all(|nested| !nested.implicit_capture)
+                })
+            })
+    }
+
     pub(super) fn execute_call_transfer(
         &mut self,
         call: &Call,
@@ -8817,9 +8877,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         operands: Option<CallOperands>,
     ) -> CallTransfer {
         let needs_value = operands.is_some();
-        if needs_value {
+        if let Some(operands) = &operands {
             assert!(call.kind == CallKind::Call && !call.has_spread);
-            assert!(matches!(call.callee, ValueExpr::Binding(_)));
+            assert!(match (&call.callee, &operands.callee) {
+                (ValueExpr::Binding(_), EvaluatedCallee::Direct(_)) => true,
+                (
+                    ValueExpr::Member(receiver, Some(_), MemberKey::Static, _),
+                    EvaluatedCallee::Member { .. },
+                ) => matches!(receiver.as_ref(), ValueExpr::Binding(_)),
+                _ => false,
+            });
         }
         if call.kind == CallKind::OpaqueExecution {
             let fact = &self.inputs.facts[call.owner.0];
@@ -9234,10 +9301,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             );
             return CallTransfer::EffectsOnly;
         }
-        let (targets, mut args) = match operands {
+        let (targets, mut args, prepared_receiver) = match operands {
             Some(operands) => {
                 assert_eq!(operands.arguments.len(), call.args.len());
-                (operands.targets, operands.arguments)
+                match operands.callee {
+                    EvaluatedCallee::Direct(targets) => (targets, operands.arguments, None),
+                    EvaluatedCallee::Member { receiver, targets } => {
+                        (targets, operands.arguments, Some(receiver))
+                    }
+                }
             }
             None => {
                 let targets = self.evaluate(&call.callee, env, captures);
@@ -9250,7 +9322,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .iter()
                     .map(|arg| self.evaluate(arg, env, captures))
                     .collect();
-                (targets, args)
+                (targets, args, None)
             }
         };
         let operands_may_throw = targets.contains(&AbstractValue::Value(Value::Unavailable))
@@ -9412,9 +9484,31 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return CallTransfer::EffectsOnly;
         }
+        if call.kind == CallKind::Call
+            && !call.has_spread
+            && self.execute_dense_array_push(
+                &call.callee,
+                &args,
+                env,
+                captures,
+                prepared_receiver.as_ref(),
+            )
+        {
+            return CallTransfer::requested(needs_value, || {
+                // Contents and multiplicity stay unknown after a push. Its
+                // completing result is numeric; a length overflow may throw.
+                Values::from([
+                    AbstractValue::Value(Value::Prim(PrimKinds::NUMBER)),
+                    AbstractValue::Value(Value::Unavailable),
+                ])
+            });
+        }
         // Proofs that reevaluate source expressions have not migrated to
         // evaluated operands. A missing result transfer truncates the ordered
         // caller; it must never replay those expressions to recover a value.
+        let prepared_receiver_unused = prepared_receiver
+            .as_ref()
+            .map(|_| self.method_receiver_is_unused(&targets));
         if needs_value {
             let local_target = targets.len() == 1
                 && targets.first().is_some_and(|target| match target {
@@ -9433,7 +9527,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             | AbstractValue::Value(Value::Prim(_))
                     )
                 });
-            if !local_target && !abrupt {
+            if (!local_target && !abrupt) || (!abrupt && prepared_receiver_unused == Some(false)) {
                 return CallTransfer::UnsupportedOperands;
             }
         }
@@ -9463,43 +9557,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return CallTransfer::EffectsOnly;
         }
-        if call.kind == CallKind::Call
-            && !needs_value
-            && !call.has_spread
-            && self.execute_dense_array_push(&call.callee, &args, env, captures)
-        {
-            return CallTransfer::EffectsOnly;
-        }
         // Known local methods still receive an implicit `this` capability.
         // Its effects are not resolved by invoke, so it can mutate any retained
         // array reachable from the receiver before a later intrinsic iteration.
         if call.kind == CallKind::Call
             && let ValueExpr::Member(receiver, _, _, _) = &call.callee
         {
-            let unused_receiver = self.inputs.index.dynamic_scope_owners.is_empty()
-                && !targets.is_empty()
-                && targets.iter().all(|target| {
-                    let key = match target {
-                        AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                        | AbstractValue::Closure(key, _) => key,
-                        _ => return false,
-                    };
-                    self.inputs.index.callables.get(key).is_some_and(|body| {
-                        !body.opaque
-                            && !body.generator
-                            && body.calls.is_empty()
-                            && !body.reads.iter().any(|id| id.0.as_ref() == "arguments")
-                            && self
-                                .inputs
-                                .index
-                                .callables
-                                .values()
-                                .filter(|nested| nested.owner == body.owner)
-                                .all(|nested| !nested.implicit_capture)
-                    })
-                });
+            let unused_receiver = prepared_receiver_unused
+                .unwrap_or_else(|| self.method_receiver_is_unused(&targets));
             if !unused_receiver {
-                let values = self.evaluate(receiver, env, captures);
+                let values = prepared_receiver
+                    .clone()
+                    .unwrap_or_else(|| self.evaluate(receiver, env, captures));
                 let contains_array = self.contains_dense_array(&values);
                 self.taint_objects(&values);
                 if contains_array {
@@ -9509,7 +9578,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         let mut opaque_args = args.clone();
         if let ValueExpr::Member(receiver, _, _, _) = &call.callee {
-            let receiver_values = self.evaluate(receiver, env, captures);
+            let receiver_values = prepared_receiver
+                .clone()
+                .unwrap_or_else(|| self.evaluate(receiver, env, captures));
             // The receiver is an input capability too: an opaque method can
             // invoke its stored callbacks through `this`, including callbacks
             // nested in collections or retained wrapper/instance values.
@@ -9546,7 +9617,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // properties or an array's iterator/species surface).
             let mut possible_objects: Values = args.iter().flatten().cloned().collect();
             if let ValueExpr::Member(receiver, _, _, _) = &call.callee {
-                possible_objects.extend(self.evaluate(receiver, env, captures));
+                possible_objects.extend(
+                    prepared_receiver
+                        .clone()
+                        .unwrap_or_else(|| self.evaluate(receiver, env, captures)),
+                );
             }
             self.expose_class_capabilities(&possible_objects);
             self.taint_objects(&possible_objects);

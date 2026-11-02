@@ -2206,20 +2206,38 @@ existing callback fallback. Earlier operations are not replayed. Read results
 from this application fallback remain opaque to the allocation-only judgment;
 synchronous completeness alone grants no provider certificate.
 
-Application execution also retains direct calls through simple binding
-references in the ordered body. It reads the callee before evaluating arguments
-from left to right and stops each abrupt path. The shared call transfer consumes
+Application execution also retains calls through simple binding references and
+static dot members of simple binding receivers in the ordered body. It reads
+the receiver and callee before evaluating arguments from left to right and
+stops each abrupt path. The shared call transfer consumes
 these evaluated operands with the canonical call's proof sites and policies.
 It returns effects and values together for a singleton untainted local function
 or closure, admitted native rows and supported foreign-summary projections.
 No separate value evaluation repeats the call. Objects
-reachable by that callee or its arguments lose the caller's fresh own-data
-admission, and returned capabilities remain reachable by a truncated remainder.
+reachable by that callee, receiver or its arguments lose the caller's fresh
+own-data admission. Completed operands and returned capabilities remain
+reachable by a truncated remainder, including while later arguments execute.
 An unknown target, incomplete invocation or missing result transfer uses the
 existing conservative callback fallback at that call site without replaying
 prior operations. A timing proof alone supplies no result transfer. Models
 that still reevaluate source operands cannot serve an ordered caller; their
 operands and results must first enter the shared transfer.
+Member lookup keeps the shared field-read guard and the canonical callee's
+existing native or namespace lookup certificates. An unproved getter truncates
+before the arguments. Local method results also require the existing
+unused-receiver check, including nested callable implicit captures; source
+methods requiring `this` stay conservative. Invocation and fallback use the
+captured receiver even if an argument rebinds its source cell. Computed or
+dynamic receivers, optional calls, spread arguments and direct eval remain
+outside this ordered grammar.
+Guarded dense-array `push` consumes that captured receiver and evaluated
+primitive arguments. It retains the existing prototype/descriptor checks and
+invalidates precise array contents. Its completing result is numeric, with a
+possible abrupt result for length overflow; no exact length is inferred.
+An undeclared, unshadowed native global can enter an ordered body only when its
+global slot passes the existing native-integrity guard. Member identity and
+invocation operands retain their separate checks; an unavailable local capture
+or an unproved global stays conservative.
 Invocation results remain opaque to the allocation-only judgment; a strict
 provider query declines calls. This supplies no property-origin export identity
 proof.

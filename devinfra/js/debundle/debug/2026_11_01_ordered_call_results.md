@@ -26,8 +26,8 @@ function build(select, input) {
 }
 ```
 
-The source collector now retains direct calls through simple binding references
-and their ordered arguments. The shared kernel reads the callee first, then
+The source collector retains direct binding calls and static dot-member calls
+on binding receivers, together with their ordered arguments. The shared kernel reads the callee first, then
 each argument from left to right. Argument assignments cannot replace the
 already selected callee. Abrupt operands stop before invocation, and a possible
 abrupt invocation result remains in the frame's result.
@@ -62,7 +62,9 @@ before that remainder.
 
 Record fields now retain their child operations recursively, using the same
 record allocation transfer; see <2026_11_01_ordered_record_operands.md>.
-Member, optional, spread and direct eval calls remain outside this grammar.
+Computed or dynamic receivers, optional, spread and direct eval calls remain
+outside this grammar. Static member calls retain their evaluated receiver;
+see <2026_11_02_ordered_member_calls.md> for lookup and implicit-capture guards.
 Unconverted native/foreign result models, ordered caller control for captured
 writes, branch execution, facade getters and property-origin export identity remain required work. This
 change alone does not prove the canonical provider or clear any gate.
