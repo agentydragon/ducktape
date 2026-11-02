@@ -22,6 +22,7 @@ FIXTURE_NAMES = (
     "anthropic_platform_credits",
     "claude_prepaid_balance",
     "claude_prepaid_balance_unavailable",
+    "claude_prepaid_balance_stale",
     "reset_credit_expiry_unavailable",
     "wire_fields",
 )

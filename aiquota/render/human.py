@@ -75,7 +75,6 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
     ) = _effective_windows(pv, now)
     credit_line = _format_paid_credits(paid_credits, pv.paid_credits_active)
     prepaid_balance, prepaid_stale_age = _effective_prepaid_balance(pv, now)
-    prepaid_balance_line = _format_prepaid_balance(prepaid_balance, prepaid_stale_age)
     openai_platform_credits = pv.display_openai_platform_credits
     openai_platform_grants_line = _format_openai_platform_grants(openai_platform_credits, tz)
     anthropic_lines = _format_anthropic_platform_credits(pv.display_anthropic_platform_credits, tz)
@@ -93,9 +92,10 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
                 stale_age,
                 tz,
                 openai_platform_credits=openai_platform_credits,
+                prepaid_balance=prepaid_balance,
+                prepaid_stale_age=prepaid_stale_age,
             )
             + (f"  {credit_line}" if credit_line else "")
-            + (f"\n  {prepaid_balance_line}" if prepaid_balance_line else "")
             + (f"\n  {openai_platform_grants_line} (stale)" if openai_platform_grants_line else "")
             + ("".join(f"\n  {line} (stale)" for line in anthropic_lines))
         )
@@ -104,11 +104,9 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
         # Mirror the GNOME popup's text-only active-extra view: while burning,
         # bars are noise, but both reset countdowns still matter.
         lines = [
-            f"{_provider_label(pv.provider, reset_credits, reset_credit_expiries, tz, reset_credit_expiry_lookup_failed, openai_platform_credits)}  "
+            f"{_provider_label(pv.provider, reset_credits, reset_credit_expiries, tz, reset_credit_expiry_lookup_failed, openai_platform_credits, prepaid_balance, prepaid_stale_age)}  "
             f"{credit_line if pv.paid_credits_active else _format_extra_active(extra)}"
         ]
-        if prepaid_balance_line:
-            lines.append(f"  {prepaid_balance_line}")
         if openai_platform_grants_line:
             lines.append(f"  {openai_platform_grants_line}")
         lines.append(_active_windows_line(windows))
@@ -127,12 +125,12 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
             stale_age,
             tz,
             openai_platform_credits=openai_platform_credits,
+            prepaid_balance=prepaid_balance,
+            prepaid_stale_age=prepaid_stale_age,
         )
     ]
     if credit_line:
         lines.append(f"  {credit_line}")
-    if prepaid_balance_line:
-        lines.append(f"  {prepaid_balance_line}")
     if openai_platform_grants_line:
         lines.append(f"  {openai_platform_grants_line}")
     lines.extend(f"  {line}" for line in anthropic_lines)
@@ -154,7 +152,7 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
     if (
         not windows
         and extra_line is None
-        and prepaid_balance_line is None
+        and prepaid_balance is None
         and openai_platform_credits is None
         and not anthropic_lines
     ):
@@ -178,7 +176,9 @@ def _format_openai_platform_grants(credits: OpenAIPlatformCredits | None, tz: tz
 
 def _effective_prepaid_balance(pv: ProviderView, now: datetime) -> tuple[PrepaidBalance | None, str | None]:
     stale_since = pv.display.prepaid_stale_since
-    age = format_age((now - stale_since).total_seconds()) if stale_since is not None else None
+    provider_stale_since = pv.display.observed_at if pv.display.source == "last_success" else None
+    has_independent_staleness = stale_since is not None and stale_since != provider_stale_since
+    age = format_age((now - stale_since).total_seconds()) if has_independent_staleness else None
     return pv.display.prepaid_balance, age
 
 
@@ -235,6 +235,8 @@ def _header(
     stale_age: str | None,
     tz: tzinfo | None,
     openai_platform_credits: OpenAIPlatformCredits | None = None,
+    prepaid_balance: PrepaidBalance | None = None,
+    prepaid_stale_age: str | None = None,
 ) -> str:
     parts = [
         _provider_label(
@@ -244,6 +246,8 @@ def _header(
             tz,
             reset_credit_expiry_lookup_failed,
             openai_platform_credits,
+            prepaid_balance,
+            prepaid_stale_age,
         )
     ]
     if error is None:
@@ -265,6 +269,8 @@ def _provider_label(
     tz: tzinfo | None,
     reset_credit_expiry_lookup_failed: bool,
     openai_platform_credits: OpenAIPlatformCredits | None = None,
+    prepaid_balance: PrepaidBalance | None = None,
+    prepaid_stale_age: str | None = None,
 ) -> str:
     if provider == "openai_platform":
         provider = "OpenAI API"
@@ -272,6 +278,13 @@ def _provider_label(
             provider += f" · ${openai_platform_credits.total_available_usd:,.2f} API credit"
     if provider == "anthropic_platform":
         provider = "Anthropic API"
+    if provider == "claude" and prepaid_balance is not None:
+        if isinstance(prepaid_balance, PrepaidBalanceAvailable):
+            provider = f"Claude · {format_prepaid_balance(prepaid_balance)} prepaid balance"
+        else:
+            provider = "Claude · prepaid balance unavailable"
+        if prepaid_stale_age is not None:
+            provider += f" (prepaid stale {prepaid_stale_age})"
     if reset_credits is None:
         return provider
     noun = "reset" if reset_credits == 1 else "resets"
@@ -361,18 +374,6 @@ def _format_paid_credits(credits: PaidCredits | None, active: bool) -> str | Non
             return "credits available"
         balance = f"{amount.quantize(Decimal(1), rounding=ROUND_HALF_UP):,} credits left"
     return f"⚡ using paid credits · {balance}" if active else balance
-
-
-def _format_prepaid_balance(balance: PrepaidBalance | None, stale_age: str | None = None) -> str | None:
-    if balance is None:
-        return None
-    if not isinstance(balance, PrepaidBalanceAvailable):
-        line = "Claude prepaid balance unavailable"
-    else:
-        line = f"Claude prepaid balance · {format_prepaid_balance(balance)}"
-    if stale_age is not None:
-        line += f" (stale {stale_age})"
-    return line
 
 
 def _active_windows_line(windows: list[WindowView]) -> str:

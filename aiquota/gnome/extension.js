@@ -114,6 +114,15 @@ function formatUsdCurrency(usd) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(Number(usd));
 }
 
+function formatGrantUsd(usd) {
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(Number(usd));
+}
+
 // The "currently burning extra" decision lives in the Python view model
 // (see aiquota/render/view_model.py) and is delivered to us by the desktop
 // daemon as state.currentlyOverPlan. Don't
@@ -146,10 +155,35 @@ function formatPaidCredits(credits, active) {
   return `${active ? "⚡ using paid credits" : "paid credits"} · ${amount}`;
 }
 
-function formatPrepaidBalance(balance) {
+function formatClaudePrepaidHeading(balance) {
   if (balance == null) return null;
-  if (balance.kind !== "available") return "Claude prepaid balance unavailable";
-  return `Claude prepaid balance · ${sharedFormatPrepaidBalance(balance.amount_minor, balance.exponent, balance.currency)}`;
+  if (balance.kind !== "available") return "Claude · prepaid balance unavailable";
+  return `Claude · ${sharedFormatPrepaidBalance(balance.amount_minor, balance.exponent, balance.currency)} prepaid balance`;
+}
+
+function formatOpenaiPlatformHeading(credits) {
+  if (!credits) return null;
+  const grants = credits.grants
+    .map((grant) => {
+      const remaining = formatGrantUsd(Number(grant.granted_usd) - Number(grant.used_usd));
+      const expiryDate = grant.expires_at ? new Date(grant.expires_at) : null;
+      const expiry =
+        expiryDate && !Number.isNaN(expiryDate.getTime())
+          ? expiryDate.toLocaleString([], {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false,
+            })
+          : "unknown";
+      const status = grant.is_scheduled ? " · scheduled" : grant.is_held_for_prepaid_transition ? " · held" : "";
+      return `${remaining} expires ${expiry}${status}`;
+    })
+    .join(", ");
+  const grantSummary = grants ? ` (${grants})` : "";
+  return `OpenAI · ${formatUsdCurrency(credits.total_available_usd)} API credit${grantSummary}`;
 }
 
 function formatAnthropicPlatformCredits(credits) {
@@ -557,7 +591,7 @@ const QuotaIndicator = GObject.registerClass(
       const retry = this._nextRetryAt > 0 ? `Retry in ${formatAge(this._nextRetryAt - now)}` : "No retry scheduled";
       const error = this._streamError ? this._streamError.slice(0, 120) : "";
       const status = error ? `${label} · ${error}` : label;
-      this._statusRow._summaryLabel.set_text(`${status}\n${lastAttempt} · ${retry}`);
+      this._statusRow._summaryLabel.set_text(`${status} · ${lastAttempt} · ${retry}`);
     }
 
     _acceptView(rawView) {
@@ -624,6 +658,7 @@ const QuotaIndicator = GObject.registerClass(
       this.menu.removeAll();
       this._statusRow = this._makeTextRow();
       this._statusRow._summaryLabel.add_style_class_name("quota-stream-status");
+      this._statusRow._summaryLabel.clutter_text.line_wrap = true;
       this.menu.addMenuItem(this._statusRow);
       for (const p of this._providers) {
         p.header = new PopupMenu.PopupSeparatorMenuItem(p.label);
@@ -641,6 +676,7 @@ const QuotaIndicator = GObject.registerClass(
         this.menu.addMenuItem(p.burnRow);
         for (const row of p.windowRows) this.menu.addMenuItem(row);
         p.header.label.add_style_class_name("quota-popup-header");
+        p.header.label.clutter_text.line_wrap = true;
       }
     }
 
@@ -944,18 +980,22 @@ const QuotaIndicator = GObject.registerClass(
         resetCreditExpiryLookupFailed,
         staleAge,
         openaiPlatformCredits,
+        prepaidBalance,
+        prepaidStaleSince,
       } = effectiveState(state);
       const haveWindows = windows.length > 0;
-      const titleWithBalance =
-        title === "OpenAI API" && openaiPlatformCredits
-          ? `${title} · ${formatUsdCurrency(openaiPlatformCredits.total_available_usd)} API credit`
-          : title;
+      const claudeHeading = title === "Claude" ? formatClaudePrepaidHeading(prepaidBalance) : null;
+      const openaiHeading = title === "OpenAI API" ? formatOpenaiPlatformHeading(openaiPlatformCredits) : null;
+      const titleWithBalance = openaiHeading ? openaiHeading : (claudeHeading ?? title);
       const parts = [titleWithBalance];
       if (state.error) {
         parts.push(formatCheckFailure(state.error, state.lastCheck, haveWindows));
         item.label.add_style_class_name("quota-popup-header-error");
       } else if (isStaleFetch(state.lastFetch)) {
         item.label.add_style_class_name("quota-popup-header-stale");
+      }
+      if (title === "Claude" && prepaidStaleSince != null && prepaidStaleSince !== state.staleSince) {
+        parts[0] += ` (prepaid stale ${formatAge(Math.max(0, (nowMs() - prepaidStaleSince) / 1000))})`;
       }
       if (staleAge != null) parts.push(`(stale ${formatAge(staleAge)})`);
       const resets = formatBankedResets(
@@ -983,25 +1023,11 @@ const QuotaIndicator = GObject.registerClass(
 
     _renderPrepaidRow(item, state) {
       const effective = effectiveState(state);
-      const openaiPlatformCredits = effective.openaiPlatformCredits;
-      const openaiGrants = openaiPlatformCredits?.grants
-        .map(
-          (grant) =>
-            `${formatUsdCurrency(Number(grant.granted_usd) - Number(grant.used_usd))} expires ${grant.expires_at ? new Date(grant.expires_at).toLocaleString() : "unknown"}${grant.is_scheduled ? " · scheduled" : grant.is_held_for_prepaid_transition ? " · held" : ""}`
-        )
-        .join("; ");
-      const lines = openaiGrants ? [`API credit grants: ${openaiGrants}`] : [];
-      lines.push(...formatAnthropicPlatformCredits(effective.anthropicPlatformCredits));
-      const prepaid = formatPrepaidBalance(effective.prepaidBalance);
-      if (prepaid) lines.push(prepaid);
+      const lines = formatAnthropicPlatformCredits(effective.anthropicPlatformCredits);
       const text = lines.length > 0 ? lines.join("\n") : null;
       item.visible = text != null;
       if (text != null) {
-        const age =
-          !openaiPlatformCredits && effective.prepaidStaleSince != null
-            ? ` (stale ${formatAge(Math.max(0, (nowMs() - effective.prepaidStaleSince) / 1000))})`
-            : "";
-        item._summaryLabel.set_text(text + age);
+        item._summaryLabel.set_text(text);
       }
     }
 

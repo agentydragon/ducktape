@@ -25,16 +25,21 @@
 # ---
 # name: test_renders_shared_fixture[claude_prepaid_balance]
   '''
-  claude
-    Claude prepaid balance · $123.45
+  Claude · $123.45 prepaid balance
+    5h:  45%  ↻ 2h00m  Δ-15%  leaves ~25% unused at reset
+    7d:  32%  ↻ 4d0h   Δ-11%  leaves ~25% unused at reset
+  '''
+# ---
+# name: test_renders_shared_fixture[claude_prepaid_balance_stale]
+  '''
+  Claude · $123.45 prepaid balance (prepaid stale 1h00m)
     5h:  45%  ↻ 2h00m  Δ-15%  leaves ~25% unused at reset
     7d:  32%  ↻ 4d0h   Δ-11%  leaves ~25% unused at reset
   '''
 # ---
 # name: test_renders_shared_fixture[claude_prepaid_balance_unavailable]
   '''
-  claude
-    Claude prepaid balance unavailable
+  Claude · prepaid balance unavailable
     5h:  45%  ↻ 2h00m  Δ-15%  leaves ~25% unused at reset
     7d:  32%  ↻ 4d0h   Δ-11%  leaves ~25% unused at reset
   '''
@@ -115,7 +120,7 @@
 # ---
 # name: test_renders_shared_fixture[stale_fallback]
   '''
-  claude  last refresh failed 2m ago: HTTP 503 Service Unavailable  (stale 1d0h)
+  Claude · $123.45 prepaid balance  last refresh failed 2m ago: HTTP 503 Service Unavailable  (stale 1d0h)
     5h:  35%  ↻ 2h12m  Δ-21%  leaves ~38% unused at reset
     7d:  72%  ↻ 5d3h   Δ+45%  exhausts ~4d9h before reset
   codex

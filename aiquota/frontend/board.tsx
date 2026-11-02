@@ -69,6 +69,9 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
           {provider.provider === "openai_platform" && quota.openaiPlatformCredits
             ? ` · ${formatUsd(Number(quota.openaiPlatformCredits.total_available_usd))} API credit`
             : null}
+          {provider.provider === "claude" && quota.prepaidBalance
+            ? ` · ${formatClaudePrepaidHeading(quota.prepaidBalance, quota.prepaidStaleSince, quota.staleSince, now)}`
+            : null}
         </h2>
         <div className="aiquota-card-status">
           {quota.staleSince !== null && (
@@ -84,9 +87,6 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
       {overPlan && <OverPlanStrip extra={quota.extraSpend} windows={quota.windows} />}
       {quota.paidCredits && (
         <PaidCreditsStrip credits={quota.paidCredits} active={paidCreditsActive} windows={quota.windows} />
-      )}
-      {quota.prepaidBalance && (
-        <PrepaidBalanceStrip balance={quota.prepaidBalance} staleSince={quota.prepaidStaleSince} now={now} />
       )}
       {quota.openaiPlatformCredits?.grants.length ? (
         <p className="aiquota-aside">
@@ -259,25 +259,20 @@ function PaidCreditsStrip({
   );
 }
 
-function PrepaidBalanceStrip({
-  balance,
-  staleSince,
-  now,
-}: {
-  balance: PrepaidBalance;
-  staleSince: string | null;
-  now: number;
-}): JSX.Element {
-  const line =
+function formatClaudePrepaidHeading(
+  balance: PrepaidBalance,
+  staleSince: string | null,
+  providerStaleSince: string | null,
+  now: number
+): string {
+  const label =
     balance.kind === "available"
-      ? `Claude prepaid balance · ${formatPrepaidBalance(balance.amount_minor, balance.exponent, balance.currency)}`
-      : "Claude prepaid balance unavailable";
-  return (
-    <p className="aiquota-aside">
-      {line}
-      {staleSince && ` (stale ${formatAge((now - Date.parse(staleSince)) / 1000)})`}
-    </p>
-  );
+      ? `${formatPrepaidBalance(balance.amount_minor, balance.exponent, balance.currency)} prepaid balance`
+      : "prepaid balance unavailable";
+  if (staleSince && Date.parse(staleSince) !== (providerStaleSince ? Date.parse(providerStaleSince) : null)) {
+    return `${label} (stale ${formatAge((now - Date.parse(staleSince)) / 1000)})`;
+  }
+  return label;
 }
 
 function AnthropicPlatformCreditsStrip({

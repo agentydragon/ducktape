@@ -16,6 +16,7 @@ from aiquota.models import (
 )
 from aiquota.render import human
 from aiquota.render.format import format_prepaid_balance
+from aiquota.render.view_model import to_view
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_fixture
 from util.bazel.runfiles import get_required_path
 
@@ -179,7 +180,7 @@ def test_cli_renders_claude_prepaid_balance_separately_from_codex_credits() -> N
 
     rendered = human.render(_quotas(_pq("claude", output)), now=_FETCHED_AT, tz=UTC)
 
-    assert "Claude prepaid balance · $123.45" in rendered
+    assert "Claude · $123.45 prepaid balance" in rendered
     assert "paid credits" not in rendered
     assert "no data" not in rendered
 
@@ -198,7 +199,34 @@ def test_cli_marks_last_successful_prepaid_balance_stale_after_refresh_error() -
     rendered = human.render(_quotas(quota), now=_FETCHED_AT, tz=UTC)
 
     assert "last refresh failed" in rendered
-    assert "Claude prepaid balance · $123.45 (stale 1h00m)" in rendered
+    assert "Claude · $123.45 prepaid balance" in rendered
+    assert "(stale 1h00m)" in rendered
+
+
+def test_cli_preserves_independent_prepaid_and_quota_staleness() -> None:
+    older = _FETCHED_AT - timedelta(hours=1)
+    balance_older = _FETCHED_AT - timedelta(hours=2)
+    last_success = SuccessfulProviderFetch(
+        fetched_at=older,
+        result=FetchSuccess(
+            windows=[QuotaWindow(used_percent=25, reset_seconds=60, window_seconds=3600)],
+            prepaid_balance=PrepaidBalanceAvailable(amount_minor=12345, exponent=2, currency="USD"),
+        ),
+    )
+    quota = ProviderQuota(
+        provider="claude",
+        last_output=ProviderFetch(fetched_at=_FETCHED_AT, result=FetchError(error="temporary usage refresh failure")),
+        last_success=last_success,
+    )
+    provider = to_view(_quotas(quota), now=_FETCHED_AT).providers[0]
+    provider = provider.model_copy(
+        update={"display": provider.display.model_copy(update={"prepaid_stale_since": balance_older})}
+    )
+
+    rendered = human._render_provider(provider, _FETCHED_AT, human._ColumnWidths(), UTC).plain
+
+    assert "(stale 1h00m)" in rendered
+    assert "(prepaid stale 2h00m)" in rendered
 
 
 def test_openai_platform_grants_survive_a_failed_refresh_as_stale() -> None:

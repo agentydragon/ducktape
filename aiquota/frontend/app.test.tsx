@@ -137,7 +137,7 @@ describe("quota subscription", () => {
       );
     });
 
-    expect(container.textContent).toContain("Claude prepaid balance · $123.45");
+    expect(container.querySelector("h2.aiquota-card-title")?.textContent).toContain("Claude · $123.45 prepaid balance");
     expect(container.textContent).not.toContain("No quota data.");
     expect(container.textContent).not.toContain("Paid credits");
 
@@ -175,7 +175,10 @@ describe("quota subscription", () => {
         })
       );
     });
-    expect(container.textContent).toContain("Claude prepaid balance unavailable");
+    expect(container.querySelector("h2.aiquota-card-title")?.textContent).toContain(
+      "Claude · prepaid balance unavailable"
+    );
+    expect(container.querySelector(".aiquota-aside")?.textContent ?? "").not.toContain("Claude prepaid balance");
   });
 
   it("renders server presentation without recomputing pace or tint", () => {

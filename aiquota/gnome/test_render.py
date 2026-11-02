@@ -122,20 +122,36 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
         session.close_menu()
         session.reload(f"/fixtures/{fixture_name}.json")
         if fixture_name == "claude_prepaid_balance":
-            prepaid_text = string_reply(session.call("GetPrepaidText", "claude"))
-            assert prepaid_text.startswith("Claude prepaid balance")
-            assert prepaid_text.endswith("$123.45")
+            header = string_reply(session.call("GetHeaderText", "claude"))
+            assert "Claude" in header
+            assert "$123.45 prepaid balance" in header
+            assert string_reply(session.call("GetPrepaidText", "claude")) == ""
         elif fixture_name == "claude_prepaid_balance_unavailable":
-            assert string_reply(session.call("GetPrepaidText", "claude")) == "Claude prepaid balance unavailable"
+            header = string_reply(session.call("GetHeaderText", "claude"))
+            assert "Claude" in header
+            assert "prepaid balance unavailable" in header
+            assert string_reply(session.call("GetPrepaidText", "claude")) == ""
+        elif fixture_name == "claude_prepaid_balance_stale":
+            header = string_reply(session.call("GetHeaderText", "claude"))
+            assert "Claude" in header
+            assert "$123.45 prepaid balance" in header
+            assert "prepaid stale 1h00m" in header
+            assert "Quota stream" not in header
+        elif fixture_name == "stale_fallback":
+            header = string_reply(session.call("GetHeaderText", "claude"))
+            assert "Claude" in header
+            assert "$123.45 prepaid balance" in header
+            assert "last refresh failed" in header
+            assert "(stale 1d0h)" in header
         elif fixture_name == "openai_platform_credits":
             header = string_reply(session.call("GetHeaderText", "openai_platform"))
             credits = string_reply(session.call("GetPrepaidText", "openai_platform"))
-            assert "OpenAI API" in header
+            assert "OpenAI" in header
             assert "$125.75 API credit" in header
-            assert credits.startswith("API credit grants:")
-            assert "$100.00 expires" in credits
-            assert "$25.75 expires" in credits
-            assert "/ $100.00" not in credits
+            assert "$100 expires" in header
+            assert "$25.75 expires" in header
+            assert "\n" not in header
+            assert credits == ""
         elif fixture_name == "anthropic_platform_credits":
             credits = string_reply(session.call("GetPrepaidText", "anthropic_platform"))
             assert "Main org" in credits
@@ -164,6 +180,34 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
         pytest.fail(f"{fixture_name}: {e}")
 
 
+def test_render_distinct_prepaid_and_quota_staleness(
+    session: GnomeSession, fixture_json_dir: Path, undeclared_dir: Path, capture_menu: GnomeMenuCapture
+) -> None:
+    try:
+        data = json.loads((fixture_json_dir / "claude_prepaid_balance_stale.json").read_text())
+        claude = next(provider for provider in data["providers"] if provider["provider"] == "claude")
+        claude["display"]["source"] = "last_success"
+        claude["display"]["observed_at"] = "2026-01-15T11:00:00Z"
+        claude["display"]["prepaid_stale_since"] = "2026-01-15T10:00:00Z"
+        fixture_path = fixture_json_dir / "claude_distinct_staleness.json"
+        fixture_path.write_text(json.dumps(data, indent=2) + "\n")
+        session.close_menu()
+        session.reload("/fixtures/claude_distinct_staleness.json")
+
+        header = string_reply(session.call("GetHeaderText", "claude"))
+        assert "(stale 1h00m)" in header
+        assert "(prepaid stale 2h00m)" in header
+
+        geometry = session.open_menu()
+        try:
+            capture_menu.capture(geometry, label="Claude distinct staleness")
+        finally:
+            session.close_menu()
+    except (TimeoutError, RuntimeError) as e:
+        session.save_log(undeclared_dir / "claude-distinct-staleness.shell.log")
+        pytest.fail(f"Claude distinct staleness: {e}")
+
+
 def test_render_disconnected_stream(
     session: GnomeSession, undeclared_dir: Path, capture_menu: GnomeMenuCapture
 ) -> None:
@@ -174,10 +218,13 @@ def test_render_disconnected_stream(
         session.call("SetSyncState", "958", "1019", "1000")
         session.wait_for_paint()
         stream_status = string_reply(session.call("GetStreamStatus")).lower()
+        assert "\n" not in stream_status
         assert "desktop sync attempt 42s ago" in stream_status
         assert "retry in 19s" in stream_status
+        assert "connection to quota api was lost" in stream_status
         session.call("SetSyncState", "958", "1019", "1001")
         stream_status = string_reply(session.call("GetStreamStatus")).lower()
+        assert "\n" not in stream_status
         assert "desktop sync attempt 43s ago" in stream_status
         assert "retry in 18s" in stream_status
         session.call("SetSyncState", "958", "1019", "1000")

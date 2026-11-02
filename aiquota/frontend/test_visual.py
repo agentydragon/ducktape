@@ -56,6 +56,23 @@ async def test_dashboard(view: VisualPage, scene: str) -> None:
         await expect(grants).to_contain_text("$100.00 expires")
         await expect(grants).to_contain_text("$25.75 expires")
         await expect(grants).not_to_contain_text("/ $100.00")
+    if scene == "claude_prepaid_balance":
+        await expect(view.page.get_by_role("heading", name="Claude · $123.45 prepaid balance")).to_be_visible()
+        await expect(view.page.get_by_text("Claude prepaid balance", exact=False)).to_have_count(0)
+    if scene == "claude_prepaid_balance_unavailable":
+        await expect(view.page.get_by_role("heading", name="Claude · prepaid balance unavailable")).to_be_visible()
+        await expect(view.page.get_by_text("Claude prepaid balance", exact=False)).to_have_count(0)
+    if scene == "claude_prepaid_balance_stale":
+        await expect(
+            view.page.get_by_role("heading", name="Claude · $123.45 prepaid balance (stale 1h00m)")
+        ).to_be_visible()
+        await expect(view.page.locator('.aiquota-card[aria-label="claude quota"] .aiquota-badge-stale')).to_have_count(
+            0
+        )
+    if scene == "stale_fallback":
+        claude = view.page.locator('.aiquota-card[aria-label="claude quota"]')
+        await expect(claude.get_by_role("heading")).to_contain_text("$123.45 prepaid balance")
+        await expect(claude.get_by_text("Stale · 1d0h", exact=False)).to_be_visible()
     if scene == "anthropic_platform_credits":
         await expect(
             view.page.get_by_text("Main org · Anthropic API credit balance · $123.45 available", exact=True)

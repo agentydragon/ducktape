@@ -19,6 +19,11 @@ providers:
         windows:
           - { used_percent: 35.0, reset_seconds: 7920.0, window_seconds: 18000.0 }
           - { used_percent: 72.0, reset_seconds: 442800.0, window_seconds: 604800.0 }
+        prepaid_balance:
+          kind: available
+          amount_minor: 12345
+          exponent: 2
+          currency: USD
   - provider: codex
     last_output:
       fetched_at: "2026-01-15T12:00:00Z"
