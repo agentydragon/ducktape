@@ -94,7 +94,7 @@ an imported callee. That is the only share per-chunk scoping could act on.
   `retained_record_factory` premise), builtin rows for the `Object.*` calls,
   and array iteration over class arrays account for 225 of 399 escapes.
 - Claude's pool is the export-reentry set. The export-reentry policy
-  (`plans/host_behavior.md`) is the lever there, not havoc reach.
+  (`SPEC.md` § Reentry through imported names) is the lever there, not havoc reach.
 - R1's report shows how much R2 could bound. Tana has 1 `bounded` construction
   out of 120. Claude has 4 out of 88; the rest are `borrowed_receiver`,
   `tainted_input` or `unknown_callee`.

@@ -136,7 +136,8 @@ Validation is translation validation (<translation_validation_gate.md>).
 - <staged_pipeline.md>: remaining stage-boundary and cache-identity work.
 - <translation_validation_gate.md>: stages 3 and 4, and the migration from
   Pass 1 and Pass 2.
-- <host_behavior.md>: host premises as explicit behavior keys.
+- `../SPEC.md` § Host behavior and § Reentry through imported names: explicit
+  host premises and their effect on export reentry.
 - <analysis_performance.md>: stage 2 cost and the CI budgets.
 - <native_receiver_identity.md>, <purity_analysis.md>,
   <runtime_validation.md>: analysis precision and probe work within stage 2.

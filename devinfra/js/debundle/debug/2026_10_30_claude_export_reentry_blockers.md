@@ -2,8 +2,8 @@
 
 Question: with gaffer-private #667's audited `host_behavior`, which loader
 blockers keep the canonical Claude CLI 2.1.292 graphs conservative, which can
-the engine clear soundly, and what would clearing them buy? The decisions are
-in <../plans/host_behavior.md> § Remaining loader blockers.
+the engine clear soundly, and what would clearing them buy? The current rule is
+specified in <../SPEC.md> § Reentry through imported names.
 
 ## Method
 

@@ -1,327 +1,35 @@
 # Staged pipeline
 
-Split `debundle run` into an analysis stage and a run stage, so an edit that
-does not change what analysis reads reuses a cached analysis artifact. Stage
-outputs are Bazel action outputs, keyed by content and shared through the
-remote cache. There is no in-process or ad-hoc on-disk cache. This plan burns
-down as its PRs land.
+The projection, serialized analysis artifact, CLI split, and Bazel actions are
+implemented in `lowering/analysis_projection.rs`,
+`lowering/analysis_artifact.rs`, `pipeline.rs`, and `pipeline.bzl`. Artifact
+identity includes the analysis engine, canonical projection, and parser source
+digests. Physical parser-file/spec paths and author notes are report context;
+content digests and normalized source paths remain analysis identity.
 
-## Problem
+## Remaining selector-identity decision
 
-Agents iterate on specs. Most edits change module assignment, co-location or
-`commuting_statements`, none of which change chunk analysis, yet every run
-recomputes all of it. Measured on `devel` `a7520fb884` (`-c opt`, local host,
-gaffer-private `origin/main` `831c8502` specs; [§ Measurements](#measurements)):
+`resolved_member` premises still carry their logical destination into analysis:
+`AnalysisProjection::new` keys `premise_members` by `(module, name)`, the
+projection retains the authored selector, and
+`resolve_native_operation_inputs` retains `ResolvedMember` selector provenance.
+A module rename therefore changes analysis identity when such a premise is
+present, even if selector resolution reaches the same source declaration.
 
-| Input                             | Wall to end of materialize | Analysis share           | Peak RSS |
-| --------------------------------- | -------------------------- | ------------------------ | -------- |
-| Tana (1 chunk plus vendor)        | 130 s                      | 120 s (S2 77, S3 43)     | 4.5 GiB  |
-| Claude CLI (76 chunks), full emit | 79 s (83 s total)          | 64 s (S2 38, S3 26 wall) | 8.6 GiB  |
+Decide whether the logical module path is intentionally part of a premise's
+identity or whether analysis should key it by the resolved provider declaration
+and leave the authored path in report-only evidence. The current
+`assignment_edit_keeps_the_projection_and_the_artifact` case does not exercise a
+`resolved_member` premise, so this boundary is not proven either way. No
+canonical gate payoff has been established for changing it.
 
-## Stage map
+If the selector is made destination-independent, add a neutral fixture with a
+`resolved_member` premise that renames its module while keeping the same source
+declaration; require identical projection and artifact bytes. Changing the
+selected declaration or premise must still invalidate the artifact.
 
-Stage names follow the code, not the original proposal. "Selector solve" is
-`prepare_logical_chunk` → `solve_projected_chunks` → `claim_prepared_chunk`
-(`lowering/mod.rs`).
+## Deferred
 
-| Stage                          | Code                                                                                                                                                                                                           | Reads                                                                                                                                      | Tana                         | Claude                        |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------- | ----------------------------- |
-| S0 prepare                     | `pipeline.rs::prepare_transform`: parse every chunk, `build_vendor_resolution_plan`                                                                                                                            | sources, `inputs`, vendor marks, package roots                                                                                             | 1.6 s                        | 3.8 s                         |
-| S1 structural + selector solve | `collect_chunk_source_facts`, selector solve                                                                                                                                                                   | source; all module YAML (anchors couple modules)                                                                                           | 3.4 s                        | 1.3 s                         |
-| S2 program-wide                | `export_policies`, `export_reentry_reports` (loader derivation, closure blockers), `cross_module::collect_cross_module_imported_purities` (provider execution indexes, callable summaries, premise resolution) | sources, `host_behavior`, `program_premises`, `chunk_export_purity`, premise lists, vendor plan; premise selectors still name modules (C3) | 0.2 s + 77 s                 | 7.5 s + 38–40 s               |
-| S3 per-chunk analysis          | `finish_logical_chunk` → `complete_chunk_structural_with_inputs` → `analyze_chunk_with_policy` (one `IterativeInference` context: interpreter and purity)                                                      | chunk source, S2 output, annotation premises, analysis half of `chunk_analysis_options`                                                    | 43 s                         | 26 s wall, 55–58 s CPU        |
-| S4 graph and gate              | `compute_dependency_graph_and_atomic_groups_with`, rebind folds, `builder.finalize`, `AssignmentAnalysis`, `validate_and_emit_reports`                                                                         | S3 facts, `commuting_statements`, `dataflow_aware_s_chain`, assignment                                                                     | 3.8–4.7 s graph + 4.0 s gate | 5.4–7.4 s + 1.8–3.3 s (`cli`) |
-| S5 lower and emit              | `lower_chunk`, naturalize, emission rewrites (including vendor strip), prune, `ReconstructionPlan`, `write_js_tree`                                                                                            | S4 placement, `chunk_renames`, output config                                                                                               | 5.0 s lower; emit see below  | 0.3 s + 5.2 s                 |
-
-S1 and S2 run once per program; S3, S4 and the lowering half of S5 run per
-chunk in parallel, so Claude's wall is its `cli` chunk.
-
-The vendor strip (`vendor/strip.rs::analyze_prune_items`) runs a sixth,
-separate analysis: `analyze_vendor_prune_chunk`, the full interpreter over the
-partially swapped vendor chunk with default inputs, after materialize. On the
-Tana `--emit-on-rejection` run it was still running single-threaded at 25 min
-(`Executor::callback_values` hot) when the harness killed it; that regression
-is being fixed separately. It is a pure function of the vendor chunk after its
-own rewrites and the vendor plan, so it is cacheable the same way.
-
-## Spec keys by stage
-
-S1 means "resolved by the selector solve". Keys absent from every stage
-(`note`, `comment` outside output) must be excluded from projections or they
-cause spurious cache misses.
-
-| Key                                                                                                                                                                   | Stages                   | Notes                                                                                         |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | --------------------------------------------------------------------------------------------- |
-| `inputs.{input_root,js_list_path}`                                                                                                                                    | S0                       | Source identity; every stage keys on it.                                                      |
-| `inputs.embedded_loaders_path`                                                                                                                                        | S0, S2                   | Loader derivation.                                                                            |
-| `host_behavior.{synchronous_module_loader, loader_result_*, synchronous_load_*, reentry_free_*_modules, reentry_free_embedded_loaders}`                               | S2                       | Export-reentry policy; copied into S4 reports only.                                           |
-| `host_behavior.reentry_free_operations`                                                                                                                               | S3                       |                                                                                               |
-| `host_behavior.predefined_globals`                                                                                                                                    | S2, S3                   | Read by two stages.                                                                           |
-| `program_premises.*`                                                                                                                                                  | S2                       | Reports only after S2.                                                                        |
-| `vendor` marks                                                                                                                                                        | S0, S2, S5               | S2 needs replacement packages and closure blockers.                                           |
-| `swap_vendor_chunks.*`, `write_js_tree`, `emit_browser_harness`, `materialize_logical_modules.report_out_dir`                                                         | S5                       | Output only.                                                                                  |
-| `logical_modules` key set, `chunk_renames` key set, `unassigned_mode` key set                                                                                         | S0 (chunk set), S2 scope | Which chunks are analysed; recorded in the projection.                                        |
-| `materialize_logical_modules.prune_other_chunks`                                                                                                                      | S2 scope                 | Changes the S2 universe.                                                                      |
-| `materialize_logical_modules.{file,target_dir}`                                                                                                                       | S1, S5                   | Request paths; analysis sees destinations by index only.                                      |
-| members' selectors, `source_matches`, `anonymous_statements[].source_match`                                                                                           | S1, S4, S5               | The assignment. Only `resolved_member` premise names reach S2 (C3).                           |
-| `annotations.{purity, initializer_purity, effect, pure_members, no_sync_callback_members, retained_record_factory}`                                                   | S1, S2 (`pure_new`), S3  | Analysis premises stored in module YAML; resolved to bindings in the projection.              |
-| `anonymous_statements[].no_reentry_call`                                                                                                                              | S1, S3                   | Resolved to call spans in the projection.                                                     |
-| `chunk_renames.<c>.members`                                                                                                                                           | S4, S5                   |                                                                                               |
-| `chunk_renames.<c>.annotations`                                                                                                                                       | S3                       | Same shape as member annotations.                                                             |
-| `unassigned_mode`                                                                                                                                                     | S1, S4                   | Never read by S2/S3.                                                                          |
-| `chunk_export_purity.*`                                                                                                                                               | S2                       | Reaches S3 through summaries. `ContractAudit::probe` already varies only this key in-process. |
-| `chunk_analysis_options.<c>.{value_inputs, native_operation_inputs, native_call_identity_inputs, argument_inputs}`                                                    | S2, S3                   | Resolved in S2; `resolved_member` selectors (C3). Cleared before graph build.                 |
-| `chunk_analysis_options.<c>.no_accessor_install_callables`                                                                                                            | S2                       |                                                                                               |
-| `chunk_analysis_options.<c>.{local_property_effects, trusted_dataflow_summaries, deferred_global_publications, non_reentrant_global_membership, admission_overrides}` | S3                       | `admission_overrides` is source-only and cheap.                                               |
-| `chunk_analysis_options.<c>.commuting_statements`                                                                                                                     | S4                       | Resolved only when the chunk graph is built.                                                  |
-| `chunk_analysis_options.<c>.dataflow_aware_s_chain`                                                                                                                   | S4                       |                                                                                               |
-
-Keys read by more than one stage: `predefined_globals`, `vendor`,
-`logical_modules`, `annotations.purity`, every input contract list,
-`chunk_renames`, `unassigned_mode`,
-`materialize_logical_modules.file`. Only the couplings below block caching;
-the rest are reads by both an analysis stage and a later stage, which is fine.
-
-The dependency graph does not read the assignment:
-`compute_dependency_graph_and_atomic_groups_with(facts, options, commuting)`
-gets no builder or placement, and rebind folds, per-atomic-group synthesis and
-`AssignmentAnalysis` all run after it.
-
-## Couplings and cuts
-
-**C3 — `resolved_member` premise selectors (residue).** S2 and S3 already
-read the spec only through `lowering::analysis_projection::AnalysisProjection`:
-annotations and `no_reentry_call` premises keyed by resolved binding,
-`purity: pure_new` derived from them, and only the members that
-`native_operation_inputs` name through `resolved_member`. What remains is that
-such a premise names its member by `(module, name)` and its evidence records
-that selector, so renaming the module still changes S2's output. Cut: with C6,
-evidence names the premise by id; optionally a codemod rewrites
-`resolved_member` to `source_match` and retires the variant.
-
-**C6 — whole-spec provenance read by S2.** Author-input evidence names its
-premise by its path inside the spec; report writers add the spec file, parser
-input path and note (`reports/author_inputs.rs`). Still path-dependent: S2's
-`GraphProvenance` parameter, read for each input chunk's source digest and
-path. Cut: the projection carries the source digests;
-`GraphProvenance` stays a report-writer input.
-
-**C8 — selector anchors couple modules within S1.** `cross_ref.anchor`,
-`reads_member.object` and similar name other members, so the selector solve
-reads all module YAML. It only affects the projection step's runtime, which is
-seconds; its output is what must be canonical.
-
-### Other hidden couplings
-
-- **SWC hygiene.** `Id = (Atom, SyntaxContext)`; a `SyntaxContext` is an index
-  into process-local `GLOBALS`, and chunks are parsed in parallel, so numbering
-  differs between processes. This killed the previous attempt
-  (`docs/lessons_learned/cross_process_stage_b.md`); see
-  [§ Artifact](#artifact) for the encoding that avoids it.
-- **Spans.** `BytePos` depends on `SourceMap` registration order. Premise
-  matching compares spans (`input.call_span == call.span`), so artifacts store
-  file-relative offsets.
-- **One `IterativeInference` context per chunk.** Purity, function effects and
-  the interpreter share it (design.md § Purity and synchronous execution share
-  one context). It never crosses the S3 boundary: the artifact holds the
-  settled `StatementFacts`, not the context.
-- **S2 keeps per-chunk premise resolutions.** `CrossModulePurities` carries
-  each chunk's resolved `value_inputs`, `native_operation_inputs`,
-  `argument_inputs` beside the summaries; S3 for chunk _c_ reads only its
-  slice plus its imports' summaries.
-- **Existing partial reuse.** `ContractAudit` keeps the S0 preparation and
-  reruns from `chunk_export_purity` in-process; `cli/edit_gate.rs` gates
-  post-edit assignments against a saved `dependency_graph.json.gz` without a run.
-  The staged run complements both: it produces the lowered tree.
-
-## Artifact
-
-What crosses the boundary: S2's `CrossModulePurities` plus export-reentry
-reports, and per chunk S3's `ChunkFactAnalysis`. Not the dependency graph: it
-depends on `commuting_statements` (an S4 key), is 3–4× larger than the facts
-it is built from, and rebuilding it from loaded facts takes 4.2 s on Tana and
-reproduces it exactly (JSON equality on the Tana main chunk and 75 Claude
-chunks).
-
-### Measurements
-
-Artifact sizes and load times below come from the earlier `7b2d174f` specs,
-on which Tana's S3 took 154–166 s (before gaffer-private #680 added the
-`runFunc` premise); stage times above are from `831c8502`.
-
-Prototype: `Serialize`/`Deserialize` added to about 250 analysis-crate types.
-`StatementFacts`, `CrossModulePurities` and `AnalysisInputs` derive cleanly
-with everything they contain; the few types that cannot (`&'static` builtin
-rows, `BinaryOp`, `petgraph` maps) are not in the artifact. Also timers at stage boundaries, and an in-run dump that writes,
-re-reads and deserializes each value. JSON is impossible for the facts
-(`BTreeMap<Id, _>` keys); `postcard` serializes but cannot deserialize the
-existing serde attributes (`#[serde(tag = …)]`, `flatten`,
-`skip_serializing_if` need a self-describing format), so its load numbers are
-not usable. MessagePack (`rmp-serde`, `to_vec_named`) round-trips everything.
-
-| Artifact                           | JSON                   | MessagePack                              | postcard | zstd -3 of MessagePack (compress, decompress) |
-| ---------------------------------- | ---------------------- | ---------------------------------------- | -------- | --------------------------------------------- |
-| Tana S2 `CrossModulePurities`      | 19.6 MB, 35–47 ms load | 16.2 MB, 22–29 ms load                   | 5.9 MB   | 0.67 MB                                       |
-| Tana S3 facts (main chunk)         | n/a                    | 212 MB, 0.3 s ser, 1.4–1.5 s load        | 124 MB   | 3.7 MB (0.07 s, 0.06 s)                       |
-| Tana dependency graph (not cached) | 899 MB                 | 682 MB, 2.2 s load                       | 202 MB   |                                               |
-| Claude S2 `CrossModulePurities`    | 75 MB, 0.24 s          | 64 MB, 0.17 s load                       | 29 MB    | 3.0 MB                                        |
-| Claude S3 facts (76 chunks)        | n/a                    | 563 MB, 4.1 s load summed (`cli` 387 MB) | 295 MB   | 11.4 MB (0.37 s all)                          |
-| Claude per-chunk `AnalysisInputs`  | 2.16 GB                | 1.77 GB                                  |          |                                               |
-
-The last row is why S3's input is the S2 artifact once, not a per-chunk copy
-of its derived `AnalysisInputs`.
-
-Identifier canonicalization, measured: numbering every `SyntaxContext` by
-first occurrence in a pre-order identifier walk of the chunk AST takes 0.25 s
-on Tana (22,878 contexts) and covered every context of the 171k `Id`s checked
-in `declared`, `local_bindings`, `reads`, `calls` and `rebinds`, including
-closure-local ones; every Claude chunk had zero misses as well.
-
-### Format
-
-Analysis identity is generated from the configured compiled `pipeline` closure
-and embedded in the public CLI and the separate `debundle_analyze` executable.
-`DebundleAnalyze` uses only the latter; ProjectAnalysis, Pipeline and ExportGraphs
-use the full CLI. CLI frontend edits therefore leave the Analyze tool unchanged.
-The shared closure still includes non-analysis lowering/emission code, so this
-does not promise isolation for edits outside `cli/`.
-
-The header field is `analysis_engine_sha256`; older artifacts must be regenerated.
-Writer, schema and decoder compiled outputs participate even if final linking
-discards a decoder path. Saved graph identity continues to hash the actual full
-executable. Native linkstamps and object-only native library providers are rejected
-by the focused collector until their identity semantics are implemented. Custom
-tool pairs must share the configured engine closure and native linking policy.
-
-Landed in PR 6: `analysis_codec.rs` (contexts as first-occurrence
-ordinals, named MessagePack, zstd-3) and `lowering/analysis_artifact.rs`
-(header with engine, projection and per-chunk source digests). Measured on
-`-c opt`, S2 plus all S3 facts, including the spans, purity causes and
-dependencies JSON reports omit:
-
-| Input  | MessagePack | Compressed | Encode    | Decode    | Two processes   |
-| ------ | ----------- | ---------- | --------- | --------- | --------------- |
-| Tana   | 199 MB      | 4.5 MB     | 1.3 s     | 1.4–1.7 s | identical bytes |
-| Claude | 835 MB      | 20.5 MB    | 5.1–5.7 s | 5.4–5.8 s | identical bytes |
-
-## Projected agent loop
-
-Run stage given a cache hit: S0, S1 and selector solve, artifact load,
-context remap, S4, S5. Numbers are measured stage times summed, not a
-measured end-to-end run of the split.
-
-| Edit                                                                        | Tana                                                      | Claude                                                     |
-| --------------------------------------------------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------- |
-| Today, any edit                                                             | ~130 s to end of the gate                                 | 83 s                                                       |
-| Assignment, co-location, module rename, selector rewrite resolving the same | ~20 s (1.6 + 2.7 + 1.5 + 0.3 + 3.8 + 4.3 + 5.0) plus emit | ~23 s (3.8 + 1.3 + 2.8 + 7.4 + 1.8 + 0.3 + 5.2)            |
-| `commuting_statements`, `dataflow_aware_s_chain`                            | same as assignment                                        | same as assignment                                         |
-| Premise edits (annotations, input lists, `chunk_export_purity`, host keys)  | full analysis; no gain                                    | full analysis; per-chunk S3 actions recover most (phase 2) |
-
-In Bazel add the projection action (S0 + S1 + selector solve, about 5 s) and
-action overhead. Tana's emit time on an accepted spec is not in the table: the
-`--emit-on-rejection` run did not finish (vendor strip, above).
-
-## CLI
-
-```text
-debundle spec project-analysis --tree-config … --tree-modules … --tree-vendor-marks …
-    --tree-source-root … [--package-root …] --out analysis_projection.json
-debundle analyze --projection analysis_projection.json --tree-source-root …
-    [--package-root …] --out analysis.dba
-debundle run <today's flags> [--analysis analysis.dba]
-```
-
-- `analyze` takes no spec tree flags: the projection is its only spec input.
-- `run --analysis` recomputes the projection and source digests from its own
-  flags and refuses on mismatch, naming the differing projection keys. Under
-  Bazel this is redundant; for an agent running `run --analysis` locally
-  against an artifact fetched once, it turns a stale artifact into an error.
-- `run` without `--analysis` keeps today's behavior, implemented as
-  project → analyze → run in-process, so there is one code path.
-
-## Bazel
-
-`debundle_pipeline` (`pipeline.bzl`) becomes three actions; callers do not
-change:
-
-| Mnemonic                  | Inputs                                          | Output                                          | Notes                                                                                                                                       |
-| ------------------------- | ----------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DebundleProjectAnalysis` | spec tree, `input_data`, package roots, binary  | `<name>.analysis_projection.json`               | Reruns on every spec edit; seconds.                                                                                                         |
-| `DebundleAnalyze`         | projection, `input_data`, package roots, binary | `<name>.dba`                                    | Key unchanged by assignment edits → remote-cache hit across agents and machines. Keeps the big `exec_properties` (Claude peaks at 8.6 GiB). |
-| `DebundlePipeline`        | today's inputs plus `<name>.dba`                | today's `<name>.out`, `dependency_graphs` group | Exit-3 handling and `no-sandbox` unchanged. Can request smaller executors.                                                                  |
-
-- Content addressing gives the cutoff: an assignment edit changes the spec
-  glob, so `DebundleProjectAnalysis` reruns, writes identical bytes, and
-  `DebundleAnalyze` hits the action cache.
-- Output sizes are small: 4–15 MB compressed, against today's 1.1–1.4 GB
-  `<name>.out`, which RBE already accepts within `--remote_timeout=10m`.
-- Local loop: `bazel build :<name>_analysis --remote_download_outputs=toplevel`
-  (after `--config=rbe`), then `debundle run --analysis` locally on each edit.
-- Phase 2, only if premise edits dominate: S2 as one action and S3 as one
-  action per chunk, with the S2 artifact split per consumer chunk (its own
-  resolved premises plus its imports' summaries) so an edit that changes no
-  exported summary cuts off before the chunks. Vendor strip analysis as its
-  own action keyed by the vendor plan.
-
-## Cache-key correctness
-
-A stage may read only what its key covers. Enforced, not documented:
-
-1. **Process boundary.** `analyze` parses no YAML but the projection and
-   accepts no spec-tree flag. On RBE the action sees only declared inputs.
-   Locally nothing confines its reads: source roots are symlink trees (Bazel
-   runfiles, staged inputs) whose files resolve outside the root, so a path
-   check would refuse legitimate runs. The header's parser-input digests
-   cover the sources; the projection covers the spec.
-2. **Types.** `AnalysisProjection` is the only spec-derived type in S2 and S3
-   signatures. `MaterializeSpecInputs` splits into `AnalysisProjection` and the
-   assignment half; `DependencyGraphOptions` splits into analysis and graph
-   options; `commuting_statements` leaves `AnalysisAssumptions`; S2 no longer
-   receives `resolved_member_sites` beyond the members premises name. The
-   `analysis` crate does not depend on the `gate` crate or any assignment type.
-3. **Canonical projection.** Sorted keys, no paths outside the source root, no
-   `note`/`comment`. Tests: moving a member between modules, renaming a
-   module, editing `commuting_statements` or rewriting a selector to an
-   equivalent one leaves the projection bytes identical; adding an annotation
-   or premise changes them.
-4. **Deterministic artifact.** No `SyntaxContext` numbers, `BytePos` values,
-   absolute paths or provenance in the artifact. Test: analyze twice in fresh
-   processes with different thread counts, compare bytes; and the cross-
-   `Globals` round trip the lessons-learned note says does not exist.
-5. **Equivalence.** `run` equals `analyze` + `run --analysis` byte-for-byte
-   on the whole e2e corpus and both canonical inputs (tree, reports, exit code).
-
-## Migration order
-
-Each PR is byte-identical on the e2e suite and both canonical inputs unless
-it says otherwise.
-
-5. Path-independent evidence (C6): landed; numbering kept for references.
-6. Serializable artifact: landed; numbering kept for references.
-7. CLI and equivalence tests: landed; numbering kept for references.
-8. `pipeline.bzl` three actions: landed; numbering kept for references.
-9. Phase 2 (per-chunk actions, vendor strip) only if measured edit mix asks
-   for it.
-
-## Interaction with other work
-
-- **Abstract interpreter** (<abstract_interpreter.md>). Step 4c keeps purity
-  and the interpreter in one per-chunk context; that context is internal to
-  S3. Step 9 moves gate consumption of `commuting_statements` onto effect
-  sets: the gate then reads effect sets from the artifact, which carries them
-  in `StatementFacts`; commuting resolution already sits in S4, where step 9
-  needs it. Artifact schema churn from any step is free (engine digest in the key).
-- **Analysis performance.** Faster S2/S3 shrinks the cold path and does not
-  change the boundary. Work that shares state between S2 and S3 (for example
-  reusing S2's prepared execution indexes in S3) must pass it as a value in
-  the S2 artifact, not as shared in-process state.
-- **Dependency-graph slimming.** Changes `dependency_graph.json.gz`, which the run
-  stage still writes; the artifact caches facts, not the graph, so the two do
-  not interact.
-
-## Not in scope
-
-- An in-process or ad-hoc local cache.
-- Incremental analysis within a chunk.
-- The prototype: it is a throwaway patch (serde derives on 62 files, timers,
-  dump code), not kept under `x/`; PR 6 redoes the derives properly.
+Per-chunk S3 actions and a separate vendor-strip action remain deferred until a
+measured edit mix shows that their additional action and artifact costs pay
+back. No measurement in this plan establishes that need.

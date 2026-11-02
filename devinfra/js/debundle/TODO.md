@@ -19,11 +19,9 @@ plans and evidence live here:
   descriptor, alias, method-receiver and initialization proof obligations.
 - <plans/abstract_interpreter.md> — migrate the bespoke semantic certificates
   onto one abstract interpreter, domain and builtin summary table.
-- <plans/synchronous_execution_fallback.md> — remove the losses that make
-  statements promote their whole havoc read set (rejected construction,
-  member reads), then bound what an incomplete statement promotes.
-- <plans/host_behavior.md> — declare runtime behavior as explicit keys and
-  derive the export-reentry policy from them.
+- <plans/synchronous_execution_fallback.md> — make modeled effects authoritative
+  for incomplete at-init calls before removing the graph builder's conservative
+  read-closure fallback; reported havoc reach is not yet consumed.
 - <ARCHITECTURE_BACKLOG.md> — unrelated deferred integrity and test/spec items.
 - `perf/` — measured performance notes. Update from real
   profiles before major matcher/index rewrites.
