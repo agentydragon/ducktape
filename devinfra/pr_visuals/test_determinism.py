@@ -52,9 +52,10 @@ def _coverage(
     attempt: int | None = 1,
     selected: bool = True,
     issues: tuple[str, ...] = (),
+    retried_by: int | None = None,
 ) -> ResultCoverage:
     result = ResultKey(invocation, target, configuration, run, shard, attempt)
-    return ResultCoverage(result, "PASSED" if selected else "FAILED", "PASSED", 1, selected, issues)
+    return ResultCoverage(result, "PASSED" if selected else "FAILED", "PASSED", 1, selected, issues, retried_by)
 
 
 def _output(
@@ -169,7 +170,7 @@ def test_failed_target_is_reported_separately_and_not_counted_as_missing() -> No
 
 def test_retry_attempts_are_not_extra_rosters_and_terminal_success_is_used() -> None:
     invocations = ["run-1", "run-2"]
-    first_attempt = _coverage("run-1", attempt=1, selected=False, issues=("superseded by retry",))
+    first_attempt = _coverage("run-1", attempt=1, selected=False, retried_by=2)
     terminal_attempt = _coverage("run-1", attempt=2)
     observed = from_collection(
         _collection(

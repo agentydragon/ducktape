@@ -162,6 +162,7 @@ def test_retries_and_runs_remain_separate_and_failed_attempt_is_not_selected(tmp
     assert len(collected.observations) == 3
     assert {(item.result.run, item.result.attempt) for item in collected.selected} == {(1, 2), (2, 1)}
     assert any("retried by attempt 2" in issue for issue in collected.issues)
+    assert [(result.result.attempt, result.retried_by) for result in collected.results if result.retried_by] == [(1, 2)]
 
 
 def test_uneven_shard_retries_use_total_result_count(tmp_path: Path) -> None:

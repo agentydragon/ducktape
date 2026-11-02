@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import html
 import json
 import mimetypes
 import os
@@ -13,9 +12,8 @@ import shutil
 import subprocess
 import tempfile
 import time
-import urllib.parse
 from collections import Counter, defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,31 +23,37 @@ from typing import Any, Literal, Protocol, cast
 import boto3
 from botocore.exceptions import ClientError
 from github import Auth, Github
-from jinja2 import Environment, FileSystemLoader, select_autoescape
 from PIL import Image
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.artifacts import Runner
 from devinfra.pr_visuals.check_run import upsert_check_run
-from devinfra.pr_visuals.collection import OutputObservation, collect_outputs
+from devinfra.pr_visuals.collection import OutputObservation, ResultKey, collect_outputs
+from devinfra.pr_visuals.gallery import review_test_page_data, templates
+from devinfra.pr_visuals.github_comment import (
+    COMMENT_MARKER,
+    ci_failure_summary,
+    error_comment_body,
+    no_visual_comment_body,
+    success_comment_body,
+)
 from devinfra.pr_visuals.metadata import (
     BaselineMetadata,
     BaselinePointer,
     ClassificationCounts,
     ReviewAsset,
     ReviewBundleMetadata,
+    ReviewIssue,
+    ReviewIssueSource,
     ReviewResult,
     ReviewTest,
     ReviewVariant,
 )
 from devinfra.pr_visuals.pull_request import find_reviewable_pull_request
+from devinfra.pr_visuals.render_common import classification_totals, ordered_assets, shared_image_key, test_impact_key
 from util.visual_diff import compare_pngs
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
-COMMENT_MARKER = "<!-- pr-visuals -->"
-COMMENT_BUDGET = 55_000
-COMMENT_OPEN_TARGETS = 2
-INLINE_ASSET_LIMIT = 3
 REVIEW_PREFIX = "reviews-test-outputs"
 
 
@@ -88,8 +92,27 @@ class DownloadedVisualTest:
     title: str
     assets: list[DownloadedAsset]
     configuration: str | None
-    issues: list[str]
-    notices: list[str] = field(default_factory=list)
+    issues: list[ReviewIssue]
+    notices: list[ReviewIssue] = field(default_factory=list)
+
+
+def _group_result_messages(results: Iterable[tuple[ResultKey, str]]) -> list[ReviewIssue]:
+    groups: dict[tuple[str, str | None, int | None, int | None, str], set[int | None]] = defaultdict(set)
+    for result, message in results:
+        groups[result.invocation, result.configuration, result.run, result.attempt, message].add(result.shard)
+    return [
+        ReviewIssue(
+            message=message,
+            source=ReviewIssueSource(
+                invocation=invocation,
+                configuration=configuration,
+                run=run,
+                attempt=attempt,
+                shards=sorted(shards, key=lambda shard: (shard is None, shard or 0)),
+            ),
+        )
+        for (invocation, configuration, run, attempt, message), shards in groups.items()
+    ]
 
 
 class BaselineSource(Protocol):
@@ -378,29 +401,26 @@ def download_visual_tests(
         if observation.key.role == "screenshot":
             by_target.setdefault(observation.key.target, [])
     for result in collected.results:
-        if result.record_count and result.issues:
+        if result.record_count and (result.issues or result.retried_by is not None):
             by_target.setdefault(result.result.target, [])
     tests: list[DownloadedVisualTest] = []
     downloads: list[_Download] = []
     for target, selected in sorted(by_target.items()):
         target_results = [entry for entry in collected.results if entry.result.target == target]
-        issues = [
-            f"{entry.result}: {message}"
-            for entry in target_results
-            for message in entry.issues
-            if message != "superseded by retry"
-        ]
+        issues = _group_result_messages((entry.result, message) for entry in target_results for message in entry.issues)
         if any(entry.overall_status not in ("PASSED", "FLAKY") for entry in target_results):
-            issues.append("The overall test result did not complete successfully.")
-        notices = [
-            f"{entry.result}: superseded by a retry"
+            issues.append(ReviewIssue(message="The overall test result did not complete successfully."))
+        notices = _group_result_messages(
+            (entry.result, f"superseded by attempt {entry.retried_by}")
             for entry in target_results
-            if "superseded by retry" in entry.issues
-        ]
+            if entry.retried_by is not None
+        )
         configurations = {entry.result.configuration for entry in target_results}
         configuration = next(iter(configurations)) if len(configurations) == 1 else None
         if len(configurations) != 1 or None in configurations:
-            issues.append("Multiple or unknown Bazel configurations prevent a coherent comparison.")
+            issues.append(
+                ReviewIssue(message="Multiple or unknown Bazel configurations prevent a coherent comparison.")
+            )
         run_rosters: dict[tuple[str, str | None, int | None], set[tuple[str, str | None, str]]] = {}
         for result in target_results:
             if result.selected:
@@ -414,21 +434,21 @@ def download_visual_tests(
                 identity
             )
         if len({frozenset(roster) for roster in run_rosters.values()}) > 1:
-            issues.append("Successful runs or invocations published different screenshot rosters.")
+            issues.append(ReviewIssue(message="Successful runs or invocations published different screenshot rosters."))
         titles = {item.title for item in selected if item.title}
         if len(titles) > 1:
-            issues.append("Screenshot records disagree on the target title.")
+            issues.append(ReviewIssue(message="Screenshot records disagree on the target title."))
         title = min(titles) if titles else target
         assets: list[DownloadedAsset] = []
         for (case_id, checkpoint, role), observations in sorted(grouped.items(), key=lambda pair: repr(pair[0])):
             labels = {item.label for item in observations if item.label}
             if len(labels) > 1:
-                issues.append(f"{case_id}: screenshot records disagree on the display label.")
+                issues.append(ReviewIssue(message=f"{case_id}: screenshot records disagree on the display label."))
             label = min(labels) if labels else case_id + (f" — {checkpoint}" if checkpoint else "")
             variants_by_digest: dict[str, list[OutputObservation]] = defaultdict(list)
             for item in observations:
                 if item.digest is None:
-                    issues.append(f"{case_id}: the screenshot has no verified CAS digest.")
+                    issues.append(ReviewIssue(message=f"{case_id}: the screenshot has no verified CAS digest."))
                     continue
                 variants_by_digest[item.digest].append(item)
             variants: list[DownloadedVariant] = []
@@ -469,87 +489,12 @@ def download_visual_tests(
     return tests
 
 
-def _templates() -> Environment:
-    return Environment(
-        loader=FileSystemLoader(Path(__file__).parent),
-        autoescape=select_autoescape(["html", "j2"]),
-        keep_trailing_newline=True,
-    )
-
-
 def _asset_summary(assets: list[ReviewAsset]) -> ClassificationCounts:
     counts: Counter[str] = Counter()
     for asset in assets:
         if asset.classification is not None:
             counts[asset.classification] += 1
     return ClassificationCounts(**counts)
-
-
-def _ordered_assets(assets: list[ReviewAsset]) -> list[ReviewAsset]:
-    """Put changed screenshots first and sort each class by review impact."""
-    classification_order = {"unstable": 0, "modified": 1, "new": 2, "removed": 3, "unchanged": 4, None: 5}
-    return sorted(
-        assets,
-        key=lambda asset: (
-            classification_order[asset.classification],
-            -(asset.changed_fraction or 0.0),
-            asset.label.casefold(),
-            asset.path,
-        ),
-    )
-
-
-def _image_key(digest: str) -> str:
-    return f"assets/{digest}.png"
-
-
-def _asset_url(
-    asset_base: str, asset: ReviewAsset, variant: Literal["candidate", "baseline", "diff"], *, shared_asset_base: str
-) -> str:
-    digest = {"candidate": asset.candidate_sha256, "baseline": asset.baseline_sha256, "diff": asset.diff_sha256}[
-        variant
-    ]
-    if digest is not None:
-        return f"{shared_asset_base}{_image_key(digest)}"
-    prefix = {"candidate": "", "baseline": "baseline/", "diff": "diff/"}[variant]
-    return f"{asset_base}{prefix}{urllib.parse.quote(asset.path, safe='/')}"
-
-
-def _asset_page_data(asset: ReviewAsset, *, asset_base: str, page_url: str, shared_asset_base: str) -> dict[str, Any]:
-    path = urllib.parse.quote(asset.path, safe="/")
-    return {
-        **asset.model_dump(exclude_none=True),
-        "candidate_url": (
-            f"{shared_asset_base}{_image_key(asset.variants[0].sha256)}"
-            if asset.candidate_sha256 is None and asset.variants
-            else _asset_url(asset_base, asset, "candidate", shared_asset_base=shared_asset_base)
-        ),
-        "baseline_url": _asset_url(asset_base, asset, "baseline", shared_asset_base=shared_asset_base),
-        "diff_url": _asset_url(asset_base, asset, "diff", shared_asset_base=shared_asset_base),
-        "anchor_url": f"{page_url}#{path}",
-        "variants": [
-            {**variant.model_dump(), "url": f"{shared_asset_base}{_image_key(variant.sha256)}"}
-            for variant in asset.variants
-        ],
-    }
-
-
-def _review_test_page_data(
-    test: ReviewTest, *, asset_base: str, page_url: str, shared_asset_base: str
-) -> dict[str, Any]:
-    page = test.model_dump(exclude_none=True)
-    page["assets"] = [
-        _asset_page_data(asset, asset_base=asset_base, page_url=page_url, shared_asset_base=shared_asset_base)
-        for asset in _ordered_assets(test.assets)
-    ]
-    impact_key = _test_impact_key(test)
-    page["sort_changed_count"] = -impact_key[1]
-    page["sort_largest_change"] = -impact_key[0]
-    if test.preview is not None:
-        page["preview"] = _asset_page_data(
-            test.preview, asset_base=asset_base, page_url=page_url, shared_asset_base=shared_asset_base
-        )
-    return page
 
 
 def _pick_preview(assets: list[ReviewAsset]) -> ReviewAsset | None:
@@ -559,7 +504,7 @@ def _pick_preview(assets: list[ReviewAsset]) -> ReviewAsset | None:
     (a target whose assets are all new — e.g. its first publish, or a PR that only adds fixtures
     to an existing target — otherwise gets no thumbnail at all).
     """
-    ordered = _ordered_assets(assets)
+    ordered = ordered_assets(assets)
     return next(
         (asset for asset in ordered if asset.classification == "unstable"),
         next(
@@ -602,7 +547,7 @@ def _classify_test_assets(
     def materialize_baseline(asset: ReviewAsset, path: str) -> Path:
         if asset.candidate_sha256 is None:
             raise ValueError(f"{test.target_label}: baseline has no image digest for {asset.case_id!r}")
-        body = baseline_source.fetch(_image_key(asset.candidate_sha256))
+        body = baseline_source.fetch(shared_image_key(asset.candidate_sha256))
         if body is None:
             raise ValueError(f"{test.target_label}: missing baseline image {asset.candidate_sha256}")
         if hashlib.sha256(body).hexdigest() != asset.candidate_sha256:
@@ -661,7 +606,7 @@ def _share_png(image: Path, output_root: Path, *, known_digest: str | None = Non
     if not image.is_file():
         return None
     digest = known_digest or hashlib.sha256(image.read_bytes()).hexdigest()
-    destination = output_root / _image_key(digest)
+    destination = output_root / shared_image_key(digest)
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
         if hashlib.sha256(destination.read_bytes()).hexdigest() != digest:
@@ -687,7 +632,7 @@ def build_bundle(
         raise ValueError("cannot build a visual-review bundle without tests")
 
     bundle = output_root / REVIEW_PREFIX / commit_sha
-    environment = _templates()
+    environment = templates()
     bundle.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(__file__).with_name("gallery.css"), bundle / "gallery.css")
     shutil.copyfile(Path(__file__).with_name("gallery_sort.js"), bundle / "gallery_sort.js")
@@ -699,7 +644,11 @@ def build_bundle(
         target_dir.mkdir(parents=True, exist_ok=True)
         issues = list(test.issues)
         if not test.configuration:
-            issues.append("The Bazel configuration is unknown; comparison and baseline publication are unavailable.")
+            issues.append(
+                ReviewIssue(
+                    message="The Bazel configuration is unknown; comparison and baseline publication are unavailable."
+                )
+            )
         baseline: ResolvedBaseline | None = None
         comparable = bool(test.configuration)
         if base_sha and baseline_source is not None:
@@ -710,7 +659,9 @@ def build_bundle(
                 or baseline.metadata.configuration != test.configuration
             ):
                 issues.append(
-                    "The baseline and candidate configurations cannot be compared under bazel-configuration-exact-v1."
+                    ReviewIssue(
+                        message="The baseline and candidate configurations cannot be compared under bazel-configuration-exact-v1."
+                    )
                 )
                 comparable = False
                 assets = [
@@ -761,7 +712,7 @@ def build_bundle(
             preview=_pick_preview(assets) if base_sha else None,
         )
         (target_dir / "metadata.json").write_text(review_test.model_dump_json(indent=2, exclude_none=True) + "\n")
-        page = _review_test_page_data(review_test, asset_base="", page_url="", shared_asset_base="../../../../")
+        page = review_test_page_data(review_test, asset_base="", page_url="", shared_asset_base="../../../../")
         (target_dir / "index.html").write_text(
             environment.get_template("pr_visual_test.html.j2").render(
                 repository=repository,
@@ -777,10 +728,10 @@ def build_bundle(
     metadata = ReviewBundleMetadata(repository=repository, commit_sha=commit_sha, tests=review_tests)
     (bundle / "metadata.json").write_text(metadata.model_dump_json(indent=2, exclude_none=True) + "\n")
     page_tests = [
-        _review_test_page_data(
+        review_test_page_data(
             test, asset_base=f"tests/{test.slug}/", page_url=f"tests/{test.slug}/index.html", shared_asset_base="../../"
         )
-        for test in sorted(review_tests, key=_test_impact_key)
+        for test in sorted(review_tests, key=test_impact_key)
     ]
     (bundle / "index.html").write_text(
         environment.get_template("pr_visuals.html.j2").render(
@@ -791,7 +742,7 @@ def build_bundle(
 
 
 def _upload_shared_image(s3: Any, *, bundle: Path, bucket: str, digest: str, cache_control: str) -> None:
-    image_key = _image_key(digest)
+    image_key = shared_image_key(digest)
     try:
         s3.head_object(Bucket=bucket, Key=image_key)
         return
@@ -877,358 +828,6 @@ def write_baseline_pointers(slugs: list[str], *, commit_sha: str, bucket: str, c
         )
 
 
-def _totals(review_tests: list[ReviewTest]) -> ClassificationCounts:
-    totals: Counter[str] = Counter()
-    for test in review_tests:
-        if test.summary is not None:
-            totals.update(test.summary.model_dump())
-    return ClassificationCounts(**totals)
-
-
-def _preview_img(url: str, alt: str) -> str:
-    escaped_url = html.escape(url, quote=True)
-    escaped_alt = html.escape(alt, quote=True)
-    return f'<a href="{escaped_url}"><img src="{escaped_url}" width="260" alt="{escaped_alt}"></a>'
-
-
-def stale_baseline_note(test: ReviewTest) -> str:
-    """Where a stale baseline came from relative to the merge base, in one phrase."""
-    baseline = f"`{test.base_sha[:8]}`" if test.base_sha else "an unavailable commit"
-    merge_base = f"`{test.merge_base_sha[:8]}`" if test.merge_base_sha else "the merge base"
-    return f"{baseline}, not merge base {merge_base}"
-
-
-def _asset_comment_lines(
-    asset: ReviewAsset, *, asset_base: str, gallery_url: str, test: ReviewTest, include_heading: bool = True
-) -> list[str]:
-    urls = _asset_page_data(
-        asset,
-        asset_base=asset_base,
-        page_url=gallery_url,
-        shared_asset_base=urllib.parse.urljoin(asset_base, "../../../../"),
-    )
-    anchor = html.escape(f"{gallery_url}#{urllib.parse.quote(asset.path, safe='/')}", quote=True)
-    label = f'<a href="{anchor}">{html.escape(asset.label)}</a>'
-    stale = f" · ⚠️ stale baseline ({stale_baseline_note(test)})" if asset.baseline_stale else ""
-    stale_heading = [f"<p>⚠️ stale baseline ({stale_baseline_note(test)})</p>", ""] if asset.baseline_stale else []
-    if asset.classification == "unstable":
-        heading = [f"<p><strong>{label}</strong> · unstable across runs</p>", ""] if include_heading else []
-        return [*heading, *(f"- {_preview_img(v['url'], asset.label)}" for v in urls["variants"])]
-    if asset.classification == "modified":
-        fraction = asset.changed_fraction or 0.0
-        diff = (
-            "_(dimensions changed)_"
-            if asset.dimension_changed
-            else _preview_img(urls["diff_url"], f"{asset.label} diff")
-        )
-        heading = (
-            [f"<p><strong>{label}</strong> · {fraction:.1%} changed{stale}</p>", ""]
-            if include_heading
-            else stale_heading
-        )
-        return [
-            *heading,
-            "| Before | After | Diff |",
-            "| --- | --- | --- |",
-            f"| {_preview_img(urls['baseline_url'], f'{asset.label} baseline')} "
-            f"| {_preview_img(urls['candidate_url'], f'{asset.label} candidate')} "
-            f"| {diff} |",
-        ]
-    if asset.classification == "new":
-        heading = [f"<p><strong>{label}</strong> · new</p>", ""] if include_heading else stale_heading
-        return [*heading, _preview_img(urls["candidate_url"], asset.label)]
-    if asset.classification == "removed":
-        heading = [f"<p><strong>{label}</strong> · removed{stale}</p>", ""] if include_heading else stale_heading
-        return [*heading, _preview_img(urls["baseline_url"], f"{asset.label} baseline")]
-    return []
-
-
-def _test_impact_key(test: ReviewTest) -> tuple[float, int, str]:
-    changed = [asset for asset in test.assets if asset.classification in {"modified", "new", "removed", "unstable"}]
-    largest_change = max(
-        (asset.changed_fraction or 0.0 for asset in changed if asset.classification == "modified"), default=0.0
-    )
-    return (-largest_change, -len(changed), test.target_label)
-
-
-def _is_unchanged(test: ReviewTest) -> bool:
-    return (
-        test.summary is not None
-        and not test.issues
-        and test.summary.modified == test.summary.new == test.summary.removed == test.summary.unstable == 0
-    )
-
-
-def _target_section(test: ReviewTest, *, url: str, open_section: bool, ci_details_url: str | None) -> list[str]:
-    counts = test.summary or ClassificationCounts()
-    assets = [
-        asset
-        for asset in _ordered_assets(test.assets)
-        if asset.classification in {"modified", "new", "removed", "unstable"}
-    ]
-    largest_change = max(
-        (asset.changed_fraction or 0.0 for asset in assets if asset.classification == "modified"), default=None
-    )
-    impact = f" · largest change {largest_change:.1%}" if largest_change is not None else ""
-    details = "<details open>" if open_section else "<details>"
-    gallery_url = f"{url}tests/{test.slug}/index.html"
-    asset_base = f"{url}tests/{test.slug}/"
-    gallery_link = f'<a href="{html.escape(gallery_url, quote=True)}">link</a>'
-    rerun_link = f' · <a href="{html.escape(ci_details_url, quote=True)}">request rerun</a>' if ci_details_url else ""
-    counts_text = _format_test_counts(counts)
-    if test.issues:
-        counts_text = "incomplete or non-comparable" + (f"; {counts_text}" if counts_text != "unchanged" else "")
-    lines = [
-        details,
-        f"<summary><code>{html.escape(test.target_label)}</code> — {counts_text}{impact} · "
-        f"{html.escape(test.title)} · {gallery_link}{rerun_link}</summary>",
-        "",
-    ]
-    lines.extend(f"- ⚠️ {html.escape(issue)}" for issue in test.issues)
-    for index, asset in enumerate(assets):
-        if len(assets) <= INLINE_ASSET_LIMIT:
-            content = _asset_comment_lines(asset, asset_base=asset_base, gallery_url=gallery_url, test=test)
-            lines.extend([*content, ""])
-            continue
-        asset_title = html.escape(asset.label)
-        if asset.classification == "modified" and asset.changed_fraction is not None:
-            asset_title += f" — {asset.changed_fraction:.1%} changed"
-        elif asset.classification is not None:
-            asset_title += f" — {asset.classification}"
-        if asset.baseline_stale:
-            asset_title += " — ⚠️ stale baseline"
-        asset_anchor = html.escape(f"{gallery_url}#{urllib.parse.quote(asset.path, safe='/')}", quote=True)
-        # Only a short link: clicking elsewhere in the summary toggles the disclosure.
-        asset_title += f' · <a href="{asset_anchor}">link</a>'
-        content = _asset_comment_lines(
-            asset, asset_base=asset_base, gallery_url=gallery_url, test=test, include_heading=False
-        )
-        asset_open = open_section and index == 0
-        lines += [
-            "<details open>" if asset_open else "<details>",
-            f"<summary>{asset_title}</summary>",
-            "",
-            *content,
-            "",
-            "</details>",
-            "",
-        ]
-    lines.append("</details>")
-    return lines
-
-
-def _unchanged_section(review_tests: list[ReviewTest], *, url: str) -> list[str]:
-    unchanged = [test for test in review_tests if _is_unchanged(test)]
-    if not unchanged:
-        return []
-    plural = "" if len(unchanged) == 1 else "s"
-    return [
-        "<details>",
-        f"<summary>{len(unchanged)} unchanged target{plural}</summary>",
-        "",
-        *(f"- [`{test.target_label}`]({url}tests/{test.slug}/index.html)" for test in unchanged),
-        "",
-        "</details>",
-    ]
-
-
-def _with_target_sections(
-    head: list[str], review_tests: list[ReviewTest], url: str, *, ci_details_url: str | None
-) -> str:
-    changed = [test for test in review_tests if test.summary and not _is_unchanged(test)]
-    changed.sort(key=_test_impact_key)
-    unchanged = _unchanged_section(review_tests, url=url)
-    lines = [*head, "### Changed tests", ""]
-    omitted = 0
-    included = 0
-    for test in changed:
-        section = _target_section(
-            test, url=url, open_section=included < COMMENT_OPEN_TARGETS, ci_details_url=ci_details_url
-        )
-        candidate = "\n".join([*lines, *section])
-        if len(candidate) + 160 > COMMENT_BUDGET:
-            omitted += 1
-            continue
-        lines.extend(section)
-        included += 1
-
-    if unchanged:
-        candidate = "\n".join([*lines, *unchanged])
-        if len(candidate) + (160 if omitted else 0) <= COMMENT_BUDGET:
-            lines.extend(unchanged)
-        else:
-            unchanged_count = sum(1 for test in review_tests if _is_unchanged(test))
-            lines += ["", f"{unchanged_count} unchanged targets; see the full gallery."]
-
-    if omitted:
-        lines += [
-            "",
-            f"{omitted} changed test section{'' if omitted == 1 else 's'} omitted for length. "
-            f"[Full gallery]({url}index.html).",
-        ]
-    return "\n".join(lines)
-
-
-def _format_test_counts(counts: ClassificationCounts) -> str:
-    """`"4 modified, 12 new"` — only the non-zero buckets, so an untouched target's bullet line
-    doesn't read `"0 modified, 0 new, 0 removed"`. `"unchanged"` when every bucket is zero."""
-    parts = [
-        f"{count} {label}"
-        for count, label in (
-            (counts.unstable, "unstable"),
-            (counts.modified, "modified"),
-            (counts.new, "new"),
-            (counts.removed, "removed"),
-        )
-        if count
-    ]
-    return ", ".join(parts) if parts else "unchanged"
-
-
-def _ci_failure_notice(ci_conclusion: str, ci_failures: list[str]) -> list[str]:
-    if ci_conclusion == "success":
-        return []
-    lines = ["> [!WARNING]", f"> Bazel CI concluded `{ci_conclusion}`; showing the visual artifacts that arrived."]
-    if ci_failures:
-        lines += [">", "> Failed Bazel targets:"]
-        displayed = ci_failures[:20]
-        lines.extend(f"> - `{target}`" for target in displayed)
-        if len(ci_failures) > len(displayed):
-            lines.append(f"> - … and {len(ci_failures) - len(displayed)} more")
-    else:
-        lines.append("> Failed target labels unavailable from BuildBuddy.")
-    return lines
-
-
-def _ci_failure_summary(ci_conclusion: str, ci_failures: list[str]) -> str:
-    if ci_conclusion == "success":
-        return ""
-    if ci_failures:
-        return f" Bazel CI concluded {ci_conclusion}; {len(ci_failures)} target(s) failed."
-    return f" Bazel CI concluded {ci_conclusion}; failed target details were unavailable."
-
-
-def _fallback_baseline_notice(review_tests: list[ReviewTest]) -> list[str]:
-    """Explain when a PR comparison could not use its exact base commit.
-
-    A per-target devel pointer is useful for showing a newly introduced visual
-    target, but it can lag the PR base.  Its differences must not be presented
-    as changes attributable solely to the PR.
-    """
-    fallbacks = [test for test in review_tests if test.baseline_fallback]
-    if not fallbacks:
-        return []
-    baselines = sorted({test.base_sha[:8] for test in fallbacks if test.base_sha})
-    target_count = len(fallbacks)
-    target_word = "target" if target_count == 1 else "targets"
-    baseline_word = "baseline" if len(baselines) == 1 else "baselines"
-    baseline_list = ", ".join(f"`{baseline}`" for baseline in baselines) or "an unavailable commit"
-    return [
-        "> [!WARNING]",
-        f"> {target_count} {target_word} used the latest devel {baseline_word} ({baseline_list}) because the "
-        "PR base published none. Diffs there may include devel drift, not just this PR's changes.",
-    ]
-
-
-def _ci_rerun_notice(details_url: str | None) -> list[str]:
-    if details_url is None:
-        return []
-    return [f"Request a manual rerun from the [CI run page]({details_url})."]
-
-
-def success_comment_body(
-    *,
-    repository: str,
-    commit_sha: str,
-    url: str,
-    review_tests: list[ReviewTest],
-    base_sha: str | None = None,
-    ci_conclusion: str = "success",
-    ci_failures: list[str] | None = None,
-    ci_details_url: str | None = None,
-) -> str:
-    ci_failures = ci_failures or []
-    commit_url = f"https://github.com/{repository}/commit/{commit_sha}"
-    page_url = f"{url}index.html"
-    target_count = len(review_tests)
-    plural = "" if target_count == 1 else "s"
-    lines = [COMMENT_MARKER, f"## Visual review for [`{commit_sha[:8]}`]({commit_url})", ""]
-    if notice := _ci_rerun_notice(ci_details_url):
-        lines += [*notice, ""]
-    if notice := _ci_failure_notice(ci_conclusion, ci_failures):
-        lines += [*notice, ""]
-    if notice := _fallback_baseline_notice(review_tests):
-        lines += [*notice, ""]
-    if base_sha is None:
-        lines += [
-            f"{target_count} Bazel test target{plural} produced visual artifacts. [Open visual review]({page_url}).",
-            "",
-        ]
-        lines.extend(
-            f"- [`{test.target_label}`]({url}tests/{test.slug}/index.html): {len(test.assets)} assets"
-            for test in review_tests
-        )
-        return "\n".join(lines)
-
-    totals = _totals(review_tests)
-    if totals.modified == totals.new == totals.removed == totals.unstable == 0 and not any(
-        t.issues for t in review_tests
-    ):
-        lines.append(
-            f"No visual changes among the {target_count} affected Bazel test target{plural}. "
-            f"[Open visual review]({page_url})."
-        )
-        return "\n".join(lines)
-
-    lines += [
-        f"{target_count} Bazel test target{plural} produced visual artifacts · "
-        f"**{totals.modified} modified**, {totals.new} new, {totals.removed} removed, "
-        f"{totals.unchanged} unchanged, {totals.unstable} unstable. [Open visual review]({page_url}).",
-        "",
-    ]
-    return _with_target_sections(lines, review_tests, url, ci_details_url=ci_details_url)
-
-
-def no_visual_comment_body(
-    *, repository: str, commit_sha: str, ci_conclusion: str, ci_failures: list[str], details_url: str | None
-) -> str:
-    commit_url = f"https://github.com/{repository}/commit/{commit_sha}"
-    lines = [COMMENT_MARKER, f"## Visual review for [`{commit_sha[:8]}`]({commit_url})", ""]
-    if notice := _ci_failure_notice(ci_conclusion, ci_failures):
-        lines += [*notice, ""]
-    lines.append("No visual artifacts were available from the Bazel CI run.")
-    if details_url:
-        lines.append(f"[Open the CI run]({details_url}) for the complete test results or to request a manual rerun.")
-    return "\n".join(lines)
-
-
-def error_comment_body(
-    *,
-    repository: str,
-    commit_sha: str,
-    error: Exception,
-    ci_conclusion: str = "success",
-    ci_failures: list[str] | None = None,
-    ci_details_url: str | None = None,
-) -> str:
-    commit_url = f"https://github.com/{repository}/commit/{commit_sha}"
-    message = str(error).replace("```", "'''")[:2000]
-    lines = [COMMENT_MARKER, f"## Visual review failed for [`{commit_sha[:8]}`]({commit_url})", ""]
-    if notice := _ci_rerun_notice(ci_details_url):
-        lines += [*notice, ""]
-    if notice := _ci_failure_notice(ci_conclusion, ci_failures or []):
-        lines += [*notice, ""]
-    lines += [
-        "> [!CAUTION]",
-        "> The visual-review publisher failed while processing this Bazel CI run.",
-        "",
-        "```text",
-        message,
-        "```",
-    ]
-    return "\n".join(lines)
-
-
 def _is_current_success_comment(*, body: str, repository: str, commit_sha: str) -> bool:
     commit_url = f"https://github.com/{repository}/commit/{commit_sha}"
     return f"## Visual review for [`{commit_sha[:8]}`]({commit_url})" in body and "[Open visual review](" in body
@@ -1285,7 +884,7 @@ def diff_check(review_tests: list[ReviewTest]) -> tuple[Literal["success", "neut
     compared = [test for test in review_tests if test.summary is not None]
     if not compared:
         return None
-    totals = _totals(review_tests)
+    totals = classification_totals(review_tests)
     summary = (
         f"{totals.modified} modified, {totals.new} new, {totals.removed} removed, "
         f"{totals.unchanged} unchanged, {totals.unstable} unstable."
@@ -1405,7 +1004,7 @@ def main() -> None:
             with Path(github_output).open("a") as output:
                 output.write(f"found={'true' if tests else 'false'}\n")
         if not tests:
-            summary += _ci_failure_summary(args.ci_conclusion, ci_failures)
+            summary += ci_failure_summary(args.ci_conclusion, ci_failures)
             no_visual_body = no_visual_comment_body(
                 repository=args.repository,
                 commit_sha=args.sha,
@@ -1446,7 +1045,7 @@ def main() -> None:
             )
         public_url = f"{args.public_base_url.rstrip('/')}/{REVIEW_PREFIX}/{args.sha}/"
         if base_sha:
-            totals = _totals(review_tests)
+            totals = classification_totals(review_tests)
             summary = (
                 f"{len(tests)} target{'s' if len(tests) != 1 else ''} · {totals.modified} modified, "
                 f"{totals.new} new, {totals.removed} removed, {totals.unchanged} unchanged, "
@@ -1464,7 +1063,7 @@ def main() -> None:
             ci_failures=ci_failures,
             ci_details_url=args.ci_details_url or workflow_url,
         )
-        summary += _ci_failure_summary(args.ci_conclusion, ci_failures)
+        summary += ci_failure_summary(args.ci_conclusion, ci_failures)
         if incomplete := sum(1 for test in review_tests if test.issues):
             summary += f" {incomplete} target(s) have incomplete or non-comparable results."
         conclusion = "neutral" if any(test.issues for test in review_tests) else "success"
@@ -1490,7 +1089,7 @@ def main() -> None:
             ci_failures=ci_failures,
             ci_details_url=args.ci_details_url or workflow_url,
         )
-        summary = str(error) + _ci_failure_summary(args.ci_conclusion, ci_failures)
+        summary = str(error) + ci_failure_summary(args.ci_conclusion, ci_failures)
         conclusion = "failure"
         raise
     finally:

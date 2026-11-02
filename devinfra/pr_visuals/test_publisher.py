@@ -17,18 +17,24 @@ from PIL import Image
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.artifacts import BuildBuddyArtifact, list_ci_artifacts
 from devinfra.pr_visuals.collection import CollectedOutputs, OutputKey, ResultCoverage, ResultKey, SourceSummary
+from devinfra.pr_visuals.github_comment import (
+    COMMENT_BUDGET,
+    COMMENT_MARKER,
+    error_comment_body,
+    no_visual_comment_body,
+    success_comment_body,
+)
 from devinfra.pr_visuals.metadata import (
     BaselineMetadata,
     BaselinePointer,
     ClassificationCounts,
     ReviewAsset,
     ReviewBundleMetadata,
+    ReviewIssue,
     ReviewResult,
     ReviewTest,
 )
 from devinfra.pr_visuals.publisher import (
-    COMMENT_BUDGET,
-    COMMENT_MARKER,
     S3_IMAGE_UPLOAD_WORKERS,
     DownloadedAsset,
     DownloadedVariant,
@@ -36,13 +42,10 @@ from devinfra.pr_visuals.publisher import (
     build_bundle,
     diff_check,
     download_visual_tests,
-    error_comment_body,
     find_test_invocations,
     list_ci_failures,
     main,
-    no_visual_comment_body,
     refresh_stale_pull_request_comment,
-    success_comment_body,
     target_slug,
     upload_bundle,
     wait_for_test_invocations,
@@ -351,7 +354,65 @@ def test_download_marks_variant_and_target_status_issues(monkeypatch: pytest.Mon
     assert len(tests[0].assets) == 1
     assert len(tests[0].assets[0].variants) == 2
     assert tests[0].assets[0].checkpoint == "expanded"
-    assert any("FAILED" in issue for issue in tests[0].issues)
+    assert any("successfully" in issue.message for issue in tests[0].issues)
+
+
+def test_failed_shards_are_grouped_and_linked_in_comment_and_gallery(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    invocation = "d1fafe09-e2cf-5409-8fbc-7ab0308820c4"
+    message = "terminal attempt has no confirmed successful result (status=FAILED)"
+    results = tuple(
+        ResultCoverage(
+            ResultKey(invocation, "//ui:visual", "abcdef0123456789", 1, shard, 1),
+            "FAILED",
+            "FAILED",
+            1,
+            False,
+            (message, "bad <script>"),
+        )
+        for shard in (1, 2, 3, 5, 10, 11)
+    )
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.collect_outputs", lambda *_a, **_k: CollectedOutputs((), (), results, (), False)
+    )
+    downloaded = download_visual_tests([invocation], tmp_path / "downloads", repository="owner/repo")
+    bundle = build_bundle(
+        downloaded, tmp_path / "site", commit_sha="b" * 40, repository="owner/repo", base_sha="a" * 40
+    )
+    test = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests[0]
+    comment = success_comment_body(
+        repository="owner/repo", commit_sha="b" * 40, url="https://visuals/", review_tests=[test], base_sha="a" * 40
+    )
+    page = (bundle / "tests" / test.slug / "index.html").read_text()
+    for rendered in (comment, page):
+        assert rendered.count(message) == 1
+        assert "shards 1-3, 5, 10-11" in rendered
+        assert f'href="https://app.buildbuddy.io/invocation/{invocation}"' in rendered
+        assert "bad &lt;script&gt;" in rendered
+        assert "bad <script>" not in rendered
+        assert "ResultKey(" not in rendered
+        assert "abcdef0123456789" not in rendered
+    assert not test.baseline_eligible
+
+
+def test_retry_notice_does_not_reclassify_an_issue_by_its_text(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    result = ResultCoverage(
+        ResultKey("invocation", "//ui:visual", "cfg", 1, 1, 1),
+        "FAILED",
+        "FLAKY",
+        1,
+        False,
+        ("superseded by retry",),
+        retried_by=2,
+    )
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.collect_outputs",
+        lambda *_a, **_k: CollectedOutputs((), (), (result,), (), False),
+    )
+    test = download_visual_tests(["invocation"], tmp_path / "downloads", repository="owner/repo")[0]
+    assert [issue.message for issue in test.issues] == ["superseded by retry"]
+    assert [notice.message for notice in test.notices] == ["superseded by attempt 2"]
 
 
 def test_download_rejects_ambiguous_configurations(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -375,7 +436,7 @@ def test_download_rejects_ambiguous_configurations(monkeypatch: pytest.MonkeyPat
         run=_download_runner({Blob(body).uri: body for body in (b"one", b"two")}),
     )
     assert tests[0].configuration is None
-    assert any("configurations" in issue for issue in tests[0].issues)
+    assert any("configurations" in issue.message for issue in tests[0].issues)
 
 
 def test_produced_outputs_survive_collection_and_content_addressed_publication(tmp_path: Path) -> None:
@@ -1086,19 +1147,19 @@ def test_configuration_mismatch_and_incomplete_result_cannot_advance_baseline(tm
     review = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests[0]
     assert not review.baseline_eligible
     assert review.assets[0].classification is None
-    assert any("configurations cannot be compared" in issue for issue in review.issues)
+    assert any("configurations cannot be compared" in issue.message for issue in review.issues)
     incomplete = DownloadedVisualTest(
         candidate.target_label,
         candidate.slug,
         candidate.title,
         candidate.assets,
         candidate.configuration,
-        ["incomplete result coverage"],
+        [ReviewIssue(message="incomplete result coverage")],
     )
     bundle = build_bundle([incomplete], tmp_path / "site", commit_sha="b" * 40, repository="r")
     review = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests[0]
     assert not review.baseline_eligible
-    assert "incomplete result coverage" in review.issues
+    assert any(issue.message == "incomplete result coverage" for issue in review.issues)
 
 
 def test_unstable_variants_keep_all_images_and_disqualify_baseline(tmp_path: Path) -> None:
@@ -1268,7 +1329,7 @@ def _test_from_files(
     *,
     repository: str = "r",
     configuration: str | None = "cfg",
-    issues: list[str] | None = None,
+    issues: list[ReviewIssue] | None = None,
 ) -> DownloadedVisualTest:
     return DownloadedVisualTest(
         label,

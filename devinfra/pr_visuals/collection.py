@@ -66,6 +66,7 @@ class ResultCoverage:
     record_count: int
     selected: bool
     issues: tuple[str, ...]
+    retried_by: int | None = None
 
 
 @dataclass(frozen=True)
@@ -358,6 +359,7 @@ def collect_materialized_outputs(
 
     errors: list[str] = []
     per_result: dict[ResultKey, list[str]] = defaultdict(list)
+    retried_by: dict[ResultKey, int] = {}
     fatal = False
 
     if targets is not None:
@@ -512,9 +514,10 @@ def collect_materialized_outputs(
             issue(terminal, "attempt sequence has missing or unexpected results")
         for earlier in attempts:
             if earlier != terminal:
+                assert terminal.attempt is not None
                 detail = f"{earlier}: retried by attempt {terminal.attempt}"
                 errors.append(detail)
-                per_result[earlier].append("superseded by retry")
+                retried_by[earlier] = terminal.attempt
         status = by_result[terminal].status
         assert terminal.configuration is not None
         configured = (terminal.invocation, terminal.target, terminal.configuration)
@@ -544,6 +547,7 @@ def collect_materialized_outputs(
                 sum(_record_name(file.name) for file in source.files),
                 key in selected_results,
                 tuple(per_result[key]),
+                retried_by.get(key),
             )
         )
     return CollectedOutputs(tuple(observations), tuple(selected), tuple(coverage), tuple(errors), not fatal)

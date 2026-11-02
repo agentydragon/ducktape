@@ -1,3 +1,4 @@
+{% macro issue_list(items) %}<ul>{% for issue in items %}<li>{{ issue.message }}{% if issue.source %} ({{ "shard" if issue.source.shards | length == 1 else "shards" }} {{ issue.source.shards | shard_ranges }} · run {{ issue.source.run or "unknown" }} · attempt {{ issue.source.attempt or "unknown" }}{% if issue.source.configuration %} · config {{ issue.source.configuration[:8] }}{% endif %}) · <a href="{{ issue.source.invocation | buildbuddy_url }}">BuildBuddy</a>{% endif %}</li>{% endfor %}</ul>{% endmacro %}
 <!doctype html>
 <html lang="en">
   <head>
@@ -14,8 +15,8 @@
       <div><code>{{ target_label }}</code> · {{ repository }} · <code>{{ commit_sha }}</code>{% if base_sha %} · base <code>{{ base_sha[:8] }}</code>{% endif %}</div>
     </header>
     <main>
-      {% if issues %}<div role="alert"><strong>Incomplete visual results</strong><ul>{% for issue in issues %}<li>{{ issue }}</li>{% endfor %}</ul></div>{% endif %}
-      {% if notices %}<details><summary>Retries and execution notices</summary><ul>{% for notice in notices %}<li>{{ notice }}</li>{% endfor %}</ul></details>{% endif %}
+      {% if issues %}<div role="alert"><strong>Incomplete visual results</strong>{{ issue_list(issues) }}</div>{% endif %}
+      {% if notices %}<details><summary>Retries and execution notices</summary>{{ issue_list(notices) }}</details>{% endif %}
       {% for asset in assets if asset.classification == "unstable" %}
       <figure id="{{ asset.path }}">
         <figcaption>{{ asset.label }}<span class="badge modified">unstable across runs</span></figcaption>
