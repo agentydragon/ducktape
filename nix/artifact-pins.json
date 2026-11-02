@@ -101,8 +101,8 @@
       "sha256": "RCEtnkGF+swcXpBscwDtoDTemWEkz1Er2SWFYLT3g3M="
     },
     "skill-debundle_architect": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_architect-fe5705627d53/debundle_architect.skill",
-      "sha256": "/lcFYn1TA+GmoEzjz6M2l2YaDjyH50QbT760MbCUUrk="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_architect-a8e2e5cbd72a/debundle_architect.skill",
+      "sha256": "qOLly9cqpJiouw7Xy1jOmnI4Oo2XY40zXuCBwbU78/4="
     },
     "skill-debundle_intake": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_intake-03877cfb538e/debundle_intake.skill",
@@ -117,8 +117,8 @@
       "sha256": "YTH+61tqARC7acdD+MHUsMKfRruakiZun43rOoSHTeU="
     },
     "skill-debundle_mint_names": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_mint_names-db9994fc7a21/debundle_mint_names.skill",
-      "sha256": "25mU/HohBuf7CRCUvyHrDI+L8FQCqTTm1s0AjG3hS/s="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_mint_names-65605db03540/debundle_mint_names.skill",
+      "sha256": "ZWBdsDVAE93MoNsg6pKgddzjJ9yyyZhv2OlOIHwdWcc="
     },
     "skill-debundle_orchestrator": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_orchestrator-61ab587e22b5/debundle_orchestrator.skill",
@@ -265,8 +265,8 @@
       "sha256": "WNc7Gnfc+3meTMG2vUuPqm3P+SmOfh/zohmspWfne6c="
     },
     "skill-debundle_explain": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_explain-a92c9b8292de/debundle_explain.skill",
-      "sha256": "qSybgpLeP/jowNq5lQYuX3dorvqayLeMcMmo1xrjAJw="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_explain-bcf417796687/debundle_explain.skill",
+      "sha256": "vPQXeWaHyDhs5hjmZUyTTHkSUrHCkRJdjnukhNZsZGE="
     },
     "agentplane-cli": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-cli-55dabc9de2d2/agentplane-cli",
