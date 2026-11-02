@@ -213,7 +213,7 @@ func (h *Host) Wait(ctx context.Context) error {
 		return ErrInterrupted
 	case Failed:
 		if bootstrapStatus.Error == selectionConflict {
-			return bootstrapStatus.Error(codes.AlreadyExists, bootstrapStatus.Error)
+			return status.Error(codes.AlreadyExists, bootstrapStatus.Error)
 		}
 		if bootstrapStatus.Error != "" {
 			return errors.New(bootstrapStatus.Error)
