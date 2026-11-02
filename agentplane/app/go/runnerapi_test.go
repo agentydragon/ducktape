@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,10 +16,11 @@ import (
 
 type runnerStatusFake struct {
 	status *sessionpb.EnvironmentRuntimeStatus
+	err    error
 }
 
 func (f runnerStatusFake) EnvironmentRuntimeStatus(context.Context, string) (*sessionpb.EnvironmentRuntimeStatus, error) {
-	return f.status, nil
+	return f.status, f.err
 }
 
 type runnerStatusTokenReviewer struct{}
@@ -30,8 +32,7 @@ func (runnerStatusTokenReviewer) Create(context.Context, *authenticationv1.Token
 	}}, nil
 }
 
-// The raw-proto route is not represented by Huma's typed response models. Exercise the browser
-// boundary when the protocol gains lifecycle fields, including integers beyond JS precision.
+// Exercise the generated AppService facade with lifecycle fields and integers beyond JS precision.
 func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testing.T) {
 	authentication, err := auth.New(auth.Config{
 		TokenReviews: runnerStatusTokenReviewer{}, TokenAudience: "agentplane",
@@ -41,7 +42,7 @@ func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testi
 		t.Fatal(err)
 	}
 	server := NewHTTPServer(authentication)
-	RegisterRunnerRoutes(server, runnerStatusFake{status: &sessionpb.EnvironmentRuntimeStatus{
+	if err := RegisterRunnerRoutes(server, &appService{runnerStatus: runnerStatusFake{status: &sessionpb.EnvironmentRuntimeStatus{
 		EnvironmentRuntimeBootId: "fixture-boot",
 		Lifecycle: &sessionpb.EnvironmentRuntimeLifecycleStatus{
 			DesiredMode:       sessionpb.EnvironmentRuntimeLifecycleMode_ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING,
@@ -54,7 +55,9 @@ func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testi
 				JournalSealCursor: 1<<63 + 3, AcknowledgementPresent: true, AcknowledgementCursor: 1<<63 + 2,
 			},
 		},
-	}})
+	}}}); err != nil {
+		t.Fatal(err)
+	}
 	request := httptest.NewRequest(http.MethodGet, "/sandboxes/fixture/runner-status", nil)
 	request.Header.Set("Authorization", "Bearer fixture-token")
 	response := httptest.NewRecorder()
@@ -63,7 +66,10 @@ func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testi
 		t.Fatalf("runner status = %d: %s", response.Code, response.Body.String())
 	}
 	var body struct {
-		Lifecycle struct {
+		EnvironmentRuntimeBootId string `json:"environment_runtime_boot_id"`
+		Processes                []any  `json:"processes"`
+		Sessions                 []any  `json:"sessions"`
+		Lifecycle                struct {
 			DesiredMode        string `json:"desired_mode"`
 			DesiredGeneration  string `json:"desired_generation"`
 			ProgressGeneration string `json:"progress_generation"`
@@ -80,6 +86,12 @@ func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testi
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
+	if body.EnvironmentRuntimeBootId != "fixture-boot" {
+		t.Fatalf("boot ID = %q", body.EnvironmentRuntimeBootId)
+	}
+	if body.Processes == nil || body.Sessions == nil {
+		t.Fatalf("unpopulated repeated fields were omitted: %s", response.Body.String())
+	}
 	lifecycle := body.Lifecycle
 	if lifecycle.DesiredMode != "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING" || lifecycle.Stage != "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING" ||
 		lifecycle.DesiredGeneration != "9223372036854775809" || lifecycle.ProgressGeneration != "7" || lifecycle.ProgressCurrent {
@@ -89,5 +101,44 @@ func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testi
 		lifecycle.Blocker.ResourceType != "IngressAcknowledgements.agentplane" ||
 		lifecycle.Blocker.JournalSealCursor != "9223372036854775811" || lifecycle.Blocker.AcknowledgementCursor != "9223372036854775810" {
 		t.Fatalf("lifecycle blocker = %+v", lifecycle.Blocker)
+	}
+}
+
+func TestRunnerStatusRoutePreservesSandboxErrorsAndCallerAuthentication(t *testing.T) {
+	authentication, err := auth.New(auth.Config{
+		TokenReviews: runnerStatusTokenReviewer{}, TokenAudience: "agentplane",
+		TokenSubjects: []string{"system:serviceaccount:fixture:reader"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewHTTPServer(authentication)
+	if err := RegisterRunnerRoutes(server, &appService{runnerStatus: runnerStatusFake{err: &sandboxes.SandboxNotFoundError{Name: "fixture"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/sandboxes/fixture/runner-status", nil)
+	response := httptest.NewRecorder()
+	server.Handler(authentication).ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated runner status = %d: %s", response.Code, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/sandboxes/fixture/runner-status", nil)
+	request.Header.Set("Authorization", "Bearer fixture-token")
+	response = httptest.NewRecorder()
+	server.Handler(authentication).ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("missing Sandbox runner status = %d: %s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Detail string `json:"detail"`
+		Code   int32  `json:"code"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Detail != "no Agentplane sandbox name='fixture'" || body.Code == 0 {
+		t.Fatalf("missing Sandbox error = %+v", body)
 	}
 }
