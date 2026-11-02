@@ -364,9 +364,11 @@ py_library(
 py_library(
     name = "github_comment",
     srcs = ["github_comment.py"],
+    data = ["github_comment.md.j2"],
     deps = [
         ":metadata",
         ":render_common",
+        "@pypi//jinja2",
     ],
 )
 

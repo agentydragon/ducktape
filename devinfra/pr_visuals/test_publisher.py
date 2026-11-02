@@ -1524,6 +1524,57 @@ def test_success_comment_body_reports_counts_and_previews() -> None:
     assert "50.0% changed" in body
 
 
+def test_comment_template_escapes_html_and_preserves_markdown_table_boundaries() -> None:
+    test = ReviewTest(
+        target_label="//ex:visual",
+        slug="s",
+        title='<script>alert("x")</script>',
+        summary=ClassificationCounts(modified=1),
+        issues=[ReviewIssue(message="bad <script>")],
+        assets=[
+            _comment_asset(path="a.png", label='<b title="x">a|b</b>', classification="modified", changed_fraction=0.5)
+        ],
+    )
+    body = success_comment_body(
+        repository="r",
+        commit_sha="a" * 40,
+        url="https://v/",
+        review_tests=[test],
+        base_sha="b" * 40,
+        ci_details_url="https://example.com/run?a=1&b=2",
+    )
+    assert "<script>" not in body
+    assert "&lt;script&gt;" in body
+    assert "&lt;b title=&#34;x&#34;&gt;a|b&lt;/b&gt;" in body
+    assert 'href="https://example.com/run?a=1&amp;b=2"' in body
+    assert "\n\n| Before | After | Diff |\n| --- | --- | --- |\n" in body
+    row = next(line for line in body.splitlines() if line.startswith("| <a href="))
+    assert row.count(r"a\|b") == 3
+    assert "\n\n</details>" in body
+
+
+def test_comment_budget_omits_oversized_target_section() -> None:
+    test = ReviewTest(
+        target_label="//ex:visual",
+        slug="s",
+        title="Ex",
+        summary=ClassificationCounts(new=1),
+        assets=[_comment_asset(path="a.png", label="x" * COMMENT_BUDGET, classification="new")],
+    )
+    body = success_comment_body(
+        repository="r", commit_sha="a" * 40, url="https://v/", review_tests=[test], base_sha="b" * 40
+    )
+    assert "1 changed test section omitted for length" in body
+    assert len(body) <= COMMENT_BUDGET
+
+
+def test_comment_template_escapes_markdown_code_and_link_destinations() -> None:
+    test = ReviewTest(target_label="//ex:has`tick", slug="s", title="Ex", assets=[])
+    body = success_comment_body(repository="r", commit_sha="a" * 40, url="https://v/(branch)/", review_tests=[test])
+    assert "[``//ex:has`tick``](https://v/%28branch%29/tests/s/index.html)" in body
+    assert "[Open visual review](https://v/%28branch%29/index.html)" in body
+
+
 def test_success_comment_body_warns_when_comparison_uses_fallback_baseline() -> None:
     body = success_comment_body(
         repository="r",
