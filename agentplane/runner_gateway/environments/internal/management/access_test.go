@@ -14,7 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/view"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/protobuf/types/known/durationpb"
 	corev1 "k8s.io/api/core/v1"
@@ -91,7 +91,7 @@ func TestCreateAppliesDefaultsAndCallerIntentAndIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	preset := "selected-preset"
-	request := &sandboxespb.CreateSandboxRequest{
+	request := &environmentpb.CreateEnvironmentRequest{
 		Name: "created-sandbox", Template: "pod-template", Bootstrap: "echo < start",
 		PolicySets: []string{"extra-policy"}, Preset: &preset, WakeOnSend: true,
 		IdleSuspendAfter: durationpb.New(time.Minute), InboxTags: []string{"team-b", "team-a", "team-b"},
@@ -134,14 +134,14 @@ func TestCreateAppliesDefaultsAndCallerIntentAndIsIdempotent(t *testing.T) {
 
 func TestCreateRejectsUnknownPolicySetsAndInvalidRequests(t *testing.T) {
 	access, _ := newAccess(t)
-	_, err := access.Create(context.Background(), &sandboxespb.CreateSandboxRequest{Name: "unknown-policy", Template: "pod"})
+	_, err := access.Create(context.Background(), &environmentpb.CreateEnvironmentRequest{Name: "unknown-policy", Template: "pod"})
 	var unknown *policy.UnknownPolicySetError
 	if !errors.As(err, &unknown) || fmt.Sprint(unknown.Names) != "[default-policy]" {
 		t.Fatalf("Create with unknown default = %v", err)
 	}
 	emptyPreset := ""
 	nonASCIIPreset := "ašb"
-	for _, request := range []*sandboxespb.CreateSandboxRequest{
+	for _, request := range []*environmentpb.CreateEnvironmentRequest{
 		{Name: "Upper", Template: "pod"},
 		{Name: "ašb", Template: "pod"},
 		{Name: "valid-name", Template: ""},
@@ -396,7 +396,7 @@ func TestCreateReturnsPersistedIdentityAcrossUncertainWritesAndReplacement(t *te
 			if err != nil {
 				t.Fatal(err)
 			}
-			target, err := access.Create(t.Context(), &sandboxespb.CreateSandboxRequest{Name: "created", Template: "pod"})
+			target, err := access.Create(t.Context(), &environmentpb.CreateEnvironmentRequest{Name: "created", Template: "pod"})
 			if test.uncertain && test.replace {
 				if target != nil || !isConflict(err) {
 					t.Fatalf("uncertain write with foreign replacement = %v, %v", target, err)
@@ -432,7 +432,7 @@ func TestCreateDoesNotInferPersistenceFromAnUncertainWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	target, err := access.Create(t.Context(), &sandboxespb.CreateSandboxRequest{Name: "created", Template: "pod"})
+	target, err := access.Create(t.Context(), &environmentpb.CreateEnvironmentRequest{Name: "created", Template: "pod"})
 	if target != nil || !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("unreconciled uncertain write = %v, %v", target, err)
 	}

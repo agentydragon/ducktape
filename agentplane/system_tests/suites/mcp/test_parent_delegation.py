@@ -16,10 +16,10 @@ from more_itertools import one
 
 from agentplane.action_service import action_service_pb2
 from agentplane.app.testing.client import Client
+from agentplane.environments.v1 import environment_service_pb2
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.offered_models import models_offered_for

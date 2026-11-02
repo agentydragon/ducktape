@@ -458,7 +458,7 @@ def build_chart(
             else None
         ),
         extra_delegated_methods=(
-            ("/agentplane.sandboxes.environments.EnvironmentService/ResumeEnvironment",)
+            ("/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",)
             if env.actions.orchestration_v1 is not None
             else ()
         ),

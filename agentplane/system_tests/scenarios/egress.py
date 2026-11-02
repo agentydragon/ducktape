@@ -34,9 +34,9 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.decisions import Decision, Outcome
+from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
 from agentplane.system_tests import probe_credential, runtime_grant
 from agentplane.system_tests.agent import Agent

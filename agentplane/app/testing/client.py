@@ -31,9 +31,9 @@ from agentplane.app.testing.models import (
     thread_view_from_proto_json,
 )
 from agentplane.egress.decisions import Decision
-from agentplane.proto import event_log_pb2, identity_pb2, sandboxes_pb2, session_pb2
+from agentplane.proto import event_log_pb2, identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
-from agentplane.runner_gateway.environments import environment_service_pb2
+from agentplane.environments.v1 import environment_service_pb2
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -122,7 +122,7 @@ class Client:
         response = await self._json("GET", "/upstream/app-config/v1/presets")
         return ParseDict(response, app_service_pb2.ListSandboxPresetsResponse())
 
-    async def create_sandbox(self, spec: sandboxes_pb2.CreateSandboxRequest) -> identity_pb2.EnvironmentTarget:
+    async def create_sandbox(self, spec: environment_service_pb2.CreateEnvironmentRequest) -> identity_pb2.EnvironmentTarget:
         """Create once and return the exact incarnation acknowledged by the app."""
         target = ParseDict(
             await self._json("POST", "/upstream/environments/v1/environments", json=MessageToDict(spec)),

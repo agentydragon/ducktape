@@ -1,8 +1,7 @@
 import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
-import { type EnvironmentDescriptor } from "../../../runner_gateway/environments/environment_service_pb";
+import { CreateEnvironmentRequestSchema, type EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { clone, create as createProto } from "@bufbuild/protobuf";
 import { DurationSchema } from "@bufbuild/protobuf/wkt";
-import { CreateSandboxRequestSchema } from "../../../proto/sandboxes_pb";
 import {
   ActionIcon,
   Button,
@@ -172,7 +171,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   }
 
   async function create(): Promise<void> {
-    const request = createProto(CreateSandboxRequestSchema, {
+    const request = createProto(CreateEnvironmentRequestSchema, {
       name: form.name || placeholderName,
       template: form.template,
       policySets: form.policy_sets,

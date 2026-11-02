@@ -203,10 +203,7 @@ ts_proto_library(
 proto_library(
     name = "sandboxes_proto",
     srcs = ["sandboxes.proto"],
-    deps = [
-        ":identity_proto",
-        "@protobuf//:duration_proto",
-    ],
+    deps = [":identity_proto"],
 )
 
 proto_library(

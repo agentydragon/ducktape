@@ -36,8 +36,8 @@ from agentplane.app.testing.replication_process import (
     SandboxesAccess,
     app_process,
 )
+from agentplane.environments.v1 import environment_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.runner_gateway.environments import environment_service_pb2
 
 ACTION_AUDIENCE = "test-actions"
 ACTION_REQUESTS = "/upstream/actions/v1/action-requests"

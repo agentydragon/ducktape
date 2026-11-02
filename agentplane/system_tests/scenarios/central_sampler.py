@@ -11,12 +11,12 @@ import pytest
 
 from agentplane.app.testing.client import Client
 from agentplane.central_sampler import sampler_pb2
+from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2
 from agentplane.native.codex.testing import responses_sse
 from agentplane.proto import event_pb2, identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
-from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.system_tests.central_sampler import MODEL, CentralStack, capture_sampler_diagnostics, central_stack
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor

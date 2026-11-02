@@ -10,9 +10,9 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle",
     deps = [
+        "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:identity_go_proto",
-        "//agentplane/runner_gateway/environments:environment_service_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/sandboxreader",
         "//agentplane/workload_auth/auth",
@@ -32,11 +32,11 @@ go_test(
     srcs = ["service_test.go"],
     deps = [
         ":lifecycle",
+        "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/runner_gateway/environments",
-        "//agentplane/runner_gateway/environments:environment_service_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/runtimeconfig",
         "//agentplane/testing/grpcmethods",

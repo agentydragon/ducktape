@@ -860,7 +860,7 @@ def delivery_chart(app: App) -> Chart:
                 ENV.namespace
             ).pods
         },
-        extra_delegated_methods=("/agentplane.sandboxes.environments.EnvironmentService/ResumeEnvironment",),
+        extra_delegated_methods=("/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",),
     )
 
 

@@ -65,7 +65,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 

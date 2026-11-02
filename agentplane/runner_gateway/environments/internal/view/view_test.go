@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

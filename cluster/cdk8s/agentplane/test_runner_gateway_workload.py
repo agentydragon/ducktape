@@ -174,10 +174,10 @@ def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manif
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/WatchDispatches",
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches",
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
-        "/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments",
-        "/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment",
-        "/agentplane.sandboxes.environments.EnvironmentService/WatchEnvironment",
-        "/agentplane.sandboxes.environments.EnvironmentService/ResumeEnvironment",
+        "/agentplane.environments.v1.EnvironmentService/ListEnvironments",
+        "/agentplane.environments.v1.EnvironmentService/GetEnvironment",
+        "/agentplane.environments.v1.EnvironmentService/WatchEnvironment",
+        "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",
     ]
     history_delegation = history["delegation"]
     assert history_delegation["actor"] == actions_account
@@ -208,7 +208,7 @@ def test_empty_operator_callers_are_omitted(scratch_app: App) -> None:
 def test_gateway_can_explicitly_configure_operator_and_delegated_resume(scratch_app: App) -> None:
     env = replace(staging.ENV, namespace="test-agentplane", wake_caller_accounts=frozenset())
     operator = ServiceAccountRef(namespace=env.namespace, name=app.NAME)
-    resume_method = "/agentplane.sandboxes.environments.EnvironmentService/ResumeEnvironment"
+    resume_method = "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment"
     chart = runner_gateway_workload.serving_chart(
         scratch_app,
         env=env,

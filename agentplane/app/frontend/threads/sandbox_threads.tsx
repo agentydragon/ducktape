@@ -1,6 +1,6 @@
 import { ActionIcon, Button, Group, Menu, Stack, Table, Text } from "@mantine/core";
 import type { ThreadView, TraceSearchSettings } from "../schema";
-import type { EnvironmentDescriptor } from "../../../runner_gateway/environments/environment_service_pb";
+import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { IconDotsVertical } from "../icons";
 import type { JSX } from "react";
 

@@ -1,9 +1,5 @@
 // @vitest-environment happy-dom
-import {
-  SandboxPhase,
-  OperatingMode,
-  ReadinessState,
-} from "../../../runner_gateway/environments/environment_service_pb";
+import { SandboxPhase, OperatingMode, ReadinessState } from "../../../environments/v1/environment_service_pb";
 
 import { readySandbox as makeReadySandbox } from "../testing/sandbox";
 import { MantineProvider } from "@mantine/core";

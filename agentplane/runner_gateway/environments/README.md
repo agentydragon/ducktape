@@ -2,13 +2,15 @@
 
 `EnvironmentService` owns managed Sandbox creation, template listing, discovery, watches, and
 separately authorized lifecycle and policy mutations. It is a separate gRPC service from the Session Dispatcher,
-co-hosted by the Runner Gateway on its existing listener. Its discovery and resume method paths are:
+co-hosted by the Runner Gateway on its existing listener. Its public contract is defined in
+[`agentplane/environments/v1/environment_service.proto`](../../environments/v1/environment_service.proto).
+Its discovery and resume method paths are:
 
-- `/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments`
-- `/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment`
-- `/agentplane.sandboxes.environments.EnvironmentService/WatchEnvironments`
-- `/agentplane.sandboxes.environments.EnvironmentService/WatchEnvironment`
-- `/agentplane.sandboxes.environments.EnvironmentService/ResumeEnvironment`
+- `/agentplane.environments.v1.EnvironmentService/ListEnvironments`
+- `/agentplane.environments.v1.EnvironmentService/GetEnvironment`
+- `/agentplane.environments.v1.EnvironmentService/WatchEnvironments`
+- `/agentplane.environments.v1.EnvironmentService/WatchEnvironment`
+- `/agentplane.environments.v1.EnvironmentService/ResumeEnvironment`
 
 All methods accept direct TokenReview-verified ServiceAccount credentials. Discovery and resume
 also accept explicitly configured Actions delegation. Management requires its own direct Pod-bound

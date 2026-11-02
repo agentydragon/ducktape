@@ -8,8 +8,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/agentydragon/ducktape/agentplane/policy"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/management"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -25,7 +24,7 @@ func (s *Service) manager(ctx context.Context) (*management.Access, error) {
 	return s.managementAccess(ctx, nil)
 }
 
-func (s *Service) managementAccess(ctx context.Context, origin *sandboxespb.SandboxLaunchOrigin) (*management.Access, error) {
+func (s *Service) managementAccess(ctx context.Context, origin *environmentpb.EnvironmentLaunchOrigin) (*management.Access, error) {
 	identity, err := caller(ctx)
 	if err != nil {
 		return nil, err
@@ -78,7 +77,7 @@ func (s *Service) ListEnvironmentTemplates(ctx context.Context, _ *emptypb.Empty
 	return &environmentpb.ListEnvironmentTemplatesResponse{Names: names}, nil
 }
 
-func (s *Service) CreateEnvironment(ctx context.Context, request *sandboxespb.CreateSandboxRequest) (*identitypb.EnvironmentTarget, error) {
+func (s *Service) CreateEnvironment(ctx context.Context, request *environmentpb.CreateEnvironmentRequest) (*identitypb.EnvironmentTarget, error) {
 	access, err := s.managementAccess(ctx, request.GetLaunchOrigin())
 	if err != nil {
 		return nil, err

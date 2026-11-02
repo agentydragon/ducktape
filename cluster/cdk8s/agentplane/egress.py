@@ -121,10 +121,10 @@ _SESSION_DISPATCHER_GRPC_PATHS = (
     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn",
 )
 _ENVIRONMENT_SERVICE_GRPC_PATHS = (
-    "/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments",
-    "/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment",
-    "/agentplane.sandboxes.environments.EnvironmentService/WatchEnvironment",
-    "/agentplane.sandboxes.environments.EnvironmentService/ResumeEnvironment",
+    "/agentplane.environments.v1.EnvironmentService/ListEnvironments",
+    "/agentplane.environments.v1.EnvironmentService/GetEnvironment",
+    "/agentplane.environments.v1.EnvironmentService/WatchEnvironment",
+    "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",
 )
 
 # The egress PolicySets created below that every environment ships. A name is exported

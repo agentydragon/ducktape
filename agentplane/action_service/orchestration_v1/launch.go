@@ -15,8 +15,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -52,10 +52,10 @@ func (e *Executor) launch(ctx context.Context, caller store.ServiceAccount, args
 	for _, list := range [][]string{args.PolicySets, args.InboxTags, args.LauncherGrants} {
 		slices.Sort(list)
 	}
-	request := &sandboxespb.CreateSandboxRequest{
+	request := &environmentpb.CreateEnvironmentRequest{
 		Name: args.Name, Template: args.Template, PolicySets: args.PolicySets, InboxTags: args.InboxTags,
 		Bootstrap: args.Bootstrap, WakeOnSend: args.WakeOnSend,
-		LaunchOrigin: &sandboxespb.SandboxLaunchOrigin{
+		LaunchOrigin: &environmentpb.EnvironmentLaunchOrigin{
 			Caller:      &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name},
 			ActionGroup: e.group, LauncherGrants: args.LauncherGrants,
 		},

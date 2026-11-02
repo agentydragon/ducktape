@@ -77,6 +77,7 @@ filegroup(
         "//agentplane/action_service:operator_action_service_pb",
         "//agentplane/action_service:web_push_service_pb",
         "//agentplane/app:app_service_pb",
+        "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/history_service:history_service_pb",
         "//agentplane/mcp_edge:connection_service_pb",
         "//agentplane/proto:command_pb",
@@ -84,7 +85,6 @@ filegroup(
         "//agentplane/proto:event_pb",
         "//agentplane/proto:sandboxes_pb",
         "//agentplane/proto:session_pb",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
     ],
 )
 
@@ -558,7 +558,7 @@ ts_library(
         ":schema",
         ":status_mark",
         "//agentplane/app/frontend/sandboxes:client",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
@@ -573,7 +573,7 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/testing:sandbox",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
@@ -672,7 +672,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/threads:thread_groups",
         "//agentplane/app/frontend/threads:thread_status",
         "//agentplane/app/frontend/threads:thread_view_recorder",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
@@ -733,7 +733,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
@@ -918,9 +918,9 @@ ts_library(
         "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:local_commands",
+        "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/proto:environment_lifecycle_pb",
         "//agentplane/proto:session_pb",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
         "//util/frontend:clamped_block",
         "//util/frontend:disclosure",
         "//util/frontend/transcript:history_sizes",

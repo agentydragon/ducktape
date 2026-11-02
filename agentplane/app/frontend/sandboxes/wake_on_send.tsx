@@ -1,4 +1,4 @@
-import type { EnvironmentDescriptor } from "../../../runner_gateway/environments/environment_service_pb";
+import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { Checkbox } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 

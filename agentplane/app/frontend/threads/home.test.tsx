@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { toJson } from "@bufbuild/protobuf";
-import { EnvironmentDescriptorSchema } from "../../../runner_gateway/environments/environment_service_pb";
+import { EnvironmentDescriptorSchema } from "../../../environments/v1/environment_service_pb";
 import { readySandbox } from "../testing/sandbox";
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";

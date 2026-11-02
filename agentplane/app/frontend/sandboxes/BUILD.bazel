@@ -33,7 +33,7 @@ ts_library(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:sandbox_status",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
@@ -63,7 +63,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:sandbox_status",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
@@ -78,7 +78,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:sandbox_status",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
@@ -102,7 +102,7 @@ ts_library(
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend/threads:client",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
+        "//agentplane/environments/v1:environment_service_pb",
         "//util/frontend:help_tooltip",
         "//util/frontend:json_view",
     ],
@@ -134,8 +134,8 @@ ts_library(
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:policy",
+        "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/proto:sandboxes_pb",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
     ],
 )
 
@@ -183,7 +183,7 @@ ts_library(
         "//agentplane/app/frontend:stream_reader",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:time_ago",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
@@ -198,7 +198,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend/bindings:table",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
+        "//agentplane/environments/v1:environment_service_pb",
         "//util/frontend:help_tooltip",
     ],
 )
@@ -213,7 +213,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:live_stream",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
@@ -268,9 +268,9 @@ ts_library(
         "//agentplane/app/frontend/threads:new_thread_form",
         "//agentplane/app/frontend/threads:sandbox_threads",
         "//agentplane/app/frontend/threads:thread_status",
+        "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/proto:session_pb",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
     ],
 )
 
@@ -301,7 +301,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/testing:sandbox",
         "//agentplane/app/frontend/testing:watch",
         "//agentplane/app/frontend/threads:client",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
@@ -326,7 +326,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/testing:sandbox",
         "//agentplane/app/frontend/testing:watch",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
@@ -345,7 +345,7 @@ ts_library(
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:watch_stream",
         "//agentplane/app/frontend/actions:action_client",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
@@ -358,10 +358,10 @@ ts_library(
         "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:schema",
+        "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/proto:sandboxes_pb",
         "//agentplane/proto:session_pb",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
     ],
 )
 
@@ -373,9 +373,9 @@ agentplane_vitest_test(
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
         "//agentplane/app/frontend:client",
+        "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/proto:session_pb",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
     ],
 )
 
@@ -392,7 +392,7 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/app/frontend/testing:sandbox",
         "//agentplane/app/frontend/testing:watch",
-        "//agentplane/runner_gateway/environments:environment_service_pb",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
