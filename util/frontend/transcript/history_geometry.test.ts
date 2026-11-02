@@ -5,15 +5,17 @@ import { HistoryGeometry, mountedRange, type RowDescriptor } from "./history_geo
 const descriptor = (key: string, revision = "revision-1"): RowDescriptor => ({ key, revision });
 
 describe("HistoryGeometry", () => {
-  it("promotes a measurement equal to its estimate and reports only evidence changes", () => {
+  it("keeps requesting a plan until it includes an admitted measurement", () => {
     const geometry = new HistoryGeometry("geometry-equal-estimate");
     const plan = geometry.plan([descriptor("row")], 400);
     const committed = geometry.commit(plan);
 
     expect(plan.rows[0].height).toEqual({ kind: "estimate", pixels: 180, remembered: false });
     expect(geometry.observe(committed, [{ key: "row", width: 400, height: 180 }])).toBe(true);
-    expect(geometry.observe(committed, [{ key: "row", width: 400, height: 180 }])).toBe(false);
+    expect(geometry.observe(committed, [{ key: "row", width: 400, height: 180 }])).toBe(true);
     expect(geometry.plan([descriptor("row")], 400).rows[0].height).toEqual({ kind: "observed", pixels: 180 });
+    const reflected = geometry.commit(geometry.plan([descriptor("row")], 400));
+    expect(geometry.observe(reflected, [{ key: "row", width: 400, height: 180 }])).toBe(false);
   });
 
   it("uses width-specific hints and prevents a changed revision from reusing its old height", () => {
@@ -99,7 +101,7 @@ describe("HistoryGeometry", () => {
 
     const nextCommit = geometry.commit(invalidated);
     expect(geometry.observe(nextCommit, [{ key: "row", width: 440, height: 101 }])).toBe(true);
-    expect(geometry.observe(nextCommit, [{ key: "row", width: 440, height: 101 }])).toBe(false);
+    expect(geometry.observe(nextCommit, [{ key: "row", width: 440, height: 101 }])).toBe(true);
     expect(geometry.plan([descriptor("row")], 440).rows[0].height).toEqual({ kind: "observed", pixels: 101 });
   });
 

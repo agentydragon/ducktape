@@ -139,7 +139,7 @@ export class HistoryGeometry {
     const { plan } = committed;
     const plannedByKey = new Map<string, PlannedRow>();
     for (const row of plan.rows) plannedByKey.set(row.key, row);
-    let changed = false;
+    let needsPlan = false;
     for (const observation of observations) {
       const row = plannedByKey.get(observation.key);
       if (
@@ -168,12 +168,15 @@ export class HistoryGeometry {
           width: plan.width,
           height: observation.height,
         });
-        changed = true;
+        needsPlan = true;
       }
+      // An observer can fire again before React commits the plan requested by
+      // the first reading. The evidence is already current, but this plan is not.
+      if (row.height.kind !== "observed" || row.height.pixels !== observation.height) needsPlan = true;
       this.needsCurrentRevisionObservation.delete(row.key);
       rememberRowHeight(this.threadId, plan.width, row.key, observation.height);
     }
-    return changed;
+    return needsPlan;
   }
 
   invalidate(keys: Iterable<string>): void {
