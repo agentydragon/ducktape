@@ -109,6 +109,11 @@ discovers old units in its scope derived from the Sandbox UID, state directory a
 verifies their expected slice, and fences them before admitting new native work. Other scopes are
 untouched.
 
+This lock also excludes a second Runtime before its VM launcher can fence units: that preflight runs
+before the COSI backing database is opened. The database takes its own exclusive lock while open,
+but COSI controller outputs arbitrate within each Runtime's engine, not between those engines. Neither
+the Runtime lock nor a COSI resource alone proves that a surviving native process has stopped.
+
 Systemd removes the owner's lifetime directory before restarting its service. A start request
 queued on an old connection then fails its invocation condition if it arrives after replacement,
 including after the replacement's inventory scan. A skipped condition never counts as native exec.
