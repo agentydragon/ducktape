@@ -309,7 +309,12 @@ func TestWatchEnvironmentClosesBothSourcesOnWatchLoss(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			first := <-sources
+			var first *watch.RaceFreeFakeWatcher
+			select {
+			case first = <-sources:
+			case <-ctx.Done():
+				t.Fatal("first Kubernetes watch was not opened")
+			}
 			switch failure {
 			case "closed":
 				first.Stop()
@@ -320,7 +325,12 @@ func TestWatchEnvironmentClosesBothSourcesOnWatchLoss(t *testing.T) {
 				if _, err := stream.Recv(); status.Code(err) != codes.Unavailable {
 					t.Fatalf("lost watch = %v, want Unavailable", err)
 				}
-				second := <-sources
+				var second *watch.RaceFreeFakeWatcher
+				select {
+				case second = <-sources:
+				case <-ctx.Done():
+					t.Fatal("second Kubernetes watch was not opened")
+				}
 				if !second.IsStopped() {
 					t.Fatal("second source was not stopped when watch ended")
 				}

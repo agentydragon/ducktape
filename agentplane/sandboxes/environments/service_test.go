@@ -133,7 +133,12 @@ func readerWithObjects(t *testing.T, objects ...client.Object) client.WithWatch 
 	if err := corev1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-	return clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+	builder := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...)
+	// The fake client implements API field selection through explicit indexes.
+	for _, object := range []client.Object{&sandboxapi.Sandbox{}, &corev1.ServiceAccount{}} {
+		builder.WithIndex(object, "metadata.name", func(object client.Object) []string { return []string{object.GetName()} })
+	}
+	return builder.Build()
 }
 
 func sandboxObject(uid types.UID) *sandboxapi.Sandbox {
