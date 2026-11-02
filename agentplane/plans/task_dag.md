@@ -19,7 +19,7 @@ remain useful but do not provide independently addressable Agentplane Sessions.
 | Priority  | Outcome                                                                                                               | Work to select                                                                                                                                                                                                     |
 | --------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | Authorize explicit resume after `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`; prioritize concrete reliability regressions                                                                                              |
-| P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE_DESIGN` then `SCHEDULED_AGENT_WAKE`, finish the approved delegation implementation, then the `DAILY_CI_AGENT` product milestone                                                              |
+| P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE_DESIGN` then `SCHEDULED_AGENT_WAKE`, finish delegation usability and staging exposure, then the `DAILY_CI_AGENT` product milestone                                                           |
 | Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                                                          |
 | Next      | Faster fresh VMs and a usable Bazel client inside a VM                                                                | `VM_STARTUP_LATENCY`, `LOCAL_BAZEL`; select image/layering changes when measurements show they address startup or needed resource headroom                                                                         |
 | Later     | Launching workers with different privileges, broader delegation and archive-read policy                               | `MULTIAGENT_MODEL`, `AGENT_LAUNCH_POLICY_DESIGN`, `AGENT_SANDBOX_LAUNCH`, broader create grants and held history-read work                                                                                         |
@@ -104,7 +104,7 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 ### Sprint scope and reliability follow-ups
 
-**Two-week timebox; operator dispatch, 2026-10-30 PDT; scheduling updated 2026-10-31 PDT.**
+**Two-week timebox; operator dispatch, 2026-10-30 PDT; remaining scope reconciled 2026-11-02 UTC.**
 Reliability contracts live in the
 [runtime specification](../central_sampler/SPEC.md#runtime-and-effects) and
 [recovery guide](../central_sampler/docs/blocked_session_recovery.md). The
@@ -127,8 +127,8 @@ manual-stop choices belong to `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN` before li
 are exposed. Ordinary execution errors and incarnation fencing can advance independently.
 
 The [delegation contract](https://github.com/agentydragon/ducktape/pull/13229) is **approved for
-implementation, operator 2026-10-31**. Start the independent backend foundations and client work
-below; routine calls use same-SA authorization and environment creation initially needs human
+implementation, operator 2026-10-31**. Backend tools and scripted workflow acceptance have landed;
+routine calls use same-SA authorization and environment creation initially needs human
 approval when implemented. **First release: reuse existing environments; new environment creation
 and template-catalogue ownership are deferred by the operator.** Prefer existing gRPC methods and
 CLI access, with Actions-first adapters allowed and explicit RPC/CLI extraction TODOs where needed. File conflicts do
@@ -145,32 +145,27 @@ Give concrete reliability regressions first attention. Caller-authorized resume 
 lifecycle decision. Broader resume/loss notices do not gate explicit resume. Dedicated sampler-roll and
 JS/exec continuation exercises remain deferred pending operator use.
 
-P1 scheduling and the approved caller-privilege delegation implementation proceed in parallel.
-Independent foundations and clients can start against the approved contract; the daily CI product milestone
-needs both scheduled wake and Session creation/cooperation. Dedicated sampler disruption acceptance
-is not a prerequisite.
+P1 scheduling and the remaining caller-privilege delegation work proceed in parallel. The daily
+CI product milestone needs both scheduled wake and Session creation/cooperation. Dedicated sampler
+disruption acceptance is not a prerequisite.
 
-**Remaining selected work, status checked 2026-11-01 21:49 UTC.** `/root` owns integration review
-and the two unpublished design proposals. `/root/delegation_discovery_receiver` and
-`/root/delegation_result_projections` own the parent CLI and external MCP workflow examples;
-their focused scenarios have passed. External acceptance is in review as
-[#13536](https://github.com/agentydragon/ducktape/pull/13536); parent publication/review and the full
-capstone remain open.
+**Remaining selected work, status checked 2026-11-02 UTC.** Landed Runtime lifecycle contracts are
+in the [Runtime specification](../env/runtime/SPEC.md); the native output-loss diagnosis and repair
+are in the [incident record](../debug/2026_11_01_native_command_output_loss.md). The
+[delegation plan](session_delegation_workflows.md) records implemented tools and scripted external
+MCP/parent CLI acceptance. The [managed-guidance rollout record](../central_sampler/docs/rollout_acceptance.md#managed-platform-guidance-rollout-2026-11-02-utc)
+discharges that deployment hold. Natural-agent usability and staging tool exposure remain open.
 Focused regression-test additions and Bazel runs remain authorized; broad disruption exercises
 remain deferred.
 
-| Lane               | Owner                                                  | Next reviewable outcome                                                                                 | Prerequisite / stopping point                                                                                             |
-| ------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| P0 concrete faults | Existing PR owner; new output investigation unassigned | `RUNTIME_QUIESCE_WAKE` review and `CODE_MODE_OUTPUT_LOSS` diagnosis                                     | Do not duplicate the quiesce repair or claim it explains every earlier shutdown failure                                   |
-| P0 policy review   | `/root`                                                | `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`: caller/target matrix for explicit resume and message wake     | Proposal only; stakeholder selection precedes `EXEC_SUSPENDED_RESUME`                                                     |
-| P1 delegation      | Workflow workers; `/root` integration                  | `THREAD_CREATE_AUTHORIZATION`: publish the realistic workflows and resolve `SESSION_OPEN_CONFIGURATION` | Backend tools and Discovery are implemented; verify the remaining integrated workflow, not another adapter implementation |
-| P1 scheduling      | `/root`                                                | `SCHEDULED_AGENT_WAKE_DESIGN`: smallest durable daily-wake proposal                                     | Proposal only; delivery/overlap/authority review precedes runtime implementation                                          |
+| Lane             | Next reviewable outcome                                                                                                      | Prerequisite / stopping point                                                                        |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| P0 policy review | `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`: [resume/wake proposal #13546](https://github.com/agentydragon/ducktape/pull/13546) | Stakeholder selection precedes `EXEC_SUSPENDED_RESUME`                                               |
+| P1 delegation    | `THREAD_CREATE_AUTHORIZATION`: natural-agent usability, then `SESSION_DELEGATION_ACTIVATION`                                 | Scripted workflows landed; align the staging catalogue and complete the remaining usability capstone |
+| P1 scheduling    | `SCHEDULED_AGENT_WAKE_DESIGN`: [durable-wake proposal #13552](https://github.com/agentydragon/ducktape/pull/13552)           | Delivery/overlap/authority review precedes runtime implementation                                    |
 
-Finish the platform-guidance reader [#13384](https://github.com/agentydragon/ducktape/pull/13384)
-alongside these tracks. Its current full CI is red in the VM output-loss scenario described below;
-focused guidance checks passed. Managed guidance and Session-tool staging exposure remain separate
-deployment holds. After lifecycle policy is selected, explicit resume takes the next P0 implementation
-slot. Scheduled wake and usable delegation feed the daily CI capstone. Small
+After lifecycle policy is selected, explicit resume takes the next P0 implementation slot.
+Scheduled wake and usable delegation feed the daily CI capstone. Small
 `SESSION_LAUNCH_FRICTION` proposals remain alongside these tracks as capacity permits. This is a
 scheduling preference, not additional dependency edges.
 
@@ -178,9 +173,8 @@ The original native-cleanup timeout remains unexplained; the closed
 [#13442](https://github.com/agentydragon/ducktape/pull/13442) path-reconstruction workaround is not
 selected. A later, separate [Runtime.Close caller-deadline failure](../env/runtime/debug/2026-11-01_runtime_close_wait_timeout.md)
 also lacks causal evidence. On recurrence, capture shutdown-stage/join evidence before attributing
-either failure or claiming it fixed. Passing later tests does not establish either cause. The selected
-Runtime COSI improvements below do not establish the cause of either earlier failure. The broader
-systemd-unit ownership decision remains separate.
+either failure or claiming it fixed. Passing later tests and the merged Runtime COSI improvements
+do not establish either cause. The broader systemd-unit ownership decision remains separate.
 
 Small launch-UX work can proceed alongside these tracks. Fresh-VM latency and VM-based Bazel are
 next and are independent of each other; image/layering work becomes a prerequisite only when the
@@ -191,13 +185,11 @@ its old ordering does not give it precedence over the selected tracks.
 ```mermaid
 flowchart LR
     subgraph PRIORITY_ZERO[P0: lifecycle authority and explicit resume]
-        CODE_MODE_OUTPUT_LOSS[Preserve observed command output through Code Mode]
-        RUNTIME_QUIESCE_WAKE[Review quiesce notification race repair]
         SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN[Review resume and message-wake authority]
         SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN --> EXEC_SUSPENDED_RESUME[Explicit authorized resume]
     end
     subgraph PRIORITY_ONE[P1: useful daily-agent workflow]
-        THREAD_CREATE_AUTHORIZATION[Caller-privilege delegation capstone]
+        THREAD_CREATE_AUTHORIZATION[Remaining: natural-agent delegation usability]
         THREAD_CREATE_AUTHORIZATION --> SESSION_DELEGATION_ACTIVATION[Held: staging tool exposure]
         SESSION_DELEGATION_ACTIVATION --> DAILY_CI_AGENT[Daily CI product milestone]
         SCHEDULED_AGENT_WAKE_DESIGN[Review durable scheduled wake] --> SCHEDULED_AGENT_WAKE
@@ -207,30 +199,6 @@ flowchart LR
     VM_STARTUP_LATENCY[Next: measured fresh-VM startup]
     LOCAL_BAZEL[Next: Bazel client inside a VM]
 ```
-
-### `CODE_MODE_OUTPUT_LOSS` — retain observed command output through Code Mode
-
-**Concrete P0 investigation; unassigned.** Full CI on the guidance reader and activation recorded
-a native `commandExecution` completing with exit code 0 and the expected `VM_MEMORY` record, while
-the corresponding Code Mode `VM_EXEC_RESULT` reported exit code 0 and empty output. The test failed
-parsing that empty result. Evidence is retained in BuildBuddy invocations
-[`09492775`](https://app.buildbuddy.io/invocation/09492775-dbce-5619-be01-9c459c29be1d) and
-[`88eb6917`](https://app.buildbuddy.io/invocation/88eb6917-afac-57b1-9d32-bd712afe597d).
-
-Trace the nested-tool/result and cell yield/wait boundary on current code; the existing artifacts do
-not distinguish those paths. Reproduce the narrow output-loss mechanism and preserve observed bytes
-through it. Do not rerun a mutation to recover output, infer that a command failed, increase the VM
-suite timeout or reopen the waived disruption exercise. Exit with causal evidence and focused
-coverage of the repaired boundary; if reproduction remains elusive, retain the evidence and name
-the remaining visibility gap without claiming a repair.
-
-### `RUNTIME_QUIESCE_WAKE` — avoid a lost notification while waiting for Host quiescence
-
-**In review, [#13528](https://github.com/agentydragon/ducktape/pull/13528), existing PR owner;
-2026-11-01 UTC.** Snapshot the Host report predicate and notification channel under the same Runtime
-lock so a final `QUIESCED` report cannot be missed between checking and subscribing. Focused race
-coverage passed; affected lifecycle CI remains pending. Keep this scoped repair with its owner.
-It does not establish the cause of the earlier native cleanup or `Runtime.Close` deadline failures.
 
 ## 2. Service-owned command admission and later notification presentation
 
@@ -264,7 +232,7 @@ auto-wake policy. Neither is selected or a prerequisite for v1 inbox messaging.
 
 ### `SCHEDULED_AGENT_WAKE_DESIGN` — choose the durable scheduled-wake contract
 
-**Proposal pending, `/root`, operator dispatch 2026-11-01 UTC; no review document published.** For the daily CI-maintenance workflow,
+**In review, [#13552](https://github.com/agentydragon/ducktape/pull/13552); operator dispatch 2026-11-01 UTC.** For the daily CI-maintenance workflow,
 choose the smallest sound scheduling/delivery contract: compare
 an existing scheduler feeding authorized Session commands with a Notification-owned schedule.
 Review cadence/timezone, missed runs, overlap, stable run identities, delivery receipts and
@@ -467,12 +435,9 @@ flowchart TD
     HISTORY_SANDBOX_RECORD[Unscheduled: History's Sandbox record and history tags]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
     HISTORY_SANDBOX_ASSOCIATION_SOURCE[Unscheduled: an authoritative Sandbox UID source for History]
-    SESSION_PLATFORM_GUIDANCE[In review: default platform guidance]
-    SESSION_PLATFORM_GUIDANCE_ACTIVATION[Held draft: activate managed sampler guidance]
     PLATFORM_GUIDANCE_OWNERSHIP_DESIGN[Later decision: platform-guidance ownership and composition]
     PLATFORM_GUIDANCE_SINGLE_OWNER[Later refactor: one platform-guidance owner]
     PLATFORM_GUIDANCE_OWNERSHIP_DESIGN --> PLATFORM_GUIDANCE_SINGLE_OWNER
-    SESSION_OPEN_CONFIGURATION[Candidate: valid optional opening configuration]
     SESSION_DELEGATION_ACTIVATION[Held draft: expose staging delegation tools]
     APP_ENVIRONMENT_DISCOVERY[Later: app inventory through backend Discovery]
     SESSION_TOOL_SURFACE_CONVERGENCE_DESIGN[Later decision: compare Agentplane tool surfaces]
@@ -485,12 +450,7 @@ flowchart TD
     MULTIAGENT_MODEL --> AGENT_LAUNCH_POLICY_DESIGN
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
     HISTORY_SANDBOX_RECORD --> THREAD_READ_POLICY
-    SESSION_PLATFORM_GUIDANCE --> THREAD_CREATE_AUTHORIZATION
-    SESSION_PLATFORM_GUIDANCE -->|operational hold: compatible reader deployed| SESSION_PLATFORM_GUIDANCE_ACTIVATION
-    SESSION_PLATFORM_GUIDANCE_ACTIVATION -->|operational hold: managed guidance deployed| THREAD_CREATE_AUTHORIZATION
-    SESSION_PLATFORM_GUIDANCE_ACTIVATION -->|operational hold| SESSION_DELEGATION_ACTIVATION
-    SESSION_OPEN_CONFIGURATION -->|release hold: schema-valid openings are usable| SESSION_DELEGATION_ACTIVATION
-    THREAD_CREATE_AUTHORIZATION -->|workflow acceptance| SESSION_DELEGATION_ACTIVATION
+    THREAD_CREATE_AUTHORIZATION -->|natural-agent usability| SESSION_DELEGATION_ACTIVATION
     ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN --> ENVIRONMENT_MANAGEMENT
     ENVIRONMENT_SHARED_ACCOUNT --> ENVIRONMENT_MANAGEMENT
     SCHEDULED_AGENT_WAKE[Selected P1: durable scheduled wake]
@@ -593,30 +553,10 @@ never a backend dependency; `orchestration_v1` is not a prerequisite. Keep the s
 and authority enforcement across all surfaces. No zero-environment child or different-privilege
 worker is claimed by this slice.
 
-The graph's capstone edges are **integration/completion prerequisites**. Schema/client work can
-start against the approved contracts while enforcing backends are built in parallel; live normal
-caller exposure waits for those checks. A real data/protocol prerequisite still gates work that
-cannot be specified until it exists. File conflicts alone do not serialize independent PRs.
-
-### `SESSION_PLATFORM_GUIDANCE` — platform guidance independent of presets
-
-**In review, [#13384](https://github.com/agentydragon/ducktape/pull/13384),
-2026-11-01 UTC; concrete review fixes and focused regression coverage pushed.** Share backend-owned composition
-for default platform/environment guidance plus the additive child brief. Start with the central
-path that currently bypasses Runner composition; retain resolved content across duplicate opening
-and resume without changing the raw request's identity. Complete native/central parity, child
-identity/destination and prompt inspection as needed for the approved workflow. Preserve harness
-base prompts. Opening/setup does not manufacture a first input or model turn.
-
-### `SESSION_PLATFORM_GUIDANCE_ACTIVATION` — enable managed sampler platform guidance
-
-**Held draft, [#13410](https://github.com/agentydragon/ducktape/pull/13410), stacked on #13384.**
-Enable the managed `platform_instructions` setting only after the compatible reader is merged,
-published, pinned and rolled out to all active sampler replicas. Old strict readers reject the
-new key. Passing CI or merging the reader does not discharge this deployment hold; do not merge
-the two layers together. Existing stored prompts remain frozen. For rollback, remove the setting
-and reconcile that removal before returning to a pre-reader image. This gate belongs to managed
-configuration activation, not unrelated delegation backend/client implementation.
+The remaining capstone edge gates general staging exposure on natural-agent usability; an isolated
+opt-in fixture can establish it first. Catalogue alignment can proceed independently. Fresh
+provisioning and broader authority keep their own decision gates. File conflicts alone do not
+serialize independent PRs.
 
 ### `PLATFORM_GUIDANCE_OWNERSHIP_DESIGN` — decide platform-guidance ownership and composition
 
@@ -634,9 +574,9 @@ and failure semantics, and how the default platform guide remains truthful while
 brief remains separate, without requiring presets. Keep current duplication until that proposal is
 reviewed; do not assume native and central runtime needs are interchangeable. This entry selects no
 guidance service, new network dependency, Dispatcher ownership, or runtime-unification mechanism.
-It is independent of the [default guidance implementation](#session_platform_guidance--platform-guidance-independent-of-presets)
-and its [managed activation hold](#session_platform_guidance_activation--enable-managed-sampler-platform-guidance),
-and does not block either one or current reliability and delegation work.
+The [current guidance contract](../session_instructions/README.md) and
+[managed rollout](../central_sampler/docs/rollout_acceptance.md#managed-platform-guidance-rollout-2026-11-02-utc)
+remain valid during this later design; it does not block current reliability or delegation work.
 
 ### `PLATFORM_GUIDANCE_SINGLE_OWNER` — consolidate platform-guidance ownership
 
@@ -650,35 +590,18 @@ per-environment instructions still need truthful composition under the reviewed 
 Preserve frozen instructions for existing Sessions, additive caller instructions and harness/provider
 base prompts. Exit with both native and central workflows using the common owner and the redundant
 ownership removed. Owner placement and distribution remain design choices; this item does not
-require a new service and does not block #13384 or its managed activation.
-
-### `SESSION_OPEN_CONFIGURATION` — schema-valid optional opening configuration
-
-**Concrete P1 gap found by the workflow workers, 2026-11-01 UTC; unassigned.** The opening Action
-schema permits omitting `reasoning_effort`; its executor forwards an empty string and the Codex
-adapter writes an empty `model_reasoning_effort`. Opening succeeds, but the first input fails at
-`thread/start` with `reasoning_effort must not be empty in model_reasoning_effort`.
-
-Align the owning opening/configuration contract with actual harness behavior: preserve a valid
-backend default for supported omission, or reject unsupported configuration at admission with a
-structured, actionable result. Do not mark a schema-valid request usable when its retained opening
-is guaranteed to fail. Use Discovery's advertised values in examples; that workaround does not
-resolve optional-field semantics. Check native and central paths without manufacturing defaults or
-silently replacing explicit caller choices. Bring a genuine default-policy choice for review.
-
-Exit with focused coverage for omission, an advertised explicit effort and an invalid explicit
-value at the owning boundary. The existing workflow examples can proceed using discovered values;
-resolve this contract before staging exposure.
+require a new service and does not block current reliability or delegation work.
 
 ### `SESSION_DELEGATION_ACTIVATION` — enable the reviewed staging tool surface
 
 **Held draft, [#13514](https://github.com/agentydragon/ducktape/pull/13514).** The backend
 [Session tools](../action_service/session_delegation/README.md),
 [Discovery](../sandboxes/discovery/README.md) and [CLI reads](../docs/agent_cli.md) are implemented.
-Complete workflow acceptance and the optional opening-configuration repair, then enable the reviewed
-surface only after the managed guidance rollout hold is discharged. The current draft advertises
-seven tools; align its explicit allowlist with the approved retained reads now implemented, and
-validate the rendered catalogue. Preserve `basic` auto-approval plus effective-caller checks; no
+Scripted external MCP and parent CLI acceptance, the optional opening-configuration repair and
+the managed guidance rollout are complete. Finish the natural-agent usability capstone, then
+enable the reviewed surface. The current draft advertises seven tools; align its explicit
+allowlist with the nine-tool contract, including retained reads, and validate the rendered
+catalogue. Preserve `basic` auto-approval plus effective-caller checks; no
 new provisioning, authority or wake permission is implied. Activation and rollback remain separate
 from backend-code merges.
 
@@ -713,18 +636,22 @@ the current receiver or tool work.
 
 ### `THREAD_CREATE_AUTHORIZATION` — caller-privilege delegation capstone
 
-**Selected P1 capstone; implementation approved; two workflow workers active, reported
-2026-11-01 UTC.** Focused external OAuth/MCP and parent-in-environment CLI scenarios have passed;
-external acceptance is in review as [#13536](https://github.com/agentydragon/ducktape/pull/13536),
-with parent publication/review still open. Close the existing-environment and external-MCP
-workflows only when delegated caller enforcement, target discovery, platform guidance and result
-reads/tools work together. Show natural discovery, directory preparation, separate opening/first
-input, correlated result, follow-up, lost-reply recovery and scoped cancellation/interruption.
-Across direct workload and external-MCP paths, exercise an owned and foreign retained History read,
-including follow/watch reauthorization after revocation; preserve the implemented receiver
-security matrix and no-privileged-fallback checks. Existing broader archive and different-SA
-delegation work is not a prerequisite. Fresh provisioning is deferred until its template-catalogue
-decision and identity/approval prerequisites; it does not hold environment reuse.
+**Selected P1 capstone; remaining outcome is natural-agent usability.** Backend authorization,
+Discovery, guidance, Action/MCP tools and retained-result reads are implemented. Scripted
+external OAuth/MCP and parent-in-environment CLI workflows landed in
+[#13536](https://github.com/agentydragon/ducktape/pull/13536) and
+[#13541](https://github.com/agentydragon/ducktape/pull/13541); their fixtures exercise real interfaces
+but prescribe the model's calls. Do not repeat that implementation or treat scripted acceptance
+as unaided agent use.
+
+Give an agent an ordinary delegation assignment and verify it discovers the target and tool
+schemas, prepares its directory, opens a child, submits separate input, reads a correlated result
+and uses follow-up/control operations when needed. Cover existing-environment and external-MCP
+entry points; retain actionable failures and lost-reply recovery. An isolated opt-in fixture can
+establish usability before general staging exposure. Reuse this evidence for `DAILY_CI_AGENT`.
+Preserve implemented foreign-principal denial, revocation and no-privileged-fallback coverage;
+broader archive and different-SA delegation are not prerequisites. Fresh provisioning remains
+deferred until its catalogue and identity/approval prerequisites; it does not hold reuse.
 
 ### `DAILY_CI_AGENT` — a daily CI-maintenance agent that can delegate fixes
 
@@ -1818,7 +1745,7 @@ by recording it. Preserve the implemented [management-process ownership](../env/
 
 ### `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN` — authorize explicit resume and message wake
 
-**Selected P0 decision; proposal pending from `/root`, operator dispatch 2026-11-01 UTC; no review document published.** Explicit resume first
+**Selected P0 decision; [proposal #13546](https://github.com/agentydragon/ducktape/pull/13546) in review; operator dispatch 2026-11-01 UTC.** Explicit resume first
 and optional model incarnation fencing are selected. Define the remaining authority matrix for
 agents, external MCP callers, users and backend automation against existing Sandbox targets.
 This consolidates the earlier same-SA wake-allowlist question without equating the triggers:

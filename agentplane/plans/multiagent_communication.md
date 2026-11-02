@@ -1,11 +1,12 @@
 # Cross-agent communication and authorization: design space
 
-Status: **messaging and same-principal retained reads implemented; broader archive policy held;
-target discovery and the complete delegation tool workflow remain open.** The send
+Status: **messaging, same-principal retained reads and delegation tools implemented with scripted
+workflow acceptance; natural-agent usability and staging tool exposure remain open; broader
+archive policy held.** The send
 rule (`session_inbox_access`), inbox tags, peer messages, receipts and notices are the Notification
 Service's contract ([API](../notification_service/docs/api.md#messages)). This plan keeps the agreed
 requirements and the open design: the read rule and the
-[archive split](#option-authorize-the-archive-apart-from-live-objects), discovery, Session creation
+[archive split](#option-authorize-the-archive-apart-from-live-objects), broader delegation
 and Sandbox launch. Gates are in the [task DAG](task_dag.md#3-multiagent-decisions-before-implementations);
 the decisions still open are summarized under [cases to resolve](#cases-to-resolve-before-implementation).
 **Operator clarification, 2026-10-30 PDT:** inbox/history tags are the current cross-SA send/read
@@ -31,10 +32,10 @@ same-privilege spawning.
 
 The [delegation implementation plan](session_delegation_workflows.md) supplies the concrete call
 sequences and remaining integration work. Same-SA admission, narrow retained reads, shared
-delegated auth and Dispatcher/History receiver enforcement are implemented. Existing-target
-discovery and platform guidance remain in review; Action/MCP adapters and complete workflows,
-including external callers without their own environment, remain unfinished. Fresh-environment
-creation and broader cross-SA grants keep their separate design gates.
+delegated auth, receiver enforcement, Discovery, guidance and Action/MCP adapters are implemented.
+Scripted parent CLI and external MCP workflows have landed, and managed guidance has rolled out;
+natural-agent usability and the separate staging tool catalogue/activation remain open. Creating
+new environments and broader cross-SA grants keep their separate design gates.
 
 ## Requirements and preferences
 
