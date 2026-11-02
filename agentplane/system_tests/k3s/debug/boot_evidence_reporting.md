@@ -46,7 +46,7 @@ service deadline without producing a complete receipt.
 Certify required sections before running optional analyzers. Each optional
 analyzer retains its two-second bound and command status, but cannot prevent
 an already complete required report from being recognized. Monitor readiness,
-all four required sections, selected-guest identity and the exact terminal
+all required sections, selected-guest identity and the exact terminal
 receipt remain mandatory in `guest_logs.py`; shutdown and scenario assertions
 are unchanged.
 
@@ -78,3 +78,20 @@ batched command arguments and completion-before-optional order are present in
 the artifacts. Commit `744755014987570633de41688daf3db9a6fcc1ab` contains the
 same reporter bytes. Formatting and the unchanged property/definition-roster
 comparison passed. Exact-head PR CI is separate from this fresh test invocation.
+
+## Remove duplicate collection
+
+The full journal archive already contains kernel version and command-line
+records, boot identity in `_BOOT_ID`, and the service logs re-exported by the
+filtered `journalctl` command. Remove those four probes and the journal-section
+receipt. The three remaining sections collect additional guest metadata,
+device state and systemd configuration/properties. The unit/property rosters,
+completion/partial checks and overall service budget remain unchanged.
+
+Reporter and udev-monitor output now goes only to the journal, including
+per-command status. Small readiness, section and completion receipts remain
+on the serial console for the existing validation. The native journal is the
+source for detailed diagnostics; it no longer needs a second bulk console copy.
+
+The earlier 16-command validation above predates this deletion. Hosted validation
+of the reduced 12-command report and retained native journal is pending.

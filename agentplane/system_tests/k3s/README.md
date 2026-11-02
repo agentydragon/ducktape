@@ -308,8 +308,9 @@ report starts after `agentplane-environment-runtime.service` starts, independent
 readiness and without holding
 `multi-user.target` open. It records the workspace symlink and udev properties, block-device names
 and serials, `/etc/fstab`, and the udevd, udev-trigger, workspace `.device`, makefs, mount and
-environment-runtime unit configuration and monotonic properties. It also retains short-monotonic
-journal records. It attempts optional `systemd-analyze` timing and critical-chain output after required
+environment-runtime unit configuration and monotonic properties. Kernel version, command line,
+boot ID and service journal records come from the copied native journal rather than additional
+guest probes or a filtered journal re-export. It attempts optional `systemd-analyze` timing and critical-chain output after required
 sections; if the boot transaction is still finishing, those commands can fail and their statuses
 remain visible without making the required report partial. Required collection shares the
 service's 35-second runtime bound. Unit properties and definitions are queried in batches to avoid
@@ -317,13 +318,14 @@ repeated systemctl startup and connection costs. Every command has an exit-statu
 `status=partial` or a missing end marker identifies incomplete required evidence. The required
 completion receipt precedes the optional analyzers, which retain their individual two-second
 bounds, so an optional probe cannot prevent completed required evidence from being certified.
-Machine-readable readiness and report receipts are written directly to the guest serial port;
-command output and udev events also go through `journal+console`. This keeps receipt parsing
-independent of systemd's journal-forwarding prefix.
+Machine-readable readiness and section/completion receipts are written directly to the guest serial
+port. Command output, per-command status and udev events go only to the journal. This keeps receipt
+parsing independent of the journal's format without duplicating bulk output on the console.
 
-Find `AGENTPLANE_BOOT_EVIDENCE_BEGIN` in the OOM guest's retained console. It includes the kernel
-command line, guest boot ID and DMI UUID so the marker maps to the exact launcher incarnation. The
-report labels its clocks separately: `/proc/uptime` is guest `CLOCK_BOOTTIME` and includes suspend;
+Find `AGENTPLANE_BOOT_EVIDENCE_BEGIN` in the OOM guest's retained console and the command output in
+its copied journal (`journalctl --file=SYSTEM_JOURNAL --unit=agentplane-boot-evidence.service`). The
+journal's `_BOOT_ID` and kernel entries identify the boot; the report also captures the DMI UUID.
+The report labels its clocks separately: `/proc/uptime` is guest `CLOCK_BOOTTIME` and includes suspend;
 udev monitor timestamps, journal `short-monotonic`, and systemd `*TimestampMonotonic` use guest
 `CLOCK_MONOTONIC`. Kernel printk brackets are guest kernel timestamps; CRI prefixes on the outer
 console artifact are host receipt times and can be buffered. The ordinary OOM guest does not

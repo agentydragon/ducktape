@@ -11,8 +11,8 @@ NotifyAccess=all
 TimeoutStartSec=5s
 ExecStart=/usr/sbin/agentplane-boot-evidence-monitor
 Environment=LC_ALL=C
-StandardOutput=journal+console
-StandardError=journal+console
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=sysinit.target

@@ -72,8 +72,9 @@ udev monitor timestamps, journal `short-monotonic`, and systemd `*TimestampMonot
 host receipt times and may be buffered.
 
 The normal `test_vm` harness now collects block-device monitor events, workspace properties,
-systemd clock origins, per-unit ExecMain timestamps, and the short-monotonic journal on its OOM
-guest. Successful teardown requires the monitor-ready receipt, every required report section and a
+systemd clock origins and per-unit ExecMain timestamps on its OOM guest. Service logs, kernel
+identity and the command line come from the copied full native journal. Successful teardown requires
+the monitor-ready receipt, every required report section and a
 complete report receipt across rotated logs for that launcher UID. See
 [`system_tests/k3s/README.md`](../system_tests/k3s/README.md). Check the exact-head PR CI artifact
 before drawing the absolute clock mapping or assigning the remaining time to kernel, udevd,
