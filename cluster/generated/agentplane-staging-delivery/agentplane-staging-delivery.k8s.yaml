@@ -9,6 +9,8 @@ data:
       - agentplane-staging/actions
       - agentplane-staging/app
       - agentplane-staging/notifications
+    environment_readers:
+      - agentplane-staging/app
     gateway_callers:
       - agentplane-staging/app
       - agentplane-staging/notifications

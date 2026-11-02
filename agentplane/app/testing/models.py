@@ -260,27 +260,6 @@ def thread_view_from_proto_json(metadata: dict[str, object], summary: dict[str, 
     )
 
 
-class KindFailure(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    error: str
-    since: datetime
-
-
-class WatchHealth(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    healthy: bool
-    failing: dict[str, KindFailure]
-
-
-class SandboxesSnapshot(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    sandboxes: list[SandboxView]
-    watch: WatchHealth
-
-
 class DecisionsUnavailable(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

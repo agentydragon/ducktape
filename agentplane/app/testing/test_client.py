@@ -334,26 +334,46 @@ async def test_a_client_error_is_not_retried() -> None:
             await _cursors(client)
 
 
-async def test_sandbox_subscription_parses_multiline_snapshots_and_ignores_health_frames() -> None:
-    watch = {"healthy": True, "failing": {}}
-
+async def test_sandbox_subscription_assembles_proto_snapshot_chunks() -> None:
     async def snapshots(after: int, writer: asyncio.StreamWriter) -> None:
         del after
         body = (
-            _frame("health", watch)
-            + b'event: snapshot\ndata: {"sandboxes": [],\ndata: "watch": '
-            + json.dumps(watch).encode()
-            + b"}\n\n"
+            b'{"result":{"snapshot":{"sandboxes":[{"name":"one","uid":"u1"}]}}}\n'
+            b'{"result":{"snapshot":{"sandboxes":[{"name":"two","uid":"u2"}]}}}\n'
+            b'{"result":{"snapshotComplete":{}}}\n'
         )
-        await _respond(writer, "200 OK", body)
+        await _respond(writer, "200 OK", body, "application/x-ndjson")
 
     async with _app(snapshots) as (client, _):
         updates = client.sandbox_snapshots()
         snapshot = await anext(updates)
-        assert snapshot.sandboxes == []
-        assert snapshot.watch.healthy
+        assert [(row.name, row.uid) for row in snapshot] == [("one", "u1"), ("two", "u2")]
         with pytest.raises(RuntimeError, match="inventory stream ended"):
             await anext(updates)
+
+
+async def test_sandbox_subscription_renews_without_publishing_an_incomplete_snapshot() -> None:
+    async def first(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "200 OK",
+            b'{"result":{"snapshot":{"sandboxes":[{"name":"discarded"}]}}}\n{"result":{"reconnectRequired":{}}}\n',
+            "application/x-ndjson",
+        )
+
+    async def second(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "200 OK",
+            b'{"result":{"snapshot":{"sandboxes":[{"name":"current"}]}}}\n{"result":{"snapshotComplete":{}}}\n',
+            "application/x-ndjson",
+        )
+
+    async with _app(first, second) as (client, _):
+        updates = client.sandbox_snapshots()
+        snapshot = await anext(updates)
+        assert [row.name for row in snapshot] == ["current"]
+        await updates.aclose()
 
 
 @pytest.mark.parametrize("status", ["401 Unauthorized", "403 Forbidden"])

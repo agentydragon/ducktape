@@ -1,12 +1,18 @@
-import { createContext, type JSX, type ReactNode, useContext } from "react";
+import { fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
+import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
+import { SandboxSchema, type Sandbox } from "../../../proto/sandboxes_pb";
+import { WatchEnvironmentsResponseSchema } from "../../../sandboxes/environments/environment_service_pb";
+import { followWatch } from "../watch_stream";
+import { type StreamConnection } from "../stream_reader";
+import { useStreamStatus } from "../stream_status";
 
-import { useLive, type Live, type WatchHealth } from "../live";
+import { type Live, type WatchHealth } from "../live";
 
 import type { ActionPolicyUnavailable, ActionPolicyView } from "../actions/client";
 import type { SandboxView, ThreadView } from "../schema";
 import type { BindingView, Decision } from "./client";
 
-export type SandboxesSnapshot = { sandboxes: SandboxView[]; watch: WatchHealth };
+export type SandboxesSnapshot = { sandboxes: Sandbox[]; watch: WatchHealth };
 export type SandboxSnapshot = {
   sandbox: SandboxView | null;
   bindings: BindingView[];
@@ -18,7 +24,7 @@ export type SandboxSnapshot = {
 export type DecisionsSnapshot = { watching: boolean; decisions: Decision[] | { detail: string } };
 
 export function liveSandboxesUrl(): string {
-  return "/live/sandboxes";
+  return "/upstream/environments/v1/environments:watch";
 }
 
 export function liveSandboxUrl(name: string, includeArchived: boolean): string {
@@ -31,10 +37,123 @@ export function liveEgressDecisionsUrl(name: string): string {
 
 const SandboxesLiveContext = createContext<Live<SandboxesSnapshot> | null>(null);
 
-/** The app's one /live/sandboxes connection: every view of the Sandbox inventory reads it, so two views of one
- * Sandbox cannot disagree. */
+// The inventory's wire type is the shared Sandbox proto. The remaining detail and mutation
+// screens use the app's presentation view; this projection keeps that view at the UI boundary.
+export function sandboxView(value: Sandbox): SandboxView {
+  const encoded = toJson(SandboxSchema, value, { useProtoFieldName: true, alwaysEmitImplicit: true });
+  if (typeof encoded !== "object" || encoded === null || Array.isArray(encoded)) throw new Error("Invalid Sandbox");
+  const phaseNames: Record<string, string> = {
+    SANDBOX_PHASE_UNSPECIFIED: "Unspecified",
+    SANDBOX_PHASE_CREATING: "Creating",
+    SANDBOX_PHASE_RUNNING: "Running",
+    SANDBOX_PHASE_SUSPENDING: "Suspending",
+    SANDBOX_PHASE_SUSPENDED: "Suspended",
+    SANDBOX_PHASE_QUIESCING: "Quiescing",
+    SANDBOX_PHASE_TEARING_DOWN: "Tearing down",
+  };
+  const phase = phaseNames[String(encoded.phase)];
+  if (!phase) throw new Error(`Unknown Sandbox phase ${encoded.phase}`);
+  const duration = encoded.idle_suspend_after;
+  const idle = typeof duration === "string" ? Number(duration.replace(/s$/, "")) : null;
+  function object(value: unknown): Record<string, unknown> | null {
+    return value !== null && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value))
+      : null;
+  }
+  const pod = value.pod;
+  const podJson = object(encoded.pod);
+  return {
+    name: value.name,
+    uid: value.uid,
+    namespace: value.namespace,
+    created_at: typeof encoded.created_at === "string" ? encoded.created_at : "0001-01-01T00:00:00Z",
+    operating_mode: value.operatingMode ?? null,
+    status: object(encoded.status) ?? {},
+    service_account: { name: value.serviceAccount?.name ?? "", namespace: value.serviceAccount?.namespace ?? "" },
+    binding: value.binding ? { bootstrap: value.binding.bootstrap } : null,
+    preset: value.preset ?? null,
+    wake_on_send: value.wakeOnSend,
+    idle_suspend_after_seconds: idle,
+    idle_suspend_at: typeof encoded.idle_suspend_at === "string" ? encoded.idle_suspend_at : null,
+    suspended_by: value.suspendedBy ?? null,
+    autosuspend_blockers: value.autosuspendBlockers.map((blocker) => {
+      const reason = blocker.reason;
+      if (
+        reason !== "ActiveTurn" &&
+        reason !== "PendingCommand" &&
+        reason !== "Setup" &&
+        reason !== "Activation" &&
+        reason !== "Bootstrap" &&
+        reason !== "Admission" &&
+        reason !== "ExecutorRelay"
+      ) {
+        throw new Error(`Unknown autosuspend blocker ${reason}`);
+      }
+      return { reason, session_id: blocker.sessionId ?? null };
+    }),
+    phase,
+    pod: pod
+      ? {
+          name: pod.name,
+          namespace: pod.namespace,
+          uid: pod.uid,
+          deleting: pod.deleting,
+          node_name: pod.nodeName ?? null,
+          owner_references: pod.ownerReferences.map((owner) => ({
+            api_version: owner.apiVersion,
+            kind: owner.kind,
+            name: owner.name,
+            uid: owner.uid,
+            controller: owner.controller,
+          })),
+          status: object(podJson?.status) ?? {},
+        }
+      : null,
+  };
+}
+
+/** One caller-scoped EnvironmentService stream shared by all inventory consumers. */
 export function SandboxesLiveProvider({ children }: { children: ReactNode }): JSX.Element {
-  const live = useLive<SandboxesSnapshot>(liveSandboxesUrl(), "Sandboxes");
+  const [snapshot, setSnapshot] = useState<SandboxesSnapshot | null>(null);
+  const [ready, setReady] = useState(false);
+  const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
+  useEffect(() => {
+    let pending: Sandbox[] = [];
+    return followWatch(liveSandboxesUrl(), {
+      onOpen: () => {
+        pending = [];
+        setReady(false);
+      },
+      onFrame: (result) => {
+        const frame = fromJson(WatchEnvironmentsResponseSchema, result as JsonValue);
+        switch (frame.frame.case) {
+          case "snapshot":
+            pending.push(...frame.frame.value.sandboxes);
+            break;
+          case "snapshotComplete":
+            setSnapshot({ sandboxes: pending, watch: { healthy: true, failing: {} } });
+            setReady(true);
+            pending = [];
+            break;
+          case "reconnectRequired":
+            break;
+          default:
+            throw new Error("EnvironmentService returned an empty watch frame");
+        }
+      },
+      onConnection: (next) => {
+        setConnection(next);
+        if (next.phase !== "live") setReady(false);
+      },
+    });
+  }, []);
+  const stalled = !ready
+    ? connection.phase === "reconnecting"
+      ? (connection.lastError ?? "Inventory watch disconnected")
+      : "Waiting for inventory snapshot"
+    : null;
+  const stream = useStreamStatus("Sandboxes", connection, stalled);
+  const live: Live<SandboxesSnapshot> = { snapshot, health: snapshot?.watch ?? null, stream };
   return <SandboxesLiveContext.Provider value={live}>{children}</SandboxesLiveContext.Provider>;
 }
 

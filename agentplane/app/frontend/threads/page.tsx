@@ -7,7 +7,7 @@ import { getThread } from "./client";
 import { harnessBehavior } from "../harness_behavior";
 import { harnessLabel } from "../model_catalog";
 import { resumeSandbox } from "../sandboxes/client";
-import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
+import { sandboxInventoryFresh, sandboxView, useRequiredSandboxesLive } from "../sandboxes/live";
 import { useRequiredThreadsLive } from "./live";
 import { ChronologicalDebugProvider } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
@@ -70,7 +70,8 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
   const environment = useRequiredSandboxesLive();
   const inventoryFresh = sandboxInventoryFresh(environment);
   // The top bar and the composer read the one Sandbox row, so they cannot disagree about it.
-  const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
+  const environmentSandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
+  const sandbox = environmentSandbox === undefined ? undefined : sandboxView(environmentSandbox);
   const topbarStatus = threadStatusFromSnapshot(snapshotThread, sandbox, snapshotFresh(threadsLive) && inventoryFresh);
   const [error, setError] = useState<string | null>(null);
   const frontendConfig = useFrontendConfig();

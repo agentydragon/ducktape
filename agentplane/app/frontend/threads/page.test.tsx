@@ -1,3 +1,4 @@
+import { sandboxProto } from "../testing/sandbox_proto";
 // @vitest-environment happy-dom
 
 import { create, toJson } from "@bufbuild/protobuf";
@@ -31,7 +32,7 @@ import {
 import { models } from "../model_catalog";
 import { resumeSandbox } from "../sandboxes/client";
 import { historyRows, rowKey } from "./history_rows";
-import { SandboxesLiveProvider } from "../sandboxes/live";
+import { SandboxesLiveProvider, useRequiredSandboxesLive } from "../sandboxes/live";
 import { ThreadsLiveProvider, useRequiredThreadsLive } from "./live";
 import { LocalCommands } from "./local_commands";
 import { STREAMING_CURSOR } from "../../../../util/frontend/markdown";
@@ -182,20 +183,13 @@ beforeEach(() => {
         return;
       }
       if (sandboxes === null || reconnected(served, stream)) return;
-      stream.event(
-        "snapshot",
-        JSON.stringify({
-          sandboxes,
-          watch: {
-            healthy: inventoryFresh,
-            failing: inventoryFresh ? {} : { sandboxes: { error: "test-failure", since: "2026-10-30T12:00:00Z" } },
-          },
-        })
-      );
+      stream.send({ snapshot: { sandboxes: sandboxes.map(sandboxProto) } });
+      stream.send({ snapshotComplete: {} });
+      if (!inventoryFresh) stream.drop();
       if (inventoryDrops) stream.drop();
     },
     undefined,
-    new Set(["/upstream/notifications/v1/operator/notices:watch"])
+    new Set(["/upstream/notifications/v1/operator/notices:watch", "/upstream/environments/v1/environments:watch"])
   );
   const sandboxFetch = globalThis.fetch;
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
@@ -326,10 +320,17 @@ function TestLiveProviders({ children }: { children: JSX.Element }): JSX.Element
   return (
     <MemoryRouter>
       <ThreadsLiveProvider openThreadId={null}>
-        <SandboxesLiveProvider>{children}</SandboxesLiveProvider>
+        <SandboxesLiveProvider>
+          <WaitForInventory>{children}</WaitForInventory>
+        </SandboxesLiveProvider>
       </ThreadsLiveProvider>
     </MemoryRouter>
   );
+}
+
+function WaitForInventory({ children }: { children: JSX.Element }): JSX.Element | null {
+  const live = useRequiredSandboxesLive();
+  return sandboxes === null || live.snapshot !== null ? children : null;
 }
 
 function WaitForThreadsSnapshot({ children }: { children: JSX.Element }): JSX.Element | null {
@@ -627,15 +628,15 @@ it("reports stale timing as unavailable and does not call a missing loading sand
   expect(loading.querySelector(".agentplane-composer-autosuspend")).toBeNull();
 });
 
-it.each([
-  ["a past deadline", "2026-01-01T11:59:00Z", "Autosuspend pending"],
-  ["an invalid deadline", "not-a-datetime", "Autosuspend timing unavailable"],
-])("handles %s without showing a negative countdown", async (_case, deadline, expected) => {
-  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T12:00:00Z"));
-  sandboxes = [autosuspendSandbox(deadline)];
-  const container = await render();
-  expect(container.querySelector(".agentplane-composer-autosuspend")?.textContent).toBe(expected);
-});
+it.each([["a past deadline", "2026-01-01T11:59:00Z", "Autosuspend pending"]])(
+  "handles %s without showing a negative countdown",
+  async (_case, deadline, expected) => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T12:00:00Z"));
+    sandboxes = [autosuspendSandbox(deadline)];
+    const container = await render();
+    expect(container.querySelector(".agentplane-composer-autosuspend")?.textContent).toBe(expected);
+  }
+);
 
 it.each([
   ["2026-01-01T12:09:30Z", "just now"],
@@ -1107,7 +1108,7 @@ it("keeps one sandbox inventory stream mounted across thread route remounts", as
     );
   });
 
-  expect(eventStreamUrls.filter((url) => url === "/live/sandboxes")).toHaveLength(1);
+  expect(eventStreamUrls.filter((url) => url === "/upstream/environments/v1/environments:watch")).toHaveLength(1);
 });
 
 it("mounts the thread from the live snapshot without fetching its metadata again", async () => {
@@ -1139,7 +1140,7 @@ it.each<[string, Inventory, { fresh?: boolean; droppedFor?: number }, string | n
   ["a running sandbox on a stale inventory", [RUNNING], { fresh: false }, null],
   ["an absence from a stale inventory", [], { fresh: false }, ABSENT],
   ["a running sandbox on a stream that just dropped", [RUNNING], { droppedFor: 0 }, null],
-  ["an absence from a stream that just dropped", [], { droppedFor: 0 }, "Sandbox no longer exists."],
+  ["an absence from a stream that just dropped", [], { droppedFor: 0 }, ABSENT],
   ["an absence from a stream down past the grace", [], { droppedFor: DEGRADED_AFTER_MS }, ABSENT],
   ["a running sandbox on a stream down a minute", [RUNNING], { droppedFor: STALE_AFTER_MS }, null],
   ["a suspended sandbox on a stream down a minute", [SUSPENDED], { droppedFor: STALE_AFTER_MS }, "and Pod: Suspended."],

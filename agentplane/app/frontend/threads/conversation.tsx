@@ -13,7 +13,7 @@ import { traceSearchUrl } from "../trace_search";
 import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadWindow } from "./thread_sync";
 import { historyRows } from "./history_rows";
 import { useRequiredThreadsLive } from "./live";
-import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
+import { sandboxInventoryFresh, sandboxView, useRequiredSandboxesLive } from "../sandboxes/live";
 import { useOptionalStreamStatus } from "../stream_status";
 import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript/retained_disclosures";
 import { pendingSentMessage } from "./thread_cards";
@@ -237,7 +237,8 @@ function ConversationBody({
   const threadsLive = useRequiredThreadsLive();
   const sandboxesLive = useRequiredSandboxesLive();
   const inventoryFresh = sandboxInventoryFresh(sandboxesLive);
-  const currentSandbox = sandboxesLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread.sandbox);
+  const environmentSandbox = sandboxesLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread.sandbox);
+  const currentSandbox = environmentSandbox === undefined ? undefined : sandboxView(environmentSandbox);
   const status = threadStatusFromSnapshot(
     threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId),
     currentSandbox,

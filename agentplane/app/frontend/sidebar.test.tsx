@@ -1,3 +1,4 @@
+import { sandboxProto } from "./testing/sandbox_proto";
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
 import { type JSX, act } from "react";
@@ -104,7 +105,7 @@ function LocationProbe(): JSX.Element {
   return <div data-testid="location">{location.pathname}</div>;
 }
 
-/** What the server would push on /live/sandboxes. */
+/** What the EnvironmentService inventory would report. */
 function inventory(sandboxes: Record<string, SandboxView>): SandboxesSnapshot {
   return { sandboxes: Object.values(sandboxes), watch: { healthy: true, failing: {} } };
 }
@@ -125,7 +126,11 @@ async function pushSandboxSnapshot(
   stream: { served: ServedWatch[]; pathname: string },
   value: SandboxesSnapshot
 ): Promise<void> {
-  await act(async () => latestOn(stream.served, stream.pathname).event("snapshot", JSON.stringify(value)));
+  await act(async () => {
+    const watch = latestOn(stream.served, stream.pathname);
+    watch.send({ snapshot: { sandboxes: value.sandboxes.map(sandboxProto) } });
+    watch.send({ snapshotComplete: {} });
+  });
 }
 
 async function render(
@@ -174,14 +179,15 @@ async function render(
         return;
       }
       if (reconnected(served, stream)) return;
-      if (pathname === "/live/sandboxes") {
-        stream.event("snapshot", JSON.stringify(inventory(sandboxes)));
+      if (pathname === "/upstream/environments/v1/environments:watch") {
+        stream.send({ snapshot: { sandboxes: Object.values(sandboxes).map(sandboxProto) } });
+        stream.send({ snapshotComplete: {} });
         return;
       }
       throw new Error(`Unexpected event stream route: ${pathname}`);
     },
     undefined,
-    new Set(["/upstream/notifications/v1/operator/notices:watch"])
+    new Set(["/upstream/notifications/v1/operator/notices:watch", "/upstream/environments/v1/environments:watch"])
   );
   listedThreads = threads;
   const eventFetch = globalThis.fetch;
@@ -270,7 +276,7 @@ async function render(
     onOpenSettings,
     onClose,
     stream: { served: threadServed, pathname: "/upstream/app/v1/threads:watch" },
-    sandboxStream: { served, pathname: "/live/sandboxes" },
+    sandboxStream: { served, pathname: "/upstream/environments/v1/environments:watch" },
     noticeUrls,
   };
 }

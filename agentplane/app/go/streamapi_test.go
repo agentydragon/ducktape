@@ -131,56 +131,6 @@ func (f *streamTestLive) Subscribe() (<-chan struct{}, func()) {
 	return f.changes, func() {}
 }
 
-func TestLiveSandboxStreamSendsInitialUpdateAndStaleHealth(t *testing.T) {
-	activeSession := "active-session"
-	deadline := metav1.NewTime(time.Date(2026, 10, 20, 1, 4, 3, 0, time.UTC))
-	live := &streamTestLive{
-		snapshots: []liveinventory.Snapshot{
-			{Sandboxes: []sandboxapi.Sandbox{{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo"},
-				Status: sandboxapi.SandboxStatus{IdleSuspendBlockers: []sandboxapi.AutosuspendBlocker{
-					{Reason: sandboxapi.AutosuspendBlockerActiveTurn, SessionID: &activeSession},
-					{Reason: sandboxapi.AutosuspendBlockerBootstrap},
-				}},
-			}}, Watch: watchhealth.Status{Available: true, Synced: true}},
-			{Sandboxes: []sandboxapi.Sandbox{{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo"},
-				Status:     sandboxapi.SandboxStatus{IdleSuspendAt: &deadline, IdleSuspendBlockers: []sandboxapi.AutosuspendBlocker{}},
-			}}, Watch: watchhealth.Status{Available: true, Synced: true}},
-			{Sandboxes: []sandboxapi.Sandbox{{ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo"}}}, Watch: watchhealth.Status{Synced: true, Failing: map[watchhealth.Kind]watchhealth.Failure{"sandboxes": {Error: "test-failure"}}}},
-		},
-		changes: make(chan struct{}, 1),
-	}
-	server := NewHTTPServer(nil)
-	routes := newStreamingRoutes(server, StreamingDependencies{Live: live})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	request := httptest.NewRequest(http.MethodGet, "/live/sandboxes", nil).WithContext(ctx)
-	response := newStreamingRecorder()
-	done := make(chan struct{})
-	go func() {
-		routes.liveSandboxes(response, request)
-		close(done)
-	}()
-	waitForStreamText(t, response, `"autosuspend_blockers":[{"reason":"ActiveTurn","session_id":"active-session"},{"reason":"Bootstrap","session_id":null}]`)
-	live.changes <- struct{}{}
-	waitForStreamText(t, response, `"idle_suspend_at":"2026-10-20T01:04:03Z"`)
-	waitForStreamText(t, response, `"autosuspend_blockers":[]`)
-	live.changes <- struct{}{}
-	waitForStreamText(t, response, `"healthy":false`)
-	waitForStreamText(t, response, `"idle_suspend_at":null`)
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("live sandbox stream did not stop after request cancellation")
-	}
-	body := response.String()
-	if !strings.Contains(body, `"name":"demo"`) || strings.Count(body, "event: snapshot") != 3 {
-		t.Fatalf("live sandbox frames = %s", body)
-	}
-}
-
 func TestSandboxThreadsUseCurrentSandboxUID(t *testing.T) {
 	const oldUID = "11111111-1111-4111-8111-111111111111"
 	const currentUID = "22222222-2222-4222-8222-222222222222"
@@ -1248,4 +1198,32 @@ func TestLiveSandboxStreamsShareThreadReadsAcrossViewers(t *testing.T) {
 	cancel()
 	wait()
 	f.awaitProducerStopped(t)
+}
+
+func TestEnvironmentWatchRequiresAppCallerAndForwardsOnlyInventory(t *testing.T) {
+	authentication := newStreamTestAuth(t)
+	server := NewHTTPServer(authentication)
+	var gotPath string
+	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, _ *http.Request, _ context.Context, path, bearer string) error {
+		gotPath = path
+		if bearer != "" {
+			t.Fatalf("unexpected forwarded bearer: %q", bearer)
+		}
+		w.WriteHeader(http.StatusOK)
+		return nil
+	}}
+	RegisterStreamingRoutes(server, StreamingDependencies{DispatcherHTTP: upstream})
+	path := "/upstream/environments/v1/environments:watch"
+	unauthenticated := httptest.NewRecorder()
+	server.Handler(authentication).ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, path, nil))
+	if unauthenticated.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous watch = %d", unauthenticated.Code)
+	}
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	request.Header.Set("Authorization", "Bearer accepted")
+	response := httptest.NewRecorder()
+	server.Handler(authentication).ServeHTTP(response, request)
+	if response.Code != http.StatusOK || gotPath != "v1/environments:watch" {
+		t.Fatalf("watch = %d, path = %q", response.Code, gotPath)
+	}
 }

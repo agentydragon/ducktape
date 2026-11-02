@@ -62,6 +62,7 @@ go_library(
         "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/sandboxes/api",
+        "//agentplane/sandboxes/environments:environment_service_go_proto",
         "//agentplane/sandboxes/runtimeconfig",
         "//agentplane/sandboxes/view",
         "//agentplane/watchhealth",

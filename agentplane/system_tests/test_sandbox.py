@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import Mock, call, create_autospec
+from unittest.mock import call, create_autospec
 from uuid import UUID, uuid4
 
 import httpx
@@ -14,7 +14,10 @@ import pytest_bazel
 from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
-from agentplane.app.testing.models import SandboxesSnapshot, SandboxPhase, SandboxView, WatchHealth
+from agentplane.app.testing.models import SandboxPhase, SandboxView
+from agentplane.proto import sandboxes_pb2
+
+# gazelle:include_dep @pypi//protobuf
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests import sandbox
@@ -37,8 +40,13 @@ def _sandbox_view(
     )
 
 
-def _snapshot(*sandboxes: SandboxView, healthy: bool = True) -> SandboxesSnapshot:
-    return SandboxesSnapshot(sandboxes=list(sandboxes), watch=WatchHealth(healthy=healthy, failing={}))
+def _snapshot(*sandboxes: SandboxView) -> list[sandboxes_pb2.Sandbox]:
+    return [
+        sandboxes_pb2.Sandbox(
+            name=row.name, uid=str(row.uid), operating_mode=row.operating_mode.value if row.operating_mode else ""
+        )
+        for row in sandboxes
+    ]
 
 
 @pytest.fixture
@@ -53,7 +61,7 @@ async def test_readiness_accepts_an_already_ready_sandbox_from_initial_inventory
     view = _sandbox_view("readiness-test", uuid4(), ready=True)
     closed = False
 
-    async def snapshots() -> AsyncIterator[SandboxesSnapshot]:
+    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
         nonlocal closed
         try:
             yield _snapshot(view)
@@ -61,10 +69,11 @@ async def test_readiness_accepts_an_already_ready_sandbox_from_initial_inventory
             closed = True
 
     client.sandbox_snapshots.return_value = snapshots()
+    client.sandbox.return_value = view
 
     assert await sandbox.wait_until_running(client, view.name, expected_uid=view.uid) is view
 
-    client.sandbox.assert_not_awaited()
+    client.sandbox.assert_awaited_once_with(view.name)
     client.sandbox_snapshots.assert_called_once_with()
     assert closed
 
@@ -76,33 +85,28 @@ async def test_readiness_waits_for_a_later_ready_snapshot() -> None:
     not_ready = _sandbox_view("readiness-test", uid, ready=False)
     suspended_ready_condition = _sandbox_view("readiness-test", uid, ready=True, operating_mode=OperatingMode.SUSPENDED)
 
-    async def snapshots() -> AsyncIterator[SandboxesSnapshot]:
+    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
         yield _snapshot()
         yield _snapshot(suspended_ready_condition)
         yield _snapshot(not_ready)
         yield _snapshot(ready)
 
     client.sandbox_snapshots.return_value = snapshots()
+    client.sandbox.side_effect = [suspended_ready_condition, not_ready, ready]
 
     assert await sandbox.wait_until_running(client, ready.name, expected_uid=uid) is ready
-    client.sandbox.assert_not_awaited()
 
 
-async def test_readiness_ignores_unhealthy_watch_snapshots() -> None:
+async def test_readiness_propagates_a_lost_inventory_source() -> None:
     client = create_autospec(Client, instance=True)
-    uid = uuid4()
-    stale_ready = _sandbox_view("readiness-test", uid, ready=True)
-    not_ready = _sandbox_view("readiness-test", uid, ready=False)
-    current_ready = _sandbox_view("readiness-test", uid, ready=True)
 
-    async def snapshots() -> AsyncIterator[SandboxesSnapshot]:
-        yield _snapshot(stale_ready, healthy=False)
-        yield _snapshot(not_ready)
-        yield _snapshot(current_ready)
+    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
+        yield []
+        raise RuntimeError("environment watch source failed")
 
     client.sandbox_snapshots.return_value = snapshots()
-
-    assert await sandbox.wait_until_running(client, current_ready.name, expected_uid=uid) is current_ready
+    with pytest.raises(RuntimeError, match="source failed"):
+        await sandbox.wait_until_running(client, "readiness-test", expected_uid=uuid4())
 
 
 async def test_readiness_rejects_a_replaced_sandbox_incarnation() -> None:
@@ -110,7 +114,7 @@ async def test_readiness_rejects_a_replaced_sandbox_incarnation() -> None:
     expected_uid = uuid4()
     replacement = _sandbox_view("readiness-test", uuid4(), ready=True)
 
-    async def snapshots() -> AsyncIterator[SandboxesSnapshot]:
+    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
         yield _snapshot(replacement)
 
     client.sandbox_snapshots.return_value = snapshots()
@@ -125,7 +129,7 @@ async def test_readiness_timeout_closes_the_watch(monkeypatch: pytest.MonkeyPatc
     view = _sandbox_view("readiness-test", uuid4(), ready=False)
     closed = False
 
-    async def snapshots() -> AsyncIterator[SandboxesSnapshot]:
+    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
         nonlocal closed
         try:
             yield _snapshot(view)
@@ -134,6 +138,7 @@ async def test_readiness_timeout_closes_the_watch(monkeypatch: pytest.MonkeyPatc
             closed = True
 
     client.sandbox_snapshots.return_value = snapshots()
+    client.sandbox.return_value = view
 
     with pytest.raises(SandboxNotReadyError) as raised:
         await sandbox.wait_until_running(client, view.name, expected_uid=view.uid)
@@ -146,7 +151,7 @@ async def test_readiness_propagates_inventory_stream_end() -> None:
     client = create_autospec(Client, instance=True)
     uid = uuid4()
 
-    async def snapshots() -> AsyncIterator[SandboxesSnapshot]:
+    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
         yield _snapshot()
         raise RuntimeError("the Sandbox inventory stream ended")
         yield  # pragma: no cover
@@ -163,23 +168,19 @@ async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluste
     closed = False
     deletion_observed = False
 
-    async def snapshots() -> AsyncIterator[SandboxesSnapshot]:
+    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
         nonlocal closed, deletion_observed
         try:
-            for name, healthy, mode in [
-                ("owned-test-sandbox", True, OperatingMode.RUNNING),
-                ("owned-test-sandbox", False, OperatingMode.SUSPENDED),
-                ("other-sandbox", True, OperatingMode.SUSPENDED),
-                ("owned-test-sandbox", True, OperatingMode.SUSPENDED),
+            for name, mode in [
+                ("owned-test-sandbox", OperatingMode.RUNNING),
+                ("other-sandbox", OperatingMode.SUSPENDED),
+                ("owned-test-sandbox", OperatingMode.SUSPENDED),
             ]:
                 client.delete_sandbox.assert_not_awaited()
-                yield Mock(
-                    watch=Mock(healthy=healthy), sandboxes=[SimpleNamespace(name=name, uid=uid, operating_mode=mode)]
-                )
+                yield [sandboxes_pb2.Sandbox(name=name, uid=str(uid), operating_mode=mode.value)]
             client.delete_sandbox.assert_awaited_once_with("owned-test-sandbox")
-            yield SandboxesSnapshot(watch=WatchHealth(healthy=False, failing={}), sandboxes=[])
             deletion_observed = True
-            yield SandboxesSnapshot(watch=WatchHealth(healthy=True, failing={}), sandboxes=[])
+            yield []
         finally:
             closed = True
 
@@ -199,11 +200,8 @@ async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluste
 async def test_cleanup_does_not_delete_a_replacement_sandbox(cluster: Cluster) -> None:
     client = create_autospec(Client, instance=True)
 
-    async def snapshots() -> AsyncIterator[SandboxesSnapshot]:
-        yield Mock(
-            watch=Mock(healthy=True),
-            sandboxes=[SimpleNamespace(name="owned-test-sandbox", uid=uuid4(), operating_mode=OperatingMode.SUSPENDED)],
-        )
+    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
+        yield [sandboxes_pb2.Sandbox(name="owned-test-sandbox", uid=str(uuid4()), operating_mode="Suspended")]
 
     client.sandbox_snapshots.return_value = snapshots()
     with pytest.raises(SandboxNotReadyError, match="has been replaced"):
@@ -218,10 +216,10 @@ async def test_cleanup_bounds_a_watch_that_stops_making_progress(
     client = create_autospec(Client, instance=True)
     closed = False
 
-    async def snapshots() -> AsyncIterator[SandboxesSnapshot]:
+    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
         nonlocal closed
         try:
-            yield Mock(watch=Mock(healthy=False), sandboxes=[])
+            yield []
             await asyncio.Event().wait()
         finally:
             closed = True
@@ -238,7 +236,7 @@ async def test_cleanup_does_not_retry_an_authorization_refusal_or_delete(cluster
     request = httpx.Request("GET", "https://app.test.invalid/sandboxes/owned-test-sandbox")
     refused = httpx.HTTPStatusError("read refused", request=request, response=httpx.Response(403, request=request))
 
-    async def snapshots() -> AsyncIterator[SandboxesSnapshot]:
+    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
         raise refused
         yield  # pragma: no cover
 

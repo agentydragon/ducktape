@@ -13,12 +13,10 @@ import { SandboxList } from "./list";
 import { SandboxesLiveProvider } from "./live";
 import { deletable, SuspendResume } from "./lifecycle";
 import { sandboxSummary } from "../sandbox_status";
+import { sandboxProto } from "../testing/sandbox_proto";
+import { serveEventStreams } from "../testing/watch";
 
-const liveSandboxData = vi.hoisted(() => ({ snapshot: null as { sandboxes: unknown[] } | null }));
-
-vi.mock("../live", () => ({
-  useLive: () => liveSandboxData,
-}));
+const liveSandboxData = vi.hoisted(() => ({ snapshot: null as { sandboxes: SandboxView[] } | null }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
@@ -29,6 +27,7 @@ afterEach(async () => {
   }
   liveSandboxData.snapshot = null;
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 const CREATED: SandboxView = {
@@ -54,6 +53,16 @@ const CREATED: SandboxView = {
 const UNSET_DEFAULTS: NewSandboxDefaults = { wake_on_send: false, idle_suspend_after_seconds: null };
 
 async function render(newSandboxDefaults: NewSandboxDefaults = UNSET_DEFAULTS) {
+  serveEventStreams(
+    (stream) => {
+      if (liveSandboxData.snapshot !== null) {
+        stream.send({ snapshot: { sandboxes: liveSandboxData.snapshot.sandboxes.map(sandboxProto) } });
+        stream.send({ snapshotComplete: {} });
+      }
+    },
+    undefined,
+    new Set(["/upstream/environments/v1/environments:watch"])
+  );
   const onOpen = vi.fn();
   const preset: SandboxPresetView = {
     name: "test-preset",

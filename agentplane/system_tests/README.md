@@ -523,7 +523,7 @@ execution/caching or mint substitute credentials to work around that boundary.
 The controlled-host instructions above are operator-only, not an agent-pod fallback.
 See [repository instructions](../../AGENTS.md).
 
-Teardown subscribes to `/live/sandboxes` until a fresh watch snapshot reports effective `Suspended`
+Teardown subscribes to the EnvironmentService collection watch through the app until a complete snapshot reports effective `Suspended`
 mode for the created Sandbox's name and UID, within the existing readiness bound. The spec write
 alone does not satisfy deletion admission. Authorization refusals fail immediately; teardown
 does not poll the inventory, reconnect a dropped stream, or delete a replacement Sandbox.

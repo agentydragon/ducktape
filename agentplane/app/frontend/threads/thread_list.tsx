@@ -12,7 +12,7 @@ import { archiveThread } from "./client";
 import { displayableError } from "../client";
 import { harnessLabel } from "../model_catalog";
 import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing } from "./live";
-import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
+import { sandboxInventoryFresh, sandboxView, useRequiredSandboxesLive } from "../sandboxes/live";
 import { MarkGlyph } from "../mark_glyph";
 import { sandboxStatusDetail, sandboxSummary } from "../sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../status_mark";
@@ -224,7 +224,9 @@ export function ThreadList({
   const current = threadRoute?.params.threadId ?? null;
   const groups = groupThreads(
     threads,
-    Object.fromEntries((sandboxesLive.snapshot?.sandboxes ?? []).map((sandbox) => [sandbox.name, sandbox])),
+    Object.fromEntries(
+      (sandboxesLive.snapshot?.sandboxes ?? []).map((sandbox) => [sandbox.name, sandboxView(sandbox)])
+    ),
     listing.includeArchived,
     current
   );

@@ -19,8 +19,9 @@ import type { SandboxView, ThreadView } from "../schema";
 import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
 import type { BindingView, Decision, PolicySetView } from "../sandboxes/client";
 import { decisionFixture, type DecisionFixture } from "../sandboxes/decision_fixture";
-import type { DecisionsSnapshot, SandboxSnapshot, SandboxesSnapshot } from "../sandboxes/live";
+import type { DecisionsSnapshot, SandboxSnapshot } from "../sandboxes/live";
 import type { WatchHealth } from "../live";
+import { sandboxProto } from "../testing/sandbox_proto";
 import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
 import "@mantine/core/styles.css";
@@ -3390,10 +3391,6 @@ function liveEvents(url: URL): ServerSentEvent[] {
   if (/^\/live\/sandboxes\/[^/]+\/egress\/decisions$/.test(url.pathname)) {
     return [{ event: "snapshot", data: egressDecisions() }];
   }
-  if (url.pathname === "/live/sandboxes") {
-    const snapshot: SandboxesSnapshot = { sandboxes: SANDBOXES, watch: watch() };
-    return [{ event: "snapshot", data: snapshot }];
-  }
   if (url.pathname === "/upstream/notifications/v1/operator/notices:watch") {
     const states: Record<
       string,
@@ -3463,7 +3460,8 @@ function liveEvents(url: URL): ServerSentEvent[] {
 function drops(url: URL): boolean {
   if (url.pathname === "/live/threads" || url.pathname === "/upstream/notifications/v1/operator/notices:watch")
     return flags.has("threadStreamDropped");
-  if (url.pathname === "/live/sandboxes") return flags.has("inventoryStreamDropped");
+  if (url.pathname === "/upstream/environments/v1/environments:watch")
+    return flags.has("inventoryStreamDropped") || flags.has("watchStale");
   if (/^\/sandboxes\/[^/]+\/notifications\/stream$/.test(url.pathname))
     return flags.has("notificationStatusUnavailable");
   return false;
@@ -3488,6 +3486,24 @@ routes.unshift([
       return liveNdjsonWatch(url.pathname, results(), results, signal, drop);
     }
     return liveEventStream(url.pathname, () => liveEvents(url), signal, drop);
+  },
+]);
+
+routes.unshift([
+  "GET",
+  /^\/upstream\/environments\/v1\/environments:watch$/,
+  (_match, _query, signal) => {
+    const results = (): unknown[] => [
+      { snapshot: { sandboxes: SANDBOXES.map(sandboxProto) } },
+      { snapshotComplete: {} },
+    ];
+    return liveNdjsonWatch(
+      "/upstream/environments/v1/environments:watch",
+      results(),
+      results,
+      signal,
+      flags.has("inventoryStreamDropped") || flags.has("watchStale")
+    );
   },
 ]);
 

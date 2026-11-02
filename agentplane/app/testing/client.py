@@ -28,15 +28,15 @@ from agentplane.app.testing.models import (
     DecisionsSnapshot,
     DecisionsUnavailable,
     NewSandbox,
-    SandboxesSnapshot,
     SandboxView,
     ThreadMetadata,
     ThreadView,
     thread_view_from_proto_json,
 )
 from agentplane.egress.decisions import Decision
-from agentplane.proto import event_log_pb2, session_pb2
+from agentplane.proto import event_log_pb2, sandboxes_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.sandboxes.environments import environment_service_pb2
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -136,31 +136,38 @@ class Client:
         response = await self._json("GET", f"/sandboxes/{name}/runner-status")
         return ParseDict(response, session_pb2.EnvironmentRuntimeStatus())
 
-    async def sandbox_snapshots(self) -> AsyncGenerator[SandboxesSnapshot]:
-        """Initial inventory and watch-triggered changes; the caller bounds the subscription.
-
-        This lifecycle stream fails immediately on HTTP refusals or connection loss. It does not
-        use the Thread journal's rollout-reconnect policy.
-        """
-        async with self._http.stream(
-            "GET",
-            "/live/sandboxes",
-            headers={"Accept": "text/event-stream"},
-            timeout=httpx.Timeout(REQUEST_SECONDS, read=None),
-        ) as response:
-            response.raise_for_status()
-            kind, data = "message", []
-            async for line in response.aiter_lines():
-                if line.startswith("event:"):
-                    kind = line.removeprefix("event:").strip()
-                elif line.startswith("data:"):
-                    data.append(line.removeprefix("data:").lstrip())
-                elif not line:
-                    frame, payload = kind, "\n".join(data)
-                    kind, data = "message", []
-                    if frame == "snapshot" and payload:
-                        yield SandboxesSnapshot.model_validate_json(payload)
-        raise RuntimeError("the Sandbox inventory stream ended")
+    async def sandbox_snapshots(self) -> AsyncGenerator[list[sandboxes_pb2.Sandbox]]:
+        """Complete EnvironmentService inventories; only a planned lease renewal reconnects."""
+        while True:
+            pending: list[sandboxes_pb2.Sandbox] = []
+            renew = False
+            async with self._http.stream(
+                "GET",
+                "/upstream/environments/v1/environments:watch",
+                headers={"Accept": "application/x-ndjson"},
+                timeout=httpx.Timeout(REQUEST_SECONDS, read=None),
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line:
+                        continue
+                    envelope = json.loads(line)
+                    if "error" in envelope:
+                        raise RuntimeError(f"Environment watch failed: {envelope['error']}")
+                    frame = ParseDict(envelope["result"], environment_service_pb2.WatchEnvironmentsResponse())
+                    match frame.WhichOneof("frame"):
+                        case "snapshot":
+                            pending.extend(frame.snapshot.sandboxes)
+                        case "snapshot_complete":
+                            yield pending
+                            pending = []
+                        case "reconnect_required":
+                            renew = True
+                            break
+                        case _:
+                            raise RuntimeError("Environment watch returned an empty frame")
+            if not renew:
+                raise RuntimeError("the Sandbox inventory stream ended")
 
     async def suspend_sandbox(self, name: str) -> None:
         await self._json("POST", f"/sandboxes/{name}/suspend")
