@@ -175,6 +175,58 @@ fn gate_list_reports_each_blocking_scc() {
 }
 
 #[test]
+fn atomic_group_rejection_also_writes_current_cycle_report() {
+    let rejected = run_rejection_fixture(FixtureOpts::new(
+        "const alpha = beta;\nconst beta = alpha;\n",
+        vec![
+            logical_module("left", &[Member::new("alpha")]),
+            logical_module("right", &[Member::new("beta")]),
+        ],
+    ));
+    let chunk_reports = rejected.report_root.join("static/app");
+    let summary: serde_json::Value = read_json(&chunk_reports.join("graph_summary.json"));
+    assert_eq!(summary["atomic_group_conflicts"], 1, "{summary}");
+    assert_eq!(summary["cycles"], 1, "{summary}");
+    assert!(
+        rejected.stderr.contains("atomic-group conflict"),
+        "the atomic rejection remains primary: {}",
+        rejected.stderr
+    );
+    assert!(
+        !rejected.stderr.contains("spec is unrealizable"),
+        "the secondary cycle must not replace the primary diagnostic: {}",
+        rejected.stderr
+    );
+
+    let atomic: serde_json::Value = read_json(&chunk_reports.join("atomic_group_conflicts.json"));
+    let cycles: serde_json::Value = read_json(&chunk_reports.join("cycles.json"));
+    assert_eq!(atomic.as_array().unwrap().len(), 1, "{atomic}");
+    assert_eq!(cycles.as_array().unwrap().len(), 1, "{cycles}");
+
+    let graph = chunk_reports
+        .join("dependency_graph.json.gz")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let parsed = gate_json(&["gate", "list", "--graph", &graph, "--format", "json"]);
+    assert_eq!(
+        parsed["blocking_sccs"].as_array().unwrap().len(),
+        1,
+        "{parsed}"
+    );
+
+    let described = gate_json(&[
+        "gate", "describe", "0", "--graph", &graph, "--format", "json",
+    ]);
+    assert_eq!(described["modules"], cycles[0]["modules"], "{described}");
+    assert_eq!(described["cut"], cycles[0]["cut"], "{described}");
+    assert!(
+        !described["evidence"].as_array().unwrap().is_empty(),
+        "the graph and report describe the same assignment: {described}"
+    );
+}
+
+#[test]
 fn gate_describe_recomputes_nonempty_evidence_from_real_artifacts() {
     let rejected = rejected_cycle_fixture();
     let parsed = gate_json(&[
@@ -426,7 +478,8 @@ fn gate_cycles_override_picks_up_custom_path() {
     assert_eq!(parsed["blocking_sccs"].as_array().unwrap().len(), 1);
 
     // With cycles.json gone from the default location and no
-    // `--cycles`, the gate reads the clean state: zero blocking SCCs.
+    // `--cycles`, the CLI loads an empty set; this alone does not prove
+    // that the surrounding report set is complete.
     let parsed = gate_json(&[
         "gate",
         "list",

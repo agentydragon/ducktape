@@ -446,9 +446,12 @@ debundle run \
   --out-root <out-dir>
 ```
 
-If the spec is unrealizable, `debundle run` rejects and emits structured
-side outputs (`cycles.json`, `atomic_group_conflicts.json`) under
-`reports/tree/<chunk-id>/`. `debundle run --dry-run` runs pipeline
+If the gate rejects an assignment, `debundle run` emits each nonempty
+structured evidence report (`cycles.json`, `atomic_group_conflicts.json`) under
+`reports/tree/<chunk-id>/`. Both can be present when a split atomic group also
+forms a blocking SCC; the atomic conflict remains the primary verdict and
+diagnostic. `graph_summary.json` records both counts. A missing `cycles.json`
+means zero blocking SCCs only for a complete, current report set. `debundle run --dry-run` runs pipeline
 parse/facts/gate checks without writing emitted JS or reports; a gate
 rejection still writes its rejection evidence. Full graph serialization is
 opt-in with `--graphs`, including for rejected runs. Graph-backed queries require
@@ -1242,10 +1245,13 @@ the **same wire shapes** `atomic_group_conflicts.json` / `cycles.json` carry
 Edit-gate rejections (including `--dry-run` probes) also write those
 artifacts to disk as siblings of `--graph` — the default location the
 `gate` queries read — so the documented follow-up queries work on the
-rejection that was just reported. A subsequent edit that passes the gate
-clears the stale artifacts. `debundle run` (and `run --dry-run`) writes the
-same files under `reports/tree/<chunk>/`, which is the same
-sibling-of-`dependency_graph.json.gz` layout.
+rejection that was just reported. The two artifacts may coexist, with the
+atomic conflict remaining the primary verdict. After graph, assignment and
+shared validation complete, the edit gate replaces prior rejection artifacts
+with each nonempty current report; a passing assignment leaves neither file.
+A preflight error leaves the last completed gate result intact. `debundle run`
+(and `run --dry-run`) writes the same files under `reports/tree/<chunk>/`,
+which is the same sibling-of-`dependency_graph.json.gz` layout.
 
 A `commuting_statements` entry the graph build rejects (contradicted by a
 source fact, or inerting no edge; [SPEC](../SPEC.md#commuting-statements))
@@ -1274,8 +1280,11 @@ primitive on the SCC) but deliberately not a `cycle list`.
 
 The SCC query commands (`gate list`, `gate describe`, and `gate cut`) accept
 `--cycles <path>` to override the default `cycles.json` location (sibling of
-`--graph`). A missing `cycles.json` is the clean state: zero blocking SCCs,
-exit 0.
+`--graph`). They read a missing `cycles.json` as an empty set, so `gate list`
+returns zero blocking SCCs and exit 0. Treat that as a clean result only when
+the current gate report set is complete; rejection writers emit `cycles.json`
+whenever the current assignment has blocking SCCs, including beside an atomic
+conflict report.
 
 For a sequencing edge, `gate describe` retains the impure initializer source
 unit and its purity reasons, and every cut and evidence edge carries the same

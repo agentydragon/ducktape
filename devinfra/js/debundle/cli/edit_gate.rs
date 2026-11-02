@@ -266,10 +266,8 @@ fn write_rejection_artifact<T: Serialize>(
         .with_context(|| format!("writing {}", path.display()))
 }
 
-/// Remove a stale rejection artifact so `gate list` reflects the
-/// latest gate verdict (a missing `cycles.json` is the documented
-/// clean state). A pass clears both artifacts; each rejection kind
-/// clears the other kind's file.
+/// Remove the previous gate result when replacing it with a completed
+/// post-edit assignment report.
 fn remove_rejection_artifact(dependency_graph_path: &Path, filename: &str) -> Result<()> {
     let path = rejection_artifact_path(dependency_graph_path, filename);
     if path.exists() {
@@ -962,14 +960,22 @@ fn gate_post_edit_assignment_with_expected(
         })
     };
 
-    // Check 1 — atom splits. Run before cycles so the diagnostic
-    // surfaces the structural co-location violation first; an
-    // atom-split commonly induces a cycle in the module quotient, and
-    // the cycle diagnostic is less actionable for the author than
-    // "here is the atomic group you split".
+    // Atom splits remain the primary diagnosis; the shared validation below
+    // supplies any co-occurring cycle report as secondary evidence.
     let atomic_groups = compute_atomic_groups(&dependency_graph);
     let atomic_conflicts =
         detect_atomic_group_conflicts(&atomic_groups, &assignment, &dependency_graph_report);
+    let report = validate_assignment(&dependency_graph, &assignment, &module_path);
+
+    // Replace artifacts only after this candidate's assignment and shared
+    // realizability report are complete. A preflight error keeps the last
+    // completed gate result available instead of leaving partial evidence.
+    remove_rejection_artifact(dependency_graph_path, output_layout::CYCLES_REPORT)?;
+    remove_rejection_artifact(
+        dependency_graph_path,
+        output_layout::ATOMIC_GROUP_CONFLICTS_REPORT,
+    )?;
+
     if !atomic_conflicts.is_empty() {
         let conflicts = AtomicGroupConflictReport::from_conflicts(
             &atomic_conflicts,
@@ -981,7 +987,14 @@ fn gate_post_edit_assignment_with_expected(
             output_layout::ATOMIC_GROUP_CONFLICTS_REPORT,
             &conflicts,
         )?;
-        remove_rejection_artifact(dependency_graph_path, output_layout::CYCLES_REPORT)?;
+        if !report.cycles.is_empty() {
+            let blocking_sccs = BlockingSccEntry::from_cycle_reports(&report.cycles);
+            write_rejection_artifact(
+                dependency_graph_path,
+                output_layout::CYCLES_REPORT,
+                &blocking_sccs,
+            )?;
+        }
         let summary = render_atomic_group_conflict_summary(
             &atomic_conflicts,
             &module_path,
@@ -996,17 +1009,12 @@ fn gate_post_edit_assignment_with_expected(
     }
 
     // Check 2 — module-quotient cycles.
-    let report = validate_assignment(&dependency_graph, &assignment, &module_path);
     if !report.cycles.is_empty() {
         let blocking_sccs = BlockingSccEntry::from_cycle_reports(&report.cycles);
         write_rejection_artifact(
             dependency_graph_path,
             output_layout::CYCLES_REPORT,
             &blocking_sccs,
-        )?;
-        remove_rejection_artifact(
-            dependency_graph_path,
-            output_layout::ATOMIC_GROUP_CONFLICTS_REPORT,
         )?;
         let summary = render_cycle_summary(&report.cycles);
         eprintln!("error: post-edit spec is unrealizable:\n{summary}");
@@ -1016,13 +1024,6 @@ fn gate_post_edit_assignment_with_expected(
         }
         .into());
     }
-    // Pass: clear stale rejection artifacts from a previous rejected
-    // edit/run so `gate list` reports the documented clean state.
-    remove_rejection_artifact(dependency_graph_path, output_layout::CYCLES_REPORT)?;
-    remove_rejection_artifact(
-        dependency_graph_path,
-        output_layout::ATOMIC_GROUP_CONFLICTS_REPORT,
-    )?;
     Ok(())
 }
 

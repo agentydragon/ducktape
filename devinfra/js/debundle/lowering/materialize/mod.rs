@@ -1711,7 +1711,8 @@ fn validate_and_emit_reports<'a>(
         )?;
     }
     // Atomic-group conflicts take precedence over cycles: a split atom
-    // already forces the cycle, so only its evidence is written and rendered.
+    // already forces the cycle, so its evidence remains the primary
+    // diagnostic. Keep any independently computed cycle report beside it.
     let verdict = if !assignment_report.atomic_group_conflicts.is_empty() {
         if let Some(report_out_dir) = report_out_dir {
             // Project onto the wire shape: source units as `"unit:N"`,
@@ -1729,6 +1730,10 @@ fn validate_and_emit_reports<'a>(
                 ATOMIC_GROUP_CONFLICTS_REPORT,
                 &wire,
             )?;
+            if !assignment_report.cycles.is_empty() {
+                let wire = ::gate::BlockingSccEntry::from_cycle_reports(&assignment_report.cycles);
+                write_chunk_report_json(report_out_dir, chunk_id, CYCLES_REPORT, &wire)?;
+            }
         }
         let summary = render_atomic_group_conflict_summary(
             &assignment_report.atomic_group_conflicts,

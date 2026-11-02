@@ -2946,8 +2946,11 @@ behalf of the spec author.
 Each materialized chunk has reports under `reports/tree/<chunk_id>/`.
 `dependency_graph.json.gz` carries the detailed dependency graph, current module quotient,
 and embedded atomic DAG. Compact validation status is folded into
-`chunk.json`; `cycles.json` and `atomic_group_conflicts.json` are emitted only
-for rejection cases.
+`chunk.json`; each rejection artifact is emitted when its evidence is nonempty.
+An assignment can therefore have both `atomic_group_conflicts.json` and
+`cycles.json`, while the atomic-group conflict remains the primary verdict.
+`graph_summary.json` records both counts. A missing cycle artifact means zero
+blocking SCCs only when the current report set completed successfully.
 
 When an output emitter materializes executable JavaScript, root reports live
 under `reports/` and per-file/per-directory reports are mirrored under
