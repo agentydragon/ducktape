@@ -60,8 +60,7 @@ COSI resource snapshots.
 COSI runtime is pinned in `third_party/go.mod`; evaluate its APIs against the actual ownership and
 teardown contracts rather than treating every controller as a simple resource transform.
 
-- `env/cosi/resources.go` pre-reads before `safe.WriterModify` to return a `changed` flag;
-  Session's `publishSession` also reads and compares both snapshots before `safe.StateModify`.
+- `env/cosi/resources.go` pre-reads before `safe.WriterModify` to return a `changed` flag.
   COSI's `Modify`/`UpdateWithConflicts` already suppress equal updates and retry update conflicts.
   Audit the extra reads and comparisons, especially the hand-written component wrappers in
   `bootstrap/resources.go`, `harnesshost/session/resources.go`,
