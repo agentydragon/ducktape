@@ -9,6 +9,7 @@ use super::value_model::{
 };
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::reports::schema::OrderedFieldReadRefusal;
 use std::collections::BTreeSet;
 use swc_common::Span;
 use swc_ecma_ast::Id;
@@ -51,6 +52,7 @@ pub(super) trait LocalContext {
         receivers: &Values,
         property: &str,
         span: Span,
+        refusal: OrderedFieldReadRefusal,
     ) -> Option<AllocationValue>;
     /// Application execution summarizes the remainder; a strict query refuses
     /// certification. Neither consumer retries already executed operations.
@@ -129,29 +131,41 @@ fn own_data_field(
     receivers: &Values,
     property: &str,
     frame: &LocalFrame,
-) -> Option<u32> {
+) -> Result<u32, OrderedFieldReadRefusal> {
     if receivers.len() != 1 {
-        return None;
+        return Err(OrderedFieldReadRefusal::ReceiverNotSingleton);
     }
-    let AbstractValue::Value(Value::Alloc(Kind::Object, object)) = receivers.first()? else {
-        return None;
+    let Some(AbstractValue::Value(Value::Alloc(Kind::Object, object))) = receivers.first() else {
+        return Err(OrderedFieldReadRefusal::ReceiverNotObject);
     };
-    (frame.fresh_records.contains(object)
-        && !frame.borrowed_records.contains(object)
-        && context.object_properties_are_settled(*object)
-        && matches!(
-            context
-                .ordinary_record_shape(*object)?
-                .properties
-                .get(property),
-            Some(OwnPropertyDescriptorSyntax::Data)
-        )
-        && context
-            .heap()
-            .properties
-            .get(object)
-            .is_some_and(|properties| properties.contains_key(&Some(property.to_owned()))))
-    .then_some(*object)
+    if frame.borrowed_records.contains(object) {
+        return Err(OrderedFieldReadRefusal::BorrowedReceiver);
+    }
+    if !context.object_properties_are_settled(*object) {
+        return Err(OrderedFieldReadRefusal::UnsettledReceiver);
+    }
+    let Some(shape) = context.ordinary_record_shape(*object) else {
+        return Err(OrderedFieldReadRefusal::UnsupportedRecordShape);
+    };
+    if !frame.fresh_records.contains(object) {
+        return Err(OrderedFieldReadRefusal::AllocationNotFresh);
+    }
+    let Some(descriptor) = shape.properties.get(property) else {
+        return Err(OrderedFieldReadRefusal::MissingField);
+    };
+    if !matches!(descriptor, OwnPropertyDescriptorSyntax::Data) {
+        return Err(OrderedFieldReadRefusal::NonDataField);
+    }
+    let key = Some(property.to_owned());
+    if !context
+        .heap()
+        .properties
+        .get(object)
+        .is_some_and(|properties| properties.contains_key(&key))
+    {
+        return Err(OrderedFieldReadRefusal::MissingHeapValue);
+    }
+    Ok(*object)
 }
 
 fn expression(
@@ -209,17 +223,23 @@ fn expression(
             if receivers.is_empty() {
                 return Some(Values::new());
             }
-            if let Some(object) = own_data_field(context, &receivers, property, frame) {
-                // The shared write proof already requires a settled existing
-                // own data slot on a fresh, unborrowed ordinary record. It is
-                // deliberately not broadened for reads of other receivers.
-                let values = context.heap().properties[&object][&Some(property.clone())].clone();
-                return Some(completing(values, frame));
+            match own_data_field(context, &receivers, property, frame) {
+                Ok(object) => {
+                    // The shared guard requires an existing own data slot on a
+                    // settled, fresh, unborrowed ordinary record. It is not
+                    // broadened for reads of other receivers.
+                    let values =
+                        context.heap().properties[&object][&Some(property.clone())].clone();
+                    Some(completing(values, frame))
+                }
+                Err(refusal) => {
+                    let result = context.unproved_field_read(
+                        frame, receiver, &receivers, property, *span, refusal,
+                    )?;
+                    judgment.compose(&result.judgment);
+                    Some(completing(result.values, frame))
+                }
             }
-            let result =
-                context.unproved_field_read(frame, receiver, &receivers, property, *span)?;
-            judgment.compose(&result.judgment);
-            Some(completing(result.values, frame))
         }
         LocalExpression::AssignField {
             receiver,
@@ -238,7 +258,7 @@ fn expression(
             if values.is_empty() {
                 return Some(values);
             }
-            let Some(object) = own_data_field(context, &receivers, property, frame) else {
+            let Ok(object) = own_data_field(context, &receivers, property, frame) else {
                 context.unproved_field_write(frame, &receivers, &values, *span);
                 return None;
             };

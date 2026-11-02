@@ -61,9 +61,12 @@ unchanged own-data guard, member call construction, callback fallback and
 strict result/retention projection. No tests or local build/corpus/profiling
 jobs were added or run. Hosted PR CI supplies compilation and existing checks.
 
-**F13 — Explain the ordered field-proof refusal:** current reports identify
-the member-read operation and source site, but do not say which guard failed.
-Expose a compact typed reason from this same guard, such as borrowed receiver,
-reused allocation site, unsettled receiver, missing field or non-data field.
-Do not reconstruct a second proof from the emitted graph, or broaden the write
-guard while trying to explain a read refusal.
+**F13 — Explain the ordered field-proof refusal:** addressed. The shared guard
+returns its first typed refusal condition, and a conservative application
+`member_read` carries that reason on the existing precision-loss row at the
+original source span. Reasons distinguish receiver shape, borrowed receiver,
+unsupported record shape, allocation not proven fresh, unsettled properties,
+missing source field, non-data descriptor and missing heap value. The freshness
+label does not claim a distinct runtime allocation. This is diagnostic only;
+the strict provider still refuses the same operation and the write guard is
+unchanged.
