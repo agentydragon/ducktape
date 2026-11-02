@@ -41,7 +41,7 @@ flowchart LR
   PD["ProcessDesiredStates"]
   PI["ProcessObservations"]
   PS["ProcessStatuses"]
-  EI["ExecutionInputs"]
+  EI["ExecutionLifecycleSignals"]
   ER["ExecutionStatuses"]
   Native[("Bootstrap scripts / VM exec-server<br/>and process domain")]
 
@@ -75,8 +75,13 @@ flowchart LR
   PS -.->|read / watch| PH
 ```
 
-The optional Execution controller shares the namespace and engine. Its host publishes `ExecutionInputs` with desired UID/demand and generation-bound start, loss and fence completion facts; `execution-lifecycle` reads those inputs and
-its own `ExecutionStatuses`, and writes the latter. Its effect starts and stops the service; for a VM, that service uses the Runtime process host above to launch the native exec-server.
+The optional Execution controller shares the namespace and engine. Its host publishes
+`ExecutionLifecycleSignals` with the desired UID and demand plus generation-bound start, loss, and
+fence completion facts. These completion facts carry their generation and UID, and the start fact
+also records demand; the resource therefore contains current reconciliation state as well as facts
+that wake `execution-lifecycle`. The controller reads the signals and its own
+`ExecutionStatuses`, and writes the latter. Its effect starts and stops the service; for a VM, that
+service uses the Runtime process host above to launch the native exec-server.
 In a Pod the native executor is in the separate companion container. The Runtime's transition and
 Close workers call and wait on these components, so those effect dependencies are not additional
 COSI input subscriptions.
@@ -86,13 +91,13 @@ its completion channel; the published transition or Close status is the observab
 a durable work queue. A blocking Host binding check stays in a worker so Close can preempt a
 transition. An uncertain effect retains ownership and is not automatically replayed.
 
-| Controller                         | Watched inputs                                                                           | Controller output                                                                     | Other relevant work                                                                                                     |
-| ---------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `environment-runtime-lifecycle`    | `EnvironmentRuntimeDesiredStates`, `EnvironmentRuntimeTransitionRequests` (weak)         | `EnvironmentRuntimeCloseStatuses`, `EnvironmentRuntimeTransitionStatuses` (exclusive) | Close and adopt/quiesce are coordinated by this one controller; workers publish completion by waking its loop.          |
-| `environment-host-report-observer` | `HostReports`, `HostIntentStatuses` (weak)                                               | None                                                                                  | Wakes Runtime waiters and starts the Execution fence for an exact applied report.                                       |
-| `bootstrap-lifecycle`              | `BootstrapRequests` (primary); `BootstrapStatuses`, `BootstrapOperationStates` (mapped)  | `BootstrapStatuses` (exclusive)                                                       | Host owns admitted one-off work and publishes its operation state. Runtime admission checks the environment generation. |
-| `process-lifecycle`                | `ProcessDesiredStates` (primary), `ProcessObservations` (mapped)                         | `ProcessStatuses` (exclusive)                                                         | Host owns launch callbacks, live handles and workers; systemd observations are published in `ProcessObservations`.      |
-| `execution-lifecycle`              | `ExecutionInputs` (primary), `ExecutionStatuses` (mapped), both in `environment-runtime` | `ExecutionStatuses` (exclusive)                                                       | Runtime host publishes typed completion facts; the controller retains an unfenced owner on failure.                     |
+| Controller                         | Watched inputs                                                                                     | Controller output                                                                     | Other relevant work                                                                                                                   |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `environment-runtime-lifecycle`    | `EnvironmentRuntimeDesiredStates`, `EnvironmentRuntimeTransitionRequests` (weak)                   | `EnvironmentRuntimeCloseStatuses`, `EnvironmentRuntimeTransitionStatuses` (exclusive) | Close and adopt/quiesce are coordinated by this one controller; workers publish completion by waking its loop.                        |
+| `environment-host-report-observer` | `HostReports`, `HostIntentStatuses` (weak)                                                         | None                                                                                  | Wakes Runtime waiters and starts the Execution fence for an exact applied report.                                                     |
+| `bootstrap-lifecycle`              | `BootstrapRequests` (primary); `BootstrapStatuses`, `BootstrapOperationStates` (mapped)            | `BootstrapStatuses` (exclusive)                                                       | Host owns admitted one-off work and publishes its operation state. Runtime admission checks the environment generation.               |
+| `process-lifecycle`                | `ProcessDesiredStates` (primary), `ProcessObservations` (mapped)                                   | `ProcessStatuses` (exclusive)                                                         | Host owns launch callbacks, live handles and workers; systemd observations are published in `ProcessObservations`.                    |
+| `execution-lifecycle`              | `ExecutionLifecycleSignals` (primary), `ExecutionStatuses` (mapped), both in `environment-runtime` | `ExecutionStatuses` (exclusive)                                                       | Runtime host publishes desired UID/demand and generation-bound completion facts; the controller retains an unfenced owner on failure. |
 
 ## Harness Host
 
@@ -181,7 +186,7 @@ its owning domain's context and join barrier.
 its resource type also appears in drain blocker diagnostics. Harness Host publishes
 `SessionInspectionStatuses` when inspection work starts or settles, separately from the more
 frequently updated `SessionInputs`. Host aggregation needs inspection settlement, not every
-dispatch change. `SessionInputs`, `CodexAppServerInputs`, and `ExecutionInputs` retain their
+dispatch change. `SessionInputs`, `CodexAppServerInputs`, and `ExecutionLifecycleSignals` retain their
 input names because each combines demand with observed or completed facts for its controller.
 Journal seals and History ACKs are facts published from durable journal/ingress activity. The
 in-memory resource is not the durable journal, seal, or ACK authority.

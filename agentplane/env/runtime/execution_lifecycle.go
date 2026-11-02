@@ -18,9 +18,9 @@ import (
 	"go.uber.org/zap"
 )
 
-const executionInputType = "ExecutionInputs.agentplane"
+const executionSignalType = "ExecutionLifecycleSignals.agentplane"
 
-type executionInput struct {
+type executionSignal struct {
 	UID    string
 	Demand uint64
 	Start  executionStartCompletion
@@ -29,7 +29,7 @@ type executionInput struct {
 }
 
 // Completion facts are scoped to the generation that issued the effect. They
-// wake the controller through its input, while native handles remain in memory.
+// wake the controller through this resource, while native handles remain in memory.
 type executionStartCompletion struct {
 	Generation uint64
 	UID        string
@@ -76,7 +76,7 @@ type executionStatus struct {
 	LossBinding      uint64
 }
 
-func (value executionInput) DeepCopy() executionInput   { return value }
+func (value executionSignal) DeepCopy() executionSignal { return value }
 func (value executionStatus) DeepCopy() executionStatus { return value }
 
 type executionExtension[T any] struct{}
@@ -85,17 +85,17 @@ func (executionExtension[T]) ResourceDefinition() spec.ResourceDefinitionSpec {
 	var value T
 	var typ resource.Type
 	switch any(value).(type) {
-	case executionInput:
-		typ = executionInputType
+	case executionSignal:
+		typ = executionSignalType
 	case executionStatus:
 		typ = lifecycle.ExecutionStatusType
 	}
 	return spec.ResourceDefinitionSpec{Type: typ, DefaultNamespace: lifecycle.Namespace}
 }
 
-func executionInputResource(value executionInput) *typed.Resource[executionInput, executionExtension[executionInput]] {
-	return typed.NewResource[executionInput, executionExtension[executionInput]](
-		resource.NewMetadata(lifecycle.Namespace, executionInputType, lifecycle.ExecutionResourceID, resource.VersionUndefined), value,
+func executionSignalResource(value executionSignal) *typed.Resource[executionSignal, executionExtension[executionSignal]] {
+	return typed.NewResource[executionSignal, executionExtension[executionSignal]](
+		resource.NewMetadata(lifecycle.Namespace, executionSignalType, lifecycle.ExecutionResourceID, resource.VersionUndefined), value,
 	)
 }
 
@@ -154,7 +154,7 @@ func (h *executionLifecycle) cancelStart() {
 }
 
 func (h *executionLifecycle) initialize(ctx context.Context) error {
-	return cosi.Publish(ctx, h.state, executionInputResource(executionInput{}), executionInput{}, "execution-host")
+	return cosi.Publish(ctx, h.state, executionSignalResource(executionSignal{}), executionSignal{}, "execution-host")
 }
 
 func (h *executionLifecycle) request(ctx context.Context, uid string) (uint64, error) {
@@ -163,12 +163,12 @@ func (h *executionLifecycle) request(ctx context.Context, uid string) (uint64, e
 	}
 	h.inputMu.Lock()
 	defer h.inputMu.Unlock()
-	input, found, err := cosi.Read(ctx, h.state, executionInputResource(executionInput{}))
+	input, found, err := cosi.Read(ctx, h.state, executionSignalResource(executionSignal{}))
 	if err != nil {
 		return 0, err
 	}
 	if !found {
-		return 0, errors.New("Execution input is not initialized")
+		return 0, errors.New("Execution lifecycle signals are not initialized")
 	}
 	if uid != "" && input.UID == uid {
 		current, _, err := cosi.Read(ctx, h.state, executionStatusResource(executionStatus{}))
@@ -192,7 +192,7 @@ func (h *executionLifecycle) request(ctx context.Context, uid string) (uint64, e
 		h.activeDemands[input.Demand] = struct{}{}
 		h.mu.Unlock()
 	}
-	err = cosi.Publish(ctx, h.state, executionInputResource(input), input, "execution-host")
+	err = cosi.Publish(ctx, h.state, executionSignalResource(input), input, "execution-host")
 	if err != nil {
 		h.mu.Lock()
 		delete(h.startContexts, input.Demand)
@@ -212,18 +212,18 @@ func (h *executionLifecycle) readyOwner(uid string) bool {
 	return h.r.executionOwner.executor(uid) != nil
 }
 
-func (h *executionLifecycle) publishCompletion(update func(*executionInput) bool) bool {
+func (h *executionLifecycle) publishCompletion(update func(*executionSignal) bool) bool {
 	h.inputMu.Lock()
 	ctx := context.Background()
-	input, found, err := cosi.Read(ctx, h.state, executionInputResource(executionInput{}))
+	input, found, err := cosi.Read(ctx, h.state, executionSignalResource(executionSignal{}))
 	published := false
 	if err == nil && found {
 		if update(&input) {
-			err = cosi.Publish(ctx, h.state, executionInputResource(input), input, "execution-host")
+			err = cosi.Publish(ctx, h.state, executionSignalResource(input), input, "execution-host")
 			published = err == nil
 		}
 	} else if err == nil {
-		err = errors.New("Execution input disappeared during lifecycle effect")
+		err = errors.New("Execution lifecycle signals disappeared during lifecycle effect")
 	}
 	h.inputMu.Unlock()
 	if err != nil {
@@ -237,7 +237,7 @@ func (h *executionLifecycle) completeStart(generation uint64, uid string, demand
 	if err != nil {
 		fact.Error = err.Error()
 	}
-	if !h.publishCompletion(func(input *executionInput) bool {
+	if !h.publishCompletion(func(input *executionSignal) bool {
 		if input.Start.Generation >= generation {
 			return false
 		}
@@ -267,7 +267,7 @@ func (h *executionLifecycle) completeLoss(generation uint64, uid string, err err
 	if err != nil {
 		fact.Error = err.Error()
 	}
-	h.publishCompletion(func(input *executionInput) bool {
+	h.publishCompletion(func(input *executionSignal) bool {
 		if input.Loss.Generation >= generation {
 			return false
 		}
@@ -281,7 +281,7 @@ func (h *executionLifecycle) completeFence(generation uint64, uid string, err er
 	if err != nil {
 		fact.Error = err.Error()
 	}
-	h.publishCompletion(func(input *executionInput) bool {
+	h.publishCompletion(func(input *executionSignal) bool {
 		if input.Fence.Generation >= generation {
 			return false
 		}
@@ -323,7 +323,7 @@ func (h *executionLifecycle) launch(uid string, demand, generation uint64, recov
 			h.mu.Unlock()
 			cancelStart()
 		}()
-		input, found, readErr := cosi.Read(startCtx, h.state, executionInputResource(executionInput{}))
+		input, found, readErr := cosi.Read(startCtx, h.state, executionSignalResource(executionSignal{}))
 		if readErr != nil {
 			if startCtx.Err() != nil {
 				h.completeStart(generation, uid, demand, nil, nil, nil, true)
@@ -358,7 +358,7 @@ func (h *executionLifecycle) launch(uid string, demand, generation uint64, recov
 			h.r.mu.Lock()
 			stale := h.r.closing || recovery && (h.r.intent == nil || h.r.intent.Mode != runtimepb.LifecycleIntent_RUNNING || h.r.intent.IncarnationUid != uid || h.r.intent.GetBinding().GetGeneration() != lossBinding)
 			h.r.mu.Unlock()
-			latest, latestFound, readErr := cosi.Read(context.Background(), h.state, executionInputResource(executionInput{}))
+			latest, latestFound, readErr := cosi.Read(context.Background(), h.state, executionSignalResource(executionSignal{}))
 			if readErr != nil {
 				err = readErr
 			}
@@ -514,7 +514,7 @@ func (*executionController) Name() string { return "execution-lifecycle" }
 func (*executionController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
-			{Namespace: lifecycle.Namespace, Type: executionInputType, Kind: controller.InputQPrimary},
+			{Namespace: lifecycle.Namespace, Type: executionSignalType, Kind: controller.InputQPrimary},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.ExecutionStatusType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: lifecycle.ExecutionStatusType, Kind: controller.OutputExclusive}},
@@ -523,7 +523,7 @@ func (*executionController) Settings() controller.QSettings {
 }
 
 func (*executionController) MapInput(_ context.Context, _ *zap.Logger, _ controller.QRuntime, _ controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
-	return []resource.Pointer{executionInputResource(executionInput{}).Metadata()}, nil
+	return []resource.Pointer{executionSignalResource(executionSignal{}).Metadata()}, nil
 }
 
 func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r controller.QRuntime, _ resource.Pointer) error {
@@ -531,10 +531,10 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	if h.terminalError() != nil {
 		return nil
 	}
-	input, found, err := cosi.Read(ctx, r, executionInputResource(executionInput{}))
+	input, found, err := cosi.Read(ctx, r, executionSignalResource(executionSignal{}))
 	if err != nil || !found {
 		if err != nil {
-			h.failTerminal(fmt.Errorf("read Execution input: %w", err))
+			h.failTerminal(fmt.Errorf("read Execution lifecycle signals: %w", err))
 		}
 		return err
 	}

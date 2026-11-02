@@ -191,7 +191,7 @@ func TestExecutionControllerFailedFenceIsTerminal(t *testing.T) {
 	first := <-started
 	first.exited <- childExit{}
 	current := waitExecutionStatus(t, r, func(s executionStatus) bool { return s.Phase == executionFailed })
-	input, _, err := cosi.Read(context.Background(), r.lifecycleState, executionInputResource(executionInput{}))
+	input, _, err := cosi.Read(context.Background(), r.lifecycleState, executionSignalResource(executionSignal{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +263,7 @@ func TestExecutionControllerImmediateExitAndLatePriorLoss(t *testing.T) {
 	deadline := time.NewTimer(3 * time.Second)
 	defer deadline.Stop()
 	for {
-		input, _, err := cosi.Read(context.Background(), r.lifecycleState, executionInputResource(executionInput{}))
+		input, _, err := cosi.Read(context.Background(), r.lifecycleState, executionSignalResource(executionSignal{}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -278,7 +278,7 @@ func TestExecutionControllerImmediateExitAndLatePriorLoss(t *testing.T) {
 	}
 	close(releaseOldExit)
 	<-oldExitPublished
-	input, _, err := cosi.Read(context.Background(), r.lifecycleState, executionInputResource(executionInput{}))
+	input, _, err := cosi.Read(context.Background(), r.lifecycleState, executionSignalResource(executionSignal{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -632,7 +632,7 @@ func TestExecutionControllerDoesNotPublishStaleSameUIDStart(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("first start was not admitted")
 	}
-	input, _, err := cosi.Read(context.Background(), r.lifecycleState, executionInputResource(executionInput{}))
+	input, _, err := cosi.Read(context.Background(), r.lifecycleState, executionSignalResource(executionSignal{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -640,7 +640,7 @@ func TestExecutionControllerDoesNotPublishStaleSameUIDStart(t *testing.T) {
 	r.executionLifecycle.mu.Lock()
 	r.executionLifecycle.startContexts[input.Demand] = t.Context()
 	r.executionLifecycle.mu.Unlock()
-	if err := cosi.Publish(context.Background(), r.lifecycleState, executionInputResource(input), input, "execution-host"); err != nil {
+	if err := cosi.Publish(context.Background(), r.lifecycleState, executionSignalResource(input), input, "execution-host"); err != nil {
 		t.Fatal(err)
 	}
 	close(releaseStart)
