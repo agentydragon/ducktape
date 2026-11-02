@@ -306,11 +306,7 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
         json.dumps(
             {
                 "sandbox": {"namespace": target.namespace, "name": target.name, "uid": target.uid},
-                "execution_account": {
-                    "namespace": account.namespace,
-                    "name": account.name,
-                    "uid": account_uid,
-                },
+                "execution_account": {"namespace": account.namespace, "name": account.name, "uid": account_uid},
                 "old_pod_uid": old_pod.uid,
                 "new_pod_uid": resumed.pod.uid,
                 "resume_outcome": response["outcome"],
