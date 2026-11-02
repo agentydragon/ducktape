@@ -128,26 +128,14 @@ def _collection_issue_message(issue: CollectionIssue) -> str:
 
 
 def _group_collection_issues(issues: Iterable[CollectionIssue]) -> list[ReviewIssue]:
-    groups: dict[tuple[str, str | None, int | None, int | None, str], set[int | None]] = defaultdict(set)
-    for issue in issues:
-        if issue.result is None:
-            raise ValueError("per-result collection issue has no result provenance")
-        message = _collection_issue_message(issue)
-        for result in (issue.result, *issue.related_results):
-            groups[result.invocation, result.configuration, result.run, result.attempt, message].add(result.shard)
-    return [
-        ReviewIssue(
-            message=message,
-            source=ReviewIssueSource(
-                invocation=invocation,
-                configuration=configuration,
-                run=run,
-                attempt=attempt,
-                shards=sorted(shards, key=lambda shard: (shard is None, shard or 0)),
-            ),
-        )
-        for (invocation, configuration, run, attempt, message), shards in groups.items()
-    ]
+    def result_messages() -> Iterable[tuple[ResultKey, str]]:
+        for issue in issues:
+            if issue.result is None:
+                raise ValueError("per-result collection issue has no result provenance")
+            message = _collection_issue_message(issue)
+            yield from ((result, message) for result in (issue.result, *issue.related_results))
+
+    return _group_result_messages(result_messages())
 
 
 class BaselineSource(Protocol):
