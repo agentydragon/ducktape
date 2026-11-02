@@ -328,3 +328,106 @@ func TestRuntimeKeepsHistoryAliveUntilExactSealedAcknowledgement(t *testing.T) {
 		t.Fatal("Runtime Close did not finish after the exact History acknowledgement")
 	}
 }
+
+func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testing.T) {
+	sealSeen := make(chan struct{})
+	releaseSeal := make(chan struct{})
+	failDelivery := make(chan struct{})
+	var failOnce, releaseSealOnce sync.Once
+	deliveryError := errors.New("injected local History delivery failure")
+	history := &acknowledgingHistory{
+		acks: map[string]*ingresspb.Acknowledgement{}, sealSeen: sealSeen, releaseSeal: releaseSeal,
+	}
+	// Run after the lifecycle fixture's cleanup, which stops delivery and Host workers.
+	var r *Runtime
+	t.Cleanup(func() {
+		if r != nil {
+			_ = r.owner.Close()
+		}
+	})
+	proxy := modelConfigServer(t)
+	workspace := t.TempDir()
+	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
+	config.Config.HostIngress.Target = startHistoryService(t, history)
+	config.expectCloseError = true
+	config.deps.runIngress = func(ctx context.Context, host *harnesshost.Host, endpoint configuration.Endpoint) error {
+		deliveryCtx, cancel := context.WithCancel(ctx)
+		deliveryDone := make(chan error, 1)
+		go func() { deliveryDone <- host.IngressSupervisor(endpoint).Run(deliveryCtx) }()
+		select {
+		case <-failDelivery:
+			cancel()
+			<-deliveryDone
+			return deliveryError
+		case err := <-deliveryDone:
+			cancel()
+			return err
+		case <-ctx.Done():
+			cancel()
+			<-deliveryDone
+			return nil
+		}
+	}
+	r = newLifecycleRuntime(t, config)
+	t.Cleanup(func() {
+		failOnce.Do(func() { close(failDelivery) })
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+		defer cancel()
+		select {
+		case <-r.ingress.done:
+		case <-cleanupCtx.Done():
+			t.Error("History delivery worker did not join during test cleanup")
+		}
+		releaseSealOnce.Do(func() { close(releaseSeal) })
+	})
+	client := startDirectExecutionTestClient(t, r, "test-incarnation")
+	if _, err := client.runner.OpenSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+		t.Fatal(err)
+	}
+	ctx := ingressTestContext(t)
+	if _, err := r.Quiesce(ctx, &sessionpb.QuiesceRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-sealSeen:
+	case <-ctx.Done():
+		t.Fatal("History did not receive the Session seal")
+	}
+	closed := make(chan error, 1)
+	go func() { closed <- r.Close(ctx) }()
+	waitRuntime(t, r, func() bool {
+		status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
+		return err == nil && found && status.Stage == lifecycle.RuntimeCloseHostFlushing
+	}, "Runtime Close to wait at the sealed History acknowledgement barrier")
+	ack, found, err := retained.ReadAcknowledgement(ctx, r.lifecycleState, "session-1")
+	if err != nil || found && ack.Sealed {
+		t.Fatalf("durable sealed History ACK before failure = %+v, found=%t, err=%v", ack, found, err)
+	}
+	failOnce.Do(func() { close(failDelivery) })
+	select {
+	case <-r.ingress.done:
+	case <-ctx.Done():
+		t.Fatal("local History delivery failure did not join its worker")
+	}
+	ack, found, err = retained.ReadAcknowledgement(ctx, r.lifecycleState, "session-1")
+	if err != nil || found && ack.Sealed {
+		t.Fatalf("durable sealed History ACK after failed delivery = %+v, found=%t, err=%v", ack, found, err)
+	}
+	waitRuntime(t, r, func() bool {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.failed
+	}, "Runtime to observe History delivery failure")
+	select {
+	case err := <-closed:
+		if err == nil || !strings.Contains(err.Error(), deliveryError.Error()) {
+			t.Fatalf("Runtime Close after failed sealed History delivery = %v, want delivery failure", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("Runtime Close did not report the failed sealed History delivery")
+	}
+	if owner, err := openEnvironmentOwner(r.config.StateDir); err == nil {
+		_ = owner.Close()
+		t.Fatal("Runtime released owner without the exact durable sealed History acknowledgement")
+	}
+}
