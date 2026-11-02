@@ -100,7 +100,9 @@ transient process unit, while the subprocess helper receives the same duration o
 launch arguments and owns TERM-to-KILL escalation. PID1 applies the same launch-time deadline.
 Host native processes retain the 5-second policy.
 The embedded Execution API allows 90 seconds to fence its native backend. Callers cannot change a process's stop grace
-after launch.
+after launch. In an embedded VM, the exec-server is a Runtime COSI-managed process; its managed
+fence allowance is 90 seconds while its systemd stop grace remains 5 seconds. Standalone Execution
+retains its independent process supervisor.
 
 ## Process topology and fence proof
 
@@ -112,6 +114,9 @@ after launch.
 
 Native supervision retains systemd manager references, exact invocation IDs and cgroup paths until
 the corresponding process-domain fences are proven.
+The process controller publishes the latest attempt-scoped systemd observation for VM-native
+processes, including a persistent unconfirmed start-reply state. A failed manager read preserves the previous snapshot and records the error; the
+observation is diagnostic and cannot establish a successful start, exit, or domain fence.
 
 The VM management unit is `agentplane-environment-runtime.service`. Runtime keeps its legacy scope
 identity; Host uses `harness-host` and Codex transient units use `execution-service`. All bind to

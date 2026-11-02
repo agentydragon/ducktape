@@ -17,6 +17,9 @@ type ProcessConfig struct {
 	// StopGrace is how long graceful shutdown can run before the backend forces
 	// termination. A zero grace requests immediate escalation.
 	StopGrace time.Duration
+	// FenceTimeout bounds a managed process's cleanup worker. Zero keeps the
+	// default allowance after StopGrace; it does not change systemd escalation.
+	FenceTimeout time.Duration
 }
 
 // A backend owns all platform-specific process state. Process supplies the
@@ -25,7 +28,6 @@ type processBackend interface {
 	validate() error
 	start(context.Context, *Process) error
 	stop(context.Context, *Process) error
-	description(*Process) string
 }
 
 type backendFactory func(ProcessConfig) processBackend
@@ -59,6 +61,9 @@ func (s *Supervisor) NewProcess(config ProcessConfig) (*Process, error) {
 	}
 	if config.StopGrace < 0 {
 		return nil, fmt.Errorf("native process stop grace must not be negative: %s", config.StopGrace)
+	}
+	if config.FenceTimeout < 0 {
+		return nil, fmt.Errorf("native process fence timeout must not be negative: %s", config.FenceTimeout)
 	}
 	if s == nil || s.makeBackend == nil {
 		return nil, errSupervisorUnconfigured

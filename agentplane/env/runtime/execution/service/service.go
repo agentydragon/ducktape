@@ -82,9 +82,15 @@ func runOwned(ctx context.Context, config Config, ready func(executorpb.Executor
 	if err != nil {
 		return err
 	}
+	var launchProcess func(context.Context, supervision.ProcessConfig) (*supervision.ManagedProcess, error)
+	if config.ProcessHost != nil && supervisor != nil {
+		launchProcess = func(ctx context.Context, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
+			return config.ProcessHost.Launch(ctx, "execution-service", config.ProcessGeneration, supervisor, processConfig)
+		}
+	}
 	return runWithReady(ctx, config, codexexecserver.NativeStart(codexexecserver.NativeConfig{
 		Config: codexexecserver.Config{URL: config.ExecutorURL, ContainerSocket: config.ContainerSocket}, Binary: config.Binary,
-		StateDir: config.WorkingDirectory, Environment: config.Environment, Supervisor: supervisor,
+		StateDir: config.WorkingDirectory, Environment: config.Environment, Supervisor: supervisor, LaunchProcess: launchProcess,
 	}), ready)
 }
 

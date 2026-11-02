@@ -83,6 +83,7 @@ func (c *Controller) Reconcile(ctx context.Context, _ *zap.Logger, r controller.
 		if !registered || !snapshot.fenced {
 			return fmt.Errorf("process %q has terminal status without a fenced host entry", id)
 		}
+		current = applyProcessFacts(current, snapshot)
 		if desiredResource.Metadata().Finalizers().Has(c.Name()) {
 			if err := c.removeFinalizer(ctx, r, id); err != nil {
 				return err
@@ -126,6 +127,11 @@ func (c *Controller) Reconcile(ctx context.Context, _ *zap.Logger, r controller.
 		current = applyProcessFacts(current, snapshot)
 		if snapshot.startDone {
 			return c.finishStart(ctx, r, id, &current, snapshot, host, write)
+		}
+		// The backend can report an uncertain or pending start while its worker
+		// remains blocked on the process-domain fence.
+		if err := write(); err != nil {
+			return err
 		}
 		return host.start(id)
 	}
@@ -286,6 +292,9 @@ func (c *Controller) removeFinalizer(ctx context.Context, r controller.QRuntime,
 }
 
 func applyProcessFacts(current Status, snapshot processHostSnapshot) Status {
+	if snapshot.systemd.Revision > current.Systemd.Revision {
+		current.Systemd = snapshot.systemd
+	}
 	current.Started = current.Started || snapshot.started
 	if snapshot.pid != 0 {
 		current.PID = snapshot.pid

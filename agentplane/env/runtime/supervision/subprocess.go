@@ -132,8 +132,6 @@ func (b *subprocessBackend) stop(ctx context.Context, p *Process) error {
 	}
 }
 
-func (b *subprocessBackend) description(p *Process) string { return p.ExitDescription() }
-
 func (b *subprocessBackend) reapSupervisor(p *Process) {
 	err := b.cmd.Wait()
 	waitOwnership.Lock()

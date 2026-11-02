@@ -49,6 +49,48 @@ type Status struct {
 	StartRefusal string
 	ExitError    string
 	StopError    string
+	// Systemd is the latest observation of this attempt's VM unit. It is absent
+	// for Pod and container-backed processes and is not process-domain proof.
+	Systemd SystemdObservation
+}
+
+// SystemdObservation is a manager observation for one process attempt. Revision
+// orders callbacks from concurrent backend workers; it is not durable state.
+type SystemdObservation struct {
+	Revision             uint64
+	Unit                 string
+	StartState           SystemdStartState
+	StartError           string
+	ExpectedInvocationID string
+	CapturedControlGroup string
+	Snapshot             SystemdUnitSnapshot
+	Error                string
+}
+
+// SystemdStartState records the reply to a single start request. A lost reply
+// stays unconfirmed even if cleanup later succeeds; it is not permission to retry.
+type SystemdStartState uint8
+
+const (
+	SystemdPreparing SystemdStartState = iota
+	SystemdStartSubmitted
+	SystemdStartAccepted
+	SystemdStartUnconfirmed
+)
+
+func (state SystemdStartState) String() string {
+	switch state {
+	case SystemdPreparing:
+		return "preparing"
+	case SystemdStartSubmitted:
+		return "submitted"
+	case SystemdStartAccepted:
+		return "accepted"
+	case SystemdStartUnconfirmed:
+		return "unconfirmed"
+	default:
+		return "invalid"
+	}
 }
 
 // LaunchRefusal distinguishes a launch that was rejected by policy or

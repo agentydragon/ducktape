@@ -368,5 +368,3 @@ func (b *pid1Backend) stop(ctx context.Context, p *Process) error {
 	_, err := p.Wait(ctx)
 	return err
 }
-
-func (b *pid1Backend) description(p *Process) string { return p.ExitDescription() }

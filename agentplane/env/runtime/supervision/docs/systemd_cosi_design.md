@@ -1,8 +1,9 @@
 # Systemd supervision through COSI: design for review
 
-**Proposal, 2026-11-01; operator review required before implementation planning.** This compares
-the existing generic process controller with a separate systemd-unit controller. It does not change
-the current supervision contract or authorize an implementation. The decision is tracked in the
+**Direction approved, 2026-11-01.** This compares the existing generic process controller with a
+separate systemd-unit controller. The first implementation registers the embedded VM exec-server
+with the process controller, publishes attempt-scoped observations through it, moves workspace
+diagnostics to that status, and removes an unused independent unit-reference API. The decision is tracked in the
 [Task DAG](../../../../plans/task_dag.md#systemd_unit_cosi_design--review-systemd-unit-resources-and-controller-ownership).
 
 ## Recommendation
@@ -31,7 +32,8 @@ not as the number of types converted to COSI.
 
 The [existing supervision contract](supervision.md) is the authority for current behavior. Runtime,
 Host and Execution share a management process and COSI engine. Each uses a process-host namespace
-and its own lifecycle policy. The generic [process controller](../controller.go) owns
+and its own lifecycle policy. Embedded VM Execution registers its exec-server with Runtime's process
+controller; standalone Execution retains its own supervisor. The generic [process controller](../controller.go) owns
 `ProcessDesiredStates`, `ProcessStatuses` and a finalizer per attempt; [Host](../host.go) owns
 the in-memory launch callback, start/exit/stop slots and process handle. [`ManagedProcess`](../managed_process.go)
 provides the native streams and waits for that controller's cleanup barrier.
@@ -70,8 +72,8 @@ The backend remains the only systemd operation owner for an attempt. The process
 its COSI phase and finalizer; higher-level callers never independently stop the same unit. For
 example, publish `Starting`, `Running`, `Stopping` and retained `Exited` through the existing
 process status; represent systemd detail as typed attempt-scoped facts rather than parallel
-independent desired state. Decide exact field placement only after identifying a real consumer.
-Avoid making every generic Pod process carry meaningless systemd-specific fields.
+independent desired state. The generic status contains a zero-valued, absent observation for Pod
+processes; it does not invent systemd state for them.
 
 ## Lifecycle sequences
 
@@ -119,7 +121,7 @@ Avoid making every generic Pod process carry meaningless systemd-specific fields
 ## Review and evidence
 
 The design replaces a proposed additional unit controller with a single attempt owner; it does
-not promise to delete the code that does real systemd work. Before implementation planning, review:
+not promise to delete the code that does real systemd work. Review this change and later work against:
 
 - Whether the status consumers need any systemd-specific facts beyond the existing generic process
   status, and whether those facts can be exposed without duplicating a lifecycle state machine.
@@ -135,8 +137,8 @@ not promise to delete the code that does real systemd work. Before implementatio
   systemd kernel fixture for changed manager/fence behavior; successful app shutdown must not stand
   in for cgroup emptiness.
 
-The first implementation probe, if approved, should be a small VM-backend change exposing one
-needed typed observation and deleting its corresponding duplicate path, with the above relevant
-race and systemd proofs. Stop if it adds a second lifecycle without deleting ownership or if the
-reconstruction and fencing guarantees cannot be preserved. A dedicated unit controller remains an
-alternative for a later independently owned unit consumer, not an implicit follow-on.
+The first implementation brings the embedded VM executor under the process controller, exposes the
+VM backend's observations and removes the workspace helper's independent diagnostic query and an unused unit-reference API. The
+manager backend remains the owner of real fencing and live handles. Further changes should delete
+duplicate ownership and preserve reconstruction and fencing guarantees. A dedicated unit controller
+remains an alternative for a later independently owned unit consumer, not an implicit follow-on.

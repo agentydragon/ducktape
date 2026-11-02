@@ -38,6 +38,8 @@ type Process struct {
 	waitErr     error
 	stdinClosed bool
 	complete    sync.Once
+	systemd     SystemdObservation
+	onSystemd   func(SystemdObservation)
 }
 
 // Start waits for native execution to begin. The context bounds startup; it
@@ -197,15 +199,60 @@ func (p *Process) ExitDescription() string {
 	return fmt.Sprintf("exit_code=%d, stderr_tail=%q", code, string(tail))
 }
 
-// BackendDescription reports backend lifecycle evidence without exposing argv or environment values.
-func (p *Process) BackendDescription() string {
+// ObserveSystemd installs one sink and replays the last observation, if any.
+// Revisions let the sink reject an older replay racing a concurrent update.
+func (p *Process) ObserveSystemd(sink func(SystemdObservation)) {
 	p.mu.Lock()
-	active := p.active
+	p.onSystemd = sink
+	observation := p.systemd
 	p.mu.Unlock()
-	if !active {
-		return p.ExitDescription()
+	if sink != nil && observation.Revision != 0 {
+		sink(observation)
 	}
-	return p.backend.description(p)
+}
+
+func (p *Process) observeSystemd(unit, invocation, group string, snapshot SystemdUnitSnapshot, err error) {
+	p.updateSystemd(func(observation *SystemdObservation) {
+		observation.Unit = unit
+		observation.ExpectedInvocationID = invocation
+		observation.CapturedControlGroup = group
+		if err != nil {
+			// An observation error makes the last snapshot stale, not nonexistent.
+			observation.Error = err.Error()
+		} else {
+			observation.Snapshot = snapshot
+			observation.Error = ""
+		}
+	})
+}
+
+func (p *Process) observeSystemdStart(unit string, state SystemdStartState, err error) {
+	p.updateSystemd(func(observation *SystemdObservation) {
+		observation.Unit = unit
+		observation.StartState = state
+		observation.StartError = ""
+		if err != nil {
+			observation.StartError = err.Error()
+		}
+	})
+}
+
+func (p *Process) updateSystemd(update func(*SystemdObservation)) {
+	p.mu.Lock()
+	previous := p.systemd
+	observation := previous
+	update(&observation)
+	if observation == previous {
+		p.mu.Unlock()
+		return
+	}
+	observation.Revision++
+	p.systemd = observation
+	sink := p.onSystemd
+	p.mu.Unlock()
+	if sink != nil {
+		sink(observation)
+	}
 }
 
 func (p *Process) attachStreams(stdin *os.File, stdout io.Reader, stderr io.Reader) {

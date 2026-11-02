@@ -1406,7 +1406,7 @@ flowchart TD
     SANDBOX_AUTODISKFUL[Decision, unscheduled: auto-diskful storage for Sandboxes]
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
-    SYSTEMD_UNIT_COSI_DESIGN[Review: systemd Unit resources and controller]
+    SYSTEMD_UNIT_COSI_DESIGN[In review: systemd Unit supervision]
     SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN[Selected P0 decision: caller-authorized resume and message wake]
     EXEC_SUSPENDED_RESUME[Selected P0: recover exec on a suspended Sandbox]
     SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN --> EXEC_SUSPENDED_RESUME
@@ -1719,10 +1719,11 @@ Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-co
 
 ### `SYSTEMD_UNIT_COSI_DESIGN` — review systemd Unit resources and controller ownership
 
-**Design proposal for operator review, 2026-11-01 UTC.** The [proposal](../env/runtime/supervision/docs/systemd_cosi_design.md)
-compares a dedicated `SystemdUnit` resource/controller with extending the existing generic process
-controller. It recommends one process-lifecycle owner with typed systemd observations, subject to
-review of the actual code it can remove and the recovery and fencing contracts.
+**Selected implementation in review, operator 2026-11-01 UTC.** The [design](../env/runtime/supervision/docs/systemd_cosi_design.md)
+selects the generic process controller over a second `SystemdUnit` controller. The first change
+brings the embedded VM exec-server under that controller, publishes typed attempt observations and
+removes a duplicate diagnostic query and unused unit reference API while retaining the existing
+recovery and fencing contracts.
 
 Cover the packaged Runtime unit as the outer lifetime owner and the native transient units it
 manages; Host and Execution no longer have separate packaged units. Distinguish a unit's
@@ -1737,9 +1738,8 @@ after controller/runtime loss rather than assuming COSI resources alone make the
 **Exit:** review an ownership map, proposed resource/status shapes, and concrete launch, normal exit,
 stop, uncertain start and reconnect sequences against today's generic process controller. Identify
 the bespoke wiring each alternative replaces and show how ordinary Pod supervision continues to
-work. Operator review precedes implementation planning. This decision does not gate current
-reliability or delegation work; no process consolidation, new binary or COSI refactor is dispatched
-by recording it. Preserve the implemented [management-process ownership](../env/README.md#layout-and-entrypoints).
+work. This decision does not gate current reliability or delegation work. Preserve the implemented
+[management-process ownership](../env/README.md#layout-and-entrypoints).
 
 ### `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN` — authorize explicit resume and message wake
 
