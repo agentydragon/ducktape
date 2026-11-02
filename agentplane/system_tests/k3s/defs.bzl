@@ -103,7 +103,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
     properties = {}
     suite_tags = K3S_TAGS + tags
     if config.vm:
-        # Six 1.5 GiB guests boot alongside k3s services; request the 20 GB worker estimate.
+        # Three 1.5 GiB guests boot alongside k3s services; request eight estimated compute units.
         properties["EstimatedComputeUnits"] = "8"
         images["vm"] = ["//agentplane/system_tests/k3s:vm_images"]
         images["guest"] = [

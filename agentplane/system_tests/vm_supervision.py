@@ -8,7 +8,7 @@ from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.session_setup import run_setup
-from agentplane.system_tests.vm_configuration import RESOURCES
+from agentplane.system_tests.vm_configuration import CPU_QUOTA_PERIOD_MICROS, RESOURCES
 
 _SETUP = r"""set -eu
 test -w .
@@ -81,7 +81,7 @@ async def session_setup_is_supervised(
         "MemoryMax": str(RESOURCES.process.memory_max_bytes),
         "MemorySwapMax": "0",
         "TasksMax": str(RESOURCES.process.pids_max),
-        "CPUQuotaPerSecUSec": "1s",
+        "CPUQuotaPerSecUSec": f"{RESOURCES.process.cpu_quota_micros // CPU_QUOTA_PERIOD_MICROS}s",
         "OOMPolicy": "continue",
         "Slice": "agentplane-workloads.slice",
     }.items():
@@ -97,7 +97,7 @@ async def session_setup_is_supervised(
         ("service", RESOURCES.service_cpu_quota_micros, RESOURCES.service_memory_max_bytes, RESOURCES.service_pids_max),
     ):
         for name, expected in {
-            "cpu.max": f"{cpu} 100000",
+            "cpu.max": f"{cpu} {CPU_QUOTA_PERIOD_MICROS}",
             "memory.max": str(memory),
             "memory.swap.max": "0",
             "memory.oom.group": "0",
