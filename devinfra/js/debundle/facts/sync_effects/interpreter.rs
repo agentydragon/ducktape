@@ -872,6 +872,54 @@ struct LocalExecutionContext<'a, 'source, 'rule> {
     callable: u32,
 }
 
+impl LocalExecutionContext<'_, '_, '_> {
+    fn fallback(
+        &mut self,
+        frame: &LocalFrame,
+        reached: Values,
+        reason: ExecutionPrecisionLossReason,
+        span: Span,
+    ) {
+        self.executor.local_operation_fallback(
+            frame,
+            reached,
+            self.owner,
+            reason,
+            span,
+            self.outcome,
+        );
+        // The opaque operation can complete and reach later calls. Retain
+        // their unknown direct-callee alternatives at their lexical sites,
+        // rather than reporting every loss only at the truncation point.
+        // This inspects indexed operands; it executes no later operation.
+        if let Some(callable) = self.executor.inputs.index.callables.get(&self.callable) {
+            for call in &callable.calls {
+                if call.kind != CallKind::Call || call.span.lo < span.hi {
+                    continue;
+                }
+                let ValueExpr::Binding(binding) = &call.callee else {
+                    continue;
+                };
+                let values = if self.executor.inputs.top_bindings.contains(binding) {
+                    self.executor.state.prefix_values.get(binding)
+                } else {
+                    frame.environment.get(binding)
+                };
+                if values.is_some_and(|values| {
+                    values.iter().any(|value| {
+                        matches!(
+                            value,
+                            AbstractValue::Value(Value::Top) | AbstractValue::SymbolicInput(_)
+                        )
+                    })
+                }) {
+                    self.outcome.lose_call_target(call.owner, call.span);
+                }
+            }
+        }
+    }
+}
+
 impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     fn read_binding(
         &mut self,
@@ -965,16 +1013,14 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         // Unknown targets and incomplete invocations truncate the body at
         // this point. Preserve capabilities in operands evaluated earlier,
         // without replaying the call or any preceding local operation.
-        self.executor.local_operation_fallback(
+        self.fallback(
             frame,
             reached,
-            self.owner,
             ExecutionPrecisionLossReason::UnsupportedOperation {
                 operation: ExecutionOperation::OpaqueExecution,
                 ordered_field_read_refusal: None,
             },
             span,
-            self.outcome,
         );
         None
     }
@@ -1028,16 +1074,14 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 values,
             ));
         }
-        self.executor.local_operation_fallback(
+        self.fallback(
             frame,
             receivers.clone(),
-            self.owner,
             ExecutionPrecisionLossReason::UnsupportedOperation {
                 operation: ExecutionOperation::MemberRead,
                 ordered_field_read_refusal: Some(refusal),
             },
             span,
-            self.outcome,
         );
         None
     }
@@ -1050,16 +1094,14 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     ) {
         let mut reached = receivers.clone();
         reached.extend(values.iter().cloned());
-        self.executor.local_operation_fallback(
+        self.fallback(
             frame,
             reached,
-            self.owner,
             ExecutionPrecisionLossReason::UnsupportedOperation {
                 operation: ExecutionOperation::PropertyWrite,
                 ordered_field_read_refusal: None,
             },
             span,
-            self.outcome,
         );
     }
     fn publish_throw(&mut self, values: &Values) {

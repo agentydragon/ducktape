@@ -52,6 +52,12 @@ capabilities remain fallback roots even if their receiving binding is later
 overwritten. Unknown targets and incomplete invocations truncate the body at
 the source call site through the established bounded callback fallback. They
 do not replay the invocation or preceding operations.
+When the truncated remainder still has an unknown direct callee, its indexed
+call record retains an `unknown_call_target` loss at that later lexical site.
+This is conservative evidence about the skipped remainder, not an execution of
+its callee or arguments. The adapter inspects current binding values and does
+not replay the body to produce diagnostics. A known abrupt result still stops
+before that remainder.
 
 Member, optional, spread and direct eval calls remain outside this grammar.
 Native and foreign call certification, live captured cells, branch execution,
