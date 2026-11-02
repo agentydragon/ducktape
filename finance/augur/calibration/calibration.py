@@ -286,7 +286,7 @@ def _exact_market_counts(
     *,
     trajectories_by_issuer: Mapping[IssuerId, list[RolloutTrajectory]],
     level_paths: Mapping[LevelSeriesKey, npt.NDArray[np.float64]],
-    inflation_history: npt.NDArray[np.float64] | None,
+    inflation_history: Mapping[date, float] | None,
     as_of: date,
     horizon_months: int,
 ) -> tuple[ResolutionCounts, str] | _Unmodeled:
@@ -312,6 +312,7 @@ def _exact_market_counts(
             direction=mapping.direction,
             at_month=months_after(as_of, mapping.at_date),
             horizon_months=horizon_months,
+            as_of=as_of,
             window_months=mapping.window_months,
             history=inflation_history,
         )
@@ -418,7 +419,7 @@ def _threshold_ladder_row(
     live_markets: list[Market | None],
     as_of: date,
     horizon_months: int,
-    inflation_history: npt.NDArray[np.float64] | None,
+    inflation_history: Mapping[date, float] | None,
 ) -> CategoricalRow | None:
     """Convert cumulative threshold contracts into one categorical distribution row.
 
@@ -451,6 +452,7 @@ def _threshold_ladder_row(
                 highs=highs,
                 at_month=at_month,
                 horizon_months=horizon_months,
+                as_of=as_of,
                 window_months=family.window_months,
                 history=inflation_history,
             )
@@ -805,7 +807,7 @@ async def run_calibration(
     price_clients: Mapping[Platform, PriceClient],
     bundle: PrivateEquityBundle,
     level_paths: Mapping[LevelSeriesKey, npt.NDArray[np.float64]] | None = None,
-    inflation_history: list[float] | None = None,
+    inflation_history: Mapping[date, float] | None = None,
 ) -> CalibrationResult:
     """Score a whole-model rollout against a curated prediction-market catalog.
 
@@ -816,13 +818,13 @@ async def run_calibration(
     surfaces as `unmodeled` rather than failing. Each market's `p_market` is read through
     the corresponding injected client; production reads mirrored evidence snapshots.
 
-    `inflation_history` is the real CPI-U for the months before month 0, anchoring the
-    denominator of near-term `inflation_yoy` markets (see `macro_anchors.resolve_anchors`).
+    `inflation_history` maps real CPI-U observation months to index levels for denominators
+    before month 0. A missing calendar month leaves only outcomes requiring that month unresolved.
     """
     as_of = catalog.metadata.model_anchor_date
     rollout_count = len(rollout_seeds)
     paths = dict(level_paths) if level_paths is not None else {}
-    inflation_history_array = np.array(inflation_history, dtype=np.float64) if inflation_history else None
+    dated_inflation_history = dict(inflation_history) if inflation_history else None
     # Per-issuer trajectory slices for every catalog-referenced issuer the bundle actually carries;
     # markets on an absent issuer surface as `unmodeled`.
     emitted_issuers = {str(issuer) for issuer in bundle.issuer_ids()}
@@ -869,7 +871,7 @@ async def run_calibration(
             market,
             trajectories_by_issuer=trajectories_by_issuer,
             level_paths=paths,
-            inflation_history=inflation_history_array,
+            inflation_history=dated_inflation_history,
             as_of=as_of,
             horizon_months=horizon_months,
         )
@@ -915,7 +917,7 @@ async def run_calibration(
             live_markets=threshold_markets,
             as_of=as_of,
             horizon_months=horizon_months,
-            inflation_history=inflation_history_array,
+            inflation_history=dated_inflation_history,
         )
         if row is None:
             logger.warning(

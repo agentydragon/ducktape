@@ -5,8 +5,10 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 
+from finance.augur.calibration import macro_anchors
 from finance.augur.calibration.catalog import (
     CatalogMetadata,
     ExactMarket,
@@ -23,13 +25,15 @@ from finance.augur.model.series import SP500_KEY, InflationKey
 ANCHOR_DATE = date(2026, 5, 27)
 
 
-def _catalog(*, anchors: dict[str, float] | None = None, inflation_history: list[float] | None = None) -> MarketCatalog:
+def _catalog(
+    *, anchors: dict[str, float] | None = None, inflation_history: dict[date, float] | None = None
+) -> MarketCatalog:
     """A catalog referencing the sp500 and inflation level series via two exact markets."""
     return MarketCatalog(
         metadata=CatalogMetadata(
             as_of=ANCHOR_DATE,
             anchors=anchors if anchors is not None else {},
-            inflation_history=inflation_history if inflation_history is not None else [],
+            inflation_history=inflation_history if inflation_history is not None else {},
         ),
         markets=[
             ExactMarket(
@@ -48,20 +52,41 @@ def _catalog(*, anchors: dict[str, float] | None = None, inflation_history: list
     )
 
 
-def test_derives_anchor_and_history_from_evidence(synthetic_evidence_dir: Path) -> None:
-    resolved = resolve_anchors(_catalog(), history_months=12)
+def test_derives_anchor_and_dated_history_from_evidence(synthetic_evidence_dir: Path) -> None:
+    resolved = resolve_anchors(_catalog())
 
-    # Cross-check the selection logic against the loader directly: the anchor is the last
-    # observation on or before the anchor month, and the history is the 12 months immediately
-    # preceding that same observation (oldest first) — not hardcoded index values.
+    # Cross-check against the loader: anchors use the latest observation at/before the model
+    # month, while every earlier CPI value keeps its source month (not its row position).
     anchor_month = ANCHOR_DATE.replace(day=1)
     levels = load_absolute_monthly_levels({SP500_KEY, InflationKey()})
     for key in (SP500_KEY, InflationKey()):
         on_or_before = [obs for obs in levels[key] if obs.month <= anchor_month]
         assert resolved.anchors[key.wire_id] == on_or_before[-1].value
-    cpi = [obs for obs in levels[InflationKey()] if obs.month <= anchor_month]
-    assert resolved.inflation_history == [obs.value for obs in cpi[-13:-1]]
-    assert len(resolved.inflation_history) == 12
+    cpi = levels[InflationKey()]
+    assert resolved.inflation_history == {obs.month: obs.value for obs in cpi if obs.month < anchor_month}
+
+
+def test_dated_history_keeps_publication_lag_and_internal_gap(
+    synthetic_evidence_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loaded = load_absolute_monthly_levels({SP500_KEY, InflationKey()})
+    lagged_cpi = [
+        obs for obs in loaded[InflationKey()] if obs.month <= date(2026, 3, 1) and obs.month != date(2025, 7, 1)
+    ]
+    monkeypatch.setattr(
+        macro_anchors,
+        "load_absolute_monthly_levels",
+        lambda keys: {key: lagged_cpi if key == InflationKey() else loaded[key] for key in keys},
+    )
+
+    resolved = resolve_anchors(_catalog())
+
+    assert resolved.anchors["inflation"] == next(obs.value for obs in lagged_cpi if obs.month == date(2026, 3, 1))
+    assert date(2026, 3, 1) in resolved.inflation_history  # last observation is two months before model as_of
+    assert date(2026, 4, 1) not in resolved.inflation_history
+    assert date(2025, 6, 1) in resolved.inflation_history
+    assert date(2025, 7, 1) not in resolved.inflation_history
+    assert date(2025, 8, 1) in resolved.inflation_history
 
 
 def test_explicit_anchor_overrides_derived_value(synthetic_evidence_dir: Path) -> None:
@@ -74,9 +99,19 @@ def test_explicit_anchor_overrides_derived_value(synthetic_evidence_dir: Path) -
 
 
 def test_explicit_history_overrides_derived_history(synthetic_evidence_dir: Path) -> None:
-    pinned = [100.0, 101.0, 102.0]
-    resolved = resolve_anchors(_catalog(inflation_history=pinned))
+    pinned = {date(2025, 7, 1): 100.0, date(2025, 8, 1): 101.0, date(2026, 3, 1): 102.0}
+    resolved = resolve_anchors(_catalog(anchors={"security:SPY": 1.0, "inflation": 200.0}, inflation_history=pinned))
     assert resolved.inflation_history == pinned
+    assert resolved.anchors["inflation"] == 200.0
+
+
+def test_inflation_history_schema_requires_pre_anchor_month_starts() -> None:
+    with pytest.raises(ValueError, match="first-of-month dates before model_anchor_date"):
+        CatalogMetadata(as_of=ANCHOR_DATE, inflation_history={date(2025, 7, 15): 100.0})
+    with pytest.raises(ValueError, match="first-of-month dates before model_anchor_date"):
+        CatalogMetadata(as_of=ANCHOR_DATE, inflation_history={date(2026, 5, 1): 100.0})
+    with pytest.raises(ValueError, match="Input should be a valid dictionary"):
+        CatalogMetadata.model_validate({"as_of": ANCHOR_DATE, "inflation_history": [100.0, 101.0]})
 
 
 if __name__ == "__main__":

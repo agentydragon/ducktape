@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
@@ -44,6 +44,12 @@ from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode
 def months_after(anchor: date, when: date) -> int:
     """Month offset of `when` from `anchor` (floored). May be negative if `when` precedes `anchor`."""
     return math.floor(months_between(anchor, when))
+
+
+def _calendar_month_offset(month: date, offset: int) -> date:
+    """First day of the calendar month `offset` months from `month`."""
+    absolute_month = month.year * 12 + month.month - 1 + offset
+    return date(absolute_month // 12, absolute_month % 12 + 1, 1)
 
 
 # An IPO is preempted by any absorbing pre-IPO exit: collapse, forced recovery
@@ -210,27 +216,30 @@ def inflation_yoy_counts(
     direction: Direction,
     at_month: int,
     horizon_months: int,
+    as_of: date,
     window_months: int = 12,
-    history: npt.NDArray[np.float64] | None = None,
+    history: Mapping[date, float] | None = None,
 ) -> ResolutionCounts:
     """Trailing year-over-year change of an index series, vectorized over rollouts.
 
     `yoy = value[at_month] / value[at_month - window] - 1`, compared to `threshold` (a fraction,
     e.g. 0.03 for 3%). The numerator comes from the sampled path (`at_month` must be within the
     horizon). For the denominator: when `at_month - window` is still within the path it's the
-    sampled value; when it falls BEFORE `as_of` (month 0) it's taken from `history` — real index
-    values for the months immediately before `as_of`, ordered oldest-first with `history[-1]` the
-    month before `as_of` (so `history[lb]` for a negative offset `lb` reads the right month). With
-    no history covering that far back, the market is UNRESOLVED.
+    sampled value; when it falls BEFORE `as_of` (month 0), the exact calendar month is looked up
+    in `history`. A missing real month leaves the market UNRESOLVED; observations are never
+    shifted, fabricated, or interpolated to fill a gap.
     """
     n = int(matrix.shape[0])
     if at_month < 0 or at_month > horizon_months:
         return ResolutionCounts(yes=0, no=0, unresolved=n)
     lookback = at_month - window_months
     if lookback >= 0:
-        denominator: npt.NDArray[np.float64] | np.float64 = matrix[:, lookback]
-    elif history is not None and lookback >= -len(history):
-        denominator = history[lookback]  # real index value (deterministic), broadcasts over rollouts
+        denominator: npt.NDArray[np.float64] | np.float64 | float = matrix[:, lookback]
+    elif history is not None:
+        history_month = _calendar_month_offset(as_of, lookback)
+        if history_month not in history:
+            return ResolutionCounts(yes=0, no=0, unresolved=n)
+        denominator = history[history_month]  # real index value, broadcasts over rollouts
     else:
         return ResolutionCounts(yes=0, no=0, unresolved=n)
     yoy = matrix[:, at_month] / denominator - 1.0
@@ -246,24 +255,28 @@ def inflation_yoy_bucket_counts(
     highs: list[float | None],
     at_month: int,
     horizon_months: int,
+    as_of: date,
     window_months: int = 12,
-    history: npt.NDArray[np.float64] | None = None,
+    history: Mapping[date, float] | None = None,
 ) -> npt.NDArray[np.int64] | None:
     """Per-bucket rollout counts for trailing YoY values at `at_month`.
 
     This is the distribution-valued sibling of `inflation_yoy_counts`: instead of
     testing one threshold, compute each rollout's YoY rate and count it into
     half-open buckets. Returns `None` when the YoY value is unavailable because the
-    requested month is out of horizon or the pre-anchor denominator is not covered
-    by `history`.
+    requested month is out of horizon or its exact pre-anchor calendar month is absent
+    from `history`.
     """
     if at_month < 0 or at_month > horizon_months:
         return None
     lookback = at_month - window_months
     if lookback >= 0:
-        denominator: npt.NDArray[np.float64] | np.float64 = matrix[:, lookback]
-    elif history is not None and lookback >= -len(history):
-        denominator = history[lookback]
+        denominator: npt.NDArray[np.float64] | np.float64 | float = matrix[:, lookback]
+    elif history is not None:
+        history_month = _calendar_month_offset(as_of, lookback)
+        if history_month not in history:
+            return None
+        denominator = history[history_month]
     else:
         return None
     yoy = matrix[:, at_month] / denominator - 1.0

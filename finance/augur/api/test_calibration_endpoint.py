@@ -9,7 +9,7 @@ so the run stays hermetic (no network). `/api/calibration` surfaces the catalog 
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from datetime import date
 from pathlib import Path
 
@@ -20,10 +20,12 @@ from fastapi.testclient import TestClient
 
 from finance.augur.api.config import Config
 from finance.augur.api.server import create_app_from_augur_config, static_price_clients
+from finance.augur.calibration import macro_anchors
 from finance.augur.calibration.catalog import MarketCatalog
 from finance.augur.calibration.testing import mock_price_clients
-from finance.augur.model.series import SP500_SYMBOL, IssuerId, SecurityKey
+from finance.augur.model.series import SP500_SYMBOL, InflationKey, IssuerId, LevelSeriesKey, SecurityKey
 from finance.augur.x.models.sample_sanity import LevelSeriesSanityCheck, PrivateEquityMarkSanityCheck, SampleSanitySpec
+from finance.evidence.loading import MonthlyLevel
 from finance.evidence.markets import Platform
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
@@ -126,6 +128,30 @@ def test_run_calibration_defaults_to_shared_preset(client: TestClient, synthetic
     response = client.post("/api/calibration/run", json={"horizon_months": 24, "rollouts": 16, "seed": 1701})
     assert response.status_code == 200, response.text
     assert response.json()["preset_id"] == "openai_pe"
+
+
+def test_run_calibration_leaves_missing_real_cpi_month_unresolved(
+    augur_config: Config, synthetic_evidence_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original_loader = macro_anchors.load_absolute_monthly_levels
+
+    def without_july_cpi(keys: Collection[LevelSeriesKey]) -> dict[LevelSeriesKey, list[MonthlyLevel]]:
+        levels = original_loader(keys)
+        if InflationKey() in levels:
+            levels[InflationKey()] = [obs for obs in levels[InflationKey()] if obs.month != date(2025, 7, 1)]
+        return levels
+
+    monkeypatch.setattr(macro_anchors, "load_absolute_monthly_levels", without_july_cpi)
+    with _client_for(augur_config) as api_client:
+        response = api_client.post(
+            "/api/calibration/run", json={"preset_id": "openai_pe", "horizon_months": 24, "rollouts": 16, "seed": 1701}
+        )
+
+    assert response.status_code == 200, response.text
+    cpi = next(row for row in response.json()["result"]["clean"] if row["market_id"] == "KXCPIYOY-26JUL-T3.0")
+    assert cpi["n_resolved"] == 0
+    assert cpi["unresolved"] == 16
+    assert cpi.get("p_model") is None
 
 
 def test_run_unknown_preset_is_400(client: TestClient) -> None:

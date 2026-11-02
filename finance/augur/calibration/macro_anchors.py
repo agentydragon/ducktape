@@ -1,4 +1,4 @@
-"""Resolve a catalog's macro anchors (and pre-anchor CPI history) from the evidence loader.
+"""Resolve a catalog's macro anchors and dated CPI history from the evidence loader.
 
 A catalog's `metadata.anchors` / `metadata.inflation_history` are OPTIONAL overrides. When
 absent, the live spot each macro level series is anchored to — and the pre-anchor CPI history
@@ -7,10 +7,9 @@ fits against (via `load_absolute_monthly_levels`). That keeps a single source of
 refreshing the evidence moves both the model fit and the calibration anchors together, instead
 of someone hand-editing index levels into catalog YAML.
 
-The anchor for a series is its last observation on or before `model_anchor_date`. Because CPI
-publishes with a lag, that observation may be a month or two before the anchor date; the CPI
-history is the months immediately preceding the same anchor observation, so anchor and history
-stay contiguous on the real scale.
+The anchor for a series is its last observation on or before `model_anchor_date`. CPI history
+retains each observation's calendar month so a YoY denominator can require its exact month even
+when CPI publication lags the model date or the source has gaps.
 """
 
 from __future__ import annotations
@@ -23,18 +22,14 @@ from finance.augur.fit.evidence_data import load_absolute_monthly_levels
 from finance.augur.model.series import parse_level_series_key
 from finance.evidence.loading import MonthlyLevel
 
-DEFAULT_INFLATION_HISTORY_MONTHS = 12
-
 
 @dataclass(frozen=True)
 class ResolvedAnchors:
     anchors: dict[str, float]
-    inflation_history: list[float]
+    inflation_history: dict[date, float]
 
 
-def resolve_anchors(
-    catalog: MarketCatalog, *, history_months: int = DEFAULT_INFLATION_HISTORY_MONTHS
-) -> ResolvedAnchors:
+def resolve_anchors(catalog: MarketCatalog) -> ResolvedAnchors:
     """Anchors + inflation history for the catalog, catalog literals overriding derived values."""
     wanted = catalog.referenced_level_series()
     explicit = catalog.metadata.anchors
@@ -55,13 +50,11 @@ def resolve_anchors(
             anchors[wire] = _level_on_or_before(series_by_wire[wire], anchor_month, wire=wire)
 
     if catalog.metadata.inflation_history:
-        inflation_history = list(catalog.metadata.inflation_history)
+        inflation_history = dict(catalog.metadata.inflation_history)
     elif need_history:
-        inflation_history = _trailing_levels(
-            series_by_wire["inflation"], anchor_month, history_months, wire="inflation"
-        )
+        inflation_history = _dated_history(series_by_wire["inflation"], anchor_month)
     else:
-        inflation_history = []
+        inflation_history = {}
     return ResolvedAnchors(anchors=anchors, inflation_history=inflation_history)
 
 
@@ -76,12 +69,6 @@ def _level_on_or_before(series: list[MonthlyLevel], anchor_month: date, *, wire:
     return observations[-1].value
 
 
-def _trailing_levels(series: list[MonthlyLevel], anchor_month: date, history_months: int, *, wire: str) -> list[float]:
-    observations = _observations_on_or_before(series, anchor_month)
-    history = observations[-(history_months + 1) : -1]
-    if len(history) < history_months:
-        raise ValueError(
-            f"vendored series {wire!r} has only {len(history)} month(s) before its anchor observation; "
-            f"need {history_months} for the inflation history"
-        )
-    return [obs.value for obs in history]
+def _dated_history(series: list[MonthlyLevel], anchor_month: date) -> dict[date, float]:
+    """Keep each observed CPI value under its actual month, without filling source gaps."""
+    return {obs.month: obs.value for obs in series if obs.month < anchor_month}
