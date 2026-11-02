@@ -93,5 +93,19 @@ per-command status. Small readiness, section and completion receipts remain
 on the serial console for the existing validation. The native journal is the
 source for detailed diagnostics; it no longer needs a second bulk console copy.
 
-The earlier 16-command validation above predates this deletion. Hosted validation
-of the reduced 12-command report and retained native journal is pending.
+The earlier 16-command validation above predates this deletion. PR #13940 CI
+invocation
+[`5c8add00-c7b3-5eea-9538-e0dcf8773808`](https://app.buildbuddy.io/invocation/5c8add00-c7b3-5eea-9538-e0dcf8773808)
+validated the reduced report: `test_guest_logs` passed in 23.089s and `test_vm`
+passed in 421.885s. BuildBuddy records synthetic merge commit
+`90412beeb43dcff1e41e76844839e09875616180`, containing implementation head
+`da723729ae35a7105442abb5766c88a20d797e5f`.
+
+All three copied native journals passed `journalctl --verify`. The selected OOM
+guest's journal contains all 12 required command results with status zero, seven
+unit-property blocks and five unit definitions. Its console retains monitor
+readiness, the three required sections and the complete terminal receipt, without
+the per-command output. Optional critical-chain and blame queries still returned
+143; their timeouts did not invalidate required collection. The real OOM and
+follow-up, shutdown checks and retained-stack cleanup passed in the unchanged VM
+suite. These are collection-correctness checks, not a measured CI speedup.
