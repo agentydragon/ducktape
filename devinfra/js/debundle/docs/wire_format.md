@@ -344,6 +344,19 @@ endpoint's binding effect, `{"kind": "observed"}` or
 required: a graph written before them does not deserialize, so the
 commuting-statements gate never reads an unclassified effect as assumed.
 
+## Ordered local member-read refusal
+
+`dependency_graph.json.gz.nodes[].synchronous_execution.precision_losses[]`
+may include `reason.ordered_field_read_refusal` for a conservative `member_read`.
+Its values are `receiver_not_singleton`, `receiver_not_object`,
+`borrowed_receiver`, `unsupported_record_shape`, `allocation_not_fresh`,
+`unsettled_receiver`, `missing_field`, `non_data_field`, and
+`missing_heap_value`. The entry retains the existing operation and source site;
+the refusal identifies the first failed condition in the shared local
+own-data guard. `allocation_not_fresh` does not identify a distinct runtime
+allocation. This optional diagnostic does not change effect promotion or gate
+admission. Older reports omit it.
+
 ## Shared purity causes
 
 An impure known-function call has one `impure_function_call` reason at the

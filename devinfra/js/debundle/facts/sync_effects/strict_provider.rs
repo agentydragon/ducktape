@@ -12,6 +12,7 @@ use super::ExecutionIndex;
 use crate::analysis_inputs::{ForeignInvocation, ForeignReturn};
 use crate::facts::abstract_domain::foreign_call::DerivedForeignCall;
 use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::reports::schema::OrderedFieldReadRefusal;
 use imbl::OrdMap;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::Span;
@@ -78,6 +79,7 @@ impl LocalContext for ProviderContext<'_> {
         _receivers: &Values,
         _property: &str,
         _span: Span,
+        _refusal: OrderedFieldReadRefusal,
     ) -> Option<AllocationValue> {
         // Symbolic inputs and captures prove no descriptor or getter behavior.
         // Only the shared fresh own-data transfer can certify a field read.

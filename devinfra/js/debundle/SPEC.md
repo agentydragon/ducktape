@@ -2884,6 +2884,15 @@ a callback-pool record also gives the pool size. An `unsupported_construction`
 record names the first construction check that failed as a typed `rejection`
 (for example `field_may_exist_on_object_prototype` with the field, whose census
 entries are in `native_prototype_property_checks`); later checks may fail too.
+An `unsupported_operation` / `member_read` reason may also carry the optional
+`ordered_field_read_refusal` field from the shared ordered own-data guard:
+`receiver_not_singleton`, `receiver_not_object`, `borrowed_receiver`,
+`unsupported_record_shape`, `allocation_not_fresh`, `unsettled_receiver`,
+`missing_field`, `non_data_field`, or `missing_heap_value`. It identifies the
+first refusal condition at that operation's original source span. For
+`allocation_not_fresh`, the analysis does not distinguish a reused allocation
+site from another reason freshness was not established. This explanation does
+not change effect promotion.
 These records do not change gate acceptance or emitted JavaScript.
 
 Each record's `reach` classifies the code the conservative path stands for.

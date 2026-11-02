@@ -1202,6 +1202,9 @@ existing member-read transfer for receivers outside this narrow guard, so
 established native/array/borrowed-data checks still apply. An unproved getter
 read promotes its possible effects and truncates the remainder through the
 same callback fallback; it does not replay the earlier local operations.
+When that fallback records a `member_read` precision loss, it carries the
+shared guard's first typed refusal reason at the original source span. This
+diagnostic does not change the read transfer or strict-provider admission.
 External values read into a frame remain retained for fallback after their
 last local alias is overwritten. This preserves capabilities reachable through
 an already evaluated reference; retention supplies no freshness proof.

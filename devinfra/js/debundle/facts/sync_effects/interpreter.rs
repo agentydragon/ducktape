@@ -53,7 +53,8 @@ use crate::reports::schema::{
     AssumedEffectReason, CallbackFactoryUseKind, ConstructionRejection, ExecutionOperation,
     ExecutionPrecisionLoss, ExecutionPrecisionLossReason, GlobalReachCause, HavocReach,
     InferenceRule, LocalRecordFactoryRejection, NativeIntegrityCheck, NativeIntegrityGuard,
-    NativePrefixObservation, NativePrototypePropertyCheck, RecordFactoryRejectionReason,
+    NativePrefixObservation, NativePrototypePropertyCheck, OrderedFieldReadRefusal,
+    RecordFactoryRejectionReason,
 };
 use imbl::OrdMap;
 use rustc_hash::FxHashSet;
@@ -109,16 +110,50 @@ impl Outcome {
         self.record_loss(loss);
     }
 
-    /// One record per reason and site. The same site can be reached with
-    /// different inputs; its reach is `global` if any reach was.
+    /// One record per reason and site, retaining distinct ordered-read
+    /// refusals. The same site can be reached with different inputs; its reach
+    /// is `global` if any reach was.
     fn record_loss(&mut self, loss: ExecutionPrecisionLoss) {
         let losses = &mut self.effects.precision_losses;
         match losses.iter_mut().find(|existing| {
-            existing.reason == loss.reason
+            let same_reason = match (&existing.reason, &loss.reason) {
+                (
+                    ExecutionPrecisionLossReason::UnsupportedOperation {
+                        operation: existing_operation,
+                        ordered_field_read_refusal: existing_refusal,
+                    },
+                    ExecutionPrecisionLossReason::UnsupportedOperation {
+                        operation: loss_operation,
+                        ordered_field_read_refusal: loss_refusal,
+                    },
+                ) => {
+                    existing_operation == loss_operation
+                        && (existing_refusal == loss_refusal
+                            || existing_refusal.is_none()
+                            || loss_refusal.is_none())
+                }
+                _ => existing.reason == loss.reason,
+            };
+            same_reason
                 && existing.statement_ordinal == loss.statement_ordinal
                 && existing.span == loss.span
         }) {
             Some(existing) => {
+                if matches!(
+                    &existing.reason,
+                    ExecutionPrecisionLossReason::UnsupportedOperation {
+                        ordered_field_read_refusal: None,
+                        ..
+                    }
+                ) && matches!(
+                    &loss.reason,
+                    ExecutionPrecisionLossReason::UnsupportedOperation {
+                        ordered_field_read_refusal: Some(_),
+                        ..
+                    }
+                ) {
+                    existing.reason = loss.reason.clone();
+                }
                 if existing.reach == HavocReach::Bounded {
                     existing.reach = loss.reach;
                 }
@@ -129,7 +164,10 @@ impl Outcome {
 
     fn unsupported(&mut self, operation: ExecutionOperation, owner: SourceUnitOrdinal, span: Span) {
         self.lose_precision(
-            ExecutionPrecisionLossReason::UnsupportedOperation { operation },
+            ExecutionPrecisionLossReason::UnsupportedOperation {
+                operation,
+                ordered_field_read_refusal: None,
+            },
             HavocReach::Global {
                 cause: GlobalReachCause::UnmodelledOperation,
             },
@@ -880,6 +918,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         receivers: &Values,
         property: &str,
         span: Span,
+        refusal: OrderedFieldReadRefusal,
     ) -> Option<super::super::allocation_transfer::AllocationValue> {
         let callee = ValueExpr::Member(
             Arc::new(ValueExpr::Binding(receiver.clone())),
@@ -914,6 +953,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             self.owner,
             ExecutionOperation::MemberRead,
             span,
+            Some(refusal),
             self.outcome,
         );
         None
@@ -933,6 +973,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             self.owner,
             ExecutionOperation::PropertyWrite,
             span,
+            None,
             self.outcome,
         );
     }
@@ -7641,6 +7682,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         owner: SourceUnitOrdinal,
         operation: ExecutionOperation,
         span: Span,
+        ordered_field_read_refusal: Option<OrderedFieldReadRefusal>,
         outcome: &mut Outcome,
     ) {
         reached.extend(frame.inputs.iter().cloned());
@@ -7652,11 +7694,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .map(|object| AbstractValue::Value(Value::Alloc(Kind::Object, *object))),
         );
         self.publish_values(&reached);
-        let mut fallback = self.bounded_invocation_fallback(
+        let fallback = self.bounded_invocation_fallback(
             owner,
             &[reached],
             &frame.environment,
-            ExecutionPrecisionLossReason::UnsupportedOperation { operation },
+            ExecutionPrecisionLossReason::UnsupportedOperation {
+                operation,
+                ordered_field_read_refusal,
+            },
             HavocReach::Global {
                 cause: GlobalReachCause::UnmodelledOperation,
             },

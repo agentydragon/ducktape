@@ -701,6 +701,24 @@ pub struct ReentryFreeOperationUse {
     pub(crate) span: swc_common::Span,
 }
 
+/// The first failed condition in the ordered local own-data field guard.
+/// This is diagnostic evidence only and does not affect admission.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OrderedFieldReadRefusal {
+    ReceiverNotSingleton,
+    ReceiverNotObject,
+    BorrowedReceiver,
+    UnsupportedRecordShape,
+    /// The allocation site is not marked fresh in this frame. This may be a
+    /// reused site; it does not identify a distinct runtime allocation.
+    AllocationNotFresh,
+    UnsettledReceiver,
+    MissingField,
+    NonDataField,
+    MissingHeapValue,
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ExecutionPrecisionLoss {
     pub reason: ExecutionPrecisionLossReason,
@@ -731,6 +749,8 @@ pub enum ExecutionPrecisionLossReason {
     UnknownCallTarget,
     UnsupportedOperation {
         operation: ExecutionOperation,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ordered_field_read_refusal: Option<OrderedFieldReadRefusal>,
     },
     /// `new` of a local class whose construction proof failed. The rejection
     /// names the first failed check, not every check that would fail.
@@ -827,14 +847,27 @@ impl std::fmt::Display for ExecutionPrecisionLossReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::UnknownCallTarget => f.write_str("`unknown_call_target`"),
-            Self::UnsupportedOperation { operation } => {
+            Self::UnsupportedOperation {
+                operation,
+                ordered_field_read_refusal,
+            } => {
                 let operation = serde_json::to_value(operation)
                     .expect("execution operations serialize as strings");
                 write!(
                     f,
                     "`unsupported_operation` ({})",
                     operation.as_str().expect("unit variant")
-                )
+                )?;
+                if let Some(refusal) = ordered_field_read_refusal {
+                    let refusal = serde_json::to_value(refusal)
+                        .expect("ordered field refusals serialize as strings");
+                    write!(
+                        f,
+                        "; ordered_field_read_refusal: {}",
+                        refusal.as_str().expect("unit variant")
+                    )?;
+                }
+                Ok(())
             }
             Self::UnsupportedConstruction { rejection } => {
                 let rejection = serde_json::to_value(rejection)
