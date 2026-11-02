@@ -191,7 +191,7 @@ func TestHostLifecycleEffectIsFencedWhileIntentIsApplying(t *testing.T) {
 		release.Do(func() { close(store.release) })
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cleanupCancel()
-		if err := r.Close(cleanupCtx); err != nil {
+		if err := r.CloseJournals(cleanupCtx); err != nil {
 			t.Error(err)
 		}
 	})
