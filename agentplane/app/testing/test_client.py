@@ -17,6 +17,7 @@ from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags, Trace
 
 from agentplane.app.testing import client as client_module
 from agentplane.app.testing.client import Client, SessionStreamError
+from agentplane.app.testing.models import NewSandbox
 from agentplane.proto import event_log_pb2, session_pb2
 
 # A server answers one connection per call: `(after, writer)`. Raw sockets, because what is under
@@ -192,6 +193,88 @@ async def test_app_config_client_decodes_generated_proto_json() -> None:
     (preset,) = presets_response.presets
     assert preset.session_defaults.harness == session_pb2.HARNESS_CODEX
     assert not preset.session_defaults.HasField("reasoning_effort")
+
+
+def _sandbox_view(name: str, uid: str, namespace: str = "sandboxes-test") -> dict[str, object]:
+    return {
+        "namespace": namespace,
+        "name": name,
+        "uid": uid,
+        "created_at": "2026-01-01T00:00:00Z",
+        "service_account": {"namespace": namespace, "name": name},
+        "phase": "Creating",
+    }
+
+
+@pytest.mark.parametrize("replaced", [False, True])
+async def test_create_sandbox_checks_exact_read_back_identity(replaced: bool) -> None:
+    created_uid = str(uuid4())
+    read_uid = str(uuid4()) if replaced else created_uid
+
+    async def created(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "200 OK",
+            json.dumps({"namespace": "sandboxes-test", "name": "demo", "uid": created_uid}).encode(),
+            "application/json",
+        )
+
+    async def read_back(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(writer, "200 OK", json.dumps(_sandbox_view("demo", read_uid)).encode(), "application/json")
+
+    async with _app(created, read_back) as (client, _):
+        spec = NewSandbox(name="demo", template="linux")
+        if replaced:
+            with pytest.raises(RuntimeError, match="created target changed before read-back"):
+                await client.create_sandbox(spec)
+        else:
+            assert str((await client.create_sandbox(spec)).uid) == read_uid
+
+
+@pytest.mark.parametrize(
+    ("outcome", "target_kind", "error"),
+    [
+        ("RESUME_OUTCOME_REQUESTED", "same", None),
+        ("RESUME_OUTCOME_ALREADY_RUNNING", "same", None),
+        ("RESUME_OUTCOME_STATE_CHANGED", "same", "Environment state changed"),
+        ("RESUME_OUTCOME_UNSPECIFIED", "same", "no resume outcome"),
+        ("RESUME_OUTCOME_REQUESTED", "missing", "different target"),
+        ("RESUME_OUTCOME_REQUESTED", "other_uid", "different target"),
+        ("RESUME_OUTCOME_REQUESTED", "other_namespace", "different target"),
+        ("RESUME_OUTCOME_REQUESTED", "other_name", "different target"),
+    ],
+)
+async def test_resume_sandbox_checks_outcome_and_exact_target(
+    outcome: str, target_kind: str, error: str | None
+) -> None:
+    uid = str(uuid4())
+    target = {"namespace": "sandboxes-test", "name": "demo", "uid": uid}
+    returned = dict(target)
+    if target_kind == "other_uid":
+        returned["uid"] = str(uuid4())
+    elif target_kind == "other_namespace":
+        returned["namespace"] = "another-namespace"
+    elif target_kind == "other_name":
+        returned["name"] = "another-name"
+    body: dict[str, object] = {"outcome": outcome}
+    if target_kind != "missing":
+        body["target"] = returned
+
+    async def read_target(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(writer, "200 OK", json.dumps(_sandbox_view("demo", uid)).encode(), "application/json")
+
+    async def resumed(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(writer, "200 OK", json.dumps(body).encode(), "application/json")
+
+    observed: list[str] = []
+    async with _app(read_target, resumed, requests=observed) as (client, _):
+        if error is None:
+            await client.resume_sandbox("demo")
+        else:
+            with pytest.raises(RuntimeError, match=error):
+                await client.resume_sandbox("demo")
+    assert len(observed) == 2
+    assert json.loads(observed[1].split("\r\n\r\n", 1)[1]) == {"target": target}
 
 
 async def test_resumes_after_the_last_entry_when_the_stream_closes_without_an_end_frame() -> None:

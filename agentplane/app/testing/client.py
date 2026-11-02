@@ -128,10 +128,16 @@ class Client:
         body = spec.model_dump(exclude_unset=True)
         if (seconds := body.pop("idle_suspend_after_seconds", None)) is not None:
             body["idle_suspend_after"] = f"{seconds}s"
-        target = await self._json("POST", "/upstream/environments/v1/environments", json=body)
-        if target["name"] != spec.name or not target["uid"]:
+        target = ParseDict(
+            await self._json("POST", "/upstream/environments/v1/environments", json=body),
+            environment_service_pb2.TargetHandle(),
+        )
+        if not target.namespace or target.name != spec.name or not target.uid:
             raise RuntimeError("EnvironmentService returned an invalid created target")
-        return await self.sandbox(spec.name)
+        created = await self.sandbox(spec.name)
+        if (created.namespace, created.name, str(created.uid)) != (target.namespace, target.name, target.uid):
+            raise RuntimeError("EnvironmentService created target changed before read-back")
+        return created
 
     async def sandbox(self, name: str) -> SandboxView:
         return SandboxView.model_validate(await self._json("GET", f"/sandboxes/{name}"))
@@ -198,11 +204,27 @@ class Client:
 
     async def resume_sandbox(self, name: str) -> None:
         target = await self._management_target(name)
-        await self._json(
-            "POST",
-            f"/upstream/environments/v1/environments/{target['namespace']}/{name}:resume",
-            json={"target": target},
+        response = ParseDict(
+            await self._json(
+                "POST",
+                f"/upstream/environments/v1/environments/{target['namespace']}/{name}:resume",
+                json={"target": target},
+            ),
+            environment_service_pb2.ResumeEnvironmentResponse(),
         )
+        if not response.HasField("target") or (
+            response.target.namespace,
+            response.target.name,
+            response.target.uid,
+        ) != (target["namespace"], target["name"], target["uid"]):
+            raise RuntimeError("EnvironmentService returned a different target")
+        if response.outcome == environment_service_pb2.RESUME_OUTCOME_STATE_CHANGED:
+            raise RuntimeError("Environment state changed; refresh and try again")
+        if response.outcome not in (
+            environment_service_pb2.RESUME_OUTCOME_REQUESTED,
+            environment_service_pb2.RESUME_OUTCOME_ALREADY_RUNNING,
+        ):
+            raise RuntimeError("EnvironmentService returned no resume outcome")
 
     async def delete_sandbox(self, name: str) -> None:
         target = await self._management_target(name)
