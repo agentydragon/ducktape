@@ -263,7 +263,7 @@ def spend_configuration(*, warmup: bool = False, monthly_minor_units: int = 7000
             ),
         ],
         allowance=policy(warmup=warmup, monthly_minor_units=monthly_minor_units),
-        account_labels={ledger.CHECKING: ledger.ACCOUNT_LABELS[ledger.CHECKING]},
+        account_labels={} if warmup else {ledger.CHECKING: ledger.ACCOUNT_LABELS[ledger.CHECKING]},
     )
 
 

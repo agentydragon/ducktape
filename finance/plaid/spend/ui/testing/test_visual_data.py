@@ -158,6 +158,16 @@ def test_allowance_balance_matches_current_cycle() -> None:
     assert allowance.daily_reference_minor_units == round_minor_units(daily_reference(allowance.monthly_minor_units), 0)
 
 
+def test_allowance_scenarios_are_calculated_from_valid_inputs() -> None:
+    warming = dashboard.spend_view(warmup=True).allowance
+    exhausted = dashboard.spend_view(monthly_minor_units=49999).allowance
+    assert warming is not None
+    assert warming.available_minor_units == 70000
+    assert all(period.observed_daily_minor_units is None for period in warming.recorded_pace_periods)
+    assert exhausted is not None
+    assert exhausted.available_minor_units == -1
+
+
 def test_pre_activation_purchase_informs_pace_without_allowance_debt() -> None:
     view = transactions.view(PeriodId.ROLLING_30D)
     assert view.allowance is not None
