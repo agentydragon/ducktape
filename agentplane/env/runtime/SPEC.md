@@ -52,7 +52,10 @@ Execution calls admitted through Runtime's public Gateway-facing gRPC server pas
 interceptors, epoch and scope checks, and admission accounting before Runtime calls the embedded
 adapter directly. One Runtime-owned lifetime holds the native handle and immutable incarnation UID;
 admission reads the adapter from that owner and closes immediately on its backend loss or stop request,
-without waiting for a COSI event. An uncertain fence retains that owner with admission closed.
+without waiting for a COSI event. The host publishes generation-bound start, loss and fence
+completion facts in the Execution input; the controller only applies a fact to its matching
+generation. Native handles and caller epochs remain in memory. An uncertain fence retains that
+owner with admission closed.
 An OpenSession stream uses the public server stream with an epoch-cancelled
 context; cancellation and adapter shutdown settle its workers before native backend fencing.
 
