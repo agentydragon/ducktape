@@ -74,11 +74,14 @@ an identified replacement; do not assume the existing set of locks and markers i
 
 ## Reconsider bootstrap event storage
 
+**Low priority; not scheduled.**
+
 The [bootstrap COSI probe](runtime/debug/2026_11_02_bootstrap_cosi_storage_probe.md) measured high
 memory amplification, per-event writes, and full-history scans for suffix reads on synthetic output.
 Collect actual output and chunk distributions, then compare the current design with an indexed
-disk-backed log and suitable COSI-backed alternatives. Measure writes, restart, tail reads and memory;
-retain ordered replay, terminal/interrupted recovery and fail-closed handling of uncertain writes.
+SQLite log and disk-backed COSI alternatives such as `state-sqlite`. Measure writes, restart, tail
+reads and memory; retain ordered replay, terminal/interrupted recovery and fail-closed handling of
+uncertain writes.
 The repeated empty suffix reads in the probe are synthetic, not a demonstrated production watcher.
 
 ## Reconsider COSI persistence for the Session journal
