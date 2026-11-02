@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/bridge"
+	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	sessionopeningpb "github.com/agentydragon/ducktape/agentplane/app/session_opening/sessionopeningpb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
@@ -20,10 +22,13 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	authenticationv1 "k8s.io/api/authentication/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 func TestSessionDefaultsMergeExplicitFieldsAndHonorSetupPresence(t *testing.T) {
@@ -271,6 +276,37 @@ func TestSessionOpeningGatewayPreservesConflictAndUncertainOutcomes(t *testing.T
 		if response.Code != test.wantHTTP || codes.Code(body.Code) != test.wantCode || body.Detail == "" || !reflect.DeepEqual(peer.calls, test.wantCalls) {
 			t.Fatalf("status %d body %+v calls %v", response.Code, body, peer.calls)
 		}
+	}
+}
+
+func TestSessionRPCErrorClassifiesWithoutHTTP(t *testing.T) {
+	resource := schema.GroupResource{Group: "agentplane.example", Resource: "sandboxes"}
+	for _, test := range []struct {
+		name       string
+		err        error
+		wantCode   codes.Code
+		wantDetail string
+	}{
+		{"sandbox missing", &sandboxes.SandboxNotFoundError{Name: "demo"}, codes.NotFound, "demo"},
+		{"kubernetes missing", apierrors.NewNotFound(resource, "demo"), codes.NotFound, "demo"},
+		{"invalid sandbox", &sandboxes.InvalidSandboxError{Reason: "invalid"}, codes.InvalidArgument, "invalid"},
+		{"sandbox conflict", &sandboxes.SandboxConflictError{Name: "demo"}, codes.FailedPrecondition, "demo"},
+		{"kubernetes conflict", apierrors.NewConflict(resource, "demo", errors.New("conflict")), codes.FailedPrecondition, "demo"},
+		{"quiescing", &sandboxes.SandboxQuiescingError{Name: "demo"}, codes.Unavailable, "quiescing"},
+		{"canceled", context.Canceled, codes.Canceled, "canceled"},
+		{"deadline", context.DeadlineExceeded, codes.DeadlineExceeded, "Upstream service unavailable"},
+		{"resource exhausted", status.Error(codes.ResourceExhausted, "quota"), codes.ResourceExhausted, "quota"},
+		{"grpc aborted", fmt.Errorf("upstream: %w", status.Error(codes.Aborted, "aborted")), codes.Aborted, "aborted"},
+		{"grpc already exists", status.Error(codes.AlreadyExists, "existing"), codes.AlreadyExists, "existing"},
+		{"grpc internal", status.Error(codes.Internal, "private-upstream-diagnostic"), codes.Internal, "Upstream service unavailable"},
+		{"unknown error", errors.New("private-upstream-diagnostic"), codes.Unavailable, "Upstream service unavailable"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := status.Convert(sessionRPCError(test.err))
+			if got.Code() != test.wantCode || !strings.Contains(got.Message(), test.wantDetail) || strings.Contains(got.Message(), "private-upstream-diagnostic") {
+				t.Fatalf("got %v, want %v containing %q without private details", got, test.wantCode, test.wantDetail)
+			}
+		})
 	}
 }
 

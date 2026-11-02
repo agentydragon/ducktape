@@ -14,12 +14,12 @@ import (
 	"unicode/utf8"
 
 	appbridge "github.com/agentydragon/ducktape/agentplane/app/go/bridge"
+	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	sessionopeningpb "github.com/agentydragon/ducktape/agentplane/app/session_opening/sessionopeningpb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
-	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
@@ -28,6 +28,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 type sessionOpener interface {
@@ -174,41 +175,56 @@ func sessionRPCError(err error) error {
 	var missing *appbridge.SessionOpeningNotFoundError
 	var service *appbridge.ServiceError
 	var refused *appbridge.RefusedError
+	var notFound *sandboxes.SandboxNotFoundError
+	var invalid *sandboxes.InvalidSandboxError
+	var conflict *sandboxes.SandboxConflictError
+	var running *sandboxes.SandboxRunningError
+	var modeUnknown *sandboxes.SandboxModeUnknownError
+	var tearingDown *sandboxes.SandboxTearingDownError
+	var quiescing *sandboxes.SandboxQuiescingError
 	switch {
 	case errors.As(err, &timeout):
 		return status.Error(codes.DeadlineExceeded, err.Error())
 	case errors.As(err, &missing):
 		return status.Error(codes.NotFound, err.Error())
 	case errors.As(err, &service):
-		if gatewayruntime.HTTPStatusFromCode(service.Code) >= 500 {
-			slog.Error("Session opening dependency failed", "error", err)
-			return status.Error(service.Code, "Upstream service unavailable")
-		}
-		return status.Error(service.Code, service.Details)
+		return sessionUpstreamRPCError(service.Code, service.Details, err)
 	case errors.As(err, &refused):
 		return status.Error(refused.Code, refused.Details)
+	case errors.As(err, &notFound), apierrors.IsNotFound(err):
+		return status.Error(codes.NotFound, err.Error())
+	case errors.As(err, &invalid):
+		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.As(err, &conflict), errors.As(err, &running), errors.As(err, &modeUnknown), errors.As(err, &tearingDown), apierrors.IsConflict(err):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.As(err, &quiescing):
+		slog.Error("Session opening dependency failed", "error", err)
+		return status.Error(codes.Unavailable, err.Error())
+	case errors.Is(err, context.Canceled):
+		return status.Error(codes.Canceled, "Request canceled")
+	case errors.Is(err, context.DeadlineExceeded), apierrors.IsTimeout(err), apierrors.IsServerTimeout(err):
+		return sessionUpstreamRPCError(codes.DeadlineExceeded, "", err)
+	case apierrors.IsTooManyRequests(err):
+		return status.Error(codes.ResourceExhausted, err.Error())
 	}
-	var httpError huma.StatusError
-	if errors.As(classifySandboxError(err), &httpError) {
-		code := codes.Unavailable
-		switch httpError.GetStatus() {
-		case 404:
-			code = codes.NotFound
-		case 422:
-			code = codes.InvalidArgument
-		case 409:
-			code = codes.FailedPrecondition
-		case 429:
-			code = codes.ResourceExhausted
-		case 504:
-			code = codes.DeadlineExceeded
-		}
-		if gatewayruntime.HTTPStatusFromCode(code) >= 500 {
-			slog.Error("Session opening dependency failed", "error", err)
-		}
-		return status.Error(code, httpError.Error())
+	if upstream, ok := status.FromError(err); ok {
+		return sessionUpstreamRPCError(upstream.Code(), upstream.Message(), err)
 	}
-	return status.Error(codes.Unavailable, "Upstream service unavailable")
+	return sessionUpstreamRPCError(codes.Unavailable, "", err)
+}
+
+// Hide internal dependency failures using gRPC semantics, before the HTTP facade sees them.
+func sessionUpstreamRPCError(code codes.Code, message string, cause error) error {
+	switch code {
+	case codes.Unknown, codes.DeadlineExceeded, codes.Unimplemented, codes.Internal, codes.Unavailable, codes.DataLoss:
+		slog.Error("Session opening dependency failed", "error", cause)
+		return status.Error(code, "Upstream service unavailable")
+	default:
+		if upstream, ok := status.FromError(cause); ok && upstream.Code() == code {
+			return upstream.Err()
+		}
+		return status.Error(code, message)
+	}
 }
 
 // Retain HTTP statuses and detail for cached clients while exposing the gRPC status to new clients.
