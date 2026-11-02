@@ -141,7 +141,8 @@ impl OriginalInitializer {
             Expr::Ident(binding) => Leaf::Binding(binding.to_id()),
             Expr::Object(record) => {
                 let mut reads = BTreeSet::new();
-                record_inputs(initializer, &mut reads)?;
+                record_inputs(initializer, &mut reads)
+                    .ok_or(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer)?;
                 Leaf::Record {
                     allocation: record.span.lo.0,
                     reads,
