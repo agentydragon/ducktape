@@ -505,7 +505,7 @@ func TestSelectionIsOnlyRestoredResource(t *testing.T) {
 	if err := publish(t.Context(), store, ResourceID, Input{Requested: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := publish(t.Context(), store, ResourceID, Runtime{Phase: Running}); err != nil {
+	if err := publish(t.Context(), store, ResourceID, Status{Phase: Running}); err != nil {
 		t.Fatal(err)
 	}
 	if err := closer.Close(); err != nil {
@@ -523,8 +523,8 @@ func TestSelectionIsOnlyRestoredResource(t *testing.T) {
 	if _, found, err := ReadInput(t.Context(), restored); err != nil || found {
 		t.Fatalf("restored admission = (%t, %v), want absent", found, err)
 	}
-	if _, found, err := ReadRuntime(t.Context(), restored); err != nil || found {
-		t.Fatalf("restored runtime = (%t, %v), want absent", found, err)
+	if _, found, err := ReadStatus(t.Context(), restored); err != nil || found {
+		t.Fatalf("restored bootstrap status = (%t, %v), want absent", found, err)
 	}
 }
 
