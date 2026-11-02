@@ -156,28 +156,6 @@ spec:
   schedule: 0 54 1 * * *
 ---
 apiVersion: seaweed.seaweedfs.com/v1
-kind: Bucket
-metadata:
-  annotations:
-    description: attic's NAR chunks; replicated per volume by the SeaweedFS cluster's defaultReplication.
-  name: attic
-  namespace: nix-cache
-spec:
-  access:
-    - actions:
-        - Read
-        - Write
-        - List
-        - Tagging
-      user: attic
-  adoptExisting: true
-  clusterRef:
-    name: seaweedfs
-    namespace: seaweedfs
-  name: attic
-  reclaimPolicy: Delete
----
-apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
   annotations:
