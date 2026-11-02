@@ -656,6 +656,13 @@ def _success_comment(commit_sha: str) -> str:
         pytest.param(_success_comment(OTHER_SHA), True, id="success-of-another-commit"),
         pytest.param(_success_comment(HEAD_SHA), False, id="success-of-this-commit"),
         pytest.param(
+            f"<!-- pr-visuals -->\n## Visual review for [`{HEAD_SHA[:8]}`]"
+            f"(https://github.com/{REPOSITORY}/commit/{HEAD_SHA})\n"
+            "[Open visual review](https://visuals/commits/sha/index.html)",
+            False,
+            id="previous-markdown-success-of-this-commit",
+        ),
+        pytest.param(
             no_visual_comment_body(
                 repository=REPOSITORY, commit_sha=HEAD_SHA, ci_conclusion="failure", ci_failures=[], details_url=None
             ),
@@ -1515,7 +1522,7 @@ def test_success_comment_body_reports_counts_and_previews() -> None:
     body = success_comment_body(
         repository="r", commit_sha=sha, url="https://v/commits/sha/", review_tests=review_tests, base_sha="f" * 40
     )
-    assert "**2 modified**, 1 new, 0 removed, 1 unchanged" in body
+    assert "<strong>2 modified</strong>, 1 new, 0 removed, 1 unchanged" in body
     # Each preview is a before/after/diff table row.
     assert "tests/ex-visuals-abcdef/baseline/a.png" in body
     assert "tests/ex-visuals-abcdef/a.png" in body
@@ -1524,7 +1531,7 @@ def test_success_comment_body_reports_counts_and_previews() -> None:
     assert "50.0% changed" in body
 
 
-def test_comment_template_escapes_html_and_preserves_markdown_table_boundaries() -> None:
+def test_comment_template_escapes_html_and_preserves_table_structure() -> None:
     test = ReviewTest(
         target_label="//ex:visual",
         slug="s",
@@ -1547,9 +1554,10 @@ def test_comment_template_escapes_html_and_preserves_markdown_table_boundaries()
     assert "&lt;script&gt;" in body
     assert "&lt;b title=&#34;x&#34;&gt;a|b&lt;/b&gt;" in body
     assert 'href="https://example.com/run?a=1&amp;b=2"' in body
-    assert "\n\n| Before | After | Diff |\n| --- | --- | --- |\n" in body
-    row = next(line for line in body.splitlines() if line.startswith("| <a href="))
-    assert row.count(r"a\|b") == 3
+    assert "<thead><tr><th>Before</th><th>After</th><th>Diff</th></tr></thead>" in body
+    row = next(line for line in body.splitlines() if line.startswith("<tbody><tr>"))
+    assert row.count("a|b") == 3
+    assert row.count("<td>") == 3
     assert "\n\n</details>" in body
 
 
@@ -1568,11 +1576,25 @@ def test_comment_budget_omits_oversized_target_section() -> None:
     assert len(body) <= COMMENT_BUDGET
 
 
-def test_comment_template_escapes_markdown_code_and_link_destinations() -> None:
+def test_comment_template_escapes_html_code_and_link_destinations() -> None:
     test = ReviewTest(target_label="//ex:has`tick", slug="s", title="Ex", assets=[])
     body = success_comment_body(repository="r", commit_sha="a" * 40, url="https://v/(branch)/", review_tests=[test])
-    assert "[``//ex:has`tick``](https://v/%28branch%29/tests/s/index.html)" in body
-    assert "[Open visual review](https://v/%28branch%29/index.html)" in body
+    assert '<a href="https://v/(branch)/tests/s/index.html"><code>//ex:has`tick</code></a>' in body
+    assert '<a href="https://v/(branch)/index.html">Open visual review</a>' in body
+
+
+def test_comment_alerts_use_markdown_and_escape_html_inside_code() -> None:
+    body = error_comment_body(
+        repository="r",
+        commit_sha="a" * 40,
+        error=ValueError("bad <tag> ``` &"),
+        ci_conclusion="failure",
+        ci_failures=["//test:<unsafe>"],
+    )
+    assert "> [!WARNING]" in body
+    assert "> [!CAUTION]" in body
+    assert "> <li><code>//test:&lt;unsafe&gt;</code></li>" in body
+    assert "<pre><code>bad &lt;tag&gt; ``` &amp;</code></pre>" in body
 
 
 def test_success_comment_body_warns_when_comparison_uses_fallback_baseline() -> None:
@@ -1595,7 +1617,7 @@ def test_success_comment_body_warns_when_comparison_uses_fallback_baseline() -> 
     )
 
     assert "[!WARNING]" in body
-    assert "`fedcba98`" in body
+    assert "<code>fedcba98</code>" in body
 
 
 def test_success_comment_body_labels_each_stale_screenshot() -> None:
@@ -1633,7 +1655,7 @@ def test_success_comment_body_labels_each_stale_screenshot() -> None:
         "<summary>a.png — 50.0% changed — ⚠️ stale baseline · "
         '<a href="https://v/commits/sha/tests/ex-visuals-abcdef/index.html#a.png">link</a></summary>'
     ) in body.splitlines()
-    assert "`fedcba98`, not merge base `11111111`" in body
+    assert "<code>fedcba98</code>, not merge base <code>11111111</code>" in body
     assert '<p><strong><a href="https://v/commits/sha/tests/ex-visuals-abcdef/index.html#a.png">a.png</a>' not in body
 
 
@@ -1668,7 +1690,7 @@ def test_success_comment_body_hides_zero_count_buckets_per_test() -> None:
         '<a href="https://v/commits/sha/tests/a/index.html">link</a></summary>'
     ) in lines
     assert "<summary>1 unchanged target</summary>" in lines
-    assert "- [`//b:y`](https://v/commits/sha/tests/b/index.html)" in lines
+    assert '<a href="https://v/commits/sha/tests/b/index.html"><code>//b:y</code></a>' in body
 
 
 def test_success_comment_body_is_compact_when_every_affected_test_is_unchanged() -> None:
@@ -1758,7 +1780,7 @@ def test_success_comment_body_groups_changed_tests_and_folds_unchanged_targets()
     )
     assert summary in lines
     assert lines.index(summary) < lines.index("<summary>22 unchanged targets</summary>")
-    assert "- [`//untouched0:visuals`](https://v/commits/sha/tests/untouched-0/index.html)" in lines
+    assert '<a href="https://v/commits/sha/tests/untouched-0/index.html"><code>//untouched0:visuals</code></a>' in body
     assert len(body) <= COMMENT_BUDGET
 
 

@@ -1,6 +1,5 @@
 """Prepare data and render visual-review comments for GitHub."""
 
-import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -24,25 +23,12 @@ COMMENT_OPEN_TARGETS = 2
 INLINE_ASSET_LIMIT = 3
 
 
-def _markdown_code(value: str) -> str:
-    delimiter = "`" * (max((len(run) for run in re.findall(r"`+", value)), default=0) + 1)
-    padding = " " if value.startswith("`") or value.endswith("`") else ""
-    return f"{delimiter}{padding}{value}{padding}{delimiter}"
-
-
-def _markdown_url(value: str) -> str:
-    return quote(value, safe="/:?#[]@!$&'*+,;=%-._~")
-
-
 @lru_cache(maxsize=1)
 def _template() -> Any:
-    # Markdown requires literal characters and blank lines; HTML contexts in the
-    # template explicitly use Jinja's escape filter.
-    environment = Environment(loader=FileSystemLoader(Path(__file__).parent), autoescape=False, trim_blocks=True)
+    # The only Markdown is the fixed syntax for GitHub's native alerts.
+    environment = Environment(loader=FileSystemLoader(Path(__file__).parent), autoescape=True, trim_blocks=True)
     environment.filters["shard_ranges"] = shard_ranges
     environment.filters["buildbuddy_url"] = buildbuddy_url
-    environment.filters["markdown_code"] = _markdown_code
-    environment.filters["markdown_url"] = _markdown_url
     return environment.get_template("github_comment.md.j2").module
 
 
@@ -207,6 +193,6 @@ def error_comment_body(
         ci_details_url=ci_details_url,
         failed=True,
     )
-    message = str(error).replace("```", "'''")[:2000]
+    message = str(error)[:2000]
     parts.append(str(_template().error(message)))
     return "\n\n".join(parts)
