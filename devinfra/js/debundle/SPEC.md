@@ -2211,8 +2211,14 @@ static dot members of simple binding receivers in the ordered body. It reads
 the receiver and callee before evaluating arguments from left to right and
 stops each abrupt path. The shared call transfer consumes
 these evaluated operands with the canonical call's proof sites and policies.
-It returns effects and values together for a singleton untainted local function
+It returns effects and values together for a singleton local source function
 or closure, admitted native rows and supported foreign-summary projections.
+Publishing an ordinary source function does not replace its call target.
+Invocation still reads live captures and applies the existing cell havoc,
+heap uncertainty and completeness checks. An unknown callee alternative prevents
+singleton admission, including after a possible binding reassignment.
+Invocations of tainted source functions bypass result memos so each invocation
+consumes the current reachable state.
 No separate value evaluation repeats the call. Objects
 reachable by that callee, receiver or its arguments lose the caller's fresh
 own-data admission. Completed operands and returned capabilities remain
