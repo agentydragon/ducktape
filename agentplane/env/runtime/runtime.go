@@ -383,11 +383,23 @@ func (r *Runtime) Close(ctx context.Context) error {
 }
 
 func (r *Runtime) finishClose() error {
+	// Settle the accepted transition and any quiescence fence before publishing a
+	// successor shutdown generation. A late old fence must never fail or overwrite
+	// the generation that Close is about to own.
+	r.transitionMu.Lock()
+	r.mu.Lock()
+	priorFence := r.fenceDone
+	r.mu.Unlock()
+	if priorFence != nil {
+		<-priorFence
+	}
+
 	r.mu.Lock()
 	desired := r.desired
 	desired.Mode, desired.Generation = lifecycle.Closing, desired.Generation+1
 	if sealedUID, sealed, err := r.state.SealedUID(); err != nil {
 		r.mu.Unlock()
+		r.transitionMu.Unlock()
 		return err
 	} else if sealed {
 		desired.SealUID = sealedUID
@@ -396,11 +408,13 @@ func (r *Runtime) finishClose() error {
 	r.admissionOpen = false
 	if err := lifecycle.PublishEnvironmentDesired(context.Background(), r.lifecycleState, desired); err != nil {
 		r.mu.Unlock()
+		r.transitionMu.Unlock()
 		return fmt.Errorf("publish Runtime closing state: %w", err)
 	}
 	r.desired = desired
 	r.changedLocked()
 	r.mu.Unlock()
+	r.transitionMu.Unlock()
 
 	// The aggregate controller owns all component shutdown steps. Close waits for
 	// its exact generation; a failed or superseded generation cannot release the

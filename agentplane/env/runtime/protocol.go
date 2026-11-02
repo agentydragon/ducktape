@@ -238,6 +238,10 @@ func (r *Runtime) waitForLifecycle(ctx context.Context, predicate func() (bool, 
 
 func (r *Runtime) requestExecutionFence(generation uint64) {
 	r.mu.Lock()
+	if r.desired.Generation != generation || r.closing && r.desired.Mode != lifecycle.Closing {
+		r.mu.Unlock()
+		return
+	}
 	if r.fenceInFlight == generation {
 		r.mu.Unlock()
 		return
@@ -277,6 +281,10 @@ func (r *Runtime) waitForExecutionFenced(ctx context.Context, generation uint64)
 	r.requestExecutionFence(generation)
 	r.mu.Lock()
 	done := r.fenceDone
+	if r.fenceInFlight != generation {
+		r.mu.Unlock()
+		return status.Error(codes.Unavailable, "Execution fence is outside the current lifecycle")
+	}
 	r.mu.Unlock()
 	select {
 	case <-done:
