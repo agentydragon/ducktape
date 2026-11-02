@@ -39,7 +39,6 @@ from finance.augur.model.series import (
 )
 from finance.calendar_months import is_next_calendar_month
 from finance.evidence import loading, sources
-from finance.evidence.snapshot import EvidenceSnapshot
 
 BOND = SecuritySymbol("BOND")
 CASH = SecuritySymbol("CASH")
@@ -410,14 +409,14 @@ def test_each_source_is_loaded_once_and_the_shared_french_frame_supplies_both_se
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write_evidence(tmp_path)
-    real_source_bytes = EvidenceSnapshot.source_bytes
+    real_source_bytes = loading.source_bytes
     reads: list[sources.EvidenceSource] = []
 
-    def count_source_bytes(snapshot: EvidenceSnapshot, source: sources.EvidenceSource) -> bytes:
+    def count_source_bytes(evidence_dir: Path, source: sources.EvidenceSource) -> bytes:
         reads.append(source)
-        return real_source_bytes(snapshot, source)
+        return real_source_bytes(evidence_dir, source)
 
-    monkeypatch.setattr(EvidenceSnapshot, "source_bytes", count_source_bytes)
+    monkeypatch.setattr(loading, "source_bytes", count_source_bytes)
     history = load_macro_history(tmp_path)
 
     assert set(reads) == {

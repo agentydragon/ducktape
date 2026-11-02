@@ -43,7 +43,6 @@ from finance.augur.x.models.structural_macro import (
 )
 from finance.evidence import loading, sources
 from finance.evidence.loading import MonthlyLevel
-from finance.evidence.snapshot import EvidenceSnapshot
 from finance.evidence.sources import FRED_CPI, FRED_FEDFUNDS, FRED_GS10, FRENCH_FACTORS, YAHOO_VFINX
 
 LONG_RECORD_START = date(1926, 7, 1)
@@ -130,10 +129,7 @@ def _long_record_macro_var_frames(cache: loading.EvidenceFrameCache) -> dict[str
 def load_long_record_macro_var_levels(evidence_dir: Path) -> MacroVarLevels:
     """Load the three independently dated series used by the 1926 long-record VAR."""
     return _macro_var_levels(
-        _long_record_macro_var_frames(
-            loading.EvidenceFrameCache(EvidenceSnapshot.capture(evidence_dir, LONG_RECORD_MACRO_SOURCES))
-        ),
-        start=LONG_RECORD_START,
+        _long_record_macro_var_frames(loading.EvidenceFrameCache(evidence_dir)), start=LONG_RECORD_START
     )
 
 
@@ -141,12 +137,7 @@ def fit_structural_macro_defaults(evidence_dir: Path, *, macro_window: MacroFitW
     """Fit `structural_macro`'s checked-in defaults from real evidence — see the module
     docstring for why these are three separable fits rather than one joint window.
     """
-    macro_sources = (
-        (FRED_FEDFUNDS, FRED_GS10, FRED_CPI) if macro_window == MacroFitWindow.FRED_1955 else LONG_RECORD_MACRO_SOURCES
-    )
-    fit_sources = tuple(dict.fromkeys((*macro_sources, FRENCH_FACTORS, YAHOO_VFINX, FRED_FEDFUNDS)))
-    snapshot = EvidenceSnapshot.capture(evidence_dir, fit_sources)
-    cache = loading.EvidenceFrameCache(snapshot)
+    cache = loading.EvidenceFrameCache(evidence_dir)
     match macro_window:
         case MacroFitWindow.FRED_1955:
             levels = _macro_var_levels(
@@ -191,8 +182,6 @@ def fit_structural_macro_defaults(evidence_dir: Path, *, macro_window: MacroFitW
     )
 
     return StructuralMacroFittedDefaults(
-        evidence_revision=snapshot.revision,
-        evidence_source_sha256=snapshot.source_hashes(),
         macro_state=MacroVarSpec(
             initial_state=macro_fit.latest_state,
             intercept=macro_fit.intercept,

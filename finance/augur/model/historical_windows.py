@@ -53,7 +53,6 @@ from finance.augur.model.product_paths import construct_products
 from finance.augur.model.schemas import FrozenModel
 from finance.evidence import loading, sources
 from finance.evidence.loading import evidence_dir_from_env
-from finance.evidence.snapshot import EvidenceSnapshot
 
 
 @dataclass(frozen=True)
@@ -434,7 +433,7 @@ def load_macro_history(evidence_dir: Path) -> MacroHistory:
     latest — today French's 1926-07.
     """
 
-    cache = loading.EvidenceFrameCache(EvidenceSnapshot.capture(evidence_dir, MACRO_HISTORY_SOURCES))
+    cache = loading.EvidenceFrameCache(evidence_dir)
     factors = cache.frame(sources.FRENCH_FACTORS)
     short_rate = loading.french_risk_free_returns(factors).select(
         "month", (pl.col("risk_free_rate") * MONTHS_PER_YEAR * DECIMAL_TO_PERCENT).alias("value")
@@ -463,6 +462,6 @@ def load_ex_us_equity_levels(evidence_dir: Path) -> pl.DataFrame:
     Compose it with a US record using `MacroHistory.with_ex_us_equity` when a consumer needs
     both paths on one month axis. This loader does not read or truncate the US evidence.
     """
-    cache = loading.EvidenceFrameCache(EvidenceSnapshot.capture(evidence_dir, (sources.FRENCH_INTERNATIONAL_INDICES,)))
+    cache = loading.EvidenceFrameCache(evidence_dir)
     ex_us = cache.frame(sources.FRENCH_INTERNATIONAL_INDICES)
     return loading.compound_monthly_returns(ex_us, return_column="market_total_return")
