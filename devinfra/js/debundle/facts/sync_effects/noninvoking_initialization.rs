@@ -106,11 +106,24 @@ impl OriginalInitializer {
             return Err(OwnerInitializationCoverageRefusalReason::SplitDeclaration);
         };
         let ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration))) = item else {
-            return Err(if matches!(item, ModuleItem::ModuleDecl(_)) {
-                OwnerInitializationCoverageRefusalReason::ExportedOwner
-            } else {
-                OwnerInitializationCoverageRefusalReason::UnsupportedOwnerKind
-            });
+            return Err(
+                if matches!(
+                    item,
+                    ModuleItem::ModuleDecl(
+                        ModuleDecl::ExportDecl(_)
+                            | ModuleDecl::ExportNamed(_)
+                            | ModuleDecl::ExportDefaultDecl(_)
+                            | ModuleDecl::ExportDefaultExpr(_)
+                            | ModuleDecl::ExportAll(_)
+                            | ModuleDecl::TsExportAssignment(_)
+                            | ModuleDecl::TsNamespaceExport(_)
+                    )
+                ) {
+                    OwnerInitializationCoverageRefusalReason::ExportedOwner
+                } else {
+                    OwnerInitializationCoverageRefusalReason::UnsupportedOwnerKind
+                },
+            );
         };
         let [declarator] = declaration.decls.as_slice() else {
             return Err(OwnerInitializationCoverageRefusalReason::SplitDeclaration);

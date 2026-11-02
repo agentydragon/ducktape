@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 
 use super::evaluation_effects::{GlobalAccessKind, GlobalMayAccess};

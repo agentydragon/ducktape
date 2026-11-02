@@ -10221,18 +10221,23 @@ impl Executor<'_, '_> {
         let calls = &index.top_calls[owner.0];
         let assignments = &index.top_assignments[owner.0];
         let (initializer_source, mut initialization_coverage_refusal) = match index
-            .original_initializers
+            .noninvoking_initializers
             .get(&owner)
-            .expect("every source owner is collected")
         {
-            Ok(source) if matches!(assignments.as_slice(), [(binding, _)] if source.matches_binding(owner, binding)) => {
+            Some(source) if matches!(assignments.as_slice(), [(binding, _)] if source.matches_binding(owner, binding)) => {
                 (Some(source), None)
             }
-            Ok(_) => (
+            Some(_) => (
                 None,
                 Some(OwnerInitializationCoverageRefusalReason::OwnerBindingMismatch),
             ),
-            Err(reason) => (None, Some(*reason)),
+            None => (
+                None,
+                Some(
+                    index.initialization_coverage_refusals[owner.0]
+                        .unwrap_or(OwnerInitializationCoverageRefusalReason::RefusalUnavailable),
+                ),
+            ),
         };
         let mut evaluated_initializer = None;
         let needed = &inputs.needed_bindings;
@@ -10682,6 +10687,7 @@ impl Executor<'_, '_> {
             .effects
             .evaluation_effects
             .depend_on(&self.queries.dependencies());
+        let initializer_result_unproved = evaluated_initializer.is_none();
         if outcome.complete
             && !outcome.unknown_call
             && outcome.effects.precision_losses.is_empty()
@@ -10701,7 +10707,7 @@ impl Executor<'_, '_> {
                     OwnerInitializationCoverageRefusalReason::UninitializedRead
                 } else if !outcome.complete {
                     OwnerInitializationCoverageRefusalReason::IncompleteExecution
-                } else if evaluated_initializer.is_none() {
+                } else if initializer_result_unproved {
                     OwnerInitializationCoverageRefusalReason::InitializerResultUnproved
                 } else {
                     OwnerInitializationCoverageRefusalReason::BindingNotInitialized

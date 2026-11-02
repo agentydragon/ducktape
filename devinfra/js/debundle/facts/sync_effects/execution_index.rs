@@ -5763,10 +5763,8 @@ struct ExecutionIndex {
     fresh_instance_field_writes: BTreeSet<SourceUnitOrdinal>,
     top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
     top_assignments: Vec<Vec<(Id, ValueExpr)>>,
-    original_initializers: BTreeMap<
-        SourceUnitOrdinal,
-        Result<OriginalInitializer, OwnerInitializationCoverageRefusalReason>,
-    >,
+    noninvoking_initializers: BTreeMap<SourceUnitOrdinal, OriginalInitializer>,
+    initialization_coverage_refusals: Vec<Option<OwnerInitializationCoverageRefusalReason>>,
     top_definite_initializers: Vec<BTreeSet<Id>>,
     const_call_owners: BTreeSet<SourceUnitOrdinal>,
     top_member_value_writes: Vec<Vec<MemberValueWrite>>,
@@ -5946,7 +5944,8 @@ impl Default for ExecutionIndex {
             fresh_instance_field_writes: BTreeSet::new(),
             top_dynamic_property_receivers: Vec::new(),
             top_assignments: Vec::new(),
-            original_initializers: BTreeMap::new(),
+            noninvoking_initializers: BTreeMap::new(),
+            initialization_coverage_refusals: Vec::new(),
             top_definite_initializers: Vec::new(),
             const_call_owners: BTreeSet::new(),
             top_member_value_writes: Vec::new(),
@@ -8395,6 +8394,7 @@ impl ExecutionIndex {
             top_property_writes: vec![Vec::new(); body.len()],
             top_dynamic_property_receivers: vec![Vec::new(); body.len()],
             top_assignments: vec![Vec::new(); body.len()],
+            initialization_coverage_refusals: vec![None; body.len()],
             top_definite_initializers: vec![BTreeSet::new(); body.len()],
             top_member_value_writes: vec![Vec::new(); body.len()],
             top_callback_result_writes: vec![Vec::new(); body.len()],
@@ -8504,10 +8504,13 @@ impl ExecutionIndex {
             }
         }
         for (ordinal, item) in body.iter().enumerate() {
-            index.original_initializers.insert(
-                SourceUnitOrdinal(ordinal),
-                OriginalInitializer::collect(item, SourceUnitOrdinal(ordinal)),
-            );
+            let owner = SourceUnitOrdinal(ordinal);
+            match OriginalInitializer::collect(item, owner) {
+                Ok(initializer) => {
+                    index.noninvoking_initializers.insert(owner, initializer);
+                }
+                Err(reason) => index.initialization_coverage_refusals[ordinal] = Some(reason),
+            }
             fresh_steps.push(fresh_value_step(item.as_module_item()));
             if index.global_guards_requested {
                 index.deferred_global_candidates[ordinal] =
