@@ -137,7 +137,10 @@ def calibrate_series_path_priors(
 
 def _period_return_frame(series: pl.DataFrame) -> pl.DataFrame:
     """Log-returns of a `(month, value)` frame, with month-gap durations, keyed by the later month."""
-    series = series.filter(pl.col("value") > 0).sort("month")
+    if series.is_empty():
+        raise ValueError("series needs at least two positive observations")
+    loading.require_positive_levels(series, series_name="log-return input")
+    series = series.sort("month")
     if series.height < 2:
         raise ValueError("series needs at least two positive observations")
     month_number = pl.col("month").dt.year() * 12 + pl.col("month").dt.month()
@@ -210,6 +213,9 @@ def _monthly_latest(
     region_name: str | None = None,
     region_state: str | None = None,
 ) -> ExogenousObservedPoint:
+    # Every value here becomes a current macro-level anchor. Rates (which may be zero or
+    # negative) use their separate PERCENT observation path and do not pass through this helper.
+    loading.require_positive_levels(monthly.tail(1), series_name=source.provenance_label)
     return ExogenousObservedPoint(
         observed_at=monthly["month"].to_list()[-1],
         value=float(monthly["value"].to_list()[-1]),

@@ -314,6 +314,24 @@ def test_the_splice_shifts_the_early_series_to_meet_the_late_one() -> None:
     assert min(steps) == pytest.approx(0.01, abs=1e-9)
 
 
+def test_splice_keeps_zero_and_negative_fred_rate_observations() -> None:
+    early_months = _month_seq(420, 1900)
+    late_months = _month_seq(300, 1910)
+
+    def read_monthly(source: sources.EvidenceSource, months: list[date], value: float) -> pl.DataFrame:
+        rows = "\n".join(f"{month.isoformat()},{value}" for month in months)
+        raw = f"observation_date,{source.series_id}\n{rows}\n".encode()
+        return loading.monthly_last(loading.fred_series_frame(raw, source))
+
+    early = read_monthly(sources.FRED_LTGOVTBD, early_months, -0.1)
+    late = read_monthly(sources.FRED_GS10, late_months, 0.0)
+    spliced = splice_monthly_frames(early=early, late=late)
+
+    assert early["value"].to_list() == [-0.1] * len(early_months)
+    assert late["value"].to_list() == [0.0] * len(late_months)
+    assert spliced["value"].to_list() == pytest.approx([0.0] * spliced.height)
+
+
 def test_the_late_series_is_never_altered_by_the_splice() -> None:
     """It is the better measurement and the one every other fit uses; the early series is what
     bends to meet it. Shifting the modern half would silently change the fitted rate block."""

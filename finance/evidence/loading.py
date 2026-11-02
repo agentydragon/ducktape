@@ -143,6 +143,13 @@ def compound_monthly_returns(frame: pl.DataFrame, *, return_column: str) -> pl.D
     return selected.sort("month").with_columns((1.0 + pl.col("value")).cum_prod().alias("value"))
 
 
+def require_positive_levels(levels: pl.DataFrame, *, series_name: str) -> None:
+    """Reject levels that cannot be used as prices or index values in a log/ratio operation."""
+    values = levels.get_column("value")
+    if len(values) == 0 or values.null_count() or not values.is_finite().all() or not (values > 0).all():
+        raise ValueError(f"{series_name} must contain only finite positive levels")
+
+
 def monthly_levels(monthly: pl.DataFrame) -> list[MonthlyLevel]:
     """Convert an aligned monthly `(month, value)` frame at the model boundary."""
     if "month" not in monthly.columns or "value" not in monthly.columns:
@@ -154,7 +161,7 @@ def monthly_levels(monthly: pl.DataFrame) -> list[MonthlyLevel]:
 
 
 def fred_series_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
-    """Parse a FRED graph CSV down to a sorted, positive `(date, value)` frame."""
+    """Parse a FRED graph CSV down to a sorted, finite `(date, value)` frame."""
     column = source.series_id  # a FRED CSV is headed by its series id
     frame = pl.read_csv(data, infer_schema=False)
     if "observation_date" not in frame.columns or column not in frame.columns:
@@ -165,11 +172,11 @@ def fred_series_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
             pl.col(column).cast(pl.Float64, strict=False).alias("value"),
         )
         .drop_nulls("value")
-        .filter(pl.col("value") > 0)
+        .filter(pl.col("value").is_finite())
         .sort("date")
     )
     if out.is_empty():
-        raise ValueError(f"{source.provenance_label} contains no positive observations for {column}")
+        raise ValueError(f"{source.provenance_label} contains no finite numeric observations for {column}")
     return out
 
 
@@ -440,16 +447,16 @@ def french_international_market_frame(data: bytes, source: EvidenceSource) -> pl
 
 
 def monthly_last(series: pl.DataFrame) -> pl.DataFrame:
-    """Collapse a `(date, value)` frame to `(month, value)` keeping the last observation per month."""
+    """Collapse a `(date, value)` frame to `(month, value)` keeping each month's last finite observation."""
     out = (
-        series.with_columns(pl.col("date").dt.truncate("1mo").alias("month"))
+        series.filter(pl.col("value").is_finite())
+        .with_columns(pl.col("date").dt.truncate("1mo").alias("month"))
         .group_by("month")
         .agg(pl.col("value").sort_by("date").last())
-        .filter(pl.col("value") > 0)
         .sort("month")
     )
     if out.is_empty():
-        raise ValueError("monthly series contains no positive observations")
+        raise ValueError("monthly series contains no finite observations")
     return out
 
 

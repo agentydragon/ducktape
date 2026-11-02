@@ -27,7 +27,13 @@ from finance.augur.model.conditioning import ExogenousObservedPoint, Observation
 from finance.augur.model.evidence import EvidenceMetadata, EvidenceMode
 from finance.augur.model.path_models.scenarios import HistoricalSeries
 from finance.augur.model.series import SP500_KEY, HomeValueKey, InflationKey, LevelSeriesKey, LocationId, RentKey
-from finance.evidence.loading import evidence_dir_from_env, monthly_last, read_fred_series, require_contiguous_months
+from finance.evidence.loading import (
+    evidence_dir_from_env,
+    monthly_last,
+    read_fred_series,
+    require_contiguous_months,
+    require_positive_levels,
+)
 from finance.evidence.sources import FRED_CPI, FRED_MORTGAGE30, FRED_SF_RENT_CPI, FRED_SFXRSA, FRED_SP500
 
 
@@ -92,6 +98,8 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
     if aligned.height < 36:
         raise ValueError(f"only {aligned.height} aligned months across the FRED-only synthesized series")
     require_contiguous_months(aligned["month"].to_list(), series_name="FRED-only aligned levels")
+    for key in series_names:
+        require_positive_levels(aligned.select(key.wire_id).rename({key.wire_id: "value"}), series_name=key.wire_id)
 
     monthly_log_returns = np.diff(
         np.log(aligned.select([key.wire_id for key in series_names]).to_numpy().astype("float64")), axis=0
