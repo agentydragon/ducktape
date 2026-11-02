@@ -31,16 +31,16 @@ from finance.augur.dev_server import build_dev_app
 from finance.evidence.markets import Platform
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
-from util.testing.frontend_visual import deterministic_browser_context
-from util.testing.page_capture import wait_for_stable
+from util.testing.frontend_visual.capture import VisualPage
+from util.testing.frontend_visual.context import deterministic_browser_context
+from util.testing.frontend_visual.page_capture import wait_for_stable
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_capture import VisualPage
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
-# gazelle:include_dep //util/testing:visual_fixtures
+# gazelle:include_dep //util/testing/frontend_visual:fixtures
 
-pytest_plugins = ("util.playwright", "util.testing.visual_fixtures")
+pytest_plugins = ("util.playwright", "util.testing.frontend_visual.fixtures")
 
 
 SCREENSHOT_VIEWPORT: ViewportSize = {"width": 1280, "height": 1000}

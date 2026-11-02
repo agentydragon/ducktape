@@ -1,6 +1,6 @@
 """Browser-level read of real, owner-authenticated archived transcript data."""
 
-# gazelle:include_dep //util/testing:visual_fixtures
+# gazelle:include_dep //util/testing/frontend_visual:fixtures
 
 from __future__ import annotations
 
@@ -23,9 +23,9 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session as DbSession
 
 from util.testing.asgi import serve_app
-from util.testing.frontend_visual import deterministic_browser_context, disable_animations_script
+from util.testing.frontend_visual.capture import VisualPage
+from util.testing.frontend_visual.context import deterministic_browser_context, disable_animations_script
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_capture import VisualPage
 from x.ai_session_archive.database import (
     Base,
     FileVersionRecordRow,
@@ -40,7 +40,7 @@ from x.ai_session_archive.database import (
 from x.ai_session_archive.web import create_app
 from x.ai_session_archive.web_settings import WebSettings
 
-pytest_plugins = ("util.testing.visual_fixtures",)
+pytest_plugins = ("util.testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 _PARSER_VERSION = "jsonl-v1"

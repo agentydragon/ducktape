@@ -21,8 +21,8 @@ from playwright.async_api import BrowserContext, Locator, Page, Playwright, Rout
 from pydantic import JsonValue, TypeAdapter
 
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
-from util.testing.frontend_visual import DISABLE_ANIMATIONS_CSS, FROZEN_NOW_MS, deterministic_browser_context
-from util.testing.page_capture import (
+from util.testing.frontend_visual.context import DISABLE_ANIMATIONS_CSS, FROZEN_NOW_MS, deterministic_browser_context
+from util.testing.frontend_visual.page_capture import (
     WAIT_TIMEOUT_MS,
     DevtoolsViewport,
     PageErrors,
@@ -31,7 +31,7 @@ from util.testing.page_capture import (
     screenshot_locator,
     wait_for_stable,
 )
-from util.testing.viewports import Viewport
+from util.testing.frontend_visual.viewports import Viewport
 from util.testing.visual_review import publish_review_png
 
 # `document.fonts.check` is true for a family no `@font-face` declares, so on its own it passes when the
@@ -89,9 +89,9 @@ async def playwright_trace(context: BrowserContext, output_dir: Path, capture_na
 
 # Keep the browser-side snapshot in a linted JS file. It records geometry and selection positions,
 # never page text, input values, URLs, or accessible names.
-_CAPTURE_DIAGNOSTICS_JS = get_required_path(own_repo_rlocation("util/testing/capture-diagnostics.js")).read_text(
-    encoding="utf-8"
-)
+_CAPTURE_DIAGNOSTICS_JS = get_required_path(
+    own_repo_rlocation("util/testing/frontend_visual/capture-diagnostics.js")
+).read_text(encoding="utf-8")
 
 
 _PATHS_BY_URL = TypeAdapter(dict[str, str])

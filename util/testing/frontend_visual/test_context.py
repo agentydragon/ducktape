@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 from playwright.async_api import Page, Playwright
 
-from util.testing.frontend_visual import (
+from util.testing.frontend_visual.context import (
     DISABLE_ANIMATIONS_CSS,
     deterministic_browser_context,
     disable_animations_script,

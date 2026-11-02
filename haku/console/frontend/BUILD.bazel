@@ -824,9 +824,9 @@ py_visual_test(
     shard_count = 4,
     stylesheets = [":styles_css"],
     test_deps = [
-        "//util/testing:page_capture",
-        "//util/testing:viewports",
-        "//util/testing:visual_capture",
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:page_capture",
+        "//util/testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

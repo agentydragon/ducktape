@@ -1,6 +1,6 @@
 """Fixed synthetic Prometheus data for the Piraeus dashboard visual test."""
 
-from util.testing.frontend_visual import FROZEN_NOW_MS
+from util.testing.frontend_visual.context import FROZEN_NOW_MS
 
 END = FROZEN_NOW_MS // 1000
 START = END - 24 * 60 * 60

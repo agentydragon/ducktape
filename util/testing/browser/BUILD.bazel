@@ -1,0 +1,14 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_testonly = True)
+
+py_library(
+    name = "launcher",
+    srcs = ["launcher.py"],
+    data = [
+        "chromium-flags.json",
+        "@chrome_headless_shell//:executable",
+    ],
+    visibility = ["//visibility:public"],
+    deps = ["//util/bazel:runfiles"],
+)

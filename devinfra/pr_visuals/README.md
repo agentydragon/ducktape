@@ -28,7 +28,7 @@ baseline resolution, check-runs, storage layout, releases: <docs/publisher.md>.
 Automatic with a shared harness:
 
 - Python browser tests (`py_visual_test`, or `py_test` with a real server):
-  `VisualPage.capture()` from `util.testing.visual_capture` writes a PNG and
+  `VisualPage.capture()` from `util.testing.frontend_visual.capture` writes a PNG and
   registers it; see <../../util/testing/frontend_visual/README.md>.
 - Other Python image producers (e.g. GNOME shell captures):
   `util.testing.visual_review.publish_review_png(png, ...)` once per rendered case.

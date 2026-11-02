@@ -10,8 +10,8 @@ import pytest_bazel
 from playwright.async_api import Playwright, expect
 
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
-from util.testing.viewports import Viewport
-from util.testing.visual_capture import HarnessConfig, InlinePage, VisualHarness
+from util.testing.frontend_visual.capture import HarnessConfig, InlinePage, VisualHarness
+from util.testing.frontend_visual.viewports import Viewport
 
 # gazelle:include_dep //util:playwright
 pytest_plugins = ("util.playwright",)
@@ -98,9 +98,9 @@ async def test_trace_default_opt_out_selection_and_failure_retention(
 
 async def test_capture_diagnostics_cover_viewport_and_crop_without_page_text(harness: VisualHarness) -> None:
     async with harness.open("plain", viewport=Viewport(width=300, height=200, device_scale_factor=2)) as view:
-        fixture = get_required_path(own_repo_rlocation("util/testing/capture-diagnostics-fixture.js")).read_text(
-            encoding="utf-8"
-        )
+        fixture = get_required_path(
+            own_repo_rlocation("util/testing/frontend_visual/capture-diagnostics-fixture.js")
+        ).read_text(encoding="utf-8")
         await view.page.evaluate(fixture)
         await view.capture("viewport", scale="css")
         await view.capture("cropped", target=view.page.locator(".entry"), scale="css")

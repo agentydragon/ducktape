@@ -27,7 +27,7 @@ py_library(
     name = "piraeus_metrics",
     testonly = True,
     srcs = ["piraeus_metrics.py"],
-    deps = ["//util/testing:frontend_visual"],
+    deps = ["//util/testing/frontend_visual:context"],
 )
 
 grafana_dashboard_visual_test(

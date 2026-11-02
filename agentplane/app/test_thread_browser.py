@@ -65,9 +65,9 @@ from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
+from util.testing.frontend_visual.capture import VisualPage
+from util.testing.frontend_visual.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
-from util.testing.visual_capture import VisualPage
 
 pytest_plugins = ("agentplane.app.testing.thread_browser",)
 

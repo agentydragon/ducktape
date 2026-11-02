@@ -1,11 +1,11 @@
 """Deterministic-screenshot primitives for a Playwright page.
 
 Nothing prepares the page here: viewport, colour scheme, reduced motion and the frozen clock are
-context options, set by `frontend_visual.deterministic_browser_context`. What is here is what a page
+context options, set by `context.deterministic_browser_context`. What is here is what a page
 records or waits for, and each recorder is a value the caller holds, so asserting on a page nobody
 instrumented cannot be written.
 
-Loading content and orchestrating shots stay with the test. `visual_capture` combines these
+Loading content and orchestrating shots stay with the test. `capture` combines these
 primitives with deterministic page lifecycles and visual-review publication.
 """
 

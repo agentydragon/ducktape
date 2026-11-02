@@ -204,8 +204,8 @@ py_visual_test(
     ],
     harness = ":visual_harness_js",
     test_deps = [
-        "//util/testing:viewports",
-        "//util/testing:visual_capture",
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

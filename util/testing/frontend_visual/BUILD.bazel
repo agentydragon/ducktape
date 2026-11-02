@@ -1,1 +1,127 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
 package(default_testonly = True)
+
+py_library(
+    name = "context",
+    srcs = ["context.py"],
+    data = [
+        "chromium-font-preferences.json",
+        "disable-animations.css",
+        "frozen-clock.js",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util/bazel:runfiles",
+        "//util/testing/browser:launcher",
+        "@pypi//playwright",
+    ],
+)
+
+py_test(
+    name = "test_context",
+    srcs = ["test_context.py"],
+    data = ["//util:playwright"],
+    tags = ["visual"],
+    deps = [
+        ":context",
+        "//:conftest",
+        "//util:playwright",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "page_capture",
+    srcs = ["page_capture.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//playwright"],
+)
+
+py_test(
+    name = "test_page_capture",
+    srcs = ["test_page_capture.py"],
+    deps = [
+        ":page_capture",
+        "//:conftest",
+        "//util:playwright",
+        "@pypi//pillow",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "capture",
+    srcs = ["capture.py"],
+    data = [
+        "capture-diagnostics.js",
+        ":capture_diagnostics_js",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":context",
+        ":page_capture",
+        ":viewports",
+        "//util/bazel:runfiles",
+        "//util/testing:visual_review",
+        "@pypi//more_itertools",
+        "@pypi//playwright",
+        "@pypi//pydantic",
+    ],
+)
+
+js_library(
+    name = "capture_diagnostics_js",
+    srcs = ["capture-diagnostics.js"],
+)
+
+js_library(
+    name = "capture_diagnostics_fixture_js",
+    srcs = ["capture-diagnostics-fixture.js"],
+)
+
+py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":capture",
+        ":page_capture",
+        ":viewports",
+        "//util/testing:undeclared_outputs",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_capture",
+    srcs = ["test_capture.py"],
+    data = [
+        "capture-diagnostics-fixture.js",
+        ":capture_diagnostics_fixture_js",
+    ],
+    deps = [
+        ":capture",
+        ":viewports",
+        "//:conftest",
+        "//util:playwright",
+        "//util/bazel:runfiles",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "viewports",
+    srcs = ["viewports.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//playwright"],
+)

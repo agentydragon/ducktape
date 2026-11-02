@@ -29,16 +29,16 @@ from study_casino.changelog import LATEST_CHANGELOG_ID
 from study_casino.config import Settings
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
-from util.testing.frontend_visual import deterministic_browser_context
+from util.testing.frontend_visual.capture import VisualPage
+from util.testing.frontend_visual.context import deterministic_browser_context
 from util.testing.postgres import DatabaseNames, PostgresDatabaseTemplate
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_capture import VisualPage
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
-# gazelle:include_dep //util/testing:visual_fixtures
+# gazelle:include_dep //util/testing/frontend_visual:fixtures
 
-pytest_plugins = ("util.playwright", "util.testing.visual_fixtures")
+pytest_plugins = ("util.playwright", "util.testing.frontend_visual.fixtures")
 
 
 # Two viewports per case: a desktop width that exercises the two-column casino

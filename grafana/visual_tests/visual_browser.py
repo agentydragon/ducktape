@@ -2,7 +2,7 @@
 
 from playwright.async_api import expect
 
-from util.testing.visual_capture import VisualPage
+from util.testing.frontend_visual.capture import VisualPage
 
 
 async def capture_dashboard(view: VisualPage) -> None:
