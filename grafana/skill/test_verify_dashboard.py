@@ -108,6 +108,78 @@ def test_query_target_datasource_overrides_panel_datasource() -> None:
     assert requests[0]["queries"][0]["datasource"] == {"type": "loki", "uid": "loki-live-uid"}
 
 
+def test_clickhouse_raw_sql_is_sent_to_plugin_with_sql_macros() -> None:
+    datasource = {"name": "ClickHouse", "type": "grafana-clickhouse-datasource", "uid": "clickhouse"}
+    target = {"refId": "A", "queryType": "sql", "format": 1, "rawSql": "SELECT value WHERE $__timeFilter(observed_at)"}
+    dashboard = {"panels": [{"id": 1, "title": "History", "datasource": "ClickHouse", "targets": [target]}]}
+    requests: list[dict[str, Any]] = []
+
+    def post(path: str, json: dict[str, Any]) -> SimpleNamespace:
+        assert path == "/api/ds/query"
+        requests.append(json)
+        return SimpleNamespace(
+            status_code=200, json=lambda: {"results": {"A": {"frames": [{"data": {"values": [[1]]}}]}}}
+        )
+
+    api = SimpleNamespace(client=SimpleNamespace(post=post))
+    VERIFY_DASHBOARD["query_panels"](
+        api, dashboard, {"ClickHouse": datasource}, {"clickhouse": datasource}, 1, 2, [], []
+    )
+    query = requests[0]["queries"][0]
+    assert query["rawSql"] == target["rawSql"]
+    assert query["queryType"] == "sql"
+    assert "expr" not in query
+
+
+def test_clickhouse_sql_variable_is_rejected_before_query() -> None:
+    datasource = {"name": "ClickHouse", "type": "grafana-clickhouse-datasource", "uid": "clickhouse"}
+    dashboard = {
+        "panels": [
+            {
+                "id": 1,
+                "title": "History",
+                "datasource": "ClickHouse",
+                "targets": [{"refId": "A", "rawSql": "SELECT value WHERE provider = ${provider:sqlstring}"}],
+            }
+        ]
+    }
+    api = SimpleNamespace(client=SimpleNamespace(post=lambda *_args, **_kwargs: pytest.fail("unexpected query")))
+    with pytest.raises(VERIFY_DASHBOARD["VerificationError"], match="unsupported SQL dashboard variable"):
+        VERIFY_DASHBOARD["query_panels"](
+            api, dashboard, {"ClickHouse": datasource}, {"clickhouse": datasource}, 1, 2, [], []
+        )
+
+
+def test_prometheus_rate_interval_uses_datasource_scrape_interval() -> None:
+    datasource = {"name": "Mimir", "type": "prometheus", "uid": "mimir", "jsonData": {"timeInterval": "30s"}}
+    dashboard: dict[str, Any] = {
+        "panels": [
+            {
+                "id": 2,
+                "title": "Rate",
+                "datasource": "Mimir",
+                "targets": [{"refId": "A", "expr": "rate(requests_total[$__rate_interval])"}],
+            }
+        ]
+    }
+    requests: list[dict[str, Any]] = []
+
+    def post(path: str, json: dict[str, Any]) -> SimpleNamespace:
+        assert path == "/api/ds/query"
+        requests.append(json)
+        return SimpleNamespace(
+            status_code=200, json=lambda: {"results": {"A": {"frames": [{"data": {"values": [[1]]}}]}}}
+        )
+
+    api = SimpleNamespace(client=SimpleNamespace(post=post))
+    VERIFY_DASHBOARD["query_panels"](api, dashboard, {"Mimir": datasource}, {"mimir": datasource}, 0, 3_600_000, [], [])
+    assert requests[0]["queries"][0]["expr"] == "rate(requests_total[120s])"
+
+    dashboard["panels"][0]["targets"][0].update(expr="up", interval="$__interval")
+    VERIFY_DASHBOARD["query_panels"](api, dashboard, {"Mimir": datasource}, {"mimir": datasource}, 0, 3_600_000, [], [])
+    assert requests[1]["queries"][0]["expr"] == "up"
+
+
 if __name__ == "__main__":
     import pytest_bazel
 
