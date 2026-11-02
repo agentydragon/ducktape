@@ -1,7 +1,8 @@
-"""What every test that starts its own k3s stack runs with: one RBE action with room for k3s."""
+"""k3s test suite macro and shared infrastructure definitions."""
 
 load("@artifact_pins//:pins.bzl", "CERT_MANAGER_V1_21_2_RELEASE_SHA256", "HELM_3_20_2_LINUX_AMD64_SHA256", "K3S_LINUX_AMD64_SHA256", "KUBEVIRT_OPERATOR_BUNDLE_SHA256", "KYVERNO_INSTALL_SHA256", "TRUST_MANAGER_CHART_V0_25_0_SHA256")
 load("@image_pins//:pins.bzl", "CERT_MANAGER_CAINJECTOR_DIGEST", "CERT_MANAGER_CONTROLLER_DIGEST", "CERT_MANAGER_WEBHOOK_DIGEST", "KUBEVIRT_VIRT_API_DIGEST", "KUBEVIRT_VIRT_CONTROLLER_DIGEST", "KUBEVIRT_VIRT_HANDLER_DIGEST", "KUBEVIRT_VIRT_LAUNCHER_DIGEST", "KUBEVIRT_VIRT_OPERATOR_DIGEST", "KYVERNO_KYVERNOPRE_DIGEST", "KYVERNO_KYVERNO_DIGEST", "TRUST_MANAGER_DIGEST")
+load("//devinfra/python:defs.bzl", "py_test")
 
 K3S_EXEC_PROPERTIES = {
     "dockerNetwork": "bridge",
@@ -102,3 +103,84 @@ K3S_SERVICE_IMAGES = {
 }
 
 K3S_SERVICE_LAYOUTS = ["//agentplane/system_tests/k3s:" + name + "_layout" for name in K3S_SERVICE_IMAGES]
+
+_HARNESSES_LAYOUT = "//agentplane/system_tests/k3s:harnesses/environment_tools_layout"
+_FIXTURE = "//agentplane/system_tests/k3s:rendered/local-model.json"
+_MCP_FIXTURE = "//agentplane/system_tests/k3s:rendered/local-model-mcp-fixtures.json"
+_MCP_LAYOUTS = [
+    "//agentplane/system_tests/k3s:mcp_fixtures/dex_layout",
+    "//agentplane/system_tests/k3s:mcp_fixtures/mcp_everything_layout",
+    "//agentplane/system_tests/k3s:mcp_fixtures/oauth_fixture_layout",
+]
+_VM_FIXTURE = "//agentplane/system_tests/k3s:rendered/local-model-vm.json"
+_SAMPLER_LAYOUT = "//agentplane/system_tests/k3s:central_sampler_layout"
+_REAL_MODEL_FIXTURE = "//agentplane/system_tests/k3s:rendered/public-litellm.json"
+_CERT_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:cert_manager_install_yaml"
+_TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml"
+
+# Each preset explicitly owns the environment its selected scenarios need. Dispatcher failover
+# uses the pod preset in a dedicated suite because it mutates shared controller Deployments.
+_STACKS = {
+    "pod": struct(fixture = _FIXTURE, vm = False, real_model = False, images = [_HARNESSES_LAYOUT]),
+    "mcp": struct(fixture = _MCP_FIXTURE, vm = False, real_model = False, images = [_HARNESSES_LAYOUT, _SAMPLER_LAYOUT] + _MCP_LAYOUTS),
+    "vm": struct(fixture = _VM_FIXTURE, vm = True, real_model = False, images = []),
+    "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, real_model = True, images = [_HARNESSES_LAYOUT]),
+}
+
+def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False):
+    """Run one suite with retained infrastructure and fresh per-action application state."""
+    if stack not in _STACKS:
+        fail("unknown k3s stack: " + stack)
+    if profile_guest and stack != "vm":
+        fail("profile_guest requires the VM stack")
+    if boot_evidence and stack != "vm":
+        fail("boot_evidence requires the VM stack")
+    config = _STACKS[stack]
+    layouts = K3S_SERVICE_LAYOUTS + config.images
+    data = [config.fixture, K3S_BINARY, _CERT_MANAGER_INSTALL, _TRUST_MANAGER_INSTALL] + layouts
+    env = {
+        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
+        "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _CERT_MANAGER_INSTALL + ")",
+        "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _TRUST_MANAGER_INSTALL + ")",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + config.fixture + ")",
+        "K3S_IMAGE_LAYOUTS": " ".join(["$(rlocationpath " + layout + ")" for layout in layouts]),
+        "K3S_GUEST_IMAGE_LAYOUTS": "",
+        "PYTEST_PLUGINS": "agentplane.system_tests.k3s.system_test_target",
+    }
+    properties = {}
+    suite_tags = K3S_TAGS + tags
+    if config.vm:
+        # Six 1.5 GiB guests boot alongside k3s services; request the 20 GB worker estimate.
+        properties["EstimatedComputeUnits"] = "8"
+        guests = [
+            "//agentplane/system_tests/k3s/guest:vm_guest_boot_layout",
+            "//agentplane/system_tests/k3s/guest:vm_guest_root_profile_layout" if profile_guest else "//agentplane/system_tests/k3s/guest:vm_guest_root_layout",
+        ]
+        data += K3S_VM_DATA + guests
+        env |= K3S_VM_ENV | {
+            "AGENTPLANE_VM_BOOT_EVIDENCE": "1" if boot_evidence else "0",
+            "K3S_GUEST_IMAGE_LAYOUTS": " ".join(["$(rlocationpath " + image + ")" for image in guests]),
+            "K3S_PROFILE_GUEST_ROOT": "1" if profile_guest else "0",
+        }
+
+    if config.real_model:
+        properties["test.env-secrets"] = "OPENAI_API_KEY"
+        suite_tags.append("live_openai_api")
+
+    # VM layers stay on disk; Pod/MCP/real-model suites use a separate tmpfs baseline.
+    properties |= K3S_PERSISTENCE_PROPERTIES | {
+        "test.runner-recycling-key": k3s_recycling_key(vm = config.vm),
+    }
+    py_test(
+        name = name,
+        size = "enormous",
+        srcs = srcs,
+        main = srcs[0],
+        data = data,
+        env = env,
+        exec_properties = K3S_EXEC_PROPERTIES | properties,
+        tags = suite_tags,
+        deps = deps + [
+            "//agentplane/system_tests/k3s:system_test_target",
+        ],
+    )

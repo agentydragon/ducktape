@@ -21,8 +21,6 @@ executor permission, the stack starts fresh infrastructure and stops k3s during 
 when setup or a scenario fails. Local BuildBuddy credentials and `CI` do not enable retention.
 If an action without permission restores a previously retained snapshot, it first stops the server
 identified by the ownership marker, then starts and tears down its own fresh node.
-The cross-action diagnostic probe requires the same permission and fails before starting a server
-when it is absent. The lifecycle probe always cleans up the processes it starts.
 
 Pod/MCP/real-model suites share one tmpfs snapshot family; VM suites share a separate disk-backed
 family with the VM resource estimate. Baseline fingerprints include the layer mode,
@@ -42,8 +40,7 @@ after an incompatible baseline rebuilds.
 Applications, PostgreSQL, model endpoints, MCP fixtures, certificates/trust and collectors are recreated.
 VM workspace claims, PVs, StorageClass and loop devices are removed before marking the baseline clean;
 guest shutdown checks and the selected boot/profile settings are preserved. k3s and the retained
-controllers remain running after successful teardown. The bare persistence and lifecycle probes cover
-cross-action reuse and cold-rebuild/ownership behavior separately.
+controllers remain running after successful teardown.
 See the [persistence evidence](../../debug/k3s_persistence.md).
 
 Setup, each image import and teardown use the same OpenTelemetry tracer as the scenarios,
