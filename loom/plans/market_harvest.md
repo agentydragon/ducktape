@@ -369,6 +369,13 @@ number; calibrate early on the labeled sample).
 
 ## Build plan
 
+The existing `finance.evidence.manifold` loader reads current `market.json`
+snapshots for augur calibration. The finance scraper retains raw Manifold bet
+history and current comments in the evidence mirror, but no shipped analytical
+helper reconstructs historical prices. Implement price-as-of from dated bets in
+this harvest, with the strict `< as_of` dossier cutoff above; keep the raw
+history so the harvest can be built and rechecked later.
+
 ### Modules (`loom/harvest/`, new package; gym stays network-free)
 
 | module             | responsibility                                                                                                   |
