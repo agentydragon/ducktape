@@ -48,6 +48,18 @@ simpler drop-in for this marker. Revisit only if a proposed native fence passes 
 probe with the no-condition control still demonstrating why stable-name dependencies are not
 enough.
 
+The first VM diagnostic failed during the synthetic owner's initial COSI reconciliation, before
+the restart: marker creation under `/run/agentplane-proof-lifetime-*` returned `read-only file
+system`. The packaged Runtime unit uses `ProtectSystem=strict` and allows writes only under
+`/run/agentplane/execution-service` (and its other declared paths), so the fixture now places its
+unique systemd-managed RuntimeDirectory under that writable subtree. This changes only the test
+owner's path; it does not relax the Runtime sandbox.
+
+The corrected fixture passed in [BuildBuddy invocation 48820de0](https://app.buildbuddy.io/invocation/48820de0-12c5-44bb-bd98-ad98ee4c0990) on PR head `ce73ee24`. The `test_vm` target passed 1/1 in 281.70 seconds. Its guest console reports systemd `257.9-1~deb13u1`, and records
+`TestSystemdKernelFixture/held_old_invocation_is_fenced_after_successor_inventory` passing, along
+with the complete supervision fixture. This proves the held-request behavior exercised here; it
+does not prove delivery after the original D-Bus sender dies.
+
 The first pair matches the system-test guest; the second pair is for the Nix-built environment VM:
 
 - [systemd.unit.xml, v257.9](https://github.com/systemd/systemd/blob/v257.9/man/systemd.unit.xml)
