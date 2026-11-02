@@ -88,7 +88,7 @@ def test_basic_policy_auto_approves_only_same_principal_session_actions(
         {
             "type": "exact_actions",
             "actions": {
-                "environments": ["get", "list"],
+                "environments": ["get", "list", "resume"],
                 "sessions": [
                     "cancel_input",
                     "get",
@@ -224,6 +224,7 @@ def test_session_dispatcher_egress_is_limited_to_the_delegation_rpc_surfaces(
         "/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments",
         "/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment",
         "/agentplane.sandboxes.environments.EnvironmentService/WatchEnvironment",
+        "/agentplane.sandboxes.environments.EnvironmentService/ResumeEnvironment",
     ]
     expected_permissions = {
         (BASIC_POLICY, credential_name, destination, "POST", path, True)

@@ -1881,7 +1881,7 @@ def generate_manifests(root: Path) -> None:
         write_directory(
             root,
             agentplane_staging_delivery_artifact,
-            functools.partial(runner_gateway_workload.serving_chart, env=staging.ENV),
+            staging.delivery_chart,
             components=[posixpath.relpath(staging.LAYOUT.image_pins, staging.LAYOUT.delivery_output_dir)],
         ),
         agentplane_staging_kustomization,

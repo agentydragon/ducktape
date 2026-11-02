@@ -216,6 +216,7 @@ flowchart LR
     k8s[Kubernetes API]
     app -->|session opens + commands| dispatcher
     app -->|Dispatch watch for the browser: gRPC| dispatcher
+    app -->|Pod-bound operator resume broker: gRPC| environments
     actions -->|caller-delegated EnvironmentService list/get; resume when enabled: gRPC| environments
     actions -->|Session commands: broker or delegated caller, gRPC| dispatcher
     actions -->|Session reads: broker or delegated caller, gRPC| history
@@ -227,8 +228,8 @@ flowchart LR
     dispatcher -->|Sandbox watch| k8s
     dispatcher -->|automatic wake assessment + request| lifecycle
     lifecycle -->|guarded running + generation update| k8s
-    pod -.->|Session and EnvironmentService list/get gRPC over HTTPS_PROXY/CONNECT| sidecar
-    guest -.->|Session and EnvironmentService list/get gRPC over HTTPS_PROXY/CONNECT| relay
+    pod -.->|Session and EnvironmentService gRPC over HTTPS_PROXY/CONNECT| sidecar
+    guest -.->|Session and EnvironmentService gRPC over HTTPS_PROXY/CONNECT| relay
     sidecar -.-> egress
     relay -.-> egress
     egress -.->|Exact RPC paths; substituted Sandbox bearer| dispatcher
@@ -237,16 +238,17 @@ flowchart LR
 Managed Pod and VM callers receive only the inert `AGENTPLANE_SESSIONS_CREDENTIAL` placeholder. The
 `AGENTPLANE_SESSIONS_URL` targets `session-dispatcher.<namespace>.svc.cluster.local:8080`. The egress sidecar
 or VM launcher relay holds the short-lived `session-dispatcher` audience token; the central proxy substitutes
-it on the allowlisted SessionDispatcher and EnvironmentService list/get RPC paths.
+it on the allowlisted SessionDispatcher and EnvironmentService RPC paths.
 Backend checks of the Sandbox identity and object UID remain authoritative; network reachability
-grants no Session authority. The Gateway also serves `EnvironmentService.ResumeEnvironment`, which
-checks the effective caller, current execution-ServiceAccount identity, resume policy and guarded
-generation before changing desired state. Delegated resume requires a separate exact-method opt-in;
-the optional direct `operator_callers` policy defaults empty. The integration app still writes
-operator resume intent through Kubernetes. Dispatcher automatic wake uses the shared lifecycle
-manager with the original effective caller and the `wakeOnSend` and `wake_callers` checks. Staging
-caller, delegated-method and egress activation remain pending. Resume acceptance is not readiness,
-and no resume path replays Session input or creates a grant.
+grants no Session authority. The Action Service uses the same Dispatcher audience and a pod-bound
+Actions token on the opted-in `EnvironmentService` list/get methods and its separately configured
+`EnvironmentService.ResumeEnvironment` method. The receiver applies the caller identity from the
+shared delegation envelope, then checks the current Sandbox and
+execution-ServiceAccount identity and resume policy. The integration app uses its own Pod-bound
+token as a distinct operator broker; it does not forward browser identity. Resume acceptance is not
+readiness, and no resume path replays Session input or creates a grant.
+Dispatcher automatic wake uses the same lifecycle manager with the original effective caller
+and the `wakeOnSend` and `wake_callers` checks.
 The opt-in Session tools also forward the effective caller to Dispatcher commands and retained
 History reads. Those receivers enforce their own same-principal checks; the existing
 `orchestration_v1` broker path retains its separate authority.

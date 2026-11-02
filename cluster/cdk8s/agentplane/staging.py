@@ -62,6 +62,7 @@ from cluster.cdk8s.agentplane import (
     notifications,
     policy_controller,
     policy_controller_rbac,
+    runner_gateway_workload,
     staging_config,
     staging_grants,
 )
@@ -609,7 +610,7 @@ ENV = Environment(
         ),
         session_delegation=SessionDelegationProps(
             direct_tools_by_group={
-                "environments": frozenset({"list", "get"}),
+                "environments": frozenset({"list", "get", "resume"}),
                 "sessions": frozenset(
                     {"open", "submit_input", "observe_input", "get", "read_turns", "cancel_input", "interrupt_turn"}
                 ),
@@ -846,6 +847,19 @@ def chart(app: App) -> Chart:
         chart, namespace=ENV.namespace, credentials_namespace=ENV.egress.credentials_namespace
     )
     return chart
+
+
+def delivery_chart(app: App) -> Chart:
+    return runner_gateway_workload.serving_chart(
+        app,
+        env=ENV,
+        operator_callers={
+            ServiceAccountRef(namespace=ENV.namespace, name=app_component.NAME): app_component.service(
+                ENV.namespace
+            ).pods
+        },
+        extra_delegated_methods=("/agentplane.sandboxes.environments.EnvironmentService/ResumeEnvironment",),
+    )
 
 
 def _add_session_secret(scope: Chart) -> None:

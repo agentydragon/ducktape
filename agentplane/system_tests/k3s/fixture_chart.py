@@ -456,6 +456,11 @@ def build_chart(
             if env.actions.orchestration_v1 is not None
             else None
         ),
+        extra_delegated_methods=(
+            ("/agentplane.sandboxes.environments.EnvironmentService/ResumeEnvironment",)
+            if env.actions.orchestration_v1 is not None
+            else ()
+        ),
         gateway_callers=gateway_callers,
         wake_callers=env.wake_caller_accounts | orchestration_caller.keys(),
         database_url=dispatcher_database_url,
