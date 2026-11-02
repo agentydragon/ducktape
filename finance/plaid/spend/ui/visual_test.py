@@ -150,7 +150,7 @@ def dashboard_url() -> Iterator[str]:
         return StreamingResponse(updates(), media_type="text/event-stream")
 
     @app.get("/api/v1/sustainability/windows")
-    def sustainability() -> SustainabilityDashboard:
+    def sustainability_windows() -> SustainabilityDashboard:
         return sustainability.dashboard(*(sustainability.window(days) for days in (30, 90, 365)))
 
     app.mount("/static", StaticFiles(directory=_UI_DIR))
