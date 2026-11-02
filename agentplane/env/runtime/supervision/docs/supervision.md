@@ -9,7 +9,7 @@ readiness, restart and journal decisions. A completed attempt never relaunches d
 
 | Owner               | Processes and state                                                                                             |
 | ------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Environment Runtime | Environment bootstrap, Host/Execution lifecycle, environment generation and legacy state-owner lock             |
+| Environment Runtime | Environment bootstrap, Host/Execution lifecycle, environment generation and environment state-owner lock        |
 | Harness Host        | Shared Codex app-server, Claude Sessions, Session setup/workspace helpers, Session journals and History ingress |
 | Execution Service   | Native exec-server and execution requests; the Pod companion owns the native executor's separate PID namespace  |
 
@@ -110,14 +110,11 @@ requires its kernel check. An empty path on its own proves nothing. Exact invoca
 unresolved starts after transport loss keep admission blocked. A packaged service's empty cgroup
 does not prove cleanup of the separately managed native units owned by that service.
 
-Runtime holds `<state_dir>/.agentplane-environment-runtime-owner`. Host holds
-`<state_dir>/harness-host/.agentplane-harness-host-owner`; Execution holds its own owner under
-`<state_dir>/execution`. These new Runtime and Host lock paths do not fence an old process using
-`.agentplane-runner-owner`, so stop old workloads before reusing a state volume. After acquiring an
-owner lock, its launcher discovers old units in the
-scope derived from the Sandbox UID, state directory and explicit scope ID, verifies their expected
-slice, and fences them before admitting new native work. Other scopes are untouched. Session
-records and journals keep their existing paths.
+Runtime holds `<state_dir>/.agentplane-environment-runtime-owner` for its embedded Host as well;
+Execution holds its own owner under `<state_dir>/execution`. After acquiring the environment lock,
+each component's launcher discovers old units in its scope derived from the Sandbox UID, state
+directory and explicit scope ID, verifies their expected slice, and fences them before admitting new
+native work. Other scopes are untouched.
 
 Systemd removes the owner's lifetime directory before restarting its service. A start request
 queued on an old connection then fails its invocation condition if it arrives after replacement,

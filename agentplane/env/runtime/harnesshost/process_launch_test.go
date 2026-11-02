@@ -215,11 +215,9 @@ func newManagedProcessTestHost(t *testing.T) *Host {
 		t.Fatal(err)
 	}
 	if err := bindHost(r, "managed-process-test"); err != nil {
-		_ = r.owner.Close()
 		t.Fatal(err)
 	}
 	if err := r.sessions.Startup(context.Background()); err != nil {
-		_ = r.owner.Close()
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {

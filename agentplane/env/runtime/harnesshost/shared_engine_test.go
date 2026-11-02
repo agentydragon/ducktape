@@ -34,6 +34,9 @@ func newTestHost(config Config, store state.State) (*Host, error) {
 	if err := engine.RegisterQController(processes.Controller()); err != nil {
 		return nil, err
 	}
+	if config.ProcessSupervisor == nil && config.VMProcessLauncher == nil {
+		config.ProcessSupervisor = supervision.NewSubprocessSupervisor(nil)
+	}
 	r, err := NewEmbedded(config, store, engine, engineDone, processes)
 	if err != nil {
 		return nil, err

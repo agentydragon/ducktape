@@ -428,7 +428,6 @@ func failedInitialOperationHost(t *testing.T, failTeardown bool) (*Host, *initia
 		if r.sessions != nil {
 			_ = r.sessions.Close()
 		}
-		_ = r.owner.Close()
 	})
 
 	if _, err := r.OpenSession(hostContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
@@ -481,7 +480,7 @@ func TestCloseSettlesAfterInitialOperationPublicationFailure(t *testing.T) {
 	}
 }
 
-func TestCloseReportsTeardownOperationPublicationFailureAndRetainsOwner(t *testing.T) {
+func TestCloseReportsTeardownOperationPublicationFailure(t *testing.T) {
 	r, store, marker := failedInitialOperationHost(t, true)
 	closeCtx, cancelClose := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancelClose()
@@ -508,11 +507,6 @@ func TestCloseReportsTeardownOperationPublicationFailureAndRetainsOwner(t *testi
 	}
 	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("failed initial operation launched the native harness: stat err=%v", err)
-	}
-	otherOwner, err := retained.OpenOwner(filepath.Join(r.config.StateDir, "harness-host"))
-	if err == nil {
-		_ = otherOwner.Close()
-		t.Fatal("Host released the state owner although shutdown cleanup failed")
 	}
 }
 
@@ -699,11 +693,9 @@ func newLifecycleHostWithState(t *testing.T, config Config, store state.State) *
 		t.Fatal(err)
 	}
 	if err := bindHost(r, "test-incarnation"); err != nil {
-		_ = r.owner.Close()
 		t.Fatal(err)
 	}
 	if err := r.sessions.Startup(context.Background()); err != nil {
-		_ = r.owner.Close()
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {

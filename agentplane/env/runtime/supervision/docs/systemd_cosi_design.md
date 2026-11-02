@@ -111,7 +111,7 @@ processes; it does not invent systemd state for them.
    no requeue, transient error or new connection authorizes replay.
 6. **Runtime loss and reconstruction.** In-memory COSI state, finalizers, pipes and D-Bus handles
    disappear with the process. The systemd Runtime unit's lifetime binding and invocation marker
-   prevent old owners from executing late starts. On restart, acquire the environment/Host/Execution
+   prevent old owners from executing late starts. On restart, acquire the environment and Execution
    owner locks and perform the existing scope inventory and fencing for each owner and expected
    slice before admitting new native work. Failure to establish that boundary blocks startup or
    admission. Reconstruct only facts supported by systemd/kernel and durable journals; do not

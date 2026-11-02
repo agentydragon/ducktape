@@ -4,7 +4,7 @@ The Environment Runtime is the authority for one Sandbox environment's identity,
 environment-owner lock, durable quiesce marker, Gateway control listener, and lifecycle of its
 Harness Host and embedded Execution API. It coordinates Host through direct lifecycle and Session
 calls and serves the public `EnvironmentRuntime` API to the existing Runner Gateway. The Host
-owns Session records, journals, native harnesses and its separate owner lock.
+owns Session records, journals and native harnesses under Runtime's environment owner.
 
 ## Retained state
 
@@ -17,16 +17,16 @@ the crash happened before process launch; Runtime never retries that uncertain a
 `BootstrapRequests` admission and all process observations are live-only COSI resources.
 
 Runtime opens `StateDir/.agentplane-environment-runtime-owner` and holds it locked for its lifetime.
-Harness Host separately locks `StateDir/harness-host/.agentplane-harness-host-owner`. This is a
-direct cutover from the old `.agentplane-runner-owner` lock paths: an old process does not contend
-on the new paths, so all pre-rename Sandbox workloads must stop before the new binaries use their
-state volumes. Old lock files may remain; Session journals do not move.
+This single process-lifetime fence covers the embedded Harness Host as well. Pod and subprocess
+native harnesses inherit its descriptor. Runtime releases it only after Host cleanup, worker joins
+and external process fencing complete; COSI output ownership and finalizers do not replace that
+cross-process fence.
 
 The durable seal remains `StateDir/sessions/sealed`, with the existing incarnation UID bytes as
 its payload. Runtime reads, removes, and writes this marker using the old filename, directory,
 payload and durability semantics. Session records are persisted as `SessionRecords` COSI resources
 in `StateDir/runtime-resources.db`. Harness Host reserves each record, then updates model, reasoning
-effort and native Session identity through field-scoped COSI writes under the Host owner. Its in-memory
+effort and native Session identity through field-scoped COSI writes under the environment owner. Its in-memory
 Session copy follows successful durable writes; concurrent changes to one Session retain write order.
 If a native frame's record update fails, Host commits the raw frame and stops receiving so recovery
 can inspect that outcome. Journals and native continuations remain under `StateDir/sessions`;
@@ -100,7 +100,7 @@ its COSI lifecycle engine. Its aggregate coordinator advances only after the mat
 stop, Execution call drain and backend fence, optional exact History seal acknowledgement, Host join,
 and accepted bootstrap settlement. Blocking steps run in Runtime-owned workers. The aggregate's
 ready-to-join status is not a successful Close: Runtime then joins its engine and workers, fences
-the Pod PID namespace when applicable, and releases its legacy owner lock last. A failed or uncertain
+the Pod PID namespace when applicable, and releases its environment owner lock last. A failed or uncertain
 fence keeps that lock; canceling a Close caller only stops that caller's wait. A failed bootstrap is
 a settled durable failure and does not by itself make process cleanup fail.
 While bootstrap is running, Runtime reports the `Bootstrap` autosuspend blocker; it clears when the

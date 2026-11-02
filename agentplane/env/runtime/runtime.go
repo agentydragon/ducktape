@@ -351,7 +351,7 @@ func (r *Runtime) admitLifecycleEffect(ctx context.Context, expected lifecycle.E
 	return effect(ctx)
 }
 
-// Close stops Runtime-owned bootstrap work and releases the legacy environment-owner lock.
+// Close stops Runtime-owned bootstrap work and releases the environment-owner lock.
 // Canceling ctx only stops this caller's wait; shutdown and worker joining continue.
 func (r *Runtime) Close(ctx context.Context) error {
 	r.mu.Lock()

@@ -3,7 +3,6 @@ package harnesshost
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -140,11 +139,6 @@ func runLifecycleBarrierTrace(t *testing.T, operation string, trace []string) {
 			t.Fatalf("%v after %s: lifecycle operation overtook work: %v", trace, event, err)
 		default:
 		}
-		owner, err := retained.OpenOwner(filepath.Join(r.config.StateDir, "harness-host"))
-		if err == nil {
-			_ = owner.Close()
-			t.Fatalf("%v after %s: released state ownership before work settled", trace, event)
-		}
 	}
 
 	if operation == "acknowledge" {
@@ -187,10 +181,4 @@ func runLifecycleBarrierTrace(t *testing.T, operation string, trace []string) {
 	case <-ctx.Done():
 		t.Fatal("close did not settle")
 	}
-	// Transport-loss/local cleanup cannot attest an Execution fence or manufacture a seal.
-	owner, err := retained.OpenOwner(filepath.Join(r.config.StateDir, "harness-host"))
-	if err != nil {
-		t.Fatalf("Close retained state ownership after cleanup: %v", err)
-	}
-	_ = owner.Close()
 }

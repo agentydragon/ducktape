@@ -13,7 +13,8 @@ remain authoritative.
 Each native Session, shared Codex app-server and isolated workspace helper receives its 5-second
 stop grace at launch; later `Stop(ctx)` calls use that immutable process policy.
 
-In a Pod, Host uses Runtime's PID1 supervisor so one reaper owns every child wait. In a VM, Host's
+In a Pod, Host uses Runtime's PID1 supervisor so one reaper owns every child wait. Subprocess
+fixtures also use Runtime's supervisor and inherit its environment owner descriptor. In a VM, Host's
 native services keep their distinct `harness-host` scope in the workload slice, but the owner unit
 and invocation marker are those of Environment Runtime. Runtime joins Host cleanup and fences the
 Pod PID namespace before releasing the environment owner.
@@ -45,11 +46,10 @@ serves external WatchState, health, epoch ownership and Quiesce.
 
 A CLOSING intent may carry no seal (ordinary shutdown), or preserve the current incarnation's seal.
 Host lifetime loss closes admission and triggers local cleanup without manufacturing a seal. Failed
-cleanup retains Host ownership. A Pod Runtime exit does not by itself fence escaped native descendants;
+cleanup retains Runtime ownership. A Pod Runtime exit does not by itself fence escaped native descendants;
 abnormal replacement requires the outer container fence. VM native services use the Host's distinct
 systemd scope with the Runtime service's invocation marker.
 
-Runtime keeps the legacy environment owner inode and `<state_dir>/sessions/sealed`. Host locks
-`<state_dir>/harness-host/.agentplane-harness-host-owner`; its records remain in `<state_dir>/sessions`,
-journals keep their IDs/cursors, and native homes remain at their existing paths. Bootstrap waiters use
-Runtime's generation-bound bootstrap wait; cancellation ends a waiter, never the bootstrap effect.
+Runtime holds the environment owner until Host native cleanup, worker joins and journal close
+complete. Host records remain in `<state_dir>/sessions`; bootstrap waiters use Runtime's
+generation-bound bootstrap wait. Cancellation ends a waiter, never the bootstrap effect.

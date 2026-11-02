@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sync"
-	"syscall"
 
 	persistencepb "github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate/persistentpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
@@ -19,51 +18,6 @@ import (
 )
 
 var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
-
-// ownershipError means another runner holds the retained state directory or the
-// filesystem could not establish the ownership fence.
-type ownershipError struct{ Err error }
-
-func (e *ownershipError) Error() string { return "runner state ownership: " + e.Err.Error() }
-func (e *ownershipError) Unwrap() error { return e.Err }
-
-// Owner holds the exclusive, lifetime writer lock for a runner state directory.
-// File is read-only so a native child may inherit the lock without gaining write access.
-type Owner struct {
-	file *os.File
-}
-
-func OpenOwner(root string) (*Owner, error) {
-	if err := EnsureDirectory(root); err != nil {
-		return nil, err
-	}
-	file, err := os.OpenFile(filepath.Join(root, ".agentplane-harness-host-owner"), os.O_RDONLY|os.O_CREATE, 0o600)
-	if err != nil {
-		return nil, &ownershipError{Err: fmt.Errorf("cannot fence runner state directory %s: %w", root, err)}
-	}
-	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		_ = file.Close()
-		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
-			return nil, &ownershipError{Err: fmt.Errorf("runner state directory %s is already owned", root)}
-		}
-		return nil, &ownershipError{Err: fmt.Errorf("cannot fence runner state directory %s: %w", root, err)}
-	}
-	return &Owner{file: file}, nil
-}
-
-// File returns the locked descriptor for inheritance by native child processes.
-func (o *Owner) File() *os.File { return o.file }
-
-func (o *Owner) Close() error {
-	if o.file == nil {
-		return nil
-	}
-	file := o.file
-	o.file = nil
-	unlockErr := syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
-	closeErr := file.Close()
-	return errors.Join(unlockErr, closeErr)
-}
 
 // EnsureDirectory durably creates each missing directory entry, syncing the parent after
 // each mkdir so a crash cannot leave a session record pointing into a lost directory.

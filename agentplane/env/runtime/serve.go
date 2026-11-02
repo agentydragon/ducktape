@@ -68,6 +68,7 @@ func (r *Runtime) startHost(ctx context.Context) error {
 		return errors.New("environment Runtime is closing")
 	}
 	config := r.config.HostConfig
+	config.StateDir = r.config.StateDir
 	if r.config.CodexExecServer != nil {
 		config.ExecServerURL = r.config.CodexExecServer.URL
 	}
@@ -75,9 +76,9 @@ func (r *Runtime) startHost(ctx context.Context) error {
 		config.VMProcessOwner = supervision.SystemdOwner{
 			Unit: RuntimeUnitName, LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: HostScopeID,
 		}
-	} else if r.config.Supervision == "pid1" {
-		// One PID1 reaper owns all child waits in the container. A subprocess
-		// supervisor would race it for native and workspace-helper exits.
+	} else {
+		// Native harnesses inherit the Runtime owner descriptor in both Pod modes.
+		// PID1 also requires one shared reaper for every child wait.
 		config.ProcessSupervisor = r.supervisor
 	}
 	if r.deps.beforeHostConstruction != nil {

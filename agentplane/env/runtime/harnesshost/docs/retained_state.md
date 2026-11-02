@@ -43,12 +43,11 @@ The connection uses `journal_mode=DELETE` and `synchronous=EXTRA`; publication r
 A journal mutex owns each complete transaction, including batch publication.
 Explicit `BEGIN IMMEDIATE` reserves the writer before reading ids/cursors; no transaction spans
 harness or network I/O. One retained connection serves the single Harness Host-session writer.
-Runtime acquires the legacy environment lifetime lock before starting Host. Host acquires its distinct
-`harness-host/.agentplane-harness-host-owner` lock before opening Session journals or launching natives;
-a contender exits before it can serve state. In production Pods Runtime is PID 1 and supervises Host,
-which supervises native subprocesses. The outer container runtime fences escaped descendants before
-an abnormal replacement. In VMs systemd owns each component's distinct scope; startup fences prior
-owned services before opening the Session stores or journals.
+Runtime acquires the environment lifetime lock before starting embedded Host and retains it through
+Host cleanup and journal close. Native Pod and subprocess harnesses inherit that descriptor.
+The outer container runtime fences escaped descendants before an abnormal replacement. In VMs
+systemd owns each component's distinct scope; startup fences prior owned services before opening
+Session stores or journals.
 See <../SPEC.md#durability-and-restart> for storage, startup barriers and containment boundaries.
 
 The stdout reader commits in groups (`Journal.WithBatch`): the lines one pipe read delivered and the

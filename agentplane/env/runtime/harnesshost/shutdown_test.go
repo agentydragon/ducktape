@@ -3,11 +3,9 @@ package harnesshost
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -52,20 +50,10 @@ func TestCloseWaitersDoNotCancelSharedCleanup(t *testing.T) {
 	if err := r.ctx.Err(); err != nil {
 		t.Fatalf("Close waiter canceled the Host lifetime: %v", err)
 	}
-	owner, err := retained.OpenOwner(filepath.Join(r.config.StateDir, "harness-host"))
-	if err == nil {
-		_ = owner.Close()
-		t.Fatal("canceled Close waiter released state ownership while setup was active")
-	}
 	finishSetup()
 	if err := r.Close(ctx); err != nil {
 		t.Fatalf("Close after setup finished = %v", err)
 	}
-	owner, err = retained.OpenOwner(filepath.Join(r.config.StateDir, "harness-host"))
-	if err != nil {
-		t.Fatalf("completed Close retained ownership: %v", err)
-	}
-	_ = owner.Close()
 	// Completion remains observable even when a later caller's context has expired.
 	if err := r.Close(expired); err != nil {
 		t.Fatalf("already completed Close with expired context = %v", err)
@@ -87,7 +75,6 @@ func TestCloseReportsExitedLifecycleEngine(t *testing.T) {
 		<-r.lifecycle.done.Done()
 		r.lifecycle.workers.Wait()
 		_ = r.sessions.Close()
-		_ = r.owner.Close()
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
@@ -110,10 +97,5 @@ func TestCloseReportsExitedLifecycleEngine(t *testing.T) {
 	}
 	if r.lifecycle.status().Stage == harnesshostlifecycle.Closed {
 		t.Fatal("engine failure reported completed lifecycle cleanup")
-	}
-	owner, err := retained.OpenOwner(filepath.Join(r.config.StateDir, "harness-host"))
-	if err == nil {
-		_ = owner.Close()
-		t.Fatal("Close released ownership without proving native cleanup")
 	}
 }
