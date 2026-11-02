@@ -21,7 +21,7 @@ import httpx
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-from agentplane.app.session_opening import session_opening_pb2
+from agentplane.app import app_service_pb2
 from agentplane.app.testing.models import (
     BindingView,
     DecisionsSnapshot,
@@ -239,7 +239,7 @@ class Client:
         setup_script: str | None = None,
     ) -> session_dispatcher_pb2.SessionOpening:
         """Submit an opening and return its first durable state without waiting for admission."""
-        body = session_opening_pb2.OpenSessionRequest(
+        body = app_service_pb2.OpenSessionRequest(
             session_id=str(session_id), sandbox_uid=str(sandbox_uid), spec=overrides or {}
         )
         if setup_script is not None:

@@ -8,7 +8,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("decodes the generated AppConfigService ProtoJSON responses into the UI config views", async () => {
+it("decodes the generated AppService ProtoJSON responses into the UI config views", async () => {
   const paths: string[] = [];
   vi.stubGlobal(
     "fetch",

@@ -6,7 +6,7 @@ import {
   ListSandboxPresetsResponseSchema,
   type ListModelsResponse,
   type ListSandboxPresetsResponse,
-} from "../config_service_pb";
+} from "../app_service_pb";
 import { Harness as ProtoHarness } from "../../proto/session_pb";
 
 export type Harness = "HARNESS_CLAUDE" | "HARNESS_CODEX" | "HARNESS_CENTRAL_SAMPLER";

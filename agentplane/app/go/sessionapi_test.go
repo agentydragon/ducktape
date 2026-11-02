@@ -11,11 +11,11 @@ import (
 	"strings"
 	"testing"
 
+	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/bridge"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
-	sessionopeningpb "github.com/agentydragon/ducktape/agentplane/app/session_opening/sessionopeningpb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
@@ -354,7 +354,7 @@ func TestSessionRPCErrorClassifiesWithoutHTTP(t *testing.T) {
 	}
 }
 
-var _ sessionopeningpb.SessionOpeningServiceServer = (*sessionOpeningService)(nil)
+var _ apppb.AppServiceServer = (*appService)(nil)
 
 // Frozen pre-facade Huma boundary: exercise the request emitted by the generated browser codec
 // against the parser still serving in old app replicas during a rolling deployment.
@@ -376,7 +376,7 @@ func TestGeneratedSessionOpeningRequestAcceptedByLegacyHuma(t *testing.T) {
 		received = input
 		return &struct{}{}, nil
 	})
-	request := &sessionopeningpb.OpenSessionRequest{}
+	request := &apppb.OpenSessionRequest{}
 	if err := protojson.Unmarshal([]byte(`{"session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"uid","spec":{"model":"test"},"setup_script":""}`), request); err != nil {
 		t.Fatal(err)
 	}

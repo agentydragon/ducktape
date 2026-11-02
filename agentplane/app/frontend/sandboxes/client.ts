@@ -4,7 +4,7 @@ import { ValueSchema } from "@bufbuild/protobuf/wkt";
 import type { components } from "../schema";
 import { api, ok, fetchWithLogin, HttpError } from "../client";
 import { SessionSpecSchema, type SessionSpec } from "../../../proto/session_pb";
-import { OpenSessionRequestSchema, GetSessionOpeningRequestSchema } from "../../session_opening/session_opening_pb";
+import { OpenSessionRequestSchema, GetSessionOpeningRequestSchema } from "../../app_service_pb";
 import { SessionOpeningSchema, type SessionOpening } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
 type Harness = NonNullable<components["schemas"]["ThreadView"]["harness"]>;

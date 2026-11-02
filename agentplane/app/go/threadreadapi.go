@@ -13,12 +13,12 @@ import (
 	"time"
 	"unicode/utf8"
 
+	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/httperror"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
-	threadmetadatapb "github.com/agentydragon/ducktape/agentplane/app/thread_metadata/threadmetadatapb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
@@ -237,7 +237,6 @@ func RegisterThreadReadRoutes(
 }
 
 type threadMetadataService struct {
-	threadmetadatapb.UnimplementedThreadMetadataServiceServer
 	store            threadReadStore
 	updates          auth.ChangeSource
 	updatesConnected func() bool
@@ -254,7 +253,7 @@ func registerThreadMetadataGateway(server *HTTPServer, store threadReadStore, up
 	service := &threadMetadataService{
 		store: store, updates: updates, updatesConnected: updatesConnected, drainDone: server.DrainDone(),
 	}
-	if err := threadmetadatapb.RegisterThreadMetadataServiceHandlerServer(context.Background(), mux, service); err != nil {
+	if err := apppb.RegisterAppServiceHandlerServer(context.Background(), mux, &appService{threads: service}); err != nil {
 		return fmt.Errorf("register generated Thread Metadata gateway: %w", err)
 	}
 	gateway := http.StripPrefix("/upstream/app", mux)
@@ -279,7 +278,7 @@ func registerThreadMetadataGateway(server *HTTPServer, store threadReadStore, up
 	return nil
 }
 
-func (s *threadMetadataService) GetThreadMetadata(ctx context.Context, request *threadmetadatapb.GetThreadMetadataRequest) (*threadmetadatapb.ThreadMetadata, error) {
+func (s *threadMetadataService) GetThreadMetadata(ctx context.Context, request *apppb.GetThreadMetadataRequest) (*apppb.ThreadMetadata, error) {
 	id, err := uuid.Parse(request.GetThreadId())
 	if err != nil || id.String() != request.GetThreadId() {
 		return nil, status.Error(codes.InvalidArgument, "thread_id must be a canonical UUID")
@@ -294,7 +293,7 @@ func (s *threadMetadataService) GetThreadMetadata(ctx context.Context, request *
 	return threadMetadataProto(*thread), nil
 }
 
-func (s *threadMetadataService) ListThreadMetadata(ctx context.Context, request *threadmetadatapb.ListThreadMetadataRequest) (*threadmetadatapb.ListThreadMetadataResponse, error) {
+func (s *threadMetadataService) ListThreadMetadata(ctx context.Context, request *apppb.ListThreadMetadataRequest) (*apppb.ListThreadMetadataResponse, error) {
 	limit := int(request.GetLimit())
 	if limit == 0 {
 		limit = 50
@@ -320,8 +319,8 @@ func (s *threadMetadataService) ListThreadMetadata(ctx context.Context, request 
 	if err != nil {
 		return nil, status.Error(codes.Internal, "count archived Threads")
 	}
-	response := &threadmetadatapb.ListThreadMetadataResponse{
-		Threads: make([]*threadmetadatapb.ThreadMetadata, 0, len(page.Threads)), ArchivedCount: int32(archivedCount),
+	response := &apppb.ListThreadMetadataResponse{
+		Threads: make([]*apppb.ThreadMetadata, 0, len(page.Threads)), ArchivedCount: int32(archivedCount),
 	}
 	for _, thread := range page.Threads {
 		response.Threads = append(response.Threads, threadMetadataProto(thread))
@@ -354,7 +353,7 @@ func (s *threadMetadataService) newThreadMetadataWatch(ctx context.Context) (*th
 	return &threadMetadataWatch{ctx: ctx, updates: updates, unsubscribe: unsubscribe, service: s, initial: true}, nil
 }
 
-func (w *threadMetadataWatch) next() (*threadmetadatapb.WatchThreadMetadataResponse, error) {
+func (w *threadMetadataWatch) next() (*apppb.WatchThreadMetadataResponse, error) {
 	if !w.initial {
 		select {
 		case <-w.ctx.Done():
@@ -366,13 +365,13 @@ func (w *threadMetadataWatch) next() (*threadmetadatapb.WatchThreadMetadataRespo
 	}
 	w.initial = false
 	connected := w.service.updatesConnected != nil && w.service.updatesConnected()
-	return &threadmetadatapb.WatchThreadMetadataResponse{
+	return &apppb.WatchThreadMetadataResponse{
 		Changed: &emptypb.Empty{}, UpdatesConnected: connected,
 	}, nil
 }
 
-func threadMetadataProto(thread threads.Thread) *threadmetadatapb.ThreadMetadata {
-	return &threadmetadatapb.ThreadMetadata{
+func threadMetadataProto(thread threads.Thread) *apppb.ThreadMetadata {
+	return &apppb.ThreadMetadata{
 		ThreadId: thread.ID.String(), CreatedAt: timestamppb.New(thread.CreatedAt), Name: thread.Name, Archived: thread.Archived,
 	}
 }

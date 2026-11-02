@@ -321,9 +321,9 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:schema",
-        "//agentplane/app/session_opening:session_opening_pb",
         "//agentplane/proto:session_pb",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],

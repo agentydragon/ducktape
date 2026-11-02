@@ -6,6 +6,7 @@ load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//agentplane/env/e2e/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = [
     "//agentplane/app:__subpackages__",
@@ -13,39 +14,49 @@ package(default_visibility = [
 ])
 
 proto_library(
-    name = "config_service_proto",
-    srcs = ["config_service.proto"],
+    name = "app_service_proto",
+    srcs = ["app_service.proto"],
     deps = [
         "//agentplane/proto:session_proto",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_proto",
         "@googleapis//google/api:annotations_proto",
         "@protobuf//:empty_proto",
+        "@protobuf//:struct_proto",
+        "@protobuf//:timestamp_proto",
     ],
 )
 
 go_proto_library(
-    name = "config_service_go_proto",
+    name = "app_service_go_proto",
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
         "@io_bazel_rules_go//proto:go_grpc_v2",
         "//devinfra/go:grpc_gateway",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/app/configservicepb",
-    proto = ":config_service_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/appservicepb",
+    proto = ":app_service_proto",
     deps = [
         "//agentplane/proto:session_go_proto",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )
 
 ts_proto_library(
-    name = "config_service_pb",
+    name = "app_service_pb",
     copy_files = False,
     node_modules = "//:node_modules",
-    proto = ":config_service_proto",
+    proto = ":app_service_proto",
     deps = [
         "//agentplane/proto:session_pb",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
         "//google/api:annotations_pb",
     ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "app_service_pb2",
+    deps = [":app_service_proto"],
 )
 
 # gazelle:resolve py agentplane.action_service.action_service_pb2 //agentplane/action_service:action_service_pb2
