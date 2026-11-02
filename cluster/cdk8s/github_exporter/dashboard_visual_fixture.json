@@ -11,7 +11,7 @@
                 "typeVersion": [0, 1],
                 "custom": {
                   "resultType": "matrix",
-                  "calculatedMinStep": 60000
+                  "calculatedMinStep": 1020000
                 }
               },
               "fields": [
@@ -22,7 +22,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1020000
                   }
                 },
                 {
@@ -91,7 +91,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1020000
                   }
                 },
                 {
@@ -153,7 +153,7 @@
                 "typeVersion": [0, 1],
                 "custom": {
                   "resultType": "matrix",
-                  "calculatedMinStep": 60000
+                  "calculatedMinStep": 1020000
                 }
               },
               "fields": [
@@ -164,7 +164,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1020000
                   }
                 },
                 {
@@ -244,7 +244,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1020000
                   }
                 },
                 {
@@ -314,7 +314,7 @@
                 "typeVersion": [0, 1],
                 "custom": {
                   "resultType": "matrix",
-                  "calculatedMinStep": 60000
+                  "calculatedMinStep": 1020000
                 }
               },
               "fields": [
@@ -325,7 +325,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1020000
                   }
                 },
                 {
@@ -401,7 +401,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1020000
                   }
                 },
                 {
@@ -473,7 +473,7 @@
                 "typeVersion": [0, 1],
                 "custom": {
                   "resultType": "matrix",
-                  "calculatedMinStep": 60000
+                  "calculatedMinStep": 1080000
                 }
               },
               "fields": [
@@ -484,7 +484,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1080000
                   }
                 },
                 {
@@ -561,7 +561,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1080000
                   }
                 },
                 {
@@ -638,7 +638,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1080000
                   }
                 },
                 {
@@ -712,7 +712,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1080000
                   }
                 },
                 {
@@ -799,7 +799,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1080000
                   }
                 },
                 {
@@ -874,7 +874,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1080000
                   }
                 },
                 {
@@ -951,7 +951,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1080000
                   }
                 },
                 {
@@ -1029,7 +1029,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1080000
                   }
                 },
                 {
@@ -1104,7 +1104,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1080000
                   }
                 },
                 {
@@ -1179,7 +1179,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1020000
                   }
                 },
                 {
@@ -1256,7 +1256,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1020000
                   }
                 },
                 {
@@ -1333,7 +1333,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1020000
                   }
                 },
                 {
@@ -1403,7 +1403,7 @@
                 "typeVersion": [0, 1],
                 "custom": {
                   "resultType": "matrix",
-                  "calculatedMinStep": 60000
+                  "calculatedMinStep": 1020000
                 }
               },
               "fields": [
@@ -1414,7 +1414,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1020000
                   }
                 },
                 {
@@ -1491,7 +1491,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1020000
                   }
                 },
                 {
@@ -1556,7 +1556,7 @@
                 "typeVersion": [0, 1],
                 "custom": {
                   "resultType": "matrix",
-                  "calculatedMinStep": 60000
+                  "calculatedMinStep": 1020000
                 }
               },
               "fields": [
@@ -1567,7 +1567,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1020000
                   }
                 },
                 {
@@ -1643,7 +1643,7 @@
                     "frame": "time.Time"
                   },
                   "config": {
-                    "interval": 60000
+                    "interval": 1020000
                   }
                 },
                 {

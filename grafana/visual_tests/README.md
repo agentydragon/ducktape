@@ -39,8 +39,10 @@ panel and query. For example:
 }
 ```
 
-The fixtures were captured from live Grafana responses over representative time
-ranges, then trimmed. Identifying strings and log contents are replaced with
+The fixtures were captured from live datasource responses over representative time
+ranges, then trimmed. Where recent data was missing, an older window is used and
+noted in the fixture. Trimmed time series advertise their retained sample spacing
+so Grafana connects consecutive samples while preserving larger gaps. Identifying strings and log contents are replaced with
 placeholders; selected storage, memory and CPU values retain their measured
 scale and history. Other numeric series are normalized. Capture notes identify
 queries that needed a correction to obtain data. An absent query or variable

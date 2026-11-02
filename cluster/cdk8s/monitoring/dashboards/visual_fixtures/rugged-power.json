@@ -2,46 +2,790 @@
   "panels": {
     "1": {
       "A": {
-        "frames": []
+        "frames": [
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 900000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 900000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "container": "container-1",
+                    "endpoint": "endpoint-1",
+                    "instance": "instance-1",
+                    "job": "job-1",
+                    "namespace": "namespace-1",
+                    "pod": "pod-1",
+                    "power_supply": "power-supply-1",
+                    "service": "service-1"
+                  },
+                  "config": {
+                    "displayNameFromDS": "power-supply-1"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [
+                [
+                  1738405800000, 1738406700000, 1738407600000, 1738408500000, 1738409400000, 1738410300000,
+                  1738411200000
+                ],
+                [12.0, 39.0, 59.0, 79.0, 80.0, 80.0, 80.0]
+              ]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 900000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 900000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "container": "container-1",
+                    "endpoint": "endpoint-1",
+                    "instance": "instance-1",
+                    "job": "job-1",
+                    "namespace": "namespace-1",
+                    "pod": "pod-1",
+                    "power_supply": "power-supply-2",
+                    "service": "service-1"
+                  },
+                  "config": {
+                    "displayNameFromDS": "power-supply-2"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [
+                [
+                  1738405800000, 1738406700000, 1738407600000, 1738408500000, 1738409400000, 1738410300000,
+                  1738411200000
+                ],
+                [2.0, 2.0, 2.0, 2.0, 32.0, 54.0, 74.0]
+              ]
+            }
+          }
+        ]
       }
     },
     "2": {
       "A": {
-        "frames": []
+        "frames": [
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "numeric-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "vector",
+                  "calculatedMinStep": 900000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 900000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "capacity_level": "capacity-level-1",
+                    "container": "container-1",
+                    "endpoint": "endpoint-1",
+                    "health": "health-1",
+                    "instance": "instance-1",
+                    "job": "job-1",
+                    "manufacturer": "manufacturer-1",
+                    "model_name": "model-name-1",
+                    "namespace": "namespace-1",
+                    "pod": "pod-1",
+                    "power_supply": "power-supply-1",
+                    "serial_number": "serial-number-1",
+                    "service": "service-1",
+                    "status": "status-1",
+                    "technology": "technology-1",
+                    "type": "type-1"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [1.0]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "numeric-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "vector",
+                  "calculatedMinStep": 900000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 900000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "capacity_level": "capacity-level-1",
+                    "container": "container-1",
+                    "endpoint": "endpoint-1",
+                    "health": "health-1",
+                    "instance": "instance-1",
+                    "job": "job-1",
+                    "manufacturer": "manufacturer-1",
+                    "model_name": "model-name-1",
+                    "namespace": "namespace-1",
+                    "pod": "pod-1",
+                    "power_supply": "power-supply-2",
+                    "serial_number": "serial-number-2",
+                    "service": "service-1",
+                    "status": "status-2",
+                    "technology": "technology-1",
+                    "type": "type-1"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [1.0]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "numeric-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "vector",
+                  "calculatedMinStep": 900000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 900000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "charge_type": "charge-type-1",
+                    "container": "container-1",
+                    "endpoint": "endpoint-1",
+                    "instance": "instance-1",
+                    "job": "job-1",
+                    "namespace": "namespace-1",
+                    "pod": "pod-1",
+                    "power_supply": "power-supply-3",
+                    "scope": "scope-1",
+                    "service": "service-1",
+                    "status": "status-1",
+                    "type": "type-2",
+                    "usb_type": "usb-type-1"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [1.0]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "numeric-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "vector",
+                  "calculatedMinStep": 900000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 900000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "charge_type": "charge-type-2",
+                    "container": "container-1",
+                    "endpoint": "endpoint-1",
+                    "instance": "instance-1",
+                    "job": "job-1",
+                    "namespace": "namespace-1",
+                    "pod": "pod-1",
+                    "power_supply": "power-supply-4",
+                    "scope": "scope-1",
+                    "service": "service-1",
+                    "status": "status-2",
+                    "type": "type-2",
+                    "usb_type": "usb-type-2"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [1.0]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "numeric-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "vector",
+                  "calculatedMinStep": 900000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 900000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "container": "container-1",
+                    "endpoint": "endpoint-1",
+                    "instance": "instance-1",
+                    "job": "job-1",
+                    "namespace": "namespace-1",
+                    "pod": "pod-1",
+                    "power_supply": "power-supply-5",
+                    "service": "service-1",
+                    "type": "type-3"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [1.0]]
+            }
+          }
+        ]
       }
     },
     "3": {
       "A": {
-        "frames": []
+        "frames": [
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 900000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 900000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "container": "container-1",
+                    "endpoint": "endpoint-1",
+                    "index": "index-1",
+                    "instance": "instance-1",
+                    "job": "job-1",
+                    "namespace": "namespace-1",
+                    "path": "path-1",
+                    "pod": "pod-1",
+                    "service": "service-1"
+                  },
+                  "config": {
+                    "displayNameFromDS": "package"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [
+                [
+                  1738405800000, 1738406700000, 1738407600000, 1738408500000, 1738409400000, 1738410300000,
+                  1738411200000
+                ],
+                [
+                  6.99229766291778, 4.044155704166667, 4.956270879166664, 4.968614450000003, 2.9212899553605602,
+                  4.8436836875000004, 5.709180160770275
+                ]
+              ]
+            }
+          }
+        ]
       },
       "B": {
-        "frames": []
+        "frames": [
+          {
+            "schema": {
+              "refId": "B",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 900000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 900000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "container": "container-1",
+                    "endpoint": "endpoint-1",
+                    "index": "index-2",
+                    "instance": "instance-1",
+                    "job": "job-1",
+                    "namespace": "namespace-1",
+                    "path": "path-2",
+                    "pod": "pod-1",
+                    "service": "service-1"
+                  },
+                  "config": {
+                    "displayNameFromDS": "DRAM"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [
+                [
+                  1738405800000, 1738406700000, 1738407600000, 1738408500000, 1738409400000, 1738410300000,
+                  1738411200000
+                ],
+                [
+                  0.0934547674098889, 0.14733162083333326, 0.15842982083333332, 0.15500957499999993,
+                  0.10500283212705526, 0.1576704458333334, 0.16317414798195157
+                ]
+              ]
+            }
+          }
+        ]
       },
       "C": {
-        "frames": []
+        "frames": [
+          {
+            "schema": {
+              "refId": "C",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 900000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 900000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "container": "container-1",
+                    "endpoint": "endpoint-1",
+                    "index": "index-1",
+                    "instance": "instance-1",
+                    "job": "job-1",
+                    "namespace": "namespace-1",
+                    "path": "path-3",
+                    "pod": "pod-1",
+                    "service": "service-1"
+                  },
+                  "config": {
+                    "displayNameFromDS": "platform"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [
+                [
+                  1738405800000, 1738406700000, 1738407600000, 1738408500000, 1738409400000, 1738410300000,
+                  1738411200000
+                ],
+                [
+                  11.61197524958489, 13.169154724999999, 13.98976419166667, 13.370604554166675, 8.360229940822899,
+                  12.324928520833328, 12.657791642521412
+                ]
+              ]
+            }
+          }
+        ]
       }
     },
     "4": {
       "A": {
-        "frames": []
+        "frames": [
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 900000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 900000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "power_supply": "power-supply-1"
+                  },
+                  "config": {
+                    "displayNameFromDS": "power-supply-1"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [
+                [
+                  1738405800000, 1738406700000, 1738407600000, 1738408500000, 1738409400000, 1738410300000,
+                  1738411200000
+                ],
+                [33.840828, 23.497567, 23.836515999999996, 19.991065, 0.007968, 0.007965, 0.007965]
+              ]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 900000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 900000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "power_supply": "power-supply-2"
+                  },
+                  "config": {
+                    "displayNameFromDS": "power-supply-2"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [
+                [
+                  1738405800000, 1738406700000, 1738407600000, 1738408500000, 1738409400000, 1738410300000,
+                  1738411200000
+                ],
+                [0.00738, 0.007382, 0.007381, 0.007381, 38.868410000000004, 27.144734, 23.678352]
+              ]
+            }
+          }
+        ]
       }
     },
     "5": {
       "A": {
-        "frames": []
+        "frames": [
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 900000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 900000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "container": "container-1",
+                    "endpoint": "endpoint-1",
+                    "instance": "instance-1",
+                    "job": "job-1",
+                    "namespace": "namespace-1",
+                    "pod": "pod-1",
+                    "power_supply": "power-supply-1",
+                    "service": "service-1"
+                  },
+                  "config": {
+                    "displayNameFromDS": "power-supply-1"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [
+                [
+                  1738405800000, 1738406700000, 1738407600000, 1738408500000, 1738409400000, 1738410300000,
+                  1738411200000
+                ],
+                [26.5, 32.0, 33.2, 33.6, 29.3, 27.3, 26.2]
+              ]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 900000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 900000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "container": "container-1",
+                    "endpoint": "endpoint-1",
+                    "instance": "instance-1",
+                    "job": "job-1",
+                    "namespace": "namespace-1",
+                    "pod": "pod-1",
+                    "power_supply": "power-supply-2",
+                    "service": "service-1"
+                  },
+                  "config": {
+                    "displayNameFromDS": "power-supply-2"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [
+                [
+                  1738405800000, 1738406700000, 1738407600000, 1738408500000, 1738409400000, 1738410300000,
+                  1738411200000
+                ],
+                [24.9, 26.1, 26.4, 26.3, 36.2, 36.4, 36.5]
+              ]
+            }
+          }
+        ]
       }
     }
   },
   "variables": {
-    "instance": []
+    "instance": ["instance-1"]
   },
   "capture_notes": {
-    "1/A": "selected All in place of an empty dashboard variable",
-    "2/A": "selected All in place of an empty dashboard variable",
-    "4/A": "selected All in place of an empty dashboard variable",
-    "5/A": "selected All in place of an empty dashboard variable",
-    "3/A": "selected All in place of an empty dashboard variable",
-    "3/B": "selected All in place of an empty dashboard variable",
-    "3/C": "selected All in place of an empty dashboard variable"
+    "1/A": "Captured from a historical Mimir query with All selected; labels anonymized.",
+    "2/A": "Captured from a historical Mimir query with All selected; labels anonymized.",
+    "4/A": "Captured from a historical Mimir query with All selected; labels anonymized.",
+    "5/A": "Captured from a historical Mimir query with All selected; labels anonymized.",
+    "3/A": "Captured from a historical Mimir query with All selected; labels anonymized.",
+    "3/B": "Captured from a historical Mimir query with All selected; labels anonymized.",
+    "3/C": "Captured from a historical Mimir query with All selected; labels anonymized.",
+    "time_range": "Captured from an earlier 24-hour period because power-supply metrics were absent in the recent window."
   }
 }
