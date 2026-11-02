@@ -1,7 +1,8 @@
 # Codex executor isolation
 
-Environment Runtime owns the standalone Execution Service and its executor lifetime. Harness Host
-runs the shared Codex app-server and sets `CODEX_EXEC_SERVER_URL` to connect to that service. An
+Environment Runtime embeds the Execution Service and owns its executor lifetime. Harness Host
+runs the shared Codex app-server and sets `CODEX_EXEC_SERVER_URL` to connect directly to the native
+exec-server's WebSocket endpoint. A standalone Execution Service is also available. An
 executor failure never enables local execution. Claude continues to execute in its own harness
 process.
 
@@ -19,7 +20,7 @@ CPU limits; kubelet restarts the container. Its PID namespace must be private
 directory, environment binary disk,
 proxy trust bundle and kubeconfig. Projected workload tokens remain confined to the egress sidecar.
 
-The standalone Execution Service claims the companion over its ownership socket. A claim's explicit
+The embedded Execution Service claims the companion over its ownership socket. A claim's explicit
 environment reaches `exec-server` through `supervision.Process`; PID 1's process-wide reaper owns
 native and orphan waits. The claim connection and companion lifetime remain the executor's
 ownership protocol. The companion does not construct Runtime's COSI lifecycle or Host's journals.
@@ -81,9 +82,10 @@ See [native supervision](../../supervision/docs/supervision.md) for the backend 
 1. Runtime acquires environment ownership and fences previous native work. In Pods it waits for a
    fresh idle companion generation before admitting an incarnation. In VMs it fences old owned
    systemd services in the expected slices.
-2. On first Codex startup Runtime starts Execution Service and waits for a bounded health probe. The
-   service's native probe initializes a WebSocket session and reads `environment/status`; Harness
-   Host then starts the app-server with the configured executor URL.
+2. When adopting an incarnation with Codex execution configured, Runtime starts the embedded
+   Execution Service and waits for a bounded native probe. The probe initializes a WebSocket session
+   and reads `environment/status`; Harness Host starts the app-server when requested, with the
+   configured executor URL.
 3. Execution Service probes native executor progress every five seconds with a three-second deadline.
    Three consecutive failures end its lifetime and fence the backend. Runtime proves the old service
    invocation fenced, then attempts one replacement while the same incarnation remains RUNNING. A

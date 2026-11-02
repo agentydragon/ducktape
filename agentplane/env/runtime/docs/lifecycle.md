@@ -12,17 +12,35 @@ The [COSI map](cosi.md) shows controller subscriptions, resource writers and lif
 
 ```mermaid
 flowchart LR
-  G[Gateway] -->|Environment Runtime RPC / WatchState| R[Environment Runtime]
-  R <-->|direct binding / Session calls| H[Harness Host]
-  R -->|HostIntents via shared COSI| H
-  H -->|HostIntentStatuses / HostReports via shared COSI| R
-  R -->|launch / drain / fence| E[Execution Service]
-  R --> B[Sandbox bootstrap]
-  H --> S[Session setup and Claude processes]
-  H --> C[Shared Codex app-server]
-  C -->|native execution protocol| E
-  H -->|durable journal push / ACK| I[History ingress]
+  G["Gateway"] -->|"authenticated gRPC: WatchState, Session, Executor"| R
+  subgraph RuntimeProcess["Environment Runtime process"]
+    R["Runtime control and lifecycle"]
+    H["Harness Host"]
+    E["Embedded Execution adapter / lifecycle"]
+    B["Bootstrap"]
+    R <-->|"direct bound Session calls"| H
+    R -->|"HostIntents: shared COSI"| H
+    H -->|"HostIntentStatuses / HostReports: shared COSI"| R
+    R -->|"direct Executor calls; start / drain / fence"| E
+    R -->|"request / wait"| B
+    H -.->|"direct bootstrap wait / Execution readiness"| R
+  end
+  H -->|"supervise"| S["Session setup / Claude processes"]
+  H -->|"supervise"| C["Shared Codex app-server"]
+  C -->|"native WebSocket protocol"| X["Codex exec-server"]
+  E -->|"native WebSocket protocol"| X
+  E -.->|"VM: supervised launch and fence"| X
+  E -.->|"Pod: Unix ownership lease / fence"| P["Pod executor companion"]
+  P -.->|"launch / fence"| X
+  H -->|"gRPC journal push"| I["History ingress"]
+  I -->|"durable ACK"| H
 ```
+
+The VM exec-server is a supervised systemd workload. In a Pod it runs in the companion's private
+PID namespace; the app-server and Execution adapter reach its native WebSocket through the Pod's
+network namespace. The companion's Unix socket is an ownership and fence protocol, not the
+Executor API. The standalone Execution binary can serve that API on a private Unix gRPC socket;
+the embedded adapter is called directly by Runtime.
 
 ## Durable owners
 
@@ -42,10 +60,11 @@ prior container/node fence.
 
 ## Lifecycle coordination and admission
 
-`env/runtime/lifecycle.proto` defines the typed lifecycle values shared in process. Every LifecycleIntent
-and the Host-owned `HostReports` resource carries the full applied intent with Runtime boot, Host boot,
-generation and Execution fence. Mode and incarnation changes need a
-new generation; Execution fencing advances monotonically within that generation.
+`env/runtime/lifecycle.proto` defines typed in-process lifecycle values. The Host-owned `HostReports`
+resource includes the complete sampled intent: Runtime boot, Host boot, generation and Execution
+fence. Runtime accepts a report only when `HostIntentStatuses` confirms that exact intent was applied.
+Mode and incarnation changes need a new generation; Execution fencing advances monotonically within
+that generation.
 
 Runtime owns external transport authentication, connection epochs and conditional Quiesce. Its
 direct Session calls carry a copied exact binding. Host checks it at direct-call ingress
@@ -129,10 +148,10 @@ block successors. See [supervision](../supervision/docs/supervision.md).
 
 ## Host COSI state
 
-Host wiring and native aggregate state live in `env/runtime/harnesshost/lifecycle_*.go` and
-`runtime_controller.go`. Component controllers exclusively write their own runtime/status resources.
-Resources contain comparable values, never process handles, streams, environments, cancellations or
-journal connections. The host registry owns native handles and publishes observations.
+Host wiring and aggregate reconciliation live in `env/runtime/harnesshost/lifecycle_*.go` and
+`runner_controller.go`. Component controllers exclusively write their own runtime/status resources.
+Resources contain lifecycle values and detached snapshots, not process handles, streams,
+cancellations or journal connections. The host registry owns native handles and publishes observations.
 
 Session input includes demand, setup, process liveness, pending commands and inspection dependencies.
 Session runtime records phase, attempt and native generation. The shared app-server has its own
@@ -143,8 +162,10 @@ in-flight effect.
 
 Session reconciliation concurrency (default 16) limits workers, not Session inventory or admission.
 Shared-service controllers reconcile one service. Stream readers and ingress workers remain
-independent so replies and ACKs progress while a controller waits. COSI watches wake progress; readiness
-polling against the separate Execution Health service uses scheduled requeues and bounded RPCs.
+independent so replies and ACKs progress while a controller waits. The app-server controller checks
+embedded Execution readiness through an in-process Host-to-Runtime callback and schedules requeues
+until ready or its dependency deadline expires. Execution separately probes the native exec-server's
+WebSocket protocol for backend readiness and liveness.
 
 Session startup reconstructs journals and records interrupted setup before publishing schedulable
 input. `Session.Observe` derives attachment, busy state and autosuspend blockers from one detached

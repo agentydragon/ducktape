@@ -26,6 +26,7 @@ flowchart LR
   PC(["process-lifecycle"])
   EC(["embedded-execution-lifecycle"])
   EH{{"Embedded Execution host / service"}}
+  CW{{"Close / transition workers"}}
   ED["EnvironmentRuntimeDesiredStates"]
   TR["EnvironmentRuntimeTransitionRequests"]
   TS["EnvironmentRuntimeTransitions"]
@@ -46,7 +47,9 @@ flowchart LR
   API -->|publish| ED & TR & I
   ED & TR -->|watch| RC
   RC -->|write| CL & TS
-  RC -.->|coordinate effects| API
+  RC -.->|start one-shot barriers| CW
+  CW -.->|completion channel| RC
+  CW -.->|bound waits / effects| API
   API -.->|request start / fence| EH
   EH -->|publish intent + completion facts| EI
   EI & ER -->|QPrimary / QMapped| EC
@@ -55,7 +58,8 @@ flowchart LR
   EH -.->|VM exec-server launch| PH
   IS & R -->|watch| HO
   HO -.->|wake / fence| API
-  R -.->|read exact applied intent| API
+  R -.->|read intent and report| API
+  IS -.->|read exact applied status| API
   API -.->|request| BH
   BH -->|publish| BI & BO
   BI & BO & BR -->|QPrimary / QMapped| BC
@@ -76,6 +80,11 @@ service; for a VM, that service uses the Runtime process host above to launch th
 In a Pod the native executor is in the separate companion container. The Runtime's transition and
 Close workers call and wait on these components, so those effect dependencies are not additional
 COSI input subscriptions.
+
+The coordinator keeps its active plan and worker handles in process. Each barrier reports through
+its completion channel; the published transition or Close status is the observable progress, not
+a durable work queue. A blocking Host binding check stays in a worker so Close can preempt a
+transition. An uncertain effect retains ownership and is not automatically replayed.
 
 | Controller                         | Watched inputs                                                                                           | Controller output                                                       | Other relevant work                                                                                                      |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
@@ -103,6 +112,7 @@ flowchart LR
   RR["RunnerRuntimes"]
   R["HostReports"]
   HR(["harness-host-report"])
+  Guard{{"Synchronous connection /<br/>admission guards"}}
   I["HostIntents"]
   IS["HostIntentStatuses"]
   HI(["harness-host-intent"])
@@ -123,7 +133,9 @@ flowchart LR
   Peer -->|publish| RD & RI
   I -->|watch| HI
   HI -->|write applying / result| IS
+  Guard -.->|exact boot IDs and startup| HI
   HI -.->|admitted native apply| Peer
+  Guard -.->|exact binding on direct calls and effects| Peer
   SM -->|publish| SI & SD & SO
   AM -->|publish| AI & AO
   Journal -->|publish| J & ACK
@@ -143,12 +155,12 @@ flowchart LR
   PH -.->|supervise and fence| Native
   RR & RD -->|watch| HR
   Peer -.->|inventory / idle / admission facts| HR
-  HR -->|write full intent + report| R
+  HR -->|write sampled intent + report| R
 ```
 
 | Controller                   | Watched inputs                                                                                                                                                                            | Controller output                    | Selection / side effects                                                                                                                      |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `harness-host-report`        | `RunnerDesiredStates`, `RunnerRuntimes` (weak), plus Host change wakeups                                                                                                                  | `HostReports` (exclusive)            | Publishes inventory, blocker, idle and lifecycle facts with the full applied intent.                                                          |
+| `harness-host-report`        | `RunnerDesiredStates`, `RunnerRuntimes` (weak), plus Host change wakeups                                                                                                                  | `HostReports` (exclusive)            | Publishes inventory, blocker, idle and lifecycle facts with the full sampled intent.                                                          |
 | `harness-host-intent`        | `HostIntents` (weak)                                                                                                                                                                      | `HostIntentStatuses` (exclusive)     | Checks startup and the synchronous Runtime connection gate, records Applying before the native effect, and fails closed on an unknown result. |
 | `runner-lifecycle`           | `RunnerDesiredStates`, `RunnerInputs`, `SessionDrainInputs`, `SessionRuntimes`, `JournalSeals`, `IngressAcks`, `CodexAppServerRuntimes`, `ProcessDesiredStates`, `ProcessStatuses` (weak) | `RunnerRuntimes` (exclusive)         | Aggregates the Host drain barrier; explicitly queues its next step after changing status.                                                     |
 | `session-lifecycle`          | `SessionInputs` (primary); `RunnerDesiredStates`, `RunnerRuntimes`, `CodexAppServerRuntimes`, `NativeOperationResults` (mapped)                                                           | `SessionRuntimes` (exclusive)        | Per Session. App-server updates map only to Codex Sessions; operation results map to their Session.                                           |
@@ -165,6 +177,20 @@ The Host publishes `SessionDrainInputs` separately from the more frequently upda
 Runner aggregation needs inspection settlement, not every dispatch change. Journal seals and History
 ACKs are facts published from durable journal/ingress activity. The in-memory resource is not the
 durable journal, seal, or ACK authority.
+
+Runtime synchronously revokes the native connection gate when its Host connection ends or Runtime
+fails, including when a COSI write fails. Host admission also checks the exact binding under its
+mutex before durable work. The Host intent controller records Applying before calling the native
+apply path; an interrupted application fails closed rather than replaying the effect. The report
+controller wakes on both Runner COSI changes and Host inventory notifications, and snapshots the
+full intent. Runtime accepts a report only after that exact intent is applied, so a same-generation
+Execution fence cannot validate an older report.
+
+`EnvironmentRuntimeDesiredStates`, `HostIntents`, statuses, reports and operation results are
+in-memory coordination state. The incarnation seal, bootstrap request and log, Session records,
+journals and History acknowledgements have durable owners. Owner locks have process lifetimes even
+though their lock files remain on disk; see [lifecycle ownership](lifecycle.md#durable-owners). A
+process exit observation alone does not prove that its native process domain was fenced.
 
 ## State and barriers
 
