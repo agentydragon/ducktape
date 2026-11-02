@@ -450,6 +450,7 @@ flowchart TD
     PLATFORM_GUIDANCE_OWNERSHIP_DESIGN --> PLATFORM_GUIDANCE_SINGLE_OWNER
     APP_ENVIRONMENT_DISCOVERY[Later: app inventory through backend Discovery]
     SESSION_TOOL_SURFACE_CONVERGENCE_DESIGN[Later decision: compare Agentplane tool surfaces]
+    ACTION_PROTO_CONTRACT_DESIGN[Later decision: protobuf wrapper Actions and generated schemas]
     ENVIRONMENT_SHARED_ACCOUNT[Deferred: shared-SA environment identity]
     ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN[Later decision: catalogue ownership and location]
     ENVIRONMENT_MANAGEMENT[Deferred: environment catalogue and creation]
@@ -633,6 +634,16 @@ unique operations until a reviewed replacement and migration are verified. The r
 Exit with a capability/authority map, target contract and explicit retain/retire/replace proposal
 for stakeholder review. This is not a selection or implementation, and is not a prerequisite for
 the current receiver or tool work.
+
+### `ACTION_PROTO_CONTRACT_DESIGN` — protobuf contracts for Action inputs and outputs
+
+**Later decision; operator request, 2026-11-02 UTC.** Consider making Actions thin wrappers around
+backend RPCs, using protobuf request and response messages as their input and output contracts and
+generating the published Action/MCP schemas from those descriptors. Compare direct protobuf
+contracts with generated adapters to remove parallel handwritten schemas. Review concrete examples
+covering both inputs and outputs, including field presence, validation and Action-specific
+approval/authorization metadata, before selecting a pattern. This does not block current resume
+or delegation work.
 
 ### `THREAD_CREATE_AUTHORIZATION` — caller-privilege delegation capstone
 
