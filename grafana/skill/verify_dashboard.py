@@ -13,6 +13,7 @@ import base64
 import contextlib
 import copy
 import json
+import math
 import os
 import re
 import shutil
@@ -43,10 +44,13 @@ DEFAULT_SECRET = "monitoring/grafana-admin-password"
 DATASOURCE_PLACEHOLDER = re.compile(r"\$\{(DS_[A-Z0-9_]+)\}")
 UNRESOLVED_MACRO = re.compile(r"\$__[_a-zA-Z0-9]+")
 UNRESOLVED_VARIABLE = re.compile(r"\$(?:__[_a-zA-Z0-9]+|[_a-zA-Z][_a-zA-Z0-9]*)")
+RATE_INTERVAL_MACRO = re.compile(r"\$\{__rate_interval\}|\$__rate_interval(?![A-Za-z0-9_])")
+SQL_DASHBOARD_VARIABLE = re.compile(r"\$(?:\{(?!__)[A-Za-z_][A-Za-z0-9_]*(?::[^}]+)?\}|(?!__)[A-Za-z_][A-Za-z0-9_]*)")
 PANEL_TITLE_VARIABLE = re.compile(
     r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::[A-Za-z_][A-Za-z0-9_]*)?\}|\$([A-Za-z_][A-Za-z0-9_]*)"
 )
 TIME_RANGE = re.compile(r"^now(?:-(?P<amount>[0-9]+)(?P<unit>[smhd]))?$")
+INTERVAL = re.compile(r"^(?P<amount>[1-9][0-9]*)(?P<unit>ms|s|m|h|d)$")
 BROWSER_QUERY_TIMEOUT_SECONDS = 45.0
 BAD_BROWSER_TEXT = re.compile(
     r"(?:PromQL query has parsing errors|not a valid duration|data source error|"
@@ -208,11 +212,15 @@ def dashboard_variables(dashboard: dict[str, Any]) -> dict[str, str]:
     return values
 
 
-def expand_expression(expression: str, variables: dict[str, str], from_ms: int, to_ms: int) -> str:
+def expand_expression(
+    expression: str, variables: dict[str, str], from_ms: int, to_ms: int, rate_interval_seconds: int | None = None
+) -> str:
     if to_ms <= from_ms:
         raise VerificationError(f"invalid dashboard query range: from={from_ms}, to={to_ms}")
     range_seconds = (to_ms - from_ms) // 1000
     expanded = re.sub(r"\$\{__range_s\}|\$__range_s(?![A-Za-z0-9_])", str(range_seconds), expression)
+    if rate_interval_seconds is not None:
+        expanded = RATE_INTERVAL_MACRO.sub(f"{rate_interval_seconds}s", expanded)
     if UNRESOLVED_MACRO.search(expanded):
         raise VerificationError(f"unresolved Grafana macro in expression: {expanded}")
     for name, value in sorted(variables.items(), key=lambda item: len(item[0]), reverse=True):
@@ -221,6 +229,20 @@ def expand_expression(expression: str, variables: dict[str, str], from_ms: int, 
     if UNRESOLVED_VARIABLE.search(expanded):
         raise VerificationError(f"unresolved Grafana variable/macro after expansion: {expanded}")
     return expanded
+
+
+def interval_seconds(value: str) -> int:
+    match = INTERVAL.fullmatch(value)
+    if not match:
+        raise VerificationError(f"unsupported Grafana scrape interval {value!r}")
+    multiplier = {"ms": 0.001, "s": 1, "m": 60, "h": 3600, "d": 86400}[match.group("unit")]
+    return math.ceil(int(match.group("amount")) * multiplier)
+
+
+def prometheus_rate_interval_seconds(datasource: dict[str, Any], target: dict[str, Any], interval_ms: int) -> int:
+    """Match Grafana's max($__interval + scrape interval, 4 * scrape interval)."""
+    scrape = interval_seconds(target.get("interval") or datasource.get("jsonData", {}).get("timeInterval") or "15s")
+    return max(math.ceil(interval_ms / 1000) + scrape, 4 * scrape)
 
 
 def datasource_map(api: GrafanaApi) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
@@ -370,17 +392,32 @@ def query_panels(
             report.append({"panel": panel_name(panel), "status": "skipped", "reason": "no targets"})
             continue
         for target in targets:
-            expression = target.get("expr")
-            if not isinstance(expression, str):
-                raise VerificationError(f"{panel_name(panel)} target {target.get('refId', '?')} has no expr")
-            expanded = expand_expression(expression, variables, from_ms, to_ms)
             datasource = datasource_for(panel, target, by_name, by_uid)
             query_target = copy.deepcopy(target)
-            query_target["expr"] = expanded
             query_target["datasource"] = {"type": datasource["type"], "uid": datasource["uid"]}
             query_target.setdefault("refId", "A")
-            query_target.setdefault("intervalMs", 15000)
             query_target.setdefault("maxDataPoints", 1000)
+            query_target.setdefault(
+                "intervalMs", max(15000, math.ceil((to_ms - from_ms) / query_target["maxDataPoints"]))
+            )
+            expression = target.get("expr")
+            if isinstance(expression, str):
+                rate_interval = (
+                    prometheus_rate_interval_seconds(datasource, target, query_target["intervalMs"])
+                    if datasource["type"] == "prometheus" and RATE_INTERVAL_MACRO.search(expression)
+                    else None
+                )
+                query_target["expr"] = expand_expression(expression, variables, from_ms, to_ms, rate_interval)
+            elif datasource["type"] == "grafana-clickhouse-datasource" and isinstance(target.get("rawSql"), str):
+                # ClickHouse expands its own SQL macros, including $__timeFilter.
+                # Dashboard variables need frontend interpolation, which this
+                # direct probe cannot reproduce safely for every SQL format.
+                if SQL_DASHBOARD_VARIABLE.search(target["rawSql"]):
+                    raise VerificationError(
+                        f"{panel_name(panel)} target {target.get('refId', '?')} uses an unsupported SQL dashboard variable"
+                    )
+            else:
+                raise VerificationError(f"{panel_name(panel)} target {target.get('refId', '?')} has no supported query")
             body = {"queries": [query_target], "from": str(from_ms), "to": str(to_ms)}
             response = api.client.post("/api/ds/query", json=body)
             try:
