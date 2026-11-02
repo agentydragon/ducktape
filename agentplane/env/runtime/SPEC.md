@@ -9,10 +9,12 @@ model remain separate design work.
 
 ## Durable state and recovery
 
-Runtime locks `StateDir/.agentplane-environment-runtime-owner` before opening Session state and
-holds it until native cleanup, delivery/worker joins and journal closure complete. Pod and
-subprocess harnesses inherit that descriptor. A prior process exit or lock acquisition alone does
-not prove that an abnormal container's native descendants were fenced.
+Runtime opens `StateDir/runtime-resources.db` with an exclusive lock before preparing native
+supervision and holds it until native cleanup, delivery/worker joins and journal closure complete.
+Pod and subprocess harnesses also inherit a descriptor for
+`StateDir/.agentplane-environment-runtime-owner`; VM systemd supervision does not use that lock.
+Prior process exit or lock acquisition alone does not prove that an abnormal container's native
+descendants were fenced.
 
 The selective COSI store in `StateDir/runtime-resources.db` persists these protobuf resources,
 including their metadata, versions and finalizers:

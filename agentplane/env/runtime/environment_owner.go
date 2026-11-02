@@ -10,8 +10,8 @@ import (
 
 const environmentRuntimeOwnerName = ".agentplane-environment-runtime-owner"
 
-// environmentOwner holds the Runtime lifetime fence. Its nonblocking flock prevents a second
-// Environment Runtime from taking ownership of the same Sandbox state concurrently.
+// environmentOwner is the Pod/subprocess child-lifetime fence. Native children
+// inherit its descriptor; the COSI backing database separately locks Runtime state.
 type environmentOwner struct {
 	file *os.File
 }

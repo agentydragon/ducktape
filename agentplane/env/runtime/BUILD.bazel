@@ -123,6 +123,7 @@ go_test(
         "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
         "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
         "@com_github_cosi_project_runtime//pkg/state/owned",
+        "@io_etcd_go_bbolt//:bbolt",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials/insecure",

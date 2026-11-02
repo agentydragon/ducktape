@@ -103,16 +103,16 @@ requires its kernel check. An empty path on its own proves nothing. Exact invoca
 unresolved starts after transport loss keep admission blocked. A packaged service's empty cgroup
 does not prove cleanup of the separately managed native units owned by that service.
 
-Runtime holds the single `<state_dir>/.agentplane-environment-runtime-owner` lock for its embedded
-Session management and Execution service. After acquiring that lock, each component's launcher
+Runtime opens the COSI backing database and holds its exclusive lock before preparing native
+supervision. Each component's launcher
 discovers old units in its scope derived from the Sandbox UID, state directory and explicit scope ID,
 verifies their expected slice, and fences them before admitting new native work. Other scopes are
 untouched.
 
-This lock also excludes a second Runtime before its VM launcher can fence units: that preflight runs
-before the COSI backing database is opened. The database takes its own exclusive lock while open,
-but COSI controller outputs arbitrate within each Runtime's engine, not between those engines. Neither
-the Runtime lock nor a COSI resource alone proves that a surviving native process has stopped.
+The database lock excludes a second Runtime before its VM launcher can fence units; the VM path does
+not take a separate owner flock. COSI controller outputs arbitrate within each Runtime's engine,
+not between those engines. Neither the database lock nor a COSI resource alone proves that a
+surviving native process has stopped.
 
 Systemd removes the owner's lifetime directory before restarting its service. A start request
 queued on an old connection then fails its invocation condition if it arrives after replacement,
