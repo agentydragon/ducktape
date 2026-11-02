@@ -19,6 +19,7 @@ import (
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
@@ -28,6 +29,136 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+type aggregateProbeRuntime struct {
+	controller.Runtime
+	storage state.State
+}
+
+func (p aggregateProbeRuntime) Get(ctx context.Context, ptr resource.Pointer, opts ...state.GetOption) (resource.Resource, error) {
+	return p.storage.Get(ctx, ptr, opts...)
+}
+
+func (p aggregateProbeRuntime) List(ctx context.Context, kind resource.Kind, opts ...state.ListOption) (resource.List, error) {
+	return p.storage.List(ctx, kind, opts...)
+}
+
+func (p aggregateProbeRuntime) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, _ ...controller.ModifyOption) error {
+	return p.storage.Modify(ctx, value, update, state.WithUpdateOwner(sessionLifecycleControllerName))
+}
+
+func (aggregateProbeRuntime) QueueReconcile() {}
+
+func TestAggregateRequiresCurrentSessionPreFenceSettlement(t *testing.T) {
+	workspace := t.TempDir()
+	config := lifecycleConfig(t, modelConfigServer(t).URL, workspace, nil, "/bin/false")
+	config.expectCloseError = true
+	r := newSessionTestRuntime(t, config)
+	if _, err := r.OpenSession(sessionCallContext(r, t.Context()), openLifecycleSession("pre-fence", filepath.Join(workspace, "project"))); err != nil {
+		t.Fatal(err)
+	}
+	waitLifecycle(t, r, func() bool {
+		_, found, err := session.ReadLifecycleStatus(r.lifecycleContext, r.lifecycleState, "pre-fence")
+		return err == nil && found
+	}, "initial Session lifecycle status")
+	ctx := t.Context()
+	statusPtr := resource.NewMetadata(lifecycle.Namespace, session.LifecycleStatusType, "pre-fence", resource.VersionUndefined)
+	ownerPtr := resource.NewMetadata(lifecycle.Namespace, session.OwnerStatusType, "pre-fence", resource.VersionUndefined)
+	aggregatePtr := resource.NewMetadata(lifecycle.Namespace, lifecycle.AggregateStatusType, lifecycle.ResourceID, resource.VersionUndefined)
+	var outputs []resource.Resource
+	for _, ptr := range []resource.Pointer{statusPtr, ownerPtr, aggregatePtr} {
+		value, err := r.lifecycleState.Get(ctx, ptr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		outputs = append(outputs, value)
+	}
+	r.lifecycleCancel()
+	<-r.lifecycleDone
+	// COSI removes exclusive controller outputs on engine exit. Restore the
+	// observed resources for a single-threaded aggregate probe.
+	for _, value := range outputs {
+		if _, err := r.lifecycleState.Get(ctx, value.Metadata()); state.IsNotFoundError(err) {
+			copy := value.DeepCopy()
+			copy.Metadata().SetVersion(resource.VersionUndefined)
+			if err := r.lifecycleState.Create(ctx, copy, state.WithCreateOwner(string(value.Metadata().Owner()))); err != nil {
+				t.Fatal(err)
+			}
+		} else if err != nil {
+			t.Fatal(err)
+		}
+	}
+	desired := lifecycle.EnvironmentDesired{Mode: lifecycle.Quiescing, Generation: 7}
+	if err := lifecycle.PublishEnvironmentDesired(ctx, r.lifecycleState, desired); err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	r.desired = desired
+	r.mu.Unlock()
+	saved := outputs[0]
+	setSessionStatus := func(generation uint64, settled bool) {
+		t.Helper()
+		_, err := r.lifecycleState.UpdateWithConflicts(ctx, statusPtr, func(value resource.Resource) error {
+			current := value.(interface {
+				TypedSpec() *session.LifecycleStatus
+			}).TypedSpec()
+			*current = session.LifecycleStatus{EnvironmentGeneration: generation, Phase: session.Halted, ProcessStopped: true, PreFenceSettled: settled}
+			return nil
+		}, state.WithUpdateOwner(session.ControllerName))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	resetAggregate := func() {
+		t.Helper()
+		_, err := r.lifecycleState.UpdateWithConflicts(ctx, aggregatePtr, func(value resource.Resource) error {
+			*value.(interface{ TypedSpec() *lifecycle.Status }).TypedSpec() = lifecycle.Status{Generation: 7, Stage: lifecycle.Stopping}
+			return nil
+		}, state.WithUpdateOwner(sessionLifecycleControllerName))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	probe := aggregateProbeRuntime{storage: r.lifecycleState}
+	controller := &sessionLifecycleController{runtime: r}
+	for _, test := range []struct {
+		name       string
+		present    bool
+		generation uint64
+		settled    bool
+		wantNative bool
+		wantBlock  lifecycle.BlockerKind
+	}{
+		{"missing", false, 0, false, false, lifecycle.SessionHaltPending},
+		{"stale generation", true, 6, true, false, lifecycle.SessionHaltPending},
+		{"pending inspection", true, 7, false, false, lifecycle.SessionInspectionPending},
+		{"settled", true, 7, true, true, lifecycle.NoBlocker},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if test.present {
+				if _, err := r.lifecycleState.Get(ctx, statusPtr); state.IsNotFoundError(err) {
+					if err := r.lifecycleState.Create(ctx, saved.DeepCopy(), state.WithCreateOwner(session.ControllerName)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				setSessionStatus(test.generation, test.settled)
+			} else if err := r.lifecycleState.Destroy(ctx, statusPtr, state.WithDestroyOwner(session.ControllerName)); err != nil {
+				t.Fatal(err)
+			}
+			resetAggregate()
+			if err := controller.reconcile(ctx, probe); err != nil {
+				t.Fatal(err)
+			}
+			got, _, err := lifecycle.ReadStatus(ctx, r.lifecycleState)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.NativeStopped != test.wantNative || got.Blocker.Kind != test.wantBlock {
+				t.Fatalf("aggregate = %+v, want NativeStopped=%t blocker=%v", got, test.wantNative, test.wantBlock)
+			}
+		})
+	}
+}
 
 type admissionStatusReadFailure struct {
 	context context.Context

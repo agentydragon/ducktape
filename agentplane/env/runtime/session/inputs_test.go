@@ -20,12 +20,7 @@ func TestSessionReconcileSnapshotsIgnoreJournalOnlyChanges(t *testing.T) {
 	ctx, root, resources, store, manager := newSessionTestManager(t, nil, func(string) string { return "destination" })
 	s := reserveTestSession(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
 	inputPointer := componentResource(s.id, ReconcileSnapshot{}).Metadata()
-	drainPointer := componentResource(s.id, InspectionStatus{}).Metadata()
 	before, err := resources.Get(ctx, inputPointer)
-	if err != nil {
-		t.Fatal(err)
-	}
-	beforeDrain, err := resources.Get(ctx, drainPointer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,11 +32,7 @@ func TestSessionReconcileSnapshotsIgnoreJournalOnlyChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	afterDrain, err := resources.Get(ctx, drainPointer)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !before.Metadata().Version().Equal(after.Metadata().Version()) || !beforeDrain.Metadata().Version().Equal(afterDrain.Metadata().Version()) {
+	if !before.Metadata().Version().Equal(after.Metadata().Version()) {
 		t.Fatal("journal output republished lifecycle input")
 	}
 	s.requestExecution()
@@ -49,28 +40,21 @@ func TestSessionReconcileSnapshotsIgnoreJournalOnlyChanges(t *testing.T) {
 	if err != nil || demand.Demand != 1 {
 		t.Fatalf("execution demand lost: %v, %v", demand, err)
 	}
-	unchangedDrain, err := resources.Get(ctx, drainPointer)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !afterDrain.Metadata().Version().Equal(unchangedDrain.Metadata().Version()) {
-		t.Fatal("dispatch demand woke aggregate drain")
-	}
 	s.mu.Lock()
 	s.reconciliations = append(s.reconciliations, &pendingReconciliation{})
 	s.mu.Unlock()
 	s.wake()
-	drain, _, err := ReadInspectionStatus(ctx, resources, s.id)
-	if err != nil || !drain.Inspecting {
-		t.Fatalf("inspection drain dependency absent: %v, %v", drain, err)
+	inspection, _, err := ReadReconcileSnapshot(ctx, resources, s.id)
+	if err != nil || inspection.Inspections != 1 {
+		t.Fatalf("inspection work absent from Session snapshot: %v, %v", inspection, err)
 	}
 	s.mu.Lock()
 	s.reconciliations = nil
 	s.mu.Unlock()
 	s.wake()
-	drain, _, err = ReadInspectionStatus(ctx, resources, s.id)
-	if err != nil || drain.Inspecting {
-		t.Fatalf("inspection drain did not settle: %v, %v", drain, err)
+	inspection, _, err = ReadReconcileSnapshot(ctx, resources, s.id)
+	if err != nil || inspection.Inspections != 0 {
+		t.Fatalf("inspection work did not settle in Session snapshot: %v, %v", inspection, err)
 	}
 }
 

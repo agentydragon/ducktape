@@ -101,7 +101,11 @@ sequenceDiagram
 ```
 
 Native cleanup includes Session halt, shared app-server cleanup, harness-domain process finalizers
-and inspection writes. Runtime-domain attempts keep their own bootstrap/Execution barriers. An old
+and inspection writes. Each Session reports `PreFenceSettled` for the observed shutdown generation
+only after its process stop proof joins native exit callbacks and its inspection queue and operation
+settle. The aggregate requires that condition for every retained Session before `NativeStopped`;
+it cannot depend on journal sealing because sealing waits for the global Execution fence.
+Runtime-domain attempts keep their own bootstrap/Execution barriers. An old
 component status cannot satisfy a successor revision. Execution fencing associates its own attempt
 generation with the lifecycle generation; a successor cannot start before its predecessor is fenced.
 

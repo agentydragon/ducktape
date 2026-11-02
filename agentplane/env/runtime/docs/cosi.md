@@ -23,7 +23,6 @@ flowchart LR
   OwnerStatus["SessionOwnerStatuses"]
   SI["SessionReconcileSnapshots"]
   SS["SessionLifecycleStatuses"]
-  Inspect["SessionInspectionStatuses"]
   AC(["codex-app-server-lifecycle"])
   AI["CodexAppServerLifecycleSignals"]
   AS["CodexAppServerStatuses"]
@@ -45,12 +44,12 @@ flowchart LR
   ED --> RC
   API -.->|"typed transition request"| RC
   RC -.->|"operation and exact-generation Close completion"| API
-  ED & Count & OwnerStatus & Inspect & SS & AS & PS & EI --> Agg
+  ED & Count & OwnerStatus & SS & AS & PS & EI --> Agg
   Agg --> Aggregate
   SR --> SOwner --> OwnerStatus
   API --> Retry --> SOwner
   SOwner --> SI
-  SI & OwnerStatus & Inspect & ED & Count & Aggregate & AS & Ack --> SC
+  SI & OwnerStatus & ED & Count & Aggregate & AS & Ack --> SC
   SC --> SS
   AI & ED & Count & Aggregate & ES --> AC
   AC --> AS
@@ -66,16 +65,16 @@ flowchart LR
 
 ## Writers and subscriptions
 
-| Controller                      | Watched inputs                                                                                                                                      | Exclusive output and effect boundary                                                                                                                                                          |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `environment-runtime-lifecycle` | Environment desired state; direct transition requests and worker-completion channels                                                                | Direct operation completion; Runtime-owned workers perform blocking transition/shutdown steps                                                                                                 |
-| `session-owner`                 | Session record (primary); explicit fresh-reservation retry (mapped)                                                                                 | Session owner status; construct and recover one live Session and its journal                                                                                                                  |
-| `environment-session-lifecycle` | Environment desired state, admission accounting, inspection and Session statuses, app-server status, process desired/status, Execution signals      | Aggregate Session status; global native cleanup and exact fence, per-Session seal and delivery status                                                                                         |
-| `session-lifecycle`             | Session snapshot (primary); owner and inspection statuses, ingress ACKs, desired state, admissions, aggregate status and app-server status (mapped) | Session lifecycle status including generation-qualified admission, committed seal UID/cursor and delivery; guarded per-Session prepare/dispatch registration and one-off halt/seal operations |
-| `codex-app-server-lifecycle`    | App-server signal including operation revisions (primary); desired state, accepted admissions, aggregate status and Execution status (mapped)       | App-server status; guarded initialization, cleanup and a separate live Execution-owner readiness check                                                                                        |
-| `execution-lifecycle`           | Execution signal (primary), Execution status (mapped)                                                                                               | Execution status; exact-attempt start/loss/fence observations, retaining an unfenced owner on failure                                                                                         |
-| `bootstrap-lifecycle`           | Bootstrap request (primary), status and operation state (mapped)                                                                                    | Bootstrap status; selected bytes and durable event sequence govern one accepted attempt                                                                                                       |
-| `process-lifecycle`             | Process desired state (primary), observation and systemd scope status (mapped)                                                                      | Process status; one attempt finalizer remains until its native domain is fenced                                                                                                               |
+| Controller                      | Watched inputs                                                                                                                                      | Exclusive output and effect boundary                                                                                                                         |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `environment-runtime-lifecycle` | Environment desired state; direct transition requests and worker-completion channels                                                                | Direct operation completion; Runtime-owned workers perform blocking transition/shutdown steps                                                                |
+| `session-owner`                 | Session record (primary); explicit fresh-reservation retry (mapped)                                                                                 | Session owner status; construct and recover one live Session and its journal                                                                                 |
+| `environment-session-lifecycle` | Environment desired state, admission accounting, Session lifecycle and owner statuses, app-server status, process desired/status, Execution signals | Aggregate Session status; global native cleanup and exact fence, per-Session seal and delivery status                                                        |
+| `session-lifecycle`             | Session snapshot (primary); owner status, ingress ACKs, desired state, admissions, aggregate status and app-server status (mapped)                  | Session lifecycle status including generation-qualified pre-fence cleanup, admission, committed seal UID/cursor and delivery; guarded per-Session operations |
+| `codex-app-server-lifecycle`    | App-server signal including operation revisions (primary); desired state, accepted admissions, aggregate status and Execution status (mapped)       | App-server status; guarded initialization, cleanup and a separate live Execution-owner readiness check                                                       |
+| `execution-lifecycle`           | Execution signal (primary), Execution status (mapped)                                                                                               | Execution status; exact-attempt start/loss/fence observations, retaining an unfenced owner on failure                                                        |
+| `bootstrap-lifecycle`           | Bootstrap request (primary), status and operation state (mapped)                                                                                    | Bootstrap status; selected bytes and durable event sequence govern one accepted attempt                                                                      |
+| `process-lifecycle`             | Process desired state (primary), observation and systemd scope status (mapped)                                                                      | Process status; one attempt finalizer remains until its native domain is fenced                                                                              |
 
 The `systemd-scope` controller watches volatile `SystemdScopeDesiredStates` and exclusively writes
 `SystemdScopeStatuses`. Scope intent snapshots owner identity and containment configuration. Its
