@@ -5,106 +5,70 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
-
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/cosi-project/runtime/pkg/controller"
-	"github.com/cosi-project/runtime/pkg/resource"
-	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
-	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
-const hostReportType = "HostReports.agentplane"
+type hostReportObserver struct{ runtime *Runtime }
 
-type hostReport struct {
-	Intent hostIntent
-	Report *runtimepb.HostReport
-}
-
-func (v hostReport) DeepCopy() hostReport {
-	if v.Report != nil {
-		v.Report = proto.Clone(v.Report).(*runtimepb.HostReport)
-	}
-	return v
-}
-
-type hostReportExtension struct{}
-
-func (hostReportExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
-	return spec.ResourceDefinitionSpec{Type: hostReportType, DefaultNamespace: lifecycle.Namespace}
-}
-
-func hostReportResource(v hostReport) *typed.Resource[hostReport, hostReportExtension] {
-	return typed.NewResource[hostReport, hostReportExtension](resource.NewMetadata(lifecycle.Namespace, hostReportType, "host", resource.VersionUndefined), v)
-}
-
-type hostReportController struct{ runtime *Runtime }
-
-func (*hostReportController) Name() string { return "environment-host-report" }
-func (*hostReportController) Inputs() []controller.Input {
+func (*hostReportObserver) Name() string { return "environment-host-report-observer" }
+func (*hostReportObserver) Inputs() []controller.Input {
 	return []controller.Input{
-		{Namespace: lifecycle.Namespace, Type: hostIntentType, Kind: controller.InputWeak},
+		{Namespace: lifecycle.Namespace, Type: lifecycle.HostReportType, Kind: controller.InputWeak},
 		{Namespace: lifecycle.Namespace, Type: hostIntentStatusType, Kind: controller.InputWeak},
 	}
 }
-
-func (*hostReportController) Outputs() []controller.Output {
-	return []controller.Output{{Type: hostReportType, Kind: controller.OutputExclusive}}
-}
-
-func (c *hostReportController) Run(ctx context.Context, engine controller.Runtime, _ *zap.Logger) error {
+func (*hostReportObserver) Outputs() []controller.Output { return nil }
+func (c *hostReportObserver) Run(ctx context.Context, engine controller.Runtime, _ *zap.Logger) error {
 	for {
-		r := c.runtime
-		r.mu.Lock()
-		host := r.host
-		connected := host != nil && host.connected
-		r.mu.Unlock()
-		var changed <-chan struct{}
-		if connected {
-			// Capture the notification before the snapshot so a concurrent Host update
-			// cannot be lost. Native Session activity also wakes this controller.
-			changed = host.peer.ChangesSince()
-			sampled, _, err := cosi.Read(ctx, engine, hostIntentStatusResource(hostIntentStatus{}))
-			if err != nil {
-				return err
-			}
-			report, err := host.peer.Report()
-			if err != nil {
-				r.fail(fmt.Errorf("observe Host lifecycle report: %w", err))
-				return nil
-			}
-			if sampled.Applied && report != nil {
-				// Applied-intent updates must re-observe even a byte-identical report:
-				// publishing the same-generation fence invalidates Runtime's old sample.
-				if err := r.acceptReport(host, report, sampled.Intent); err != nil {
-					r.fail(err)
-					return nil
-				}
-			}
-		}
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-engine.EventCh():
-		case <-changed:
+		}
+		r := c.runtime
+		r.mu.Lock()
+		report := r.hostReportLocked()
+		if report != nil {
+			r.changedLocked()
+		}
+		var fenceBinding *runtimepb.Binding
+		if report != nil && report.Ready && report.NativeStopped && r.intent != nil && !r.intent.ExecutionFenced &&
+			(r.intent.Mode == runtimepb.LifecycleIntent_QUIESCING || r.intent.Mode == runtimepb.LifecycleIntent_CLOSING) {
+			fenceBinding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
+		}
+		var failure error
+		if report != nil && report.Error != "" {
+			failure = status.Errorf(codes.FailedPrecondition, "Harness Host rejected lifecycle generation %d: %s", report.Binding.Generation, report.Error)
+		}
+		r.mu.Unlock()
+		if failure != nil {
+			r.fail(failure)
+			return nil
+		}
+		if fenceBinding != nil {
+			r.maybeFenceExecution(fenceBinding)
 		}
 		engine.ResetRestartBackoff()
 	}
 }
 
-// Caller holds Runtime.mu. Binding validation also invalidates the old report
-// when the Execution fence advances within the same generation.
+// Caller holds Runtime.mu. The exact applied intent invalidates an old report
+// even when ExecutionFenced changes inside the same generation.
 func (r *Runtime) hostReportLocked() *runtimepb.HostReport {
 	if r.lifecycleState == nil || r.intent == nil {
 		return nil
 	}
-	current, _, err := cosi.Read(context.Background(), r.lifecycleState, hostReportResource(hostReport{}))
+	current, found, err := cosi.Read(context.Background(), r.lifecycleState, lifecycle.HostReportResource(lifecycle.HostReport{}))
 	if err != nil {
 		r.failed = true
 		if r.failureErr == nil {
-			r.failureErr = err
+			r.failureErr = fmt.Errorf("read Host report: %w", err)
 		}
 		r.changedLocked()
 		select {
@@ -113,7 +77,24 @@ func (r *Runtime) hostReportLocked() *runtimepb.HostReport {
 		}
 		return nil
 	}
-	if current.Intent != intentValue(r.intent) {
+	if !found || !proto.Equal(current.Intent, r.intent) || current.Report == nil ||
+		!proto.Equal(current.Report.Binding, r.intent.Binding) {
+		return nil
+	}
+	applied, _, err := cosi.Read(context.Background(), r.lifecycleState, hostIntentStatusResource(hostIntentStatus{}))
+	if err != nil {
+		r.failed = true
+		if r.failureErr == nil {
+			r.failureErr = fmt.Errorf("read Host intent status: %w", err)
+		}
+		r.changedLocked()
+		select {
+		case r.fatal <- err:
+		default:
+		}
+		return nil
+	}
+	if !applied.Applied || applied.Intent != intentValue(r.intent) {
 		return nil
 	}
 	return current.Report

@@ -41,7 +41,8 @@ prior container/node fence.
 ## Lifecycle coordination and admission
 
 `env/runtime/lifecycle.proto` defines the typed lifecycle values shared in process. Every LifecycleIntent
-and HostReport carries Runtime boot, Host boot and generation. Mode and incarnation changes need a
+and the Host-owned `HostReports` resource carries the full applied intent with Runtime boot, Host boot,
+generation and Execution fence. Mode and incarnation changes need a
 new generation; Execution fencing advances monotonically within that generation.
 
 Runtime owns external transport authentication, connection epochs and conditional Quiesce. Its
@@ -66,13 +67,13 @@ sequenceDiagram
   R->>H: QUIESCING(binding, incarnation seal)
   H->>H: close admission; settle setup and accepted writes
   H->>H: halt native processes; join readers and inspections
-  H->>R: HostReport(binding, native_stopped)
+  H->>R: HostReports(intent, native_stopped)
   R->>E: drain and stop; prove execution domain fenced
   R->>H: same binding, execution_fenced=true
   H->>H: seal final journal cursors
   H->>I: final entries and seal
   I->>H: durable ACK of exact sealed cursor
-  H->>R: HostReport(binding, QUIESCED)
+  H->>R: HostReports(intent, QUIESCED)
 ```
 
 Bootstrap belongs to Runtime. Session setup waits through the generation-bound Runtime call; canceling a waiter does not

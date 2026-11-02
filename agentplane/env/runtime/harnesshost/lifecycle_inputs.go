@@ -34,14 +34,11 @@ func publishLifecycle[T lifecycleSpec[T]](l *lifecycle, id string, value T) erro
 }
 
 func (l *lifecycle) admissionCount(ctx context.Context) (int, error) {
-	input, found, err := lifecycleRead[runnerInputSpec](ctx, l.state, "runner")
+	input, err := safe.ReaderGet[*typed.Resource[runnerInputSpec, lifecycleExtension[runnerInputSpec]]](ctx, l.state, lifecycleResourceFor("runner", runnerInputSpec{}).Metadata())
 	if err != nil {
 		return 0, err
 	}
-	if !found {
-		return 0, errors.New("runner admission state is missing")
-	}
-	return input.Admissions, nil
+	return input.TypedSpec().Admissions, nil
 }
 
 // Caller holds Runner.mu: accounting must precede durable admission and serialize with closing.

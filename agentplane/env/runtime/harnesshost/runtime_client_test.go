@@ -13,6 +13,8 @@ import (
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/state"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -240,5 +242,60 @@ func TestAcceptedSetupKeepsRunningBootstrapBindingDuringDrain(t *testing.T) {
 	}
 	if !proto.Equal(recorder.binding, running.Binding) {
 		t.Fatalf("accepted setup waited using draining binding: %v", recorder.binding)
+	}
+}
+
+func TestHostPublishesExactIntentAndIdleFacts(t *testing.T) {
+	r, ctx := boundaryHost(t)
+	running := intentFor(r, 1, runtimepb.LifecycleIntent_RUNNING)
+	if err := r.ApplyIntent(ctx, running); err != nil {
+		t.Fatal(err)
+	}
+	read := func(expectedFence bool) runnerlifecycle.HostReport {
+		t.Helper()
+		result, err := r.lifecycle.state.WatchFor(ctx, runnerlifecycle.HostReportResource(runnerlifecycle.HostReport{}).Metadata(),
+			state.WithEventTypes(state.Created, state.Updated),
+			state.WithCondition(func(value resource.Resource) (bool, error) {
+				report := value.(interface {
+					TypedSpec() *runnerlifecycle.HostReport
+				}).TypedSpec()
+				return report.Intent != nil && report.Intent.ExecutionFenced == expectedFence &&
+					proto.Equal(report.Intent.Binding, running.Binding) && report.Report != nil && report.Report.Ready, nil
+			}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return *result.(interface {
+			TypedSpec() *runnerlifecycle.HostReport
+		}).TypedSpec()
+	}
+	first := read(false)
+	if first.Report.Facts == nil || first.Report.Facts.IdleSince == nil || first.Report.Facts.QuiesceStage != 0 {
+		t.Fatalf("Host report lost idle and lifecycle facts: %v", first.Report)
+	}
+	fenced := proto.Clone(running).(*runtimepb.LifecycleIntent)
+	fenced.ExecutionFenced = true
+	if err := r.ApplyIntent(ctx, fenced); err != nil {
+		t.Fatal(err)
+	}
+	second := read(true)
+	if !second.Intent.ExecutionFenced || !proto.Equal(second.Report.Binding, running.Binding) {
+		t.Fatalf("Host report did not bind the same-generation fence: %v", second)
+	}
+}
+
+func TestHostReportControllerExitsCleanlyWithHost(t *testing.T) {
+	r, ctx := boundaryHost(t)
+	intent := &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: r.bootID, Generation: 1}, SandboxUid: "sandbox", Mode: runtimepb.LifecycleIntent_INACTIVE}
+	if err := r.ApplyIntent(ctx, intent); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-r.fatal:
+		t.Fatalf("normal Host shutdown reported failure: %v", err)
+	default:
 	}
 }

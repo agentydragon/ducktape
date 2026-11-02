@@ -8,9 +8,12 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+	"go.uber.org/zap"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
@@ -41,9 +44,10 @@ func TestUncertainExecutionFenceIsNotRetriedForBinding(t *testing.T) {
 	r.mu.Lock()
 	r.host = &hostLink{connected: true}
 	r.intent = &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_QUIESCING}
+	publishAppliedHostIntent(t, r)
 	report := &runtimepb.HostReport{Binding: binding, Ready: true, NativeStopped: true}
-	value := hostReport{Intent: intentValue(r.intent), Report: report}
-	if err := cosi.Publish(t.Context(), r.lifecycleState, hostReportResource(value), value, "environment-host-report"); err != nil {
+	value := lifecycle.HostReport{Intent: proto.Clone(r.intent).(*runtimepb.LifecycleIntent), Report: report}
+	if err := cosi.Publish(t.Context(), r.lifecycleState, lifecycle.HostReportResource(value), value, "harness-host-report"); err != nil {
 		t.Fatal(err)
 	}
 	r.mu.Unlock()
@@ -93,11 +97,29 @@ func TestWaitForHostQuiescedWakesForFinalReportPublishedAfterSnapshot(t *testing
 	}
 
 	r.lifecycleState = state.WrapCore(namespaced.NewState(inmem.Build))
+	engine, err := cosiruntime.NewRuntime(r.lifecycleState, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.RegisterController(&hostReportObserver{runtime: r}); err != nil {
+		t.Fatal(err)
+	}
+	observerCtx, stopObserver := context.WithCancel(t.Context())
+	observerDone := make(chan error, 1)
+	go func() { observerDone <- engine.Run(observerCtx) }()
+	t.Cleanup(func() { stopObserver(); <-observerDone })
 	publishAppliedHostIntent(t, r)
-	if err := r.acceptReport(host, report, intentValue(r.intent)); err != nil {
+	initialChange := r.changes
+	value := lifecycle.HostReport{Intent: proto.Clone(r.intent).(*runtimepb.LifecycleIntent), Report: report}
+	if err := cosi.Publish(t.Context(), r.lifecycleState, lifecycle.HostReportResource(value), value, "harness-host-report"); err != nil {
 		t.Fatal(err)
 	}
 
+	select {
+	case <-initialChange:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("initial report did not wake Runtime")
+	}
 	quiesced, changed, err := r.hostQuiescenceWaitSnapshot(binding)
 	if err != nil {
 		t.Fatalf("snapshot before final report: %v", err)
@@ -113,12 +135,13 @@ func TestWaitForHostQuiescedWakesForFinalReportPublishedAfterSnapshot(t *testing
 			QuiesceStage: environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED,
 		},
 	}
-	if err := r.acceptReport(host, finalReport, intentValue(r.intent)); err != nil {
+	value.Report = finalReport
+	if err := cosi.Publish(t.Context(), r.lifecycleState, lifecycle.HostReportResource(value), value, "harness-host-report"); err != nil {
 		t.Fatalf("accept final report: %v", err)
 	}
 	select {
 	case <-changed:
-	default:
+	case <-time.After(lifecycleTestTimeout):
 		t.Fatal("final report did not wake the channel captured with the prior report check")
 	}
 

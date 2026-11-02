@@ -17,8 +17,6 @@ import (
 type hostLifecyclePeer interface {
 	BootID() string
 	ApplyIntent(context.Context, *runtimepb.LifecycleIntent) error
-	Report() (*runtimepb.HostReport, error)
-	ChangesSince() <-chan struct{}
 }
 
 // ConnectHost binds Host to the shared COSI lifecycle engine.
@@ -69,63 +67,6 @@ func (r *Runtime) connectHost(ctx context.Context, client *harnesshost.Runner, p
 	case <-r.lifecycleDone:
 		return errors.New("Runtime lifecycle engine stopped")
 	}
-}
-
-func (r *Runtime) acceptReport(host *hostLink, report *runtimepb.HostReport, sampledIntent hostIntent) error {
-	if report == nil || report.Binding == nil || report.Facts == nil {
-		return status.Error(codes.InvalidArgument, "HostReport requires a binding and EnvironmentRuntimeFacts")
-	}
-	r.mu.Lock()
-	if r.host != host || !host.connected {
-		r.mu.Unlock()
-		return status.Error(codes.Aborted, "HostReport belongs to a superseded Host connection")
-	}
-	if !proto.Equal(report.Binding, r.intent.GetBinding()) {
-		// A report can be in flight while the Host applies a newer intent. It is never
-		// an acknowledgement for that new generation; drop it and wait for a bound report.
-		r.mu.Unlock()
-		return nil
-	}
-	applied, _, err := cosi.Read(context.Background(), r.lifecycleState, hostIntentStatusResource(hostIntentStatus{}))
-	if err != nil {
-		r.mu.Unlock()
-		return err
-	}
-	if !applied.Applied || applied.Intent != sampledIntent || applied.Intent != intentValue(r.intent) {
-		// A same-generation fence update briefly closes Host admission. A
-		// report sampled before application cannot acknowledge that update.
-		r.mu.Unlock()
-		return nil
-	}
-	if report.Error != "" {
-		r.mu.Unlock()
-		return status.Errorf(codes.FailedPrecondition, "Harness Host rejected lifecycle generation %d: %s", report.Binding.Generation, report.Error)
-	}
-	previous, _, err := cosi.Read(context.Background(), r.lifecycleState, hostReportResource(hostReport{}))
-	if err != nil {
-		r.mu.Unlock()
-		return err
-	}
-	if previous.Intent == applied.Intent && proto.Equal(previous.Report, report) {
-		r.mu.Unlock()
-		return nil
-	}
-	value := hostReport{Intent: intentValue(r.intent), Report: proto.Clone(report).(*runtimepb.HostReport)}
-	if err := cosi.Publish(context.Background(), r.lifecycleState, hostReportResource(value), value, "environment-host-report"); err != nil {
-		r.mu.Unlock()
-		return err
-	}
-	var fenceBinding *runtimepb.Binding
-	if report.Ready && report.NativeStopped && r.intent != nil && !r.intent.ExecutionFenced &&
-		(r.intent.Mode == runtimepb.LifecycleIntent_QUIESCING || r.intent.Mode == runtimepb.LifecycleIntent_CLOSING) {
-		fenceBinding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
-	}
-	r.changedLocked()
-	r.mu.Unlock()
-	if fenceBinding != nil {
-		r.maybeFenceExecution(fenceBinding)
-	}
-	return nil
 }
 
 func (r *Runtime) maybeFenceExecution(binding *runtimepb.Binding) {

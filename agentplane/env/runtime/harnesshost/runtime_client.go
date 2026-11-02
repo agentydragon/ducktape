@@ -189,32 +189,3 @@ func (r *Runner) executionReady(ctx context.Context) (bool, error) {
 	}
 	return bridge.HostExecutionReady(ctx)
 }
-
-// Report returns an immutable snapshot of the generation Host has applied. A
-// concurrent intent change invalidates this sample; the coordinator will retry
-// after observing the Host change notification.
-func (r *Runner) Report() (*runtimepb.HostReport, error) {
-	r.mu.Lock()
-	var sampled *runtimepb.Binding
-	if r.intent != nil {
-		sampled = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
-	}
-	r.mu.Unlock()
-	facts, err := r.facts()
-	if err != nil {
-		return nil, err
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if !proto.Equal(sampled, r.intent.GetBinding()) || r.intent == nil {
-		return nil, nil
-	}
-	report := &runtimepb.HostReport{Binding: proto.Clone(r.intent.Binding).(*runtimepb.Binding), Ready: r.ready.Load(), NativeStopped: r.nativeStopped, Facts: facts}
-	current := r.lifecycle.status()
-	if current.Generation == r.intent.Binding.Generation {
-		report.Error = current.Error
-	}
-	return report, nil
-}
-
-func (r *Runner) ChangesSince() <-chan struct{} { return r.changesSince() }

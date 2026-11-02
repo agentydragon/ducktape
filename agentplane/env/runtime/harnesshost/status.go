@@ -164,6 +164,10 @@ func runnerLifecycleBlocker(blocker runnerlifecycle.Blocker) *sessionpb.Environm
 }
 
 func (r *Runner) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, error) {
+	return r.factsWithContext(r.ctx)
+}
+
+func (r *Runner) factsWithContext(ctx context.Context) (*environmentruntimestatepb.EnvironmentRuntimeFacts, error) {
 	sessions := r.sessions.Inventory()
 	var blockers []*sandboxpb.AutosuspendBlocker
 	setup := false
@@ -176,7 +180,7 @@ func (r *Runner) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, er
 	}
 	facts := &environmentruntimestatepb.EnvironmentRuntimeFacts{SetupsRunning: setup}
 	r.mu.Lock()
-	admissions, err := r.lifecycle.admissionCount(r.ctx)
+	admissions, err := r.lifecycle.admissionCount(ctx)
 	if err != nil {
 		r.mu.Unlock()
 		return nil, err
@@ -208,7 +212,14 @@ func (r *Runner) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, er
 	facts.AutosuspendBlockers = blockers
 	if r.environment().Quiesced {
 		facts.QuiesceStage = environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_DRAINING
-		current, desiredState := r.lifecycle.status(), r.lifecycle.desiredState()
+		current, _, err := runnerlifecycle.ReadStatus(ctx, r.lifecycle.state)
+		if err != nil {
+			return nil, err
+		}
+		desiredState, _, err := runnerlifecycle.ReadDesired(ctx, r.lifecycle.state)
+		if err != nil {
+			return nil, err
+		}
 		if current.Generation == desiredState.Generation && current.Stage >= runnerlifecycle.Flushing {
 			facts.QuiesceStage = environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_FLUSHING
 			if current.Stage == runnerlifecycle.Quiesced {

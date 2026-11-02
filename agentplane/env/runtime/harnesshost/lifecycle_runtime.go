@@ -69,6 +69,9 @@ func (l *lifecycle) observeSharedEngine() {
 }
 
 func (l *lifecycle) registerControllers() error {
+	if err := l.engine.RegisterController(&hostReportController{runner: l.runner}); err != nil {
+		return err
+	}
 	if err := l.engine.RegisterController(&runnerLifecycleController{l: l}); err != nil {
 		return err
 	}

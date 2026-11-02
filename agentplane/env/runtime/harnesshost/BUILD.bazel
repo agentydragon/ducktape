@@ -128,6 +128,7 @@ go_test(
         "//agentplane/env/runtime/lifecycle",
         "//agentplane/proto:session_go_proto",
         "@com_github_cosi_project_runtime//pkg/controller/runtime",
+        "@com_github_cosi_project_runtime//pkg/resource",
         "@com_github_cosi_project_runtime//pkg/state",
         "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
         "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",

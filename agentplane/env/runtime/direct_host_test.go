@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	"google.golang.org/protobuf/proto"
@@ -28,7 +29,7 @@ func startHostIntentController(t *testing.T, r *Runtime) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := engine.RegisterController(&hostReportController{runtime: r}); err != nil {
+	if err := engine.RegisterController(&hostReportObserver{runtime: r}); err != nil {
 		t.Fatal(err)
 	}
 	if err := engine.RegisterController(&hostIntentController{runtime: r}); err != nil {
@@ -54,12 +55,12 @@ type heldHostPeer struct {
 	started      chan struct{}
 	release      chan struct{}
 	holdFenced   bool
+	state        state.State
 	fenceStarted chan struct{}
 	fenceRelease chan struct{}
 }
 
-func (p *heldHostPeer) BootID() string                { return "host" }
-func (p *heldHostPeer) ChangesSince() <-chan struct{} { return make(chan struct{}) }
+func (p *heldHostPeer) BootID() string { return "host" }
 func (p *heldHostPeer) ApplyIntent(ctx context.Context, intent *runtimepb.LifecycleIntent) error {
 	p.mu.Lock()
 	first := p.applied == nil
@@ -91,7 +92,9 @@ func (p *heldHostPeer) ApplyIntent(ctx context.Context, intent *runtimepb.Lifecy
 	p.mu.Lock()
 	p.applied = proto.Clone(intent).(*runtimepb.LifecycleIntent)
 	p.mu.Unlock()
-	return nil
+	report := &runtimepb.HostReport{Binding: proto.Clone(intent.Binding).(*runtimepb.Binding), Ready: true, NativeStopped: true, Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{}}
+	value := lifecycle.HostReport{Intent: proto.Clone(intent).(*runtimepb.LifecycleIntent), Report: report}
+	return cosi.Publish(ctx, p.state, lifecycle.HostReportResource(value), value, "harness-host-report")
 }
 
 func TestDirectHostFenceWaitsForHostToApplyIt(t *testing.T) {
@@ -105,7 +108,7 @@ func TestDirectHostFenceWaitsForHostToApplyIt(t *testing.T) {
 	initialRelease := make(chan struct{})
 	close(initialRelease)
 	peer := &heldHostPeer{
-		started: make(chan struct{}, 1), release: initialRelease,
+		started: make(chan struct{}, 1), release: initialRelease, state: r.lifecycleState,
 		holdFenced: true, fenceStarted: make(chan struct{}, 1), fenceRelease: make(chan struct{}),
 	}
 	done := make(chan error, 1)
@@ -117,7 +120,6 @@ func TestDirectHostFenceWaitsForHostToApplyIt(t *testing.T) {
 	}, "initial direct Host report")
 	r.mu.Lock()
 	binding := proto.Clone(r.intent.Binding).(*runtimepb.Binding)
-	sampledIntent := intentValue(r.intent)
 	r.mu.Unlock()
 	if err := r.setExecutionFenced(binding); err != nil {
 		t.Fatal(err)
@@ -127,18 +129,8 @@ func TestDirectHostFenceWaitsForHostToApplyIt(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("fenced intent was not sent to Host")
 	}
-	// Reports carry only the generation, so this old ready sample is byte-identical
-	// to the sample after the fence. It must not reopen admission while Apply is held.
-	oldReport, err := peer.Report()
-	if err != nil {
-		t.Fatal(err)
-	}
-	r.mu.Lock()
-	host := r.host
-	r.mu.Unlock()
-	if err := r.acceptReport(host, oldReport, sampledIntent); err != nil {
-		t.Fatal(err)
-	}
+	// The old report remains in COSI while the same-generation fence is applying.
+	// Its exact intent must not acknowledge the fence.
 	r.mu.Lock()
 	premature := r.hostReportLocked()
 	r.mu.Unlock()
@@ -154,39 +146,16 @@ func TestDirectHostFenceWaitsForHostToApplyIt(t *testing.T) {
 	if err := r.waitForExecutionFenced(ctx, binding); err != nil {
 		t.Fatalf("Host-applied Execution fence was not acknowledged: %v", err)
 	}
-	// The peer deliberately returns the same report bytes after the fence.
-	// Runtime cleared its copy when publishing the fence, so the coordinator
-	// must deliver an identical report again after Host applies the intent.
+	// A byte-identical report is accepted only after the new exact intent is applied.
 	waitRuntime(t, r, func() bool {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		return r.host != nil && r.hostReportLocked() != nil && r.hostReportLocked().Ready && proto.Equal(r.hostReportLocked().Binding, binding)
+		return r.hostReportLocked() != nil && r.hostReportLocked().Ready
 	}, "same-generation Host report after Execution fence")
-	// Application can also finish between sampling and accepting an old report.
-	// Its generation still matches, but its exact sampled intent must not be retagged.
-	oldReport.Ready = false
-	if err := r.acceptReport(host, oldReport, sampledIntent); err != nil {
-		t.Fatal(err)
-	}
-	r.mu.Lock()
-	after := r.hostReportLocked()
-	r.mu.Unlock()
-	if after == nil || !after.Ready {
-		t.Fatalf("delayed old report overwrote applied fence readiness: %v", after)
-	}
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatalf("coordinator exit = %v, want cancellation", err)
 	}
-}
-
-func (p *heldHostPeer) Report() (*runtimepb.HostReport, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.applied == nil {
-		return nil, nil
-	}
-	return &runtimepb.HostReport{Binding: proto.Clone(p.applied.Binding).(*runtimepb.Binding), Ready: true, NativeStopped: true, Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{}}, nil
 }
 
 func TestDirectHostIntentPublishedWhileApplyIsBlocked(t *testing.T) {
@@ -197,7 +166,7 @@ func TestDirectHostIntentPublishedWhileApplyIsBlocked(t *testing.T) {
 		bootID: "runtime", changes: make(chan struct{}),
 	}
 	startHostIntentController(t, r)
-	peer := &heldHostPeer{started: make(chan struct{}, 1), release: make(chan struct{})}
+	peer := &heldHostPeer{started: make(chan struct{}, 1), release: make(chan struct{}), state: r.lifecycleState}
 	done := make(chan error, 1)
 	go func() { done <- r.connectHost(ctx, nil, peer) }()
 	select {
@@ -226,30 +195,33 @@ func TestDirectHostIntentPublishedWhileApplyIsBlocked(t *testing.T) {
 	}
 }
 
-func TestDirectHostReportCopiesAndDropsStaleGeneration(t *testing.T) {
+func TestDirectHostReportRequiresExactAppliedIntent(t *testing.T) {
 	binding := &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 2}
 	host := &hostLink{bootID: "host", connected: true}
-	r := &Runtime{
-		host: host, intent: &runtimepb.LifecycleIntent{Binding: proto.Clone(binding).(*runtimepb.Binding), Mode: runtimepb.LifecycleIntent_RUNNING},
-		changes: make(chan struct{}),
-	}
+	r := &Runtime{host: host, intent: &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_RUNNING}, changes: make(chan struct{})}
 	r.lifecycleState = state.WrapCore(namespaced.NewState(inmem.Build))
 	publishAppliedHostIntent(t, r)
-	stale := &runtimepb.HostReport{
-		Binding: &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 1},
-		Ready:   true, Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{},
-	}
-	if err := r.acceptReport(host, stale, intentValue(r.intent)); err != nil || r.hostReportLocked() != nil {
-		t.Fatalf("stale report accepted: report=%v err=%v", r.hostReportLocked(), err)
-	}
-	report := &runtimepb.HostReport{Binding: binding, Ready: true, Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{}}
-	if err := r.acceptReport(host, report, intentValue(r.intent)); err != nil {
+	report := &runtimepb.HostReport{Binding: proto.Clone(binding).(*runtimepb.Binding), Ready: true, Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{}}
+	staleIntent := proto.Clone(r.intent).(*runtimepb.LifecycleIntent)
+	staleIntent.Binding.Generation--
+	value := lifecycle.HostReport{Intent: staleIntent, Report: report}
+	if err := cosi.Publish(t.Context(), r.lifecycleState, lifecycle.HostReportResource(value), value, "harness-host-report"); err != nil {
 		t.Fatal(err)
 	}
-	report.Binding.Generation = 3
+	if r.hostReportLocked() != nil {
+		t.Fatal("stale Host report acknowledged current generation")
+	}
+	value.Intent = proto.Clone(r.intent).(*runtimepb.LifecycleIntent)
+	if err := cosi.Publish(t.Context(), r.lifecycleState, lifecycle.HostReportResource(value), value, "harness-host-report"); err != nil {
+		t.Fatal(err)
+	}
 	report.Ready = false
-	if r.hostReportLocked().Binding.Generation != 2 || !r.hostReportLocked().Ready {
-		t.Fatalf("Runtime retained caller-owned report: %v", r.hostReportLocked())
+	if got := r.hostReportLocked(); got == nil || !got.Ready {
+		t.Fatalf("published report was not immutable: %v", got)
+	}
+	r.intent.ExecutionFenced = true
+	if r.hostReportLocked() != nil {
+		t.Fatal("old report acknowledged same-generation fence")
 	}
 }
 

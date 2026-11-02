@@ -4,14 +4,19 @@ package(default_visibility = ["//agentplane/env:__subpackages__"])
 
 go_library(
     name = "lifecycle",
-    srcs = ["contracts.go"],
+    srcs = [
+        "contracts.go",
+        "host_report.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle",
     deps = [
+        "//agentplane/env/runtime:runtime_service_go_proto",
         "@com_github_cosi_project_runtime//pkg/controller",
         "@com_github_cosi_project_runtime//pkg/resource",
         "@com_github_cosi_project_runtime//pkg/resource/meta/spec",
         "@com_github_cosi_project_runtime//pkg/resource/typed",
         "@com_github_cosi_project_runtime//pkg/safe",
         "@com_github_cosi_project_runtime//pkg/state",
+        "@org_golang_google_protobuf//proto",
     ],
 )
