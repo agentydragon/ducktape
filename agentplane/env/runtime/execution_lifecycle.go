@@ -29,7 +29,7 @@ type executionSignal struct {
 }
 
 // Completion facts are scoped to the generation that issued the effect. They
-// wake the controller through its input, while native handles remain in memory.
+// wake the controller through this resource, while native handles remain in memory.
 type executionStartCompletion struct {
 	Generation uint64
 	UID        string
