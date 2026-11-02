@@ -9,8 +9,10 @@ K3S_EXEC_PROPERTIES = {
     "EstimatedFreeDiskBytes": "50GB",
 }
 
-# Manual experiment only: refreshing a restored baseline currently requires remote snapshots.
+# BuildBuddy injects the lifecycle permission only when executing the remote action. Putting it
+# in py_test.env would also enable persistence under local Bazel execution.
 K3S_PERSISTENCE_PROPERTIES = {
+    "test.env-overrides": "AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1",
     "test.allow-remote-snapshots": "true",
     "test.remote-snapshot-save-policy": "always",
     "test.snapshot-read-policy": "newest",

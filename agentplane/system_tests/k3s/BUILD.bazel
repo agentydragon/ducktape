@@ -11,6 +11,18 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 package(default_testonly = True)
 
 py_test(
+    name = "test_executor_persistence",
+    srcs = ["test_executor_persistence.py"],
+    deps = [
+        ":stack",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_persistence_across_actions",
     srcs = ["test_persistence_across_actions.py"],
     data = [K3S_BINARY],
@@ -35,7 +47,10 @@ py_test(
     srcs = ["test_persistence_lifecycle.py"],
     data = [K3S_BINARY],
     env = {"K3S_BINARY_RLOCATION": "$(rlocationpath " + K3S_BINARY + ")"},
-    exec_properties = K3S_EXEC_PROPERTIES | {"test.runner-recycling-key": "k3s-persistence-lifecycle-v1"},
+    exec_properties = K3S_EXEC_PROPERTIES | {
+        "test.env-overrides": "AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1",
+        "test.runner-recycling-key": "k3s-persistence-lifecycle-v1",
+    },
     tags = K3S_TAGS + ["manual"],
     deps = [
         ":stack",

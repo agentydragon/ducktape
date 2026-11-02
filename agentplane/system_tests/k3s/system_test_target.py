@@ -54,6 +54,7 @@ def deployment(request: pytest.FixtureRequest, scripted_listener: Listener) -> I
             inputs,
             models=_models(inputs, scripted_listener),
             validate_vm_shutdown=lambda: request.session.testsfailed == 0,
+            persist_infrastructure=os.environ.get("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE") == "1",
         ) as stack,
         pytest.MonkeyPatch.context() as environment,
     ):

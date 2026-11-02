@@ -2,7 +2,7 @@
 
 ## Expansion to every k3s application suite
 
-Persistence is the default for every `k3s_suite` declaration: Pod, Dispatcher, all MCP suites,
+Persistence on BuildBuddy executors is the default for every `k3s_suite` declaration: Pod, Dispatcher, all MCP suites,
 normal VM, manual VM, profile VM and real-model. Their standard targets use retained
 infrastructure directly; the separate manual comparison targets have been removed. Existing manual
 and live-model tags continue to control suite selection. Application fixtures remain fresh per action.
@@ -21,8 +21,23 @@ Failures leave the marker dirty for a cold rebuild. The existing lifecycle and b
 retain their diagnostic semantics.
 
 The current snapshot families are `k3s-persistence-v7-{pod,vm}`. Every application stack uses
-persistence without an environment opt-in. Historical commands and commit-pinned links below retain
+persistence automatically on BuildBuddy executors. Historical commands and commit-pinned links below retain
 the comparison-target names used when those measurements were collected.
+
+### Executor lifecycle boundary
+
+BuildBuddy's `test.env-overrides` property injects `AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1` into
+the remote test action. It is not a `py_test.env` setting and is not inherited from the developer's
+shell. [BuildBuddy's executor implementation](https://github.com/buildbuddy-io/buildbuddy/blob/acaf608b95780c2b0681b0205182c38bf5b6237d/enterprise/server/remote_execution/executorplatform/executorplatform.go#L343-L355)
+applies these overrides on the executor. A hosted `bb execute` probe confirmed the marker is injected
+with the property and absent without it. This is an explicit lifecycle permission, not a security
+attestation; deliberately exporting the marker can grant it too.
+
+Without the exact permission, ordinary suites use their original fresh-node lifecycle and stop k3s
+at teardown, including failure paths. The retained-baseline entry point also rejects callers before
+touching persistent state when permission is absent, protecting the cross-action diagnostic probe.
+BuildBuddy API credentials and generic CI variables do not grant permission. PostgreSQL and all other
+per-action application state remain fresh in either mode.
 
 ### Default enablement validation
 
@@ -41,7 +56,7 @@ shared macro. Their existing target names need no additional flags. All seven em
 `persistence-suite.json` with cleanup complete; VM cleanup released its three owned loop devices.
 The standard snapshot families rebuilt cold after the implementation fingerprint changed. This
 validates default activation, rather than a new warm-timing comparison. Required Bazel, import and
-pre-commit checks passed at that head. Subsequent changes in this update are documentation only.
+pre-commit checks passed at that head. These results predate the executor-only lifecycle gate above.
 
 ### Non-VM cold and warm results
 

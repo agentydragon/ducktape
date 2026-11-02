@@ -634,6 +634,9 @@ def _baseline_stop_owned(k3s: K3s, previous: dict[str, Any]) -> None:
 
 
 def _baseline_open(source: Path, fingerprint: str, *, layers_in_memory: bool) -> tuple[K3s, dict[str, Any], bool]:
+    # Protect diagnostic callers too: only BuildBuddy's remote exec property grants this lifecycle.
+    if os.environ.get("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE") != "1":
+        raise RuntimeError("retaining k3s requires BuildBuddy's executor persistence permission")
     _BASELINE_ROOT.mkdir(exist_ok=True)
     binary = _BASELINE_ROOT / "k3s"
     k3s = K3s(_BASELINE_ROOT, binary)
@@ -805,9 +808,13 @@ def _baseline_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None
 
 @contextlib.contextmanager
 def running_stack(
-    inputs: StackInputs, *, models: rendered_fixture.Models, validate_vm_shutdown: Callable[[], bool]
+    inputs: StackInputs,
+    *,
+    models: rendered_fixture.Models,
+    validate_vm_shutdown: Callable[[], bool],
+    persist_infrastructure: bool,
 ) -> Iterator[Stack]:
-    """Reuse healthy infrastructure, create fresh fixtures and forward LLM ingress to `models`."""
+    """Create fresh fixtures; retain infrastructure only with the executor's lifecycle permission."""
     crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
     fixture = inputs.fixture
     cert_manager, trust_manager = certificates.releases()
@@ -831,20 +838,25 @@ def running_stack(
                 process_traces.ProcessTraces(k3s.node_ip, undeclared_outputs_dir() / "process-spans.jsonl")
             )
             # A VM stack's layers would leave too little memory for its guests (README § Image layers in memory).
-            k3s, baseline_marker, baseline_warm = _baseline_open(
-                inputs.binary,
-                _baseline_fingerprint(
+            baseline_warm = False
+            if persist_infrastructure:
+                k3s, baseline_marker, baseline_warm = _baseline_open(
                     inputs.binary,
-                    crds,
-                    cert_manager
-                    + trust_manager
-                    + releases
-                    + (vm_sandboxes.baseline_objects() if fixture.vm_sandboxes else []),
-                    pki_images | infrastructure_images,
+                    _baseline_fingerprint(
+                        inputs.binary,
+                        crds,
+                        cert_manager
+                        + trust_manager
+                        + releases
+                        + (vm_sandboxes.baseline_objects() if fixture.vm_sandboxes else []),
+                        pki_images | infrastructure_images,
+                        layers_in_memory=not fixture.vm_sandboxes,
+                    ),
                     layers_in_memory=not fixture.vm_sandboxes,
-                ),
-                layers_in_memory=not fixture.vm_sandboxes,
-            )
+                )
+            else:
+                process = k3s.start(layers_in_memory=not fixture.vm_sandboxes)
+                cleanup.callback(k3s.stop, process)
             setup.add_event("node Ready")
             cluster = Cluster(
                 kubeconfig=k3s.kubeconfig, namespace=fixture.namespace, kubectl_command=(str(k3s.binary), "kubectl")
@@ -1024,10 +1036,11 @@ def running_stack(
                     )
                 )
         persistence_output = undeclared_outputs_dir() / "persistence-suite.json"
-        persistence_evidence = _baseline_evidence(
-            k3s, fixture, models, cert_manager + trust_manager, baseline_marker, baseline_warm
-        )
-        persistence_output.write_text(json.dumps(persistence_evidence))
+        if persist_infrastructure:
+            persistence_evidence = _baseline_evidence(
+                k3s, fixture, models, cert_manager + trust_manager, baseline_marker, baseline_warm
+            )
+            persistence_output.write_text(json.dumps(persistence_evidence))
         yield Stack(k3s=k3s, cluster=cluster, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
         with tracer.start_as_current_span("system_test.stack.diagnostics"):
             print(k3s.report(fixture.namespace))
@@ -1035,15 +1048,16 @@ def running_stack(
                 (undeclared_outputs_dir() / "vm-sandboxes.txt").write_text(
                     vm_sandboxes.report(k3s.kubectl, fixture.namespace)
                 )
-        # Stop the provisioner, forwards, profilers and guest log capture first. Their checks
-        # must pass before we can certify the baseline, while the API and retained node stay live.
-        cleanup.close()
-        _baseline_clean(k3s, fixture)
-        # Namespace deletion releases all VM users of the loop devices. Certify clean only
-        # after their owned mappings detach and the per-action backing files are removed.
-        block_cleanup.close()
-        baseline_marker["state"] = "clean"
-        _baseline_write_marker(baseline_marker)
-        persistence_evidence["workspace_loop_devices_released"] = len(raw_block.devices)
-        persistence_evidence["cleanup"] = "complete"
-        persistence_output.write_text(json.dumps(persistence_evidence))
+        if persist_infrastructure:
+            # Stop the provisioner, forwards, profilers and guest log capture first. Their checks
+            # must pass before we can certify the baseline, while the API and retained node stay live.
+            cleanup.close()
+            _baseline_clean(k3s, fixture)
+            # Namespace deletion releases all VM users of the loop devices. Certify clean only
+            # after their owned mappings detach and the per-action backing files are removed.
+            block_cleanup.close()
+            baseline_marker["state"] = "clean"
+            _baseline_write_marker(baseline_marker)
+            persistence_evidence["workspace_loop_devices_released"] = len(raw_block.devices)
+            persistence_evidence["cleanup"] = "complete"
+            persistence_output.write_text(json.dumps(persistence_evidence))
