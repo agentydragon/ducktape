@@ -105,7 +105,11 @@ func (r *childReaper) fenceNamespace(ctx context.Context) error {
 // gain privilege because the companion runs without capabilities or privilege
 // escalation.
 func namespaceWorkloadPIDs(uid int) ([]int, error) {
-	entries, err := os.ReadDir("/proc")
+	return namespaceWorkloadPIDsAt("/proc", uid, os.ReadFile)
+}
+
+func namespaceWorkloadPIDsAt(procDir string, uid int, readStatus func(string) ([]byte, error)) ([]int, error) {
+	entries, err := os.ReadDir(procDir)
 	if err != nil {
 		return nil, fmt.Errorf("read PID namespace process table: %w", err)
 	}
@@ -115,7 +119,7 @@ func namespaceWorkloadPIDs(uid int) ([]int, error) {
 		if err != nil || pid == 1 {
 			continue
 		}
-		status, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "status"))
+		status, err := readStatus(filepath.Join(procDir, entry.Name(), "status"))
 		// procfs can return ESRCH as well as ENOENT when a process exits
 		// between listing /proc and opening its status file.
 		if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ESRCH) {
