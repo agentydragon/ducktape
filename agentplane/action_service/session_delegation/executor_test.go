@@ -10,13 +10,17 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/session_delegation/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
+	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
@@ -24,11 +28,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/workload_auth/grpc"
 	"github.com/google/uuid"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -52,6 +58,10 @@ type delegatedBackend struct {
 	interruptCalls int
 	gotList        *environmentpb.ListEnvironmentsRequest
 	gotGet         *environmentpb.GetEnvironmentRequest
+	gotResume      *environmentpb.ResumeEnvironmentRequest
+	resumeResponse *environmentpb.ResumeEnvironmentResponse
+	resumeErr      error
+	resumeCalls    int
 	lookup         *dispatcherpb.Dispatch
 	lookupErr      error
 	cancels        int
@@ -71,6 +81,22 @@ func (b *delegatedBackend) GetEnvironment(ctx context.Context, request *environm
 	b.assertCaller(ctx, testRequestID, testExecutionID)
 	b.gotGet = proto.Clone(request).(*environmentpb.GetEnvironmentRequest)
 	return &environmentpb.EnvironmentDescriptor{Target: proto.Clone(request.GetTarget()).(*environmentpb.TargetHandle)}, nil
+}
+
+func (b *delegatedBackend) ResumeEnvironment(ctx context.Context, request *environmentpb.ResumeEnvironmentRequest) (*environmentpb.ResumeEnvironmentResponse, error) {
+	b.assertCaller(ctx, testRequestID, testExecutionID)
+	b.resumeCalls++
+	b.gotResume = proto.Clone(request).(*environmentpb.ResumeEnvironmentRequest)
+	if b.resumeErr != nil {
+		return nil, b.resumeErr
+	}
+	if b.resumeResponse != nil {
+		return proto.Clone(b.resumeResponse).(*environmentpb.ResumeEnvironmentResponse), nil
+	}
+	return &environmentpb.ResumeEnvironmentResponse{
+		Target:  proto.Clone(request.GetTarget()).(*environmentpb.TargetHandle),
+		Outcome: environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED,
+	}, nil
 }
 
 func (b *delegatedBackend) GetSessionOpening(ctx context.Context, request *dispatcherpb.GetSessionOpeningRequest) (*dispatcherpb.GetSessionOpeningResponse, error) {
@@ -218,7 +244,8 @@ func newDelegatedExecutorForGroup(t *testing.T, backend *delegatedBackend, group
 	}
 	t.Cleanup(func() { _ = connection.Close() })
 	executor, err := NewExecutor(group, catalog.SessionDelegationBinding{Description: "forwards caller"},
-		environmentpb.NewEnvironmentServiceClient(connection), dispatcherpb.NewSessionDispatcherClient(connection), historypb.NewHistoryServiceClient(connection))
+		environmentpb.NewEnvironmentServiceClient(connection),
+		dispatcherpb.NewSessionDispatcherClient(connection), historypb.NewHistoryServiceClient(connection))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,14 +263,167 @@ func TestEnvironmentReadsForwardRecordedCallerAndExactTarget(t *testing.T) {
 	if backend.gotList == nil || backend.gotList.GetLimit() != 7 || backend.gotList.GetPageToken() != "cursor-1" {
 		t.Fatalf("ListEnvironments request = %v", backend.gotList)
 	}
-	getOutcome, err := executor.attempt(t.Context(), requestFor("get", map[string]any{"target": map[string]string{
-		"namespace": testCallerNamespace, "name": "sandbox-one", "uid": "sandbox-uid-1",
-	}}, &uid))
+	getOutcome, err := executor.attempt(t.Context(), requestFor("get", map[string]any{
+		"target": map[string]string{"namespace": testCallerNamespace, "name": "sandbox-one", "uid": "sandbox-uid-1"},
+	}, &uid))
 	if err != nil || getOutcome.State != store.ExecutionSucceeded {
 		t.Fatalf("get outcome=%+v error=%v", getOutcome, err)
 	}
-	if backend.gotGet == nil || backend.gotGet.GetTarget().GetNamespace() != testCallerNamespace || backend.gotGet.GetTarget().GetName() != "sandbox-one" || backend.gotGet.GetTarget().GetUid() != "sandbox-uid-1" {
+	if backend.gotGet == nil || backend.gotGet.GetTarget().GetNamespace() != testCallerNamespace || backend.gotGet.GetTarget().GetName() != "sandbox-one" ||
+		backend.gotGet.GetTarget().GetUid() != "sandbox-uid-1" {
 		t.Fatalf("GetEnvironment request = %v", backend.gotGet)
+	}
+}
+
+func TestResumeForwardsRecordedCallerExactTargetAndOpaquePrecondition(t *testing.T) {
+	backend := &delegatedBackend{testing: t, resumeResponse: &environmentpb.ResumeEnvironmentResponse{
+		Target:  &environmentpb.TargetHandle{Namespace: testCallerNamespace, Name: "sandbox-one", Uid: "sandbox-uid-1"},
+		Outcome: environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED,
+	}}
+	executor := newDelegatedExecutorForGroup(t, backend, contract.GroupEnvironments)
+	uid := testCallerUID
+	outcome, err := executor.attempt(t.Context(), requestFor("resume", map[string]any{
+		"target":       map[string]string{"namespace": testCallerNamespace, "name": "sandbox-one", "uid": "sandbox-uid-1"},
+		"resume_token": "opaque-generation-bound-token",
+	}, &uid))
+	if err != nil || outcome.State != store.ExecutionSucceeded {
+		t.Fatalf("outcome=%+v error=%v", outcome, err)
+	}
+	if backend.resumeCalls != 1 || backend.gotResume == nil || backend.gotResume.GetResumeToken() != "opaque-generation-bound-token" ||
+		backend.gotResume.GetTarget().GetNamespace() != testCallerNamespace || backend.gotResume.GetTarget().GetName() != "sandbox-one" ||
+		backend.gotResume.GetTarget().GetUid() != "sandbox-uid-1" {
+		t.Fatalf("resume request=%v calls=%d", backend.gotResume, backend.resumeCalls)
+	}
+	var response struct {
+		Outcome string `json:"outcome"`
+	}
+	if err := json.Unmarshal(outcome.Result, &response); err != nil {
+		t.Fatalf("decode result: %v", err)
+	}
+	if response.Outcome != environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED.String() {
+		t.Fatalf("resume outcome=%q", response.Outcome)
+	}
+}
+
+func TestResumeUnknownReplyIsNotReplayed(t *testing.T) {
+	assessment := &environmentlifecyclepb.WakeAssessment{
+		State:  environmentlifecyclepb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN,
+		Reason: environmentlifecyclepb.WakeReason_WAKE_REASON_OUTCOME_UNKNOWN,
+		Error:  &statuspb.Status{Code: int32(codes.Unavailable), Message: "patch result unknown"},
+	}
+	resumeStatus, err := status.New(codes.Unavailable, "private backend detail").WithDetails(assessment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := &delegatedBackend{testing: t, resumeErr: resumeStatus.Err()}
+	executor := newDelegatedExecutorForGroup(t, backend, contract.GroupEnvironments)
+	uid := testCallerUID
+	outcome, err := executor.attempt(t.Context(), requestFor("resume", map[string]any{
+		"target":       map[string]string{"namespace": testCallerNamespace, "name": "sandbox-one", "uid": "sandbox-uid-1"},
+		"resume_token": "opaque-generation-bound-token",
+	}, &uid))
+	if err != nil || outcome.State != store.ExecutionUnknown || backend.resumeCalls != 1 {
+		t.Fatalf("resume outcome=%+v error=%v calls=%d; want one unknown-outcome attempt", outcome, err, backend.resumeCalls)
+	}
+	var failure struct {
+		Kind           string `json:"kind"`
+		GRPCCode       string `json:"grpc_code"`
+		WakeAssessment struct {
+			State  string `json:"state"`
+			Reason string `json:"reason"`
+			Error  struct {
+				Code    int32  `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		} `json:"wake_assessment"`
+	}
+	if err := json.Unmarshal(outcome.Error, &failure); err != nil {
+		t.Fatal(err)
+	}
+	if failure.Kind != string(store.UnknownAdapterOutcome) || failure.GRPCCode != "UNAVAILABLE" ||
+		failure.WakeAssessment.State != environmentlifecyclepb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN.String() ||
+		failure.WakeAssessment.Reason != environmentlifecyclepb.WakeReason_WAKE_REASON_OUTCOME_UNKNOWN.String() ||
+		failure.WakeAssessment.Error.Code != int32(codes.Unavailable) || failure.WakeAssessment.Error.Message != "patch result unknown" {
+		t.Fatalf("unknown resume error details = %+v", failure)
+	}
+}
+
+func TestResumePolicyDenialIsMappedToBackendRefusal(t *testing.T) {
+	denial := &environmentlifecyclepb.ResumeEligibility{
+		State:  environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED,
+		Reason: environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED,
+	}
+	resumeStatus, err := status.New(codes.PermissionDenied, "private policy detail").WithDetails(denial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := &delegatedBackend{testing: t, resumeErr: resumeStatus.Err()}
+	executor := newDelegatedExecutorForGroup(t, backend, contract.GroupEnvironments)
+	uid := testCallerUID
+	outcome, err := executor.attempt(t.Context(), requestFor("resume", map[string]any{
+		"target":       map[string]string{"namespace": testCallerNamespace, "name": "sandbox-one", "uid": "sandbox-uid-1"},
+		"resume_token": "opaque-generation-bound-token",
+	}, &uid))
+	if err != nil || outcome.State != store.ExecutionFailed || backend.resumeCalls != 1 {
+		t.Fatalf("denied resume outcome=%+v error=%v calls=%d", outcome, err, backend.resumeCalls)
+	}
+	var failure struct {
+		Kind              string `json:"kind"`
+		GRPCCode          string `json:"grpc_code"`
+		ResumeEligibility struct {
+			State  string `json:"state"`
+			Reason string `json:"reason"`
+		} `json:"resume_eligibility"`
+	}
+	if err := json.Unmarshal(outcome.Error, &failure); err != nil {
+		t.Fatal(err)
+	}
+	if failure.Kind != "backend_refused" || failure.GRPCCode != "PERMISSION_DENIED" ||
+		failure.ResumeEligibility.State != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED.String() ||
+		failure.ResumeEligibility.Reason != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED.String() ||
+		strings.Contains(string(outcome.Error), "private policy detail") {
+		t.Fatalf("denied resume error = %s", outcome.Error)
+	}
+}
+
+func TestResumeRateLimitPreservesWakeAssessmentRetryTime(t *testing.T) {
+	retryAt := timestamppb.New(time.Date(2026, time.November, 1, 12, 0, 0, 0, time.UTC))
+	assessment := &environmentlifecyclepb.WakeAssessment{
+		State:   environmentlifecyclepb.WakeState_WAKE_STATE_RATE_LIMITED,
+		Reason:  environmentlifecyclepb.WakeReason_WAKE_REASON_WAKE_BUDGET_EXHAUSTED,
+		RetryAt: retryAt,
+	}
+	resumeStatus, err := status.New(codes.ResourceExhausted, "wake budget exhausted").WithDetails(assessment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := &delegatedBackend{testing: t, resumeErr: resumeStatus.Err()}
+	executor := newDelegatedExecutorForGroup(t, backend, contract.GroupEnvironments)
+	uid := testCallerUID
+	outcome, err := executor.attempt(t.Context(), requestFor("resume", map[string]any{
+		"target":       map[string]string{"namespace": testCallerNamespace, "name": "sandbox-one", "uid": "sandbox-uid-1"},
+		"resume_token": "opaque-generation-bound-token",
+	}, &uid))
+	if err != nil || outcome.State != store.ExecutionFailed || backend.resumeCalls != 1 {
+		t.Fatalf("rate limited resume outcome=%+v error=%v calls=%d", outcome, err, backend.resumeCalls)
+	}
+	var failure struct {
+		Kind           string `json:"kind"`
+		GRPCCode       string `json:"grpc_code"`
+		WakeAssessment struct {
+			State   string `json:"state"`
+			Reason  string `json:"reason"`
+			RetryAt string `json:"retry_at"`
+		} `json:"wake_assessment"`
+	}
+	if err := json.Unmarshal(outcome.Error, &failure); err != nil {
+		t.Fatal(err)
+	}
+	if failure.Kind != "capacity_exhausted" || failure.GRPCCode != "RESOURCE_EXHAUSTED" ||
+		failure.WakeAssessment.State != environmentlifecyclepb.WakeState_WAKE_STATE_RATE_LIMITED.String() ||
+		failure.WakeAssessment.Reason != environmentlifecyclepb.WakeReason_WAKE_REASON_WAKE_BUDGET_EXHAUSTED.String() ||
+		failure.WakeAssessment.RetryAt != "2026-11-01T12:00:00Z" {
+		t.Fatalf("rate limit resume error details = %+v; raw=%s", failure, outcome.Error)
 	}
 }
 
@@ -252,7 +432,7 @@ func TestEachExecutorOffersOnlyItsOwnActionGroup(t *testing.T) {
 		group string
 		want  []string
 	}{
-		{group: "environments", want: []string{"get", "list"}},
+		{group: "environments", want: []string{"get", "list", "resume"}},
 		{group: "sessions", want: []string{"cancel_input", "get", "interrupt_turn", "observe_input", "open", "read_turns", "submit_input"}},
 	} {
 		t.Run(test.group, func(t *testing.T) {

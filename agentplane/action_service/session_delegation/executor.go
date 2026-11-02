@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
+	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
@@ -21,6 +22,7 @@ import (
 	sessionclient "github.com/agentydragon/ducktape/agentplane/session_client"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/workload_auth/grpc"
 	"github.com/google/uuid"
+	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -77,7 +79,10 @@ func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest) 
 	}
 	result, err := e.dispatch(delegated, request)
 	var refused *refusal
+	var resumeOutcome *resumeOutcomeError
 	switch {
+	case errors.As(err, &resumeOutcome):
+		return resumeOutcome.outcome, nil
 	case errors.As(err, &refused):
 		return worker.Failed(refused.kind, refused.message), nil
 	case errors.Is(err, catalog.ErrInvalidArguments):
@@ -121,6 +126,26 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		response, err := e.environment.ListEnvironments(ctx, &environmentpb.ListEnvironmentsRequest{Limit: uint32(args.Limit), PageToken: pageToken})
 		if err != nil {
 			return nil, readFailure("Environment Service", err)
+		}
+		return protoResult(response)
+	case contract.ActionResumeEnvironment:
+		args, err := e.inputs.ResumeEnvironment.Decode(request.Arguments)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateTargetNamespace(request.Caller.Namespace, args.Target); err != nil {
+			return nil, err
+		}
+		response, err := e.environment.ResumeEnvironment(ctx, &environmentpb.ResumeEnvironmentRequest{
+			Target: &environmentpb.TargetHandle{
+				Namespace: args.Target.Namespace,
+				Name:      args.Target.Name,
+				Uid:       args.Target.UID,
+			},
+			ResumeToken: args.ResumeToken,
+		})
+		if err != nil {
+			return nil, resumeWriteFailure(err)
 		}
 		return protoResult(response)
 	case "get":
@@ -271,9 +296,13 @@ func (e *Executor) getEnvironment(ctx context.Context, request store.ExecutionRe
 	if err != nil {
 		return nil, err
 	}
-	response, err := e.environment.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &environmentpb.TargetHandle{
+	if err := validateTargetNamespace(request.Caller.Namespace, args.Target); err != nil {
+		return nil, err
+	}
+	getRequest := &environmentpb.GetEnvironmentRequest{Target: &environmentpb.TargetHandle{
 		Namespace: args.Target.Namespace, Name: args.Target.Name, Uid: args.Target.UID,
-	}})
+	}}
+	response, err := e.environment.GetEnvironment(ctx, getRequest)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return nil, refuse("target_not_found", "the exact environment incarnation is no longer available")
@@ -314,6 +343,20 @@ func validateTargetNamespace(callerNamespace string, target contract.TargetRef) 
 }
 
 type refusal struct{ kind, message string }
+
+type resumeOutcomeError struct {
+	outcome store.ExecutionOutcome
+}
+
+func (e *resumeOutcomeError) Error() string { return "resume returned a terminal execution outcome" }
+
+type resumeErrorDocument struct {
+	Kind              string          `json:"kind"`
+	Message           string          `json:"message"`
+	GRPCCode          string          `json:"grpc_code"`
+	ResumeEligibility json.RawMessage `json:"resume_eligibility,omitempty"`
+	WakeAssessment    json.RawMessage `json:"wake_assessment,omitempty"`
+}
 
 func (r *refusal) Error() string { return r.message }
 
@@ -383,4 +426,47 @@ func writeFailure(source string, err error) error {
 	default:
 		return fmt.Errorf("%w: %s call outcome is unknown: %w", worker.ErrOutcomeUnknown, source, err)
 	}
+}
+
+// resumeWriteFailure keeps the lifecycle protobuf details that explain a denial, a bounded retry, or an uncertain
+// mutation. A refusal is a failed Execution; an unclassified status keeps the worker's execution_unknown semantics.
+func resumeWriteFailure(err error) error {
+	converted := status.Convert(err)
+	classified := writeFailure("Environment Service", err)
+	grpcCode := converted.Code().String()
+	if name, ok := code.Code_name[int32(converted.Code())]; ok {
+		grpcCode = name
+	}
+	document := resumeErrorDocument{GRPCCode: grpcCode}
+	state := store.ExecutionFailed
+	var refused *refusal
+	if errors.As(classified, &refused) {
+		document.Kind = refused.kind
+		document.Message = refused.message
+	} else {
+		state = store.ExecutionUnknown
+		document.Kind = string(store.UnknownAdapterOutcome)
+		document.Message = "resume outcome is unknown; not replayed"
+	}
+	for _, detail := range converted.Details() {
+		switch typed := detail.(type) {
+		case *environmentlifecyclepb.ResumeEligibility:
+			encoded, marshalErr := protojson.MarshalOptions{UseProtoNames: true}.Marshal(typed)
+			if marshalErr != nil {
+				return fmt.Errorf("marshal resume eligibility error detail: %w", marshalErr)
+			}
+			document.ResumeEligibility = encoded
+		case *environmentlifecyclepb.WakeAssessment:
+			encoded, marshalErr := protojson.MarshalOptions{UseProtoNames: true}.Marshal(typed)
+			if marshalErr != nil {
+				return fmt.Errorf("marshal wake assessment error detail: %w", marshalErr)
+			}
+			document.WakeAssessment = encoded
+		}
+	}
+	encoded, marshalErr := json.Marshal(document)
+	if marshalErr != nil {
+		return fmt.Errorf("marshal resume error document: %w", marshalErr)
+	}
+	return &resumeOutcomeError{outcome: store.ExecutionOutcome{State: state, Error: encoded}}
 }
