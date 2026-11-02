@@ -75,7 +75,7 @@ func (s *pausedSessionInputState) Modify(ctx context.Context, value resource.Res
 	if err := s.State.Modify(ctx, value, update, opts...); err != nil {
 		return err
 	}
-	if value.Metadata().Type() == session.InputType && s.armed.CompareAndSwap(true, false) {
+	if value.Metadata().Type() == session.ReconcileSnapshotType && s.armed.CompareAndSwap(true, false) {
 		close(s.entered)
 		select {
 		case <-s.release:
