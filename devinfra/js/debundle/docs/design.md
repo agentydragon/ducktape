@@ -1235,6 +1235,11 @@ results require the existing unused-receiver predicate, including its nested
 implicit-capture check. The runtime does not yet bind `this` or retain it in
 arrow closures. Such methods use conservative fallback with the receiver as
 an input capability.
+The existing guarded dense-array push uses the same receiver check at callee
+lookup and invocation. Its transfer accepts evaluated primitive arguments and
+the captured receiver, invalidates exact array contents, and returns a numeric
+value with a possible abrupt completion. It does not reevaluate the source
+receiver or infer length from a joined allocation site's snapshot.
 The body's entry check admits native global reads only through the existing
 global-slot integrity guard with no shadowing or local declaration. It records
 that guard's dependencies; the member lookup and invocation still need their

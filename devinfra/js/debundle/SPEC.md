@@ -2230,6 +2230,10 @@ methods requiring `this` stay conservative. Invocation and fallback use the
 captured receiver even if an argument rebinds its source cell. Computed or
 dynamic receivers, optional calls, spread arguments and direct eval remain
 outside this ordered grammar.
+Guarded dense-array `push` consumes that captured receiver and evaluated
+primitive arguments. It retains the existing prototype/descriptor checks and
+invalidates precise array contents. Its completing result is numeric, with a
+possible abrupt result for length overflow; no exact length is inferred.
 An undeclared, unshadowed native global can enter an ordered body only when its
 global slot passes the existing native-integrity guard. Member identity and
 invocation operands retain their separate checks; an unavailable local capture

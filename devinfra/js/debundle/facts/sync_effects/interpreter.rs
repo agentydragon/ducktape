@@ -1439,7 +1439,13 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             .iter()
             .find(|call| call.kind == CallKind::AccessorCalleeLookup && call.span == span);
         let call = match lookup {
-            Some(lookup) if self.executor.callee_lookup_is_certified(lookup) => lookup.clone(),
+            Some(lookup)
+                if self.executor.callee_lookup_is_certified(lookup)
+                    || (property == "push"
+                        && self.executor.dense_array_push_receiver(receivers).is_some()) =>
+            {
+                lookup.clone()
+            }
             _ => Call::member_read(self.owner, Some(self.callable), callee, span),
         };
         // Retain established native, array and borrowed-record read proofs.
@@ -2674,12 +2680,25 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         Some((*object, self.state.dense_arrays.get(object)?.clone()))
     }
 
+    fn dense_array_push_receiver(&self, receiver: &Values) -> Option<u32> {
+        let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
+            receiver.iter().collect::<Vec<_>>().as_slice()
+        else {
+            return None;
+        };
+        (self.state.dense_arrays.contains_key(object)
+            && self.state.object_accessors_are_settled(object)
+            && self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS))
+        .then_some(*object)
+    }
+
     fn execute_dense_array_push(
         &mut self,
         callee: &ValueExpr,
         args: &[Values],
         env: &Context,
         captures: &Context,
+        prepared_receiver: Option<&Values>,
     ) -> bool {
         let ValueExpr::Member(receiver, Some(method), MemberKey::Static, _) = callee else {
             return false;
@@ -2692,25 +2711,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return false;
         }
-        let receiver = self.evaluate(receiver, env, captures);
-        let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
-            receiver.iter().collect::<Vec<_>>().as_slice()
-        else {
+        let receiver = prepared_receiver
+            .cloned()
+            .unwrap_or_else(|| self.evaluate(receiver, env, captures));
+        let Some(object) = self.dense_array_push_receiver(&receiver) else {
             return false;
         };
-        if !self.state.dense_arrays.contains_key(object)
-            || !self.state.object_accessors_are_settled(object)
-            || !self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS)
-        {
-            return false;
-        }
         // An intact ordinary array has its own writable length, and the
         // guarded prototypes cannot intercept the appended primitive slots.
         // Preserve its contained callbacks, but invalidate the precise array
         // contents after this real mutation. No descriptor replacement or
         // getter installation occurred. Refuse exact array snapshots without
         // claiming a fresh value or modeling how often this site executed.
-        if self.state.unknown_array_contents.insert(*object) {
+        if self.state.unknown_array_contents.insert(object) {
             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
         }
         true
@@ -9471,6 +9484,25 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return CallTransfer::EffectsOnly;
         }
+        if call.kind == CallKind::Call
+            && !call.has_spread
+            && self.execute_dense_array_push(
+                &call.callee,
+                &args,
+                env,
+                captures,
+                prepared_receiver.as_ref(),
+            )
+        {
+            return CallTransfer::requested(needs_value, || {
+                // Contents and multiplicity stay unknown after a push. Its
+                // completing result is numeric; a length overflow may throw.
+                Values::from([
+                    AbstractValue::Value(Value::Prim(PrimKinds::NUMBER)),
+                    AbstractValue::Value(Value::Unavailable),
+                ])
+            });
+        }
         // Proofs that reevaluate source expressions have not migrated to
         // evaluated operands. A missing result transfer truncates the ordered
         // caller; it must never replay those expressions to recover a value.
@@ -9522,13 +9554,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if call.kind == CallKind::Call
             && !needs_value
             && self.execute_array_iteration(call.span.into(), env, captures, outcome)
-        {
-            return CallTransfer::EffectsOnly;
-        }
-        if call.kind == CallKind::Call
-            && !needs_value
-            && !call.has_spread
-            && self.execute_dense_array_push(&call.callee, &args, env, captures)
         {
             return CallTransfer::EffectsOnly;
         }

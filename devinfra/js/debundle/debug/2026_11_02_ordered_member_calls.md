@@ -44,6 +44,25 @@ records the native proof's dependencies. Other missing reads keep their
 conservative path, and method identity and invocation inputs still require
 their separate checks. A familiar global name supplies no proof on its own.
 
+## F34: lookup and result transport must migrate together
+
+Normal hosted CI at `9ac304811c82b2d74132f1017dd5f71a6e21c9b5` rejected the
+existing `descriptor_inspection_preserves_eager_argument_effects` fixture.
+Its argument helper calls `effects.push('argument')` before returning a
+primitive. Entering the new ordered member-call path lost the source-summary
+push proof, making descriptor capture conservative and introducing a rejected
+atomic group. The failing test was read from BuildBuddy
+`0264a642-c1ee-5688-be71-7f84a90a67df`; no local test was run.
+
+The existing push receiver guard now serves both callee lookup and invocation.
+It retains singleton ordinary-array identity, settled descriptors and the same
+Array/Object prototype and iterator integrity requirements. The invocation
+consumes the captured receiver and already evaluated primitive arguments. It
+keeps the existing invalidation of precise contents and returns a numeric
+completing value plus a possible throw for length overflow. It does not infer
+an exact length or mutate the literal snapshot to simulate another activation.
+Other array operations still require their own operand/result transfer.
+
 ## Transfer and review boundary
 
 The canonical local body IR retains static members of binding receivers. The
