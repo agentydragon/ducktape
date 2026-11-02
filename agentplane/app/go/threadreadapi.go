@@ -572,24 +572,6 @@ func readThreadSummary(ctx context.Context, history threadReadHistory, id uuid.U
 	return history.GetSummary(ctx, id)
 }
 
-func getThreadView(ctx context.Context, store threadReadStore, history threadReadHistory, id uuid.UUID) (threadView, error) {
-	thread, err := store.GetThread(ctx, id)
-	if err != nil {
-		return threadView{}, err
-	}
-	if thread == nil {
-		return threadView{}, fmt.Errorf("no thread %s", id)
-	}
-	summary, err := readThreadSummary(ctx, history, id)
-	if err != nil {
-		return threadView{}, err
-	}
-	if !summary.Present {
-		return threadView{}, fmt.Errorf("no thread %s", id)
-	}
-	return makeThreadView(*thread, summary)
-}
-
 func makeThreadView(thread threads.Thread, summary historydata.FoldSummary) (threadView, error) {
 	if summary.Sandbox == "" {
 		return threadView{}, errors.New("History Session has no Sandbox identity")

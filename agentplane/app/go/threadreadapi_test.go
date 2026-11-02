@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
@@ -18,6 +19,8 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/structpb"
+	authenticationv1 "k8s.io/api/authentication/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type threadReadStoreFake struct {
@@ -97,6 +100,16 @@ type threadReadHistoryFake struct {
 	summaries   map[uuid.UUID]historydata.FoldSummary
 	sandboxes   map[uuid.UUID]string
 	sandboxUIDs map[uuid.UUID]string
+}
+
+type threadReadAcceptedTokenReviewer struct{}
+
+func (threadReadAcceptedTokenReviewer) Create(context.Context, *authenticationv1.TokenReview, metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
+	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
+		Authenticated: true,
+		Audiences:     []string{"agentplane"},
+		User:          authenticationv1.UserInfo{Username: "system:serviceaccount:tools:runner"},
+	}}, nil
 }
 
 type threadReadInventoryFake struct {
@@ -451,7 +464,32 @@ func TestThreadViewReadsHistoryIdentityActivityAndAttachedSpecification(t *testi
 	if _, err := makeThreadView(row, historydata.FoldSummary{Present: true}); err == nil {
 		t.Fatal("committed History without Sandbox identity was accepted")
 	}
-	if _, err := getThreadView(t.Context(), &threadReadStoreFake{rows: []threads.Thread{row}}, &threadReadHistoryFake{}, id); err == nil {
-		t.Fatal("pending History identity was exposed")
+}
+
+func TestRenameThreadReturnsNotFoundWhenHistorySessionIsMissing(t *testing.T) {
+	authentication, err := auth.New(auth.Config{
+		TokenReviews: threadReadAcceptedTokenReviewer{}, TokenAudience: "agentplane",
+		TokenSubjects: []string{"system:serviceaccount:tools:runner"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewHTTPServer(authentication)
+	t.Cleanup(server.Close)
+	id := uuid.New()
+	store := &threadReadStoreFake{rows: []threads.Thread{{ID: id}}}
+	if err := RegisterThreadReadRoutes(server, store, &threadReadHistoryFake{}, nil, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPatch, "/threads/"+id.String(), strings.NewReader(`{"name":"renamed"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer accepted")
+	response := httptest.NewRecorder()
+	server.Handler(authentication).ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("PATCH /threads/{thread_id} with no History session = %d %s, want 404", response.Code, response.Body.String())
+	}
+	if store.rows[0].Name != nil {
+		t.Fatalf("Thread was renamed without a History session: %q", *store.rows[0].Name)
 	}
 }
