@@ -217,17 +217,23 @@ enum PossibleDischarge {
 fn possible_discharges(
     witness: &NativeMutationWitness,
     reach: SlotReach,
+    family: NativeIntrinsic,
 ) -> Vec<PossibleDischarge> {
+    let mut possible_discharges = spec::IntrinsicFamily::ALL
+        .into_iter()
+        .any(|author_family| NativeIntrinsic::from(author_family) == family)
+        .then_some(PossibleDischarge::IntrinsicsNeverWritten)
+        .into_iter()
+        .collect::<Vec<_>>();
     if matches!(
         reach,
         SlotReach::FamilyCoupling | SlotReach::GlobalObjectCoupling
     ) {
-        return vec![PossibleDischarge::IntrinsicsNeverWritten];
+        return possible_discharges;
     }
     if reach != SlotReach::UnknownReceiver {
         return Vec::new();
     }
-    let mut possible_discharges = vec![PossibleDischarge::IntrinsicsNeverWritten];
     possible_discharges.extend(match &witness.receiver_global {
         Some(property) if is_standard_global(property) => Vec::new(),
         Some(_) => vec![
@@ -403,7 +409,7 @@ fn explain(
                         receiver_roots: witness.receiver_roots.clone(),
                         receiver_global: witness.receiver_global.clone(),
                         target_slots: witness.target_slots.clone(),
-                        possible_discharges: possible_discharges(witness, reach),
+                        possible_discharges: possible_discharges(witness, reach, slot.family()),
                     }
                 })
                 .collect::<Vec<_>>();

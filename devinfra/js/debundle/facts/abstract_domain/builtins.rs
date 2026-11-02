@@ -662,6 +662,8 @@ pub const ROWS: &[Row] = &[
     EMPTY_HOST_OBJECT,
     Row {
         op: IntrinsicOp::TextEncoder,
+        assumed_intact: false,
+        requires: &[IntrinsicSlot::Global(NativeIntrinsic::TextEncoder)],
         cite: "https://encoding.spec.whatwg.org/#dom-textencoder",
         ..EMPTY_HOST_OBJECT
     },

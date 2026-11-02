@@ -1313,7 +1313,11 @@ fn completed_purity_retains_residual_evaluation_obligations() {
         }
         assert!(execution.purity_disagreement.is_none());
     }
-    for constructor in ["TextEncoder", "TextDecoder"] {
+    // The migrated host row can prove timing through its native slot census,
+    // while its purity requires the separately audited exact-site input.
+    for (constructor, pure, complete) in
+        [("TextEncoder", false, true), ("TextDecoder", true, false)]
+    {
         let source = format!(
             "const value = new {constructor}();\nconsole.log(value instanceof {constructor});\n"
         );
@@ -1329,12 +1333,14 @@ fn completed_purity_retains_residual_evaluation_obligations() {
                     .any(|binding| binding.binding == "value")
             })
             .unwrap();
-        assert!(value.purity.is_pure(), "{constructor}: {:?}", value.purity);
-        let execution = value.synchronous_execution.as_ref().unwrap();
-        assert!(
-            !execution.complete,
-            "purity-only native row retains separate timing coverage"
+        assert_eq!(
+            value.purity.is_pure(),
+            pure,
+            "{constructor}: {:?}",
+            value.purity
         );
+        let execution = value.synchronous_execution.as_ref().unwrap();
+        assert_eq!(execution.complete, complete, "{constructor}: {execution:?}");
         assert!(execution.purity_disagreement.is_none());
     }
 }

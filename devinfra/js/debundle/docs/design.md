@@ -176,6 +176,11 @@ excluded; it never certifies a subsequent invocation of the function value.
 For a primitive array spread, the premise covers only the Array iterator and
 iterator `next` identities at the selected initializer; the source shape, not
 the author, proves the declarator interval has no producer.
+The `text_encoder_empty` initializer premise certifies only a direct bare
+zero-argument `new TextEncoder()` site. Its original global data binding is
+checked against known exact-slot writes in every analyzed chunk. It uses the
+shared constructor row and leaves the result opaque. Adding this host census
+family does not expand the `IntrinsicFamily::ALL` author-premise vocabulary.
 The exact `Promise.resolve()` initializer premise requires stable global
 `Promise` and constructor `resolve` slots in the shared source census. Its
 independent `host_behavior.reentry_free_operations` assertion supplies timing; neither assertion

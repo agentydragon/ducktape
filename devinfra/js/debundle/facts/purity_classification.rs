@@ -209,7 +209,7 @@ pub(crate) fn item_purity(
         // PlainData const is legitimately pure, so no PlainData name is
         // lexically shadowed here.
         StatementKind::VarDecl => {
-            if let Some(input) = symbol_for_literal_initializer(item, proofs.native_operations) {
+            if let Some(input) = native_pure_initializer(item, proofs.native_operations) {
                 return Effects::none().with_dependencies(
                     &crate::analysis_inputs::ProofDependencies {
                         native_operation_inputs: BTreeSet::from([input.evidence.reference.clone()]),
@@ -258,7 +258,7 @@ pub(crate) fn item_purity(
 /// The native-site proof applies to the complete initializer only when the
 /// selected call is the entire simple binding. Other expressions retain their
 /// independently classified reads, calls, and throws.
-fn symbol_for_literal_initializer<'a>(
+fn native_pure_initializer<'a>(
     item: &ModuleItem,
     native_facts: &'a ValidatedNativeOperationFacts,
 ) -> Option<&'a crate::analysis_inputs::ResolvedNativeOperationInput> {
@@ -269,10 +269,11 @@ fn symbol_for_literal_initializer<'a>(
     let Pat::Ident(binding) = &decl.name else {
         return None;
     };
-    let Expr::Call(call) = decl.init.as_deref()?.unwrap_parens() else {
-        return None;
+    let input = match decl.init.as_deref()?.unwrap_parens() {
+        Expr::Call(call) => native_facts.symbol_for_literal_proof(call)?,
+        Expr::New(construction) => native_facts.text_encoder_empty_proof(construction)?,
+        _ => return None,
     };
-    let input = native_facts.symbol_for_literal_proof(call)?;
     (binding.id.to_id() == input.binding).then_some(input)
 }
 
