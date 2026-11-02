@@ -439,6 +439,13 @@ oci_load(
     repo_tags = ["loom-gym-eval:latest"],
 )
 
+# keep
+py_binary(
+    name = "analyze_baselines_bin",
+    main_module = "loom.gym.analyze_baselines",
+    deps = [":analyze_baselines"],
+)
+
 py_library(
     name = "analyze_baselines",
     srcs = ["analyze_baselines.py"],
