@@ -128,16 +128,32 @@ it("reads the AppService runner status as the existing generated EnvironmentRunt
   const fetchMock = vi.fn().mockResolvedValue(
     Response.json({
       environmentRuntimeBootId: "fixture-boot",
+      processes: [],
+      sessions: [],
       lifecycle: {
         desiredMode: "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING",
         desiredGeneration: "9223372036854775809",
         progressGeneration: "7",
         progressAvailable: true,
+        progressCurrent: false,
         stage: "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING",
+        error: "",
         blocker: {
           kind: "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT",
+          error: "",
+          resourceType: "",
+          resourceId: "",
+          processId: "",
+          resourcePresent: false,
+          admissions: "0",
+          journalSealPresent: false,
+          journalSealUid: "",
+          expectedJournalSealUid: "",
           journalSealCursor: "9223372036854775811",
+          acknowledgementPresent: false,
+          acknowledgementSealed: false,
           acknowledgementCursor: "9223372036854775810",
+          finalizersPending: false,
         },
       },
     })

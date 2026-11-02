@@ -78,14 +78,17 @@ func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testi
 	if _, ok := wire["environment_runtime_boot_id"]; ok {
 		t.Fatalf("ProtoJSON used proto field names: %s", response.Body.String())
 	}
-	if _, ok := wire["processes"]; ok {
-		t.Fatalf("empty repeated process field was emitted: %s", response.Body.String())
+	processes, ok := wire["processes"].([]any)
+	if !ok || len(processes) != 0 {
+		t.Fatalf("empty repeated process field = %v: %s", wire["processes"], response.Body.String())
 	}
-	if _, ok := wire["sessions"]; ok {
-		t.Fatalf("empty repeated session field was emitted: %s", response.Body.String())
+	sessions, ok := wire["sessions"].([]any)
+	if !ok || len(sessions) != 0 {
+		t.Fatalf("empty repeated session field = %v: %s", wire["sessions"], response.Body.String())
 	}
-	if _, ok := wire["lifecycle"].(map[string]any)["progressCurrent"]; ok {
-		t.Fatalf("default false lifecycle field was emitted: %s", response.Body.String())
+	lifecycleWire, ok := wire["lifecycle"].(map[string]any)
+	if !ok || lifecycleWire["progressCurrent"] != false {
+		t.Fatalf("default lifecycle fields = %v: %s", wire["lifecycle"], response.Body.String())
 	}
 	var body sessionpb.EnvironmentRuntimeStatus
 	if err := protojson.Unmarshal(response.Body.Bytes(), &body); err != nil {

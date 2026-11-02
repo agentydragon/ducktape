@@ -211,7 +211,9 @@ async def test_runner_status_client_reads_generated_defaults_and_old_replica_nam
                             "assignedSessionIds": ["session-a"],
                         }
                     ],
-                    "sessions": [{"sessionId": "session-a", "executionState": "SESSION_EXECUTION_STATE_READY"}],
+                    "sessions": [
+                        {"sessionId": "session-a", "executionState": "SESSION_EXECUTION_STATE_READY", "busy": False}
+                    ],
                     "lifecycle": {
                         "desiredMode": "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING",
                         "desiredGeneration": "7",
@@ -219,14 +221,23 @@ async def test_runner_status_client_reads_generated_defaults_and_old_replica_nam
                         "progressAvailable": True,
                         "progressCurrent": True,
                         "stage": "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING",
+                        "error": "",
                         "blocker": {
                             "kind": "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT",
+                            "error": "",
                             "resourceType": "IngressAcknowledgements.agentplane",
                             "resourceId": "session-a",
+                            "processId": "",
                             "resourcePresent": True,
+                            "admissions": "0",
+                            "journalSealPresent": False,
+                            "journalSealUid": "",
+                            "expectedJournalSealUid": "",
                             "journalSealCursor": "9223372036854775811",
-                            "acknowledgementPresent": True,
+                            "acknowledgementPresent": False,
+                            "acknowledgementSealed": False,
                             "acknowledgementCursor": "9223372036854775810",
+                            "finalizersPending": False,
                         },
                     },
                 }
