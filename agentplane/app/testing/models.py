@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
+from pydantic.alias_generators import to_camel
 
 from agentplane.action_service.policy_view import EffectivePolicyView
 from agentplane.app.sandbox_models import MIN_IDLE_SUSPEND_AFTER_SECONDS, InboxTag
@@ -186,30 +187,39 @@ def sandbox_is_ready(view: SandboxView) -> bool:
     )
 
 
-class HarnessProcessView(BaseModel):
-    process_id: str
+class EnvironmentRuntimeProtoJSONView(BaseModel):
+    """Read generated ProtoJSON and the older snake_case route during replica rollouts."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
+
+
+class HarnessProcessView(EnvironmentRuntimeProtoJSONView):
+    process_id: str = ""
     pid: int | None = None
-    harness: Harness
-    state: Literal["PROCESS_STATE_STARTING", "PROCESS_STATE_RUNNING", "PROCESS_STATE_STOPPING"]
-    assigned_session_ids: list[str]
+    harness: Harness | Literal["HARNESS_UNSPECIFIED"] = "HARNESS_UNSPECIFIED"
+    state: Literal[
+        "PROCESS_STATE_UNSPECIFIED", "PROCESS_STATE_STARTING", "PROCESS_STATE_RUNNING", "PROCESS_STATE_STOPPING"
+    ] = "PROCESS_STATE_UNSPECIFIED"
+    assigned_session_ids: list[str] = Field(default_factory=list)
 
 
-class RunnerSessionView(BaseModel):
-    session_id: str
+class RunnerSessionView(EnvironmentRuntimeProtoJSONView):
+    session_id: str = ""
     process_id: str | None = None
     native_session_id: str | None = None
     execution_state: Literal[
+        "SESSION_EXECUTION_STATE_UNSPECIFIED",
         "SESSION_EXECUTION_STATE_DORMANT",
         "SESSION_EXECUTION_STATE_PREPARING",
         "SESSION_EXECUTION_STATE_READY",
         "SESSION_EXECUTION_STATE_FAILED",
-    ]
+    ] = "SESSION_EXECUTION_STATE_UNSPECIFIED"
     active_turn_id: str | None = None
     failure_cursor: str | None = None
-    busy: bool
+    busy: bool = False
 
 
-class EnvironmentRuntimeLifecycleBlockerView(BaseModel):
+class EnvironmentRuntimeLifecycleBlockerView(EnvironmentRuntimeProtoJSONView):
     kind: Literal[
         "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_UNSPECIFIED",
         "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_ADMISSIONS",
@@ -222,34 +232,34 @@ class EnvironmentRuntimeLifecycleBlockerView(BaseModel):
         "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_INSPECTION",
         "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_JOURNAL_SEAL",
         "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT",
-    ]
-    error: str
-    resource_type: str
-    resource_id: str
-    process_id: str
-    resource_present: bool
-    admissions: str
-    journal_seal_present: bool
-    journal_seal_uid: str
-    expected_journal_seal_uid: str
-    journal_seal_cursor: str
-    acknowledgement_present: bool
-    acknowledgement_sealed: bool
-    acknowledgement_cursor: str
-    finalizers_pending: bool
+    ] = "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_UNSPECIFIED"
+    error: str = ""
+    resource_type: str = ""
+    resource_id: str = ""
+    process_id: str = ""
+    resource_present: bool = False
+    admissions: str = "0"
+    journal_seal_present: bool = False
+    journal_seal_uid: str = ""
+    expected_journal_seal_uid: str = ""
+    journal_seal_cursor: str = "0"
+    acknowledgement_present: bool = False
+    acknowledgement_sealed: bool = False
+    acknowledgement_cursor: str = "0"
+    finalizers_pending: bool = False
 
 
-class EnvironmentRuntimeLifecycleView(BaseModel):
+class EnvironmentRuntimeLifecycleView(EnvironmentRuntimeProtoJSONView):
     desired_mode: Literal[
         "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_UNSPECIFIED",
         "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_RUNNING",
         "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING",
         "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_CLOSING",
-    ]
-    desired_generation: str
-    progress_generation: str
-    progress_available: bool
-    progress_current: bool
+    ] = "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_UNSPECIFIED"
+    desired_generation: str = "0"
+    progress_generation: str = "0"
+    progress_available: bool = False
+    progress_current: bool = False
     stage: Literal[
         "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_UNSPECIFIED",
         "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_RUNNING",
@@ -261,15 +271,15 @@ class EnvironmentRuntimeLifecycleView(BaseModel):
         "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING",
         "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_QUIESCED",
         "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_CLOSED",
-    ]
-    error: str
+    ] = "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_UNSPECIFIED"
+    error: str = ""
     blocker: EnvironmentRuntimeLifecycleBlockerView | None = None
 
 
-class EnvironmentRuntimeStatusView(BaseModel):
-    environment_runtime_boot_id: str
-    processes: list[HarnessProcessView]
-    sessions: list[RunnerSessionView]
+class EnvironmentRuntimeStatusView(EnvironmentRuntimeProtoJSONView):
+    environment_runtime_boot_id: str = ""
+    processes: list[HarnessProcessView] = Field(default_factory=list)
+    sessions: list[RunnerSessionView] = Field(default_factory=list)
     lifecycle: EnvironmentRuntimeLifecycleView | None = None
 
 
