@@ -38,14 +38,14 @@ func TestHostIntentDecisionFailsClosedOnUnknownEffect(t *testing.T) {
 
 func TestHostIntentAdmissionRequiresStartupAndExactConnection(t *testing.T) {
 	desired := runnerlifecycle.HostIntent{RuntimeBootID: "runtime", HostBootID: "host", Generation: 1}
-	controller := &hostIntentController{runner: &Runner{bootID: "host"}}
+	controller := &hostIntentController{host: &Host{bootID: "host"}}
 	if controller.eligible(desired) {
 		t.Fatal("intent applied before Session startup")
 	}
-	controller.runner.startupComplete = true
+	controller.host.startupComplete = true
 	connection := &runtimeConnection{runtimeBootID: "runtime", hostBootID: "host", connected: true}
-	controller.runner.runtimeConnection.Store(connection)
-	if !controller.runner.RuntimeConnectionMatches(desired.RuntimeBootID, desired.HostBootID) {
+	controller.host.runtimeConnection.Store(connection)
+	if !controller.host.RuntimeConnectionMatches(desired.RuntimeBootID, desired.HostBootID) {
 		t.Fatal("exact connected Host was rejected")
 	}
 	if !controller.eligible(desired) {
@@ -59,20 +59,20 @@ func TestHostIntentAdmissionRequiresStartupAndExactConnection(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			invalid := *connection
 			mutate(&invalid)
-			controller.runner.runtimeConnection.Store(&invalid)
+			controller.host.runtimeConnection.Store(&invalid)
 			if controller.eligible(desired) {
 				t.Fatal("invalid Host connection admitted intent")
 			}
 		})
 	}
-	controller.runner.runtimeConnection.Store(nil)
+	controller.host.runtimeConnection.Store(nil)
 	if controller.eligible(desired) {
 		t.Fatal("missing connection admitted intent")
 	}
 }
 
 func TestHostFailureCannotReopenRuntimeConnection(t *testing.T) {
-	runner := &Runner{fatal: make(chan error, 1)}
+	runner := &Host{fatal: make(chan error, 1)}
 	runner.SetRuntimeConnection("runtime", "host", true)
 	runner.fail(context.Canceled)
 	runner.SetRuntimeConnection("runtime", "host", true)
@@ -111,10 +111,10 @@ func TestHostDisconnectAfterApplyingMarkerSkipsNativeEffect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := &Runner{bootID: "host", startupComplete: true, fatal: make(chan error, 1)}
+	runner := &Host{bootID: "host", startupComplete: true, fatal: make(chan error, 1)}
 	runner.SetRuntimeConnection("runtime", "host", true)
 	var calls atomic.Int32
-	controller := &hostIntentController{runner: runner, apply: func(context.Context, *runtimepb.LifecycleIntent) error { calls.Add(1); return nil }}
+	controller := &hostIntentController{host: runner, apply: func(context.Context, *runtimepb.LifecycleIntent) error { calls.Add(1); return nil }}
 	if err := engine.RegisterController(controller); err != nil {
 		t.Fatal(err)
 	}
@@ -157,10 +157,10 @@ func TestHostIntentControllerFailsOnInterruptedApplication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := &Runner{bootID: "host", startupComplete: true, fatal: make(chan error, 1)}
+	runner := &Host{bootID: "host", startupComplete: true, fatal: make(chan error, 1)}
 	runner.SetRuntimeConnection("runtime", "host", true)
 	var calls atomic.Int32
-	if err := engine.RegisterController(&hostIntentController{runner: runner, apply: func(context.Context, *runtimepb.LifecycleIntent) error {
+	if err := engine.RegisterController(&hostIntentController{host: runner, apply: func(context.Context, *runtimepb.LifecycleIntent) error {
 		calls.Add(1)
 		return nil
 	}}); err != nil {

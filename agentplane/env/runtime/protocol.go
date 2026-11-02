@@ -17,7 +17,7 @@ import (
 
 // ConnectHost binds Host to the shared COSI lifecycle engine.
 // Neither component mutex is held across a call into the other component.
-func (r *Runtime) ConnectHost(ctx context.Context, client *harnesshost.Runner) (resultErr error) {
+func (r *Runtime) ConnectHost(ctx context.Context, client *harnesshost.Host) (resultErr error) {
 	bootID := client.BootID()
 	if bootID == "" {
 		return status.Error(codes.InvalidArgument, "Harness Host has no boot ID")

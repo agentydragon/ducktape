@@ -22,8 +22,8 @@ type executionProxy struct {
 
 func newExecutionProxy(r *Runtime) *executionProxy { return &executionProxy{runtime: r} }
 
-func (r *Runtime) authorizeHostCall(ctx context.Context, mutation bool) (*harnesshost.Runner, context.Context, func(), error) {
-	var client *harnesshost.Runner
+func (r *Runtime) authorizeHostCall(ctx context.Context, mutation bool) (*harnesshost.Host, context.Context, func(), error) {
+	var client *harnesshost.Host
 	var binding *runtimepb.Binding
 	var admitted bool
 	err := r.control.Admit(ctx, func(epoch *runtimecontrol.Epoch) error {
@@ -77,7 +77,7 @@ func (r *Runtime) authorizeHostCall(ctx context.Context, mutation bool) (*harnes
 
 // invokeHost preserves the protobuf transport's immutable request/response
 // boundary while invoking the typed Host implementation in this process.
-func invokeHost[Request proto.Message, Response proto.Message](r *Runtime, ctx context.Context, request Request, mutation bool, call func(*harnesshost.Runner, context.Context, Request) (Response, error)) (Response, error) {
+func invokeHost[Request proto.Message, Response proto.Message](r *Runtime, ctx context.Context, request Request, mutation bool, call func(*harnesshost.Host, context.Context, Request) (Response, error)) (Response, error) {
 	var zero Response
 	client, bound, finish, err := r.authorizeHostCall(ctx, mutation)
 	if err != nil {
@@ -92,11 +92,11 @@ func invokeHost[Request proto.Message, Response proto.Message](r *Runtime, ctx c
 }
 
 func (r *Runtime) ListSessions(ctx context.Context, request *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
-	return invokeHost(r, ctx, request, false, (*harnesshost.Runner).ListSessions)
+	return invokeHost(r, ctx, request, false, (*harnesshost.Host).ListSessions)
 }
 
 func (r *Runtime) GetStatus(ctx context.Context, request *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
-	response, err := invokeHost(r, ctx, request, false, (*harnesshost.Runner).GetStatus)
+	response, err := invokeHost(r, ctx, request, false, (*harnesshost.Host).GetStatus)
 	if err != nil {
 		return nil, err
 	}
@@ -107,23 +107,23 @@ func (r *Runtime) GetStatus(ctx context.Context, request *sessionpb.GetStatusReq
 }
 
 func (r *Runtime) OpenSession(ctx context.Context, request *environmentruntimepb.OpenSessionRequest) (*environmentruntimepb.OpenSessionResponse, error) {
-	return invokeHost(r, ctx, request, true, (*harnesshost.Runner).OpenSession)
+	return invokeHost(r, ctx, request, true, (*harnesshost.Host).OpenSession)
 }
 
 func (r *Runtime) SubmitInput(ctx context.Context, request *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
-	return invokeHost(r, ctx, request, true, (*harnesshost.Runner).SubmitInput)
+	return invokeHost(r, ctx, request, true, (*harnesshost.Host).SubmitInput)
 }
 
 func (r *Runtime) ChangeModel(ctx context.Context, request *environmentruntimepb.ChangeModelRequest) (*environmentruntimepb.ChangeModelResponse, error) {
-	return invokeHost(r, ctx, request, true, (*harnesshost.Runner).ChangeModel)
+	return invokeHost(r, ctx, request, true, (*harnesshost.Host).ChangeModel)
 }
 
 func (r *Runtime) ChangeReasoningEffort(ctx context.Context, request *environmentruntimepb.ChangeReasoningEffortRequest) (*environmentruntimepb.ChangeReasoningEffortResponse, error) {
-	return invokeHost(r, ctx, request, true, (*harnesshost.Runner).ChangeReasoningEffort)
+	return invokeHost(r, ctx, request, true, (*harnesshost.Host).ChangeReasoningEffort)
 }
 
 func (r *Runtime) InterruptTurn(ctx context.Context, request *environmentruntimepb.InterruptTurnRequest) (*environmentruntimepb.InterruptTurnResponse, error) {
-	return invokeHost(r, ctx, request, true, (*harnesshost.Runner).InterruptTurn)
+	return invokeHost(r, ctx, request, true, (*harnesshost.Host).InterruptTurn)
 }
 
 func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.ExecutionScope) (executorpb.ExecutorServer, context.Context, func(), error) {

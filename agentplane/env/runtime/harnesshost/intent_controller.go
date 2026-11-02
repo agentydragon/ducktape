@@ -15,8 +15,8 @@ import (
 // The Host owns application of its desired intent in the shared engine. A
 // published Applying status is terminal on restart: effects are never replayed.
 type hostIntentController struct {
-	runner *Runner
-	apply  func(context.Context, *runtimepb.LifecycleIntent) error
+	host  *Host
+	apply func(context.Context, *runtimepb.LifecycleIntent) error
 }
 
 func (*hostIntentController) Name() string { return "harness-host-intent" }
@@ -50,7 +50,7 @@ func (c *hostIntentController) Run(ctx context.Context, engine controller.Runtim
 			return err
 		}
 		if currentFound && !current.Applied && current.Error == "" {
-			c.runner.fail(errors.New("prior Host lifecycle intent application has an unknown outcome"))
+			c.host.fail(errors.New("prior Host lifecycle intent application has an unknown outcome"))
 			return nil
 		}
 		if !shouldApplyHostIntent(found, desired, currentFound, current) {
@@ -69,10 +69,10 @@ func (c *hostIntentController) Run(ctx context.Context, engine controller.Runtim
 		if !c.eligible(desired) {
 			result.Error = "Host connection ended before intent application"
 			_, writeErr := cosi.Write(ctx, engine, runnerlifecycle.HostIntentStatusResource(result), result)
-			c.runner.fail(fmt.Errorf("apply Host lifecycle intent: %w", errors.Join(errors.New(result.Error), writeErr)))
+			c.host.fail(fmt.Errorf("apply Host lifecycle intent: %w", errors.Join(errors.New(result.Error), writeErr)))
 			return nil
 		}
-		apply := c.runner.ApplyIntent
+		apply := c.host.ApplyIntent
 		if c.apply != nil {
 			apply = c.apply
 		}
@@ -84,7 +84,7 @@ func (c *hostIntentController) Run(ctx context.Context, engine controller.Runtim
 		}
 		_, writeErr := cosi.Write(ctx, engine, runnerlifecycle.HostIntentStatusResource(result), result)
 		if applyErr != nil || writeErr != nil {
-			c.runner.fail(fmt.Errorf("apply Host lifecycle intent: %w", errors.Join(applyErr, writeErr)))
+			c.host.fail(fmt.Errorf("apply Host lifecycle intent: %w", errors.Join(applyErr, writeErr)))
 		}
 		engine.ResetRestartBackoff()
 	}
@@ -95,8 +95,8 @@ func shouldApplyHostIntent(found bool, desired runnerlifecycle.HostIntent, curre
 }
 
 func (c *hostIntentController) eligible(desired runnerlifecycle.HostIntent) bool {
-	c.runner.mu.Lock()
-	startup := c.runner.startupComplete && !c.runner.closing && c.runner.bootID == desired.HostBootID
-	c.runner.mu.Unlock()
-	return startup && c.runner.RuntimeConnectionMatches(desired.RuntimeBootID, desired.HostBootID)
+	c.host.mu.Lock()
+	startup := c.host.startupComplete && !c.host.closing && c.host.bootID == desired.HostBootID
+	c.host.mu.Unlock()
+	return startup && c.host.RuntimeConnectionMatches(desired.RuntimeBootID, desired.HostBootID)
 }

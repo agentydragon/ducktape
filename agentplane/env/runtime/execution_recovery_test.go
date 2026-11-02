@@ -385,7 +385,7 @@ func TestFencedExecutionLossRestartsAPIForSameIncarnation(t *testing.T) {
 		starts <- local
 		return local, nil
 	}
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleRuntime(t, config)
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
 	first := <-starts
 

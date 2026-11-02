@@ -15,7 +15,7 @@ import (
 )
 
 func TestManagedProcessWaitCleansUpAfterNaturalExit(t *testing.T) {
-	r := newManagedProcessTestRunner(t)
+	r := newManagedProcessTestHost(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -59,7 +59,7 @@ func TestManagedProcessWaitCleansUpAfterNaturalExit(t *testing.T) {
 }
 
 func TestManagedProcessCanceledWaitRetainsOwnershipUntilStop(t *testing.T) {
-	r := newManagedProcessTestRunner(t)
+	r := newManagedProcessTestHost(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -116,7 +116,7 @@ func TestManagedProcessCanceledWaitRetainsOwnershipUntilStop(t *testing.T) {
 }
 
 func TestManagedProcessBlocksCloseUntilFence(t *testing.T) {
-	r := newManagedProcessTestRunner(t)
+	r := newManagedProcessTestHost(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -141,20 +141,20 @@ func TestManagedProcessBlocksCloseUntilFence(t *testing.T) {
 		case <-time.After(lifecycleTestTimeout):
 			r.cancel()
 			<-closeDone
-			t.Errorf("Runner Close did not finish after process cleanup")
+			t.Errorf("Host Close did not finish after process cleanup")
 		}
 		if closeErr != nil {
-			t.Errorf("close managed process test runner: %v", closeErr)
+			t.Errorf("close managed process test host: %v", closeErr)
 		}
 	})
 	stopManagedProcessOnCleanup(t, process)
 
 	waitLifecycle(t, r, func() bool {
 		return r.lifecycle.status().Blocker.Kind == runnerlifecycle.ProcessCleanupPending && r.lifecycle.status().Blocker.FinalizersPending
-	}, "Runner process fencing barrier")
+	}, "Host process fencing barrier")
 	select {
 	case <-closeDone:
-		t.Fatalf("Runner Close returned before process fencing: %v", closeErr)
+		t.Fatalf("Host Close returned before process fencing: %v", closeErr)
 	default:
 	}
 	if !process.Running() {
@@ -167,16 +167,16 @@ func TestManagedProcessBlocksCloseUntilFence(t *testing.T) {
 	select {
 	case <-closeDone:
 		if closeErr != nil {
-			t.Fatalf("Runner Close after process fencing: %v", closeErr)
+			t.Fatalf("Host Close after process fencing: %v", closeErr)
 		}
 	case <-ctx.Done():
-		t.Fatalf("Runner Close did not finish after process fencing: %v", ctx.Err())
+		t.Fatalf("Host Close did not finish after process fencing: %v", ctx.Err())
 	}
 }
 
 // Runtime processes share the controller but must not enter the Host's drain barrier.
 func TestHostCloseDoesNotWaitForRuntimeProcess(t *testing.T) {
-	r := newManagedProcessTestRunner(t)
+	r := newManagedProcessTestHost(t)
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
 	var runtimeWorkers sync.WaitGroup
@@ -208,9 +208,9 @@ func TestHostCloseDoesNotWaitForRuntimeProcess(t *testing.T) {
 	runtimeWorkers.Wait()
 }
 
-func newManagedProcessTestRunner(t *testing.T) *Runner {
+func newManagedProcessTestHost(t *testing.T) *Host {
 	t.Helper()
-	r, err := newTestRunner(Config{StateDir: t.TempDir()}, nil)
+	r, err := newTestHost(Config{StateDir: t.TempDir()}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,13 +224,13 @@ func newManagedProcessTestRunner(t *testing.T) *Runner {
 	}
 	t.Cleanup(func() {
 		if err := r.Close(context.Background()); err != nil {
-			t.Errorf("close managed process test runner: %v", err)
+			t.Errorf("close managed process test host: %v", err)
 		}
 	})
 	return r
 }
 
-func assertManagedProcessFinalizer(t *testing.T, ctx context.Context, r *Runner, process *supervision.ManagedProcess, want bool) {
+func assertManagedProcessFinalizer(t *testing.T, ctx context.Context, r *Host, process *supervision.ManagedProcess, want bool) {
 	t.Helper()
 	desired, err := r.lifecycle.state.Get(ctx, process.Pointer())
 	if err != nil {
@@ -242,7 +242,7 @@ func assertManagedProcessFinalizer(t *testing.T, ctx context.Context, r *Runner,
 	}
 }
 
-func assertManagedProcessAbsent(t *testing.T, ctx context.Context, r *Runner, process *supervision.ManagedProcess) {
+func assertManagedProcessAbsent(t *testing.T, ctx context.Context, r *Host, process *supervision.ManagedProcess) {
 	t.Helper()
 	_, err := r.lifecycle.state.Get(ctx, process.Pointer())
 	if !state.IsNotFoundError(err) {

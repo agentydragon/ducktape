@@ -65,7 +65,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 	write := func() error {
 		changed, err := runnerlifecycle.WriteStatus(ctx, r, current)
 		if changed {
-			c.l.runner.changed()
+			c.l.host.changed()
 			// This controller does not subscribe to RunnerRuntime, so queue the next aggregate step explicitly.
 			r.QueueReconcile()
 		}
@@ -76,9 +76,9 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		current.Blocker = runnerlifecycle.Blocker{}
 		return write()
 	}
-	c.l.runner.mu.Lock()
+	c.l.host.mu.Lock()
 	admissions, err := c.l.admissionCount(ctx)
-	c.l.runner.mu.Unlock()
+	c.l.host.mu.Unlock()
 	if err != nil {
 		return err
 	}
@@ -90,12 +90,12 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		}
 		return write()
 	}
-	ids, err := c.l.runner.store.SessionIDs()
+	ids, err := c.l.host.store.SessionIDs()
 	if err != nil {
 		return err
 	}
 	for _, id := range ids {
-		if _, err := c.l.runner.sessions.Load(ctx, id); err != nil {
+		if _, err := c.l.host.sessions.Load(ctx, id); err != nil {
 			return err
 		}
 	}
@@ -104,7 +104,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		current.Blocker = runnerlifecycle.Blocker{}
 		return write()
 	}
-	sessions := c.l.runner.sessions.Inventory()
+	sessions := c.l.host.sessions.Inventory()
 	for _, s := range sessions {
 		status, found, err := session.ReadLifecycleStatus(ctx, r, s.ID())
 		if err != nil {
@@ -159,7 +159,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			return write()
 		}
 	}
-	if c.l.runner.codexAppServer != nil {
+	if c.l.host.codexAppServer != nil {
 		runtime, found, err := codexappserver.ReadRuntime(ctx, r)
 		if err != nil {
 			return err
@@ -240,27 +240,27 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			return write()
 		}
 	}
-	c.l.runner.mu.Lock()
+	c.l.host.mu.Lock()
 	latest, found, err := runnerlifecycle.ReadDesired(ctx, c.l.state)
 	if err != nil {
-		c.l.runner.mu.Unlock()
+		c.l.host.mu.Unlock()
 		return err
 	}
 	if !found || latest != desiredState {
-		c.l.runner.mu.Unlock()
+		c.l.host.mu.Unlock()
 		return nil
 	}
 	applied, found, err := cosi.Read(ctx, r, runnerlifecycle.HostIntentStatusResource(runnerlifecycle.HostIntentStatus{}))
 	if err != nil {
-		c.l.runner.mu.Unlock()
+		c.l.host.mu.Unlock()
 		return err
 	}
-	nativeChanged := !c.l.runner.nativeStopped
-	c.l.runner.nativeStopped = true
-	fenced := found && hostFenceMatches(applied, c.l.runner.intent, desiredState.Generation)
-	c.l.runner.mu.Unlock()
+	nativeChanged := !c.l.host.nativeStopped
+	c.l.host.nativeStopped = true
+	fenced := found && hostFenceMatches(applied, c.l.host.intent, desiredState.Generation)
+	c.l.host.mu.Unlock()
 	if nativeChanged {
-		c.l.runner.changed()
+		c.l.host.changed()
 	}
 	if desiredState.SealUID != "" && !fenced {
 		current.Stage = runnerlifecycle.Fencing
@@ -290,14 +290,14 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 	if desiredState.Mode == runnerlifecycle.Closing {
 		// Closing the final admission window and publishing completion share
 		// the RPC barrier, including late exact-turn controls.
-		c.l.runner.mu.Lock()
+		c.l.host.mu.Lock()
 		admissions, err := c.l.admissionCount(ctx)
 		if err != nil {
-			c.l.runner.mu.Unlock()
+			c.l.host.mu.Unlock()
 			return err
 		}
 		if admissions != 0 {
-			c.l.runner.mu.Unlock()
+			c.l.host.mu.Unlock()
 			current.Blocker = runnerlifecycle.Blocker{
 				Kind: runnerlifecycle.AdmissionsPending, ResourceType: runnerInputType,
 				ResourceID: runnerlifecycle.ResourceID, ResourcePresent: true, Admissions: uint64(admissions),
@@ -306,15 +306,15 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		}
 		latest := c.l.desiredState()
 		if latest != desiredState {
-			c.l.runner.mu.Unlock()
+			c.l.host.mu.Unlock()
 			return nil
 		}
 		current.Stage = runnerlifecycle.Closed
 		current.Blocker = runnerlifecycle.Blocker{}
 		changed, err := runnerlifecycle.WriteStatus(ctx, r, current)
-		c.l.runner.mu.Unlock()
+		c.l.host.mu.Unlock()
 		if changed {
-			c.l.runner.changed()
+			c.l.host.changed()
 			r.QueueReconcile()
 		}
 		return err

@@ -56,7 +56,7 @@ func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.S
 	}
 	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
 	config.Control = configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnerSecurity}
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleRuntime(t, config)
 	listener, server, err := r.control.Listen(r.executorProxy)
 	if err != nil {
 		t.Fatal(err)
@@ -197,7 +197,7 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 	gatewayTLS := ca.Issue(t, environmentruntimetransport.GatewayURI)
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
 	config.Control = configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: environmentruntimetransport.Security{Mode: environmentruntimetransport.MutualTLS, TLS: &runnerTLS}}
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleRuntime(t, config)
 	listener, server, err := r.control.Listen(r.executorProxy)
 	if err != nil {
 		t.Fatal(err)
@@ -325,7 +325,7 @@ func TestForwardRunnerRejectsUnconfiguredExecutionSession(t *testing.T) {
 	gatewayTLS := ca.Issue(t, environmentruntimetransport.GatewayURI)
 	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
 	config.Control = configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: environmentruntimetransport.Security{Mode: environmentruntimetransport.MutualTLS, TLS: &runnerTLS}}
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleRuntime(t, config)
 	listener, server, err := r.control.Listen(r.executorProxy)
 	if err != nil {
 		t.Fatal(err)

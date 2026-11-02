@@ -18,7 +18,7 @@ import (
 
 // The fixture supplies the same shared-engine boundary as Environment Runtime.
 // Host cancellation stops this test-owned engine after the Host reaches Closed.
-func newTestRunner(config Config, store state.State) (*Runner, error) {
+func newTestHost(config Config, store state.State) (*Host, error) {
 	if store == nil {
 		store = state.WrapCore(namespaced.NewState(inmem.Build))
 	}
@@ -54,5 +54,5 @@ func newTestRunner(config Config, store state.State) (*Runner, error) {
 }
 
 func newLifecycleWatchFixture(ctx context.Context) *lifecycle {
-	return &lifecycle{runner: &Runner{ctx: ctx}, state: state.WrapCore(namespaced.NewState(inmem.Build))}
+	return &lifecycle{host: &Host{ctx: ctx}, state: state.WrapCore(namespaced.NewState(inmem.Build))}
 }

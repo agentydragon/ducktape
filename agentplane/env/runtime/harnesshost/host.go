@@ -23,7 +23,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-type Runner struct {
+// Host owns the environment's native harness sessions and their lifecycle.
+type Host struct {
 	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 	config              Config
 	ctx                 context.Context
@@ -57,7 +58,7 @@ type Runner struct {
 
 // NewEmbedded registers Host controllers in the Runtime-owned engine and store.
 // Runtime retains responsibility for stopping and joining that engine.
-func NewEmbedded(config Config, lifecycleState state.State, engine *cosiruntime.Runtime, engineDone <-chan struct{}, processes *supervision.Host) (*Runner, error) {
+func NewEmbedded(config Config, lifecycleState state.State, engine *cosiruntime.Runtime, engineDone <-chan struct{}, processes *supervision.Host) (*Host, error) {
 	if lifecycleState == nil || engine == nil || engineDone == nil || processes == nil {
 		return nil, errors.New("embedded Host requires Runtime state, engine and completion signal")
 	}
@@ -96,7 +97,7 @@ func NewEmbedded(config Config, lifecycleState state.State, engine *cosiruntime.
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &Runner{config: config, owner: owner, supervisor: supervisor, workspaceSupervisor: workspaceSupervisor, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, changes: make(chan struct{}), fatal: make(chan error, 1)}
+	r := &Host{config: config, owner: owner, supervisor: supervisor, workspaceSupervisor: workspaceSupervisor, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, changes: make(chan struct{}), fatal: make(chan error, 1)}
 	r.scripts, err = scripts.New(scripts.Config{HarnessEnvironment: config.HarnessEnvironment, LaunchProcess: func(ctx context.Context, owner string, cfg supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
 		return r.launchProcess(ctx, owner, r.supervisor, cfg)
 	}})
@@ -126,7 +127,7 @@ func NewEmbedded(config Config, lifecycleState state.State, engine *cosiruntime.
 	return r, nil
 }
 
-func (r *Runner) configureSessions() error {
+func (r *Host) configureSessions() error {
 	var err error
 	r.sessions, err = session.NewManager(session.Config{
 		Context:            r.ctx,
@@ -158,16 +159,16 @@ func (r *Runner) configureSessions() error {
 	return nil
 }
 
-func (r *Runner) changed() {
+func (r *Host) changed() {
 	r.mu.Lock()
 	close(r.changes)
 	r.changes = make(chan struct{})
 	r.mu.Unlock()
 }
 
-func (r *Runner) changesSince() <-chan struct{} { r.mu.Lock(); defer r.mu.Unlock(); return r.changes }
+func (r *Host) changesSince() <-chan struct{} { r.mu.Lock(); defer r.mu.Unlock(); return r.changes }
 
-func (r *Runner) fail(err error) {
+func (r *Host) fail(err error) {
 	if err == nil {
 		return
 	}
@@ -187,7 +188,7 @@ func (r *Runner) fail(err error) {
 	}
 }
 
-func (r *Runner) ensureWorkspace(ctx context.Context, cwd string) (string, error) {
+func (r *Host) ensureWorkspace(ctx context.Context, cwd string) (string, error) {
 	config := workspace.Config{Root: r.config.WorkspaceRoot}
 	if r.workspaceSupervisor != nil {
 		config.LaunchHelper = func(ctx context.Context, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
@@ -198,8 +199,8 @@ func (r *Runner) ensureWorkspace(ctx context.Context, cwd string) (string, error
 }
 
 // Close starts local process cleanup once. Canceling ctx ends only this caller's wait;
-// accepted setup/bootstrap and the shared cleanup continue under Runner ownership.
-func (r *Runner) Close(ctx context.Context) error {
+// accepted setup/bootstrap and the shared cleanup continue under Host ownership.
+func (r *Host) Close(ctx context.Context) error {
 	r.closeOnce.Do(func() {
 		r.mu.Lock()
 		r.closing = true
@@ -223,13 +224,13 @@ func (r *Runner) Close(ctx context.Context) error {
 	}
 }
 
-func (r *Runner) isClosing() bool {
+func (r *Host) isClosing() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.closing
 }
 
-func (r *Runner) finishClose() error {
+func (r *Host) finishClose() error {
 	r.mu.Lock()
 	err := r.lifecycle.setDesiredState(runnerlifecycle.Closing, "")
 	r.mu.Unlock()
@@ -256,7 +257,7 @@ func (r *Runner) finishClose() error {
 
 // WaitClosed observes the Host controller's native cleanup barrier without
 // waiting for its final owner release, which follows the shared engine join.
-func (r *Runner) WaitClosed(ctx context.Context) error {
+func (r *Host) WaitClosed(ctx context.Context) error {
 	closed := func() (bool, error) {
 		status, found, err := runnerlifecycle.ReadStatus(context.Background(), r.lifecycle.state)
 		if err != nil || !found {
