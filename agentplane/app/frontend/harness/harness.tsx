@@ -22,6 +22,7 @@ import { decisionFixture, type DecisionFixture } from "../sandboxes/decision_fix
 import type { DecisionsSnapshot, SandboxSnapshot, SandboxesSnapshot } from "../sandboxes/live";
 import type { WatchHealth } from "../live";
 import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
+import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
 import "@mantine/core/styles.css";
 
 import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
@@ -56,6 +57,7 @@ import type { GitHubSubject, InboxStatus, SandboxNotificationStatus, Subscriptio
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
 import { CommandSchema } from "../../../proto/command_pb";
 import { EventEntrySchema } from "../../../proto/event_log_pb";
+import { Harness, ProcessState, SessionExecutionState } from "../../../proto/session_pb";
 import { DisclosureVisual } from "./disclosure_visual";
 import { OperationPresentationVisual } from "./operation_presentation_visual";
 import { LocalCommands } from "../threads/local_commands";
@@ -2843,64 +2845,40 @@ routes.push(
   [
     "GET",
     /^\/sandboxes\/([^/]+)\/runner-status$/,
-    () => ({
-      environment_runtime_boot_id: "visual-runner-boot-01",
-      lifecycle: {
-        desired_mode: "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING",
-        desired_generation: "3",
-        progress_generation: "3",
-        progress_available: true,
-        progress_current: true,
-        stage: "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING",
-        error: "",
-        blocker: {
-          kind: "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT",
-          error: "",
-          resource_type: "IngressAcknowledgements.agentplane",
-          resource_id: "ready-session",
-          process_id: "",
-          resource_present: true,
-          admissions: "0",
-          journal_seal_present: true,
-          journal_seal_uid: "visual-incarnation-01",
-          expected_journal_seal_uid: "visual-incarnation-01",
-          journal_seal_cursor: "19",
-          acknowledgement_present: true,
-          acknowledgement_sealed: true,
-          acknowledgement_cursor: "18",
-          finalizers_pending: false,
-        },
-      },
-      processes: [
-        {
-          process_id: "visual-claude-process-01",
-          pid: 18001,
-          harness: "HARNESS_CLAUDE",
-          state: "PROCESS_STATE_RUNNING",
-          assigned_session_ids: ["ready-session"],
-        },
-      ],
-      sessions: [
-        {
-          session_id: "dormant-session",
-          process_id: null,
-          native_session_id: null,
-          execution_state: "SESSION_EXECUTION_STATE_DORMANT",
-          active_turn_id: null,
-          failure_cursor: null,
-          busy: false,
-        },
-        {
-          session_id: "ready-session",
-          process_id: "visual-claude-process-01",
-          native_session_id: "visual-native-session-01",
-          execution_state: "SESSION_EXECUTION_STATE_READY",
-          active_turn_id: null,
-          failure_cursor: null,
-          busy: false,
-        },
-      ],
-    }),
+    () =>
+      runnerStatusFixture({
+        environmentRuntimeBootId: "visual-runner-boot-01",
+        lifecycle: acknowledgedQuiescingLifecycleFixture({
+          generation: 3n,
+          sessionId: "ready-session",
+          journalSealUid: "visual-incarnation-01",
+          journalSealCursor: 19n,
+          acknowledgementCursor: 18n,
+        }),
+        processes: [
+          {
+            processId: "visual-claude-process-01",
+            pid: 18001n,
+            harness: Harness.CLAUDE,
+            state: ProcessState.RUNNING,
+            assignedSessionIds: ["ready-session"],
+          },
+        ],
+        sessions: [
+          {
+            sessionId: "dormant-session",
+            executionState: SessionExecutionState.DORMANT,
+            busy: false,
+          },
+          {
+            sessionId: "ready-session",
+            processId: "visual-claude-process-01",
+            nativeSessionId: "visual-native-session-01",
+            executionState: SessionExecutionState.READY,
+            busy: false,
+          },
+        ],
+      }),
   ],
   [
     "POST",

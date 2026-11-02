@@ -283,6 +283,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:trace_search",
         "//agentplane/app/frontend/testing:langfuse_search",
         "//agentplane/app/frontend/testing:model_catalog",
+        "//agentplane/app/frontend/testing:runner_status",
         "//agentplane/app/frontend/testing:watch",
         "//agentplane/app/frontend/threads:client",
     ],

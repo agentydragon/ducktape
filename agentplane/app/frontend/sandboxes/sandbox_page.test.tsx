@@ -16,12 +16,20 @@ import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 
 import { api } from "../client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
+import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
 import type * as LiveModule from "../live";
 import type { Live } from "../live";
 import { SandboxRoute } from "../app";
 import { SandboxPage } from "./sandbox_page";
 import { TopbarContext } from "../topbar";
 import type { SandboxSnapshot } from "./live";
+import {
+  EnvironmentRuntimeLifecycleMode,
+  EnvironmentRuntimeLifecycleStage,
+  Harness,
+  ProcessState,
+  SessionExecutionState,
+} from "../../../proto/session_pb";
 
 const fetchMock = vi.hoisted(() => {
   const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
@@ -168,45 +176,41 @@ async function render(
   claudePaused = false,
   routeNavigation = false,
   runnerStatus: () => Promise<Response> = async () =>
-    Response.json({
-      environment_runtime_boot_id: "boot-visual-001",
-      processes: [
-        {
-          process_id: "process-claude-001",
-          pid: 4312,
-          harness: "HARNESS_CLAUDE",
-          state: "PROCESS_STATE_RUNNING",
-          assigned_session_ids: ["session-ready-001"],
-        },
-        {
-          process_id: "process-codex-002",
-          pid: null,
-          harness: "HARNESS_CODEX",
-          state: "PROCESS_STATE_STARTING",
-          assigned_session_ids: ["session-preparing-002"],
-        },
-      ],
-      sessions: [
-        {
-          session_id: "session-ready-001",
-          process_id: "process-claude-001",
-          native_session_id: "native-claude-001",
-          execution_state: "SESSION_EXECUTION_STATE_DORMANT",
-          active_turn_id: null,
-          failure_cursor: null,
-          busy: false,
-        },
-        {
-          session_id: "session-preparing-002",
-          process_id: "process-codex-002",
-          native_session_id: null,
-          execution_state: "SESSION_EXECUTION_STATE_PREPARING",
-          active_turn_id: null,
-          failure_cursor: null,
-          busy: false,
-        },
-      ],
-    })
+    Response.json(
+      runnerStatusFixture({
+        environmentRuntimeBootId: "boot-visual-001",
+        processes: [
+          {
+            processId: "process-claude-001",
+            pid: 4312n,
+            harness: Harness.CLAUDE,
+            state: ProcessState.RUNNING,
+            assignedSessionIds: ["session-ready-001"],
+          },
+          {
+            processId: "process-codex-002",
+            harness: Harness.CODEX,
+            state: ProcessState.STARTING,
+            assignedSessionIds: ["session-preparing-002"],
+          },
+        ],
+        sessions: [
+          {
+            sessionId: "session-ready-001",
+            processId: "process-claude-001",
+            nativeSessionId: "native-claude-001",
+            executionState: SessionExecutionState.DORMANT,
+            busy: false,
+          },
+          {
+            sessionId: "session-preparing-002",
+            processId: "process-codex-002",
+            executionState: SessionExecutionState.PREPARING,
+            busy: false,
+          },
+        ],
+      })
+    )
 ): Promise<ReturnType<typeof vi.fn>> {
   // The Egress log panel stays mounted behind its tab and follows a stream that these tests never feed.
   serveEventStreams(() => undefined);
@@ -444,55 +448,34 @@ it("opens the Kubernetes status items that have an unmet condition and no others
 });
 
 it("refreshes the runner snapshot and replaces old process and Session details", async () => {
-  let status: object = {
-    environment_runtime_boot_id: "boot-before-refresh",
-    lifecycle: {
-      desired_mode: "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING",
-      desired_generation: "7",
-      progress_generation: "7",
-      progress_available: true,
-      progress_current: true,
-      stage: "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING",
-      error: "",
-      blocker: {
-        kind: "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT",
-        error: "",
-        resource_type: "IngressAcknowledgements.agentplane",
-        resource_id: "session-before-refresh",
-        process_id: "",
-        resource_present: true,
-        admissions: "0",
-        journal_seal_present: true,
-        journal_seal_uid: "incarnation-before-refresh",
-        expected_journal_seal_uid: "incarnation-before-refresh",
-        journal_seal_cursor: "12",
-        acknowledgement_present: true,
-        acknowledgement_sealed: true,
-        acknowledgement_cursor: "11",
-        finalizers_pending: false,
-      },
-    },
+  let status: object = runnerStatusFixture({
+    environmentRuntimeBootId: "boot-before-refresh",
+    lifecycle: acknowledgedQuiescingLifecycleFixture({
+      generation: 7n,
+      sessionId: "session-before-refresh",
+      journalSealUid: "incarnation-before-refresh",
+      journalSealCursor: 12n,
+      acknowledgementCursor: 11n,
+    }),
     processes: [
       {
-        process_id: "process-before-refresh",
-        pid: 4312,
-        harness: "HARNESS_CLAUDE",
-        state: "PROCESS_STATE_RUNNING",
-        assigned_session_ids: ["session-before-refresh"],
+        processId: "process-before-refresh",
+        pid: 4312n,
+        harness: Harness.CLAUDE,
+        state: ProcessState.RUNNING,
+        assignedSessionIds: ["session-before-refresh"],
       },
     ],
     sessions: [
       {
-        session_id: "session-before-refresh",
-        process_id: "process-before-refresh",
-        native_session_id: "native-before-refresh",
-        execution_state: "SESSION_EXECUTION_STATE_READY",
-        active_turn_id: null,
-        failure_cursor: null,
+        sessionId: "session-before-refresh",
+        processId: "process-before-refresh",
+        nativeSessionId: "native-before-refresh",
+        executionState: SessionExecutionState.READY,
         busy: false,
       },
     ],
-  };
+  });
   await render(
     async () => Response.json([]),
     undefined,
@@ -506,39 +489,34 @@ it("refreshes the runner snapshot and replaces old process and Session details",
   expect(container.textContent).toContain("Blocked at History acknowledgement");
   expect(container.textContent).toContain("Acknowledged cursor · 11 of 12 · sealed yes");
 
-  status = {
-    environment_runtime_boot_id: "boot-after-refresh",
+  status = runnerStatusFixture({
+    environmentRuntimeBootId: "boot-after-refresh",
     lifecycle: {
-      desired_mode: "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_CLOSING",
-      desired_generation: "8",
-      progress_generation: "8",
-      progress_available: true,
-      progress_current: true,
-      stage: "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_CLOSED",
+      desiredMode: EnvironmentRuntimeLifecycleMode.CLOSING,
+      desiredGeneration: 8n,
+      progressGeneration: 8n,
+      progressAvailable: true,
+      progressCurrent: true,
+      stage: EnvironmentRuntimeLifecycleStage.CLOSED,
       error: "",
-      blocker: null,
     },
     processes: [
       {
-        process_id: "process-after-refresh",
-        pid: null,
-        harness: "HARNESS_CODEX",
-        state: "PROCESS_STATE_STARTING",
-        assigned_session_ids: ["session-after-refresh"],
+        processId: "process-after-refresh",
+        harness: Harness.CODEX,
+        state: ProcessState.STARTING,
+        assignedSessionIds: ["session-after-refresh"],
       },
     ],
     sessions: [
       {
-        session_id: "session-after-refresh",
-        process_id: "process-after-refresh",
-        native_session_id: null,
-        execution_state: "SESSION_EXECUTION_STATE_PREPARING",
-        active_turn_id: null,
-        failure_cursor: null,
+        sessionId: "session-after-refresh",
+        processId: "process-after-refresh",
+        executionState: SessionExecutionState.PREPARING,
         busy: false,
       },
     ],
-  };
+  });
   const refresh = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent?.trim() === "Refresh"
   );
