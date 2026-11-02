@@ -46,6 +46,61 @@ The temporary input comment was restored exactly after the experiment. Full raw 
 production CI savings. Snapshot-write time and bytes are not isolated by the collected action
 metadata, so the remote policy's extra cost remains a production decision.
 
+The full Pod continuation passed all 13 existing case identities in each of three fresh actions:
+
+| Full Pod action                 | Invocation                                                                            | Cases     | Setup span | TestRunner wall |
+| ------------------------------- | ------------------------------------------------------------------------------------- | --------- | ---------: | --------------: |
+| Cold seed                       | [430df10f](https://app.buildbuddy.io/invocation/430df10f-12dc-432f-ba75-acd071e21b11) | 13 passed |  119.027 s |       318.886 s |
+| Concurrent run 1, cold fallback | [7326cb8f](https://app.buildbuddy.io/invocation/7326cb8f-c6c8-4982-92d1-3038f41a4c92) | 13 passed |   171.84 s |       363.312 s |
+| Concurrent run 2, warm          | [7326cb8f](https://app.buildbuddy.io/invocation/7326cb8f-c6c8-4982-92d1-3038f41a4c92) | 13 passed |   24.994 s |       209.368 s |
+
+The concurrent command added `--runs_per_test=2` to the full-suite command below; these are separate
+runs, not retries. Native execution intervals overlapped for 209.368 s on distinct workers. All
+three application namespaces, PostgreSQL Pods, test-root Certificate/Secret pairs and collector
+namespaces had distinct UIDs, and all three cleanups completed. Run 2 retained the cold seed's
+exact k3s and four PKI Deployment identities on a different reported worker; its native
+`lastExecutedTask` names the cold seed's snapshot and execution.
+
+Run 1 safely fell back to cold startup. The baseline fingerprint and platform hash matched the
+other two actions, but its VM configuration hash was `b506fa68...` rather than `ee99195a...`; its
+snapshot version and VM ID also differed, with no previous task reported. All three requested
+4000 milliCPU, 10,000,000,000 bytes of memory and 53,687,091,200 bytes of free disk. The differing
+provider VM configuration partitions the snapshot cache; resource requests and our fingerprint do
+not alone identify that configuration.
+
+Read-only REAPI `ActionCache.GetActionResult` reads of all three per-snapshot manifests resolved the
+difference: every serialized `VMConfiguration` field matched except `host_cpuid.family`. The seed
+and warm worker had family 26; the cold concurrent worker had family 25. The serialized configuration
+SHA-256 values exactly matched the native `configurationHash` values above. BuildBuddy intentionally
+includes host CPU vendor/family in snapshot compatibility
+([configuration contract](https://github.com/buildbuddy-io/buildbuddy/blob/acaf608b95780c2b0681b0205182c38bf5b6237d/proto/firecracker.proto#L31-L79),
+[host identity](https://github.com/buildbuddy-io/buildbuddy/blob/acaf608b95780c2b0681b0205182c38bf5b6237d/enterprise/server/remote_execution/containers/firecracker/firecracker.go#L4469-L4475)).
+The two families therefore need separate prepared seeds. Test execution properties cannot set this
+host identity. Decoded manifests, hash checks and raw responses are retained in
+`continuation/manifest-configs.json` and `continuation/manifest-*.response` under the scratch root.
+One warm and one cold result in this selected pair is not a fleet hit-rate estimate. Eviction
+behavior and stable production warm availability remain unproven.
+
+One final two-run repetition after both observed CPU families had seeds passed 13/13 in each action
+([716dea8f](https://app.buildbuddy.io/invocation/716dea8f-8867-4748-8d6d-4775ddc1dd6f)). TestRunner walls
+were 234.0 s and 220.5 s; setup spans were 42.572 s and 39.954 s. Both reported warm with the same
+baseline fingerprint as the earlier actions. Run 1 restored family 25's `f91b6928...` snapshot;
+run 2 restored family 26's `136f284c...` snapshot, each retaining its seed's k3s/PKI identity.
+Their native execution intervals overlapped for 220.396 s. These selected actions validate reuse
+after both hardware families were seeded, not fleet-wide warm availability or a measured
+end-to-end CI reduction.
+The five fresh-resource UID fields were pairwise distinct across all five full-suite actions.
+
+The initial continuation actions tested source `64f78edc9865201457ef8f1d151252283042c690` plus reviewed source patch A
+SHA-256 `a9d9f47476535a045091080f02b31d7ba41e28f51c4a7d394f0a77a65014ee3f`; B's temporary input-change
+patch was `fa88f7044c840a1988f0e2bb01a935eb8381b6107d935a4fa3a4b206bd50d905`.
+Commit `27aa8b8733a975a079a3ad91bfe7515fcd841bfc` contains the tested Python/Starlark changes; its
+additional changes are the investigation note and README. Two earlier preflight invocations,
+`5bb3fa76-aa90-459d-a342-5abceab6a1c6` and `b983915a-b0ac-4c2a-8f92-4c61b50c04b0`, excluded manual
+tests through CI's tag filter and executed no TestRunners. They are not passing test evidence.
+The final pair ran directly from `27aa8b8733a975a079a3ad91bfe7515fcd841bfc` with only investigation
+Markdown changes; its Python/Starlark inputs match the initial continuation actions.
+
 Repeat the lifecycle contract with:
 
 ```sh
