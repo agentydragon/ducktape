@@ -28,14 +28,22 @@ requested cwd directories when it opens a Session.
 Per-target instructions are absent because the Sandbox API has no such field; bootstrap scripts are
 not treated as instructions. Platform guidance is a separate source.
 
-Readiness, operating mode, stop stage, wake-on-send and resume eligibility are current observed
-Sandbox state. Resume eligibility reflects the existing wake policy: both the Sandbox's
-`wakeOnSend` setting and the caller's current configured wake-caller status must allow it. This
-service does not add lifecycle or wake authority.
+Readiness, operating mode, stop stage, automatic wake-on-send status and explicit-resume eligibility
+are separate current facts. Explicit-resume eligibility includes a denial reason and is evaluated
+for the authenticated effective caller against the Sandbox's live same-ServiceAccount identity and
+`resumePolicy`; it does not depend on `wakeOnSend`. An available descriptor includes the observed
+wake generation and an opaque precondition for that exact Sandbox UID and generation. The backend
+rechecks identity, policy and state when the token is used; it is not a capability.
 
-The CLI exposes `agentplane environments list` and
-`agentplane environments get NAMESPACE NAME UID`; both use
-`AGENTPLANE_SESSIONS_URL` and `AGENTPLANE_SESSIONS_CREDENTIAL`.
+`GetEnvironment.wait_for_ready_seconds` accepts 0..30. A positive value performs bounded,
+side-effect-free reads until Ready or the bound expires; it returns the latest descriptor on timeout.
+It never requests resume. Call `EnvironmentLifecycle.ResumeEnvironment` explicitly, then read or
+wait again. `REQUESTED` confirms acceptance of desired running state, not readiness; no Session or
+input is opened or replayed.
+
+The CLI exposes `agentplane environments list`, `agentplane environments get NAMESPACE NAME UID
+[--wait-seconds N]`, and `agentplane environments resume NAMESPACE NAME UID --resume-token TOKEN`;
+all use `AGENTPLANE_SESSIONS_URL` and `AGENTPLANE_SESSIONS_CREDENTIAL`.
 
 For a child Session, choose a separate path under the configured root, such as
 `/state/workspaces/ci-latency-2026-10-31`. The Runner creates missing cwd directories when opening

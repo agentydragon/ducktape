@@ -8,11 +8,13 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/discovery"
 	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
@@ -33,6 +35,12 @@ runner_security: {mode: mtls, tls: {cert_file: /tmp/test-cert, key_file: /tmp/te
 `
 
 type configTestTokenReviews struct{}
+
+type configTestWakeBudget struct{}
+
+func (configTestWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.ServiceAccount, string, int64) (time.Duration, error) {
+	return 0, nil
+}
 
 func (configTestTokenReviews) Create(
 	_ context.Context,
@@ -84,15 +92,16 @@ func writeSettings(t *testing.T, contents string) string {
 	return path
 }
 
-func TestCallerListsComeFromTheFileAndKeepAuthAndWakePoliciesSeparate(t *testing.T) {
-	path := writeSettings(t, requiredFile+"wake_callers: [agentplane/app]\ndelegation:\n  actor: agentplane/actions\n  caller_namespaces: [agentplane]\n  methods:\n    - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput\n    - /agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments\n    - /agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment\n")
+func TestCallerListsComeFromTheFileAndKeepAuthWakeAndOperatorPoliciesSeparate(t *testing.T) {
+	path := writeSettings(t, requiredFile+"wake_callers: [agentplane/notifications]\noperator_callers: [agentplane/app]\ndelegation:\n  actor: agentplane/actions\n  caller_namespaces: [agentplane]\n  methods:\n    - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput\n    - /agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments\n    - /agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment\n")
 	c, err := loadTestConfig(t, required(t,
 		settingPrefix+"CONFIG_FILE="+path, settingPrefix+"SANDBOX_CONTROLLER_ACCOUNT=agentplane/sandbox-controller"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(c.DispatcherCallers, []auth.Account{{Namespace: "agentplane", Name: "app"}, {Namespace: "agentplane", Name: "notifications"}}) ||
-		!slices.Equal(c.WakeCallers, []auth.Account{{Namespace: "agentplane", Name: "app"}}) ||
+		!slices.Equal(c.WakeCallers, []auth.Account{{Namespace: "agentplane", Name: "notifications"}}) ||
+		!slices.Equal(c.OperatorCallers, []auth.Account{{Namespace: "agentplane", Name: "app"}}) ||
 		!slices.Equal(c.GatewayCallers, []auth.Account{{Namespace: "agentplane", Name: "runner-gateway"}}) ||
 		c.DispatcherAudience == c.GatewayAudience || c.ControllerAccount.Name != "sandbox-controller" || c.Delegation == nil ||
 		c.Delegation.Actor != (auth.Account{Namespace: "agentplane", Name: "actions"}) ||
@@ -103,6 +112,21 @@ func TestCallerListsComeFromTheFileAndKeepAuthAndWakePoliciesSeparate(t *testing
 			"/agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment",
 		}) {
 		t.Fatalf("policy boundaries were merged: %+v", c)
+	}
+}
+
+func TestOperatorCallersMustAlsoBeAuthenticatedDispatcherCallers(t *testing.T) {
+	path := writeSettings(t, requiredFile+"operator_callers: [agentplane/unknown]\n")
+	if _, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
+		t.Fatal("operator caller not admitted by Dispatcher auth was accepted")
+	}
+	path = writeSettings(t, requiredFile+"operator_callers: []\n")
+	c, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+path))
+	if err != nil {
+		t.Fatalf("empty operator caller list: %v", err)
+	}
+	if len(c.OperatorCallers) != 0 {
+		t.Fatalf("empty operator caller list loaded as %v", c.OperatorCallers)
 	}
 }
 
@@ -151,7 +175,13 @@ runtime_catalog:
 		}},
 	}}
 	objects := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, executionAccount).Build()
-	service, err := discovery.New("agentplane", objects, config.RuntimeCatalog, nil)
+	lifecycleService, err := lifecycle.NewService(lifecycle.Options{
+		Namespace: "agentplane", Objects: objects, WakeBudget: configTestWakeBudget{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := discovery.New("agentplane", objects, config.RuntimeCatalog, lifecycleService)
 	if err != nil {
 		t.Fatal(err)
 	}

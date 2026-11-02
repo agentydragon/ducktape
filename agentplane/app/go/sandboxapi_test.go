@@ -10,13 +10,64 @@ import (
 	"time"
 
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
+	lifecyclepb "github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle/lifecyclepb"
 	"github.com/danielgtaylor/huma/v2"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func sandboxString(value string) *string { return &value }
+
+type resumeSandboxGetter struct{ sandbox *sandboxespb.Sandbox }
+
+func (g resumeSandboxGetter) Get(context.Context, string) (*sandboxespb.Sandbox, error) {
+	return g.sandbox, nil
+}
+
+type resumeSandboxClient struct {
+	request  *lifecyclepb.ResumeEnvironmentRequest
+	response *lifecyclepb.ResumeEnvironmentResponse
+	err      error
+}
+
+func (c *resumeSandboxClient) ResumeEnvironment(
+	_ context.Context,
+	request *lifecyclepb.ResumeEnvironmentRequest,
+) (*lifecyclepb.ResumeEnvironmentResponse, error) {
+	c.request = request
+	return c.response, c.err
+}
+
+func TestOperatorResumeUsesCurrentExactSandboxIdentityThroughLifecycle(t *testing.T) {
+	current := &sandboxespb.Sandbox{Namespace: "sandboxes", Name: "worker", Uid: "sandbox-uid"}
+	lifecycle := &resumeSandboxClient{response: &lifecyclepb.ResumeEnvironmentResponse{
+		Target:  &discoverypb.TargetHandle{Namespace: current.Namespace, Name: current.Name, Uid: current.Uid},
+		Outcome: lifecyclepb.ResumeOutcome_RESUME_OUTCOME_REQUESTED,
+	}}
+	if err := requestSandboxResume(context.Background(), "sandboxes", "worker", resumeSandboxGetter{sandbox: current}, lifecycle); err != nil {
+		t.Fatal(err)
+	}
+	if lifecycle.request.GetTarget().GetNamespace() != current.Namespace || lifecycle.request.GetTarget().GetName() != current.Name ||
+		lifecycle.request.GetTarget().GetUid() != current.Uid || lifecycle.request.GetResumeToken() != "" {
+		t.Fatalf("operator resume request = %v", lifecycle.request)
+	}
+}
+
+func TestOperatorResumeReportsChangedStateForRefresh(t *testing.T) {
+	current := &sandboxespb.Sandbox{Namespace: "sandboxes", Name: "worker", Uid: "sandbox-uid"}
+	lifecycle := &resumeSandboxClient{response: &lifecyclepb.ResumeEnvironmentResponse{
+		Target:  &discoverypb.TargetHandle{Namespace: current.Namespace, Name: current.Name, Uid: current.Uid},
+		Outcome: lifecyclepb.ResumeOutcome_RESUME_OUTCOME_STATE_CHANGED,
+	}}
+	err := requestSandboxResume(context.Background(), "sandboxes", "worker", resumeSandboxGetter{sandbox: current}, lifecycle)
+	if status.Code(err) != codes.Aborted {
+		t.Fatalf("state changed error = %v, want Aborted", err)
+	}
+}
 
 func TestNewSandboxAcceptsPythonDefaultFieldsOmitted(t *testing.T) {
 	server := NewHTTPServer(nil)

@@ -10,7 +10,9 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -19,32 +21,11 @@ import (
 	"k8s.io/client-go/util/workqueue"
 )
 
-var (
-	ErrWakeQuiescing   = errors.New("Sandbox is quiescing")
-	ErrWakeModeUnknown = errors.New("Sandbox operating mode unknown")
-	ErrWakeDeleted     = errors.New("Sandbox is tearing down")
-	ErrWakeSuperseded  = errors.New("wake ownership or queued request was superseded")
-)
-
 const deliveryWorkerCount = 4
-
-type wakeLimitedError struct{ retryAfter time.Duration }
-
-type retryKind uint8
-
-const (
-	retryFailure retryKind = iota
-	retryWakeBudget
-)
 
 type retryState struct {
 	workID string
 	until  time.Time
-	kind   retryKind
-}
-
-func (e wakeLimitedError) Error() string {
-	return fmt.Sprintf("wake budget exhausted for %s", e.retryAfter)
 }
 
 // SandboxCatalog must return a complete listing after synchronization. It also
@@ -57,11 +38,10 @@ type SandboxCatalog interface {
 	WaitSynced(context.Context) bool
 }
 
-// WakeController rereads the Sandbox and uses UID/resourceVersion preconditions.
-// beforeResume is called only immediately before a guarded patch; it reserves
-// the caller's persistent budget and starts the stored wake deadline first.
-type WakeController interface {
-	WakeForSend(context.Context, string, string, func(int64) error) (bool, error)
+// WakeRequester shares the lifecycle owner's live authorization, guarded mutation and budget
+// path with explicit resume. Dispatcher supplies only the retained effective sender identity.
+type WakeRequester interface {
+	RequestWake(context.Context, lifecycle.Target, lifecycle.ServiceAccount) (*environmentpb.WakeAssessment, error)
 }
 
 type DeliveryRunner interface {
@@ -77,7 +57,7 @@ type LeaseOwner interface {
 type DeliveryWorker struct {
 	Store   *Store
 	Catalog SandboxCatalog
-	Wake    WakeController
+	Wake    WakeRequester
 	Leases  LeaseOwner
 	Runner  DeliveryRunner
 	Hub     *WatchHub
@@ -91,9 +71,8 @@ type DeliveryWorker struct {
 	refused map[string]string
 	queue   workqueue.TypedRateLimitingInterface[string]
 	limiter workqueue.TypedRateLimiter[string]
-	// A delayed item can be added early by a database notification. The queue
-	// owns the timer and retry count; the cause decides whether a newly ready
-	// Sandbox may bypass a wake-budget delay.
+	// A delayed item can be added early by a database notification. The worker
+	// still checks readiness before honoring a persisted wake retry time.
 	retries map[string]retryState
 }
 
@@ -311,7 +290,7 @@ func (w *DeliveryWorker) forgetOwner(uid string, owner Owner) {
 
 func (w *DeliveryWorker) enqueue(sessionID string) {
 	retry := w.retryFor(sessionID)
-	if delay := time.Until(retry.until); delay > 0 && retry.kind != retryWakeBudget {
+	if delay := time.Until(retry.until); delay > 0 {
 		w.queue.AddAfter(sessionID, delay)
 	} else {
 		w.queue.Add(sessionID)
@@ -473,12 +452,12 @@ func (w *DeliveryWorker) clearRetry(sessionID string) {
 
 func (w *DeliveryWorker) backoff(sessionID, workID string) {
 	delay := w.limiter.When(sessionID)
-	w.setRetry(sessionID, workID, delay, retryFailure)
+	w.setRetry(sessionID, workID, delay)
 }
 
-func (w *DeliveryWorker) setRetry(sessionID, workID string, after time.Duration, kind retryKind) {
+func (w *DeliveryWorker) setRetry(sessionID, workID string, after time.Duration) {
 	w.mu.Lock()
-	w.retries[sessionID] = retryState{workID: workID, until: time.Now().Add(after), kind: kind}
+	w.retries[sessionID] = retryState{workID: workID, until: time.Now().Add(after)}
 	w.mu.Unlock()
 	w.queue.AddAfter(sessionID, after)
 }

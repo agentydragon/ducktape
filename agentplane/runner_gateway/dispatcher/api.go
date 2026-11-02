@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 // SandboxReader is the shared, UID-fenced live Sandbox view supplied by the
@@ -35,11 +36,13 @@ type ExecutionAccountReader interface {
 type SandboxSnapshot struct {
 	Name, Namespace, UID string
 	// Blocker is the current dispatch reason, empty only when the runner is Ready.
-	Blocker     string
-	WakeOnSend  bool
-	Incarnation string
-	Deleting    bool
-	ReadyDetail string
+	Blocker        string
+	WakeOnSend     bool
+	WakeGeneration int64
+	ManualStop     bool
+	Incarnation    string
+	Deleting       bool
+	ReadyDetail    string
 }
 
 // RunnerCommands uses the Gateway's generated Runner proxy for direct
@@ -54,13 +57,11 @@ type Service struct {
 	// DispatcherCallers retain the existing explicit Pod-bound backend path. An account-only
 	// bearer for one of these names remains an ordinary execution-principal caller.
 	DispatcherCallers map[auth.Account]struct{}
-	// WakeCallers are the admitted callers whose commands and openings wake a stopped Sandbox.
-	WakeCallers   map[auth.Account]struct{}
-	Sandboxes     SandboxReader
-	Runner        RunnerCommands
-	Hub           *WatchHub
-	WatchLease    time.Duration
-	CentralTarget *CentralTarget
+	Sandboxes         SandboxReader
+	Runner            RunnerCommands
+	Hub               *WatchHub
+	WatchLease        time.Duration
+	CentralTarget     *CentralTarget
 }
 
 // maxFilterCommands bounds DispatchFilter.command_ids, the size of a Session's queue.
@@ -106,10 +107,7 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 	}
 	leaseCtx, endLease := context.WithTimeout(ctx, lease)
 	defer endLease()
-	written := map[string]struct {
-		State  dispatcherpb.DeliveryState
-		Reason string
-	}{}
+	written := map[string]*dispatcherpb.Dispatch{}
 	var terminal []TerminalEvent
 	changed, caughtUp := true, false
 	for {
@@ -126,11 +124,7 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 			}
 			terminal = nil
 			for _, row := range rows {
-				key := struct {
-					State  dispatcherpb.DeliveryState
-					Reason string
-				}{row.GetState(), row.GetReason()}
-				if written[row.GetCommandId()] == key {
+				if previous, ok := written[row.GetCommandId()]; ok && proto.Equal(previous, row) {
 					continue
 				}
 				ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
@@ -142,7 +136,7 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 				if ended {
 					return nil
 				}
-				written[row.GetCommandId()] = key
+				written[row.GetCommandId()] = proto.Clone(row).(*dispatcherpb.Dispatch)
 			}
 			if !caughtUp {
 				caughtUp = true
@@ -326,18 +320,6 @@ func (s *Service) requireLiveExecution(ctx context.Context, opening *Opening, sa
 	return nil
 }
 
-// wakeAccount is the admitted caller when its commands wake a stopped Sandbox, else nil.
-func (s *Service) wakeAccount(ctx context.Context) (*Account, error) {
-	caller, err := s.caller(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if _, ok := s.WakeCallers[auth.Account{Namespace: caller.Account.Namespace, Name: caller.Account.Name}]; ok {
-		return &Account{Namespace: caller.Account.Namespace, Name: caller.Account.Name}, nil
-	}
-	return nil, nil
-}
-
 func apiError(err error) error {
 	switch {
 	case err == nil:
@@ -389,10 +371,6 @@ func (s *Service) enqueue(ctx context.Context, commandID, sessionID, sandbox, sa
 	if err != nil {
 		return nil, err
 	}
-	wake, err := s.wakeAccount(ctx)
-	if err != nil {
-		return nil, err
-	}
 	if err := required(commandID, sessionID, sandbox, sandboxUID); err != nil {
 		return nil, err
 	}
@@ -414,7 +392,7 @@ func (s *Service) enqueue(ctx context.Context, commandID, sessionID, sandbox, sa
 	} else if !caller.Privileged {
 		return nil, status.Error(codes.NotFound, "dispatch not found")
 	}
-	row, err := s.Store.EnqueueForCaller(ctx, sessionID, sandbox, current.UID, command, wake, caller)
+	row, err := s.Store.EnqueueForCaller(ctx, sessionID, sandbox, current.UID, command, nil, caller)
 	if err != nil {
 		return nil, apiError(err)
 	}
@@ -463,10 +441,6 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 		),
 	)
 	defer func() { observability.End(span, resultErr) }()
-	wake, err := s.wakeAccount(ctx)
-	if err != nil {
-		return nil, err
-	}
 	if err := required(request.GetSessionId(), request.GetSandbox(), request.GetSandboxUid()); err != nil {
 		return nil, err
 	}
@@ -504,7 +478,7 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 		execution = account
 	}
 	row, err := s.Store.OpenSessionWithIdentity(ctx, request.GetSessionId(), request.GetSandbox(), current.UID,
-		request.GetSpec(), request.SetupScript, wake, &execution, &caller.Attribution.Actor, caller.Attribution)
+		request.GetSpec(), request.SetupScript, nil, &execution, &caller.Attribution.Actor, caller.Attribution)
 	if err != nil {
 		return nil, apiError(err)
 	}

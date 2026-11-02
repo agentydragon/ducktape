@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
+	lifecyclepb "github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle/lifecyclepb"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -20,6 +21,7 @@ const maxEnvironmentPage = 100
 type environmentDiscovery struct {
 	connection *grpc.ClientConn
 	client     discoverypb.EnvironmentDiscoveryClient
+	lifecycle  lifecyclepb.EnvironmentLifecycleClient
 }
 
 func (a *app) connectEnvironmentDiscovery() (*environmentDiscovery, error) {
@@ -58,13 +60,74 @@ func (a *app) connectEnvironmentDiscovery() (*environmentDiscovery, error) {
 	if err != nil {
 		return nil, usageFailure("%s is not a valid gRPC endpoint", urlVariable)
 	}
-	return &environmentDiscovery{connection: connection, client: discoverypb.NewEnvironmentDiscoveryClient(connection)}, nil
+	return &environmentDiscovery{
+		connection: connection,
+		client:     discoverypb.NewEnvironmentDiscoveryClient(connection),
+		lifecycle:  lifecyclepb.NewEnvironmentLifecycleClient(connection),
+	}, nil
 }
 
 func (a *app) environmentsCommand() *cobra.Command {
 	return group("environments", "Discover existing environments this account may use",
-		"Lists and refreshes only exact Sandbox incarnations running as the ServiceAccount proved by AGENTPLANE_SESSIONS_CREDENTIAL.",
-		a.listEnvironmentsCommand(), a.getEnvironmentCommand())
+		"Lists and refreshes exact Sandbox incarnations for the ServiceAccount proved by AGENTPLANE_SESSIONS_CREDENTIAL. Explicit resume still requires current backend policy.",
+		a.listEnvironmentsCommand(), a.getEnvironmentCommand(), a.resumeEnvironmentCommand())
+}
+
+func (a *app) resumeEnvironmentCommand() *cobra.Command {
+	var resumeToken string
+	command := &cobra.Command{
+		Use:   "resume NAMESPACE NAME UID --resume-token TOKEN",
+		Short: "Request resume of one exact eligible environment",
+		Long: `Requests desired running state for the exact existing Sandbox using a fresh opaque token from environments get.
+The token binds the request to the Sandbox UID and observed wake generation; the backend rechecks current caller policy.
+REQUESTED is acceptance, not readiness. Read or wait with environments get before issuing new work. If the reply is
+uncertain, refresh the exact target and use only a fresh descriptor's token for another explicit request. This
+command never retries the mutation or replays an earlier command.`,
+		Args: cobra.ExactArgs(3),
+		RunE: func(_ *cobra.Command, args []string) error {
+			if resumeToken == "" {
+				return usageFailure("--resume-token must not be empty")
+			}
+			connected, err := a.connectEnvironmentDiscovery()
+			if err != nil {
+				return err
+			}
+			defer connected.connection.Close()
+			ctx, cancel := a.deadline()
+			defer cancel()
+			target := &discoverypb.TargetHandle{Namespace: args[0], Name: args[1], Uid: args[2]}
+			response, err := connected.lifecycle.ResumeEnvironment(ctx, &lifecyclepb.ResumeEnvironmentRequest{
+				Target:      target,
+				ResumeToken: resumeToken,
+			})
+			if err != nil {
+				return resumeFailure(ctx, err)
+			}
+			if response == nil || response.GetTarget() == nil || response.GetTarget().GetNamespace() != target.GetNamespace() ||
+				response.GetTarget().GetName() != target.GetName() || response.GetTarget().GetUid() != target.GetUid() {
+				return invalidResponse("ResumeEnvironment returned a different target")
+			}
+			if a.asJSON {
+				return a.writeProtoJSON(response)
+			}
+			if _, err := fmt.Fprintln(a.stdout, environmentResumeText(response)); err != nil {
+				return clientFailure(exitRefused, "INTERNAL", "write stdout: %v", err)
+			}
+			return nil
+		},
+	}
+	command.Flags().StringVar(&resumeToken, "resume-token", "", "opaque precondition returned by environments get for this exact Sandbox generation")
+	_ = command.MarkFlagRequired("resume-token")
+	return command
+}
+
+func resumeFailure(ctx context.Context, err error) error {
+	failureErr := grpcFailure(ctx, err)
+	if failure, ok := failureErr.(*failure); ok && failure.ambiguous() {
+		failure.exit = exitExecutionUnknown
+		failure.Message = "resume outcome is unknown; refresh the exact environment and use only its current resume token for any new explicit request"
+	}
+	return failureErr
 }
 
 func (a *app) environmentCommand(fn func(context.Context, discoverypb.EnvironmentDiscoveryClient, []string) error) func(*cobra.Command, []string) error {
@@ -108,21 +171,30 @@ deployment-configured offers; custom templates without a published mapping remai
 }
 
 func (a *app) getEnvironmentCommand() *cobra.Command {
-	return &cobra.Command{
+	var waitSeconds int
+	command := &cobra.Command{
 		Use:   "get NAMESPACE NAME UID",
 		Short: "Refresh one exact environment incarnation",
-		Long:  "Fetches the current readiness and configured runtime facts only if the Sandbox UID and execution account still match.",
+		Long:  "Fetch current readiness, explicit-resume eligibility, token and runtime facts for the exact Sandbox UID. Optionally wait up to 30 seconds for readiness; if it is still not ready, the latest observed facts are returned. This read never resumes the environment. Set the global --timeout above --wait-seconds to receive the final descriptor.",
 		Args:  cobra.ExactArgs(3),
-		RunE: a.environmentCommand(func(ctx context.Context, client discoverypb.EnvironmentDiscoveryClient, args []string) error {
-			response, err := client.GetEnvironment(ctx, &discoverypb.GetEnvironmentRequest{
-				Target: &discoverypb.TargetHandle{Namespace: args[0], Name: args[1], Uid: args[2]},
-			})
-			if err != nil {
-				return grpcFailure(ctx, err)
+		RunE: func(command *cobra.Command, args []string) error {
+			if waitSeconds < 0 || waitSeconds > 30 {
+				return usageFailure("--wait-seconds must be between 0 and 30")
 			}
-			return a.showEnvironment(response)
-		}),
+			return a.environmentCommand(func(ctx context.Context, client discoverypb.EnvironmentDiscoveryClient, args []string) error {
+				response, err := client.GetEnvironment(ctx, &discoverypb.GetEnvironmentRequest{
+					Target:              &discoverypb.TargetHandle{Namespace: args[0], Name: args[1], Uid: args[2]},
+					WaitForReadySeconds: uint32(waitSeconds),
+				})
+				if err != nil {
+					return grpcFailure(ctx, err)
+				}
+				return a.showEnvironment(response)
+			})(command, args)
+		},
 	}
+	command.Flags().IntVar(&waitSeconds, "wait-seconds", 0, "wait up to this many seconds for readiness (0-30), then return current facts")
+	return command
 }
 
 func (a *app) showEnvironmentPage(response *discoverypb.ListEnvironmentsResponse) error {
@@ -167,7 +239,12 @@ func environmentText(environment *discoverypb.EnvironmentDescriptor) string {
 	fmt.Fprintf(&output, "%s/%s uid=%s readiness=%s", target.GetNamespace(), target.GetName(), target.GetUid(), environment.GetReadiness().GetState())
 	account := environment.GetExecutionAccount()
 	fmt.Fprintf(&output, " account=%s/%s uid=%s", account.GetNamespace(), account.GetName(), account.GetUid())
-	fmt.Fprintf(&output, " mode=%s resume=%s wake_on_send=%t", environment.GetOperatingMode(), environment.GetResume(), environment.GetWakeOnSend())
+	fmt.Fprintf(&output, " mode=%s wake_on_send_resume=%s wake_on_send=%t", environment.GetOperatingMode(), environment.GetResume(), environment.GetWakeOnSend())
+	eligibility := environment.GetResumeEligibility()
+	fmt.Fprintf(&output, " explicit_resume=%s reason=%s wake_generation=%d", eligibility.GetState(), eligibility.GetReason(), environment.GetWakeGeneration())
+	if environment.GetResumeToken() != "" {
+		fmt.Fprintf(&output, "\n  resume_token=%s", environment.GetResumeToken())
+	}
 	workspace := environment.GetWorkspace()
 	fmt.Fprintf(&output, " workspace=%s", workspace.GetAvailability())
 	if workspace.GetAvailability() == discoverypb.Availability_AVAILABILITY_CONFIGURED {
@@ -181,4 +258,13 @@ func environmentText(environment *discoverypb.EnvironmentDescriptor) string {
 		fmt.Fprintf(&output, "\n  readiness_reason=%s detail=%q", readiness.GetReason(), readiness.GetDetail())
 	}
 	return output.String()
+}
+
+func environmentResumeText(response *lifecyclepb.ResumeEnvironmentResponse) string {
+	target := response.GetTarget()
+	line := fmt.Sprintf("%s/%s uid=%s outcome=%s", target.GetNamespace(), target.GetName(), target.GetUid(), response.GetOutcome())
+	if response.WakeGeneration != nil {
+		line += fmt.Sprintf(" wake_generation=%d", response.GetWakeGeneration())
+	}
+	return line + " ready=not-established"
 }

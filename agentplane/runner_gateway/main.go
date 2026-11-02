@@ -28,6 +28,8 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/discovery"
 	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle"
+	lifecyclepb "github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle/lifecyclepb"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/util/netlistener"
@@ -221,11 +223,18 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	}
 	defer db.Close()
 	store := dispatcher.NewStore(db, c.QueueCap)
+	lifecycleService, err := lifecycle.NewService(lifecycle.Options{
+		Namespace: c.Namespace, Objects: objects, WakeBudget: store,
+		WakeCallers: c.WakeCallers, OperatorCallers: c.OperatorCallers,
+	})
+	if err != nil {
+		return err
+	}
 	catalog, err := dispatcher.NewKubernetesSandboxes(inventory, objects, c.Namespace)
 	if err != nil {
 		return err
 	}
-	discoveryService, err := discovery.New(c.Namespace, objects, c.RuntimeCatalog, accountSet(c.WakeCallers))
+	discoveryService, err := discovery.New(c.Namespace, objects, c.RuntimeCatalog, lifecycleService)
 	if err != nil {
 		return err
 	}
@@ -287,7 +296,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 
 	ready := make(chan struct{})
 	worker := &dispatcher.DeliveryWorker{
-		Store: store, Catalog: catalog, Wake: catalog,
+		Store: store, Catalog: catalog, Wake: lifecycleService,
 		Leases: dispatcher.NewOwnershipLeases(kube.CoordinationV1().Leases(c.Namespace), store, c.Namespace),
 		Runner: runner, Hub: hub, Ready: ready,
 	}
@@ -300,7 +309,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		return ctx.Err()
 	}
 	service := &dispatcher.Service{
-		Store: store, DispatcherCallers: accountSet(c.DispatcherCallers), WakeCallers: accountSet(c.WakeCallers),
+		Store: store, DispatcherCallers: accountSet(c.DispatcherCallers),
 		Sandboxes: catalog, Runner: runner,
 		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
@@ -308,6 +317,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	methods := auth.HealthMethods()
 	maps.Copy(methods, dispatcherMethods)
 	maps.Copy(methods, discovery.Methods(dispatchAuth))
+	maps.Copy(methods, lifecycle.Methods(dispatchAuth))
 	maps.Copy(methods, g.Methods())
 	if c.Delegation != nil {
 		delegator := auth.Delegator{Account: c.Delegation.Actor, CallerNamespaces: c.Delegation.CallerNamespaces}
@@ -336,6 +346,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	)...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
 	discoverypb.RegisterEnvironmentDiscoveryServer(server, discoveryService)
+	lifecyclepb.RegisterEnvironmentLifecycleServer(server, lifecycleService)
 	defer server.Stop()
 	g.RegisterProxy(server)
 	if len(c.ExecutorCallers) > 0 {

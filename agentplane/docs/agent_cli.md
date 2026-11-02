@@ -1,7 +1,7 @@
 # Agent CLI
 
 `agentplane` ([`cli/`](../cli/)) is a Go command an agent runs from its shell to call the generated
-Action Service, Session Dispatcher and History Service gRPC APIs and the Notification Service and Egress
+Action Service, Session Dispatcher, Environment Discovery/Lifecycle and History Service gRPC APIs, and the Notification Service and Egress
 rules HTTP APIs through the egress proxy. It adds no authority or state and no backend logic. What it takes off each agent
 is the part `curl` leaves to every model turn: JSON quoting, the idempotency and recovery protocol, long
 waits, telling an egress refusal from a service refusal, and exit status. `agentplane --help` is what an
@@ -23,7 +23,8 @@ the facades keep these commands' contract, and a service that moves behind one u
 ## Commands
 
 One command group per service, each configured and failing independently: `agentplane actions` needs
-only the Action Service, `sessions` uses the Session Dispatcher, `sessions get` and
+only the Action Service, `environments` uses the Runner Gateway at the existing Session Dispatcher
+endpoint, `sessions` uses the Session Dispatcher, `sessions get` and
 `sessions observe-input` also use History, `sessions read-turns` uses only History, `notifications`
 uses only the Notification Service, and `egress` only the Egress rules API.
 Session commands operate on an existing Sandbox; they do not create an environment. A command whose
@@ -53,6 +54,9 @@ group, so another service joins as one more group under them.
 | `sessions cancel-input COMMAND_ID`                                                                                                                 | `SessionDispatcher.CancelDispatch`                                      |
 | `sessions interrupt-turn SESSION_ID --sandbox NAME --sandbox-uid UID --command-id ID --turn-id ID`                                                 | `SessionDispatcher.InterruptTurn`                                       |
 | `sessions observe-input SESSION_ID --command-id ID [--wait-seconds N] [--resume-token TOKEN]`                                                      | Dispatcher receipt and correlated `HistoryService.FollowSession` events |
+| `environments list [--limit N] [--after TOKEN]`                                                                                                    | `EnvironmentDiscovery.ListEnvironments`                                 |
+| `environments get NAMESPACE NAME UID [--wait-seconds N]`                                                                                           | `EnvironmentDiscovery.GetEnvironment`                                   |
+| `environments resume NAMESPACE NAME UID --resume-token TOKEN`                                                                                      | `EnvironmentLifecycle.ResumeEnvironment`                                |
 | `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY] [--destination JSON]`     | `POST /v1/subscriptions`                                                |
 | `notifications inbox read ID [--after CURSOR] [--limit N]`                                                                                         | `GET /v1/inboxes/{id}/entries`, one page                                |
 | `notifications inbox ack ID --through CURSOR`                                                                                                      | `PUT /v1/inboxes/{id}/acknowledgement`                                  |
@@ -65,6 +69,16 @@ group, so another service joins as one more group under them.
 | `egress rules`                                                                                                                                     | `GET /v1/rules`                                                         |
 
 Every command takes `--json` and `--timeout`; paged lists take `--limit` and `--after`, as does the one-page inbox read.
+
+`environments` uses `AGENTPLANE_SESSIONS_URL` and `AGENTPLANE_SESSIONS_CREDENTIAL`. `get --wait-seconds`
+accepts 0..30 and returns the latest descriptor when the bound expires; it never resumes. Use the
+fresh descriptor's `resume_eligibility`, `wake_generation`, and opaque `resume_token` before calling
+`resume` with the exact namespace/name/UID. The token is a precondition, not authority; the backend
+rechecks current caller policy and state. `REQUESTED` means desired running state was accepted, not
+readiness. Follow with `get --wait-seconds N` before issuing new work. The CLI does not retry a
+resume mutation; an uncertain reply exits `14` (`execution_unknown`) so the caller can refresh the
+exact target and use only a fresh descriptor's token for another explicit request. It never replays
+earlier input or exec.
 
 Session mutations require caller-supplied IDs; the CLI does not mint or replace them and gRPC retries
 are disabled. `SESSION_ID` is the idempotency key for `open`; `COMMAND_ID` is the caller's key for

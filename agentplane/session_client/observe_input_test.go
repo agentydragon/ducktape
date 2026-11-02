@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
@@ -14,7 +15,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -124,6 +127,54 @@ func TestObserveInputCorrelatesCommandWithCompletedTurn(t *testing.T) {
 	}
 	if history.request.GetAfterCursor() != 17 || history.request.GetFollow() {
 		t.Fatalf("History request = %#v", history.request)
+	}
+}
+
+func TestObserveInputReturnsWakeDenialFromQueuedWatchUpdate(t *testing.T) {
+	initial := &dispatcherpb.Dispatch{
+		CommandId: testCommandID, SessionId: testSessionID,
+		Operation:      dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
+		State:          dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+		WakeAssessment: &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_NOT_EVALUATED},
+	}
+	updated := &dispatcherpb.Dispatch{
+		CommandId: testCommandID, SessionId: testSessionID,
+		Operation: dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
+		State:     dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+		DeliveryBlocker: &environmentpb.DeliveryBlocker{
+			Kind: environmentpb.DeliveryBlockerKind_DELIVERY_BLOCKER_KIND_ENVIRONMENT_SUSPENDED,
+		},
+		WakeAssessment: &environmentpb.WakeAssessment{
+			State:      environmentpb.WakeState_WAKE_STATE_DENIED,
+			Reason:     environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED,
+			ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(4),
+		},
+	}
+	dispatcher := &dispatcherStub{
+		dispatch: initial,
+		watch: &dispatchStreamStub{frames: []*dispatcherpb.WatchDispatchesResponse{{
+			Frame: &dispatcherpb.WatchDispatchesResponse_Dispatch{Dispatch: updated},
+		}}},
+	}
+	history := &historyStub{}
+	got, err := ObserveInput(context.Background(), dispatcher, history,
+		ObserveInputRequest{SessionID: testSessionID, CommandID: testCommandID, WaitSeconds: 30})
+	if err != nil {
+		t.Fatalf("ObserveInput() error = %v", err)
+	}
+	if history.calls != 0 || got.Dispatch.Kind != "observed" {
+		t.Fatalf("wake denial was not returned before History: dispatch=%#v History calls=%d", got.Dispatch, history.calls)
+	}
+	observed := &dispatcherpb.Dispatch{}
+	if err := protojson.Unmarshal(got.Dispatch.Value, observed); err != nil {
+		t.Fatalf("decode observed Dispatcher receipt: %v", err)
+	}
+	if observed.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER ||
+		observed.GetDeliveryBlocker().GetKind() != environmentpb.DeliveryBlockerKind_DELIVERY_BLOCKER_KIND_ENVIRONMENT_SUSPENDED ||
+		observed.GetWakeAssessment().GetState() != environmentpb.WakeState_WAKE_STATE_DENIED ||
+		observed.GetWakeAssessment().GetReason() != environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED ||
+		observed.GetWakeAssessment().GetTargetGeneration() != 4 {
+		t.Fatalf("observed queued wake denial: %+v", observed)
 	}
 }
 

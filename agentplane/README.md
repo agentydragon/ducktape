@@ -14,7 +14,7 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
 - [MCP edge](mcp_edge/README.md): external Connection/OAuth authority and `/mcp`; forwards authenticated Actions calls over gRPC.
 - [Runner Gateway](runner_gateway/README.md): one process providing runner state observation,
   authorized live Runner proxy, [Session Dispatcher](runner_gateway/dispatcher/README.md) durable queue,
-  and read-only EnvironmentDiscovery.
+  EnvironmentDiscovery and policy-enforced EnvironmentLifecycle resume.
   New serving Pods run the queue migration before starting ([deployment](runner_gateway/README.md#deployment)).
 - [History Service](history_service/README.md): retained Session history, read by the
   integration app and the Notification service.
@@ -73,7 +73,7 @@ flowchart LR
     app[Integration API]
     subgraph services[Agentplane services]
         direction TB
-        gw[Runner Gateway: Dispatcher, EnvironmentDiscovery, proxy and observation]
+        gw[Runner Gateway: Dispatcher, EnvironmentDiscovery, EnvironmentLifecycle, proxy and observation]
         sandboxctl[Sandbox Controller]
         policy[Policy Controller]
         hs[History Service]
@@ -151,6 +151,8 @@ flowchart LR
     notif -->|Action history: gRPC| actions
     actions -->|Session commands: broker or delegated caller, gRPC| gw
     actions -->|caller-delegated EnvironmentDiscovery list/get: gRPC| gw
+    actions -->|caller-delegated explicit resume: gRPC| gw
+    app -->|Pod-bound operator resume broker: gRPC| gw
     actions -->|Session reads: broker or delegated caller, gRPC| hs
     app -->|gRPC| egress
     app --> electric
@@ -188,10 +190,10 @@ flowchart LR
     gw -->|mTLS Runner and Executor gRPC| vmruntime
     runner -.->|dials SessionJournalIngress.Push| sidecar
     sidecar -.->|outbound ingress route| hs
-    agent -.->|Session and EnvironmentDiscovery gRPC through HTTPS_PROXY/CONNECT| sidecar
+    agent -.->|Session, EnvironmentDiscovery and EnvironmentLifecycle gRPC through HTTPS_PROXY/CONNECT| sidecar
     guest -.->|dials SessionJournalIngress.Push| relay
     relay -.->|outbound ingress route| hs
-    guest_agent -.->|Session and EnvironmentDiscovery gRPC through HTTPS_PROXY/CONNECT| relay
+    guest_agent -.->|Session, EnvironmentDiscovery and EnvironmentLifecycle gRPC through HTTPS_PROXY/CONNECT| relay
     egress -.->|allowlisted gRPC methods, substituted Sandbox bearer| gw
 
     egress --> llm
@@ -230,12 +232,13 @@ embeds files through an embedding endpoint and owns its own PostgreSQL database
   `session_dispatcher` (also the Gateway's queue; the Gateway has no registry database). The
   optional central sampler owns its separate continuation database and uses PostgreSQL notifications
   for resident Session work and History export wakeups.
-- **Sandbox lifecycle and runner control.** The app writes requested Sandbox state and operator
-  grants to Kubernetes; the Sandbox Controller reconciles them, owns `Sandbox.status`, and holds
-  deletion until the runner has sealed its Sessions through the Gateway. Notifications and the
-  Runner Gateway read Sandbox inventory directly. The Runner Gateway implements Dispatcher Session
-  openings and durable command admission/delivery alongside the control stream; the app reads live
-  runner inventory and diagnostics through the Runner Proxy, which checks the live Sandbox name, UID
+- **Sandbox lifecycle and runner control.** The app writes creation, suspension and deletion
+  requests and operator grants to Kubernetes; explicit resume goes through the Runner Gateway's
+  policy-enforced Environment Lifecycle service. The Sandbox Controller reconciles requests, owns
+  `Sandbox.status`, and holds deletion until the runner has sealed its Sessions through the Gateway.
+  Notifications and the Runner Gateway read Sandbox inventory directly. The Gateway implements
+  Dispatcher Session openings and durable command admission/delivery alongside the control stream;
+  the app reads live runner inventory and diagnostics through the Runner Proxy, which checks the live Sandbox name, UID
   and owner. The Runner starts and resumes its own harnesses.
 
 Status, open work and design gates: [`plans/`](plans/README.md).

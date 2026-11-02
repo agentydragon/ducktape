@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -13,9 +12,11 @@ import (
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -35,8 +36,8 @@ func (queueCatalog) WaitSynced(context.Context) bool { return true }
 
 type queueWake struct{}
 
-func (queueWake) WakeForSend(context.Context, string, string, func(int64) error) (bool, error) {
-	return false, errors.New("unexpected wake for ready Sandbox")
+func (queueWake) RequestWake(context.Context, lifecycle.Target, lifecycle.ServiceAccount) (*environmentpb.WakeAssessment, error) {
+	return &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_NOT_NEEDED}, nil
 }
 
 type queueLease struct{ store *dispatcher.Store }

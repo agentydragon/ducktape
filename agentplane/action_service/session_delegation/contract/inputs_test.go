@@ -3,6 +3,7 @@ package contract
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -15,14 +16,16 @@ func TestInputsUseApprovedActionNamesAndSchemas(t *testing.T) {
 	}
 	environments := inputs.EnvironmentActions()
 	sessions := inputs.SessionActions()
-	if got, want := sortedKeys(environments), []string{"get", "list"}; !reflect.DeepEqual(got, want) {
+	if got, want := sortedKeys(environments), []string{"get", "list", "resume"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("environment actions = %v, want %v", got, want)
 	}
 	if got, want := sortedKeys(sessions), []string{"cancel_input", "get", "interrupt_turn", "observe_input", "open", "read_turns", "submit_input"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("session actions = %v, want %v", got, want)
 	}
 	assertProperties(t, inputs.ListEnvironments.Definition().InputSchema, []string{"after", "limit"}, []string{"limit"})
-	assertProperties(t, inputs.GetEnvironment.Definition().InputSchema, []string{"target"}, []string{"target"})
+	assertProperties(t, inputs.GetEnvironment.Definition().InputSchema,
+		[]string{"target", "wait_for_ready_seconds"}, []string{"target"})
+	assertProperties(t, inputs.ResumeEnvironment.Definition().InputSchema, []string{"resume_token", "target"}, []string{"resume_token", "target"})
 	assertProperties(t, inputs.OpenSession.Definition().InputSchema,
 		[]string{"additional_instructions", "session_id", "setup_script", "spec", "target"},
 		[]string{"session_id", "spec", "target"})
@@ -65,6 +68,24 @@ func TestInputDecoderRejectsUnknownFieldsAndInvalidEnums(t *testing.T) {
 	} {
 		if _, err := inputs.CancelInput.Decode(json.RawMessage(raw)); err == nil {
 			t.Errorf("CancelInput.Decode(%s) unexpectedly succeeded", raw)
+		}
+	}
+	resumeArguments, err := json.Marshal(map[string]any{
+		"target":       map[string]string{"namespace": "agentplane-staging", "name": "sandbox-one", "uid": "uid-1"},
+		"resume_token": strings.Repeat("x", 2049),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := inputs.ResumeEnvironment.Decode(resumeArguments); err == nil {
+		t.Fatal("ResumeEnvironment.Decode accepted an oversized token")
+	}
+	for _, raw := range []string{
+		`{"target":{"namespace":"agentplane-staging","name":"sandbox-one","uid":"uid-1"},"wait_for_ready_seconds":31}`,
+		`{"target":{"namespace":"agentplane-staging","name":"sandbox-one","uid":"uid-1"},"wait_for_ready_seconds":-1}`,
+	} {
+		if _, err := inputs.GetEnvironment.Decode(json.RawMessage(raw)); err == nil {
+			t.Errorf("GetEnvironment.Decode(%s) unexpectedly succeeded", raw)
 		}
 	}
 	for _, harness := range []sessionpb.Harness{

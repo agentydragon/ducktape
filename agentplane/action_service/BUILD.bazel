@@ -299,6 +299,7 @@ go_library(
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/discovery:environment_discovery_go_proto",
+        "//agentplane/sandboxes/lifecycle:environment_lifecycle_go_proto",
         "//agentplane/watchhealth",
         "//agentplane/workload_auth/auth",
         "//agentplane/workload_auth/grpc",

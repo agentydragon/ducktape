@@ -19,6 +19,7 @@ direct tool as `<group>__<action>`:
 | ------------------------- | -------------------------- | ---------------- |
 | `environments/list`       | `environments__list`       | Offered          |
 | `environments/get`        | `environments__get`        | Offered          |
+| `environments/resume`     | `environments__resume`     | Offered          |
 | `sessions/open`           | `sessions__open`           | Offered          |
 | `sessions/submit_input`   | `sessions__submit_input`   | Offered          |
 | `sessions/observe_input`  | `sessions__observe_input`  | Offered          |
@@ -34,7 +35,10 @@ caller-minted UUIDs. An opening accepts one offered runtime configuration and op
 task separately with `sessions__submit_input`.
 
 `environments__list` returns the owning Discovery page; `environments__get` refreshes one exact
-incarnation. `sessions__get` returns `session_client.GetSession`'s independently sourced retained
+incarnation and can wait up to 30 seconds for readiness. `environments__resume` sends one explicit
+request using the exact target and opaque token from a fresh get; its result is acceptance, not
+readiness. The receiving backend enforces the effective caller's current same-ServiceAccount policy.
+`sessions__get` returns `session_client.GetSession`'s independently sourced retained
 Dispatcher opening and History summary. It does not look up a live environment. Each source keeps
 its observed, missing or unavailable state and sanitized error; an interrupted composite read adds
 an aggregate `read_error` while preserving facts already read. `sessions__read_turns` returns
@@ -50,7 +54,7 @@ stored and returned by MCP Edge as structured JSON with the same JSON text fallb
 
 ## Authorization and recovery
 
-The `basic` PolicySet contains an exact-action auto-approval rule for the nine approved operations.
+The `basic` PolicySet contains an exact-action auto-approval rule for the ten approved operations.
 Its callers already have scoped Dispatcher and Discovery reachability, and the receiving services
 verify the effective caller's UID and resource authority. A grant to `basic` is the operator-owned
 policy assignment; existing PolicyBindings are not rewritten by this adapter. Neither Action
@@ -64,7 +68,8 @@ known refusal only for an explicit backend rejection; a transport or deadline er
 `execution_unknown`. The Action worker does not replay a mutation. Reconcile with the same retained
 IDs and inspect effects before starting a new operation.
 
-This adapter only reuses existing environments. It creates no target and adds no wake authority; a
-submitted input may still follow the existing backend wake-on-send policy when its authenticated
-caller already has that permission. It adds no broker authority path or managed platform-guidance
-activation.
+This adapter only reuses existing environments and creates no target or caller grant. Explicit
+resume is a reviewed request checked by EnvironmentLifecycle against the caller's existing
+`resumePolicy`; it adds no caller authority. Submitted input remains governed separately by the
+backend's wake-on-send policy. Uncertain resume replies are not replayed, and resuming never replays
+prior Session input.

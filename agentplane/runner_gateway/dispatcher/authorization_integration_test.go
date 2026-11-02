@@ -173,8 +173,7 @@ func authorityClientWithDelegation(
 	}
 	service := &Service{
 		Store: store, DispatcherCallers: map[auth.Account]struct{}{actor: {}},
-		WakeCallers: map[auth.Account]struct{}{actor: {}},
-		Sandboxes:   inventory, Hub: hub, WatchLease: 10 * time.Second,
+		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
 	}
 	connection := grpcmethods.Serve(t, methods, func(server *grpc.Server) {
 		dispatcherpb.RegisterSessionDispatcherServer(server, service)

@@ -100,6 +100,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
         f"{staging.ENV.namespace}/{notifications.NAME}",
         f"{staging.ENV.namespace}/{actions.NAME}",
     }
+    assert settings["operator_callers"] == [f"{staging.ENV.namespace}/{app.NAME}"]
     assert f"{staging.ENV.namespace}/{runner_gateway.NAME}" in settings["gateway_callers"]
     assert f"{staging.ENV.namespace}/{app.NAME}" in settings["wake_callers"]
     assert not pod.get("initContainers")
@@ -173,6 +174,7 @@ def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manif
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
         "/agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments",
         "/agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment",
+        "/agentplane.sandboxes.lifecycle.EnvironmentLifecycle/ResumeEnvironment",
     ]
     history_delegation = history["delegation"]
     assert history_delegation["actor"] == actions_account
@@ -210,6 +212,7 @@ def test_session_delegation_is_a_dispatcher_caller_without_wake_authority(scratc
         f"{env.namespace}/{notifications.NAME}",
         f"{env.namespace}/{actions.NAME}",
     }
+    assert settings["operator_callers"] == [f"{env.namespace}/{app.NAME}"]
     assert f"{env.namespace}/{actions.NAME}" not in settings["wake_callers"]
 
 

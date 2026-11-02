@@ -18,7 +18,7 @@ remain useful but do not provide independently addressable Agentplane Sessions.
 
 | Priority  | Outcome                                                                                                               | Work to select                                                                                                                                                                                                     |
 | --------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | Authorize explicit resume after `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`; prioritize concrete reliability regressions                                                                                              |
+| P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | Implement approved lifecycle authority, explicit resume and observable queued wake in #13546; prioritize concrete reliability regressions                                                                          |
 | P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE_DESIGN` then `SCHEDULED_AGENT_WAKE`, enable the reviewed delegation tools, then the `DAILY_CI_AGENT` product milestone; evaluate usability through normal use                                |
 | Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                                                          |
 | Next      | Measure a production fresh VM start and provide a usable Bazel client inside a VM                                     | `VM_STARTUP_LATENCY`, `LOCAL_BAZEL`; select an image or layering change only if production measurements show it addresses startup or needed resource headroom                                                      |
@@ -122,9 +122,10 @@ operation first and make the model's expected-incarnation argument optional. The
 configured automation requests resume; the environment lifecycle API authorizes the effective
 caller and enforces policy; the Sandbox Controller performs the Pod/VM transition. Gateway and
 execution code route and fence calls. Reconnect, resume and accepting a new incarnation are
-separate operations. The remaining caller/target eligibility, wake-on-message, budgets and
-manual-stop choices belong to `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN` before lifecycle mutations
-are exposed. Ordinary execution errors and incarnation fencing can advance independently.
+separate operations. **Operator approval, 2026-11-02 UTC:** implement the
+[selected authority](environment_lifecycle_authorization.md#selected-policy), including exact-SA
+target opt-in, shared explicit/automatic resume permission, sticky requested stops and typed queued
+wake observations. Ordinary execution errors and incarnation fencing remain independent.
 
 The [delegation contract](https://github.com/agentydragon/ducktape/pull/13229) is **approved for
 implementation, operator 2026-10-31**. Backend tools and scripted workflow acceptance have landed;
@@ -141,8 +142,8 @@ the broader runtime redesign remain outside this sprint.
 
 ### Dispatch order and prerequisites
 
-Give concrete reliability regressions first attention. Caller-authorized resume waits on its
-lifecycle decision. Broader resume/loss notices do not gate explicit resume. Dedicated sampler-roll and
+Give concrete reliability regressions first attention. Caller-authorized resume is approved and
+dispatched. Broader resume/loss notices do not gate explicit resume. Dedicated sampler-roll and
 JS/exec continuation exercises remain deferred pending operator use.
 
 P1 scheduling and the remaining caller-privilege delegation work proceed in parallel. The daily
@@ -159,13 +160,13 @@ an operator follow-up; no model exercise is dispatched.
 Focused regression-test additions and Bazel runs remain authorized; broad disruption exercises
 remain deferred.
 
-| Lane             | Next reviewable outcome                                                                                                      | Prerequisite / stopping point                                     |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| P0 policy review | `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`: [resume/wake proposal #13546](https://github.com/agentydragon/ducktape/pull/13546) | Stakeholder selection precedes `EXEC_SUSPENDED_RESUME`            |
-| P1 delegation    | `THREAD_CREATE_AUTHORIZATION`: operator follow-up for natural-agent usability                                                | Ordinary use; no model exercise is dispatched                     |
-| P1 scheduling    | `SCHEDULED_AGENT_WAKE_DESIGN`: [durable-wake proposal #13552](https://github.com/agentydragon/ducktape/pull/13552)           | Delivery/overlap/authority review precedes runtime implementation |
+| Lane              | Next reviewable outcome                                                                                                                        | Prerequisite / stopping point                                                                   |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| P0 implementation | Approved lifecycle backend, explicit resume and typed wake observations in [draft #13546](https://github.com/agentydragon/ducktape/pull/13546) | Three workers dispatched; backend/API/receipt dependencies below; focused checks precede review |
+| P1 delegation     | `THREAD_CREATE_AUTHORIZATION`: operator follow-up for natural-agent usability                                                                  | Ordinary use; no model exercise is dispatched                                                   |
+| P1 scheduling     | `SCHEDULED_AGENT_WAKE_DESIGN`: [durable-wake proposal #13552](https://github.com/agentydragon/ducktape/pull/13552)                             | Delivery/overlap/authority review precedes runtime implementation                               |
 
-After lifecycle policy is selected, explicit resume takes the next P0 implementation slot.
+Explicit resume occupies the next P0 implementation slot; its policy review is complete.
 Scheduled wake and usable delegation feed the daily CI capstone. Small
 `SESSION_LAUNCH_FRICTION` proposals remain alongside these tracks as capacity permits. This is a
 scheduling preference, not additional dependency edges.
@@ -186,8 +187,14 @@ its old ordering does not give it precedence over the selected tracks.
 ```mermaid
 flowchart LR
     subgraph PRIORITY_ZERO[P0: lifecycle authority and explicit resume]
-        SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN[Review resume and message-wake authority]
-        SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN --> EXEC_SUSPENDED_RESUME[Explicit authorized resume]
+        ENVIRONMENT_LIFECYCLE_BACKEND[In flight: shared lifecycle backend] --> ENVIRONMENT_RESUME_API[In flight: explicit resume RPC and clients]
+        DISPATCH_WAKE_OBSERVATION[In flight: typed queued wake observations]
+        ENVIRONMENT_LIFECYCLE_BACKEND --> DISPATCH_AUTHORIZED_WAKE[Shared-authority automatic wake]
+        DISPATCH_WAKE_OBSERVATION --> DISPATCH_AUTHORIZED_WAKE
+        ENVIRONMENT_RESUME_API --> ENVIRONMENT_RESUME_AGENT_TOOLS[In flight: Action and MCP resume]
+        ENVIRONMENT_RESUME_API --> EXEC_SUSPENDED_RESUME[Integrated resume acceptance]
+        DISPATCH_AUTHORIZED_WAKE --> EXEC_SUSPENDED_RESUME
+        ENVIRONMENT_RESUME_AGENT_TOOLS --> EXEC_SUSPENDED_RESUME
     end
     subgraph PRIORITY_ONE[P1: useful daily-agent workflow]
         THREAD_CREATE_AUTHORIZATION[Operator follow-up: delegation usability]
@@ -1402,9 +1409,19 @@ flowchart TD
     SANDBOX_AUTODISKFUL[Decision, unscheduled: auto-diskful storage for Sandboxes]
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
-    SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN[Selected P0 decision: caller-authorized resume and message wake]
-    EXEC_SUSPENDED_RESUME[Selected P0: recover exec on a suspended Sandbox]
-    SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN --> EXEC_SUSPENDED_RESUME
+    ENVIRONMENT_LIFECYCLE_BACKEND[In flight: shared resume policy and mutation]
+    ENVIRONMENT_RESUME_API[In flight: RPC, Discovery, CLI and operator client]
+    DISPATCH_WAKE_OBSERVATION[In flight: typed receipt persistence and watches]
+    DISPATCH_AUTHORIZED_WAKE[In flight: original-caller automatic wake]
+    ENVIRONMENT_RESUME_AGENT_TOOLS[In flight: Action, MCP and guidance]
+    EXEC_SUSPENDED_RESUME[Capstone: recover exec on a suspended Sandbox]
+    ENVIRONMENT_LIFECYCLE_BACKEND --> ENVIRONMENT_RESUME_API
+    ENVIRONMENT_LIFECYCLE_BACKEND --> DISPATCH_AUTHORIZED_WAKE
+    DISPATCH_WAKE_OBSERVATION --> DISPATCH_AUTHORIZED_WAKE
+    ENVIRONMENT_RESUME_API --> ENVIRONMENT_RESUME_AGENT_TOOLS
+    ENVIRONMENT_RESUME_API --> EXEC_SUSPENDED_RESUME
+    DISPATCH_AUTHORIZED_WAKE --> EXEC_SUSPENDED_RESUME
+    ENVIRONMENT_RESUME_AGENT_TOOLS --> EXEC_SUSPENDED_RESUME
     AGENT_EXECUTOR_LOSS_NOTICE[Unscheduled: tell agents when executor restarts or kills lose their processes]
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
@@ -1712,39 +1729,84 @@ differently.
 
 Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-coverage).
 
-### `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN` — authorize explicit resume and message wake
+### `ENVIRONMENT_LIFECYCLE_BACKEND` — own resume policy and guarded state changes
 
-**Selected P0 decision; [proposal #13546](https://github.com/agentydragon/ducktape/pull/13546) in review; operator dispatch 2026-11-01 UTC.** Explicit resume first
-and optional model incarnation fencing are selected. Define the remaining authority matrix for
-agents, external MCP callers, users and backend automation against existing Sandbox targets.
-This consolidates the earlier same-SA wake-allowlist question without equating the triggers:
-explicit resume is a lifecycle request; wake-on-message is a delivery policy.
+**Selected P0; in flight, coordinator dispatch 2026-11-02 03:04 UTC.** Worker
+`resume_lifecycle_core` implements the [approved contract](environment_lifecycle_authorization.md#selected-policy)
+in [draft #13546](https://github.com/agentydragon/ducktape/pull/13546). The authority decision is
+complete: exact live execution-SA resume requires `resumePolicy.allowOwnServiceAccount=true`;
+explicit resume and automatic wake share authority; requested stops remain sticky for ordinary
+callers; send admission is independent. Preserve explicitly configured broker authority separately
+from delegated effective-caller checks and the operator's manual-stop override.
 
-The environment lifecycle API validates the effective caller and target identity, enforces the
-selected opt-in/budgets, and requests desired state; the Sandbox Controller reconciles the Pod/VM.
-The Session Dispatcher and any future automatic wake-on-exec path use that same policy/operation.
-An Actions/sampler backend must not substitute its broad actor privileges for the caller's.
-A native harness suspended inside its own environment needs an external wake source. Environment
-execution alone grants no resume permission, and environments may have no resume capability.
+Own target UID/live-account checks, generation-bound tokens, guarded desired-state mutation,
+concurrency, retained wake-budget reservations and structured failures in a reusable lifecycle
+backend, initially hosted in the Gateway binary. The Sandbox Controller owns Pod/VM transitions.
+No backend depends on the integration app; no new binary, database or command queue is required.
+A native harness suspended inside its own environment still needs an external wake source.
 
-**Questions for review:** allow exact same-SA callers to resume their target directly, use narrow
-delegated lifecycle grants, or retain operator/backend-only resume? Recommend the same-SA option
-under explicit target policy, without generic Kubernetes patch authority. For authorized message
-delivery, allow same-SA wake when `wakeOnSend=true` (recommended) or retain `wake_callers` as an
-additional gate? Specify whether an explicit resume needs a separate opt-in, how wake budgets and
-concurrent requests converge, and what happens when the operator manually stopped the environment.
-Do not reinterpret `wakeOnSend` as generic execution/resume permission. Retain existing send
-authorization and explicit privileged broker behavior; do not silently remove the current allowlist.
+**Exit:** focused authorization, replacement/revocation, requested-stop, token/conflict, budget and
+uncertain-outcome coverage. No uncertain operation replay. Shared protobuf contracts unblock
+adapter development before the complete backend lands. Fresh provisioning, catalogue ownership,
+broader access grants, operator suspend and dispatch regrouping remain separate.
 
-**Exit:** reviewed caller/target/trigger examples, denial and approval rules, revocation/account
-replacement, budget/manual-stop behavior and one owning API contract. The API can initially live
-in an existing binary. Fresh provisioning/catalogue ownership, broad grant administration and
-Session/Environment dispatch regrouping remain outside this decision. Routing/error reporting and
-incarnation fencing proceed independently; backend mutation/exposure waits for this outcome.
+### `ENVIRONMENT_RESUME_API` — expose explicit resume and readiness
+
+**Selected P0; in flight in #13546, core + `resume_agent_surfaces`.** Uses
+`ENVIRONMENT_LIFECYCLE_BACKEND`. Expose the authenticated `EnvironmentLifecycle.ResumeEnvironment`
+RPC; Discovery supplies exact target, eligibility, generation-bound token and bounded read-only
+readiness waiting. Add the equivalent CLI command and migrate the existing authenticated operator
+resume facade to the RPC. Ordinary/delegated agent identity never inherits the app's authority.
+
+**Exit:** same-account direct/delegated success and denial; exact target/token propagation;
+acceptance distinct from readiness; timeout/controller facts retained; operator requested-stop
+override confined to the protected direct operator path. Public suspend authority/retry design
+is not a prerequisite and remains unselected.
+
+### `DISPATCH_WAKE_OBSERVATION` — retain typed queued-wake assessments
+
+**Selected P0; in flight in #13546, `resume_queue_observability`.** Shared protobuf types are
+available; receipt implementation does not wait for the complete lifecycle backend. Add new
+Goose migrations and typed delivery-blocker/wake persistence without changing queued-input
+admission. Carry assessments through Get/List/Watch and `sessions__observe_input`, retaining
+independently authorized History evidence.
+
+**Exit:** not-evaluated, disabled, denied, rate-limited, requested, failed and unknown observations
+remain structured and timestamped. Transactional notification and watch comparison publish wake
+changes even when delivery state/reason is unchanged. Existing rows and retry identities survive.
+Direct Runtime proxy calls create no Dispatcher receipt and do not acquire one through this work.
+
+### `DISPATCH_AUTHORIZED_WAKE` — use shared authority for automatic wake
+
+**Selected P0; dispatched in #13546 to `resume_queue_observability`.** Uses
+`ENVIRONMENT_LIFECYCLE_BACKEND` and `DISPATCH_WAKE_OBSERVATION`. Dispatcher evaluates whether native
+Session delivery actually needs the environment, then applies `wakeOnSend` and the original retained
+effective caller's current lifecycle authority. Enqueue-time eligibility is not a permanent grant.
+Authorized sends stay queued when wake is denied, disabled or budget-limited. Preserve explicit
+broker policy and make requested stops sticky for automatic wake.
+
+**Exit:** policy/account changes before delivery are respected, assessed wake outcomes are observable
+through receipt reads/watches, and concurrent explicit/automatic resume shares the same guarded
+mutation and budget. Central Session input that does not need the environment must not wake it.
+Gateway/Actions actor privileges must not replace the sender's identity.
+
+### `ENVIRONMENT_RESUME_AGENT_TOOLS` — make resume usable from Actions and MCP
+
+**Selected P0; in flight in #13546, `resume_agent_surfaces`.** Uses `ENVIRONMENT_RESUME_API`;
+adapters proceed against its fixed contract. Add `environments/resume`, its MCP facade, exact
+`basic` auto-approval, delegated method scope, destination configuration and progressive guidance.
+Discovery supplies handles/tokens; agents do not invent them. Configuration activation follows
+backend authorization and focused/system checks. Auto-approval adds no target authority.
+
+**Exit:** external MCP and central-agent paths authenticate the effective caller without depending
+on the app, distinguish resume acceptance from readiness, and document realistic recovery with a
+new command after readiness. Provisioning, generic suspend and automatic exec retry remain outside
+scope. The operator's later prompt exercise is not a gate.
 
 ### `EXEC_SUSPENDED_RESUME` — make exec recoverable after Sandbox suspension
 
-**Selected P0; implementation blocked only on `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`.** Shared
+**Selected P0 capstone; implementation dispatched in #13546, coordinator 2026-11-02 UTC.** Uses
+`ENVIRONMENT_RESUME_API`, `DISPATCH_AUTHORIZED_WAKE` and `ENVIRONMENT_RESUME_AGENT_TOOLS`. Shared
 live execution-account proof landed in [#13390](https://github.com/agentydragon/ducktape/pull/13390).
 Implement explicit discoverable resume of an existing environment through the lifecycle API, with
 equivalent agent/MCP/CLI access. This
@@ -1761,8 +1823,9 @@ without an available environment. Update discovery, agent instructions and ownin
 
 **Exit:** deterministic coverage exercises idle suspension, authorized resume, readiness,
 reconnection to the same Sandbox's new incarnation and a successful newly requested exec; it also
-covers concurrent resume, denied/failed wake, admission/quiesce races and uncertain prior effects
-without replay. Reuse existing same-Sandbox rebind coverage; the new outcome is agent-requested
+covers concurrent resume, sender-visible queued denial/disabled/rate-limited wake through reads and
+watches, denied/failed wake, admission/quiesce races and uncertain prior effects without replay.
+Reuse existing same-Sandbox rebind coverage; the new outcome is agent-requested
 resume and recovery. Broader notices and fresh provisioning are not prerequisites. Optional
 model-controlled incarnation fencing landed in [#13427](https://github.com/agentydragon/ducktape/pull/13427);
 it remains an execution contract, but no longer an in-flight DAG item.

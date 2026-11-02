@@ -56,6 +56,7 @@ import (
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
+	lifecyclepb "github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle/lifecyclepb"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/workload_auth/grpc"
@@ -261,6 +262,7 @@ func orchestrationExecutors(
 func sessionDelegationExecutors(
 	groups *catalog.Catalog,
 	discovery discoverypb.EnvironmentDiscoveryClient,
+	lifecycle lifecyclepb.EnvironmentLifecycleClient,
 	dispatcher dispatcherpb.SessionDispatcherClient,
 	history historypb.HistoryServiceClient,
 ) (map[string]worker.Executor, error) {
@@ -270,7 +272,7 @@ func sessionDelegationExecutors(
 		if !isSessionDelegation {
 			continue
 		}
-		executor, err := sessiondelegation.NewExecutor(key, binding, discovery, dispatcher, history)
+		executor, err := sessiondelegation.NewExecutor(key, binding, discovery, lifecycle, dispatcher, history)
 		if err != nil {
 			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
 		}
@@ -435,6 +437,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		delegated, err := sessionDelegationExecutors(
 			c.ActionGroups,
 			discoverypb.NewEnvironmentDiscoveryClient(dispatcherConn),
+			lifecyclepb.NewEnvironmentLifecycleClient(dispatcherConn),
 			dispatcherpb.NewSessionDispatcherClient(dispatcherConn),
 			historypb.NewHistoryServiceClient(historyConn),
 		)

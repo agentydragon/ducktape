@@ -19,7 +19,7 @@ It scopes existing Sessions and existing environments; it does not create enviro
 
 - An independent `delegation` setting names the Actions ServiceAccount, the namespaces whose caller identity it may assert,
   and the exact full RPC method names that accept delegated calls. It does not inherit `dispatcher_callers` or
-  `wake_callers`; those remain separate direct-caller policies.
+  `wake_callers`; the latter remains a separate trusted automatic-wake broker grant.
 - Shared workload-auth middleware admits the Actions token and rechecks the effective caller's current ServiceAccount UID
   before the handler runs. Direct and delegated calls both use the typed `EffectiveCaller` admission. Missing or replaced
   ServiceAccounts fail closed, and backend lookup failures return `UNAVAILABLE`.
@@ -65,9 +65,20 @@ It scopes existing Sessions and existing environments; it does not create enviro
   appends or cancels work. The worker checks the live managed account before binding a pending owner and again
   immediately before Runner delivery. Source errors fail closed; missing pending accounts remain queued, while
   a changed bound account fails queued work instead of delivering it under the replacement identity.
-- Existing wake eligibility remains governed by `wake_caller_accounts` and `Sandbox.spec.wakeOnSend`. A
-  normal target account is not implicitly added to `wake_caller_accounts`; its work remains queued while the
-  Sandbox is suspended unless an existing authorized caller wakes it.
+- Automatic wake is attempted only when the live Sandbox has `spec.wakeOnSend: true`. The shared lifecycle service
+  rechecks the target UID, the retained effective caller's current ServiceAccount UID, and current `resumePolicy` before
+  requesting resume. The existing `wake_caller_accounts` setting is a separate trusted broker grant for automatic
+  wake only; it does not grant explicit resume authority or override `SuspendedBy=Requested`. Dispatcher actors and
+  admission-time eligibility are never substitutes for the effective caller's current authority.
+- `Dispatch` and `SessionOpening` keep delivery state separate from wake state. `delivery_blocker` and the typed
+  `wake_assessment` are persisted with the receipt and published transactionally to active watches, including updates
+  that leave delivery state and reason unchanged. Disabled, denied, rate-limited, failed and uncertain wake outcomes
+  remain queued; only the existing post-request readiness deadline can terminally fail work. The assessment records
+  its observation time, observed generation, optional retry time and structured status details. The shared lifecycle
+  budget charges caller namespace/name/UID plus Sandbox UID and generation. An uncertain patch result is not retried
+  during the same observed generation; a later generation triggers a fresh assessment.
+- Central sampler openings and their inputs bypass executor readiness and automatic wake. The suspended execution
+  environment does not block delivery to the central sampler.
 
 ## Transport boundary
 

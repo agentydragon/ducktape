@@ -9,6 +9,8 @@ data:
       - agentplane-staging/actions
       - agentplane-staging/app
       - agentplane-staging/notifications
+    operator_callers:
+      - agentplane-staging/app
     gateway_callers:
       - agentplane-staging/app
       - agentplane-staging/notifications
@@ -197,6 +199,7 @@ data:
         - /agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch
         - /agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments
         - /agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment
+        - /agentplane.sandboxes.lifecycle.EnvironmentLifecycle/ResumeEnvironment
 immutable: false
 ---
 apiVersion: v1

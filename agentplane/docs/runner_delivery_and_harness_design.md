@@ -114,8 +114,10 @@ The current path has different authority at each step:
 | Dispatcher admission and wake        | Authenticated service-account allowlist; a separate wake-caller allowlist. It requires the expected Sandbox UID, compares it with the current Sandbox, persists that UID with queued work, compares UID before delivery, and UID-guards the Kubernetes wake patch. | The service-account allowlist does not distinguish originating users or provide per-destination grants. V0 delegates user checks to App/Notification; generalized per-destination grants and queued-work revocation need a separate decision. |
 | Gateway proxy and runner             | Proxy authenticates an allowed service account and routes to the connection holder. UID and owner headers are required; the proxy checks the exact Sandbox and ready Pod. Runner rejects an unknown Session.                                                       | The Go Dispatcher carries the watched UID into proxy calls, rejecting a same-name replacement. Proxy's broad caller list is not a per-destination send grant; runner membership cannot be checked while offline.                              |
 
-Current app resume and live inventory both call the Runner through the identity-fenced per-Sandbox
-proxy. The Gateway Session wrappers, registry and separate database are retired.
+The app's live Runner inventory still uses the identity-fenced per-Sandbox proxy. Explicit Sandbox
+resume now calls the Runner Gateway's Environment Lifecycle service, which checks the operator's
+Pod-bound authority and exact target before changing desired state. The Gateway Session wrappers,
+registry and separate database are retired.
 
 **Approved public destination (operator, 2026-10-15):** every submission names the exact
 `(Sandbox UID, Agentplane Session ID)`. Store, native-ID and process routing are runner-private;
@@ -492,7 +494,7 @@ effects. Same command ID/payload returns the original admission; conflicting reu
 
 Keep the guarded turn interrupt control and distinct Sandbox suspend/resume controls. Sending to a
 dormant Session uses runner-managed readiness; existing Sandbox wake authorization still applies.
-The app's manual resume changes Sandbox lifecycle state through Kubernetes; retained native state
+The app's operator resume request goes through Environment Lifecycle; retained native Session
 recovery belongs to the Runner.
 
 ### Provisional introspection model and Sandbox page

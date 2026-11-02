@@ -40,13 +40,6 @@ func (e *SandboxTearingDownError) Error() string {
 	return fmt.Sprintf("sandbox %s is being deleted", e.Name)
 }
 
-// SandboxQuiescingError means the controller is sealing the current incarnation before stopping it.
-type SandboxQuiescingError struct{ Name string }
-
-func (e *SandboxQuiescingError) Error() string {
-	return fmt.Sprintf("sandbox %s is quiescing; retry resume after it is suspended", e.Name)
-}
-
 // UnknownPolicySetError names requested PolicySets absent from this namespace.
 type UnknownPolicySetError struct {
 	Names []string

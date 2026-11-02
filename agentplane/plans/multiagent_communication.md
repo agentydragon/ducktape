@@ -466,7 +466,7 @@ Still open:
 - The longer-term intent is wake-on-message by default, with suspension and resume transparent to
   users and agents. V1 keeps per-Sandbox `spec.wakeOnSend`, Dispatcher's wake allowlist and operator
   lifecycle controls; messaging and history grants imply no lifecycle edits
-  ([lifecycle authorization](task_dag.md#sandbox_lifecycle_authorization_design--authorize-explicit-resume-and-message-wake)).
+  ([lifecycle authorization](task_dag.md#environment_lifecycle_backend--own-resume-policy-and-guarded-state-changes)).
   Per-source wake switches and moving notice timing into Dispatcher are
   [deferred](task_freezer.md#notification_dispatcher_ownership--review-notification-and-dispatcher-ownership).
 - A2A, MCP and other facades can expose the same contract later without changing the SA and

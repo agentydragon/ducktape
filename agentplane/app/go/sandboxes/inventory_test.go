@@ -237,31 +237,17 @@ func TestCreateRejectsUnknownPolicySetsAndInvalidRequests(t *testing.T) {
 	}
 }
 
-func TestSuspendResumeAndPolicyUpdatesKeepUIDFenceAndWakeGeneration(t *testing.T) {
+func TestSuspendAndPolicyUpdatesKeepUIDFenceAndWakeGeneration(t *testing.T) {
 	resource := testSandbox("paused", "sandbox-uid", sandboxapi.OperatingModeSuspended)
 	resource.Spec.Running = false
 	resource.Spec.WakeGeneration = 4
-	idle := sandboxapi.SuspendedByIdle
-	generation := int64(4)
-	resource.Status.SuspendedBy = &idle
-	resource.Status.SuspendedAtWakeGeneration = &generation
 	access, objects := newAccess(t, resource)
 
-	if err := access.Resume(context.Background(), "paused"); err != nil {
-		t.Fatal(err)
-	}
-	if err := access.Resume(context.Background(), "paused"); err != nil {
-		t.Fatal(err)
-	}
-	stored := readSandbox(t, objects, "paused")
-	if !stored.Spec.Running || stored.Spec.WakeGeneration != 5 {
-		t.Fatalf("resume state = running %v, generation %d", stored.Spec.Running, stored.Spec.WakeGeneration)
-	}
 	if err := access.Suspend(context.Background(), "paused"); err != nil {
 		t.Fatal(err)
 	}
-	stored = readSandbox(t, objects, "paused")
-	if stored.Spec.Running || stored.Spec.WakeGeneration != 5 {
+	stored := readSandbox(t, objects, "paused")
+	if stored.Spec.Running || stored.Spec.WakeGeneration != 4 {
 		t.Fatalf("suspend state = running %v, generation %d", stored.Spec.Running, stored.Spec.WakeGeneration)
 	}
 	if err := access.SetWakeOnSend(context.Background(), "paused", "old-uid", false); !isNotFound(err) {
@@ -287,14 +273,7 @@ func TestSuspendResumeAndPolicyUpdatesKeepUIDFenceAndWakeGeneration(t *testing.T
 	}
 }
 
-func TestResumeRefusesQuiescingAndMutationsRefuseTeardown(t *testing.T) {
-	resource := testSandbox("paused", "uid", sandboxapi.OperatingModeSuspended)
-	resource.Status.StopStage = sandboxapi.StopStageQuiescing
-	access, _ := newAccess(t, resource)
-	var quiescing *SandboxQuiescingError
-	if err := access.Resume(context.Background(), "paused"); !errors.As(err, &quiescing) {
-		t.Fatalf("resume during quiesce = %v", err)
-	}
+func TestMutationsRefuseTeardown(t *testing.T) {
 	deleting := metav1.NewTime(time.Now())
 	resource = testSandbox("deleting", "uid-delete", sandboxapi.OperatingModeSuspended)
 	resource.DeletionTimestamp = &deleting

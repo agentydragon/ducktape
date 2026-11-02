@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package agentplane.proto;
+
+option go_package = "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb;environmentlifecyclepb";
+
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+
+// The current caller's permission to request explicit environment resume.
+enum ResumeEligibilityState {
+  RESUME_ELIGIBILITY_STATE_UNSPECIFIED = 0;
+  RESUME_ELIGIBILITY_STATE_AVAILABLE = 1;
+  RESUME_ELIGIBILITY_STATE_DENIED = 2;
+}
+
+// Why explicit resume is or is not available to the observed caller and target.
+enum ResumeEligibilityReason {
+  RESUME_ELIGIBILITY_REASON_UNSPECIFIED = 0;
+  RESUME_ELIGIBILITY_REASON_ALLOWED_OWN_SERVICE_ACCOUNT = 1;
+  RESUME_ELIGIBILITY_REASON_POLICY_DISABLED = 2;
+  RESUME_ELIGIBILITY_REASON_CALLER_NOT_EXECUTION_ACCOUNT = 3;
+  RESUME_ELIGIBILITY_REASON_OPERATOR_REQUESTED_STOP = 4;
+  RESUME_ELIGIBILITY_REASON_UNSUPPORTED_ENVIRONMENT = 5;
+  RESUME_ELIGIBILITY_REASON_TARGET_CHANGED = 6;
+  RESUME_ELIGIBILITY_REASON_EXECUTION_ACCOUNT_CHANGED = 7;
+  RESUME_ELIGIBILITY_REASON_ALLOWED_TRUSTED_OPERATOR = 8;
+}
+
+message ResumeEligibility {
+  ResumeEligibilityState state = 1;
+  ResumeEligibilityReason reason = 2;
+}
+
+enum DeliveryBlockerKind {
+  DELIVERY_BLOCKER_KIND_UNSPECIFIED = 0;
+  DELIVERY_BLOCKER_KIND_ENVIRONMENT_SUSPENDED = 1;
+  DELIVERY_BLOCKER_KIND_OPERATOR_REQUESTED_STOP = 2;
+}
+
+message DeliveryBlocker {
+  DeliveryBlockerKind kind = 1;
+}
+
+// Whether a particular delivery or explicit lifecycle operation assessed a wake request.
+enum WakeState {
+  WAKE_STATE_UNSPECIFIED = 0;
+  WAKE_STATE_NOT_EVALUATED = 1;
+  WAKE_STATE_NOT_NEEDED = 2;
+  WAKE_STATE_AUTOMATIC_WAKE_DISABLED = 3;
+  WAKE_STATE_DENIED = 4;
+  WAKE_STATE_RATE_LIMITED = 5;
+  WAKE_STATE_REQUESTED = 6;
+  WAKE_STATE_FAILED = 7;
+  WAKE_STATE_OUTCOME_UNKNOWN = 8;
+  // Current wake policy permits a request; no attempt, budget reservation or mutation occurred.
+  WAKE_STATE_ELIGIBLE = 9;
+}
+
+// Policy or operational reason associated with a wake assessment.
+enum WakeReason {
+  WAKE_REASON_UNSPECIFIED = 0;
+  WAKE_REASON_CALLER_NOT_AUTHORIZED = 1;
+  WAKE_REASON_OPERATOR_REQUESTED_STOP = 2;
+  WAKE_REASON_UNSUPPORTED_ENVIRONMENT = 3;
+  WAKE_REASON_RESUME_POLICY_DISABLED = 4;
+  WAKE_REASON_WAKE_BUDGET_EXHAUSTED = 5;
+  WAKE_REASON_TARGET_CHANGED = 6;
+  WAKE_REASON_EXECUTION_ACCOUNT_CHANGED = 7;
+  WAKE_REASON_QUIESCING = 8;
+  WAKE_REASON_DELETING = 9;
+  WAKE_REASON_BACKEND_STATE_UNAVAILABLE = 10;
+  WAKE_REASON_OUTCOME_UNKNOWN = 11;
+  WAKE_REASON_ALLOWED_WAKE_BROKER = 12;
+}
+
+message WakeAssessment {
+  WakeState state = 1;
+  WakeReason reason = 2;
+  google.protobuf.Timestamp observed_at = 3;
+  // Present when the backend observed the Sandbox wake generation.
+  optional uint64 target_generation = 4;
+  // Present only for a bounded retry decision such as a shared wake-budget limit.
+  google.protobuf.Timestamp retry_at = 5;
+  // Preserves structured gRPC status details when the wake attempt failed.
+  google.rpc.Status error = 6;
+}

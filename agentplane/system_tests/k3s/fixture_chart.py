@@ -450,6 +450,7 @@ def build_chart(
         "runner-gateway",
         env,
         dispatcher_callers=gateway_callers | orchestration_caller,
+        operator_callers=app_caller,
         delegation_actor=(
             ServiceAccountRef(namespace=NAMESPACE, name=actions.NAME)
             if env.actions.orchestration_v1 is not None

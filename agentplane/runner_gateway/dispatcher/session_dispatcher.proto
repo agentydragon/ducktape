@@ -5,6 +5,7 @@ syntax = "proto3";
 package agentplane.runner_gateway.dispatcher;
 
 import "agentplane/proto/event_log.proto";
+import "agentplane/proto/environment_lifecycle.proto";
 import "agentplane/proto/session.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
@@ -95,6 +96,10 @@ message Dispatch {
   optional agentplane.proto.EventEntry admission = 8;
   google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp updated_at = 10;
+  // The environment condition currently preventing delivery, independent of delivery state.
+  agentplane.proto.DeliveryBlocker delivery_blocker = 11;
+  // The latest typed automatic-wake assessment. Denied or failed wake requests do not fail the command.
+  agentplane.proto.WakeAssessment wake_assessment = 12;
 }
 
 message SubmitInputRequest {
@@ -216,6 +221,10 @@ message SessionOpening {
   reserved 6;
   google.protobuf.Timestamp created_at = 7;
   google.protobuf.Timestamp updated_at = 8;
+  // The environment condition currently preventing delivery, independent of delivery state.
+  agentplane.proto.DeliveryBlocker delivery_blocker = 9;
+  // The latest typed automatic-wake assessment. Denied or failed wake requests do not fail the opening.
+  agentplane.proto.WakeAssessment wake_assessment = 10;
 }
 
 message OpenSessionResponse {

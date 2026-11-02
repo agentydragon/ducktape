@@ -28,6 +28,7 @@ go_library(
         "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/sandboxes/discovery:environment_discovery_go_proto",
+        "//agentplane/sandboxes/lifecycle:environment_lifecycle_go_proto",
         "//agentplane/session_client",
         "//agentplane/workload_auth/grpc",
         "@com_github_google_uuid//:uuid",
@@ -40,7 +41,10 @@ go_library(
 
 go_test(
     name = "session_delegation_test",
-    srcs = ["executor_test.go"],
+    srcs = [
+        "executor_test.go",
+        "receipt_action_test.go",
+    ],
     embed = [":session_delegation"],
     deps = [
         "//agentplane/action_service/catalog",
@@ -48,11 +52,13 @@ go_test(
         "//agentplane/action_service/worker",
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/proto:delegation_go_proto",
+        "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/sandboxes/discovery:environment_discovery_go_proto",
+        "//agentplane/sandboxes/lifecycle:environment_lifecycle_go_proto",
         "//agentplane/workload_auth/auth",
         "//agentplane/workload_auth/grpc",
         "@com_github_google_uuid//:uuid",
@@ -61,5 +67,6 @@ go_test(
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
