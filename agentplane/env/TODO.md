@@ -41,10 +41,6 @@ teardown contracts rather than treating every controller as a simple resource tr
   no-op, unlike the current early return. On an existing resource the direct path reads twice, so
   it saves a read on changed writes but loses the current one-read no-op fast path; measure before
   claiming a performance improvement. Keep process fence ordering.
-- `PublishEnvironmentDesired`, `PublishRuntimeTransitionRequest` and `PublishDesired` in
-  `lifecycle/contracts.go` repeat the same typed assignment and explicit owner handling as
-  `env/cosi.Publish`. Their specs are comparable; they can share that helper without changing the
-  caller-owned admission and transition locks.
 - `env/cosi.Write` also serves Bootstrap, Session, Codex app-server and Execution status writes,
   where `changed` wakes Runtime, Host or app-server waiters. The Harness Host aggregate has a
   separate `WriteStatus` with the same pre-read; it queues another reconcile on change because it
