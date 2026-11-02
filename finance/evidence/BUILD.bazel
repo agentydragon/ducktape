@@ -62,10 +62,7 @@ py_library(
 py_library(
     name = "manifold",
     srcs = ["manifold.py"],
-    deps = [
-        "@pypi//polars",
-        "@pypi//pydantic",
-    ],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(
@@ -109,9 +106,6 @@ py_test(
     deps = [
         ":manifold",
         "//:conftest",
-        "@pypi//polars",
-        "@pypi//pydantic",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
