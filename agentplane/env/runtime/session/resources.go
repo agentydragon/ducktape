@@ -66,9 +66,13 @@ type LifecycleStatus struct {
 	Resuming              bool
 	ProcessID             string
 	EnvironmentGeneration uint64
-	SetupOperationID      string
-	ProcessStopped        bool
-	Error                 string
+	// AdmissionClosed reports that the cutoff is enforced and accepted commands
+	// are settled for EnvironmentGeneration. Identical committed command IDs may
+	// still return their original receipt.
+	AdmissionClosed  bool
+	SetupOperationID string
+	ProcessStopped   bool
+	Error            string
 }
 
 type componentSpec[T any] interface {

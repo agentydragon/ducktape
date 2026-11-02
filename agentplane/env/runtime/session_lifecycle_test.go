@@ -326,6 +326,14 @@ func TestClosingIntentPreservesSealAndWaitsForSetup(t *testing.T) {
 	if seal := s.EventJournal().SealState(); seal != nil {
 		t.Fatalf("sealed before setup: %+v", seal)
 	}
+	waitLifecycle(t, r, func() bool {
+		current, found, err := session.ReadLifecycleStatus(r.lifecycleContext, r.lifecycleState, s.ID())
+		return err == nil && found && current.EnvironmentGeneration == environmentDesired(r).Generation
+	}, "Session to observe Closing generation")
+	beforeCutoff, found, err := session.ReadLifecycleStatus(r.lifecycleContext, r.lifecycleState, s.ID())
+	if err != nil || !found || beforeCutoff.EnvironmentGeneration != environmentDesired(r).Generation || beforeCutoff.AdmissionClosed {
+		t.Fatalf("Session cutoff reported during halt: status=%+v found=%v err=%v", beforeCutoff, found, err)
+	}
 	finishSetup()
 	waitLifecycle(t, r, func() bool { return currentSessionLifecycleStatus(r).Stage == lifecycle.Flushing }, "closing seal flush")
 	seal := s.EventJournal().SealState()
@@ -358,6 +366,10 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 		t.Fatalf("accept quiesce: %v", err)
 	}
 	waitLifecycle(t, r, func() bool { return currentSessionLifecycleStatus(r).Stage == lifecycle.Flushing }, "quiesce to flush sealed journal")
+	cutoff, found, err := session.ReadLifecycleStatus(r.lifecycleContext, r.lifecycleState, s.ID())
+	if err != nil || !found || cutoff.EnvironmentGeneration != environmentDesired(r).Generation || !cutoff.AdmissionClosed {
+		t.Fatalf("Session cutoff after sealing: status=%+v found=%v err=%v", cutoff, found, err)
+	}
 	seal := s.EventJournal().SealState()
 	if seal == nil || seal.Cursor == 0 {
 		t.Fatalf("journal seal = %+v, want a nonzero cursor", seal)
