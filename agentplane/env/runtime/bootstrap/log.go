@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sync"
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -25,16 +26,30 @@ type Log struct {
 
 func OpenLog(path string) (*Log, error) {
 	log := &Log{path: path}
+	created := false
 	if _, err := os.Stat(path); err == nil {
 		if err := log.load(); err != nil {
 			return nil, err
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
+	} else {
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		created = true
 	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o666)
 	if err != nil {
 		return nil, err
+	}
+	if created {
+		directory, err := os.Open(filepath.Dir(path))
+		if err == nil {
+			err = directory.Sync()
+			err = errors.Join(err, directory.Close())
+		}
+		if err != nil {
+			return nil, errors.Join(err, file.Close())
+		}
 	}
 	log.file = file
 	return log, nil

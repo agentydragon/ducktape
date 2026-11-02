@@ -8,6 +8,22 @@ owns Session records, journals, native harnesses and its separate owner lock.
 
 ## Retained state
 
+Runtime stores the exact selected bootstrap script (1–65536 bytes) as a durable
+`BootstrapSelections` COSI resource in `StateDir/bootstrap-selections.db`. It commits the
+selection before launching the script and runs those selected bytes. Subsequent requests must
+match byte for byte. `StateDir/initialization/events.jsonl` remains the authority for output and
+terminal result. A selection without a terminal event is interrupted on restart, including when
+the crash happened before process launch; Runtime never retries that uncertain attempt.
+`BootstrapInputs` admission and all process observations are live-only COSI resources.
+
+This cutover applies to newly created Sandboxes; existing Sandbox state is not converted. A
+durable non-hex value at `initialization/request.json` precedes every selection. It is only a
+rollback fence: this Runtime never reads it as selection or outcome authority. An older binary
+cannot match it to a script digest, so it refuses a selected Sandbox instead of rerunning its
+bootstrap. It cannot recover the COSI outcome; keep such Sandboxes out of service during a binary
+rollback and roll forward a corrected Runtime before readmitting them. Their state volumes remain
+intact.
+
 Runtime opens `StateDir/.agentplane-environment-runtime-owner` and holds it locked for its lifetime.
 Harness Host separately locks `StateDir/harness-host/.agentplane-harness-host-owner`. This is a
 direct cutover from the old `.agentplane-runner-owner` lock paths: an old process does not contend

@@ -2393,6 +2393,11 @@ go_deps.module(
     sum = "h1:VWZF71pwSQ2lZZCt7hFGJsOfDc5dVG28/IysjjMWXL8=",
     version = "v0.20.0",
 )
+go_deps.module(
+    path = "go.etcd.io/bbolt",
+    sum = "h1:dEadXpI6G79deX5prL3QRNP6JB8UxVkqo4UPnHaNXJo=",
+    version = "v1.4.3",
+)
 
 # ─ Repos exported for Bazel BUILD files ──────────────────────────────────
 # Includes directly-used repos AND transitive deps of manual go_deps.module()
@@ -2481,6 +2486,7 @@ use_repo(
     "dev_dny_code_ssrf",
     "in_gopkg_yaml_v3",
     "in_yaml_go_yaml_v4",
+    "io_etcd_go_bbolt",
     "io_k8s_api",
     "io_k8s_apimachinery",
     "io_k8s_apiserver",

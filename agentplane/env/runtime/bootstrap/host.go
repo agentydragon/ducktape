@@ -3,8 +3,6 @@ package bootstrap
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,6 +31,7 @@ const (
 	failedMessage         = "the Sandbox bootstrap failed and never runs again; use a new Sandbox"
 	operationHasNoOutcome = "bootstrap has no terminal outcome"
 	maximumBootstrapBytes = 65536
+	legacyRollbackFence   = `{"script_sha256":"cosi-selection-rollback-fence"}`
 )
 
 var ErrInterrupted = errors.New(interruptedMessage)
@@ -98,9 +97,9 @@ func (h *Host) Initialize(ctx context.Context) error {
 	return publish(ctx, h.state, ResourceID, Input{})
 }
 
-// Request records accepted bootstrap demand while the Runner's admission guard
-// holds its admission lock. The retained request file and event log are the
-// durable authorities. An already accepted request remains successful after
+// Request records accepted bootstrap demand while Runtime's admission guard
+// holds its admission lock. The selection and event log are the durable
+// authorities. An already accepted request remains successful after
 // admissions close.
 func (h *Host) Request(ctx context.Context) error {
 	if h == nil || !h.Configured() {
@@ -341,41 +340,39 @@ func (h *Host) runBootstrap(ctx context.Context) error {
 	if script == nil {
 		return errors.New("bootstrap is not configured")
 	}
-	if len(*script) == 0 || len(*script) > maximumBootstrapBytes {
-		return errors.New("bootstrap must contain 1..65536 UTF-8 bytes")
+	if err := validateScript(*script); err != nil {
+		return err
 	}
 	root := filepath.Join(h.config.StateDir, "initialization")
 	if err := retained.EnsureDirectory(root); err != nil {
 		return err
 	}
-	digest := sha256.Sum256([]byte(*script))
-	metadata := struct {
-		SHA string `json:"script_sha256"`
-	}{hex.EncodeToString(digest[:])}
-	requestPath := filepath.Join(root, "request.json")
-	raw, err := os.ReadFile(requestPath)
-	selected := errors.Is(err, os.ErrNotExist)
-	if err != nil && !selected {
+	// Old binaries read this path as a script digest. A non-hex value makes
+	// them refuse the attempt; this binary never reads it as an authority.
+	if err := retained.WriteDurable(filepath.Join(root, "request.json"), []byte(legacyRollbackFence)); err != nil {
 		return err
 	}
-	if selected {
-		encoded, err := json.Marshal(metadata)
-		if err != nil {
+	selected, found, err := ReadSelection(ctx, h.state)
+	if err != nil {
+		return err
+	}
+	newSelection := !found
+	if !found {
+		if _, err := os.Stat(filepath.Join(root, "events.jsonl")); err == nil {
+			return errors.New("initialization events exist without a bootstrap selection")
+		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		if err := retained.WriteDurable(requestPath, encoded); err != nil {
+		if err := publish(ctx, h.state, ResourceID, Selection{Script: *script}); err != nil {
 			return err
 		}
-	} else {
-		var previous struct {
-			SHA string `json:"script_sha256"`
+		selected, found, err = ReadSelection(ctx, h.state)
+		if err != nil || !found {
+			return errors.Join(err, errors.New("durable bootstrap selection unavailable after publication"))
 		}
-		if err := decodeSelection(raw, &previous); err != nil {
-			return err
-		}
-		if previous.SHA != metadata.SHA {
-			return status.Error(codes.AlreadyExists, selectionConflict)
-		}
+	}
+	if selected.Script != *script {
+		return status.Error(codes.AlreadyExists, selectionConflict)
 	}
 	log, err := OpenLog(filepath.Join(root, "events.jsonl"))
 	if err != nil {
@@ -385,7 +382,7 @@ func (h *Host) runBootstrap(ctx context.Context) error {
 	if log.Ended() {
 		return bootstrapErrorForLog(log)
 	}
-	if !selected || log.LastSequence() != 0 {
+	if !newSelection || log.LastSequence() != 0 {
 		if err := log.AppendInterrupted(1); err != nil {
 			return err
 		}
@@ -395,7 +392,7 @@ func (h *Host) runBootstrap(ctx context.Context) error {
 	if cwd == "" {
 		cwd = h.config.StateDir
 	}
-	code, err := h.scripts.Run(ctx, ControllerName, *script, cwd, func(stdout bool, data []byte) error {
+	code, err := h.scripts.Run(ctx, ControllerName, selected.Script, cwd, func(stdout bool, data []byte) error {
 		stream := sessionpb.InitializationStream_INITIALIZATION_STREAM_STDERR
 		if stdout {
 			stream = sessionpb.InitializationStream_INITIALIZATION_STREAM_STDOUT
@@ -413,6 +410,13 @@ func (h *Host) runBootstrap(ctx context.Context) error {
 	}
 	if code != 0 {
 		return errors.New(failedMessage)
+	}
+	return nil
+}
+
+func validateScript(script string) error {
+	if len(script) == 0 || len(script) > maximumBootstrapBytes {
+		return errors.New("bootstrap must contain 1..65536 bytes")
 	}
 	return nil
 }

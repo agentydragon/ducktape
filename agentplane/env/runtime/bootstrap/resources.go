@@ -17,15 +17,21 @@ const (
 	InputType      = "BootstrapInputs.agentplane"
 	RuntimeType    = "BootstrapRuntimes.agentplane"
 	OperationType  = "BootstrapOperationResults.agentplane"
+	SelectionType  = "BootstrapSelections.agentplane"
 	ControllerName = "bootstrap-lifecycle"
 	ResourceID     = "bootstrap"
 	HostOwner      = "bootstrap-host"
 )
 
 // Input records that the Runner synchronously admitted the Sandbox bootstrap.
-// The retained request file and event log remain the durable authorities.
+// It is live-only and must never be restored after a restart.
 type Input struct {
 	Requested bool
+}
+
+// Selection is the immutable script committed before its one execution attempt.
+type Selection struct {
+	Script string `json:"script"`
 }
 
 type Phase uint8
@@ -85,6 +91,10 @@ func ReadRuntime(ctx context.Context, reader controller.Reader) (Runtime, bool, 
 	return componentRead[Runtime](ctx, reader, ResourceID)
 }
 
+func ReadSelection(ctx context.Context, reader controller.Reader) (Selection, bool, error) {
+	return componentRead[Selection](ctx, reader, ResourceID)
+}
+
 func isTerminal(phase Phase) bool {
 	return phase == Succeeded || phase == Failed || phase == Interrupted
 }
@@ -93,5 +103,7 @@ func (Input) resourceType() resource.Type               { return InputType }
 func (value Input) DeepCopy() Input                     { return value }
 func (Runtime) resourceType() resource.Type             { return RuntimeType }
 func (value Runtime) DeepCopy() Runtime                 { return value }
+func (Selection) resourceType() resource.Type           { return SelectionType }
+func (value Selection) DeepCopy() Selection             { return value }
 func (operationResult) resourceType() resource.Type     { return OperationType }
 func (value operationResult) DeepCopy() operationResult { return value }
