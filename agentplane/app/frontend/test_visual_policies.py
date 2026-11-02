@@ -989,7 +989,9 @@ async def test_action_history_receipt(view: VisualPage, app: AgentplaneFixture) 
 
 
 @DESKTOP_AND_MOBILE
-async def test_gmail_draft_history_keeps_request_and_result_together(view: VisualPage, app: AgentplaneFixture) -> None:
+async def test_gmail_draft_history_keeps_request_and_result_together(
+    view: VisualPage, app: AgentplaneFixture, capture_name: str
+) -> None:
     await app.set_flag(Flag.GMAIL_DRAFT_HISTORY)
     await app.mount_app("/actions")
     page = view.page
@@ -1002,7 +1004,7 @@ async def test_gmail_draft_history_keeps_request_and_result_together(view: Visua
     )
     await _in_viewport(card)
     await view.check(context="Gmail draft compact history card")
-    await view.capture("gmail_draft_history_compact", target=card)
+    await view.capture(f"{capture_name}-compact", target=card)
 
     await _open_history_receipts(page)
     await expect(page.get_by_text("prepare the release email", exact=True)).to_be_visible()
