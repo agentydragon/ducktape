@@ -7,8 +7,9 @@
       "id": "A",
       "priority": "High",
       "category": "Ownership",
-      "title": "Move Augur’s deployed model contracts out of x/",
-      "refresh_status": "present_at_refresh"
+      "title": "Move Augur’s application model contracts out of x/",
+      "refresh_status": "present_at_refresh",
+      "deployment_note": "Cluster documentation at 5c8d1938be says Augur is parked; a live deployment was not verified."
     },
     {
       "id": "B",
