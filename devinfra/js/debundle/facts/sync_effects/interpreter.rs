@@ -4443,13 +4443,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         summary: &crate::analysis_inputs::ForeignCallSummary,
         args: &[Values],
     ) -> Values {
-        let retained: Values = summary
-            .retained_arguments
-            .iter()
-            .filter_map(|position| args.get(*position))
-            .flatten()
-            .cloned()
-            .collect();
+        let retained: Values = if summary.retained_provider_captures.is_empty() {
+            summary
+                .retained_arguments
+                .iter()
+                .filter_map(|position| args.get(*position))
+                .flatten()
+                .cloned()
+                .collect()
+        } else {
+            // Unknown captured values may alias an actual argument. The
+            // summary proves no separation between those inputs and captures.
+            args.iter().flatten().cloned().collect()
+        };
         self.expose_class_capabilities(&retained);
         self.taint_objects(&retained);
         retained
@@ -4470,7 +4476,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .unwrap_or_else(|| Values::from([AbstractValue::UNDEFINED])),
                 ),
                 ForeignReturn::FreshAllocation => {
-                    let retained = self.retain_foreign_arguments(summary, args);
+                    let mut retained = self.retain_foreign_arguments(summary, args);
+                    if !summary.retained_provider_captures.is_empty() {
+                        // Captures need not be primitive or unescaped. A later
+                        // use retains arbitrary foreign/importer-cell effects.
+                        retained.insert(AbstractValue::ForeignDeferredRecord);
+                    }
                     // Keep live input identities, including containers that
                     // acquire callbacks after this call. The carrier remains
                     // opaque; its interned captures prove no result identity.
@@ -6831,19 +6842,44 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn promote_foreign_record(&mut self, outcome: &mut Outcome) {
-        // Foreign bodies may read importer cells through a direct ESM capture,
-        // without calling an exported callback. Preserve all such obligations.
-        // This deliberately buys precision only at construction, not member use.
+        // An opaque foreign capability can read or rebind importer cells,
+        // through a direct ESM capture or a retained callback. Precision is
+        // gained at construction only; later use preserves both obligations.
         self.assuming(AssumedEffectReason::EscapedCallbackClosure, |this| {
+            // Foreign code cannot assign an ESM import binding directly. A
+            // retained importer callback can perform any source rebind; eval
+            // or with defeats that finite source census.
+            let rebinds: BTreeSet<_> = if this.state.reachability.incomplete {
+                this.inputs.binding_owner.keys().cloned().collect()
+            } else {
+                this.inputs
+                    .facts
+                    .iter()
+                    .flat_map(|fact| fact.rebinds.eager.iter().chain(&fact.rebinds.lazy))
+                    .filter(|binding| this.inputs.top_bindings.contains(*binding))
+                    .cloned()
+                    .collect()
+            };
             this.promote_top_effects(
                 this.inputs.binding_owner.keys().collect(),
-                Vec::new(),
+                rebinds.iter().collect(),
                 this.state
                     .current_top_owner
                     .expect("foreign record use has a top owner"),
                 outcome,
             )
         });
+        self.apply_rebind_effects(&outcome.effects.rebinds);
+        let reached = self
+            .state
+            .prefix_values
+            .values()
+            .flatten()
+            .chain(self.state.exported_runtime_values.iter())
+            .chain(self.state.global_escaped_callbacks.iter())
+            .cloned()
+            .collect();
+        self.unsettle(&reached);
         outcome.unknown_call = true;
         self.widen_native_effects();
         outcome.lose_precision(

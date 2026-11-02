@@ -1687,6 +1687,9 @@ struct ReceiverFlowValue {
 #[derive(Debug, Clone)]
 struct BindingDeclarationWrite {
     owner: SourceUnitOrdinal,
+    /// A simple `var` in a callable's scope. Such a binding is initialized to
+    /// undefined on entry; this proves no kind or privacy of its stored value.
+    private_var_scope: Option<u32>,
     binding_span: Span,
     initializer_span: Option<Span>,
     initializer: Option<ValueExpr>,
@@ -5619,6 +5622,9 @@ struct ExecutionIndex {
     retained_record_factories: BTreeSet<String>,
     owner: SourceUnitOrdinal,
     current: Option<u32>,
+    /// Lexical var scope, distinct from the effect owner inherited by
+    /// unindexed accessors and static blocks.
+    variable_scope: Option<u32>,
     allowed_local_member_receiver: Option<u32>,
     past_await: bool,
     may_skip_await_depth: u32,
@@ -5696,6 +5702,7 @@ struct ExecutionIndex {
     top_const_declarations: BTreeSet<Id>,
     direct_top_level_var_declaration: bool,
     direct_top_level_const_declaration: bool,
+    variable_kind: Option<VarDeclKind>,
     /// Direct primitive literal initializers for simple top-level `const`
     /// bindings. Reassignment and dynamic-scope checks are applied after the
     /// single canonical AST walk is complete.
@@ -5814,6 +5821,7 @@ impl Default for ExecutionIndex {
             retained_record_factories: BTreeSet::new(),
             owner: SourceUnitOrdinal(0),
             current: None,
+            variable_scope: None,
             allowed_local_member_receiver: None,
             past_await: false,
             may_skip_await_depth: 0,
@@ -5883,6 +5891,7 @@ impl Default for ExecutionIndex {
             top_const_declarations: BTreeSet::new(),
             direct_top_level_var_declaration: false,
             direct_top_level_const_declaration: false,
+            variable_kind: None,
             direct_primitive_const_bindings: BTreeSet::new(),
             reassigned_bindings: BTreeSet::new(),
             ordinary_input_refs: BTreeMap::new(),
@@ -6094,6 +6103,34 @@ impl BundleGlobalContext<'_> {
 }
 
 impl ExecutionIndex {
+    fn private_var_binding(&self, binding: &Id) -> bool {
+        if !self.dynamic_scope_owners.is_empty() || self.imported_bindings.contains(binding) {
+            return false;
+        }
+        let Some(writes) = self.binding_declaration_writes.get(binding) else {
+            return false;
+        };
+        let Some(scope) = writes.first().and_then(|write| write.private_var_scope) else {
+            return false;
+        };
+        let Some(callable) = self.callables.get(&scope) else {
+            return false;
+        };
+        // Parameter initialization has a different TDZ and, with defaults,
+        // can create closures before the body environment exists. A var
+        // redeclaration must not turn such a parameter into this proof.
+        if callable.params.iter().any(|parameter| {
+            parameter.binding.is_none()
+                || parameter.default.is_some()
+                || parameter.binding.as_ref() == Some(binding)
+        }) {
+            return false;
+        }
+        writes
+            .iter()
+            .all(|write| write.private_var_scope == Some(scope) && write.simple_identifier)
+    }
+
     pub(super) fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
         if self.array_elements.contains_key(&allocation) {
             return None;
@@ -10041,6 +10078,7 @@ impl ExecutionIndex {
             .is_some_and(|parent| parent.created_after_parent_await)
             || (self.past_await && !self.hoisted_nested_functions.contains(&key));
         let saved_current = self.current.replace(key);
+        let saved_variable_scope = self.variable_scope.replace(key);
         let saved_await = std::mem::replace(&mut self.past_await, false);
         let saved_may_skip = std::mem::replace(&mut self.may_skip_await_depth, 0);
         let saved_conditional = std::mem::replace(&mut self.conditional_depth, 0);
@@ -10057,6 +10095,7 @@ impl ExecutionIndex {
         visit(self);
         self.prototype_capture_stack.pop();
         self.current = saved_current;
+        self.variable_scope = saved_variable_scope;
         self.past_await = saved_await;
         self.may_skip_await_depth = saved_may_skip;
         self.conditional_depth = saved_conditional;
@@ -10568,7 +10607,9 @@ impl Visit for ExecutionIndex {
             .entry(static_property_name(&setter.key))
             .or_default()
             .insert(self.owner);
+        let previous_scope = self.variable_scope.take();
         setter.visit_children_with(self);
+        self.variable_scope = previous_scope;
     }
 
     fn visit_getter_prop(&mut self, getter: &GetterProp) {
@@ -10576,7 +10617,15 @@ impl Visit for ExecutionIndex {
         // Accessor bodies retain the enclosing callable here; source order
         // cannot distinguish their deferred captured writes from local writes.
         self.unindexed_accessor_owners.insert(self.owner);
+        let previous_scope = self.variable_scope.take();
         getter.visit_children_with(self);
+        self.variable_scope = previous_scope;
+    }
+
+    fn visit_static_block(&mut self, block: &StaticBlock) {
+        let previous_scope = self.variable_scope.take();
+        block.visit_children_with(self);
+        self.variable_scope = previous_scope;
     }
 
     fn visit_object_lit(&mut self, object: &ObjectLit) {
@@ -11389,6 +11438,12 @@ impl Visit for ExecutionIndex {
         self.assignment_target = saved;
     }
 
+    fn visit_var_decl(&mut self, declaration: &VarDecl) {
+        let previous = self.variable_kind.replace(declaration.kind);
+        declaration.visit_children_with(self);
+        self.variable_kind = previous;
+    }
+
     fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
         if self.direct_top_level_var_declaration
             && self.current.is_none()
@@ -11437,6 +11492,9 @@ impl Visit for ExecutionIndex {
                 .or_insert_with(|| Vec::with_capacity(1))
                 .push(BindingDeclarationWrite {
                     owner: self.owner,
+                    private_var_scope: self
+                        .variable_scope
+                        .filter(|_| self.variable_kind == Some(VarDeclKind::Var)),
                     binding_span: binding.id.span,
                     initializer_span: declarator.init.as_ref().map(|value| value.span()),
                     initializer: initializer.clone(),
@@ -11472,6 +11530,7 @@ impl Visit for ExecutionIndex {
                     .or_insert_with(|| Vec::with_capacity(1))
                     .push(BindingDeclarationWrite {
                         owner: self.owner,
+                        private_var_scope: None,
                         binding_span: declarator.name.span(),
                         initializer_span: declarator.init.as_ref().map(|value| value.span()),
                         initializer: initializer.clone(),
