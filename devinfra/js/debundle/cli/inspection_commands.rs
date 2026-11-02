@@ -347,9 +347,7 @@ fn resolve_id_as_module_path(id: &str, module_paths: &[String]) -> Option<String
             .file_name()
             .is_some_and(|name| name == module_id)
     });
-    let Some(first) = matches.next() else {
-        return None;
-    };
+    let first = matches.next()?;
     if matches.next().is_some() {
         return None;
     }

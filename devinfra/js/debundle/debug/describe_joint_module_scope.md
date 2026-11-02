@@ -26,3 +26,8 @@ accept `--tree-config`. Removing that check alone would have let unrelated
 YAML contaminate binding-home and claim resolution. The e2e fixture exercises
 the base failure and verifies the scoped behavior, including rejection of a
 different config path and changed source bytes.
+
+The scoped module index and tree config are related resolver inputs; passing
+each as a separate argument made the source-unit resolver exceed the project's
+Clippy argument limit. Keep these inputs grouped in its context. The module
+path lookup returns `Option`, so use `?` when there is no path candidate.

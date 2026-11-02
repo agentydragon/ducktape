@@ -860,13 +860,15 @@ fn explain_from_graph(
     } = resolve_source_unit_ids(
         selection,
         graph,
-        common,
-        size_cap_lines,
-        source_lookup.root,
-        source_lookup.verified,
-        propose,
-        &session.tree_config,
-        &session.module_files,
+        &ResolveSourceUnitContext {
+            common,
+            size_cap_lines,
+            source_root: source_lookup.root,
+            source_context: source_lookup.verified,
+            propose,
+            tree_config: session.tree_config.as_deref(),
+            module_files: &session.module_files,
+        },
     )?;
     let source_unit_set: BTreeSet<String> = source_unit_ids.iter().cloned().collect();
     let mut source_units = source_units_for_ids(graph, &source_unit_set);
@@ -1227,13 +1229,15 @@ pub fn run_source_selection_report(
     } = resolve_source_unit_ids(
         selection,
         &graph,
-        &args.common,
-        args.size_cap_lines,
-        args.source_root.as_deref(),
-        source_context,
-        None,
-        &None,
-        &module_files,
+        &ResolveSourceUnitContext {
+            common: &args.common,
+            size_cap_lines: args.size_cap_lines,
+            source_root: args.source_root.as_deref(),
+            source_context,
+            propose: None,
+            tree_config: None,
+            module_files: &module_files,
+        },
     )?;
     let source_unit_set: BTreeSet<String> = source_unit_ids.iter().cloned().collect();
     let source_units = source_units_for_ids(&graph, &source_unit_set);
@@ -1726,16 +1730,20 @@ impl Display for SourceUnitNotFound {
 
 impl Error for SourceUnitNotFound {}
 
+struct ResolveSourceUnitContext<'a> {
+    common: &'a CommonArgs,
+    size_cap_lines: usize,
+    source_root: Option<&'a Path>,
+    source_context: Option<&'a VerifiedGraphSourceContext>,
+    propose: Option<&'a ProposalsReport>,
+    tree_config: Option<&'a Path>,
+    module_files: &'a [PathBuf],
+}
+
 fn resolve_source_unit_ids(
     selection: &SelectionKind,
     graph: &DependencyGraphReport,
-    common: &CommonArgs,
-    size_cap_lines: usize,
-    source_root: Option<&Path>,
-    source_context: Option<&VerifiedGraphSourceContext>,
-    propose: Option<&ProposalsReport>,
-    tree_config: &Option<PathBuf>,
-    module_files: &[PathBuf],
+    context: &ResolveSourceUnitContext<'_>,
 ) -> Result<ResolvedSelection> {
     let mut unknown_binding_ids: Vec<String> = Vec::new();
     let mut source_unit_ids: Vec<String> = match selection {
@@ -1752,11 +1760,11 @@ fn resolve_source_unit_ids(
         SelectionKind::ModulePath(module_path) => {
             let (resolved, unknown) = resolve_module_path_source_unit_ids(
                 graph,
-                common,
-                source_root,
-                source_context,
+                context.common,
+                context.source_root,
+                context.source_context,
                 module_path,
-                module_files,
+                context.module_files,
             )?;
             unknown_binding_ids = unknown;
             resolved
@@ -1784,18 +1792,18 @@ fn resolve_source_unit_ids(
             .map(|node| node.id.clone())
             .collect(),
         SelectionKind::Proposal(proposal_id) => {
-            let proposal_source_unit_ids = if let Some(propose) = propose {
+            let proposal_source_unit_ids = if let Some(propose) = context.propose {
                 source_unit_ids_for_proposal(propose, proposal_id)
             } else {
                 let propose = propose_from_graph(
                     graph,
                     &ProposalOptions {
-                        dependency_graph_path: common.dependency_graph_path.clone(),
-                        modules_root: common.modules_root.clone(),
-                        tree_config: tree_config.clone(),
-                        source_root: source_root.map(Path::to_path_buf),
-                        source_context: source_context.cloned(),
-                        size_cap_lines,
+                        dependency_graph_path: context.common.dependency_graph_path.clone(),
+                        modules_root: context.common.modules_root.clone(),
+                        tree_config: context.tree_config.map(Path::to_path_buf),
+                        source_root: context.source_root.map(Path::to_path_buf),
+                        source_context: context.source_context.cloned(),
+                        size_cap_lines: context.size_cap_lines,
                     },
                 )?;
                 source_unit_ids_for_proposal(&propose, proposal_id)
@@ -1816,18 +1824,18 @@ fn resolve_source_unit_ids(
             .map(|atomic_group| atomic_group.source_unit_ids.clone())
             .unwrap_or_default(),
         SelectionKind::Diagnostic(diagnostic_id) => {
-            let diagnostic_source_unit_ids = if let Some(propose) = propose {
+            let diagnostic_source_unit_ids = if let Some(propose) = context.propose {
                 source_unit_ids_for_diagnostic(propose, diagnostic_id)
             } else {
                 let propose = propose_from_graph(
                     graph,
                     &ProposalOptions {
-                        dependency_graph_path: common.dependency_graph_path.clone(),
-                        modules_root: common.modules_root.clone(),
+                        dependency_graph_path: context.common.dependency_graph_path.clone(),
+                        modules_root: context.common.modules_root.clone(),
                         tree_config: None,
-                        source_root: source_root.map(Path::to_path_buf),
-                        source_context: source_context.cloned(),
-                        size_cap_lines,
+                        source_root: context.source_root.map(Path::to_path_buf),
+                        source_context: context.source_context.cloned(),
+                        size_cap_lines: context.size_cap_lines,
                     },
                 )?;
                 source_unit_ids_for_diagnostic(&propose, diagnostic_id)
@@ -1960,8 +1968,8 @@ fn binding_homes(
 ) -> Result<Vec<BindingHomeReport>> {
     let mut homes = BTreeSet::new();
     for path in module_files {
-        let module_path = module_path_from_file(&path, modules_root);
-        for member in read_module_file(&path)?.members {
+        let module_path = module_path_from_file(path, modules_root);
+        for member in read_module_file(path)?.members {
             let Some(binding_selector) = member.selector.binding else {
                 continue;
             };
