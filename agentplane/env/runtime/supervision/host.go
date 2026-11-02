@@ -34,10 +34,11 @@ type Host struct {
 }
 
 type hostRegistry struct {
-	state     state.State
-	namespace resource.Namespace
-	mu        sync.Mutex
-	entries   map[string]*processHostEntry
+	state         state.State
+	namespace     resource.Namespace
+	mu            sync.Mutex
+	entries       map[string]*processHostEntry
+	systemdScopes map[SystemdScopeID]*systemdScopeEntry
 }
 
 // Each slot's result is written once before its done channel closes. The live
@@ -100,7 +101,7 @@ func NewHost(ctx context.Context, store state.State, namespace resource.Namespac
 	return &Host{
 		hostRegistry: &hostRegistry{
 			state: store, namespace: namespace,
-			entries: make(map[string]*processHostEntry),
+			entries: make(map[string]*processHostEntry), systemdScopes: make(map[SystemdScopeID]*systemdScopeEntry),
 		},
 		ctx: ctx, domain: domain, workers: workers, onError: onError,
 	}

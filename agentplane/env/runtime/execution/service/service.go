@@ -45,17 +45,7 @@ func runOwned(ctx context.Context, config Config, ready func(executorpb.Executor
 		err = codexexecserver.FenceContainer(fence, config.ContainerSocket, "")
 		finish()
 	case "systemd":
-		ownerUnit, lifetimeDirectory := config.Systemd.OwnerUnit, config.Systemd.LifetimeDirectory
-		launcher := &supervision.SystemdLauncher{
-			Slice:    supervision.ExecutorSlice,
-			AgentUID: config.Systemd.AgentUID, AgentGID: config.Systemd.AgentGID,
-			BlockDevices:    config.Systemd.BlockDevices,
-			AggregateLimits: config.Systemd.AggregateLimits, ProcessLimits: config.Systemd.ProcessLimits,
-		}
-		supervisor, err = launcher.PrepareForOwner(config.StateDir, config.SandboxUID, supervision.SystemdOwner{
-			ScopeID: supervision.SystemdScopeID("execution-service"),
-			Unit:    ownerUnit, LifetimeDirectory: lifetimeDirectory,
-		})
+		supervisor = config.Supervisor
 	}
 	if err != nil {
 		return err

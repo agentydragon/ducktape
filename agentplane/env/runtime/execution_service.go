@@ -10,6 +10,7 @@ import (
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/service"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"go.uber.org/zap"
 )
 
@@ -144,11 +145,10 @@ func (h *executionServiceHandle) serving() bool {
 }
 
 func (r *Runtime) startExecutionService(ctx context.Context, config Config, incarnationUID string) (executionHandle, error) {
-	serviceConfig, err := runtimeExecutionServiceConfig(config, incarnationUID)
+	serviceConfig, err := runtimeExecutionServiceConfig(config, incarnationUID, r.processes, r.executionSupervisor)
 	if err != nil {
 		return nil, err
 	}
-	serviceConfig.ProcessHost = r.processes
 	r.mu.Lock()
 	serviceConfig.ProcessGeneration = r.desired.Generation
 	r.mu.Unlock()
@@ -180,11 +180,12 @@ func (r *Runtime) startExecutionService(ctx context.Context, config Config, inca
 	return handle, nil
 }
 
-func runtimeExecutionServiceConfig(config Config, incarnationUID string) (service.Config, error) {
+func runtimeExecutionServiceConfig(config Config, incarnationUID string, processes *supervision.Host, supervisor *supervision.Supervisor) (service.Config, error) {
 	if config.CodexExecServer == nil {
 		return service.Config{}, errors.New("Execution service requires a configured Codex exec-server")
 	}
 	serviceConfig := service.Config{
+		ProcessHost: processes, Supervisor: supervisor,
 		Namespace: config.Launch.Sandbox.Namespace, SandboxName: config.Launch.Sandbox.Name,
 		SandboxUID: config.Launch.Sandbox.UID, IncarnationUID: incarnationUID,
 		StateDir:    filepath.Join(config.StateDir, "execution"),
@@ -199,11 +200,7 @@ func runtimeExecutionServiceConfig(config Config, incarnationUID string) (servic
 		serviceConfig.Backend = "systemd"
 		serviceConfig.Binary = config.CodexBinary
 		serviceConfig.WorkingDirectory = config.StateDir
-		serviceConfig.Systemd = &service.SystemdConfig{
-			AgentUID: launcher.AgentUID, AgentGID: launcher.AgentGID, BlockDevices: launcher.BlockDevices,
-			AggregateLimits: launcher.AggregateLimits, ProcessLimits: launcher.ProcessLimits,
-			OwnerUnit: RuntimeUnitName, LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime",
-		}
+
 	} else {
 		if config.CodexExecServer.ContainerSocket == "" {
 			return service.Config{}, errors.New("Pod execution service requires the companion ownership socket")

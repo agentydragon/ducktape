@@ -38,8 +38,11 @@ controller; standalone Execution retains its own supervisor. The generic [proces
 the in-memory launch callback, start/exit/stop slots and process handle. [`ManagedProcess`](../managed_process.go)
 provides the native streams and waits for that controller's cleanup barrier.
 
-On VMs, [`SystemdLauncher`](../systemd_launcher.go) prepares each owner's scope and fences stale
-units before admission. [`systemdBackend`](../systemd.go) owns each transient unit's manager
+On VMs, [`systemd-scope`](../systemd_scope.go) reconciles volatile scope intent, prepares each
+owner's marker and slice, and fences stale units before publishing readiness. Process desired state
+names its scope, and the process controller waits for that scope's ready status before launching.
+The scope controller never owns current process attempts; its ready latch prevents re-inventory
+inside the same Runtime lifetime. [`systemdBackend`](../systemd.go) owns each transient unit's manager
 connection, name, streams, observed invocation and cgroup, job tracking, exit observation and
 fence. Systemd owns the actual unit, configured signal/escalation behavior and cgroup. Runtime,
 Host and Execution own readiness, successor admission, journals and restart policy above this

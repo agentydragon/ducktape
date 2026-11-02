@@ -40,7 +40,7 @@ func (h *Host) Launch(ctx context.Context, owner string, generation uint64, supe
 		stopTimeout = config.StopGrace + 5*time.Second
 	}
 	err = h.requestNative(ctx, p.id, DesiredState{
-		Owner: owner, Generation: generation, StartDeadline: deadline, StopTimeout: stopTimeout,
+		SystemdScope: supervisor.systemdScope, Owner: owner, Generation: generation, StartDeadline: deadline, StopTimeout: stopTimeout,
 	}, func(startCtx context.Context) (*Instance, error) {
 		native.ObserveSystemd(func(observation SystemdObservation) { h.observeSystemd(p.id, observation) })
 		if err := native.Start(startCtx); err != nil {

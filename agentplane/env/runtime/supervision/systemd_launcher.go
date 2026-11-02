@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -36,12 +37,13 @@ type SystemdOwner struct {
 }
 
 // SystemdLauncher describes systemd-owned containment, independently of a launch.
-// Prepare assigns scope from durable owner identity before any Session store opens.
+// Scope declarations snapshot this configuration before reconciliation performs I/O.
 type SystemdLauncher struct {
 	Slice                          string
 	AgentUID, AgentGID             uint32
 	BlockDevices                   []string
 	AggregateLimits, ProcessLimits ResourceLimits
+	launchReady                    *atomic.Bool
 	scope                          string
 	lifetimeUnit                   string
 	lifetimeMarker                 string
@@ -139,75 +141,78 @@ func openSystemdConnection() (*systemd.Conn, context.CancelFunc, error) {
 	return conn, cancel, nil
 }
 
-// Prepare uses the environment Runtime's native-process scope.
-func (p *SystemdLauncher) Prepare(stateDir, sandboxUID string) (*Supervisor, error) {
-	return p.PrepareForOwner(stateDir, sandboxUID, SystemdOwner{
-		Unit: runtimeUnit, LifetimeDirectory: runtimeLifetimeDirectory, ScopeID: SystemdEnvironmentRuntimeScopeID,
-	})
-}
-
-// PrepareForOwner validates and applies the owner scope, fences units left by a
-// prior owner incarnation, and returns a factory for processes in that scope.
-func (p *SystemdLauncher) PrepareForOwner(stateDir, sandboxUID string, owner SystemdOwner) (*Supervisor, error) {
+func (p *SystemdLauncher) configureScope(stateDir, sandboxUID string, owner SystemdOwner) error {
 	if p == nil {
-		return nil, errors.New("VM process launcher is required")
+		return errors.New("VM process launcher is required")
 	}
 	if err := owner.validate(); err != nil {
-		return nil, err
+		return err
 	}
 	if sandboxUID == "" {
-		return nil, errors.New("VM supervision requires a Sandbox owner UID")
+		return errors.New("VM supervision requires a Sandbox owner UID")
 	}
 	if p.Slice != WorkloadSlice && p.Slice != ExecutorSlice {
-		return nil, errors.New("invalid native systemd slice")
+		return errors.New("invalid native systemd slice")
 	}
 	if p.AgentUID == 0 || p.AgentGID == 0 {
-		return nil, errors.New("VM native services require a non-root identity")
+		return errors.New("VM native services require a non-root identity")
 	}
 	if err := p.AggregateLimits.Validate(); err != nil {
-		return nil, err
+		return err
 	}
 	if err := p.ValidateProcessLimits(p.ProcessLimits); err != nil {
-		return nil, err
+		return err
 	}
-	if err := p.prepareOwner(owner); err != nil {
-		return nil, err
-	}
+
 	sum := sha256.Sum256([]byte(systemdScopeIdentity(stateDir, sandboxUID, owner)))
 	p.scope = fmt.Sprintf("agentplane-native-%x-", sum[:8])
+	marker, err := systemdLifetimeMarker(owner.LifetimeDirectory)
+	if err != nil {
+		return err
+	}
+	p.lifetimeUnit, p.lifetimeMarker = owner.Unit, marker
+	return nil
+}
+
+// reconcileScope performs only idempotent preparation and stale-unit fencing.
+// Its caller must keep launches closed until the complete inventory is fenced.
+func (p *SystemdLauncher) reconcileScope(ctx context.Context, owner SystemdOwner) error {
+	if err := p.prepareOwner(owner); err != nil {
+		return err
+	}
 	conn, cancelConnection, err := openSystemdConnection()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer cancelConnection()
 	defer conn.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	props, err := p.properties(p.AggregateLimits)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if err := conn.SetUnitPropertiesContext(ctx, p.Slice, true, props...); err != nil {
-		return nil, err
+		return err
 	}
 	units, err := conn.ListUnitsByPatternsContext(ctx, []string{}, []string{p.scope + "*.service"})
 	if err != nil {
-		return nil, err
+		return err
 	}
 	for _, unit := range units {
 		service, err := ReadSystemdUnit(ctx, conn, unit.Name)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if service.Slice != p.Slice {
 			continue
 		}
 		if err := FenceSystemdUnit(ctx, conn, unit.Name, SystemdFence{Ordered: true}); err != nil {
-			return nil, fmt.Errorf("fence prior native unit %s: %w", unit.Name, err)
+			return fmt.Errorf("fence prior native unit %s: %w", unit.Name, err)
 		}
 		_ = conn.ResetFailedUnitContext(ctx, unit.Name)
 	}
-	return p.newSupervisor(), nil
+	return nil
 }
 
 func systemdScopeIdentity(stateDir, sandboxUID string, owner SystemdOwner) string {
@@ -250,13 +255,21 @@ func (p *SystemdLauncher) newSupervisor() *Supervisor {
 
 // systemd removes the owner directory synchronously when the service dies. An
 // old queued launch therefore cannot cross exec after a successor starts.
-func prepareSystemdLifetime(directory string) (string, error) {
+func systemdLifetimeMarker(directory string) (string, error) {
 	invocation := os.Getenv("INVOCATION_ID")
 	if len(invocation) != 32 {
 		return "", errors.New("VM supervision requires a systemd INVOCATION_ID")
 	}
 	if _, err := hex.DecodeString(invocation); err != nil {
 		return "", fmt.Errorf("invalid systemd INVOCATION_ID: %w", err)
+	}
+	return filepath.Join(directory, invocation), nil
+}
+
+func prepareSystemdLifetime(directory string) (string, error) {
+	marker, err := systemdLifetimeMarker(directory)
+	if err != nil {
+		return "", err
 	}
 	directoryInfo, err := os.Lstat(directory)
 	if err != nil {
@@ -266,7 +279,6 @@ func prepareSystemdLifetime(directory string) (string, error) {
 	if !directoryInfo.IsDir() || !ok || directoryOwner.Uid != 0 || directoryInfo.Mode().Perm()&0022 != 0 {
 		return "", errors.New("systemd owner lifetime directory must be owned and writable only by root")
 	}
-	marker := filepath.Join(directory, invocation)
 	file, err := os.OpenFile(marker, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0444)
 	if err == nil {
 		err = errors.Join(file.Chmod(0444), file.Close())

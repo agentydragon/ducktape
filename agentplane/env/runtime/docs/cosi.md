@@ -37,6 +37,9 @@ flowchart LR
   PC(["process-lifecycle"])
   PD["ProcessDesiredStates / ProcessObservations"]
   PS["ProcessStatuses"]
+  SD["SystemdScopeDesiredStates"]
+  SDC(["systemd-scope"])
+  SStatus["SystemdScopeStatuses"]
   Seal["JournalSeals / IngressAcks"]
 
   API --> ED & Count
@@ -56,6 +59,7 @@ flowchart LR
   EC --> ES
   BI & BS --> BC
   BC --> BS
+  SD --> SDC --> SStatus --> PC
   PD --> PC
   PC --> PS
   SC & AC & BC & EC -.->|"one-off work and native supervision"| PD
@@ -72,7 +76,12 @@ flowchart LR
 | `codex-app-server-lifecycle`    | App-server signal including operation revisions (primary); desired state, accepted admissions, aggregate status and Execution status (mapped)                       | App-server status; guarded initialization, cleanup and a separate live Execution-owner readiness check       |
 | `execution-lifecycle`           | Execution signal (primary), Execution status (mapped)                                                                                                               | Execution status; exact-attempt start/loss/fence observations, retaining an unfenced owner on failure        |
 | `bootstrap-lifecycle`           | Bootstrap request (primary), status and operation state (mapped)                                                                                                    | Bootstrap status; selected bytes and durable event sequence govern one accepted attempt                      |
-| `process-lifecycle`             | Process desired state (primary), observation (mapped)                                                                                                               | Process status; one attempt finalizer remains until its native domain is fenced                              |
+| `process-lifecycle`             | Process desired state (primary), observation and systemd scope status (mapped)                                                                                      | Process status; one attempt finalizer remains until its native domain is fenced                              |
+
+The `systemd-scope` controller watches volatile `SystemdScopeDesiredStates` and exclusively writes
+`SystemdScopeStatuses`. Scope intent snapshots owner identity and containment configuration. Its
+ready status gates process starts after stale-unit fencing; an in-process latch prevents a restarted
+controller from treating current units as stale. A new Runtime owner starts with fresh scope state.
 
 Controller settings are authoritative for primary/mapped subscriptions. Synchronous reads can also
 inspect resources without subscribing to them. Registration is in [`runtime.go`](../runtime.go) and

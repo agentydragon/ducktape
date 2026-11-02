@@ -20,16 +20,6 @@ func (r *Runtime) initializeSessions() error {
 	if _, present := r.config.HarnessEnvironment["CODEX_EXEC_SERVER_URL"]; present {
 		return errors.New("CODEX_EXEC_SERVER_URL is owned by execution configuration")
 	}
-	r.harnessSupervisor = r.supervisor
-	if r.config.VMProcessLauncher != nil {
-		var err error
-		r.harnessSupervisor, err = r.config.VMProcessLauncher.PrepareForOwner(r.config.StateDir, r.config.Launch.Sandbox.UID, supervision.SystemdOwner{
-			Unit: RuntimeUnitName, LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: HarnessScopeID,
-		})
-		if err != nil {
-			return err
-		}
-	}
 	var err error
 	r.store, err = retained.NewStore(filepath.Join(r.config.StateDir, "sessions"), r.lifecycleState)
 	if err != nil {

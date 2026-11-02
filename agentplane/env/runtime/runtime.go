@@ -145,6 +145,7 @@ type Runtime struct {
 	startupComplete        bool
 	harnessSupervisor      *supervision.Supervisor
 	workspaceSupervisor    *supervision.Supervisor
+	executionSupervisor    *supervision.Supervisor
 	harnessProcesses       *supervision.Host
 	sessionWorkers         sync.WaitGroup
 	sessionScripts         *scripts.Runner
@@ -226,10 +227,6 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 		supervisor, err = supervision.NewPID1Supervisor()
 	} else if config.Supervision == "subprocess" {
 		supervisor = supervision.NewSubprocessSupervisor(ownerFile)
-	} else {
-		supervisor, err = config.VMProcessLauncher.PrepareForOwner(config.StateDir, config.Launch.Sandbox.UID, supervision.SystemdOwner{
-			Unit: RuntimeUnitName, LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: RuntimeScopeID,
-		})
 	}
 	if err != nil {
 		if lifecycleStore != nil {
@@ -281,6 +278,34 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 	}
 	r.lifecycleEngine = engine
 	r.processes = supervision.NewHost(ctx, r.lifecycleState, lifecycle.Namespace, supervision.RuntimeDomain, &r.lifecycleWorkers, r.fail)
+	if r.config.Supervision == "systemd" {
+		r.supervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.VMProcessLauncher, r.config.StateDir, r.config.Launch.Sandbox.UID, supervision.SystemdOwner{
+			Unit: RuntimeUnitName, LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: RuntimeScopeID,
+		})
+		if err != nil {
+			return err
+		}
+		r.harnessSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.VMProcessLauncher, r.config.StateDir, r.config.Launch.Sandbox.UID, supervision.SystemdOwner{
+			Unit: RuntimeUnitName, LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: HarnessScopeID,
+		})
+		if err != nil {
+			return err
+		}
+		if r.config.CodexExecServer != nil {
+			r.executionSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.CodexExecServer.Launcher, filepath.Join(r.config.StateDir, "execution"), r.config.Launch.Sandbox.UID, supervision.SystemdOwner{
+				Unit: RuntimeUnitName, LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: "execution-service",
+			})
+			if err != nil {
+				return err
+			}
+		}
+	} else {
+		r.harnessSupervisor = r.supervisor
+	}
+	if err := engine.RegisterQController(r.processes.SystemdScopeController()); err != nil {
+		return err
+	}
+
 	r.scripts, err = scripts.New(scripts.Config{
 		HarnessEnvironment: r.config.HarnessEnvironment,
 		LaunchProcess: func(processCtx context.Context, owner string, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {

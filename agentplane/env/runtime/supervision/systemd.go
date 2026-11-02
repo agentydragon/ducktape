@@ -91,6 +91,9 @@ func (b *systemdBackend) validate() error {
 }
 
 func (b *systemdBackend) start(ctx context.Context, p *Process) error {
+	if b.launcher.launchReady != nil && !b.launcher.launchReady.Load() {
+		return errors.New("systemd scope is not ready")
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}

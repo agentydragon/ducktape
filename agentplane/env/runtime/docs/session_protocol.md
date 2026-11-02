@@ -187,9 +187,9 @@ an uncertain native effect is not retried to reconcile configuration.
   cannot execute after replacement. Systemd contains descendants across process-group changes.
   Runtime reports completion only after the service is inactive/failed and its execution
   domain is empty. Native services do not inherit the state-owner descriptor: a replacement may
-  acquire the lock after Runtime death, but it must discover and fence the prior units in its
-  explicit Sandbox/state owner scope before opening Session stores, journals or admitting native
-  work. It verifies each unit's expected slice and leaves unrelated units alone. A lost or
+  acquire the lock after Runtime death and open its lifecycle store. Its COSI scope controller must
+  discover and fence prior units in the explicit Sandbox/state owner scope before the process
+  controller admits native work. It verifies each unit's expected slice and leaves unrelated units alone. A lost or
   canceled launch reply is resolved by fencing that same launch identity, never by issuing a
   second launch. A status-read timeout on a connected manager retries without declaring native
   exit or releasing ownership. Manager disconnection remains a fencing barrier, preventing
