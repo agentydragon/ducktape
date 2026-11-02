@@ -110,7 +110,7 @@ def test_quest_bearer_is_only_substituted_for_read_only_operations(scratch_chart
             "type": "egress",
             "hosts": ["quest.allegedly.works"],
             "methods": ["GET"],
-            "paths": ["/openapi.json", "/guest/getReasons/*", "/guest/getPscDetails/*"],
+            "paths": ["/openapi.json", "/guest/getReasons/*", "/guest/getPscDetails/*", "/api/getInsuranceProfile"],
             "credentialRef": {"name": "quest-read"},
         },
         {
