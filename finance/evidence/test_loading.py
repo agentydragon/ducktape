@@ -18,6 +18,8 @@ from finance.evidence.loading import (
     fred_series_frame,
     french_factors_frame,
     french_international_market_frame,
+    french_market_returns,
+    french_risk_free_returns,
     read_monthly_levels,
     require_contiguous_months,
     source_bytes,
@@ -208,7 +210,10 @@ def test_the_annual_section_is_not_mistaken_for_monthly_rows() -> None:
     frame = french_factors_frame(_french_zip(_FRENCH_BODY), FRENCH_FACTORS)
 
     assert frame.height == 3
-    assert cast(float, frame.get_column("market_total_return").max()) < 0.05
+    assert frame.columns == ["month", "Mkt-RF", "SMB", "HML", "RF"]
+    assert frame.row(0) == (date(1926, 7, 1), 2.89, -2.55, -2.39, 0.22)
+    assert french_market_returns(frame)["market_total_return"].to_list() == pytest.approx([0.0311, 0.0289, 0.0059])
+    assert french_risk_free_returns(frame)["risk_free_rate"].to_list() == pytest.approx([0.0022, 0.0025, 0.0023])
     assert date(1927, 1, 1) not in frame.get_column("month").to_list()
 
 
@@ -218,6 +223,12 @@ def test_a_gap_in_the_monthly_series_is_rejected() -> None:
 
     body = _FRENCH_BODY.replace("192608,   2.64,  -1.20,   3.82,   0.25\n", "")
     with pytest.raises(ValueError, match=re.escape(FRENCH_FACTORS.provenance_label)):
+        french_factors_frame(_french_zip(body), FRENCH_FACTORS)
+
+
+def test_unrecognized_factors_header_is_rejected() -> None:
+    body = _FRENCH_BODY.replace(",Mkt-RF,SMB,HML,RF", ",Mkt-RF,HML,SMB,RF")
+    with pytest.raises(ValueError, match="recognized factors header"):
         french_factors_frame(_french_zip(body), FRENCH_FACTORS)
 
 
