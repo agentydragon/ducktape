@@ -50,8 +50,7 @@ def harness(playwright: Playwright, tmp_path: Path, monkeypatch: pytest.MonkeyPa
     return VisualHarness(
         playwright,
         HarnessConfig(harness_path=bundle, title="API test", expected_font_family=None),
-        tmp_path / "out",
-        case_id=case_id,
+        BoundTestOutputs(tmp_path / "out", case_id),
     )
 
 
@@ -333,8 +332,7 @@ def inline_harness(harness: VisualHarness, tmp_path: Path) -> VisualHarness:
     return VisualHarness(
         harness.playwright,
         replace(harness.config, inline_page=InlinePage(stylesheet_paths=(stylesheet,), base_href=None)),
-        harness.output_dir,
-        case_id=harness.case_id,
+        harness.outputs,
     )
 
 
@@ -365,8 +363,7 @@ async def test_inline_origin_and_mock_frame(inline_harness: VisualHarness, tmp_p
             inline_page=replace(inline_harness.config.inline_page, url="https://app.test/"),
             served_documents={"https://frame.test/": document},
         ),
-        inline_harness.output_dir,
-        case_id=inline_harness.case_id,
+        inline_harness.outputs,
     )
     async with harness.open("framed") as view:
         await expect(view.page.frame_locator("iframe").locator("main")).to_have_text("Mock frame")
@@ -376,10 +373,7 @@ async def test_inline_origin_and_mock_frame(inline_harness: VisualHarness, tmp_p
 
 async def test_undeclared_named_font_fails_before_publication(harness: VisualHarness) -> None:
     harness = VisualHarness(
-        harness.playwright,
-        replace(harness.config, expected_font_family="Absent Font"),
-        harness.output_dir,
-        case_id=harness.case_id,
+        harness.playwright, replace(harness.config, expected_font_family="Absent Font"), harness.outputs
     )
     async with harness.open("plain") as view:
         with pytest.raises(AssertionError, match=r"Absent Font font did not load.*undeclared"):

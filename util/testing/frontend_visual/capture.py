@@ -300,11 +300,18 @@ class VisualPage:
 
 
 class VisualHarness:
-    def __init__(self, playwright: Playwright, config: HarnessConfig, output_dir: Path, *, case_id: str) -> None:
+    def __init__(self, playwright: Playwright, config: HarnessConfig, outputs: BoundTestOutputs) -> None:
         self.playwright = playwright
         self.config = config
-        self.output_dir = output_dir
-        self.case_id = case_id
+        self.outputs = outputs
+
+    @property
+    def output_dir(self) -> Path:
+        return self.outputs.output_dir
+
+    @property
+    def case_id(self) -> str:
+        return self.outputs.case_id
 
     @asynccontextmanager
     async def open(
@@ -334,7 +341,7 @@ class VisualHarness:
                 has_touch=viewport.has_touch,
                 extra_args=["--allow-file-access-from-files"] if config.inline_page is None else [],
             ) as context,
-            playwright_trace(context, BoundTestOutputs(self.output_dir, self.case_id), trace_checkpoint),
+            playwright_trace(context, self.outputs, trace_checkpoint),
         ):
             page = await context.new_page()
             page.set_default_timeout(WAIT_TIMEOUT_MS)
@@ -355,7 +362,7 @@ class VisualHarness:
             )
             view = VisualPage(
                 page,
-                outputs=BoundTestOutputs(self.output_dir, self.case_id),
+                outputs=self.outputs,
                 title=config.title,
                 fence=fence,
                 devtools_viewport=devtools,

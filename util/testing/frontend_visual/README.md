@@ -77,7 +77,7 @@ helpers. The function-scoped `visual` fixture binds that ID to its `VisualHarnes
 the session-scoped Playwright driver remains shared. With `view`, `await view.capture()`
 writes the default screenshot (`checkpoint=None`) for that case. Use readable parameter IDs.
 App-owned fixtures call `visual.open()` without passing an ID. Outside pytest, construct
-`VisualHarness(..., case_id=...)` with an explicit case identity.
+`VisualHarness(..., outputs=BoundTestOutputs(output_dir, case_id))` with an explicit case identity.
 
 `VisualPage.outputs` is a `BoundTestOutputs` writer from `util.testing.output_writer`,
 bound to the page's output directory and case ID. Use `view.outputs.publish(...)` for

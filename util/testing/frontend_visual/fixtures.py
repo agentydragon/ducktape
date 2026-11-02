@@ -30,9 +30,7 @@ async def playwright_driver() -> AsyncIterator[Playwright]:
 
 @pytest.fixture
 def visual(playwright_driver: Playwright, test_outputs: BoundTestOutputs) -> VisualHarness:
-    return VisualHarness(
-        playwright_driver, HarnessConfig.from_env(), test_outputs.output_dir, case_id=test_outputs.case_id
-    )
+    return VisualHarness(playwright_driver, HarnessConfig.from_env(), test_outputs)
 
 
 @pytest.fixture
