@@ -92,6 +92,7 @@ py_test(
         "//finance/augur/model:conditioning",
         "//finance/augur/model:series",
         "//finance/evidence:sources",
+        "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

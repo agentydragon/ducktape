@@ -12,6 +12,8 @@ only needs `HistoricalSeries`.
 
 from __future__ import annotations
 
+from datetime import date
+
 import numpy as np
 
 from finance.augur.fit.evidence_data import (
@@ -25,7 +27,7 @@ from finance.augur.model.conditioning import ExogenousObservedPoint, Observation
 from finance.augur.model.evidence import EvidenceMetadata, EvidenceMode
 from finance.augur.model.path_models.scenarios import HistoricalSeries
 from finance.augur.model.series import SP500_KEY, HomeValueKey, InflationKey, LevelSeriesKey, LocationId, RentKey
-from finance.evidence.loading import evidence_dir_from_env, monthly_last, read_fred_series
+from finance.evidence.loading import evidence_dir_from_env, monthly_last, read_fred_series, require_contiguous_months
 from finance.evidence.sources import FRED_CPI, FRED_MORTGAGE30, FRED_SF_RENT_CPI, FRED_SFXRSA, FRED_SP500
 
 
@@ -89,6 +91,7 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
     )
     if aligned.height < 36:
         raise ValueError(f"only {aligned.height} aligned months across the FRED-only synthesized series")
+    require_contiguous_months(aligned["month"].to_list(), series_name="FRED-only aligned levels")
 
     monthly_log_returns = np.diff(
         np.log(aligned.select([key.wire_id for key in series_names]).to_numpy().astype("float64")), axis=0
@@ -134,6 +137,13 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
 def _historical_from_log_returns(
     series_names: tuple[LevelSeriesKey, ...], monthly_log_returns: np.ndarray, return_months: tuple[str, ...]
 ) -> HistoricalSeries:
+    if monthly_log_returns.ndim != 2 or monthly_log_returns.shape[0] != len(return_months):
+        raise ValueError("aligned monthly returns and their calendar labels have different shapes")
+    if not return_months:
+        raise ValueError("historical evidence has no aligned monthly returns")
+    require_contiguous_months(
+        [date.fromisoformat(f"{month}-01") for month in return_months], series_name="aligned exogenous returns"
+    )
     n_factors = monthly_log_returns.shape[1]
     cum = np.concatenate([np.zeros((1, n_factors)), np.cumsum(monthly_log_returns, axis=0)], axis=0)
     levels = np.exp(cum)

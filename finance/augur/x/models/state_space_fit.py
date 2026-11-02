@@ -21,7 +21,7 @@ from finance.augur.model.conditioning import (
     ObservationTreatment,
     ObservationUnits,
 )
-from finance.augur.model.path_models.scenarios import HistoricalSeries
+from finance.augur.model.path_models.scenarios import HistoricalSeries, historical_log_returns
 from finance.augur.model.series import SP500_KEY, IssuerId
 from finance.augur.x.models.private_equity_fit import (
     PriceObservation,
@@ -53,11 +53,23 @@ class FittedPrivateEquityStateSpaceFactor:
 
 
 def fit_state_space_artifact(
-    historical: HistoricalSeries, evidence: ExogenousEvidence, *, private_equity_config_paths: tuple[Path, ...] = ()
+    evidence: ExogenousEvidence,
+    *,
+    historical: HistoricalSeries | None = None,
+    private_equity_config_paths: tuple[Path, ...] = (),
 ) -> tuple[StateSpaceModelArtifact, ExogenousConditioningContext]:
-    private_factors = tuple(_fit_private_equity_factor(path, historical) for path in private_equity_config_paths)
-    artifact = StateSpaceModel.fit(
-        historical,
+    if historical is not None:
+        _validate_historical_matches_evidence(historical, evidence)
+    if private_equity_config_paths:
+        if historical is None:
+            raise ValueError("private-equity state-space fitting requires a contiguous HistoricalSeries")
+        private_factors = tuple(_fit_private_equity_factor(path, historical) for path in private_equity_config_paths)
+    else:
+        private_factors = ()
+    artifact = StateSpaceModel.fit_monthly_returns(
+        series_names=evidence.series_names,
+        monthly_log_returns=evidence.monthly_log_returns,
+        monthly_return_months=evidence.monthly_return_months,
         latest_observations={key.wire_id: point for key, point in evidence.latest_observations.items()},
         source_manifest=_source_manifest(evidence, private_factors),
         prior_manifest=_prior_manifest(evidence, private_factors),
@@ -65,6 +77,19 @@ def fit_state_space_artifact(
     )
     conditioning = _conditioning_from_evidence(evidence, private_factors)
     return artifact, conditioning
+
+
+def _validate_historical_matches_evidence(historical: HistoricalSeries, evidence: ExogenousEvidence) -> None:
+    if historical.series_names != evidence.series_names:
+        raise ValueError("HistoricalSeries factors do not match the supplied exogenous evidence")
+    if historical.months[1:] != evidence.monthly_return_months:
+        raise ValueError("HistoricalSeries dates do not match the supplied exogenous evidence")
+    historical_returns = historical_log_returns(historical)
+    evidence_returns = np.asarray(evidence.monthly_log_returns, dtype=np.float64)
+    if historical_returns.shape != evidence_returns.shape or not np.allclose(
+        historical_returns, evidence_returns, rtol=1e-12, atol=1e-12
+    ):
+        raise ValueError("HistoricalSeries returns do not match the supplied exogenous evidence")
 
 
 def _conditioning_from_evidence(
@@ -199,6 +224,7 @@ def _source_manifest(
             "first": evidence.monthly_return_months[0],
             "last": evidence.monthly_return_months[-1],
             "count": len(evidence.monthly_return_months),
+            "observed": evidence.monthly_return_months,
         },
         "evidence_metadata": evidence.metadata.model_dump(mode="json"),
         "private_equity": {

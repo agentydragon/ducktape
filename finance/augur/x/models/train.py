@@ -34,6 +34,7 @@ from pathlib import Path
 import yaml
 
 from finance.augur.fit.data import load_evidence
+from finance.augur.fit.evidence_data import load_exogenous_evidence
 from finance.augur.x.models.provider_config import StateSpaceProviderConfig, VecmProviderConfig
 from finance.augur.x.models.state_space import write_state_space_artifact
 from finance.augur.x.models.state_space_fit import fit_state_space_artifact
@@ -104,10 +105,14 @@ def main(argv: list[str] | None = None) -> int:
     elif args.model == "state_space":
         if out_blob is None:
             raise ValueError("--out-blob is required for --model state_space")
-        historical, evidence = load_evidence()
+        if args.private_equity_config:
+            historical, evidence = load_evidence()
+        else:
+            historical = None
+            evidence = load_exogenous_evidence()
         artifact, conditioning = fit_state_space_artifact(
-            historical,
             evidence,
+            historical=historical,
             private_equity_config_paths=tuple(path.resolve() for path in args.private_equity_config),
         )
         write_state_space_artifact(out_blob, artifact)

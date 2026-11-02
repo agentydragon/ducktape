@@ -62,6 +62,15 @@ def _gaussian_log_density(x: np.ndarray, mu: np.ndarray, sigma: np.ndarray) -> f
     return float(np.sum(-0.5 * ((x - mu) / sigma) ** 2 - np.log(sigma) - 0.5 * math.log(2 * math.pi)))
 
 
+def _month_labels(count: int, *, gap_after: int | None = None) -> tuple[str, ...]:
+    labels = []
+    for index in range(count):
+        offset = index + int(gap_after is not None and index >= gap_after)
+        year, zero_based_month = divmod(2000 * 12 + offset, 12)
+        labels.append(f"{year:04d}-{zero_based_month + 1:02d}")
+    return tuple(labels)
+
+
 class _ConstantGaussianModel:
     """Synthetic model: each monthly log-return is iid Normal(mu, sigma) per
     factor, mu/sigma fixed at construction. `fit()` ignores its argument so
@@ -108,8 +117,24 @@ def _toy_historical(n_steps: int, *, mu: np.ndarray, sigma: np.ndarray, seed: in
     n_factors = len(mu)
     log_returns = rng.normal(loc=mu, scale=sigma, size=(n_steps, n_factors))
     levels = np.exp(np.concatenate([np.zeros((1, n_factors)), np.cumsum(log_returns, axis=0)], axis=0))
-    months = tuple(f"2000-{i:02d}" for i in range(n_steps + 1))
+    months = _month_labels(n_steps + 1)
     return HistoricalSeries(series_names=_synthetic_factor_keys(n_factors), levels=levels, months=months)
+
+
+def test_predictive_scorers_reject_gapped_calendar() -> None:
+    continuous = _toy_historical(12, mu=np.array([0.001]), sigma=np.array([0.02]), seed=7)
+    gapped = HistoricalSeries(
+        series_names=continuous.series_names,
+        levels=continuous.levels,
+        months=_month_labels(len(continuous.months), gap_after=6),
+    )
+
+    with pytest.raises(ValueError, match="requires consecutive calendar months"):
+        held_out_predictive_score(_UnscoredModel(), gapped)
+    with pytest.raises(ValueError, match="requires consecutive calendar months"):
+        rolling_origin_predictive_score(_UnscoredModel, gapped, min_train=3)
+    with pytest.raises(ValueError, match="requires consecutive calendar months"):
+        multi_step_predictive_score(_UnscoredModel(), gapped, horizons=(1,))
 
 
 class TestHeldOutPredictiveScore:

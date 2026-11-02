@@ -16,6 +16,7 @@ from finance.augur.model.conditioning import (
     ObservationUnits,
 )
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
+from finance.augur.model.path_models.scenarios import HistoricalSeries
 from finance.augur.model.series import (
     SP500_SYMBOL,
     HomeValueKey,
@@ -27,6 +28,7 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.x.models.state_space import (
+    StateSpaceModel,
     StateSpaceModelArtifact,
     StateSpacePrivateEquityEventPrior,
     StateSpaceProviderConfig,
@@ -35,6 +37,17 @@ from finance.augur.x.models.state_space import (
 from finance.augur.x.models.trained_private_equity import TrainedPrivateEquityScalePrior
 
 PRIVATE_COMPANY_A = IssuerId("private_company_a")
+
+
+def test_historical_state_space_fit_rejects_a_missing_calendar_month() -> None:
+    historical = HistoricalSeries(
+        series_names=(InflationKey(),),
+        levels=np.array([[1.0], [1.01], [1.03], [1.04]]),
+        months=("2025-08", "2025-09", "2025-11", "2025-12"),
+    )
+
+    with pytest.raises(ValueError, match="requires consecutive calendar months"):
+        StateSpaceModel.fit(historical, latest_observations={}, source_manifest={}, prior_manifest={})
 
 
 def test_state_space_samples_all_available_series_and_hard_anchors(tmp_path: Path) -> None:

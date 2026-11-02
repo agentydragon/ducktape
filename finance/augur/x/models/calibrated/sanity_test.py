@@ -120,12 +120,12 @@ def _assert_central_path_plausible(model: Sampler) -> None:
 def _check_vecm(artifact: VecmProviderConfig) -> None:
     model = artifact.realize_model()
     levels = np.exp(model.train_log_levels)
+    months = []
+    for offset in range(len(levels)):
+        year, zero_based_month = divmod(2000 * 12 + offset, 12)
+        months.append(f"{year:04d}-{zero_based_month + 1:02d}")
     _assert_residual_scale(
-        model,
-        # The artifact keeps no month labels, and `predictive` reads only the levels.
-        HistoricalSeries(
-            series_names=model.factor_names, levels=levels, months=tuple(str(month) for month in range(len(levels)))
-        ),
+        model, HistoricalSeries(series_names=model.factor_names, levels=levels, months=tuple(months))
     )
     _assert_central_path_plausible(model)
 

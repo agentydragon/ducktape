@@ -32,9 +32,17 @@ def _observation(value: float, units: ObservationUnits) -> ExogenousObservedPoin
     )
 
 
+def _month_labels(count: int) -> tuple[str, ...]:
+    labels = []
+    for index in range(count):
+        year, zero_based_month = divmod(2000 * 12 + index, 12)
+        labels.append(f"{year:04d}-{zero_based_month + 1:02d}")
+    return tuple(labels)
+
+
 def _series_from_log_levels(log_levels: np.ndarray) -> HistoricalSeries:
     levels = np.exp(log_levels - log_levels[0])
-    months = tuple(f"2000-{i:02d}" for i in range(levels.shape[0]))
+    months = _month_labels(levels.shape[0])
     # Synthetic 2-factor cointegration data: the factor identities are arbitrary (the test
     # exercises fit/predictive shapes, not series semantics) — two distinct level keys suffice.
     return HistoricalSeries(
@@ -44,7 +52,7 @@ def _series_from_log_levels(log_levels: np.ndarray) -> HistoricalSeries:
 
 def _historical_series_4factor(log_levels: np.ndarray) -> HistoricalSeries:
     levels = np.exp(log_levels - log_levels[0])
-    months = tuple(f"2000-{i:02d}" for i in range(levels.shape[0]))
+    months = _month_labels(levels.shape[0])
     return HistoricalSeries(
         series_names=(
             SecurityKey(symbol=SP500_SYMBOL),
@@ -70,6 +78,17 @@ def _cointegrated_two_factor(seed: int, n_steps: int) -> HistoricalSeries:
 
 
 class TestVecmModel:
+    def test_fit_rejects_a_missing_calendar_month(self) -> None:
+        continuous = _cointegrated_two_factor(seed=42, n_steps=3)
+        historical = HistoricalSeries(
+            series_names=continuous.series_names,
+            levels=continuous.levels,
+            months=("2000-01", "2000-02", "2000-04", "2000-05"),
+        )
+
+        with pytest.raises(ValueError, match="requires consecutive calendar months"):
+            VecmModel(config=VecmConfig(n_iters=1)).fit(historical)
+
     def test_fit_then_predictive_returns_a_multivariate_gaussian(self) -> None:
         historical = _cointegrated_two_factor(seed=42, n_steps=200)
 
