@@ -13,7 +13,7 @@ CPAP gateway and Agentplane runner images:
   SandboxTemplate in <../cdk8s/agentplane/staging.py>.
 
 The Agentplane VM attaches two: the guest root and a small read-only erofs disk with the
-Environment Runtime, Harness Host, Execution service and `agentplane` command
+Environment Runtime, Runtime, Execution service and `agentplane` command
 (`//agentplane/env/images:disk_image`, built by Bazel and published
 by the `push-images` workflow from <../../devinfra/ci/image_targets.json>), so a runner release does
 not republish the guest.

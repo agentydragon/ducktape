@@ -23,9 +23,9 @@ Agentplane components:
   current bindings; a launch preset or catalog entry does not establish permission.
 - **Notifications:** follows Actions and enabled external sources, including GitHub, and delivers
   inbox notices as user messages to your Session.
-- **Environment Runtime and Harness Host:** {% if session_runtime == "central_sampler" %}Environment Runtime executes code tools in the bound Sandbox; the central sampler owns
+- **Environment Runtime:** {% if session_runtime == "central_sampler" %}Environment Runtime executes code tools in the bound Sandbox; the central sampler owns
   this Session's provider loop and Code Mode host. The Session Dispatcher sends commands to the
-  sampler, and the Runner Gateway carries Sandbox executor traffic. History retains Session events.{% else %}Runtime manages this Sandbox environment; Harness Host
+  sampler, and the Runner Gateway carries Sandbox executor traffic. History retains Session events.{% else %}Runtime manages this Sandbox environment,
   runs your native harness and retains Session events. The Session Dispatcher delivers commands,
   and the Runner Gateway carries Environment Runtime control traffic.{% endif %} The Sandbox
   Controller manages the execution environment; the Policy Controller manages grant lifetimes

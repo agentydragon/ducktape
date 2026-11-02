@@ -2,15 +2,15 @@
 
 This package exercises complete Sandbox environment topologies with real pinned Linux harnesses,
 container process boundaries, and VM supervision. Production contracts live with their owners:
-[Environment Runtime](../runtime/SPEC.md), [Harness Host](../runtime/harnesshost/SPEC.md), and
+[Environment Runtime](../runtime/SPEC.md) and
 [Execution Service](../runtime/execution/SPEC.md). Test helpers live in [`testing/`](testing/), and this
 package defaults to test-only in Bazel.
 
 ## Tests
 
-`//agentplane/env/runtime/harnesshost:harnesshost_test` and `//agentplane/env/runtime/harnesshost/codex:codex_test` run with Go's race detector. The
+`//agentplane/env/runtime:runtime_test` and `//agentplane/env/runtime/codex:codex_test` run with Go's race detector. The
 Codex router test drives parallel sessions through shared host, request, and thread routing state. The
-journal suite (`//agentplane/env/runtime/harnesshost/journal:journal_test`) also runs with the race detector;
+journal suite (`//agentplane/env/runtime/journal:journal_test`) also runs with the race detector;
 the runner suite covers process and Session integration. The VM fixture runs the separate
 pure-Go `//agentplane/env/runtime/supervision:environment_runtime_systemd_fixture` test binary against its real systemd manager before starting
 Runner. It exercises direct argv/stream semantics, lost launch replies, Runner death, stop status,

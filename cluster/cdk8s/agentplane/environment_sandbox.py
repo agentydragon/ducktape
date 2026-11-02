@@ -70,7 +70,7 @@ _ENVIRONMENT_RUNTIME_TLS_PATH = "/run/agentplane/environment-runtime-tls"
 # SandboxTemplate's state volume -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
 # The environment disk image's `bin/` (//agentplane/env/images:disk_image): Environment Runtime,
-# Harness Host, Execution Service and `agentplane`, mounted read-only the way the VM guest mounts its
+# Runtime, Execution Service and `agentplane`, mounted read-only the way the VM guest mounts its
 # erofs. Runtime is Pod PID 1; the Execution Service companion gets a separate PID namespace.
 _ENVIRONMENT_VOLUME_NAME = "environment"
 _ENVIRONMENT_DIR = "/run/agentplane/environment"

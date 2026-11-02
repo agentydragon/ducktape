@@ -4,7 +4,7 @@
 # SandboxTemplate (cluster/cdk8s/agentplane/environment_sandbox.py), which names the harnesses by their
 # /bin paths here.
 #
-# Runtime, Harness Host, Execution service and the `agentplane` command are not in this image: the
+# Runtime, Runtime, Execution service and the `agentplane` command are not in this image: the
 # template mounts them from the environment disk image (//agentplane/env/images:disk_image) at
 # /run/agentplane/environment and starts Runtime there, so a service or CLI bump republishes that small
 # image and not this one. PATH ends with the mount's

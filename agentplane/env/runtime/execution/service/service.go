@@ -18,7 +18,7 @@ import (
 // ErrFencedBackendLoss reports an established executor backend loss after the
 // Execution adapter drained and the backend's process domain was fenced. For the
 // companion backend this includes proof of a fresh idle executor generation.
-// Runtime can replace the API lifetime without replacing Harness Host.
+// Runtime can replace the API lifetime without replacing Runtime.
 var ErrFencedBackendLoss = errors.New("execution backend loss was fenced")
 
 // RunEmbedded keeps the native backend under the Runtime process lifetime. The

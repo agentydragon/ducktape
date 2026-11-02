@@ -20,7 +20,7 @@ def test_platform_guide_describes_the_selected_runtime(runtime: SessionRuntime) 
     match runtime:
         case SessionRuntime.NATIVE_HARNESS:
             assert "You run inside an Agentplane Sandbox" in guide
-            assert "Harness Host\n  runs your native harness" in guide
+            assert "runs your native harness" in guide
             assert "outside the Sandbox" not in guide
         case SessionRuntime.CENTRAL_SAMPLER:
             assert "outside the Sandbox" in guide

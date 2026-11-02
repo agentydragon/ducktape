@@ -1,6 +1,6 @@
 """Select live-smoke cases from the model catalog offered by Agentplane."""
 
-from agentplane.env.runtime.harnesshost.harness import Harness
+from agentplane.env.runtime.harness import Harness
 from agentplane.proto import session_pb2
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 

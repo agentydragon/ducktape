@@ -12,7 +12,7 @@
 # Runtime configuration, launch data and egress trust arrive on read-only ConfigMap disks. Runtime
 # TLS credentials and its trust bundle arrive on read-only virtiofs mounts.
 #
-# Runtime, Harness Host, Execution service and the `agentplane` command are not in this closure.
+# Runtime, Runtime, Execution service and the `agentplane` command are not in this closure.
 # They arrive on the read-only runtime disk (//agentplane/env/images:disk_image), a second
 # containerDisk mounted at /run/agentplane/environment, so a service release republishes that small
 # disk and not this guest. The harnesses and tools stay here.
@@ -60,7 +60,7 @@ let
     ) (builtins.attrValues seedDisks)
     && lib.elem "d ${builtins.dirOf runtimeTLS.private_mount} 0700 root root -" config.systemd.tmpfiles.rules
     && lib.elem "L+ ${runtimeTLS.runtime_path} - - - - ${runtimeTLS.private_mount}" config.systemd.tmpfiles.rules;
-  # virtiofsd's identity (above); the Go Harness Host runs harnesses as this user.
+  # virtiofsd's identity (above); the Go Runtime runs harnesses as this user.
   agentUser = "agent";
   agentId = 107;
 

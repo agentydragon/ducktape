@@ -1,41 +1,35 @@
 # Agentplane environment services
 
-The environment is split by runtime ownership. Environment Runtime owns Sandbox identity, bootstrap,
-external control, and coordinated lifecycle. Harness Host owns native Sessions and journals. The
-Execution Service owns typed process and filesystem execution. The Runner Gateway remains a
-control-plane service outside `env/`.
+Environment Runtime owns Sandbox identity, bootstrap, external control, Session management,
+harnesses, journals, History delivery and coordinated shutdown. Execution owns typed process and
+filesystem operations and the native exec-server. The Runner Gateway remains outside `env/`.
 
-The deployment renders the shared
-[`Session guide`](../session_instructions/platform_instructions.j2) with concrete service URLs and
-the selected runtime's ownership description. Native and central backends append the child's own
-notification destination and additional standing instructions. Detailed workflows live behind the
-services' `/llms.txt` indexes.
+`//agentplane/env/runtime/cmd:agentplane-environment-runtime` constructs those components in one
+process and one COSI engine. Session records and acknowledgements have Runtime-owned persistent
+COSI backing; Session journals retain SQLite storage under `<state_dir>/sessions`, and the shared
+Codex home stays under `<state_dir>/codex`. `OpenSession` acknowledges a durable reservation;
+harness startup follows admitted execution work.
 
-## Layout and entrypoints
+`//agentplane/env/runtime/execution/cmd:agentplane-execution-service` provides the Pod execution
+companion. Production Pod Runtime is PID 1 and owns the shared native reaper. VM native harnesses
+and executors use separate systemd containment domains bound to Runtime's service invocation.
 
-`//agentplane/env/runtime/cmd:agentplane-environment-runtime` runs the environment owner,
-Harness Host and Execution API in one process. Runtime owns bootstrap and public control; Host
-owns Sessions, harnesses and journals; Execution owns the native exec-server and execution adapter.
-`//agentplane/env/runtime/execution/cmd:agentplane-execution-service` provides the Pod execution companion.
+The sole environment desired lifecycle is `EnvironmentRuntimeDesiredStates`. Runtime closes its
+admission gate before changing the desired revision. Independent Session, bootstrap, Execution and
+process controllers publish their own observations. Drain preserves native process fencing, journal
+sealing and exact durable History acknowledgements. Runtime joins delivery, controllers, workers and
+journals before releasing its environment owner. See the [Runtime contract](runtime/SPEC.md),
+[lifecycle ordering](runtime/docs/lifecycle.md) and [COSI map](runtime/docs/cosi.md).
 
-Shared process machinery is in `env/runtime/supervision`; one-shot operation bookkeeping is in
-`env/oneoff`, shell execution in `env/scripts`, and Go deployment parsing in `env/configuration`.
-Host owns workspace containment and helpers in `env/runtime/harnesshost/workspace`. The `env/e2e/` contains cross-service integration tests; image and VM packaging lives in `env/images/`.
+Native adapters, Session management, retained records, journals and workspace helpers live directly
+under `env/runtime/`. Shared process machinery is in `runtime/supervision`, one-shot operation
+bookkeeping in `env/oneoff`, shell execution in `env/scripts`, and Go deployment parsing in
+`env/configuration`. `env/e2e/` contains cross-service integration tests; image and VM packaging
+lives in `env/images/`.
 
-Runtime constructs Host from the same `--config` and `--launch-file` and coordinates its lifecycle
-and Session calls directly in the process. Production Pod Runtime is PID1 and Host shares its reaper.
-In VMs, native harnesses and executors use separate systemd service cgroups in the workload and
-executor slices, bound to the Runtime service lifetime. Runtime retains one environment owner fence for itself and embedded Host; Pod and subprocess
-native harnesses inherit its descriptor. Session state stays under `<state_dir>/sessions`
-and the shared Codex home stays under `<state_dir>/codex`.
+The deployment renders the shared [Session guide](../session_instructions/platform_instructions.j2)
+with concrete service URLs. Native and central backends append the child's notification destination
+and standing instructions. Detailed workflows remain behind the services' `/llms.txt` indexes.
 
-The lifecycle coordinator binds every intent/report to the same process boots and generation.
-Host drains admitted work and native processes before reporting `native_stopped`. Runtime fences
-Execution before acknowledging `execution_fenced`; only then may Host seal journals. Runtime's History
-worker delivers and durably records exact acknowledgements before it closes Session journals. A
-Session or History delivery failure closes native admission and drains Sessions without creating a
-new seal. An abnormal Pod Runtime exit requires the outer container fence before replacement.
-See [Host contract](runtime/harnesshost/SPEC.md) and [lifecycle](runtime/docs/lifecycle.md).
-
-The Runtime and execution companion executables ship with the `agentplane` CLI in `//agentplane/env/images:disk_image`.
-Native Claude/Codex executables, workspace tools and CA certificates come from the runtime image.
+The Runtime and companion ship with the `agentplane` CLI in `//agentplane/env/images:disk_image`.
+Native Claude/Codex executables, workspace tools and CA certificates come from the Runtime image.

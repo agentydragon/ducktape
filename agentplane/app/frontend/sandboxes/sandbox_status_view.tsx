@@ -415,7 +415,7 @@ function EnvironmentRuntimeLifecycleCard({ lifecycle }: { lifecycle: Environment
       : `Last progress · generation ${lifecycle.progressGeneration} · ${stage}`;
 
   return (
-    <Paper data-testid="harness-host-lifecycle" withBorder p="sm" radius="md">
+    <Paper data-testid="environment-runtime-lifecycle" withBorder p="sm" radius="md">
       <Stack gap={4}>
         <Group justify="space-between" wrap="wrap" gap="xs">
           <Title order={6}>Lifecycle</Title>
@@ -493,13 +493,13 @@ function EnvironmentRuntimeLifecycleCard({ lifecycle }: { lifecycle: Environment
   );
 }
 
-type HarnessHostDiagnosticsState =
+type EnvironmentRuntimeDiagnosticsState =
   | { kind: "loading" }
   | { kind: "available"; value: EnvironmentRuntimeStatus; observedAt: string }
   | { kind: "unavailable"; reason: string }
   | { kind: "suspended" };
 
-function HarnessHostDiagnostics({
+function EnvironmentRuntimeDiagnostics({
   sandbox,
   threads,
   active,
@@ -508,7 +508,7 @@ function HarnessHostDiagnostics({
   threads: ThreadView[];
   active: boolean;
 }): JSX.Element {
-  const [state, setState] = useState<HarnessHostDiagnosticsState>({ kind: "loading" });
+  const [state, setState] = useState<EnvironmentRuntimeDiagnosticsState>({ kind: "loading" });
   const [refreshVersion, setRefreshVersion] = useState(0);
   useEffect(() => {
     if (!active) return;
@@ -533,12 +533,12 @@ function HarnessHostDiagnostics({
   const threadsById = new Map(threads.map((thread) => [thread.id, thread]));
 
   return (
-    <Stack gap="xs" data-testid="sandbox-harness-host-diagnostics">
+    <Stack gap="xs" data-testid="sandbox-environment-runtime-diagnostics">
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="xs">
         <div>
-          <Title order={5}>Harness Host diagnostics</Title>
+          <Title order={5}>Runtime diagnostics</Title>
           <Text size="xs" c="dimmed">
-            Read-only snapshot of Harness Host lifecycle, process, and Session state.
+            Read-only snapshot of Runtime lifecycle, process, and Session state.
           </Text>
         </div>
         <Button
@@ -552,17 +552,17 @@ function HarnessHostDiagnostics({
       </Group>
       {state.kind === "loading" && (
         <Text size="sm" role="status" c="dimmed">
-          Loading Harness Host diagnostics…
+          Loading Runtime diagnostics…
         </Text>
       )}
       {state.kind === "suspended" && (
         <Text size="sm" role="status" c="dimmed">
-          Sandbox suspended. Harness Host diagnostics are unavailable until it is running.
+          Sandbox suspended. Runtime diagnostics are unavailable until it is running.
         </Text>
       )}
       {state.kind === "unavailable" && (
         <Text size="sm" role="status" c="dimmed">
-          Harness Host diagnostics unavailable: {state.reason}
+          Runtime diagnostics unavailable: {state.reason}
         </Text>
       )}
       {state.kind === "available" && (
@@ -575,7 +575,7 @@ function HarnessHostDiagnostics({
             <EnvironmentRuntimeLifecycleCard lifecycle={state.value.lifecycle} />
           ) : (
             <Text size="sm" c="dimmed">
-              Harness Host lifecycle progress is not reported.
+              Runtime lifecycle progress is not reported.
             </Text>
           )}
           {state.value.processes.length === 0 ? (
@@ -679,7 +679,7 @@ export function StatusView({
           <KubernetesStatus sandbox={sandbox} />
         </>
       )}
-      <HarnessHostDiagnostics sandbox={sandbox} threads={threads} active={active} />
+      <EnvironmentRuntimeDiagnostics sandbox={sandbox} threads={threads} active={active} />
     </Stack>
   );
 }

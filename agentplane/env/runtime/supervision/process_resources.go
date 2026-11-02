@@ -25,7 +25,7 @@ type Domain string
 
 const (
 	RuntimeDomain Domain = "environment-runtime"
-	HarnessDomain Domain = "harness-host"
+	HarnessDomain Domain = "harness"
 )
 
 type DesiredState struct {

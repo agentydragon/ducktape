@@ -2,95 +2,158 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
+
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
-	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
-	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
-// bindHost publishes the one Session component's initial intent.
-// Caller holds lifecycleStartMu so Close cannot race Host initialization.
-func (r *Runtime) bindHost() error {
-	client := r.sessions
-	host := &hostBinding{active: true}
+// Accepted registration work remains counted until its component operation slot
+// is visible. Publication failures and callbacks can report failure without
+// reentering the admission mutex.
+func (r *Runtime) admitLifecycleEffect(ctx context.Context, expected lifecycle.EnvironmentDesired, effect func(context.Context) error) (resultErr error) {
 	r.mu.Lock()
-	if r.closing || r.failed {
-		r.mu.Unlock()
-		return status.Error(codes.Unavailable, "environment Runtime is closing or failed")
-	}
-	if r.host != nil {
-		r.mu.Unlock()
-		return status.Error(codes.AlreadyExists, "Runtime already owns a Harness Host")
-	}
-	r.host = host
-	client.SetRuntimeBinding(r.bootID, true)
-	r.intent = &runtimepb.LifecycleIntent{
-		Binding:    &runtimepb.Binding{RuntimeBootId: r.bootID, Generation: 1},
-		SandboxUid: r.config.Launch.Sandbox.UID, Mode: runtimepb.LifecycleIntent_INACTIVE,
-	}
-	if err := r.publishHostIntentLocked(); err != nil {
-		host.active = false
-		r.revokeHostBindingLocked()
-		r.changedLocked()
+	if err := ctx.Err(); err != nil {
 		r.mu.Unlock()
 		return err
 	}
+	if r.closing || r.failed || !r.admissionOpen || r.desired != expected || expected.Mode != lifecycle.Running {
+		r.mu.Unlock()
+		return nil
+	}
+	err := r.changeAdmissionsLocked(1)
+	r.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	defer r.finishAdmission(&resultErr)
+	resultErr = effect(ctx)
+	if resultErr != nil {
+		r.fail(resultErr)
+	}
+	return resultErr
+}
+
+func (r *Runtime) admitCodexRequest(ctx context.Context, effect func(context.Context) error) (resultErr error) {
+	r.mu.Lock()
+	if !r.acceptingLocked() {
+		r.mu.Unlock()
+		return status.Error(codes.Aborted, "this Sandbox is quiesced")
+	}
+	err := r.changeAdmissionsLocked(1)
+	r.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	defer r.finishAdmission(&resultErr)
+	return effect(ctx)
+}
+
+// Publication and acceptance are different boundaries. The old gate closes
+// synchronously; controllers observing the new resource cannot act until recovery
+// finishes and Runtime accepts that exact revision.
+func (r *Runtime) publishDesired(ctx context.Context, mode lifecycle.Mode, uid, sealUID string) (uint64, error) {
+	r.mu.Lock()
+	if r.closing || r.failed || !r.startupComplete {
+		r.mu.Unlock()
+		return 0, status.Error(codes.Unavailable, "environment Runtime is unavailable")
+	}
+	r.admissionOpen = false
+	desired := lifecycle.EnvironmentDesired{Mode: mode, IncarnationUID: uid, SealUID: sealUID, Generation: r.desired.Generation + 1}
+	// Reserve the revision even on a failed write: its durable outcome can be
+	// unknown, so a later Close must never reuse it for a different desire.
+	r.desired = desired
+	err := lifecycle.PublishEnvironmentDesired(ctx, r.lifecycleState, desired)
+	if err != nil {
+		r.failed = true
+		if r.failureErr == nil {
+			r.failureErr = err
+		}
+	}
 	r.changedLocked()
 	r.mu.Unlock()
+	if err != nil {
+		r.fail(fmt.Errorf("publish environment lifecycle: %w", err))
+		return 0, err
+	}
+	if mode == lifecycle.Running {
+		if err := r.sessions.ResetDemand(); err != nil {
+			r.fail(err)
+			return 0, err
+		}
+		if r.codexAppServer != nil {
+			if err := r.codexAppServer.ResetDemand(r.lifecycleContext); err != nil {
+				r.fail(err)
+				return 0, err
+			}
+		}
+		for _, s := range r.sessions.Inventory() {
+			if err := r.sessions.Reopen(r.lifecycleContext, s); err != nil {
+				r.fail(err)
+				return 0, err
+			}
+			if err := r.sessions.ResumeRecovered(s); err != nil {
+				r.fail(err)
+				return 0, err
+			}
+		}
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closing || r.failed || r.desired != desired {
+		return 0, status.Error(codes.Unavailable, "environment lifecycle changed before acceptance")
+	}
+	r.admissionOpen = mode == lifecycle.Running
+	if mode == lifecycle.Running {
+		if err := r.changeAdmissionsLocked(0); err != nil {
+			return 0, err
+		}
+	}
+	r.changedLocked()
+	return desired.Generation, nil
+}
+
+func (r *Runtime) environment() session.Environment {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return session.Environment{IncarnationUID: r.desired.IncarnationUID, Quiesced: r.desired.Mode != lifecycle.Running || r.failed || r.closing}
+}
+
+func (r *Runtime) waitBootstrapForSession(ctx context.Context) error {
+	// Session operations reach this dependency only after admission. Draining
+	// closes new work while accepted setup still joins its retained bootstrap.
+	if r.bootstrapWait != nil {
+		return r.bootstrapWait(ctx)
+	}
+	if r.bootstrapHost != nil {
+		return r.bootstrapHost.Wait(ctx)
+	}
 	return nil
 }
 
-func (r *Runtime) HostFailed(err error) {
-	r.mu.Lock()
-	host := r.host
-	r.mu.Unlock()
-	if host == nil {
-		r.fail(fmt.Errorf("Harness Host failed: %w", err))
-		return
+func (r *Runtime) executionReady(ctx context.Context) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
 	}
-	r.retireHost(host, err)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.config.CodexExecServer == nil {
+		return true, nil
+	}
+	return !r.closing && !r.failed && r.executionOwner.executor(r.desired.IncarnationUID) != nil, nil
 }
 
-func (r *Runtime) maybeFenceExecution(binding *runtimepb.Binding) {
+func (r *Runtime) launchSessionProcess(ctx context.Context, owner string, supervisor *supervision.Supervisor, config supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
 	r.mu.Lock()
-	report := r.hostReportLocked()
-	if r.host == nil || !r.host.active || r.intent == nil || !proto.Equal(r.intent.Binding, binding) ||
-		r.intent.ExecutionFenced || report == nil || !report.Ready || !report.NativeStopped ||
-		(r.intent.Mode != runtimepb.LifecycleIntent_QUIESCING && r.intent.Mode != runtimepb.LifecycleIntent_CLOSING) {
-		r.mu.Unlock()
-		return
-	}
-	if r.fenceInFlight != nil && proto.Equal(r.fenceInFlight, binding) {
-		r.mu.Unlock()
-		return
-	}
-	r.fenceInFlight = proto.Clone(binding).(*runtimepb.Binding)
+	generation := r.desired.Generation
 	r.mu.Unlock()
-
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), executionFenceGrace)
-		defer cancel()
-		// Retain the in-flight marker on failure: an uncertain stop or fence
-		// publication must not be attempted again for this binding.
-		if err := r.stopExecution(ctx); err != nil {
-			r.fail(fmt.Errorf("fence embedded Execution API: %w", err))
-			return
-		}
-		if err := r.setExecutionFenced(binding); err != nil {
-			r.fail(fmt.Errorf("publish embedded Execution fence: %w", err))
-			return
-		}
-		r.mu.Lock()
-		if proto.Equal(r.fenceInFlight, binding) {
-			r.fenceInFlight = nil
-		}
-		r.mu.Unlock()
-	}()
+	return r.harnessProcesses.Launch(ctx, owner, generation, supervisor, config)
 }
 
 func (r *Runtime) cancelExecutionCalls() {
@@ -109,218 +172,183 @@ func (r *Runtime) cancelExecutionCalls() {
 }
 
 func (r *Runtime) waitForExecutionCalls(ctx context.Context) error {
-	for {
+	return r.waitForLifecycle(ctx, func() (bool, error) {
 		r.mu.Lock()
+		defer r.mu.Unlock()
 		if failure := r.failureLocked(); failure != nil && !r.closing {
-			r.mu.Unlock()
-			return failure
+			return false, failure
 		}
-		if r.activeExecutionCalls == 0 {
-			r.mu.Unlock()
-			return nil
+		return r.activeExecutionCalls == 0, nil
+	})
+}
+
+func (r *Runtime) readSessionStatus(ctx context.Context) (lifecycle.Status, bool, error) {
+	return lifecycle.ReadStatus(ctx, r.lifecycleState)
+}
+
+func (r *Runtime) waitSessionStage(ctx context.Context, minimum lifecycle.Stage) error {
+	return r.waitForLifecycle(ctx, func() (bool, error) {
+		current, found, err := r.readSessionStatus(ctx)
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if err != nil {
+			return false, err
 		}
-		changed := r.changes
-		r.mu.Unlock()
+		if found && current.Generation == r.desired.Generation {
+			if current.Error != "" {
+				return false, errors.New(current.Error)
+			}
+			if current.Stage >= minimum {
+				return true, nil
+			}
+		}
+		return false, r.failureLocked()
+	})
+}
+
+func (r *Runtime) waitForNativeStopped(ctx context.Context, generation uint64) error {
+	return r.waitForNativeStop(ctx, generation, false)
+}
+
+func (r *Runtime) waitForNativeStop(ctx context.Context, generation uint64, closing bool) error {
+	return r.waitForLifecycle(ctx, func() (bool, error) {
+		current, found, err := r.readSessionStatus(ctx)
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if r.desired.Generation != generation {
+			return false, status.Error(codes.Aborted, "native-stop generation was superseded")
+		}
+		if err != nil {
+			return false, err
+		}
+		if found && current.Generation == generation {
+			if current.Error != "" {
+				return false, errors.New(current.Error)
+			}
+			if current.NativeStopped {
+				return true, nil
+			}
+		}
+		if closing {
+			return false, nil
+		}
+		return false, r.failureLocked()
+	})
+}
+
+func (r *Runtime) waitForLifecycle(ctx context.Context, predicate func() (bool, error)) error {
+	for {
+		changed := r.changesSince()
+		done, err := predicate()
+		if done || err != nil {
+			return err
+		}
 		select {
 		case <-changed:
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-r.lifecycleDone:
+			return errors.New("Runtime lifecycle engine stopped")
 		}
 	}
 }
 
-func (r *Runtime) retireHost(host *hostBinding, cause error) {
+func (r *Runtime) requestExecutionFence(generation uint64) {
 	r.mu.Lock()
-	if r.host == host && host.active {
-		host.active = false
-		r.revokeHostBindingLocked()
-		r.changedLocked()
-		closing := r.closing
+	if r.desired.Generation != generation || r.closing && r.desired.Mode != lifecycle.Closing {
 		r.mu.Unlock()
-		if !closing && cause != nil {
-			r.fail(fmt.Errorf("Harness Host failed before fence acknowledgement: %w", cause))
-		}
 		return
 	}
+	if r.fenceInFlight == generation {
+		r.mu.Unlock()
+		return
+	}
+	if r.fenceDone != nil {
+		select {
+		case <-r.fenceDone:
+		default:
+			r.mu.Unlock()
+			r.fail(errors.New("overlapping Execution fences"))
+			return
+		}
+	}
+	r.fenceInFlight = generation
+	r.fenceDone = make(chan struct{})
+	r.fenceErr = nil
+	done := r.fenceDone
+	r.lifecycleWorkers.Add(1)
 	r.mu.Unlock()
+	go func() {
+		defer r.lifecycleWorkers.Done()
+		ctx, cancel := context.WithTimeout(context.Background(), executionFenceGrace)
+		defer cancel()
+		err := r.fenceExecution(ctx, generation)
+		r.mu.Lock()
+		r.fenceErr = err
+		close(done)
+		r.changedLocked()
+		r.mu.Unlock()
+		if err != nil {
+			r.fail(err)
+		}
+	}()
 }
 
-func (r *Runtime) WaitHostBootstrap(ctx context.Context, binding *runtimepb.Binding) error {
-	if err := ctx.Err(); err != nil {
-		return status.FromContextError(err).Err()
+func (r *Runtime) waitForExecutionFenced(ctx context.Context, generation uint64) error {
+	r.requestExecutionFence(generation)
+	r.mu.Lock()
+	done := r.fenceDone
+	if r.fenceInFlight != generation {
+		r.mu.Unlock()
+		return status.Error(codes.Unavailable, "Execution fence is outside the current lifecycle")
+	}
+	r.mu.Unlock()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 	r.mu.Lock()
-	valid := binding != nil && r.host != nil && r.host.active && r.lastRunning != nil &&
-		proto.Equal(binding, r.lastRunning) && binding.RuntimeBootId == r.bootID
-	r.mu.Unlock()
-	if !valid {
-		return status.Error(codes.FailedPrecondition, "bootstrap wait is outside the admitted environment binding")
+	defer r.mu.Unlock()
+	if r.fenceInFlight != generation || r.desired.Generation != generation {
+		return status.Error(codes.Aborted, "Execution fence generation changed")
 	}
-	// Runtime admits the one-shot bootstrap during incarnation adoption. Host receives only
-	// this read/wait boundary; canceling this RPC never cancels the Runtime-owned operation.
-	var wait func(context.Context) error
-	if r.waitBootstrap != nil {
-		wait = r.waitBootstrap
-	} else if r.bootstrapHost != nil {
-		wait = r.bootstrapHost.Wait
-	}
-	if wait == nil {
-		return nil
-	}
-	if err := wait(ctx); err != nil {
+	return r.fenceErr
+}
+
+func (r *Runtime) fenceExecution(ctx context.Context, generation uint64) error {
+	if err := r.stopExecution(ctx); err != nil {
 		return err
 	}
-	return nil
-}
-
-func (r *Runtime) HostExecutionReady(ctx context.Context) (bool, error) {
-	if err := ctx.Err(); err != nil {
-		return false, err
-	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.config.CodexExecServer == nil {
-		return true, nil
-	}
-	return !r.closing && r.intent != nil && r.executionOwner.executor(r.intent.IncarnationUid) != nil, nil
-}
-
-func (r *Runtime) setIntentLocked(mode runtimepb.LifecycleIntent_Mode, incarnationUID, sealUID string, executionFenced bool) *runtimepb.LifecycleIntent {
-	if r.host == nil {
-		return nil
-	}
-	var generation uint64 = 1
-	if r.intent != nil && r.intent.Binding != nil {
-		generation = r.intent.Binding.Generation + 1
-	}
-	r.intent = &runtimepb.LifecycleIntent{
-		Binding:    &runtimepb.Binding{RuntimeBootId: r.bootID, Generation: generation},
-		SandboxUid: r.config.Launch.Sandbox.UID, IncarnationUid: incarnationUID,
-		Mode: mode, SealUid: sealUID, ExecutionFenced: executionFenced,
-	}
-	r.intentChangedLocked()
-	return proto.Clone(r.intent).(*runtimepb.LifecycleIntent)
-}
-
-func (r *Runtime) setExecutionFenced(binding *runtimepb.Binding) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.intent == nil || !proto.Equal(r.intent.Binding, binding) {
-		return status.Error(codes.Aborted, "execution fence belongs to a stale environment generation")
-	}
-	if r.intent.ExecutionFenced {
-		return nil
-	}
-	if r.host == nil || !r.host.active {
-		return status.Error(codes.Unavailable, "Harness Host connection was lost before publishing Execution fence")
-	}
-	r.intent.ExecutionFenced = true
-	r.intentChangedLocked()
-	return nil
-}
-
-func (r *Runtime) waitForExecutionFenced(ctx context.Context, binding *runtimepb.Binding) error {
-	for {
-		r.mu.Lock()
-		if failure := r.failureLocked(); failure != nil {
-			r.mu.Unlock()
-			return failure
-		}
-		if r.host == nil || !r.host.active {
-			r.mu.Unlock()
-			return status.Error(codes.Unavailable, "Harness Host connection was lost before Execution fence")
-		}
-		// Publishing the fence locally is not enough: stopping Host before it
-		// applies this update can make Close reject the delayed intent.
-		applied, _, err := cosi.Read(context.Background(), r.lifecycleState, lifecycle.HostIntentStatusResource(lifecycle.HostIntentStatus{}))
-		if err != nil {
-			r.mu.Unlock()
-			return err
-		}
-		if r.intent != nil && proto.Equal(r.intent.Binding, binding) && r.intent.ExecutionFenced &&
-			applied.Applied && applied.Intent == lifecycle.HostIntentFromProto(r.intent) {
-			r.mu.Unlock()
-			return nil
-		}
-		changed := r.changes
+	if r.desired.Generation != generation {
 		r.mu.Unlock()
-		select {
-		case <-changed:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+		return status.Error(codes.Aborted, "Execution fence belongs to a stale lifecycle generation")
 	}
-}
-
-func (r *Runtime) waitForHostReady(ctx context.Context, binding *runtimepb.Binding) (*runtimepb.HostReport, error) {
-	return r.waitForAppliedHostReport(ctx, binding, nil,
-		status.Error(codes.Unavailable, "Session component is unavailable"))
-}
-
-// Keep the report read and change subscription under Runtime.mu so a report
-// published between them cannot leave a waiter asleep. hostReportLocked also
-// requires the complete intent, including its fence, to have been applied.
-func (r *Runtime) waitForAppliedHostReport(
-	ctx context.Context, binding *runtimepb.Binding, accept func(*runtimepb.HostReport) bool, disconnected error,
-) (*runtimepb.HostReport, error) {
-	for {
-		r.mu.Lock()
-		if failure := r.failureLocked(); failure != nil {
-			r.mu.Unlock()
-			return nil, failure
-		}
-		if r.host == nil || !r.host.active {
-			r.mu.Unlock()
-			return nil, disconnected
-		}
-		report := r.hostReportLocked()
-		if report != nil && report.Ready && r.intent != nil && proto.Equal(r.intent.Binding, binding) &&
-			(accept == nil || accept(report)) {
-			snapshot := proto.Clone(report).(*runtimepb.HostReport)
-			r.mu.Unlock()
-			return snapshot, nil
-		}
-		changed := r.changes
-		r.mu.Unlock()
-		select {
-		case <-changed:
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
-	}
-}
-
-func (r *Runtime) waitForHostQuiesced(ctx context.Context, binding *runtimepb.Binding) error {
-	for {
-		quiesced, changed, err := r.hostQuiescenceWaitSnapshot(binding)
+	r.mu.Unlock()
+	if r.executionLifecycle != nil {
+		current, found, err := cosi.Read(ctx, r.lifecycleState, executionStatusResource(executionStatus{}))
 		if err != nil {
 			return err
 		}
-		if quiesced {
-			return nil
+		if !found || current.Phase != executionStopped || current.FencedGeneration != current.Generation {
+			return errors.New("Execution attempt is not fenced")
 		}
-		select {
-		case <-changed:
-		case <-ctx.Done():
-			return ctx.Err()
+		if !r.executionLifecycle.publishCompletion(func(input *executionSignal) bool {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			if r.desired.Generation != generation || input.Fence.LifecycleGeneration > generation {
+				return false
+			}
+			if input.Fence.Generation != 0 && input.Fence.Generation != current.Generation {
+				return false
+			}
+			input.Fence.LifecycleGeneration = generation
+			return true
+		}) {
+			return errors.New("publish exact Execution fence")
 		}
 	}
-}
-
-func (r *Runtime) hostQuiescenceWaitSnapshot(binding *runtimepb.Binding) (bool, <-chan struct{}, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	report := r.hostReportLocked()
-	if r.host != nil && r.host.active && report != nil && report.Ready &&
-		r.intent != nil && proto.Equal(r.intent.Binding, binding) &&
-		report.Facts.GetQuiesceStage() == environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED {
-		return true, nil, nil
-	}
-	if failure := r.failureLocked(); failure != nil {
-		return false, nil, failure
-	}
-	if r.host == nil || !r.host.active {
-		return false, nil, status.Error(codes.Unavailable, "Session component is unavailable")
-	}
-	return false, r.changes, nil
+	r.changed()
+	return nil
 }

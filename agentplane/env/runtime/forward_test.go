@@ -227,7 +227,7 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 			dropFirstReply = false
 			firstCursor = response.(*environmentruntimepb.SubmitInputResponse).GetAdmission().GetCursor()
 			cancelFirst()
-			return status.Error(codes.Unavailable, "simulated lost Harness Host admission reply")
+			return status.Error(codes.Unavailable, "simulated lost Session admission reply")
 		}
 		return err
 	}

@@ -57,7 +57,7 @@ replays execution requests.
 
 **Deviation:** the proto keeps the published `agentplane.executor` wire package while source and
 client import paths live under `env/runtime/execution`. Relocation changes neither RPC method names nor
-message fields, so current Gateway, Harness Host and sampler versions still agree during deployment.
+message fields, so current Gateway, Runtime and sampler versions still agree during deployment.
 
 ## Cutover and rollback
 
@@ -67,7 +67,7 @@ preserve authored files and Session history before deleting their storage. Rollb
 the new Sandboxes before restoring the previous guest and runtime image pins, then recreating them.
 
 Runtime fences the previous Execution Service owner before starting a replacement. Its scope is
-distinct from Harness Host's process scope. Inventory retained sampler execution bindings and
+distinct from native harness process scope. Inventory retained sampler execution bindings and
 reconcile unfinished operations before restarting an executor: native sessions/processes are
 in-memory state. Preserve authored files and existing Session journals and volumes. See
 [staging data preservation](../../../docs/staging_data_preservation.md) before a deployment rollback.
@@ -80,7 +80,7 @@ retains the Codex app-server and journals; `agentplane-execution-service compani
 starts and fences it before replacing a lost process. A companion exit or failed health probe lets
 Kubernetes restart that container with a fresh PID namespace; the environment services never replay an in-flight
 command. `Environment.isolated_codex_executor` controls this Pod-template policy and can be disabled
-for environments that need execution inside the Host container.
+for environments that need execution inside the Runtime container.
 
 Both containers run as the image's uid and gid 1000 and share the Sandbox state and workspace at the
 same absolute paths, plus `/home/runner`, `/tmp`, and the read-only runner disk image. They use the
@@ -91,7 +91,7 @@ Its Kubernetes requests and limits are independently configurable with `executor
 companion receives the Sandbox kubeconfig and any optional BuildBuddy diagnostics key so its command
 tools keep the runner's intended access. It gets no model credentials or sidecar-projected tokens.
 
-`../harnesshost/codex/protocol` generates Go models at build time with Quicktype from schemas
+`../codex/protocol` generates Go models at build time with Quicktype from schemas
 exported by the same pinned Codex executable used by the native tests. Requests,
 responses, notifications and known item payloads use these models. Method and item
 dispatch keep a raw JSON boundary for unknown variants; recorded native frames are

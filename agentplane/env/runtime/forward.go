@@ -3,16 +3,14 @@ package runtime
 import (
 	"context"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	runtimecontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
-	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 type executionProxy struct {
@@ -21,109 +19,6 @@ type executionProxy struct {
 }
 
 func newExecutionProxy(r *Runtime) *executionProxy { return &executionProxy{runtime: r} }
-
-func (r *Runtime) authorizeHostCall(ctx context.Context, mutation bool) (*harnesshost.Host, context.Context, func(), error) {
-	var client *harnesshost.Host
-	var binding *runtimepb.Binding
-	var admitted bool
-	err := r.control.Admit(ctx, func(epoch *runtimecontrol.Epoch) error {
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		if r.closing {
-			return status.Error(codes.Unavailable, "Runner is closing")
-		}
-		if r.intent == nil || (r.intent.Mode != runtimepb.LifecycleIntent_RUNNING && r.intent.Mode != runtimepb.LifecycleIntent_QUIESCING) {
-			return status.Error(codes.FailedPrecondition, "environment generation is not serving Host RPCs")
-		}
-		report := r.hostReportLocked()
-		if r.host == nil || !r.host.active || report == nil || !report.Ready {
-			return status.Error(codes.Unavailable, "Harness Host has not applied the active environment generation")
-		}
-		if epoch.IncarnationUID() != r.intent.IncarnationUid {
-			return status.Error(codes.Aborted, "control epoch does not match the active environment generation")
-		}
-		client = r.sessions
-		binding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
-		if mutation {
-			r.activeAdmissions++
-			r.changedLocked()
-			admitted = true
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	finish := func() {
-		if !admitted {
-			return
-		}
-		r.mu.Lock()
-		if r.activeAdmissions > 0 {
-			r.activeAdmissions--
-		}
-		r.changedLocked()
-		r.mu.Unlock()
-	}
-	// The Host's ingress check runs after Runtime releases its mutex. Its
-	// native admission check repeats under the Host mutex before any write.
-	bound, err := client.BoundContext(ctx, binding)
-	if err != nil {
-		finish()
-		return nil, nil, nil, err
-	}
-	return client, bound, finish, nil
-}
-
-// invokeHost preserves the protobuf transport's immutable request/response
-// boundary while invoking the typed Host implementation in this process.
-func invokeHost[Request proto.Message, Response proto.Message](r *Runtime, ctx context.Context, request Request, mutation bool, call func(*harnesshost.Host, context.Context, Request) (Response, error)) (Response, error) {
-	var zero Response
-	client, bound, finish, err := r.authorizeHostCall(ctx, mutation)
-	if err != nil {
-		return zero, err
-	}
-	defer finish()
-	response, err := call(client, bound, proto.Clone(request).(Request))
-	if err != nil {
-		return zero, err
-	}
-	return proto.Clone(response).(Response), nil
-}
-
-func (r *Runtime) ListSessions(ctx context.Context, request *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
-	return invokeHost(r, ctx, request, false, (*harnesshost.Host).ListSessions)
-}
-
-func (r *Runtime) GetStatus(ctx context.Context, request *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
-	response, err := invokeHost(r, ctx, request, false, (*harnesshost.Host).GetStatus)
-	if err != nil {
-		return nil, err
-	}
-	// Runtime owns the boot identity reported to Gateway.
-	response.EnvironmentRuntimeBootId = r.bootID
-	return response, nil
-}
-
-func (r *Runtime) OpenSession(ctx context.Context, request *environmentruntimepb.OpenSessionRequest) (*environmentruntimepb.OpenSessionResponse, error) {
-	return invokeHost(r, ctx, request, true, (*harnesshost.Host).OpenSession)
-}
-
-func (r *Runtime) SubmitInput(ctx context.Context, request *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
-	return invokeHost(r, ctx, request, true, (*harnesshost.Host).SubmitInput)
-}
-
-func (r *Runtime) ChangeModel(ctx context.Context, request *environmentruntimepb.ChangeModelRequest) (*environmentruntimepb.ChangeModelResponse, error) {
-	return invokeHost(r, ctx, request, true, (*harnesshost.Host).ChangeModel)
-}
-
-func (r *Runtime) ChangeReasoningEffort(ctx context.Context, request *environmentruntimepb.ChangeReasoningEffortRequest) (*environmentruntimepb.ChangeReasoningEffortResponse, error) {
-	return invokeHost(r, ctx, request, true, (*harnesshost.Host).ChangeReasoningEffort)
-}
-
-func (r *Runtime) InterruptTurn(ctx context.Context, request *environmentruntimepb.InterruptTurnRequest) (*environmentruntimepb.InterruptTurnResponse, error) {
-	return invokeHost(r, ctx, request, true, (*harnesshost.Host).InterruptTurn)
-}
 
 func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.ExecutionScope) (executorpb.ExecutorServer, context.Context, func(), error) {
 	var client executorpb.ExecutorServer
@@ -134,11 +29,14 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 	err := r.control.Admit(ctx, func(epoch *runtimecontrol.Epoch) error {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		if r.closing || r.executionOwner.recovering() || r.intent == nil || (r.intent.Mode != runtimepb.LifecycleIntent_RUNNING && r.intent.Mode != runtimepb.LifecycleIntent_QUIESCING) {
+		if r.closing || r.failed || r.executionOwner.recovering() || (r.desired.Mode != lifecycle.Running && r.desired.Mode != lifecycle.Quiescing) {
 			return status.Error(codes.Unavailable, "execution admission is closed")
 		}
-		report := r.hostReportLocked()
-		if r.host != nil && report != nil && report.NativeStopped {
+		progress, found, err := r.readSessionStatus(ctx)
+		if err != nil {
+			return err
+		}
+		if found && progress.Generation == r.desired.Generation && progress.NativeStopped {
 			return status.Error(codes.FailedPrecondition, "environment native work has stopped")
 		}
 		if err := validateExecutionScope(scope, r.config.Launch.Sandbox, epoch.SandboxUID(), epoch.IncarnationUID()); err != nil {
@@ -152,7 +50,9 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 		r.execCallID++
 		callID = r.execCallID
 		r.execCalls[callID] = cancel
-		r.activeAdmissions++
+		if err := r.changeAdmissionsLocked(1); err != nil {
+			return err
+		}
 		r.activeExecutionCalls++
 		r.changedLocked()
 		admitted = true
@@ -168,14 +68,15 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 		cancel()
 		r.mu.Lock()
 		delete(r.execCalls, callID)
-		if r.activeAdmissions > 0 {
-			r.activeAdmissions--
-		}
+		admissionErr := r.changeAdmissionsLocked(-1)
 		if r.activeExecutionCalls > 0 {
 			r.activeExecutionCalls--
 		}
 		r.changedLocked()
 		r.mu.Unlock()
+		if admissionErr != nil {
+			r.fail(admissionErr)
+		}
 	}
 	return client, outgoing, finish, nil
 }
@@ -222,7 +123,7 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 	err := r.control.Admit(stream.Context(), func(epoch *runtimecontrol.Epoch) error {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		if r.closing || r.executionOwner.recovering() || r.intent == nil || r.intent.Mode != runtimepb.LifecycleIntent_RUNNING {
+		if r.closing || r.failed || r.executionOwner.recovering() || !r.acceptingLocked() {
 			return status.Error(codes.Unavailable, "execution admission is closed")
 		}
 		if err := validateExecutionScope(request.GetScope(), r.config.Launch.Sandbox, epoch.SandboxUID(), epoch.IncarnationUID()); err != nil {
@@ -236,8 +137,11 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 			}
 			return status.Error(codes.Unavailable, "Execution API is not ready for this incarnation")
 		}
-		report := r.hostReportLocked()
-		if r.host != nil && report != nil && report.NativeStopped {
+		progress, found, err := r.readSessionStatus(stream.Context())
+		if err != nil {
+			return err
+		}
+		if found && progress.Generation == r.desired.Generation && progress.NativeStopped {
 			return status.Error(codes.FailedPrecondition, "environment native work has stopped")
 		}
 		streamCtx, cancel = context.WithCancel(stream.Context())

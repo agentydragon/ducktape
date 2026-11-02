@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
-	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -45,7 +44,7 @@ type runtimeTransitionWorker struct {
 
 type runtimeTransitionOutcome struct {
 	steps        []runtimeTransitionStep
-	binding      *runtimepb.Binding
+	generation   uint64
 	adoption     adoptionOutcome
 	adoptionPlan *adoptionPlan
 	quiesce      *quiescePlan
@@ -139,7 +138,7 @@ func (c *runtimeTransitionSequence) runStep(step runtimeTransitionStep) (runtime
 		if errors.Is(err, context.Canceled) && !c.r.isClosing() && step.adoption.kind == adoptionExecutionFence {
 			fenceCtx, cancel := context.WithTimeout(c.engineCtx, executionFenceGrace)
 			defer cancel()
-			if settleErr := c.r.waitForExecutionFenced(fenceCtx, c.binding(step.adoption.binding)); settleErr == nil {
+			if settleErr := c.r.waitForExecutionFenced(fenceCtx, c.adoption.generation); settleErr == nil {
 				return outcome, err
 			} else {
 				err = errors.Join(err, fmt.Errorf("settle exact Execution fence after epoch loss: %w", settleErr))

@@ -9,7 +9,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from agentplane.env.runtime.harnesshost.harness import Harness
+from agentplane.env.runtime.harness import Harness
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s.agentplane import (
     central_sampler,

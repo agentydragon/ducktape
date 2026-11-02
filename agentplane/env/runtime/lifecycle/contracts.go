@@ -1,5 +1,4 @@
-// Package lifecycle defines distinct Runtime and Harness Host desired resources
-// and the Harness Host aggregate status consumed by their coordinated lifecycle.
+// Package lifecycle defines Runtime desired state and component lifecycle observations.
 package lifecycle
 
 import (
@@ -17,13 +16,13 @@ import (
 
 const (
 	Namespace                    = "environment-runtime"
-	DesiredStateType             = "HarnessHostDesiredStates.agentplane"
-	AggregateStatusType          = "HarnessHostLifecycleStatuses.agentplane"
+	AdmissionCountType           = "EnvironmentAdmissionCounts.agentplane"
+	AggregateStatusType          = "EnvironmentSessionStatuses.agentplane"
 	RuntimeCloseStatusType       = "EnvironmentRuntimeCloseStatuses.agentplane"
 	RuntimeTransitionRequestType = "EnvironmentRuntimeTransitionRequests.agentplane"
 	RuntimeTransitionStatusType  = "EnvironmentRuntimeTransitionStatuses.agentplane"
-	ResourceID                   = "harness-host"
-	HostOwner                    = "harness-host"
+	ResourceID                   = "environment-runtime"
+	SessionOwner                 = "environment-sessions"
 	EnvironmentDesiredStateType  = "EnvironmentRuntimeDesiredStates.agentplane"
 	// ExecutionStatusType is observed by the app-server controller to
 	// wake its live Execution readiness check.
@@ -36,7 +35,8 @@ const (
 type Mode uint8
 
 const (
-	Running Mode = iota
+	Inactive Mode = iota
+	Running
 	Quiescing
 	Closing
 )
@@ -55,18 +55,14 @@ const (
 	Closed
 )
 
-type Desired struct {
-	Mode       Mode
-	SealUID    string
-	Generation uint64
-}
-
-// EnvironmentDesired is Runtime's bootstrap and process admission generation.
-// Host Desired is a separate resource with its own writer and lifecycle.
+// EnvironmentDesired is the only environment lifecycle desire. Runtime revokes
+// admission before publishing a replacement and accepts the exact revision only
+// after its local recovery work completes.
 type EnvironmentDesired struct {
-	Mode       Mode
-	SealUID    string
-	Generation uint64
+	Mode           Mode
+	IncarnationUID string
+	SealUID        string
+	Generation     uint64
 }
 
 func (value EnvironmentDesired) DeepCopy() EnvironmentDesired { return value }
@@ -97,9 +93,7 @@ func PublishEnvironmentDesired(ctx context.Context, writer state.State, value En
 	return cosi.Publish(ctx, writer, resource, value, EnvironmentOwner)
 }
 
-func (value Desired) DeepCopy() Desired { return value }
-
-// Blocker identifies the first unmet predicate in the aggregate Harness Host barrier. It is written with
+// Blocker identifies the first unmet predicate in the aggregate Session barrier. It is written with
 // the corresponding Stage and describes the resources the controller just inspected; it is not an
 // independent lifecycle state machine.
 type BlockerKind uint8
@@ -139,10 +133,11 @@ type Blocker struct {
 func (value Blocker) DeepCopy() Blocker { return value }
 
 type Status struct {
-	Generation uint64
-	Stage      Stage
-	Error      string
-	Blocker    Blocker
+	Generation    uint64
+	Stage         Stage
+	Error         string
+	Blocker       Blocker
+	NativeStopped bool
 }
 
 // RuntimeCloseStage is the Runtime's ordered shutdown barrier. ReadyToJoin means
@@ -153,8 +148,8 @@ const (
 	RuntimeClosePreparing RuntimeCloseStage = iota
 	RuntimeCloseNativeStopping
 	RuntimeCloseExecutionFencing
-	RuntimeCloseHostFlushing
-	RuntimeCloseHostJoining
+	RuntimeCloseHistoryFlushing
+	RuntimeCloseSessionsJoining
 	RuntimeCloseBootstrapSettling
 	RuntimeCloseReadyToJoin
 	RuntimeCloseFailed
@@ -189,14 +184,12 @@ const (
 	RuntimeTransitionPlanning RuntimeTransitionStage = iota
 	RuntimeTransitionNativeStopping
 	RuntimeTransitionExecutionStarting
-	RuntimeTransitionIntentPublishing
+	RuntimeTransitionDesiredPublishing
 	RuntimeTransitionExecutionFencing
-	RuntimeTransitionHostAcknowledging
+	RuntimeTransitionHistoryAcknowledging
 	RuntimeTransitionIncarnationAdopting
-	RuntimeTransitionHostReady
 	RuntimeTransitionBootstrapRequesting
 	RuntimeTransitionQuiesceSealing
-	RuntimeTransitionHostStatusChecking
 	RuntimeTransitionDone
 	RuntimeTransitionFailed
 )
@@ -293,31 +286,10 @@ func WriteRuntimeCloseStatus(ctx context.Context, writer controller.Writer, valu
 
 func (value Status) DeepCopy() Status { return value }
 
-// AdmissionGuard runs effect while the Harness Host admission barrier is held, but only while expected
-// remains the current Running desired state.
-type AdmissionGuard func(ctx context.Context, expected Desired, effect func(context.Context) error) error
-
-type desiredExtension struct{}
-
-func (desiredExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
-	return spec.ResourceDefinitionSpec{Type: DesiredStateType, DefaultNamespace: Namespace}
-}
-
 type statusExtension struct{}
 
 func (statusExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
 	return spec.ResourceDefinitionSpec{Type: AggregateStatusType, DefaultNamespace: Namespace}
-}
-
-func ReadDesired(ctx context.Context, reader controller.Reader) (Desired, bool, error) {
-	resource, err := safe.ReaderGetByID[*typed.Resource[Desired, desiredExtension]](ctx, reader, ResourceID)
-	if state.IsNotFoundError(err) {
-		return Desired{}, false, nil
-	}
-	if err != nil {
-		return Desired{}, false, err
-	}
-	return *resource.TypedSpec(), true, nil
 }
 
 func ReadStatus(ctx context.Context, reader controller.Reader) (Status, bool, error) {
@@ -337,21 +309,14 @@ func WatchStatus(ctx context.Context, reader state.State, condition func(Status)
 		state.WithCondition(func(value resource.Resource) (bool, error) {
 			current, ok := value.(*typed.Resource[Status, statusExtension])
 			if !ok {
-				return false, fmt.Errorf("unexpected Harness Host aggregate status resource %T", value)
+				return false, fmt.Errorf("unexpected Session aggregate status resource %T", value)
 			}
 			return condition(*current.TypedSpec())
 		}))
 	return err
 }
 
-// PublishDesired is the host-side writer for Harness Host intent. The Host owns admission locking;
-// this function owns only typed publication of the shared desired-state resource.
-func PublishDesired(ctx context.Context, writer state.State, value Desired) error {
-	resource := desiredResource(value)
-	return cosi.Publish(ctx, writer, resource, value, HostOwner)
-}
-
-// WriteStatus is used only by the Harness Host aggregate controller, which exclusively owns this output.
+// WriteStatus is used only by the Session aggregate controller, which exclusively owns this output.
 func WriteStatus(ctx context.Context, writer controller.ReaderWriter, value Status) (bool, error) {
 	current, found, err := ReadStatus(ctx, writer)
 	if err != nil || found && current == value {
@@ -362,12 +327,6 @@ func WriteStatus(ctx context.Context, writer controller.ReaderWriter, value Stat
 		return nil
 	})
 	return err == nil, err
-}
-
-func desiredResource(value Desired) *typed.Resource[Desired, desiredExtension] {
-	return typed.NewResource[Desired, desiredExtension](
-		resource.NewMetadata(Namespace, DesiredStateType, ResourceID, resource.VersionUndefined), value,
-	)
 }
 
 func statusResource(value Status) *typed.Resource[Status, statusExtension] {

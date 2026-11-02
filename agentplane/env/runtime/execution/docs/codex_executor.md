@@ -1,6 +1,6 @@
 # Codex executor isolation
 
-Environment Runtime embeds the Execution Service and owns its executor lifetime. Harness Host
+Environment Runtime embeds the Execution Service and owns its executor lifetime. Runtime
 runs the shared Codex app-server and sets `CODEX_EXEC_SERVER_URL` to connect directly to the native
 exec-server's WebSocket endpoint. An executor failure never enables local execution. Claude continues to execute in its own harness
 process.
@@ -13,7 +13,7 @@ between Sessions or a safe place for another principal's credentials.
 
 The template starts `/run/agentplane/environment/bin/agentplane-execution-service companion` in a separate
 container on the same tools image. This process mode runs the companion as PID 1 without starting
-Environment Runtime, Harness Host, COSI or telemetry. Kubernetes `resources` supplies its memory and
+Environment Runtime, Runtime, COSI or telemetry. Kubernetes `resources` supplies its memory and
 CPU limits; kubelet restarts the container. Its PID namespace must be private
 (`shareProcessNamespace: false`). Both containers mount the same state, workspace, home, temporary
 directory, environment binary disk,
@@ -59,7 +59,7 @@ The template owns the endpoint and socket paths used on both sides.
 
 The template's `vm_resources` value supplies `environment.resources` under `environment.kind: "vm"`.
 Its optional executor budget and `environment.executor` endpoint must be configured together.
-Execution Service applies that budget to `agentplane-executors.slice`; Harness Host uses the sibling
+Execution Service applies that budget to `agentplane-executors.slice`; Runtime uses the sibling
 `agentplane-workloads.slice`. Runtime and the native slices live under the capped `agentplane.slice`.
 Runtime fences previous owned services before admitting an incarnation.
 The harness aggregate and executor aggregate have independent limits; their configured memory caps
@@ -83,7 +83,7 @@ See [native supervision](../../supervision/docs/supervision.md) for the backend 
    systemd services in the expected slices.
 2. When adopting an incarnation with Codex execution configured, Runtime starts the embedded
    Execution Service and waits for a bounded native probe. The probe initializes a WebSocket session
-   and reads `environment/status`; Harness Host starts the app-server when requested, with the
+   and reads `environment/status`; Runtime starts the app-server when requested, with the
    configured executor URL.
 3. Execution Service probes native executor progress every five seconds with a three-second deadline.
    Three consecutive failures end its lifetime and fence the backend. Runtime proves the old service

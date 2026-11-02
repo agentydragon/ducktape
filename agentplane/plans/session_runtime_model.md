@@ -129,7 +129,7 @@ with the harness backend; Codex exec-server adaptation belongs with the executio
 owns authenticated routing/fencing. This records ownership, not a new transport or authority policy.
 
 Current ownership and lifecycle guarantees are defined by the
-[Environment Runtime](../env/runtime/SPEC.md), [Harness Host](../env/runtime/harnesshost/SPEC.md) and
+[Environment Runtime](../env/runtime/SPEC.md), [Harness Host](../env/runtime/SPEC.md) and
 [Execution service](../env/runtime/execution/SPEC.md). Pod/VM packaging lives under `env/images`.
 Use those contracts when changing admission, drain, state locks, process generations, fencing or
 failure settlement. Rightsizing, future laptop support, a JS-host replacement and the broader

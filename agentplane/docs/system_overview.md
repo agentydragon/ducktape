@@ -34,7 +34,7 @@ flowchart LR
       subgraph sandbox[Sandbox Pod]
         subgraph pod_runtime[Environment Runtime process: PID1]
           runtime[Environment lifecycle]
-          runner[Harness Host + native drivers]
+          runner[Runtime Session components + native drivers]
           execution[Execution API]
         end
         runtime -->|direct lifecycle and Session calls| runner
@@ -47,7 +47,7 @@ flowchart LR
       subgraph vm_guest[VM guest]
         subgraph vm_runtime[Environment Runtime process]
           vmruntime[Environment lifecycle]
-          guest[Harness Host + native drivers]
+          guest[Runtime Session components + native drivers]
           vmexecution[Execution API]
         end
         vmruntime -->|direct lifecycle and Session calls| guest
@@ -146,7 +146,7 @@ flowchart LR
     click index href "../x/indexing/app.py" "Git index API"
 ```
 
-A VM guest runs Environment Runtime, Harness Host and Execution Service; its relay is in the separate KubeVirt launcher Pod. The Git index is
+A VM guest runs Environment Runtime with Session components and Execution; its relay is in the separate KubeVirt launcher Pod. The Git index is
 standalone, with no dependency on the backend services or the app: it polls a configured Git remote,
 embeds files through an embedding endpoint and owns its own PostgreSQL database
 ([indexing README](../x/indexing/README.md)).
@@ -317,27 +317,24 @@ harnesses keep their current local sampling, execution and persistence paths. Se
 flowchart LR
     gateway[Runner Gateway]
     subgraph environment_runtime[Environment Runtime process]
-      runtime[Environment lifecycle]
-      host[Harness Host]
+      runtime[Runtime admission and lifecycle]
+      sessions[Session manager, adapters and journals]
       execution[Execution API]
+      bootstrap[Bootstrap]
+      delivery[History delivery worker]
+      runtime -->|construct and own| sessions & execution & bootstrap & delivery
+      sessions -->|journal inventory| delivery
     end
-    bootstrap[Sandbox bootstrap]
     history[History ingress]
     gateway -->|mTLS Runner / Executor / WatchState| runtime
-    runtime <-->|direct binding / lifecycle intents / reports| host
-    runtime -->|direct typed Session calls| host
-    runtime -->|direct Executor calls / backend fence| execution
-    runtime --> bootstrap
-    host -->|Session journal inventory| runtime
-    runtime -.->|durable journal push and ACK| history
+    delivery -.->|durable journal push and ACK| history
 ```
 
-The components share one process. Runtime owns environment identity, bootstrap, health and aggregate lifecycle. Host owns native Session
-admission, state and journals; it rechecks Runtime boot and generation before durable work.
-Host reports native stop before Runtime acknowledges Execution fencing, then seals journals. Runtime
-keeps its History delivery worker alive through the exact sealed cursor ACK and joins it before Host
-closes journals. Public connection Leases and epoch fencing remain in Runtime's control endpoint.
-Central sampler remains a separate control-plane process outside the environment.
+Runtime owns the components and one desired lifecycle revision. Native Session admission rechecks
+that accepted revision and the public caller epoch before durable work. Component observations
+prove native cleanup; Execution fencing precedes journal sealing, and exact durable History ACKs
+precede delivery/journal closure and owner release. The external control Lease and epoch boundaries
+remain in Runtime's endpoint. Central sampler remains a separate control-plane process.
 
 ## Codex execution inside a Sandbox
 
@@ -346,11 +343,11 @@ flowchart LR
     subgraph pod[Sandbox Pod]
         subgraph pod_runtime[Environment Runtime process: PID1]
           runtime[Environment lifecycle]
-          host[Harness Host]
+          host[Session and harness components]
           execution[Execution API]
         end
         exec[Companion container and exec-server]
-        runtime -->|component lifecycle| host
+        runtime -->|construct and own| host
         runtime -->|component lifecycle| execution
         execution -->|Unix ownership connection| exec
         host -->|shared app-server WebSocket tools| exec
@@ -358,7 +355,7 @@ flowchart LR
     subgraph vm[VM guest]
         subgraph vm_runtime[Environment Runtime service]
           vmruntime[Environment lifecycle]
-          vmhost[Harness Host]
+          vmhost[Session and harness components]
           vmexecution[Execution API]
         end
         manager[systemd manager]

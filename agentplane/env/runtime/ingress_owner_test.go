@@ -9,9 +9,8 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -63,18 +62,17 @@ func (s *pausedRecoveryState) List(ctx context.Context, kind resource.Kind, opts
 	return s.State.List(ctx, kind, opts...)
 }
 
-func ingressTestRuntime(t *testing.T, store state.State, run func(context.Context, *harnesshost.Host, configuration.Endpoint) error) *Runtime {
+func ingressTestRuntime(t *testing.T, store state.State, run func(context.Context, configuration.Endpoint) error) *Runtime {
 	t.Helper()
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
-	config.Config.HostConfig = config.host
-	config.Config.HostIngress.Target = "history.test:8081"
+	config.Config.HistoryIngress.Target = "history.test:8081"
 	config.deps.runIngress = run
 	r, err := newRuntime(config.Config, store, config.deps)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.startHost(); err != nil {
+	if err := r.startSessions(); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -101,7 +99,7 @@ func TestRuntimeHistoryStartsAfterSessionRecovery(t *testing.T) {
 		State: state.WrapCore(namespaced.NewState(inmem.Build)), entered: make(chan struct{}), release: make(chan struct{}),
 	}
 	started := make(chan struct{})
-	r := ingressTestRuntime(t, store, func(ctx context.Context, _ *harnesshost.Host, _ configuration.Endpoint) error {
+	r := ingressTestRuntime(t, store, func(ctx context.Context, _ configuration.Endpoint) error {
 		close(started)
 		<-ctx.Done()
 		return nil
@@ -125,7 +123,7 @@ func TestRuntimeHistoryStartsAfterSessionRecovery(t *testing.T) {
 	default:
 	}
 	close(store.release)
-	if err := r.waitForInitialHost(ctx); err != nil {
+	if err := r.waitForInitialSessions(ctx); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -149,7 +147,7 @@ func TestRuntimeRecoveryFailureNeverStartsHistoryDelivery(t *testing.T) {
 		State: state.WrapCore(namespaced.NewState(inmem.Build)), entered: make(chan struct{}), release: make(chan struct{}), err: recoveryErr,
 	}
 	started := make(chan struct{})
-	r := ingressTestRuntime(t, store, func(context.Context, *harnesshost.Host, configuration.Endpoint) error {
+	r := ingressTestRuntime(t, store, func(context.Context, configuration.Endpoint) error {
 		close(started)
 		return nil
 	})
@@ -167,7 +165,7 @@ func TestRuntimeRecoveryFailureNeverStartsHistoryDelivery(t *testing.T) {
 		t.Fatal("Session recovery did not start")
 	}
 	close(store.release)
-	if err := r.waitForInitialHost(ctx); !errors.Is(err, recoveryErr) {
+	if err := r.waitForInitialSessions(ctx); !errors.Is(err, recoveryErr) {
 		t.Fatalf("initial Host wait = %v, want recovery failure", err)
 	}
 	waitRuntime(t, r, func() bool {
@@ -175,7 +173,7 @@ func TestRuntimeRecoveryFailureNeverStartsHistoryDelivery(t *testing.T) {
 		defer r.mu.Unlock()
 		return r.failed
 	}, "Runtime to observe failed Session recovery")
-	if err := r.waitForInitialHost(ctx); !errors.Is(err, recoveryErr) {
+	if err := r.waitForInitialSessions(ctx); !errors.Is(err, recoveryErr) {
 		t.Fatalf("initial Host wait after Runtime failure = %v, want recovery failure", err)
 	}
 	select {
@@ -193,11 +191,11 @@ func TestRuntimeRecoveryFailureNeverStartsHistoryDelivery(t *testing.T) {
 	}
 }
 
-func TestRuntimeHistoryFailureFencesHostAdmissionAndCloses(t *testing.T) {
+func TestRuntimeHistoryFailureFencesAdmissionAndCloses(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	ingressErr := errors.New("injected History delivery failure")
-	r := ingressTestRuntime(t, nil, func(context.Context, *harnesshost.Host, configuration.Endpoint) error {
+	r := ingressTestRuntime(t, nil, func(context.Context, configuration.Endpoint) error {
 		close(started)
 		<-release
 		return ingressErr
@@ -210,7 +208,7 @@ func TestRuntimeHistoryFailureFencesHostAdmissionAndCloses(t *testing.T) {
 		}
 	})
 	ctx := ingressTestContext(t)
-	if err := r.waitForInitialHost(ctx); err != nil {
+	if err := r.waitForInitialSessions(ctx); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -225,11 +223,10 @@ func TestRuntimeHistoryFailureFencesHostAdmissionAndCloses(t *testing.T) {
 		return r.failed
 	}, "fatal History failure")
 	r.mu.Lock()
-	host := r.sessions
-	bootID := r.bootID
+	admissionOpen := r.admissionOpen
 	r.mu.Unlock()
-	if host.RuntimeBindingMatches(bootID) {
-		t.Fatal("Host still admits Runtime calls after History delivery failure")
+	if admissionOpen {
+		t.Fatal("Runtime still admits calls after History delivery failure")
 	}
 	if err := r.Close(ctx); !errors.Is(err, ingressErr) {
 		t.Fatalf("Runtime Close after History failure = %v", err)
@@ -240,7 +237,7 @@ func TestRuntimeCloseJoinsHistoryBeforeReleasingOwner(t *testing.T) {
 	started := make(chan struct{})
 	canceled := make(chan struct{})
 	release := make(chan struct{})
-	r := ingressTestRuntime(t, nil, func(ctx context.Context, _ *harnesshost.Host, _ configuration.Endpoint) error {
+	r := ingressTestRuntime(t, nil, func(ctx context.Context, _ configuration.Endpoint) error {
 		close(started)
 		<-ctx.Done()
 		close(canceled)
@@ -255,7 +252,7 @@ func TestRuntimeCloseJoinsHistoryBeforeReleasingOwner(t *testing.T) {
 		}
 	})
 	ctx := ingressTestContext(t)
-	if err := r.waitForInitialHost(ctx); err != nil {
+	if err := r.waitForInitialSessions(ctx); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -305,7 +302,7 @@ func TestRuntimeKeepsHistoryAliveUntilExactSealedAcknowledgement(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
-	config.Config.HostIngress.Target = startHistoryService(t, history)
+	config.Config.HistoryIngress.Target = startHistoryService(t, history)
 	r := newLifecycleRuntime(t, config)
 	t.Cleanup(func() { releaseOnce.Do(func() { close(releaseSeal) }) })
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
@@ -325,7 +322,7 @@ func TestRuntimeKeepsHistoryAliveUntilExactSealedAcknowledgement(t *testing.T) {
 	go func() { closed <- r.Close(ctx) }()
 	waitRuntime(t, r, func() bool {
 		status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
-		return err == nil && found && status.Stage == lifecycle.RuntimeCloseHostFlushing
+		return err == nil && found && status.Stage == lifecycle.RuntimeCloseHistoryFlushing
 	}, "Runtime Close to wait at the sealed History acknowledgement barrier")
 	select {
 	case <-r.ingress.done:
@@ -358,8 +355,9 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 	history := &acknowledgingHistory{
 		acks: map[string]*ingresspb.Acknowledgement{}, sealSeen: sealSeen, releaseSeal: releaseSeal,
 	}
-	// Run after the lifecycle fixture's cleanup, which stops delivery and Host workers.
+	// Run after the lifecycle fixture's cleanup, which stops delivery and Session workers.
 	var r *Runtime
+	runtimeReady := make(chan struct{})
 	t.Cleanup(func() {
 		if r != nil {
 			_ = r.owner.Close()
@@ -368,12 +366,17 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
-	config.Config.HostIngress.Target = startHistoryService(t, history)
+	config.Config.HistoryIngress.Target = startHistoryService(t, history)
 	config.expectCloseError = true
-	config.deps.runIngress = func(ctx context.Context, host *harnesshost.Host, endpoint configuration.Endpoint) error {
+	config.deps.runIngress = func(ctx context.Context, endpoint configuration.Endpoint) error {
+		select {
+		case <-runtimeReady:
+		case <-ctx.Done():
+			return nil
+		}
 		deliveryCtx, cancel := context.WithCancel(ctx)
 		deliveryDone := make(chan error, 1)
-		go func() { deliveryDone <- host.IngressSupervisor(endpoint, host.ReportFailure).Run(deliveryCtx) }()
+		go func() { deliveryDone <- r.ingressSupervisor(endpoint, r.fail).Run(deliveryCtx) }()
 		select {
 		case <-failDelivery:
 			cancel()
@@ -389,6 +392,7 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 		}
 	}
 	r = newLifecycleRuntime(t, config)
+	close(runtimeReady)
 	t.Cleanup(func() {
 		failOnce.Do(func() { close(failDelivery) })
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
@@ -417,7 +421,7 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 	go func() { closed <- r.Close(ctx) }()
 	waitRuntime(t, r, func() bool {
 		status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
-		return err == nil && found && status.Stage == lifecycle.RuntimeCloseHostFlushing
+		return err == nil && found && status.Stage == lifecycle.RuntimeCloseHistoryFlushing
 	}, "Runtime Close to wait at the sealed History acknowledgement barrier")
 	ack, found, err := retained.ReadAcknowledgement(ctx, r.lifecycleState, "session-1")
 	if err != nil || found && ack.Sealed {
@@ -472,7 +476,7 @@ func TestRuntimeRetainsOwnerWhenSessionDeliveryCannotPersistSealedAcknowledgemen
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
-	config.Config.HostIngress.Target = startHistoryService(t, history)
+	config.Config.HistoryIngress.Target = startHistoryService(t, history)
 	config.expectCloseError = true
 	r = newLifecycleRunnerWithState(t, config, store)
 	t.Cleanup(func() { releaseOnce.Do(func() { close(releaseSeal) }) })
@@ -493,7 +497,7 @@ func TestRuntimeRetainsOwnerWhenSessionDeliveryCannotPersistSealedAcknowledgemen
 	go func() { closed <- r.Close(ctx) }()
 	waitRuntime(t, r, func() bool {
 		status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
-		return err == nil && found && status.Stage == lifecycle.RuntimeCloseHostFlushing
+		return err == nil && found && status.Stage == lifecycle.RuntimeCloseHistoryFlushing
 	}, "Runtime Close to wait for the sealed History acknowledgement")
 	releaseOnce.Do(func() { close(releaseSeal) })
 	select {

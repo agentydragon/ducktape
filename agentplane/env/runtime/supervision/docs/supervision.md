@@ -1,17 +1,11 @@
 # Native process supervision
 
-The reusable launchers, COSI process controller and process registry live in
-[`agentplane/env/runtime/supervision`](../). Environment Runtime, Harness Host and
-Execution Service each own their component lifetime. One COSI process controller and registry
-serve scoped owner views with separate contexts, process domains, worker tracking and error callbacks. Native adapters and script workers publish
-`supervision.ProcessConfig` through `supervision.ManagedProcess`; owning controllers retain
-readiness, restart and journal decisions. A completed attempt never relaunches during reconciliation.
-
-| Owner               | Processes and state                                                                                                        |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Environment Runtime | Environment bootstrap, Host/Execution lifecycle, History delivery, environment generation and environment state-owner lock |
-| Harness Host        | Shared Codex app-server, Claude Sessions, Session setup/workspace helpers and Session journals                             |
-| Execution Service   | Native exec-server and execution requests; the Pod companion owns the native executor's separate PID namespace             |
+The reusable launchers, COSI process controller and registry live in
+[`agentplane/env/runtime/supervision`](../). Runtime owns environment lifetime and constructs
+scoped process views for bootstrap/Execution and native harness work. One process controller shares
+attempt identities while each domain retains its native supervisor, worker join and error callback.
+Adapters and scripts publish `ProcessConfig` and retain `ManagedProcess` handles; their controllers
+own readiness, restart and journal decisions. A completed attempt never relaunches on reconciliation.
 
 Each supervisor creates `Process` handles through a private backend interface. `Process` owns
 streams, PID and completion result; the backend owns launch, observation and execution-domain
@@ -23,7 +17,7 @@ COSI-managed launches use `ProcessDesiredStates`, `ProcessStatuses` and a finali
 Launch callbacks and native handles stay in the registry. Teardown joins an in-flight start and
 fences any instance it returns before releasing the finalizer. Owners check remaining process
 intents in their process domain before acknowledging cleanup; a reader observing leader exit cannot
-hide a failed fence. The Harness Host drain ignores Runtime-domain attempts, whose cleanup is owned
+hide a failed fence. The Session aggregate drain ignores Runtime-domain attempts, whose cleanup is owned
 by the Runtime's barriers.
 VM native-process status also carries the latest typed systemd observation for that attempt,
 including start-request acceptance or an unconfirmed reply, the expected and observed invocation IDs
@@ -38,11 +32,10 @@ Embedded VM Execution registers its exec-server with the Runtime process control
 standalone Execution retains its independent supervisor. Execution's managed fence timeout is
 90 seconds, independent of the unit's 5-second systemd stop grace.
 
-Runtime coordinates its embedded process owners with direct calls. Host reports native stop against the
-exact Runtime boot ID and lifecycle generation. Runtime fences Execution before authorizing
-Host sealing and waits for the matching seal/History ACK before completing quiesce. The
-[Host protocol](../../harnesshost/SPEC.md) and [environment lifecycle](../../docs/lifecycle.md) define those
-barriers. Host failure closes admission and Runtime drains native work without inventing a seal.
+Runtime's Session aggregate observes exact-generation native cleanup before Execution is fenced
+and journals seal. Exact durable History acknowledgements remain a separate barrier. See the
+[Runtime contract](../../SPEC.md) and [lifecycle ordering](../../docs/lifecycle.md). Component failure
+closes admission and drains native work without creating a seal.
 
 ## VM services
 
@@ -87,7 +80,7 @@ cleanup of that same identity. An uncertain launch never creates a second unit t
 Native effects remain subject to journal reconciliation.
 
 `PrepareForOwner` takes an explicit service unit, lifetime directory and scope ID. Runtime uses the
-legacy Runner scope ID. Host uses `harness-host` and Execution uses `execution-service`; their
+legacy Runner scope ID. Native harnesses use `harness` and Execution uses `execution-service`; their
 native scopes remain independent. All three bind their native units to
 `agentplane-environment-runtime.service` and require its invocation marker under
 `/run/agentplane-environment-runtime-lifetime`.

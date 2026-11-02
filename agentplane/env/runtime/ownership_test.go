@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/harness"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 )
 
 const ownershipFixtureMode = "--test-runtime-ownership-fixture"
@@ -26,37 +26,32 @@ func runOwnershipFixture(args []string) error {
 	launch := configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}}
 	config := Config{
 		StateDir: root, Launch: launch, Supervision: "subprocess", Control: insecureControl(),
-		HostIngress: configuration.Endpoint{Target: history},
-		HostConfig: harnesshost.Config{
-			Launch: launch, WorkspaceRoot: root, InitializationCwd: root,
-			Claude: &harness.LaunchConfig{Binary: "/bin/false", BaseURL: endpoint, Token: "test"},
-		},
+		HistoryIngress: configuration.Endpoint{Target: history},
+		WorkspaceRoot:  root, InitializationCwd: root,
+		Claude: &harness.LaunchConfig{Binary: "/bin/false", BaseURL: endpoint, Token: "test"},
 	}
 	r, err := New(config)
 	if err != nil {
 		return err
 	}
 	ctx := context.Background()
-	if err := r.startHost(); err != nil {
+	if err := r.startSessions(); err != nil {
 		return err
 	}
-	if err := r.waitForInitialHost(ctx); err != nil {
+	if err := r.waitForInitialSessions(ctx); err != nil {
 		return err
 	}
 	if err := r.adoptIncarnation(ctx, "test-incarnation"); err != nil {
 		return err
 	}
-	r.mu.Lock()
-	host, binding := r.sessions, r.intent.Binding
-	r.mu.Unlock()
-	bound, err := host.BoundContext(ctx, binding)
-	if err != nil {
-		return err
-	}
 	setup := fmt.Sprintf("trap '' TERM\nsleep 60 &\nprintf '%%s\\n' $! > %s\nprintf '%%s\\n' $$ > %s\nmv %s %s\nwait", shellQuote(filepath.Join(root, "descendant-pid")), shellQuote(filepath.Join(root, "native-pid.tmp")), shellQuote(filepath.Join(root, "native-pid.tmp")), shellQuote(filepath.Join(root, "native-pid")))
 	request := openLifecycleSession("session-1", filepath.Join(root, "workspace"))
 	request.SetupScript = &setup
-	if _, err := host.OpenSession(bound, request); err != nil {
+	record, err := retained.NewRecord(request.Spec, setup, nil)
+	if err != nil {
+		return err
+	}
+	if _, err := r.sessions.ReserveFresh(ctx, request.SessionId, func() error { return r.store.Write(request.SessionId, record) }); err != nil {
 		return err
 	}
 	select {}

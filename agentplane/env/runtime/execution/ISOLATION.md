@@ -11,7 +11,7 @@
 - Protecting Environment Runtime's and other Agentplane programs' files from agent writes is a
   lower-priority goal.
 
-These goals allow Runtime, Harness Host and Execution Service management code to share a process.
+These goals allow Runtime, Runtime and Execution Service management code to share a process.
 
 Resource containment and signal permissions are separate protections. Cgroups constrain resource
 usage; they do not prevent an agent from signaling a server running under the same UID. Signal
@@ -49,7 +49,7 @@ provide the intended harness-versus-command resource boundary in either environm
 
 In VMs, the shared Codex app-server runs under `agentplane-workloads.slice`. Each Claude harness
 also has its own transient service there, with its Bash descendants. The workload slice's aggregate
-budget is shared across those services. Runtime, Harness Host and Execution Service share one
+budget is shared across those services. Runtime, Runtime and Execution Service share one
 management service cgroup. In Pods, the runner container also contains Claude and its direct tool processes,
 so their memory contributes to that container's limit.
 

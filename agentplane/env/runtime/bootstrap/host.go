@@ -151,12 +151,12 @@ func (h *Host) Request(ctx context.Context) error {
 	if found {
 		return requestRefusal(current.Mode)
 	}
-	return status.Error(codes.Unavailable, "Harness Host desired state is not initialized")
+	return status.Error(codes.Unavailable, "Runtime desired state is not initialized")
 }
 
 func requestRefusal(mode lifecycle.Mode) error {
 	if mode == lifecycle.Closing {
-		return status.Error(codes.Unavailable, "Harness Host is closing")
+		return status.Error(codes.Unavailable, "Runtime is closing")
 	}
 	return status.Error(codes.Aborted, "this Sandbox is quiesced or bootstrap admission changed")
 }

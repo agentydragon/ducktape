@@ -8,11 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
-	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
@@ -33,11 +31,11 @@ func (s *heldSuccessorDemand) Modify(ctx context.Context, value resource.Resourc
 	if value.Metadata().Type() != session.ReconcileSnapshotType || !s.armed.Load() {
 		return nil
 	}
-	current, found, err := cosi.Read(ctx, s.State, lifecycle.HostIntentStatusResource(lifecycle.HostIntentStatus{}))
+	current, found, err := lifecycle.ReadEnvironmentDesired(ctx, s.State)
 	if err != nil {
 		return err
 	}
-	if found && current.Intent.IncarnationUID == "successor" && current.Intent.Mode == runtimepb.LifecycleIntent_RUNNING && !current.Applied && current.Error == "" && s.armed.CompareAndSwap(true, false) {
+	if found && current.IncarnationUID == "successor" && current.Mode == lifecycle.Running && s.armed.CompareAndSwap(true, false) {
 		close(s.entered)
 		select {
 		case <-s.release:
@@ -48,7 +46,7 @@ func (s *heldSuccessorDemand) Modify(ctx context.Context, value resource.Resourc
 	return nil
 }
 
-func TestRuntimeCloseWaitsForApplyingHostIntentAndExecutionFence(t *testing.T) {
+func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 	store := &heldSuccessorDemand{State: state.WrapCore(namespaced.NewState(inmem.Build)), entered: make(chan struct{}), release: make(chan struct{})}
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
@@ -79,37 +77,28 @@ func TestRuntimeCloseWaitsForApplyingHostIntentAndExecutionFence(t *testing.T) {
 	select {
 	case <-store.entered:
 	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("successor Host intent did not reach Session demand reset")
+		t.Fatal("successor Running revision did not reach Session demand reset")
 	}
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
-	waitRuntime(t, r, func() bool {
-		status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
-		return err == nil && found && status.Stage == lifecycle.RuntimeCloseNativeStopping
-	}, "Close to wait for the Host native-stop barrier")
+	waitRuntime(t, r, func() bool { return r.isClosing() }, "Close to revoke admission while Running preparation settles")
 	r.mu.Lock()
-	closingIntent := r.intent
-	if closingIntent == nil || closingIntent.Mode != runtimepb.LifecycleIntent_CLOSING || closingIntent.IncarnationUid != "successor" {
-		r.mu.Unlock()
-		t.Fatalf("Runtime Close intent = %v, want successor closing intent", closingIntent)
-	}
-	closeGeneration := closingIntent.Binding.Generation
+	preparing, accepted := r.desired, r.admissionOpen
 	r.mu.Unlock()
-	applying, found, err := cosi.Read(context.Background(), r.lifecycleState, lifecycle.HostIntentStatusResource(lifecycle.HostIntentStatus{}))
-	if err != nil || !found || applying.Intent.IncarnationUID != "successor" || applying.Intent.Generation >= closeGeneration || applying.Applied || applying.Error != "" {
-		t.Fatalf("Host status while Close waits = %+v, found=%t, err=%v; want older Applying intent", applying, found, err)
+	if preparing.Mode != lifecycle.Running || preparing.IncarnationUID != "successor" || accepted {
+		t.Fatalf("revision while Close waits for preparation: desired=%+v accepted=%t", preparing, accepted)
 	}
 	select {
 	case err := <-closeDone:
-		t.Fatalf("Close returned before the applying Host intent settled: %v", err)
+		t.Fatalf("Close returned before the Running preparation settled: %v", err)
 	default:
 	}
 	if successor.fences.Load() != 0 {
-		t.Fatal("Execution fence started before the Host acknowledged Close")
+		t.Fatal("Execution fence started before the Session component completed native shutdown")
 	}
 	if owner, err := openEnvironmentOwner(config.StateDir); err == nil {
 		_ = owner.Close()
-		t.Fatal("environment owner released while Host intent was applying")
+		t.Fatal("environment owner released while Running preparation was unsettled")
 	}
 	releaseDemand.Do(func() { close(store.release) })
 	select {
@@ -128,7 +117,7 @@ func TestRuntimeCloseWaitsForApplyingHostIntentAndExecutionFence(t *testing.T) {
 	}
 	releaseFence.Do(func() { close(successor.release) })
 	if err := waitClose(t, closeDone); err != nil {
-		t.Fatalf("Close after intent and fence settled: %v", err)
+		t.Fatalf("Close after preparation and fence settled: %v", err)
 	}
 	if err := waitClose(t, adoptionDone); err == nil {
 		t.Fatal("superseded adoption succeeded during Close")

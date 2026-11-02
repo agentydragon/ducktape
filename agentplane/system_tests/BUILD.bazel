@@ -106,7 +106,7 @@ py_test(
         ":sandbox",
         "//:conftest",
         "//agentplane/app/testing:client",
-        "//agentplane/env/runtime/harnesshost:harness",
+        "//agentplane/env/runtime:harness",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway/dispatcher:testing_client",
@@ -143,7 +143,7 @@ py_test(
         "//:conftest",
         "//agentplane/app/testing:client",
         "//agentplane/app/testing:models",
-        "//agentplane/env/runtime/harnesshost:harness",
+        "//agentplane/env/runtime:harness",
         "//agentplane/history_service/fold:views",
         "//agentplane/native/claude:wire",
         "//agentplane/native/codex:wire",
@@ -249,7 +249,7 @@ py_library(
     name = "ollama_catalog",
     srcs = ["ollama_catalog.py"],
     deps = [
-        "//agentplane/env/runtime/harnesshost:harness",
+        "//agentplane/env/runtime:harness",
         "//agentplane/proto:session_pb2",
         "//agentplane/sandboxes/runtimeconfig:model_catalog",
         "@pypi//protobuf",
@@ -316,7 +316,7 @@ py_library(
     srcs = ["launch_preset.py"],
     deps = [
         "//agentplane/app:presets",
-        "//agentplane/env/runtime/harnesshost:harness",
+        "//agentplane/env/runtime:harness",
     ],
 )
 
@@ -417,7 +417,7 @@ py_library(
     srcs = ["offered_models.py"],
     deps = [
         "//agentplane/app/testing:client",
-        "//agentplane/env/runtime/harnesshost:harness",
+        "//agentplane/env/runtime:harness",
         "//agentplane/proto:session_pb2",
         "@pypi//protobuf",
     ],

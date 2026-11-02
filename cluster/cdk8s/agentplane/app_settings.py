@@ -10,7 +10,7 @@ from pydantic import AnyHttpUrl
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.settings import AppSettingsConfig, FrontendConfig
-from agentplane.env.runtime.harnesshost.harness import Harness
+from agentplane.env.runtime.harness import Harness
 from agentplane.sandboxes.runtimeconfig.model_catalog import (
     WORKSPACE_ROOT,
     Catalog,

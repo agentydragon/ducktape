@@ -287,20 +287,20 @@ waiting for completion, and subscribing to or cancelling GitHub PR notifications
 
 Each Claude Session runs its own supervised native process, with `CLAUDE_CONFIG_DIR` in the
 Session's state directory. Every Codex Session of a Runner is one thread of the Runner's one Codex
-app-server ([`codexappserver/host.go`](../env/runtime/harnesshost/codexappserver/host.go)), whose `CODEX_HOME` is `<state_dir>/codex`.
+app-server ([`codexappserver/host.go`](../env/runtime/codexappserver/host.go)), whose `CODEX_HOME` is `<state_dir>/codex`.
 The app-server's command line and `CODEX_HOME` are process-wide. `thread/start` and `thread/resume`
 carry each Session's working directory, model, effort, developer instructions and a thread `config`
 map, whose `shell_environment_policy.set` gives a thread's tools its Session's notification
 destination. The Session record stores one Claude session ID or Codex thread ID, and a runner restart
 creates a new process and resumes the native conversation from that store. See
-[`session/`](../env/runtime/harnesshost/session), [`supervision/`](../env/runtime/supervision/),
-[`retained/`](../env/runtime/harnesshost/retained), and the adapters ([Claude](../env/runtime/harnesshost/claude/adapter.go),
-[Codex](../env/runtime/harnesshost/codex/adapter.go)).
+[`session/`](../env/runtime/session), [`supervision/`](../env/runtime/supervision/),
+[`retained/`](../env/runtime/retained), and the adapters ([Claude](../env/runtime/claude/adapter.go),
+[Codex](../env/runtime/codex/adapter.go)).
 
 The shared app-server starts when a Codex Session first needs a harness and stays up until the
 Runner stops or quiesces; it is not reaped when idle. Stopping is phased: every Session halts first
 (its active turn interrupted), each Claude process stops, then the app-server stops once. Its frames
-are assigned by thread ([`codex/router.go`](../env/runtime/harnesshost/codex/router.go)): a response to the Session
+are assigned by thread ([`codex/router.go`](../env/runtime/codex/router.go)): a response to the Session
 whose request it answers, a frame naming a thread to that thread's Session or, for a sub-agent, its
 root's, and a frame naming none, like stderr, to every hosted Session. Thread creation is serialized,
 so a thread naming itself before its `thread/start` response belongs to the one Session creating it.
@@ -408,9 +408,9 @@ the possibly orphaned native data for reconciliation. A lost response after the 
 commit resolves by the same public ID. Claude's current adapter chooses a native ID before launch;
 that narrower path does not solve the harness-chosen-ID crash window in general. Specify the
 reservation/mapping format, native reconciliation proof, and failure status before implementation.
-Today [`Session.startHarness`](../env/runtime/harnesshost/session/native.go) writes the native ID only after adapter handshake;
-[`CodexAdapter`](../env/runtime/harnesshost/codex/adapter.go) starts a native thread during that handshake, and
-[`ClaudeAdapter`](../env/runtime/harnesshost/claude/adapter.go) selects an ID before launch but also persists it afterward.
+Today [`Session.startHarness`](../env/runtime/session/native.go) writes the native ID only after adapter handshake;
+[`CodexAdapter`](../env/runtime/codex/adapter.go) starts a native thread during that handshake, and
+[`ClaudeAdapter`](../env/runtime/claude/adapter.go) selects an ID before launch but also persists it afterward.
 Persisting Claude's chosen ID before launch can narrow its case; Codex still needs a proven recovery
 path for an ID assigned by the harness.
 
@@ -446,9 +446,9 @@ delivery. Loss of runner storage ends runner-owned state; retained History is no
 mapping reconstruction source. An unknown delivery response is handled by the same command ID,
 not by inventing another Session.
 
-## Harness Host lifecycle
+## Runtime lifecycle
 
-**Approved direction (operator, 2026-10-17).** Callers address durable Sessions; the Harness Host owns
+**Approved direction (operator, 2026-10-17).** Callers address durable Sessions; the Runtime owns
 harness startup, native conversation preparation, reconciliation and process replacement. Process
 allocation stays internal. This decision does not select process/store counts, shared-store write
 safety or the remaining native-ID creation contract above.
@@ -456,11 +456,11 @@ safety or the remaining native-ID creation contract above.
 ### Admission and execution
 
 Dispatcher durably queues the exact destination, command ID and payload before acknowledging queued
-acceptance or requesting authorized Sandbox wake. The Harness Host validates membership and durably admits
+acceptance or requesting authorized Sandbox wake. The Runtime validates membership and durably admits
 input **before** starting or resuming its harness. Admission is not native readiness or confirmation
 that the harness consumed the input. An unknown Session is rejected, never implicitly created.
 
-Once admitted, work belongs to the Harness Host despite caller disconnect. It ensures setup and native
+Once admitted, work belongs to the Runtime despite caller disconnect. It ensures setup and native
 conversation preparation, reconciles durable evidence, then delivers input. Concurrent inputs share
 one necessary startup attempt and preserve Session input order. Startup must not hold the admission
 lock across native I/O or prevent controls from being processed. Definitive startup failures become
@@ -495,7 +495,7 @@ effects. Same command ID/payload returns the original admission; conflicting reu
 Keep the guarded turn interrupt control and distinct Sandbox suspend/resume controls. Sending to a
 dormant Session uses runner-managed readiness; existing Sandbox wake authorization still applies.
 The app's manual resume changes Sandbox lifecycle state through Kubernetes; retained native state
-recovery belongs to the Harness Host.
+recovery belongs to the Runtime.
 
 ### Provisional introspection model and Sandbox page
 
