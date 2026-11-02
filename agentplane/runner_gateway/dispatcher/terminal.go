@@ -167,11 +167,11 @@ func executionAccountField(owner *ServiceAccountIdentity, field string) string {
 	}
 	switch field {
 	case "namespace":
-		return owner.Account.Namespace
+		return owner.GetAccount().GetNamespace()
 	case "name":
-		return owner.Account.Name
+		return owner.GetAccount().GetName()
 	case "uid":
-		return owner.UID
+		return owner.GetUid()
 	default:
 		return ""
 	}

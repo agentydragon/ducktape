@@ -380,7 +380,8 @@ func (s *Manager) directOperator(ctx context.Context, caller *ServiceAccountIden
 	if !ok || direct.Pod == nil || !direct.Pod.IsPodBound() || !identityMatches(direct.Caller, caller) {
 		return false
 	}
-	_, configured := s.operatorCallers[direct.Caller.Account]
+	account := direct.Caller.GetAccount()
+	_, configured := s.operatorCallers[auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()}]
 	return configured
 }
 
@@ -419,17 +420,17 @@ func effectiveCaller(ctx context.Context) (*ServiceAccountIdentity, error) {
 	if err != nil {
 		return nil, err
 	}
-	result := &ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: caller.Account.Namespace, Name: caller.Account.Name}, Uid: caller.ServiceAccountUID}
-	if !validServiceAccount(result) {
+	if !validServiceAccount(caller) {
 		return nil, status.Error(codes.Unauthenticated, errInvalidCaller.Error())
 	}
-	return result, nil
+	return caller, nil
 }
 
-func identityMatches(principal auth.ServiceAccountPrincipal, identity *ServiceAccountIdentity) bool {
+func identityMatches(principal *auth.ServiceAccountPrincipal, identity *ServiceAccountIdentity) bool {
 	account := identity.GetAccount()
-	return account != nil && principal.Account.Namespace == account.GetNamespace() && principal.Account.Name == account.GetName() &&
-		principal.ServiceAccountUID == identity.GetUid()
+	principalAccount := principal.GetAccount()
+	return account != nil && principalAccount != nil && principalAccount.GetNamespace() == account.GetNamespace() &&
+		principalAccount.GetName() == account.GetName() && principal.GetUid() == identity.GetUid()
 }
 
 func validTarget(target *Target) bool {

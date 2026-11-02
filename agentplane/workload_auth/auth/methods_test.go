@@ -26,7 +26,7 @@ import (
 type callerHealth struct {
 	healthpb.UnimplementedHealthServer
 	callers    chan auth.Principal
-	effective  chan auth.ServiceAccountPrincipal
+	effective  chan *auth.ServiceAccountPrincipal
 	admissions chan auth.Admission
 }
 
@@ -52,13 +52,13 @@ func (h callerHealth) Check(ctx context.Context, _ *healthpb.HealthCheckRequest)
 	return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}, nil
 }
 
-func serveAdmissionHealth(t *testing.T, methods auth.Methods) (healthpb.HealthClient, <-chan auth.ServiceAccountPrincipal, <-chan auth.Admission) {
+func serveAdmissionHealth(t *testing.T, methods auth.Methods) (healthpb.HealthClient, <-chan *auth.ServiceAccountPrincipal, <-chan auth.Admission) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	effective := make(chan auth.ServiceAccountPrincipal, 8)
+	effective := make(chan *auth.ServiceAccountPrincipal, 8)
 	admissions := make(chan auth.Admission, 8)
 	server := grpc.NewServer(methods.ServerOptions(0)...)
 	healthpb.RegisterHealthServer(server, callerHealth{effective: effective, admissions: admissions})
@@ -303,7 +303,8 @@ func TestReviewedServiceAccountDelegationKeepsActorAndEffectiveCallerSeparate(t 
 	}
 	directEffective := <-effective
 	directAdmission, ok := (<-admissions).(auth.DirectAdmission)
-	if !ok || directEffective.Account != caller || directEffective.ServiceAccountUID != string(callerAccount.UID) ||
+	directAccount := directEffective.GetAccount()
+	if !ok || directAccount.GetNamespace() != caller.Namespace || directAccount.GetName() != caller.Name || directEffective.GetUid() != string(callerAccount.UID) ||
 		directAdmission.Pod == nil || !directAdmission.Pod.IsPodBound() {
 		t.Fatalf("direct admission did not preserve caller and Pod proof: effective=%+v admission=%#v", directEffective, directAdmission)
 	}
@@ -312,9 +313,12 @@ func TestReviewedServiceAccountDelegationKeepsActorAndEffectiveCallerSeparate(t 
 	}
 	delegatedEffective := <-effective
 	delegatedAdmission, ok := (<-admissions).(auth.DelegatedAdmission)
-	if !ok || delegatedEffective != directEffective || delegatedAdmission.Actor.Account != actor ||
+	delegatedAccount := delegatedEffective.GetAccount()
+	if !ok || directAccount.GetNamespace() != delegatedAccount.GetNamespace() || directAccount.GetName() != delegatedAccount.GetName() ||
+		delegatedEffective.GetUid() != directEffective.GetUid() || delegatedAdmission.Actor.Account != actor ||
 		delegatedAdmission.Actor.ServiceAccountUID != string(actorAccount.UID) || !delegatedAdmission.Actor.IsPodBound() ||
-		delegatedAdmission.EffectiveCaller.Account != caller || delegatedAdmission.EffectiveCaller.ServiceAccountUID != string(callerAccount.UID) {
+		delegatedAdmission.EffectiveCaller.GetAccount().GetNamespace() != caller.Namespace ||
+		delegatedAdmission.EffectiveCaller.GetAccount().GetName() != caller.Name || delegatedAdmission.EffectiveCaller.GetUid() != string(callerAccount.UID) {
 		t.Fatalf("delegated admission conflated actor and caller: effective=%+v admission=%#v", delegatedEffective, delegatedAdmission)
 	}
 	delegatedContext := delegationContext(t, actorToken, caller, string(callerAccount.UID))
@@ -399,7 +403,7 @@ func TestReviewedServiceAccountDelegationKeepsActorAndEffectiveCallerSeparate(t 
 		t.Fatalf("direct account-token call: %v", err)
 	}
 	accountOnlyAdmission := <-admissions
-	if direct, ok := accountOnlyAdmission.(auth.DirectAdmission); !ok || direct.Caller.ServiceAccountUID != string(callerAccount.UID) || direct.Pod != nil {
+	if direct, ok := accountOnlyAdmission.(auth.DirectAdmission); !ok || direct.Caller.GetUid() != string(callerAccount.UID) || direct.Pod != nil {
 		t.Fatalf("account-token direct admission manufactured Pod proof: %#v", accountOnlyAdmission)
 	}
 }

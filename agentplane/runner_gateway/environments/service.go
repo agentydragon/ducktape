@@ -8,8 +8,6 @@ import (
 	"slices"
 	"time"
 
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/view"
@@ -103,19 +101,28 @@ func (s *Service) ResumeEnvironment(ctx context.Context, request *environmentpb.
 	return s.lifecycle.ResumeEnvironment(ctx, request)
 }
 
-func caller(ctx context.Context) (auth.ServiceAccountPrincipal, error) {
+func serviceAccountReference(identity *auth.ServiceAccountPrincipal) auth.Account {
+	if identity == nil {
+		return auth.Account{}
+	}
+	account := identity.GetAccount()
+	return auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()}
+}
+
+func caller(ctx context.Context) (*auth.ServiceAccountPrincipal, error) {
 	identity, err := auth.EffectiveCaller(ctx)
 	if err != nil {
-		return auth.ServiceAccountPrincipal{}, err
+		return nil, err
 	}
-	if identity.Account.Namespace == "" || identity.Account.Name == "" || identity.ServiceAccountUID == "" {
-		return auth.ServiceAccountPrincipal{}, status.Error(codes.Unauthenticated, "effective ServiceAccount identity is incomplete")
+	if identity == nil || identity.GetAccount() == nil || identity.GetAccount().GetNamespace() == "" ||
+		identity.GetAccount().GetName() == "" || identity.GetUid() == "" {
+		return nil, status.Error(codes.Unauthenticated, "effective ServiceAccount identity is incomplete")
 	}
 	return identity, nil
 }
 
 // broadReader applies only to direct credentials; delegated actors never lend their grants to a caller.
-func (s *Service) broadReader(ctx context.Context, identity auth.ServiceAccountPrincipal) bool {
+func (s *Service) broadReader(ctx context.Context, identity *auth.ServiceAccountPrincipal) bool {
 	admission, err := auth.Admitted(ctx)
 	if err != nil {
 		return false
@@ -123,13 +130,14 @@ func (s *Service) broadReader(ctx context.Context, identity auth.ServiceAccountP
 	if _, ok := admission.(auth.DirectAdmission); !ok {
 		return false
 	}
-	_, ok := s.readers[identity.Account]
+	_, ok := s.readers[serviceAccountReference(identity)]
 	return ok
 }
 
-func callerMatches(caller auth.ServiceAccountPrincipal, execution *sandboxreader.ServiceAccountIdentity) bool {
-	return execution != nil && execution.GetAccount() != nil && caller.Account.Namespace == execution.GetAccount().GetNamespace() &&
-		caller.Account.Name == execution.GetAccount().GetName() && caller.ServiceAccountUID == execution.GetUid()
+func callerMatches(caller *auth.ServiceAccountPrincipal, execution *sandboxreader.ServiceAccountIdentity) bool {
+	return caller != nil && execution != nil && execution.GetAccount() != nil &&
+		caller.GetAccount().GetNamespace() == execution.GetAccount().GetNamespace() &&
+		caller.GetAccount().GetName() == execution.GetAccount().GetName() && caller.GetUid() == execution.GetUid()
 }
 
 func (s *Service) ListEnvironments(ctx context.Context, request *environmentpb.ListEnvironmentsRequest) (*environmentpb.ListEnvironmentsResponse, error) {
@@ -151,10 +159,11 @@ func (s *Service) ListEnvironments(ctx context.Context, request *environmentpb.L
 	// that candidate directly; a namespace-wide continuation token could reveal another Sandbox's
 	// storage key even when its object is filtered out. The list contract keeps its page shape for
 	// future account mappings without making today's lookup depend on foreign inventory.
-	if identity.Account.Namespace != s.namespace {
+	account := serviceAccountReference(identity)
+	if account.Namespace != s.namespace {
 		return response, nil
 	}
-	view, err := s.sandboxes.Get(ctx, identity.Account.Name)
+	view, err := s.sandboxes.Get(ctx, account.Name)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return response, nil
@@ -190,7 +199,7 @@ func (s *Service) ListEnvironments(ctx context.Context, request *environmentpb.L
 
 // listAll is used only by a direct, explicitly granted inventory reader. Its Kubernetes
 // continuation may include names only that principal is authorized to discover.
-func (s *Service) listAll(ctx context.Context, request *environmentpb.ListEnvironmentsRequest, identity auth.ServiceAccountPrincipal) (*environmentpb.ListEnvironmentsResponse, error) {
+func (s *Service) listAll(ctx context.Context, request *environmentpb.ListEnvironmentsRequest, identity *auth.ServiceAccountPrincipal) (*environmentpb.ListEnvironmentsResponse, error) {
 	var list api.SandboxList
 	opts := []client.ListOption{client.InNamespace(s.namespace), client.Limit(int64(request.GetLimit()))}
 	if request.GetPageToken() != "" {
@@ -236,7 +245,7 @@ func (s *Service) GetEnvironment(ctx context.Context, request *environmentpb.Get
 func (s *Service) getEnvironment(
 	ctx context.Context,
 	request *environmentpb.GetEnvironmentRequest,
-	identity auth.ServiceAccountPrincipal,
+	identity *auth.ServiceAccountPrincipal,
 ) (*environmentpb.EnvironmentDescriptor, string, error) {
 	target := request.GetTarget()
 	if target == nil || target.GetNamespace() == "" || target.GetName() == "" || target.GetUid() == "" {
@@ -298,7 +307,7 @@ func deleting(object *api.Sandbox) bool {
 func (s *Service) revalidateDescriptor(
 	ctx context.Context,
 	descriptor *environmentpb.EnvironmentDescriptor,
-	caller auth.ServiceAccountPrincipal,
+	caller *auth.ServiceAccountPrincipal,
 	broad bool,
 ) (*sandboxreader.ServiceAccountIdentity, bool, bool, error) {
 	target := descriptor.GetTarget()
@@ -334,7 +343,7 @@ func (s *Service) describe(
 	ctx context.Context,
 	object *api.Sandbox,
 	execution *sandboxreader.ServiceAccountIdentity,
-	caller auth.ServiceAccountPrincipal,
+	caller *auth.ServiceAccountPrincipal,
 ) (*environmentpb.EnvironmentDescriptor, error) {
 	var pod *corev1.Pod
 	if incarnation := object.Status.Incarnation; incarnation != nil {
@@ -370,10 +379,7 @@ func (s *Service) describe(
 			return nil, err
 		}
 		if object.Status.OperatingMode == api.OperatingModeSuspended {
-			wake, err := s.lifecycle.AssessAutomaticWake(ctx, target, &lifecycle.ServiceAccountIdentity{
-				Account: &identitypb.ServiceAccount{Namespace: caller.Account.Namespace, Name: caller.Account.Name},
-				Uid:     caller.ServiceAccountUID,
-			})
+			wake, err := s.lifecycle.AssessAutomaticWake(ctx, target, caller)
 			if err != nil {
 				return nil, status.Error(codes.Unavailable, "automatic wake eligibility is unavailable")
 			}

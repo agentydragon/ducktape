@@ -255,10 +255,7 @@ func (h *WatchHub) terminalPart(payload string) error {
 	}
 	var owner *ServiceAccountIdentity
 	if assembly.ownerNS != "" && assembly.ownerName != "" {
-		owner = &ServiceAccountIdentity{
-			Account: Account{Namespace: assembly.ownerNS, Name: assembly.ownerName},
-			UID:     assembly.ownerUID,
-		}
+		owner = serviceAccountIdentityFor(Account{Namespace: assembly.ownerNS, Name: assembly.ownerName}, assembly.ownerUID)
 	}
 	h.notifyTerminal(TerminalEvent{ID: item.GetEventId(), Dispatch: dispatch, Owner: owner})
 	return nil

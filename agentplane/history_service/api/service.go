@@ -102,19 +102,23 @@ func (s *Service) scopedReader(ctx context.Context) (*reads.Reader, error) {
 	if err != nil {
 		return nil, err
 	}
+	account := caller.GetAccount()
+	if account == nil || account.GetNamespace() == "" || account.GetName() == "" || caller.GetUid() == "" {
+		return nil, status.Error(codes.Unauthenticated, "effective ServiceAccount identity is incomplete")
+	}
 	admission, err := auth.Admitted(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if direct, ok := admission.(auth.DirectAdmission); ok && direct.Pod != nil && direct.Pod.IsPodBound() {
-		if _, privileged := s.readerAccounts[caller.Account]; privileged {
+		if _, privileged := s.readerAccounts[auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()}]; privileged {
 			return s.reader.WithReadScope(storage.AllSessions()), nil
 		}
 	}
 	principal := storage.ExecutionPrincipal{
-		Namespace: caller.Account.Namespace,
-		Name:      caller.Account.Name,
-		UID:       caller.ServiceAccountUID,
+		Namespace: account.GetNamespace(),
+		Name:      account.GetName(),
+		UID:       caller.GetUid(),
 	}
 	return s.reader.WithReadScope(storage.OwnedBy(principal)), nil
 }

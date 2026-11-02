@@ -7,7 +7,6 @@ import (
 	"time"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/google/uuid"
@@ -28,9 +27,7 @@ func (w *callbackWake) RequestWake(
 ) (*environmentpb.WakeAssessment, error) {
 	w.calls++
 	w.callers = append(w.callers, caller)
-	wait, err := w.store.ReserveWakeAttempt(ctx, ServiceAccountIdentity{
-		Account: Account{Namespace: caller.GetAccount().GetNamespace(), Name: caller.GetAccount().GetName()}, UID: caller.GetUid(),
-	}, target.GetUid(), 41)
+	wait, err := w.store.ReserveWakeAttempt(ctx, caller, target.GetUid(), 41)
 	if err != nil {
 		return nil, err
 	}
@@ -52,13 +49,11 @@ type executionAccountCatalog struct {
 	accountUID string
 }
 
-func (c *executionAccountCatalog) GetExecutionAccount(_ context.Context, sandbox SandboxSnapshot) (ServiceAccountIdentity, bool, error) {
-	return ServiceAccountIdentity{
-		Account: Account{Namespace: sandbox.Namespace, Name: sandbox.Name}, UID: c.accountUID,
-	}, true, nil
+func (c *executionAccountCatalog) GetExecutionAccount(_ context.Context, sandbox SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
+	return serviceAccountIdentityFor(Account{Namespace: sandbox.Namespace, Name: sandbox.Name}, c.accountUID), true, nil
 }
 
-func wakeAttribution(actor, effective ServiceAccountIdentity) *AdmissionAttribution {
+func wakeAttribution(actor, effective *ServiceAccountIdentity) *AdmissionAttribution {
 	return &AdmissionAttribution{
 		Actor: actor, EffectiveCaller: effective,
 		ActorPod: &PodIdentity{Name: "actions-pod", UID: "actions-pod-uid"},
@@ -70,12 +65,13 @@ func openWakeableSession(
 	t *testing.T,
 	store *Store,
 	sessionID, sandboxName, sandboxUID string,
-	actor, effective ServiceAccountIdentity,
+	actor, effective *ServiceAccountIdentity,
 ) *AdmissionAttribution {
 	t.Helper()
 	attribution := wakeAttribution(actor, effective)
+	effectiveAccount := accountOfIdentity(effective)
 	if _, err := store.OpenSessionWithIdentity(context.Background(), sessionID, sandboxName, sandboxUID,
-		&sessionpb.SessionSpec{}, nil, &effective.Account, &effective, &actor, attribution); err != nil {
+		&sessionpb.SessionSpec{}, nil, &effectiveAccount, effective, actor, attribution); err != nil {
 		t.Fatal("open wakeable Session:", err)
 	}
 	return attribution
@@ -84,7 +80,7 @@ func openWakeableSession(
 func TestMixedVersionWakeWritersShareCapAndGenerationDedup(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t, 3)
-	caller := ServiceAccountIdentity{Account: Account{Namespace: "wake-budget-mixed-version", Name: "shared-cap"}, UID: "current-uid"}
+	caller := serviceAccountIdentityFor(Account{Namespace: "wake-budget-mixed-version", Name: "shared-cap"}, "current-uid")
 	const uid = "00000000-0000-4000-8000-000000000091"
 
 	for generation := int64(1); generation <= WakeLimit; generation++ {
@@ -112,7 +108,7 @@ func TestMixedVersionWakeWritersShareCapAndGenerationDedup(t *testing.T) {
 	if err := store.DB.QueryRowContext(ctx, `SELECT count(*),count(*) FILTER (WHERE caller_uid=''),
 		count(*) FILTER (WHERE caller_uid=$3) FROM wake_attempt
 		WHERE caller_namespace=$1 AND caller_name=$2 AND sandbox_uid=$4`,
-		caller.Namespace, caller.Name, caller.UID, uid).Scan(&total, &legacy, &current); err != nil {
+		caller.GetAccount().GetNamespace(), caller.GetAccount().GetName(), caller.GetUid(), uid).Scan(&total, &legacy, &current); err != nil {
 		t.Fatal("count mixed-version wake rows:", err)
 	}
 	if total != WakeLimit || legacy != WakeLimit/2 || current != WakeLimit/2 {
@@ -123,8 +119,8 @@ func TestMixedVersionWakeWritersShareCapAndGenerationDedup(t *testing.T) {
 func TestDeliveryUsesRetainedEffectiveCallerUIDForWakeBudget(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t, 3)
-	actor := ServiceAccountIdentity{Account: Account{Namespace: "agentplane", Name: "actions"}, UID: "actions-uid"}
-	effective := ServiceAccountIdentity{Account: Account{Namespace: "agentplane", Name: "delegate"}, UID: "delegate-uid"}
+	actor := serviceAccountIdentityFor(Account{Namespace: "agentplane", Name: "actions"}, "actions-uid")
+	effective := serviceAccountIdentityFor(Account{Namespace: "agentplane", Name: "delegate"}, "delegate-uid")
 	wake := &callbackWake{store: store}
 	worker := &DeliveryWorker{Store: store, Wake: wake, Leases: testLease{store: store}}
 	worker.init()
@@ -135,7 +131,7 @@ func TestDeliveryUsesRetainedEffectiveCallerUIDForWakeBudget(t *testing.T) {
 		sandboxName, sandboxUID := fmt.Sprintf("uid-wake-sandbox-%d", i), uuid.NewString()
 		attribution := openWakeableSession(t, store, sessionID, sandboxName, sandboxUID, actor, effective)
 		sandbox := SandboxSnapshot{
-			Name: sandboxName, Namespace: effective.Namespace, UID: sandboxUID,
+			Name: sandboxName, Namespace: effective.GetAccount().GetNamespace(), UID: sandboxUID,
 			Incarnation: "old-pod", Blocker: "sandbox_suspended", WakeOnSend: true,
 		}
 		owner, err := store.ClaimSandboxOwner(ctx, sandboxUID, "wake-lease-"+sessionID, 1, "replica", 0)
@@ -146,8 +142,9 @@ func TestDeliveryUsesRetainedEffectiveCallerUIDForWakeBudget(t *testing.T) {
 		var prepareErr error
 		if kind == "dispatch" {
 			caller := CallerIdentity{ServiceAccountIdentity: effective, Attribution: attribution}
+			effectiveAccount := accountOfIdentity(effective)
 			row, err := store.EnqueueForCaller(ctx, sessionID, sandboxName, sandboxUID,
-				input("uid-wake-command", "hello"), &effective.Account, caller)
+				input("uid-wake-command", "hello"), &effectiveAccount, caller)
 			if err != nil {
 				t.Fatal("enqueue attributed wake command:", err)
 			}
@@ -165,20 +162,18 @@ func TestDeliveryUsesRetainedEffectiveCallerUIDForWakeBudget(t *testing.T) {
 		var effectiveRows, actorRows int
 		if err := store.DB.QueryRowContext(ctx, `SELECT count(*) FROM wake_attempt
 			WHERE caller_namespace=$1 AND caller_name=$2 AND caller_uid=$3 AND sandbox_uid=$4`,
-			effective.Namespace, effective.Name, effective.UID, sandboxUID).Scan(&effectiveRows); err != nil {
+			effective.GetAccount().GetNamespace(), effective.GetAccount().GetName(), effective.GetUid(), sandboxUID).Scan(&effectiveRows); err != nil {
 			t.Fatal("count effective caller wake attempts:", err)
 		}
 		if err := store.DB.QueryRowContext(ctx, `SELECT count(*) FROM wake_attempt
 			WHERE caller_namespace=$1 AND caller_name=$2 AND caller_uid=$3 AND sandbox_uid=$4`,
-			actor.Namespace, actor.Name, actor.UID, sandboxUID).Scan(&actorRows); err != nil {
+			actor.GetAccount().GetNamespace(), actor.GetAccount().GetName(), actor.GetUid(), sandboxUID).Scan(&actorRows); err != nil {
 			t.Fatal("count actor wake attempts:", err)
 		}
 		if effectiveRows != 1 || actorRows != 0 {
 			t.Fatalf("%s wake budget used effective=%d actor=%d rows", kind, effectiveRows, actorRows)
 		}
-		if got := wake.callers[i]; !proto.Equal(got, &identitypb.ServiceAccountIdentity{
-			Account: &identitypb.ServiceAccount{Namespace: effective.Namespace, Name: effective.Name}, Uid: effective.UID,
-		}) {
+		if got := wake.callers[i]; !sameServiceAccountIdentity(got, effective) {
 			t.Fatalf("%s lifecycle caller=%+v, want retained effective identity", kind, got)
 		}
 	}
@@ -229,18 +224,22 @@ func TestLegacyWakeCallerWithoutUIDDoesNotWake(t *testing.T) {
 }
 
 func TestWakeAttributionRequiresEffectiveIdentityAlignment(t *testing.T) {
-	actor := ServiceAccountIdentity{Account: Account{Namespace: "agentplane", Name: "actions"}, UID: "actor-uid"}
-	effective := ServiceAccountIdentity{Account: Account{Namespace: "agentplane", Name: "delegate"}, UID: "effective-uid"}
+	actor := serviceAccountIdentityFor(Account{Namespace: "agentplane", Name: "actions"}, "actor-uid")
+	effective := serviceAccountIdentityFor(Account{Namespace: "agentplane", Name: "delegate"}, "effective-uid")
 	attribution := &AdmissionAttribution{Actor: actor, EffectiveCaller: effective}
-	if err := validateAttribution(attribution, &effective.Account); err != nil {
+	effectiveAccount := accountOfIdentity(effective)
+	actorAccount := accountOfIdentity(actor)
+	if err := validateAttribution(attribution, &effectiveAccount); err != nil {
 		t.Fatalf("valid effective wake identity: %v", err)
 	}
-	if err := validateAttribution(attribution, &actor.Account); err == nil {
+	if err := validateAttribution(attribution, &actorAccount); err == nil {
 		t.Fatal("actor account was accepted as effective wake caller")
 	}
-	withoutUID := *attribution
-	withoutUID.EffectiveCaller.UID = ""
-	if err := validateAttribution(&withoutUID, &effective.Account); err == nil {
+	withoutUID := &AdmissionAttribution{
+		Actor: proto.Clone(actor).(*ServiceAccountIdentity), EffectiveCaller: proto.Clone(effective).(*ServiceAccountIdentity),
+	}
+	withoutUID.EffectiveCaller.Uid = ""
+	if err := validateAttribution(withoutUID, &effectiveAccount); err == nil {
 		t.Fatal("effective caller without a UID was accepted")
 	}
 }
@@ -250,8 +249,8 @@ func TestStoreRejectsMismatchedWakeCaller(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			ctx := context.Background()
 			store := testStore(t, 3)
-			actor := ServiceAccountIdentity{Account: Account{Namespace: "agentplane", Name: "actions"}, UID: "actor-uid"}
-			effective := ServiceAccountIdentity{Account: Account{Namespace: "agentplane", Name: "delegate"}, UID: "effective-uid"}
+			actor := serviceAccountIdentityFor(Account{Namespace: "agentplane", Name: "actions"}, "actor-uid")
+			effective := serviceAccountIdentityFor(Account{Namespace: "agentplane", Name: "delegate"}, "effective-uid")
 			attribution := wakeAttribution(actor, effective)
 			sandboxUID := uuid.NewString()
 			sessionID := "wake-attribution-" + kind
@@ -262,7 +261,7 @@ func TestStoreRejectsMismatchedWakeCaller(t *testing.T) {
 			write := func(wakeCaller *Account) error {
 				if kind == "opening" {
 					_, err := store.OpenSessionWithIdentity(ctx, sessionID, "sandbox", sandboxUID,
-						&sessionpb.SessionSpec{}, nil, wakeCaller, &effective, &actor, attribution)
+						&sessionpb.SessionSpec{}, nil, wakeCaller, effective, actor, attribution)
 					return err
 				}
 				_, err := store.EnqueueForCaller(ctx, sessionID, "sandbox", sandboxUID,
@@ -270,17 +269,19 @@ func TestStoreRejectsMismatchedWakeCaller(t *testing.T) {
 					CallerIdentity{ServiceAccountIdentity: effective, Attribution: attribution})
 				return err
 			}
-			if err := write(&actor.Account); err == nil {
+			actorAccount := accountOfIdentity(actor)
+			effectiveAccount := accountOfIdentity(effective)
+			if err := write(&actorAccount); err == nil {
 				t.Fatal("store accepted a wake caller different from the effective caller")
 			}
-			if err := write(&effective.Account); err != nil {
+			if err := write(&effectiveAccount); err != nil {
 				t.Fatal("store rejected matching wake attribution:", err)
 			}
 			var err error
 			if kind == "opening" {
-				_, err = store.DB.ExecContext(ctx, "UPDATE session_opening SET wake_caller_name=$1 WHERE session_id=$2", actor.Name, sessionID)
+				_, err = store.DB.ExecContext(ctx, "UPDATE session_opening SET wake_caller_name=$1 WHERE session_id=$2", actorAccount.Name, sessionID)
 			} else {
-				_, err = store.DB.ExecContext(ctx, "UPDATE dispatch SET wake_caller_name=$1 WHERE command_id=$2", actor.Name, commandID)
+				_, err = store.DB.ExecContext(ctx, "UPDATE dispatch SET wake_caller_name=$1 WHERE command_id=$2", actorAccount.Name, commandID)
 			}
 			if err != nil {
 				t.Fatal("modify persisted wake caller:", err)
@@ -299,9 +300,8 @@ func TestStoreRejectsMismatchedWakeCaller(t *testing.T) {
 
 func TestWakeBudgetRejectsMissingUID(t *testing.T) {
 	store := testStore(t, 3)
-	if _, err := store.ReserveWakeAttempt(context.Background(), ServiceAccountIdentity{
-		Account: Account{Namespace: "agentplane", Name: "missing-uid"},
-	}, "00000000-0000-4000-8000-000000000093", 1); err == nil {
+	if _, err := store.ReserveWakeAttempt(context.Background(), serviceAccountIdentityFor(Account{Namespace: "agentplane", Name: "missing-uid"}, ""),
+		"00000000-0000-4000-8000-000000000093", 1); err == nil {
 		t.Fatal("wake reservation accepted an identity without a UID")
 	}
 }

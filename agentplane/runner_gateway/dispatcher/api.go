@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"go.opentelemetry.io/otel/attribute"
@@ -30,7 +31,7 @@ type SandboxReader interface {
 // ExecutionAccountReader resolves the current controller-owned ServiceAccount for a Sandbox. The
 // UID is live delivery/write authority; retained reads use the UID recorded in session_opening.
 type ExecutionAccountReader interface {
-	GetExecutionAccount(context.Context, SandboxSnapshot) (ServiceAccountIdentity, bool, error)
+	GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error)
 }
 
 type SandboxSnapshot struct {
@@ -172,7 +173,7 @@ func terminalVisibleTo(event TerminalEvent, caller CallerIdentity) bool {
 	if caller.Privileged {
 		return true
 	}
-	return event.Owner != nil && event.Owner.Account == caller.Account && event.Owner.UID == caller.UID
+	return event.Owner != nil && caller.ServiceAccountIdentity != nil && sameServiceAccountIdentity(event.Owner, caller.ServiceAccountIdentity)
 }
 
 func sendWatchDispatch(
@@ -236,16 +237,11 @@ func (s *Service) caller(ctx context.Context) (CallerIdentity, error) {
 	if err != nil {
 		return CallerIdentity{}, err
 	}
-	attribution := &AdmissionAttribution{
-		Actor: ServiceAccountIdentity{
-			Account: Account{Namespace: effective.Account.Namespace, Name: effective.Account.Name},
-			UID:     effective.ServiceAccountUID,
-		},
-		EffectiveCaller: ServiceAccountIdentity{
-			Account: Account{Namespace: effective.Account.Namespace, Name: effective.Account.Name},
-			UID:     effective.ServiceAccountUID,
-		},
+	if effective == nil || effective.GetAccount() == nil || effective.GetAccount().GetNamespace() == "" ||
+		effective.GetAccount().GetName() == "" || effective.GetUid() == "" {
+		return CallerIdentity{}, status.Error(codes.Unauthenticated, "effective ServiceAccount identity is incomplete")
 	}
+	attribution := &AdmissionAttribution{Actor: effective, EffectiveCaller: effective}
 	privileged := false
 	admission, err := auth.Admitted(ctx)
 	if err != nil {
@@ -256,19 +252,16 @@ func (s *Service) caller(ctx context.Context) (CallerIdentity, error) {
 		direct := call
 		if direct.Pod != nil {
 			attribution.ActorPod = &PodIdentity{Name: direct.Pod.PodName, UID: direct.Pod.PodUID}
-			_, configured := s.DispatcherCallers[effective.Account]
+			_, configured := s.DispatcherCallers[auth.Account{Namespace: effective.GetAccount().GetNamespace(), Name: effective.GetAccount().GetName()}]
 			privileged = configured && direct.Pod.IsPodBound()
 		}
 	case auth.DelegatedAdmission:
 		delegated := call
-		attribution.Actor = ServiceAccountIdentity{
-			Account: Account{Namespace: delegated.Actor.Account.Namespace, Name: delegated.Actor.Account.Name},
-			UID:     delegated.Actor.ServiceAccountUID,
+		attribution.Actor = &ServiceAccountIdentity{
+			Account: &identitypb.ServiceAccount{Namespace: delegated.Actor.Account.Namespace, Name: delegated.Actor.Account.Name},
+			Uid:     delegated.Actor.ServiceAccountUID,
 		}
-		attribution.EffectiveCaller = ServiceAccountIdentity{
-			Account: Account{Namespace: delegated.EffectiveCaller.Account.Namespace, Name: delegated.EffectiveCaller.Account.Name},
-			UID:     delegated.EffectiveCaller.ServiceAccountUID,
-		}
+		attribution.EffectiveCaller = delegated.EffectiveCaller
 		attribution.ActorPod = &PodIdentity{Name: delegated.Actor.PodName, UID: delegated.Actor.PodUID}
 		attribution.Action = &ActionCorrelation{
 			RequestID: delegated.Provenance.GetActionRequestId(), ExecutionID: delegated.Provenance.GetActionExecutionId(),
@@ -280,18 +273,15 @@ func (s *Service) caller(ctx context.Context) (CallerIdentity, error) {
 		return CallerIdentity{}, status.Error(codes.Unauthenticated, "call attribution is invalid")
 	}
 	return CallerIdentity{
-		ServiceAccountIdentity: ServiceAccountIdentity{
-			Account: Account{Namespace: effective.Account.Namespace, Name: effective.Account.Name},
-			UID:     effective.ServiceAccountUID,
-		},
-		Privileged: privileged, Attribution: attribution,
+		ServiceAccountIdentity: effective,
+		Privileged:             privileged, Attribution: attribution,
 	}, nil
 }
 
-func (s *Service) executionAccount(ctx context.Context, sandbox SandboxSnapshot) (ServiceAccountIdentity, bool, error) {
+func (s *Service) executionAccount(ctx context.Context, sandbox SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
 	reader, ok := s.Sandboxes.(ExecutionAccountReader)
 	if !ok {
-		return ServiceAccountIdentity{}, false, errors.New("Sandbox execution account reader unavailable")
+		return nil, false, errors.New("Sandbox execution account reader unavailable")
 	}
 	return reader.GetExecutionAccount(ctx, sandbox)
 }
@@ -302,7 +292,7 @@ func (s *Service) requireLiveExecution(ctx context.Context, opening *Opening, sa
 	if caller.Privileged {
 		return nil
 	}
-	if opening == nil || opening.ExecutionPrincipal == nil || opening.ExecutionPrincipal.UID == "" ||
+	if opening == nil || opening.ExecutionPrincipal == nil || opening.ExecutionPrincipal.GetUid() == "" ||
 		opening.SandboxName != sandbox.Name || opening.SandboxUID != sandbox.UID {
 		return status.Error(codes.PermissionDenied, "caller does not own the Session")
 	}
@@ -310,11 +300,13 @@ func (s *Service) requireLiveExecution(ctx context.Context, opening *Opening, sa
 	if err != nil {
 		return status.Error(codes.Unavailable, "sandbox execution identity unavailable")
 	}
-	if !found || account.UID != opening.ExecutionPrincipal.UID {
+	if !found || account == nil || account.GetUid() != opening.ExecutionPrincipal.GetUid() {
 		return status.Error(codes.FailedPrecondition, "sandbox execution identity changed")
 	}
-	if account.Account != caller.Account || account.UID != caller.UID ||
-		opening.ExecutionPrincipal.Account != caller.Account || opening.ExecutionPrincipal.UID != caller.UID {
+	if caller.ServiceAccountIdentity == nil || !sameServiceAccount(account.GetAccount(), caller.ServiceAccountIdentity.GetAccount()) ||
+		account.GetUid() != caller.ServiceAccountIdentity.GetUid() ||
+		!sameServiceAccount(opening.ExecutionPrincipal.GetAccount(), caller.ServiceAccountIdentity.GetAccount()) ||
+		opening.ExecutionPrincipal.GetUid() != caller.ServiceAccountIdentity.GetUid() {
 		return status.Error(codes.PermissionDenied, "caller does not own the Session")
 	}
 	return nil
@@ -458,7 +450,7 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 	if err != nil {
 		return nil, err
 	}
-	execution := ServiceAccountIdentity{Account: Account{Namespace: current.Namespace, Name: current.Name}}
+	execution := &ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: current.Namespace, Name: current.Name}}
 	if caller.Privileged {
 		account, found, err := s.executionAccount(ctx, current)
 		if err != nil {
@@ -472,13 +464,13 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 		if err != nil {
 			return nil, status.Error(codes.Unavailable, "sandbox execution identity unavailable")
 		}
-		if !found || account != caller.ServiceAccountIdentity {
+		if !found || account == nil || !sameServiceAccountIdentity(account, caller.ServiceAccountIdentity) {
 			return nil, status.Error(codes.PermissionDenied, "caller does not own the Session")
 		}
 		execution = account
 	}
 	row, err := s.Store.OpenSessionWithIdentity(ctx, request.GetSessionId(), request.GetSandbox(), current.UID,
-		request.GetSpec(), request.SetupScript, nil, &execution, &caller.Attribution.Actor, caller.Attribution)
+		request.GetSpec(), request.SetupScript, nil, execution, caller.Attribution.Actor, caller.Attribution)
 	if err != nil {
 		return nil, apiError(err)
 	}

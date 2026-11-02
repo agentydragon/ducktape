@@ -44,12 +44,13 @@ func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamin
 		return err
 	}
 	broad := s.broadReader(ctx, identity)
-	if !broad && identity.Account.Namespace != s.namespace {
+	account := serviceAccountReference(identity)
+	if !broad && account.Namespace != s.namespace {
 		return status.Error(codes.NotFound, "environment not found")
 	}
 	name := ""
 	if !broad {
-		name = identity.Account.Name
+		name = account.Name
 	}
 	initialSandboxes := &sandboxapi.SandboxList{}
 	sandboxes, err := s.watchCollection(ctx, initialSandboxes, s.namespace, name)
@@ -226,7 +227,7 @@ func (s *Service) watchCollection(ctx context.Context, objects client.ObjectList
 	return result, nil
 }
 
-func (s *Service) collection(ctx context.Context, identity auth.ServiceAccountPrincipal, broad bool) ([]*environmentpb.EnvironmentDescriptor, error) {
+func (s *Service) collection(ctx context.Context, identity *auth.ServiceAccountPrincipal, broad bool) ([]*environmentpb.EnvironmentDescriptor, error) {
 	var resources []sandboxapi.Sandbox
 	if broad {
 		var list sandboxapi.SandboxList
@@ -235,7 +236,7 @@ func (s *Service) collection(ctx context.Context, identity auth.ServiceAccountPr
 		}
 		resources = list.Items
 	} else {
-		v, err := s.sandboxes.Get(ctx, identity.Account.Name)
+		v, err := s.sandboxes.Get(ctx, serviceAccountReference(identity).Name)
 		if status.Code(err) == codes.NotFound {
 			return []*environmentpb.EnvironmentDescriptor{}, nil
 		}
@@ -285,8 +286,8 @@ func (s *Service) collection(ctx context.Context, identity auth.ServiceAccountPr
 
 // collectionItem rereads only the Sandbox affected by a source event. The returned Pod name is
 // tracked even when the item is not currently visible, so a later incarnation event can reconcile it.
-func (s *Service) collectionItem(ctx context.Context, identity auth.ServiceAccountPrincipal, broad bool, name string) (*environmentpb.EnvironmentDescriptor, string, error) {
-	if !broad && name != identity.Account.Name {
+func (s *Service) collectionItem(ctx context.Context, identity *auth.ServiceAccountPrincipal, broad bool, name string) (*environmentpb.EnvironmentDescriptor, string, error) {
+	if !broad && name != serviceAccountReference(identity).Name {
 		return nil, "", nil
 	}
 	v, err := s.sandboxes.Get(ctx, name)

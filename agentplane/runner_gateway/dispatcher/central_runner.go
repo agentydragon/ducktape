@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 // CentralTarget is deployment-owned. The Dispatcher selects the service for new sessions.
@@ -28,10 +29,7 @@ func openingExecutionPrincipal(identity *ServiceAccountIdentity) *identitypb.Ser
 	if identity == nil {
 		return nil
 	}
-	return &identitypb.ServiceAccountIdentity{
-		Account: &identitypb.ServiceAccount{Namespace: identity.Account.Namespace, Name: identity.Account.Name},
-		Uid:     identity.UID,
-	}
+	return proto.Clone(identity).(*identitypb.ServiceAccountIdentity)
 }
 
 type openingReader interface {

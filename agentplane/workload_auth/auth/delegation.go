@@ -135,7 +135,7 @@ type Admission interface{ isAdmission() }
 
 // DirectAdmission retains the direct caller's ServiceAccount identity and optional Pod proof.
 type DirectAdmission struct {
-	Caller ServiceAccountPrincipal
+	Caller *ServiceAccountPrincipal
 	Pod    *Principal
 }
 
@@ -145,7 +145,7 @@ func (DirectAdmission) isAdmission() {}
 // The actor is never inserted into the legacy Caller context.
 type DelegatedAdmission struct {
 	Actor           Principal
-	EffectiveCaller ServiceAccountPrincipal
+	EffectiveCaller *ServiceAccountPrincipal
 	Provenance      *delegationpb.Delegation
 }
 
@@ -166,10 +166,10 @@ func Admitted(ctx context.Context) (Admission, error) {
 
 // EffectiveCaller returns only the ServiceAccount identity used for ordinary resource checks.
 // It deliberately does not return the delegated actor or Pod proof.
-func EffectiveCaller(ctx context.Context) (ServiceAccountPrincipal, error) {
+func EffectiveCaller(ctx context.Context) (*ServiceAccountPrincipal, error) {
 	admission, err := Admitted(ctx)
 	if err != nil {
-		return ServiceAccountPrincipal{}, err
+		return nil, err
 	}
 	switch call := admission.(type) {
 	case DirectAdmission:
@@ -177,7 +177,7 @@ func EffectiveCaller(ctx context.Context) (ServiceAccountPrincipal, error) {
 	case DelegatedAdmission:
 		return call.EffectiveCaller, nil
 	default:
-		return ServiceAccountPrincipal{}, errNotAdmitted
+		return nil, errNotAdmitted
 	}
 }
 
@@ -242,10 +242,9 @@ func (p *delegationPolicy) admit(ctx, reviewContext context.Context, authorizati
 	}
 	return withAdmission(ctx, DelegatedAdmission{
 		Actor: actor,
-		EffectiveCaller: ServiceAccountPrincipal{
-			Account:           Account{Namespace: caller.GetAccount().GetNamespace(), Name: caller.GetAccount().GetName()},
-			ServiceAccountUID: caller.GetUid(),
-		},
+		EffectiveCaller: serviceAccountPrincipal(Account{
+			Namespace: caller.GetAccount().GetNamespace(), Name: caller.GetAccount().GetName(),
+		}, caller.GetUid()),
 		Provenance: proto.Clone(envelope).(*delegationpb.Delegation),
 	}), nil
 }

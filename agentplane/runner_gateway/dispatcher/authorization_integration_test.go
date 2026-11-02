@@ -63,7 +63,7 @@ func (r tokenReviewStub) Create(_ context.Context, request *authenticationv1.Tok
 type authorityInventory struct {
 	mu           sync.Mutex
 	sandbox      SandboxSnapshot
-	account      ServiceAccountIdentity
+	account      *ServiceAccountIdentity
 	accountFound bool
 	sandboxErr   error
 }
@@ -77,16 +77,16 @@ func (i *authorityInventory) GetSandbox(_ context.Context, name string) (Sandbox
 	return i.sandbox, name == i.sandbox.Name, nil
 }
 
-func (i *authorityInventory) GetExecutionAccount(_ context.Context, sandbox SandboxSnapshot) (ServiceAccountIdentity, bool, error) {
+func (i *authorityInventory) GetExecutionAccount(_ context.Context, sandbox SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	if sandbox.Name != i.sandbox.Name || sandbox.UID != i.sandbox.UID {
-		return ServiceAccountIdentity{}, false, nil
+		return nil, false, nil
 	}
 	return i.account, i.accountFound, nil
 }
 
-func (i *authorityInventory) setAccount(account ServiceAccountIdentity) {
+func (i *authorityInventory) setAccount(account *ServiceAccountIdentity) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	i.account, i.accountFound = account, true
@@ -185,15 +185,15 @@ func authorityClientWithDelegation(
 func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t, 10)
-	owner := ServiceAccountIdentity{Account: Account(caller), UID: "owner-uid"}
+	owner := serviceAccountIdentityFor(Account(caller), "owner-uid")
 	inventory := &authorityInventory{
 		sandbox: SandboxSnapshot{Name: caller.Name, Namespace: caller.Namespace, UID: authoritySandboxUID},
 		account: owner, accountFound: true,
 	}
 	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true}
 	client := authorityClient(t, store, inventory, tokenReviewStub{
-		"owner-account":   {account: caller, uid: owner.UID},
-		"owner-pod":       {account: caller, uid: owner.UID, pod: true},
+		"owner-account":   {account: caller, uid: owner.GetUid()},
+		"owner-pod":       {account: caller, uid: owner.GetUid(), pod: true},
 		"owner-replaced":  {account: caller, uid: "replacement-uid"},
 		"foreign-account": {account: auth.Account{Namespace: caller.Namespace, Name: "test-stranger"}, uid: "foreign-uid"},
 	}, hub)
@@ -274,7 +274,7 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 	if _, err := client.GetSessionOpening(replacement, &dispatcherpb.GetSessionOpeningRequest{SessionId: "authority-owned-session"}); status.Code(err) != codes.NotFound {
 		t.Fatalf("same-name replacement GetSessionOpening = %v, want NotFound", err)
 	}
-	inventory.setAccount(ServiceAccountIdentity{Account: Account(caller), UID: "replacement-uid"})
+	inventory.setAccount(serviceAccountIdentityFor(Account(caller), "replacement-uid"))
 	inventory.failSandboxRead(errors.New("inventory unavailable for retained reads"))
 	if _, err := client.GetSessionOpening(authorityContext(t, "owner-account"), &dispatcherpb.GetSessionOpeningRequest{SessionId: "authority-owned-session"}); err != nil {
 		t.Fatalf("retained read required a live Sandbox after account replacement: %v", err)
@@ -313,11 +313,11 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 		t.Fatalf("WatchDispatches initial frame = %#v, %v; want caught-up", first, err)
 	}
 	hub.notifyTerminal(TerminalEvent{
-		ID: "foreign-terminal", Owner: &ServiceAccountIdentity{Account: Account(caller), UID: "replacement-uid"},
+		ID: "foreign-terminal", Owner: serviceAccountIdentityFor(Account(caller), "replacement-uid"),
 		Dispatch: &dispatcherpb.Dispatch{CommandId: "foreign-terminal-command", SessionId: "authority-terminal-watch", Sandbox: caller.Name, SandboxUid: authoritySandboxUID, State: dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED},
 	})
 	hub.notifyTerminal(TerminalEvent{
-		ID: "owned-terminal", Owner: &owner,
+		ID: "owned-terminal", Owner: owner,
 		Dispatch: &dispatcherpb.Dispatch{CommandId: "owned-terminal-command", SessionId: "authority-terminal-watch", Sandbox: caller.Name, SandboxUid: authoritySandboxUID, State: dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED},
 	})
 	terminalFrame, err := stream.Recv()
@@ -336,7 +336,7 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	snapshot := SandboxSnapshot{Name: effective.Name, Namespace: effective.Namespace, UID: authoritySandboxUID}
 	inventory := &authorityInventory{
 		sandbox: snapshot,
-		account: ServiceAccountIdentity{Account: Account(effective), UID: effectiveUID}, accountFound: true,
+		account: serviceAccountIdentityFor(Account(effective), effectiveUID), accountFound: true,
 	}
 	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true}
 	delegatedMethods := []string{
@@ -373,8 +373,8 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 		t.Fatalf("delegated idempotent opening retry: %#v %v", openingRetry, err)
 	}
 	opening, err := store.GetOpening(ctx, sessionID)
-	if err != nil || opening.Creator == nil || opening.Creator.Account != Account(effective) || opening.Attribution == nil ||
-		opening.Attribution.Actor.Account != Account(effective) || opening.Attribution.EffectiveCaller.Account != Account(effective) || opening.Attribution.Action != nil {
+	if err != nil || opening.Creator == nil || accountOfIdentity(opening.Creator) != Account(effective) || opening.Attribution == nil ||
+		accountOfIdentity(opening.Attribution.Actor) != Account(effective) || accountOfIdentity(opening.Attribution.EffectiveCaller) != Account(effective) || opening.Attribution.Action != nil {
 		t.Fatalf("delegated retry replaced direct opening admission evidence: %#v %v", opening, err)
 	}
 	if directOpening.GetOpening().GetSessionId() != sessionID || opening.WakeEligible {
@@ -398,8 +398,8 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 		t.Fatalf("direct-to-delegated operation retry was not reconciled: first=%+v second=%+v err=%v", first, second, err)
 	}
 	directRetry, err := store.GetDispatch(ctx, "direct-to-action-retry")
-	if err != nil || directRetry.Position != firstStored.Position || directRetry.Attribution == nil || directRetry.Attribution.Actor.Account != Account(effective) ||
-		directRetry.Attribution.EffectiveCaller.Account != Account(effective) || directRetry.Attribution.Action != nil {
+	if err != nil || directRetry.Position != firstStored.Position || directRetry.Attribution == nil || accountOfIdentity(directRetry.Attribution.Actor) != Account(effective) ||
+		accountOfIdentity(directRetry.Attribution.EffectiveCaller) != Account(effective) || directRetry.Attribution.Action != nil {
 		t.Fatalf("Action retry replaced original direct admission evidence: %+v %v", directRetry, err)
 	}
 
@@ -410,9 +410,9 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 		t.Fatalf("delegated effective caller command: %v", err)
 	}
 	stored, err := store.GetDispatch(ctx, created.GetDispatch().GetCommandId())
-	if err != nil || stored.Attribution == nil || stored.Attribution.Actor.Account != Account(caller) ||
-		stored.Attribution.Actor.UID != actorUID || stored.Attribution.ActorPod == nil ||
-		stored.Attribution.EffectiveCaller.Account != Account(effective) || stored.Attribution.EffectiveCaller.UID != effectiveUID ||
+	if err != nil || stored.Attribution == nil || accountOfIdentity(stored.Attribution.Actor) != Account(caller) ||
+		stored.Attribution.Actor.GetUid() != actorUID || stored.Attribution.ActorPod == nil ||
+		accountOfIdentity(stored.Attribution.EffectiveCaller) != Account(effective) || stored.Attribution.EffectiveCaller.GetUid() != effectiveUID ||
 		stored.Attribution.Action == nil || stored.Attribution.Action.RequestID != requestID || stored.Attribution.Action.ExecutionID != executionID {
 		t.Fatalf("delegated admission evidence was not durably retained distinctly: %+v %v", stored, err)
 	}
@@ -459,9 +459,9 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	}
 
 	foreignID := "delegated-foreign-session"
-	foreignIdentity := ServiceAccountIdentity{Account: Account(foreign), UID: "foreign-caller-uid"}
+	foreignIdentity := serviceAccountIdentityFor(Account(foreign), "foreign-caller-uid")
 	foreignOpening, err := store.OpenSessionWithIdentity(ctx, foreignID, snapshot.Name, snapshot.UID,
-		&sessionpb.SessionSpec{}, nil, nil, &foreignIdentity, &foreignIdentity, nil)
+		&sessionpb.SessionSpec{}, nil, nil, foreignIdentity, foreignIdentity, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -545,13 +545,13 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 
 type changingExecutionCatalog struct {
 	testCatalog
-	accounts []ServiceAccountIdentity
+	accounts []*ServiceAccountIdentity
 	calls    int
 }
 
-func (c *changingExecutionCatalog) GetExecutionAccount(context.Context, SandboxSnapshot) (ServiceAccountIdentity, bool, error) {
+func (c *changingExecutionCatalog) GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
 	if c.calls >= len(c.accounts) {
-		return ServiceAccountIdentity{}, false, fmt.Errorf("unexpected extra execution account read %d", c.calls+1)
+		return nil, false, fmt.Errorf("unexpected extra execution account read %d", c.calls+1)
 	}
 	account := c.accounts[c.calls]
 	c.calls++
@@ -562,7 +562,7 @@ func TestPendingExecutionUIDBindsOnceAndReplacementStopsRunnerDelivery(t *testin
 	ctx := context.Background()
 	store := testStore(t, 3)
 	snapshot := SandboxSnapshot{Name: caller.Name, Namespace: caller.Namespace, UID: pendingSandboxUID}
-	pending := ServiceAccountIdentity{Account: Account(caller)}
+	pending := serviceAccountIdentityFor(Account(caller), "")
 	opening, err := store.OpenSessionWithIdentity(
 		ctx,
 		"authority-pending-session",
@@ -571,18 +571,18 @@ func TestPendingExecutionUIDBindsOnceAndReplacementStopsRunnerDelivery(t *testin
 		&sessionpb.SessionSpec{},
 		nil,
 		nil,
-		&pending,
-		&ServiceAccountIdentity{Account: Account(caller), UID: "creator-uid"},
+		pending,
+		serviceAccountIdentityFor(Account(caller), "creator-uid"),
 		nil,
 	)
-	if err != nil || opening.ExecutionPrincipal == nil || opening.ExecutionPrincipal.UID != "" {
+	if err != nil || opening.ExecutionPrincipal == nil || opening.ExecutionPrincipal.GetUid() != "" {
 		t.Fatalf("seed pending opening: %#v %v", opening, err)
 	}
 	catalog := &changingExecutionCatalog{
 		testCatalog: testCatalog{sandbox: snapshot},
-		accounts: []ServiceAccountIdentity{
-			{Account: Account(caller), UID: "managed-account-uid"},
-			{Account: Account(caller), UID: "replacement-account-uid"},
+		accounts: []*ServiceAccountIdentity{
+			serviceAccountIdentityFor(Account(caller), "managed-account-uid"),
+			serviceAccountIdentityFor(Account(caller), "replacement-account-uid"),
 		},
 	}
 	runner := &acceptingRunner{calls: make(chan string, 2)}
@@ -601,7 +601,7 @@ func TestPendingExecutionUIDBindsOnceAndReplacementStopsRunnerDelivery(t *testin
 		t.Fatalf("worker read execution identity %d times, want bind then pre-delivery recheck", catalog.calls)
 	}
 	stored, err := store.GetOpening(ctx, opening.SessionID)
-	if err != nil || stored.ExecutionPrincipal == nil || stored.ExecutionPrincipal.UID != "managed-account-uid" {
+	if err != nil || stored.ExecutionPrincipal == nil || stored.ExecutionPrincipal.GetUid() != "managed-account-uid" {
 		t.Fatalf("opening did not retain its first bound UID: %#v %v", stored, err)
 	}
 	if stored.State != FailedState || stored.Reason != "execution_identity_changed" {

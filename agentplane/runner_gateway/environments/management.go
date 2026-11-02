@@ -38,12 +38,13 @@ func (s *Service) managementAccess(ctx context.Context, origin *sandboxespb.Sand
 	if !ok || direct.Pod == nil || !direct.Pod.IsPodBound() {
 		return nil, status.Error(codes.PermissionDenied, "environment management requires a direct Pod-bound caller")
 	}
+	account := serviceAccountReference(identity)
 	if origin == nil {
-		if _, ok := s.managers[identity.Account]; !ok {
+		if _, ok := s.managers[account]; !ok {
 			return nil, status.Error(codes.PermissionDenied, "caller cannot manage environments")
 		}
 	} else {
-		if _, ok := s.launchers[identity.Account]; !ok {
+		if _, ok := s.launchers[account]; !ok {
 			return nil, status.Error(codes.PermissionDenied, "caller cannot launch environments on behalf of an Action caller")
 		}
 		if origin.GetCaller().GetNamespace() == "" || origin.GetCaller().GetName() == "" || origin.GetActionGroup() == "" {
@@ -51,7 +52,7 @@ func (s *Service) managementAccess(ctx context.Context, origin *sandboxespb.Sand
 		}
 	}
 	return management.New(s.namespace, s.objects, s.defaultPolicySets, &identitypb.ServiceAccount{
-		Namespace: identity.Account.Namespace, Name: identity.Account.Name,
+		Namespace: account.Namespace, Name: account.Name,
 	})
 }
 
