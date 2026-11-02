@@ -35,14 +35,37 @@ disabled and a root shell when it is enabled.
 COSI runtime is pinned in `third_party/go.mod`; evaluate its APIs against the actual ownership and
 teardown contracts rather than treating every controller as a simple resource transform.
 
-- `env/cosi/resources.go` pre-reads before `safe.WriterModify` to return a `changed` flag.
-  COSI's `Modify`/`UpdateWithConflicts` already suppress equal updates and retry update conflicts.
-  Audit the extra reads and comparisons, especially the hand-written component wrappers in
-  `bootstrap/resources.go`, `harnesshost/session/resources.go`,
-  `harnesshost/codexappserver/resources.go` and `supervision/process_resources.go`. Preserve the
-  `changed` notifications and aggregate's explicit `QueueReconcile`, the serialized demand
-  increment and coherent Session/drain snapshots. A separate pre-read is not an atomic change
-  detector; do not replace the locking or report a false change on a conflict retry.
+- The Runtime Close and transition status writers in `lifecycle/contracts.go`, the three Host
+  intent-status writes in `harnesshost/intent_controller.go`, and the Process controller's
+  `writeResource` calls discard any change result. Consider calling `safe.WriterModify` directly:
+  COSI suppresses equal updates and retries update conflicts. Its phase check still runs for a
+  no-op, unlike the current early return. On an existing resource the direct path reads twice, so
+  it saves a read on changed writes but loses the current one-read no-op fast path; measure before
+  claiming a performance improvement. Keep intent Applying-before-effect and process fence ordering.
+- `PublishEnvironmentDesired`, `PublishRuntimeTransitionRequest` and `PublishDesired` in
+  `lifecycle/contracts.go` repeat the same typed assignment and explicit owner handling as
+  `env/cosi.Publish`. Their specs are comparable; they can share that helper without changing the
+  caller-owned admission and transition locks.
+- `env/cosi.Write` also serves Bootstrap, Session, Codex app-server and Execution status writes,
+  where `changed` wakes Runtime, Host or app-server waiters. The Harness Host aggregate has a
+  separate `WriteStatus` with the same pre-read; it queues another reconcile on change because it
+  does not watch its own output. A pre-read is not an atomic change detector: a competing writer
+  could change the resource between that read and Modify. These controllers declare exclusive
+  outputs and serialize the relevant key; no competing production writer was found. Any replacement
+  must handle creation and conflict retries and preserve those notifications without a wakeup loop.
+  A pre-read that returns early also bypasses COSI output tracking; no environment controller
+  currently enables `StartTrackingOutputs`.
+- Keep the retryable _mutations_ and their outer barriers: Session input publication increments
+  demand inside `StateModify` while `publishMu` serializes snapshots; Host admission accounting
+  updates a delta under the admission lock; retained Session field updates patch an existing record
+  with `StateUpdateWithConflicts`. Execution's `inputMu` also orders demand and completion against
+  native handle registration; its completion callback has side effects and cannot simply move
+  inside a retryable updater. COSI retries update conflicts, but its absent-resource Modify path can
+  still return an AlreadyExists error if a concurrent creator wins.
+- `supervision.Host.Request` publishes Process desired state through a controller writer, but its only
+  repository caller is a test controller exercising shared-output ownership. Production launches use
+  `requestNative`. Decide whether the exported controller-facing API has an external consumer before
+  removing that path; keep the immutable-attempt check and equivalent lifecycle coverage.
 - COSI's generic mappers are not drop-in replacements here. Session operation routing reads the
   operation to ignore its destruction; labels remain present on COSI's destroyed event, so a
   label-only mapper adds a wakeup after consumption. The Process host accepts a namespace at runtime,
