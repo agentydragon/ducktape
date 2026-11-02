@@ -278,7 +278,7 @@ func TestStoreRejectsMismatchedWakeCaller(t *testing.T) {
 			effective := ServiceAccountIdentity{Account: Account{Namespace: "agentplane", Name: "delegate"}, UID: "effective-uid"}
 			attribution := wakeAttribution(actor, effective)
 			sandboxUID := uuid.NewString()
-			const sessionID = "wake-attribution-session"
+			sessionID := "wake-attribution-" + kind
 			const commandID = "wake-attribution-command"
 			if kind == "dispatch" {
 				openWakeableSession(t, store, sessionID, "sandbox", sandboxUID, actor, effective)
