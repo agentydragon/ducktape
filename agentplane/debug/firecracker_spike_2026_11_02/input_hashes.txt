@@ -1,0 +1,18 @@
+Firecracker release: https://github.com/firecracker-microvm/firecracker/releases/download/v1.17.0/firecracker-v1.17.0-x86_64.tgz
+06094a1108ae9e82aa4c23a775aa92758f53f1175d422270d9d6162cb9ade558  downloads/firecracker-v1.17.0-x86_64.tgz
+b89dea3edf551929f151b95d31168677ad2b8bb257d1d87a08470f7299749b7c  downloads/firecracker-v1.17.0-x86_64.tgz.sha256.txt
+
+Linux source: https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.1.188.tar.xz
+ed4d0acb1307c235230c89efc094e210e6290593f94a7e617f28b1001101a33a  downloads/linux-6.1.188.tar.xz
+09057481a7f58c55910a7194d57ee9247bbbbf81246f720263c3666598ff4b44  downloads/kernel-sha256sums.asc
+
+Firecracker guest config at commit 95f868c
+153ca1b40f3312bfb40b7587b471ea548a915f98f480f0d0892a1537957a2147  downloads/microvm-kernel-ci-x86_64-6.1.config
+
+Ubuntu 24.04 guest rootfs: https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/20261028-84df49062576-0/x86_64/ubuntu-24.04.squashfs
+568127fd53c728c1f275fbbcc0d61da065b435e455b89307e985b32b02dc56d9  downloads/ubuntu-24.04.squashfs
+
+Spike inputs
+cc8bf7c86ae5b0aedca44c07b2ad0378d02a8e11a87cbf641a9d8aefe995b6da  src/prepare.sh
+6c1b8366e935f7b0c1d6dd990d75f8338c32d385c9ffa95183b1bb98f68651f8  src/guest-init.sh
+ac90c81035b759afcd160a6570b6aae04637d3b58e92d8feea8eb9f2a66b102c  src/guest.py

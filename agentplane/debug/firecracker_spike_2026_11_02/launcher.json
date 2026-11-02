@@ -1,0 +1,51 @@
+{
+  "namespace": "firecracker-spike",
+  "name": "launcher",
+  "uid": "4f068493-e403-4d96-8a95-c9aab3319111",
+  "node": "wyrm2",
+  "automountServiceAccountToken": false,
+  "hostNetwork": false,
+  "hostPID": false,
+  "containers": [
+    {
+      "name": "launcher",
+      "image": "ubuntu:24.04",
+      "resources": {
+        "limits": {
+          "cpu": "4",
+          "devices.kubevirt.io/kvm": "1",
+          "memory": "4Gi"
+        },
+        "requests": {
+          "cpu": "2",
+          "devices.kubevirt.io/kvm": "1",
+          "memory": "2Gi"
+        }
+      },
+      "securityContext": {
+        "privileged": true
+      }
+    }
+  ],
+  "effectiveImages": [
+    {
+      "name": "launcher",
+      "imageID": "docker.io/library/ubuntu@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852"
+    }
+  ],
+  "volumes": [
+    {
+      "emptyDir": {
+        "sizeLimit": "12Gi"
+      },
+      "name": "work"
+    },
+    {
+      "hostPath": {
+        "path": "/dev/net/tun",
+        "type": "CharDevice"
+      },
+      "name": "tun"
+    }
+  ]
+}

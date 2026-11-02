@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: firecracker-spike
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: launcher
+  namespace: firecracker-spike
+  labels:
+    app: firecracker-spike
+spec:
+  automountServiceAccountToken: false
+  restartPolicy: Never
+  nodeSelector:
+    kubernetes.io/hostname: wyrm2
+  containers:
+    - name: launcher
+      image: ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+      command: ["bash", "-ec"]
+      args:
+        - |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends python3 curl ca-certificates iproute2 iptables e2fsprogs erofs-utils xorriso xz-utils squashfs-tools gcc libc6-dev make flex bison libssl-dev libelf-dev bc cpio tcpdump
+          touch /work/ready
+          exec tail -f /dev/null
+      securityContext:
+        privileged: true
+      resources:
+        requests:
+          cpu: "2"
+          memory: 2Gi
+          devices.kubevirt.io/kvm: "1"
+        limits:
+          cpu: "4"
+          memory: 4Gi
+          devices.kubevirt.io/kvm: "1"
+      volumeMounts:
+        - name: work
+          mountPath: /work
+        - name: tun
+          mountPath: /dev/net/tun
+      readinessProbe:
+        exec:
+          command: ["test", "-f", "/work/ready"]
+        periodSeconds: 2
+  volumes:
+    - name: work
+      emptyDir:
+        sizeLimit: 12Gi
+    - name: tun
+      hostPath:
+        path: /dev/net/tun
+        type: CharDevice

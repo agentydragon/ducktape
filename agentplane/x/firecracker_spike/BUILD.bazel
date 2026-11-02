@@ -1,0 +1,18 @@
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/python:defs.bzl", "py_library")
+
+pkg_tar(
+    name = "agentplane_inputs",
+    srcs = ["//agentplane/env/images:disk_erofs"],
+    deps = ["//agentplane/egress:sidecar_go_binary_layer"],
+)
+
+py_library(
+    name = "demo_spike",
+    srcs = ["demo_spike.py"],
+)
+
+py_library(
+    name = "guest",
+    srcs = ["guest.py"],
+)
