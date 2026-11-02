@@ -304,6 +304,20 @@ func (m *Manager) ResumeRecovered(s *Session) error {
 	return nil
 }
 
+// requireSuccessorRevision is called with admitMu held for a live owner's cutoff.
+// Check both before the journal write and before opening admission: either
+// boundary can observe a lifecycle change while acknowledgement is published.
+func (m *Manager) requireSuccessorRevision(ctx context.Context, s *Session, uid string) error {
+	desired, found, err := lifecycle.ReadEnvironmentDesired(ctx, m.state)
+	if err != nil {
+		return err
+	}
+	if !found || desired.Mode != lifecycle.Running || desired.IncarnationUID != uid || desired.Generation <= s.cutoff.generation || m.environment().Quiesced {
+		return fmt.Errorf("Session %s successor reopen does not match the current environment revision", s.id)
+	}
+	return nil
+}
+
 func (m *Manager) Reopen(ctx context.Context, s *Session) error {
 	env := m.environment()
 	uid, known := env.IncarnationUID, env.IncarnationUID != ""
@@ -315,27 +329,24 @@ func (m *Manager) Reopen(ctx context.Context, s *Session) error {
 		// reopen. Runtime's global gate is closed here, but direct Session
 		// admission and lifecycle observation must remain consistent too.
 		s.admitMu.Lock()
-		if s.finalAdmissionClosed {
-			s.finalAdmissionRequireRevision = true
-			desired, found, err := lifecycle.ReadEnvironmentDesired(ctx, m.state)
-			if err != nil || !found || desired.Mode != lifecycle.Running || desired.IncarnationUID != uid || desired.Generation <= s.finalAdmissionGeneration || m.environment().Quiesced {
+		if s.cutoff != nil && s.cutoff.live {
+			if err := m.requireSuccessorRevision(ctx, s, uid); err != nil {
 				s.admitMu.Unlock()
-				if err != nil {
-					return err
-				}
-				return fmt.Errorf("Session %s successor reopen does not match the current environment revision", s.id)
+				return err
 			}
 		}
-		s.finalAdmissionClosed = true
+		if s.cutoff == nil {
+			s.cutoff = &admissionCutoff{}
+		}
 		if err := s.journal.Reopen(ctx, uid); err != nil {
 			s.admitMu.Unlock()
 			return err
 		}
-		s.finalAdmissionReopenedUID = uid
+		s.cutoff.reopenedUID = uid
 		s.admitMu.Unlock()
 	}
 	s.admitMu.Lock()
-	reopenPending := s.finalAdmissionReopenedUID == uid
+	reopenPending := s.cutoff != nil && s.cutoff.reopenedUID == uid
 	s.admitMu.Unlock()
 	ack, err := m.store.ReadAcknowledgement(s.id)
 	if err != nil {
@@ -358,34 +369,26 @@ func (m *Manager) Reopen(ctx context.Context, s *Session) error {
 	// A retry may see an already-unsealed journal; the recorded reopen UID
 	// identifies the successor that is allowed to complete that retry.
 	s.admitMu.Lock()
-	if s.finalAdmissionClosed {
-		if s.finalAdmissionReopenedUID != uid || s.journal.SealState() != nil {
+	if s.cutoff != nil {
+		if s.cutoff.reopenedUID != uid || s.journal.SealState() != nil {
 			s.admitMu.Unlock()
 			return fmt.Errorf("Session %s final admission cutoff has no completed successor reopen for %q", s.id, uid)
 		}
-		if s.finalAdmissionRequireRevision {
-			desired, found, err := lifecycle.ReadEnvironmentDesired(ctx, m.state)
-			if err != nil || !found || desired.Mode != lifecycle.Running || desired.IncarnationUID != uid || desired.Generation <= s.finalAdmissionGeneration || m.environment().Quiesced {
+		if s.cutoff.live {
+			if err := m.requireSuccessorRevision(ctx, s, uid); err != nil {
 				s.admitMu.Unlock()
-				if err != nil {
-					return err
-				}
-				return fmt.Errorf("Session %s successor reopen no longer matches the accepted environment revision", s.id)
+				return err
 			}
 		}
 		// A live Session needs a new reconcile after its gate reopens. A newly
 		// loaded Session has not published its first snapshot yet.
-		if s.finalAdmissionRequireRevision {
+		if s.cutoff.live {
 			if err := s.deps.signalOperation(s.id); err != nil {
 				s.admitMu.Unlock()
 				return err
 			}
 		}
-		s.finalAdmissionClosed = false
-		s.finalAdmissionSettled = false
-		s.finalAdmissionGeneration = 0
-		s.finalAdmissionReopenedUID = ""
-		s.finalAdmissionRequireRevision = false
+		s.cutoff = nil
 	}
 	s.admitMu.Unlock()
 	if reopening || writeAck {

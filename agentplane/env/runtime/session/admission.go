@@ -10,22 +10,33 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+type admissionCutoff struct {
+	// generation is the revision that first closed a live owner's admission.
+	generation uint64
+	// settled records undispatched command settlement after the cutoff.
+	settled bool
+	// reopenedUID identifies a durable reopen awaiting acknowledgement.
+	reopenedUID string
+	// live requires a newer exact Running revision and a reconcile signal.
+	// A newly loaded sealed journal uses the startup boundary instead.
+	live bool
+}
+
 // closeAdmission is the per-Session final cutoff. Admission and sealing take
 // the same lock, so a racing command either commits before this boundary or
 // returns without creating a journal entry.
 func (s *Session) closeAdmission(generation uint64) {
 	s.admitMu.Lock()
-	if !s.finalAdmissionClosed {
-		s.finalAdmissionGeneration = generation
+	if s.cutoff == nil {
+		s.cutoff = &admissionCutoff{generation: generation, live: true}
 	}
-	s.finalAdmissionClosed = true
 	s.admitMu.Unlock()
 }
 
 func (s *Session) admissionClosed() bool {
 	s.admitMu.Lock()
 	defer s.admitMu.Unlock()
-	return (s.finalAdmissionClosed && s.finalAdmissionSettled) || s.journal.SealState() != nil
+	return (s.cutoff != nil && s.cutoff.settled) || s.journal.SealState() != nil
 }
 
 func (s *Session) Admit(ctx context.Context, command *commandpb.Command, lameduck bool) (*eventlogpb.EventEntry, error) {
@@ -39,7 +50,7 @@ func (s *Session) Admit(ctx context.Context, command *commandpb.Command, lameduc
 	if old == nil && s.journal.SealState() != nil && command.GetInterruptTurn() != nil {
 		return nil, journal.ErrSealed
 	}
-	if old == nil && (s.finalAdmissionClosed || s.journal.SealState() != nil) {
+	if old == nil && (s.cutoff != nil || s.journal.SealState() != nil) {
 		return nil, status.Error(codes.Aborted, "this Session no longer admits new commands")
 	}
 	if old == nil && (lameduck || closed) && command.GetInterruptTurn() == nil {
@@ -54,7 +65,7 @@ func (s *Session) Admit(ctx context.Context, command *commandpb.Command, lameduc
 		return nil, err
 	}
 	if old != nil {
-		if closed || s.finalAdmissionClosed {
+		if closed || s.cutoff != nil {
 			return entry, nil
 		}
 	}
