@@ -46,6 +46,7 @@ from finance.plaid.spend.portfolio_models import (
 )
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.sustainability import SustainabilityDisplay, SustainabilityPolicy
+from finance.plaid.spend.transaction_projection import summarize_excluded_flows
 
 
 def excluded_row(
@@ -79,7 +80,7 @@ def excluded_row(
 
 def test_excluded_flows_keep_directions_and_currencies_separate() -> None:
     rows = [excluded_row(500), excluded_row(-500), excluded_row(0, pending=True), excluded_row(700, currency="EUR")]
-    groups = service.summarize_excluded_flows(rows)
+    groups = summarize_excluded_flows(rows)
     assert [
         (g.currency, g.debit_minor_units, g.credit_minor_units, g.transaction_count, g.pending_count) for g in groups
     ] == [("EUR", 700, 0, 1, 0), ("USD", 500, 500, 3, 1)]
@@ -88,11 +89,11 @@ def test_excluded_flows_keep_directions_and_currencies_separate() -> None:
 
 @pytest.mark.parametrize("disposition", [value for value in Disposition if value != Disposition.EXCLUDED] + [None])
 def test_excluded_flows_ignore_other_dispositions(disposition: Disposition | None) -> None:
-    assert service.summarize_excluded_flows([excluded_row(500, disposition=disposition)]) == []
+    assert summarize_excluded_flows([excluded_row(500, disposition=disposition)]) == []
 
 
 def test_excluded_flows_keep_categories_and_uncategorized_rows() -> None:
-    groups = service.summarize_excluded_flows(
+    groups = summarize_excluded_flows(
         [excluded_row(100), excluded_row(200, category="tax"), excluded_row(-50, category=None)]
     )
     assert [(g.category.id, g.debit_minor_units, g.credit_minor_units) for g in groups] == [
@@ -100,7 +101,7 @@ def test_excluded_flows_keep_categories_and_uncategorized_rows() -> None:
         ("transfer", 100, 0),
         ("uncategorized", 0, 50),
     ]
-    assert service.summarize_excluded_flows([]) == []
+    assert summarize_excluded_flows([]) == []
 
 
 @pytest_asyncio.fixture
