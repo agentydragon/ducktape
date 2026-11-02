@@ -87,6 +87,8 @@ single_version_override(
     version = "0.41.0",
 )
 
+register_toolchains("//devinfra/js/proto:protobuf_es_toolchain")
+
 bazel_dep(name = "rules_conda", version = "0.3.2")
 
 # aspect_rules_lint's lint actions create empty output files with `touch`, but some
