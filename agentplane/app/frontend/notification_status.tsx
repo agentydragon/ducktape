@@ -26,12 +26,9 @@ import type { Timestamp } from "@bufbuild/protobuf/wkt";
 type SubscriptionState = "active" | "expired" | "cancelled";
 type SubscriptionFilter = "not-cancelled" | SubscriptionState | "all";
 
-const SOURCE_FAILURE_KIND = "SOURCE_FAILURE_KIND_";
-const NOTICE_WAIT_REASON = "NOTICE_WAIT_REASON_";
-
-/** An enum value's name without its prefix, as lowercase words: `NOTICE_WAIT_REASON_DEBOUNCING` is "debouncing". */
-function enumWords(name: string, prefix: string): string {
-  return name.slice(prefix.length).toLowerCase().replaceAll("_", " ");
+/** Generated enum names omit their protobuf prefix. */
+function enumWords(name: string): string {
+  return name.toLowerCase().replaceAll("_", " ");
 }
 
 /** Protobuf int64 values are bigint. */
@@ -68,7 +65,7 @@ function subscriptionLabel(sub: SubscriptionStatus, observedAt?: Timestamp): str
   if (state !== "active") return state;
   const errorKind =
     sub.errorKind ?? sub.github?.access.find((access) => access.errorKind)?.errorKind ?? sub.github?.subject?.errorKind;
-  if (errorKind) return enumWords(SourceFailureKind[errorKind], SOURCE_FAILURE_KIND);
+  if (errorKind) return enumWords(SourceFailureKind[errorKind]);
   if (sub.github?.access.some((access) => !access.currentlyValid)) return "GitHub access not validated";
   return "no current source error";
 }
@@ -285,7 +282,7 @@ export function NotificationStatus({
                     )}
                     {noticeWaitReason && (
                       <Text size="sm">
-                        Notice: {enumWords(NoticeWaitReason[noticeWaitReason], NOTICE_WAIT_REASON)}
+                        Notice: {enumWords(NoticeWaitReason[noticeWaitReason])}
                         {noticeDueAt ? ` · eligible ${timestamp(noticeDueAt)}` : ""}
                       </Text>
                     )}
