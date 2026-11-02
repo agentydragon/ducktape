@@ -1,19 +1,19 @@
 # TODO — Agentplane environment
 
-## Fix subprocess supervisor-loss fencing
+## Handle subprocess supervisor loss before and after native PID report
 
-The subprocess backend treats an abnormally killed trusted supervisor as a completed native process:
-`Wait` returns exit 137 with no error and `Stop` returns success even though the native child can still
-be alive. In the [RBE reproduction](https://app.buildbuddy.io/invocation/717b6862-8bcf-4ea8-97d8-5cc6c0de9cff),
-the child closed its inherited owner descriptor before its supervisor was killed; a replacement then
-acquired the environment owner lock while the child was still sleeping. This exercises the subprocess
-backend, not the production Pod PID1 or VM systemd paths.
+The [RBE reproduction](https://app.buildbuddy.io/invocation/717b6862-8bcf-4ea8-97d8-5cc6c0de9cff)
+killed a trusted supervisor after the native PID was reported, after the child closed its inherited
+owner descriptor. The backend now reports this as a failed fence, so COSI retains the finalizer instead
+of treating exit 137 as cleanup success. Normal subprocess cleanup signals the same process group
+while its leader is unreaped, then waits up to five seconds for group disappearance; a group held by
+orphaned zombies returns a failed fence rather than a false success or an unbounded wait.
 
-Distinguish supervisor loss from a confirmed native fence, retain failed cleanup until the native
-domain is proved stopped, and add a regression for the reproduced sequence. The ordinary subprocess
-fence also sends group `SIGKILL` without waiting for group disappearance; cover that completion
-boundary while preserving process identity safety. The COSI finalizer currently relies on the backend's
-reported stop result, so it cannot correct a falsely successful fence by itself.
+The startup boundary remains unresolved. If the supervisor dies before reporting the native PID,
+`Process.Start` returns an error and `Host.Launch` returns no instance; the host currently treats that
+as already fenced even if a child survived. Fix this with an explicit failed-start fence contract so
+the COSI controller retains ownership on uncertain startup cleanup. Runtime death and replacement
+after loss of the in-memory controller also remain outside this backend-local fix.
 
 ## Fence uncertain Session reservation writes
 
