@@ -54,7 +54,7 @@ def test_column_count(edf_path: Path) -> None:
 
 def test_dates(edf_path: Path) -> None:
     df = read_str_edf(edf_path)
-    for i, (_, row) in enumerate(df.iterrows()):
+    for i, row in df.iterrows():
         expected = START + timedelta(days=i)
         assert row["Date"].date() == expected.date()
 

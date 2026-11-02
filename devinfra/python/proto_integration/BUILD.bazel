@@ -28,7 +28,11 @@ py_proto_library_with_mypy_stubs(
 py_library(
     name = "status_consumer",
     srcs = ["status_consumer.py"],
-    deps = ["//devinfra/python/proto_integration:status_envelope_pb2"],
+    # Generated stubs reference google.protobuf; its direct dependency selects types-protobuf.
+    deps = [
+        "//devinfra/python/proto_integration:status_envelope_pb2",
+        "@pypi//protobuf",  # keep: generated stubs need the configured types-protobuf mapping
+    ],
 )
 
 py_test(

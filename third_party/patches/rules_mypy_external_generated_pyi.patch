@@ -1,28 +1,6 @@
 diff --git a/mypy/private/mypy.bzl b/mypy/private/mypy.bzl
 --- a/mypy/private/mypy.bzl
 +++ b/mypy/private/mypy.bzl
-@@ -23,13 +23,13 @@
- )
--
-+
- def _extract_import_dir(import_):
--    # Remove first parent from the directory
--    if "/" in import_:
--        # "_main/path/to/package" -> "path/to/package"
--        return import_.split("/", 1)[-1]
--    else:
--        # "_main" -> ""
-+    # Main-repository imports are relative to the execroot. Imports from an
-+    # external repository need its external/<repo> prefix in the execroot.
-+    if import_ == "_main" or import_ == "site-packages":
-         return ""
-+    if import_.startswith("_main/"):
-+        return import_.split("/", 1)[1]
-+    return "external/" + import_
--
-+
- def _imports(target):
-     if RulesPythonPyInfo in target:
 @@ -107,4 +107,5 @@
      # generated dirs
      generated_dirs = {}
@@ -30,12 +8,17 @@ diff --git a/mypy/private/mypy.bzl b/mypy/private/mypy.bzl
 -
 +
      upstream_caches = []
-@@ -149,22 +150,44 @@
+@@ -149,22 +150,49 @@
          if MypyCacheInfo in dep:
              upstream_caches.append(dep[MypyCacheInfo].directory)
 -
 +
-+        dep_imports = _extract_imports(dep)
++        # Generated runfiles retain their repository prefix in the execroot.
++        # Keep this separate from source/wheel import resolution.
++        dep_imports = [
++            _extract_import_dir(i) if i == "_main" or i.startswith("_main/") else "external/" + i
++            for i in _imports(dep)
++        ]
          for file in dep.default_runfiles.files.to_list():
 +            if file.is_source:
 +                continue
@@ -87,7 +70,7 @@ diff --git a/mypy/private/mypy.bzl b/mypy/private/mypy.bzl
 +
      path_components = (
          # normally, mypy looks in the current directory last, but we explicitly want
-@@ -178,6 +201,6 @@
+@@ -178,6 +206,6 @@
          sorted(external_deps) +
          sorted(imports_dirs) +
          sorted(generated_dirs) +
