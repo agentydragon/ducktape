@@ -179,7 +179,7 @@ func TestClosePreparationTreatsExitedHostAsDisconnected(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer coordinator.plan.cancelFence()
-	if coordinator.plan.connected || coordinator.plan.binding != nil || !coordinator.plan.hostLifetimeExists {
+	if coordinator.plan.connected || coordinator.plan.binding != nil || coordinator.plan.host != host {
 		t.Fatalf("Close plan after Host exit = %+v, want disconnected Host with cleanup ownership", coordinator.plan)
 	}
 }

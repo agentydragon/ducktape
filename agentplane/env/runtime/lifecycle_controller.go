@@ -28,14 +28,14 @@ type runtimeLifecycleController struct {
 }
 
 type closePlan struct {
-	binding            *runtimepb.Binding
-	sealUID            string
-	connected          bool
-	hostLifetimeExists bool
-	executionMayExist  bool
-	hostRunErr         error
-	fenceCtx           context.Context
-	cancelFence        context.CancelFunc
+	binding           *runtimepb.Binding
+	sealUID           string
+	connected         bool
+	host              hostLifetime
+	executionMayExist bool
+	hostRunErr        error
+	fenceCtx          context.Context
+	cancelFence       context.CancelFunc
 }
 
 type closeOperation struct {
@@ -208,6 +208,16 @@ func (c *runtimeLifecycleController) publish(ctx context.Context, r controller.R
 	return nil
 }
 
+func stopHost(ctx context.Context, host hostLifetime) error {
+	if host == nil {
+		return nil
+	}
+	if err := host.Stop(ctx); err != nil {
+		return err
+	}
+	return host.WaitClosed(ctx)
+}
+
 func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecycle.RuntimeCloseStage) error {
 	p := &c.plan
 	switch stage {
@@ -217,14 +227,8 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecyc
 		if p.connected {
 			return c.r.waitForHostNativeStopped(p.fenceCtx, p.binding)
 		}
-		if p.hostLifetimeExists {
-			c.r.mu.Lock()
-			host := c.r.hostLifetime
-			c.r.mu.Unlock()
-			if err := host.Stop(p.fenceCtx); err != nil {
-				return fmt.Errorf("Runtime lost its Host lifecycle connection and native cleanup is unproved: %w", err)
-			}
-			if err := host.WaitClosed(p.fenceCtx); err != nil {
+		if p.host != nil {
+			if err := stopHost(p.fenceCtx, p.host); err != nil {
 				return fmt.Errorf("Runtime lost its Host lifecycle connection and native cleanup is unproved: %w", err)
 			}
 			p.hostRunErr = errors.New("Harness Host lifecycle connection was lost")
@@ -239,7 +243,7 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecyc
 			c.r.maybeFenceExecution(p.binding)
 			return c.r.waitForExecutionFenced(p.fenceCtx, p.binding)
 		}
-		if p.hostLifetimeExists {
+		if p.host != nil {
 			if err := c.r.stopExecution(p.fenceCtx); err != nil {
 				return fmt.Errorf("fence Execution after Host lifecycle loss: %w", err)
 			}
@@ -252,7 +256,7 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecyc
 		return nil
 	case lifecycle.RuntimeCloseHostJoining:
 		if p.connected {
-			if err := c.r.stopHost(p.fenceCtx); err != nil {
+			if err := stopHost(p.fenceCtx, p.host); err != nil {
 				return fmt.Errorf("stop and fence Harness Host: %w", err)
 			}
 		}
@@ -297,16 +301,16 @@ func (c *runtimeLifecycleController) prepare() error {
 	}
 	p := &c.plan
 	p.sealUID = sealUID
+	p.host = r.hostLifetime
 	p.connected = r.host != nil && r.host.connected
-	if p.connected && r.hostLifetime != nil {
+	if p.connected && p.host != nil {
 		select {
-		case <-r.hostLifetime.Done():
+		case <-p.host.Done():
 			p.connected = false
 		default:
 		}
 	}
 	p.executionMayExist = r.config.CodexExecServer != nil || r.executionOwner != nil
-	p.hostLifetimeExists = r.hostLifetime != nil
 	if p.connected {
 		mode := runtimepb.LifecycleIntent_CLOSING
 		if sealUID != "" {

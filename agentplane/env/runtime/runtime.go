@@ -503,20 +503,6 @@ func (r *Runtime) waitBootstrapSettled(ctx context.Context) error {
 	return nil
 }
 
-func (r *Runtime) stopHost(ctx context.Context) error {
-	r.mu.Lock()
-	process := r.hostLifetime
-	r.mu.Unlock()
-	if process == nil {
-		return nil
-	}
-	stopErr := process.Stop(ctx)
-	if stopErr != nil {
-		return stopErr
-	}
-	return process.WaitClosed(ctx)
-}
-
 func (r *Runtime) changed() {
 	r.mu.Lock()
 	r.changedLocked()
