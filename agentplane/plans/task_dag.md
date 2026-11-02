@@ -33,10 +33,10 @@ cases can justify pulling a narrower fix forward. The sprint dispatch below scop
 authorized work; the priority list does not dispatch the other tracks.
 
 **Component boundaries:** the [Environment Runtime](../env/runtime/SPEC.md),
-[Harness Host](../env/runtime/SPEC.md) and [Execution service](../env/runtime/execution/SPEC.md)
-have distinct lifecycle responsibilities within the combined management process
-([current topology](../env/README.md#layout-and-entrypoints)). Preserve those logical owners. Session and
-Environment dispatch remain distinct roles whose binary grouping is for later; the broader
+[Execution service](../env/runtime/execution/SPEC.md) and their Session and native process components
+have distinct responsibilities within the combined management process
+([current topology](../env/README.md#layout-and-entrypoints)). Session and Environment dispatch remain
+distinct roles whose binary grouping is for later; the broader
 runtime-model decision does not gate these reliability or delegation slices.
 
 **Quality bar for every selected outcome:** sound domain models, clear ownership/lifetimes and
@@ -85,11 +85,6 @@ The operator is reusing environments partly because fresh startup is slow. Separ
 are acceptable for cooperating agents with shared access; that does not imply isolation between
 different principals. Starting less-privileged workers can wait: the selected first spawning
 scope uses the caller's ServiceAccount and may reuse its environment.
-
-**Ownership report, 2026-10-27 PDT:** Harness Host lifecycle implementation was assigned to other
-agents. Confirm current ownership before assigning overlapping lifecycle work; do not duplicate an
-active owner's task. This report does not hold independent sampler-roll, JS/exec recovery,
-scheduling or Session-creation work.
 
 Audit metadata consumers (`sandbox`, `harness`, `model`, `cwd`, summary/activity fields) before
 deleting useful UI projections.
@@ -543,7 +538,7 @@ serialize independent PRs.
 
 **Later decision; current duplication is accepted.** Design one authoritative owner/source for
 platform guidance while allowing placement- and environment-specific variants. Compare ownership and
-composition in the native Harness Host and Central Sampler. The existing shared template is a textual
+composition in the Environment Runtime's native harnesses and Central Sampler. The existing shared template is a textual
 source of truth; it does not settle which services distribute or compose guidance, or how deployment-
 specific content and runtime-specific needs reach each Session. Use the [Session/runtime model](session_runtime_model.md)
 to compare concrete native-host and central-Sampler cases with zero, one and multiple attached
@@ -563,7 +558,7 @@ Related deferred work: [consolidate agents' access to documentation and system c
 ### `PLATFORM_GUIDANCE_SINGLE_OWNER` — consolidate platform-guidance ownership
 
 **Future refactor; blocked on `PLATFORM_GUIDANCE_OWNERSHIP_DESIGN` review.** Put the job of knowing
-the platform instructions in one authoritative owner, then migrate native Harness Host and Central
+the platform instructions in one authoritative owner, then migrate Environment Runtime and Central
 Sampler consumers to it. Remove independently maintained guidance configuration and selection rules
 from those consumers. Shared template text alone does not complete this refactor. Consumers may
 cache or materialize resolved guidance; deployment-specific content, harness differences and
@@ -942,6 +937,14 @@ Session identity, durable harness stores, running hosts, placement and execution
 Preserve harness-specific constraints: Claude
 Code naturally runs in the environment it acts in; a shared vocabulary must not pretend every
 backend supports independent placement or executor replacement.
+
+Use the current environment `OpenSession` as a concrete design case: it reserves a Session, while
+setup and native harness or process startup may happen later, and the relationship between the RPC
+result and observable harness readiness/failure needs a clearer model. Decide how Session identity
+and reservation, harness placement, environment attachment, process start and status reporting fit
+together for both a Session independent of environments and a harness running inside one. Specify
+what each operation acknowledges and how callers observe progress or failure, without assuming every
+harness supports the same placement or creation order.
 
 Recommendation for review: distinguish Session identity/continuation authority, harness placement
 and execution attachments without choosing their storage or forcing a global creation order. Prefer

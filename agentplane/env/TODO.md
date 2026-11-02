@@ -2,7 +2,7 @@
 
 ## Fence uncertain Session reservation writes
 
-`OpenSession` returns a retained `SessionRecords` write error without failing the Host. COSI writes
+`OpenSession` returns a retained `SessionRecords` write error without failing Runtime. COSI writes
 the backing store before updating its in-memory collection, so an error after a durable write can
 leave `Exists` reporting the Session absent. With an injected backing store that saves the first
 record then returns an error, a retry writes a different record under the same ID, including a new
@@ -12,10 +12,11 @@ restart, conflicting Session specs and event-source identity; do not infer absen
 
 ## Prove VM guest boot and console autologin
 
-The current regression checks evaluate the NixOS mount table and rendered VM resources, but do not
-build and boot the guest image or prove Runtime readiness. Add VM guest coverage that waits for
-Runtime readiness and verifies the serial console shows a login prompt when `console_autologin` is
-disabled and a root shell when it is enabled.
+The VM system suite boots a test guest using shared Runtime units, not the production NixOS guest.
+The production image's checks evaluate its mount table and rendered VM resources but do not boot it
+or prove Runtime readiness. Add production-guest coverage that waits for Runtime readiness and
+verifies the serial console shows a login prompt when `console_autologin` is disabled and a root
+shell when it is enabled.
 
 ## Simplify Environment Runtime reconciliation and coordination
 
@@ -61,18 +62,6 @@ Validate crash and restart, overlapping owners, late starts, uncertain fence out
 descendants for each affected backend. Remove redundant mechanisms only after their guarantees have
 an identified replacement; do not assume the existing set of locks and markers is minimal.
 
-## Reconsider bootstrap event storage
-
-**Low priority; not scheduled.**
-
-The [bootstrap COSI probe](runtime/debug/2026_11_02_bootstrap_cosi_storage_probe.md) measured high
-memory amplification, per-event writes, and full-history scans for suffix reads on synthetic output.
-Collect actual output and chunk distributions, then compare the current design with an indexed
-SQLite log and disk-backed COSI alternatives such as `state-sqlite`. Measure writes, restart, tail
-reads and memory; retain ordered replay, terminal/interrupted recovery and fail-closed handling of
-uncertain writes.
-The repeated empty suffix reads in the probe are synthetic, not a demonstrated production watcher.
-
 ## Reconsider COSI persistence for the Session journal
 
 Keep the SQLite journal as the authority for now, and revisit COSI if a disk-backed implementation
@@ -88,12 +77,17 @@ in COSI merely to expose observations controllers already need.
 
 ## Reconsider the Session state model
 
-Session management, retained Session records and History journal delivery currently share the Host.
-Evaluate modeling Sessions and their lifecycle directly as COSI resources with a disk-backed state
+Runtime owns Session management, retained Session records and History journal delivery. Evaluate
+modeling Sessions and their lifecycle directly as COSI resources with a disk-backed state
 implementation such as SQLite or bbolt. Define ownership and transaction boundaries with Session
 journals and command outcomes before changing storage, including recovery of uncertain native effects.
 Measure resident memory and indexed access at realistic Session counts; controller caches and list
 operations may load additional resources even with an on-disk backend.
+
+The broader [Session/runtime model decision](../plans/task_dag.md#session_runtime_model_design--sessions-harness-placement-and-execution-attachments)
+also covers Sessions independent of environments and harnesses inside them. Use `OpenSession` as a
+concrete example: separate reservation, placement, native process startup and observable readiness
+or failure without assuming all harnesses support the same placement.
 
 ## Use COSI primitives where they fit the lifecycle
 
@@ -115,7 +109,7 @@ teardown contracts rather than treating every controller as a simple resource tr
   structural equality: pointer-backed COSI protobuf specs need their own equality-aware path.
   No current `cosi.Write` caller uses those persisted protobuf specs.
 - Keep the retryable _mutations_ and their outer barriers: Session input publication increments
-  demand inside `StateModify` while `publishMu` serializes snapshots; Host admission accounting
+  demand inside `StateModify` while `publishMu` serializes snapshots; Runtime admission accounting
   updates a delta under the admission lock; retained Session field updates patch an existing record
   with `StateUpdateWithConflicts`. Execution's `inputMu` also orders demand and completion against
   native handle registration; its completion callback has side effects and cannot simply move
@@ -139,11 +133,12 @@ teardown contracts rather than treating every controller as a simple resource tr
 ## Define Session admission after publication failure
 
 `Manager.loadLocked` adds a Session and returns it after `publishSession`, whose COSI write failures
-call `Host.fail` but are not returned to `OpenSession`. The durable reservation may therefore be
-reported successful while Host has revoked further admission and the Session input was not published.
-Define whether success means durable reservation or a schedulable Session, and fault-inject both
-input and inspection publication failures to verify the response and restart behavior. Do not
-replay already admitted native effects to repair publication.
+call `Runtime.fail` but are not returned to `OpenSession`. The durable reservation may therefore be
+reported successful while Runtime has revoked further admission and the Session input was not
+published. Success acknowledges a durable reservation, not a schedulable Session; decide how callers
+observe the publication failure and recovery under that contract. Fault-inject both input and
+inspection publication failures to verify the response and restart behavior. Do not replay already
+admitted native effects to repair publication.
 
 ## Prove central execution across Pod and VM lifetimes
 
@@ -152,6 +147,15 @@ integration test exercises that route with subprocess supervision, and the Pod s
 covers suspend and resume. Extend central execution coverage to the production PID1 Pod and VM
 systemd paths, including ownership loss, executor replacement and descendant cleanup; keep the
 Sandbox incarnation and uncertain-effect boundaries in those checks.
+
+## Investigate VM executor health loss during tool OOM
+
+The [VM OOM failure record](runtime/debug/2026_11_02_vm_executor_replacement_ci.md) shows a tool
+OOM followed by an exec-server health deadline, native fencing and executor replacement; the reason
+the local WebSocket handshake stalled is not established. On recurrence, capture per-probe timing
+and exec-server process and socket evidence before the fence, then distinguish OOM effects from
+guest scheduling, systemd contention and other causes. Do not replay uncertain work or change the
+health deadline solely from the observed replacement.
 
 ## Protect resident harnesses from tool resource exhaustion
 
