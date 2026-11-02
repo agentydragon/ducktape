@@ -36,7 +36,7 @@ func boundaryHost(t *testing.T) (*Host, context.Context) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := r.Close(ctx); err != nil {
+		if err := r.CloseJournals(ctx); err != nil {
 			t.Error(err)
 		}
 	})
@@ -119,7 +119,7 @@ func TestHostIntentCannotReopenDesiredStateAfterClose(t *testing.T) {
 		releaseCloseRead.Do(func() { close(store.closeReadRelease) })
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cleanupCancel()
-		if err := r.Close(cleanupCtx); err != nil {
+		if err := r.CloseJournals(cleanupCtx); err != nil {
 			t.Error(err)
 		}
 	})
@@ -146,7 +146,7 @@ func TestHostIntentCannotReopenDesiredStateAfterClose(t *testing.T) {
 	}
 	store.closeReadArmed.Store(true)
 	closed := make(chan error, 1)
-	go func() { closed <- r.Close(ctx) }()
+	go func() { closed <- r.CloseJournals(ctx) }()
 	select {
 	case <-store.closeReadEntered:
 	case <-ctx.Done():
@@ -457,7 +457,7 @@ func TestHostReportControllerExitsCleanlyWithHost(t *testing.T) {
 	if err := r.ApplyIntent(ctx, intent); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Close(ctx); err != nil {
+	if err := r.CloseJournals(ctx); err != nil {
 		t.Fatal(err)
 	}
 	select {

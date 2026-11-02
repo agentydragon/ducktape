@@ -12,18 +12,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
-	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
-	"google.golang.org/grpc"
 )
-
-type idleHistoryIngress struct {
-	ingresspb.UnimplementedSessionJournalIngressServer
-}
 
 type failedStartupState struct {
 	state.State
@@ -38,18 +32,7 @@ func (s *failedStartupState) List(ctx context.Context, kind resource.Kind, opts 
 	return s.State.List(ctx, kind, opts...)
 }
 
-type failureReportingBridge struct {
-	completedBootstrapBridge
-	failures chan error
-	release  chan struct{}
-}
-
-func (b *failureReportingBridge) HostFailed(err error) {
-	b.failures <- err
-	<-b.release
-}
-
-func TestHostRunReportsStartupFailureBeforeJoining(t *testing.T) {
+func TestHostStartupFailureFencesAdmission(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	startupErr := errors.New("injected Session recovery failure")
@@ -60,14 +43,15 @@ func TestHostRunReportsStartupFailureBeforeJoining(t *testing.T) {
 	}
 	t.Cleanup(func() { r.cancel(); <-r.lifecycle.done.Done() })
 	r.SetRuntimeBinding("runtime", true)
-	bridge := &failureReportingBridge{failures: make(chan error, 1), release: make(chan struct{})}
 	store.armed.Store(true)
-	done := make(chan error, 1)
-	go func() { done <- r.Run(ctx, configuration.Endpoint{}, bridge) }()
+	err = r.Startup(completedBootstrapBridge{})
+	if !errors.Is(err, startupErr) {
+		t.Fatalf("Host startup = %v, want recovery error", err)
+	}
 	select {
-	case err := <-bridge.failures:
+	case err := <-r.Failures():
 		if !errors.Is(err, startupErr) {
-			t.Fatalf("reported Host failure = %v", err)
+			t.Fatalf("reported startup failure = %v", err)
 		}
 	case <-ctx.Done():
 		t.Fatal("Host startup failure was not reported")
@@ -76,30 +60,6 @@ func TestHostRunReportsStartupFailureBeforeJoining(t *testing.T) {
 		t.Fatal("failed Host still admits the Runtime binding")
 	}
 	store.armed.Store(false)
-	close(bridge.release)
-	select {
-	case err := <-done:
-		if !errors.Is(err, startupErr) {
-			t.Fatalf("Host Run = %v, want startup failure", err)
-		}
-	case <-ctx.Done():
-		t.Fatal("Host did not finish after reporting startup failure")
-	}
-}
-
-func (*idleHistoryIngress) Push(stream grpc.BidiStreamingServer[ingresspb.PushFrame, ingresspb.Acknowledgement]) error {
-	frame, err := stream.Recv()
-	if err != nil {
-		return err
-	}
-	if frame.GetAnnounce() == nil {
-		return errors.New("History ingress did not receive a Session announcement")
-	}
-	if err := stream.Send(&ingresspb.Acknowledgement{}); err != nil {
-		return err
-	}
-	<-stream.Context().Done()
-	return nil
 }
 
 func waitIntentStatus(t *testing.T, ctx context.Context, store state.State, intent harnesshostlifecycle.HostIntent, done bool) harnesshostlifecycle.HostIntentStatus {
@@ -120,7 +80,7 @@ func waitIntentStatus(t *testing.T, ctx context.Context, store state.State, inte
 	}).TypedSpec()
 }
 
-func TestHostRunInterruptedIntentKeepsClosingState(t *testing.T) {
+func TestHostBeginCloseInterruptedIntentKeepsClosingState(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	store := &pausedSessionInputState{
@@ -132,14 +92,10 @@ func TestHostRunInterruptedIntentKeepsClosingState(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.SetRuntimeBinding("runtime", true)
-	endpoint := loopbackGRPCServer(t, func(server *grpc.Server) {
-		ingresspb.RegisterSessionJournalIngressServer(server, &idleHistoryIngress{})
-	})
-	runCtx, stop := context.WithCancel(ctx)
-	done := make(chan error, 1)
-	go func() { done <- r.Run(runCtx, configuration.Endpoint{Target: endpoint}, completedBootstrapBridge{}) }()
+	if err := r.Startup(completedBootstrapBridge{}); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
-		stop()
 		select {
 		case <-store.release:
 		default:
@@ -185,12 +141,13 @@ func TestHostRunInterruptedIntentKeepsClosingState(t *testing.T) {
 		t.Fatalf("Host intent was not Applying before native effect: %+v", status)
 	}
 	store.closeReadArmed.Store(true)
-	stop()
+	done := make(chan error, 1)
+	go func() { done <- r.BeginClose(ctx) }()
 	r.SetRuntimeBinding("runtime", false)
 	select {
 	case <-store.closeReadEntered:
 	case <-ctx.Done():
-		t.Fatal("Host Run did not publish Closing")
+		t.Fatal("Host did not publish Closing")
 	}
 	close(store.release)
 	if status := waitIntentStatus(t, ctx, store, next, true); status.Applied || status.Error == "" {
@@ -203,9 +160,9 @@ func TestHostRunInterruptedIntentKeepsClosingState(t *testing.T) {
 	select {
 	case err := <-done:
 		if err != nil {
-			t.Fatalf("Host Run after coordinated close = %v", err)
+			t.Fatalf("Host BeginClose after coordinated close = %v", err)
 		}
 	case <-ctx.Done():
-		t.Fatal("Host Run did not finish")
+		t.Fatal("Host BeginClose did not finish")
 	}
 }

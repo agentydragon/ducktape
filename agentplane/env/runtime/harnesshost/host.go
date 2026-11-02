@@ -40,6 +40,9 @@ type Host struct {
 	fatal               chan error
 	idleSince           *timestamppb.Timestamp
 	lifecycle           *lifecycle
+	beginCloseOnce      sync.Once
+	beginCloseDone      chan struct{}
+	beginCloseErr       error
 	closeOnce           sync.Once
 	closeDone           chan struct{}
 	closeErr            error
@@ -183,16 +186,63 @@ func (r *Host) ensureWorkspace(ctx context.Context, cwd string) (string, error) 
 	return workspace.Ensure(ctx, cwd, config)
 }
 
-// Close starts local process cleanup once. Canceling ctx ends only this caller's wait;
-// accepted setup/bootstrap and the shared cleanup continue under Host ownership.
-func (r *Host) Close(ctx context.Context) error {
-	r.closeOnce.Do(func() {
+// BeginClose fences local admission and waits for native cleanup. Runtime calls
+// it after ingress has finished any required sealed History acknowledgement.
+// Canceling ctx ends only this caller's wait; the accepted cleanup continues.
+func (r *Host) BeginClose(ctx context.Context) error {
+	r.beginCloseOnce.Do(func() {
 		r.mu.Lock()
 		r.closing = true
 		r.mu.Unlock()
+		r.beginCloseDone = make(chan struct{})
+		go func() {
+			r.beginCloseErr = r.finishBeginClose()
+			close(r.beginCloseDone)
+		}()
+	})
+	select {
+	case <-r.beginCloseDone:
+		return r.beginCloseErr
+	default:
+	}
+	select {
+	case <-r.beginCloseDone:
+		return r.beginCloseErr
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (r *Host) isClosing() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.closing
+}
+
+func (r *Host) finishBeginClose() error {
+	r.mu.Lock()
+	err := r.lifecycle.setDesiredState(harnesshostlifecycle.Closing, "")
+	r.mu.Unlock()
+	r.changed()
+	if err == nil {
+		err = r.WaitClosed(r.ctx)
+	}
+	if err != nil {
+		return err
+	}
+	// Controllers stop before joining workers, so no new operation can race Wait.
+	r.cancel()
+	return nil
+}
+
+// CloseJournals joins the shared engine and Host workers before closing Session
+// journals. Runtime first joins its separate ingress worker, then calls this
+// method during final owner release.
+func (r *Host) CloseJournals(ctx context.Context) error {
+	r.closeOnce.Do(func() {
 		r.closeDone = make(chan struct{})
 		go func() {
-			r.closeErr = r.finishClose()
+			r.closeErr = r.finishCloseJournals()
 			close(r.closeDone)
 		}()
 	})
@@ -209,25 +259,10 @@ func (r *Host) Close(ctx context.Context) error {
 	}
 }
 
-func (r *Host) isClosing() bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.closing
-}
-
-func (r *Host) finishClose() error {
-	r.mu.Lock()
-	err := r.lifecycle.setDesiredState(harnesshostlifecycle.Closing, "")
-	r.mu.Unlock()
-	r.changed()
-	if err == nil {
-		err = r.WaitClosed(r.ctx)
-	}
-	if err != nil {
+func (r *Host) finishCloseJournals() error {
+	if err := r.BeginClose(context.Background()); err != nil {
 		return err
 	}
-	// Controllers stop before joining workers, so no new operation can race Wait.
-	r.cancel()
 	// Runtime stops the shared engine only after every Host controller has
 	// published Closed. Join it before closing Host journals.
 	<-r.lifecycle.done.Done()

@@ -1,8 +1,8 @@
 # Environment lifecycle ownership
 
 Environment Runtime is the single lifecycle owner in the management process. It owns identity,
-bootstrap, public control, coordinated drain and the Session worker. The Session component owns
-native Sessions, setup, app-server, journals and History ingress. Execution Service owns typed
+bootstrap, public control, coordinated drain, Session recovery and History delivery. The Session
+component owns native Sessions, setup, app-server and journals. Execution Service owns typed
 execution and the native exec-server. Each component
 has distinct typed lifecycle resources in one Runtime-owned COSI engine. Runtime owns the engine
 and joins it after Host controllers reach Closed and before releasing its environment state owner.
@@ -85,7 +85,7 @@ not interchangeable just because two counters currently have the same number.
 | Identity                                 | Scope                                                                                                                                                                                                                                                             |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `runtime.Runtime`                        | Environment Runtime coordinator; owns the shared COSI engine and environment lifetime.                                                                                                                                                                            |
-| `harnesshost.Host`                       | Runtime-owned Session component; owns retained Sessions and native harness lifecycle. Runtime starts its worker once and observes completion directly.                                                                                                            |
+| `harnesshost.Host`                       | Runtime-owned Session component; owns retained Sessions and native harness lifecycle. Runtime starts its recovery and observes failures directly.                                                                                                                   |
 | `bootstrap.Host`                         | Runtime-owned bootstrap controller and one-shot operation; it is not a separately served host process.                                                                                                                                                            |
 | `codexappserver.Host`                    | One shared Codex app-server process and its protocol readers, used by Codex Sessions.                                                                                                                                                                             |
 | `supervision.Host`                       | A view over the shared process registry, bound to a domain lifetime and worker barrier; in Runtime's shared registry, process attempt IDs are global across the Runtime and Harness views.                                                                        |
@@ -139,10 +139,10 @@ FLUSHING. CLOSING preserves an existing seal and waits for its journal seals; Ru
 Host quiescence and exact History ACKs before requesting Host close when a seal is present. CLOSING
 without a seal performs native cleanup without ending the incarnation's history.
 
-Unexpected Session worker completion closes admission and starts local cleanup without inventing a seal. Local
-Close callers share one cleanup; cancellation ends only the caller's wait. Engine exit and teardown
-errors remain failures, and incomplete cleanup retains ownership. Controllers stop before worker joins;
-journals close after workers. Runtime retains the environment owner
+Session recovery or History delivery failure closes admission synchronously and Runtime starts
+cleanup without inventing a seal. Canceling a Close caller ends only that caller's wait. Engine exit
+and teardown errors remain failures, and incomplete cleanup retains ownership. Runtime joins History
+delivery before Session journals close; controllers stop before Session worker joins. Runtime retains the environment owner
 until its Host and Execution domains are fenced.
 
 Runtime's own COSI engine also runs its Close aggregate alongside bootstrap and process controllers.

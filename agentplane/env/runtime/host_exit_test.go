@@ -18,7 +18,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestInitialHostWaitObservesExitAcrossSubscription(t *testing.T) {
+func TestInitialHostWaitObservesRecoveryFailureAcrossSubscription(t *testing.T) {
 	for _, beforeSubscribe := range []bool{true, false} {
 		name := "after-subscribe"
 		if beforeSubscribe {
@@ -27,7 +27,7 @@ func TestInitialHostWaitObservesExitAcrossSubscription(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
-			failure := errors.New("Session worker stopped during startup")
+			failure := errors.New("Session recovery failed")
 			r := &Runtime{sessionWorkerDone: make(chan struct{}), sessionWorkerErr: failure, changes: make(chan struct{})}
 			subscribed := make(chan struct{})
 			var observed sync.Once
@@ -40,7 +40,7 @@ func TestInitialHostWaitObservesExitAcrossSubscription(t *testing.T) {
 			select {
 			case <-subscribed:
 			case <-ctx.Done():
-				t.Fatal("initial Session wait did not observe worker completion")
+				t.Fatal("initial Session wait did not observe recovery completion")
 			}
 			if !beforeSubscribe {
 				close(r.sessionWorkerDone)
@@ -51,37 +51,31 @@ func TestInitialHostWaitObservesExitAcrossSubscription(t *testing.T) {
 					t.Fatalf("initial Session wait = %v, want original worker error", err)
 				}
 			case <-ctx.Done():
-				t.Fatal("Host exit did not wake initial wait")
+				t.Fatal("Session recovery failure did not wake initial wait")
 			}
 		})
 	}
 }
 
-func TestInitialHostWaitReportsCleanUnexpectedExit(t *testing.T) {
-	r := &Runtime{sessionWorkerDone: make(chan struct{}), changes: make(chan struct{})}
-	close(r.sessionWorkerDone)
-	err := r.waitForInitialHost(t.Context())
-	if err == nil || !strings.Contains(err.Error(), "Session worker stopped") {
-		t.Fatalf("clean unexpected Host exit = %v", err)
-	}
-}
-
-func TestInitialHostWaitOrdersReadyReportAndExit(t *testing.T) {
-	for _, exitBeforeRead := range []bool{true, false} {
-		name := "ready-report-first"
-		if exitBeforeRead {
-			name = "exit-before-ready-read"
+func TestInitialHostWaitRequiresRecoveryEvenWithReadyReport(t *testing.T) {
+	for _, recoveryFails := range []bool{true, false} {
+		name := "successful-recovery"
+		if recoveryFails {
+			name = "failed-recovery"
 		}
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
-			workerErr := errors.New("Session worker exited")
+			recoveryErr := errors.New("Session recovery failed")
 			binding := &runtimepb.Binding{RuntimeBootId: "runtime", Generation: 1}
 			intent := &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_INACTIVE}
 			r := &Runtime{
-				sessionWorkerDone: make(chan struct{}), sessionWorkerErr: workerErr,
+				sessionWorkerDone: make(chan struct{}),
 				host: &hostBinding{active: true}, intent: intent,
 				lifecycleState: state.WrapCore(namespaced.NewState(inmem.Build)), changes: make(chan struct{}), fatal: make(chan error, 1),
+			}
+			if recoveryFails {
+				r.sessionWorkerErr = recoveryErr
 			}
 			publishAppliedHostIntent(t, r)
 			report := lifecycle.HostReport{Intent: proto.Clone(intent).(*runtimepb.LifecycleIntent), Report: &runtimepb.HostReport{
@@ -90,19 +84,36 @@ func TestInitialHostWaitOrdersReadyReportAndExit(t *testing.T) {
 			if err := cosi.Publish(ctx, r.lifecycleState, lifecycle.HostReportResource(report), report, "harness-host-report"); err != nil {
 				t.Fatal(err)
 			}
-			if exitBeforeRead {
+			if recoveryFails {
 				close(r.sessionWorkerDone)
-			}
-			err := r.waitForInitialHost(ctx)
-			if exitBeforeRead {
-				if !errors.Is(err, workerErr) {
-					t.Fatalf("ready report won after Host exit: %v", err)
+				if err := r.waitForInitialHost(ctx); !errors.Is(err, recoveryErr) {
+					t.Fatalf("ready report won over failed recovery: %v", err)
 				}
-			} else if err != nil {
-				t.Fatalf("ready report before Host exit was rejected: %v", err)
+				return
 			}
-			if !exitBeforeRead {
-				close(r.sessionWorkerDone)
+			subscribed := make(chan struct{})
+			var observed sync.Once
+			r.deps.afterInitialWaitSnapshot = func() { observed.Do(func() { close(subscribed) }) }
+			result := make(chan error, 1)
+			go func() { result <- r.waitForInitialHost(ctx) }()
+			select {
+			case <-subscribed:
+			case <-ctx.Done():
+				t.Fatal("initial Host wait did not inspect the ready report")
+			}
+			select {
+			case err := <-result:
+				t.Fatalf("ready report bypassed Session recovery: %v", err)
+			default:
+			}
+			close(r.sessionWorkerDone)
+			select {
+			case err := <-result:
+				if err != nil {
+					t.Fatalf("ready report after Session recovery = %v", err)
+				}
+			case <-ctx.Done():
+				t.Fatal("successful Session recovery did not wake initial Host wait")
 			}
 		})
 	}
@@ -117,6 +128,7 @@ func TestInitialHostWaitWakesOnRuntimeFailureOrClose(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
+			failure := errors.New("injected Runtime failure")
 			r := &Runtime{sessionWorkerDone: make(chan struct{}), changes: make(chan struct{})}
 			subscribed := make(chan struct{})
 			var observed sync.Once
@@ -131,11 +143,17 @@ func TestInitialHostWaitWakesOnRuntimeFailureOrClose(t *testing.T) {
 			r.mu.Lock()
 			r.failed = !closing
 			r.closing = closing
+			if !closing {
+				r.failureErr = failure
+			}
 			r.changedLocked()
 			r.mu.Unlock()
 			select {
 			case err := <-result:
-				if err == nil || !strings.Contains(err.Error(), "failed or closed") {
+				if !closing && !errors.Is(err, failure) {
+					t.Fatalf("initial Host wait after Runtime failure = %v, want injected cause", err)
+				}
+				if closing && (err == nil || !strings.Contains(err.Error(), "closed")) {
 					t.Fatalf("initial Host wait after Runtime %s = %v", name, err)
 				}
 			case <-ctx.Done():
@@ -145,7 +163,7 @@ func TestInitialHostWaitWakesOnRuntimeFailureOrClose(t *testing.T) {
 	}
 }
 
-func TestClosePreparationTreatsExitedHostAsDisconnected(t *testing.T) {
+func TestClosePreparationTreatsFailedRecoveryAsDisconnected(t *testing.T) {
 	config := lifecycleConfig(t, "", t.TempDir(), nil, "/bin/false")
 	r, err := newRuntime(config.Config, nil, runtimeDeps{})
 	if err != nil {
@@ -153,6 +171,7 @@ func TestClosePreparationTreatsExitedHostAsDisconnected(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = r.owner.Close() })
 	r.sessionWorkerDone = make(chan struct{})
+	r.sessionWorkerErr = errors.New("Session recovery failed")
 	r.sessions = &harnesshost.Host{}
 	r.host = &hostBinding{active: true}
 	close(r.sessionWorkerDone)
@@ -162,6 +181,6 @@ func TestClosePreparationTreatsExitedHostAsDisconnected(t *testing.T) {
 	}
 	defer coordinator.plan.cancelFence()
 	if coordinator.plan.active || coordinator.plan.binding != nil || !coordinator.plan.sessionsStarted {
-		t.Fatalf("Close plan after Host exit = %+v, want disconnected Host with cleanup ownership", coordinator.plan)
+		t.Fatalf("Close plan after failed Session recovery = %+v, want disconnected Session component with cleanup ownership", coordinator.plan)
 	}
 }

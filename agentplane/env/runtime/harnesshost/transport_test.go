@@ -179,7 +179,7 @@ func newBareRunner(t *testing.T) *Host {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := runner.Close(context.Background()); err != nil {
+		if err := runner.CloseJournals(context.Background()); err != nil {
 			t.Errorf("close test host: %v", err)
 		}
 	})

@@ -1,18 +1,17 @@
 package harnesshost
 
 import (
-	"context"
 	"errors"
-	"sync"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/ingress"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 )
 
-// Run joins the embedded Host controllers under Runtime's management lifetime.
-// Only the public Gateway control server remains a network listener.
-func (r *Host) Run(ctx context.Context, endpoint configuration.Endpoint, bridge RuntimeBridge) error {
+// Startup recovers durable Session state before Runtime starts History delivery
+// or exposes public control. The Host owns the Session component, while Runtime
+// owns the startup worker and the environment lifetime.
+func (r *Host) Startup(bridge RuntimeBridge) error {
 	if bridge == nil {
 		return errors.New("Harness Host requires its Runtime coordinator")
 	}
@@ -21,34 +20,20 @@ func (r *Host) Run(ctx context.Context, endpoint configuration.Endpoint, bridge 
 	r.mu.Unlock()
 	if err := r.sessions.Startup(r.ctx); err != nil {
 		r.fail(err)
-		bridge.HostFailed(err)
-		return errors.Join(err, r.Close(context.WithoutCancel(ctx)))
+		return err
 	}
 	r.mu.Lock()
 	r.startupComplete = true
 	r.mu.Unlock()
 	close(r.startupDone)
-	servingCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	defer cancel()
-	var workers sync.WaitGroup
-	workers.Go(func() {
-		if err := r.newIngressSupervisor(endpoint).Run(servingCtx); err != nil && servingCtx.Err() == nil {
-			r.fail(err)
-		}
-	})
-	var failure error
-	select {
-	case <-ctx.Done():
-	case failure = <-r.fatal:
-		bridge.HostFailed(failure)
-	}
-	// Accepted native effects and their journals settle before the coordinator
-	// is canceled; Runtime waits for this joined lifetime before releasing its lock.
-	closeErr := r.Close(context.WithoutCancel(ctx))
-	cancel()
-	workers.Wait()
-	return errors.Join(failure, closeErr)
+	return nil
 }
+
+// Failures reports a local Host failure to Runtime's supervision worker.
+func (r *Host) Failures() <-chan error { return r.fatal }
+
+// ReportFailure closes the Host admission gate before notifying Runtime.
+func (r *Host) ReportFailure(err error) { r.fail(err) }
 
 func (r *Host) newIngressSupervisor(endpoint configuration.Endpoint) *ingress.Supervisor {
 	return ingress.NewSupervisor(ingress.SupervisorConfig{
@@ -58,6 +43,12 @@ func (r *Host) newIngressSupervisor(endpoint configuration.Endpoint) *ingress.Su
 			return nil
 		},
 	})
+}
+
+// IngressSupervisor supplies the Session inventory and durable ACK store to a
+// Runtime-owned delivery worker.
+func (r *Host) IngressSupervisor(endpoint configuration.Endpoint) *ingress.Supervisor {
+	return r.newIngressSupervisor(endpoint)
 }
 
 func (r *Host) ingressSources() []ingress.Source {

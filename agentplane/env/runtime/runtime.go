@@ -71,6 +71,7 @@ type runtimeDeps struct {
 	stopSessions             func(context.Context) error
 	waitSessionsClosed       func(context.Context) error
 	closeSessions            func(context.Context) error
+	runIngress               func(context.Context, *harnesshost.Host, configuration.Endpoint) error
 }
 
 type executionHandle interface {
@@ -138,9 +139,9 @@ type Runtime struct {
 	control                  *control.Server
 	waitBootstrap            func(context.Context) error
 	sessions                 *harnesshost.Host
-	sessionWorkerCancel      context.CancelFunc
 	sessionWorkerDone        chan struct{}
 	sessionWorkerErr         error
+	ingress                  *ingressWorker
 	closeOnce                sync.Once
 	closeDone                chan struct{}
 	closeErr                 error
@@ -448,7 +449,7 @@ func (r *Runtime) joinClose() error {
 	sessionLossErr := r.lifecycleCoordinator.plan.sessionLossErr
 	if r.sessions != nil {
 		<-r.sessionWorkerDone
-		// Worker completion does not prove native cleanup. Retain Runtime's
+		// Recovery completion does not prove native cleanup. Retain Runtime's
 		// owner if the Session component cannot finish its joined work.
 		if cleanupErr := r.closeSessions(context.Background()); cleanupErr != nil {
 			return errors.Join(sessionLossErr, r.sessionWorkerErr, fmt.Errorf("Session cleanup unproved: %w", cleanupErr))

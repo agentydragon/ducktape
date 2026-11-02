@@ -132,7 +132,7 @@ func TestManagedProcessBlocksCloseUntilFence(t *testing.T) {
 	closeDone := make(chan struct{})
 	var closeErr error
 	go func() {
-		closeErr = r.Close(context.Background())
+		closeErr = r.CloseJournals(context.Background())
 		close(closeDone)
 	}()
 	t.Cleanup(func() {
@@ -221,7 +221,7 @@ func newManagedProcessTestHost(t *testing.T) *Host {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := r.Close(context.Background()); err != nil {
+		if err := r.CloseJournals(context.Background()); err != nil {
 			t.Errorf("close managed process test host: %v", err)
 		}
 	})

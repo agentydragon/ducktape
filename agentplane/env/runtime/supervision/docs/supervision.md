@@ -7,11 +7,11 @@ serve scoped owner views with separate contexts, process domains, worker trackin
 `supervision.ProcessConfig` through `supervision.ManagedProcess`; owning controllers retain
 readiness, restart and journal decisions. A completed attempt never relaunches during reconciliation.
 
-| Owner               | Processes and state                                                                                             |
-| ------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Environment Runtime | Environment bootstrap, Host/Execution lifecycle, environment generation and environment state-owner lock        |
-| Harness Host        | Shared Codex app-server, Claude Sessions, Session setup/workspace helpers, Session journals and History ingress |
-| Execution Service   | Native exec-server and execution requests; the Pod companion owns the native executor's separate PID namespace  |
+| Owner               | Processes and state                                                                                                        |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Environment Runtime | Environment bootstrap, Host/Execution lifecycle, History delivery, environment generation and environment state-owner lock |
+| Harness Host        | Shared Codex app-server, Claude Sessions, Session setup/workspace helpers and Session journals                             |
+| Execution Service   | Native exec-server and execution requests; the Pod companion owns the native executor's separate PID namespace             |
 
 Each supervisor creates `Process` handles through a private backend interface. `Process` owns
 streams, PID and completion result; the backend owns launch, observation and execution-domain
@@ -42,7 +42,7 @@ Runtime coordinates its embedded process owners with direct calls. Host reports 
 exact Runtime boot ID and lifecycle generation. Runtime fences Execution before authorizing
 Host sealing and waits for the matching seal/History ACK before completing quiesce. The
 [Host protocol](../../harnesshost/SPEC.md) and [environment lifecycle](../../docs/lifecycle.md) define those
-barriers. Host lifetime loss closes admission and drains native work without inventing a seal.
+barriers. Host failure closes admission and Runtime drains native work without inventing a seal.
 
 ## VM services
 

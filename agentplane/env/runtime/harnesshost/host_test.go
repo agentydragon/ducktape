@@ -39,7 +39,7 @@ func closeHostForTest(t *testing.T, r *Host) error {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return r.Close(ctx)
+	return r.CloseJournals(ctx)
 }
 
 func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
@@ -496,7 +496,7 @@ func TestCloseSettlesAfterInitialOperationPublicationFailure(t *testing.T) {
 	r, _, marker := failedInitialOperationHost(t, false)
 
 	closeDone := make(chan error, 1)
-	go func() { closeDone <- r.Close(context.Background()) }()
+	go func() { closeDone <- r.CloseJournals(context.Background()) }()
 	closeCtx, cancelClose := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancelClose()
 	select {
@@ -523,7 +523,7 @@ func TestCloseReportsTeardownOperationPublicationFailure(t *testing.T) {
 	closeCtx, cancelClose := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancelClose()
 	closeDone := make(chan error, 1)
-	go func() { closeDone <- r.Close(context.Background()) }()
+	go func() { closeDone <- r.CloseJournals(context.Background()) }()
 	select {
 	case err := <-closeDone:
 		if err == nil || !strings.Contains(err.Error(), "publish operation start") {
@@ -737,7 +737,7 @@ func newLifecycleHostWithState(t *testing.T, config Config, store state.State) *
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := r.Close(context.Background()); err != nil {
+		if err := r.CloseJournals(context.Background()); err != nil {
 			t.Errorf("close test host: %v", err)
 		}
 	})
@@ -776,7 +776,7 @@ func TestScriptRunPreservesEnvironmentStreamsAndExitStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := r.Close(context.Background()); err != nil {
+		if err := r.CloseJournals(context.Background()); err != nil {
 			t.Errorf("close test host: %v", err)
 		}
 	})

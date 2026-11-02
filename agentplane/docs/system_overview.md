@@ -318,13 +318,15 @@ flowchart LR
     runtime -->|direct typed Session calls| host
     runtime -->|direct Executor calls / backend fence| execution
     runtime --> bootstrap
-    host -.->|durable journal push and ACK| history
+    host -->|Session journal inventory| runtime
+    runtime -.->|durable journal push and ACK| history
 ```
 
 The components share one process. Runtime owns environment identity, bootstrap, health and aggregate lifecycle. Host owns native Session
 admission, state and journals; it rechecks Runtime boot and generation before durable work.
-Host reports native stop before Runtime acknowledges Execution fencing, then seals and flushes exact
-History cursors. Public connection Leases and epoch fencing remain in Runtime's control endpoint.
+Host reports native stop before Runtime acknowledges Execution fencing, then seals journals. Runtime
+keeps its History delivery worker alive through the exact sealed cursor ACK and joins it before Host
+closes journals. Public connection Leases and epoch fencing remain in Runtime's control endpoint.
 Central sampler remains a separate control-plane process outside the environment.
 
 ## Codex execution inside a Sandbox

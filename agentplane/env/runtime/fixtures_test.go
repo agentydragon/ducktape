@@ -68,29 +68,17 @@ func newLifecycleRuntime(t *testing.T, config runtimeTestConfig) *Runtime {
 
 func newLifecycleRunnerWithState(t *testing.T, config runtimeTestConfig, store state.State) *Runtime {
 	t.Helper()
+	config.Config.HostConfig = config.host
+	if config.Config.HostIngress.Target == "" {
+		config.Config.HostIngress.Target = startAcknowledgingHistory(t)
+	}
 	r, err := newRuntime(config.Config, store, config.deps)
 	if err != nil {
 		t.Fatal(err)
 	}
-	historyTarget := startAcknowledgingHistory(t)
-	config.host.StateDir = config.StateDir
-	config.host.ProcessSupervisor = r.supervisor
-	host, err := harnesshost.NewEmbedded(config.host, r.lifecycleState, r.lifecycleEngine, r.lifecycleDone, r.processes)
-	if err != nil {
+	if err := r.startHost(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	r.sessions = host
-	r.sessionWorkerCancel = cancel
-	r.sessionWorkerDone = make(chan struct{})
-	if err := r.bindHost(); err != nil {
-		t.Fatal(err)
-	}
-	r.startLifecycleEngine()
-	go func() {
-		r.sessionWorkerErr = host.Run(ctx, configuration.Endpoint{Target: historyTarget}, r)
-		close(r.sessionWorkerDone)
-	}()
 	t.Cleanup(func() {
 		closeCtx, closeCancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 		defer closeCancel()
@@ -100,26 +88,33 @@ func newLifecycleRunnerWithState(t *testing.T, config runtimeTestConfig, store s
 		}
 		if config.expectCloseError && closeErr != nil {
 			// An unproved fence deliberately retains the shared engine and owner.
-			// This fixture owns only temporary state, so stop the engine to join
-			// the remaining Host goroutines after the test's assertions.
+			// This fixture owns only temporary state. Settle Session cleanup
+			// before stopping the engine, even though production retains the owner.
+			select {
+			case <-r.lifecycleDone:
+			default:
+				_ = r.stopSessions(closeCtx)
+			}
+			_ = r.stopIngress(closeCtx)
 			r.lifecycleCancel()
 			<-r.lifecycleDone
+			_ = r.closeSessions(closeCtx)
+			return
 		}
-		cancel()
 		select {
 		case <-r.sessionWorkerDone:
 			if r.sessionWorkerErr != nil && !config.expectCloseError {
-				t.Errorf("Host close: %v", r.sessionWorkerErr)
+				t.Errorf("Session recovery: %v", r.sessionWorkerErr)
 			}
 		case <-closeCtx.Done():
-			t.Error("Host failed to join")
+			t.Error("Session recovery failed to join")
 		}
 	})
-	waitRuntime(t, r, func() bool {
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		return r.host != nil && r.hostReportLocked() != nil && r.hostReportLocked().Ready && r.hostReportLocked().NativeStopped
-	}, "Host initial binding")
+	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+	defer cancel()
+	if err := r.waitForInitialHost(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if err := r.adoptIncarnation(context.Background(), "test-incarnation"); err != nil {
 		t.Fatal(err)
 	}

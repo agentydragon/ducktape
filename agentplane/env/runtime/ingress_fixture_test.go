@@ -16,12 +16,17 @@ import (
 // cannot finish a sealed drain while Host's journals have no acknowledged seal.
 func startAcknowledgingHistory(t *testing.T) string {
 	t.Helper()
+	return startHistoryService(t, &acknowledgingHistory{acks: map[string]*ingresspb.Acknowledgement{}})
+}
+
+func startHistoryService(t *testing.T, history *acknowledgingHistory) string {
+	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	ingresspb.RegisterSessionJournalIngressServer(server, &acknowledgingHistory{acks: map[string]*ingresspb.Acknowledgement{}})
+	ingresspb.RegisterSessionJournalIngressServer(server, history)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	return listener.Addr().String()
@@ -29,8 +34,11 @@ func startAcknowledgingHistory(t *testing.T) string {
 
 type acknowledgingHistory struct {
 	ingresspb.UnimplementedSessionJournalIngressServer
-	mu   sync.Mutex
-	acks map[string]*ingresspb.Acknowledgement
+	mu          sync.Mutex
+	acks        map[string]*ingresspb.Acknowledgement
+	sealSeen    chan struct{}
+	releaseSeal <-chan struct{}
+	sealOnce    sync.Once
 }
 
 func (h *acknowledgingHistory) Push(stream grpc.BidiStreamingServer[ingresspb.PushFrame, ingresspb.Acknowledgement]) error {
@@ -76,6 +84,16 @@ func (h *acknowledgingHistory) Push(stream grpc.BidiStreamingServer[ingresspb.Pu
 				return fmt.Errorf("History seal does not name the received prefix and incarnation")
 			}
 			ack.Sealed = true
+			if h.sealSeen != nil {
+				h.sealOnce.Do(func() { close(h.sealSeen) })
+				h.mu.Unlock()
+				select {
+				case <-h.releaseSeal:
+				case <-stream.Context().Done():
+					return stream.Context().Err()
+				}
+				h.mu.Lock()
+			}
 		} else if frame.GetHeartbeat() == nil {
 			h.mu.Unlock()
 			return fmt.Errorf("unexpected History ingress frame")
