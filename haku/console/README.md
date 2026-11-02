@@ -78,7 +78,7 @@ Writer rollout by vocabulary:
 - **Decision** — drives behavior (identity, provenance, rejection statuses): the reader knowing
   the new member ships one release before the writer. Columns stay strict: tolerance would not lift
   the two-release rule, since no consumer may guess.
-- **Required field added to an existing shape** — a narrowing, not an extension: expand/contract
+- **Required field added to an existing shape** — a narrowing, not an extension: expand–migrate–contract
   plus a constraint making the old writer fail rather than write a permanently misread row.
 
 ## Test
