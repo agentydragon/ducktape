@@ -238,7 +238,7 @@ function ConversationBody({
   const threadsLive = useRequiredThreadsLive();
   const sandboxesLive = useRequiredSandboxesLive();
   const inventoryFresh = sandboxInventoryFresh(sandboxesLive);
-  const currentSandbox = sandboxesLive.snapshot?.environments.find(
+  const currentSandbox = sandboxesLive.snapshot?.find(
     (candidate) => candidate.target?.name === thread.sandbox && candidate.target.uid === thread.sandbox_uid
   );
   const status = threadStatusFromSnapshot(

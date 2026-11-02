@@ -71,7 +71,7 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
   const environment = useRequiredSandboxesLive();
   const inventoryFresh = sandboxInventoryFresh(environment);
   // The top bar and the composer read the one Sandbox row, so they cannot disagree about it.
-  const sandbox = environment.snapshot?.environments.find(
+  const sandbox = environment.snapshot?.find(
     (candidate) =>
       thread !== null &&
       candidate.target !== undefined &&

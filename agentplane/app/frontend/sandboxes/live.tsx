@@ -1,8 +1,6 @@
-import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
+import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
 import {
-  EnvironmentChunkSchema,
-  type EnvironmentChunk,
   WatchEnvironmentsResponseSchema,
   WatchEnvironmentResponseSchema,
   type EnvironmentDescriptor,
@@ -37,11 +35,11 @@ export function liveEgressDecisionsUrl(target: TargetHandle): string {
   return `/live/sandboxes/${encodeURIComponent(target.name)}/egress/decisions?sandbox_uid=${encodeURIComponent(target.uid)}`;
 }
 
-const SandboxesLiveContext = createContext<Live<EnvironmentChunk> | null>(null);
+const SandboxesLiveContext = createContext<Live<EnvironmentDescriptor[]> | null>(null);
 
 /** One caller-scoped EnvironmentService stream shared by all inventory consumers. */
 export function SandboxesLiveProvider({ children }: { children: ReactNode }): JSX.Element {
-  const [snapshot, setSnapshot] = useState<EnvironmentChunk | null>(null);
+  const [snapshot, setSnapshot] = useState<EnvironmentDescriptor[] | null>(null);
   const [ready, setReady] = useState(false);
   const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
   useEffect(() => {
@@ -52,7 +50,7 @@ export function SandboxesLiveProvider({ children }: { children: ReactNode }): JS
       const sandboxes = Array.from(current.values()).sort(
         (a, b) => a.target!.namespace.localeCompare(b.target!.namespace) || a.target!.name.localeCompare(b.target!.name)
       );
-      setSnapshot(create(EnvironmentChunkSchema, { environments: sandboxes }));
+      setSnapshot(sandboxes);
     };
     return followWatch(liveSandboxesUrl(), {
       onOpen: () => {
@@ -114,7 +112,7 @@ export function SandboxesLiveProvider({ children }: { children: ReactNode }): JS
       : "Waiting for inventory snapshot"
     : null;
   const stream = useStreamStatus("Sandboxes", connection, stalled);
-  const live: Live<EnvironmentChunk> = {
+  const live: Live<EnvironmentDescriptor[]> = {
     snapshot,
     health: snapshot === null ? null : { healthy: true, failing: {} },
     stream,
@@ -123,11 +121,11 @@ export function SandboxesLiveProvider({ children }: { children: ReactNode }): JS
 }
 
 /** Whether the inventory stream is current and the server's watch behind it healthy, so its Sandboxes are live. */
-export function sandboxInventoryFresh(live: Live<EnvironmentChunk>): boolean {
+export function sandboxInventoryFresh(live: Live<EnvironmentDescriptor[]>): boolean {
   return live.stream.standing === "current" && live.health?.healthy === true;
 }
 
-export function useRequiredSandboxesLive(): Live<EnvironmentChunk> {
+export function useRequiredSandboxesLive(): Live<EnvironmentDescriptor[]> {
   const live = useContext(SandboxesLiveContext);
   if (!live) throw new Error("Sandbox status requires SandboxesLiveProvider");
   return live;
