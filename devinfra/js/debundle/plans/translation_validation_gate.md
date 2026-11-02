@@ -262,9 +262,12 @@ acceptance nor the comparison derives facts from those sampled examples.
 
 2. **Effect-set conflicts.** Switch the sweep to effect sets (needs
    abstract-interpreter step 7) and report the differences against the
-   edge-based verdict per category. A pair TV accepts that the gate rejects
-   must have no conflicting cell. A pair TV rejects that the gate accepts is
-   a soundness bug in the edge rules or a missing effect.
+   edge-based verdict per category. Classify each discrepancy from its source
+   and effect witnesses before changing authority. A new acceptance may expose
+   conservative legacy edges or missing or understated effects; it requires proof
+   that no conflicting cell was omitted. A new rejection may expose a conflict
+   missed by legacy rules, conservative effect coverage, or an incorrect new
+   effect. Verdict disagreement alone does not identify which checker is wrong.
    - Forward edges move into the sweep here (§ Relation to today's gate).
      The gate accepts some orders only by swapping a forward edge, which
      step 1 reports as `forward_edges_swapped` outside its verdict: on
