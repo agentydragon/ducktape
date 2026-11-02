@@ -54,6 +54,7 @@ def test_card_responses_describe_the_same_accounts_and_statement_spend() -> None
 @pytest.mark.parametrize("period", [PeriodId.CREDIT_CYCLE, PeriodId.ROLLING_7D, PeriodId.ROLLING_30D])
 def test_transaction_summary_matches_shown_rows(period: TransactionPeriodId) -> None:
     view = transactions.view(period)
+    assert view.rows == sorted(view.rows, key=lambda row: (row.date, abs(row.amount_minor_units)), reverse=True)
     assert view.summary.transaction_count == len(view.rows)
     assert view.summary.net_allowance_spend_minor_units == sum(row.allowance_minor_units for row in view.rows)
     unmatched = [

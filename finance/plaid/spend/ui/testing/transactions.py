@@ -388,6 +388,7 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             category=_UNCLASSIFIED,
         ),
     ]
+    rows.sort(key=lambda row: (row.date, abs(row.amount_minor_units)), reverse=True)
     shown = [row for row in rows if row.date >= PeriodId(period).start(today, date(2026, 9, 25))]
     return SpendTransactionsView(
         generated_at=datetime(2026, 10, 15, 12, tzinfo=UTC),
