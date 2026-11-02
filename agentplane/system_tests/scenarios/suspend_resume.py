@@ -253,6 +253,7 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
         environment["AGENTPLANE_SESSIONS_CREDENTIAL"] = token
         descriptor = await _run_cli(environment, "environments", "get", target.namespace, target.name, target.uid)
         actions = descriptor["actions"]
+        assert isinstance(actions, dict), descriptor
         eligibility = actions["resume_eligibility"]
         assert isinstance(eligibility, dict), descriptor
         assert eligibility["state"] == "RESUME_ELIGIBILITY_STATE_AVAILABLE", descriptor
