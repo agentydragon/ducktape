@@ -10,6 +10,13 @@ containerd keeps unpacked image layers (its overlayfs snapshotter's root) on a t
 with VM Sandboxes ([measurements](debug/stack_timings.md#image-layers-in-memory-2026-10-21)).
 The stack pins its imported OCI images in containerd's CRI metadata. Kubelet image GC can otherwise
 delete an image before a later Sandbox uses it; these fixture-local tags cannot be pulled from a registry.
+At import-group boundaries, the stack removes untagged, unpinned CRI images
+that no container uses. Named caches stay warm, including k3s's own images. Cleanup also runs with
+the kubelet stopped during a cold rebuild, before restored obsolete layers can trigger evictions
+while a fresh kubelet waits for its image-GC minimum age. See the
+[storage-pressure reproduction](debug/2026_11_02_image_store_pressure.md).
+During imports, using half of a group's starting filesystem headroom triggers an intermediate
+sweep. Filesystem checks avoid a CRI round trip for each unchanged or small image import.
 
 Every `k3s_suite` retains live k3s and cert-manager/trust-manager in hosted BuildBuddy RBE snapshots. VM suites
 also retain KubeVirt and Kyverno. This is the default for Pod, Dispatcher, all MCP suites,
@@ -52,6 +59,9 @@ Retained baselines also publish bounded tails of the k3s, containerd and contain
 as `*-retained.log`, plus `baseline-transitions.jsonl` with reset/stop ownership and file-state evidence,
 including when baseline attachment fails. Dispatcher failure diagnostics include
 CRI image status and containerd image references before the failed Sandbox is deleted.
+`storage/{before-import,final}/` captures filesystem bytes/inodes, CRI and containerd images,
+kubelet stats/config/metrics, and Node/Pod events. `image-prune.log` records reclaimed image IDs;
+`system_test.images.prune` spans account for cleanup time.
 
 Every stack exposes the fixture-owned OTLP receiver at the production Alloy service name, so
 service and Runner spans are collected in `process-spans.jsonl`. Driver spans write directly to disk
