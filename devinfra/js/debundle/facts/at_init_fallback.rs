@@ -564,6 +564,14 @@ impl Visit for OpaqueAtInitCallFinder<'_> {
                 Expr::Call(call) if self.native_facts.symbol_for_literal_proof(call).is_some() => {
                     false
                 }
+                Expr::New(construction)
+                    if self
+                        .native_facts
+                        .text_encoder_empty_proof(construction)
+                        .is_some() =>
+                {
+                    false
+                }
                 Expr::Call(_) | Expr::New(_) => !classify_expr_purity(
                     expr,
                     self.shadowed,

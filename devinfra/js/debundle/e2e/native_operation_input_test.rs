@@ -66,7 +66,7 @@ fn primitive_set_input(source: &str) -> NativeOperationInputContract {
     }
 }
 
-fn selected_set_input(
+fn selected_native_input(
     source: &str,
     declaration: &str,
     binding: &str,
@@ -82,7 +82,7 @@ fn selected_set_input(
         ),
         operation,
         audited_source_sha256: source_hash(source),
-        note: Some("Neutral fixture audits this exact Set operation.".to_string()),
+        note: Some("Neutral fixture audits this exact native operation.".to_string()),
     }
 }
 
@@ -115,19 +115,19 @@ fn certified_fresh_sets_split_after_unrelated_constructor_heap_barrier() {
         .with_native_operation_inputs(
             "static/app",
             vec![
-                selected_set_input(
+                selected_native_input(
                     SOURCE,
                     DECLARATION,
                     "seed",
                     NativeOperationKind::SetFromPrimitiveArray,
                 ),
-                selected_set_input(
+                selected_native_input(
                     SOURCE,
                     DECLARATION,
                     "sibling",
                     NativeOperationKind::SetFromPrimitiveArray,
                 ),
-                selected_set_input(
+                selected_native_input(
                     SOURCE,
                     DECLARATION,
                     "merged",
@@ -188,19 +188,19 @@ fn certified_same_output_set_spread_removes_only_its_constructor_barrier() {
     const SOURCE: &str = "globalThis.saved = () => factory();\nvar seed = new Set(['a']), sibling = new Set(['b']), merged = new Set([...seed, 'c']);\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconsole.log(merged.size, LaterError.name);\nexport { factory, LaterError };\n";
     let inputs = || {
         vec![
-            selected_set_input(
+            selected_native_input(
                 SOURCE,
                 DECLARATION,
                 "seed",
                 NativeOperationKind::SetFromPrimitiveArray,
             ),
-            selected_set_input(
+            selected_native_input(
                 SOURCE,
                 DECLARATION,
                 "sibling",
                 NativeOperationKind::SetFromPrimitiveArray,
             ),
-            selected_set_input(
+            selected_native_input(
                 SOURCE,
                 DECLARATION,
                 "merged",
@@ -266,7 +266,7 @@ fn repeated_var_input_selects_the_matched_declaration_site() {
             .with_unassigned_mode(unassigned_mode_inline())
             .with_native_operation_inputs(
                 "static/app",
-                vec![selected_set_input(
+                vec![selected_native_input(
                     SOURCE,
                     DECLARATION,
                     "seed",
@@ -282,19 +282,19 @@ fn set_spread_requires_every_intervening_constructor_and_one_output_module() {
     const DECLARATION: &str =
         "var seed = new Set([1]), sibling = new Set([2]), merged = new Set([...seed, 3]);";
     let source = format!("{DECLARATION}\nconsole.log(merged.size);\nexport {{}};\n");
-    let seed = selected_set_input(
+    let seed = selected_native_input(
         &source,
         DECLARATION,
         "seed",
         NativeOperationKind::SetFromPrimitiveArray,
     );
-    let sibling = selected_set_input(
+    let sibling = selected_native_input(
         &source,
         DECLARATION,
         "sibling",
         NativeOperationKind::SetFromPrimitiveArray,
     );
-    let spread = selected_set_input(
+    let spread = selected_native_input(
         &source,
         DECLARATION,
         "merged",
@@ -341,7 +341,7 @@ fn set_spread_interval_accepts_zero_or_multiple_inert_siblings() {
             format!("var seed = new Set([1]), {middle}merged = new Set([...seed, 3]);");
         let source = format!("{declaration}\nconsole.log(merged.size);\nexport {{}};\n");
         let mut bindings = vec![Member::new("seed")];
-        let mut inputs = vec![selected_set_input(
+        let mut inputs = vec![selected_native_input(
             &source,
             &declaration,
             "seed",
@@ -350,7 +350,7 @@ fn set_spread_interval_accepts_zero_or_multiple_inert_siblings() {
         for index in 0..siblings {
             let name = ["sibling0", "sibling1"][index];
             bindings.push(Member::new(name));
-            inputs.push(selected_set_input(
+            inputs.push(selected_native_input(
                 &source,
                 &declaration,
                 name,
@@ -358,7 +358,7 @@ fn set_spread_interval_accepts_zero_or_multiple_inert_siblings() {
             ));
         }
         bindings.push(Member::new("merged"));
-        inputs.push(selected_set_input(
+        inputs.push(selected_native_input(
             &source,
             &declaration,
             "merged",
@@ -384,13 +384,13 @@ fn set_spread_rejects_intervening_mutators_and_callbacks() {
         );
         let source = format!("{declaration}\nconsole.log(merged.size);\nexport {{}};\n");
         let inputs = vec![
-            selected_set_input(
+            selected_native_input(
                 &source,
                 &declaration,
                 "seed",
                 NativeOperationKind::SetFromPrimitiveArray,
             ),
-            selected_set_input(
+            selected_native_input(
                 &source,
                 &declaration,
                 "merged",
@@ -423,13 +423,13 @@ fn set_spread_rejects_native_protocol_replacement_in_another_chunk() {
         "import './mutation.js';\n{DECLARATION}\nconsole.log(merged.size);\nexport {{}};\n"
     );
     let inputs = vec![
-        selected_set_input(
+        selected_native_input(
             &source,
             DECLARATION,
             "seed",
             NativeOperationKind::SetFromPrimitiveArray,
         ),
-        selected_set_input(
+        selected_native_input(
             &source,
             DECLARATION,
             "merged",
@@ -474,13 +474,13 @@ fn certified_spread_keeps_later_alias_mutation_order() {
         .with_native_operation_inputs(
             "static/app",
             vec![
-                selected_set_input(
+                selected_native_input(
                     &source,
                     DECLARATION,
                     "seed",
                     NativeOperationKind::SetFromPrimitiveArray,
                 ),
-                selected_set_input(
+                selected_native_input(
                     &source,
                     DECLARATION,
                     "merged",
@@ -1326,4 +1326,258 @@ fn primitive_argument_throw_is_preserved_by_the_selected_call_path() {
     let uses = native_input_uses(&graph);
     assert_eq!(uses.len(), 1, "the exact selected call is still reported");
     assert_eq!(uses[0]["evidence"]["selected_binding"], "marker");
+}
+
+fn encoder_input(source: &str) -> NativeOperationInputContract {
+    let declaration = source
+        .lines()
+        .find(|line| line.starts_with("const encoder ="))
+        .unwrap();
+    selected_native_input(
+        source,
+        declaration,
+        "encoder",
+        NativeOperationKind::TextEncoderEmpty,
+    )
+}
+
+fn encoder_opts(source: &str) -> FixtureOpts<'_> {
+    FixtureOpts::new(source, vec![])
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_extra_chunks(REFLECT_CHUNKS)
+        .with_extra_files(&[("static/reflect.js", REFLECT_SOURCE)])
+}
+
+#[test]
+fn exact_encoder_input_keeps_adjacent_construction_and_returned_methods_opaque() {
+    let source = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nconst encoder = new TextEncoder();\nconst adjacent = new TextEncoder();\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconst encoded = encoder.encode('ok');\nconst getter = globalThis.TextEncoder;\nconsole.log(encoded.length, adjacent.encoding, Boolean(getter));\nexport { encoder, adjacent, factory, LaterError, reflect };\n";
+    let opts = || {
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "values",
+                &[
+                    Member::new("encoder"),
+                    Member::new("adjacent"),
+                    Member::new("factory"),
+                    Member::new("LaterError"),
+                    Member::new("encoded"),
+                    Member::new("getter"),
+                ],
+                &[
+                    "globalThis.saved = () => factory();",
+                    "console.log(encoded.length, adjacent.encoding, Boolean(getter));",
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_extra_chunks(REFLECT_CHUNKS)
+        .with_extra_files(&[("static/reflect.js", REFLECT_SOURCE)])
+    };
+    let control = run_fixture(opts());
+    let graph = serde_json::to_value(control.dependency_graph()).unwrap();
+    assert!(has_unknown_call_target(node_for_binding(&graph, "encoder")));
+    let all = run_fixture(
+        opts().with_program_premises(
+            serde_json::from_value(serde_json::json!({
+                "intrinsics_never_written": { "families": "all" }
+            }))
+            .unwrap(),
+        ),
+    );
+    let all_graph = serde_json::to_value(all.dependency_graph()).unwrap();
+    assert!(
+        has_unknown_call_target(node_for_binding(&all_graph, "encoder")),
+        "old all-family assertions cannot supply a new host identity: {all_graph}"
+    );
+    let mut input = encoder_input(source);
+    input.selector = SourceUnitSelector::ResolvedMember(ResolvedMemberSelector {
+        module: "values".into(),
+        name: "encoder".into(),
+    });
+    let fixture = run_fixture(opts().with_native_operation_inputs("static/app", vec![input]));
+    assert_preserved_entry_output(&fixture, "2 utf-8 true\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program = serde_json::to_value(fixture.program_graph()).unwrap();
+    unknown_receiver_witness(&program);
+    assert!(
+        !has_unknown_call_target(node_for_binding(&graph, "encoder")),
+        "{graph}"
+    );
+    assert!(
+        has_unknown_call_target(node_for_binding(&graph, "adjacent")),
+        "{graph}"
+    );
+    assert!(
+        has_unknown_call_target(node_for_binding(&graph, "encoded")),
+        "{graph}"
+    );
+    let uses = native_input_uses(&graph);
+    assert_eq!(uses.len(), 1, "{graph}");
+    assert_eq!(uses[0]["evidence"]["operation"], "text_encoder_empty");
+    assert_eq!(uses[0]["evidence"]["selected_binding"], "encoder");
+    assert_eq!(uses[0]["source_location"]["start_line"], 3);
+}
+
+#[test]
+fn exact_encoder_input_removes_only_selected_reentry_constraint() {
+    let source = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nconst encoder = new TextEncoder();\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconsole.log(encoder.encoding, LaterError.name);\nexport { encoder, factory, LaterError, reflect };\n";
+    let opts = || {
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "encoder",
+                    &[Member::new("encoder")],
+                    &["globalThis.saved = () => factory();"],
+                ),
+                logical_module("factory", &[Member::new("factory")]),
+                logical_module("later", &[Member::new("LaterError")]),
+            ],
+        )
+        .with_extra_chunks(REFLECT_CHUNKS)
+        .with_extra_files(&[("static/reflect.js", REFLECT_SOURCE)])
+    };
+    assert!(
+        !run_rejection_fixture(opts())
+            .atomic_group_conflicts()
+            .is_empty()
+    );
+    let fixture =
+        run_fixture(opts().with_native_operation_inputs("static/app", vec![encoder_input(source)]));
+    assert_preserved_entry_output(&fixture, "utf-8 LaterError\n");
+}
+
+#[test]
+fn encoder_input_rejects_unsupported_shape_and_identity() {
+    for initializer in [
+        "new TextEncoder('utf-8')",
+        "new TextEncoder(...[])",
+        "TextEncoder()",
+        "new globalThis.TextEncoder()",
+        "new (0, TextEncoder)()",
+        "(sideEffect(), new TextEncoder())",
+        "(globalThis.result = new TextEncoder())",
+        "new OtherEncoder()",
+    ] {
+        let source = format!("const encoder = {initializer};\nexport {{ encoder }};\n");
+        expect_rejection_containing_all(
+            encoder_opts(&source)
+                .with_native_operation_inputs("static/app", vec![encoder_input(&source)]),
+            &["native_operation_inputs"],
+        );
+    }
+    let source = "class TextEncoder {}\nconst encoder = new TextEncoder();\nexport { encoder };\n";
+    expect_rejection_containing_all(
+        encoder_opts(source)
+            .with_native_operation_inputs("static/app", vec![encoder_input(source)]),
+        &["native_operation_inputs"],
+    );
+}
+
+#[test]
+fn encoder_input_rejects_known_slot_writes_including_alias_and_sibling() {
+    for mutation in [
+        "TextEncoder = function replacement() {};",
+        "const root = globalThis; root.TextEncoder = function replacement() {};",
+        "Object.defineProperty(globalThis, 'TextEncoder', { get() { return function replacement() {}; } });",
+    ] {
+        let source =
+            format!("const encoder = new TextEncoder();\n{mutation}\nexport {{ encoder }};\n");
+        expect_rejection_containing_all(
+            encoder_opts(&source)
+                .with_native_operation_inputs("static/app", vec![encoder_input(&source)]),
+            &["TextEncoder", "contradicted"],
+        );
+    }
+    let source =
+        "import './mutation.js';\nconst encoder = new TextEncoder();\nexport { encoder };\n";
+    expect_rejection_containing_all(
+        FixtureOpts::new(source, vec![])
+            .with_extra_chunks(&[(
+                "static/mutation",
+                "globalThis.TextEncoder = function replacement() {};\n",
+            )])
+            .with_native_operation_inputs("static/app", vec![encoder_input(source)]),
+        &["TextEncoder", "static/mutation"],
+    );
+}
+
+#[test]
+fn encoder_input_rejects_stale_digest_and_mismatched_selector() {
+    let source = "const encoder = new TextEncoder();\nexport { encoder };\n";
+    let mut stale = encoder_input(source);
+    stale.audited_source_sha256 = "0".repeat(64);
+    expect_rejection_containing_all(
+        encoder_opts(source).with_native_operation_inputs("static/app", vec![stale]),
+        &["sha256"],
+    );
+    let mut mismatched = encoder_input(source);
+    mismatched.selector = SourceUnitSelector::SourceMatch(
+        serde_yaml::from_str("match: 'const missing = new TextDecoder();'\nbindings: [missing]\n")
+            .unwrap(),
+    );
+    expect_rejection_containing_all(
+        encoder_opts(source).with_native_operation_inputs("static/app", vec![mismatched]),
+        &["native_operation_inputs"],
+    );
+}
+
+#[test]
+fn unannotated_encoder_census_proves_timing_but_preserves_purity_fallback() {
+    let source =
+        "const encoder = new TextEncoder();\nconsole.log(encoder.encoding);\nexport { encoder };\n";
+    let opts = || FixtureOpts::new(source, vec![]).with_unassigned_mode(unassigned_mode_inline());
+    let fixture = run_fixture(opts());
+    assert_preserved_entry_output(&fixture, "utf-8\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let node = node_for_binding(&graph, "encoder");
+    assert!(!has_unknown_call_target(node), "{graph}");
+    assert_eq!(node["purity"]["kind"], "not_pure");
+    assert!(native_input_uses(&graph).is_empty());
+    let fixture =
+        run_fixture(opts().with_native_operation_inputs("static/app", vec![encoder_input(source)]));
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let node = node_for_binding(&graph, "encoder");
+    assert_eq!(node["purity"]["kind"], "pure");
+    assert_eq!(
+        node["purity"]["dependencies"]["native_operation_inputs"][0]["input_index"],
+        0
+    );
+}
+
+#[test]
+fn encoder_input_rejects_ambiguous_constructor_selection() {
+    let source = "const encoder = new TextEncoder();\nconst adjacent = new TextEncoder();\nexport { encoder, adjacent };\n";
+    expect_rejection_containing_all(
+        encoder_opts(source)
+            .with_native_operation_inputs("static/app", vec![encoder_input(source)]),
+        &["native_operation_inputs"],
+    );
+}
+
+#[test]
+fn encoder_input_selects_one_comma_declarator_without_parentheses() {
+    let source = "import { reflect } from './reflect.js';\nvar limit = 1e4, encoder = new TextEncoder;\nconsole.log(limit, encoder.encoding);\nexport { limit, encoder, reflect };\n";
+    let input = selected_native_input(
+        source,
+        "var limit = 1e4, encoder = new TextEncoder;",
+        "encoder",
+        NativeOperationKind::TextEncoderEmpty,
+    );
+    let fixture =
+        run_fixture(encoder_opts(source).with_native_operation_inputs("static/app", vec![input]));
+    assert_preserved_entry_output(&fixture, "10000 utf-8\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let uses = native_input_uses(&graph);
+    assert_eq!(uses.len(), 1, "{graph}");
+    assert_eq!(uses[0]["evidence"]["selected_binding"], "encoder");
+    assert!(
+        !has_unknown_call_target(node_for_binding(&graph, "encoder")),
+        "{graph}"
+    );
+    assert_eq!(
+        node_for_binding(&graph, "encoder")["purity"]["kind"],
+        "pure"
+    );
 }

@@ -1837,6 +1837,7 @@ location, selected binding and site.
 
 | Input                                | Selected source                                                                                                                                                            | Asserted slots                                                              |
 | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `text_encoder_empty`                 | Top-level simple binding initialized by direct bare zero-argument `new TextEncoder()`                                                                                      | Original global `TextEncoder` data binding                                  |
 | `symbol`                             | Top-level simple binding initialized by a direct `Symbol(...)` call with zero or one syntactically primitive argument                                                      | `%Symbol%`                                                                  |
 | `symbol_for`                         | The same with `Symbol.for(...)`                                                                                                                                            | `%Symbol%`, `%Symbol.for%`                                                  |
 | `promise_resolve`                    | Top-level simple binding initialized by a zero-argument `Promise.resolve()`                                                                                                | `%Promise%`, `%Promise.resolve%`                                            |
@@ -1866,6 +1867,21 @@ input applies only together with `host_behavior.reentry_free_operations:
 arguments with their effects and throws; the input grants no family-wide
 integrity, purity, return shape or guarantee at another site, and A11 remains
 the external obligation for code outside the analyzed program.
+
+`text_encoder_empty` asserts the original standard constructor through an ordinary
+global data binding at this exact site. The checked shape excludes aliases,
+subclasses, qualified/global-property callees, arguments, spreads, shadowing,
+and sequence or assignment wrappers. Parentheses after `TextEncoder` are optional;
+one binding in a comma declaration may be selected. Source-known global `TextEncoder` writes
+in any analyzed chunk contradict the input; opaque mutation witnesses remain
+under the author's audit. The original constructor performs no user callbacks
+with zero arguments. Its result stays opaque: later property reads, getters,
+`.encode` calls and prototype behavior receive no certification. No
+`host_behavior.reentry_free_operations` entry is needed. `TextEncoder` belongs
+to the native write census, but is outside `program_premises`'
+`intrinsics_never_written` family vocabulary, including `families: all`. Syntactic purity requires this
+exact-site input and records its dependency; an unannotated construction keeps
+conservative purity even when the ordinary census proves its callback timing.
 
 ### Bundle-owned globals
 

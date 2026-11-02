@@ -281,3 +281,22 @@ fn an_unknown_slot_or_location_is_rejected() {
         assert!(!out.status.success(), "{query:?}");
     }
 }
+
+#[test]
+fn host_census_family_does_not_suggest_an_unavailable_author_family_premise() {
+    let fixture = GraphFixture::new(
+        "function forget() { delete globalThis.registry.TextEncoder; }\nconst encoder = new TextEncoder();\nexport { encoder, forget };\n",
+        &[],
+    );
+    let report = fixture.json(&["explain-integrity", "--slot", "TextEncoder"]);
+    let encoder = slot(&report, "%TextEncoder%");
+    assert_eq!(encoder["intact"], false);
+    assert_eq!(reaches(encoder), [reach("unknown_receiver", 1)]);
+    assert_eq!(
+        encoder["witnesses"][0]["possible_discharges"],
+        json!([
+            "predefined_globals_bundle_ownership",
+            "no_accessor_install_callables"
+        ])
+    );
+}

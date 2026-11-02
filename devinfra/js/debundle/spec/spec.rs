@@ -1034,6 +1034,8 @@ pub enum NativeCallIdentityKind {
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum NativeOperationKind {
+    /// Direct zero-argument construction through the original global data binding.
+    TextEncoderEmpty,
     Symbol,
     SymbolFor,
     SetFromPrimitiveArray,

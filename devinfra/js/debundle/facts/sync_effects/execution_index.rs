@@ -1189,6 +1189,9 @@ fn selected_symbol_binding(callee: &ValueExpr, operation: NativeInputKind) -> Op
 
 fn native_operation_call_name(operation: NativeInputKind) -> &'static str {
     match operation {
+        NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty) => {
+            "direct zero-argument new TextEncoder() construction"
+        }
         NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
             "direct Symbol(...) call (unsupported Symbol call shape)"
         }
@@ -1207,6 +1210,9 @@ fn native_operation_mutation_name(operation: NativeInputKind) -> &'static str {
         NativeInputKind::Operation(
             spec::NativeOperationKind::Symbol | spec::NativeOperationKind::SymbolFor,
         ) => "global Symbol replacement or accessor installation",
+        NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty) => {
+            "global TextEncoder replacement or accessor installation"
+        }
         NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => {
             "global Promise replacement or Promise.resolve overwrite, accessor installation, or deletion"
         }
@@ -5758,6 +5764,7 @@ struct ExecutionIndex {
     /// Ordinary CallExpr syntax at lexical top level; optional calls use a
     /// conservative Call record too, but do not satisfy this witness shape.
     ordinary_top_call_sites: BTreeSet<CallSite>,
+    bare_constructor_sites: BTreeSet<CallSite>,
     literal_true_second_arguments: BTreeSet<CallSite>,
     top_property_writes: Vec<Vec<(Option<Id>, Option<String>)>>,
     fresh_instance_field_writes: BTreeSet<SourceUnitOrdinal>,
@@ -5939,6 +5946,7 @@ impl Default for ExecutionIndex {
             unindexed_accessor_owners: BTreeSet::new(),
             top_calls: Vec::new(),
             ordinary_top_call_sites: BTreeSet::new(),
+            bare_constructor_sites: BTreeSet::new(),
             literal_true_second_arguments: BTreeSet::new(),
             top_property_writes: Vec::new(),
             fresh_instance_field_writes: BTreeSet::new(),
@@ -6704,6 +6712,11 @@ impl ExecutionIndex {
                         input.call_span,
                         [SET_FROM_ARRAY, &[SetIteratorPrototype]].concat(),
                     ),
+                    // Timing, purity and heap ordering of this construction;
+                    // the platform result has no ordinary-object certificate.
+                    NativeInputKind::Operation(Operation::TextEncoderEmpty) => {
+                        (input.call_span, vec![Global(NativeIntrinsic::TextEncoder)])
+                    }
                     // Purity, timing and heap ordering at the read; calling the
                     // read function keeps ordinary call analysis.
                     NativeInputKind::Operation(Operation::ObjectOwnDataFunctionRead) => {
@@ -7408,7 +7421,9 @@ impl ExecutionIndex {
                 ));
                 continue;
             };
-            let ValueExpr::Call(callee, args, call_site) = initializer else {
+            let (ValueExpr::Call(callee, args, call_site)
+            | ValueExpr::New(callee, args, call_site)) = initializer
+            else {
                 self.native_operation_input_errors.push(format!(
                     "{request} must select a direct top-level binding initialized by a {}",
                     native_operation_call_name(input.evidence.operation)
@@ -7424,6 +7439,13 @@ impl ExecutionIndex {
                 ));
                 continue;
             };
+            if input.evidence.operation
+                == NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty)
+                && declaration.initializer_span != Some(call.span)
+            {
+                self.native_operation_input_errors.push(format!("{request} must select the direct constructor initializer without a sequence or assignment wrapper"));
+                continue;
+            }
             if let Some(reason) = self.native_operation_call_shape_error(
                 input.evidence.operation,
                 callee,
@@ -7637,10 +7659,12 @@ impl ExecutionIndex {
                 ));
                 continue;
             };
-            let Some(ValueExpr::Call(callee, args, call_site)) = declaration.initializer.as_ref()
+            let Some(
+                ValueExpr::Call(callee, args, call_site) | ValueExpr::New(callee, args, call_site),
+            ) = declaration.initializer.as_ref()
             else {
                 self.native_operation_input_errors.push(format!(
-                    "{request} no longer selects a direct Symbol or Promise.resolve initializer"
+                    "{request} no longer selects a direct native initializer"
                 ));
                 continue;
             };
@@ -7653,6 +7677,13 @@ impl ExecutionIndex {
                 ));
                 continue;
             };
+            if input.evidence.operation
+                == NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty)
+                && declaration.initializer_span != Some(call.span)
+            {
+                self.native_operation_input_errors.push(format!("{request} must select the direct constructor initializer without a sequence or assignment wrapper"));
+                continue;
+            }
             if let Some(reason) = self.native_operation_call_shape_error(
                 input.evidence.operation,
                 callee,
@@ -7841,6 +7872,25 @@ impl ExecutionIndex {
         call_site: CallSite,
         call: &Call,
     ) -> Option<&'static str> {
+        if operation == NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty) {
+            if call.kind != CallKind::New
+                || call.has_spread
+                || call.caller.is_some()
+                || !args.is_empty()
+                || !self.bare_constructor_sites.contains(&call_site)
+            {
+                return Some(
+                    "must select direct zero-argument new TextEncoder() construction without spread",
+                );
+            }
+            let ValueExpr::Binding(binding) = callee else {
+                return Some("must select the direct bare global TextEncoder constructor");
+            };
+            if binding.0.as_ref() != "TextEncoder" || self.declared_bindings().contains(binding) {
+                return Some("must select the original unshadowed global TextEncoder binding");
+            }
+            return None;
+        }
         if call.kind != CallKind::Call || call.has_spread || call.caller.is_some() {
             return Some(match operation {
                 NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
@@ -7918,6 +7968,15 @@ impl ExecutionIndex {
         operation: NativeInputKind,
     ) -> Option<SourceUnitOrdinal> {
         match operation {
+            NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty) => {
+                match self.source_slot_overlap(&NativeWriteSlot {
+                    receiver: NativeReceiverPath::GlobalObject,
+                    key: NativePropertyKey::String("TextEncoder".to_owned()),
+                }) {
+                    NativeSlotOverlap::Known(owner) => Some(owner),
+                    NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
+                }
+            }
             NativeInputKind::Operation(
                 spec::NativeOperationKind::Symbol | spec::NativeOperationKind::SymbolFor,
             ) => self.known_global_symbol_mutation(),
@@ -8813,6 +8872,9 @@ impl ExecutionIndex {
         {
             for (id, _) in assignments {
                 match id.0.as_ref() {
+                    "TextEncoder" => {
+                        mutated_intrinsics.insert(NativeIntrinsic::TextEncoder);
+                    }
                     "Error" => {
                         mutated_intrinsics.insert(NativeIntrinsic::Error);
                     }
@@ -12503,6 +12565,9 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_new_expr(&mut self, new_expr: &NewExpr) {
+        if matches!(new_expr.callee.unwrap_parens(), Expr::Ident(_)) {
+            self.bare_constructor_sites.insert(new_expr.span.into());
+        }
         if let Some(span) = map_entry_array_span(new_expr) {
             self.map_entry_arrays.insert(span);
         }

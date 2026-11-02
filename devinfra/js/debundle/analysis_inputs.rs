@@ -291,6 +291,8 @@ pub enum NativeIntrinsic {
     GlobalObject,
     /// A global slot may hold any native value; descendants retain this root.
     UnknownGlobalValue,
+    /// Host census only; not part of author `IntrinsicFamily::ALL`.
+    TextEncoder,
     Error,
     FinalizationRegistry,
     Function,
@@ -342,6 +344,7 @@ impl NativeIntrinsic {
         "WeakMap",
         "WeakSet",
         "FinalizationRegistry",
+        "TextEncoder",
         "globalThis",
         "window",
         "self",
@@ -351,6 +354,7 @@ impl NativeIntrinsic {
 
     pub(crate) fn for_global_binding(property: &str) -> Option<Self> {
         match property {
+            "TextEncoder" => Some(Self::TextEncoder),
             "Error" => Some(Self::Error),
             "Function" => Some(Self::Function),
             "Object" => Some(Self::Object),
@@ -374,6 +378,7 @@ impl NativeIntrinsic {
     pub(crate) fn global_binding(self) -> Option<&'static str> {
         match self {
             Self::GlobalObject | Self::UnknownGlobalValue => None,
+            Self::TextEncoder => Some("TextEncoder"),
             Self::Error => Some("Error"),
             Self::FinalizationRegistry => Some("FinalizationRegistry"),
             Self::Function => Some("Function"),
@@ -915,6 +920,19 @@ pub(crate) struct ValidatedNativeOperationFacts {
 impl ValidatedNativeOperationFacts {
     pub(crate) fn new(inputs: Vec<ResolvedNativeOperationInput>) -> Self {
         Self { inputs }
+    }
+
+    /// A validated direct zero-argument native constructor; its result has no
+    /// ordinary-object or retained-callback certificate.
+    pub(crate) fn text_encoder_empty_proof(
+        &self,
+        construction: &swc_ecma_ast::NewExpr,
+    ) -> Option<&ResolvedNativeOperationInput> {
+        self.inputs.iter().find(|input| {
+            input.call_span == construction.span
+                && input.evidence.operation
+                    == NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty)
+        })
     }
 
     /// The exact-site native input certifies the ordinary original data slots;

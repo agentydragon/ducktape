@@ -869,6 +869,7 @@ pub fn resolve_imported_callable_summaries(
                     spec::NativeOperationKind::Symbol
                         | spec::NativeOperationKind::SymbolFor
                         | spec::NativeOperationKind::PromiseResolve
+                        | spec::NativeOperationKind::TextEncoderEmpty
                 )
             )
         })
@@ -885,6 +886,8 @@ pub fn resolve_imported_callable_summaries(
                     NativeInputKind::Operation(
                         spec::NativeOperationKind::Symbol | spec::NativeOperationKind::SymbolFor,
                     ) => "Symbol",
+                    NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty) =>
+                        "TextEncoder",
                     _ => "Promise",
                 },
                 owner.0

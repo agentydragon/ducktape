@@ -44,6 +44,18 @@ Callback and no-reentry keys below live under
 | A browser-global slot cannot expose its stored callback during synchronous initialization          | [Global publication](../../SPEC.md#deferred-browser-global-publication): `chunk_analysis_options.<chunk>.deferred_global_publications`; audit the host descriptor and all consumers                               |
 | A literal-key membership probe on a direct builtin global cannot reenter                           | [Host membership](../../SPEC.md#audited-builtin-global-membership-probes): `chunk_analysis_options.<chunk>.non_reentrant_global_membership`; audit exact keys, host identity, prototypes, aliases, and intrinsics |
 
+### Exact empty TextEncoder construction
+
+Choose `native_operation_inputs` with `operation: text_encoder_empty` only after
+auditing the original global `TextEncoder` data binding at one selected direct
+zero-argument top-level initializer through every emitted initialization
+schedule. Audit host entry state, aliases and possible foreign mutation paths;
+source-known global-slot writes in any analyzed chunk reject the input. The
+constructor timing is silent, but its result remains opaque. Later `.encode`,
+getters, prototype reads and callback behavior need their ordinary proofs.
+Use a canonical selector and the exact parser-input digest; this grants no
+family-wide or host-wide contract. See [native integrity inputs](../../SPEC.md#native-integrity-inputs).
+
 ### Fresh returned callback graphs
 
 **Choose:** `inline_callback_factory_exports` for one syntactic inline callback

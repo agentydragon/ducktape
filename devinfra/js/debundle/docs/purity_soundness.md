@@ -354,7 +354,7 @@ heap barrier. Unselected calls use the ordinary guards.
 
 `chunk_analysis_options.<chunk>.native_operation_inputs` is a source-selected
 author premise for one exact direct native initializer. The schema admits
-`operation: symbol`, `operation: symbol_for`, `operation: promise_resolve`,
+`operation: text_encoder_empty`, `operation: symbol`, `operation: symbol_for`, `operation: promise_resolve`,
 `operation: set_from_primitive_array`,
 `operation: set_from_set_spread`, `operation: object_own_data_function_read`,
 and `operation: array_spread_from_primitive_arrays`.
@@ -400,6 +400,27 @@ CommonJS behavior and ordering remain on the normal conservative paths. The
 premise grants no whole-lifetime purity, general receiver guarantee or native
 integrity outside analyzed code; the external A11 identity obligation still
 applies.
+
+For `text_encoder_empty`, the checked initializer is exactly a direct bare
+zero-argument `new TextEncoder()` through the unshadowed global identifier.
+The author asserts that this callee read resolves the original standard
+constructor through a data binding across every admitted initialization schedule.
+The [Encoding constructor steps](https://encoding.spec.whatwg.org/#dom-textencoder)
+do nothing. The [Web IDL interface object algorithm](https://webidl.spec.whatwg.org/#es-interface-call)
+creates the platform object; the original constructor's own `prototype` is
+nonwritable, nonconfigurable data. Direct construction therefore uses the
+original `NewTarget` without a user-defined prototype lookup or argument
+conversion. Only the global constructor slot is required. Known writes to that
+slot, including aliased and sibling-chunk writes, reject the input; opaque
+writes remain census witnesses and an author obligation. No TextEncoder method,
+prototype method identity, ordinary-object shape, or callback retention premise
+follows. The shared row returns `Unknown`, so later accesses remain conservative.
+`TextEncoder` is a census family, outside the family-wide author-premise enum;
+existing `families: all` assertions acquire no new meaning. Its migrated row
+sets `assumed_intact: false`: the selected initializer's purity, heap-content
+barrier and legacy at-init fallback consume the validated exact-site fact.
+Purity records the input dependency. Without an assertion the shared census may
+prove construction timing, while syntactic purity stays conservative.
 
 For `set_from_primitive_array`, the selected initializer is one direct
 unshadowed `new Set([primitive literals])` with a dense, nonspread array.
