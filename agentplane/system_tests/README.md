@@ -25,7 +25,7 @@ The shared stack cuts setup and image-import work, while each target now has a c
 changed scenario reruns its suite. Scenario modules live in [`scenarios/`](scenarios/) as ordinary
 libraries. Entry points under `suites/` contain ordinary pytest tests, marks, and
 parametrization. Each test passes its fixture values explicitly to a plain scenario function.
-Gazelle derives Python dependencies; `k3s_suite` supplies stack artifacts and execution settings.
+Gazelle derives Python dependencies; [`k3s_suite`](k3s/suite.bzl) supplies stack artifacts and execution settings.
 
 The session-scoped `deployment` fixture yields the running stack. Suite client fixtures depend on
 it directly, and executor fixtures declare the suite's SandboxTemplate and working directory.

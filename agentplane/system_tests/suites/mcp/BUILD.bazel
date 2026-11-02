@@ -1,7 +1,7 @@
-load("//agentplane/system_tests:defs.bzl", "k3s_suite")
+load("//agentplane/system_tests/k3s:suite.bzl", "k3s_suite")
 load("//devinfra/python:defs.bzl", "py_library")
 
-# gazelle:map_kind py_test k3s_suite //agentplane/system_tests:defs.bzl
+# gazelle:map_kind py_test k3s_suite //agentplane/system_tests/k3s:suite.bzl
 
 package(
     default_testonly = True,
