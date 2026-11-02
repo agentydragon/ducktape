@@ -21,7 +21,7 @@ Linux only.
 
 - **Terraform/OpenTofu** modules are Bazel-managed (`@rules_tf`): declare provider versions in the BUILD's `tf_providers_versions`, never in `terraform.tf`. `tf/gitops/**` is applied by the in-cluster tofu-controller; `cluster/terraform/` by `bazel run //cluster:bootstrap`.
 - **Haku Forgejo tokens** are owned by the GitOps Terraform controller — never mint/sync by hand. Fix wiring in <tf/gitops/haku-state> and <cluster/cdk8s/forgejo/gitops_modules.py>; manual `curl`/`tea`/`kubectl` is diagnostics only, followed by a PR making the controller own it.
-- **CI:** GitHub Actions → `bbr`; no `buildbuddy.yaml`. `.github/workflows/ci.yml` runs bazel-ci → release/push-images; other workflows trigger independently. Container images: <cluster/docs/container-images.md>.
+- **CI:** no root `buildbuddy.yaml`. `.github/workflows/ci.yml` runs `bazel-ci` first, then `release` and `push-images` on pushes; other workflows trigger independently. Container images: <cluster/docs/container-images.md>.
 - **RBE image repins are costly** (the digest is in every action's cache key and the Firecracker snapshot key). A needed edit to <devinfra/buildbuddy/images/rbe/Dockerfile> is fine — never keep a falsehood to dodge one — but don't widen `rbe-container-image.yml`'s trigger or add anything Bazel could supply. Dev/agent tooling goes in <devinfra/buildbuddy/images/runner/image.nix>.
 
 ## SOPS
