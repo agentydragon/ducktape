@@ -95,7 +95,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   // Keep the exact UID selected when opening the confirmation, even if its name is reused.
   const [confirmingDelete, setConfirmingDelete] = useState<TargetHandle | null>(null);
   const live = useRequiredSandboxesLive();
-  const rows = live.snapshot?.environments ?? [];
+  const rows = live.snapshot ?? [];
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedPreset = searchParams.get(PRESET_PARAM);
   // An empty Name field creates the Sandbox under this free name, derived from the preset's.

@@ -130,7 +130,7 @@ export function SandboxPage({
   const [threadLimit, setThreadLimit] = useState(200);
 
   const inventory = useRequiredSandboxesLive();
-  const candidate = inventory.snapshot?.environments.find((item) => item.target?.name === name);
+  const candidate = inventory.snapshot?.find((item) => item.target?.name === name);
   const selected = sandboxInventoryFresh(inventory) ? candidate?.target : undefined;
   const target = selected?.namespace && selected.name && selected.uid ? selected : undefined;
   const sandboxNamespace = target?.namespace;

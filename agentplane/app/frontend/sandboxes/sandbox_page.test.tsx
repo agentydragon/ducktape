@@ -101,7 +101,7 @@ vi.mock("../threads/live", () => ({
 const readySandbox = makeReadySandbox("startup-test", "00000000-0000-4000-8000-000000000001");
 readySandbox.preset = "test-preset";
 const inventory = {
-  snapshot: { environments: [readySandbox] },
+  snapshot: [readySandbox],
   health: { healthy: true, failing: {} },
   stream: { standing: "current" },
 };
@@ -109,7 +109,7 @@ vi.mock("./live", async (importOriginal) => ({
   ...(await importOriginal<typeof SandboxLiveModule>()),
   useRequiredSandboxesLive: () => inventory,
   useEnvironmentWatch: (target: { uid: string } | undefined) => ({
-    environment: inventory.snapshot.environments.find((item) => item.target?.uid === target?.uid) ?? null,
+    environment: inventory.snapshot.find((item) => item.target?.uid === target?.uid) ?? null,
     stream: inventory.stream,
   }),
 }));
@@ -150,7 +150,7 @@ afterEach(async () => {
   readySandbox.readiness!.state = ReadinessState.READY;
   readySandbox.target!.uid = "00000000-0000-4000-8000-000000000001";
   mutableSnapshot.sandbox_uid = readySandbox.target!.uid;
-  inventory.snapshot.environments = [readySandbox];
+  inventory.snapshot = [readySandbox];
   sessionStorage.clear();
   rerender = async () => {};
   readySandbox.binding = undefined;
@@ -234,8 +234,7 @@ async function render(
       })
     )
 ): Promise<ReturnType<typeof vi.fn>> {
-  if (routeNavigation)
-    inventory.snapshot.environments.push(makeReadySandbox("other-test", "00000000-0000-4000-8000-000000000002"));
+  if (routeNavigation) inventory.snapshot.push(makeReadySandbox("other-test", "00000000-0000-4000-8000-000000000002"));
   // The Egress log panel stays mounted behind its tab and follows a stream that these tests never feed.
   serveEventStreams(() => undefined);
   fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
@@ -747,7 +746,7 @@ it("keeps retained History Threads visible through ready to suspended with no ru
 
   // History outlives the Sandbox row itself. Removing the Sandbox must not hide authored Threads.
   mutableSnapshot.sandbox_uid = null;
-  inventory.snapshot.environments = [];
+  inventory.snapshot = [];
   await rerender();
   expect(retainedRow()).toBeDefined();
 

@@ -26,7 +26,7 @@ function Inventory() {
     <span>
       {snapshot === null
         ? "waiting"
-        : snapshot.environments.map((sandbox) => `${sandbox.target!.name}:${sandbox.target!.uid}`).join(",")}
+        : snapshot.map((sandbox) => `${sandbox.target!.name}:${sandbox.target!.uid}`).join(",")}
     </span>
   );
 }

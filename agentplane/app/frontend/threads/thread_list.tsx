@@ -225,7 +225,7 @@ export function ThreadList({
   const current = threadRoute?.params.threadId ?? null;
   const groups = groupThreads(
     threads,
-    Object.fromEntries((sandboxesLive.snapshot?.environments ?? []).map((sandbox) => [sandbox.target!.name, sandbox])),
+    Object.fromEntries((sandboxesLive.snapshot ?? []).map((sandbox) => [sandbox.target!.name, sandbox])),
     listing.includeArchived,
     current
   );
