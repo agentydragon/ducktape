@@ -123,6 +123,7 @@ type executionLifecycle struct {
 	inputMu           sync.Mutex
 	mu                sync.Mutex
 	startResult       executionStartResult
+	unfencedStarts    []executionHandle
 	terminal          error
 	startContexts     map[uint64]context.Context
 	startOutcomes     map[uint64]error
@@ -215,13 +216,15 @@ func (h *executionLifecycle) readyOwner(uid string) bool {
 	return h.r.executionOwner.executor(uid) != nil
 }
 
-func (h *executionLifecycle) publishCompletion(update func(*executionInput) bool) {
+func (h *executionLifecycle) publishCompletion(update func(*executionInput) bool) bool {
 	h.inputMu.Lock()
 	ctx := context.Background()
 	input, found, err := cosi.Read(ctx, h.state, executionInputResource(executionInput{}))
+	published := false
 	if err == nil && found {
 		if update(&input) {
 			err = cosi.Publish(ctx, h.state, executionInputResource(input), input, "embedded-execution-host")
+			published = err == nil
 		}
 	} else if err == nil {
 		err = errors.New("embedded Execution input disappeared during lifecycle effect")
@@ -230,6 +233,7 @@ func (h *executionLifecycle) publishCompletion(update func(*executionInput) bool
 	if err != nil {
 		h.failTerminal(fmt.Errorf("publish embedded Execution completion: %w", err))
 	}
+	return published
 }
 
 func (h *executionLifecycle) completeStart(generation uint64, uid string, demand uint64, handle executionHandle, epoch context.Context, err error, skipped bool) {
@@ -237,7 +241,7 @@ func (h *executionLifecycle) completeStart(generation uint64, uid string, demand
 	if err != nil {
 		fact.Error = err.Error()
 	}
-	h.publishCompletion(func(input *executionInput) bool {
+	if !h.publishCompletion(func(input *executionInput) bool {
 		if input.Start.Generation >= generation {
 			return false
 		}
@@ -246,7 +250,20 @@ func (h *executionLifecycle) completeStart(generation uint64, uid string, demand
 		h.mu.Unlock()
 		input.Start = fact
 		return true
-	})
+	}) && handle != nil && !errors.Is(err, ErrFencedStartup) {
+		// A rejected or unpublished start has no generation the controller can
+		// claim. Keep its native handle for diagnosis and block further starts.
+		h.mu.Lock()
+		h.unfencedStarts = append(h.unfencedStarts, handle)
+		h.mu.Unlock()
+		h.r.mu.Lock()
+		if owner := h.r.executionOwner; owner != nil {
+			owner.admitted = false
+			h.r.changedLocked()
+		}
+		h.r.mu.Unlock()
+		h.failTerminal(errors.New("embedded Execution start handle has no published completion"))
+	}
 }
 
 func (h *executionLifecycle) completeLoss(generation uint64, uid string, err error) {

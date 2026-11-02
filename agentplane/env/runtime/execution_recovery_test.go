@@ -295,6 +295,32 @@ func TestExecutionControllerImmediateExitAndLatePriorLoss(t *testing.T) {
 	}
 }
 
+func TestExecutionControllerRetainsRejectedLiveStartHandle(t *testing.T) {
+	first := newControllerExecutionHandle(nil)
+	r := newExecutionControllerRuntime(t, func(context.Context, Config, string) (executionHandle, error) {
+		return first, nil
+	})
+	if err := r.startExecutionForUID(t.Context(), "incarnation"); err != nil {
+		t.Fatal(err)
+	}
+	orphan := newControllerExecutionHandle(nil)
+	r.executionLifecycle.completeStart(1, "incarnation", 1, orphan, t.Context(), nil, false)
+	r.executionLifecycle.mu.Lock()
+	retained := len(r.executionLifecycle.unfencedStarts) == 1 && r.executionLifecycle.unfencedStarts[0] == orphan
+	terminal := r.executionLifecycle.terminal
+	r.executionLifecycle.mu.Unlock()
+	r.mu.Lock()
+	owner := r.executionOwner
+	admitted := owner != nil && owner.admitted
+	r.mu.Unlock()
+	if !retained || terminal == nil || owner == nil || owner.handle != first || admitted {
+		t.Fatalf("rejected live handle was not retained with admission closed: retained=%t terminal=%v owner=%v admitted=%t", retained, terminal, owner, admitted)
+	}
+	if err := r.startExecutionForUID(t.Context(), "another-incarnation"); err == nil {
+		t.Fatal("rejected live start admitted another generation")
+	}
+}
+
 func TestExecutionControllerStopSuppressesRecoveryAndJoinsCanceledWait(t *testing.T) {
 	started := make(chan *controllerExecutionHandle, 2)
 	fenceEntered := make(chan struct{})
