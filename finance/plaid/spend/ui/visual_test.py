@@ -383,22 +383,28 @@ async def _open_transaction_details(page: Page, rows: Locator, width: int) -> No
     await page.get_by_text("Credit cycle", exact=True).click()
     await page.get_by_text("Allowance bridge", exact=True).wait_for()
     if width >= 992:
-        await rows.locator("tbody tr[data-transaction-row]").filter(has_text="UPS").click()
+        original = rows.locator("tbody.transaction-rows").filter(
+            has_text="UPS · Example Shipping · Example Marketplace"
+        )
+        await original.locator("tr[data-transaction-row]").click()
         await expect(rows.locator("tbody tr")).to_have_count(14)
     else:
-        await _expand_accordion(rows.get_by_role("button", name="UPS", exact=False))
-    await rows.get_by_text("Required document shipping for a synthetic example.").first.wait_for()
-    await expect(rows.get_by_text("UPS · Example Shipping · Example Marketplace", exact=True)).to_have_count(1)
-    await expect(rows.get_by_text("Counterparties:", exact=False)).to_have_count(0)
-    await expect(rows.get_by_text("Example Shipping · merchant", exact=True)).to_have_count(1)
-    await expect(rows.get_by_text("Mandatory · outside allowance", exact=False)).to_have_count(1)
-    await expect(rows.get_by_text("Card statement: Counted in card cycle", exact=False).first).to_be_attached()
-    await _expand_accordion(rows.get_by_role("button", name="Plaid source fields"))
-    await rows.get_by_text("Plaid amount (major units): 18.50", exact=True).wait_for()
-    await expect(rows.get_by_text("Original description: EXAMPLE SHIPPING PAYMENT", exact=True)).to_have_count(1)
-    await expect(rows.get_by_text("City: Example City", exact=True)).to_have_count(1)
-    await expect(rows.get_by_text("Reference number: synthetic-reference", exact=True)).to_have_count(1)
-    await expect(rows.get_by_text("Personal detail: TRANSPORTATION_SHIPPING", exact=True)).to_have_count(1)
+        original = rows.locator(".mantine-Accordion-item").filter(
+            has_text="UPS · Example Shipping · Example Marketplace"
+        )
+        await _expand_accordion(original.get_by_role("button", name="UPS", exact=False))
+    await original.get_by_text("Required document shipping for a synthetic example.").wait_for()
+    await expect(original.get_by_text("UPS · Example Shipping · Example Marketplace", exact=True)).to_have_count(1)
+    await expect(original.get_by_text("Counterparties:", exact=False)).to_have_count(0)
+    await expect(original.get_by_text("Example Shipping · merchant", exact=True)).to_have_count(1)
+    await expect(original.get_by_text("Mandatory · outside allowance", exact=False)).to_have_count(1)
+    await expect(original.get_by_text("Card statement: Counted in card cycle", exact=False)).to_be_attached()
+    await _expand_accordion(original.get_by_role("button", name="Plaid source fields"))
+    await original.get_by_text("Plaid amount (major units): 18.50", exact=True).wait_for()
+    await expect(original.get_by_text("Original description: EXAMPLE SHIPPING PAYMENT", exact=True)).to_have_count(1)
+    await expect(original.get_by_text("City: Example City", exact=True)).to_have_count(1)
+    await expect(original.get_by_text("Reference number: synthetic-reference", exact=True)).to_have_count(1)
+    await expect(original.get_by_text("Personal detail: TRANSPORTATION_SHIPPING", exact=True)).to_have_count(1)
 
 
 @pytest.mark.asyncio
@@ -580,8 +586,9 @@ async def test_transaction_explanations_dark_theme(page: Page, view: VisualPage,
     await _select_spend_page(page, "Transactions")
     rows = page.locator(".mantine-Accordion-root")
     await rows.get_by_text("Example Cafe", exact=True).wait_for()
-    await _expand_accordion(rows.get_by_role("button", name="UPS", exact=False))
-    await page.get_by_text("Required document shipping for a synthetic example.").first.wait_for()
+    original = rows.locator(".mantine-Accordion-item").filter(has_text="UPS · Example Shipping · Example Marketplace")
+    await _expand_accordion(original.get_by_role("button", name="UPS", exact=False))
+    await original.get_by_text("Required document shipping for a synthetic example.").wait_for()
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     image = "transactions-dark-390.png"

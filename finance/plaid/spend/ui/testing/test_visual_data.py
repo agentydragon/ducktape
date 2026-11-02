@@ -16,7 +16,8 @@ from finance.plaid.spend.allowance import (
 )
 from finance.plaid.spend.models import StatementReason
 from finance.plaid.spend.sustainability import SustainabilityView
-from finance.plaid.spend.ui.testing import dashboard, sustainability, transactions
+from finance.plaid.spend.testing import dashboard
+from finance.plaid.spend.ui.testing import sustainability, transactions
 
 
 def test_card_responses_describe_the_same_accounts_and_statement_spend() -> None:

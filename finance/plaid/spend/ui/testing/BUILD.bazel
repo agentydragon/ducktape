@@ -28,7 +28,6 @@ py_test(
     name = "test_visual_data",
     srcs = ["test_visual_data.py"],
     deps = [
-        ":dashboard",
         ":sustainability",
         ":transactions",
         "//:conftest",
@@ -36,6 +35,7 @@ py_test(
         "//finance/plaid/spend:conftest",
         "//finance/plaid/spend:models",
         "//finance/plaid/spend:sustainability",
+        "//finance/plaid/spend/testing:dashboard",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
