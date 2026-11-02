@@ -53,9 +53,8 @@ found/**
 ansible/**
 nix/**
 
-# k8s cluster manifests (declarative YAML, never Bazelized; scripts/charts/terraform are Bazelized)
+# Cluster manifests and supporting files not consistently covered by Bazel
 cluster/k8s/**
-cluster/generated/**
 cluster/parked/**
 cluster/scripts/get-passwords
 cluster/docs/iam-policy-route53.json
@@ -122,7 +121,6 @@ tana/export/references/**
 
 # Git hooks and server-side hooks
 **/hooks/pre-receive*
-**/hooks/pre-commit
 
 # TODO/notes files
 *-TODO
