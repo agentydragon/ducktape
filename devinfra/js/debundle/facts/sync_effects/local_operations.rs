@@ -19,6 +19,11 @@ pub(super) enum LocalExpression {
     Value(ValueExpr),
     Sequence(Arc<[Self]>),
     Assign(Id, Arc<Self>),
+    Call {
+        callee: Id,
+        arguments: Arc<[Self]>,
+        span: Span,
+    },
     ReadField {
         receiver: Id,
         property: String,
@@ -91,6 +96,28 @@ impl LocalExpression {
                     .map(|expression| Self::lower(expression))
                     .collect::<Option<Arc<[_]>>>()?,
             )),
+            Expr::Call(call) if !call.args.iter().any(|argument| argument.spread.is_some()) => {
+                let Callee::Expr(callee) = &call.callee else {
+                    return None;
+                };
+                let Expr::Ident(callee) = callee.unwrap_parens() else {
+                    return None;
+                };
+                // A reference to eval can enter dynamic scope. Its binding
+                // resolution remains on the existing conservative path.
+                if callee.sym == "eval" {
+                    return None;
+                }
+                Some(Self::Call {
+                    callee: callee.to_id(),
+                    arguments: call
+                        .args
+                        .iter()
+                        .map(|argument| Self::lower(&argument.expr))
+                        .collect::<Option<Arc<[_]>>>()?,
+                    span: call.span,
+                })
+            }
             Expr::Member(member) => {
                 let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
                     return None;
@@ -143,6 +170,9 @@ impl LocalExpression {
             Self::Assign(binding, expression) => {
                 bindings.contains_key(binding) && expression.local_targets(bindings)
             }
+            Self::Call { arguments, .. } => arguments
+                .iter()
+                .all(|argument| argument.local_targets(bindings)),
             Self::AssignField {
                 receiver, value, ..
             } => bindings.contains_key(receiver) && value.local_targets(bindings),
@@ -158,6 +188,14 @@ impl LocalExpression {
                 }
             }
             Self::Assign(_, expression) => expression.reads(reads),
+            Self::Call {
+                callee, arguments, ..
+            } => {
+                reads.insert(callee.clone());
+                for argument in arguments.iter() {
+                    argument.reads(reads);
+                }
+            }
             Self::ReadField { receiver, .. } => {
                 reads.insert(receiver.clone());
             }

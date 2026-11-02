@@ -897,6 +897,74 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             values,
         ))
     }
+    fn call(
+        &mut self,
+        frame: &mut LocalFrame,
+        callee: &Values,
+        arguments: &[Values],
+        span: Span,
+    ) -> Option<super::super::allocation_transfer::AllocationValue> {
+        let target = if callee.len() == 1 {
+            match callee.first() {
+                Some(AbstractValue::Value(Value::Alloc(Kind::Function, key))) => Some((*key, None)),
+                Some(AbstractValue::Closure(key, captures)) => Some((*key, Some(captures.clone()))),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let mut reached = callee.clone();
+        reached.extend(arguments.iter().flatten().cloned());
+        // Another activation receives these capabilities. Its descriptor or
+        // prototype operations must not leave the caller's original fresh
+        // own-data proof in force, even when that invocation completes.
+        frame
+            .borrowed_records
+            .extend(self.executor.reachable_objects(&reached));
+        if let Some((key, captures)) = target
+            && self.executor.inputs.index.callables.contains_key(&key)
+            && !self.executor.state.tainted_functions.contains(&key)
+        {
+            // The ordinary invocation owns both effects and return values.
+            // A second value-only evaluation could repeat a stateful call.
+            let mut nested = self
+                .executor
+                .invoke(key, arguments.to_vec(), captures, false);
+            self.executor.apply_rebind_effects(&nested.effects.rebinds);
+            self.outcome.absorb_binding_effects(
+                &mut nested.effects,
+                self.executor.state.assumption.as_ref(),
+            );
+            self.outcome.executed_owners.extend(nested.executed_owners);
+            self.outcome.unknown_call |= nested.unknown_call;
+            self.outcome
+                .inherit_completeness(nested.complete, nested.effects.precision_losses);
+            if nested.complete && !nested.unknown_call {
+                frame.inputs.extend(nested.returns.iter().cloned());
+                frame
+                    .borrowed_records
+                    .extend(self.executor.reachable_objects(&nested.returns));
+                // A complete invocation is not an allocation-only proof or
+                // a provider-export identity certificate.
+                return Some(super::super::allocation_transfer::AllocationValue::opaque(
+                    nested.returns,
+                ));
+            }
+            reached.extend(nested.returns);
+        }
+        // Unknown targets and incomplete invocations truncate the body at
+        // this point. Preserve capabilities in operands evaluated earlier,
+        // without replaying the call or any preceding local operation.
+        self.executor.local_operation_fallback(
+            frame,
+            reached,
+            self.owner,
+            ExecutionOperation::OpaqueExecution,
+            span,
+            self.outcome,
+        );
+        None
+    }
     fn literal_layout(&self, allocation: u32) -> super::super::allocation_transfer::LiteralLayout {
         self.executor.inputs.index.allocation_layout(allocation)
     }
@@ -947,7 +1015,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 values,
             ));
         }
-        self.executor.local_field_fallback(
+        self.executor.local_operation_fallback(
             frame,
             receivers.clone(),
             self.owner,
@@ -969,7 +1037,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     ) {
         let mut reached = receivers.clone();
         reached.extend(values.iter().cloned());
-        self.executor.local_field_fallback(
+        self.executor.local_operation_fallback(
             frame,
             reached,
             self.owner,
@@ -7677,9 +7745,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     /// Stop the frame without replaying its earlier operations. An unproved
-    /// read or store may call an accessor and publish capabilities the remainder can
-    /// reach, including objects whose local binding has since been replaced.
-    fn local_field_fallback(
+    /// read, store or call may publish capabilities the remainder can reach,
+    /// including objects whose local binding has since been replaced.
+    fn local_operation_fallback(
         &mut self,
         frame: &LocalFrame,
         mut reached: Values,

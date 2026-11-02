@@ -38,6 +38,15 @@ impl LocalFrame {
 
 pub(super) trait LocalContext {
     fn read_binding(&mut self, binding: &Id, frame: &mut LocalFrame) -> Option<AllocationValue>;
+    /// Operands have already been evaluated in source order. Return the value
+    /// from that invocation's effect transfer; do not evaluate the call again.
+    fn call(
+        &mut self,
+        frame: &mut LocalFrame,
+        callee: &Values,
+        arguments: &[Values],
+        span: Span,
+    ) -> Option<AllocationValue>;
     fn literal_layout(&self, allocation: u32) -> LiteralLayout;
     fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape>;
     fn object_properties_are_settled(&self, allocation: u32) -> bool;
@@ -211,6 +220,31 @@ fn expression(
             }
             frame.environment.insert(binding.clone(), values.clone());
             Some(values)
+        }
+        LocalExpression::Call {
+            callee,
+            arguments,
+            span,
+        } => {
+            // GetValue(callee) precedes every argument. In particular, an
+            // argument assignment must not replace this captured callee.
+            let callee = value(context, &ValueExpr::Binding(callee.clone()), frame)?;
+            judgment.compose(&callee.judgment);
+            let callee = completing(callee.values, frame);
+            if callee.is_empty() {
+                return Some(Values::new());
+            }
+            let mut inputs = Vec::with_capacity(arguments.len());
+            for argument in arguments.iter() {
+                let values = expression(context, argument, body, frame, judgment)?;
+                if values.is_empty() {
+                    return Some(Values::new());
+                }
+                inputs.push(values);
+            }
+            let result = context.call(frame, &callee, &inputs, *span)?;
+            judgment.compose(&result.judgment);
+            Some(completing(result.values, frame))
         }
         LocalExpression::ReadField {
             receiver,
