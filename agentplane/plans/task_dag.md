@@ -1752,7 +1752,7 @@ Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-co
 
 ### `ENVIRONMENT_LIFECYCLE_BACKEND` — own resume policy and guarded state changes
 
-**Selected P0; candidate extraction, no worker assigned.** Implement the
+**Selected P0; backend/API implementation under review in [#13915](https://github.com/agentydragon/ducktape/pull/13915), 2026-11-02 UTC.** Implement the
 [approved authority contract](environment_lifecycle_authorization.md#selected-policy). The policy
 decision is complete: exact live execution-SA resume requires `resumePolicy.allowOwnServiceAccount=true`;
 explicit and automatic resume share authority; operator-requested stops remain sticky for ordinary
@@ -1767,12 +1767,12 @@ depends on the app; no new binary, database or command queue is required.
 
 **Exit:** focused authorization, replacement/revocation, requested-stop, token/conflict, budget and
 uncertain-outcome coverage. No uncertain operation replay. Keep the accepted contract fixed while
-extracting small PRs from parked #13546; fresh provisioning and dispatch regrouping remain separate.
+reviewing the extracted backend, client and automatic-wake PRs; fresh provisioning and dispatch regrouping remain separate.
 
-### `ENVIRONMENT_RESUME_API` — expose explicit resume and readiness
+### `ENVIRONMENT_RESUME_API` — expose explicit resume and discovery
 
-**Selected P0; blocked on `ENVIRONMENT_LIFECYCLE_BACKEND`.** Expose authenticated
-`EnvironmentLifecycle.ResumeEnvironment`. `GetEnvironment` returns the current descriptor
+**Selected P0; API and backend share [#13915](https://github.com/agentydragon/ducktape/pull/13915), 2026-11-02 UTC; acceptance requires `ENVIRONMENT_LIFECYCLE_BACKEND`.** Expose authenticated
+`EnvironmentService.ResumeEnvironment`. `GetEnvironment` returns the current descriptor
 immediately, including current eligibility and the generation-bound resume precondition.
 `WatchEnvironment` observes current-state changes for the exact target. Neither RPC waits for
 readiness; CLI and Action/MCP wait adapters over the watch remain follow-up work. Keep resume
@@ -1785,7 +1785,7 @@ support precedes new production settings and caller activation. Public suspend r
 
 ### `DISPATCH_WAKE_OBSERVATION` — retain typed queued-wake assessments
 
-**Selected P0; independent of the complete lifecycle backend.** Use migration 8's existing storage
+**Selected P0; receipt implementation under review in [#13914](https://github.com/agentydragon/ducktape/pull/13914), 2026-11-02 UTC; independent of the complete lifecycle backend.** Use migration 8's existing storage
 for protobuf-defined delivery-blocker/wake assessments. Carry
 them through Get/List/Watch and `sessions__observe_input` with independently authorized History
 evidence. Further stored-schema changes require a new migration; do not edit migration 8.
@@ -1797,7 +1797,7 @@ Runtime proxy calls do not create Dispatcher receipts. This slice does not chang
 
 ### `DISPATCH_AUTHORIZED_WAKE` — use shared authority for automatic wake
 
-**Selected P0; blocked on `ENVIRONMENT_LIFECYCLE_BACKEND` and `DISPATCH_WAKE_OBSERVATION`.**
+**Selected P0; automatic integration extracted into [#13546](https://github.com/agentydragon/ducktape/pull/13546), 2026-11-02 UTC; requires `ENVIRONMENT_LIFECYCLE_BACKEND` and `DISPATCH_WAKE_OBSERVATION`.**
 Dispatcher first determines whether delivery needs the environment, then applies `wakeOnSend` and
 the original retained effective caller's current lifecycle authority. An enqueue-time eligibility
 boolean is not a permanent grant. Authorized input stays queued when wake is denied, disabled or
@@ -1809,7 +1809,7 @@ input that needs no environment does not wake one. Actor privileges never replac
 
 ### `ENVIRONMENT_RESUME_AGENT_TOOLS` — expose resume through CLI, Actions and MCP
 
-**Selected P0; blocked on `ENVIRONMENT_RESUME_API`.** Add the equivalent CLI command,
+**Selected P0; CLI [#13917](https://github.com/agentydragon/ducktape/pull/13917) and Action/MCP [#13918](https://github.com/agentydragon/ducktape/pull/13918) are under review, 2026-11-02 UTC; both require `ENVIRONMENT_RESUME_API`.** Add the equivalent CLI command,
 `environments/resume` Action/MCP adapter, exact `basic` auto-approval and progressive guidance.
 Use shared delegated authentication; Discovery supplies handles/tokens. No agent-selected generation
 or new provisioning is required. Keep production method scope and destination activation separate.
