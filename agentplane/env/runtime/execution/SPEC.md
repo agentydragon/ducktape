@@ -27,7 +27,9 @@ or provisioning authority. Invalid, foreign or stale Sandbox identities, an unsy
 inventory and uncertain Kubernetes reads receive no Gateway environment detail. Legacy Runner
 proxy calls keep their existing status behavior and do not receive this execution detail.
 
-The state-directory owner lock precedes native startup. Pod ownership is
+Runtime holds the environment owner lock before constructing the embedded Execution service. Its
+COSI Execution controller serializes service attempts and requires the previous service's joined
+fence before launching a successor. Pod ownership is
 PID 1 plus its private process namespace. On ordinary release, the companion stops exec-server,
 fences every remaining process in that namespace, and publishes a new idle generation only after
 the process table contains no workload process. Fence requests name the observed generation;
@@ -39,9 +41,9 @@ ownership lease so Runtime can recover the backend. If the in-container fence fa
 exits and the outer runtime's whole-namespace cleanup supplies the stronger fence. VM ownership is the Runtime systemd unit, its lifetime marker and the explicit `execution-service`
 scope in `agentplane-executors.slice`, with startup fencing and stop proof from the shared supervisor.
 No second owner may start native work while the prior owner remains live. A
-failed fence is not permission to launch a successor. Before taking the lock, the service opens its
-state directory without following symlinks and enforces mode `0700`; this restores private access
-when a persistent-volume remount adds `fsGroup` permissions.
+failed fence is not permission to launch a successor. Runtime retains ownership when cleanup is
+uncertain; its process lifetime and external backend fences survive independently of COSI's
+in-memory lifecycle state.
 
 ## Sessions and effects
 

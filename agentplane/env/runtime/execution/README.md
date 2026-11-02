@@ -52,7 +52,7 @@ replays execution requests.
   cancellation.
 - `codexexecserver/`: native launch/probe/fence backends.
 - `companion/`: Pod PID-1 ownership protocol and its client, shared reaper integration.
-- `service/`: environment identity, state-directory ownership and embedded adapter lifetime.
+- `service/`: environment identity and embedded adapter lifetime under Runtime ownership.
 - `cmd/`: companion executable entrypoint; `testing/`: shared companion container fixtures.
 
 **Deviation:** the proto keeps the published `agentplane.executor` wire package while source and
