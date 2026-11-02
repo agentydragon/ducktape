@@ -16,11 +16,6 @@ from util.testing.pytest_outputs import test_outputs
 __all__ = ["test_outputs"]
 
 
-@pytest.fixture
-def case_id(test_outputs: BoundTestOutputs) -> str:
-    return test_outputs.case_id
-
-
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def playwright_driver() -> AsyncIterator[Playwright]:
     expect.set_options(timeout=WAIT_TIMEOUT_MS)

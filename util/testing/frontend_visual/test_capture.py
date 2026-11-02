@@ -58,7 +58,9 @@ async def test_visual_page_preserves_existing_failure(page: Page, tmp_path: Path
 
 
 @pytest.fixture
-def harness(playwright: Playwright, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case_id: str) -> VisualHarness:
+def harness(
+    playwright: Playwright, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, test_outputs: BoundTestOutputs
+) -> VisualHarness:
     monkeypatch.setenv("VISUAL_TRACE", "0")
     bundle = tmp_path / "harness.js"
     bundle.write_text(
@@ -71,7 +73,7 @@ def harness(playwright: Playwright, tmp_path: Path, monkeypatch: pytest.MonkeyPa
     return VisualHarness(
         playwright,
         HarnessConfig(harness_path=bundle, title="API test", expected_font_family=None),
-        BoundTestOutputs(tmp_path / "out", case_id),
+        BoundTestOutputs(tmp_path / "out", test_outputs.case_id),
     )
 
 
@@ -121,7 +123,7 @@ async def test_multiple_checkpoints_have_distinct_outputs(harness: VisualHarness
 
 
 async def test_trace_default_opt_out_selection_and_failure_retention(
-    harness: VisualHarness, monkeypatch: pytest.MonkeyPatch, case_id: str
+    harness: VisualHarness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("VISUAL_TRACE", raising=False)
     monkeypatch.delenv("VISUAL_TRACE_CAPTURE_NAME", raising=False)
@@ -140,7 +142,7 @@ async def test_trace_default_opt_out_selection_and_failure_retention(
         pass
     assert not any(r.get("checkpoint") == "unmatched" for r in _records(harness.output_dir))
 
-    monkeypatch.setenv("VISUAL_TRACE_CAPTURE_NAME", case_id)
+    monkeypatch.setenv("VISUAL_TRACE_CAPTURE_NAME", harness.case_id)
     async with harness.open("plain", trace_checkpoint="selected") as view:
         await view.page.get_by_role("button", name="Open").click()
     assert zipfile.is_zipfile(_payload(harness.output_dir, role="trace", checkpoint="selected"))
@@ -230,7 +232,10 @@ async def test_concurrent_traces_claim_identity_once(tmp_path: Path, monkeypatch
         async with playwright_trace(cast(BrowserContext, FakeContext(payload)), outputs, "shared"):
             pass
 
-    results = await asyncio.gather(write_trace(b"first trace"), write_trace(b"second trace"), return_exceptions=True)
+    async with asyncio.timeout(10):
+        results = await asyncio.gather(
+            write_trace(b"first trace"), write_trace(b"second trace"), return_exceptions=True
+        )
     failures = [result for result in results if isinstance(result, BaseException)]
     assert len(failures) == 1
     assert isinstance(failures[0], FileExistsError)
@@ -254,9 +259,7 @@ async def test_concurrent_traces_claim_identity_once(tmp_path: Path, monkeypatch
     }
 
 
-async def test_capture_diagnostics_cover_viewport_and_crop_without_page_text(
-    harness: VisualHarness, case_id: str
-) -> None:
+async def test_capture_diagnostics_cover_viewport_and_crop_without_page_text(harness: VisualHarness) -> None:
     async with harness.open("plain", viewport=Viewport(width=300, height=200, device_scale_factor=2)) as view:
         fixture = get_required_path(
             own_repo_rlocation("util/testing/frontend_visual/capture-diagnostics-fixture.js")
@@ -266,7 +269,7 @@ async def test_capture_diagnostics_cover_viewport_and_crop_without_page_text(
         await view.capture("cropped", target=view.page.locator(".entry"), scale="css")
 
     viewport = json.loads(_payload(harness.output_dir, role="diagnostics", checkpoint="viewport").read_text())
-    assert viewport["case_id"] == case_id
+    assert viewport["case_id"] == harness.case_id
     assert viewport["checkpoint"] == "viewport"
     assert viewport["sample"] == "before_screenshot"
     assert viewport["scale"] == "css"

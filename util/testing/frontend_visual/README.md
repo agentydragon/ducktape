@@ -72,7 +72,7 @@ fixtures can depend on it to prepare reusable state without hiding test interact
 
 The root pytest configuration provides `test_outputs`, a generic fixture bound to the full
 repository-relative pytest node ID, including parameter IDs. It can publish any output role via
-`test_outputs.publish(...)`; `case_id` exposes the same ID for browser and native UI
+`test_outputs.publish(...)`; `test_outputs.case_id` exposes the same ID for browser and native UI
 helpers. The function-scoped `visual` fixture binds that ID to its `VisualHarness`, while
 the session-scoped Playwright driver remains shared. With `view`, `await view.capture()`
 writes the default screenshot (`checkpoint=None`) for that case. Use readable parameter IDs.
