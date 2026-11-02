@@ -21,6 +21,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
@@ -64,7 +65,7 @@ func (s *operationSignalState) UpdateWithConflicts(ctx context.Context, ptr reso
 			return nil
 		}
 		revision := signal.TypedSpec().OperationRevision
-		if revision == s.failRevision {
+		if s.err != nil && revision == s.failRevision {
 			return s.err
 		}
 		if revision == s.blockRevision {
@@ -519,5 +520,132 @@ func TestOperationRevisionPreservesConcurrentDemand(t *testing.T) {
 	input, _, err := ReadLifecycleSignal(t.Context(), store)
 	if err != nil || input.OperationRevision != 2 || input.Demand != 1 {
 		t.Fatalf("signal=%+v error=%v", input, err)
+	}
+}
+
+func TestDemandResetRetriesWithoutLosingOperationRevision(t *testing.T) {
+	store := &operationSignalState{State: state.WrapCore(namespaced.NewState(inmem.Build)), blockRevision: 0, publishing: make(chan struct{}), release: make(chan struct{})}
+	host := operationHost(t, store.State, func(err error) { t.Error(err) })
+	if err := host.updateLifecycleSignal(t.Context(), func(input *LifecycleSignal) { input.Demand = 7 }); err != nil {
+		t.Fatal(err)
+	}
+	host.deps.State = store
+	reset := make(chan error, 1)
+	go func() { reset <- host.ResetDemand(t.Context()) }()
+	<-store.publishing
+	if err := host.startOperation(&host.initializing, func(context.Context) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	host.deps.Workers.Wait()
+	close(store.release)
+	if err := <-reset; err != nil {
+		t.Fatal(err)
+	}
+	input, _, err := ReadLifecycleSignal(t.Context(), store)
+	if err != nil || input.OperationRevision != 2 || input.Demand != 0 {
+		t.Fatalf("signal=%+v error=%v", input, err)
+	}
+}
+
+func TestOperationRevisionPreservesConcurrentResetAndNativeExit(t *testing.T) {
+	f := newFixture(t)
+	ctx, cancel := context.WithTimeout(f.ctx, lifecycleTestTimeout)
+	defer cancel()
+	process, err := f.host.Host(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signal, _, err := ReadLifecycleSignal(ctx, f.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &operationSignalState{State: f.store, blockRevision: signal.OperationRevision + 1, publishing: make(chan struct{}), release: make(chan struct{})}
+	f.host.mu.Lock()
+	f.host.deps.State = store
+	f.host.mu.Unlock()
+	started := make(chan error, 1)
+	go func() { started <- f.host.startOperation(&f.host.draining, func(context.Context) error { return nil }) }()
+	<-store.publishing
+	if err := f.host.ResetDemand(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := process.process.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	_, err = safe.StateWatchFor[*typed.Resource[LifecycleSignal, componentExtension[LifecycleSignal]]](ctx, f.store, componentResource(ResourceID, LifecycleSignal{}).Metadata(), state.WithEventTypes(state.Created, state.Updated), state.WithCondition(func(value resource.Resource) (bool, error) {
+		return value.(*typed.Resource[LifecycleSignal, componentExtension[LifecycleSignal]]).TypedSpec().ExitSequence > signal.ExitSequence, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	close(store.release)
+	if err := <-started; err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, f, func(current Status) bool {
+		return current.Phase == Stopped && current.ExitSequence > signal.ExitSequence
+	})
+	input, _, err := ReadLifecycleSignal(ctx, f.store)
+	if err != nil || input.OperationRevision != signal.OperationRevision+2 || input.Demand != 0 || input.ExitProcessID != process.ID() {
+		t.Fatalf("signal=%+v error=%v", input, err)
+	}
+}
+
+func TestOperationCompletionWakesControllerWithoutDemand(t *testing.T) {
+	f := newFixture(t)
+	waitForStatus(t, f, func(current Status) bool { return current.EnvironmentGeneration == 1 })
+	release := make(chan struct{})
+	workErr := errors.New("test initialization refused")
+	if err := f.host.startOperation(&f.host.initializing, func(context.Context) error { <-release; return workErr }); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	current := waitForStatus(t, f, func(current Status) bool { return current.Error == workErr.Error() })
+	signal, _, err := ReadLifecycleSignal(f.ctx, f.store)
+	if err != nil || signal != (LifecycleSignal{OperationRevision: 2}) {
+		t.Fatalf("signal=%+v error=%v", signal, err)
+	}
+	if current.Phase != Stopped || current.ObservedDemand != 0 || current.ProcessID != "" {
+		t.Fatalf("status=%+v", current)
+	}
+	f.host.mu.Lock()
+	remaining := f.host.initializing
+	f.host.mu.Unlock()
+	if remaining != nil {
+		t.Fatal("controller did not consume completed operation")
+	}
+}
+
+func TestMissingLifecycleSignalFailsClosed(t *testing.T) {
+	store := state.WrapCore(namespaced.NewState(inmem.Build))
+	reported := make(chan error, 2)
+	host := &Host{deps: Dependencies{Context: t.Context(), State: store, Workers: &sync.WaitGroup{}, OnError: func(err error) { reported <- err }}, changed: make(chan struct{})}
+	if err := lifecycle.PublishEnvironmentDesired(t.Context(), store, lifecycle.EnvironmentDesired{Mode: lifecycle.Running, Generation: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := host.RequestLocked(t.Context(), nil); !state.IsNotFoundError(err) {
+		t.Fatalf("request error=%v", err)
+	}
+	var effects atomic.Int32
+	if err := host.startOperation(&host.initializing, func(context.Context) error { effects.Add(1); return nil }); !state.IsNotFoundError(err) {
+		t.Fatalf("start error=%v", err)
+	}
+	host.deps.Workers.Wait()
+	if effects.Load() != 0 || host.initializing != nil {
+		t.Fatal("missing lifecycle signal admitted work")
+	}
+	host.publishExit(&Process{})
+	for range 2 {
+		select {
+		case err := <-reported:
+			if !state.IsNotFoundError(err) {
+				t.Fatal(err)
+			}
+		default:
+			t.Fatal("missing lifecycle signal error was not reported")
+		}
+	}
+	if _, found, err := ReadLifecycleSignal(t.Context(), store); err != nil || found {
+		t.Fatalf("signal created after failure: found=%t error=%v", found, err)
 	}
 }
