@@ -90,19 +90,25 @@ class MacroVarLevels:
     cpi_level: list[MonthlyLevel]
 
 
-def _aligned_macro_var_levels(frames: dict[str, pl.DataFrame], *, start: date | None = None) -> MacroVarLevels:
+def _macro_var_levels(frames: dict[str, pl.DataFrame], *, start: date | None = None) -> MacroVarLevels:
     expected = {"short_rate_percent", "long_rate_percent", "cpi_level"}
     if set(frames) != expected:
         raise ValueError(f"macro VAR needs exactly these selected series: {sorted(expected)}")
-    aligned = loading.align_monthly_frames(frames, value_column="value")
-    if start is not None:
-        aligned = aligned.filter(pl.col("month") >= start)
-        if aligned.is_empty() or aligned.get_column("month")[0] != start:
-            raise ValueError(f"long-record macro inputs do not cover the required start month {start}")
+
+    # Keep each source's own calendar: the VAR state needs CPI from a year before each
+    # state month even when rate data were missing at that earlier date.
+    selected = {}
+    for name, frame in frames.items():
+        validated = loading.align_monthly_frames({name: frame}, value_column="value").rename({name: "value"})
+        if start is not None:
+            validated = validated.filter(pl.col("month") >= start)
+            if validated.is_empty() or validated.get_column("month")[0] != start:
+                raise ValueError(f"long-record macro input {name} does not cover the required start month {start}")
+        selected[name] = loading.monthly_levels(validated)
     return MacroVarLevels(
-        short_rate_percent=loading.monthly_levels(aligned.select("month", pl.col("short_rate_percent").alias("value"))),
-        long_rate_percent=loading.monthly_levels(aligned.select("month", pl.col("long_rate_percent").alias("value"))),
-        cpi_level=loading.monthly_levels(aligned.select("month", pl.col("cpi_level").alias("value"))),
+        short_rate_percent=selected["short_rate_percent"],
+        long_rate_percent=selected["long_rate_percent"],
+        cpi_level=selected["cpi_level"],
     )
 
 
@@ -120,8 +126,8 @@ def _long_record_macro_var_frames(cache: loading.EvidenceFrameCache) -> dict[str
 
 
 def load_long_record_macro_var_levels(evidence_dir: Path) -> MacroVarLevels:
-    """Load only the three month-aligned series used by the 1926 long-record VAR."""
-    return _aligned_macro_var_levels(
+    """Load the three independently dated series used by the 1926 long-record VAR."""
+    return _macro_var_levels(
         _long_record_macro_var_frames(
             loading.EvidenceFrameCache(EvidenceSnapshot.capture(evidence_dir, LONG_RECORD_MACRO_SOURCES))
         ),
@@ -141,7 +147,7 @@ def fit_structural_macro_defaults(evidence_dir: Path, *, macro_window: MacroFitW
     cache = loading.EvidenceFrameCache(snapshot)
     match macro_window:
         case MacroFitWindow.FRED_1955:
-            levels = _aligned_macro_var_levels(
+            levels = _macro_var_levels(
                 {
                     "short_rate_percent": cache.monthly_frame(FRED_FEDFUNDS),
                     "long_rate_percent": cache.monthly_frame(FRED_GS10),
@@ -155,7 +161,7 @@ def fit_structural_macro_defaults(evidence_dir: Path, *, macro_window: MacroFitW
             )
             macro_source = f"{FRED_FEDFUNDS.provenance_label},{FRED_GS10.provenance_label},{FRED_CPI.provenance_label}"
         case MacroFitWindow.LONG_RECORD_1926:
-            levels = _aligned_macro_var_levels(_long_record_macro_var_frames(cache), start=LONG_RECORD_START)
+            levels = _macro_var_levels(_long_record_macro_var_frames(cache), start=LONG_RECORD_START)
             macro_fit = fit_macro_var(
                 short_rate_percent=levels.short_rate_percent,
                 long_rate_percent=levels.long_rate_percent,

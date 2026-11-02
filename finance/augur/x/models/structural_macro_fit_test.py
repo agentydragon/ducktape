@@ -17,7 +17,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.historical_windows import MacroHistory, load_macro_history
-from finance.augur.x.models.macro_var import fit_macro_var
+from finance.augur.x.models.macro_var import fit_macro_var, macro_state_path
 from finance.augur.x.models.structural_macro_fit import (
     LONG_RECORD_MACRO_SOURCES,
     LONG_RECORD_START,
@@ -145,7 +145,7 @@ def test_long_var_uses_its_three_inputs_when_a_corporate_series_ends_early(
     assert levels.short_rate_percent[-1].month > corporate_end
 
 
-def test_long_var_inner_aligns_a_gap_in_one_required_input(tmp_path: Path) -> None:
+def test_long_var_preserves_each_inputs_calendar_until_the_model_combines_them(tmp_path: Path) -> None:
     end = date(1993, 12, 1)
     _write_evidence(tmp_path, end=end, corporate_end=end)
     source = sources.FRED_CPI_NSA
@@ -158,8 +158,24 @@ def test_long_var_inner_aligns_a_gap_in_one_required_input(tmp_path: Path) -> No
         [level.month for level in levels.long_rate_percent],
         [level.month for level in levels.cpi_level],
     ]
-    assert month_axes[0] == month_axes[1] == month_axes[2]
-    assert date(1970, 6, 1) not in month_axes[0]
+    assert date(1970, 6, 1) in month_axes[0]
+    assert date(1970, 6, 1) in month_axes[1]
+    assert date(1970, 6, 1) not in month_axes[2]
+
+
+def test_long_var_rate_gap_does_not_discard_next_years_cpi_lookback(tmp_path: Path) -> None:
+    _write_evidence(tmp_path, end=date(1993, 12, 1), corporate_end=date(1993, 12, 1))
+    rate_path = tmp_path / sources.FRED_GS10.output_filename
+    rate_path.write_text("\n".join(row for row in rate_path.read_text().splitlines() if row[:7] != "1970-06") + "\n")
+
+    levels = load_long_record_macro_var_levels(tmp_path)
+    path = macro_state_path(
+        short_rate_percent=levels.short_rate_percent,
+        long_rate_percent=levels.long_rate_percent,
+        cpi_level=levels.cpi_level,
+    )
+    assert date(1970, 6, 1) not in path.months
+    assert date(1971, 6, 1) in path.months
 
 
 def test_fitted_artifact_records_the_exact_captured_sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
