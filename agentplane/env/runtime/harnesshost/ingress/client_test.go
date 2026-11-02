@@ -16,6 +16,9 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -25,6 +28,16 @@ import (
 )
 
 const testSessionID = "ingress-session"
+
+func newTestStore(t *testing.T) *retained.Store {
+	t.Helper()
+	resources := state.WrapCore(namespaced.NewState(inmem.Build))
+	store, err := retained.NewStore(t.TempDir(), resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
 
 func newTestSource(t *testing.T, count int) (Source, *retained.Store, []*eventlogpb.EventEntry) {
 	t.Helper()
@@ -38,10 +51,7 @@ func newTestSource(t *testing.T, count int) (Source, *retained.Store, []*eventlo
 			t.Errorf("close journal: %v", err)
 		}
 	})
-	store, err := retained.NewStore(t.TempDir(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := newTestStore(t)
 	if err := j.WithBatch(context.Background(), func(ctx context.Context) error {
 		for i := 1; i <= count; i++ {
 			if _, err := j.Append(ctx, &eventpb.Event{

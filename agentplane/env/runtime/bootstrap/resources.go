@@ -5,11 +5,13 @@ import (
 	"context"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
+	persistencepb "github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate/persistentpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 )
 
@@ -27,11 +29,6 @@ const (
 // It is live-only and must never be restored after a restart.
 type Request struct {
 	Requested bool
-}
-
-// Selection is the immutable script committed before its one execution attempt.
-type Selection struct {
-	Script string `json:"script"`
 }
 
 type Phase uint8
@@ -91,8 +88,28 @@ func ReadStatus(ctx context.Context, reader controller.Reader) (Status, bool, er
 	return componentRead[Status](ctx, reader, ResourceID)
 }
 
-func ReadSelection(ctx context.Context, reader controller.Reader) (Selection, bool, error) {
-	return componentRead[Selection](ctx, reader, ResourceID)
+func ReadSelection(ctx context.Context, reader controller.Reader) (string, bool, error) {
+	value, err := safe.ReaderGet[*SelectionResource](ctx, reader, SelectionResourceValue("").Metadata())
+	if state.IsNotFoundError(err) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if err := validateScript(string(value.TypedSpec().Value.Script)); err != nil {
+		return "", false, err
+	}
+	return string(value.TypedSpec().Value.Script), true, nil
+}
+
+func publishSelection(ctx context.Context, writer state.State, script string) error {
+	if err := validateScript(script); err != nil {
+		return err
+	}
+	return safe.StateModify(ctx, writer, SelectionResourceValue(script), func(current *SelectionResource) error {
+		current.TypedSpec().Value = &persistencepb.BootstrapSelectionSpec{Script: []byte(script)}
+		return nil
+	}, state.WithUpdateOwner(HostOwner))
 }
 
 func isTerminal(phase Phase) bool {
@@ -103,7 +120,5 @@ func (Request) resourceType() resource.Type           { return RequestType }
 func (value Request) DeepCopy() Request               { return value }
 func (Status) resourceType() resource.Type            { return StatusType }
 func (value Status) DeepCopy() Status                 { return value }
-func (Selection) resourceType() resource.Type         { return SelectionType }
-func (value Selection) DeepCopy() Selection           { return value }
 func (operationState) resourceType() resource.Type    { return OperationStateType }
 func (value operationState) DeepCopy() operationState { return value }

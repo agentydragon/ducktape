@@ -1,7 +1,7 @@
 package retained
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -10,8 +10,10 @@ import (
 	"sync"
 	"syscall"
 
-	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
+	persistencepb "github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate/persistentpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/google/uuid"
 )
@@ -130,57 +132,51 @@ func WriteDurable(path string, data []byte) error {
 }
 
 // Record is the durable Session reservation and native recovery identity.
-type Record struct {
-	Harness                  sessionpb.Harness
-	CWD                      string
-	Model                    string
-	TotalContextBudgetTokens *int
-	ReasoningEffort          string
-	Instructions             string
-	SetupScript              string
-	EventSourceID            string
-	NativeSessionID          *string
-	ExecutionPrincipal       *delegationpb.ServiceAccountIdentity
-}
+// The generated protobuf spec is the sole in-memory and on-disk representation.
+type Record = persistencepb.SessionRecordSpec
 
-func NewRecord(spec *sessionpb.SessionSpec, setupScript string, totalContextBudgetTokens *int) (Record, error) {
+func NewRecord(spec *sessionpb.SessionSpec, setupScript string, totalContextBudgetTokens *int) (*Record, error) {
 	if spec == nil {
-		return Record{}, errors.New("session spec is required")
+		return nil, errors.New("session spec is required")
 	}
 	if totalContextBudgetTokens != nil && *totalContextBudgetTokens <= 0 {
-		return Record{}, errors.New("total context budget must be positive")
+		return nil, errors.New("total context budget must be positive")
 	}
-	record := Record{
-		Harness: spec.GetHarness(), CWD: spec.GetCwd(), Model: spec.GetModel(),
-		TotalContextBudgetTokens: totalContextBudgetTokens, ReasoningEffort: spec.GetReasoningEffort(),
-		Instructions: spec.GetInstructions(), SetupScript: setupScript, EventSourceID: uuid.NewString(),
+	record := &Record{
+		Harness: spec.GetHarness(), Cwd: spec.GetCwd(), Model: spec.GetModel(),
+		ReasoningEffort: spec.GetReasoningEffort(), Instructions: spec.GetInstructions(),
+		SetupScript: []byte(setupScript), EventSourceId: uuid.NewString(),
+	}
+	if totalContextBudgetTokens != nil {
+		budget := int64(*totalContextBudgetTokens)
+		record.TotalContextBudgetTokens = &budget
 	}
 	return record, nil
 }
 
 // MatchesSetupScript compares a supplied script against the retained source.
 // Callers should skip this check when the OpenSession request omits setup_script.
-func (r Record) MatchesSetupScript(script string) bool {
-	return r.SetupScript == script
+func MatchesSetupScript(record *Record, script string) bool {
+	return string(record.SetupScript) == script
 }
 
 // HasSetupScript reports whether a setup source was retained.
-func (r Record) HasSetupScript() bool { return r.SetupScript != "" }
+func HasSetupScript(record *Record) bool { return len(record.SetupScript) != 0 }
 
-func (r Record) Spec() *sessionpb.SessionSpec {
+func SessionSpec(record *Record) *sessionpb.SessionSpec {
 	return &sessionpb.SessionSpec{
-		Harness: r.Harness, Cwd: r.CWD, Model: r.Model,
-		ReasoningEffort: r.ReasoningEffort, Instructions: r.Instructions,
+		Harness: record.Harness, Cwd: record.Cwd, Model: record.Model,
+		ReasoningEffort: record.ReasoningEffort, Instructions: record.Instructions,
 	}
 }
 
 type Acknowledgement struct {
-	Cursor uint64 `json:"cursor"`
-	Sealed bool   `json:"sealed"`
+	Cursor uint64
+	Sealed bool
 }
 
-// Store owns Session directories and their ingress acknowledgements. Session
-// records are stored in the shared COSI state.
+// Store owns Session directories and the shared COSI state for Session records
+// and ingress acknowledgements.
 type Store struct {
 	mu    sync.Mutex
 	root  string
@@ -211,20 +207,15 @@ func (s *Store) Directory(sessionID string) (string, error) {
 func (s *Store) ReadAcknowledgement(sessionID string) (*Acknowledgement, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	directory, err := s.Directory(sessionID)
+	if s.state == nil {
+		return nil, errors.New("Session COSI state is required")
+	}
+	acknowledgement, found, err := ReadAcknowledgement(context.Background(), s.state, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(filepath.Join(directory, "acknowledgement.json"))
-	if errors.Is(err, os.ErrNotExist) {
+	if !found {
 		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var acknowledgement Acknowledgement
-	if err := json.Unmarshal(data, &acknowledgement); err != nil {
-		return nil, err
 	}
 	return &acknowledgement, nil
 }
@@ -232,34 +223,15 @@ func (s *Store) ReadAcknowledgement(sessionID string) (*Acknowledgement, error) 
 func (s *Store) WriteAcknowledgement(sessionID string, acknowledgement Acknowledgement) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.replace(sessionID, "acknowledgement.json", acknowledgement)
-}
-
-func (s *Store) replace(sessionID, name string, value any) error {
-	directory, err := s.Directory(sessionID)
-	if err != nil {
+	if s.state == nil {
+		return errors.New("Session COSI state is required")
+	}
+	if _, err := ValidateSessionID(sessionID); err != nil {
 		return err
 	}
-	if err := EnsureDirectory(directory); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return err
-	}
-	temporary := filepath.Join(directory, name+".tmp")
-	file, err := os.OpenFile(temporary, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o666)
-	if err != nil {
-		return err
-	}
-	_, writeErr := file.Write(data)
-	syncErr := file.Sync()
-	closeErr := file.Close()
-	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
-		return err
-	}
-	if err := os.Rename(temporary, filepath.Join(directory, name)); err != nil {
-		return err
-	}
-	return syncDirectory(directory)
+	return safe.StateModify(context.Background(), s.state, AcknowledgementResource(sessionID, acknowledgement), func(current *IngressAckResource) error {
+		current.TypedSpec().Value.Cursor = acknowledgement.Cursor
+		current.TypedSpec().Value.Sealed = acknowledgement.Sealed
+		return nil
+	}, state.WithUpdateOwner(lifecycle.HostOwner))
 }

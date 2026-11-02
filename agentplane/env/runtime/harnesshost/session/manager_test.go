@@ -3,7 +3,6 @@ package session
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -90,7 +89,6 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root),
 		Destination: func(string) string { return "test-destination" },
 		PublishSeal: func(string, *journal.SealState) error { return nil },
-		PublishAck:  func(string, retained.Acknowledgement) error { return nil },
 		OnError: func(err error) {
 			if err != nil {
 				publishErrors <- err
@@ -230,7 +228,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	}
 }
 
-func TestReopenRetryClearsSealedAcknowledgementAfterJournalReopened(t *testing.T) {
+func TestReopenRetryKeepsCOSIIngressAcknowledgementAfterJournalReopened(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	root := t.TempDir()
@@ -252,8 +250,7 @@ func TestReopenRetryClearsSealedAcknowledgementAfterJournalReopened(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	acknowledgementPath := filepath.Join(directory, "acknowledgement.json")
-	sealedJournal, err := journal.Open(ctx, filepath.Join(directory, "journal.sqlite"), record.EventSourceID)
+	sealedJournal, err := journal.Open(ctx, filepath.Join(directory, "journal.sqlite"), record.EventSourceId)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,22 +266,16 @@ func TestReopenRetryClearsSealedAcknowledgementAfterJournalReopened(t *testing.T
 		t.Fatal(err)
 	}
 	environment := Environment{IncarnationUID: "current-incarnation"}
-	var ackPublications []retained.Acknowledgement
-	ackPublishCalls := 0
+	sealPublishCalls := 0
 	publishErr := errors.New("injected acknowledgement publication failure")
 	m, err := NewManager(withTestSessionFacilities(t, Config{
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root), Environment: func() Environment { return environment },
 		Destination: func(string) string { return "test-destination" },
-		PublishSeal: func(string, *journal.SealState) error { return nil },
-		PublishAck: func(_ string, ack retained.Acknowledgement) error {
-			ackPublishCalls++
-			if ackPublishCalls == 1 {
-				if err := os.WriteFile(acknowledgementPath, []byte("invalid acknowledgement"), 0o600); err != nil {
-					return err
-				}
+		PublishSeal: func(string, *journal.SealState) error {
+			sealPublishCalls++
+			if sealPublishCalls == 1 {
 				return publishErr
 			}
-			ackPublications = append(ackPublications, ack)
 			return nil
 		},
 		OnChange: func() {},
@@ -304,7 +295,7 @@ func TestReopenRetryClearsSealedAcknowledgementAfterJournalReopened(t *testing.T
 		}
 	})
 	if _, err := m.Load(ctx, "reopen-session"); !errors.Is(err, publishErr) {
-		t.Fatalf("initial load error = %v, want %v after durable journal reopen", err, publishErr)
+		t.Fatalf("initial load error = %v, want %v after durable journal and acknowledgement reopen", err, publishErr)
 	}
 	if m.Get("reopen-session") != nil {
 		t.Fatal("failed reopen became visible in the Session registry")
@@ -312,8 +303,9 @@ func TestReopenRetryClearsSealedAcknowledgementAfterJournalReopened(t *testing.T
 	if _, found, err := ReadInput(ctx, resources, "reopen-session"); err != nil || found {
 		t.Fatalf("failed reopen published a Session input: found=%t, err=%v", found, err)
 	}
-	if err := store.WriteAcknowledgement("reopen-session", sealedAck); err != nil {
-		t.Fatal(err)
+	ack, err := store.ReadAcknowledgement("reopen-session")
+	if err != nil || ack == nil || ack.Cursor != sealCursor || ack.Sealed {
+		t.Fatalf("acknowledgement after failed publication = %+v, err=%v; want durable unsealed cursor", ack, err)
 	}
 	environment.Quiesced = true
 
@@ -321,12 +313,9 @@ func TestReopenRetryClearsSealedAcknowledgementAfterJournalReopened(t *testing.T
 	if err != nil {
 		t.Fatalf("retry load after durable journal reopen: %v", err)
 	}
-	ack, err := store.ReadAcknowledgement("reopen-session")
+	ack, err = store.ReadAcknowledgement("reopen-session")
 	if err != nil || ack == nil || ack.Cursor != sealCursor || ack.Sealed {
 		t.Fatalf("reopened acknowledgement = %+v, err=%v; want cursor preserved and unsealed", ack, err)
-	}
-	if len(ackPublications) != 1 || ackPublications[0] != *ack {
-		t.Fatalf("acknowledgement publications = %+v, want one unsealed retry state", ackPublications)
 	}
 	entries, err := s.journal.Since(ctx, 0, 10)
 	if err != nil {
@@ -382,7 +371,7 @@ func TestCodexExitBeforeProcessInstall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j, err := journal.Open(ctx, filepath.Join(directory, "journal.sqlite"), record.EventSourceID)
+	j, err := journal.Open(ctx, filepath.Join(directory, "journal.sqlite"), record.EventSourceId)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -391,7 +380,7 @@ func TestCodexExitBeforeProcessInstall(t *testing.T) {
 		environmentState: func() Environment { return Environment{IncarnationUID: "test-incarnation"} },
 		ctx:              ctx, state: resources, store: store,
 		changed: func() {}, fail: func(err error) { t.Error(err) }, publish: func(*Session, bool) {},
-	}, "codex-session", &record, j)
+	}, "codex-session", record, j)
 	attachment := s.appServerAttachment()
 	s.mu.Lock()
 	exitEpoch := s.codexExitEpoch

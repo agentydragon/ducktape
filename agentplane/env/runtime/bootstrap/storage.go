@@ -1,51 +1,47 @@
 package bootstrap
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
+	persistencepb "github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate/persistentpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
+	resourcepb "github.com/cosi-project/runtime/pkg/resource/protobuf"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 )
 
-// Selection is a singleton and never updated. Its fixed COSI metadata is
-// reconstructed when the persisted selection is loaded.
-type selectionMarshaler struct{}
+type selectionExtension struct{}
 
-type selectionDisk struct {
-	Script []byte `json:"script"`
+func (selectionExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
+	return spec.ResourceDefinitionSpec{Type: SelectionType, DefaultNamespace: lifecycle.Namespace}
 }
 
-func SelectionCodec() cosistate.Codec {
-	codec := selectionMarshaler{}
-	return cosistate.Codec{Type: SelectionType, Marshal: codec.MarshalResource, Unmarshal: codec.UnmarshalResource}
+type (
+	selectionSpec     = resourcepb.ResourceSpec[persistencepb.BootstrapSelectionSpec, *persistencepb.BootstrapSelectionSpec]
+	SelectionResource = typed.Resource[selectionSpec, selectionExtension]
+)
+
+func init() {
+	if err := resourcepb.RegisterResource(SelectionType, &SelectionResource{}); err != nil {
+		panic(err)
+	}
 }
 
-func (selectionMarshaler) MarshalResource(value resource.Resource) ([]byte, error) {
-	selected, ok := value.(*typed.Resource[Selection, componentExtension[Selection]])
-	if !ok || selected.Metadata().ID() != ResourceID {
-		return nil, fmt.Errorf("unexpected bootstrap selection resource %T", value)
-	}
-	if err := validateScript(selected.TypedSpec().Script); err != nil {
-		return nil, err
-	}
-	return json.Marshal(selectionDisk{Script: []byte(selected.TypedSpec().Script)})
+func SelectionResourceValue(script string) *SelectionResource {
+	return typed.NewResource[selectionSpec, selectionExtension](resource.NewMetadata(lifecycle.Namespace, SelectionType, ResourceID, resource.VersionUndefined),
+		resourcepb.NewResourceSpec(&persistencepb.BootstrapSelectionSpec{Script: []byte(script)}))
 }
 
-func (selectionMarshaler) UnmarshalResource(data []byte) (resource.Resource, error) {
-	var disk selectionDisk
-	if err := decodeSelection(data, &disk); err != nil {
-		return nil, err
+func SelectionRegistration() cosistate.Registration {
+	return cosistate.Registration{Type: SelectionType, Validate: validateSelectionResource}
+}
+
+func validateSelectionResource(value resource.Resource) error {
+	selected, ok := value.(*SelectionResource)
+	if !ok || selected.Metadata().Namespace() != lifecycle.Namespace || selected.Metadata().Type() != SelectionType || selected.Metadata().ID() != ResourceID || selected.Metadata().Owner() != HostOwner || selected.TypedSpec().Value == nil {
+		return fmt.Errorf("unexpected bootstrap selection resource %T", value)
 	}
-	selected := Selection{Script: string(disk.Script)}
-	if err := validateScript(selected.Script); err != nil {
-		return nil, err
-	}
-	value := componentResource(ResourceID, selected)
-	value.Metadata().SetVersion(resource.VersionUndefined.Next())
-	if err := value.Metadata().SetOwner(HostOwner); err != nil {
-		return nil, err
-	}
-	return value, nil
+	return validateScript(string(selected.TypedSpec().Value.Script))
 }

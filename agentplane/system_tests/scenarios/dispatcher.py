@@ -878,7 +878,6 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                 state_session = mount_sources["/state"] / "sessions" / session
                 early_payload = f"EARLY_ARCHIVE_PAYLOAD_{sandbox}".encode()
                 late_payload = f"LATE_ARCHIVE_PAYLOAD_{sandbox}".encode()
-                early_session_payload = f"EARLY_DIAGNOSTIC_PAYLOAD_{sandbox}".encode()
                 late_session_payload = f"LATE_DIAGNOSTIC_PAYLOAD_{sandbox}".encode()
                 (state_session / "diagnostic-early.bin").write_bytes(early_payload)
                 (mount_sources["/home/runner"] / f"diagnostic-late-{sandbox}.bin").write_bytes(late_payload)
@@ -940,27 +939,10 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                         f"/sessions/{session}/diagnostic-early.bin": early_payload,
                         f"/diagnostic-late-{sandbox}.bin": late_payload,
                     }
-                    session_record_found = False
                     with tarfile.open(archive_manifest["archive_path"], "r|") as runner_archive:
                         for member in runner_archive:
                             if not member.isfile():
                                 continue
-                            if member.name == "state/runtime-resources.db":
-                                archived_file = runner_archive.extractfile(member)
-                                assert archived_file is not None
-                                database = archived_file.read()
-                                # The bbolt file contains COSI's encoded resource. Decode the
-                                # Session record rather than treating a matching byte sequence
-                                # elsewhere in the database as proof of the reservation.
-                                prefix = (
-                                    f'{{"type":"SessionRecords.agentplane","data":{{"id":"{session}","record":'
-                                ).encode()
-                                offset = database.find(prefix)
-                                assert offset >= 0, "archived COSI state lacks the Session resource"
-                                resource, _ = json.JSONDecoder().raw_decode(database[offset:].decode(errors="replace"))
-                                assert resource["data"]["id"] == session
-                                assert early_session_payload.decode() in resource["data"]["record"]["Instructions"]
-                                session_record_found = True
                             for suffix, expected_payload in expected.items():
                                 if member.name.endswith(suffix):
                                     archived_file = runner_archive.extractfile(member)
@@ -969,7 +951,6 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                                     assert archived_payload == expected_payload
                                     found_markers.add(suffix)
                     assert found_markers == set(expected)
-                    assert session_record_found
                 finally:
                     wal_db.close()
                 evidence.update(

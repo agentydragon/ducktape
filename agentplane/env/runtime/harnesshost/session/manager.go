@@ -27,7 +27,6 @@ type Manager struct {
 	dependencies  sessionDependencies
 	destination   func(string) string
 	publishSeal   func(string, *journal.SealState) error
-	publishAck    func(string, retained.Acknowledgement) error
 	changed       func()
 	fail          func(error)
 	workers       int
@@ -41,7 +40,7 @@ type Manager struct {
 }
 
 func NewManager(config Config) (*Manager, error) {
-	if config.Context == nil || config.State == nil || config.Store == nil || config.Destination == nil || config.Scripts == nil || config.WaitBootstrap == nil || config.Environment == nil || config.EnsureWorkspace == nil || config.LaunchProcess == nil || config.ResolveModelConfig == nil || config.PublishSeal == nil || config.PublishAck == nil || config.OnChange == nil || config.OnError == nil || config.ReconcileConcurrency <= 0 {
+	if config.Context == nil || config.State == nil || config.Store == nil || config.Destination == nil || config.Scripts == nil || config.WaitBootstrap == nil || config.Environment == nil || config.EnsureWorkspace == nil || config.LaunchProcess == nil || config.ResolveModelConfig == nil || config.PublishSeal == nil || config.OnChange == nil || config.OnError == nil || config.ReconcileConcurrency <= 0 {
 		return nil, fmt.Errorf("invalid Session manager dependencies")
 	}
 	if config.Claude != nil {
@@ -55,8 +54,8 @@ func NewManager(config Config) (*Manager, error) {
 	m := &Manager{
 		ctx: config.Context, state: config.State, store: config.Store,
 		workspaceRoot: config.WorkspaceRoot, destination: config.Destination, environment: config.Environment,
-		publishSeal: config.PublishSeal, publishAck: config.PublishAck,
-		changed: config.OnChange, fail: config.OnError,
+		publishSeal: config.PublishSeal,
+		changed:     config.OnChange, fail: config.OnError,
 		workers: config.ReconcileConcurrency, sessions: map[string]*Session{}, freshReservations: map[string]struct{}{},
 	}
 	m.dependencies = sessionDependencies{
@@ -137,14 +136,14 @@ func (m *Manager) loadLocked(ctx context.Context, id string, recoverRetained boo
 	if err != nil {
 		return nil, err
 	}
-	if _, err := workspace.Resolve(record.CWD, m.workspaceRoot); err != nil {
+	if _, err := workspace.Resolve(record.Cwd, m.workspaceRoot); err != nil {
 		return nil, err
 	}
 	directory, err := m.store.Directory(id)
 	if err != nil {
 		return nil, err
 	}
-	journal, err := journal.Open(ctx, filepath.Join(directory, "journal.sqlite"), record.EventSourceID)
+	journal, err := journal.Open(ctx, filepath.Join(directory, "journal.sqlite"), record.EventSourceId)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +155,7 @@ func (m *Manager) loadLocked(ctx context.Context, id string, recoverRetained boo
 	}()
 	deps := m.dependencies
 	deps.destination = m.destination(id)
-	s := newSession(deps, id, &record, journal)
+	s := newSession(deps, id, record, journal)
 	s.loading = true
 	if err := s.load(ctx); err != nil {
 		return nil, err
@@ -232,11 +231,6 @@ func (m *Manager) Reopen(ctx context.Context, s *Session) error {
 	}
 	if err := m.publishSeal(s.id, s.journal.SealState()); err != nil {
 		return err
-	}
-	if ack != nil {
-		if err := m.publishAck(s.id, *ack); err != nil {
-			return err
-		}
 	}
 	if reopening || writeAck {
 		m.changed()

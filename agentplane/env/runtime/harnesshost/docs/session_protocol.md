@@ -73,10 +73,10 @@ public control RPCs are in [Environment Runtime control](../../control/environme
   Each call announces the session's `Attached` snapshot and sends the journal's entries after the
   ingress's first acknowledgement, replayed and then live, at most 1024 beyond the latest
   acknowledgement, then `Sealed` once the journal is sealed.
-- The Harness Host records each session's latest acknowledgement on its state volume and deletes no
-  journal entry on it, then publishes the acknowledgement to Harness Host lifecycle observation. Journal
-  read/wait, acknowledgement persistence, and lifecycle-observation failures are local and fail the
-  Harness Host; remote stream loss retries with the control stream's backoff. A call the ingress refuses as
+- The Harness Host records each session's latest acknowledgement as a persistent `IngressAcks` COSI
+  resource and deletes no journal entry. The same resource drives Harness Host lifecycle observation.
+  Journal read/wait and acknowledgement persistence failures are local and fail the Harness Host; remote
+  stream loss retries with the control stream's backoff. A call the ingress refuses as
   another writer's, or whose first acknowledgement is beyond the journal, retries at the maximum.
   These remote failures do not hold up another session, a command or a lifecycle request: the journal is the buffer.
 - The ingress bearer is a placeholder the egress proxy substitutes for the ingress's own audience;

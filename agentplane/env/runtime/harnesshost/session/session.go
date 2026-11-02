@@ -89,7 +89,7 @@ type sessionDependencies struct {
 
 func newSession(deps sessionDependencies, id string, record *retained.Record, journal *journal.Journal) *Session {
 	s := &Session{deps: deps, id: id, record: record, journal: journal, pending: map[string]bool{}, dispatched: map[string]bool{}, controlDispatches: map[string]chan struct{}{}, interrupts: map[string]string{}, launch: sessionpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING, setup: sessionpb.SetupState_SETUP_STATE_NOT_REQUIRED}
-	if record.HasSetupScript() {
+	if retained.HasSetupScript(record) {
 		s.setup = sessionpb.SetupState_SETUP_STATE_RUNNING
 	}
 	s.connection = &nativeConnection{deps: nativeConnectionDependencies{
@@ -108,10 +108,15 @@ func newSession(deps sessionDependencies, id string, record *retained.Record, jo
 func (s *Session) Session() harness.SessionSnapshot {
 	s.mu.Lock()
 	native := ""
-	if s.record.NativeSessionID != nil {
-		native = *s.record.NativeSessionID
+	if s.record.NativeSessionId != nil {
+		native = *s.record.NativeSessionId
 	}
-	snapshot := harness.SessionSnapshot{Directory: s.directory(), Cwd: s.record.CWD, Model: s.record.Model, ReasoningEffort: s.record.ReasoningEffort, Instructions: s.record.Instructions, NativeSessionID: native, TotalContextBudgetTokens: s.record.TotalContextBudgetTokens, ActiveTurnID: s.activeTurn, Environment: s.environment()}
+	var budget *int
+	if s.record.TotalContextBudgetTokens != nil {
+		value := int(*s.record.TotalContextBudgetTokens)
+		budget = &value
+	}
+	snapshot := harness.SessionSnapshot{Directory: s.directory(), Cwd: s.record.Cwd, Model: s.record.Model, ReasoningEffort: s.record.ReasoningEffort, Instructions: s.record.Instructions, NativeSessionID: native, TotalContextBudgetTokens: budget, ActiveTurnID: s.activeTurn, Environment: s.environment()}
 	s.mu.Unlock()
 	snapshot.Resuming = s.lifecycleStatus().Resuming
 	return snapshot

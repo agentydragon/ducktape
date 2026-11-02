@@ -17,7 +17,6 @@ import (
 const (
 	harnessHostAdmissionCountType = "HarnessHostAdmissionCounts.agentplane"
 	journalSealType               = "JournalSeals.agentplane"
-	ingressAckType                = "IngressAcks.agentplane"
 	harnessHostControllerName     = "harness-host-lifecycle"
 )
 
@@ -54,10 +53,6 @@ type journalSealSpec struct {
 	IncarnationUID string
 	Cursor         uint64
 }
-type ingressAckSpec struct {
-	Cursor uint64
-	Sealed bool
-}
 
 func (harnessHostAdmissionCountSpec) resourceType() resource.Type {
 	return harnessHostAdmissionCountType
@@ -66,9 +61,6 @@ func (value harnessHostAdmissionCountSpec) DeepCopy() harnessHostAdmissionCountS
 
 func (journalSealSpec) resourceType() resource.Type     { return journalSealType }
 func (value journalSealSpec) DeepCopy() journalSealSpec { return value }
-
-func (ingressAckSpec) resourceType() resource.Type    { return ingressAckType }
-func (value ingressAckSpec) DeepCopy() ingressAckSpec { return value }
 
 func watchLifecycle[T lifecycleSpec[T]](ctx context.Context, l *lifecycle, id string, condition func(T) (bool, error)) error {
 	ctx, cancel := context.WithCancel(ctx)

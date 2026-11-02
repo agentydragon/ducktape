@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -18,7 +19,7 @@ func (m *Manager) publishSession(s *Session, demand bool) {
 	var input Input
 	s.mu.Lock()
 	input.Harness = s.record.Harness
-	input.SetupRequested = s.record.SetupScript != ""
+	input.SetupRequested = retained.HasSetupScript(s.record)
 	input.Setup, input.Pending, input.ProcessID = s.setup, len(s.pending), s.processID
 	input.ProcessRunning = s.process != nil && s.process.Running()
 	input.InspectionRunning = s.inspection != nil

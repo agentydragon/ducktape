@@ -1,6 +1,7 @@
 package retained
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
+	sandboxes "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
@@ -22,24 +25,29 @@ func TestSessionRecordsUseCOSIState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	budget := 32768
+	budget := int64(32768)
 	native := "native-session"
-	record := Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, CWD: "/workspace", Model: "route/model", TotalContextBudgetTokens: &budget, SetupScript: "printf 'exact \\t'\n", EventSourceID: "source", NativeSessionID: &native}
+	wantScript := []byte("printf 'exact \\t'\n")
+	record := &Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", Model: "route/model", TotalContextBudgetTokens: &budget, SetupScript: bytes.Clone(wantScript), EventSourceId: "source", NativeSessionId: &native, ExecutionPrincipal: &delegationpb.ServiceAccountIdentity{Account: &sandboxes.ServiceAccount{Namespace: "ns", Name: "account"}, Uid: "uid"}}
 	if err := store.Write("session-1", record); err != nil {
 		t.Fatal(err)
 	}
 	budget = 1
 	native = "changed"
+	record.SetupScript[0] = 'X'
+	record.ExecutionPrincipal.Account.Name = "changed"
 	read, err := store.Read("session-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if *read.TotalContextBudgetTokens != 32768 || *read.NativeSessionID != "native-session" || read.SetupScript != record.SetupScript {
+	if *read.TotalContextBudgetTokens != 32768 || *read.NativeSessionId != "native-session" || !bytes.Equal(read.SetupScript, wantScript) || read.ExecutionPrincipal.GetAccount().GetName() != "account" {
 		t.Fatalf("record = %+v", read)
 	}
-	*read.NativeSessionID = "mutated"
+	*read.NativeSessionId = "mutated"
+	read.SetupScript[0] = 'X'
+	read.ExecutionPrincipal.Account.Name = "mutated"
 	again, err := store.Read("session-1")
-	if err != nil || *again.NativeSessionID != "native-session" {
+	if err != nil || *again.NativeSessionId != "native-session" || !bytes.Equal(again.SetupScript, wantScript) || again.ExecutionPrincipal.GetAccount().GetName() != "account" {
 		t.Fatalf("mutated resource: %+v, %v", again, err)
 	}
 	ids, err := store.SessionIDs()
@@ -67,7 +75,7 @@ func TestSessionRecordsUseCOSIState(t *testing.T) {
 
 func TestConcurrentSessionFieldsSurviveRestart(t *testing.T) {
 	root := t.TempDir()
-	resources, backing, err := cosistate.Open(root, lifecycle.Namespace, SessionRecordCodec())
+	resources, backing, err := cosistate.Open(root, lifecycle.Namespace, SessionRecordRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +83,10 @@ func TestConcurrentSessionFieldsSurviveRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Write("session", Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, CWD: "/workspace", Model: "old-model", ReasoningEffort: "old-effort", EventSourceID: "source"}); err != nil {
+	record := &Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", Model: "old-model", ReasoningEffort: "old-effort", EventSourceId: "source"}
+	unknown := []byte{0xa0, 0x06, 0x07} // Field 100, varint 7.
+	record.ProtoReflect().SetUnknown(unknown)
+	if err := store.Write("session", record); err != nil {
 		t.Fatal(err)
 	}
 	start := make(chan struct{})
@@ -104,7 +115,7 @@ func TestConcurrentSessionFieldsSurviveRestart(t *testing.T) {
 	if err := backing.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, reopenedBacking, err := cosistate.Open(root, lifecycle.Namespace, SessionRecordCodec())
+	reopened, reopenedBacking, err := cosistate.Open(root, lifecycle.Namespace, SessionRecordRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,12 +124,12 @@ func TestConcurrentSessionFieldsSurviveRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	record, err := restored.Read("session")
+	restoredRecord, err := restored.Read("session")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if record.Model != "new-model" || record.ReasoningEffort != "new-effort" || record.NativeSessionID == nil || *record.NativeSessionID != "native-session" || record.EventSourceID != "source" {
-		t.Fatalf("restored concurrent updates = %+v", record)
+	if restoredRecord.Model != "new-model" || restoredRecord.ReasoningEffort != "new-effort" || restoredRecord.NativeSessionId == nil || *restoredRecord.NativeSessionId != "native-session" || restoredRecord.EventSourceId != "source" || !bytes.Equal(restoredRecord.ProtoReflect().GetUnknown(), unknown) {
+		t.Fatalf("restored concurrent updates = %+v", restoredRecord)
 	}
 }
 
@@ -137,13 +148,77 @@ func TestSessionFieldUpdateDoesNotCreateRecord(t *testing.T) {
 	}
 }
 
-func TestNewRecordKeepsExactSetupSource(t *testing.T) {
-	script := "printf ' setup \\t'\n\necho done"
-	record, err := NewRecord(&sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", Model: "route/model"}, script, nil)
+func TestIngressAcknowledgementsUsePersistentCOSIAndIgnoreLegacyJSON(t *testing.T) {
+	root := t.TempDir()
+	sessionsRoot := filepath.Join(root, "sessions")
+	legacyDirectory := filepath.Join(sessionsRoot, "session-1")
+	if err := os.MkdirAll(legacyDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	legacyJSON := []byte(`{"cursor":777,"sealed":true}`)
+	legacyPath := filepath.Join(legacyDirectory, "acknowledgement.json")
+	if err := os.WriteFile(legacyPath, legacyJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stateDir := filepath.Join(root, "state")
+	if err := os.Mkdir(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	resources, backing, err := cosistate.Open(stateDir, lifecycle.Namespace, SessionRecordRegistration(), IngressAckRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !record.MatchesSetupScript(script) || record.MatchesSetupScript("different") || !record.HasSetupScript() {
-		t.Fatalf("setup source = %q", record.SetupScript)
+	store, err := NewStore(sessionsRoot, resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ack, err := store.ReadAcknowledgement("session-1"); err != nil || ack != nil {
+		t.Fatalf("legacy file acknowledgement = %+v, err=%v; want no COSI state", ack, err)
+	}
+	sealed := Acknowledgement{Cursor: 12, Sealed: true}
+	if err := store.WriteAcknowledgement("session-1", sealed); err != nil {
+		t.Fatal(err)
+	}
+	if err := backing.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, reopenedBacking, err := cosistate.Open(stateDir, lifecycle.Namespace, SessionRecordRegistration(), IngressAckRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopenedStore, err := NewStore(sessionsRoot, reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := reopenedStore.ReadAcknowledgement("session-1")
+	if err != nil || got == nil || *got != sealed {
+		t.Fatalf("reopened sealed COSI acknowledgement = %+v, err=%v; want %+v", got, err, sealed)
+	}
+	unsealed := sealed
+	unsealed.Sealed = false
+	if err := reopenedStore.WriteAcknowledgement("session-1", unsealed); err != nil {
+		t.Fatal(err)
+	}
+	if err := reopenedBacking.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopenedAgain, reopenedAgainBacking, err := cosistate.Open(stateDir, lifecycle.Namespace, SessionRecordRegistration(), IngressAckRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopenedAgainBacking.Close()
+	unsealedStore, err := NewStore(sessionsRoot, reopenedAgain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = unsealedStore.ReadAcknowledgement("session-1")
+	if err != nil || got == nil || *got != unsealed {
+		t.Fatalf("reopened unsealed COSI acknowledgement = %+v, err=%v; want %+v", got, err, unsealed)
+	}
+	if got, err := os.ReadFile(legacyPath); err != nil || !bytes.Equal(got, legacyJSON) {
+		t.Fatalf("legacy file changed: %q, err=%v", got, err)
 	}
 }

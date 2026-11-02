@@ -147,7 +147,6 @@ func (r *Host) configureSessions() error {
 		},
 		ResolveModelConfig:   r.config.ResolveModelConfig,
 		PublishSeal:          r.lifecycle.publishSeal,
-		PublishAck:           r.lifecycle.publishAck,
 		OnChange:             r.changed,
 		OnError:              r.fail,
 		ReconcileConcurrency: r.config.SessionReconcileConcurrency,

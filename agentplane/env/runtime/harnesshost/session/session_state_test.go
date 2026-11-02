@@ -42,11 +42,11 @@ func TestConcurrentModelChangesKeepCachedAndDurableOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	record := retained.Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, CWD: "/workspace", Model: "old", EventSourceID: "source"}
+	record := &retained.Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", Model: "old", EventSourceId: "source"}
 	if err := store.Write("session", record); err != nil {
 		t.Fatal(err)
 	}
-	s := newSession(sessionDependencies{ctx: ctx, state: gated, store: store, changed: func() {}}, "session", &record, openTestJournal(t))
+	s := newSession(sessionDependencies{ctx: ctx, state: gated, store: store, changed: func() {}}, "session", record, openTestJournal(t))
 	for _, id := range []string{"first", "second"} {
 		command := &commandpb.Command{CommandId: id, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: id}}}
 		if _, _, err := s.journal.Admit(ctx, command, ""); err != nil {
@@ -164,7 +164,6 @@ func newSessionTestManager(t *testing.T, environment map[string]string, destinat
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: root,
 		Destination: destination, HarnessEnvironment: environment,
 		PublishSeal: func(string, *journal.SealState) error { return nil },
-		PublishAck:  func(string, retained.Acknowledgement) error { return nil },
 		OnChange:    func() {},
 		OnError: func(err error) {
 			if err != nil {

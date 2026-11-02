@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -142,7 +143,7 @@ func TestIngressSupervisorPublishesSealedAcknowledgementToQuiesce(t *testing.T) 
 		t.Fatalf("ingress did not send its under-cursor acknowledgement: %v", ctx.Err())
 	}
 	waitLifecycle(t, runner, func() bool {
-		ack, found, err := lifecycleRead[ingressAckSpec](ctx, runner.lifecycle.state, session.ID())
+		ack, found, err := retained.ReadAcknowledgement(ctx, runner.lifecycle.state, session.ID())
 		return err == nil && found && ack.Cursor == seal.Cursor-1 && !ack.Sealed
 	}, "under-cursor ingress acknowledgement observation")
 	if ack, err := runner.store.ReadAcknowledgement(session.ID()); err != nil || ack == nil || ack.Cursor != seal.Cursor-1 || ack.Sealed {
@@ -156,7 +157,7 @@ func TestIngressSupervisorPublishesSealedAcknowledgementToQuiesce(t *testing.T) 
 	if ack, err := runner.store.ReadAcknowledgement(session.ID()); err != nil || ack == nil || ack.Cursor != seal.Cursor || !ack.Sealed {
 		t.Fatalf("persisted sealed acknowledgement = %+v, err %v", ack, err)
 	}
-	if ack, found, err := lifecycleRead[ingressAckSpec](ctx, runner.lifecycle.state, session.ID()); err != nil || !found || ack.Cursor != seal.Cursor || !ack.Sealed {
+	if ack, found, err := retained.ReadAcknowledgement(ctx, runner.lifecycle.state, session.ID()); err != nil || !found || ack.Cursor != seal.Cursor || !ack.Sealed {
 		t.Fatalf("COSI sealed acknowledgement = %+v, found %t, err %v", ack, found, err)
 	}
 	if err := <-service.result; err != nil {

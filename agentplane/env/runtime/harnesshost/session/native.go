@@ -200,7 +200,7 @@ func (s *Session) prepare(ctx context.Context, adapter harness.Adapter, pid int)
 		return err
 	}
 	s.mu.Lock()
-	s.record.NativeSessionID = &native
+	s.record.NativeSessionId = &native
 	s.mu.Unlock()
 	s.recordMu.Unlock()
 	// The native handshake succeeded; persist its observation even if preparation was canceled.

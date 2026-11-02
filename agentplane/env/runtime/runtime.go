@@ -212,7 +212,7 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	lifecycleState := injectedState
 	var lifecycleStore io.Closer
 	if lifecycleState == nil {
-		lifecycleState, lifecycleStore, err = cosistate.Open(config.StateDir, lifecycle.Namespace, bootstrap.SelectionCodec(), retained.SessionRecordCodec())
+		lifecycleState, lifecycleStore, err = cosistate.Open(config.StateDir, lifecycle.Namespace, bootstrap.SelectionRegistration(), retained.SessionRecordRegistration(), retained.IngressAckRegistration())
 		if err != nil {
 			_ = owner.Close()
 			return nil, err

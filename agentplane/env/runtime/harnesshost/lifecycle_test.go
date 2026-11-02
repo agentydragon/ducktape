@@ -371,7 +371,7 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	if seal == nil || seal.Cursor == 0 {
 		t.Fatalf("journal seal = %+v, want a nonzero cursor", seal)
 	}
-	if err := r.lifecycle.publishAck(s.ID(), retained.Acknowledgement{Cursor: seal.Cursor - 1, Sealed: true}); err != nil {
+	if err := r.store.WriteAcknowledgement(s.ID(), retained.Acknowledgement{Cursor: seal.Cursor - 1, Sealed: true}); err != nil {
 		t.Fatal(err)
 	}
 	waitLifecycle(t, r, func() bool {
@@ -382,7 +382,7 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	blocked := harnessHostLifecycleSnapshot(t, r)
 	if !blocked.ProgressCurrent || blocked.Stage != sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING ||
 		blocked.Blocker == nil || blocked.Blocker.Kind != sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT ||
-		blocked.Blocker.ResourceId != s.ID() || blocked.Blocker.ResourceType != ingressAckType ||
+		blocked.Blocker.ResourceId != s.ID() || blocked.Blocker.ResourceType != retained.IngressAckType ||
 		!blocked.Blocker.ResourcePresent || !blocked.Blocker.AcknowledgementPresent || !blocked.Blocker.AcknowledgementSealed ||
 		blocked.Blocker.AcknowledgementCursor != seal.Cursor-1 || blocked.Blocker.JournalSealCursor != seal.Cursor ||
 		!blocked.Blocker.JournalSealPresent {
@@ -399,7 +399,7 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 		t.Fatalf("runtime after under-cursor acknowledgement = %v, want FLUSHING", current.Stage)
 	}
 
-	if err := r.lifecycle.publishAck(s.ID(), retained.Acknowledgement{Cursor: seal.Cursor, Sealed: true}); err != nil {
+	if err := r.store.WriteAcknowledgement(s.ID(), retained.Acknowledgement{Cursor: seal.Cursor, Sealed: true}); err != nil {
 		t.Fatal(err)
 	}
 	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == harnesshostlifecycle.Quiesced }, "exact sealed cursor acknowledgement")
@@ -650,9 +650,6 @@ func TestJournalAndAcknowledgementChangesWakeObservers(t *testing.T) {
 	}
 	ack := retained.Acknowledgement{Cursor: s.EventJournal().LastCursor()}
 	if err := r.store.WriteAcknowledgement(s.ID(), ack); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.lifecycle.publishAck(s.ID(), ack); err != nil {
 		t.Fatal(err)
 	}
 	r.changed() // Acknowledgement receipt still wakes observer-only consumers.
