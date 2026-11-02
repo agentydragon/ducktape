@@ -88,7 +88,7 @@ _CONFIG = Config(
         enabled=True, url="http://platform-sessions.platform-sessions.svc:8080/openai"
     ),
     anthropic_platform=AnthropicPlatformSettings(
-        enabled=True, url="http://openai-platform-session.openai-platform-session.svc:8080"
+        enabled=True, url="http://platform-sessions.platform-sessions.svc:8080/anthropic"
     ),
     zai=ZaiSettings(enabled=False),
 )
