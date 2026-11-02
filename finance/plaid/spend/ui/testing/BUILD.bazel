@@ -20,6 +20,7 @@ py_library(
     deps = [
         "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:models",
+        "//finance/plaid/spend:transaction_views",
         "//finance/plaid/spend/testing:dashboard",
         "//finance/plaid/spend/testing:ledger",
     ],
