@@ -552,10 +552,13 @@ func TestQuiesceDoesNotWaitForModelLookupOrCreateLateSession(t *testing.T) {
 		t.Fatal("quiesce waited for an in-flight model-config lookup")
 	}
 	releaseProxy()
-	if err := <-openDone; status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("late session creation error = %v, want Aborted", err)
-	}
+	openErr := <-openDone
 	openFinished = true
+	// The fixture's ExecutionFenced update can briefly make the binding unready
+	// before the original binding is reported stale. Both reject the late admission.
+	if code := status.Code(openErr); code != codes.FailedPrecondition && code != codes.Unavailable {
+		t.Fatalf("late session creation error = %v, want FailedPrecondition or Unavailable", openErr)
+	}
 	if exists, err := r.store.Exists("late-session"); err != nil || exists {
 		t.Fatalf("late session was persisted: exists=%t err=%v", exists, err)
 	}
