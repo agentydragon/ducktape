@@ -71,7 +71,7 @@ func runLifecycleBarrierTrace(t *testing.T, operation string, trace []string) {
 		})
 		admitted <- err
 	}()
-	if err := watchLifecycle(ctx, r.lifecycle, harnesshostlifecycle.ResourceID, func(input harnessHostInputSpec) (bool, error) {
+	if err := watchLifecycle(ctx, r.lifecycle, harnesshostlifecycle.ResourceID, func(input harnessHostAdmissionCountSpec) (bool, error) {
 		return input.Admissions == 1, nil
 	}); err != nil {
 		t.Fatalf("wait for admission: %v", err)
@@ -85,7 +85,7 @@ func runLifecycleBarrierTrace(t *testing.T, operation string, trace []string) {
 		return current.Stage == harnesshostlifecycle.Draining && current.Blocker.Kind == harnesshostlifecycle.AdmissionsPending
 	}, "quiesce admission barrier")
 	blocker := harnessHostLifecycleSnapshot(t, r).Blocker
-	if blocker == nil || blocker.ResourceType != "HarnessHostInputs.agentplane" || blocker.ResourceId != "harness-host" {
+	if blocker == nil || blocker.ResourceType != "HarnessHostAdmissionCounts.agentplane" || blocker.ResourceId != "harness-host" {
 		t.Fatalf("externally reported admission blocker = %+v; want Harness Host resource identity", blocker)
 	}
 

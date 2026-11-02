@@ -15,24 +15,24 @@ import (
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 )
 
-func TestBootstrapIsActiveUntilAcceptedInputIsTerminal(t *testing.T) {
+func TestBootstrapIsActiveUntilAcceptedRequestIsTerminal(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		input       bootstrap.Input
-		inputFound  bool
-		status      bootstrap.Status
-		statusFound bool
-		wantActive  bool
+		name         string
+		request      bootstrap.Request
+		requestFound bool
+		status       bootstrap.Status
+		statusFound  bool
+		wantActive   bool
 	}{
-		{name: "not requested", inputFound: true, status: bootstrap.Status{Phase: bootstrap.Dormant}, statusFound: true},
-		{name: "accepted before controller runs", input: bootstrap.Input{Requested: true}, inputFound: true, wantActive: true},
-		{name: "running", input: bootstrap.Input{Requested: true}, inputFound: true, status: bootstrap.Status{Phase: bootstrap.Running}, statusFound: true, wantActive: true},
-		{name: "succeeded", input: bootstrap.Input{Requested: true}, inputFound: true, status: bootstrap.Status{Phase: bootstrap.Succeeded}, statusFound: true},
-		{name: "failed", input: bootstrap.Input{Requested: true}, inputFound: true, status: bootstrap.Status{Phase: bootstrap.Failed}, statusFound: true},
-		{name: "interrupted", input: bootstrap.Input{Requested: true}, inputFound: true, status: bootstrap.Status{Phase: bootstrap.Interrupted}, statusFound: true},
+		{name: "not requested", requestFound: true, status: bootstrap.Status{Phase: bootstrap.Dormant}, statusFound: true},
+		{name: "accepted before controller runs", request: bootstrap.Request{Requested: true}, requestFound: true, wantActive: true},
+		{name: "running", request: bootstrap.Request{Requested: true}, requestFound: true, status: bootstrap.Status{Phase: bootstrap.Running}, statusFound: true, wantActive: true},
+		{name: "succeeded", request: bootstrap.Request{Requested: true}, requestFound: true, status: bootstrap.Status{Phase: bootstrap.Succeeded}, statusFound: true},
+		{name: "failed", request: bootstrap.Request{Requested: true}, requestFound: true, status: bootstrap.Status{Phase: bootstrap.Failed}, statusFound: true},
+		{name: "interrupted", request: bootstrap.Request{Requested: true}, requestFound: true, status: bootstrap.Status{Phase: bootstrap.Interrupted}, statusFound: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := bootstrapIsActive(tc.input, tc.inputFound, tc.status, tc.statusFound); got != tc.wantActive {
+			if got := bootstrapIsActive(tc.request, tc.requestFound, tc.status, tc.statusFound); got != tc.wantActive {
 				t.Fatalf("bootstrapIsActive() = %t, want %t", got, tc.wantActive)
 			}
 		})

@@ -15,12 +15,12 @@ import (
 )
 
 const (
-	InputType           = "SessionInputs.agentplane"
-	DrainInputType      = "SessionDrainInputs.agentplane"
-	LifecycleStatusType = "SessionLifecycleStatuses.agentplane"
-	OperationStateType  = "SessionOperationStates.agentplane"
-	ControllerName      = "session-lifecycle"
-	HostOwner           = lifecycle.HostOwner
+	InputType            = "SessionInputs.agentplane"
+	InspectionStatusType = "SessionInspectionStatuses.agentplane"
+	LifecycleStatusType  = "SessionLifecycleStatuses.agentplane"
+	OperationStateType   = "SessionOperationStates.agentplane"
+	ControllerName       = "session-lifecycle"
+	HostOwner            = lifecycle.HostOwner
 )
 
 type Phase uint8
@@ -47,9 +47,9 @@ type Input struct {
 	DispatchBlocked   bool
 }
 
-// DrainInput changes only when inspection work starts or settles. The Harness Host
+// InspectionStatus changes only when inspection work starts or settles. The Harness Host
 // lifecycle controller needs this barrier, not every Session dispatch dependency.
-type DrainInput struct{ Inspecting bool }
+type InspectionStatus struct{ Inspecting bool }
 
 type LifecycleStatus struct {
 	Phase            Phase
@@ -115,8 +115,8 @@ func (value LifecycleStatus) DeepCopy() LifecycleStatus { return value }
 func (operationState) resourceType() resource.Type      { return OperationStateType }
 func (value operationState) DeepCopy() operationState   { return value }
 
-func (DrainInput) resourceType() resource.Type { return DrainInputType }
-func (value DrainInput) DeepCopy() DrainInput  { return value }
-func ReadDrainInput(ctx context.Context, reader controller.Reader, id string) (DrainInput, bool, error) {
-	return componentRead[DrainInput](ctx, reader, id)
+func (InspectionStatus) resourceType() resource.Type      { return InspectionStatusType }
+func (value InspectionStatus) DeepCopy() InspectionStatus { return value }
+func ReadInspectionStatus(ctx context.Context, reader controller.Reader, id string) (InspectionStatus, bool, error) {
+	return componentRead[InspectionStatus](ctx, reader, id)
 }

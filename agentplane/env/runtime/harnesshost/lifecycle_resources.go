@@ -15,10 +15,10 @@ import (
 )
 
 const (
-	harnessHostInputType      = "HarnessHostInputs.agentplane"
-	journalSealType           = "JournalSeals.agentplane"
-	ingressAckType            = "IngressAcks.agentplane"
-	harnessHostControllerName = "harness-host-lifecycle"
+	harnessHostAdmissionCountType = "HarnessHostAdmissionCounts.agentplane"
+	journalSealType               = "JournalSeals.agentplane"
+	ingressAckType                = "IngressAcks.agentplane"
+	harnessHostControllerName     = "harness-host-lifecycle"
 )
 
 // Specs contain scalar values and immutable time.Time values; no native handles or mutable references.
@@ -46,7 +46,7 @@ func lifecycleRead[T lifecycleSpec[T]](ctx context.Context, reader controller.Re
 	return cosi.Read(ctx, reader, lifecycleResourceFor(id, zero))
 }
 
-type harnessHostInputSpec struct {
+type harnessHostAdmissionCountSpec struct {
 	Admissions int
 }
 type journalSealSpec struct {
@@ -59,8 +59,10 @@ type ingressAckSpec struct {
 	Sealed bool
 }
 
-func (harnessHostInputSpec) resourceType() resource.Type          { return harnessHostInputType }
-func (value harnessHostInputSpec) DeepCopy() harnessHostInputSpec { return value }
+func (harnessHostAdmissionCountSpec) resourceType() resource.Type {
+	return harnessHostAdmissionCountType
+}
+func (value harnessHostAdmissionCountSpec) DeepCopy() harnessHostAdmissionCountSpec { return value }
 
 func (journalSealSpec) resourceType() resource.Type     { return journalSealType }
 func (value journalSealSpec) DeepCopy() journalSealSpec { return value }

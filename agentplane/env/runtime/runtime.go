@@ -480,11 +480,11 @@ func (r *Runtime) waitBootstrapSettled(ctx context.Context) error {
 	if r.bootstrapHost == nil || !r.bootstrapHost.Configured() {
 		return nil
 	}
-	input, found, err := bootstrap.ReadInput(ctx, r.lifecycleState)
+	request, found, err := bootstrap.ReadRequest(ctx, r.lifecycleState)
 	if err != nil {
 		return fmt.Errorf("read accepted bootstrap state during shutdown: %w", err)
 	}
-	if !found || !input.Requested {
+	if !found || !request.Requested {
 		return nil
 	}
 	// A terminal bootstrap error is its durable outcome, not a failure to fence the
@@ -637,7 +637,7 @@ func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, e
 	}
 	bootstrapActive := false
 	if r.bootstrapHost != nil && r.bootstrapHost.Configured() {
-		input, inputFound, err := bootstrap.ReadInput(context.Background(), r.lifecycleState)
+		request, requestFound, err := bootstrap.ReadRequest(context.Background(), r.lifecycleState)
 		if err != nil {
 			return nil, err
 		}
@@ -645,9 +645,9 @@ func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, e
 		if err != nil {
 			return nil, err
 		}
-		bootstrapActive = bootstrapIsActive(input, inputFound, bootstrapStatus, statusFound)
+		bootstrapActive = bootstrapIsActive(request, requestFound, bootstrapStatus, statusFound)
 		if bootstrapActive {
-			// A requested input is busy even before the lifecycle controller has
+			// An accepted request is busy even before the lifecycle controller has
 			// published Running. Do not expose its idle Host facts in that gap.
 			facts.Bootstrap = environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_RUNNING
 			if !hasAutosuspendReason(facts.AutosuspendBlockers, "Bootstrap") {
@@ -699,9 +699,9 @@ func hasAutosuspendReason(blockers []*sandboxpb.AutosuspendBlocker, reason strin
 	return false
 }
 
-func bootstrapIsActive(input bootstrap.Input, inputFound bool, status bootstrap.Status, statusFound bool) bool {
+func bootstrapIsActive(request bootstrap.Request, requestFound bool, status bootstrap.Status, statusFound bool) bool {
 	terminal := statusFound && (status.Phase == bootstrap.Succeeded || status.Phase == bootstrap.Failed || status.Phase == bootstrap.Interrupted)
-	return (statusFound && status.Phase == bootstrap.Running) || (inputFound && input.Requested && !terminal)
+	return (statusFound && status.Phase == bootstrap.Running) || (requestFound && request.Requested && !terminal)
 }
 
 func (r *Runtime) isClosing() bool {
