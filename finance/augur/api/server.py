@@ -43,13 +43,10 @@ from finance.augur.model.series import IssuerId, LevelSeriesKey, parse_level_ser
 from finance.augur.product.portfolio import ProductPortfolioResponse, product_portfolio_response
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import (
-    MetricFanResponse,
     ProductProjectionRequest,
     ProductProjectionResponse,
-    ProjectionSamplingRequest,
     RolloutRequest,
     RolloutResponse,
-    TerminalDistributionResponse,
 )
 from finance.augur.sim.money import USD
 from finance.augur.x.models.sample_sanity import SampleSanitySpec, evaluate_sample_checks, partition_spec_coverage
@@ -210,16 +207,6 @@ def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
                 currency=USD,
             )
         )
-
-    @app.post("/api/product/projections/metric_fan", response_model=MetricFanResponse)
-    def product_projection_metric_fan(request: ProjectionSamplingRequest, services: Services) -> JSONResponse:
-        return payload(services.product_service.metric_fan(request))
-
-    @app.post("/api/product/projections/terminal_distribution", response_model=TerminalDistributionResponse)
-    def product_projection_terminal_distribution(
-        request: ProjectionSamplingRequest, services: Services
-    ) -> JSONResponse:
-        return payload(services.product_service.terminal_distribution(request))
 
     @app.post("/api/product/projections/summary", response_model=ProductProjectionResponse)
     def product_projection_summary(request: ProductProjectionRequest, services: Services) -> JSONResponse:

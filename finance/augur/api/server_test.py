@@ -68,11 +68,19 @@ def test_backend_server_catalog_serializes_configured_money_as_decimal_strings(s
 
 def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollout_detail(server_url: str) -> None:
     scenario = {"model_id": "current_model", "horizon_months": 3, "monthly_spend": 1000, "spend_index": "none"}
-    fan = _post_json(
+    combined = _post_json(
         server_url,
-        "/api/product/projections/metric_fan",
-        {"scenario": scenario, "first_seed": 7, "rollout_count": 2, "metric": "cash", "percentiles": [0, 50, 100]},
+        "/api/product/projections/summary",
+        {
+            "scenario": scenario,
+            "first_seed": 7,
+            "rollout_count": 2,
+            "metric": "cash",
+            "fan_percentiles": [0, 50, 100],
+            "terminal_percentiles": [0, 1, 2, 50, 100],
+        },
     )
+    fan = combined["metric_fan"]
 
     assert fan["currency_code"] == "USD"
     assert fan["currency_quantum"] == "0.01"
@@ -104,17 +112,7 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         "value_quanta": ["24887500", "24887500", "24887500"],
     }
 
-    terminal_distribution = _post_json(
-        server_url,
-        "/api/product/projections/terminal_distribution",
-        {
-            "scenario": scenario,
-            "first_seed": 7,
-            "rollout_count": 2,
-            "metric": "cash",
-            "percentiles": [0, 1, 2, 50, 100],
-        },
-    )
+    terminal_distribution = combined["terminal_distribution"]
 
     assert terminal_distribution["currency_code"] == "USD"
     assert terminal_distribution["currency_quantum"] == "0.01"
@@ -131,26 +129,19 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         "failed": [False, False],
     }
 
-    combined = _post_json(
+    holding_projection = _post_json(
         server_url,
         "/api/product/projections/summary",
         {
             "scenario": scenario,
             "first_seed": 7,
             "rollout_count": 2,
-            "metric": "cash",
-            "fan_percentiles": [0, 50, 100],
-            "terminal_percentiles": [0, 1, 2, 50, 100],
+            "metric": "holding_value",
+            "fan_percentiles": [50],
+            "terminal_percentiles": [50],
         },
     )
-    assert combined["metric_fan"] == fan
-    assert combined["terminal_distribution"] == terminal_distribution
-
-    holding_fan = _post_json(
-        server_url,
-        "/api/product/projections/metric_fan",
-        {"scenario": scenario, "first_seed": 7, "rollout_count": 2, "metric": "holding_value", "percentiles": [50]},
-    )
+    holding_fan = holding_projection["metric_fan"]
 
     assert holding_fan["metric"] == "holding_value"
     assert holding_fan["monthly_metric_fan"]["month_index"] == [0, 1, 2, 3]
@@ -266,11 +257,20 @@ def test_backend_server_retains_stop_book_and_marks_terminal_wealth_unobserved(s
         "spend_index": "none",
         "funding_policy": {"sleeve_weights": []},
     }
-    fan = _post_json(
+    projection = _post_json(
         server_url,
-        "/api/product/projections/metric_fan",
-        {"scenario": scenario, "first_seed": 7, "rollout_count": 1, "metric": "net_worth", "percentiles": [50]},
+        "/api/product/projections/summary",
+        {
+            "scenario": scenario,
+            "first_seed": 7,
+            "rollout_count": 1,
+            "metric": "net_worth",
+            "fan_percentiles": [50],
+            "terminal_percentiles": [50],
+        },
     )
+    fan = projection["metric_fan"]
+    terminal_distribution = projection["terminal_distribution"]
 
     assert fan["failed_count"] == 1
     assert "rollout_summaries" not in fan
@@ -279,6 +279,10 @@ def test_backend_server_retains_stop_book_and_marks_terminal_wealth_unobserved(s
     assert fan["monthly_metric_fan"]["value_quanta"] == [_usd_quanta(1_260_500.0), None, None, None]
     assert fan["terminal_metric_percentiles"] == {"percentile": [50.0], "value_quanta": [None]}
     assert fan["completed_count"] == 0
+    assert terminal_distribution["failed_count"] == 1
+    assert terminal_distribution["completed_count"] == 0
+    assert terminal_distribution["terminal_metric_percentiles"] == {"percentile": [50.0], "value_quanta": [None]}
+    assert terminal_distribution["terminal_metric_samples"] == {"seed": [7], "value_quanta": [None], "failed": [True]}
 
     detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
 
@@ -426,13 +430,21 @@ def test_api_product_metric_fan_respects_private_equity_tender_capacity(
         "pe_tender_policy": {"liquid_net_worth_floor": 1_200_000, "index_floor_to_inflation": False},
     }
 
-    fan_response = capacity_limited_private_equity_client.post(
-        "/api/product/projections/metric_fan",
-        json={"scenario": scenario, "first_seed": 7, "rollout_count": 1, "metric": "cash", "percentiles": [50]},
+    projection_response = capacity_limited_private_equity_client.post(
+        "/api/product/projections/summary",
+        json={
+            "scenario": scenario,
+            "first_seed": 7,
+            "rollout_count": 1,
+            "metric": "cash",
+            "fan_percentiles": [50],
+            "terminal_percentiles": [50],
+        },
     )
 
-    assert fan_response.status_code == 200
-    fan = fan_response.json()
+    assert projection_response.status_code == 200
+    projection = projection_response.json()
+    fan = projection["metric_fan"]
     assert fan["terminal_metric_percentiles"] == {"percentile": [50.0], "value_quanta": [_usd_quanta(256_125.0)]}
     assert "rollout_summaries" not in fan
 
