@@ -1,16 +1,50 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_testonly = True)
 
 py_library(
-    name = "visual_data",
-    srcs = ["visual_data.py"],
+    name = "dashboard",
+    srcs = ["dashboard.py"],
     visibility = ["//finance/plaid/spend/ui:__pkg__"],
     deps = [
         "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:models",
+    ],
+)
+
+py_library(
+    name = "sustainability",
+    srcs = ["sustainability.py"],
+    visibility = ["//finance/plaid/spend/ui:__pkg__"],
+    deps = [
         "//finance/plaid/spend:portfolio_models",
         "//finance/plaid/spend:reconciliation",
         "//finance/plaid/spend:sustainability",
+    ],
+)
+
+py_library(
+    name = "transactions",
+    srcs = ["transactions.py"],
+    visibility = ["//finance/plaid/spend/ui:__pkg__"],
+    deps = [
+        ":dashboard",
+        "//finance/plaid/spend:allowance",
+        "//finance/plaid/spend:models",
+    ],
+)
+
+py_test(
+    name = "test_visual_data",
+    srcs = ["test_visual_data.py"],
+    deps = [
+        ":sustainability",
+        ":transactions",
+        "//:conftest",
+        "//finance/plaid/spend:allowance",
+        "//finance/plaid/spend:conftest",
+        "//finance/plaid/spend:sustainability",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

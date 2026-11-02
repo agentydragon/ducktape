@@ -11,6 +11,7 @@ import json
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from typing import Literal
 
 import pytest
 import pytest_bazel
@@ -23,7 +24,7 @@ from finance.plaid.spend.allowance import EstimatePeriodId
 from finance.plaid.spend.models import SpendConfigurationView, SpendTransactionsView, SpendView
 from finance.plaid.spend.reconciliation import ReportStatus
 from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityHistoryPoint
-from finance.plaid.spend.ui.testing import visual_data
+from finance.plaid.spend.ui.testing import dashboard, sustainability, transactions
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual.capture import VisualPage, open_visual_page
@@ -129,20 +130,18 @@ def dashboard_url() -> Iterator[str]:
     def index() -> FileResponse:
         return FileResponse(_UI_DIR / "index.html")
 
-    app.add_api_route("/api/v1/view", visual_data.spend_view, methods=["GET"], response_model=SpendView)
+    app.add_api_route("/api/v1/view", dashboard.spend_view, methods=["GET"], response_model=SpendView)
     app.add_api_route(
-        "/api/v1/configuration", visual_data.configuration, methods=["GET"], response_model=SpendConfigurationView
+        "/api/v1/configuration", dashboard.configuration, methods=["GET"], response_model=SpendConfigurationView
     )
-    app.add_api_route(
-        "/api/v1/transactions", visual_data.transactions, methods=["GET"], response_model=SpendTransactionsView
-    )
+    app.add_api_route("/api/v1/transactions", transactions.view, methods=["GET"], response_model=SpendTransactionsView)
 
     @app.get("/api/v1/events")
     async def events(estimate_period_id: EstimatePeriodId | None = None, warmup: bool = False) -> StreamingResponse:
         async def updates() -> AsyncIterator[str]:
             yield (
                 f"event: view\ndata: "
-                f"{json.dumps(visual_data.spend_view(warmup=warmup, estimate_period_id=estimate_period_id).model_dump(mode='json'))}\n\n"
+                f"{json.dumps(dashboard.spend_view(warmup=warmup, estimate_period_id=estimate_period_id).model_dump(mode='json'))}\n\n"
             )
             while True:
                 await asyncio.sleep(60)
@@ -152,9 +151,7 @@ def dashboard_url() -> Iterator[str]:
 
     @app.get("/api/v1/sustainability/windows")
     def sustainability() -> SustainabilityDashboard:
-        return visual_data.sustainability_dashboard(
-            *(visual_data.sustainability_window(days) for days in (30, 90, 365))
-        )
+        return sustainability.dashboard(*(sustainability.window(days) for days in (30, 90, 365)))
 
     app.mount("/static", StaticFiles(directory=_UI_DIR))
     with serve_app_sync(app) as url:
@@ -762,11 +759,11 @@ async def test_sustainability_shorter_curve_survives_missing_yearly_history(
     page: Page, view: VisualPage, dashboard_url: str, width: int
 ) -> None:
     async def serve_windows(route: Route) -> None:
-        yearly = visual_data.with_sustainability_history(visual_data.sustainability(window_days=365), [])
+        yearly = sustainability.with_history(sustainability.view(window_days=365), [])
         await route.fulfill(
-            json=visual_data.sustainability_dashboard(
-                visual_data.sustainability_window(30), visual_data.sustainability(), yearly
-            ).model_dump(mode="json")
+            json=sustainability.dashboard(sustainability.window(30), sustainability.view(), yearly).model_dump(
+                mode="json"
+            )
         )
 
     await page.route("**/api/v1/sustainability/windows", serve_windows)
@@ -791,10 +788,10 @@ async def test_sustainability_shared_history_tooltip_dates(
 ) -> None:
     async def serve_single_endpoint(route: Route) -> None:
         windows = [
-            visual_data.with_sustainability_history(window, window.history[-1:])
-            for window in (visual_data.sustainability_window(days) for days in (30, 90, 365))
+            sustainability.with_history(window, window.history[-1:])
+            for window in (sustainability.window(days) for days in (30, 90, 365))
         ]
-        await route.fulfill(json=visual_data.sustainability_dashboard(*windows).model_dump(mode="json"))
+        await route.fulfill(json=sustainability.dashboard(*windows).model_dump(mode="json"))
 
     await page.route("**/api/v1/sustainability/windows", serve_single_endpoint)
     await page.set_viewport_size({"width": width, "height": 960})
@@ -903,11 +900,7 @@ async def test_sustainability_partial_window_has_no_startup_chart(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
     async def serve_partial(route: Route) -> None:
-        await route.fulfill(
-            json=visual_data.sustainability_dashboard(visual_data.sustainability_partial_window()).model_dump(
-                mode="json"
-            )
-        )
+        await route.fulfill(json=sustainability.dashboard(sustainability.partial_window()).model_dump(mode="json"))
 
     await page.route("**/api/v1/sustainability/windows", serve_partial)
     await page.set_viewport_size({"width": width, "height": height})
@@ -933,9 +926,7 @@ async def test_sustainability_account_history_coverage_render(
 ) -> None:
     async def serve_partial_coverage(route: Route) -> None:
         await route.fulfill(
-            json=visual_data.sustainability_dashboard(
-                visual_data.sustainability_with_partial_account_history()
-            ).model_dump(mode="json")
+            json=sustainability.dashboard(sustainability.with_partial_account_history()).model_dump(mode="json")
         )
 
     await page.route("**/api/v1/sustainability/windows", serve_partial_coverage)
@@ -990,9 +981,7 @@ async def test_sustainability_history_survives_current_coverage_gap(
 ) -> None:
     async def serve_historical_gap(route: Route) -> None:
         await route.fulfill(
-            json=visual_data.sustainability_dashboard(
-                visual_data.sustainability_with_historical_coverage_gap()
-            ).model_dump(mode="json")
+            json=sustainability.dashboard(sustainability.with_historical_coverage_gap()).model_dump(mode="json")
         )
 
     await page.route("**/api/v1/sustainability/windows", serve_historical_gap)
@@ -1023,9 +1012,7 @@ async def test_sustainability_scenario_marker_supports_touch(touch_view: VisualP
     touch_page = touch_view.page
 
     async def serve_ready(route: Route) -> None:
-        await route.fulfill(
-            json=visual_data.sustainability_dashboard(visual_data.sustainability()).model_dump(mode="json")
-        )
+        await route.fulfill(json=sustainability.dashboard(sustainability.view()).model_dump(mode="json"))
 
     await touch_page.route("**/api/v1/sustainability/windows", serve_ready)
     await touch_page.goto(dashboard_url, wait_until="domcontentloaded")
@@ -1058,9 +1045,7 @@ async def test_sustainability_scenario_marker_supports_touch(touch_view: VisualP
 
 async def test_sustainability_short_gauge_fill_render(page: Page, view: VisualPage, dashboard_url: str) -> None:
     async def serve_low_draw(route: Route) -> None:
-        await route.fulfill(
-            json=visual_data.sustainability_dashboard(visual_data.sustainability("low_draw")).model_dump(mode="json")
-        )
+        await route.fulfill(json=sustainability.dashboard(sustainability.view("low_draw")).model_dump(mode="json"))
 
     await page.route("**/api/v1/sustainability/windows", serve_low_draw)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
@@ -1081,11 +1066,7 @@ async def test_sustainability_scenario_tooltip_explains_unmodeled_tax(
     page: Page, view: VisualPage, dashboard_url: str
 ) -> None:
     async def serve_tax_unmodeled(route: Route) -> None:
-        await route.fulfill(
-            json=visual_data.sustainability_dashboard(visual_data.sustainability("tax_unmodeled")).model_dump(
-                mode="json"
-            )
-        )
+        await route.fulfill(json=sustainability.dashboard(sustainability.view("tax_unmodeled")).model_dump(mode="json"))
 
     await page.route("**/api/v1/sustainability/windows", serve_tax_unmodeled)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
@@ -1120,9 +1101,9 @@ async def test_sustainability_provisional_reversal_keeps_estimate_and_marks_hist
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
     async def serve_provisional(route: Route) -> None:
-        provisional = visual_data.sustainability("provisional")
-        provisional = visual_data.with_sustainability_history(provisional, provisional.history[-1:])
-        await route.fulfill(json=visual_data.sustainability_dashboard(provisional).model_dump(mode="json"))
+        provisional = sustainability.view("provisional")
+        provisional = sustainability.with_history(provisional, provisional.history[-1:])
+        await route.fulfill(json=sustainability.dashboard(provisional).model_dump(mode="json"))
 
     await page.route("**/api/v1/sustainability/windows", serve_provisional)
     await page.set_viewport_size({"width": width, "height": height})
@@ -1162,7 +1143,7 @@ async def test_sustainability_provisional_reversal_keeps_estimate_and_marks_hist
     )
 
     async def serve_historical_provisional(route: Route) -> None:
-        historical = visual_data.sustainability()
+        historical = sustainability.view()
         latest = historical.history[-1]
         provisional_point = SustainabilityHistoryPoint(
             date=latest.date,
@@ -1172,7 +1153,7 @@ async def test_sustainability_provisional_reversal_keeps_estimate_and_marks_hist
             spending_draw_rate=latest.spending_draw_rate,
             tax_adjusted_draw_rate=latest.tax_adjusted_draw_rate,
         )
-        historical = visual_data.with_sustainability_history(
+        historical = sustainability.with_history(
             historical,
             [provisional_point],
             issues=[
@@ -1180,7 +1161,7 @@ async def test_sustainability_provisional_reversal_keeps_estimate_and_marks_hist
                 "before relying on this point."
             ],
         )
-        await route.fulfill(json=visual_data.sustainability_dashboard(historical).model_dump(mode="json"))
+        await route.fulfill(json=sustainability.dashboard(historical).model_dump(mode="json"))
 
     await page.unroute("**/api/v1/sustainability/windows", serve_provisional)
     await page.route("**/api/v1/sustainability/windows", serve_historical_provisional)
@@ -1204,12 +1185,10 @@ async def test_sustainability_provisional_reversal_keeps_estimate_and_marks_hist
 @pytest.mark.parametrize("variant", ["stale", "unavailable"])
 @pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
 async def test_sustainability_stale_and_unavailable_render(
-    page: Page, view: VisualPage, dashboard_url: str, variant: str, width: int, height: int
+    page: Page, view: VisualPage, dashboard_url: str, variant: Literal["stale", "unavailable"], width: int, height: int
 ) -> None:
     async def serve_variant(route: Route) -> None:
-        await route.fulfill(
-            json=visual_data.sustainability_dashboard(visual_data.sustainability(variant)).model_dump(mode="json")
-        )
+        await route.fulfill(json=sustainability.dashboard(sustainability.view(variant)).model_dump(mode="json"))
 
     await page.route("**/api/v1/sustainability/windows", serve_variant)
     await page.set_viewport_size({"width": width, "height": height})

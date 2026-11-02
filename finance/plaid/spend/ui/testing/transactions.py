@@ -1,0 +1,365 @@
+"""Synthetic transactions responses for Spend visual tests."""
+
+from __future__ import annotations
+
+from datetime import UTC, date, datetime
+from decimal import Decimal
+
+from finance.plaid.spend.allowance import (
+    AllOf,
+    DateRange,
+    Disposition,
+    Kind,
+    NameContains,
+    NamePrefix,
+    Period,
+    PeriodId,
+    PlaidCounterparty,
+    ReversalPair,
+    Rule,
+    RuleScope,
+    TransactionPeriodId,
+)
+from finance.plaid.spend.models import (
+    AnalysisCategoryView,
+    ExcludedFlowSummary,
+    PaceEffect,
+    PlaidPaymentMeta,
+    PlaidPersonalFinanceCategory,
+    PlaidTransactionDetails,
+    PlaidTransactionLocation,
+    SpendTransactionRow,
+    SpendTransactionsView,
+    StatementReason,
+    TransactionPeriodSummary,
+)
+from finance.plaid.spend.ui.testing import dashboard
+
+_OWN_TRANSFERS = AnalysisCategoryView(id="own_transfers", label="Own-account transfers", color="#64748B")
+_TAXES = AnalysisCategoryView(id="taxes", label="Taxes", color="#B45309")
+_UNCLASSIFIED = AnalysisCategoryView(id="unclassified", label="Unclassified", color="#D97706")
+
+
+def _pace_effects(amount: int = 0) -> list[PaceEffect]:
+    return [
+        PaceEffect(period_id=period_id, amount_minor_units=amount)
+        for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
+    ]
+
+
+def _checking_row(
+    *,
+    when: date,
+    name: str,
+    amount_minor_units: int,
+    disposition: Disposition,
+    effective_kind: Kind,
+    rule: Rule,
+    pfc_primary: str,
+    pfc_detailed: str,
+    category: AnalysisCategoryView,
+    rule_number: int | None = None,
+    reversal_pair: ReversalPair | None = None,
+    merchant_name: str | None = None,
+    currency: str = "USD",
+    pending: bool = False,
+    allowance_minor_units: int = 0,
+    pace_effects: list[PaceEffect] | None = None,
+) -> SpendTransactionRow:
+    return SpendTransactionRow(
+        date=when,
+        account_label="Example checking",
+        name=name,
+        merchant_name=merchant_name,
+        amount_minor_units=amount_minor_units,
+        currency=currency,
+        pending=pending,
+        allowance_in_scope=True,
+        disposition=disposition,
+        rule_number=rule_number,
+        effective_kind=effective_kind,
+        reversal_pair=reversal_pair,
+        rule=rule,
+        allowance_minor_units=allowance_minor_units,
+        pace_effects=_pace_effects() if pace_effects is None else pace_effects,
+        statement_minor_units=None,
+        statement_reason=None,
+        pfc_primary=pfc_primary,
+        pfc_detailed=pfc_detailed,
+        merchant_category_code=None,
+        category=category,
+    )
+
+
+def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransactionsView:
+    today = date(2026, 10, 15)
+    rows = [
+        SpendTransactionRow(
+            date=date(2026, 10, 15),
+            account_label="Example card",
+            name="EXAMPLE CAFE PURCHASE",
+            merchant_name="Example Cafe",
+            amount_minor_units=1500,
+            currency="USD",
+            pending=True,
+            allowance_in_scope=True,
+            disposition=Disposition.COUNTED,
+            rule_number=None,
+            rule=None,
+            allowance_minor_units=1500,
+            pace_effects=_pace_effects(1500),
+            statement_minor_units=1500,
+            statement_reason=StatementReason.COUNTED,
+            pfc_primary="FOOD_AND_DRINK",
+            pfc_detailed="FOOD_AND_DRINK_COFFEE",
+            merchant_category_code="5812",
+            category=_UNCLASSIFIED,
+        ),
+        SpendTransactionRow(
+            date=date(2026, 10, 14),
+            account_label="Example card",
+            name="UPS SHIPPING",
+            merchant_name="UPS",
+            amount_minor_units=1850,
+            currency="USD",
+            pending=False,
+            allowance_in_scope=True,
+            disposition=Disposition.FIXED,
+            rule_number=2,
+            effective_kind=Kind.FIXED,
+            rule=Rule(
+                condition=NamePrefix(field="name", prefix="UPS"),
+                kind=Kind.FIXED,
+                analysis_category="shipping",
+                description="Required document shipping for a synthetic example.",
+            ),
+            allowance_minor_units=0,
+            pace_effects=_pace_effects(),
+            statement_minor_units=1850,
+            statement_reason=StatementReason.COUNTED,
+            pfc_primary="TRANSPORTATION",
+            pfc_detailed="TRANSPORTATION_SHIPPING",
+            merchant_category_code="4215",
+            category=AnalysisCategoryView(id="shipping", label="Document shipping", color="#0F766E"),
+            counterparties=[
+                PlaidCounterparty(
+                    name="Example Shipping",
+                    type="merchant",
+                    confidence_level="HIGH",
+                    entity_id="synthetic-merchant",
+                    website="https://example.invalid/shipping",
+                ),
+                PlaidCounterparty(name="Example Marketplace", type="marketplace"),
+            ],
+            details=PlaidTransactionDetails(
+                account_id="synthetic-account",
+                transaction_id="synthetic-transaction",
+                amount=Decimal("18.50"),
+                iso_currency_code="USD",
+                original_description="EXAMPLE SHIPPING PAYMENT",
+                authorized_date=date(2026, 10, 13),
+                payment_channel="in store",
+                location=PlaidTransactionLocation(city="Example City", region="CA", country="US"),
+                payment_meta=PlaidPaymentMeta(reference_number="synthetic-reference"),
+                personal_finance_category=PlaidPersonalFinanceCategory(
+                    primary="TRANSPORTATION", detailed="TRANSPORTATION_SHIPPING", confidence_level="HIGH"
+                ),
+            ),
+        ),
+        SpendTransactionRow(
+            date=date(2026, 10, 13),
+            account_label="Example card",
+            name="EXAMPLE REFUND",
+            merchant_name=None,
+            amount_minor_units=-4200,
+            currency="USD",
+            pending=False,
+            allowance_in_scope=True,
+            disposition=Disposition.HELD_REFUND,
+            rule_number=1,
+            effective_kind=Kind.REVIEW,
+            rule=Rule(
+                condition=NamePrefix(field="name", prefix="EXAMPLE"),
+                kind=Kind.REVIEW,
+                description="Confirm the purchase before netting this refund.",
+            ),
+            allowance_minor_units=0,
+            pace_effects=_pace_effects(),
+            statement_minor_units=-4200,
+            statement_reason=StatementReason.COUNTED,
+            pfc_primary="GENERAL_MERCHANDISE",
+            pfc_detailed="GENERAL_MERCHANDISE_OTHER",
+            merchant_category_code=None,
+            category=_UNCLASSIFIED,
+        ),
+        _checking_row(
+            when=date(2026, 10, 11),
+            name="EXAMPLE OWN ACCOUNT TRANSFER",
+            amount_minor_units=12_000,
+            disposition=Disposition.REVERSED,
+            rule_number=3,
+            effective_kind=Kind.EXCLUDED,
+            reversal_pair=dashboard.full_reversal_pair(),
+            rule=Rule(
+                condition=AllOf(
+                    conditions=[
+                        NameContains(field="name", substring="EXAMPLE OWN ACCOUNT TRANSFER"),
+                        DateRange(start=date(2026, 10, 11), end=date(2026, 10, 11)),
+                    ]
+                ),
+                kind=Kind.EXCLUDED,
+                scope=RuleScope.ONE_OFF,
+                id="example-own-account-leg",
+                description="Second leg of one own-account transfer, confirmed by the owner 2026-10-12.",
+            ),
+            pfc_primary="TRANSFER_OUT",
+            pfc_detailed="TRANSFER_OUT_OTHER",
+            category=_OWN_TRANSFERS,
+        ),
+        _checking_row(
+            when=date(2026, 10, 12),
+            name="EXAMPLE OWN ACCOUNT REVERSAL",
+            amount_minor_units=-12_000,
+            disposition=Disposition.REVERSED,
+            rule_number=2,
+            effective_kind=Kind.EXCLUDED,
+            reversal_pair=dashboard.full_reversal_pair(),
+            rule=Rule(
+                condition=NamePrefix(field="name", prefix="EXAMPLE OWN ACCOUNT"),
+                kind=Kind.REVIEW,
+                description="Synthetic rule classification retained as context for the reversal.",
+            ),
+            pfc_primary="TRANSFER_IN",
+            pfc_detailed="TRANSFER_IN_OTHER",
+            category=_OWN_TRANSFERS,
+        ),
+        _checking_row(
+            when=date(2026, 10, 2),
+            name="EXAMPLE TRAVEL PURCHASE",
+            merchant_name="Example Travel",
+            amount_minor_units=53500,
+            disposition=Disposition.COUNTED,
+            rule_number=3,
+            effective_kind=Kind.FLEXIBLE,
+            rule=Rule(
+                condition=NamePrefix(field="name", prefix="EXAMPLE TRAVEL"),
+                kind=Kind.FLEXIBLE,
+                analysis_category="travel",
+                description="Synthetic discretionary trip purchase.",
+            ),
+            allowance_minor_units=53500,
+            pace_effects=[
+                PaceEffect(period_id=period_id, amount_minor_units=53500 if period_id == PeriodId.ROLLING_30D else 0)
+                for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
+            ],
+            pfc_primary="TRAVEL",
+            pfc_detailed="TRAVEL_OTHER",
+            category=AnalysisCategoryView(id="travel", label="Holiday travel", color="#7C3AED"),
+        ),
+        _checking_row(
+            when=date(2026, 10, 10),
+            name="EXAMPLE OWN TRANSFER DEBIT",
+            amount_minor_units=12_500,
+            disposition=Disposition.EXCLUDED,
+            effective_kind=Kind.EXCLUDED,
+            rule=Rule(
+                condition=NamePrefix(field="name", prefix="EXAMPLE OWN TRANSFER"),
+                kind=Kind.EXCLUDED,
+                analysis_category="own_transfers",
+                description="Synthetic own-account transfer excluded from the allowance.",
+            ),
+            pfc_primary="TRANSFER_OUT",
+            pfc_detailed="TRANSFER_OUT_OTHER",
+            category=_OWN_TRANSFERS,
+        ),
+        _checking_row(
+            when=date(2026, 10, 11),
+            name="EXAMPLE OWN TRANSFER CREDIT",
+            amount_minor_units=-12_500,
+            disposition=Disposition.EXCLUDED,
+            effective_kind=Kind.EXCLUDED,
+            rule=Rule(
+                condition=NamePrefix(field="name", prefix="EXAMPLE OWN TRANSFER"),
+                kind=Kind.EXCLUDED,
+                analysis_category="own_transfers",
+                description="Synthetic own-account transfer excluded from the allowance.",
+            ),
+            pfc_primary="TRANSFER_IN",
+            pfc_detailed="TRANSFER_IN_OTHER",
+            category=_OWN_TRANSFERS,
+        ),
+        _checking_row(
+            when=date(2026, 10, 12),
+            name="EXAMPLE TAX PAYMENT",
+            amount_minor_units=41_500,
+            pending=True,
+            disposition=Disposition.EXCLUDED,
+            effective_kind=Kind.EXCLUDED,
+            rule=Rule(
+                condition=NamePrefix(field="name", prefix="EXAMPLE TAX"),
+                kind=Kind.EXCLUDED,
+                analysis_category="taxes",
+                description="Synthetic tax payment accounted for separately.",
+            ),
+            pfc_primary="TAXES",
+            pfc_detailed="TAXES_OTHER_TAXES",
+            category=_TAXES,
+        ),
+        _checking_row(
+            when=date(2026, 10, 13),
+            name="EXAMPLE TAX PAYMENT CAD",
+            amount_minor_units=7_200,
+            currency="CAD",
+            disposition=Disposition.EXCLUDED,
+            effective_kind=Kind.EXCLUDED,
+            rule=Rule(
+                condition=NamePrefix(field="name", prefix="EXAMPLE TAX"),
+                kind=Kind.EXCLUDED,
+                analysis_category="taxes",
+                description="Synthetic foreign-currency tax payment accounted for separately.",
+            ),
+            pfc_primary="TAXES",
+            pfc_detailed="TAXES_OTHER_TAXES",
+            category=_TAXES,
+        ),
+    ]
+    shown = [row for row in rows if row.date >= PeriodId(period).start(today, date(2026, 10, 1))]
+    return SpendTransactionsView(
+        generated_at=datetime(2026, 10, 15, 12, tzinfo=UTC),
+        requested_period_id=period,
+        period=Period.for_id(PeriodId(period), today, date(2026, 10, 1)),
+        summary=TransactionPeriodSummary(
+            transaction_count=len(shown),
+            net_allowance_spend_minor_units=sum(row.allowance_minor_units for row in shown),
+            unmatched_charge_count=1,
+            unmatched_charge_minor_units=1500,
+            excluded_flows=[
+                ExcludedFlowSummary(
+                    category=_OWN_TRANSFERS,
+                    currency="USD",
+                    debit_minor_units=12_500,
+                    credit_minor_units=12_500,
+                    transaction_count=2,
+                    pending_count=0,
+                ),
+                ExcludedFlowSummary(
+                    category=_TAXES,
+                    currency="USD",
+                    debit_minor_units=41_500,
+                    credit_minor_units=0,
+                    transaction_count=1,
+                    pending_count=1,
+                ),
+                ExcludedFlowSummary(
+                    category=_TAXES,
+                    currency="CAD",
+                    debit_minor_units=7_200,
+                    credit_minor_units=0,
+                    transaction_count=1,
+                    pending_count=0,
+                ),
+            ],
+        ),
+        allowance=dashboard.allowance(),
+        rows=shown,
+    )
