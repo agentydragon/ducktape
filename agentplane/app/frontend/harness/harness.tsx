@@ -18,6 +18,7 @@ import {
 import type { SandboxView, ThreadView } from "../schema";
 import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
 import type { BindingView, Decision, PolicySetView } from "../sandboxes/client";
+import { decisionFixture, type DecisionFixture } from "../sandboxes/decision_fixture";
 import type { DecisionsSnapshot, SandboxSnapshot, SandboxesSnapshot } from "../sandboxes/live";
 import type { WatchHealth } from "../live";
 import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
@@ -505,111 +506,37 @@ const ACTION_POLICY: ActionPolicyView = {
   ],
 };
 
+const GITHUB_ADMITTED = {
+  host: "api.github.com",
+  outcome: "allow",
+  address: "140.82.116.5",
+  binding: "ready-sandbox-github-public",
+  policy: "github-public",
+  rule: 0,
+} satisfies Omit<DecisionFixture, "at">;
+
+const PYPI_REFUSED = {
+  host: "pypi.org",
+  outcome: "deny",
+  reason: "no-rule",
+} satisfies Omit<DecisionFixture, "at">;
+
+// Oldest first, as the proxy sends the whole retained log.
 const DECISIONS: Decision[] = [
-  {
-    at: ago(9 * 60_000),
-    method: "CONNECT",
-    host: "api.github.com",
-    port: 443,
-    outcome: "allow",
-    address: "140.82.116.5",
-    reason: null,
-    binding: "ready-sandbox-github-public",
-    policy: "github-public",
-    rule: 0,
-    substituted: false,
-  },
-  {
-    at: ago(9 * 60_000 - 200),
-    method: "GET",
-    host: "api.github.com",
-    port: 443,
-    outcome: "allow",
-    address: "140.82.116.5",
-    reason: null,
-    binding: "ready-sandbox-github-public",
-    policy: "github-public",
-    rule: 0,
-    substituted: true,
-  },
-  {
-    at: ago(7 * 60_000),
-    method: "GET",
-    host: "api.github.com",
-    port: 443,
-    outcome: "allow",
-    address: "140.82.116.5",
-    reason: null,
-    binding: "ready-sandbox-github-public",
-    policy: "github-public",
-    rule: 0,
-    substituted: true,
-  },
-  {
-    at: ago(6 * 60_000),
-    method: "GET",
-    host: "api.github.com",
-    port: 443,
-    outcome: "allow",
-    address: "140.82.116.5",
-    reason: null,
-    binding: "ready-sandbox-github-public",
-    policy: "github-public",
-    rule: 0,
-    substituted: true,
-  },
-  {
-    at: ago(5 * 60_000),
-    method: "GET",
-    host: "pypi.org",
-    port: 443,
-    outcome: "deny",
-    address: null,
-    reason: "no-rule",
-    binding: null,
-    policy: null,
-    rule: null,
-    substituted: false,
-  },
-  {
-    at: ago(4 * 60_000),
-    method: "GET",
-    host: "pypi.org",
-    port: 443,
-    outcome: "deny",
-    address: null,
-    reason: "no-rule",
-    binding: null,
-    policy: null,
-    rule: null,
-    substituted: false,
-  },
-  {
-    at: ago(3 * 60_000),
-    method: "GET",
-    host: "pypi.org",
-    port: 443,
-    outcome: "deny",
-    address: null,
-    reason: "no-rule",
-    binding: null,
-    policy: null,
-    rule: null,
-    substituted: false,
-  },
-  {
+  decisionFixture({ ...GITHUB_ADMITTED, at: ago(9 * 60_000), method: "CONNECT" }),
+  decisionFixture({ ...GITHUB_ADMITTED, at: ago(9 * 60_000 - 200), substituted: true }),
+  decisionFixture({ ...GITHUB_ADMITTED, at: ago(7 * 60_000), substituted: true }),
+  decisionFixture({ ...GITHUB_ADMITTED, at: ago(6 * 60_000), substituted: true }),
+  decisionFixture({ ...PYPI_REFUSED, at: ago(5 * 60_000) }),
+  decisionFixture({ ...PYPI_REFUSED, at: ago(4 * 60_000) }),
+  decisionFixture({ ...PYPI_REFUSED, at: ago(3 * 60_000) }),
+  decisionFixture({
     at: ago(60_000),
-    method: "CONNECT",
     host: "example.invalid",
-    port: 443,
+    method: "CONNECT",
     outcome: "deny",
-    address: null,
     reason: "no-binding",
-    binding: null,
-    policy: null,
-    rule: null,
-    substituted: false,
-  },
+  }),
 ];
 
 /** The phone fixture shows the proxy unreachable, the desktop one its decisions; both fit on a page. */

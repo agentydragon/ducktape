@@ -1,23 +1,17 @@
 import { expect, it } from "vitest";
 
-import type { Decision } from "./client";
 import { groupDecisions } from "./decision_groups";
+import { decisionFixture, type DecisionFixture } from "./decision_fixture";
 
-function decision(at: string, overrides: Partial<Decision> = {}): Decision {
-  return {
+function decision(at: string, overrides: Partial<DecisionFixture> = {}) {
+  return decisionFixture({
     at,
-    method: "GET",
     host: "api.example.test",
-    port: 443,
-    outcome: "allow",
-    address: null,
-    reason: null,
     binding: "test-binding",
     policy: "test-policy",
     rule: 0,
-    substituted: false,
     ...overrides,
-  };
+  });
 }
 
 it("groups interleaved requests that were decided the same way, newest member first", () => {
