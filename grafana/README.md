@@ -50,6 +50,10 @@ so interrupted runs cannot publish a partial screenshot set. An initial run has
 no before image until the target has a published devel baseline. The publisher
 labels a fallback baseline when it cannot find one for the exact base commit.
 
+TODO: Measure Grafana and browser startup costs and consider sharing their setup
+or rendering all dashboards in one test. Compare the savings with the effects on
+test isolation, parallelism, caching, and per-dashboard visual baselines.
+
 An explicitly invoked live-data preview could use a supplied metrics endpoint,
 but needs a separate design for authentication, network access and screenshot
 publication. Live data must not be sent automatically to the public PR visuals
