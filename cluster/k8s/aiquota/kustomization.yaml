@@ -21,7 +21,7 @@ configMapGenerator:
 
         [openai_platform]
         enabled = true
-        url = "http://openai-platform-session.openai-platform-session.svc:8080"
+        url = "http://platform-sessions.platform-sessions.svc:8080/openai"
 
         [zai]
         enabled = false

@@ -107,7 +107,7 @@ def test_quest_bearer_has_its_own_secret_and_network_access(scratch_chart: Chart
     policy = next(obj for obj in objects if obj["kind"] == "PolicySet" and obj["metadata"]["name"] == "quest-read")
     rules = policy["spec"]["rules"]
     assert [rule["methods"] for rule in rules] == [["GET"], ["POST"]]
-    assert all(rule["hosts"] == ["openai-platform.allegedly.works"] for rule in rules)
+    assert all(rule["hosts"] == ["platform-sessions.allegedly.works"] for rule in rules)
     assert all(rule["paths"] for rule in rules)
     assert all(path.startswith("/quest/") for rule in rules for path in rule["paths"])
     network = next(
@@ -117,12 +117,7 @@ def test_quest_bearer_has_its_own_secret_and_network_access(scratch_chart: Chart
     )
     assert {
         "toEndpoints": [
-            {
-                "matchLabels": {
-                    "app": "openai-platform-session",
-                    "k8s:io.kubernetes.pod.namespace": "openai-platform-session",
-                }
-            }
+            {"matchLabels": {"app": "platform-sessions", "k8s:io.kubernetes.pod.namespace": "platform-sessions"}}
         ],
         "toPorts": [{"ports": [{"port": "8080", "protocol": "TCP"}]}],
     } in network["spec"]["egress"]

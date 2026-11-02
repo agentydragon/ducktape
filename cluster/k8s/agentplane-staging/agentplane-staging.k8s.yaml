@@ -11469,7 +11469,7 @@ metadata:
   name: quest-read
   namespace: agentplane-staging
 spec:
-  description: Quest scheduling, account, and insurance lookup API. Use https://openai-platform.allegedly.works/quest/openapi.json to discover the available routes. The bearer is substituted only for the listed lookup paths.
+  description: Quest scheduling, account, and insurance lookup API. Use https://platform-sessions.allegedly.works/quest/openapi.json to discover the available routes. The bearer is substituted only for the listed lookup paths.
   source:
     secretRef:
       key: token
@@ -11489,7 +11489,7 @@ spec:
     - credentialRef:
         name: quest-read
       hosts:
-        - openai-platform.allegedly.works
+        - platform-sessions.allegedly.works
       methods:
         - GET
       paths:
@@ -11508,7 +11508,7 @@ spec:
     - credentialRef:
         name: quest-read
       hosts:
-        - openai-platform.allegedly.works
+        - platform-sessions.allegedly.works
       methods:
         - POST
       paths:
@@ -12262,8 +12262,8 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            app: openai-platform-session
-            k8s:io.kubernetes.pod.namespace: openai-platform-session
+            app: platform-sessions
+            k8s:io.kubernetes.pod.namespace: platform-sessions
       toPorts:
         - ports:
             - port: "8080"
