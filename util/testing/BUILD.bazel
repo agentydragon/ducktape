@@ -3,10 +3,6 @@
 
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-# gazelle:exclude test_outputs.py
-# gazelle:resolve py util.test_outputs //util:test_outputs
-# gazelle:resolve py util.testing.test_outputs //util/testing:test_outputs
-
 package(default_testonly = True)
 
 py_library(
@@ -16,12 +12,13 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
-# keep: this module name starts with test_ because it is the protocol's established path.
+# The publisher consumes the framework-neutral record schema outside tests.
 py_library(
-    name = "test_outputs",
-    srcs = ["test_outputs.py"],
+    name = "output_records",
+    testonly = False,  # keep
+    srcs = ["output_records.py"],
     visibility = ["//visibility:public"],
-    deps = ["//util:test_outputs"],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(
@@ -252,11 +249,18 @@ py_test(
     name = "test_output_protocol",
     srcs = ["test_output_protocol.py"],
     deps = [
+        ":output_records",
+        ":output_writer",
         "//:conftest",
-        "//util:test_outputs",
-        "//util/testing:test_outputs",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "output_writer",
+    srcs = ["output_writer.py"],
+    visibility = ["//visibility:public"],
+    deps = [":output_records"],
 )

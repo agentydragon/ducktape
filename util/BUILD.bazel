@@ -3,8 +3,6 @@
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
-# gazelle:exclude test_outputs.py
-
 py_library(
     name = "data_uri",
     srcs = ["data_uri.py"],
@@ -46,14 +44,6 @@ py_library(
 py_library(
     name = "visual_review",
     srcs = ["visual_review.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
-)
-
-# keep: this module name starts with test_ because it is the protocol's established path.
-py_library(
-    name = "test_outputs",
-    srcs = ["test_outputs.py"],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pydantic"],
 )

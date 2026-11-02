@@ -12,8 +12,8 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from util.test_outputs import FILES_DIR, RECORDS_DIR, OutputRecord, output_key
-from util.testing.test_outputs import publish_output
+from util.testing.output_records import FILES_DIR, RECORDS_DIR, OutputRecord, output_key
+from util.testing.output_writer import publish_output
 
 
 def _publish_from_process(output_dir: str) -> str:

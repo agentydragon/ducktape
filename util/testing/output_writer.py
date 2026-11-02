@@ -8,7 +8,7 @@ import stat
 import tempfile
 from pathlib import Path
 
-from util.test_outputs import (
+from util.testing.output_records import (
     FILES_DIR,
     LOCKS_DIR,
     RECORDS_DIR,
