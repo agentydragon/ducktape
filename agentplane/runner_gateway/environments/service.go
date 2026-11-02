@@ -382,9 +382,7 @@ func (s *Service) describe(
 			}
 		}
 	}
-	descriptor.ExecutionAccount = &identitypb.ServiceAccountIdentity{
-		Account: execution.Account, Uid: execution.Uid,
-	}
+	descriptor.ExecutionAccount = execution
 	descriptor.Actions = &environmentpb.EnvironmentActions{
 		AutomaticWake: automaticWake, ResumeEligibility: eligibility, WakeGeneration: generation,
 	}

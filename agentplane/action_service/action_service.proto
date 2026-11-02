@@ -5,7 +5,6 @@ syntax = "proto3";
 
 package agentplane.action_service;
 
-import "agentplane/proto/sandboxes.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/struct.proto";
