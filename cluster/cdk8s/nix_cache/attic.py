@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart, JsonPatch
 from cdk8s_plus_34 import ClusterRole, ClusterRolePolicyRule, ServiceAccount, k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecCluster, DatabaseSpecDatabaseReclaimPolicy
@@ -174,7 +174,7 @@ def _database(scope: Construct) -> None:
 
 
 def _storage(scope: Construct) -> s3.PrivateBucket:
-    return s3.PrivateBucket(
+    storage = s3.PrivateBucket(
         scope,
         "storage",
         name=NAME,
@@ -182,6 +182,10 @@ def _storage(scope: Construct) -> s3.PrivateBucket:
         adopt_existing=True,
         description="attic's NAR chunks; replicated per volume by the SeaweedFS cluster's defaultReplication.",
     )
+    # Stage deletion of the old, disposable S3 cache before removing its CRs.
+    for resource in (storage.bucket, storage.credentials, storage.identity):
+        resource.add_json_patch(JsonPatch.replace("/spec/reclaimPolicy", "Delete"))
+    return storage
 
 
 def _service(scope: Construct) -> None:
