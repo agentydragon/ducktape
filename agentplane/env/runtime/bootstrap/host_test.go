@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -17,6 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
@@ -34,6 +37,83 @@ const bootstrapTestTimeout = 10 * time.Second
 type initialOperationFailureState struct {
 	state.State
 	err error
+}
+
+type selectionPublicationFailureState struct {
+	state.State
+	err error
+}
+
+type failedBackingStore struct{ err error }
+
+func (failedBackingStore) Load(context.Context, inmem.LoadHandler) error { return nil }
+func (s failedBackingStore) Put(context.Context, resource.Type, resource.Resource) error {
+	return s.err
+}
+
+func (failedBackingStore) Destroy(context.Context, resource.Type, resource.Pointer) error { return nil }
+
+func TestFailedDurablePutDoesNotExposeSelection(t *testing.T) {
+	failure := errors.New("backing store write failed")
+	backing := selectionBackingStore{BackingStore: failedBackingStore{err: failure}}
+	build := inmem.NewStateWithOptions(inmem.WithBackingStore(backing))
+	store := state.WrapCore(namespaced.NewState(func(ns resource.Namespace) state.CoreState { return build(ns) }))
+	if err := publish(t.Context(), store, ResourceID, Selection{Script: "printf effect"}); !errors.Is(err, failure) {
+		t.Fatalf("selection write = %v, want backing store error", err)
+	}
+	if _, found, err := ReadSelection(t.Context(), store); err != nil || found {
+		t.Fatalf("selection after failed durable write = (%t, %v), want absent", found, err)
+	}
+}
+
+func (s selectionPublicationFailureState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
+	if value.Metadata().Type() == SelectionType {
+		return s.err
+	}
+	return s.State.Modify(ctx, value, update, opts...)
+}
+
+func TestSelectionPublicationFailureDoesNotLaunch(t *testing.T) {
+	stateDir := t.TempDir()
+	store, closer, err := OpenState(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closer.Close()
+	failure := errors.New("selection publication failed")
+	var launched atomic.Bool
+	runner, err := scripts.New(scripts.Config{LaunchProcess: func(context.Context, string, supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
+		launched.Store(true)
+		return nil, errors.New("unexpected script launch")
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := "printf effect"
+	host := &Host{config: Config{Script: &script, StateDir: stateDir}, state: selectionPublicationFailureState{State: store, err: failure}, scripts: runner}
+	if err := host.runBootstrap(t.Context()); !errors.Is(err, failure) {
+		t.Fatalf("selection failure = %v, want publication error", err)
+	}
+	if launched.Load() {
+		t.Fatal("script launched without a durable selection")
+	}
+	if _, found, err := ReadSelection(t.Context(), store); err != nil || found {
+		t.Fatalf("selection after failed publication = (%t, %v), want absent", found, err)
+	}
+	legacy, err := os.ReadFile(filepath.Join(stateDir, "initialization", "request.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var request struct {
+		SHA string `json:"script_sha256"`
+	}
+	if err := json.Unmarshal(legacy, &request); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte(script))
+	if request.SHA == "" || request.SHA == hex.EncodeToString(digest[:]) {
+		t.Fatalf("legacy rollback fence %q permits replay", request.SHA)
+	}
 }
 
 func (s initialOperationFailureState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
@@ -137,14 +217,15 @@ func TestControllerInitialOperationPublicationFailureBecomesTerminal(t *testing.
 }
 
 type hostTestRuntime struct {
-	ctx       context.Context
-	cancel    context.CancelFunc
-	state     state.State
-	host      *Host
-	workers   *sync.WaitGroup
-	done      chan struct{}
-	failures  chan error
-	closeOnce sync.Once
+	ctx         context.Context
+	cancel      context.CancelFunc
+	state       state.State
+	storeCloser io.Closer
+	host        *Host
+	workers     *sync.WaitGroup
+	done        chan struct{}
+	failures    chan error
+	closeOnce   sync.Once
 }
 
 func TestMain(m *testing.M) {
@@ -158,7 +239,11 @@ func newHostTestRuntime(t *testing.T, script *string, stateDir string, admission
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	store := state.WrapCore(namespaced.NewState(inmem.Build))
+	store, storeCloser, err := OpenState(stateDir)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
 	workers := &sync.WaitGroup{}
 	failures := make(chan error, 8)
 	reportError := func(err error) {
@@ -223,7 +308,7 @@ func newHostTestRuntime(t *testing.T, script *string, stateDir string, admission
 		t.Fatal(err)
 	}
 	testRuntime := &hostTestRuntime{
-		ctx: ctx, cancel: cancel, state: store, host: host, workers: workers,
+		ctx: ctx, cancel: cancel, state: store, storeCloser: storeCloser, host: host, workers: workers,
 		done: make(chan struct{}), failures: failures,
 	}
 	go func() {
@@ -244,6 +329,9 @@ func (r *hostTestRuntime) close(t *testing.T) {
 		r.workers.Wait()
 		if err := r.host.CloseLog(); err != nil {
 			t.Errorf("close bootstrap log: %v", err)
+		}
+		if err := r.storeCloser.Close(); err != nil {
+			t.Errorf("close selection store: %v", err)
 		}
 		for {
 			select {
@@ -321,14 +409,14 @@ func TestInterruptedAttemptIsReconstructedWithoutRerunning(t *testing.T) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	digest := sha256.Sum256([]byte(script))
-	request, err := json.Marshal(struct {
-		SHA string `json:"script_sha256"`
-	}{hex.EncodeToString(digest[:])})
+	store, closer, err := OpenState(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "request.json"), request, 0o600); err != nil {
+	if err := publish(t.Context(), store, ResourceID, Selection{Script: script}); err != nil {
+		t.Fatal(err)
+	}
+	if err := closer.Close(); err != nil {
 		t.Fatal(err)
 	}
 	log, err := OpenLog(filepath.Join(root, "events.jsonl"))
@@ -354,6 +442,127 @@ func TestInterruptedAttemptIsReconstructedWithoutRerunning(t *testing.T) {
 	runtimeState, found, err := ReadRuntime(ctx, r.state)
 	if err != nil || !found || runtimeState.Phase != Interrupted {
 		t.Fatalf("restored interrupted runtime = (%+v, found=%t, err=%v), want interrupted", runtimeState, found, err)
+	}
+}
+
+func TestSelectionWithoutTerminalEventIsInterruptedAfterRestart(t *testing.T) {
+	stateDir := t.TempDir()
+	script := fmt.Sprintf("printf ran > %q", filepath.Join(stateDir, "effect"))
+	store, closer, err := OpenState(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := publish(t.Context(), store, ResourceID, Selection{Script: script}); err != nil {
+		t.Fatal(err)
+	}
+	if err := closer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	r := newHostTestRuntime(t, &script, stateDir, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), bootstrapTestTimeout)
+	defer cancel()
+	if err := r.host.Wait(ctx); !errors.Is(err, ErrInterrupted) {
+		t.Fatalf("restored selection without terminal event = %v, want interrupted", err)
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, "effect")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("script ran after restart: %v", err)
+	}
+}
+
+func TestOutputWithoutTerminalEventIsInterruptedAfterRestart(t *testing.T) {
+	stateDir := t.TempDir()
+	script := fmt.Sprintf("printf ran > %q", filepath.Join(stateDir, "effect"))
+	store, closer, err := OpenState(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := publish(t.Context(), store, ResourceID, Selection{Script: script}); err != nil {
+		t.Fatal(err)
+	}
+	if err := closer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(stateDir, "initialization")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	log, err := OpenLog(filepath.Join(root, "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := log.AppendOutput(1, sessionpb.InitializationStream_INITIALIZATION_STREAM_STDOUT, []byte("partial")); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	r := newHostTestRuntime(t, &script, stateDir, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), bootstrapTestTimeout)
+	defer cancel()
+	if err := r.host.Wait(ctx); !errors.Is(err, ErrInterrupted) {
+		t.Fatalf("restored output without terminal event = %v, want interrupted", err)
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, "effect")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("script ran after partial output recovery: %v", err)
+	}
+}
+
+func TestSelectionIsOnlyRestoredResource(t *testing.T) {
+	stateDir := t.TempDir()
+	store, closer, err := OpenState(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string([]byte{0xff, 0x00, 'x'})
+	if err := publish(t.Context(), store, ResourceID, Selection{Script: script}); err != nil {
+		t.Fatal(err)
+	}
+	if err := publish(t.Context(), store, ResourceID, Input{Requested: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := publish(t.Context(), store, ResourceID, Runtime{Phase: Running}); err != nil {
+		t.Fatal(err)
+	}
+	if err := closer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	restored, restoredCloser, err := OpenState(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restoredCloser.Close()
+	selection, found, err := ReadSelection(t.Context(), restored)
+	if err != nil || !found || selection.Script != script {
+		t.Fatalf("restored selection = (%+v, %t, %v)", selection, found, err)
+	}
+	if _, found, err := ReadInput(t.Context(), restored); err != nil || found {
+		t.Fatalf("restored admission = (%t, %v), want absent", found, err)
+	}
+	if _, found, err := ReadRuntime(t.Context(), restored); err != nil || found {
+		t.Fatalf("restored runtime = (%t, %v), want absent", found, err)
+	}
+}
+
+func TestDifferingSelectedScriptIsRejectedAfterRestart(t *testing.T) {
+	stateDir := t.TempDir()
+	store, closer, err := OpenState(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := publish(t.Context(), store, ResourceID, Selection{Script: "printf one"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := closer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	different := "printf two"
+	r := newHostTestRuntime(t, &different, stateDir, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), bootstrapTestTimeout)
+	defer cancel()
+	if err := r.host.Wait(ctx); status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("different selected script = %v, want AlreadyExists", err)
 	}
 }
 
@@ -383,28 +592,37 @@ func TestRequestDetectsAdmissionGuardThatSkippedEffect(t *testing.T) {
 	}
 }
 
-func TestDecodeSelectionRemainsStrict(t *testing.T) {
+func TestSelectionMarshalerRejectsMalformedData(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		data     string
 		rejected bool
 	}{
-		{name: "valid", data: `{"script_sha256":"abc"}`},
-		{name: "unknown field", data: `{"script_sha256":"abc","extra":true}`, rejected: true},
-		{name: "trailing value", data: `{"script_sha256":"abc"} {}`, rejected: true},
+		{name: "valid", data: `{"script":"YWJj"}`},
+		{name: "unknown field", data: `{"script":"YWJj","extra":true}`, rejected: true},
+		{name: "trailing value", data: `{"script":"YWJj"} {}`, rejected: true},
+		{name: "empty script", data: `{"script":""}`, rejected: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			var selection struct {
-				SHA string `json:"script_sha256"`
-			}
-			err := decodeSelection([]byte(test.data), &selection)
-			if !test.rejected && (err != nil || selection.SHA != "abc") {
-				t.Fatalf("decode valid selection = %+v, %v", selection, err)
+			value, err := (selectionMarshaler{}).UnmarshalResource([]byte(test.data))
+			if !test.rejected && (err != nil || value.(*typed.Resource[Selection, componentExtension[Selection]]).TypedSpec().Script != "abc") {
+				t.Fatalf("decode valid selection = %+v, %v", value, err)
 			}
 			if test.rejected && err == nil {
 				t.Fatal("decode accepted non-strict selection")
 			}
 		})
+	}
+}
+
+func TestSelectionByteLimit(t *testing.T) {
+	marshal := selectionMarshaler{}
+	maximum := strings.Repeat("x", maximumBootstrapBytes)
+	if _, err := marshal.MarshalResource(componentResource(ResourceID, Selection{Script: maximum})); err != nil {
+		t.Fatalf("maximum selected bytes rejected: %v", err)
+	}
+	if _, err := marshal.MarshalResource(componentResource(ResourceID, Selection{Script: maximum + "x"})); err == nil {
+		t.Fatal("oversize bootstrap selection accepted")
 	}
 }
 

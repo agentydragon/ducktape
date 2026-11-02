@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,8 +26,6 @@ import (
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/state"
-	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
-	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -103,6 +102,7 @@ type Runtime struct {
 	owner                    *environmentOwner
 	state                    *EnvironmentState
 	lifecycleState           state.State
+	lifecycleStore           io.Closer
 	lifecycleEngine          *cosiruntime.Runtime
 	lifecycleCancel          context.CancelFunc
 	lifecycleDone            chan struct{}
@@ -153,7 +153,7 @@ func New(config Config) (*Runtime, error) {
 }
 
 // newRuntime is the deterministic test seam used by lifecycle/forwarding tests. A nil COSI state
-// selects an in-memory Runner lifecycle store; a nonnil one lets focused tests inject controller
+// selects the production Runtime lifecycle store; a nonnil one lets focused tests inject controller
 // state without changing the production process topology.
 func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Runtime, error) {
 	if !filepath.IsAbs(config.StateDir) {
@@ -209,13 +209,18 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 		return nil, err
 	}
 	lifecycleState := injectedState
+	var lifecycleStore io.Closer
 	if lifecycleState == nil {
-		lifecycleState = state.WrapCore(namespaced.NewState(inmem.Build))
+		lifecycleState, lifecycleStore, err = bootstrap.OpenState(config.StateDir)
+		if err != nil {
+			_ = owner.Close()
+			return nil, err
+		}
 	}
 	runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
 	r := &Runtime{
 		config: config, deps: deps, owner: owner, state: environmentState, supervisor: supervisor,
-		lifecycleState: lifecycleState, lifecycleCancel: cancelRuntime, lifecycleDone: make(chan struct{}), lifecycleContext: runtimeCtx,
+		lifecycleState: lifecycleState, lifecycleStore: lifecycleStore, lifecycleCancel: cancelRuntime, lifecycleDone: make(chan struct{}), lifecycleContext: runtimeCtx,
 		bootID: uuid.NewString(), changes: make(chan struct{}), fatal: make(chan error, 1), waitBootstrap: deps.waitBootstrap,
 		desired: lifecycle.EnvironmentDesired{Mode: lifecycle.Quiescing, Generation: 1}, closeDone: make(chan struct{}),
 		execStreams: make(map[uint64]context.CancelFunc), execCalls: make(map[uint64]context.CancelFunc),
@@ -225,6 +230,9 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	}
 	if err := r.initializeLifecycle(runtimeCtx); err != nil {
 		cancelRuntime()
+		if lifecycleStore != nil {
+			_ = lifecycleStore.Close()
+		}
 		_ = owner.Close()
 		return nil, err
 	}
@@ -462,6 +470,9 @@ func (r *Runtime) joinClose() error {
 		if err := r.bootstrapHost.CloseLog(); err != nil {
 			return err
 		}
+	}
+	if r.lifecycleStore != nil {
+		hostRunErr = errors.Join(hostRunErr, r.lifecycleStore.Close())
 	}
 	return errors.Join(hostRunErr, r.owner.Close())
 }
