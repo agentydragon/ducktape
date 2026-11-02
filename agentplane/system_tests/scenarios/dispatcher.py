@@ -3,6 +3,7 @@
 import asyncio
 import json
 import sqlite3
+import subprocess
 import sys
 import tarfile
 from collections.abc import AsyncIterator, Callable
@@ -260,6 +261,44 @@ async def _capture_cleanup_diagnostics(
                 diagnostics[key] = {"capture_error": type(error).__name__}
 
         await asyncio.gather(*(capture(key, args) for key, args in commands.items()))
+        # A Pod image volume can fail before its containers start. Capture both CRI's view and
+        # containerd's image references while the failed Pod still exists, before cleanup.
+        crictl_config = artifact_dir / "crictl.yaml"
+        crictl_config.write_text("runtime-endpoint: unix:///run/k3s/containerd/containerd.sock\ntimeout: 10\n")
+        image_commands = {
+            "cri_images": (*crictl_command, "--config", str(crictl_config), "images", "-o", "json"),
+            "containerd_images": (
+                crictl_command[0],
+                "ctr",
+                "--address",
+                "/run/k3s/containerd/containerd.sock",
+                "-n",
+                "k8s.io",
+                "images",
+                "list",
+                "--quiet",
+            ),
+        }
+        pod = diagnostics.get("pod")
+        if isinstance(pod, dict):
+            for volume in pod.get("spec", {}).get("volumes", []):
+                if reference := volume.get("image", {}).get("reference"):
+                    image_commands[f"cri_image_volume_{volume['name']}"] = (
+                        *crictl_command,
+                        "--config",
+                        str(crictl_config),
+                        "inspecti",
+                        reference,
+                    )
+
+        async def capture_image_command(key: str, command: tuple[str, ...]) -> None:
+            try:
+                result = await asyncio.to_thread(subprocess.run, command, capture_output=True, text=True, timeout=10)
+                diagnostics[key] = {"exit_code": result.returncode, "stdout": result.stdout, "stderr": result.stderr}
+            except (OSError, subprocess.TimeoutExpired) as error:
+                diagnostics[key] = {"capture_error": str(error)}
+
+        await asyncio.gather(*(capture_image_command(key, command) for key, command in image_commands.items()))
         persist()
         try:
             diagnostics["runner_data"] = await _archive_runner_data(
