@@ -11,7 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
-	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
@@ -68,7 +68,7 @@ func newExecutionControllerRuntime(t *testing.T, start func(context.Context, Con
 	}
 	r := &Runtime{
 		config:         Config{CodexExecServer: &codexexecserver.Config{URL: "ws://127.0.0.1:1"}},
-		intent:         &runtimepb.LifecycleIntent{Mode: runtimepb.LifecycleIntent_RUNNING, IncarnationUid: "incarnation"},
+		desired:        lifecycle.EnvironmentDesired{Mode: lifecycle.Running, IncarnationUID: "incarnation", Generation: 1},
 		lifecycleState: store, changes: make(chan struct{}), fatal: make(chan error, 1),
 		execCalls: make(map[uint64]context.CancelFunc), execStreams: make(map[uint64]context.CancelFunc),
 		deps: runtimeDeps{startExecution: start},
@@ -475,7 +475,7 @@ func TestExecutionControllerLossDuringQuiesceDoesNotRestart(t *testing.T) {
 	}
 	first := <-started
 	r.mu.Lock()
-	r.intent.Mode = runtimepb.LifecycleIntent_QUIESCING
+	r.desired.Mode = lifecycle.Quiescing
 	r.mu.Unlock()
 	first.exited <- childExit{}
 	current := waitExecutionStatus(t, r, func(s executionStatus) bool { return s.Phase == executionStopped && s.FencedGeneration == s.Generation })
@@ -483,7 +483,7 @@ func TestExecutionControllerLossDuringQuiesceDoesNotRestart(t *testing.T) {
 		t.Fatalf("quiescing launched successor: state=%+v starts=%d", current, starts.Load())
 	}
 	r.mu.Lock()
-	r.intent.Mode = runtimepb.LifecycleIntent_RUNNING
+	r.desired.Mode = lifecycle.Running
 	r.mu.Unlock()
 	if err := r.startExecutionForUID(t.Context(), "incarnation"); err != nil {
 		t.Fatalf("new epoch could not start after fence: %v", err)
