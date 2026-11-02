@@ -13,7 +13,9 @@ ready=0
 while IFS= read -r line; do
 	printf '%s\n' "$line"
 	if [ "$line" = "KERNEL - the kernel uevent" ]; then
-		/usr/bin/systemd-notify --ready --status="block kernel and udev monitors are bound"
+		# The manager-tracked root shell stays alive draining this FIFO, so parent-credential
+		# notification needs no barrier to keep a short-lived sender attributable.
+		/usr/bin/systemd-notify --no-block --ready --status="block kernel and udev monitors are bound"
 		printf '%s\n' AGENTPLANE_UDEV_MONITOR_READY
 		printf '%s\n' AGENTPLANE_UDEV_MONITOR_READY >/dev/ttyS0
 		ready=1
