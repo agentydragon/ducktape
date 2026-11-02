@@ -55,12 +55,12 @@ type componentExtension[T componentSpec[T]] struct{}
 
 func (componentExtension[T]) ResourceDefinition() spec.ResourceDefinitionSpec {
 	var value T
-	return spec.ResourceDefinitionSpec{Type: value.resourceType(), DefaultNamespace: lifecycle.EnvironmentNamespace}
+	return spec.ResourceDefinitionSpec{Type: value.resourceType(), DefaultNamespace: lifecycle.Namespace}
 }
 
 func componentResource[T componentSpec[T]](id string, value T) *typed.Resource[T, componentExtension[T]] {
 	return typed.NewResource[T, componentExtension[T]](
-		resource.NewMetadata(lifecycle.EnvironmentNamespace, value.resourceType(), id, resource.VersionUndefined), value,
+		resource.NewMetadata(lifecycle.Namespace, value.resourceType(), id, resource.VersionUndefined), value,
 	)
 }
 

@@ -84,7 +84,7 @@ func (r *Runtime) startHost(ctx context.Context) error {
 	if r.deps.beforeHostConstruction != nil {
 		r.deps.beforeHostConstruction()
 	}
-	host, err := harnesshost.NewEmbedded(config, r.lifecycleState, r.lifecycleEngine, r.lifecycleDone)
+	host, err := harnesshost.NewEmbedded(config, r.lifecycleState, r.lifecycleEngine, r.lifecycleDone, r.processes)
 	if err != nil {
 		r.lifecycleInitErr = err
 		return err

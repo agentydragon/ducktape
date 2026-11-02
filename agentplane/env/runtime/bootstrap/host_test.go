@@ -170,7 +170,7 @@ func newHostTestRuntime(t *testing.T, script *string, stateDir string, admission
 		default:
 		}
 	}
-	processes := supervision.NewHost(ctx, store, lifecycle.EnvironmentNamespace, workers, reportError)
+	processes := supervision.NewHost(ctx, store, lifecycle.Namespace, supervision.RuntimeDomain, workers, reportError)
 	supervisor := supervision.NewSubprocessSupervisor(nil)
 	scriptRunner, err := scripts.New(scripts.Config{
 		LaunchProcess: func(ctx context.Context, owner string, config supervision.ProcessConfig) (*supervision.ManagedProcess, error) {

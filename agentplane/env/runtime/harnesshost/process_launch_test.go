@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync"
 	"testing"
 	"time"
 
@@ -171,6 +172,40 @@ func TestManagedProcessBlocksCloseUntilFence(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatalf("Runner Close did not finish after process fencing: %v", ctx.Err())
 	}
+}
+
+// Runtime processes share the controller but must not enter the Host's drain barrier.
+func TestHostCloseDoesNotWaitForRuntimeProcess(t *testing.T) {
+	r := newManagedProcessTestRunner(t)
+	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+	defer cancel()
+	var runtimeWorkers sync.WaitGroup
+	runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
+	t.Cleanup(cancelRuntime)
+	runtimeProcesses := r.lifecycle.processes.Scope(runtimeCtx, supervision.RuntimeDomain, &runtimeWorkers, r.fail)
+	process, err := runtimeProcesses.Launch(ctx, "runtime-process-test", 1, r.supervisor, supervision.ProcessConfig{
+		Command: []string{"/bin/sleep", "60"}, Dir: t.TempDir(), StopGrace: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stopManagedProcessOnCleanup(t, process)
+	r.mu.Lock()
+	err = r.lifecycle.setDesiredState(runnerlifecycle.Closing, "")
+	r.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.WaitClosed(ctx); err != nil {
+		t.Fatalf("Host drain waited for Runtime process: %v", err)
+	}
+	if !process.Running() {
+		t.Fatal("Host drain stopped a Runtime process")
+	}
+	if err := process.Stop(ctx); err != nil {
+		t.Fatalf("stop Runtime process: %v", err)
+	}
+	runtimeWorkers.Wait()
 }
 
 func newManagedProcessTestRunner(t *testing.T) *Runner {

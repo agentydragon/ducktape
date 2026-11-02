@@ -29,7 +29,7 @@ func withTestSessionFacilities(t *testing.T, config Config) Config {
 		config.Environment = func() Environment { return Environment{IncarnationUID: "test-incarnation"} }
 	}
 	var workers sync.WaitGroup
-	host := supervision.NewHost(config.Context, config.State, runnerlifecycle.Namespace, &workers, func(err error) {
+	host := supervision.NewHost(config.Context, config.State, runnerlifecycle.Namespace, supervision.HarnessDomain, &workers, func(err error) {
 		if err != nil {
 			t.Error(err)
 		}

@@ -106,6 +106,12 @@ retains its independent process supervisor.
 
 ## Process topology and fence proof
 
+Runtime and Harness Host use one COSI process controller and registry in the Runtime namespace.
+Each attempt records its owning process domain and keeps that owner's context, worker join and
+error boundary. Host native-stop acknowledgement waits for every Host-domain attempt and its
+finalizer; Runtime-domain attempts are covered by Runtime's own close and execution barriers.
+Neither the COSI namespace nor process-controller sharing changes the native containment domains.
+
 | Mode                              | Runtime and Host                                                                                   | Execution API                                                                                                               | Fence evidence                                                                                                                                                                                                                                              |
 | --------------------------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Production Pod (`pid1`)           | Runtime is PID 1; embedded Host shares its child reaper.                                           | Embedded Execution claims the Codex companion in a separate PID-1 container.                                                | Replacement requires Host `native_stopped`, adapter shutdown and a fresh idle companion generation. A fenced backend loss can restart the API lifetime; unproven loss fails Runtime. Abnormal Runtime exit requires the outer container fence.              |

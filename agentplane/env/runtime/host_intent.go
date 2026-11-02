@@ -45,21 +45,21 @@ func (v hostIntentStatus) DeepCopy() hostIntentStatus { return v }
 type hostIntentStatusExtension struct{}
 
 func (hostIntentStatusExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
-	return spec.ResourceDefinitionSpec{Type: hostIntentStatusType, DefaultNamespace: lifecycle.EnvironmentNamespace}
+	return spec.ResourceDefinitionSpec{Type: hostIntentStatusType, DefaultNamespace: lifecycle.Namespace}
 }
 
 func hostIntentStatusResource(v hostIntentStatus) *typed.Resource[hostIntentStatus, hostIntentStatusExtension] {
-	return typed.NewResource[hostIntentStatus, hostIntentStatusExtension](resource.NewMetadata(lifecycle.EnvironmentNamespace, hostIntentStatusType, "host", resource.VersionUndefined), v)
+	return typed.NewResource[hostIntentStatus, hostIntentStatusExtension](resource.NewMetadata(lifecycle.Namespace, hostIntentStatusType, "host", resource.VersionUndefined), v)
 }
 
 type hostIntentExtension struct{}
 
 func (hostIntentExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
-	return spec.ResourceDefinitionSpec{Type: hostIntentType, DefaultNamespace: lifecycle.EnvironmentNamespace}
+	return spec.ResourceDefinitionSpec{Type: hostIntentType, DefaultNamespace: lifecycle.Namespace}
 }
 
 func hostIntentResource(v hostIntent) *typed.Resource[hostIntent, hostIntentExtension] {
-	return typed.NewResource[hostIntent, hostIntentExtension](resource.NewMetadata(lifecycle.EnvironmentNamespace, hostIntentType, "host", resource.VersionUndefined), v)
+	return typed.NewResource[hostIntent, hostIntentExtension](resource.NewMetadata(lifecycle.Namespace, hostIntentType, "host", resource.VersionUndefined), v)
 }
 
 func intentValue(v *runtimepb.LifecycleIntent) hostIntent {
@@ -76,7 +76,7 @@ type hostIntentController struct{ runtime *Runtime }
 
 func (*hostIntentController) Name() string { return "environment-host-intent" }
 func (*hostIntentController) Inputs() []controller.Input {
-	return []controller.Input{{Namespace: lifecycle.EnvironmentNamespace, Type: hostIntentType, Kind: controller.InputWeak}}
+	return []controller.Input{{Namespace: lifecycle.Namespace, Type: hostIntentType, Kind: controller.InputWeak}}
 }
 
 func (*hostIntentController) Outputs() []controller.Output {

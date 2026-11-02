@@ -245,7 +245,7 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 		return err
 	}
 	r.lifecycleEngine = engine
-	r.processes = supervision.NewHost(ctx, r.lifecycleState, lifecycle.EnvironmentNamespace, &r.lifecycleWorkers, r.fail)
+	r.processes = supervision.NewHost(ctx, r.lifecycleState, lifecycle.Namespace, supervision.RuntimeDomain, &r.lifecycleWorkers, r.fail)
 	r.scripts, err = scripts.New(scripts.Config{
 		HarnessEnvironment: r.config.HarnessEnvironment,
 		LaunchProcess: func(processCtx context.Context, owner string, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {

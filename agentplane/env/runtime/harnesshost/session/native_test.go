@@ -323,7 +323,7 @@ func frameTestSessionWithControllerGate(t *testing.T, command []string, withCont
 		t.Fatal(err)
 	}
 	var workers sync.WaitGroup
-	host := supervision.NewHost(ctx, resources, runnerlifecycle.Namespace, &workers, func(err error) {
+	host := supervision.NewHost(ctx, resources, runnerlifecycle.Namespace, supervision.HarnessDomain, &workers, func(err error) {
 		if err != nil && !errors.Is(err, context.Canceled) {
 			t.Error(err)
 		}

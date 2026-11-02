@@ -123,7 +123,7 @@ func newFixtureWithOnChange(t *testing.T, onChange func()) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	processes := supervision.NewHost(ctx, f.store, lifecycle.Namespace, &f.workers, func(err error) { t.Errorf("process host: %v", err) })
+	processes := supervision.NewHost(ctx, f.store, lifecycle.Namespace, supervision.HarnessDomain, &f.workers, func(err error) { t.Errorf("process host: %v", err) })
 	admit := func(ctx context.Context, expected lifecycle.Desired, effect func(context.Context) error) error {
 		current, found, err := lifecycle.ReadDesired(ctx, f.store)
 		if err != nil || !found || current != expected || current.Mode != lifecycle.Running {

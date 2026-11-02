@@ -20,7 +20,10 @@ Pod PID namespace before releasing the environment owner.
 
 The Host lifetime begins with its boot ID. Runtime publishes a typed intent bound to Runtime boot ID,
 Host boot ID and nonzero generation. The shared COSI engine applies it and publishes readiness,
-native cleanup and EnvironmentRuntimeFacts with that exact binding. Mode/identity changes require a new generation;
+native cleanup and EnvironmentRuntimeFacts with that exact binding. Host process attempts share
+the Runtime's COSI process controller and registry, but retain the Host lifetime and worker barrier.
+The Host drain waits for Host-domain process finalizers; Runtime-domain attempts have their own
+cleanup barriers. Mode/identity changes require a new generation;
 Execution fence acknowledgement may advance monotonically within the same generation.
 
 Runtime passes copied Runtime boot ID, Host boot ID and environment generation bindings with

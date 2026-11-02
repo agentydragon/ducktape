@@ -6,7 +6,8 @@ History ingress. Execution Service owns typed execution and the native exec-serv
 has distinct typed lifecycle resources in one Runtime-owned COSI engine. Runtime owns the engine
 and joins it after Host controllers reach Closed and before either component releases its state owner.
 The Host still owns its Session, journal and native process resources; Runtime owns bootstrap and
-environment process resources. Their process controllers use separate namespaces and finalizers.
+environment process resources. One process controller and registry own attempt finalizers in the shared namespace;
+process domains retain separate lifecycle and worker barriers.
 The [COSI map](cosi.md) shows controller subscriptions, resource writers and lifecycle states.
 
 ```mermaid

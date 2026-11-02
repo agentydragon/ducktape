@@ -20,9 +20,9 @@ func (*LifecycleController) Name() string { return ControllerName }
 func (*LifecycleController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
-			{Namespace: lifecycle.EnvironmentNamespace, Type: InputType, Kind: controller.InputQPrimary},
-			{Namespace: lifecycle.EnvironmentNamespace, Type: RuntimeType, Kind: controller.InputQMapped},
-			{Namespace: lifecycle.EnvironmentNamespace, Type: OperationType, Kind: controller.InputQMapped},
+			{Namespace: lifecycle.Namespace, Type: InputType, Kind: controller.InputQPrimary},
+			{Namespace: lifecycle.Namespace, Type: RuntimeType, Kind: controller.InputQMapped},
+			{Namespace: lifecycle.Namespace, Type: OperationType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: RuntimeType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(1)),
@@ -30,7 +30,7 @@ func (*LifecycleController) Settings() controller.QSettings {
 }
 
 func (*LifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
-	input := resource.NewMetadata(lifecycle.EnvironmentNamespace, InputType, ResourceID, resource.VersionUndefined)
+	input := resource.NewMetadata(lifecycle.Namespace, InputType, ResourceID, resource.VersionUndefined)
 	switch ptr.Type() {
 	case InputType, RuntimeType:
 		return []resource.Pointer{input}, nil

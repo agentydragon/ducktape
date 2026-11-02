@@ -62,7 +62,7 @@ func newLifecycleRunner(t *testing.T, config runtimeTestConfig) *Runtime {
 	}
 	historyTarget := startAcknowledgingHistory(t)
 	config.host.StateDir = config.StateDir
-	host, err := harnesshost.NewEmbedded(config.host, r.lifecycleState, r.lifecycleEngine, r.lifecycleDone)
+	host, err := harnesshost.NewEmbedded(config.host, r.lifecycleState, r.lifecycleEngine, r.lifecycleDone, r.processes)
 	if err != nil {
 		t.Fatal(err)
 	}

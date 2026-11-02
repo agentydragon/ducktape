@@ -299,7 +299,7 @@ func (h *Host) publishOperation(op *oneoff.Operation, done bool) error {
 }
 
 func (h *Host) forgetOperation(ctx context.Context, op *oneoff.Operation) error {
-	err := h.state.Destroy(ctx, resource.NewMetadata(lifecycle.EnvironmentNamespace, OperationType, op.ID(), resource.VersionUndefined), state.WithDestroyOwner(HostOwner))
+	err := h.state.Destroy(ctx, resource.NewMetadata(lifecycle.Namespace, OperationType, op.ID(), resource.VersionUndefined), state.WithDestroyOwner(HostOwner))
 	if state.IsNotFoundError(err) {
 		return nil
 	}
