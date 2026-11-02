@@ -34,10 +34,11 @@ abrupt invocation result remains in the frame's result.
 
 ## One outcome, with existing safety boundaries
 
-The application adapter invokes one singleton untainted local function or
-closure through the existing invocation transfer. It consumes both effects and
-return values from that outcome, rather than evaluating the call separately to
-obtain its value. Known effects, including rebinds and proof dependencies,
+The application adapter passes evaluated operands to the common call dispatcher,
+preserving the canonical call's policy and proof sites. Singleton untainted
+local functions/closures, admitted native rows and supported foreign-summary
+projections return effects and values together. It does not evaluate the call
+again to obtain its value. Known effects, including rebinds and proof dependencies,
 follow the same merge as the ordinary call adapter. Results stay opaque to the
 allocation-only judgment. Strict provider queries decline this operation.
 The source collector caches whether an ordered body contains calls. The
@@ -49,7 +50,7 @@ Objects reachable through the callee or arguments become borrowed in the
 caller before the invocation. This prevents retaining a fresh own-data
 descriptor proof across a callee that changes that object. Returned
 capabilities remain fallback roots even if their receiving binding is later
-overwritten. Unknown targets and incomplete invocations truncate the body at
+overwritten. Unknown targets, incomplete invocations and missing result transfers truncate the body at
 the source call site through the established bounded callback fallback. They
 do not replay the invocation or preceding operations.
 When the truncated remainder still has an unknown direct callee, its indexed
@@ -62,7 +63,7 @@ before that remainder.
 Record fields now retain their child operations recursively, using the same
 record allocation transfer; see <2026_11_01_ordered_record_operands.md>.
 Member, optional, spread and direct eval calls remain outside this grammar.
-Native and foreign call certification, ordered caller control for captured
+Unconverted native/foreign result models, ordered caller control for captured
 writes, branch execution, facade getters and property-origin export identity remain required work. This
 change alone does not prove the canonical provider or clear any gate.
 
@@ -77,5 +78,7 @@ were added or run locally. Normal hosted PR CI supplies existing checks.
 still has separate call-effect and call-value paths. Stateful native models,
 getters and live-cell factories need one shared result carrying both effects
 and value before entering this ordered path. Re-evaluating an already executed
-call is not a safe way to recover its result. Extend the common invocation
-result rather than introducing a provider-specific evaluator.
+call is not a safe way to recover its result. Ordered calls now consume the
+shared dispatcher's result directly; flattened roots and general value queries
+remain to migrate. See <2026_11_02_evaluated_call_results.md> for the cache-scope
+and operand-replay traps. No provider-specific evaluator is introduced.

@@ -2208,13 +2208,18 @@ synchronous completeness alone grants no provider certificate.
 
 Application execution also retains direct calls through simple binding
 references in the ordered body. It reads the callee before evaluating arguments
-from left to right, stops each abrupt path, and invokes a singleton untainted
-local function or closure once. The invocation's return values and effects
-travel together; no separate value evaluation repeats the call. Objects
+from left to right and stops each abrupt path. The shared call transfer consumes
+these evaluated operands with the canonical call's proof sites and policies.
+It returns effects and values together for a singleton untainted local function
+or closure, admitted native rows and supported foreign-summary projections.
+No separate value evaluation repeats the call. Objects
 reachable by that callee or its arguments lose the caller's fresh own-data
 admission, and returned capabilities remain reachable by a truncated remainder.
-An unknown target or incomplete invocation uses the existing conservative
-callback fallback at that call site without replaying prior operations.
+An unknown target, incomplete invocation or missing result transfer uses the
+existing conservative callback fallback at that call site without replaying
+prior operations. A timing proof alone supplies no result transfer. Models
+that still reevaluate source operands cannot serve an ordered caller; their
+operands and results must first enter the shared transfer.
 Invocation results remain opaque to the allocation-only judgment; a strict
 provider query declines calls. This supplies no property-origin export identity
 proof.

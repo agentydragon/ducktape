@@ -1205,19 +1205,33 @@ body. Earlier operations are not replayed. This local execution proof does not
 provide an owner-completion or foreign-provider certificate.
 Direct calls through simple binding references also enter this ordered path.
 The kernel reads the callee before evaluating each argument in order, retaining
-that callee if an argument reassigns its binding. Application execution invokes
-a singleton untainted local function or closure and consumes that invocation's
-one outcome, including its effects and return values. It does not perform a
-second value-only call evaluation. Abrupt operands stop the call; a possible
+that callee if an argument reassigns its binding. Application execution sends
+the evaluated operands through `RuntimeOperation::Call` together with the
+canonical call's existing policy and proof sites. This is the same dispatcher
+used for source-summary call effects. It returns effects and values together
+for singleton untainted local functions/closures, admitted native rows and
+supported foreign-summary projections. The ordered caller performs no second
+value-only call evaluation. Abrupt operands stop the call; a possible
 abrupt invocation result is retained before following its completing values.
 Records reachable through the callee or its arguments become borrowed in the
 caller, so a completed callee cannot leave the original fresh descriptor proof
 in force after modifying that receiver. Returned values stay in the frame's
-fallback capability roots. Unknown targets and incomplete invocations truncate
-the remainder through the existing callback fallback without replay. Their
+fallback capability roots. Unknown targets, incomplete invocations and missing
+result transfers truncate the remainder through the existing callback fallback
+without replay. A complete effect transfer can still lack a result transfer;
+the ordered caller must decline it. Array-iteration/from-entries helpers that
+reevaluate source operands remain on their source-summary path until they
+consume evaluated inputs. Their
 already executed effects remain in the outcome. All invocation results remain
 opaque to allocation-only proof, and the strict provider adapter refuses the
 operation. This gives no provider identity to exported property aliases.
+
+Call results travel in the single-consumer runtime payload. They are not
+cached by source location: repeated activations and hypothetical value queries
+can share a source call without sharing its runtime inputs. The unconverted
+general value-query and flattened root paths still have separate call/value
+handling; they must migrate onto ordered operations before claiming actual
+caller control or exact loader-cache state.
 
 Record literals retain ordered local expressions for each static data field in
 the canonical body IR. Their children run through the same local kernel and

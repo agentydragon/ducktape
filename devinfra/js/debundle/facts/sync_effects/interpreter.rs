@@ -10,7 +10,9 @@ use super::super::value_model::{
 };
 use super::runtime_callbacks::{CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
-use super::runtime_inference::{ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue};
+use super::runtime_inference::{
+    CallOperands, ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue,
+};
 use super::{
     Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, LocalConstructor,
     MemberValueWrite, NativeIntrinsic, NativePointEffects, Parameter, RetainedCallbackCall,
@@ -1316,67 +1318,73 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         arguments: &[Values],
         span: Span,
     ) -> Option<super::super::allocation_transfer::AllocationValue> {
-        let target = if callee.len() == 1 {
-            match callee.first() {
-                Some(AbstractValue::Value(Value::Alloc(Kind::Function, key))) => Some((*key, None)),
-                Some(AbstractValue::Closure(key, captures)) => Some((*key, Some(captures.clone()))),
-                _ => None,
-            }
-        } else {
-            None
-        };
-        if callee.iter().any(|value| {
-            matches!(
-                value,
-                AbstractValue::Value(Value::Top) | AbstractValue::SymbolicInput(_)
-            )
-        }) {
-            // A retained known callback does not remove an unknown callee
-            // alternative. Keep its original lexical call-site diagnostic.
-            self.outcome.lose_call_target(self.owner, span);
-        }
         let mut reached = callee.clone();
         reached.extend(arguments.iter().flatten().cloned());
-        // Another activation receives these capabilities. Its descriptor or
-        // prototype operations must not leave the caller's original fresh
-        // own-data proof in force, even when that invocation completes.
         frame
             .borrowed_records
             .extend(self.executor.reachable_objects(&reached));
-        if let Some((key, captures)) = target
-            && self.executor.inputs.index.callables.contains_key(&key)
-            && !self.executor.state.tainted_functions.contains(&key)
+        // Reuse the canonical call's source policy and proof sites, while
+        // transporting the operands selected by the ordered kernel.
+        let call = self.executor.inputs.index.callables[&self.callable]
+            .calls
+            .iter()
+            .find(|call| call.kind == CallKind::Call && call.span == span)
+            .expect("a source-covered call has its canonical call record")
+            .clone();
+        let result = self.executor.request(RuntimeOperation::Call {
+            call,
+            environment: frame.environment.clone(),
+            captures: frame.environment.clone(),
+            outcome: Box::new(Outcome {
+                complete: true,
+                ..Outcome::default()
+            }),
+            operands: Some(Box::new(CallOperands {
+                targets: callee.clone(),
+                arguments: arguments.to_vec(),
+            })),
+        });
+        let RuntimeValue::Call {
+            mut outcome,
+            values,
+        } = result
+        else {
+            unreachable!("call transfers return effects and their result together");
+        };
+        let complete = outcome.complete && !outcome.unknown_call;
+        if (!complete || values.is_none())
+            && callee.iter().any(|value| {
+                matches!(
+                    value,
+                    AbstractValue::Value(Value::Top) | AbstractValue::SymbolicInput(_)
+                )
+            })
         {
-            // The ordinary invocation owns both effects and return values.
-            // A second value-only evaluation could repeat a stateful call.
-            let mut nested = self
-                .executor
-                .invoke(key, arguments.to_vec(), captures, false);
-            self.executor.apply_rebind_effects(&nested.effects.rebinds);
-            self.outcome.absorb_binding_effects(
-                &mut nested.effects,
-                self.executor.state.assumption.as_ref(),
-            );
-            self.outcome.executed_owners.extend(nested.executed_owners);
-            self.outcome.unknown_call |= nested.unknown_call;
-            self.outcome
-                .inherit_completeness(nested.complete, nested.effects.precision_losses);
-            if nested.complete && !nested.unknown_call {
-                frame.inputs.extend(nested.returns.iter().cloned());
-                frame
-                    .borrowed_records
-                    .extend(self.executor.reachable_objects(&nested.returns));
-                // A complete invocation is not an allocation-only proof or
-                // a provider-export identity certificate.
+            self.outcome.lose_call_target(self.owner, span);
+        }
+        self.outcome.absorb_binding_effects(
+            &mut outcome.effects,
+            self.executor.state.assumption.as_ref(),
+        );
+        self.outcome.executed_owners.extend(outcome.executed_owners);
+        self.outcome.unknown_call |= outcome.unknown_call;
+        self.outcome
+            .inherit_completeness(outcome.complete, outcome.effects.precision_losses);
+        if let Some(values) = values {
+            frame.inputs.extend(values.iter().cloned());
+            frame
+                .borrowed_records
+                .extend(self.executor.reachable_objects(&values));
+            if complete {
+                // A complete call is not an allocation-only certificate.
                 return Some(super::super::allocation_transfer::AllocationValue::opaque(
-                    nested.returns,
+                    values,
                 ));
             }
-            reached.extend(nested.returns);
+            reached.extend(values);
         }
-        // Unknown targets and incomplete invocations truncate the body at
-        // this point. Preserve capabilities in operands evaluated earlier,
-        // without replaying the call or any preceding local operation.
+        // Preserve the partial call's effects and returned capabilities, then
+        // summarize the remainder without repeating any operand or invocation.
         self.fallback(
             frame,
             reached,
@@ -8762,8 +8770,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             environment: env.clone(),
             captures: captures.clone(),
             outcome: Box::new(std::mem::take(outcome)),
+            operands: None,
         });
-        let RuntimeValue::Outcome(result) = result else {
+        let RuntimeValue::Call {
+            outcome: result, ..
+        } = result
+        else {
             unreachable!("call transfers produce outcomes");
         };
         *outcome = *result;
@@ -8797,7 +8809,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         env: &Context,
         captures: &Context,
         outcome: &mut Outcome,
-    ) {
+        operands: Option<CallOperands>,
+    ) -> Option<Values> {
+        let needs_value = operands.is_some();
+        if needs_value {
+            assert!(call.kind == CallKind::Call && !call.has_spread);
+            assert!(matches!(call.callee, ValueExpr::Binding(_)));
+        }
         if call.kind == CallKind::OpaqueExecution {
             let fact = &self.inputs.facts[call.owner.0];
             let mut reached: Values = env
@@ -8823,7 +8841,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.invoke_possible_callbacks(&[reached], false, outcome);
             outcome.unsupported(ExecutionOperation::OpaqueExecution, call.owner, call.span);
             outcome.unknown_call = true;
-            return;
+            return None;
         }
         if call.kind == CallKind::Call && call.has_spread {
             // The canonical argument values are iterable capabilities, not
@@ -8839,7 +8857,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.invoke_possible_callbacks(&[reached], false, outcome);
             outcome.unsupported(ExecutionOperation::OpaqueExecution, call.owner, call.span);
             outcome.unknown_call = true;
-            return;
+            return None;
         }
         if call.kind == CallKind::Call
             && self
@@ -8847,7 +8865,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .frozen_namespace_calls
                 .contains(&CallSite::from(call.span))
         {
-            return;
+            return operands.map(|operands| operands.arguments[0].clone());
         }
         if call.kind == CallKind::AccessorCalleeLookup {
             let ValueExpr::Member(receiver, property, _, _) = &call.callee else {
@@ -8866,7 +8884,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             self.no_reentry_member_lookup_admitted(site, env, captures)
                         }))
             {
-                return;
+                return None;
             }
             if values.iter().any(|value| {
                 matches!(value, AbstractValue::Value(Value::Top))
@@ -8875,7 +8893,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     if !self.state.object_accessors_are_settled(object))
             }) {
                 self.promote_possible_getter(call, &values, outcome);
-                return;
+                return None;
             }
             for value in &values {
                 if let AbstractValue::OwnDescriptorMap(site) = value {
@@ -8884,7 +8902,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             let accessor_getters = self.applied_getters(&values, property.as_deref());
             if accessor_getters.is_empty() {
-                return;
+                return None;
             }
             let no_reentry_accessor_call = self
                 .inputs
@@ -8902,7 +8920,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.state.array_iteration_unsupported = true;
             }
             outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
-            return;
+            return None;
         }
         if matches!(
             call.kind,
@@ -8925,7 +8943,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 // Operand effects were indexed/evaluated normally. The separate
                 // author contract certifies only this exact host protocol's
                 // lack of callback reentry; purity and throw checks stay intact.
-                return;
+                return None;
             }
             if call.kind == CallKind::InProtocol
                 && self.ordinary_prototype_chain(&operands[0])
@@ -8933,7 +8951,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, _)))
                 })
             {
-                return;
+                return None;
             }
             if call.kind == CallKind::InstanceOfProtocol
                 && self.default_class_has_instance(&operands[0])
@@ -8941,7 +8959,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 // OrdinaryHasInstance consults the LHS prototype chain, never
                 // the constructor's deferred method bodies.
                 if self.ordinary_prototype_chain(&operands[1]) {
-                    return;
+                    return None;
                 }
                 operands.remove(0);
             }
@@ -8961,14 +8979,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 call.span,
             );
             outcome.unknown_call = true;
-            return;
+            return None;
         }
         if call.kind == CallKind::LocalMemberRead {
             if self.native_member_lookup_is_data(&call.callee, None) {
-                return;
+                return None;
             }
             if self.closed_enum_member_read(&call.callee) {
-                return;
+                return None;
             }
             if object_own_data_read_property(&call.callee, |id| self.inputs.flow.is_declared(id))
                 .is_some()
@@ -8984,7 +9002,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.note_unknown_call(call);
                 outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
                 outcome.unknown_call = true;
-                return;
+                return None;
             }
             let ValueExpr::Member(receiver, property, _, _) = &call.callee else {
                 unreachable!()
@@ -8997,13 +9015,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     if !self.state.object_accessors_are_settled(object))
             }) {
                 self.promote_possible_getter(call, &values, outcome);
-                return;
+                return None;
             }
             if values.contains(&AbstractValue::ForeignDeferredRecord) {
                 self.promote_foreign_record(outcome);
                 self.note_unknown_call(call);
                 self.invoke_possible_callbacks(&[values], false, outcome);
-                return;
+                return None;
             }
             for value in &values {
                 if let AbstractValue::OwnDescriptorMap(site) = value {
@@ -9075,12 +9093,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
             }
-            return;
+            return None;
         }
         if call.kind == CallKind::ObjectSpread {
             let values = self.evaluate(&call.args[0], env, captures);
             if self.ordinary_data_properties(&values).is_some() {
-                return;
+                return None;
             }
             if self.state.array_iteration_depth > 0 {
                 self.state.array_iteration_unsupported = true;
@@ -9090,7 +9108,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.note_unknown_call(call);
             self.promote_escaped_callbacks(&values, outcome);
             self.invoke_possible_callbacks(&[values], false, outcome);
-            return;
+            return None;
         }
         if call.kind == CallKind::ArraySpread {
             let values = self.evaluate(&call.args[0], env, captures);
@@ -9100,7 +9118,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .stable_spread_dependencies(call.span)
             {
                 self.record_proof_dependencies(NativeIntegrityGuard::SetIterable, dependencies);
-                return;
+                return None;
             }
             if call.caller.is_none()
                 && let Some(proof) = self
@@ -9116,10 +9134,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .stable_array_spread_dependencies(call.span)
                         .expect("array spread certificate retains dependencies"),
                 );
-                return;
+                return None;
             }
             if self.dense_source(&values, ARRAY_PROTOTYPE_SLOTS).is_some() {
-                return;
+                return None;
             }
             outcome.unsupported(ExecutionOperation::ArraySpread, call.owner, call.span);
             outcome.unknown_call = true;
@@ -9127,7 +9145,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // Consuming a custom iterator can execute deferred generator bodies.
             self.promote_escaped_callbacks(&values, outcome);
             self.invoke_possible_callbacks(&[values], false, outcome);
-            return;
+            return None;
         }
         if call.kind == CallKind::ImplicitCoercion {
             let values = call
@@ -9141,12 +9159,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     AbstractValue::Value(Value::Prim(_)) | AbstractValue::Value(Value::Unavailable)
                 )
             }) {
-                return;
+                return None;
             }
             let mut possible_values = values;
             possible_values.remove(&AbstractValue::Value(Value::Unavailable));
             if possible_values.is_empty() {
-                return;
+                return None;
             }
             // ToPrimitive may call an own [Symbol.toPrimitive], valueOf, or
             // toString method. Treat that protocol step like an opaque
@@ -9162,7 +9180,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // effects in such returned functions remain visible.
             self.promote_deferred_callbacks(&possible_values, outcome);
             self.invoke_possible_callbacks(&[possible_values], false, outcome);
-            return;
+            return None;
         }
         // Only a fresh primitive literal or a checked const alias to one is
         // safe to omit from callback effects. A pure object/function element
@@ -9189,7 +9207,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     span: call.span,
                 },
             );
-            return;
+            return None;
         }
         if call.kind == CallKind::New
             && call.caller.is_none()
@@ -9206,21 +9224,35 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .dependencies_for_constructor(call.span)
                     .expect("a set certificate retains its typed dependencies"),
             );
-            return;
+            return None;
         }
-        let targets = self.evaluate(&call.callee, env, captures);
-        if targets.len() == 1 && targets.contains(&AbstractValue::Value(Value::Unavailable)) {
-            return;
-        }
-        let mut args: Vec<Values> = call
-            .args
-            .iter()
-            .map(|arg| self.evaluate(arg, env, captures))
-            .collect();
+        let (targets, mut args) = match operands {
+            Some(operands) => {
+                assert_eq!(operands.arguments.len(), call.args.len());
+                (operands.targets, operands.arguments)
+            }
+            None => {
+                let targets = self.evaluate(&call.callee, env, captures);
+                if targets.len() == 1 && targets.contains(&AbstractValue::Value(Value::Unavailable))
+                {
+                    return None;
+                }
+                let args = call
+                    .args
+                    .iter()
+                    .map(|arg| self.evaluate(arg, env, captures))
+                    .collect();
+                (targets, args)
+            }
+        };
+        let operands_may_throw = targets.contains(&AbstractValue::Value(Value::Unavailable))
+            || args
+                .iter()
+                .any(|values| values.contains(&AbstractValue::Value(Value::Unavailable)));
         if args.iter().any(|values| {
             values.len() == 1 && values.contains(&AbstractValue::Value(Value::Unavailable))
         }) {
-            return;
+            return needs_value.then(|| Values::from([AbstractValue::Value(Value::Unavailable)]));
         }
         for values in &mut args {
             values.remove(&AbstractValue::Value(Value::Unavailable));
@@ -9232,7 +9264,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             self.retain_foreign_arguments(&summary, &args);
             self.record_foreign_call_use(&summary);
-            return;
+            return needs_value.then(|| {
+                let mut values = self.foreign_call_result(&summary, &args);
+                if operands_may_throw {
+                    values.insert(AbstractValue::Value(Value::Unavailable));
+                }
+                values
+            });
         }
         if call.kind == CallKind::Call
             && !call.has_spread
@@ -9244,23 +9282,33 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 call.owner,
                 call.span,
             );
-            return;
+            return needs_value.then(|| Values::from([AbstractValue::ForeignDeferredRecord]));
         }
         if call.kind == CallKind::Call
             && !call.has_spread
-            && self
-                .source_namespace_wrapper(&call.callee, &args, call.span.into())
-                .is_some()
+            && let Some(source_object) =
+                self.source_namespace_wrapper(&call.callee, &args, call.span.into())
         {
-            return;
+            return needs_value.then(|| {
+                let mut retained = Values::from([AbstractValue::Value(Value::Alloc(
+                    Kind::Object,
+                    source_object,
+                ))]);
+                retained.extend(self.callback_values(&retained));
+                Values::from([
+                    self.deferred_callbacks(retained),
+                    AbstractValue::Value(Value::Top),
+                    AbstractValue::Value(Value::Unavailable),
+                ])
+            });
         }
         if call.kind == CallKind::Call
             && !call.has_spread
-            && self
-                .descriptor_copy_projection(&call.callee, &args, call.span.into())
-                .is_some()
+            && let Some(proof) =
+                self.descriptor_copy_projection(&call.callee, &args, call.span.into())
         {
-            return;
+            return needs_value
+                .then(|| self.install_descriptor_copy_result(proof, &args, call.span.into()));
         }
         if !call.has_spread
             && let Some(resolution) = self.resolve_native_call(
@@ -9279,10 +9327,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             {
                 self.apply_own_descriptor_map(&args);
             }
-            return;
+            return needs_value.then(|| {
+                self.native_return_values(resolution, &args, operands_may_throw, call.span.into())
+            });
         }
         if self.host_call_does_not_reenter(call) {
-            return;
+            return None;
         }
         if call.kind == CallKind::Call
             && !call.has_spread
@@ -9297,15 +9347,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if self.state.global_escaped_callbacks.len() != before {
                 self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
             }
-            return;
+            return None;
         }
         if call.kind == CallKind::Call
             && !call.has_spread
-            && self
-                .retained_factory_callbacks(call.span.into(), &call.args, &args)
-                .is_some()
+            && let Some(callbacks) =
+                self.retained_factory_callbacks(call.span.into(), &call.args, &args)
         {
-            return;
+            return needs_value.then(|| {
+                Values::from([self.audited_retained_result(RetainedResultKind::Factory, callbacks)])
+            });
         }
         if call.kind == CallKind::New
             && !call.has_spread
@@ -9313,7 +9364,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .retained_constructor_callbacks(call.span.into(), &call.args, &args)
                 .is_some()
         {
-            return;
+            return None;
         }
         // The author assertion covers this direct imported call with checked
         // primitive arguments. Its result remains Unknown; only opaque
@@ -9323,7 +9374,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && let ValueExpr::Binding(binding) = &call.callee
             && self.inputs.index.no_reentry_exports.contains(binding)
         {
-            return;
+            return None;
         }
         // Distinct author assertions cover primitive and fresh-record inputs.
         // Both use the same member identity and lookup guards. The provider
@@ -9346,14 +9397,39 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .get(namespace)
                         .is_some_and(|members| members.contains(property))))
         {
-            return;
+            return None;
         }
-        let from_entries_source_callbacks = if call.kind == CallKind::Call {
+        // Proofs that reevaluate source expressions have not migrated to
+        // evaluated operands. A missing result transfer truncates the ordered
+        // caller; it must never replay those expressions to recover a value.
+        if needs_value {
+            let local_target = targets.len() == 1
+                && targets.first().is_some_and(|target| match target {
+                    AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                    | AbstractValue::Closure(key, _) => {
+                        self.inputs.index.callables.contains_key(key)
+                            && !self.state.tainted_functions.contains(key)
+                    }
+                    _ => false,
+                });
+            let abrupt = !targets.is_empty()
+                && targets.iter().all(|target| {
+                    matches!(
+                        target,
+                        AbstractValue::Value(Value::Unavailable)
+                            | AbstractValue::Value(Value::Prim(_))
+                    )
+                });
+            if !local_target && !abrupt {
+                return None;
+            }
+        }
+        let from_entries_source_callbacks = if call.kind == CallKind::Call && !needs_value {
             if self
                 .proven_from_entries_callbacks(call.span.into(), env, captures)
                 .is_some()
             {
-                return;
+                return None;
             }
             self.callbacks_in_from_entries_source(call.span.into(), env, captures)
         } else {
@@ -9366,18 +9442,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // what it holds: whoever reaches the Map reaches them.
             let entries = args.iter().flatten().cloned().collect();
             self.taint_objects(&entries);
-            return;
+            return None;
         }
         if call.kind == CallKind::Call
+            && !needs_value
             && self.execute_array_iteration(call.span.into(), env, captures, outcome)
         {
-            return;
+            return None;
         }
         if call.kind == CallKind::Call
+            && !needs_value
             && !call.has_spread
             && self.execute_dense_array_push(&call.callee, &args, env, captures)
         {
-            return;
+            return None;
         }
         // Known local methods still receive an implicit `this` capability.
         // Its effects are not resolved by invoke, so it can mutate any retained
@@ -9426,7 +9504,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // does not prove that the foreign call preserves its contents.
             opaque_args.push(receiver_values);
         }
-        if let Some(proof) = self.inputs.index.array_iterations.get(&call.span.into()) {
+        if !needs_value
+            && let Some(proof) = self.inputs.index.array_iterations.get(&call.span.into())
+        {
             let source = self.evaluate(&proof.source.clone(), env, captures);
             self.promote_escaped_callbacks(&source, outcome);
             opaque_args.push(source);
@@ -9467,6 +9547,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.invoke_possible_callbacks(&opaque_args, call.no_sync_arguments, outcome);
         }
         let mut invoked_unknown_callbacks = targets.is_empty();
+        let mut result_values = Values::new();
+        if needs_value
+            && (operands_may_throw
+                || targets
+                    .iter()
+                    .any(|target| matches!(target, AbstractValue::Value(Value::Prim(_)))))
+        {
+            result_values.insert(AbstractValue::Value(Value::Unavailable));
+        }
         for target in targets {
             match target {
                 AbstractValue::CallbackFactory
@@ -9619,6 +9708,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     if call.kind == CallKind::Call =>
                 {
                     let mut nested = self.invoke(key, args.clone(), None, false);
+                    if needs_value {
+                        result_values.extend(nested.returns.iter().cloned());
+                    }
                     self.apply_rebind_effects(&nested.effects.rebinds);
                     outcome.absorb_binding_effects(
                         &mut nested.effects,
@@ -9630,6 +9722,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 AbstractValue::Closure(key, captured) if call.kind == CallKind::Call => {
                     let mut nested = self.invoke(key, args.clone(), Some(captured), false);
+                    if needs_value {
+                        result_values.extend(nested.returns.iter().cloned());
+                    }
                     self.apply_rebind_effects(&nested.effects.rebinds);
                     outcome.absorb_binding_effects(
                         &mut nested.effects,
@@ -9654,6 +9749,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
         }
+        needs_value.then_some(result_values)
     }
 }
 
