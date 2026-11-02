@@ -33,6 +33,7 @@ type Session struct {
 	record                                                 *retained.Record
 	journal                                                *journal.Journal
 	mu                                                     sync.Mutex
+	recordMu                                               sync.Mutex
 	loading                                                bool
 	notifiedBlockers                                       blockerNotification
 	admitMu                                                sync.Mutex

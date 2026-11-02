@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,10 +13,82 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 )
+
+type gatedRecordState struct {
+	state.State
+	entered chan struct{}
+	release chan struct{}
+	calls   atomic.Int32
+}
+
+func (s *gatedRecordState) UpdateWithConflicts(ctx context.Context, ptr resource.Pointer, update state.UpdaterFunc, options ...state.UpdateOption) (resource.Resource, error) {
+	if s.calls.Add(1) == 1 {
+		close(s.entered)
+		<-s.release
+	}
+	return s.State.UpdateWithConflicts(ctx, ptr, update, options...)
+}
+
+func TestConcurrentModelChangesKeepCachedAndDurableOrder(t *testing.T) {
+	ctx := context.Background()
+	resources := state.WrapCore(namespaced.NewState(inmem.Build))
+	gated := &gatedRecordState{State: resources, entered: make(chan struct{}), release: make(chan struct{})}
+	store, err := retained.NewStore(t.TempDir(), gated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := retained.Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, CWD: "/workspace", Model: "old", EventSourceID: "source"}
+	if err := store.Write("session", record); err != nil {
+		t.Fatal(err)
+	}
+	s := newSession(sessionDependencies{ctx: ctx, state: gated, store: store, changed: func() {}}, "session", &record, openTestJournal(t))
+	for _, id := range []string{"first", "second"} {
+		command := &commandpb.Command{CommandId: id, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: id}}}
+		if _, _, err := s.journal.Admit(ctx, command, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first := make(chan error, 1)
+	go func() { first <- s.ModelChanged(ctx, "first", "one", nil) }()
+	<-gated.entered
+	if s.recordMu.TryLock() {
+		s.recordMu.Unlock()
+		close(gated.release)
+		t.Fatal("record update lock released before the COSI write finished")
+	}
+	second := make(chan error, 1)
+	secondStarted := make(chan struct{})
+	go func() {
+		close(secondStarted)
+		second <- s.ModelChanged(ctx, "second", "two", nil)
+	}()
+	<-secondStarted
+	close(gated.release)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-second; err != nil {
+		t.Fatal(err)
+	}
+	if gated.calls.Load() != 2 {
+		t.Fatalf("COSI updates = %d, want 2", gated.calls.Load())
+	}
+	persisted, err := store.Read("session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	cached := s.record.Model
+	s.mu.Unlock()
+	if persisted.Model != "two" || cached != "two" {
+		t.Fatalf("model durable=%q cached=%q, want two", persisted.Model, cached)
+	}
+}
 
 func TestSessionEnvironmentCarriesItsOwnDestination(t *testing.T) {
 	globalEnvironment := map[string]string{"TZ": "UTC"}

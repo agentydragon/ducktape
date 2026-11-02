@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
 	harness "github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/journal"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -192,14 +193,16 @@ func (s *Session) prepare(ctx context.Context, adapter harness.Adapter, pid int)
 	if err != nil {
 		return err
 	}
-	s.mu.Lock()
-	s.record.NativeSessionID = &native
-	record := *s.record
-	s.mu.Unlock()
 	resuming := s.lifecycleStatus().Resuming
-	if err := s.deps.store.Write(s.id, record); err != nil {
+	s.recordMu.Lock()
+	if err := s.deps.store.UpdateNativeSessionID(s.id, native); err != nil {
+		s.recordMu.Unlock()
 		return err
 	}
+	s.mu.Lock()
+	s.record.NativeSessionID = &native
+	s.mu.Unlock()
+	s.recordMu.Unlock()
 	// The native handshake succeeded; persist its observation even if preparation was canceled.
 	if err := s.Emit(s.deps.ctx, observation(&eventpb.HarnessStarted{Resumed: resuming, Pid: int32(pid)}), nil); err != nil {
 		return err
@@ -432,6 +435,11 @@ func (s *Session) receive(ctx context.Context, line []byte, adapter harness.Adap
 		// Native protocols may acquire fields independently of the runner. Preserve the
 		// original frame and report the translation failure; storage failures stop us.
 		var storageErr *journal.StorageError
+		var retainedErr *retained.StorageError
+		if errors.As(err, &retainedErr) {
+			// Keep the raw frame for recovery before stopping native receive.
+			return errors.Join(err, s.journal.CommitBatch(ctx))
+		}
 		if errors.Is(err, context.Canceled) || errors.As(err, &storageErr) {
 			return err
 		}

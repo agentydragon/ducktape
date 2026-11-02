@@ -290,6 +290,44 @@ func (a frameTestAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sequ
 	return a.onFrame(ctx, raw, sequence)
 }
 
+func TestRetainedWriteFailureStopsNativeFrameAndPreservesCachedRecord(t *testing.T) {
+	ctx := context.Background()
+	journal := openTestJournal(t)
+	resources := state.WrapCore(namespaced.NewState(inmem.Build))
+	store, err := retained.NewStore(t.TempDir(), resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := retained.Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, CWD: "/workspace", Model: "old-model", EventSourceID: "source"}
+	s := newSession(sessionDependencies{ctx: ctx, state: resources, store: store, changed: func() {}}, "session", &record, journal)
+	command := &commandpb.Command{CommandId: "change-model", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}
+	if _, _, err := journal.Admit(ctx, command, ""); err != nil {
+		t.Fatal(err)
+	}
+	adapter := frameTestAdapter{onFrame: func(ctx context.Context, _ json.RawMessage, sequence uint64) error {
+		return s.ModelChanged(ctx, "change-model", "new-model", []uint64{sequence})
+	}}
+	var storageErr *retained.StorageError
+	frame := []byte(`{"type":"control_response"}`)
+	err = journal.WithBatch(ctx, func(batchCtx context.Context) error { return s.receive(batchCtx, frame, adapter) })
+	if !errors.As(err, &storageErr) || !state.IsNotFoundError(err) {
+		t.Fatalf("native frame error = %v, want retained storage not-found", err)
+	}
+	entries, err := journal.Since(ctx, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 || entries[1].Event.GetNative().GetLine() != string(frame) {
+		t.Fatalf("native frame was not retained after storage failure: %v", entries)
+	}
+	s.mu.Lock()
+	got := s.record.Model
+	s.mu.Unlock()
+	if got != "old-model" {
+		t.Fatalf("cached model = %q, want old-model", got)
+	}
+}
+
 func frameTestSession(t *testing.T, command []string) (*Session, *supervision.ManagedProcess, *Manager) {
 	return frameTestSessionWithController(t, command, false)
 }
