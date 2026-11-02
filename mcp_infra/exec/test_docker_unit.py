@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -9,10 +10,10 @@ from fastmcp.client import Client
 from fastmcp.resources.template import match_uri_template
 from tenacity import AsyncRetrying, retry_if_result, stop_after_delay, wait_fixed
 
-from mcp_infra.exec.docker import container_session
+from mcp_infra.exec.docker import container_session, launcher
 from mcp_infra.exec.docker.container_session import ContainerSessionState, run_session_container, scoped_container
 from mcp_infra.exec.docker.server import FILE_RESOURCE_URI_TEMPLATE, ContainerExecServer
-from mcp_infra.exec.docker.types import AlwaysSetTo, BindMount, ContainerExecServerConfig, ResolvedExecInput
+from mcp_infra.exec.docker.types import AlwaysSetTo, ContainerExecServerConfig, ResolvedExecInput
 from mcp_infra.testing.fixtures import make_container_opts
 from util.exec.models import BaseExecResult, Exited, TimedOut
 
@@ -195,27 +196,56 @@ async def test_timeout_preserves_literal_arguments(exec_session) -> None:
     assert result.stdout == "$HOME; echo surprise\n"
 
 
-def test_from_config_roundtrip() -> None:
-    """ContainerExecServerConfig → from_config produces correct opts and kwargs."""
-    config = ContainerExecServerConfig(
-        image="test:latest",
-        working_dir=Path("/work"),
-        binds=[BindMount(host_path=Path("/host/dir"), container_path=Path("/container/dir"), mode="ro")],
-        network_mode="bridge",
-        environment={"FOO": "bar"},
-        labels={"app": "test"},
-        allow_user_field=True,
-        allow_env_field=False,
-        cwd_policy=AlwaysSetTo(value=Path("/work")),
+def test_launcher_json_config_sets_container_creation_options(monkeypatch) -> None:
+    config_json = json.dumps(
+        {
+            "image": "test:latest",
+            "working_dir": "/work",
+            "binds": [{"host_path": "/host/dir", "container_path": "/container/dir", "mode": "ro"}],
+            "network_mode": "bridge",
+            "environment": {"FOO": "bar"},
+            "labels": {"app": "test"},
+            "allow_user_field": True,
+            "allow_env_field": False,
+            "cwd_policy": {"type": "always", "value": "/work"},
+        }
     )
+    captured: dict[str, ContainerExecServerConfig] = {}
 
-    # Verify JSON roundtrip preserves discriminated union
-    restored = ContainerExecServerConfig.model_validate_json(config.model_dump_json())
-    assert isinstance(restored.cwd_policy, AlwaysSetTo)
-    assert restored.cwd_policy.value == Path("/work")
-    assert restored.binds[0].mode == "ro"
-    assert restored.allow_user_field is True
-    assert restored.allow_env_field is False
+    class FakeDockerClient:
+        async def close(self) -> None:
+            pass
+
+    docker_client = FakeDockerClient()
+
+    class FakeServer:
+        def __init__(self, actual_docker_client: object, config: ContainerExecServerConfig) -> None:
+            assert actual_docker_client is docker_client
+            captured["config"] = config
+
+        async def run_stdio_async(self) -> None:
+            pass
+
+    monkeypatch.setattr(launcher.aiodocker, "Docker", lambda: docker_client)
+    monkeypatch.setattr(launcher, "ContainerExecServer", FakeServer)
+
+    launcher.main(config=config_json)
+
+    config = captured["config"]
+    assert isinstance(config.cwd_policy, AlwaysSetTo)
+    assert config.cwd_policy.value == Path("/work")
+    container_config = config.to_container_config(cmd=["sleep", "infinity"])
+    assert container_config == {
+        "Image": "test:latest",
+        "Cmd": ["sleep", "infinity"],
+        "WorkingDir": "/work",
+        "Env": ["FOO=bar"],
+        "Labels": {"app": "test"},
+        "AttachStdout": True,
+        "AttachStderr": True,
+        "Tty": False,
+        "HostConfig": {"NetworkMode": "bridge", "Binds": ["/host/dir:/container/dir:ro"]},
+    }
 
 
 def test_file_uri_template_matches_paths_with_slashes() -> None:
