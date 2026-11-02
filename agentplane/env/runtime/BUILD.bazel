@@ -82,6 +82,7 @@ go_test(
         "//agentplane/env/runtime/execution/codexexecserver",
         "//agentplane/env/runtime/harnesshost",
         "//agentplane/env/runtime/harnesshost/harness",
+        "//agentplane/env/runtime/harnesshost/session",
         "//agentplane/env/runtime/harnesshost/workspace",
         "//agentplane/env/runtime/lifecycle",
         "//agentplane/env/scripts",
