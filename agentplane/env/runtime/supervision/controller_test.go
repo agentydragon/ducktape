@@ -62,10 +62,10 @@ func TestSharedProcessControllerKeepsOwnerLifetimesSeparate(t *testing.T) {
 			host *Host
 			id   string
 		}{{runtimeHost, "runtime"}, {harnessHost, "harness"}} {
-			finished := make(chan error, 1)
-			var once sync.Once
+			// Stop proves the process-domain fence without relying on the exit
+			// observer winning its race against cancellation during joining.
 			if err := pair.host.requestNative(ctx, pair.id, DesiredState{Owner: pair.id, StopTimeout: time.Second}, func(context.Context) (*Instance, error) {
-				return &Instance{Done: finished, Stop: func(context.Context) error { once.Do(func() { close(finished) }); return nil }}, nil
+				return &Instance{Done: make(chan error), Stop: func(context.Context) error { return nil }}, nil
 			}); err != nil {
 				t.Fatal(err)
 			}
@@ -103,7 +103,7 @@ func TestSharedProcessControllerKeepsOwnerLifetimesSeparate(t *testing.T) {
 		}); err == nil {
 			t.Fatal("another scope registered an existing attempt")
 		}
-		if err := harnessHost.requestStop("harness"); err != nil {
+		if _, err := store.Teardown(ctx, resourceFor(processTestNamespace, "harness", DesiredState{}).Metadata(), state.WithTeardownOwner(hostOwner)); err != nil {
 			t.Fatal(err)
 		}
 		var hostStatus Status
@@ -126,7 +126,7 @@ func TestSharedProcessControllerKeepsOwnerLifetimesSeparate(t *testing.T) {
 		if err != nil || status.Phase != Running {
 			t.Fatalf("Runtime process after Host stop = %+v, %v", status, err)
 		}
-		if err := runtimeHost.requestStop("runtime"); err != nil {
+		if _, err := store.Teardown(ctx, resourceFor(processTestNamespace, "runtime", DesiredState{}).Metadata(), state.WithTeardownOwner(hostOwner)); err != nil {
 			t.Fatal(err)
 		}
 	})
