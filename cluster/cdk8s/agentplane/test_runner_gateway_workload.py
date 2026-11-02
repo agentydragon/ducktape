@@ -202,7 +202,7 @@ def test_empty_operator_callers_are_omitted(scratch_app: App) -> None:
     settings = yaml.safe_load(_resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
 
     assert "operator_callers" not in settings
-    assert settings["environment_launchers"] == []
+    assert settings["environment_launchers"] == [f"{staging.ENV.namespace}/{actions.NAME}"]
 
 
 def test_gateway_can_explicitly_configure_operator_and_delegated_resume(scratch_app: App) -> None:
@@ -242,6 +242,7 @@ def test_session_delegation_is_a_dispatcher_caller_without_wake_authority(scratc
         f"{env.namespace}/{actions.NAME}",
     }
     assert "operator_callers" not in settings
+    assert settings["environment_launchers"] == []
     assert f"{env.namespace}/{actions.NAME}" not in settings["wake_callers"]
 
 
