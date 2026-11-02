@@ -4100,6 +4100,27 @@
     "type": "action_auto_approve"
    }
   },
+  "argument schema, a Python-style named group pattern": {
+   "outcome": "refused",
+   "rule": {
+    "policy": {
+     "actions": {
+      "test-group": [
+       "test-action"
+      ]
+     },
+     "schema": {
+      "properties": {
+       "a": {
+        "pattern": "(?P<x>a)"
+       }
+      }
+     },
+     "type": "argument_schema"
+    },
+    "type": "action_auto_approve"
+   }
+  },
   "argument schema, a file $ref": {
    "outcome": "refused",
    "rule": {
@@ -4167,7 +4188,7 @@
      "schema": {
       "properties": {
        "a": {
-        "pattern": "(?P<x>a)"
+        "pattern": "(?<x>a)"
        }
       }
      },

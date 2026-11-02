@@ -52,19 +52,18 @@ func TestLookaheadPatternCompilesAndValidates(t *testing.T) {
 	}
 }
 
-func TestPatternsRE2AcceptsStayOnRE2(t *testing.T) {
-	// `(?i)` is RE2 syntax that ECMAScript mode rejects, so this only compiles if RE2 still goes first.
-	action := ActionDefinition{InputSchema: []byte(`{"type":"object","properties":{"name":{"type":"string","pattern":"(?i)^abc$"}}}`)}
-
-	if err := action.CheckArguments(map[string]any{"name": "ABC"}); err != nil {
-		t.Fatalf("an RE2 pattern must keep compiling and matching: %v", err)
+func TestPatternsRE2WroteStillWork(t *testing.T) {
+	// The ECMAScript-mode engine also takes `(?i)`, so a pattern that compiled under RE2 keeps its meaning.
+	action := ActionDefinition{InputSchema: []byte(`{"type":"object","properties":{"name":{"type":"string","pattern":"(?i)^\\w+\\d$"}}}`)}
+	if err := action.CheckArguments(map[string]any{"name": "ABC1"}); err != nil {
+		t.Fatalf("a pattern with an inline flag must compile and match: %v", err)
 	}
-	if err := action.CheckArguments(map[string]any{"name": "abd"}); !errors.Is(err, ErrInvalidArguments) {
+	if err := action.CheckArguments(map[string]any{"name": "ABC"}); !errors.Is(err, ErrInvalidArguments) {
 		t.Fatalf("expected ErrInvalidArguments, got %v", err)
 	}
 }
 
-func TestPatternNeitherEngineAcceptsStillFailsCompilation(t *testing.T) {
+func TestAnInvalidPatternStillFailsCompilation(t *testing.T) {
 	action := ActionDefinition{InputSchema: []byte(`{"type":"object","properties":{"x":{"type":"string","pattern":"("}}}`)}
 
 	err := action.CheckArguments(map[string]any{"x": "a"})
@@ -75,7 +74,7 @@ func TestPatternNeitherEngineAcceptsStillFailsCompilation(t *testing.T) {
 }
 
 func TestBacktrackingPatternIsABoundedMismatch(t *testing.T) {
-	// A lookahead forces the backtracking engine; (a+)+ then explodes on the trailing "b". It must end quickly and
+	// (a+)+ explodes on the trailing "b". It must end quickly and
 	// count as no match, so the arguments are refused rather than the service hanging.
 	action := ActionDefinition{InputSchema: []byte(`{"type":"object","properties":{"x":{"type":"string","pattern":"^(?=a)(a+)+$"}}}`)}
 

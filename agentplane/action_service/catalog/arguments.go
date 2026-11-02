@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"time"
 
 	"github.com/dlclark/regexp2/v2"
@@ -27,26 +26,21 @@ var annotatedFormats = []string{
 	"period", "relative-json-pointer", "semver", "time", "uri", "uri-reference", "uri-template", "uuid",
 }
 
-// patternTimeout bounds one `pattern` match in the fallback engine, which backtracks.
+// patternTimeout bounds one `pattern` match, because the engine backtracks.
 const patternTimeout = time.Second
 
-// regexpEngine compiles a schema's `pattern` (and `patternProperties` key, and `regex` format). JSON Schema patterns
-// are ECMA 262, and Python's re, which admission used before, accepts lookaheads too, but the library's default,
-// Go's regexp (RE2), rejects `(?!`, `(?=` and backreferences, and one such pattern in one tool's schema withdrew
-// the whole MCP group (Tana's `search_nodes` email filter, 2026-11-01). So a pattern is compiled by RE2 first,
-// which is linear-time and unchanged for every pattern that worked before, and only a pattern RE2 rejects falls to
-// an ECMAScript-mode backtracking engine. A pattern neither accepts is invalid, as before.
+// regexpEngine compiles a schema's `pattern` (and `patternProperties` key, and `regex` format) as ECMA 262, which is
+// what JSON Schema specifies. The library's default, Go's regexp (RE2), rejects lookaheads and backreferences, and one
+// such pattern in one tool's schema withdrew the whole MCP group (Tana's `search_nodes` email filter, 2026-11-01);
+// Python's re, which admission used before, accepts them. One engine means a pattern has one meaning, whatever it
+// uses. The cost is that matching can backtrack, so a match is bounded by patternTimeout.
 func regexpEngine(expr string) (jsonschema.Regexp, error) {
-	re, err := regexp.Compile(expr)
-	if err == nil {
-		return re, nil
+	re, err := regexp2.Compile(expr, regexp2.ECMAScript)
+	if err != nil {
+		return nil, err
 	}
-	fallback, ecmaErr := regexp2.Compile(expr, regexp2.ECMAScript)
-	if ecmaErr != nil {
-		return nil, err // RE2's error: it is the library's default and the one a schema author knows
-	}
-	fallback.MatchTimeout = patternTimeout
-	return ecmaRegexp{fallback}, nil
+	re.MatchTimeout = patternTimeout
+	return ecmaRegexp{re}, nil
 }
 
 // ecmaRegexp adapts regexp2, whose match can fail, to the library's Regexp. A match that times out or exceeds the
