@@ -41,7 +41,7 @@ ordinary-account resume permission disabled. The permission is
 checked for both explicit and automatic resume. `wakeOnSend` controls whether queued delivery
 requests it automatically. Neither field authorizes editing policy.
 
-## Current implementation and ownership
+## Baseline before this implementation
 
 - [Discovery](../sandboxes/discovery/service.go) describes the exact target, execution account,
   operating state and readiness. Its current `ResumeState` reflects send-wake eligibility; it is
@@ -299,10 +299,20 @@ while its execution environment stays suspended.
 
 ## Implementation sequence and dispatch
 
-**Dispatched by the operator, 2026-11-02; coordinator status 03:04 UTC.** All three workers contribute
-to #13546, which stays draft while implementation and checks proceed. The policy decision is
-complete. The implementation contract is shared protobuf types, with no Discovery dependency in
-the common observation messages.
+**Dispatched by the operator, 2026-11-02; coordinator integration update 04:08 UTC.** The three
+workers' implementations and Gateway composition are integrated in #13546 and rebased onto current
+`devel`. Their focused backend, receipt/PostgreSQL, Discovery, CLI, Action, app and manifest checks
+passed before that rebase. The PR stays draft while coordinator review and checks proceed; no
+deployment is claimed. The policy decision is complete. Common observation protobufs have no
+Discovery dependency.
+
+Coordinator review is closing old/new writer overlap for the new receipt columns and wake budget,
+preservation of typed lifecycle error details through CLI/Action adapters, and a focused existing
+Pod-system-test extension for explicit same-SA resume followed by newly requested execution.
+These are implementation/acceptance follow-ups under the selected contract, not new policy gates.
+Configuration activation must also respect strict-settings rollout: the new Gateway binary must be
+available before `operator_callers` reaches deployed settings, and the app caller cutover follows
+backend authority. Keep this operational hold explicit until its deployment sequence is represented.
 
 | Step | Outcome                                                                                                                                   | Owner / dependency                                                                                               |
 | ---- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |

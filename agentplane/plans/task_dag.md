@@ -163,7 +163,7 @@ remain deferred.
 | Lane              | Next reviewable outcome                                                                                                                        | Prerequisite / stopping point                                                                   |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | P0 implementation | Approved lifecycle backend, explicit resume and typed wake observations in [draft #13546](https://github.com/agentydragon/ducktape/pull/13546) | Three workers dispatched; backend/API/receipt dependencies below; focused checks precede review |
-| P1 delegation | `THREAD_CREATE_AUTHORIZATION`: operator follow-up for natural-agent usability | Ordinary use; no model exercise is dispatched |
+| P1 delegation     | `THREAD_CREATE_AUTHORIZATION`: operator follow-up for natural-agent usability                                                                  | Ordinary use; no model exercise is dispatched                                                   |
 | P1 scheduling     | `SCHEDULED_AGENT_WAKE_DESIGN`: [durable-wake proposal #13552](https://github.com/agentydragon/ducktape/pull/13552)                             | Delivery/overlap/authority review precedes runtime implementation                               |
 
 Explicit resume occupies the next P0 implementation slot; its policy review is complete.
