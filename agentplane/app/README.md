@@ -272,8 +272,8 @@ Staging runs two app replicas on separate nodes with `RollingUpdate` (`maxUnavai
 ### Inventory snapshots
 
 The shared Sandbox inventory uses the generated EnvironmentService watch through
-`/upstream/environments/v1/environments:watch`. Each completed set of protobuf snapshot chunks
-replaces the prior inventory. `/live/sandboxes/{name}` is an authenticated SSE stream carrying a
+`/upstream/environments/v1/environments:watch`. Protobuf snapshot chunks replace the inventory
+when complete; subsequent upserts and UID-fenced removals update individual Sandboxes. `/live/sandboxes/{name}` is an authenticated SSE stream carrying a
 whole detail snapshot on change and a health frame through the quiet. What it pushes: one Sandbox's bindings with each reader's verdict,
 its Action policy list, and its threads, the last of these from the store rather than a watch, since the app is the
 only writer of a thread's name. The Sandbox page uses those History Thread summaries as its retained

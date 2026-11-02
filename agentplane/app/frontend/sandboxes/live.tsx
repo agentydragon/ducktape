@@ -118,25 +118,52 @@ export function SandboxesLiveProvider({ children }: { children: ReactNode }): JS
   const [ready, setReady] = useState(false);
   const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
   useEffect(() => {
-    let pending: Sandbox[] = [];
+    const key = (namespace: string, name: string): string => `${namespace}\0${name}`;
+    let pending: Map<string, Sandbox> | null = new Map();
+    let current = new Map<string, Sandbox>();
+    const publish = (): void => {
+      const sandboxes = Array.from(current.values()).sort(
+        (a, b) => a.namespace.localeCompare(b.namespace) || a.name.localeCompare(b.name)
+      );
+      setSnapshot({ sandboxes, watch: { healthy: true, failing: {} } });
+    };
     return followWatch(liveSandboxesUrl(), {
       onOpen: () => {
-        pending = [];
+        pending = new Map();
         setReady(false);
       },
       onFrame: (result) => {
         const frame = fromJson(WatchEnvironmentsResponseSchema, result as JsonValue);
         switch (frame.frame.case) {
           case "snapshot":
-            pending.push(...frame.frame.value.sandboxes);
+            if (pending === null) throw new Error("Unexpected inventory snapshot chunk");
+            for (const sandbox of frame.frame.value.sandboxes)
+              pending.set(key(sandbox.namespace, sandbox.name), sandbox);
             break;
           case "snapshotComplete":
-            setSnapshot({ sandboxes: pending, watch: { healthy: true, failing: {} } });
+            if (pending === null) throw new Error("Unexpected inventory snapshot completion");
+            current = pending;
+            pending = null;
+            publish();
             setReady(true);
-            pending = [];
             break;
-          case "reconnectRequired":
+          case "upsert": {
+            if (pending !== null) throw new Error("Inventory update before snapshot completion");
+            const sandbox = frame.frame.value;
+            current.set(key(sandbox.namespace, sandbox.name), sandbox);
+            publish();
             break;
+          }
+          case "removed": {
+            if (pending !== null) throw new Error("Inventory removal before snapshot completion");
+            const removed = frame.frame.value;
+            const itemKey = key(removed.namespace, removed.name);
+            if (current.get(itemKey)?.uid === removed.uid) {
+              current.delete(itemKey);
+              publish();
+            }
+            break;
+          }
           default:
             throw new Error("EnvironmentService returned an empty watch frame");
         }

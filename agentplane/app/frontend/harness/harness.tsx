@@ -3493,14 +3493,24 @@ routes.unshift([
   "GET",
   /^\/upstream\/environments\/v1\/environments:watch$/,
   (_match, _query, signal) => {
-    const results = (): unknown[] => [
-      { snapshot: { sandboxes: SANDBOXES.map(sandboxProto) } },
-      { snapshotComplete: {} },
-    ];
+    const snapshot = [{ snapshot: { sandboxes: SANDBOXES.map(sandboxProto) } }, { snapshotComplete: {} }];
+    let previous = new Map(
+      SANDBOXES.map((sandbox) => [sandbox.name, { uid: sandbox.uid, namespace: sandbox.namespace }])
+    );
+    const updates = (): unknown[] => {
+      const current = new Map(
+        SANDBOXES.map((sandbox) => [sandbox.name, { uid: sandbox.uid, namespace: sandbox.namespace }])
+      );
+      const removals = Array.from(previous, ([name, old]) =>
+        current.get(name)?.uid === old.uid ? null : { removed: { namespace: old.namespace, name, uid: old.uid } }
+      ).filter((frame) => frame !== null);
+      previous = current;
+      return [...removals, ...SANDBOXES.map((sandbox) => ({ upsert: sandboxProto(sandbox) }))];
+    };
     return liveNdjsonWatch(
       "/upstream/environments/v1/environments:watch",
-      results(),
-      results,
+      snapshot,
+      updates,
       signal,
       flags.has("inventoryStreamDropped") || flags.has("watchStale")
     );

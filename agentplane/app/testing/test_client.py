@@ -352,28 +352,36 @@ async def test_sandbox_subscription_assembles_proto_snapshot_chunks() -> None:
             await anext(updates)
 
 
-async def test_sandbox_subscription_renews_without_publishing_an_incomplete_snapshot() -> None:
-    async def first(_after: int, writer: asyncio.StreamWriter) -> None:
+async def test_sandbox_subscription_applies_upserts_and_uid_fenced_removals() -> None:
+    async def updates(_after: int, writer: asyncio.StreamWriter) -> None:
         await _respond(
             writer,
             "200 OK",
-            b'{"result":{"snapshot":{"sandboxes":[{"name":"discarded"}]}}}\n{"result":{"reconnectRequired":{}}}\n',
+            b'{"result":{"snapshot":{"sandboxes":[{"namespace":"ns","name":"box","uid":"old"}]}}}\n'
+            b'{"result":{"snapshotComplete":{}}}\n'
+            b'{"result":{"upsert":{"namespace":"ns","name":"box","uid":"new"}}}\n'
+            b'{"result":{"removed":{"namespace":"ns","name":"box","uid":"old"}}}\n'
+            b'{"result":{"upsert":{"namespace":"ns","name":"other","uid":"u2"}}}\n'
+            b'{"result":{"removed":{"namespace":"ns","name":"box","uid":"new"}}}\n',
             "application/x-ndjson",
         )
 
-    async def second(_after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(
-            writer,
-            "200 OK",
-            b'{"result":{"snapshot":{"sandboxes":[{"name":"current"}]}}}\n{"result":{"snapshotComplete":{}}}\n',
-            "application/x-ndjson",
-        )
+    async with _app(updates) as (client, _):
+        stream = client.sandbox_snapshots()
+        assert [(row.name, row.uid) for row in await anext(stream)] == [("box", "old")]
+        assert [(row.name, row.uid) for row in await anext(stream)] == [("box", "new")]
+        assert [(row.name, row.uid) for row in await anext(stream)] == [("box", "new"), ("other", "u2")]
+        assert [(row.name, row.uid) for row in await anext(stream)] == [("other", "u2")]
+        await stream.aclose()
 
-    async with _app(first, second) as (client, _):
-        updates = client.sandbox_snapshots()
-        snapshot = await anext(updates)
-        assert [row.name for row in snapshot] == ["current"]
-        await updates.aclose()
+
+async def test_sandbox_subscription_rejects_an_update_before_initial_snapshot() -> None:
+    async def early(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(writer, "200 OK", b'{"result":{"upsert":{"name":"too-early"}}}\n', "application/x-ndjson")
+
+    async with _app(early) as (client, _):
+        with pytest.raises(RuntimeError, match="before snapshot completion"):
+            await anext(client.sandbox_snapshots())
 
 
 @pytest.mark.parametrize("status", ["401 Unauthorized", "403 Forbidden"])

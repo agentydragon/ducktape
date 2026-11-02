@@ -137,37 +137,52 @@ class Client:
         return ParseDict(response, session_pb2.EnvironmentRuntimeStatus())
 
     async def sandbox_snapshots(self) -> AsyncGenerator[list[sandboxes_pb2.Sandbox]]:
-        """Complete EnvironmentService inventories; only a planned lease renewal reconnects."""
-        while True:
-            pending: list[sandboxes_pb2.Sandbox] = []
-            renew = False
-            async with self._http.stream(
-                "GET",
-                "/upstream/environments/v1/environments:watch",
-                headers={"Accept": "application/x-ndjson"},
-                timeout=httpx.Timeout(REQUEST_SECONDS, read=None),
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line:
-                        continue
-                    envelope = json.loads(line)
-                    if "error" in envelope:
-                        raise RuntimeError(f"Environment watch failed: {envelope['error']}")
-                    frame = ParseDict(envelope["result"], environment_service_pb2.WatchEnvironmentsResponse())
-                    match frame.WhichOneof("frame"):
-                        case "snapshot":
-                            pending.extend(frame.snapshot.sandboxes)
-                        case "snapshot_complete":
-                            yield pending
-                            pending = []
-                        case "reconnect_required":
-                            renew = True
-                            break
-                        case _:
-                            raise RuntimeError("Environment watch returned an empty frame")
-            if not renew:
-                raise RuntimeError("the Sandbox inventory stream ended")
+        """Yield complete inventories reconstructed from the EnvironmentService watch."""
+        pending: dict[tuple[str, str], sandboxes_pb2.Sandbox] | None = {}
+        current: dict[tuple[str, str], sandboxes_pb2.Sandbox] = {}
+        async with self._http.stream(
+            "GET",
+            "/upstream/environments/v1/environments:watch",
+            headers={"Accept": "application/x-ndjson"},
+            timeout=httpx.Timeout(REQUEST_SECONDS, read=None),
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line:
+                    continue
+                envelope = json.loads(line)
+                if "error" in envelope:
+                    raise RuntimeError(f"Environment watch failed: {envelope['error']}")
+                frame = ParseDict(envelope["result"], environment_service_pb2.WatchEnvironmentsResponse())
+                match frame.WhichOneof("frame"):
+                    case "snapshot":
+                        if pending is None:
+                            raise RuntimeError("unexpected inventory snapshot chunk")
+                        for row in frame.snapshot.sandboxes:
+                            pending[(row.namespace, row.name)] = row
+                    case "snapshot_complete":
+                        if pending is None:
+                            raise RuntimeError("unexpected inventory snapshot completion")
+                        current, pending = pending, None
+                        yield [current[key] for key in sorted(current)]
+                    case "upsert":
+                        if pending is not None:
+                            raise RuntimeError("inventory update before snapshot completion")
+                        row = frame.upsert
+                        current[(row.namespace, row.name)] = row
+                        yield [current[key] for key in sorted(current)]
+                    case "removed":
+                        if pending is not None:
+                            raise RuntimeError("inventory removal before snapshot completion")
+                        removed = frame.removed
+                        key = (removed.namespace, removed.name)
+                        previous = current.get(key)
+                        if previous is not None and previous.uid == removed.uid:
+                            del current[key]
+                            yield [current[key] for key in sorted(current)]
+                    case _:
+                        raise RuntimeError("Environment watch returned an empty frame")
+        raise RuntimeError("the Sandbox inventory stream ended")
 
     async def suspend_sandbox(self, name: str) -> None:
         await self._json("POST", f"/sandboxes/{name}/suspend")

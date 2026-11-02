@@ -105,11 +105,6 @@ function LocationProbe(): JSX.Element {
   return <div data-testid="location">{location.pathname}</div>;
 }
 
-/** What the EnvironmentService inventory would report. */
-function inventory(sandboxes: Record<string, SandboxView>): { sandboxes: SandboxView[] } {
-  return { sandboxes: Object.values(sandboxes) };
-}
-
 /** The server's end of the streams on one path: it writes down the latest connection. */
 interface ThreadWatchEnd {
   served: ServedWatch[];
@@ -122,14 +117,15 @@ async function pushThreadChange(stream: ThreadWatchEnd, connected = true): Promi
   await act(async () => latestOn(stream.served, stream.pathname).send({ changed: {}, updatesConnected: connected }));
 }
 
-async function pushSandboxSnapshot(
+async function pushSandboxChanges(
   stream: { served: ServedWatch[]; pathname: string },
-  value: { sandboxes: SandboxView[] }
+  upserts: SandboxView[],
+  removed: SandboxView[] = []
 ): Promise<void> {
   await act(async () => {
     const watch = latestOn(stream.served, stream.pathname);
-    watch.send({ snapshot: { sandboxes: value.sandboxes.map(sandboxProto) } });
-    watch.send({ snapshotComplete: {} });
+    for (const row of upserts) watch.send({ upsert: sandboxProto(row) });
+    for (const row of removed) watch.send({ removed: { namespace: row.namespace, name: row.name, uid: row.uid } });
   });
 }
 
@@ -309,18 +305,15 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   const renamed = { ...running, name: "Renamed in another replica" };
   listedThreads = [renamed];
   await pushThreadChange(stream);
-  await pushSandboxSnapshot(
-    sandboxStream,
-    inventory({
-      "test-sandbox": sandbox("test-sandbox", {
-        operating_mode: "Suspended",
-        phase: "Suspended",
-        pod: null,
-        status: {},
-      }),
-      "test-threadless": sandbox("test-threadless", { pod: null }),
-    })
-  );
+  await pushSandboxChanges(sandboxStream, [
+    sandbox("test-sandbox", {
+      operating_mode: "Suspended",
+      phase: "Suspended",
+      pod: null,
+      status: {},
+    }),
+    sandbox("test-threadless", { pod: null }),
+  ]);
   expect(container.textContent).not.toContain("Before rename");
   expect(row(renamed.name).className).toContain("current");
   expect(container.querySelector(".agentplane-thread-list-state-icon[data-status='suspended']")).not.toBeNull();
@@ -329,7 +322,7 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   expect(container.textContent).toContain("0 threads");
   expect(fetchMock).not.toHaveBeenCalled();
 
-  await pushSandboxSnapshot(sandboxStream, inventory({}));
+  await pushSandboxChanges(sandboxStream, [], [sandbox("test-sandbox"), sandbox("test-threadless")]);
   expect(container.querySelector('a[href="/sandboxes/test-sandbox"]')).toBeNull();
   await act(async () => row(renamed.name).click());
   expect(location()).toBe("/threads/t-1");
