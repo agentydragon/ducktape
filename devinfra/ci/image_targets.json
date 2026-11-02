@@ -235,8 +235,8 @@
       "registry": "forgejo"
     },
     "google-mcp": {
-      "target": "//x/google_mcp_server:image",
-      "test": "//x/google_mcp_server/...",
+      "target": "//google_mcp_server:image",
+      "test": "//google_mcp_server/...",
       "registry": "forgejo"
     },
     "agentplane-egress-proxy": {

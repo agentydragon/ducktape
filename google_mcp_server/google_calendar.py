@@ -18,7 +18,7 @@ from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from x.google_mcp_server.google_calendar_client import (
+from google_mcp_server.google_calendar_client import (
     CalendarEvent,
     CalendarEventsPage,
     CalendarReminder,
@@ -30,7 +30,7 @@ from x.google_mcp_server.google_calendar_client import (
     ListCalendarEventsArgs,
     UpdateCalendarEventArgs,
 )
-from x.google_mcp_server.google_service import build_google_api_service
+from google_mcp_server.google_service import build_google_api_service
 
 # Wire-frozen id: named by cluster/cdk8s/haku/console_config.py and persisted in
 # ledger `server_id` rows — renaming is a config + data migration.

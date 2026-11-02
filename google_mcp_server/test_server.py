@@ -4,7 +4,7 @@ import httpx
 import pytest
 import pytest_bazel
 
-from x.google_mcp_server.server import create_app
+from google_mcp_server.server import create_app
 
 
 @pytest.mark.anyio

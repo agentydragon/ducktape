@@ -1,4 +1,4 @@
-# x/google_mcp_server TODO
+# google_mcp_server TODO
 
 Project-level TODOs for this component. Remove entries once done.
 

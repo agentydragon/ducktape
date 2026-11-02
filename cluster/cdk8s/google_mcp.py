@@ -1,6 +1,6 @@
 """google-mcp: a Gmail/Calendar MCP backend for agentplane-staging.
 
-Serves the Gmail/Calendar tool code in `haku/console/tools` (`x/google_mcp_server`) against a
+Serves the Gmail/Calendar tool code in `google_mcp_server` against a
 write-scoped Airlock provider (`cluster/cdk8s/airlock.py`'s `OAUTH_CONFIG`) whose access token is
 ESO-mirrored into *this namespace only* -- never into claude-sandbox, haku-sandbox, or
 agentplane-staging directly. The agent reaches Gmail/Calendar only through agentplane's

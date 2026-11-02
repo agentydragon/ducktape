@@ -362,7 +362,7 @@ def chart(app: App) -> Chart:
     )
     # google-write-access-token (write-scoped Gmail/Calendar) goes into google-mcp only -- the
     # standalone MCP server that fronts it behind agentplane's approval-gated ActionGroups
-    # (x/google_mcp_server, cluster/cdk8s/google_mcp.py). Deliberately not mirrored into
+    # (google_mcp_server, cluster/cdk8s/google_mcp.py). Deliberately not mirrored into
     # claude-sandbox, haku-sandbox, or agentplane-staging directly: unlike google-access-token,
     # which an egress proxy may present on a sandbox's reads, this token can send mail and mutate
     # Gmail/Calendar, so it must never reach a namespace the agent's own execution can read from

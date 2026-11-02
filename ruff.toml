@@ -153,6 +153,7 @@ known-first-party = [
     "finance",
     "gmail_api",
     "gmail_archiver",
+    "google_mcp_server",
     "gnome",
     "grocy_mcp",
     "homeassistant",

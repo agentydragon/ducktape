@@ -156,7 +156,7 @@ py_library(
 
 py_binary(
     name = "server_cli",
-    main_module = "x.google_mcp_server.server",
+    main_module = "google_mcp_server.server",
     deps = [":server"],
 )
 

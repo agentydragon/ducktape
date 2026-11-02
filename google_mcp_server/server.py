@@ -25,8 +25,8 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp
 
+from google_mcp_server import gmail as gmail_tools, google_calendar as calendar_tools
 from mcp_infra.static_bearer import StaticBearerGuard
-from x.google_mcp_server import gmail as gmail_tools, google_calendar as calendar_tools
 
 logger = logging.getLogger(__name__)
 

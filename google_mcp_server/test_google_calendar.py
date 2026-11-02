@@ -5,8 +5,8 @@ from unittest.mock import Mock
 import pytest_bazel
 from fastmcp import Client
 
-from x.google_mcp_server.google_calendar import build_mcp
-from x.google_mcp_server.google_calendar_client import CalendarEvent, CalendarEventsPage
+from google_mcp_server.google_calendar import build_mcp
+from google_mcp_server.google_calendar_client import CalendarEvent, CalendarEventsPage
 
 
 def _mcp(calendar=None):

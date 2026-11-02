@@ -12,7 +12,7 @@ so existing approval rows remain renderable. No Console-owned MCP execution back
 
 The exporter also reflects two servers that do not run in-process in haku-console: the **remote**
 ``grocy-sf`` server's custom batch tools, and ``gmail``/``google_calendar``, whose tool
-implementations moved to ``x/google_mcp_server`` (agentplane's own Gmail/Calendar MCP backend)
+implementations moved to ``google_mcp_server`` (agentplane's own Gmail/Calendar MCP backend)
 when haku-console's in-process copies were decommissioned. Their frontend preview widgets
 (``tool_rendering/gmail``, ``tool_rendering/google_calendar``) still validate against these
 schemas, so the exporter keeps building them the same inert-credential way it always did.
@@ -37,12 +37,12 @@ from typing import Any, cast
 from fastmcp import Client, FastMCP
 from mcp_types import Tool
 
+from google_mcp_server import gmail as gmail_tools, google_calendar as google_calendar_tools
 from grocy_mcp.batch_tools import build_batch_tools_mcp
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
 from haku.console.tools.routine import LaunchRoutineArguments, LaunchRoutineResult
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
-from x.google_mcp_server import gmail as gmail_tools, google_calendar as google_calendar_tools
 
 GROCY_SF_SERVER_ID = "grocy-sf"
 
