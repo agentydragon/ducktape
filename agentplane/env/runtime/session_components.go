@@ -24,7 +24,7 @@ func (r *Runtime) initializeSessions() error {
 	if r.config.VMProcessLauncher != nil {
 		var err error
 		r.harnessSupervisor, err = r.config.VMProcessLauncher.PrepareForOwner(r.config.StateDir, r.config.Launch.Sandbox.UID, supervision.SystemdOwner{
-			Unit: RuntimeUnitName, LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: HostScopeID,
+			Unit: RuntimeUnitName, LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: HarnessScopeID,
 		})
 		if err != nil {
 			return err

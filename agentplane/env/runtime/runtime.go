@@ -42,7 +42,7 @@ import (
 const (
 	RuntimeUnitName                            = "agentplane-environment-runtime.service"
 	RuntimeScopeID  supervision.SystemdScopeID = supervision.SystemdEnvironmentRuntimeScopeID
-	HostScopeID     supervision.SystemdScopeID = "harness-host"
+	HarnessScopeID     supervision.SystemdScopeID = "harness"
 )
 
 // Config contains the resolved environment configuration.

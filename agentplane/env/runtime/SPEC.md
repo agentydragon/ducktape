@@ -170,7 +170,7 @@ exit outcome. A failed manager read preserves the previous snapshot and records 
 observations do not establish a process-domain fence.
 
 The VM management unit is `agentplane-environment-runtime.service`. Runtime keeps its legacy scope
-identity; Host uses `harness-host` and Codex transient units use `execution-service`. All bind to
+identity; Native harnesses use `harness` and Codex transient units use `execution-service`. All bind to
 the Runtime unit and `/run/agentplane-environment-runtime-lifetime`. Runtime does not enable or start the Codex companion unit;
 Pod orchestration owns that separate container.
 

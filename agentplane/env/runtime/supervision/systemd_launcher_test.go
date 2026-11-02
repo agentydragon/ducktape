@@ -30,7 +30,7 @@ func TestSystemdScopeIdentity(t *testing.T) {
 		t.Fatalf("Runtime scope identity = %q, want legacy identity %q", runnerIdentity, want)
 	}
 	runtime := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: "agentplane-environment-runtime.service", LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: SystemdEnvironmentRuntimeScopeID})
-	harness := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: runtimeUnit, LifetimeDirectory: runtimeLifetimeDirectory, ScopeID: "harness-host"})
+	harness := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: runtimeUnit, LifetimeDirectory: runtimeLifetimeDirectory, ScopeID: "harness"})
 	execution := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: runtimeUnit, LifetimeDirectory: runtimeLifetimeDirectory, ScopeID: "execution-service"})
 	if runtime != runnerIdentity || harness == runtime || execution == runtime || execution == harness {
 		t.Fatal("distinct systemd owners shared a native process scope")

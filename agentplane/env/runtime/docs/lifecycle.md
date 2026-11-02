@@ -173,7 +173,7 @@ Explicit subprocess mode remains
 available for local fixtures, with its parent-liveness and inherited owner-descriptor barrier.
 
 VM Runtime, Host and Execution use distinct native scope IDs bound to the Runtime service invocation
-and lifetime marker. Runtime preserves its legacy scope hash, while Host uses `harness-host` and
+and lifetime marker. Runtime preserves its legacy scope hash, while Native harnesses use `harness` and
 Execution uses `execution-service`. Completion requires service state
 and an empty execution domain, including descendants. Manager disconnect and uncertain fence results
 block successors. See [supervision](../supervision/docs/supervision.md).
