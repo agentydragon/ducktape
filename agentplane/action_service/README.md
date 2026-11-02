@@ -188,8 +188,8 @@ one database transaction. Replaying an exchanged code revokes that grant.
 
 Local access and refresh tokens are opaque; PostgreSQL stores their SHA-256 digests. The upstream
 provider refresh token must be recoverable for renewal, so it is stored as plaintext in
-`oauth_authorization.upstream_refresh_token`; the current design accepts plaintext database
-storage. Each `/mcp` request resolves the grant to its Connection's current bound account. Grant
+the MCP edge database's `oauth_authorization.upstream_refresh_token`; the current design accepts
+plaintext database storage. Each `/mcp` request resolves the grant to its Connection's current bound account. Grant
 identity and provenance are not copied onto ActionRequests. Local token revocation revokes the
 grant; upstream account revocation is separate.
 

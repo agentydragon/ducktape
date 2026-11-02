@@ -1,5 +1,12 @@
 # Staging MCP edge handoff
 
+## Later decision, 2026-11-01 PDT
+
+The operator approved deletion of the eight legacy Actions records and all six old Actions
+Connection/external OAuth tables. Actions migration 9 implements that decision. The live MCP edge
+database and its distinct records remain the current owner. The investigation and preservation
+recommendations below describe the state and decision boundary **before** this approval.
+
 ## Current finding, 2026-11-02 04:15–04:22 UTC
 
 The external serving handoff happened; the old identities are absent from the observed edge state.
@@ -93,7 +100,7 @@ interpret missing reviewed evidence as proof that a transfer never ran.
 
 ## Existing transfer is inapplicable to this destination
 
-[`schema_transfer.Run`](../schema_transfer/transfer.go) copies six tables, retaining IDs and
+The now-retired `mcp-edge-transfer` command copied six tables, retaining IDs and
 all supported fields, inside one destination transaction. It requires recognized histories,
 only expected destination relations, **an empty destination**, and stopped source/destination
 writers. It fails on any nonempty destination table. It records no separate durable transfer receipt.
