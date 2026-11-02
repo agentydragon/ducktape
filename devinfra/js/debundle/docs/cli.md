@@ -1255,10 +1255,10 @@ typed entry beside the selector outcomes: `commuting_statements_diagnostics[]`
 `commuting_statements_diagnostics.json`; any such entry fails
 `validation.success`. The ndjson stream emits each as a
 `commuting_statements_diagnostic` section. For an unused entry, each endpoint
-also includes `a_logical_members` or `b_logical_members`: the authored module
+can include `a_logical_members` or `b_logical_members`: the authored module
 members whose resolved declaration is that endpoint, including when a
-`source_match` selected it. An empty list means no authored member maps to the
-endpoint. `a_source_location` and `b_source_location` contain the input path,
+`source_match` selected it. The field is omitted when no authored member maps
+to the endpoint. `a_source_location` and `b_source_location` contain the input path,
 line and column when available. The text diagnostic prints the same module/member
 names and source position so a stale premise can be reviewed against the input.
 
