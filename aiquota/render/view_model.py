@@ -51,7 +51,7 @@ class ProviderView(BaseModel):
     paid_credits_active: bool
     burn: BurnStatus | None
     display_windows: list[WindowView]
-    display_platform_credits: PlatformCredits | None
+    display_platform_credits: PlatformCredits | None = None
     summary_tint: Tint
     summary_index: int | None
 

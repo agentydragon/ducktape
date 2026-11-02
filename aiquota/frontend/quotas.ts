@@ -39,7 +39,7 @@ export function effectiveQuota(provider: ProviderView): EffectiveQuota {
   ) {
     return {
       ...shown(result),
-      platformCredits: provider.display_platform_credits,
+      platformCredits: provider.display_platform_credits ?? null,
       windows: provider.display_windows,
       staleSince: null,
       error,
@@ -49,7 +49,7 @@ export function effectiveQuota(provider: ProviderView): EffectiveQuota {
   if (fallback)
     return {
       ...shown(fallback.result),
-      platformCredits: provider.display_platform_credits,
+      platformCredits: provider.display_platform_credits ?? null,
       windows: provider.display_windows,
       staleSince: fallback.fetched_at,
       error,
