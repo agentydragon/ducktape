@@ -1,6 +1,6 @@
 {
   "repository": "agentydragon/ducktape",
-  "source_devel_commit": "de5f671002f516e952c3dfafcbf06659a4bc731b",
+  "source_devel_commit": "f342c9f7fd5fcfc9fe66afb530e12e022e32af7f",
   "window_utc": [
     "2026-11-01T02:30:00Z",
     "2026-11-01T21:45:00Z"
@@ -44624,6 +44624,10 @@
   },
   "prior_dispositions": [
     {
+      "topic": "Hosted k3s infrastructure reuse",
+      "disposition": "Merged in #13586 across all suite declarations with executor-only permission and validated ownership/cleanup. Manual-only adoption and untested VM/MCP followups are superseded. Fleet latency, warm hit rate and reliability effect await the recorded soak follow-up."
+    },
+    {
       "topic": "Native/guest profiler work",
       "disposition": "Retain original CPU/scheduler traces and invalid-probe results. Boot-relative 60s recording missed delayed native startup; do not repeat it unchanged. Root-service lifetime recording, matching kernel symbols and host-side QEMU evidence are prerequisites for causal native/TCG attribution."
     },
@@ -44665,6 +44669,14 @@
     }
   ],
   "intervention_effects": [
+    {
+      "intervention": "BuildBuddy executor-scoped k3s infrastructure reuse",
+      "merged_work": "https://github.com/agentydragon/ducktape/pull/13586",
+      "merge_commit": "53012e85ee611a902667601f135f9631da935b1b",
+      "merged_at_utc": "2026-11-02T03:17:13Z",
+      "current": "All k3s suite declarations retain compatible infrastructure on BuildBuddy executors. Local execution starts/stops a fresh node. App/PostgreSQL/PKI fixtures, collectors and VM workspaces stay fresh.",
+      "interpretation": "Selected non-VM pairs used 32-40 percent less action time; normal VM used 19 percent less. No post-merge fleet treatment effect or warm hit rate is measured. See k3s_persistence_rollout.soak_followup."
+    },
     {
       "intervention": "Pod concurrency and reuse",
       "current": "All 13 cases still run; two slots, storage exclusive, fresh Sessions, compatible runner reuse. Current combined-tree actions 235\u2013255s; case envelopes 132\u2013141s.",
@@ -44883,22 +44895,21 @@
     "publication_note": "Raw source filenames identify local collection only; durable public provenance is the exact GitHub job and BuildBuddy invocation IDs."
   },
   "report_validation": {
-    "invocation_id": "6b231684-f28e-4388-a6d4-27db58f3c8e0",
+    "invocation_id": "8501eaf9-b57c-4c01-9cd8-b9f4fc7c3c90",
     "target": "//x/ci_report_preview:visual_test",
-    "verdict": "PASSED, 1/1",
-    "report_html_sha256": "cbd8e66a48d9d856d053abf252dc2374020d57eb2ecc34165c6b186aaa693d24",
-    "preview_evidence_sha256": "394f9f890feb2f0f0df1e65ca0d2b9b5c77ea8dd2b9338c83fa247f8ff32bb6a",
-    "visual_review_manifest_sha256": "8ec28b64a5499936fa6894ecb4edca8ac02b41700bf53aea11d8b0f36602e07c",
+    "verdict": "PASSED, 1/1, uncached RBE",
+    "report_html_sha256": "0e8e13316fc0736bfd3aeaefbbb8eb14feb0d81642e612ea7af95cbaadf9bbfb",
+    "preview_evidence_sha256": "508a4eaf09a39b7c1d407d7d2a22c7604a9f134732e7c732d32df926be9c8d21",
     "preview_evidence": [
       {
         "report": "latency",
-        "report_sha256": "cbd8e66a48d9d856d053abf252dc2374020d57eb2ecc34165c6b186aaa693d24",
+        "report_sha256": "0e8e13316fc0736bfd3aeaefbbb8eb14feb0d81642e612ea7af95cbaadf9bbfb",
         "viewport": {
           "name": "desktop",
           "width": 1280,
           "height": 900
         },
-        "internal_link_count": 70,
+        "internal_link_count": 84,
         "details_expanded": 4,
         "interactive_controls_exercised": [],
         "document_dimensions_with_details_open": {
@@ -44909,23 +44920,23 @@
         "captures": [
           {
             "name": "latency-desktop-first-screen.png",
-            "sha256": "59233c892f63cb59505d2f76c1ae73fbf9f91e6f29e2d9fd3acaf110f21d0300"
+            "sha256": "9e8b99c93d7616adb993d251003b8ca4ef98b6bd7da8b7c8037934ebeddcc12a"
           },
           {
             "name": "latency-desktop-effects.png",
-            "sha256": "ee8d4fb8ae201abc64cb8f44430d81073d48af98d1b3d401b6b0d275bb82abf1"
+            "sha256": "bbc9dd8e67cc23ac1bcf7000707231938bee1aa9027190b951abe4cd7962897c"
           },
           {
             "name": "latency-desktop-runtime.png",
-            "sha256": "e85fc4da1c0bba1838c260579946deeee6a2e0dccd8a4510b35444a709d278fd"
+            "sha256": "d1e1b76a8553336dc9108aee9c8f2e6a5b5692f755b4864bfbaf5cc384675e9c"
           },
           {
             "name": "latency-desktop-twice.png",
-            "sha256": "544da39d2ab8b3baaa647ccb89c90cb23df6434a40e080c3d9f2f387b7fc26b9"
+            "sha256": "a0886a69dfa7f6985888b86219e6ff60ad536b33d59392505819fb9e9da2cc2e"
           },
           {
             "name": "latency-desktop-pr-cases.png",
-            "sha256": "9dd4073965868bc5c952806ab6d20994f62483e7d9d677d80fd3098b4b154814"
+            "sha256": "3d052ef504591a1a252baac8bd1b8397e9ca285f0792646af46364ab0af33dcf"
           },
           {
             "name": "latency-desktop-resources.png",
@@ -44933,31 +44944,39 @@
           },
           {
             "name": "latency-desktop-experiments.png",
-            "sha256": "8dcff997688d8aaf26d1b5372cfdf7a8cb31b5e69e0915d1d20379ab5b57910a"
+            "sha256": "3a7ebbe8e9bc287e7f2bbc96fc47b0a8952bd21fd69ac4a8d588bdf4d415cf6f"
           },
           {
             "name": "latency-desktop-pod-results.png",
-            "sha256": "35566ddc55e87b5ca683f35dcaf2dc869fb958eda9e163e1cee80a6c28d908ff"
+            "sha256": "aedc937c7ec875530c411c6532c6bd0bdce79fc141612eb96ab7f9d103f8e198"
           },
           {
             "name": "latency-desktop-pod-means.png",
-            "sha256": "ca99dece80ca9fb07b27816edc9b8d634c5c371ad44b77c3e08b295e87cbc65e"
+            "sha256": "57a292a2d69f80b89224cbf981b2f50f189d56b8a0b258945774dfe91542e246"
           },
           {
             "name": "latency-desktop-persistence.png",
-            "sha256": "74618d87577d49e6e0a349ff808efbf9510bf9020c22c15a7d785cc736131c51"
+            "sha256": "0168f5c9ed1d8361257192116697830df61efe5338e74ad690ac053f0078fa0a"
+          },
+          {
+            "name": "latency-desktop-persistence-results.png",
+            "sha256": "5e0ff4fec2778ce2dc3cd14cf648be7245d2d9fa28f90225f1bb6b11cfa8236e"
+          },
+          {
+            "name": "latency-desktop-soak.png",
+            "sha256": "3dd3cf866ecbab30edf8b4cc6a3a84c853895fbb9c5fb803f0a9d978c19ae7e3"
           }
         ]
       },
       {
         "report": "latency",
-        "report_sha256": "cbd8e66a48d9d856d053abf252dc2374020d57eb2ecc34165c6b186aaa693d24",
+        "report_sha256": "0e8e13316fc0736bfd3aeaefbbb8eb14feb0d81642e612ea7af95cbaadf9bbfb",
         "viewport": {
           "name": "mobile",
           "width": 390,
           "height": 844
         },
-        "internal_link_count": 70,
+        "internal_link_count": 84,
         "details_expanded": 4,
         "interactive_controls_exercised": [],
         "document_dimensions_with_details_open": {
@@ -44968,31 +44987,31 @@
         "captures": [
           {
             "name": "latency-mobile-first-screen.png",
-            "sha256": "669979868fdebfeb177b40ee66c9c0ff03468da7e1f26afe4d3a771d0e111c56"
+            "sha256": "53425abb95ccfc8c2bf91fbbe78ca7a0b7b7ff0a99def3c45b50150e9ff1062d"
           },
           {
             "name": "latency-mobile-effects.png",
-            "sha256": "8e982eb9f12d1973a7673d68d7a34c5ad70dbc2c0724dbd7e40f788bb258a1fe"
+            "sha256": "fdbaf52384b99eeadc3548444ae79e823a197bb3fb3f5521f1ef4cc25c93f5dd"
           },
           {
             "name": "latency-mobile-runtime.png",
-            "sha256": "63d1395495bee4d339d5446cac8a10a84a46a74b25e901d2ee1d50d623afb8e3"
+            "sha256": "1e618502f3360c7f88a096c870a7a9d9be81fe9c0b30b873cf596bcf15aa84e1"
           },
           {
             "name": "latency-mobile-twice.png",
-            "sha256": "a740f942d5db5beb586c0fadda237463bff24ab46056245eaacdde1b1ad568d2"
+            "sha256": "57969da754af4780771fe262bb6b56afdeac66b11ff3d76de747d0ab46fee752"
           },
           {
             "name": "latency-mobile-pr-cases.png",
-            "sha256": "c6959fc9ce14315da099bfa69c97ed40919ed317dccab4d31eb2c7a0c46d6b05"
+            "sha256": "4523627cdc771e8a074e9e7fcf3571f47c948838c56c4d83597b8f57435e9b98"
           },
           {
             "name": "latency-mobile-resources.png",
-            "sha256": "882b665076b863d646b564c4eb31c49334a8ca529848be24eae7dc6566f4c32f"
+            "sha256": "7a1c7abf10d6ed85f4b3696c6721ae98d9598e36419b6b0d15bdb52ab9c2de3c"
           },
           {
             "name": "latency-mobile-experiments.png",
-            "sha256": "cd9d4ae27ddd132593672eea5eda9bb0d334fdf0c25a4925a6f96a2d65f668cc"
+            "sha256": "1c94df81d83c292e4e9181dd055c5d158a58159358a54f784b83f89e5a6d5b3e"
           },
           {
             "name": "latency-mobile-pod-results.png",
@@ -45004,266 +45023,28 @@
           },
           {
             "name": "latency-mobile-persistence.png",
-            "sha256": "b43995eb56f618340c1c9d95a7e2eb0b9b460df72e203d38b0096652917375c3"
-          }
-        ]
-      },
-      {
-        "report": "reliability",
-        "report_sha256": "62fec8f56a414138dcdd27a7883c18045fc01845b43ef81d97ad5b463c88f4a9",
-        "viewport": {
-          "name": "desktop",
-          "width": 1280,
-          "height": 900
-        },
-        "internal_link_count": 43,
-        "details_expanded": 0,
-        "interactive_controls_exercised": [],
-        "document_dimensions_with_details_open": {
-          "viewport_width": 1280,
-          "document_width": 1280,
-          "body_width": 1280
-        },
-        "captures": [
-          {
-            "name": "reliability-desktop-first-screen.png",
-            "sha256": "b4514b2e5b8e98b1f0611b84f04c4129ad604e6b973fc3d2ed11c1182370bd99"
+            "sha256": "a0ebe336f80eca6eccdd1db0c29789df449e3108cc61289fce7fce58bd12acc5"
           },
           {
-            "name": "reliability-desktop-actions.png",
-            "sha256": "d5a00fa65b4dfab03f0cf826774bd53cff8c7493a8f591413a334eab9d6ada65"
+            "name": "latency-mobile-persistence-results.png",
+            "sha256": "571913a26d85540b558bbf31efdb003a56d55ab3d83c24b858ddca2198f0a410"
           },
           {
-            "name": "reliability-desktop-population.png",
-            "sha256": "a78fb8012d90d5265204f69901ca13646c885a63e58c482b0100ac2e24763856"
-          },
-          {
-            "name": "reliability-desktop-vm.png",
-            "sha256": "8d2fa0371d840abaecff1fe291d481cded7e8a6d169088459e72d22f2b67f28f"
-          },
-          {
-            "name": "reliability-desktop-app.png",
-            "sha256": "196c6f5094408de0bb68aa69336becca7e7ddc2dfdda9cd219dc444423f3bae1"
-          },
-          {
-            "name": "reliability-desktop-merges.png",
-            "sha256": "e54f120cf77e0e4bed813004c3a7e4294a8a49ed9bddf105bd2e120a45208cc0"
-          },
-          {
-            "name": "reliability-desktop-continuity.png",
-            "sha256": "e1deb6a301d435e729a8b0f1b17b1380871dbc7df7416582e9b169b0959b82da"
-          },
-          {
-            "name": "reliability-desktop-method.png",
-            "sha256": "32b80fa4d373d069e8a46b37e8952a07eb45fca6ca432544732267225cd742ab"
-          }
-        ]
-      },
-      {
-        "report": "reliability",
-        "report_sha256": "62fec8f56a414138dcdd27a7883c18045fc01845b43ef81d97ad5b463c88f4a9",
-        "viewport": {
-          "name": "mobile",
-          "width": 390,
-          "height": 844
-        },
-        "internal_link_count": 43,
-        "details_expanded": 0,
-        "interactive_controls_exercised": [],
-        "document_dimensions_with_details_open": {
-          "viewport_width": 390,
-          "document_width": 390,
-          "body_width": 390
-        },
-        "captures": [
-          {
-            "name": "reliability-mobile-first-screen.png",
-            "sha256": "69248b55f977082fa7bbeca2ee11c03ec21b1ca1ccc57ef3da29f779f80323cb"
-          },
-          {
-            "name": "reliability-mobile-actions.png",
-            "sha256": "2c1a65c881a1d0e7adae3547242a977d6a9fc87e881a838528de75880cde7cef"
-          },
-          {
-            "name": "reliability-mobile-population.png",
-            "sha256": "7b709c000006831d479550c72e3c45efe8735070cf3558ddbbc06153ab7730c4"
-          },
-          {
-            "name": "reliability-mobile-vm.png",
-            "sha256": "c5d153be85b648c4583ab6b5ead0b58c26d344d1931218557713d853bcfb7809"
-          },
-          {
-            "name": "reliability-mobile-app.png",
-            "sha256": "0921962846bdff450bc67f6421c57d350db19d6be89a8f581da325604edc43e0"
-          },
-          {
-            "name": "reliability-mobile-merges.png",
-            "sha256": "fc2cdfb1b78a64070147571245b9e33a8375197093066405dcdbb8201d9d86ce"
-          },
-          {
-            "name": "reliability-mobile-continuity.png",
-            "sha256": "4396980c3aeac37b55716666906b00399ab2cc567cf0c9791226186558fc2c7a"
-          },
-          {
-            "name": "reliability-mobile-method.png",
-            "sha256": "5a44cc237c53ff3ea38923b3bd2e74e7b6eff3318242522558436ec395b593b9"
+            "name": "latency-mobile-soak.png",
+            "sha256": "1e806da9cc29c423edbc7e86eee679ad4d2530e0431f653702cbc312a6c50337"
           }
         ]
       }
     ],
-    "visual_capture_manifest": {
-      "schema": "ducktape.visual-review.v1",
-      "title": "CI report preview",
-      "assets": [
-        {
-          "path": "latency-desktop-first-screen.png",
-          "label": "latency report, desktop, first screen"
-        },
-        {
-          "path": "latency-desktop-effects.png",
-          "label": "latency report, desktop, #effects"
-        },
-        {
-          "path": "latency-desktop-runtime.png",
-          "label": "latency report, desktop, #runtime"
-        },
-        {
-          "path": "latency-desktop-twice.png",
-          "label": "latency report, desktop, #twice"
-        },
-        {
-          "path": "latency-desktop-pr-cases.png",
-          "label": "latency report, desktop, #pr-cases"
-        },
-        {
-          "path": "latency-desktop-resources.png",
-          "label": "latency report, desktop, #resources"
-        },
-        {
-          "path": "latency-desktop-experiments.png",
-          "label": "latency report, desktop, #experiments"
-        },
-        {
-          "path": "latency-desktop-pod-results.png",
-          "label": "latency report, desktop, #pod-results"
-        },
-        {
-          "path": "latency-desktop-pod-means.png",
-          "label": "latency report, desktop, #pod-means"
-        },
-        {
-          "path": "latency-desktop-persistence.png",
-          "label": "latency report, desktop, #persistence"
-        },
-        {
-          "path": "latency-mobile-first-screen.png",
-          "label": "latency report, mobile, first screen"
-        },
-        {
-          "path": "latency-mobile-effects.png",
-          "label": "latency report, mobile, #effects"
-        },
-        {
-          "path": "latency-mobile-runtime.png",
-          "label": "latency report, mobile, #runtime"
-        },
-        {
-          "path": "latency-mobile-twice.png",
-          "label": "latency report, mobile, #twice"
-        },
-        {
-          "path": "latency-mobile-pr-cases.png",
-          "label": "latency report, mobile, #pr-cases"
-        },
-        {
-          "path": "latency-mobile-resources.png",
-          "label": "latency report, mobile, #resources"
-        },
-        {
-          "path": "latency-mobile-experiments.png",
-          "label": "latency report, mobile, #experiments"
-        },
-        {
-          "path": "latency-mobile-pod-results.png",
-          "label": "latency report, mobile, #pod-results"
-        },
-        {
-          "path": "latency-mobile-pod-means.png",
-          "label": "latency report, mobile, #pod-means"
-        },
-        {
-          "path": "latency-mobile-persistence.png",
-          "label": "latency report, mobile, #persistence"
-        },
-        {
-          "path": "reliability-desktop-first-screen.png",
-          "label": "reliability report, desktop, first screen"
-        },
-        {
-          "path": "reliability-desktop-actions.png",
-          "label": "reliability report, desktop, #actions"
-        },
-        {
-          "path": "reliability-desktop-population.png",
-          "label": "reliability report, desktop, #population"
-        },
-        {
-          "path": "reliability-desktop-vm.png",
-          "label": "reliability report, desktop, #vm"
-        },
-        {
-          "path": "reliability-desktop-app.png",
-          "label": "reliability report, desktop, #app"
-        },
-        {
-          "path": "reliability-desktop-merges.png",
-          "label": "reliability report, desktop, #merges"
-        },
-        {
-          "path": "reliability-desktop-continuity.png",
-          "label": "reliability report, desktop, #continuity"
-        },
-        {
-          "path": "reliability-desktop-method.png",
-          "label": "reliability report, desktop, #method"
-        },
-        {
-          "path": "reliability-mobile-first-screen.png",
-          "label": "reliability report, mobile, first screen"
-        },
-        {
-          "path": "reliability-mobile-actions.png",
-          "label": "reliability report, mobile, #actions"
-        },
-        {
-          "path": "reliability-mobile-population.png",
-          "label": "reliability report, mobile, #population"
-        },
-        {
-          "path": "reliability-mobile-vm.png",
-          "label": "reliability report, mobile, #vm"
-        },
-        {
-          "path": "reliability-mobile-app.png",
-          "label": "reliability report, mobile, #app"
-        },
-        {
-          "path": "reliability-mobile-merges.png",
-          "label": "reliability report, mobile, #merges"
-        },
-        {
-          "path": "reliability-mobile-continuity.png",
-          "label": "reliability report, mobile, #continuity"
-        },
-        {
-          "path": "reliability-mobile-method.png",
-          "label": "reliability report, mobile, #method"
-        }
-      ]
-    },
-    "visual_review": "Root inspected full desktop/mobile experiment captures and desktop recommendations. Numerical tables are scrollable within their mobile containers; narrative recommendations use stacked cards. Source/status/clock claims and raw identity artifacts reviewed separately.",
-    "capture_limit": "The persistence-anchor screenshot captures the h3 only; full experiments screenshots include the complete persistence narrative/table.",
-    "privacy_review": "No private key or token patterns in authored HTML/reviewed JSON; raw test logs, certificate YAML and process traces excluded."
+    "parent_visual_review": "Reviewed desktop and mobile first screens, rollout evidence, responsive measurements and soak plan. Fixed mobile clipping; final captures preserve all measurements and labels.",
+    "checks": [
+      "Internal anchors",
+      "Expanded details",
+      "Console errors",
+      "Request fence",
+      "Document overflow",
+      "Screenshot and report hashes"
+    ]
   },
   "pod_concurrency_experiment": {
     "source_devel_commit": "de5f671002f516e952c3dfafcbf06659a4bc731b",
@@ -48028,19 +47809,20 @@
     "source_debug_note": "agentplane/debug/k3s_persistence_spike.md",
     "source_patch_commit": "64f78edc9865201457ef8f1d151252283042c690",
     "source_patch_file": "source.patch",
-    "source_patch_sha256": "0c97f8962eb9cbfdbac5bec931f1b1632e40c52365007a89da62141be2b2d37e"
+    "source_patch_sha256": "0c97f8962eb9cbfdbac5bec931f1b1632e40c52365007a89da62141be2b2d37e",
+    "disposition": "Historical Pod-only probe; its manual-only scope and untested VM/MCP adoption limits are superseded by k3s_persistence_rollout. Preserve original failures and measurements as historical evidence."
   },
   "experiment_narrative": {
-    "headline": "Hosted k3s reuse works; extra Pod slots need memory.",
-    "lead_html": "The full Pod persistence spike passed all 13 cases in both actions: 285.1s cold and 214.2s prepared, with fresh application state. More Pod concurrency needs a larger worker: three slots failed memory admission on four units; four slots passed twice on eight units in 192.0/192.6s. These are suite measurements, with no demonstrated reduction of the enclosing CI gate.",
+    "headline": "k3s reuse is merged; the larger Pod worker remains a candidate.",
+    "lead_html": "Expanded hosted k3s baseline reuse merged in #13586 on 2026-11-02T03:17:13Z. Selected all-suite cold/warm measurements and the executor boundary supersede the Pod-only adoption plan. Fleet effects remain pending soak.",
     "pod_conclusion_html": "Four slots shortened the case envelope to 100.9\u2013102.6s, versus 128.6/142.8s for the two-slot controls on the same eight-unit worker. The final two-slot control took 227.1s despite a lower 50.4s setup span, compared with the four-slot pair\u2019s 192.0/192.6s actions and 61.8/63.0s setup. That is a selected 34.8s (15.3%) whole-action difference against the final control, not a fleet treatment estimate. The initial two-slot control\u2019s 305.2s action included 149.4s setup, so presenting the full 113s difference as a concurrency saving would be misleading. Four-slot allocation is about 1,538 unit-seconds per action, versus 1,049 for the original four-unit/two-slot control: roughly 47% more allocation for the observed lower wall time. Retain two slots on the existing worker; the eight-unit/four-slot candidate is useful if Pods become the blocking gate after VM improvement. Right-sizing fixture memory requests remains untested and needs per-container peak evidence.",
-    "recommendation_a_html": "<tr><td data-label=\"Priority / change\">A \u00b7 Prepared hosted infrastructure</td><td data-label=\"Measured opportunity and who benefits\">The manual Pod spike now proves live k3s and prepared PKI reuse on BuildBuddy-hosted workers. One full pair reduced setup 109.4\u219235.5s and action wall 285.1\u2192214.2s while preserving all 13 cases and fresh app state. This includes image/cache warming; it is not an isolated estimate of retaining k3s alone. Ordinary VM setup remains 103\u2013167s and Pod setup 70\u201395s in the selected devel runs.</td><td data-label=\"Effort / confidence / validation\">High confidence in the hosted mechanism and this pair\u2019s isolation, low confidence in fleet savings. The spike is manual and source-pinned. Production adoption needs versioned baseline keys, cold/eviction coverage and hit-rate evidence. VM reuse additionally needs KubeVirt/Kyverno and raw-block/guest ownership validation; MCP is unmeasured. Keep fresh namespaces, DBs, CA/certificates, volumes and Sandboxes, plus cold-install coverage when baseline inputs change.</td></tr>",
+    "recommendation_a_html": "<tr><td data-label=\"Priority / change\">A \u00b7 Measure merged k3s reuse after soak</td>\n<td data-label=\"Measured opportunity and who benefits\">Implementation merged in <a href=\"https://github.com/agentydragon/ducktape/pull/13586\">#13586</a>,\nincluding VM and MCP coverage. Selected non-VM action time fell 32\u201340%; normal VM fell 19%.\nThe warm VM action still took 304s, so this alone does not reach the 186s/265s baseline half-time goals.</td>\n<td data-label=\"Effort / confidence / validation\">Adoption is complete; fleet effect and warm hit rate remain pending.\nFollow the <a href=\"#soak\">48-hour checkpoint and measurement plan</a>. Keep fresh fixtures, cold rebuild and ownership\nchecks. Re-rank accelerated guests and Pod slots after observing the new critical path.</td></tr>",
     "recommendation_c_html": "<tr><td data-label=\"Priority / change\">C \u00b7 Pod slots after VM improvement</td><td data-label=\"Measured opportunity and who benefits\">The 2/3/4 experiment is complete. Three slots exceeded scheduler memory reservations on four units. On eight units, four slots passed twice with 101\u2013103s case envelopes and 192\u2013193s actions; the final two-slot control was 143s/227s. Candidate change: CASE_LIMIT=4 plus EstimatedComputeUnits=8; preserve storage exclusivity, all 13 cases and pool ownership.</td><td data-label=\"Effort / confidence / validation\">Small source change, doubled requested compute/memory. About 47% more unit-seconds than the original four-unit control in these selected actions. Two passing candidate runs establish neither a fleet flake rate nor gate savings. VM actions remain 344\u2013425s, so this does not deliver 2\u00d7 CI. Keep the current two-slot worker configuration until the bottleneck shifts or request sizing is measured.</td></tr>",
     "experiment_window_utc": [
       "2026-11-01T22:15:00Z",
       "2026-11-01T23:12:25.941Z"
     ],
-    "review": "Parent reviewed raw preflight OTel overlap, failing three-slot JUnit scheduler messages, source/pool contracts, action metadata, cold/warm identity artifacts and the complete source spike diff. All temporary concurrency/resource constants were restored."
+    "review": "Prior fleet cohort and Pod-concurrency experiment retained. Implementation inspected on current devel, source-pinned all-suite trials and lifecycle artifacts reviewed; no post-merge fleet resampling."
   },
   "experiment_window_utc": [
     "2026-11-01T22:15:00Z",
@@ -48055,6 +47837,222 @@
     "latency_refresh_pr": "https://github.com/agentydragon/ducktape/pull/13550",
     "reliability_refresh_pr": "https://github.com/agentydragon/ducktape/pull/13551",
     "fleet_cohort_retained": true,
-    "source_spike_commit": "64f78edc9865201457ef8f1d151252283042c690"
+    "source_spike_commit": "64f78edc9865201457ef8f1d151252283042c690",
+    "immediate_previous_report_branch_commit": "f6975b41fae3c634568ca454f0c38921ec3595df",
+    "implementation_pr": "https://github.com/agentydragon/ducktape/pull/13586",
+    "implementation_merge_commit": "53012e85ee611a902667601f135f9631da935b1b"
+  },
+  "fleet_source_devel_commit": "de5f671002f516e952c3dfafcbf06659a4bc731b",
+  "no_new_fleet_census": true,
+  "rollout_update_observed_at_utc": "2026-11-02T03:26:20Z",
+  "k3s_persistence_rollout": {
+    "schema": "ducktape.ci.k3s-persistence-rollout.v1",
+    "status": "merged; soak measurement pending",
+    "pr": "https://github.com/agentydragon/ducktape/pull/13586",
+    "merge_commit": "53012e85ee611a902667601f135f9631da935b1b",
+    "merged_at_utc": "2026-11-02T03:17:13Z",
+    "inspected_devel_commit": "f342c9f7fd5fcfc9fe66afb530e12e022e32af7f",
+    "observed_at_utc": "2026-11-02T03:26:20Z",
+    "source_note": "https://github.com/agentydragon/ducktape/blob/53012e85ee611a902667601f135f9631da935b1b/agentplane/debug/k3s_persistence.md",
+    "families": [
+      "k3s-persistence-v7-pod",
+      "k3s-persistence-v7-vm"
+    ],
+    "scope": "All k3s_suite declarations; manual/live selection unchanged; no separate variants.",
+    "executor_boundary": {
+      "injected_property": "test.env-overrides",
+      "permission": "AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1",
+      "ordinary_local_teardown": true,
+      "restored_owner_stopped_when_retention_disabled": true,
+      "pid_reuse_protected": true
+    },
+    "retained": [
+      "k3s",
+      "cert-manager",
+      "trust-manager",
+      "KubeVirt and Kyverno in VM family"
+    ],
+    "fresh": [
+      "application services",
+      "PostgreSQL",
+      "model/MCP endpoints",
+      "CA and certificates",
+      "collectors",
+      "VM workspace StorageClass/PVs/loop devices"
+    ],
+    "postgres_retention": {
+      "status": "tried and removed",
+      "observation": "No overall timing benefit; PostgreSQL remains fresh per action."
+    },
+    "selected_pairs": [
+      {
+        "suite": "Pod",
+        "cases": 13,
+        "setup_seconds": {
+          "cold": 141.7,
+          "warm": 37.6
+        },
+        "test_runner_wall_seconds": {
+          "cold": 329.5,
+          "warm": 224.6
+        },
+        "action_reduction_seconds": 104.9,
+        "source_commit": "4a190b1991a0748884e0431d84371901c1074f52"
+      },
+      {
+        "suite": "Dispatcher",
+        "cases": 3,
+        "setup_seconds": {
+          "cold": 136.6,
+          "warm": 39.6
+        },
+        "test_runner_wall_seconds": {
+          "cold": 264.2,
+          "warm": 167.3
+        },
+        "action_reduction_seconds": 96.9,
+        "source_commit": "4a190b1991a0748884e0431d84371901c1074f52"
+      },
+      {
+        "suite": "MCP Actions",
+        "cases": 5,
+        "setup_seconds": {
+          "cold": 176.2,
+          "warm": 39.1
+        },
+        "test_runner_wall_seconds": {
+          "cold": 352.4,
+          "warm": 212.3
+        },
+        "action_reduction_seconds": 140.1,
+        "source_commit": "4a190b1991a0748884e0431d84371901c1074f52"
+      },
+      {
+        "suite": "MCP Services",
+        "cases": 5,
+        "setup_seconds": {
+          "cold": 196.1,
+          "warm": 51.8
+        },
+        "test_runner_wall_seconds": {
+          "cold": 349.9,
+          "warm": 213.7
+        },
+        "action_reduction_seconds": 136.2,
+        "source_commit": "4a190b1991a0748884e0431d84371901c1074f52"
+      },
+      {
+        "suite": "Real-model (live tag)",
+        "cases": 4,
+        "setup_seconds": {
+          "cold": 146.1,
+          "warm": 40.3
+        },
+        "test_runner_wall_seconds": {
+          "cold": 286.7,
+          "warm": 189.6
+        },
+        "action_reduction_seconds": 97.1,
+        "source_commit": "4a190b1991a0748884e0431d84371901c1074f52"
+      },
+      {
+        "suite": "Normal VM (three concurrent scenarios)",
+        "cases": "1 batch",
+        "setup_seconds": {
+          "cold": 95.0,
+          "warm": 38.6
+        },
+        "test_runner_wall_seconds": {
+          "cold": 374.2,
+          "warm": 303.8
+        },
+        "action_reduction_seconds": 70.4,
+        "source_commit": "4e5ce89345f5a547d158f6420666aa5c62ee55fc"
+      }
+    ],
+    "pair_invocations": {
+      "non_vm_cold": "8752f1b1-ad4d-412f-a7f2-dccbe85a0f71",
+      "warm_pod_dispatcher_real_model": "e7fcb343-9437-495a-97fa-1815a9631a4b",
+      "warm_mcp": "544152d9-3e5f-4882-8c0a-6c0077aecc40",
+      "vm_cold": "fd9d3fc8-81f8-44af-a21c-2cf7d798a178",
+      "vm_warm_and_all_suite_validation": "a690a9d1-34b8-4b9a-ada6-2689937e3f83"
+    },
+    "validation": {
+      "all_suites": 8,
+      "junit_cases": 35,
+      "manual_live_included": true,
+      "cleanup": "complete",
+      "owned_loops_released_per_vm_action": 3,
+      "lifecycle_invocation": "a63eeab6-7bc0-42a3-bd1e-106ee4f8a926",
+      "fallback_invocation": "4519b25d-9ef0-4afa-bb15-53a91981318a",
+      "fallback_cases": 13,
+      "fallback_shutdown_span_complete": true,
+      "fallback_persistence_artifact_absent": true
+    },
+    "final_premerge_ci": {
+      "invocation_id": "7aab9a38-a5db-5b9a-ac50-805267be092c",
+      "tested_synthetic_merge": "87a950706bde1fd5c3ea4caa9cc662578ecf5369",
+      "bazel_wall_seconds": 376.843,
+      "computed_critical_path_seconds": 364.49,
+      "vm_critical_path_seconds": 364.18,
+      "vm_baseline": "cold",
+      "vm_setup_seconds": 144.5,
+      "mcp_actions_baseline": "warm",
+      "mcp_actions_setup_seconds": 40.4,
+      "limitation": "Pre-merge illustration. Artifacts include cached/shared results; not a fresh-action hit-rate sample or soak cohort."
+    },
+    "unresolved_signatures": [
+      "Guest scheduler kernel panic/provider pause failure",
+      "Missing guest boot-monitor receipt",
+      "PVC-list timeout terminated workspace provisioner"
+    ],
+    "repaired_signature": "Kyverno deprecation stderr was incorrectly treated as remaining kubectl resource names.",
+    "limits": [
+      "Selected pairs, uncontrolled worker/cache/image warming; not isolated k3s-only causal savings.",
+      "No profile-specific warm reuse established: successful profile action was cold fallback after physical failure.",
+      "Cold comparison invocation failures remain in provenance; selected passing suites do not imply all enclosing invocations passed.",
+      "No post-merge fleet census, warm hit rate, snapshot upload cost or reliability improvement established."
+    ],
+    "soak_followup": {
+      "status": "pending",
+      "first_checkpoint_not_before_utc": "2026-11-04T03:17:13Z",
+      "suggested_observation_hours": 48,
+      "extend_to_days_if_sparse": 7,
+      "collection_target": {
+        "originating_ordinary_k3s_actions": 30,
+        "vm_minimum": 10,
+        "non_vm_minimum": 10,
+        "multiple_pr_heads": true,
+        "not_statistical_confidence_threshold": true
+      },
+      "deduplication": "Physical execution IDs; originating versus reused invocation links; separate result-cache hits.",
+      "required_metrics": [
+        "Tested-tree ancestry and runner patch provenance",
+        "Baseline outcome/fingerprint, Pod versus VM family; missing/unknown artifacts",
+        "Per-suite warm/cold n, setup/action/queue/preparation/upload p50/p90 and uncertainty",
+        "Exact-head required-gate feedback proxy by PR class and selected workload; next blocking gate",
+        "All physical failures, retries, cancellations, incomplete runs; cleanup/fresh identity/owned-loop checks",
+        "CPU, worker-seconds and requested unit-seconds separately from wall time"
+      ],
+      "comparison": "Matched workload/case/source/cache/worker strata across pre/post windows, controlling other landed changes; report unobserved confounders.",
+      "planning_expectation": {
+        "conditional_on": "compatible warm baseline and system-test critical path",
+        "ci_wall_saving_seconds_approx": [
+          60,
+          70
+        ],
+        "overall_reduction_percent_approx": [
+          10,
+          20
+        ],
+        "illustrative_before_minutes": [
+          6,
+          10
+        ],
+        "measured_fleet_effect": false,
+        "benefit_can_be_zero": true
+      },
+      "automation_scheduled": false
+    }
   }
 }

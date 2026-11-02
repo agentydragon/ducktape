@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>
-      Ducktape CI latency · 1 November 2026 · hosted experiment follow-up
+      Ducktape CI latency · k3s reuse merged 2 November 2026 · soak pending
     </title>
     <style>
       * {
@@ -303,19 +303,25 @@
   <body>
     <main>
       <header>
-        <div class="eyebrow">Ducktape · CI latency · 1 November 2026</div>
-        <h1>The VM path still sets the integration floor.</h1>
+        <div class="eyebrow">
+          Ducktape · CI latency · rollout update 2 November 2026
+        </div>
+        <h1>Hosted k3s reuse is merged. Measure the soak next.</h1>
         <p class="lead">
-          Current green-head CI feedback is
-          <strong>6m 11s median / 11m 36s p90</strong>. Landed Pod, MCP and VM
-          changes are present in the combined tested trees, but a twofold
-          feedback improvement is unproved. VM actions still take 344–425
-          seconds. Reaching half-time requires reducing VM setup and guest work,
-          then the Pod/MCP floor.
+          <a href="https://github.com/agentydragon/ducktape/pull/13586"
+            >#13586</a
+          >
+          merged on 2 November at 03:17 UTC. All k3s suites now reuse compatible
+          infrastructure automatically inside BuildBuddy executors. Selected
+          warm trials used 32–40% less non-VM action time and 19% less normal VM
+          action time. Fleet-wide savings remain unmeasured. The
+          <strong>6m 11s median / 11m 36s p90</strong> below is the retained
+          <em>pre-rollout</em> fleet baseline.
         </p>
         <p class="meta">
-          Fresh arrival census: <strong>1 November 02:30–21:45 UTC</strong> ·
-          source <code>de5f671002f5</code> · collected 2026-11-01T21:51:03Z →
+          Retained pre-rollout arrival census:
+          <strong>1 November 02:30–21:45 UTC</strong> · source
+          <code>de5f671002f5</code> · collected 2026-11-01T21:51:03Z →
           2026-11-01T21:59:14Z. Reliability has its own longer window.
           <a href="evidence.json">Reviewed evidence</a> ·
           <a href="manifest.json">Source manifest</a>.
@@ -324,35 +330,37 @@
           <div class="card">
             <strong>371 / 696s</strong
             ><span
-              >Three-required-job proxy p50/p90<br />149 green of 297 exact PR
-              heads</span
+              >Pre-rollout required-job proxy p50/p90<br />149 green of 297
+              exact PR heads</span
             >
           </div>
           <div class="card">
             <strong>529 / 733s</strong
             ><span
-              >System/runtime PR p50/p90<br />24 green of 27 classed heads</span
+              >Pre-rollout system/runtime PR p50/p90<br />24 green of 27 classed
+              heads</span
             >
           </div>
           <div class="card">
             <strong>344–425s</strong
             ><span
-              >Fresh VM actions on combined trees<br />Two selected ordinary
-              devel runs</span
+              >Pre-rollout fresh VM actions<br />Two selected ordinary devel
+              runs</span
             >
           </div>
         </div>
         <p class="meta">
-          Hosted experiment follow-up: 2026-11-01T22:15:00Z →
-          2026-11-01T23:12:25.941Z. Fleet cohort and collection clocks above are
-          retained from the merged refresh.
+          Rollout note observed 2026-11-02T03:26:20Z; implementation inspected
+          at devel <code>f342c9f7fd5f</code>. The fleet cohort and collection
+          clocks above are unchanged. The <a href="#soak">soak follow-up</a> is
+          pending; no post-merge fleet census was collected.
         </p>
         <nav aria-label="Report sections">
           <a href="#effects">Intervention effects</a
-          ><a href="#feedback">Current timings</a
+          ><a href="#feedback">Baseline timings</a
           ><a href="#runtime">Blocking work</a
           ><a href="#experiments">Hosted experiments</a>
-          <a href="#twice">Path to 2×</a
+          <a href="#soak">Soak follow-up</a><a href="#twice">Path to 2×</a
           ><a href="#resources">Queues &amp; compute</a
           ><a href="#signals">Agent signals</a
           ><a href="#continuity">Prior work</a><a href="#methods">Methods</a>
@@ -361,13 +369,15 @@
 
       <section id="effects">
         <span class="pill">Observed effects, with limits</span>
-        <h2>Source changes landed. Their combined runtime is now observed.</h2>
+        <h2>
+          k3s reuse joined the merged interventions; fleet impact is pending.
+        </h2>
         <p>
-          All nine intervention merge commits from the previous implementation
-          report are ancestors of both selected devel test sources and inspected
-          devel; each ancestry check returned zero. This refresh closes the
-          missing combined-revision observation. It does not supply matched
-          before/after fleet controls.
+          The retained pre-rollout analysis confirmed that all nine intervention
+          merge commits from the previous implementation report are ancestors of
+          both selected devel test sources and inspected devel; each ancestry
+          check returned zero. This refresh closes the missing combined-revision
+          observation. It does not supply matched before/after fleet controls.
         </p>
         <div class="table-scroll narrative" tabindex="0">
           <table>
@@ -380,6 +390,33 @@
               </tr>
             </thead>
             <tbody>
+              <tr>
+                <td data-label="Intervention">
+                  BuildBuddy k3s infrastructure reuse
+                </td>
+                <td data-label="Merged work">
+                  <a href="https://github.com/agentydragon/ducktape/pull/13586"
+                    >#13586</a
+                  ><br />Merged 2026-11-02 03:17:13 UTC
+                </td>
+                <td data-label="Current observation">
+                  All standard k3s suites use versioned, fingerprinted baselines
+                  on BuildBuddy. k3s and PKI persist; VM suites also retain
+                  KubeVirt/Kyverno. Applications, PostgreSQL, certificates,
+                  collectors and workspace disks remain fresh. Without the
+                  executor permission, k3s stops at teardown.
+                </td>
+                <td data-label="What the evidence establishes">
+                  Selected cold/warm pairs show 97–140s less non-VM action time
+                  and 70s less normal VM action time, with identity and cleanup
+                  checks. These are experimental observations, not a post-merge
+                  CI treatment effect.
+                  <a href="#soak"
+                    >Measure compatible warm reuse and required-gate feedback
+                    after soak.</a
+                  >
+                </td>
+              </tr>
               <tr>
                 <td data-label="Intervention">Pod concurrency and reuse</td>
                 <td data-label="Merged work">
@@ -732,11 +769,12 @@
       <section id="runtime">
         <h2>Most integration time remains inside the VM test.</h2>
         <p>
-          Both selected ordinary devel invocations contain the merged
-          interventions. VM contributes roughly 427/345 seconds to their
-          444/361-second computed critical paths. Its remote action queues were
-          below 0.1s. Outer runner logs show an existing repository workspace,
-          which does not establish inner analysis-cache or image-store warmth.
+          Both selected pre-rollout ordinary devel invocations contain the
+          earlier merged interventions. VM contributes roughly 427/345 seconds
+          to their 444/361-second computed critical paths. Its remote action
+          queues were below 0.1s. Outer runner logs show an existing repository
+          workspace, which does not establish inner analysis-cache or
+          image-store warmth.
         </p>
         <div
           role="img"
@@ -1091,14 +1129,14 @@
         <p class="eyebrow">
           Hosted experiments · same inspected source, isolated patches
         </p>
-        <h2>Hosted k3s reuse works; extra Pod slots need memory.</h2>
+        <h2>k3s reuse is merged; the larger Pod worker remains a candidate.</h2>
         <p>
-          The full Pod persistence spike passed all 13 cases in both actions:
-          285.1s cold and 214.2s prepared, with fresh application state. More
-          Pod concurrency needs a larger worker: three slots failed memory
-          admission on four units; four slots passed twice on eight units in
-          192.0/192.6s. These are suite measurements, with no demonstrated
-          reduction of the enclosing CI gate.
+          The early Pod-only probe was expanded and merged across every k3s
+          suite. The new measurements and lifecycle boundary are below. The Pod
+          concurrency experiment remains unchanged: three slots failed memory
+          admission on four units; four slots passed twice on eight units, at
+          higher allocated compute cost. It was not enabled by the k3s
+          persistence PR.
         </p>
         <h3>More Pod slots hit a memory-reservation limit.</h3>
         <p>
@@ -1335,144 +1373,319 @@
             measured comparison.
           </p>
         </details>
-        <h3 id="persistence">
-          Prepared k3s and PKI work on hosted BuildBuddy.
-        </h3>
-        <p>
-          The full
-          <a
-            href="https://github.com/agentydragon/ducktape/commit/64f78edc9865201457ef8f1d151252283042c690"
-            >manual source spike</a
+        <div id="persistence">
+          <h3>k3s infrastructure reuse is merged across all suites.</h3>
+          <p>
+            <a href="https://github.com/agentydragon/ducktape/pull/13586"
+              >#13586</a
+            >
+            merged as
+            <a
+              href="https://github.com/agentydragon/ducktape/commit/53012e85ee611a902667601f135f9631da935b1b"
+              ><code>53012e85ee61</code></a
+            >
+            at <strong>2026-11-02 03:17:13 UTC</strong>. Pod, Dispatcher, all
+            MCP suites, normal/manual/profile VM and real-model declarations use
+            the optimization automatically on BuildBuddy executors; existing
+            manual/live tags still control which suites ordinary CI selects. No
+            separate comparison targets remain.
+          </p>
+          <p>
+            BuildBuddy injects
+            <code>AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1</code> through
+            <code>test.env-overrides</code>. The test's ordinary environment
+            does not set it. Tests executed locally start fresh infrastructure
+            and stop k3s; a local command that sends its test to BuildBuddy
+            still gets reuse. If retention is disabled on a restored baseline,
+            the recorded owner is stopped before the fresh node starts.
+            PID/start-time ownership checks protect unrelated processes.
+          </p>
+          <p>
+            The retained baseline is k3s plus cert-manager/trust-manager; VM
+            suites also retain KubeVirt and Kyverno. The
+            <code>k3s-persistence-v7-{pod,vm}</code> families separate tmpfs and
+            VM disk-backed layers. Input fingerprints and live identities reject
+            dirty, missing, incompatible or unhealthy baselines. Every action
+            recreates app services, PostgreSQL, model/MCP endpoints,
+            CA/certificates, collectors and VM workspace disks. Teardown
+            validates guest logs and removes fixture resources, PVs and owned
+            loops before certifying a clean baseline.
+          </p>
+          <h4>Selected cold/warm pairs: setup and TestRunner wall time</h4>
+          <div
+            id="persistence-results"
+            class="table-scroll narrative"
+            tabindex="0"
           >
-          uses a detached k3s process, stable binary/config/log paths, an input
-          fingerprint, live identity checks and a dirty marker. It preserves k3s
-          and PKI controllers while recreating application state. Both actions
-          below ran the same source and identical TestRunner action digest on
-          one hosted worker with four compute units.
+            <table>
+              <thead>
+                <tr>
+                  <th>Suite</th>
+                  <th>Cases</th>
+                  <th>Setup, s</th>
+                  <th>Action wall, s</th>
+                  <th>Less action time</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td data-label="Suite">Pod</td>
+                  <td data-label="Cases">13</td>
+                  <td data-label="Setup, s">141.7 → 37.6</td>
+                  <td data-label="Action wall, s">329.5 → 224.6</td>
+                  <td data-label="Less action time">32%</td>
+                </tr>
+                <tr>
+                  <td data-label="Suite">Dispatcher</td>
+                  <td data-label="Cases">3</td>
+                  <td data-label="Setup, s">136.6 → 39.6</td>
+                  <td data-label="Action wall, s">264.2 → 167.3</td>
+                  <td data-label="Less action time">37%</td>
+                </tr>
+                <tr>
+                  <td data-label="Suite">MCP Actions</td>
+                  <td data-label="Cases">5</td>
+                  <td data-label="Setup, s">176.2 → 39.1</td>
+                  <td data-label="Action wall, s">352.4 → 212.3</td>
+                  <td data-label="Less action time">40%</td>
+                </tr>
+                <tr>
+                  <td data-label="Suite">MCP Services</td>
+                  <td data-label="Cases">5</td>
+                  <td data-label="Setup, s">196.1 → 51.8</td>
+                  <td data-label="Action wall, s">349.9 → 213.7</td>
+                  <td data-label="Less action time">39%</td>
+                </tr>
+                <tr>
+                  <td data-label="Suite">Real-model (live tag)</td>
+                  <td data-label="Cases">4</td>
+                  <td data-label="Setup, s">146.1 → 40.3</td>
+                  <td data-label="Action wall, s">286.7 → 189.6</td>
+                  <td data-label="Less action time">34%</td>
+                </tr>
+                <tr>
+                  <td data-label="Suite">
+                    Normal VM (three concurrent scenarios)
+                  </td>
+                  <td data-label="Cases">1 batch</td>
+                  <td data-label="Setup, s">95.0 → 38.6</td>
+                  <td data-label="Action wall, s">374.2 → 303.8</td>
+                  <td data-label="Less action time">19%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            The non-VM comparisons use source <code>4a190b1991a0</code>:
+            <a
+              href="https://app.buildbuddy.io/invocation/8752f1b1-ad4d-412f-a7f2-dccbe85a0f71"
+              >cold wave</a
+            >,
+            <a
+              href="https://app.buildbuddy.io/invocation/e7fcb343-9437-495a-97fa-1815a9631a4b"
+              >warm Pod/Dispatcher/real-model</a
+            >,
+            <a
+              href="https://app.buildbuddy.io/invocation/544152d9-3e5f-4882-8c0a-6c0077aecc40"
+              >warm MCP</a
+            >. Normal VM uses source <code>4e5ce89345f5</code>:
+            <a
+              href="https://app.buildbuddy.io/invocation/fd9d3fc8-81f8-44af-a21c-2cf7d798a178"
+              >cold</a
+            >
+            and
+            <a
+              href="https://app.buildbuddy.io/invocation/a690a9d1-34b8-4b9a-ada6-2689937e3f83"
+              >warm</a
+            >. The enclosing cold waves also contain unrelated failed
+            suite/physical attempts; the selected successful suite results are
+            not a passing verdict for every enclosing invocation.
+          </p>
+          <p>
+            <strong
+              >These selected pairs do not establish a fleet-wide or isolated
+              k3s-only treatment effect.</strong
+            >
+            Worker/cache conditions and image warming were not controlled. Case
+            identities were preserved; retained k3s/PKI and VM-controller UIDs
+            matched their seeds, while application, PostgreSQL, CA, collector
+            and workspace identities changed. The explicit all-suite validation
+            passed eight suites / 35 cases and complete cleanup, including three
+            owned loops released per VM action. It included manual/live suites
+            excluded from ordinary PR CI. The profile VM passed via a cold
+            fallback after a physical execution failure; profile-specific warm
+            reuse is not established.
+          </p>
+          <p>
+            The
+            <a
+              href="https://app.buildbuddy.io/invocation/a63eeab6-7bc0-42a3-bd1e-106ee4f8a926"
+              >expanded real-k3s lifecycle test</a
+            >
+            passed clean attach, invalidation, dead-node recovery, PID-reuse
+            protection, and disabling retention followed by ordinary node
+            start/stop. The
+            <a
+              href="https://app.buildbuddy.io/invocation/4519b25d-9ef0-4afa-bb15-53a91981318a"
+              >full Pod fallback run</a
+            >
+            passed all 13 cases with a completed k3s shutdown span and no
+            retained-baseline artifact.
+          </p>
+          <p>
+            The
+            <a
+              href="https://app.buildbuddy.io/invocation/7aab9a38-a5db-5b9a-ac50-805267be092c"
+              >final pre-merge ordinary CI run</a
+            >
+            passed in 376.8s; VM contributed 364.2s of the 364.5s computed
+            critical path. Its VM artifact reported a cold baseline and 144.5s
+            setup; MCP Actions reported warm with 40.4s setup. Some suite
+            artifacts reuse earlier work, so this is neither a fresh-action
+            hit-rate sample nor a post-merge soak result.
+          </p>
+          <p>
+            PostgreSQL retention was tried and removed because it showed no
+            overall timing benefit. Earlier trials also exposed guest scheduler
+            panics, a missing boot-monitor receipt and a PVC-list timeout that
+            stopped the provisioner. Those remain unresolved signatures; later
+            passes do not prove repairs. The Kyverno stderr/resource-name
+            cleanup error was repaired. See the
+            <a
+              href="https://github.com/agentydragon/ducktape/blob/53012e85ee611a902667601f135f9631da935b1b/agentplane/debug/k3s_persistence.md"
+              >source-pinned investigation</a
+            >
+            for ownership evidence and failed attempts.
+          </p>
+          <details>
+            <summary>Historical Pod-only proof and earlier failures</summary>
+            <p>
+              The first full Pod pair reduced setup 109.4 → 35.5s and action
+              wall 285.1 → 214.2s, with all 13 cases and fresh app state. Early
+              probes found process-group cleanup killed non-detached k3s, and a
+              CertificateRequest GC race required idempotent deletion. The
+              original same-worker mechanism proof and its failed physical
+              attempts remain in <code>k3s_persistence_spike</code> in the
+              evidence and the
+              <a
+                href="https://github.com/agentydragon/ducktape/blob/f6975b41fae3c634568ca454f0c38921ec3595df/latency/index.html#persistence"
+                >previous report</a
+              >. Its manual-only scope and untested VM/MCP adoption statements
+              are superseded by the merged rollout above.
+            </p>
+          </details>
+        </div>
+      </section>
+      <section id="soak">
+        <span class="pill"
+          >Pending follow-up · no post-merge measurement yet</span
+        >
+        <h2>Measure the steady-state benefit after soak.</h2>
+        <p>
+          <strong
+            >First checkpoint: after 48 hours, no earlier than 4 November 2026
+            at 03:17 UTC.</strong
+          >
+          Aim for at least 30 originating ordinary k3s TestRunner actions,
+          including at least 10 VM and 10 non-VM actions across multiple PR
+          heads. This is a collection threshold, not statistical confidence.
+          Extend to seven days if ordinary traffic is sparse; report actual
+          sample sizes and uncertainty. This is a recorded follow-up, not a
+          scheduled job.
         </p>
-        <div class="table-scroll">
+        <div class="table-scroll narrative" tabindex="0">
           <table>
             <thead>
               <tr>
-                <th>Full 13-case Pod action</th>
-                <th>Setup, s</th>
-                <th>Action, s</th>
-                <th>CPU, s</th>
-                <th>Peak, GB</th>
-                <th>Queue / preparation, s</th>
-                <th>Result</th>
+                <th>Question</th>
+                <th>Collection and comparison</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>
-                  <a
-                    href="https://app.buildbuddy.io/invocation/7ef08fcc-d50a-402a-bef7-f54fb1e3f8c8"
-                    >Cold seed</a
-                  >
+                <td data-label="Question">
+                  Does compatible infrastructure actually get reused?
                 </td>
-                <td>109.43</td>
-                <td>285.051</td>
-                <td>693.425</td>
-                <td>4.934</td>
-                <td>0.060 / 1.411</td>
-                <td>13 passed; cleanup complete</td>
+                <td data-label="Collection and comparison">
+                  Verify the tested tree contains merge
+                  <code>53012e85ee61</code>, including runner-applied patches.
+                  Read each fresh action's
+                  <code>persistence-suite.json</code> outcome and fingerprint;
+                  separate Pod and VM families, warm attaches, cold rebuilds and
+                  unknown/missing artifacts. Deduplicate physical execution IDs
+                  and originating/shared invocation links. Result-cache hits are
+                  a separate population, not warm baseline hits.
+                </td>
               </tr>
               <tr>
-                <td>
-                  <a
-                    href="https://app.buildbuddy.io/invocation/182acac7-a360-4f2e-9818-2eb8860e209a"
-                    >Prepared attach</a
-                  >
+                <td data-label="Question">Where does time change?</td>
+                <td data-label="Collection and comparison">
+                  For each suite and warm/cold stratum, compare setup, action
+                  wall, queue/preparation and output-upload time; report n,
+                  p50/p90 and uncertainty. Compare matched workload/case sets,
+                  source/fingerprint and cache/worker conditions where possible.
+                  Keep fixture-changing commits and cold rebuilds visible. CPU,
+                  worker-seconds and requested unit-seconds stay separate from
+                  wall time; snapshot-save metadata alone does not prove remote
+                  upload completion or quantify snapshot storage cost.
                 </td>
-                <td>35.54</td>
-                <td>214.168</td>
-                <td>465.318</td>
-                <td>4.991</td>
-                <td>0.058 / 0.236</td>
-                <td>13 passed; cleanup complete</td>
+              </tr>
+              <tr>
+                <td data-label="Question">Do PRs finish sooner?</td>
+                <td data-label="Collection and comparison">
+                  Join exact PR heads to the actual required checks and measure
+                  the same workflow-start feedback proxy as the baseline,
+                  stratified by system-test selection and PR class. Compare
+                  matched pre/post windows and critical paths, including the
+                  next-slowest gate, queueing, cancellations and retries. Do not
+                  add parallel suite savings or count an observational change as
+                  causal without controlling workload and other landed changes.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Question">
+                  Is isolation and reliability preserved?
+                </td>
+                <td data-label="Collection and comparison">
+                  Retain every physical failure, retry and canceled/unfinished
+                  run. Audit cleanup completion, fresh identities for
+                  applications, databases, certificates, collectors and
+                  workspaces; and loop release. Track teardown/ownership errors,
+                  missing boot receipts, PVC-list worker failures and provider
+                  pause/kernel-panic signatures separately. No automatic replay
+                  of uncertain resource writes; a successful retry does not
+                  erase its first failure.
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
         <p>
           <strong
-            >Observed: 70.9s less action wall time and 73.9s less setup in one
-            cold/prepared pair.</strong
+            >Planning expectation, conditional on warm reuse and a system-test
+            critical path:</strong
           >
-          The same boot ID, PID/start ticks, node and kube-system UIDs prove the
-          k3s process survived. All four PKI Deployment UIDs were unchanged. The
-          app namespace, PostgreSQL Pod, root Certificate and Secret, collector
-          namespace and scripted-model endpoint were different. Teardown
-          verified removal of fixture-owned namespaces, volumes, CA resources,
-          exact cluster-scoped objects and generated permissions before marking
-          the seed clean. The warm snapshot’s lastExecutedTask identifies the
-          cold action.
+          about 60–70s less CI wall time, roughly 10–20% of a 6–10 minute run.
+          The selected normal VM pair saved 70.4s; non-VM suite savings were
+          96.9–140.1s, but parallel savings do not add. Cached tests,
+          incompatible snapshots, other blocking gates and queueing can reduce
+          the end-to-end benefit to zero. This is not a measured fleet
+          improvement or a 2× projection. The soak should test this expectation,
+          not assume it.
         </p>
-        <p>
-          Yes, this works without provisioning our own runners.
-          <a
-            href="https://www.buildbuddy.io/docs/rbe-microvms/#preserving-microvm-state-across-actions"
-            >BuildBuddy documents live-process recycling</a
-          >; this spike demonstrated it with the default local snapshot policy.
-          Reuse is best effort. Only same-worker local reuse is proved here;
-          cross-worker availability, eviction behavior and production hit rate
-          remain unmeasured. Runtime fingerprints reject changed inputs, and the
-          manual recycling key must be bumped to create a new prepared seed.
-          Ordinary cold-install targets remain available.
-        </p>
-        <p>
-          The 71s action difference includes image/cache warming and the
-          prepared cluster, so it does not isolate a k3s-only effect. Worker
-          preparation did not increase in this pair, but snapshot-write cost and
-          retained-state resource cost were not separately measured. No
-          end-to-end PR saving follows while VM remains the longest action. VM
-          reuse is explicitly excluded from this Pod spike: retaining KubeVirt,
-          Kyverno and raw-block guest resources needs a separate ownership
-          check.
-        </p>
-        <details>
-          <summary>
-            Failed probes explain the mechanism and the cleanup repair.
-          </summary>
-          <p>
-            Early default-policy probes restored an older snapshot and started
-            cold. Explicit remote-save/read policies advanced snapshot lineage,
-            but k3s still died:
-            <a
-              href="https://github.com/bazelbuild/bazel/blob/9.2.0/tools/test/test-setup.sh#L280-L283"
-              >Bazel kills the test process group on exit</a
-            >, and the original subprocess inherited it. Detaching the server
-            and using a fresh key proved bare API reuse, with 32.7/12.8s
-            cold/warm actions and identical process and cluster identity. Extra
-            snapshot-save properties were unnecessary for that same-worker
-            result.
-          </p>
-          <p>
-            The first full-suite version passed all 13 case bodies but failed
-            teardown when cert-manager had already garbage-collected an
-            enumerated CertificateRequest. Idempotent deletion fixed that race;
-            the fresh-key pair above passed complete cleanup. The failed target
-            is retained in evidence. Five canceled/lint-failed preflight
-            commands also launched physical TestRunners; they are not silently
-            discarded as unexecuted builds. Full raw logs remain in linked
-            BuildBuddy artifacts; the reviewed JSON retains IDs, patches,
-            metrics, verdicts and snapshot lineage.
-          </p>
-        </details>
       </section>
       <section id="twice">
         <h2>What would be needed for 2× faster CI?</h2>
         <p>
           <strong
-            >The current all-green median target is 186s; the system/runtime
-            class target is 265s.</strong
+            >The baseline all-green median half-time target is 186s; the
+            system/runtime class target is 265s.</strong
           >
           Those are half of this census’s 371s and 529s medians. They are
-          engineering goals, not projections. Current integration tests alone
-          exceed them. Even eliminating VM would leave Pod at 235–255s and MCP
-          actions at 222–224s, plus about 80s of assigned-job overhead and PR
-          queueing.
+          engineering goals, not projections. The pre-rollout integration tests
+          alone exceed them. Even eliminating VM would leave Pod at 235–255s and
+          MCP actions at 222–224s, plus about 80s of assigned-job overhead and
+          PR queueing.
         </p>
         <div class="table-scroll narrative" tabindex="0">
           <table>
@@ -1486,26 +1699,24 @@
             <tbody>
               <tr>
                 <td data-label="Priority / change">
-                  A · Prepared hosted infrastructure
+                  A · Measure merged k3s reuse after soak
                 </td>
                 <td data-label="Measured opportunity and who benefits">
-                  The manual Pod spike now proves live k3s and prepared PKI
-                  reuse on BuildBuddy-hosted workers. One full pair reduced
-                  setup 109.4→35.5s and action wall 285.1→214.2s while
-                  preserving all 13 cases and fresh app state. This includes
-                  image/cache warming; it is not an isolated estimate of
-                  retaining k3s alone. Ordinary VM setup remains 103–167s and
-                  Pod setup 70–95s in the selected devel runs.
+                  Implementation merged in
+                  <a href="https://github.com/agentydragon/ducktape/pull/13586"
+                    >#13586</a
+                  >, including VM and MCP coverage. Selected non-VM action time
+                  fell 32–40%; normal VM fell 19%. The warm VM action still took
+                  304s, so this alone does not reach the 186s/265s baseline
+                  half-time goals.
                 </td>
                 <td data-label="Effort / confidence / validation">
-                  High confidence in the hosted mechanism and this pair’s
-                  isolation, low confidence in fleet savings. The spike is
-                  manual and source-pinned. Production adoption needs versioned
-                  baseline keys, cold/eviction coverage and hit-rate evidence.
-                  VM reuse additionally needs KubeVirt/Kyverno and
-                  raw-block/guest ownership validation; MCP is unmeasured. Keep
-                  fresh namespaces, DBs, CA/certificates, volumes and Sandboxes,
-                  plus cold-install coverage when baseline inputs change.
+                  Adoption is complete; fleet effect and warm hit rate remain
+                  pending. Follow the
+                  <a href="#soak">48-hour checkpoint and measurement plan</a>.
+                  Keep fresh fixtures, cold rebuild and ownership checks.
+                  Re-rank accelerated guests and Pod slots after observing the
+                  new critical path.
                 </td>
               </tr>
               <tr>
@@ -2073,7 +2284,7 @@
           executions.
         </p>
         <p>
-          Source is inspected devel
+          The retained fleet analysis inspected devel
           <code>de5f671002f516e952c3dfafcbf06659a4bc731b</code>. Current
           required contexts remain
           <strong>Build artifacts + imports check</strong>,
@@ -2109,12 +2320,13 @@
           Raw API payloads, profiles, process traces and logs remain local or in
           linked BuildBuddy artifacts. Published evidence contains reviewed
           measurements and public provenance, without credentials, webhook
-          payloads or agent inbox data. Attribution is not collected. No
-          production/workflow/test policy was changed. The fleet arrival window
-          remains 02:30–21:45 UTC; later hosted experiments have a separate
-          window and source patches in evidence. Desktop/mobile checks and exact
-          HTML hashes are recorded separately in evidence and manifest after
-          visual review.
+          payloads or agent inbox data. Attribution is not collected. The
+          original fleet collection changed no production/workflow/test policy;
+          this update records the separately merged fixture optimization and
+          changes only the report. The fleet arrival window remains 02:30–21:45
+          UTC; later hosted experiments have a separate window and source
+          patches in evidence. Desktop/mobile checks and exact HTML hashes are
+          recorded separately in evidence and manifest after visual review.
         </p>
       </section>
       <footer>
