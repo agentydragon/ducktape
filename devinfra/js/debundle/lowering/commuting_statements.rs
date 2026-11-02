@@ -219,20 +219,18 @@ fn resolved_logical_members(
             };
             resolved_member_sites
                 .iter()
-                .filter_map(|((module, name), sites)| {
-                    sites
-                        .iter()
-                        .any(|site| {
-                            site.provider_chunk == chunk_name
-                                && site.declaration.as_ref().is_some_and(|declaration| {
-                                    declaration.body_index == body_index
-                                        && declaration.binding.as_str() == selected_binding
-                                })
-                        })
-                        .then(|| ResolvedMemberSelector {
-                            module: module.clone(),
-                            name: name.clone(),
-                        })
+                .filter(|(_, sites)| {
+                    sites.iter().any(|site| {
+                        site.provider_chunk == chunk_name
+                            && site.declaration.as_ref().is_some_and(|declaration| {
+                                declaration.body_index == body_index
+                                    && declaration.binding.as_str() == selected_binding
+                            })
+                    })
+                })
+                .map(|((module, name), _)| ResolvedMemberSelector {
+                    module: module.clone(),
+                    name: name.clone(),
                 })
                 .collect()
         }
