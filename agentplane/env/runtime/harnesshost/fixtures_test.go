@@ -65,6 +65,8 @@ func quiesceHost(ctx context.Context, r *Runner) (*sessionpb.QuiesceResponse, er
 		intent.ExecutionFenced = true
 		if err := r.ApplyIntent(ctx, intent); err != nil {
 			r.fail(err)
+		} else if err := publishHostIntentStatus(ctx, r, intent, true); err != nil {
+			r.fail(err)
 		}
 	}()
 	return &sessionpb.QuiesceResponse{}, nil

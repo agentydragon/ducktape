@@ -47,11 +47,7 @@ func lifecycleRead[T lifecycleSpec[T]](ctx context.Context, reader controller.Re
 }
 
 type runnerInputSpec struct {
-	Admissions      int
-	ExecutionFenced bool
-	RuntimeBootID   string
-	HostBootID      string
-	Generation      uint64
+	Admissions int
 }
 type journalSealSpec struct {
 	Present        bool

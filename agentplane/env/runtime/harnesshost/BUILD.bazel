@@ -74,6 +74,7 @@ go_test(
     race = "on",
     deps = [
         "//agentplane/env/configuration",
+        "//agentplane/env/cosi",
         "//agentplane/env/runtime:runtime_service_go_proto",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/env/runtime/harnesshost/codexappserver",
@@ -122,6 +123,7 @@ go_test(
     race = "on",
     deps = [
         "//agentplane/env/configuration",
+        "//agentplane/env/cosi",
         "//agentplane/env/runtime:runtime_service_go_proto",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/env/runtime/harnesshost/retained",

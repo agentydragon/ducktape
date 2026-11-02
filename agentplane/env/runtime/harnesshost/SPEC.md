@@ -36,7 +36,8 @@ serves external WatchState, health, epoch ownership and Quiesce.
 1. Runtime publishes a draining generation. Host closes admission synchronously.
 2. Accepted journal admissions and setup settle; Session/native/app-server cleanup and inspection join.
 3. Host reports `native_stopped` for the current binding.
-4. Runtime proves Execution fenced and sends `execution_fenced` for that binding.
+4. Runtime proves Execution fenced and sends `execution_fenced` for that binding. Host waits for
+   successful application of the exact intent before sealing.
 5. A seal-bearing intent seals each journal at its final cursor. Host keeps History ingress alive
    until the exact sealed cursor is acknowledged durably, then reports QUIESCED.
 6. Runtime stops and joins Host before releasing the environment owner.
