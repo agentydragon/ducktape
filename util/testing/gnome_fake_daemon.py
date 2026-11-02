@@ -36,6 +36,34 @@ class FakeDaemon:
         return int(match[1]), int(match[2]), int(match[3])
 
 
+def _cleanup(daemon: FakeDaemon, pid: int) -> list[Exception]:
+    errors: list[Exception] = []
+    try:
+        if daemon.is_running():
+            daemon.call("Stop")
+    except Exception as error:
+        errors.append(error)
+    try:
+        # Also terminate a process that failed before exporting its control interface.
+        result = daemon.session.exec(
+            f"if kill -0 {pid} 2>/dev/null; then kill {pid} 2>/dev/null || ! kill -0 {pid} 2>/dev/null; fi"
+        )
+        if result.exit_code != 0:
+            raise RuntimeError(f"fake daemon cleanup failed: {exec_output(result)}")
+        wait_until(lambda: not daemon.is_running(), f"fake D-Bus service {daemon.destination} did not stop")
+    except Exception as error:
+        errors.append(error)
+    try:
+        result = daemon.session.exec("cat /tmp/fake-daemon.log")
+        stdout, stderr = exec_output(result)
+        if result.exit_code != 0:
+            raise RuntimeError(f"fake daemon log capture failed: {(stdout + stderr).decode(errors='replace')}")
+        (undeclared_outputs_dir() / "fake-daemon.log").write_bytes(stdout + stderr)
+    except Exception as error:
+        errors.append(error)
+    return errors
+
+
 @contextmanager
 def fake_daemon(session: GnomeSession, *, destination: str, object_path: str) -> Iterator[FakeDaemon]:
     daemon = FakeDaemon(session, destination=destination, object_path=object_path)
@@ -44,20 +72,17 @@ def fake_daemon(session: GnomeSession, *, destination: str, object_path: str) ->
     if result.exit_code != 0:
         raise RuntimeError(f"fake daemon could not start: {(stdout + stderr).decode(errors='replace')}")
     pid = int(stdout)
+    failure: BaseException | None = None
     try:
         wait_until(daemon.is_running, f"fake D-Bus service {destination} did not start")
         yield daemon
+    except BaseException as error:
+        failure = error
+        raise
     finally:
-        try:
-            if daemon.is_running():
-                daemon.call("Stop")
-        finally:
-            # Also terminate a process that failed before exporting its control interface.
-            result = session.exec(
-                f"if kill -0 {pid} 2>/dev/null; then kill {pid} 2>/dev/null || ! kill -0 {pid} 2>/dev/null; fi"
-            )
-            if result.exit_code != 0:
-                raise RuntimeError(f"fake daemon cleanup failed: {exec_output(result)}")
-            wait_until(lambda: not daemon.is_running(), f"fake D-Bus service {destination} did not stop")
-            stdout, stderr = exec_output(session.exec("cat /tmp/fake-daemon.log"))
-            (undeclared_outputs_dir() / "fake-daemon.log").write_bytes(stdout + stderr)
+        errors = _cleanup(daemon, pid)
+        if failure is not None:
+            for cleanup_error in errors:
+                failure.add_note(f"Fake daemon cleanup failed: {cleanup_error!r}")
+        elif errors:
+            raise ExceptionGroup("Fake daemon cleanup failed", errors)

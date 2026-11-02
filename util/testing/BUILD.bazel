@@ -290,3 +290,16 @@ py_library(
         ":undeclared_outputs",
     ],
 )
+
+py_test(
+    name = "test_gnome_failure_cleanup",
+    srcs = ["test_gnome_failure_cleanup.py"],
+    deps = [
+        ":gnome",
+        ":gnome_fake_daemon",
+        "//:conftest",
+        "@pypi//docker",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

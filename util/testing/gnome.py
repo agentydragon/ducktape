@@ -188,13 +188,22 @@ def gnome_session(
             destination=destination,
             object_path=object_path,
         )
+        failure: BaseException | None = None
         try:
             session.boot()
             session.start(environment=environment)
             session.wait_for_paint()
             yield session
+        except BaseException as error:
+            failure = error
+            raise
         finally:
-            session.save_log(undeclared_outputs_dir() / "session.shell.log")
+            try:
+                session.save_log(undeclared_outputs_dir() / "session.shell.log")
+            except Exception as log_error:
+                if failure is None:
+                    raise
+                failure.add_note(f"GNOME session log capture failed: {log_error!r}")
 
 
 def string_reply(reply: bytes) -> str:
