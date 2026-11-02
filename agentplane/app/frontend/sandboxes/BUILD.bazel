@@ -144,10 +144,18 @@ agentplane_vitest_test(
     name = "decision_groups_test",
     srcs = ["decision_groups.test.ts"],
     deps = [
-        ":client",
+        ":decision_fixture",
         ":decision_groups",
         "//:node_modules/vitest",
     ],
+)
+
+ts_library(
+    name = "decision_fixture",
+    testonly = True,
+    srcs = ["decision_fixture.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
 )
 
 ts_library(
