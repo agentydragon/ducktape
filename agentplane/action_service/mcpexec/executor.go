@@ -278,7 +278,12 @@ func (e *Executor) schedule() time.Duration {
 	if e.reason != nil {
 		reason = e.reason.String()
 	}
-	slog.Warn("MCP group unavailable; retry scheduled", "group", e.key, "reason", reason, "retry_in", delay)
+	attrs := []any{"group", e.key, "reason", reason, "retry_in", delay}
+	if e.detail != nil {
+		// What the operator's group health shows too; without it a rejected catalog names no tool in the logs.
+		attrs = append(attrs, "detail", *e.detail)
+	}
+	slog.Warn("MCP group unavailable; retry scheduled", attrs...)
 	return delay
 }
 

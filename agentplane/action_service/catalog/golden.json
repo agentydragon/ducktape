@@ -4291,8 +4291,24 @@
    "arguments": {
     "name": "user"
    },
-   "go_outcome": "fault",
+   "go_outcome": "satisfied",
    "name": "a lookahead pattern",
+   "schema": {
+    "properties": {
+     "name": {
+      "pattern": "^(?!admin).*$",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "arguments": {
+    "name": "admin"
+   },
+   "go_outcome": "not_satisfied",
+   "name": "a lookahead pattern that does not match",
    "schema": {
     "properties": {
      "name": {

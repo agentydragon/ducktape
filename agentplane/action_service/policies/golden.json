@@ -4135,7 +4135,7 @@
    }
   },
   "argument schema, a lookahead pattern": {
-   "outcome": "refused",
+   "outcome": "accepted",
    "rule": {
     "policy": {
      "actions": {
