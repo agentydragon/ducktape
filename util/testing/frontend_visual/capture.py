@@ -293,10 +293,11 @@ class VisualPage:
 
 
 class VisualHarness:
-    def __init__(self, playwright: Playwright, config: HarnessConfig, output_dir: Path) -> None:
+    def __init__(self, playwright: Playwright, config: HarnessConfig, output_dir: Path, *, case_id: str) -> None:
         self.playwright = playwright
         self.config = config
         self.output_dir = output_dir
+        self.case_id = case_id
 
     @asynccontextmanager
     async def open(
@@ -308,7 +309,6 @@ class VisualHarness:
         query: Mapping[str, str] | None = None,
         window_globals: Mapping[str, JsonValue] | None = None,
         frozen_now_ms: int = FROZEN_NOW_MS,
-        case_id: str,
         trace_checkpoint: str | None = None,
     ) -> AsyncIterator[VisualPage]:
         config = self.config
@@ -327,7 +327,7 @@ class VisualHarness:
                 has_touch=viewport.has_touch,
                 extra_args=["--allow-file-access-from-files"] if config.inline_page is None else [],
             ) as context,
-            playwright_trace(context, self.output_dir, case_id, trace_checkpoint),
+            playwright_trace(context, self.output_dir, self.case_id, trace_checkpoint),
         ):
             page = await context.new_page()
             page.set_default_timeout(WAIT_TIMEOUT_MS)
@@ -353,7 +353,7 @@ class VisualHarness:
                 fence=fence,
                 devtools_viewport=devtools,
                 expected_font_family=config.expected_font_family,
-                case_id=case_id,
+                case_id=self.case_id,
             )
             await fence.install(page)
             if config.inline_page is None:

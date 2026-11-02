@@ -71,11 +71,13 @@ an unnamed harness and closes its isolated browser context after the test. App-s
 fixtures can depend on it to prepare reusable state without hiding test interactions.
 
 The root pytest configuration provides `test_outputs`, a generic fixture bound to the full
-repository-relative pytest node ID. It can publish any output role via
+repository-relative pytest node ID, including parameter IDs. It can publish any output role via
 `test_outputs.publish(...)`; `case_id` exposes the same ID for browser and native UI
-helpers. With `view`, `await view.capture()` writes the default screenshot
-(`checkpoint=None`) for that case. Use readable parameter IDs. App-owned fixtures
-pass `case_id=case_id` to `visual.open()`.
+helpers. The function-scoped `visual` fixture binds that ID to its `VisualHarness`, while
+the session-scoped Playwright driver remains shared. With `view`, `await view.capture()`
+writes the default screenshot (`checkpoint=None`) for that case. Use readable parameter IDs.
+App-owned fixtures call `visual.open()` without passing an ID. Outside pytest, construct
+`VisualHarness(..., case_id=...)` with an explicit case identity.
 
 `test_outputs.publish(role="diagnostics", suffix="json", data=json.dumps(details))`
 accepts text (encoded as UTF-8) or bytes. Code that writes to a file handle can use
@@ -91,7 +93,7 @@ one component, omit it to capture the viewport, or use `full_page=True`. Crops
 retain the nearest-pixel rounding convention. `devtools_viewport` retains device-pixel
 compatibility for existing galleries. Duplicate case/checkpoint/role claims fail.
 
-`VisualHarness.open()` retains a standard Playwright trace for each case by default.
+`VisualHarness.open()` retains a standard Playwright trace for its bound case by default.
 Custom deterministic-context fixtures can use `playwright_trace(context, output_dir,
 case_id)`. Set `VISUAL_TRACE=0` to disable tracing. Set
 `VISUAL_TRACE_CAPTURE_NAME` to the exact full `case_id` to retain only that case.
