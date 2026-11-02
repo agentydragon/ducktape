@@ -7,7 +7,10 @@ package(
     default_visibility = ["//visibility:public"],
 )
 
-exports_files(["dashboard_visual_test.py"])
+exports_files([
+    "dashboard_visual_test.py",
+    "test_image_renderer_spike.py",
+])
 
 py_library(
     name = "recorded",

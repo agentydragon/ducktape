@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//grafana/visual_tests:visual_test.bzl", "grafana_dashboard_visual_test")
 
 exports_files(
@@ -108,3 +108,35 @@ grafana_dashboard_visual_test(
     dashboard = ":aiquota-history.json",
     fixture_data = ":visual_fixtures/aiquota-history.json",
 )
+
+# Temporary upstream-renderer comparison against the existing recorded fixtures.
+[py_test(
+    name = "renderer_spike_" + name,
+    srcs = ["//grafana/visual_tests:test_image_renderer_spike.py"],
+    data = [
+        dashboard,
+        fixture,
+    ],
+    env = {
+        "GRAFANA_DASHBOARD_RLOCATION": "$(rlocationpath %s)" % dashboard,
+        "GRAFANA_FIXTURE_RLOCATION": "$(rlocationpath %s)" % fixture,
+    },
+    main = "//grafana/visual_tests:test_image_renderer_spike.py",
+    requires_docker = True,
+    tags = ["manual"],
+    deps = [
+        "//grafana/visual_tests:recorded",
+        "//grafana/visual_tests:visual_harness",
+        "//third_party/containers:grafana_image_renderer_spike",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:frontend_visual",
+        "//util/testing:undeclared_outputs",
+        "@pypi//docker",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+) for name, dashboard, fixture in [
+    ("piraeus", ":piraeus-storage.json", ":visual_fixtures/piraeus-storage.json"),
+    ("node_memory", ":node-memory.json", ":visual_fixtures/node-memory.json"),
+]]

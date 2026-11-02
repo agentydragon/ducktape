@@ -249,7 +249,14 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "v3.5.0",
 )
-use_repo(oci, "grafana_visual", "grafana_visual_linux_amd64", "prometheus_visual", "prometheus_visual_linux_amd64")
+oci.pull(
+    name = "grafana_image_renderer_spike",
+    digest = "sha256:a7970b826f6e477461e02bf5463d92634e9ad27d525e4e50296978a2e592d2d7",
+    image = "docker.io/grafana/grafana-image-renderer",
+    platforms = ["linux/amd64"],
+    tag = "v5.12.10",
+)
+use_repo(oci, "grafana_image_renderer_spike", "grafana_image_renderer_spike_linux_amd64", "grafana_visual", "grafana_visual_linux_amd64", "prometheus_visual", "prometheus_visual_linux_amd64")
 
 # Most Docker Hub base images are pulled through mirror.gcr.io (Google's pull-through
 # cache of Docker Hub) instead of docker.io directly: Docker Hub's anonymous
