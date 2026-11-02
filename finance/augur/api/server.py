@@ -32,7 +32,12 @@ from finance.augur.api.deployment import DeploymentInfo, build_deployment_info
 from finance.augur.api.portfolio_sources import ResolvedPortfolioSources, resolve_portfolio_sources
 from finance.augur.api.product_service import build_product_service
 from finance.augur.api.wire import CalibrationInfo, CatalogResponse, SettingsResponse
-from finance.augur.calibration.calibration import build_anchored_level_paths, mark_fan, run_calibration
+from finance.augur.calibration.calibration import (
+    MarketEvidencePolicyError,
+    build_anchored_level_paths,
+    mark_fan,
+    run_calibration,
+)
 from finance.augur.calibration.catalog import MarketCatalog
 from finance.augur.calibration.default_clients import default_price_clients
 from finance.augur.calibration.macro_anchors import resolve_anchors
@@ -179,6 +184,7 @@ def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
     app.add_exception_handler(ValidationError, lambda request, exc: error(422, exc.errors()))
     app.add_exception_handler(KeyError, lambda request, exc: error(400, str(exc)))
     app.add_exception_handler(ValueError, lambda request, exc: error(400, str(exc)))
+    app.add_exception_handler(MarketEvidencePolicyError, lambda request, exc: error(409, str(exc)))
 
     # Routes return a `JSONResponse` directly (custom snake_case + drop-None wire), so FastAPI
     # passes the Response through untouched. `response_model=` is purely for the OpenAPI document
@@ -292,6 +298,7 @@ def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
             bundle=bundle,
             level_paths=level_paths,
             inflation_history=anchors.inflation_history,
+            market_evidence_max_age_seconds=request.market_evidence_max_age_seconds,
         )
         # One mark fan per scored issuer; valuation fan only for issuers whose opt-in channel is on.
         mark_fans = [

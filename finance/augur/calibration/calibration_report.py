@@ -4,7 +4,8 @@ Usage:
 
     bb run //finance/augur/calibration:calibration_report_bin -- \\
         /path/to/augur/config.yaml \\
-        [--preset bayesian_mint_streams] [--rollouts 5000] [--horizon 120]
+        [--preset bayesian_mint_streams] [--rollouts 5000] [--horizon 120] \\
+        [--market-evidence-max-age-seconds 86400]
 
 Loads the catalog and presets from the deployment config, samples the chosen preset model,
 runs `run_calibration` against live market prices, and prints scored markets sorted by
@@ -36,7 +37,15 @@ async def _run(argv: list[str] | None) -> int:
     parser.add_argument("--preset", default=None, help="Preset id (default = config default)")
     parser.add_argument("--rollouts", type=int, default=5000)
     parser.add_argument("--horizon", type=int, default=120)
+    parser.add_argument(
+        "--market-evidence-max-age-seconds",
+        type=int,
+        default=None,
+        help="Require every catalog market's last successful scraper fetch within this many seconds.",
+    )
     args = parser.parse_args(argv)
+    if args.market_evidence_max_age_seconds is not None and args.market_evidence_max_age_seconds < 0:
+        parser.error("--market-evidence-max-age-seconds must be nonnegative")
 
     augur_config = load_augur_config(args.config)
     preset_id = args.preset or augur_config.default_model_id
@@ -82,7 +91,24 @@ async def _run(argv: list[str] | None) -> int:
             bundle=bundle,
             level_paths=level_paths,
             inflation_history=anchors.inflation_history,
+            market_evidence_max_age_seconds=args.market_evidence_max_age_seconds,
         )
+
+    known_evidence = [item for item in result.market_evidence if item.last_successful_fetch_at is not None]
+    unknown_count = len(result.market_evidence) - len(known_evidence)
+    oldest = min((item.last_successful_fetch_at for item in known_evidence), default=None)
+    print("\nMARKET EVIDENCE (scraper last-successful-fetch metadata; not source observation time)")
+    policy = (
+        f"required max age: {result.market_evidence_max_age_seconds}s"
+        if result.market_evidence_max_age_seconds is not None
+        else "no max-age requirement"
+    )
+    print(
+        f"checked at {result.market_evidence_checked_at.isoformat()}; "
+        f"{len(known_evidence)} known, {unknown_count} unknown; {policy}"
+    )
+    if oldest is not None:
+        print(f"oldest known successful fetch: {oldest.isoformat()}")
 
     clean_rows = sorted(result.clean, key=lambda r: -abs(r.kl_bits) if r.kl_bits is not None else 0)
     clean_table = [

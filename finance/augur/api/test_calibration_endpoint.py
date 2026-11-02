@@ -8,9 +8,10 @@ so the run stays hermetic (no network). `/api/calibration` surfaces the catalog 
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from collections.abc import Collection, Iterator
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -22,11 +23,14 @@ from finance.augur.api.config import Config
 from finance.augur.api.server import create_app_from_augur_config, static_price_clients
 from finance.augur.calibration import macro_anchors
 from finance.augur.calibration.catalog import MarketCatalog
+from finance.augur.calibration.evidence_clients import EvidenceMarketReader
+from finance.augur.calibration.platform import PriceClient
 from finance.augur.calibration.testing import mock_price_clients
 from finance.augur.model.series import SP500_SYMBOL, InflationKey, IssuerId, LevelSeriesKey, SecurityKey
 from finance.augur.x.models.sample_sanity import LevelSeriesSanityCheck, PrivateEquityMarkSanityCheck, SampleSanitySpec
 from finance.evidence.loading import MonthlyLevel
-from finance.evidence.markets import Platform
+from finance.evidence.manifest import EVIDENCE_META_FILENAME, EvidenceManifest
+from finance.evidence.markets import Platform, market_json_path
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -51,6 +55,56 @@ def _client_for(config: Config) -> TestClient:
     return TestClient(
         create_app_from_augur_config(config, price_clients=static_price_clients(mock_price_clients(dict(by_platform))))
     )
+
+
+def _evidence_client_for(
+    config: Config, evidence_dir: Path, *, last_fetched: dict[tuple[Platform, str], datetime]
+) -> TestClient:
+    catalog = MarketCatalog.from_yaml(config.calibration_catalog.catalog_path)
+    for platform, market_id in catalog.referenced_markets():
+        if platform is Platform.MANIFOLD:
+            payload: object = {
+                "id": market_id,
+                "url": f"https://manifold.markets/test/{market_id}",
+                "question": market_id,
+                "probability": 0.5,
+                "outcomeType": "BINARY",
+            }
+        elif platform is Platform.KALSHI:
+            payload = {
+                "market": {
+                    "ticker": market_id,
+                    "title": market_id,
+                    "yes_bid_dollars": "0.49",
+                    "yes_ask_dollars": "0.51",
+                    "yes_bid_size_fp": "100",
+                    "yes_ask_size_fp": "100",
+                    "last_price_dollars": "0.50",
+                }
+            }
+        else:
+            payload = [
+                {
+                    "id": market_id,
+                    "conditionId": market_id,
+                    "slug": market_id,
+                    "question": market_id,
+                    "bestBid": 0.49,
+                    "bestAsk": 0.51,
+                    "volumeNum": 100,
+                }
+            ]
+        path = market_json_path(evidence_dir, platform, market_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload))
+    manifest = EvidenceManifest(
+        last_fetched={f"{platform}:{market_id}": timestamp for (platform, market_id), timestamp in last_fetched.items()}
+    )
+    (evidence_dir / EVIDENCE_META_FILENAME).write_text(manifest.model_dump_json())
+    price_clients: dict[Platform, PriceClient] = {
+        platform: EvidenceMarketReader(platform=platform, evidence_dir=evidence_dir) for platform in Platform
+    }
+    return TestClient(create_app_from_augur_config(config, price_clients=static_price_clients(price_clients)))
 
 
 @pytest.fixture
@@ -79,6 +133,10 @@ def test_run_calibration(client: TestClient, synthetic_evidence_dir: Path) -> No
     date.fromisoformat(result["as_of"])
     assert result["horizon_months"] == 24
     assert result["rollout_count"] == 16
+    assert "market_evidence_max_age_seconds" not in result
+    assert result["market_evidence"]
+    assert all(item["status"] == "unknown" for item in result["market_evidence"])
+    assert all("last_successful_fetch_at" not in item for item in result["market_evidence"])
     # PE markets now carry their issuer in `channel`; the example catalog scores `openai`.
     assert any(row.get("channel") == "openai" for row in result["clean"])
     # The example catalog ships both exact (scored) and surfaced markets.
@@ -128,6 +186,71 @@ def test_run_calibration_defaults_to_shared_preset(client: TestClient, synthetic
     response = client.post("/api/calibration/run", json={"horizon_months": 24, "rollouts": 16, "seed": 1701})
     assert response.status_code == 200, response.text
     assert response.json()["preset_id"] == "openai_pe"
+
+
+def test_run_calibration_reports_manifest_freshness_and_accepts_explicit_policy(
+    tmp_path: Path, augur_config: Config, synthetic_evidence_dir: Path
+) -> None:
+    catalog = MarketCatalog.from_yaml(augur_config.calibration_catalog.catalog_path)
+    fetched_at = datetime.now(UTC) - timedelta(hours=1)
+    last_fetched = dict.fromkeys(catalog.referenced_markets(), fetched_at)
+    with _evidence_client_for(augur_config, tmp_path, last_fetched=last_fetched) as api_client:
+        response = api_client.post(
+            "/api/calibration/run",
+            json={
+                "preset_id": "openai_pe",
+                "horizon_months": 24,
+                "rollouts": 4,
+                "seed": 1701,
+                "market_evidence_max_age_seconds": 86400,
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()["result"]
+    assert result["market_evidence_max_age_seconds"] == 86400
+    assert result["market_evidence_checked_at"]
+    assert result["market_evidence"]
+    evidence = result["market_evidence"][0]
+    assert evidence["status"] == "fresh"
+    assert evidence["age_seconds"] >= 3600
+    assert datetime.fromisoformat(evidence["last_successful_fetch_at"]) == fetched_at
+
+
+@pytest.mark.parametrize("case", ["stale", "absent", "future"])
+def test_run_calibration_rejects_stale_or_unknown_manifest_entries(
+    tmp_path: Path, augur_config: Config, synthetic_evidence_dir: Path, case: str
+) -> None:
+    catalog = MarketCatalog.from_yaml(augur_config.calibration_catalog.catalog_path)
+    keys = sorted(catalog.referenced_markets(), key=lambda key: (key[0], key[1]))
+    stale_key = keys[0]
+    now = datetime.now(UTC)
+    last_fetched = {key: now - timedelta(hours=1) for key in keys}
+    if case == "stale":
+        last_fetched[stale_key] = now - timedelta(days=10)
+        expected_status = "stale"
+    elif case == "absent":
+        del last_fetched[stale_key]
+        expected_status = "unknown"
+    else:
+        last_fetched[stale_key] = now + timedelta(days=1)
+        expected_status = "unknown"
+
+    with _evidence_client_for(augur_config, tmp_path, last_fetched=last_fetched) as api_client:
+        response = api_client.post(
+            "/api/calibration/run",
+            json={
+                "preset_id": "openai_pe",
+                "horizon_months": 24,
+                "rollouts": 4,
+                "seed": 1701,
+                "market_evidence_max_age_seconds": 86400,
+            },
+        )
+
+    assert response.status_code == 409, response.text
+    platform, market_id = stale_key
+    assert f"{platform}:{market_id} is {expected_status}" in response.json()["detail"]
 
 
 def test_run_calibration_leaves_missing_real_cpi_month_unresolved(

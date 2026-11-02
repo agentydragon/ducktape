@@ -138,7 +138,8 @@ the React bundle and property media separately (e.g. nginx sidecar); media is de
 
 Prediction-market calibration reads quotes from the augur-evidence checkout
 (`AUGUR_EVIDENCE_DIR`), with no request-time network I/O. The `finance/scraper` mirror is
-parked, so quotes date from its last run. Workstation runs auto-clone via `ensure_checkout()`
+parked; calibration exposes the manifest's last successful fetch time as liveness metadata,
+not as a platform observation time. Workstation runs auto-clone via `ensure_checkout()`
 with `AUGUR_EVIDENCE_GIT_{USERNAME,PASSWORD}`. Boundaries: <docs/calibration.md>.
 
 Local dev on the public fixture: `bazelisk run //finance/augur:dev`. Its config composes an

@@ -36,8 +36,8 @@ from pathlib import Path
 from typing import Protocol
 
 import pygit2
-from pydantic import BaseModel, Field
 
+from finance.evidence.manifest import EVIDENCE_META_FILENAME, EvidenceManifest
 from finance.evidence.markets import MarketEntry, load_roster, merged_roster
 from finance.evidence.sources import EVIDENCE_SOURCES, EvidenceSource
 from finance.scraper.http_fetch import FETCH_ERRORS, HttpGet, http_get as _real_http_get
@@ -46,8 +46,6 @@ from finance.scraper.market_mirror import sync_markets
 logger = logging.getLogger(__name__)
 
 _AUTHOR = pygit2.Signature("augur evidence scraper", "augur@allegedly.works")
-
-EVIDENCE_META_FILENAME = "evidence_meta.json"
 
 # Skip re-GETting a source fetched within this window: its committed copy is still
 # fresh, so refetching would just re-download unchanged data and burn rate limits.
@@ -65,13 +63,6 @@ DEFAULT_STALE_AFTER = timedelta(days=3)
 # from committing a manifest-only diff every time — the mirror's git history stays
 # a record of real data changes (plus one liveness attestation per ~day).
 MANIFEST_REFRESH_FLOOR = DEFAULT_MAX_AGE
-
-
-class EvidenceManifest(BaseModel):
-    """Per-source last-successful-fetch times, committed as evidence_meta.json."""
-
-    # provenance_label (e.g. "fred:CPIAUCSL") -> last successful fetch (UTC).
-    last_fetched: dict[str, datetime] = Field(default_factory=dict)
 
 
 def _load_manifest(workdir: Path) -> EvidenceManifest:

@@ -21,8 +21,16 @@ Production clients in <../calibration/default_clients.py> use
 `EvidenceMarketReader` over the evidence checkout. Requests read mirrored quotes,
 not platform HTTP APIs or a TTL read-through cache. Missing mirrored markets or
 uninformative quotes are logged and omitted; malformed snapshots propagate as
-errors. An outage can leave old quotes available, but does not guarantee fresh or
-complete evidence. Deployment checkout ownership is described in <../README.md>.
+errors. The result includes each referenced market's manifest
+`last_successful_fetch_at` and its age at `market_evidence_checked_at`. This is the
+scraper's last successful fetch time, not the platform's observation timestamp; the
+snapshot and manifest files are read separately, so the timestamp does not bind the
+snapshot bytes to a digest or repository revision. Missing, malformed, timezone-naive
+or future-dated manifest entries are reported as unknown. Callers may set
+`market_evidence_max_age_seconds` per calibration operation; when set, every catalog
+market must have a known fetch time within that age or the operation returns a freshness
+conflict. The default imposes no maximum age and never refreshes the pinned checkout.
+Deployment checkout ownership is described in <../README.md>.
 
 ## Resolution and reporting
 

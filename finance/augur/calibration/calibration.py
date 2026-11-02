@@ -25,7 +25,8 @@ from bisect import bisect_left
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
+from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -203,6 +204,17 @@ class CategoricalRow(BaseModel):
     buckets: list[CategoricalBucket]
 
 
+class MarketEvidenceFreshness(BaseModel):
+    """Scraper liveness metadata for one catalog market used by this calibration operation."""
+
+    platform: Platform
+    market_id: str
+    # The scraper manifest records a successful fetch, not the source observation time.
+    last_successful_fetch_at: datetime | None = None
+    age_seconds: float | None = None
+    status: Literal["unknown", "known", "fresh", "stale"]
+
+
 class CalibrationResult(BaseModel):
     """Model-level calibration: every market the catalog scores, across all issuers/channels.
 
@@ -216,6 +228,38 @@ class CalibrationResult(BaseModel):
     clean: list[CleanRow]
     surfaced: list[SurfacedRow]
     categorical: list[CategoricalRow] = Field(default_factory=list)
+    market_evidence_checked_at: datetime
+    market_evidence_max_age_seconds: int | None = None
+    market_evidence: list[MarketEvidenceFreshness] = Field(default_factory=list)
+
+
+class MarketEvidencePolicyError(Exception):
+    """Raised when an explicitly requested market-evidence age policy is not satisfied."""
+
+
+def _market_evidence_freshness(
+    platform: Platform,
+    market_id: str,
+    fetched_at: datetime | None,
+    *,
+    checked_at: datetime,
+    max_age_seconds: int | None,
+) -> MarketEvidenceFreshness:
+    if fetched_at is None or fetched_at.tzinfo is None or fetched_at.utcoffset() is None:
+        return MarketEvidenceFreshness(platform=platform, market_id=market_id, status="unknown")
+    age = checked_at - fetched_at
+    if age < timedelta(0):
+        return MarketEvidenceFreshness(platform=platform, market_id=market_id, status="unknown")
+    status: Literal["unknown", "known", "fresh", "stale"] = (
+        "known" if max_age_seconds is None else "fresh" if age.total_seconds() <= max_age_seconds else "stale"
+    )
+    return MarketEvidenceFreshness(
+        platform=platform,
+        market_id=market_id,
+        last_successful_fetch_at=fetched_at,
+        age_seconds=age.total_seconds(),
+        status=status,
+    )
 
 
 class MonthBand(BaseModel):
@@ -808,6 +852,7 @@ async def run_calibration(
     bundle: PrivateEquityBundle,
     level_paths: Mapping[LevelSeriesKey, npt.NDArray[np.float64]] | None = None,
     inflation_history: Mapping[date, float] | None = None,
+    market_evidence_max_age_seconds: int | None = None,
 ) -> CalibrationResult:
     """Score a whole-model rollout against a curated prediction-market catalog.
 
@@ -820,7 +865,12 @@ async def run_calibration(
 
     `inflation_history` maps real CPI-U observation months to index levels for denominators
     before month 0. A missing calendar month leaves only outcomes requiring that month unresolved.
+    `market_evidence_max_age_seconds` optionally requires every catalog market to have a known
+    scraper last-successful-fetch timestamp within this age. The timestamp is a mirror liveness
+    attestation, not an observation timestamp. This operation never refreshes evidence.
     """
+    if market_evidence_max_age_seconds is not None and market_evidence_max_age_seconds < 0:
+        raise ValueError("market_evidence_max_age_seconds must be nonnegative")
     as_of = catalog.metadata.model_anchor_date
     rollout_count = len(rollout_seeds)
     paths = dict(level_paths) if level_paths is not None else {}
@@ -837,7 +887,7 @@ async def run_calibration(
         for issuer in sorted(catalog.referenced_issuers() & emitted_issuers)
     }
 
-    async def _live(market_id: str, platform: Platform) -> Market | None:
+    async def _live(market_id: str, platform: Platform) -> tuple[Market | None, datetime | None]:
         # A single broken catalog row (bad market_id), a market the mirror hasn't synced yet
         # (e.g. a catalog entry newer than the last scraper run), or a market whose quote
         # carries no information (untraded / one-sided book, no usable last trade) must not
@@ -849,17 +899,46 @@ async def run_calibration(
             market = await price_clients[platform].get_market(market_id)
         except MarketNotMirroredError:
             logger.warning("dropping calibration row: %s market %r not mirrored", platform, market_id, exc_info=True)
-            return None
+            return None, None
         if implied_probability(market.quote, volume=market.volume) is None:
             logger.warning("dropping calibration row: %s market %r carried no informative quote", platform, market_id)
-            return None
-        return market
+            return None, market.last_successful_fetch_at
+        return market, market.last_successful_fetch_at
 
     # Every (platform, market_id) the catalog references, deduped (one market can back several rows),
     # fetched concurrently once; the row builders below read from this resolved map.
-    keys = list(catalog.referenced_markets())
+    keys = sorted(catalog.referenced_markets(), key=lambda key: (key[0].value, key[1]))
     fetched = await asyncio.gather(*(_live(market_id, platform) for platform, market_id in keys))
-    live_markets: dict[tuple[Platform, str], Market | None] = dict(zip(keys, fetched, strict=True))
+    live_markets: dict[tuple[Platform, str], Market | None] = {
+        key: read[0] for key, read in zip(keys, fetched, strict=True)
+    }
+    evidence_checked_at = datetime.now(UTC)
+    market_evidence = [
+        _market_evidence_freshness(
+            platform,
+            market_id,
+            read[1],
+            checked_at=evidence_checked_at,
+            max_age_seconds=market_evidence_max_age_seconds,
+        )
+        for (platform, market_id), read in zip(keys, fetched, strict=True)
+    ]
+    if market_evidence_max_age_seconds is not None:
+        failures = [evidence for evidence in market_evidence if evidence.status != "fresh"]
+        if failures:
+            detail = "; ".join(
+                f"{evidence.platform}:{evidence.market_id} is {evidence.status}"
+                + (
+                    f" (last successful fetch {evidence.last_successful_fetch_at.isoformat()})"
+                    if evidence.last_successful_fetch_at is not None
+                    else " (last successful fetch unknown)"
+                )
+                for evidence in failures
+            )
+            raise MarketEvidencePolicyError(
+                f"market evidence must have a known successful fetch within "
+                f"{market_evidence_max_age_seconds}s: {detail}"
+            )
 
     clean: list[CleanRow] = []
     surfaced: list[SurfacedRow] = []
@@ -940,4 +1019,7 @@ async def run_calibration(
         clean=clean,
         surfaced=surfaced,
         categorical=categorical,
+        market_evidence_checked_at=evidence_checked_at,
+        market_evidence_max_age_seconds=market_evidence_max_age_seconds,
+        market_evidence=market_evidence,
     )

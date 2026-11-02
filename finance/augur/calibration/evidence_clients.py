@@ -4,11 +4,13 @@ The evidence scraper (`finance/scraper`) mirrors every rostered + catalog-refere
 market into the augur-evidence repo; the augur Deployment's git-sync sidecar keeps a
 checkout at `AUGUR_EVIDENCE_DIR`. :class:`EvidenceMarketReader` implements
 :class:`PriceClient` over that checkout, so calibration does no market-API network
-I/O at request time: quote staleness is bounded by the scraper cadence, and the last
-successfully-synced state is always available (upstream flaps cost freshness, never
-rows). A market the mirror doesn't have raises :class:`MarketNotMirroredError`, which the
-calibration run handles by dropping that row — the same operator experience as a
-failed live fetch, and self-healing once the scraper picks up the new catalog entry.
+I/O or evidence refresh at request time. It reports the manifest's last successful fetch
+time when available; this is a scraper liveness timestamp, not a platform observation time.
+The snapshot and manifest are separate files and are not read atomically, so the timestamp
+attests to the checkout's recorded fetch and does not bind the bytes to a digest/version. Missing
+or invalid manifest metadata remains unknown. A market the mirror doesn't have raises
+:class:`MarketNotMirroredError`, which the calibration run handles by dropping that row unless
+the caller explicitly requires known fresh evidence.
 
 Parse failures propagate: a snapshot that exists but doesn't parse is corrupt mirror
 data (a bug), not a recoverable outage.
@@ -16,16 +18,39 @@ data (a bug), not a recoverable outage.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import logging
+from dataclasses import dataclass, replace
+from datetime import datetime
 from pathlib import Path
+
+from pydantic import ValidationError
 
 from finance.augur.calibration.platform import Market
 from finance.augur.calibration.quote import BookQuote, PoolQuote
 from finance.evidence import kalshi, manifold, polymarket
+from finance.evidence.manifest import EVIDENCE_META_FILENAME, EvidenceManifest
 from finance.evidence.markets import Platform, market_json_path
 
 _KALSHI_URL_TEMPLATE = "https://kalshi.com/markets/{ticker}"
 _POLYMARKET_URL_TEMPLATE = "https://polymarket.com/event/{slug}"
+logger = logging.getLogger(__name__)
+
+
+def _last_successful_fetch_at(evidence_dir: Path, platform: Platform, market_id: str) -> datetime | None:
+    """Read a known, timezone-aware scraper attestation; absent or invalid metadata stays unknown."""
+    path = evidence_dir / EVIDENCE_META_FILENAME
+    try:
+        manifest = EvidenceManifest.model_validate_json(path.read_bytes())
+    except FileNotFoundError:
+        return None
+    except OSError, ValidationError, ValueError:
+        logger.warning("ignoring missing or invalid evidence freshness manifest at %s", path, exc_info=True)
+        return None
+
+    fetched_at = manifest.last_fetched.get(f"{platform}:{market_id}")
+    if fetched_at is None or fetched_at.tzinfo is None or fetched_at.utcoffset() is None:
+        return None
+    return fetched_at
 
 
 class MarketNotMirroredError(Exception):
@@ -113,7 +138,10 @@ class EvidenceMarketReader:
         path = market_json_path(self.evidence_dir, self.platform, market_id)
         if not path.exists():
             raise MarketNotMirroredError(f"no mirrored snapshot at {path}")
-        return _PARSERS[self.platform](market_id, path.read_bytes())
+        market = _PARSERS[self.platform](market_id, path.read_bytes())
+        return replace(
+            market, last_successful_fetch_at=_last_successful_fetch_at(self.evidence_dir, self.platform, market_id)
+        )
 
     async def aclose(self) -> None:
         """No-op: the reader holds no connections."""

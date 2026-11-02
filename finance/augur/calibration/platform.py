@@ -9,6 +9,7 @@ platform-specific payload directly. The platform identity enum lives in
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 
@@ -50,6 +51,9 @@ class Market:
     # absent when that snapshot carries none. A mirrored snapshot may be stale.
     title: str | None = None
     rules: str | None = None
+    # Scraper manifest's last successful fetch time, when known. This is a mirror liveness
+    # attestation, not the timestamp of the platform's underlying observation.
+    last_successful_fetch_at: datetime | None = None
 
     def require_implied_probability(self) -> float:
         probability = implied_probability(self.quote, volume=self.volume)
