@@ -2319,12 +2319,18 @@ OpenAPI-derived contracts, mirrored wire types and handwritten route implementat
 UI-specific view models and adapters may remain.
 
 Remaining scope includes frontend configuration; Sandbox inventory, lifecycle, policy and Runner status;
-Session opening; Thread metadata mutations; Action policy, caller grants and system status;
+Thread metadata mutations; Action policy, caller grants and system status;
 and app-owned live snapshots, event, notice, notification and console streams. Inventory the raw
 streams and Electric synchronization path explicitly: migrate app-owned API contracts to generated
 facades, while recording any protocol-specific transport that must remain. Login/OAuth redirects,
 static assets, health probes, API documentation and OTLP telemetry are protocol-specific HTTP
 surfaces, not application RPCs to convert mechanically.
+
+Session-opening follow-ups: replace the untyped override map with a typed contract while preserving
+omitted, null and empty semantics; retire mixed-version browser compatibility only after the
+replica, cached-bundle and rollback windows close; and preserve status information for non-JSON
+HTTP failures without treating uncertain openings as rejected. Details are in
+[generated HTTP facades](grpc_http_facade.md#open).
 
 **Prerequisites:** no dependency on the separate History-read facade track or a service rename.
 Before each independently reviewable migration, identify the owning service and preserve the app's

@@ -14,13 +14,13 @@ import (
 // operation declarations without invoking handlers.
 func exportOpenAPI(writer io.Writer) error {
 	server := NewHTTPServer(nil)
+	defer server.Close()
 	config := Config{}
 	if err := RegisterCoreRoutes(server, config); err != nil {
 		return fmt.Errorf("register core routes: %w", err)
 	}
 	RegisterSandboxRoutes(server, config, (*sandboxes.Access)(nil))
 	RegisterPolicyRoutes(server, config, (*sandboxes.Access)(nil), (*policyaccess.Access)(nil))
-	RegisterSessionRoutes(server, config, nil, nil, nil)
 	RegisterRunnerRoutes(server, nil)
 	if err := RegisterThreadReadRoutes(server, nil, nil, nil, nil, nil, nil); err != nil {
 		return fmt.Errorf("register Thread routes: %w", err)

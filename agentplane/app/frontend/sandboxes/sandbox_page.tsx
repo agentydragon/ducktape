@@ -1,3 +1,4 @@
+import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 import type { SandboxView, ThreadView } from "../schema";
 import { NotificationStatus } from "../notification_status";
 import {
@@ -18,9 +19,9 @@ import { IconDotsVertical, IconPlus, IconTrash } from "../icons";
 import { type JSX, useEffect, useEffectEvent, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { api, displayableError, HttpError } from "../client";
+import { api, displayableError } from "../client";
 import { findThread, getThread } from "../threads/client";
-import { getSessionOpening, openSession } from "./client";
+import { getSessionOpening, openSession, sessionOpeningRejected, sessionOpeningNotVisible } from "./client";
 import { ActionPolicySection } from "../actions/policy";
 import { EgressLog } from "./egress";
 import { liveSandboxUrl, type SandboxSnapshot } from "./live";
@@ -47,19 +48,19 @@ function pendingOpenKey(sandbox: string): string {
   return `agentplane:pending-open:${sandbox}`;
 }
 
-type PendingOpen = { threadId: string; state?: string; reason?: string };
+type PendingOpen = { threadId: string; state?: DeliveryState; reason?: string };
 
-function openingStateLabel(state: string | undefined): string {
+function openingStateLabel(state: DeliveryState | undefined): string {
   switch (state) {
-    case "DELIVERY_STATE_QUEUED_IN_DISPATCHER":
+    case DeliveryState.QUEUED_IN_DISPATCHER:
       return "Queued in Dispatcher";
-    case "DELIVERY_STATE_DELIVERING_TO_RUNNER":
+    case DeliveryState.DELIVERING_TO_RUNNER:
       return "Opening on the runner";
-    case "DELIVERY_STATE_RUNNER_ADMITTED":
+    case DeliveryState.RUNNER_ADMITTED:
       return "Accepted by the runner";
-    case "DELIVERY_STATE_FAILED":
+    case DeliveryState.FAILED:
       return "Opening failed";
-    case "DELIVERY_STATE_UNKNOWN":
+    case DeliveryState.UNKNOWN:
       return "Opening outcome unavailable";
     default:
       return "Waiting for opening status";
@@ -203,9 +204,9 @@ export function SandboxPage({
         return;
       }
       rememberOpen({ threadId, state: opening.state, reason: opening.reason });
-      if (opening.state === "DELIVERY_STATE_FAILED") finishSessionCreate(threadId, "failed");
+      if (opening.state === DeliveryState.FAILED) finishSessionCreate(threadId, "failed");
       if (
-        opening.state === "DELIVERY_STATE_RUNNER_ADMITTED" &&
+        opening.state === DeliveryState.RUNNER_ADMITTED &&
         (threadById[threadId] || (await withinSessionCreate(threadId, () => findThread(threadId))))
       ) {
         await openThread(threadId, threadId);
@@ -213,8 +214,7 @@ export function SandboxPage({
     } catch (reason: unknown) {
       // Outcome may be ambiguous. Do not replay Open or bootstrap, even in this tab.
       if (!openingAccepted) {
-        const rejectedStatus =
-          reason instanceof HttpError && reason.status >= 400 && reason.status < 500 && reason.status !== 408;
+        const rejectedStatus = sessionOpeningRejected(reason);
         finishSessionCreate(threadId, rejectedStatus ? "rejected" : "unknown");
       }
       setError(`${displayableError(reason)} Check this attempt before creating another thread.`);
@@ -235,10 +235,10 @@ export function SandboxPage({
         try {
           const opening = await withinSessionCreate(threadId, () => getSessionOpening(name, threadId));
           rememberOpen({ threadId, state: opening.state, reason: opening.reason });
-          if (opening.state === "DELIVERY_STATE_FAILED") finishSessionCreate(threadId, "failed");
+          if (opening.state === DeliveryState.FAILED) finishSessionCreate(threadId, "failed");
           setError(`${openingStateLabel(opening.state)}${opening.reason ? `: ${opening.reason}` : "."}`);
         } catch (reason: unknown) {
-          if (reason instanceof HttpError && (reason.status === 404 || reason.status === 503)) {
+          if (sessionOpeningNotVisible(reason)) {
             setError(
               "No runner Thread or Dispatcher opening is visible yet. Check later; this attempt is never retried."
             );

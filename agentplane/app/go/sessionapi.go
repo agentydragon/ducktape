@@ -4,19 +4,26 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	appbridge "github.com/agentydragon/ducktape/agentplane/app/go/bridge"
-	"github.com/agentydragon/ducktape/agentplane/app/go/httperror"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
+	sessionopeningpb "github.com/agentydragon/ducktape/agentplane/app/session_opening/sessionopeningpb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
-	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
-	"google.golang.org/protobuf/encoding/protojson"
+	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/structpb"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 type sessionOpener interface {
@@ -28,99 +35,185 @@ type threadOpener interface {
 	OpenThread(context.Context, uuid.UUID) error
 }
 
-type newSessionInput struct {
-	Name string `path:"name" minLength:"1" maxLength:"57" pattern:"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"`
-	Body newSessionBody
+type sessionOpeningService struct {
+	sessionopeningpb.UnimplementedSessionOpeningServiceServer
+	config    Config
+	inventory appbridge.SandboxGetter
+	bridge    sessionOpener
+	store     threadOpener
 }
 
-type newSessionBody struct {
-	SessionID          uuid.UUID      `json:"session_id" format:"uuid"`
-	SandboxUID         string         `json:"sandbox_uid" minLength:"1"`
-	Spec               map[string]any `json:"spec"`
-	SetupScript        *string        `json:"setup_script,omitempty"`
-	SetupScriptPresent bool           `json:"-"`
-}
-
-func (b *newSessionBody) UnmarshalJSON(data []byte) error {
-	type bodyAlias newSessionBody
-	var body bodyAlias
-	if err := json.Unmarshal(data, &body); err != nil {
+// The generated unary gateway invokes the app-owned service in process, after RequireCaller
+// authenticates HTTP callers and enforces cookie CSRF. Dispatcher remains a native gRPC call.
+func RegisterSessionRoutes(server *HTTPServer, config Config, inventory appbridge.SandboxGetter, bridge sessionOpener, store threadOpener) error {
+	mux := gatewayruntime.NewServeMux(
+		gatewayruntime.WithForwardResponseOption(func(ctx context.Context, w http.ResponseWriter, _ proto.Message) error {
+			if method, ok := gatewayruntime.RPCMethod(ctx); ok && strings.HasSuffix(method, "/OpenSession") {
+				w.WriteHeader(http.StatusCreated)
+			}
+			return nil
+		}),
+		gatewayruntime.WithErrorHandler(sessionGatewayError),
+	)
+	service := &sessionOpeningService{config: config, inventory: inventory, bridge: bridge, store: store}
+	if err := sessionopeningpb.RegisterSessionOpeningServiceHandlerServer(context.Background(), mux, service); err != nil {
 		return err
 	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return err
-	}
-	*b = newSessionBody(body)
-	_, b.SetupScriptPresent = fields["setup_script"]
+	server.RegisterRawRoute("POST /sandboxes/{name}/sessions", mux, false)
+	server.RegisterRawRoute("GET /sandboxes/{name}/sessions/{session_id}/opening", mux, false)
 	return nil
 }
 
-type sessionOpeningOutput struct{ Body map[string]any }
+var sessionSandboxName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 
-// RegisterSessionRoutes preserves the caller-minted idempotency key and configured Sandbox preset
-// defaults before dispatching the generated Session Dispatcher RPC.
-func RegisterSessionRoutes(
-	server *HTTPServer,
-	config Config,
-	inventory *sandboxes.Access,
-	bridge sessionOpener,
-	store threadOpener,
-) {
-	api := server.ProtectedAPI()
-	huma.Register[newSessionInput, sessionOpeningOutput](api, huma.Operation{
-		OperationID: "openSandboxSession", Method: http.MethodPost, Path: "/sandboxes/{name}/sessions", Tags: []string{"sessions"},
-		Summary: "Open a durable Runner Session through the Session Dispatcher", DefaultStatus: http.StatusCreated,
-	}, func(ctx context.Context, input *newSessionInput) (_ *sessionOpeningOutput, routeErr error) {
-		ctx, span := observability.Start(ctx, "agentplane.session.create")
-		defer func() { observability.End(span, routeErr) }()
-		body := input.Body
-		if body.Spec == nil {
-			return nil, huma.Error422UnprocessableEntity("spec is required")
-		}
-		if body.SandboxUID == "" {
-			return nil, huma.Error422UnprocessableEntity("sandbox_uid is required")
-		}
-		sandbox, err := inventory.Get(ctx, input.Name)
-		if err != nil {
-			return nil, sandboxHTTPError(err)
-		}
-		if sandbox.GetUid() != body.SandboxUID {
-			return nil, huma.Error409Conflict("Sandbox identity changed")
-		}
-		defaults, setupScript, err := sessionDefaults(config, sandbox, body.SetupScriptPresent, body.SetupScript)
-		if err != nil {
-			return nil, huma.Error409Conflict(err.Error())
-		}
-		spec, err := appbridge.ParseSessionSpec(defaults, body.Spec)
-		if err != nil {
-			return nil, huma.Error422UnprocessableEntity(err.Error())
-		}
-		spec.Cwd = replaceSessionID(spec.GetCwd(), body.SessionID.String())
-		if err := store.OpenThread(ctx, body.SessionID); err != nil {
-			return nil, httperror.LogServerError(huma.Error503ServiceUnavailable("Thread metadata is unavailable"), err)
-		}
-		opening, err := bridge.OpenSession(ctx, input.Name, body.SandboxUID, body.SessionID, spec, setupScript)
-		if err != nil {
-			return nil, sessionHTTPError(err)
-		}
-		return openingOutput(opening)
-	})
-	huma.Register[sessionOpeningInput, sessionOpeningOutput](api, huma.Operation{
-		OperationID: "getSandboxSessionOpening", Method: http.MethodGet, Path: "/sandboxes/{name}/sessions/{session_id}/opening", Tags: []string{"sessions"},
-		Summary: "Read the durable opening response for a Session",
-	}, func(ctx context.Context, input *sessionOpeningInput) (*sessionOpeningOutput, error) {
-		opening, err := bridge.SessionOpening(ctx, input.Name, input.SessionID)
-		if err != nil {
-			return nil, sessionHTTPError(err)
-		}
-		return openingOutput(opening)
-	})
+func validateSessionOpeningIdentity(name, id string) (uuid.UUID, error) {
+	if len(name) < 1 || len(name) > 57 || !sessionSandboxName.MatchString(name) {
+		return uuid.Nil, status.Error(codes.InvalidArgument, "invalid Sandbox name")
+	}
+	parsed, err := uuid.Parse(id)
+	if err != nil {
+		return uuid.Nil, status.Error(codes.InvalidArgument, "session_id must be a UUID")
+	}
+	return parsed, nil
 }
 
-type sessionOpeningInput struct {
-	Name      string    `path:"name" minLength:"1" maxLength:"57" pattern:"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"`
-	SessionID uuid.UUID `path:"session_id" format:"uuid"`
+func (s *sessionOpeningService) OpenSession(ctx context.Context, request *sessionopeningpb.OpenSessionRequest) (_ *sessionopeningpb.OpenSessionResponse, routeErr error) {
+	ctx, span := observability.Start(ctx, "agentplane.session.create")
+	defer func() { observability.End(span, routeErr) }()
+	id, err := validateSessionOpeningIdentity(request.GetName(), request.GetSessionId())
+	if err != nil {
+		return nil, err
+	}
+	if request.GetSpec() == nil || request.GetSandboxUid() == "" {
+		return nil, status.Error(codes.InvalidArgument, "spec and sandbox_uid are required")
+	}
+	var setupScript *string
+	if value := request.GetSetupScript(); value != nil {
+		switch kind := value.GetKind().(type) {
+		case *structpb.Value_NullValue:
+		case *structpb.Value_StringValue:
+			setupScript = &kind.StringValue
+		default:
+			return nil, status.Error(codes.InvalidArgument, "setup_script must be a string or null")
+		}
+	}
+	sandbox, err := s.inventory.Get(ctx, request.GetName())
+	if err != nil {
+		return nil, sessionRPCError(err)
+	}
+	if sandbox.GetUid() != request.GetSandboxUid() {
+		return nil, status.Error(codes.Aborted, "Sandbox identity changed")
+	}
+	defaults, setupScript, err := sessionDefaults(s.config, sandbox, request.GetSetupScript() != nil, setupScript)
+	if err != nil {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	spec, err := appbridge.ParseSessionSpec(defaults, request.GetSpec().AsMap())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if setupScript != nil && utf8.RuneCountInString(*setupScript) > appbridge.MaxSetupScriptCharacters {
+		return nil, status.Error(codes.InvalidArgument, "setup script exceeds maximum length")
+	}
+	spec.Cwd = replaceSessionID(spec.GetCwd(), id.String())
+	if err := s.store.OpenThread(ctx, id); err != nil {
+		slog.ErrorContext(ctx, "create Thread metadata", "session_id", id, "error", err)
+		return nil, status.Error(codes.Unavailable, "Thread metadata is unavailable")
+	}
+	opening, err := s.bridge.OpenSession(ctx, request.GetName(), request.GetSandboxUid(), id, spec, setupScript)
+	if err != nil {
+		var unconfirmed *appbridge.SessionOpeningNotFoundError
+		if errors.As(err, &unconfirmed) {
+			slog.ErrorContext(ctx, "Dispatcher opening response did not confirm requested identity", "session_id", id, "error", err)
+			return nil, status.Errorf(codes.Unknown, "Dispatcher result for session %s was not confirmed; reconcile this identity", id)
+		}
+		return nil, sessionRPCError(err)
+	}
+	return &sessionopeningpb.OpenSessionResponse{Opening: opening}, nil
+}
+
+func (s *sessionOpeningService) GetSessionOpening(ctx context.Context, request *sessionopeningpb.GetSessionOpeningRequest) (*sessionopeningpb.GetSessionOpeningResponse, error) {
+	id, err := validateSessionOpeningIdentity(request.GetName(), request.GetSessionId())
+	if err != nil {
+		return nil, err
+	}
+	opening, err := s.bridge.SessionOpening(ctx, request.GetName(), id)
+	if err != nil {
+		return nil, sessionRPCError(err)
+	}
+	return &sessionopeningpb.GetSessionOpeningResponse{Opening: opening}, nil
+}
+
+func sessionRPCError(err error) error {
+	var timeout *appbridge.DispatcherRequestTimeoutError
+	var missing *appbridge.SessionOpeningNotFoundError
+	var service *appbridge.ServiceError
+	var refused *appbridge.RefusedError
+	var notFound *sandboxes.SandboxNotFoundError
+	var invalid *sandboxes.InvalidSandboxError
+	var conflict *sandboxes.SandboxConflictError
+	var running *sandboxes.SandboxRunningError
+	var modeUnknown *sandboxes.SandboxModeUnknownError
+	var tearingDown *sandboxes.SandboxTearingDownError
+	var quiescing *sandboxes.SandboxQuiescingError
+	switch {
+	case errors.As(err, &timeout):
+		return status.Error(codes.DeadlineExceeded, err.Error())
+	case errors.As(err, &missing):
+		return status.Error(codes.NotFound, err.Error())
+	case errors.As(err, &service):
+		return sessionUpstreamRPCError(service.Code, service.Details, err)
+	case errors.As(err, &refused):
+		return status.Error(refused.Code, refused.Details)
+	case errors.As(err, &notFound), apierrors.IsNotFound(err):
+		return status.Error(codes.NotFound, err.Error())
+	case errors.As(err, &invalid):
+		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.As(err, &conflict), errors.As(err, &running), errors.As(err, &modeUnknown), errors.As(err, &tearingDown), apierrors.IsConflict(err):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.As(err, &quiescing):
+		slog.Error("Session opening dependency failed", "error", err)
+		return status.Error(codes.Unavailable, err.Error())
+	case errors.Is(err, context.Canceled):
+		return status.Error(codes.Canceled, "Request canceled")
+	case errors.Is(err, context.DeadlineExceeded), apierrors.IsTimeout(err), apierrors.IsServerTimeout(err):
+		return sessionUpstreamRPCError(codes.DeadlineExceeded, "", err)
+	case apierrors.IsTooManyRequests(err):
+		return status.Error(codes.ResourceExhausted, err.Error())
+	}
+	if upstream, ok := status.FromError(err); ok {
+		return sessionUpstreamRPCError(upstream.Code(), upstream.Message(), err)
+	}
+	return sessionUpstreamRPCError(codes.Unavailable, "", err)
+}
+
+// Hide internal dependency failures using gRPC semantics, before the HTTP facade sees them.
+func sessionUpstreamRPCError(code codes.Code, message string, cause error) error {
+	switch code {
+	case codes.Unknown, codes.DeadlineExceeded, codes.Unimplemented, codes.Internal, codes.Unavailable, codes.DataLoss:
+		slog.Error("Session opening dependency failed", "error", cause)
+		return status.Error(code, "Upstream service unavailable")
+	default:
+		if upstream, ok := status.FromError(cause); ok && upstream.Code() == code {
+			return upstream.Err()
+		}
+		return status.Error(code, message)
+	}
+}
+
+// Retain HTTP statuses and detail for cached clients while exposing the gRPC status to new clients.
+func sessionGatewayError(_ context.Context, _ *gatewayruntime.ServeMux, _ gatewayruntime.Marshaler, w http.ResponseWriter, _ *http.Request, err error) {
+	st := status.Convert(err)
+	httpStatus := gatewayruntime.HTTPStatusFromCode(st.Code())
+	switch st.Code() {
+	case codes.InvalidArgument:
+		httpStatus = http.StatusUnprocessableEntity
+	case codes.FailedPrecondition, codes.AlreadyExists, codes.Aborted:
+		httpStatus = http.StatusConflict
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(httpStatus)
+	_ = json.NewEncoder(w).Encode(map[string]any{"code": int32(st.Code()), "message": st.Message(), "detail": st.Message()})
 }
 
 func sessionDefaults(config Config, sandbox *sandboxespb.Sandbox, setupWasSet bool, requestedSetup *string) (*sessionpb.SessionSpec, *string, error) {
@@ -157,37 +250,4 @@ func sessionDefaults(config Config, sandbox *sandboxespb.Sandbox, setupWasSet bo
 
 func replaceSessionID(value, sessionID string) string {
 	return strings.ReplaceAll(value, "{session_id}", sessionID)
-}
-
-func openingOutput(opening *dispatcherpb.SessionOpening) (*sessionOpeningOutput, error) {
-	encoded, err := (protojson.MarshalOptions{}).Marshal(opening)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("Session opening could not be encoded")
-	}
-	var result map[string]any
-	if err := json.Unmarshal(encoded, &result); err != nil {
-		return nil, huma.Error500InternalServerError("Session opening could not be decoded")
-	}
-	return &sessionOpeningOutput{Body: result}, nil
-}
-
-func sessionHTTPError(err error) error {
-	var timeout *appbridge.DispatcherRequestTimeoutError
-	var opening *appbridge.SessionOpeningNotFoundError
-	var malformed *appbridge.MalformedMessageError
-	var threadMissing *appbridge.ThreadNotFoundError
-	var threadState *appbridge.ThreadStateError
-	var refused *appbridge.RefusedError
-	switch {
-	case errors.As(err, &timeout):
-		return huma.Error504GatewayTimeout(err.Error())
-	case errors.As(err, &opening), errors.As(err, &threadMissing):
-		return huma.Error404NotFound(err.Error())
-	case errors.As(err, &malformed):
-		return huma.Error422UnprocessableEntity(err.Error())
-	case errors.As(err, &threadState), errors.As(err, &refused):
-		return huma.Error409Conflict(err.Error())
-	default:
-		return sandboxHTTPError(err)
-	}
 }

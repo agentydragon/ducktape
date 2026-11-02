@@ -190,11 +190,13 @@ does not require an HTTP facade.
   Each gateway passes an explicit unary timeout; zero delegates bounds to the servicer. A unary
   timeout never limits a server stream, which ends with its request/session lifetime. Gateway clients
   disable retries so mutations cannot be replayed by the transport.
-  **App-owned composition:** the integration app may invoke its own servicer in process instead of
-  creating a local gRPC listener. The app HTTP middleware must authenticate callers and enforce
-  cookie CSRF before invocation, because gRPC interceptors do not run on this path. grpc-gateway's
-  in-process registration does not support streaming; app-owned watches can forward the same typed
-  responses through its standard stream encoder. Calls to other services remain native gRPC.
+  **App-owned composition:** the integration app may register generated `HandlerServer` handlers
+  against its own in-process unary servicer without a local listener. The app HTTP middleware must
+  authenticate callers and enforce cookie CSRF before invocation, because gRPC interceptors do not
+  run on this path. Request context and cancellation flow into the servicer. grpc-gateway's in-process
+  registration does not support streaming; app-owned watches can forward the same typed responses
+  through its standard stream encoder. Calls to other services remain native gRPC, and remotely
+  callable gRPC service APIs use a native listener.
 - **Exposure:** only an RPC with a rule is on HTTP, so the full-duplex
   `SessionJournalIngress.Push` and the private `Runner` service stay native gRPC. Operator and workload
   callers get separate proto services (`OperatorActionService` beside `ActionService`,

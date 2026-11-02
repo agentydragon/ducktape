@@ -112,6 +112,35 @@ async def test_client_propagates_active_trace_context() -> None:
     assert "traceparent: 00-1234567890abcdef1234567890abcdef-1234567890abcdef-01\r\n" in observed[0].lower()
 
 
+@pytest.mark.parametrize(("overrides", "setup_script"), [(None, None), ({"model": "", "instructions": None}, "")])
+async def test_open_session_preserves_override_presence(
+    overrides: dict[str, object] | None, setup_script: str | None
+) -> None:
+    observed: list[str] = []
+    session_id, sandbox_uid = uuid4(), uuid4()
+
+    async def opened(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "201 Created",
+            json.dumps({"sessionId": str(session_id), "sandboxUid": str(sandbox_uid)}).encode(),
+            "application/json",
+        )
+
+    async with _app(opened, requests=observed) as (client, _):
+        await client.open_session(
+            "demo", session_id, sandbox_uid=sandbox_uid, overrides=overrides, setup_script=setup_script
+        )
+
+    body = json.loads(observed[0].split("\r\n\r\n", 1)[1])
+    assert body == {
+        "session_id": str(session_id),
+        "sandbox_uid": str(sandbox_uid),
+        "spec": overrides or {},
+        **({"setup_script": setup_script} if setup_script is not None else {}),
+    }
+
+
 async def test_app_config_client_adapts_proto_json_to_test_views() -> None:
     async def models(_after: int, writer: asyncio.StreamWriter) -> None:
         await _respond(
