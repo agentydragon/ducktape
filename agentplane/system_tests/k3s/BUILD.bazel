@@ -4,7 +4,7 @@
 
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_EXEC_PROPERTIES", "K3S_SERVICE_IMAGES", "K3S_TAGS", "K3S_VM_IMAGES")
+load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_EXEC_PROPERTIES", "K3S_PERSISTENCE_PROPERTIES", "K3S_SERVICE_IMAGES", "K3S_TAGS", "K3S_VM_IMAGES")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -18,6 +18,31 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_pinned_images",
+    size = "enormous",
+    srcs = ["test_pinned_images.py"],
+    data = [
+        ":egress_sidecar_layout",
+        K3S_BINARY,
+    ],
+    env = {
+        "K3S_BINARY_RLOCATION": "$(rlocationpath " + K3S_BINARY + ")",
+        "K3S_TEST_IMAGE_RLOCATION": "$(rlocationpath :egress_sidecar_layout)",
+    },
+    exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
+        "test.runner-recycling-key": "k3s-pinned-image-probe-v1",
+    },
+    tags = K3S_TAGS + ["manual"],
+    deps = [
+        ":stack",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )
