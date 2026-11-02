@@ -13,7 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/journal"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/workspace"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -29,7 +29,7 @@ func withTestSessionFacilities(t *testing.T, config Config) Config {
 		config.Environment = func() Environment { return Environment{IncarnationUID: "test-incarnation"} }
 	}
 	var workers sync.WaitGroup
-	host := supervision.NewHost(config.Context, config.State, runnerlifecycle.Namespace, supervision.HarnessDomain, &workers, func(err error) {
+	host := supervision.NewHost(config.Context, config.State, harnesshostlifecycle.Namespace, supervision.HarnessDomain, &workers, func(err error) {
 		if err != nil {
 			t.Error(err)
 		}
@@ -44,7 +44,7 @@ func withTestSessionFacilities(t *testing.T, config Config) Config {
 	}
 	bootstrapHost, err := bootstrap.NewHost(bootstrap.Config{}, bootstrap.Dependencies{
 		Context: config.Context, State: config.State, Workers: &workers,
-		Admission: func(ctx context.Context, _ runnerlifecycle.EnvironmentDesired, work func(context.Context) error) error {
+		Admission: func(ctx context.Context, _ harnesshostlifecycle.EnvironmentDesired, work func(context.Context) error) error {
 			return work(ctx)
 		},
 		OnError: func(err error) {

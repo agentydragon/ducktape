@@ -1,4 +1,4 @@
-// Package session owns one Runner's durable Session inventory and its COSI lifecycle.
+// Package session owns the Harness Host's durable Session inventory and its COSI lifecycle.
 package session
 
 import (
@@ -20,7 +20,7 @@ const (
 	LifecycleStatusType = "SessionLifecycleStatuses.agentplane"
 	OperationType       = "NativeOperationResults.agentplane"
 	ControllerName      = "session-lifecycle"
-	HostOwner           = "runner-host"
+	HostOwner           = lifecycle.HostOwner
 )
 
 type Phase uint8
@@ -47,8 +47,8 @@ type Input struct {
 	DispatchBlocked   bool
 }
 
-// DrainInput changes only when inspection work starts or settles. Harness Host
-// lifecycle aggregation needs this barrier, not every Session dispatch dependency.
+// DrainInput changes only when inspection work starts or settles. The Harness Host
+// lifecycle controller needs this barrier, not every Session dispatch dependency.
 type DrainInput struct{ Inspecting bool }
 
 type LifecycleStatus struct {

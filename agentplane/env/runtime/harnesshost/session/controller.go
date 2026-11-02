@@ -6,7 +6,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -24,11 +24,11 @@ func (*sessionLifecycleController) Name() string { return ControllerName }
 func (c *sessionLifecycleController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
-			{Namespace: runnerlifecycle.Namespace, Type: InputType, Kind: controller.InputQPrimary},
-			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.DesiredStateType, Kind: controller.InputQMapped},
-			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.AggregateStatusType, Kind: controller.InputQMapped},
-			{Namespace: runnerlifecycle.Namespace, Type: codexappserver.RuntimeType, Kind: controller.InputQMapped},
-			{Namespace: runnerlifecycle.Namespace, Type: OperationType, Kind: controller.InputQMapped},
+			{Namespace: harnesshostlifecycle.Namespace, Type: InputType, Kind: controller.InputQPrimary},
+			{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.DesiredStateType, Kind: controller.InputQMapped},
+			{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.AggregateStatusType, Kind: controller.InputQMapped},
+			{Namespace: harnesshostlifecycle.Namespace, Type: codexappserver.RuntimeType, Kind: controller.InputQMapped},
+			{Namespace: harnesshostlifecycle.Namespace, Type: OperationType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: LifecycleStatusType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(c.manager.workers)),
@@ -41,7 +41,7 @@ func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger
 		if err != nil || !found || result.Controller != ControllerName || result.Session == "" {
 			return nil, err
 		}
-		return []resource.Pointer{resource.NewMetadata(runnerlifecycle.Namespace, InputType, result.Session, resource.VersionUndefined)}, nil
+		return []resource.Pointer{resource.NewMetadata(harnesshostlifecycle.Namespace, InputType, result.Session, resource.VersionUndefined)}, nil
 	}
 	rows, err := safe.ReaderListAll[*typed.Resource[Input, componentExtension[Input]]](ctx, r)
 	if err != nil {
@@ -70,11 +70,11 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	if err != nil {
 		return err
 	}
-	desiredState, _, err := runnerlifecycle.ReadDesired(ctx, r)
+	desiredState, _, err := harnesshostlifecycle.ReadDesired(ctx, r)
 	if err != nil {
 		return err
 	}
-	outer, _, err := runnerlifecycle.ReadStatus(ctx, r)
+	outer, _, err := harnesshostlifecycle.ReadStatus(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -85,7 +85,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 		return err
 	}
-	if desiredState.Mode == runnerlifecycle.Running && current.Generation != desiredState.Generation {
+	if desiredState.Mode == harnesshostlifecycle.Running && current.Generation != desiredState.Generation {
 		for _, slot := range []**oneoff.Operation{&s.halting, &s.sealing} {
 			if op, done := s.takeOperation(slot); done {
 				c.manager.forgetOperation(op)
@@ -140,12 +140,12 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		processID := s.processID
 		live := s.process != nil && s.process.Running()
 		s.mu.Unlock()
-		if op.Err() == nil && live && desiredState.Mode == runnerlifecycle.Running && current.Phase == Preparing {
+		if op.Err() == nil && live && desiredState.Mode == harnesshostlifecycle.Running && current.Phase == Preparing {
 			current.Phase, current.ProcessID = Ready, processID
 			s.mu.Lock()
 			s.processState = sessionpb.ProcessState_PROCESS_STATE_RUNNING
 			s.mu.Unlock()
-		} else if desiredState.Mode == runnerlifecycle.Running {
+		} else if desiredState.Mode == harnesshostlifecycle.Running {
 			current.Phase = Dormant
 			if input.Pending == 0 {
 				current.Attempt = input.Demand
@@ -167,7 +167,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	s.mu.Lock()
 	operationStartFailed := s.operationStartFailed
 	s.mu.Unlock()
-	if desiredState.Mode == runnerlifecycle.Running && (operationStartFailed || current.Error != "") {
+	if desiredState.Mode == harnesshostlifecycle.Running && (operationStartFailed || current.Error != "") {
 		return write()
 	}
 	// Reconciliation runs independently from halt, so native stdout can deliver its replies.
@@ -203,8 +203,8 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			return err
 		}
 	}
-	if desiredState.Mode != runnerlifecycle.Running {
-		if outer.Generation != desiredState.Generation || outer.Stage < runnerlifecycle.Halting {
+	if desiredState.Mode != harnesshostlifecycle.Running {
+		if outer.Generation != desiredState.Generation || outer.Stage < harnesshostlifecycle.Halting {
 			return write()
 		}
 		if current.Error != "" {
@@ -250,7 +250,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			}
 			current.ProcessStopped = true
 		}
-		if current.Phase == Halted && outer.Stage >= runnerlifecycle.Stopping && !current.ProcessStopped {
+		if current.Phase == Halted && outer.Stage >= harnesshostlifecycle.Stopping && !current.ProcessStopped {
 			s.mu.Lock()
 			shared := s.deps.codexAppServer != nil && s.record.Harness == sessionpb.Harness_HARNESS_CODEX
 			s.mu.Unlock()
@@ -278,7 +278,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		s.mu.Lock()
 		inspected := s.inspection == nil && len(s.reconciliations) == 0
 		s.mu.Unlock()
-		if current.Phase == Halted && current.ProcessStopped && inspected && outer.Stage >= runnerlifecycle.Sealing && desiredState.SealUID != "" && s.journal.SealState() == nil {
+		if current.Phase == Halted && current.ProcessStopped && inspected && outer.Stage >= harnesshostlifecycle.Sealing && desiredState.SealUID != "" && s.journal.SealState() == nil {
 			if _, err := s.startOperation(&s.sealing, func(ctx context.Context) error {
 				if err := s.sealJournal(ctx); err != nil {
 					return err

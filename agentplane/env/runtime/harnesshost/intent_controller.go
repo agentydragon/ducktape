@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"go.uber.org/zap"
@@ -21,11 +21,11 @@ type hostIntentController struct {
 
 func (*hostIntentController) Name() string { return "harness-host-intent" }
 func (*hostIntentController) Inputs() []controller.Input {
-	return []controller.Input{{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.HostIntentType, Kind: controller.InputWeak}}
+	return []controller.Input{{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.HostIntentType, Kind: controller.InputWeak}}
 }
 
 func (*hostIntentController) Outputs() []controller.Output {
-	return []controller.Output{{Type: runnerlifecycle.HostIntentStatusType, Kind: controller.OutputExclusive}}
+	return []controller.Output{{Type: harnesshostlifecycle.HostIntentStatusType, Kind: controller.OutputExclusive}}
 }
 
 func (c *hostIntentController) Run(ctx context.Context, engine controller.Runtime, _ *zap.Logger) error {
@@ -35,14 +35,14 @@ func (c *hostIntentController) Run(ctx context.Context, engine controller.Runtim
 			return nil
 		case <-engine.EventCh():
 		}
-		desired, found, err := cosi.Read(ctx, engine, runnerlifecycle.HostIntentResource(runnerlifecycle.HostIntent{}))
+		desired, found, err := cosi.Read(ctx, engine, harnesshostlifecycle.HostIntentResource(harnesshostlifecycle.HostIntent{}))
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
 			return err
 		}
-		current, currentFound, err := cosi.Read(ctx, engine, runnerlifecycle.HostIntentStatusResource(runnerlifecycle.HostIntentStatus{}))
+		current, currentFound, err := cosi.Read(ctx, engine, harnesshostlifecycle.HostIntentStatusResource(harnesshostlifecycle.HostIntentStatus{}))
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -59,8 +59,8 @@ func (c *hostIntentController) Run(ctx context.Context, engine controller.Runtim
 		if !c.eligible(desired) {
 			continue
 		}
-		result := runnerlifecycle.HostIntentStatus{Intent: desired}
-		if _, err := cosi.Write(ctx, engine, runnerlifecycle.HostIntentStatusResource(result), result); err != nil {
+		result := harnesshostlifecycle.HostIntentStatus{Intent: desired}
+		if _, err := cosi.Write(ctx, engine, harnesshostlifecycle.HostIntentStatusResource(result), result); err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
@@ -68,7 +68,7 @@ func (c *hostIntentController) Run(ctx context.Context, engine controller.Runtim
 		}
 		if !c.eligible(desired) {
 			result.Error = "Host connection ended before intent application"
-			_, writeErr := cosi.Write(ctx, engine, runnerlifecycle.HostIntentStatusResource(result), result)
+			_, writeErr := cosi.Write(ctx, engine, harnesshostlifecycle.HostIntentStatusResource(result), result)
 			c.runner.fail(fmt.Errorf("apply Host lifecycle intent: %w", errors.Join(errors.New(result.Error), writeErr)))
 			return nil
 		}
@@ -82,7 +82,7 @@ func (c *hostIntentController) Run(ctx context.Context, engine controller.Runtim
 		} else {
 			result.Applied = true
 		}
-		_, writeErr := cosi.Write(ctx, engine, runnerlifecycle.HostIntentStatusResource(result), result)
+		_, writeErr := cosi.Write(ctx, engine, harnesshostlifecycle.HostIntentStatusResource(result), result)
 		if applyErr != nil || writeErr != nil {
 			c.runner.fail(fmt.Errorf("apply Host lifecycle intent: %w", errors.Join(applyErr, writeErr)))
 		}
@@ -90,11 +90,11 @@ func (c *hostIntentController) Run(ctx context.Context, engine controller.Runtim
 	}
 }
 
-func shouldApplyHostIntent(found bool, desired runnerlifecycle.HostIntent, currentFound bool, current runnerlifecycle.HostIntentStatus) bool {
+func shouldApplyHostIntent(found bool, desired harnesshostlifecycle.HostIntent, currentFound bool, current harnesshostlifecycle.HostIntentStatus) bool {
 	return found && (!currentFound || (current.Applied && current.Error == "" && current.Intent != desired))
 }
 
-func (c *hostIntentController) eligible(desired runnerlifecycle.HostIntent) bool {
+func (c *hostIntentController) eligible(desired harnesshostlifecycle.HostIntent) bool {
 	c.runner.mu.Lock()
 	startup := c.runner.startupComplete && !c.runner.closing && c.runner.bootID == desired.HostBootID
 	c.runner.mu.Unlock()

@@ -24,7 +24,7 @@ const (
 	pageSize          = 128
 )
 
-// Source is the durable history a runner can publish for one Session.
+// Source is the durable history the Harness Host can publish for one Session.
 type Source struct {
 	ID       string
 	Announce func() *sessionpb.Attached

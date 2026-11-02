@@ -1,5 +1,5 @@
-// Package lifecycle defines distinct Runtime and Host desired resources and
-// the Host aggregate status consumed by their coordinated lifecycle.
+// Package lifecycle defines distinct Runtime and Harness Host desired resources
+// and the Harness Host aggregate status consumed by their coordinated lifecycle.
 package lifecycle
 
 import (
@@ -16,13 +16,13 @@ import (
 
 const (
 	Namespace                    = "environment-runtime"
-	DesiredStateType             = "RunnerDesiredStates.agentplane"
-	AggregateStatusType          = "RunnerRuntimes.agentplane"
+	DesiredStateType             = "HarnessHostDesiredStates.agentplane"
+	AggregateStatusType          = "HarnessHostLifecycleStatuses.agentplane"
 	RuntimeCloseStatusType       = "EnvironmentRuntimeCloses.agentplane"
 	RuntimeTransitionRequestType = "EnvironmentRuntimeTransitionRequests.agentplane"
 	RuntimeTransitionStatusType  = "EnvironmentRuntimeTransitions.agentplane"
-	ResourceID                   = "runner"
-	HostOwner                    = "runner-host"
+	ResourceID                   = "harness-host"
+	HostOwner                    = "harness-host"
 	EnvironmentDesiredStateType  = "EnvironmentRuntimeDesiredStates.agentplane"
 	// EmbeddedExecutionRuntimeType is observed by the app-server controller to
 	// wake its live Execution readiness check.
@@ -100,7 +100,7 @@ func PublishEnvironmentDesired(ctx context.Context, writer state.State, value En
 
 func (value Desired) DeepCopy() Desired { return value }
 
-// Blocker identifies the first unmet predicate in the aggregate Runner barrier. It is written with
+// Blocker identifies the first unmet predicate in the aggregate Harness Host barrier. It is written with
 // the corresponding Stage and describes the resources the controller just inspected; it is not an
 // independent lifecycle state machine.
 type BlockerKind uint8
@@ -305,7 +305,7 @@ func WriteRuntimeCloseStatus(ctx context.Context, writer controller.ReaderWriter
 
 func (value Status) DeepCopy() Status { return value }
 
-// AdmissionGuard runs effect while the Runner admission barrier is held, but only while expected
+// AdmissionGuard runs effect while the Harness Host admission barrier is held, but only while expected
 // remains the current Running desired state.
 type AdmissionGuard func(ctx context.Context, expected Desired, effect func(context.Context) error) error
 
@@ -349,14 +349,14 @@ func WatchStatus(ctx context.Context, reader state.State, condition func(Status)
 		state.WithCondition(func(value resource.Resource) (bool, error) {
 			current, ok := value.(*typed.Resource[Status, statusExtension])
 			if !ok {
-				return false, fmt.Errorf("unexpected Runner aggregate status resource %T", value)
+				return false, fmt.Errorf("unexpected Harness Host aggregate status resource %T", value)
 			}
 			return condition(*current.TypedSpec())
 		}))
 	return err
 }
 
-// PublishDesired is the host-side writer for Runner intent. The Runner owns admission locking;
+// PublishDesired is the host-side writer for Harness Host intent. The Host owns admission locking;
 // this function owns only typed publication of the shared desired-state resource.
 func PublishDesired(ctx context.Context, writer state.State, value Desired) error {
 	resource := desiredResource(value)
@@ -366,7 +366,7 @@ func PublishDesired(ctx context.Context, writer state.State, value Desired) erro
 	}, state.WithUpdateOwner(HostOwner))
 }
 
-// WriteStatus is used only by the Runner aggregate controller, which exclusively owns this output.
+// WriteStatus is used only by the Harness Host aggregate controller, which exclusively owns this output.
 func WriteStatus(ctx context.Context, writer controller.ReaderWriter, value Status) (bool, error) {
 	current, found, err := ReadStatus(ctx, writer)
 	if err != nil || found && current == value {

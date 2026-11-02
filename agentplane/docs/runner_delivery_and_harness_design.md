@@ -444,9 +444,9 @@ delivery. Loss of runner storage ends runner-owned state; retained History is no
 mapping reconstruction source. An unknown delivery response is handled by the same command ID,
 not by inventing another Session.
 
-## Runner-owned harness lifecycle
+## Harness Host lifecycle
 
-**Approved direction (operator, 2026-10-17).** Callers address durable Sessions; the runner owns
+**Approved direction (operator, 2026-10-17).** Callers address durable Sessions; the Harness Host owns
 harness startup, native conversation preparation, reconciliation and process replacement. Process
 allocation stays internal. This decision does not select process/store counts, shared-store write
 safety or the remaining native-ID creation contract above.
@@ -454,11 +454,11 @@ safety or the remaining native-ID creation contract above.
 ### Admission and execution
 
 Dispatcher durably queues the exact destination, command ID and payload before acknowledging queued
-acceptance or requesting authorized Sandbox wake. Runner validates membership and durably admits
+acceptance or requesting authorized Sandbox wake. The Harness Host validates membership and durably admits
 input **before** starting or resuming its harness. Admission is not native readiness or confirmation
 that the harness consumed the input. An unknown Session is rejected, never implicitly created.
 
-Once admitted, work belongs to the runner despite caller disconnect. It ensures setup and native
+Once admitted, work belongs to the Harness Host despite caller disconnect. It ensures setup and native
 conversation preparation, reconciles durable evidence, then delivers input. Concurrent inputs share
 one necessary startup attempt and preserve Session input order. Startup must not hold the admission
 lock across native I/O or prevent controls from being processed. Definitive startup failures become
@@ -493,7 +493,7 @@ effects. Same command ID/payload returns the original admission; conflicting reu
 Keep the guarded turn interrupt control and distinct Sandbox suspend/resume controls. Sending to a
 dormant Session uses runner-managed readiness; existing Sandbox wake authorization still applies.
 The app's manual resume changes Sandbox lifecycle state through Kubernetes; retained native state
-recovery belongs to the Runner.
+recovery belongs to the Harness Host.
 
 ### Provisional introspection model and Sandbox page
 

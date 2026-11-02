@@ -70,7 +70,7 @@ fence. A Running intent already published by that epoch remains current until a 
 Close requests its own drain. A prior requested drain is reconciled against its exact binding
 instead of issuing another stop generation. Quiesce seals durably before publishing its intent;
 repeated requests preserve a healthy generation. To decide whether a failed Host generation needs
-a retry, Runtime verifies the exact Host binding and reads the matching Runner desired and aggregate
+a retry, Runtime verifies the exact Host binding and reads the matching Harness Host desired and aggregate
 status generations from the shared COSI store; missing or stale status cannot trigger a retry.
 Close cancels an active transition and waits for its settlement before preparing shutdown.
 
