@@ -521,9 +521,14 @@ ArgumentNoEscape, DescriptorCopy*}` → the
   which bindings a tainted statement reads may hold the global object, and a
   statement using them only as bases of static-key member reads gets those
   `GlobalProp` read cells instead of the havoc.
+- Landed: `initialization_effects.rs` folds callee
+  `evaluation_effects.global_accesses` into `GlobalProp` read/write cells with
+  `IndexedMayAccess` evidence. This ledger composes possible accesses; it does
+  not certify execution or complete effect-domain coverage.
 - Remaining: the cells become projections of the interpreter's effect set
-  (`Binding`/`GlobalProp` cells), writes through an alias included, and
-  callees' `GlobalProp` effects with them. `collector.rs` keeps only
+  (`Binding`/`GlobalProp` cells), including writes through aliases and semantic
+  coverage of callee effects. Migrate the existing syntactic/indexed sources
+  and completeness proofs together. `collector.rs` keeps only
   syntax collection (declarations, lazy boundaries, TLA). Needs canonical
   replays: it changes precision both ways, and `needed` grows to every
   eagerly read binding. Callee `GlobalProp` writes are ordered today by the
