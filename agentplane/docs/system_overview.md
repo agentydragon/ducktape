@@ -18,7 +18,7 @@ flowchart LR
     history[History Service]
     subgraph unified[Runner Gateway]
         dispatcher[Dispatcher API and durable delivery]
-        discovery[EnvironmentDiscovery API]
+        discovery[EnvironmentService API]
         gateway[Runner proxy and state observation]
     end
     pod[Managed Pod agent process and CLI]
@@ -31,8 +31,7 @@ flowchart LR
     k8s[Kubernetes API]
     app -->|session opens + commands| dispatcher
     app -->|Dispatch watch for the browser: gRPC| dispatcher
-    app -->|EnvironmentDiscovery list/get: gRPC| discovery
-    actions -->|caller-delegated EnvironmentDiscovery list/get: gRPC| discovery
+    actions -->|caller-delegated EnvironmentService list/get: gRPC| discovery
     actions -->|Session commands: broker or delegated caller, gRPC| dispatcher
     actions -->|Session reads: broker or delegated caller, gRPC| history
     app -->|per-Sandbox Runner Proxy: live inventory + diagnostics| gateway
@@ -50,7 +49,7 @@ flowchart LR
 Managed Pod and VM callers receive only the inert `AGENTPLANE_SESSIONS_CREDENTIAL` placeholder. The
 `AGENTPLANE_SESSIONS_URL` targets `session-dispatcher.<namespace>.svc.cluster.local:8080`. The egress sidecar
 or VM launcher relay holds the short-lived `session-dispatcher` audience token; the central proxy substitutes
-it on the allowlisted SessionDispatcher and EnvironmentDiscovery RPC paths. Backend checks of the Sandbox
+it on the allowlisted SessionDispatcher and EnvironmentService RPC paths. Backend checks of the Sandbox
 identity and object UID remain authoritative; network reachability grants no Session authority.
 The Action Service uses the same Dispatcher audience and a pod-bound Actions token on the explicitly
 opted-in discovery methods. The receiver applies the caller identity from the shared delegation

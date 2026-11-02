@@ -214,8 +214,8 @@ class RunnerGateway(Construct):
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/WatchDispatches",
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches",
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
-                    "/agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments",
-                    "/agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment",
+                    "/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments",
+                    "/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment",
                 ],
             }
         settings = SettingsFile(

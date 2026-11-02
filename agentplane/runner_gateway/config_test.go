@@ -11,8 +11,8 @@ import (
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/discovery"
-	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/environments"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
@@ -85,7 +85,7 @@ func writeSettings(t *testing.T, contents string) string {
 }
 
 func TestCallerListsComeFromTheFileAndKeepAuthAndWakePoliciesSeparate(t *testing.T) {
-	path := writeSettings(t, requiredFile+"wake_callers: [agentplane/app]\ndelegation:\n  actor: agentplane/actions\n  caller_namespaces: [agentplane]\n  methods:\n    - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput\n    - /agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments\n    - /agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment\n")
+	path := writeSettings(t, requiredFile+"wake_callers: [agentplane/app]\ndelegation:\n  actor: agentplane/actions\n  caller_namespaces: [agentplane]\n  methods:\n    - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput\n    - /agentplane.sandboxes.environments.EnvironmentService/ListEnvironments\n    - /agentplane.sandboxes.environments.EnvironmentService/GetEnvironment\n")
 	c, err := loadTestConfig(t, required(t,
 		settingPrefix+"CONFIG_FILE="+path, settingPrefix+"SANDBOX_CONTROLLER_ACCOUNT=agentplane/sandbox-controller"))
 	if err != nil {
@@ -99,14 +99,14 @@ func TestCallerListsComeFromTheFileAndKeepAuthAndWakePoliciesSeparate(t *testing
 		!slices.Equal(c.Delegation.CallerNamespaces, []string{"agentplane"}) ||
 		!slices.Equal(c.Delegation.Methods, []string{
 			"/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
-			"/agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments",
-			"/agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment",
+			"/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments",
+			"/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment",
 		}) {
 		t.Fatalf("policy boundaries were merged: %+v", c)
 	}
 }
 
-func TestConfiguredHarnessNamesRoundTripThroughEnvironmentDiscovery(t *testing.T) {
+func TestConfiguredHarnessNamesRoundTripThroughEnvironmentService(t *testing.T) {
 	settings := requiredFile + `
 runtime_catalog:
   models:
@@ -151,7 +151,7 @@ runtime_catalog:
 		}},
 	}}
 	objects := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, executionAccount).Build()
-	service, err := discovery.New("agentplane", objects, config.RuntimeCatalog, nil)
+	service, err := environments.New("agentplane", objects, config.RuntimeCatalog, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,12 +159,12 @@ runtime_catalog:
 	if err != nil {
 		t.Fatal(err)
 	}
-	connection := grpcmethods.Serve(t, discovery.Methods(resolver), func(server *grpc.Server) {
-		discoverypb.RegisterEnvironmentDiscoveryServer(server, service)
+	connection := grpcmethods.Serve(t, environments.Methods(resolver), func(server *grpc.Server) {
+		environmentpb.RegisterEnvironmentServiceServer(server, service)
 	})
-	client := discoverypb.NewEnvironmentDiscoveryClient(connection)
+	client := environmentpb.NewEnvironmentServiceClient(connection)
 	ctx := metadata.AppendToOutgoingContext(t.Context(), "authorization", "Bearer test-token")
-	response, err := client.ListEnvironments(ctx, &discoverypb.ListEnvironmentsRequest{Limit: 10})
+	response, err := client.ListEnvironments(ctx, &environmentpb.ListEnvironmentsRequest{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -49,7 +49,7 @@ have landed. Delivery consumes the persisted effective caller; the store rejects
 attribution. The migration provides wake-assessment storage. The approved resume authorization,
 typed receipt delivery and client surfaces remain unfinished.
 
-- [Discovery](../sandboxes/discovery/service.go) describes the exact target, execution account,
+- [Discovery](../sandboxes/environments/service.go) describes the exact target, execution account,
   operating state and readiness. Its current `ResumeState` reflects send-wake eligibility; it is
   not an implemented explicit-resume RPC or a generic lifecycle grant.
 - [Dispatcher wake](../runner_gateway/dispatcher/README.md#contract) requires both the configured
@@ -137,7 +137,7 @@ are implementation contracts; they are not deployed callable operations yet.
 
 | Surface                                                           | Request                                                      | Response / role                                                                                                                                     |
 | ----------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `EnvironmentDiscovery.GetEnvironment` / `environments__get`       | Existing exact target; optional bounded readiness wait       | Extend the descriptor with explicit-resume eligibility, denial reason, current wake generation and an opaque resume token                           |
+| `EnvironmentService.GetEnvironment` / `environments__get`         | Existing exact target; optional bounded readiness wait       | Extend the descriptor with explicit-resume eligibility, denial reason, current wake generation and an opaque resume token                           |
 | `EnvironmentLifecycle.ResumeEnvironment` / `environments__resume` | `{target: TargetHandle, resume_token: string}`               | Typed `REQUESTED`, `ALREADY_RUNNING`, or `STATE_CHANGED` result, target and observed generation; denied calls return structured `PERMISSION_DENIED` |
 | `agentplane environments resume`                                  | Same target/token contract                                   | Direct gRPC client with the same authorization; return acceptance separately from readiness                                                         |
 | `EnvironmentLifecycle.SuspendEnvironment`                         | Exact target; suspend retry/precondition contract for review | Proposed operator-authorized companion; no agent suspend permission follows from resume permission                                                  |

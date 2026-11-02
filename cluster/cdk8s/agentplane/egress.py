@@ -120,9 +120,9 @@ _SESSION_DISPATCHER_GRPC_PATHS = (
     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn",
 )
-_ENVIRONMENT_DISCOVERY_GRPC_PATHS = (
-    "/agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments",
-    "/agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment",
+_ENVIRONMENT_SERVICE_READ_GRPC_PATHS = (
+    "/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments",
+    "/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment",
 )
 
 # The egress PolicySets created below that every environment ships. A name is exported
@@ -257,7 +257,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
         metadata=ApiObjectMetadata(name=session_dispatcher.WORKLOAD_CREDENTIAL, namespace=namespace),
         description=(
             "The calling Sandbox Pod's short-lived, Pod-bound identity minted specifically for Session Dispatcher "
-            "and EnvironmentDiscovery gRPC calls."
+            "and EnvironmentService gRPC calls."
         ),
         source=Source.projected_workload_token(audience=session_dispatcher.TOKEN_AUDIENCE),
         targets=[
@@ -446,7 +446,7 @@ def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, lit
                 hosts=[session_dispatcher.service(namespace).fqdn],
                 cluster_internal=True,
                 methods=[PolicySetSpecRulesMethods.POST],
-                paths=list(_ENVIRONMENT_DISCOVERY_GRPC_PATHS),
+                paths=list(_ENVIRONMENT_SERVICE_READ_GRPC_PATHS),
                 credential_ref=PolicySetSpecRulesCredentialRef(name=session_dispatcher.WORKLOAD_CREDENTIAL),
             ),
             # These caller-authorized Action adapters use the same Dispatcher/Discovery APIs at the

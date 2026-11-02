@@ -220,12 +220,13 @@ def test_session_dispatcher_egress_is_limited_to_the_delegation_rpc_surfaces(
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn",
     ]
-    discovery_paths = [
-        "/agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments",
-        "/agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment",
+    environment_service_paths = [
+        "/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments",
+        "/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment",
     ]
     expected_permissions = {
-        (BASIC_POLICY, credential_name, destination, "POST", path, True) for path in (*session_paths, *discovery_paths)
+        (BASIC_POLICY, credential_name, destination, "POST", path, True)
+        for path in (*session_paths, *environment_service_paths)
     }
 
     def host_matches_destination(pattern: str) -> bool:

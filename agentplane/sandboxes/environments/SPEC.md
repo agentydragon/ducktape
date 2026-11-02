@@ -1,4 +1,4 @@
-# EnvironmentDiscovery SPEC
+# EnvironmentService SPEC
 
 ## Purpose
 

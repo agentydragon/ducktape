@@ -1808,7 +1808,7 @@ metadata:
   name: agentplane-session-dispatcher-workload
   namespace: agentplane-staging
 spec:
-  description: The calling Sandbox Pod's short-lived, Pod-bound identity minted specifically for Session Dispatcher and EnvironmentDiscovery gRPC calls.
+  description: The calling Sandbox Pod's short-lived, Pod-bound identity minted specifically for Session Dispatcher and EnvironmentService gRPC calls.
   source:
     projectedWorkloadToken:
       audience: session-dispatcher
@@ -2018,8 +2018,8 @@ spec:
       methods:
         - POST
       paths:
-        - /agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments
-        - /agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment
+        - /agentplane.sandboxes.environments.EnvironmentService/ListEnvironments
+        - /agentplane.sandboxes.environments.EnvironmentService/GetEnvironment
       type: egress
     - policy:
         actions:

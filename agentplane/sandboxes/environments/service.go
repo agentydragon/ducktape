@@ -1,6 +1,6 @@
-// Package discovery exposes only existing managed Sandboxes whose live execution
+// Package environments exposes only existing managed Sandboxes whose live execution
 // ServiceAccount is the reviewed caller's exact account UID.
-package discovery
+package environments
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -28,7 +28,7 @@ const maxLimit = 100
 // lookup starts from a current API-server view; ExecutionAccount rereads each candidate's UID and
 // controller-owned account before it is returned.
 type Service struct {
-	discoverypb.UnimplementedEnvironmentDiscoveryServer
+	environmentpb.UnimplementedEnvironmentServiceServer
 
 	namespace   string
 	sandboxes   *sandboxreader.Reader
@@ -62,8 +62,8 @@ func New(
 func Methods(resolver *auth.Resolver) auth.Methods {
 	rule := auth.ReviewedServiceAccount(resolver)
 	return auth.Methods{
-		discoverypb.EnvironmentDiscovery_ListEnvironments_FullMethodName: rule,
-		discoverypb.EnvironmentDiscovery_GetEnvironment_FullMethodName:   rule,
+		environmentpb.EnvironmentService_ListEnvironments_FullMethodName: rule,
+		environmentpb.EnvironmentService_GetEnvironment_FullMethodName:   rule,
 	}
 }
 
@@ -83,7 +83,7 @@ func callerMatches(caller auth.ServiceAccountPrincipal, execution sandboxreader.
 		caller.ServiceAccountUID == execution.UID
 }
 
-func (s *Service) ListEnvironments(ctx context.Context, request *discoverypb.ListEnvironmentsRequest) (*discoverypb.ListEnvironmentsResponse, error) {
+func (s *Service) ListEnvironments(ctx context.Context, request *environmentpb.ListEnvironmentsRequest) (*environmentpb.ListEnvironmentsResponse, error) {
 	if request == nil || request.GetLimit() < 1 || request.GetLimit() > maxLimit {
 		return nil, status.Errorf(codes.InvalidArgument, "limit must be between 1 and %d", maxLimit)
 	}
@@ -94,7 +94,7 @@ func (s *Service) ListEnvironments(ctx context.Context, request *discoverypb.Lis
 	if request.GetPageToken() != "" {
 		return nil, status.Error(codes.InvalidArgument, "page token is not valid for this inventory")
 	}
-	response := &discoverypb.ListEnvironmentsResponse{Items: []*discoverypb.EnvironmentDescriptor{}}
+	response := &environmentpb.ListEnvironmentsResponse{Items: []*environmentpb.EnvironmentDescriptor{}}
 	// Current Sandbox-owned execution accounts share the Sandbox's namespace and name. Read only
 	// that candidate directly; a namespace-wide continuation token could reveal another Sandbox's
 	// storage key even when its object is filtered out. The list contract keeps its page shape for
@@ -124,7 +124,7 @@ func (s *Service) ListEnvironments(ctx context.Context, request *discoverypb.Lis
 	return response, nil
 }
 
-func (s *Service) GetEnvironment(ctx context.Context, request *discoverypb.GetEnvironmentRequest) (*discoverypb.EnvironmentDescriptor, error) {
+func (s *Service) GetEnvironment(ctx context.Context, request *environmentpb.GetEnvironmentRequest) (*environmentpb.EnvironmentDescriptor, error) {
 	identity, err := caller(ctx)
 	if err != nil {
 		return nil, err
@@ -166,43 +166,43 @@ func (s *Service) describe(
 	object *api.Sandbox,
 	execution sandboxreader.ServiceAccountIdentity,
 	caller auth.ServiceAccountPrincipal,
-) *discoverypb.EnvironmentDescriptor {
+) *environmentpb.EnvironmentDescriptor {
 	condition := meta.FindStatusCondition(object.Status.Conditions, api.ConditionReady)
-	readiness := &discoverypb.Readiness{State: discoverypb.ReadinessState_READINESS_STATE_NOT_READY}
+	readiness := &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_NOT_READY}
 	if condition == nil {
 		readiness.Reason = "ReadyConditionUnavailable"
 	} else {
 		readiness.Detail = condition.Message
 		readiness.Reason = condition.Reason
 		if condition.Status == metav1.ConditionTrue {
-			readiness.State = discoverypb.ReadinessState_READINESS_STATE_READY
+			readiness.State = environmentpb.ReadinessState_READINESS_STATE_READY
 		}
 	}
-	mode := discoverypb.OperatingMode_OPERATING_MODE_UNSPECIFIED
-	resume := discoverypb.ResumeState_RESUME_STATE_UNSPECIFIED
+	mode := environmentpb.OperatingMode_OPERATING_MODE_UNSPECIFIED
+	resume := environmentpb.ResumeState_RESUME_STATE_UNSPECIFIED
 	switch object.Status.OperatingMode {
 	case api.OperatingModeRunning:
-		mode = discoverypb.OperatingMode_OPERATING_MODE_RUNNING
-		resume = discoverypb.ResumeState_RESUME_STATE_NOT_REQUIRED
+		mode = environmentpb.OperatingMode_OPERATING_MODE_RUNNING
+		resume = environmentpb.ResumeState_RESUME_STATE_NOT_REQUIRED
 	case api.OperatingModeSuspended:
-		mode = discoverypb.OperatingMode_OPERATING_MODE_SUSPENDED
+		mode = environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED
 		_, callerCanWake := s.wakeCallers[auth.Account{Namespace: caller.Account.Namespace, Name: caller.Account.Name}]
 		if object.Status.StopStage != api.StopStageQuiescing && object.Status.StopStage != api.StopStageDeleting &&
 			object.Spec.WakeOnSend && callerCanWake {
-			resume = discoverypb.ResumeState_RESUME_STATE_AVAILABLE
+			resume = environmentpb.ResumeState_RESUME_STATE_AVAILABLE
 		} else {
-			resume = discoverypb.ResumeState_RESUME_STATE_NOT_AVAILABLE
+			resume = environmentpb.ResumeState_RESUME_STATE_NOT_AVAILABLE
 		}
 	}
-	descriptor := &discoverypb.EnvironmentDescriptor{
-		Target: &discoverypb.TargetHandle{Namespace: object.Namespace, Name: object.Name, Uid: string(object.UID)},
-		ExecutionAccount: &discoverypb.AccountHandle{
+	descriptor := &environmentpb.EnvironmentDescriptor{
+		Target: &environmentpb.TargetHandle{Namespace: object.Namespace, Name: object.Name, Uid: string(object.UID)},
+		ExecutionAccount: &environmentpb.AccountHandle{
 			Namespace: execution.Namespace, Name: execution.Name, Uid: execution.UID,
 		},
 		Readiness:                  readiness,
-		Workspace:                  &discoverypb.WorkspaceGuidance{Availability: discoverypb.Availability_AVAILABILITY_UNAVAILABLE},
-		Instructions:               &discoverypb.TextFact{Availability: discoverypb.Availability_AVAILABILITY_ABSENT},
-		ConfigurationsAvailability: discoverypb.Availability_AVAILABILITY_UNAVAILABLE,
+		Workspace:                  &environmentpb.WorkspaceGuidance{Availability: environmentpb.Availability_AVAILABILITY_UNAVAILABLE},
+		Instructions:               &environmentpb.TextFact{Availability: environmentpb.Availability_AVAILABILITY_ABSENT},
+		ConfigurationsAvailability: environmentpb.Availability_AVAILABILITY_UNAVAILABLE,
 		ObservedAt:                 timestamppb.New(time.Now().UTC()),
 		Template:                   object.Spec.Template,
 		OperatingMode:              mode,
@@ -218,24 +218,24 @@ func (s *Service) describe(
 		return descriptor
 	}
 	if template.WorkspaceRoot == "" {
-		descriptor.Workspace.Availability = discoverypb.Availability_AVAILABILITY_ABSENT
+		descriptor.Workspace.Availability = environmentpb.Availability_AVAILABILITY_ABSENT
 	} else if template.WorkspaceProvenance == runtimeconfig.ProvenanceDeploymentConfig {
-		descriptor.Workspace.Availability = discoverypb.Availability_AVAILABILITY_CONFIGURED
+		descriptor.Workspace.Availability = environmentpb.Availability_AVAILABILITY_CONFIGURED
 		descriptor.Workspace.Root = template.WorkspaceRoot
-		descriptor.Workspace.Provenance = discoverypb.Provenance_PROVENANCE_DEPLOYMENT_CONFIG
+		descriptor.Workspace.Provenance = environmentpb.Provenance_PROVENANCE_DEPLOYMENT_CONFIG
 		descriptor.Workspace.RootEnforced = template.WorkspaceRootEnforced
 		descriptor.Workspace.CreatesMissingCwd = template.CreatesMissingCWD
 	}
 	descriptor.Configurations = configuredChoices(s.runtime.Models)
 	if len(descriptor.Configurations) == 0 {
-		descriptor.ConfigurationsAvailability = discoverypb.Availability_AVAILABILITY_ABSENT
+		descriptor.ConfigurationsAvailability = environmentpb.Availability_AVAILABILITY_ABSENT
 	} else {
-		descriptor.ConfigurationsAvailability = discoverypb.Availability_AVAILABILITY_CONFIGURED
+		descriptor.ConfigurationsAvailability = environmentpb.Availability_AVAILABILITY_CONFIGURED
 	}
 	return descriptor
 }
 
-func configuredChoices(catalog runtimeconfig.ModelCatalog) []*discoverypb.RuntimeConfiguration {
+func configuredChoices(catalog runtimeconfig.ModelCatalog) []*environmentpb.RuntimeConfiguration {
 	models := make(map[string]runtimeconfig.ModelOption, len(catalog.Models))
 	for _, model := range catalog.Models {
 		models[model.Model] = model
@@ -245,17 +245,17 @@ func configuredChoices(catalog runtimeconfig.ModelCatalog) []*discoverypb.Runtim
 		harnesses = append(harnesses, harness)
 	}
 	slices.Sort(harnesses)
-	var result []*discoverypb.RuntimeConfiguration
+	var result []*environmentpb.RuntimeConfiguration
 	for _, harness := range harnesses {
 		for _, modelID := range catalog.Harnesses[harness] {
 			model, ok := models[modelID]
 			if !ok {
 				continue
 			}
-			result = append(result, &discoverypb.RuntimeConfiguration{
+			result = append(result, &environmentpb.RuntimeConfiguration{
 				Harness: harness, Model: model.Model, DisplayName: model.DisplayName,
 				ReasoningEfforts: stringsOrEmpty(model.ReasoningEfforts),
-				Provenance:       discoverypb.Provenance_PROVENANCE_DEPLOYMENT_CONFIG,
+				Provenance:       environmentpb.Provenance_PROVENANCE_DEPLOYMENT_CONFIG,
 			})
 		}
 	}
@@ -269,4 +269,4 @@ func stringsOrEmpty(values []string) []string {
 	return values
 }
 
-var _ discoverypb.EnvironmentDiscoveryServer = (*Service)(nil)
+var _ environmentpb.EnvironmentServiceServer = (*Service)(nil)

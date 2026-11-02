@@ -55,7 +55,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/workload_auth/grpc"
@@ -260,7 +260,7 @@ func orchestrationExecutors(
 // these groups do not read or write Kubernetes grants; every backend call carries the Action caller's verified UID.
 func sessionDelegationExecutors(
 	groups *catalog.Catalog,
-	discovery discoverypb.EnvironmentDiscoveryClient,
+	environment environmentpb.EnvironmentServiceClient,
 	dispatcher dispatcherpb.SessionDispatcherClient,
 	history historypb.HistoryServiceClient,
 ) (map[string]worker.Executor, error) {
@@ -270,7 +270,7 @@ func sessionDelegationExecutors(
 		if !isSessionDelegation {
 			continue
 		}
-		executor, err := sessiondelegation.NewExecutor(key, binding, discovery, dispatcher, history)
+		executor, err := sessiondelegation.NewExecutor(key, binding, environment, dispatcher, history)
 		if err != nil {
 			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
 		}
@@ -413,7 +413,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		}
 		maps.Copy(byGroup, orchestrators)
 	}
-	// The delegated Dispatcher peer is also the shared EnvironmentDiscovery listener. Its projected token and the
+	// The delegated Dispatcher peer is also the shared EnvironmentService listener. Its projected token and the
 	// History token are read for every call, and the executor adds the durable Action caller envelope to each one.
 	if c.SessionDelegationDispatcher != nil {
 		dispatcherConn, err := workloadgrpc.DialDelegated(
@@ -421,7 +421,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 			time.Duration(c.SessionDelegationDispatcher.RequestTimeoutSeconds*float64(time.Second)),
 		)
 		if err != nil {
-			return fmt.Errorf("dial delegated Environment Discovery and Session Dispatcher: %w", err)
+			return fmt.Errorf("dial delegated Environment Service and Session Dispatcher: %w", err)
 		}
 		defer dispatcherConn.Close()
 		historyConn, err := workloadgrpc.DialDelegated(
@@ -434,7 +434,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		defer historyConn.Close()
 		delegated, err := sessionDelegationExecutors(
 			c.ActionGroups,
-			discoverypb.NewEnvironmentDiscoveryClient(dispatcherConn),
+			environmentpb.NewEnvironmentServiceClient(dispatcherConn),
 			dispatcherpb.NewSessionDispatcherClient(dispatcherConn),
 			historypb.NewHistoryServiceClient(historyConn),
 		)

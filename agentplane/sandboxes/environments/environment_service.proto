@@ -1,14 +1,14 @@
 syntax = "proto3";
 
-package agentplane.sandboxes.discovery;
+package agentplane.sandboxes.environments;
 
-option go_package = "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb;discoverypb";
+option go_package = "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb;environmentpb";
 
 import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
 
-// EnvironmentDiscovery is a same-ServiceAccount, exact-incarnation view of existing managed Sandboxes.
-service EnvironmentDiscovery {
+// EnvironmentService is a same-ServiceAccount, exact-incarnation view of existing managed Sandboxes.
+service EnvironmentService {
   rpc ListEnvironments(ListEnvironmentsRequest) returns (ListEnvironmentsResponse) {
     option (google.api.http) = {get: "/v1/environments"};
   }
