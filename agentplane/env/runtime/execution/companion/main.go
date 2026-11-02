@@ -46,7 +46,7 @@ func Main(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 64
 	}
-	supervisor, err := supervision.NewPID1SupervisorWithoutStateOwner()
+	supervisor, err := supervision.NewPID1Supervisor()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

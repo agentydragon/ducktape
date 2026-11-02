@@ -7,7 +7,8 @@ import os
 import signal
 import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import override
 
@@ -134,21 +135,22 @@ async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str, b
             await asyncio.to_thread(_wait_ready, tmp_path)
             descendants = await asyncio.to_thread(_descendant_pids, container, backend)
             assert len(descendants) == (1 if mode == "native-exit" and backend == "subprocess" else 2)
-            with (tmp_path / "owner").open("rb") as probe:
-                with pytest.raises(BlockingIOError):
+            if backend == "subprocess":
+                with (tmp_path / "owner").open("rb") as probe, pytest.raises(BlockingIOError):
                     fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                if mode == "native-exit":
-                    (tmp_path / "exit-native").write_text("exit\n")
-                else:
-                    await asyncio.to_thread(wrapped.kill, signal="SIGKILL" if mode == "crash" else "SIGTERM")
-                result = await asyncio.to_thread(wrapped.wait, timeout=15)
-                assert result["StatusCode"] == (137 if mode == "crash" else 0)
-                for pid in descendants:
-                    await asyncio.wait_for(wait_for_exit(pid), timeout=5)
-                # The observed runtime exit, not flock availability, authorizes
-                # replacement. Escaped descendants are fenced at this boundary.
-                fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                fcntl.flock(probe, fcntl.LOCK_UN)
+            if mode == "native-exit":
+                (tmp_path / "exit-native").write_text("exit\n")
+            else:
+                await asyncio.to_thread(wrapped.kill, signal="SIGKILL" if mode == "crash" else "SIGTERM")
+            result = await asyncio.to_thread(wrapped.wait, timeout=15)
+            assert result["StatusCode"] == (137 if mode == "crash" else 0)
+            for pid in descendants:
+                await asyncio.wait_for(wait_for_exit(pid), timeout=5)
+            # Replacement requires observed container exit and descendant death.
+            if backend == "subprocess":
+                with (tmp_path / "owner").open("rb") as probe:
+                    fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.flock(probe, fcntl.LOCK_UN)
             generations.append(
                 {"generation": generation, "exit_code": result["StatusCode"], "descendants": descendants}
             )
@@ -156,6 +158,13 @@ async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str, b
                 await asyncio.to_thread(_clear_generation, tmp_path)
                 await asyncio.to_thread(wrapped.start)
         (undeclared_outputs_dir() / f"runner-pid1-{backend}-{mode}.json").write_text(json.dumps(generations, indent=2))
+
+
+@contextmanager
+def _hold_lock(path: Path) -> Iterator[None]:
+    with path.open("a+b") as owner:
+        fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
 
 
 @pytest.mark.parametrize("abrupt", [False, True], ids=["term", "crash"])
@@ -195,7 +204,11 @@ async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, 
         .with_env("OTEL_SDK_DISABLED", "true")
         .with_command("/environment-runtime --config /proof/environment-runtime.json --launch-file /proof/launch.json")
     )
-    with container:
+    state = tmp_path / "state"
+    state.mkdir()
+    # An old independent owner lock must not prevent PID1 startup. The real
+    # COSI database still excludes a competing store while Runtime is alive.
+    with _hold_lock(state / ".agentplane-environment-runtime-owner"), container:
         wrapped = container.get_wrapped_container()
         await gateway.control.connect(host_control, "pid1-proof-uid")
         if abrupt:
@@ -204,7 +217,7 @@ async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, 
             assert len(descendants) == 2
         else:
             descendants = []
-        with (tmp_path / "state" / ".agentplane-environment-runtime-owner").open("rb") as probe:
+        with (state / "runtime-resources.db").open("rb") as probe:
             with pytest.raises(BlockingIOError):
                 fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
             await asyncio.to_thread(wrapped.kill, signal="SIGKILL" if abrupt else "SIGTERM")
