@@ -92,6 +92,9 @@ func (r *Host) authorizeBindingLocked(binding *runtimepb.Binding) error {
 	if !proto.Equal(binding, r.intent.Binding) || binding.HostBootId != r.bootID {
 		return status.Error(codes.FailedPrecondition, "stale environment binding")
 	}
+	if !r.RuntimeConnectionMatches(binding.RuntimeBootId, binding.HostBootId) {
+		return status.Error(codes.Unavailable, "Harness Host is disconnected from its Environment Runtime")
+	}
 	return nil
 }
 

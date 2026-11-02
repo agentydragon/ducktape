@@ -564,6 +564,68 @@ func TestQuiesceDoesNotWaitForModelLookupOrCreateLateSession(t *testing.T) {
 	}
 }
 
+func TestOpenSessionRevokedRuntimeConnectionDoesNotWriteAfterModelLookup(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseProxy := func() { releaseOnce.Do(func() { close(release) }) }
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-release
+		_, _ = fmt.Fprintf(w, `{"model":%q,"total_context_budget_tokens":32768}`, r.URL.Query().Get("model"))
+	}))
+	t.Cleanup(proxy.Close)
+	workspace := t.TempDir()
+	r := newLifecycleHost(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	if !r.RuntimeConnectionMatches("test-runtime", r.bootID) {
+		t.Fatal("fixture did not establish the Runtime connection gate")
+	}
+	ctx, err := admittedHostContext(r, context.Background())
+	if err != nil {
+		t.Fatalf("initial OpenSession binding admission: %v", err)
+	}
+	openDone := make(chan error, 1)
+	openFinished := false
+	go func() {
+		_, err := r.OpenSession(ctx, openLifecycleSession("revoked-session", filepath.Join(workspace, "project")))
+		openDone <- err
+	}()
+	defer func() {
+		releaseProxy()
+		if !openFinished {
+			select {
+			case <-openDone:
+			case <-time.After(3 * time.Second):
+				t.Error("OpenSession did not finish after releasing model lookup")
+			}
+		}
+	}()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("model lookup did not start")
+	}
+
+	// Runtime uses this synchronous gate when its connection or intent publication fails.
+	r.SetRuntimeConnection("test-runtime", r.bootID, false)
+	if r.RuntimeConnectionMatches("test-runtime", r.bootID) {
+		t.Fatal("Runtime connection gate remained open after revocation")
+	}
+	releaseProxy()
+	select {
+	case err := <-openDone:
+		openFinished = true
+		if status.Code(err) != codes.Unavailable {
+			t.Fatalf("OpenSession after connection revocation = %v, want Unavailable", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("OpenSession did not finish after model lookup was released")
+	}
+	if exists, err := r.store.Exists("revoked-session"); err != nil || exists {
+		t.Fatalf("revoked OpenSession wrote a durable Session: exists=%t err=%v", exists, err)
+	}
+}
+
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }

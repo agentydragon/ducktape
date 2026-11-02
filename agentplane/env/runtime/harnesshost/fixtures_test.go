@@ -29,6 +29,7 @@ func bindHost(r *Host, incarnation string) error {
 		generation = r.intent.Binding.Generation + 1
 	}
 	r.mu.Unlock()
+	r.SetRuntimeConnection("test-runtime", r.bootID, true)
 	return r.ApplyIntent(r.ctx, &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "test-runtime", HostBootId: r.bootID, Generation: generation}, SandboxUid: r.config.Launch.Sandbox.UID, IncarnationUid: incarnation, Mode: runtimepb.LifecycleIntent_RUNNING})
 }
 
@@ -36,6 +37,13 @@ func hostContext(r *Host, ctx context.Context) context.Context {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return withBinding(ctx, r.intent.Binding)
+}
+
+func admittedHostContext(r *Host, ctx context.Context) (context.Context, error) {
+	r.mu.Lock()
+	binding := proto.Clone(r.intent.Binding).(*runtimepb.Binding)
+	r.mu.Unlock()
+	return r.BoundContext(ctx, binding)
 }
 
 func quiesceHost(ctx context.Context, r *Host) (*sessionpb.QuiesceResponse, error) {
