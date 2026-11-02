@@ -322,7 +322,7 @@ flowchart LR
 ```
 
 The components share one process. Runtime owns environment identity, bootstrap, health and aggregate lifecycle. Host owns native Session
-admission, state and journals; it rechecks Runtime boot, Host boot and generation before durable work.
+admission, state and journals; it rechecks Runtime boot and generation before durable work.
 Host reports native stop before Runtime acknowledges Execution fencing, then seals and flushes exact
 History cursors. Public connection Leases and epoch fencing remain in Runtime's control endpoint.
 Central sampler remains a separate control-plane process outside the environment.

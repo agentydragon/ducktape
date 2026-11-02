@@ -625,7 +625,7 @@ func TestOpenSessionRevokedRuntimeBindingDoesNotWriteAfterModelLookup(t *testing
 	t.Cleanup(proxy.Close)
 	workspace := t.TempDir()
 	r := newLifecycleHost(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
-	if !r.RuntimeBindingMatches("test-runtime", r.bootID) {
+	if !r.RuntimeBindingMatches("test-runtime") {
 		t.Fatal("fixture did not establish the Runtime connection gate")
 	}
 	ctx, err := admittedHostContext(r, context.Background())
@@ -655,8 +655,8 @@ func TestOpenSessionRevokedRuntimeBindingDoesNotWriteAfterModelLookup(t *testing
 	}
 
 	// Runtime uses this synchronous gate when its connection or intent publication fails.
-	r.SetRuntimeBinding("test-runtime", r.bootID, false)
-	if r.RuntimeBindingMatches("test-runtime", r.bootID) {
+	r.SetRuntimeBinding("test-runtime", false)
+	if r.RuntimeBindingMatches("test-runtime") {
 		t.Fatal("Runtime connection gate remained open after revocation")
 	}
 	releaseProxy()

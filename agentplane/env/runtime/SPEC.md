@@ -52,13 +52,13 @@ state volume with the binary version that wrote it when planning this hard cutov
 
 ## Lifecycle boundary
 
-Each Host lifetime reports the exact Runtime boot ID, Host boot ID and monotonically increasing
+Each Host lifetime reports the exact Runtime boot ID and monotonically increasing
 environment generation it applied. Runtime applies a
 `LifecycleIntent` containing the Sandbox UID, incarnation UID, mode and seal UID. The initial mode
 is `INACTIVE`. Session RPCs are forwarded only after the Host reports `ready` for the exact binding.
 Runtime passes a copied binding with each direct Session call; Host checks it at ingress and inside
 its admission barrier. Runtime publishes immutable typed Host intent in the shared COSI store. A Host-owned controller
-applies each intent once after Session startup and while a synchronous native gate confirms the exact Runtime and Host boots. Runtime revokes that gate on Host or Runtime failure, independently of COSI writes. The controller records its exact binding and Execution fence acknowledgement before
+applies each intent once after Session startup and while a synchronous native gate confirms the exact Runtime boot ID. Runtime revokes that gate on Host or Runtime failure, independently of COSI writes. The controller records its exact binding and Execution fence acknowledgement before
 Runtime can finish that barrier. Failed or uncertain application is terminal; controller restart does
 not replay it. Host owns a typed COSI report resource containing a snapshot of its mutable inventory, idle and
 blocker facts, and lifecycle progress. Its controller samples under the Host admission boundary and

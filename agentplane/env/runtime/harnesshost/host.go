@@ -18,7 +18,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/state"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -33,7 +32,6 @@ type Host struct {
 	scripts             *scripts.Runner
 	workspaceSupervisor *supervision.Supervisor
 	store               *retained.Store
-	bootID              string
 	mu                  sync.Mutex
 	sessions            *session.Manager
 	createMu            sync.Mutex
@@ -89,7 +87,7 @@ func NewEmbedded(config Config, lifecycleState state.State, engine *cosiruntime.
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &Host{config: config, supervisor: supervisor, workspaceSupervisor: workspaceSupervisor, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, changes: make(chan struct{}), startupDone: make(chan struct{}), fatal: make(chan error, 1)}
+	r := &Host{config: config, supervisor: supervisor, workspaceSupervisor: workspaceSupervisor, store: store, ctx: ctx, cancel: cancel, changes: make(chan struct{}), startupDone: make(chan struct{}), fatal: make(chan error, 1)}
 	r.scripts, err = scripts.New(scripts.Config{HarnessEnvironment: config.HarnessEnvironment, LaunchProcess: func(ctx context.Context, owner string, cfg supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
 		return r.launchProcess(ctx, owner, r.supervisor, cfg)
 	}})

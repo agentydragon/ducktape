@@ -29,7 +29,7 @@ func TestHostReportPublicationSuppressesEquivalentProtobufUpdates(t *testing.T) 
 	store := state.WrapCore(namespaced.NewState(inmem.Build))
 	writer := reportTestWriter{state: store}
 	first := harnesshostlifecycle.HostReport{
-		Intent: &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 1}},
+		Intent: &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "runtime", Generation: 1}},
 		Report: &runtimepb.HostReport{Ready: true, Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{}},
 	}
 	if err := harnesshostlifecycle.WriteHostReport(ctx, writer, first); err != nil {

@@ -59,7 +59,7 @@ func TestHostRunReportsStartupFailureBeforeJoining(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { r.cancel(); <-r.lifecycle.done.Done() })
-	r.SetRuntimeBinding("runtime", r.bootID, true)
+	r.SetRuntimeBinding("runtime", true)
 	bridge := &failureReportingBridge{failures: make(chan error, 1), release: make(chan struct{})}
 	store.armed.Store(true)
 	done := make(chan error, 1)
@@ -72,7 +72,7 @@ func TestHostRunReportsStartupFailureBeforeJoining(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("Host startup failure was not reported")
 	}
-	if r.RuntimeBindingMatches("runtime", r.bootID) {
+	if r.RuntimeBindingMatches("runtime") {
 		t.Fatal("failed Host still admits the Runtime binding")
 	}
 	store.armed.Store(false)
@@ -131,7 +131,7 @@ func TestHostRunInterruptedIntentKeepsClosingState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.SetRuntimeBinding("runtime", r.bootID, true)
+	r.SetRuntimeBinding("runtime", true)
 	endpoint := loopbackGRPCServer(t, func(server *grpc.Server) {
 		ingresspb.RegisterSessionJournalIngressServer(server, &idleHistoryIngress{})
 	})
@@ -151,7 +151,7 @@ func TestHostRunInterruptedIntentKeepsClosingState(t *testing.T) {
 			close(store.closeReadRelease)
 		}
 	})
-	first := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", HostBootID: r.bootID, Generation: 1, SandboxUID: "sandbox", Mode: runtimepb.LifecycleIntent_INACTIVE}
+	first := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1, SandboxUID: "sandbox", Mode: runtimepb.LifecycleIntent_INACTIVE}
 	if err := cosi.Publish(ctx, store, harnesshostlifecycle.HostIntentResource(first), first, harnesshostlifecycle.EnvironmentOwner); err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestHostRunInterruptedIntentKeepsClosingState(t *testing.T) {
 	}
 	store.closeReadArmed.Store(true)
 	stop()
-	r.SetRuntimeBinding("runtime", r.bootID, false)
+	r.SetRuntimeBinding("runtime", false)
 	select {
 	case <-store.closeReadEntered:
 	case <-ctx.Done():

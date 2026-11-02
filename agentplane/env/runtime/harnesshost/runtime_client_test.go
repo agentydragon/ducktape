@@ -44,7 +44,7 @@ func boundaryHost(t *testing.T) (*Host, context.Context) {
 }
 
 func intentFor(r *Host, generation uint64, mode runtimepb.LifecycleIntent_Mode) *runtimepb.LifecycleIntent {
-	intent := &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: r.bootID, Generation: generation}, SandboxUid: "sandbox", IncarnationUid: "incarnation", Mode: mode}
+	intent := &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "runtime", Generation: generation}, SandboxUid: "sandbox", IncarnationUid: "incarnation", Mode: mode}
 	if mode == runtimepb.LifecycleIntent_QUIESCING || mode == runtimepb.LifecycleIntent_CLOSING {
 		intent.SealUid = intent.IncarnationUid
 	}
@@ -280,7 +280,6 @@ func TestHostFenceRequiresAppliedExactIntent(t *testing.T) {
 	for name, mutate := range map[string]func(*harnesshostlifecycle.HostIntentStatus){
 		"stale generation":  func(value *harnesshostlifecycle.HostIntentStatus) { value.Intent.Generation-- },
 		"runtime boot":      func(value *harnesshostlifecycle.HostIntentStatus) { value.Intent.RuntimeBootID = "old-runtime" },
-		"host boot":         func(value *harnesshostlifecycle.HostIntentStatus) { value.Intent.HostBootID = "old-host" },
 		"unfenced":          func(value *harnesshostlifecycle.HostIntentStatus) { value.Intent.ExecutionFenced = false },
 		"applying":          func(value *harnesshostlifecycle.HostIntentStatus) { value.Applied = false },
 		"failed":            func(value *harnesshostlifecycle.HostIntentStatus) { value.Error = "failed" },
@@ -454,7 +453,7 @@ func TestAggregateStatusWakesHostReportAndStatusWait(t *testing.T) {
 
 func TestHostReportControllerExitsCleanlyWithHost(t *testing.T) {
 	r, ctx := boundaryHost(t)
-	intent := &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: r.bootID, Generation: 1}, SandboxUid: "sandbox", Mode: runtimepb.LifecycleIntent_INACTIVE}
+	intent := &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "runtime", Generation: 1}, SandboxUid: "sandbox", Mode: runtimepb.LifecycleIntent_INACTIVE}
 	if err := r.ApplyIntent(ctx, intent); err != nil {
 		t.Fatal(err)
 	}

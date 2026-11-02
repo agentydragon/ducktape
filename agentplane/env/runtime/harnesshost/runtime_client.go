@@ -28,32 +28,29 @@ func withBinding(ctx context.Context, binding *runtimepb.Binding) context.Contex
 
 type runtimeBinding struct {
 	runtimeBootID string
-	hostBootID    string
 	active        bool
 	failed        bool
 }
 
 // Runtime revokes this native binding gate synchronously, even if COSI is
 // unavailable. Intent application still comes only from the shared COSI store.
-func (r *Host) SetRuntimeBinding(runtimeBootID, hostBootID string, active bool) {
+func (r *Host) SetRuntimeBinding(runtimeBootID string, active bool) {
 	for {
 		current := r.runtimeBinding.Load()
 		if current != nil && current.failed {
 			return
 		}
-		if r.runtimeBinding.CompareAndSwap(current, &runtimeBinding{runtimeBootID: runtimeBootID, hostBootID: hostBootID, active: active}) {
+		if r.runtimeBinding.CompareAndSwap(current, &runtimeBinding{runtimeBootID: runtimeBootID, active: active}) {
 			return
 		}
 	}
 }
 
 // RuntimeBindingMatches checks the native gate used by Host intent admission.
-func (r *Host) RuntimeBindingMatches(runtimeBootID, hostBootID string) bool {
+func (r *Host) RuntimeBindingMatches(runtimeBootID string) bool {
 	binding := r.runtimeBinding.Load()
-	return binding != nil && binding.active && !binding.failed && binding.runtimeBootID == runtimeBootID && binding.hostBootID == hostBootID
+	return binding != nil && binding.active && !binding.failed && binding.runtimeBootID == runtimeBootID
 }
-
-func (r *Host) BootID() string { return r.bootID }
 
 // BoundContext checks the exact lifecycle binding at direct-call ingress. Native
 // admission repeats this check under the Host mutex before any durable mutation.
@@ -89,17 +86,17 @@ func (r *Host) authorizeBindingLocked(binding *runtimepb.Binding) error {
 	if binding == nil {
 		return status.Error(codes.Unauthenticated, "environment binding is required")
 	}
-	if !proto.Equal(binding, r.intent.Binding) || binding.HostBootId != r.bootID {
+	if !proto.Equal(binding, r.intent.Binding) {
 		return status.Error(codes.FailedPrecondition, "stale environment binding")
 	}
-	if !r.RuntimeBindingMatches(binding.RuntimeBootId, binding.HostBootId) {
+	if !r.RuntimeBindingMatches(binding.RuntimeBootId) {
 		return status.Error(codes.Unavailable, "Harness Host binding is inactive")
 	}
 	return nil
 }
 
 func (r *Host) ApplyIntent(ctx context.Context, intent *runtimepb.LifecycleIntent) error {
-	if intent == nil || intent.Binding == nil || intent.Binding.RuntimeBootId == "" || intent.Binding.HostBootId != r.bootID || intent.Binding.Generation == 0 || intent.SandboxUid != r.config.Launch.Sandbox.UID {
+	if intent == nil || intent.Binding == nil || intent.Binding.RuntimeBootId == "" || intent.Binding.Generation == 0 || intent.SandboxUid != r.config.Launch.Sandbox.UID {
 		return errors.New("invalid environment lifecycle binding")
 	}
 	mode := harnesshostlifecycle.Quiescing

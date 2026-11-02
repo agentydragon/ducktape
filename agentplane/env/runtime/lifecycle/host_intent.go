@@ -19,7 +19,6 @@ const (
 // HostIntent is the immutable input to Host admission; native handles remain outside COSI.
 type HostIntent struct {
 	RuntimeBootID   string
-	HostBootID      string
 	Generation      uint64
 	SandboxUID      string
 	IncarnationUID  string
@@ -30,11 +29,11 @@ type HostIntent struct {
 
 func (v HostIntent) DeepCopy() HostIntent { return v }
 func HostIntentFromProto(v *runtimepb.LifecycleIntent) HostIntent {
-	return HostIntent{RuntimeBootID: v.Binding.RuntimeBootId, HostBootID: v.Binding.HostBootId, Generation: v.Binding.Generation, SandboxUID: v.SandboxUid, IncarnationUID: v.IncarnationUid, Mode: v.Mode, SealUID: v.SealUid, ExecutionFenced: v.ExecutionFenced}
+	return HostIntent{RuntimeBootID: v.Binding.RuntimeBootId, Generation: v.Binding.Generation, SandboxUID: v.SandboxUid, IncarnationUID: v.IncarnationUid, Mode: v.Mode, SealUID: v.SealUid, ExecutionFenced: v.ExecutionFenced}
 }
 
 func (v HostIntent) Proto() *runtimepb.LifecycleIntent {
-	return &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: v.RuntimeBootID, HostBootId: v.HostBootID, Generation: v.Generation}, SandboxUid: v.SandboxUID, IncarnationUid: v.IncarnationUID, Mode: v.Mode, SealUid: v.SealUID, ExecutionFenced: v.ExecutionFenced}
+	return &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: v.RuntimeBootID, Generation: v.Generation}, SandboxUid: v.SandboxUID, IncarnationUid: v.IncarnationUID, Mode: v.Mode, SealUid: v.SealUID, ExecutionFenced: v.ExecutionFenced}
 }
 
 type HostIntentStatus struct {

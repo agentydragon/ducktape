@@ -19,8 +19,8 @@ native services keep their distinct `harness-host` scope in the workload slice, 
 and invocation marker are those of Environment Runtime. Runtime joins Host cleanup and fences the
 Pod PID namespace before releasing the environment owner.
 
-The Host lifetime begins with its boot ID. Runtime publishes a typed intent bound to Runtime boot ID,
-Host boot ID and nonzero generation. The shared COSI engine applies it and publishes readiness,
+Runtime and its embedded Host share one lifetime identity. Runtime publishes a typed intent bound to its boot ID
+and a nonzero generation. The shared COSI engine applies it and publishes readiness,
 native cleanup and EnvironmentRuntimeFacts with that exact binding in the report's sampled intent.
 The fact payload carries no second binding. Host process attempts share
 the Runtime's COSI process controller and registry, but retain the Host lifetime and worker barrier.
@@ -28,8 +28,8 @@ The Host drain waits for Host-domain process finalizers; Runtime-domain attempts
 cleanup barriers. Mode/identity changes require a new generation;
 Execution fence acknowledgement may advance monotonically within the same generation.
 
-Runtime passes copied Runtime boot ID, Host boot ID and environment generation bindings with
-direct Session calls. Host checks all three at ingress and again under the
+Runtime passes copied Runtime boot ID and environment generation bindings with
+direct Session calls. Host checks both at ingress and again under the
 native admission lock before durable mutation. A model lookup does not hold that lock. Runtime alone
 serves external WatchState, health, epoch ownership and Quiesce.
 

@@ -8,7 +8,8 @@ import "agentplane/proto/environment_runtime_state.proto";
 
 message Binding {
   string runtime_boot_id = 1;
-  string host_boot_id = 2;
+  reserved 2;
+  reserved "host_boot_id";
   uint64 generation = 3;
 }
 

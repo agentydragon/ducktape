@@ -147,7 +147,7 @@ flowchart LR
   I -->|watch| HI
   Peer -.->|startup completion wakeup| HI
   HI -->|write applying / result| IS
-  Guard -.->|exact boot IDs and startup| HI
+  Guard -.->|exact Runtime boot ID and startup| HI
   HI -.->|admitted native apply| Peer
   Guard -.->|exact binding on direct calls and effects| Peer
   SM -->|publish| SI & SD & SO
