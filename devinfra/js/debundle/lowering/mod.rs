@@ -360,6 +360,7 @@ pub enum AnalysisMode {
     Load {
         base: AnalysisSpec,
         artifact: Vec<u8>,
+        analysis_engine_sha256: String,
     },
 }
 
@@ -448,7 +449,9 @@ pub fn materialize_logical_modules(
     };
     let mut loaded = match &options.analysis {
         AnalysisMode::Load {
-            artifact: bytes, ..
+            artifact: bytes,
+            analysis_engine_sha256,
+            ..
         } => Some(load_analysis(
             bytes,
             &artifact,
@@ -456,6 +459,7 @@ pub fn materialize_logical_modules(
             options.config.file.as_deref(),
             &reparsed,
             options.graph_provenance.as_ref(),
+            analysis_engine_sha256,
         )?),
         AnalysisMode::Compute | AnalysisMode::Project(_) => None,
     };
@@ -766,14 +770,15 @@ fn load_analysis(
     file: Option<&str>,
     reparsed: &BTreeMap<ChunkId, cross_module::ReparsedEntry>,
     provenance: Option<&GraphProvenance>,
+    analysis_engine_sha256: &str,
 ) -> Result<(AnalysisArtifactHeader, AnalysisArtifactBody)> {
     let (header, body) = analysis_artifact::read_header(bytes)?;
     let provenance = provenance.context("an analysis artifact requires graph provenance")?;
     ensure!(
-        header.engine_sha256 == provenance.engine_sha256,
+        header.analysis_engine_sha256 == analysis_engine_sha256,
         "analysis artifact was computed by engine {}, this engine is {}",
-        header.engine_sha256,
-        provenance.engine_sha256
+        header.analysis_engine_sha256,
+        analysis_engine_sha256
     );
     let sources = chunk_source_digests(provenance);
     if header.chunk_sources != sources {
@@ -804,6 +809,7 @@ pub struct AnalyzeProgramInputs<'a> {
     pub embedded_loaders: &'a BTreeMap<String, spec::BunLoader>,
     pub vendor_plan: &'a vendor::VendorResolutionPlan,
     pub graph_provenance: &'a GraphProvenance,
+    pub analysis_engine_sha256: &'a str,
 }
 
 /// `debundle analyze`: the cross-module pass and every analysed chunk's facts,
@@ -819,6 +825,7 @@ pub fn analyze_program(
         embedded_loaders,
         vendor_plan,
         graph_provenance,
+        analysis_engine_sha256,
     } = inputs;
     let selected_chunk_ids = normalized_chunk_ids(spec.analysed_chunks())?;
     let resolved_export_purity =
@@ -893,7 +900,7 @@ pub fn analyze_program(
         .into_iter()
         .collect::<Result<BTreeMap<_, _>>>()?;
     let header = AnalysisArtifactHeader {
-        engine_sha256: graph_provenance.engine_sha256.clone(),
+        analysis_engine_sha256: analysis_engine_sha256.to_string(),
         projection: spec.encode()?,
         chunk_sources: chunk_source_digests(graph_provenance),
     };

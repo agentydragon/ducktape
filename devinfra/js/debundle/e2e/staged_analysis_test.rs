@@ -84,15 +84,17 @@ impl Staged {
 
     fn analyze(&self) -> CommandResult {
         let root = self.root();
-        command(&[
-            "analyze",
-            "--projection",
-            path(&self.projection),
-            "--tree-source-root",
-            path(root),
-            "--out",
-            path(&self.artifact),
-        ])
+        command_with(
+            &analyzer_path(),
+            &[
+                "--projection",
+                path(&self.projection),
+                "--tree-source-root",
+                path(root),
+                "--out",
+                path(&self.artifact),
+            ],
+        )
     }
 
     fn run(&self, extra: &[&str]) -> CommandResult {
@@ -121,7 +123,14 @@ fn path(path: &Path) -> &str {
 }
 
 fn command(args: &[&str]) -> CommandResult {
-    let output = run_debundle(args);
+    command_with(&debundler_path(), args)
+}
+
+fn command_with(binary: &Path, args: &[&str]) -> CommandResult {
+    let output = std::process::Command::new(binary)
+        .args(args)
+        .output()
+        .expect("spawn debundle tool");
     CommandResult {
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
@@ -242,6 +251,75 @@ fn accepted_split_matches_a_direct_run() {
         ),
         &[],
     );
+}
+
+#[test]
+fn standalone_cli_and_dedicated_analyzer_write_identical_artifacts() {
+    let (staged, _fixture) = staged(split_with_pure_import());
+    let dedicated = fs::read(&staged.artifact).unwrap();
+    let standalone = StandaloneDebundle::install();
+    assert_ok(
+        &standalone.run(&[
+            "analyze",
+            "--projection",
+            path(&staged.projection),
+            "--tree-source-root",
+            path(staged.root()),
+            "--out",
+            path(&staged.artifact),
+        ]),
+        "standalone analyze",
+    );
+    assert_eq!(dedicated, fs::read(&staged.artifact).unwrap());
+    assert_ok(
+        &standalone.run(&[
+            "run",
+            "--spec",
+            path(&staged.spec),
+            "--analysis",
+            path(&staged.artifact),
+        ]),
+        "standalone staged run",
+    );
+}
+
+#[test]
+fn identity_mismatch_is_refused() {
+    let (staged, _fixture) = staged(split_with_pure_import());
+    assert_ok(
+        &staged.run(&["--analysis", path(&staged.artifact)]),
+        "unmodified staged artifact",
+    );
+    let bytes = fs::read(&staged.artifact).unwrap();
+    let (mut header, body) = lowering::analysis_artifact::read_header(&bytes).unwrap();
+    header.analysis_engine_sha256 = "another-compiled-engine".to_string();
+    let encoded = rmp_serde::to_vec_named(&header).unwrap();
+    let mut corrupt = u32::try_from(encoded.len()).unwrap().to_le_bytes().to_vec();
+    corrupt.extend(encoded);
+    corrupt.extend(body);
+    fs::write(&staged.artifact, corrupt).unwrap();
+    let refused = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert!(!refused.status.success());
+}
+
+#[test]
+fn source_mismatch_is_refused() {
+    let (staged, _fixture) = staged(split_with_pure_import());
+    assert_ok(
+        &staged.run(&["--analysis", path(&staged.artifact)]),
+        "unmodified staged artifact",
+    );
+    let bytes = fs::read(&staged.artifact).unwrap();
+    let (mut header, body) = lowering::analysis_artifact::read_header(&bytes).unwrap();
+    let source = header.chunk_sources.values_mut().next().unwrap();
+    *source = "other-parser-input".to_string();
+    let encoded = rmp_serde::to_vec_named(&header).unwrap();
+    let mut corrupt = u32::try_from(encoded.len()).unwrap().to_le_bytes().to_vec();
+    corrupt.extend(encoded);
+    corrupt.extend(body);
+    fs::write(&staged.artifact, corrupt).unwrap();
+    let refused = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert!(!refused.status.success());
 }
 
 #[test]

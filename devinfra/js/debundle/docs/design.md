@@ -3786,6 +3786,14 @@ emits a re-export-only file (re-imports and re-exports, no owned code).
 
 ## Invariants
 
+Staged analysis artifacts identify the configured compiled `pipeline` dependency
+closure shared by their writer and reader. The generated identity includes Rust
+objects before final linking, build-script outputs, native link inputs and flags,
+and toolchain inputs. Query frontend code in `cli/` is outside that closure. This
+identity describes compiled analysis code; saved graph provenance continues to
+identify the full executable bytes. Source digests and canonical projection
+equality remain independent requirements before staged facts are used.
+
 The implementation must maintain:
 
 1. **Identity.** Each binding has exactly one canonical module

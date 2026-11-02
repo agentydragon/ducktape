@@ -568,14 +568,21 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
                     full_reports: full_reports.into_iter().collect(),
                     full_report_chunks: full_report_chunks.into_iter().collect(),
                 },
-                analysis.as_deref(),
+                analysis
+                    .as_deref()
+                    .map(|path| pipeline::AnalysisArtifactInput {
+                        path,
+                        analysis_engine_sha256: analysis_identity::ANALYSIS_ENGINE_SHA256,
+                    }),
             )?;
             if output == RunOutput::DryRun {
                 println!("dry-run: transform pipeline checks passed; no outputs written");
             }
             Ok(())
         }
-        DebundleCommand::Analyze(args) => analyze_cli(args),
+        DebundleCommand::Analyze(args) => {
+            analyze_cli(args, analysis_identity::ANALYSIS_ENGINE_SHA256)
+        }
         DebundleCommand::Bindings(args) => bindings_commands::run(args, source_context.as_ref()),
         DebundleCommand::Modules(args) => modules_commands::run(args, source_context.as_ref()),
         DebundleCommand::Atoms(args) => inspection_commands::run_atoms(args),

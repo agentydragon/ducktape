@@ -70,7 +70,11 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "staged_analysis_test",
+    data = ["//devinfra/js/debundle:debundle_analyze"],
+    env = {"DEBUNDLE_TEST_ANALYZER": "$(rlocationpath //devinfra/js/debundle:debundle_analyze)"},
     deps = [
+        "//devinfra/js/debundle:lowering",
+        "@crates//:rmp-serde",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
     ],

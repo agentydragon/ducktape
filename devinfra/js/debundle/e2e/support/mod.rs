@@ -1198,11 +1198,18 @@ fn read_gzip_json_with_stderr<T: DeserializeOwned>(path: &Path, stderr: Option<&
 }
 
 pub fn debundler_path() -> PathBuf {
-    let relative =
-        std::env::var("DEBUNDLE_TEST_DEBUNDLER").expect("DEBUNDLE_TEST_DEBUNDLER runfile label");
+    tool_path("DEBUNDLE_TEST_DEBUNDLER")
+}
+
+pub fn analyzer_path() -> PathBuf {
+    tool_path("DEBUNDLE_TEST_ANALYZER")
+}
+
+fn tool_path(variable: &str) -> PathBuf {
+    let relative = std::env::var(variable).unwrap_or_else(|_| panic!("{variable} runfile label"));
     let r = Runfiles::create().expect("create runfiles");
     rlocation!(r, relative.as_str())
-        .unwrap_or_else(|| panic!("could not resolve debundler runfile: {relative}"))
+        .unwrap_or_else(|| panic!("could not resolve tool runfile: {relative}"))
 }
 
 /// `debundle` as a release download runs it: a copy of the binary alone in an

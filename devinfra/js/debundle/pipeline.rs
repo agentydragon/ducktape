@@ -265,12 +265,19 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     run_transform_with_analysis(cli, options, None)
 }
 
+/// A stored artifact paired with the reader's compiled analysis identity.
+#[derive(Clone, Copy)]
+pub struct AnalysisArtifactInput<'a> {
+    pub path: &'a Path,
+    pub analysis_engine_sha256: &'a str,
+}
+
 /// `debundle run`, taking analysis from the artifact at `analysis` when given
 /// (`debundle run --analysis`).
 pub fn run_transform_with_analysis(
     cli: &TransformCli,
     options: TransformRunOptions,
-    analysis: Option<&Path>,
+    analysis: Option<AnalysisArtifactInput<'_>>,
 ) -> Result<()> {
     if let RunArtifacts::ReportsOnly { out_root } = &options.artifacts {
         anyhow::ensure!(analysis.is_some(), "--reports-only requires --analysis");
@@ -294,12 +301,17 @@ pub fn run_transform_with_analysis(
             );
         }
     }
-    let (spec, prepared) = prepare_transform(cli, &options, None, analysis)?;
+    let (spec, prepared) =
+        prepare_transform(cli, &options, None, analysis.map(|input| input.path))?;
     let mode = match analysis {
-        Some(path) => AnalysisMode::Load {
+        Some(AnalysisArtifactInput {
+            path,
+            analysis_engine_sha256,
+        }) => AnalysisMode::Load {
             base: AnalysisSpec::from_transform(&spec, &prepared.source_root)?,
             artifact: fs::read(path)
                 .with_context(|| format!("read analysis artifact {}", path.display()))?,
+            analysis_engine_sha256: analysis_engine_sha256.to_string(),
         },
         None => AnalysisMode::Compute,
     };
@@ -344,7 +356,7 @@ pub struct AnalyzeArgs {
 /// `debundle analyze`: compute the cross-module pass and every analysed
 /// chunk's facts from a projection and the sources, and write them as an
 /// analysis artifact for `debundle run --analysis`.
-pub fn analyze_cli(args: AnalyzeArgs) -> Result<()> {
+pub fn analyze_cli(args: AnalyzeArgs, analysis_engine_sha256: &str) -> Result<()> {
     let projection_bytes = fs::read(&args.projection)
         .with_context(|| format!("read analysis projection {}", args.projection.display()))?;
     let spec = AnalysisSpec::decode(&projection_bytes)?;
@@ -414,6 +426,7 @@ pub fn analyze_cli(args: AnalyzeArgs) -> Result<()> {
             embedded_loaders: &embedded_loaders,
             vendor_plan: &vendor_plan,
             graph_provenance: &provenance,
+            analysis_engine_sha256,
         },
     )?;
     fs::write(&args.out, bytes)
