@@ -43,7 +43,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	dbmigrate "github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
@@ -154,8 +153,7 @@ func run(ctx context.Context, config Config) error {
 		return err
 	}
 	threadStore := threads.NewStore(db)
-	inventory, err := sandboxinventory.New(config.SandboxNamespace, objects, nil,
-		&sandboxespb.ServiceAccount{Namespace: config.SandboxNamespace, Name: "app"})
+	inventory, err := sandboxinventory.New(config.SandboxNamespace, objects)
 	if err != nil {
 		return fmt.Errorf("configure Sandbox inventory: %w", err)
 	}

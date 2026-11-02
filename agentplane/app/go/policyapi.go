@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
+	"github.com/agentydragon/ducktape/agentplane/policy"
 	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
 	"github.com/danielgtaylor/huma/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -107,7 +108,7 @@ func RegisterPolicyRoutes(server *HTTPServer, config Config, inventory *sandboxi
 
 func policyHTTPError(err error) error {
 	var notFound *policyaccess.BindingNotFoundError
-	var missingSets *sandboxinventory.UnknownPolicySetError
+	var missingSets *policy.UnknownPolicySetError
 	var fromGit *policyaccess.FluxOwnedBindingError
 	var fromSandbox *policyaccess.SandboxOwnedBindingError
 	var notVisible *policyaccess.CreatedBindingNotVisibleError

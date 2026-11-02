@@ -70,9 +70,11 @@ go_library(
     deps = [
         ":environment_service_go_proto",
         "//agentplane/grpc/streaming",
+        "//agentplane/policy",
         "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/runner_gateway/environments/internal/management",
         "//agentplane/runner_gateway/environments/lifecycle",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/inventory",

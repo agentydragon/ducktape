@@ -385,7 +385,7 @@ export function SandboxPage({
                   Find Sandbox LLM traces in Langfuse
                 </Menu.Item>
               )}
-              {/* The API refuses a running sandbox (agentplane/sandboxes/inventory/inventory.go); the reason is shown beside the item. */}
+              {/* The API refuses a running sandbox (agentplane/runner_gateway/environments/internal/management/access.go); the reason is shown beside the item. */}
               <Menu.Item
                 color="red"
                 leftSection={<IconTrash size={15} />}

@@ -18,7 +18,6 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
 	"github.com/google/uuid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"google.golang.org/grpc/codes"
@@ -58,7 +57,7 @@ func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 			} `json:"launch_origin"`
 		} `json:"request"`
 	}
-	if err := json.Unmarshal([]byte(sandbox.Annotations[inventory.CreateIntentAnnotation]), &intent); err != nil {
+	if err := json.Unmarshal([]byte(sandbox.Annotations[sandboxapi.CreateIntentAnnotation]), &intent); err != nil {
 		t.Fatal(err)
 	}
 	if intent.Caller.Namespace != f.namespace || intent.Caller.Name != "actions" ||

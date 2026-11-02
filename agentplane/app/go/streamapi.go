@@ -1180,15 +1180,9 @@ func writeGRPCOpenError(w http.ResponseWriter, err error) {
 
 func sandboxHTTPErrorToRaw(w http.ResponseWriter, err error) error {
 	var notFound *sandboxinventory.SandboxNotFoundError
-	var invalid *sandboxinventory.InvalidSandboxError
-	var conflict *sandboxinventory.SandboxConflictError
 	switch {
 	case errors.As(err, &notFound):
 		writeDetailError(w, http.StatusNotFound, err.Error())
-	case errors.As(err, &invalid):
-		writeDetailError(w, http.StatusUnprocessableEntity, err.Error())
-	case errors.As(err, &conflict):
-		writeDetailError(w, http.StatusConflict, err.Error())
 	default:
 		writeDetailError(w, http.StatusServiceUnavailable, "Sandbox inventory is unavailable")
 	}

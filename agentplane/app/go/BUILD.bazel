@@ -53,6 +53,7 @@ go_library(
         "//agentplane/mcp_edge:connection_service_go_proto",
         "//agentplane/notification_service:notifications_operator_go_proto",
         "//agentplane/observability",
+        "//agentplane/policy",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/wakeups",

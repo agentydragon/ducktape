@@ -57,7 +57,7 @@ invariant; breaking it costs the whole account's authority rather than one box's
 ## Separation from the integration app
 
 **Its own label and selector.** Not `agentplane.allegedly.works/managed`, which identifies Session
-Sandboxes that carry runners (<../../sandboxes/inventory/inventory.go>). A box carrying it would join the
+Sandboxes that carry runners (<../../runner_gateway/environments/internal/management/access.go>). A box carrying it would join the
 fleet view, which then looks for a runner the box does not have.
 
 **Owned by its caller's account.** Each box carries an owner reference to the ServiceAccount it runs
