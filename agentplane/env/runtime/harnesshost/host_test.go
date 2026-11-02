@@ -122,8 +122,8 @@ func TestOpenSessionRetryUsesPersistedSetupAfterSealPublicationFailure(t *testin
 		t.Fatalf("failed OpenSession published a Session input: found=%t, err=%v", found, err)
 	}
 	record, err := r.store.Read(request.SessionId)
-	if err != nil || record.SetupScript != script || record.SetupScriptSHA256 != nil {
-		t.Fatalf("retained setup = %q, legacy hash = %v, err=%v; want source authority without cached digest", record.SetupScript, record.SetupScriptSHA256, err)
+	if err != nil || record.SetupScript != script {
+		t.Fatalf("retained setup = %q, err=%v; want exact setup source", record.SetupScript, err)
 	}
 	wrongScript := "exit 1"
 	conflict := openLifecycleSession(request.SessionId, filepath.Join(workspace, "project"))

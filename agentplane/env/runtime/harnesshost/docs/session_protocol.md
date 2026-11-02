@@ -39,6 +39,8 @@ public control RPCs are in [Environment Runtime control](../../control/environme
   running is recorded as interrupted before the Session is published; its retained source is never
   replayed. A failed or interrupted setup is terminal for that session and is never rerun. A
   different setup source is refused. Start a new session to try again.
+  The persisted `session.json` uses the current schema and rejects unknown fields; retries compare
+  the retained source verbatim.
 - `spec.instructions` are the session's standing instructions: what the session is for, and the
   orders that hold for every turn of it. They reach the model appended to the harness's own system
   prompt, so each harness keeps its coding-agent policy. A caller's empty task leaves the platform part. They are
