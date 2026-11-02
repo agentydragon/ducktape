@@ -26,20 +26,6 @@ required COSI subresource or a reason to combine resources with different owners
 
 - Rename the embedded Harness Host Go type `Runner` to a component-specific name. Preserve the Host
   drain barrier and its distinction from the Environment Runtime close and transition coordinator.
-- Rename the other controller-owned `*Runtimes` status resources and Go types consistently:
-  `BootstrapRuntimes` → `BootstrapStatuses`, `CodexAppServerRuntimes` → `CodexAppServerStatuses`,
-  and `EmbeddedExecutionRuntimes` → `ExecutionStatuses`. `EnvironmentRuntimeTransitions` and
-  `EnvironmentRuntimeCloses` also hold status and should say so. Align type names, constants,
-  readers, diagrams and documentation.
-- Rename `environment-runtime-close` and its controller type to reflect that the same controller
-  also coordinates adoption and quiesce transitions. Drop `embedded` from the Execution controller
-  and resource names where it merely describes how the service is packaged.
-- Rename the Session controller's `SessionRuntimes` status resource and Go type to
-  `SessionLifecycleStatuses`. For Sessions, the retained record supplies configuration and
-  `SessionInputs` supplies harness kind and demand; `SessionRuntimes` records controller progress,
-  not a desired runtime spec. The controller realizes demand by launching a Session-owned Claude
-  process or attaching to the shared Codex app-server and establishing a thread. A Codex Session's
-  process ID identifies the shared app-server, and its attachment/router state also lives in memory.
 - Review resources named `*Inputs` by their actual contents rather than applying one replacement:
   bootstrap carries a request, Session combines demand and observations, Process carries a revision
   wakeup, Execution carries demand and completion facts, and the Host input carries admission
@@ -72,7 +58,7 @@ COSI resource snapshots.
   manager-wide mutex. If significant, narrow subscriptions or locking without losing the separate
   inspection-settlement signal needed by the drain barrier.
 - Runtime Close and transition coordination each implement a private worker, completion channel and
-  cancellation/join path (`close_controller.go`, `transition_sequence.go`), while bootstrap,
+  cancellation/join path (`lifecycle_controller.go`, `transition_sequence.go`), while bootstrap,
   Sessions and the app-server use `env/oneoff`. Compare the lifetimes before consolidating: Close
   must preempt transitions, the event loop must stay responsive, and interrupted Execution starts
   must settle their exact fence before another owner can start. `oneoff` publishes COSI completion
@@ -93,20 +79,16 @@ teardown contracts rather than treating every controller as a simple resource tr
   `changed` notifications and aggregate's explicit `QueueReconcile`, the serialized demand
   increment and coherent Session/drain snapshots. A separate pre-read is not an atomic change
   detector; do not replace the locking or report a false change on a conflict retry.
-- Session's `MapInput` reads each `NativeOperationResults` spec to find its Session and controller;
-  the Process controller manually maps `ProcessInputs` to the same ID. COSI exposes labels on
-  `ReducedResourceMetadata` and provides `qtransform.MapExtractLabelValue` and `MapperSameID`.
-  Evaluate metadata labels for operation routing and the same-ID mapper where its namespace/type
-  assumptions fit. Preserve the completion gate, destruction behavior and one-shot ownership;
-  labels alone do not carry the operation result or make an uncertain effect replayable.
-- Compare each one-input/one-output controller with COSI's `qtransform` (mapped inputs,
-  concurrency, finalizers and output teardown are built in). In particular, bootstrap and
-  app-server use singleton primary inputs and mapped status/operation wakeups; the Process controller
-  has per-attempt desired/status resources. Prototype only where the generic teardown order matches:
-  Process status must remain observable until the owner destroys desired state, and a finalizer
-  cannot be released before native fencing. Session and Runtime also perform multi-step effects and
-  cannot be converted by assuming a pure transformation. COSI already supplies `NewRequeueError`
-  for deadlines, as the app-server controller uses; don't introduce a parallel timer queue.
+- COSI's generic mappers are not drop-in replacements here. Session operation routing reads the
+  operation to ignore its destruction; labels remain present on COSI's destroyed event, so a
+  label-only mapper adds a wakeup after consumption. The Process host accepts a namespace at runtime,
+  whereas `MapperSameID` derives it from the resource definition, which currently has no default.
+- The current lifecycle controllers are not simple `qtransform` candidates. Its transform runs
+  inside a retryable `Modify`, potentially before the output is committed or more than once; these
+  controllers publish status before effects and notify waiters after writes. Its input finalizer and
+  output teardown order also differ from the Process controller's retained `Exited` status and fence
+  barrier. Revisit only if a proposed design preserves those contracts; do not move one-shot effects
+  into a retryable transform.
 
 ## Connect central Codex to environment execution in Pods and VMs
 
