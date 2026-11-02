@@ -20,7 +20,7 @@ func (*LifecycleController) Name() string { return ControllerName }
 func (*LifecycleController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
-			{Namespace: lifecycle.Namespace, Type: InputType, Kind: controller.InputQPrimary},
+			{Namespace: lifecycle.Namespace, Type: LifecycleSignalType, Kind: controller.InputQPrimary},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.DesiredStateType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.AggregateStatusType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.ExecutionStatusType, Kind: controller.InputQMapped},
@@ -38,7 +38,7 @@ func (*LifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r contr
 			return nil, err
 		}
 	}
-	return []resource.Pointer{resource.NewMetadata(lifecycle.Namespace, InputType, ResourceID, resource.VersionUndefined)}, nil
+	return []resource.Pointer{resource.NewMetadata(lifecycle.Namespace, LifecycleSignalType, ResourceID, resource.VersionUndefined)}, nil
 }
 
 func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r controller.QRuntime, _ resource.Pointer) error {
@@ -46,7 +46,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	if c.host != nil {
 		c.host.notify()
 	}
-	input, found, err := ReadInput(ctx, r)
+	input, found, err := ReadLifecycleSignal(ctx, r)
 	if err != nil || !found {
 		return err
 	}

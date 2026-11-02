@@ -166,13 +166,13 @@ func NewHost(launch harness.LaunchConfig, deps Dependencies) (*Host, error) {
 
 func (c *Host) Controller() controller.QController { return &LifecycleController{host: c} }
 func (c *Host) Initialize(ctx context.Context) error {
-	return publish(ctx, c.deps.State, ResourceID, Input{})
+	return publish(ctx, c.deps.State, ResourceID, LifecycleSignal{})
 }
 
 func (c *Host) ResetDemand(ctx context.Context) error {
 	c.inputMu.Lock()
 	defer c.inputMu.Unlock()
-	return publish(ctx, c.deps.State, ResourceID, Input{})
+	return publish(ctx, c.deps.State, ResourceID, LifecycleSignal{})
 }
 
 func (c *Host) WithThreadHandshake(work func() error) error {
@@ -294,14 +294,14 @@ func (c *Host) RequestLocked(ctx context.Context, s *Attachment) (uint64, error)
 		}
 	}
 	c.mu.Unlock()
-	input, found, err := ReadInput(ctx, c.deps.State)
+	input, found, err := ReadLifecycleSignal(ctx, c.deps.State)
 	if err != nil {
 		c.clearInitializingOwner(s)
 		return 0, err
 	}
 	if !found {
 		c.clearInitializingOwner(s)
-		return 0, errors.New("Codex input is not initialized")
+		return 0, errors.New("Codex app-server lifecycle signals are not initialized")
 	}
 	input.Demand++
 	if err := publish(ctx, c.deps.State, ResourceID, input); err != nil {
@@ -422,9 +422,9 @@ func (c *Host) waitReaders(p *Process) {
 func (c *Host) publishExit(p *Process) {
 	c.inputMu.Lock()
 	defer c.inputMu.Unlock()
-	input, found, err := ReadInput(c.deps.Context, c.deps.State)
+	input, found, err := ReadLifecycleSignal(c.deps.Context, c.deps.State)
 	if err == nil && !found {
-		err = errors.New("Codex input disappeared before process exit was observed")
+		err = errors.New("Codex app-server lifecycle signals disappeared before process exit was observed")
 	}
 	if err == nil {
 		input.ExitSequence++

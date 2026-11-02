@@ -15,12 +15,12 @@ import (
 )
 
 const (
-	InputType            = "SessionInputs.agentplane"
-	InspectionStatusType = "SessionInspectionStatuses.agentplane"
-	LifecycleStatusType  = "SessionLifecycleStatuses.agentplane"
-	OperationStateType   = "SessionOperationStates.agentplane"
-	ControllerName       = "session-lifecycle"
-	HostOwner            = lifecycle.HostOwner
+	ReconcileSnapshotType = "SessionReconcileSnapshots.agentplane"
+	InspectionStatusType  = "SessionInspectionStatuses.agentplane"
+	LifecycleStatusType   = "SessionLifecycleStatuses.agentplane"
+	OperationStateType    = "SessionOperationStates.agentplane"
+	ControllerName        = "session-lifecycle"
+	HostOwner             = lifecycle.HostOwner
 )
 
 type Phase uint8
@@ -33,7 +33,7 @@ const (
 	Halted
 )
 
-type Input struct {
+type ReconcileSnapshot struct {
 	Harness           sessionpb.Harness
 	Demand            uint64
 	SetupRequested    bool
@@ -100,20 +100,20 @@ func publish[T componentSpec[T]](ctx context.Context, writer state.State, id str
 	return cosi.Publish(ctx, writer, componentResource(id, value), value, HostOwner)
 }
 
-func ReadInput(ctx context.Context, reader controller.Reader, id string) (Input, bool, error) {
-	return componentRead[Input](ctx, reader, id)
+func ReadReconcileSnapshot(ctx context.Context, reader controller.Reader, id string) (ReconcileSnapshot, bool, error) {
+	return componentRead[ReconcileSnapshot](ctx, reader, id)
 }
 
 func ReadLifecycleStatus(ctx context.Context, reader controller.Reader, id string) (LifecycleStatus, bool, error) {
 	return componentRead[LifecycleStatus](ctx, reader, id)
 }
 
-func (Input) resourceType() resource.Type               { return InputType }
-func (value Input) DeepCopy() Input                     { return value }
-func (LifecycleStatus) resourceType() resource.Type     { return LifecycleStatusType }
-func (value LifecycleStatus) DeepCopy() LifecycleStatus { return value }
-func (operationState) resourceType() resource.Type      { return OperationStateType }
-func (value operationState) DeepCopy() operationState   { return value }
+func (ReconcileSnapshot) resourceType() resource.Type       { return ReconcileSnapshotType }
+func (value ReconcileSnapshot) DeepCopy() ReconcileSnapshot { return value }
+func (LifecycleStatus) resourceType() resource.Type         { return LifecycleStatusType }
+func (value LifecycleStatus) DeepCopy() LifecycleStatus     { return value }
+func (operationState) resourceType() resource.Type          { return OperationStateType }
+func (value operationState) DeepCopy() operationState       { return value }
 
 func (InspectionStatus) resourceType() resource.Type      { return InspectionStatusType }
 func (value InspectionStatus) DeepCopy() InspectionStatus { return value }

@@ -30,7 +30,7 @@ func (s *heldSuccessorDemand) Modify(ctx context.Context, value resource.Resourc
 	if err := s.State.Modify(ctx, value, update, opts...); err != nil {
 		return err
 	}
-	if value.Metadata().Type() != session.InputType || !s.armed.Load() {
+	if value.Metadata().Type() != session.ReconcileSnapshotType || !s.armed.Load() {
 		return nil
 	}
 	current, found, err := cosi.Read(ctx, s.State, lifecycle.HostIntentStatusResource(lifecycle.HostIntentStatus{}))

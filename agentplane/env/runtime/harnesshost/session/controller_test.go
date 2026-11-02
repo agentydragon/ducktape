@@ -37,7 +37,7 @@ func TestSessionControllerMapsAppServerStatusToCodexSessions(t *testing.T) {
 		"claude-session": sessionpb.Harness_HARNESS_CLAUDE,
 		"codex-session":  sessionpb.Harness_HARNESS_CODEX,
 	} {
-		if err := publish(context.Background(), resources, id, Input{Harness: harness}); err != nil {
+		if err := publish(context.Background(), resources, id, ReconcileSnapshot{Harness: harness}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -74,7 +74,7 @@ type sessionControllerTestRuntime struct {
 }
 
 func (r sessionControllerTestRuntime) List(ctx context.Context, _ resource.Kind, opts ...state.ListOption) (resource.List, error) {
-	return r.state.List(ctx, resource.NewMetadata(harnesshostlifecycle.Namespace, InputType, "", resource.VersionUndefined), opts...)
+	return r.state.List(ctx, resource.NewMetadata(harnesshostlifecycle.Namespace, ReconcileSnapshotType, "", resource.VersionUndefined), opts...)
 }
 
 func pointerIDs(pointers []resource.Pointer) []string {

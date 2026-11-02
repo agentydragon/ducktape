@@ -180,9 +180,10 @@ Host wiring and aggregate reconciliation live in `env/runtime/harnesshost/lifecy
 Resources contain lifecycle values and detached snapshots, not process handles, streams,
 cancellations or journal connections. The host registry owns native handles and publishes observations.
 
-Session input includes demand, setup, process liveness, pending commands and inspection dependencies.
-Session lifecycle status records phase, observed demand and the Harness Host desired generation.
-The shared app-server has its own input/status and readiness deadline. Process desired/status/input resources are provided by
+`SessionReconcileSnapshots` includes demand, setup, process liveness, pending commands and inspection
+dependencies. Session lifecycle status records phase, observed demand and the Harness Host desired
+generation. `CodexAppServerLifecycleSignals` carries app-server demand and process-exit facts; its
+status records lifecycle progress and readiness deadline. Process desired/status/input resources are provided by
 `env/runtime/supervision`; finalizers remain until native cleanup is proven. `env/oneoff.Operation` owns
 one-shot slots through state publication and consumption, preventing retries from duplicating an
 in-flight effect.

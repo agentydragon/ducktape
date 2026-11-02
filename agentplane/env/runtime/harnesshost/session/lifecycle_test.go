@@ -254,10 +254,10 @@ func TestPreparationCompletionRefreshesStaleSchedulingInput(t *testing.T) {
 		// preparation. Otherwise it can overwrite the test's Preparing phase.
 		setSessionPhase(t, s, Preparing)
 		// Model the completion resource becoming visible before the worker refreshes
-		// its Session input. The native process is already live, but input is stale.
+		// its Session reconcile snapshot. The native process is already live, but input is stale.
 		m.publishMu.Lock()
 		defer m.publishMu.Unlock()
-		input, _, err := ReadInput(m.ctx, m.state, s.id)
+		input, _, err := ReadReconcileSnapshot(m.ctx, m.state, s.id)
 		if err == nil {
 			input.ProcessID = ""
 			input.ProcessRunning = false
