@@ -148,7 +148,11 @@ func (c *runtimeCloseController) reconcile(ctx context.Context, r controller.Run
 				}
 				return c.publish(ctx, r)
 			}
-			c.stage++
+			next, err := nextRuntimeCloseStage(c.stage)
+			if err != nil {
+				return err
+			}
+			c.stage = next
 		default:
 			return nil
 		}
@@ -171,6 +175,27 @@ func (c *runtimeCloseController) reconcile(ctx context.Context, r controller.Run
 		close(op.done)
 	}()
 	return nil
+}
+
+// A completed worker advances to the next shutdown barrier. Keep the sequence
+// explicit so changing a status value cannot silently skip a fence or join.
+func nextRuntimeCloseStage(stage lifecycle.RuntimeCloseStage) (lifecycle.RuntimeCloseStage, error) {
+	switch stage {
+	case lifecycle.RuntimeClosePreparing:
+		return lifecycle.RuntimeCloseNativeStopping, nil
+	case lifecycle.RuntimeCloseNativeStopping:
+		return lifecycle.RuntimeCloseExecutionFencing, nil
+	case lifecycle.RuntimeCloseExecutionFencing:
+		return lifecycle.RuntimeCloseHostFlushing, nil
+	case lifecycle.RuntimeCloseHostFlushing:
+		return lifecycle.RuntimeCloseHostJoining, nil
+	case lifecycle.RuntimeCloseHostJoining:
+		return lifecycle.RuntimeCloseBootstrapSettling, nil
+	case lifecycle.RuntimeCloseBootstrapSettling:
+		return lifecycle.RuntimeCloseReadyToJoin, nil
+	default:
+		return 0, fmt.Errorf("unexpected completed Runtime Close stage %d", stage)
+	}
 }
 
 func (c *runtimeCloseController) publish(ctx context.Context, r controller.Runtime) error {
