@@ -52,10 +52,12 @@ func TestMain(m *testing.M) {
 }
 
 func pid1ProofNative(mode string) int {
-	// Native runtimes can close inherited descriptors. The outer container fence
-	// must contain them independently of whether this token survives exec.
-	if err := unix.Close(3); err != nil {
-		panic(err)
+	// Subprocess containment must survive a native closing its inherited token.
+	// PID1 natives receive no owner descriptor and rely on the namespace fence.
+	if os.Getenv("PID1_PROOF_BACKEND") == "subprocess" {
+		if err := unix.Close(3); err != nil {
+			panic(err)
+		}
 	}
 	roles := []string{"group"}
 	// The PID1 native-exit case exercises FenceNamespace against an escaped
@@ -110,25 +112,15 @@ func TestPID1ContainerContract(t *testing.T) {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM)
 	defer signal.Stop(signals)
-	owner, err := os.OpenFile("/proof/owner", os.O_CREATE|os.O_RDONLY, 0600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer owner.Close()
-	if err := unix.Flock(int(owner.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		t.Fatal(err)
-	}
 	var supervisor *Supervisor
+	var err error
 	switch os.Getenv("PID1_PROOF_BACKEND") {
 	case "pid1":
-		supervisor, err = NewPID1Supervisor(owner)
+		supervisor, err = NewPID1Supervisor()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := NewPID1Supervisor(nil); err == nil {
-			t.Fatal("stateful PID1 backend accepted an absent owner descriptor")
-		}
-		mixed, err := NewSubprocessSupervisor(owner).NewProcess(ProcessConfig{Command: []string{os.Args[0], "--pid1-proof-fast"}})
+		mixed, err := NewSubprocessSupervisor(nil).NewProcess(ProcessConfig{Command: []string{os.Args[0], "--pid1-proof-fast"}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -139,6 +131,14 @@ func TestPID1ContainerContract(t *testing.T) {
 			t.Run("wait-ownership-and-orphan-reaping", func(t *testing.T) { provePID1Waits(t, ctx, supervisor) })
 		}
 	case "subprocess":
+		owner, err := os.OpenFile("/proof/owner", os.O_CREATE|os.O_RDONLY, 0600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer owner.Close()
+		if err := unix.Flock(int(owner.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+			t.Fatal(err)
+		}
 		supervisor = NewSubprocessSupervisor(owner)
 	default:
 		t.Fatal("PID1_PROOF_BACKEND must explicitly select pid1 or subprocess")
@@ -163,7 +163,7 @@ func TestPID1ContainerContract(t *testing.T) {
 		}
 	}
 	if os.Getenv("PID1_PROOF_BACKEND") == "subprocess" {
-		if _, err := NewPID1Supervisor(owner); err == nil || !strings.Contains(err.Error(), "subprocess supervisors own child waits") {
+		if _, err := NewPID1Supervisor(); err == nil || !strings.Contains(err.Error(), "subprocess supervisors own child waits") {
 			t.Fatalf("PID1 reaper displaced an active subprocess wait owner: %v", err)
 		}
 	}
@@ -171,7 +171,7 @@ func TestPID1ContainerContract(t *testing.T) {
 	for _, stream := range []io.Reader{p.Stdout(), p.Stderr()} {
 		go func() { _, err := io.Copy(os.Stderr, stream); readers <- err }()
 	}
-	// The native's ready record is written only after it closed its owner FD.
+	// The subprocess native closes its owner FD before writing its ready record.
 	if err := waitPID1ProofFile(ctx, "/proof/native.pid"); err != nil {
 		t.Fatal(err)
 	}
@@ -260,11 +260,7 @@ func TestPID1ContainerContract(t *testing.T) {
 
 func provePID1Waits(t *testing.T, ctx context.Context, supervisor *Supervisor) {
 	t.Helper()
-	withoutStateOwner, err := NewPID1SupervisorWithoutStateOwner()
-	if err != nil {
-		t.Fatal(err)
-	}
-	failedStart, err := withoutStateOwner.NewProcess(ProcessConfig{
+	failedStart, err := supervisor.NewProcess(ProcessConfig{
 		Command: []string{"/run/agentplane-pid1-proof-absent"},
 		Env:     map[string]string{},
 	})
@@ -272,9 +268,9 @@ func provePID1Waits(t *testing.T, ctx context.Context, supervisor *Supervisor) {
 		t.Fatal(err)
 	}
 	if err := failedStart.Start(ctx); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("state-less PID1 start did not report an exec failure: %v", err)
+		t.Fatalf("PID1 start did not report an exec failure: %v", err)
 	}
-	fast, err := withoutStateOwner.NewProcess(ProcessConfig{
+	fast, err := supervisor.NewProcess(ProcessConfig{
 		Command: []string{os.Args[0], "--pid1-proof-fast"},
 		Env:     map[string]string{},
 	})
@@ -285,7 +281,7 @@ func provePID1Waits(t *testing.T, ctx context.Context, supervisor *Supervisor) {
 		t.Fatal(err)
 	}
 	if code, err := fast.Wait(ctx); code != 42 || err != nil {
-		t.Fatalf("state-less PID1 result = (%d, %v)", code, err)
+		t.Fatalf("PID1 result = (%d, %v)", code, err)
 	}
 	for _, stream := range []io.Reader{fast.Stdout(), fast.Stderr()} {
 		if _, err := io.Copy(io.Discard, stream); err != nil {

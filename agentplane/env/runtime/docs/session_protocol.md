@@ -159,12 +159,13 @@ a committed outcome needs no second-store repair. Dispatch markers remain durabl
 an uncertain native effect is not retried to reconcile configuration.
 
 - Runtime holds the exclusive lock on `<state_dir>/runtime-resources.db` throughout the environment
-  lifetime, including Host native cleanup, worker joins and journal close. Pod and subprocess native
-  harnesses also inherit `<state_dir>/.agentplane-environment-runtime-owner`. Runtime alone owns the
-  `EnvironmentSeals` COSI resource; Host never
-  clears or adopts that resource. It is a hard cutover from `<state_dir>/sessions/sealed`: stop
+  lifetime, including Host native cleanup, worker joins and journal close. Only subprocess helpers
+  additionally inherit `<state_dir>/.agentplane-environment-runtime-owner`. Runtime alone owns the
+  `EnvironmentSeals` COSI resource; Host never clears or adopts that resource. It is a hard cutover
+  from `<state_dir>/sessions/sealed`: stop
   pre-cutover workloads before new binaries reuse their state volumes. Runtime releases the
-  environment lock only after its child domains are fenced. Durable Session IDs and paths do not move.
+  database and any environment lock only after its child domains are fenced. Durable Session IDs
+  and paths do not move.
 - Production Pods explicitly select PID1 supervision and reject Runtime startup outside container
   PID 1. Embedded Host shares Runtime's PID1 supervisor for native helpers. Normal Host
   `native_stopped` reports prove its native cleanup; abnormal Runtime exit alone does not prove that
@@ -174,9 +175,10 @@ an uncertain native effect is not retried to reconcile configuration.
   the group disappears. Stop sends TERM, then KILL after its grace budget. Non-PID1 fixtures
   explicitly select the internal subprocess supervisor, whose parent-liveness pipe and trusted
   owner descriptor fence the native group after Runtime death.
-  Both Pod backends require observed container-runtime exit to fence escaped process groups and
-  natives that close inherited descriptors. A lock acquisition or force-deleted Pod's API
-  disappearance does not prove that outer fence. Replacement after node loss or force deletion
+  PID1 natives inherit no environment owner descriptor. Both Pod backends require observed
+  container-runtime exit to fence escaped process groups and natives that close inherited
+  descriptors. A lock acquisition or force-deleted Pod's API disappearance does not prove that
+  outer fence. Replacement after node loss or force deletion
   requires a prior-container or external node/storage fence.
   [Supervision](../supervision/docs/supervision.md#pid-1-and-the-outer-fence) describes these boundaries.
 - In VMs every native launch is a systemd transient `Type=exec` service, bound to the Runtime unit,

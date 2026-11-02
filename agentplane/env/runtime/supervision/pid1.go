@@ -30,25 +30,12 @@ var waitOwnership struct {
 	subprocess int
 }
 
-// NewPID1Supervisor requires an outer container-runtime fence before replacement.
-// PID 1 owns every wait4, including adopted orphans; exec.Cmd.Wait is never used.
-func NewPID1Supervisor(stateOwnerFD *os.File) (*Supervisor, error) {
-	return newPID1Supervisor(stateOwnerFD, true)
-}
-
-// NewPID1SupervisorWithoutStateOwner uses the container lifetime as the ownership fence.
-// The caller must run as PID 1 in a private container PID namespace whose runtime fences the
-// namespace before replacement.
-func NewPID1SupervisorWithoutStateOwner() (*Supervisor, error) {
-	return newPID1Supervisor(nil, false)
-}
-
-func newPID1Supervisor(stateOwnerFD *os.File, requireStateOwner bool) (*Supervisor, error) {
+// NewPID1Supervisor requires PID 1 in a private container PID namespace whose
+// runtime fences the namespace before replacement. PID 1 owns every wait4,
+// including adopted orphans; exec.Cmd.Wait is never used.
+func NewPID1Supervisor() (*Supervisor, error) {
 	if os.Getpid() != 1 {
 		return nil, errors.New("Pod PID1 supervision requires Runner to be PID 1 in a private container PID namespace")
-	}
-	if requireStateOwner && stateOwnerFD == nil {
-		return nil, errors.New("Pod PID1 supervision requires the state-owner descriptor")
 	}
 	waitOwnership.Lock()
 	defer waitOwnership.Unlock()
@@ -58,7 +45,7 @@ func newPID1Supervisor(stateOwnerFD *os.File, requireStateOwner bool) (*Supervis
 	waitOwnership.pid1 = true
 	reaper := pid1Children()
 	return &Supervisor{makeBackend: func(config ProcessConfig) processBackend {
-		return &pid1Backend{config: config, owner: stateOwnerFD, reaper: reaper, exited: make(chan nativeExit, 1)}
+		return &pid1Backend{config: config, reaper: reaper, exited: make(chan nativeExit, 1)}
 	}, fenceNamespace: reaper.fenceNamespace}, nil
 }
 
@@ -262,7 +249,6 @@ func directChildren() ([]int, error) {
 
 type pid1Backend struct {
 	config ProcessConfig
-	owner  *os.File
 	reaper *childReaper
 	cmd    *exec.Cmd
 	exited chan nativeExit
@@ -291,9 +277,6 @@ func (b *pid1Backend) start(ctx context.Context, p *Process) error {
 	cmd := exec.Command(b.config.Command[0], b.config.Command[1:]...)
 	cmd.Dir, cmd.Env = b.config.Dir, environment(b.config.Env)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdinReader, stdoutWriter, stderrWriter
-	if b.owner != nil {
-		cmd.ExtraFiles = []*os.File{b.owner}
-	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	// Start's failed-exec handshake may itself wait for the child. Registration
 	// and every wait4 share this lock, so neither path steals the other's status.

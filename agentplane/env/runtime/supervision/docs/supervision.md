@@ -129,10 +129,11 @@ The Execution API is embedded; its Pod companion runs separately as PID1 and own
 exec-server namespace. Non-PID1 integration fixtures select Runtime's `subprocess` backend. VM
 systemd supervision does not fall back to a Pod backend.
 
-PID1 launches each child in its own process group. The owner descriptor is inherited, although
-native runtimes may close inherited descriptors. The subprocess supervisor retains a trusted
-owner-descriptor copy and a parent-liveness pipe. Owners keep their locks through ordinary process
-cleanup and journal closure. `Stop` closes stdin and sends TERM, then KILL after its grace budget;
+PID1 launches each child in its own process group without an environment owner descriptor.
+Runtime's open COSI database excludes a concurrent Runtime; the private PID namespace and its
+outer runtime fence contain descendants after PID1 death. The subprocess supervisor retains a
+trusted owner-descriptor copy and a parent-liveness pipe. Owners keep their database and any extra
+lock through ordinary process cleanup and journal closure. `Stop` closes stdin and sends TERM, then KILL after its grace budget;
 a canceled stop escalates and leaves the cleanup barrier owned. Leader exit triggers a KILL of the
 remaining process group. PID1 waits for the group to disappear; the subprocess supervisor sends KILL
 but does not wait for group disappearance. A reported failed fence retains the finalizer.
@@ -178,16 +179,17 @@ Sandbox Controller waits for the prior Pod's deletion event before creating its 
 (`converge` in `sandbox_controller/controller.go`). Normal kubelet restarts and graceful Pod deletion
 supply the outer fence. An API deletion event after force deletion or node loss does not prove the
 old container stopped. Container teardown or an external node/storage fence must precede
-replacement. Node-local storage and the fixed inode lock remain part of the supported contract;
+replacement. Node-local storage and the COSI database's fixed inode lock remain part of the supported contract;
 neither Pod UID nor PVC access mode replaces runtime fencing.
 
 ### Acceptance coverage
 
 `//agentplane/env/e2e:test_pid1_container` runs both backend fixtures in real private PID namespaces.
-It closes the native's inherited owner descriptor and starts TERM-resistant same-group and escaped
-descendants. It checks lock exclusion, observes container exit and descendant death, then reacquires
-the lock before restarting the container. The production cases invoke the combined Runtime and cover
-clean TERM, Session-managed native processes and abrupt bootstrap death. They do not claim graceful completion
+It starts TERM-resistant same-group and escaped descendants, closes the subprocess native's
+inherited owner descriptor, and observes container exit and descendant death before restarting.
+The production cases start PID1 Runtime while the legacy independent owner lock is held, verify
+COSI database lock exclusion through shutdown, and cover clean TERM, Session-managed native
+processes and abrupt bootstrap death. They do not claim graceful completion
 with escaped pipe holders. JSON evidence and logs go to undeclared test outputs.
 
 `//agentplane/env/e2e:test_executor_container` exercises the separately packaged Execution companion,

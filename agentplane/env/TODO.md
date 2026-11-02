@@ -54,13 +54,12 @@ shell when it is enabled.
 
 ## Simplify ownership and process fencing with COSI lifecycle primitives
 
-Runtime holds the COSI database lock; Pod and subprocess native harnesses also inherit a separate
+Runtime holds the COSI backing database's process lock through cleanup. Pod PID1 descendants rely
+on the private PID namespace and its outer runtime fence; subprocess natives inherit an additional
 owner descriptor. Execution uses Runtime ownership and the COSI Execution controller's serial,
 joined native fence; its independently supervised Pod companion retains the generation lease and
-namespace fence.
-Revisit the remaining Runtime owner flock for Pod PID 1 and subprocess supervision, including
-inherited owner descriptors. Determine whether the COSI backing database's process lock or another
-mechanism can replace the extra lock while still covering children that outlive their parent.
+namespace fence. Revisit the remaining Runtime owner flock in subprocess supervision while still
+covering children that outlive their parent.
 
 Use COSI's [exclusive controller outputs, strong inputs and finalizers](https://github.com/cosi-project/runtime/blob/v1.16.2/README.md#controllers)
 and teardown phases to express ownership and cleanup barriers where they can replace private

@@ -205,11 +205,11 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 			return nil, fmt.Errorf("open Runtime COSI state: %w", err)
 		}
 	}
-	// The Pod and subprocess backends also pass a fence to native children.
-	// Systemd has its own process-domain fence and needs no extra owner file.
+	// Only subprocess helpers need an inherited owner descriptor. PID1 and
+	// systemd use their outer process-domain fence after Runtime death.
 	var owner *environmentOwner
 	var ownerFile *os.File
-	if config.Supervision != "systemd" {
+	if config.Supervision == "subprocess" {
 		owner, err = openEnvironmentOwner(config.StateDir)
 		if err != nil {
 			if lifecycleStore != nil {
@@ -223,7 +223,7 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	if deps.prepareSupervisor != nil {
 		supervisor, err = deps.prepareSupervisor(config, ownerFile)
 	} else if config.Supervision == "pid1" {
-		supervisor, err = supervision.NewPID1Supervisor(ownerFile)
+		supervisor, err = supervision.NewPID1Supervisor()
 	} else if config.Supervision == "subprocess" {
 		supervisor = supervision.NewSubprocessSupervisor(ownerFile)
 	} else {
