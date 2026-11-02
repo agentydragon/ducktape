@@ -82,13 +82,13 @@ func (r *Runtime) publishDesired(ctx context.Context, mode lifecycle.Mode, uid, 
 			return 0, err
 		}
 		if r.codexAppServer != nil {
-			if err := r.codexAppServer.ResetDemand(ctx); err != nil {
+			if err := r.codexAppServer.ResetDemand(r.lifecycleContext); err != nil {
 				r.fail(err)
 				return 0, err
 			}
 		}
 		for _, s := range r.sessions.Inventory() {
-			if err := r.sessions.Reopen(ctx, s); err != nil {
+			if err := r.sessions.Reopen(r.lifecycleContext, s); err != nil {
 				r.fail(err)
 				return 0, err
 			}
@@ -120,12 +120,8 @@ func (r *Runtime) environment() session.Environment {
 }
 
 func (r *Runtime) waitBootstrapForSession(ctx context.Context) error {
-	r.mu.Lock()
-	accepted := r.startupComplete && !r.failed && r.desired.Mode == lifecycle.Running
-	r.mu.Unlock()
-	if !accepted {
-		return status.Error(codes.Aborted, "bootstrap wait is outside the active environment")
-	}
+	// Session operations reach this dependency only after admission. Draining
+	// closes new work while accepted setup still joins its retained bootstrap.
 	if r.bootstrapWait != nil {
 		return r.bootstrapWait(ctx)
 	}
