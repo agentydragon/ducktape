@@ -1,17 +1,20 @@
 # Abstract interpreter
 
 One abstract interpreter over one abstract domain, driven by one declarative
-table of builtin summaries. Every bespoke certificate rule in § 1 becomes a
-derived instance: the interpreter evaluates the shape under the domain and the
-table, and the former rule's conclusion is a projection of the resulting effect
-set. The iterative substrate stays: typed facts, program points, worklist,
-proof dependencies and `AnalysisAssumptions` axioms (`inference/iterative.rs`,
-<../docs/inference.md>).
+table of builtin summaries. The rules in § 1 use shared value/effect semantics;
+checked specific recognizers can supply input facts and preconditions without
+duplicating operation execution. The iterative substrate stays: typed facts,
+program points, worklist, proof dependencies and `AnalysisAssumptions` axioms
+(`inference/iterative.rs`, <../docs/inference.md>).
 
-Precision is not the goal. The goal is one semantics, so a new bundle shape
-costs a table row or an axiom, not a rule. Where a current rule's precision
-cannot be reproduced by the domain, § 2.5 says so and names the author
-assertion that replaces it.
+Choose between general interpretation, a sound sufficient-condition recognizer
+and an audited annotation by downstream payoff and total cost, following the
+[orchestration workflow](../skills/shared/workflow.md#choose-the-solution-depth).
+Narrow recognition and annotations can remain the right solutions; broad
+interpretation is not a prerequisite for every new bundle shape. All routes
+retain common semantics and the distinction between inferred facts and author
+assertions. Where the domain loses a current rule's precision, § 2.5 records
+the limitation and the available assertion.
 
 Burn-down: each step in § 5 deletes the rule it replaces once the interpreter
 passes that rule's contract tests unchanged. Durable content graduates to

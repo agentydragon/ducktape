@@ -1,16 +1,18 @@
 # Plan and delegate Debundle work
 
 Use the [task chooser](../../README.md#choose-a-task) for individual authoring
-operations. This guide owns shared planning, worker, and integration procedures;
-project adapters supply concrete paths, commands, conventions, and gates.
+operations. This guide owns the spec/tool improvement loop and shared planning,
+worker, and integration procedures; project adapters supply concrete paths,
+commands, conventions, and gates.
 
-| Task                               | Read                                                                                   | Result                                                        |
-| ---------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Plan an assignment without editing | [Plan an assignment](../../docs/planning.md#plan-an-assignment)                        | Source-backed proposal, decomposition, or selector worklist   |
-| Ground residual proposals          | [Prepare seeds](../../docs/planning.md#prepare-seeds)                                  | Named worker packets in `seeds.json`                          |
-| Apply one assigned edit            | [Execute a lane](../../docs/spec_editing.md#workflow-executing-a-delegated-assignment) | Reviewed YAML delta and completed validation evidence         |
-| Combine worker results             | [Integrate worker results](../../docs/integration.md)                                  | Validated combined spec and per-branch disposition            |
-| Coordinate a round                 | [Coordinate a round](#coordinate-a-round)                                              | Isolated assignments, current evidence, and routed follow-ups |
+| Task                                | Read                                                                                   | Result                                                        |
+| ----------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Plan an assignment without editing  | [Plan an assignment](../../docs/planning.md#plan-an-assignment)                        | Source-backed proposal, decomposition, or selector worklist   |
+| Ground residual proposals           | [Prepare seeds](../../docs/planning.md#prepare-seeds)                                  | Named worker packets in `seeds.json`                          |
+| Apply one assigned edit             | [Execute a lane](../../docs/spec_editing.md#workflow-executing-a-delegated-assignment) | Reviewed YAML delta and completed validation evidence         |
+| Combine worker results              | [Integrate worker results](../../docs/integration.md)                                  | Validated combined spec and per-branch disposition            |
+| Improve specs and the tool together | [Drive specs and tool improvements](#drive-specs-and-tool-improvements)                | Prioritized canonical capability and justified solution route |
+| Coordinate a round                  | [Coordinate a round](#coordinate-a-round)                                              | Isolated assignments, current evidence, and routed follow-ups |
 
 ## Roles
 
@@ -88,10 +90,102 @@ resolved `argv` and `cwd`, then separately save its actual exit status,
 
 Public skills must not encode private project names or fixed app taxonomies.
 
+## Drive specs and tool improvements
+
+The outcome is accepted, readable, idiomatic, runnable output for the configured
+specs, with behavior preserved under explicit assumptions. Inspect module
+boundaries, names, imports and runtime results as well as gate acceptance.
+Output emitted despite rejection is inspection material. Keep required engine
+architecture work explicit alongside downstream acceptance; neither alone
+completes a goal requiring both.
+
+Keep private inputs, concrete spec audits and project-specific progress in
+[gaffer-private](https://github.com/agentydragon/gaffer-private). Public engine
+changes and examples use neutral synthetic shapes.
+
+### Select an observable capability
+
+Maintain a short ranked plan in the owning project's `plans/` directory. Repair
+introduced soundness defects and regressions first. Choose subsequent work by
+expected canonical benefit and total implementation, validation, audit,
+maintenance and operator cost. A module extraction or justified assignment
+repair can advance the goal without an engine change. Include usability,
+iteration speed and memory work when their payoff warrants the attention.
+
+For substantial work, record the selected failure or capability, matching
+source/spec/engine identity, source-backed cause, chosen solution route,
+expected downstream change, authorized validation and remaining prerequisites.
+Prefer a complete causal path to a useful result over an open-ended list of
+missing interpreter primitives. When a new prerequisite expands that path or
+the evidence contradicts its predicted benefit, reconsider the choice before
+dispatching the next implementation slice. Review-sized PRs may implement one
+capability in pieces; their count is not the outcome.
+
+### Choose the solution depth
+
+Compare these routes briefly before committing to a broad implementation. The
+letters identify alternatives, not a mandatory ladder:
+
+| Route                             | Appropriate use                                                                                                                                  | Required boundary                                                                                                                                                                 |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A: general semantics**          | The construct recurs broadly, or general support costs less than maintaining special cases and audits.                                           | Model the operation and its unknown cases through the shared value/effect semantics.                                                                                              |
+| **B: sound specific recognition** | A bounded source category covers the blocker with cheaply checkable sufficient conditions.                                                       | Every match must justify the conclusion under its checked conditions and declared assumptions. Missing other valid cases is acceptable; a false positive is a correctness defect. |
+| **C: audited annotation**         | Automatic proof is expensive, while the author can reasonably promise the needed behavior or known library identity for this configured program. | State the exact assertion and scope, use an existing contract when it fits, and obtain any required author decision. A passing gate does not establish the assertion's truth.     |
+
+A specific wrapper recognizer or a known-library annotation may avoid a long
+prerequisite chain for arbitrary loader execution. Source resemblance alone
+does not establish runtime identity or behavior. The
+[contract chooser](initialization_contracts.md) separates timing, effects,
+retention, result and identity obligations; assert only the facts the audit
+supports. Document a new annotation's contract in `SPEC.md` and retain existing
+approved contracts unless a changed assertion is explicitly justified.
+
+All routes feed the same typed facts, value/effect semantics and validator,
+retaining the distinction between source proof and author assumption. A
+recognizer need not become a second evaluator, and an annotation must not
+bypass validation. Narrow coverage and annotations can remain the right
+solutions. Graduate them to broader inference when demonstrated reuse,
+repeated audit cost or maintenance justifies it, then remove redundant rules
+or stale assertions without silently expanding the promised scope.
+
+### Keep the iteration loop cheap and informative
+
+- Reuse matching cached analysis for spec changes the staged pipeline excludes
+  from its analysis inputs. Refresh expensive analysis when those inputs or
+  the engine change. Request full graphs and evidence streams when the
+  investigation needs them; keep routine output bounded.
+- Read the complete gate inventory, structured reports and their truncation
+  metadata. The first console rejection is not the inventory, and a selected
+  cycle cut is not its reciprocal path. Absence of a secondary report does
+  not establish absence of that failure class.
+- Check the predicted witness in existing normal CI artifacts where possible.
+  Unchanged gate verdicts can conceal precision regressions; inspect affected
+  execution completeness and constraints, and classify new restrictions.
+  Edge counts alone conflate ordering requirements and duplicate provenance.
+- Distinguish public engine checks, private integration, accepted canonical
+  output and runtime proof. A merged pin or green synthetic suite establishes
+  only its own scope. Track the exact head and live job; let an existing run
+  finish before refreshing its pin merely for bookkeeping.
+- Prefer direct storage/lifetime improvements when their mechanism is clear.
+  Use a real profiler for an unanswered allocation or CPU question when it
+  would change the decision. Bound that investigation; do not make every
+  optimization contingent on a separate benchmarking project or claim
+  unmeasured aggregate savings.
+- Record confusing output, failed assumptions and avoidable rabbit holes in
+  the owning project's `debug/` or `TODO.md` and commit them. Fix cheap friction
+  in context; rank larger follow-ups with the main work.
+
+Use the task's authorized checks and resource limits. These proof stages do
+not authorize extra corpus runs, tests, profiles or workers. Report missing
+evidence explicitly. End a slice with the observed capability change and the
+remaining gap; if it made no demonstrated movement, reassess its justification
+before extending the prerequisite chain.
+
 ## Coordinate a round
 
-1. Refresh pipeline outputs, graphs, root/chunk/directory reports, and cycle
-   evidence. Select work using [planning](../../docs/planning.md#plan-an-assignment).
+1. Select the outcome and solution route above. Reuse matching pipeline
+   outputs, graphs and reports, refreshing stale evidence as needed. Use
+   [planning](../../docs/planning.md#plan-an-assignment) for assignment work.
 2. Route residual proposals through intake. Send reviewed existing-module maps
    directly to workers; intake does not consume decomposition reports. Prefer
    coherent synthesis buckets for selector cleanup.
@@ -104,10 +198,10 @@ Public skills must not encode private project names or fixed app taxonomies.
    metrics such as residual units, patch-stream members, named-module fraction,
    selector debt, and largest generated files.
 
-Route substantial source discovery to intake, architecture decisions to the
-architect, naming-only work to the namer, and merge trains to the integrator.
-The orchestrator owns adapter details and broadcasts working commands; it should
-not absorb specialist work as that work becomes substantial.
+When delegation is useful and authorized, route substantial source discovery to
+intake, architecture decisions to the architect, naming-only work to the namer,
+and merge trains to the integrator. The orchestrator owns adapter details,
+broadcasts working commands and retains the canonical outcome across handoffs.
 
 ## Execution evidence
 
@@ -146,10 +240,12 @@ were not validated.
 - Stale graph: refresh matching evidence before diagnosing another cause.
 - Gate rejection: read the structured cycle/atom reports and the source-backed
   [diagnostics](../../docs/cli.md#rejection-diagnostics). Establish initializer,
-  called-binding, provider, and runtime facts before choosing an assertion via
-  the [contract guide](initialization_contracts.md). A cycle alone supplies none
-  of those premises. Preserve conservative constraints when the audit is not
-  established, and rerun the same gate and runtime smoke after justified edits.
+  called-binding, provider, and runtime facts, then choose a spec repair or one
+  of the [three solution routes](#choose-the-solution-depth). The
+  [contract guide](initialization_contracts.md) routes assertion audits; a cycle
+  alone supplies none of their premises. Preserve conservative constraints
+  outside the chosen proof or approved contract, and verify the same gate and
+  runtime behavior after justified edits within the task's execution limits.
 - Split atomic group: expand the scoped lane to include the whole group or
   redispatch coordinated work.
 - Unclear destination: route to the architect; broad source discovery: intake.
