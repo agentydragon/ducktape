@@ -21,7 +21,7 @@ remain useful but do not provide independently addressable Agentplane Sessions.
 | P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | Authorize explicit resume after `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`; prioritize concrete reliability regressions                                                                                              |
 | P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE_DESIGN` then `SCHEDULED_AGENT_WAKE`, finish delegation usability and staging exposure, then the `DAILY_CI_AGENT` product milestone                                                           |
 | Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                                                          |
-| Next      | Faster fresh VMs and a usable Bazel client inside a VM                                                                | `VM_STARTUP_LATENCY`, `LOCAL_BAZEL`; select image/layering changes when measurements show they address startup or needed resource headroom                                                                         |
+| Next      | Measure a production fresh VM start and provide a usable Bazel client inside a VM                                     | `VM_STARTUP_LATENCY`, `LOCAL_BAZEL`; select an image or layering change only if production measurements show it addresses startup or needed resource headroom                                                      |
 | Later     | Launching workers with different privileges, broader delegation and archive-read policy                               | `MULTIAGENT_MODEL`, `AGENT_LAUNCH_POLICY_DESIGN`, `AGENT_SANDBOX_LAUNCH`, broader create grants and held history-read work                                                                                         |
 | Later     | Broader runtime/conversation redesign and maintenance without a current workflow need                                 | Full `SESSION_RUNTIME_MODEL_DESIGN` and `AGENT_AUTHORED_CONVERSATIONS_DESIGN` implementations, renames, optional queue/database modes, broad protocol-parity research and speculative service/storage replacements |
 
@@ -196,7 +196,7 @@ flowchart LR
         SCHEDULED_AGENT_WAKE[Durable scheduled wake] --> DAILY_CI_AGENT
     end
     SESSION_LAUNCH_FRICTION[Alongside: simpler reused-environment launch]
-    VM_STARTUP_LATENCY[Next: measured fresh-VM startup]
+    VM_STARTUP_LATENCY[Next: measure production VM startup]
     LOCAL_BAZEL[Next: Bazel client inside a VM]
 ```
 
@@ -882,7 +882,7 @@ app/Sandbox Service database changes requires its own migration safety review.
 flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
     SESSION_LAUNCH_FRICTION[Alongside: fewer clicks on reused environments]
-    VM_STARTUP_LATENCY[Next: reduce measured fresh-VM startup latency]
+    VM_STARTUP_LATENCY[Next: measure production VM startup]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
     EGRESS_RELAY_RENAME[TODO: rename egress sidecar to relay]
     EGRESS_CREDENTIAL_TRANSPORT_DESIGN[Decision: credential upstream schemes and ports]
@@ -920,15 +920,28 @@ candidate UX first; do not require new agent/conversation entities to improve it
 Exit: the agreed common path needs fewer decisions/clicks and opens a useful Session in the chosen
 directory, with intended defaults and override behavior visible. Include the normal visual review.
 
-### `VM_STARTUP_LATENCY` — reduce measured time to a useful fresh VM Session
+### `VM_STARTUP_LATENCY` — measure production time to a useful fresh VM Session
 
-**Next; operator, 2026-10-30 PDT.** Attribute fresh startup time across scheduling, image
-transfer/unpack, storage attachment, guest boot, executor readiness and Session setup using retained
-timestamps/traces and real profiling where needed. Compare equivalent cold/warm starts. Then select
-a bounded change addressing the measured dominant delay and show its effect on first usable work.
-Image slimming, tools-disk separation and runtime harness delivery are candidates, not assumed
-prerequisites. Keep reusable environments as a supported path and preserve resource/ownership
-contracts. `LOCAL_BAZEL` independently proves the VM-based coding workflow.
+**Next; operator, 2026-10-30 PDT.** First measure one ordinary staging `environment-vm` start using
+the production NixOS guest on a KVM-schedulable node. The [prior-work audit](../debug/2026_11_01_vm_startup_latency.md)
+records the boot, image, and runner-disk improvements already shipped, and why the recent Debian/QEMU
+system-test timings do not measure this product path. The staging [fresh VM acceptance](../docs/vm_sandboxes.md#fresh-vm-trial-readiness)
+currently records functional readiness but no durations.
+
+Record the exact guest image digest, node, storage class, and naturally observed image/cache state.
+Capture a warm follow-up on the same node/image if available; do not evict caches or discard state to
+manufacture a cold start. Correlate retained Kubernetes object timestamps/events and launcher, guest,
+Runner, and Session evidence across Sandbox request, PVC binding, VM/VMI scheduling and start, guest
+boot, Runner Ready/bootstrap, and first safe useful Session action. If an essential phase is missing,
+add only its smallest timestamp at the owning boundary. Keep test-fixture spans separate.
+
+**Exit:** retain a phase timeline that identifies the critical path and states whether a product
+bottleneck is demonstrated. If it is, propose one bounded change at the owning boundary, naming the
+mechanism and preserving KVM scheduling, storage/state ownership, and Runner/bootstrap/readiness
+behavior; include matched same-image validation of the affected phase and first useful work. If no
+phase dominates, or a naturally cold image state was unavailable, record that limit and stop without
+choosing an image/layout redesign. Keep reusable environments supported. `RUNNER_LAYERING_VM` remains
+paused and is not a prerequisite; `LOCAL_BAZEL` independently proves the VM-based coding workflow.
 
 ### `SESSION_RUNTIME_MODEL_DESIGN` — Sessions, harness placement and execution attachments
 
