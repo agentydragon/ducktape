@@ -1543,6 +1543,10 @@ debundle explain-integrity --graph output/reports/tree/static/index/dependency_g
   --at static/index.js:1234
 # The same for a source unit or a binding it declares
 debundle explain-integrity --id unit:120
+# Bound precision-loss examples per source unit and witness rows per slot
+debundle explain-integrity --id unit:120 --limit 5
+# Show all rows
+debundle explain-integrity --id unit:120 --all
 # Every census witness reaching one slot
 debundle explain-integrity --slot '%Array.prototype%'   # or Array.prototype.map, Array[@@species], Object.defineProperty, Set
 ```
@@ -1564,16 +1568,34 @@ excerpt, operation and `reach`:
 - `unknown_receiver`: a receiver that may be any native object.
 
 `receiver_global` names the global property an unknown receiver was read from
-(`location` for `window.location.href = url`). `discharged_by` lists what could
-remove an unknown-receiver witness: for a property the host does not predefine,
-`predefined_globals: standard` bundle ownership, or
-`no_accessor_install_callables` where a computed-key call keeps the property
-from being bundle-owned; for a receiver read through a local binding, a
-`value_inputs` captured ordinary object where that binding qualifies (SPEC.md §
-Captured ordinary-object values). No current premise removes the other reach
-kinds; an exact-site `native_operation_inputs` axiom instead covers one
-consuming call. `--limit`/`--all` bound witness rows; `reach_counts` stay
-complete.
+(`location` for `window.location.href = url`). `possible_discharges` lists
+author premises or host keys that could remove the witness from this slot's
+census. These are audit candidates only: they do not assert that a matching
+input is configured, independently audited, or used as proof.
+
+`program_premises.intrinsics_never_written` can override an
+`unknown_receiver`, `family_coupling` or `global_object_coupling` witness for a
+named family, as defined by the premise contract. The contract rejects a write
+to a named family's exact object or binding; it overrides other witnesses
+that would reach the family (SPEC.md § Intrinsics never written). Because the
+candidate list is based on reach kind, it may include `intrinsics_never_written`
+for a family-level witness whose exact writer makes that premise invalid. Check
+the witness against the contract before authoring a premise. For
+`unknown_receiver`, `possible_discharges` can also include
+`predefined_globals: standard` when a host-undefined global property is the
+receiver, `no_accessor_install_callables` when a computed-key call keeps that
+property from qualifying as bundle-owned, or `value_inputs` when a local
+binding captures an ordinary object (SPEC.md § Bundle-owned globals and §
+Captured ordinary-object values). `native_operation_inputs` applies to one
+selected consuming call; it does not discharge a census witness (SPEC.md §
+Native integrity inputs).
+
+`--limit` bounds precision-loss examples **per source unit** and witness rows
+**per slot**. Under `--at`, the line filter is applied before the per-unit
+limit. Each source-unit row's `precision_loss_limit` and each slot's
+`witness_limit` report exact `total`, `emitted` and `truncated` values; the text
+report states when it omits rows. `--all` shows every row. Source-unit and slot
+selection, guard findings and `reach_counts` remain complete.
 
 When a purity reason is `unknown_member` for a recognized native own-data read,
 its `detail` names the required slots, any slots without proof, and an

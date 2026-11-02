@@ -1740,6 +1740,16 @@ ordinary checks. A shadowed binding, dynamic scope or unproved slot integrity
 keeps conservative lookup effects. Exact author inputs retain their declared
 operation and source-site scope.
 
+The read-only `debundle explain-integrity` query reads a saved dependency graph
+and its linked program graph without reanalysis. `--limit N` bounds reported
+precision losses per source unit, after `--at` filtering, and census witnesses
+per slot. Each query row reports exact `total`, `emitted` and `truncated`
+counts in `precision_loss_limit` or `witness_limit`; `--all` shows every row.
+These bounds affect only the query output: saved graph precision losses and
+census witnesses remain complete. A witness's `possible_discharges` names
+candidate contracts for author audit; it does not record configured or
+consumed premise evidence. Details: <docs/cli.md#native-integrity-guards>.
+
 A `%Set%` or `%Object.freeze%` slot is an own data property of the global
 object or of a census constructor or namespace. A property write, update,
 delete or reflective definition changes only its receiver's own property under

@@ -44,7 +44,8 @@ pub(super) struct ExplainIntegrityArgs {
     #[arg(long)]
     id: Option<String>,
 
-    /// Witnesses shown per slot (default 10); counts stay complete.
+    /// Precision-loss examples per source unit and witnesses per slot
+    /// (default 10); counts stay complete.
     #[arg(
         long,
         default_value = "10",
@@ -53,7 +54,7 @@ pub(super) struct ExplainIntegrityArgs {
     )]
     limit: Option<usize>,
 
-    /// Show every witness. Conflicts with --limit.
+    /// Show every precision loss and witness. Conflicts with --limit.
     #[arg(long)]
     all: bool,
 
@@ -126,6 +127,7 @@ struct SourceUnitIntegrity {
     complete: bool,
     /// For `--at`, only the losses on that line.
     precision_losses: Vec<Loss>,
+    precision_loss_limit: LimitSectionReport,
     /// Every guard this unit's execution evaluated, failed or not.
     evaluated_guards: BTreeSet<NativeIntegrityGuard>,
     failed_guards: Vec<FailedGuard>,
@@ -182,16 +184,16 @@ struct WitnessExplanation {
     #[serde(skip_serializing_if = "Option::is_none")]
     receiver_global: Option<String>,
     target_slots: BTreeSet<NativeWriteSlot>,
-    /// Author premises or host keys that could remove this witness from the
-    /// slot's census; empty for a write the census sees naming the slot or
-    /// its family.
-    discharged_by: Vec<Discharge>,
+    /// Candidate author premises or host keys that could remove this witness
+    /// from the slot's census. These are not evidence that one is configured
+    /// or audited; empty for writes naming the slot or its family.
+    possible_discharges: Vec<PossibleDischarge>,
 }
 
-/// A premise or host key that removes an unknown-receiver witness.
+/// An author premise or host key that could remove a census witness.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
-enum Discharge {
+enum PossibleDischarge {
     /// `host_behavior.predefined_globals: standard`, under which the value of
     /// a bundle-owned global property reaches no intrinsic slot (SPEC.md §
     /// Bundle-owned globals).
@@ -208,35 +210,40 @@ enum Discharge {
     IntrinsicsNeverWritten,
 }
 
-/// Premises that could remove a witness that does not name the slot. A
-/// property the host predefines is never bundle-owned.
-fn discharges(witness: &NativeMutationWitness, reach: SlotReach) -> Vec<Discharge> {
+/// Candidate premises that could remove a witness that does not name the
+/// slot. This describes the witness shape only; it does not assert any input
+/// is present or independently audited. A host-predefined property is never
+/// bundle-owned.
+fn possible_discharges(
+    witness: &NativeMutationWitness,
+    reach: SlotReach,
+) -> Vec<PossibleDischarge> {
     if matches!(
         reach,
         SlotReach::FamilyCoupling | SlotReach::GlobalObjectCoupling
     ) {
-        return vec![Discharge::IntrinsicsNeverWritten];
+        return vec![PossibleDischarge::IntrinsicsNeverWritten];
     }
     if reach != SlotReach::UnknownReceiver {
         return Vec::new();
     }
-    let mut discharges = vec![Discharge::IntrinsicsNeverWritten];
-    discharges.extend(match &witness.receiver_global {
+    let mut possible_discharges = vec![PossibleDischarge::IntrinsicsNeverWritten];
+    possible_discharges.extend(match &witness.receiver_global {
         Some(property) if is_standard_global(property) => Vec::new(),
         Some(_) => vec![
-            Discharge::PredefinedGlobalsBundleOwnership,
-            Discharge::NoAccessorInstallCallables,
+            PossibleDischarge::PredefinedGlobalsBundleOwnership,
+            PossibleDischarge::NoAccessorInstallCallables,
         ],
         None if witness.through_local_alias
             && witness
                 .receiver_roots
                 .contains(&NativeIntrinsic::UnknownGlobalValue) =>
         {
-            vec![Discharge::CapturedValueInput]
+            vec![PossibleDischarge::CapturedValueInput]
         }
         None => Vec::new(),
     });
-    discharges
+    possible_discharges
 }
 
 pub(super) fn run(args: ExplainIntegrityArgs, roots: CurrentRoots) -> Result<()> {
@@ -319,8 +326,10 @@ fn explain(
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;
+            let total_losses = losses.len();
             let losses = losses
                 .into_iter()
+                .take(limit.unwrap_or(total_losses))
                 .map(|loss| Loss {
                     excerpt: loss
                         .source_location
@@ -329,12 +338,18 @@ fn explain(
                     reason: loss.reason,
                     source_location: loss.source_location,
                 })
-                .collect();
+                .collect::<Vec<_>>();
+            let emitted_losses = losses.len();
             Ok(SourceUnitIntegrity {
                 id: node.id,
                 source_location: node.source_location,
                 complete: execution.is_none_or(|execution| execution.complete),
                 precision_losses: losses,
+                precision_loss_limit: LimitSectionReport {
+                    total: total_losses,
+                    emitted: emitted_losses,
+                    truncated: emitted_losses < total_losses,
+                },
                 evaluated_guards: execution
                     .into_iter()
                     .flat_map(|execution| {
@@ -388,7 +403,7 @@ fn explain(
                         receiver_roots: witness.receiver_roots.clone(),
                         receiver_global: witness.receiver_global.clone(),
                         target_slots: witness.target_slots.clone(),
-                        discharged_by: discharges(witness, reach),
+                        possible_discharges: possible_discharges(witness, reach),
                     }
                 })
                 .collect::<Vec<_>>();
@@ -627,6 +642,13 @@ fn render_text(report: &IntegrityExplanationReport, out: &mut String) {
                     .unwrap_or_default()
             );
         }
+        if unit.precision_loss_limit.truncated {
+            let _ = writeln!(
+                out,
+                "  showing {} of {} precision losses; use --all for the rest",
+                unit.precision_loss_limit.emitted, unit.precision_loss_limit.total
+            );
+        }
         let _ = writeln!(
             out,
             "  evaluated guards: {}",
@@ -696,11 +718,11 @@ fn render_text(report: &IntegrityExplanationReport, out: &mut String) {
             if let Some(property) = &witness.receiver_global {
                 let _ = writeln!(block, "    receiver: global `{property}`");
             }
-            if !witness.discharged_by.is_empty() {
+            if !witness.possible_discharges.is_empty() {
                 let _ = writeln!(
                     block,
-                    "    discharged by: {}",
-                    snake_set(&witness.discharged_by)
+                    "    possible discharges (audit candidates only): {}",
+                    snake_set(&witness.possible_discharges)
                 );
             }
         }

@@ -76,17 +76,19 @@ fn a_failed_guard_names_the_witnesses_behind_its_unknown_slots() {
             ])
         );
         let array_prototype = slot(&report, "%Array.prototype.map%");
+        assert_eq!(array_prototype["intact"], false);
         assert_eq!(reaches(array_prototype), [reach("unknown_receiver", 2)]);
         let delete = &array_prototype["witnesses"][0];
         assert_eq!(delete["receiver_global"], "registry");
         assert_eq!(
-            delete["discharged_by"],
+            delete["possible_discharges"],
             json!([
                 "intrinsics_never_written",
                 "predefined_globals_bundle_ownership",
                 "no_accessor_install_callables"
             ])
         );
+        assert!(delete.get("discharged_by").is_none());
     }
 }
 
@@ -118,6 +120,125 @@ fn a_slot_query_lists_only_the_witnesses_that_can_name_it() {
     assert_eq!(
         limited["witness_limit"],
         json!({"total": 2, "emitted": 1, "truncated": true})
+    );
+    assert_eq!(limited["intact"], false);
+    assert_eq!(
+        limited["witnesses"][0]["possible_discharges"],
+        json!(["intrinsics_never_written"])
+    );
+
+    let text = fixture.command(&[
+        "explain-integrity",
+        "--slot",
+        "Object.prototype",
+        "--limit",
+        "1",
+        "--format",
+        "text",
+    ]);
+    assert!(
+        text.status.success(),
+        "{}",
+        String::from_utf8_lossy(&text.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&text.stdout)
+            .contains("possible discharges (audit candidates only): intrinsics_never_written"),
+        "{}",
+        String::from_utf8_lossy(&text.stdout)
+    );
+}
+
+#[test]
+fn precision_loss_limit_applies_per_unit_after_location_filtering() {
+    let fixture = GraphFixture::new(
+        "Object.freeze = value => value;\n\
+         const values = Object.freeze([\n\
+         firstMissing(),\n\
+         secondMissing(),\n\
+         thirdMissing(),\n\
+         ]);\n\
+         console.log(values.length);\n",
+        &[],
+    );
+    let all = fixture.json(&["explain-integrity", "--id", "values", "--all"]);
+    let limited = fixture.json(&["explain-integrity", "--id", "values", "--limit", "1"]);
+    let [all_unit] = all["source_units"].as_array().unwrap().as_slice() else {
+        panic!("one values unit: {all}");
+    };
+    let limited_unit = limited["source_units"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|unit| unit["id"] == all_unit["id"])
+        .unwrap_or_else(|| panic!("limited values unit: {limited}"));
+    let all_losses = all_unit["precision_losses"].as_array().unwrap();
+    assert!(all_losses.len() >= 3, "{all_unit}");
+    let loss_total = all_losses.len();
+    assert!(
+        !all_unit["failed_guards"].as_array().unwrap().is_empty(),
+        "fixture keeps a failed guard in report: {all_unit}"
+    );
+    assert_eq!(
+        all_unit["precision_loss_limit"],
+        json!({"total": loss_total, "emitted": loss_total, "truncated": false})
+    );
+    let limited_losses = limited_unit["precision_losses"].as_array().unwrap();
+    assert_eq!(
+        limited_losses.len(),
+        1,
+        "--limit should bound this source unit's precision losses: {limited_unit}"
+    );
+    assert_eq!(limited_losses[0], all_losses[0]);
+    assert_eq!(
+        limited_unit["precision_loss_limit"],
+        json!({"total": loss_total, "emitted": 1, "truncated": true})
+    );
+    for field in [
+        "id",
+        "source_location",
+        "complete",
+        "evaluated_guards",
+        "failed_guards",
+    ] {
+        assert_eq!(limited_unit[field], all_unit[field], "{field} changed");
+    }
+
+    let at = fixture.json(&["explain-integrity", "--at", "main.js:5", "--limit", "1"]);
+    let [at_unit] = at["source_units"].as_array().unwrap().as_slice() else {
+        panic!("one source unit with a loss at line 5: {at}");
+    };
+    assert_eq!(at_unit["id"], all_unit["id"]);
+    assert_eq!(at_unit["precision_losses"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        at_unit["precision_losses"][0]["source_location"]["start_line"],
+        5
+    );
+    assert_eq!(
+        at_unit["precision_loss_limit"],
+        json!({"total": 1, "emitted": 1, "truncated": false})
+    );
+
+    let text = fixture.command(&[
+        "explain-integrity",
+        "--id",
+        "values",
+        "--limit",
+        "1",
+        "--format",
+        "text",
+    ]);
+    assert!(
+        text.status.success(),
+        "{}",
+        String::from_utf8_lossy(&text.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&text.stdout).contains(&format!(
+            "showing 1 of {loss_total} precision losses; use --all for the rest"
+        )),
+        "{}",
+        String::from_utf8_lossy(&text.stdout)
     );
 }
 
