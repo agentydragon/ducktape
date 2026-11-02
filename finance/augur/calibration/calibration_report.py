@@ -94,9 +94,13 @@ async def _run(argv: list[str] | None) -> int:
             market_evidence_max_age_seconds=args.market_evidence_max_age_seconds,
         )
 
-    known_evidence = [item for item in result.market_evidence if item.last_successful_fetch_at is not None]
-    unknown_count = len(result.market_evidence) - len(known_evidence)
-    oldest = min((item.last_successful_fetch_at for item in known_evidence), default=None)
+    known_fetch_times = []
+    for item in result.market_evidence:
+        fetched_at = item.last_successful_fetch_at
+        if fetched_at is not None:
+            known_fetch_times.append(fetched_at)
+    unknown_count = len(result.market_evidence) - len(known_fetch_times)
+    oldest = min(known_fetch_times, default=None)
     print("\nMARKET EVIDENCE (scraper last-successful-fetch metadata; not source observation time)")
     policy = (
         f"required max age: {result.market_evidence_max_age_seconds}s"
@@ -105,7 +109,7 @@ async def _run(argv: list[str] | None) -> int:
     )
     print(
         f"checked at {result.market_evidence_checked_at.isoformat()}; "
-        f"{len(known_evidence)} known, {unknown_count} unknown; {policy}"
+        f"{len(known_fetch_times)} known, {unknown_count} unknown; {policy}"
     )
     if oldest is not None:
         print(f"oldest known successful fetch: {oldest.isoformat()}")
