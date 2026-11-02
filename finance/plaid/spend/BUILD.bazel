@@ -59,7 +59,6 @@ py_library(
         "//finance/plaid/db:models",
         "@pypi//anyio",
         "@pypi//asyncpg",
-        "@pypi//babel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -403,6 +402,7 @@ py_library(
 py_library(
     name = "reconciliation_views",
     srcs = ["reconciliation_views.py"],
+    visibility = ["//finance/plaid/spend/testing:__pkg__"],
     deps = [
         ":allowance",
         ":reconciliation",
@@ -413,6 +413,7 @@ py_library(
 py_library(
     name = "configuration",
     srcs = ["configuration.py"],
+    visibility = ["//finance/plaid/spend/testing:__pkg__"],
     deps = [
         ":allowance",
         ":sustainability",

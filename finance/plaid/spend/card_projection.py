@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
+from typing import TypedDict
 from zoneinfo import ZoneInfo
 
 from babel.numbers import get_currency_precision
@@ -40,6 +41,18 @@ class CardAccount:
     last_synced_at: datetime | None
 
 
+class _CardFields(TypedDict):
+    account_id: str
+    label: str
+    account_name: str
+    institution_name: str | None
+    mask: str | None
+    currency: str
+    limit_minor_units: int | None
+    alert_threshold_percent: int | None
+    last_synced_at: datetime | None
+
+
 def project_card(
     account: CardAccount,
     config: CardConfig,
@@ -57,7 +70,7 @@ def project_card(
     """
     if config.account_id != account.account_id:
         raise ValueError("card configuration and account IDs differ")
-    common = {
+    common: _CardFields = {
         "account_id": account.account_id,
         "label": config.label,
         "account_name": account.account_name,

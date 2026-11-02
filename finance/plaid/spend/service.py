@@ -13,7 +13,6 @@ from decimal import Decimal
 
 import anyio
 import asyncpg
-from babel.numbers import get_currency_precision
 from sqlalchemy import text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import SQLAlchemyError
@@ -22,10 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from finance.plaid.db.models import async_session_factory
 from finance.plaid.spend.allowance import (
     AllowanceView,
-    Disposition,
     EstimatePeriodId,
     ForecastView,
-    Kind,
     PaceAlert,
     Period,
     PeriodId,

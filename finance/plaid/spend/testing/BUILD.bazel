@@ -14,6 +14,20 @@ py_library(
     srcs = ["dashboard.py"],
     visibility = ["//finance/plaid/spend:__subpackages__"],
     deps = [
+        ":ledger",
+        "//finance/plaid/spend:allowance",
+        "//finance/plaid/spend:card_projection",
+        "//finance/plaid/spend:configuration",
+        "//finance/plaid/spend:models",
+        "//finance/plaid/spend:reconciliation_views",
+    ],
+)
+
+py_library(
+    name = "ledger",
+    srcs = ["ledger.py"],
+    visibility = ["//finance/plaid/spend:__subpackages__"],
+    deps = [
         "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:models",
     ],
