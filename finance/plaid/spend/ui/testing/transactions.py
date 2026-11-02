@@ -38,6 +38,13 @@ from finance.plaid.spend.testing import dashboard
 _OWN_TRANSFERS = AnalysisCategoryView(id="own_transfers", label="Own-account transfers", color="#64748B")
 _TAXES = AnalysisCategoryView(id="taxes", label="Taxes", color="#B45309")
 _UNCLASSIFIED = AnalysisCategoryView(id="unclassified", label="Unclassified", color="#D97706")
+_SHIPPING = AnalysisCategoryView(id="shipping", label="Document shipping", color="#0F766E")
+_SHIPPING_RULE = Rule(
+    condition=NamePrefix(field="name", prefix="UPS"),
+    kind=Kind.FIXED,
+    analysis_category="shipping",
+    description="Required document shipping for a synthetic example.",
+)
 
 
 def _pace_effects(amount: int = 0) -> list[PaceEffect]:
@@ -127,12 +134,7 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             disposition=Disposition.FIXED,
             rule_number=2,
             effective_kind=Kind.FIXED,
-            rule=Rule(
-                condition=NamePrefix(field="name", prefix="UPS"),
-                kind=Kind.FIXED,
-                analysis_category="shipping",
-                description="Required document shipping for a synthetic example.",
-            ),
+            rule=_SHIPPING_RULE,
             allowance_minor_units=0,
             pace_effects=_pace_effects(),
             statement_minor_units=1850,
@@ -140,7 +142,7 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             pfc_primary="TRANSPORTATION",
             pfc_detailed="TRANSPORTATION_SHIPPING",
             merchant_category_code="4215",
-            category=AnalysisCategoryView(id="shipping", label="Document shipping", color="#0F766E"),
+            category=_SHIPPING,
             counterparties=[
                 PlaidCounterparty(
                     name="Example Shipping",
@@ -204,6 +206,46 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             pfc_detailed="GENERAL_MERCHANDISE_OTHER",
             merchant_category_code=None,
             category=_UNCLASSIFIED,
+        ),
+        SpendTransactionRow(
+            date=date(2026, 10, 12),
+            account_label="Example card",
+            name="UPS SHIPPING SERVICE",
+            merchant_name="Example Courier",
+            amount_minor_units=22850,
+            currency="USD",
+            pending=False,
+            allowance_in_scope=True,
+            disposition=Disposition.FIXED,
+            rule_number=2,
+            effective_kind=Kind.FIXED,
+            rule=_SHIPPING_RULE,
+            allowance_minor_units=0,
+            pace_effects=_pace_effects(),
+            statement_minor_units=22850,
+            statement_reason=StatementReason.COUNTED,
+            pfc_primary="TRANSPORTATION",
+            pfc_detailed="TRANSPORTATION_SHIPPING",
+            merchant_category_code="4215",
+            category=_SHIPPING,
+        ),
+        SpendTransactionRow(
+            date=date(2026, 10, 11),
+            account_label="New example card",
+            name="EXAMPLE INITIAL PURCHASE",
+            merchant_name="Example Shop",
+            amount_minor_units=3900,
+            currency="USD",
+            pending=False,
+            allowance_in_scope=False,
+            disposition=None,
+            allowance_minor_units=0,
+            pace_effects=_pace_effects(),
+            statement_minor_units=3900,
+            statement_reason=StatementReason.COUNTED,
+            pfc_primary="GENERAL_MERCHANDISE",
+            pfc_detailed="GENERAL_MERCHANDISE_OTHER",
+            merchant_category_code=None,
         ),
         _checking_row(
             when=date(2026, 10, 11),
@@ -346,6 +388,7 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             category=_UNCLASSIFIED,
         ),
     ]
+    rows.sort(key=lambda row: (row.date, abs(row.amount_minor_units)), reverse=True)
     shown = [row for row in rows if row.date >= PeriodId(period).start(today, date(2026, 9, 25))]
     return SpendTransactionsView(
         generated_at=datetime(2026, 10, 15, 12, tzinfo=UTC),
