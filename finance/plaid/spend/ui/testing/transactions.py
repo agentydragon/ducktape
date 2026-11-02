@@ -53,8 +53,8 @@ def _checking_row(
     name: str,
     amount_minor_units: int,
     disposition: Disposition,
-    effective_kind: Kind,
-    rule: Rule,
+    effective_kind: Kind | None,
+    rule: Rule | None,
     pfc_primary: str,
     pfc_detailed: str,
     category: AnalysisCategoryView,
@@ -166,6 +166,19 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
                 ),
             ),
         ),
+        _checking_row(
+            when=date(2026, 10, 10),
+            name="EXAMPLE GROCERIES",
+            amount_minor_units=7250,
+            disposition=Disposition.COUNTED,
+            effective_kind=Kind.FLEXIBLE,
+            rule=Rule(condition=NamePrefix(field="name", prefix="EXAMPLE GROCERIES"), kind=Kind.FLEXIBLE),
+            allowance_minor_units=7250,
+            pace_effects=_pace_effects(7250),
+            pfc_primary="FOOD_AND_DRINK",
+            pfc_detailed="FOOD_AND_DRINK_GROCERIES",
+            category=_UNCLASSIFIED,
+        ),
         SpendTransactionRow(
             date=date(2026, 10, 13),
             account_label="Example card",
@@ -237,7 +250,7 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             when=date(2026, 10, 2),
             name="EXAMPLE TRAVEL PURCHASE",
             merchant_name="Example Travel",
-            amount_minor_units=53500,
+            amount_minor_units=41250,
             disposition=Disposition.COUNTED,
             rule_number=3,
             effective_kind=Kind.FLEXIBLE,
@@ -247,9 +260,9 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
                 analysis_category="travel",
                 description="Synthetic discretionary trip purchase.",
             ),
-            allowance_minor_units=53500,
+            allowance_minor_units=41250,
             pace_effects=[
-                PaceEffect(period_id=period_id, amount_minor_units=53500 if period_id == PeriodId.ROLLING_30D else 0)
+                PaceEffect(period_id=period_id, amount_minor_units=41250 if period_id == PeriodId.ROLLING_30D else 0)
                 for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
             ],
             pfc_primary="TRAVEL",
@@ -310,24 +323,19 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             name="EXAMPLE TAX PAYMENT CAD",
             amount_minor_units=7_200,
             currency="CAD",
-            disposition=Disposition.EXCLUDED,
-            effective_kind=Kind.EXCLUDED,
-            rule=Rule(
-                condition=NamePrefix(field="name", prefix="EXAMPLE TAX"),
-                kind=Kind.EXCLUDED,
-                analysis_category="taxes",
-                description="Synthetic foreign-currency tax payment accounted for separately.",
-            ),
+            disposition=Disposition.OTHER_CURRENCY,
+            effective_kind=None,
+            rule=None,
             pfc_primary="TAXES",
             pfc_detailed="TAXES_OTHER_TAXES",
-            category=_TAXES,
+            category=_UNCLASSIFIED,
         ),
     ]
-    shown = [row for row in rows if row.date >= PeriodId(period).start(today, date(2026, 10, 1))]
+    shown = [row for row in rows if row.date >= PeriodId(period).start(today, date(2026, 9, 25))]
     return SpendTransactionsView(
         generated_at=datetime(2026, 10, 15, 12, tzinfo=UTC),
         requested_period_id=period,
-        period=Period.for_id(PeriodId(period), today, date(2026, 10, 1)),
+        period=Period.for_id(PeriodId(period), today, date(2026, 9, 25)),
         summary=TransactionPeriodSummary(
             transaction_count=len(shown),
             net_allowance_spend_minor_units=sum(row.allowance_minor_units for row in shown),
@@ -349,14 +357,6 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
                     credit_minor_units=0,
                     transaction_count=1,
                     pending_count=1,
-                ),
-                ExcludedFlowSummary(
-                    category=_TAXES,
-                    currency="CAD",
-                    debit_minor_units=7_200,
-                    credit_minor_units=0,
-                    transaction_count=1,
-                    pending_count=0,
                 ),
             ],
         ),

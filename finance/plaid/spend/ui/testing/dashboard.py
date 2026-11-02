@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from finance.plaid.spend.allowance import (
@@ -87,11 +87,13 @@ def unresolved_reversal_pair() -> ReversalPair:
 def allowance(warmup: bool = False, estimate_period_id: EstimatePeriodId | None = None) -> AllowanceView:
     today = date(2026, 10, 15)
     estimate_period_id = estimate_period_id or PeriodId.ROLLING_7D
-    activation = today if warmup else date(2026, 10, 1)
+    activation = today if warmup else date(2026, 9, 25)
+    daily_pace = 1250 if estimate_period_id == PeriodId.ROLLING_7D else 2380
+    alert = PaceAlert.NORMAL if estimate_period_id == PeriodId.ROLLING_7D else PaceAlert.WARNING
     spend_amounts = {
-        PeriodId.CREDIT_CYCLE: 55000,
-        PeriodId.CALENDAR_MONTH: 55000,
-        PeriodId.YEAR_TO_DATE: 55000,
+        PeriodId.CREDIT_CYCLE: 50000,
+        PeriodId.CALENDAR_MONTH: 50000,
+        PeriodId.YEAR_TO_DATE: 50000,
         PeriodId.ROLLING_7D: 8750,
         PeriodId.ROLLING_30D: 50000,
     }
@@ -108,37 +110,38 @@ def allowance(warmup: bool = False, estimate_period_id: EstimatePeriodId | None 
         time_zone="UTC",
         currency="USD",
         monthly_minor_units=70000,
-        # Deliberately differs from the monthly-derived rate to verify both UI displays use the API field.
-        daily_reference_minor_units=2800,
+        daily_reference_minor_units=2300,
         activation_at=activation,
         available_minor_units=70000 if warmup else 20000,
-        next_credit_at=datetime(2026, 10, 25, tzinfo=UTC),
-        posted_minor_units=0 if warmup else 52500,
-        pending_minor_units=0 if warmup else 2500,
+        next_credit_at=datetime(2026, 11, 15, tzinfo=UTC) if warmup else datetime(2026, 10, 25, tzinfo=UTC),
+        posted_minor_units=0 if warmup else 48500,
+        pending_minor_units=0 if warmup else 1500,
         review_minor_units=0 if warmup else 1500,
-        review_transaction_count=0 if warmup else 2,
-        unmatched_refunds_minor_units=0,
+        review_transaction_count=0 if warmup else 1,
+        unmatched_refunds_minor_units=0 if warmup else 4200,
         spend_periods=spend_periods,
         recorded_pace_periods=[
             RecordedPacePeriod(
                 period=Period.for_id(period_id, today),
                 observed_daily_minor_units=None if warmup else observed,
-                unmatched_charges=UnmatchedCharges(count=0 if warmup else 2, amount_minor_units=0 if warmup else 300),
+                unmatched_charges=UnmatchedCharges(count=0 if warmup else 1, amount_minor_units=0 if warmup else 1500),
             )
-            for period_id, observed in ((PeriodId.ROLLING_7D, 1250), (PeriodId.ROLLING_30D, 1000))
+            for period_id, observed in ((PeriodId.ROLLING_7D, 1250), (PeriodId.ROLLING_30D, 1666))
         ],
         forecast=ForecastView(
             basis_period=Period.for_id(estimate_period_id, today),
-            daily_pace_minor_units=None if warmup else (1250 if estimate_period_id == PeriodId.ROLLING_7D else 1000),
+            daily_pace_minor_units=None if warmup else daily_pace,
             projected_cycle_end_minor_units=None
             if warmup
-            else (7500 if estimate_period_id == PeriodId.ROLLING_7D else 10000),
-            estimated_exhaustion_at=None if warmup else datetime(2026, 10, 31, tzinfo=UTC),
-            alert_state=PaceAlert.UNAVAILABLE if warmup else PaceAlert.NORMAL,
+            else (7500 if estimate_period_id == PeriodId.ROLLING_7D else -3800),
+            estimated_exhaustion_at=None
+            if warmup
+            else datetime(2026, 10, 15, 12, tzinfo=UTC) + timedelta(days=20000 / daily_pace),
+            alert_state=PaceAlert.UNAVAILABLE if warmup else alert,
         ),
-        spending_signal=PaceAlert.UNAVAILABLE if warmup else PaceAlert.NORMAL,
+        spending_signal=PaceAlert.UNAVAILABLE if warmup else alert,
         last_synced_at=datetime(2026, 10, 15, 11, tzinfo=UTC),
-        prior_carry_minor_units=0 if warmup else 5000,
+        prior_carry_minor_units=0,
         note="Provisional: Reversal pair example-reversal-needs-review: "
         "Original selector matched 0 retained transactions; exactly one is required.",
     )
@@ -198,7 +201,7 @@ def configuration() -> SpendConfigurationView:
         ],
         allowance=AllowanceConfigurationView(
             monthly_minor_units=70000,
-            activation_at=date(2026, 10, 1),
+            activation_at=date(2026, 9, 25),
             currency="USD",
             spending_account_count=1,
             max_sync_age_hours=72,
