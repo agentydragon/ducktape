@@ -277,7 +277,7 @@ impl fmt::Display for CommutingStatementsDiagnostic {
 pub enum DependencyGraphBuildError {
     DuplicateTopLevelDeclaration(DuplicateTopLevelDeclaration),
     CommutingStatementsContradicted(CommutingStatementsContradiction),
-    CommutingStatementsUnused(CommutingStatementsUnused),
+    CommutingStatementsUnused(Box<CommutingStatementsUnused>),
 }
 
 impl DependencyGraphBuildError {
@@ -288,9 +288,9 @@ impl DependencyGraphBuildError {
             Self::CommutingStatementsContradicted(error) => {
                 Some(CommutingStatementsDiagnostic::Contradicted(error.clone()))
             }
-            Self::CommutingStatementsUnused(error) => {
-                Some(CommutingStatementsDiagnostic::Unused(error.clone()))
-            }
+            Self::CommutingStatementsUnused(error) => Some(CommutingStatementsDiagnostic::Unused(
+                error.as_ref().clone(),
+            )),
             Self::DuplicateTopLevelDeclaration(_) => None,
         }
     }
@@ -864,7 +864,7 @@ fn apply_commuting_statements(
         }
         if inertable.is_empty() {
             return Err(DependencyGraphBuildError::CommutingStatementsUnused(
-                CommutingStatementsUnused {
+                Box::new(CommutingStatementsUnused {
                     spec_location: premise.spec_location.clone(),
                     a: premise.a.source_unit,
                     a_binding: premise.a.selected_binding.clone(),
@@ -879,7 +879,7 @@ fn apply_commuting_statements(
                     } else {
                         UnusedPremiseReason::NoSequencedEdge
                     },
-                },
+                }),
             ));
         }
         for id in &inertable {
