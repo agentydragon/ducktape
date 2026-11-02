@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import re
 from typing import Any
 
@@ -35,13 +37,48 @@ def _panels(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return panels
 
 
+def _fingerprint(value: dict[str, Any]) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def query_fingerprint(panel: dict[str, Any], target: dict[str, Any]) -> str:
+    """Bind a recorded response to the source query and its effective datasource."""
+    return _fingerprint({"datasource": target.get("datasource", panel.get("datasource")), "target": target})
+
+
+def variable_fingerprint(variable: dict[str, Any]) -> str:
+    """Bind recorded choices to the query-variable declaration that produced them."""
+    return _fingerprint(variable)
+
+
+def _is_empty_result(result: dict[str, Any]) -> bool:
+    frames = result["frames"]
+    return not frames or all(
+        not any(value is not None for column in frame.get("data", {}).get("values", []) for value in column)
+        for frame in frames
+    )
+
+
 def validate_fixture(dashboard: dict[str, Any], fixture: dict[str, Any]) -> None:
     """Require an explicit response for every visible target, including lazy panels."""
     panels = fixture["panels"]
+    fingerprints = fixture.get("query_fingerprints", {})
+    variable_fingerprints = fixture.get("variable_fingerprints", {})
+    empty_reasons = fixture.get("empty_reasons", {})
+    capture_corrections = fixture.get("capture_corrections", {})
     variables = fixture.get("variables", {})
     for variable in dashboard.get("templating", {}).get("list", []):
-        if variable.get("type") == "query" and variable["name"] not in variables:
-            raise ValueError(f"missing recorded choices for dashboard variable {variable['name']}")
+        if variable.get("type") == "query":
+            name = variable["name"]
+            if name not in variables:
+                raise ValueError(f"missing recorded choices for dashboard variable {name}")
+            expected = variable_fingerprint(variable)
+            if variable_fingerprints.get(name) != expected:
+                raise ValueError(
+                    f"stale or missing query-variable fingerprint for dashboard variable {name}; "
+                    f"review its recorded choices, then use {expected}"
+                )
     for panel in _panels(dashboard.get("panels", [])):
         panel_id = str(panel.get("id"))
         for target in panel.get("targets", []):
@@ -50,16 +87,34 @@ def validate_fixture(dashboard: dict[str, Any], fixture: dict[str, Any]) -> None
             ref = target.get("refId")
             if panel_id not in panels or ref not in panels[panel_id]:
                 raise ValueError(f"missing recorded result for panel {panel_id}, query {ref}")
+            key = f"{panel_id}/{ref}"
+            expected = query_fingerprint(panel, target)
+            if fingerprints.get(key) != expected:
+                raise ValueError(
+                    f"stale or missing query fingerprint for panel {panel_id}, query {ref}; "
+                    f"review its recorded response, then use {expected}"
+                )
             result = panels[panel_id][ref]
             if "variants" in result:
                 variable = result["variant_variable"]
                 if variable not in variables or set(variables[variable]) - result["variants"].keys():
                     raise ValueError(f"missing recorded variants for panel {panel_id}, query {ref}")
-                results = result["variants"].values()
+                results = [(f"{key}/{variant}", item) for variant, item in result["variants"].items()]
             else:
-                results = [result]
-            if any(not isinstance(item.get("frames"), list) for item in results):
-                raise ValueError(f"missing recorded frames for panel {panel_id}, query {ref}")
+                results = [(key, result)]
+            for result_key, item in results:
+                if not isinstance(item.get("frames"), list):
+                    raise ValueError(f"missing recorded frames for panel {panel_id}, query {ref}")
+                reason = empty_reasons.get(result_key)
+                if _is_empty_result(item) and (not isinstance(reason, str) or not reason.strip()):
+                    raise ValueError(f"missing empty-result reason for panel {panel_id}, query {ref}")
+            if key in capture_corrections:
+                correction = capture_corrections[key]
+                if not isinstance(correction, dict) or any(
+                    not isinstance(correction.get(field), str) or not correction[field].strip()
+                    for field in ("query", "reason")
+                ):
+                    raise ValueError(f"invalid capture correction for panel {panel_id}, query {ref}")
 
 
 def recorded_result(query: dict[str, Any], fixture: dict[str, Any], dashboard: dict[str, Any]) -> dict[str, Any]:

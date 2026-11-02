@@ -572,5 +572,15 @@
   },
   "capture_notes": {
     "3/A": "live query sorted ascending and requested as a table for Grafana datasource compatibility"
+  },
+  "query_fingerprints": {
+    "1/A": "ddec1672082d94c5f82d7d48179c5235e0b44d75a7f06cdc69d4b8d33c023184",
+    "2/A": "6cb14b26c21378799d589534232de4b4cb8b0a21bc91fb5fe7f06dc1856b39a0",
+    "3/A": "bb510b52168628e321b8c4ec7c534654c14b7362aae2686c2076cc802a23b0c5",
+    "4/A": "9a407b1ada2ca5c87899d0d623838abb36b6d0fe46f68883dd92aea6719f8063"
+  },
+  "variable_fingerprints": {},
+  "empty_reasons": {
+    "4/A": "Recorded capture returned no Claude extra-usage samples in this window."
   }
 }

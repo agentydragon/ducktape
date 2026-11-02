@@ -5313,5 +5313,20 @@
   },
   "variables": {
     "bucket": ["bucket-1", "bucket-2", "bucket-3", "bucket-4", "bucket-5", "bucket-6", "bucket-7", "bucket-8"]
+  },
+  "query_fingerprints": {
+    "2/A": "0f5f9f6f476d453b0bf78e1e754b8746448f47f739d17a7ed885faf8b9e9cbb6",
+    "3/A": "da07f57f947342aebb8abed74894bab860a9d9fe702fc3b19415d898d45290b4",
+    "4/A": "541f0635d9929e4210acb27c8592d9a0029aa776c27ebe711664a251f56ab067",
+    "5/A": "56a1740c4452ef31e419ad599826f07f3a715c5374a15f39894eb96d23e30e5e",
+    "6/A": "1e5a6b911bb8a10eb9c4a55b8d2488efa263b778752c797a4aab948a562dec48",
+    "7/A": "06e06bc7dc560b58f98b37e953f25c5e60b21a082e386accb86edc06c9df51d4",
+    "8/A": "94f13367554da91ac2840188ba57d2aca33b9d744c27621e59d570c848095659",
+    "9/A": "1869e8770dbbd3262d9e318830ee57afa8fd1ee8185a2b623f6d9d78f4e059ef",
+    "10/A": "094ae1a2d181d9f95a977d7ad52e2fd53d3b1916841ab5ee091b7e41898c7f9e",
+    "11/A": "1cdddc6fd71a5da2d977742e8ba46cea3b481a439f92cf8085c30c4635639401"
+  },
+  "variable_fingerprints": {
+    "bucket": "b5cc585aaa91f4b1d12aab9fb189fc10666da6fd5c2ea1396268477ec9c9add8"
   }
 }

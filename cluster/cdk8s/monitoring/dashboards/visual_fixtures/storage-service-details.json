@@ -12554,5 +12554,22 @@
   },
   "capture_notes": {
     "time_range": "Captured from one historical 24-hour window with All selected; identifying labels anonymized."
+  },
+  "query_fingerprints": {
+    "6/A": "bfcaa2fa602b3f534658f127bdcf610fcc909384fe06c3d01a4b952cc8995192",
+    "7/A": "ebfc208af446ca6ce587e6e251b8ba03e6697ad522e1d5729313bb1838d633eb",
+    "8/A": "28091d1ec8c8dcdd80f98af65f72f020448d746b1c9c4eca61d0b42bfef96552",
+    "9/A": "de6a549dce2b8102f137cc1bd6563baa4b53e4e27bdea5ffe0f30ce4c5c1938b",
+    "14/A": "e4198be32b66ec591030625580de0cc8a1e5c859b6c4f23415b10c06f445a451",
+    "15/A": "38bf3c9c4ed9459818eaad4c95cae6d6851acbd44849a786b269331294ee2517",
+    "10/A": "fe570ffddb35da5722b4abebb620c0b0773948f39d731a0db1a91c29662e23a4",
+    "11/A": "a42e4945c38de64d66dc6238c93e8a7b25c27fb3d971ee75b97e4d9aed6653c5",
+    "12/A": "02d02ebe4641213ccd7ac88f3bf0cbea9975b1b4a2c742fa372a4cb7521f8d6f",
+    "13/A": "983e976e857c0aaf50991889fc5f3c74af7e4710b8a31ea710334ffabb365efd",
+    "16/A": "5f319ec57b842643561a3171bd86912827d9df91c5a4c133124e7914eea5ec6d",
+    "17/A": "2cb8b60d2e5c741158c27847e735f9de0732499db04458980ce9892cdd3db962"
+  },
+  "variable_fingerprints": {
+    "node": "5415c3a8bd10d15d670b2df0e9d250d1bb79608e050c31fba66702bcd995bdfb"
   }
 }
