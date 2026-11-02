@@ -18,13 +18,6 @@
       "status": "deferred"
     },
     {
-      "id": "D",
-      "priority": "Medium",
-      "category": "Dead target candidate",
-      "title": "Drop the unused Plaid migration wrapper, not the migrations",
-      "refresh_status": "present_at_refresh"
-    },
-    {
       "id": "F",
       "priority": "Medium",
       "category": "Dead target candidate",
@@ -112,8 +105,16 @@
     "External consumers and dynamically constructed labels not exhaustively known",
     "The original audit did not implement its recommendations; status fields record subsequent work"
   ],
-  "burndown_updated_utc": "2026-11-02T06:43:45Z",
-  "dispatched_in_progress": [],
+  "burndown_updated_utc": "2026-11-02T11:21:18Z",
+  "dispatched_in_progress": [
+    {
+      "id": "D",
+      "pull_requests": [
+        13847
+      ],
+      "status_at_update": "open"
+    }
+  ],
   "status_refresh": {
     "source_commit": "2cbcf945b203c1260e10c8e32a6b6e26025f254d",
     "checked_utc": "2026-11-02T11:05:00Z",
