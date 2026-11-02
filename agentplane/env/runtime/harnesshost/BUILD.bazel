@@ -77,6 +77,7 @@ go_test(
         "//agentplane/env/cosi",
         "//agentplane/env/runtime:runtime_service_go_proto",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/env/runtime/cosistate",
         "//agentplane/env/runtime/harnesshost/codexappserver",
         "//agentplane/env/runtime/harnesshost/harness",
         "//agentplane/env/runtime/harnesshost/journal",

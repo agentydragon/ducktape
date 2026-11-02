@@ -69,7 +69,8 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	root := t.TempDir()
-	store, err := retained.NewStore(filepath.Join(root, "sessions"))
+	resources := state.WrapCore(namespaced.NewState(inmem.Build))
+	store, err := retained.NewStore(filepath.Join(root, "sessions"), resources)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +83,6 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	if err := store.Write("one-session", record); err != nil {
 		t.Fatal(err)
 	}
-	resources := state.WrapCore(namespaced.NewState(inmem.Build))
 	publishErrors := make(chan error, 16)
 	var publicationMu sync.Mutex
 	publications := map[string][]sessionpb.SetupState{}
@@ -234,7 +234,8 @@ func TestReopenRetryClearsSealedAcknowledgementAfterJournalReopened(t *testing.T
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	root := t.TempDir()
-	store, err := retained.NewStore(filepath.Join(root, "sessions"))
+	resources := state.WrapCore(namespaced.NewState(inmem.Build))
+	store, err := retained.NewStore(filepath.Join(root, "sessions"), resources)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +269,6 @@ func TestReopenRetryClearsSealedAcknowledgementAfterJournalReopened(t *testing.T
 		t.Fatal(err)
 	}
 	environment := Environment{IncarnationUID: "current-incarnation"}
-	resources := state.WrapCore(namespaced.NewState(inmem.Build))
 	var ackPublications []retained.Acknowledgement
 	ackPublishCalls := 0
 	publishErr := errors.New("injected acknowledgement publication failure")
@@ -364,7 +364,8 @@ func TestReopenRetryClearsSealedAcknowledgementAfterJournalReopened(t *testing.T
 func TestCodexExitBeforeProcessInstall(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	store, err := retained.NewStore(filepath.Join(root, "sessions"))
+	resources := state.WrapCore(namespaced.NewState(inmem.Build))
+	store, err := retained.NewStore(filepath.Join(root, "sessions"), resources)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -388,7 +389,7 @@ func TestCodexExitBeforeProcessInstall(t *testing.T) {
 	t.Cleanup(func() { _ = j.Close() })
 	s := newSession(sessionDependencies{
 		environmentState: func() Environment { return Environment{IncarnationUID: "test-incarnation"} },
-		ctx:              ctx, state: state.WrapCore(namespaced.NewState(inmem.Build)), store: store,
+		ctx:              ctx, state: resources, store: store,
 		changed: func() {}, fail: func(err error) { t.Error(err) }, publish: func(*Session, bool) {},
 	}, "codex-session", &record, j)
 	attachment := s.appServerAttachment()

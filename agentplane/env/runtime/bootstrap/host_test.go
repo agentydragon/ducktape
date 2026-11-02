@@ -13,9 +13,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
+	sandboxes "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -28,6 +32,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func openTestState(stateDir string) (state.State, io.Closer, error) {
+	return cosistate.Open(stateDir, lifecycle.Namespace, SelectionCodec(), retained.SessionRecordCodec())
+}
 
 const bootstrapTestTimeout = 10 * time.Second
 
@@ -52,7 +60,7 @@ func (failedBackingStore) Destroy(context.Context, resource.Type, resource.Point
 
 func TestFailedDurablePutDoesNotExposeSelection(t *testing.T) {
 	failure := errors.New("backing store write failed")
-	backing := selectionBackingStore{BackingStore: failedBackingStore{err: failure}}
+	backing := failedBackingStore{err: failure}
 	build := inmem.NewStateWithOptions(inmem.WithBackingStore(backing))
 	store := state.WrapCore(namespaced.NewState(func(ns resource.Namespace) state.CoreState { return build(ns) }))
 	if err := publish(t.Context(), store, ResourceID, Selection{Script: "printf effect"}); !errors.Is(err, failure) {
@@ -60,6 +68,26 @@ func TestFailedDurablePutDoesNotExposeSelection(t *testing.T) {
 	}
 	if _, found, err := ReadSelection(t.Context(), store); err != nil || found {
 		t.Fatalf("selection after failed durable write = (%t, %v), want absent", found, err)
+	}
+}
+
+func TestFailedDurablePutDoesNotExposeSession(t *testing.T) {
+	failure := errors.New("backing store write failed")
+	build := inmem.NewStateWithOptions(inmem.WithBackingStore(failedBackingStore{err: failure}))
+	resources := state.WrapCore(namespaced.NewState(func(ns resource.Namespace) state.CoreState { return build(ns) }))
+	sessions, err := retained.NewStore(t.TempDir(), resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := retained.NewRecord(&sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", Model: "model"}, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sessions.Write("session-1", record); !errors.Is(err, failure) {
+		t.Fatalf("write = %v, want backing failure", err)
+	}
+	if exists, err := sessions.Exists("session-1"); err != nil || exists {
+		t.Fatalf("Session after failed write = %t, %v", exists, err)
 	}
 }
 
@@ -72,7 +100,7 @@ func (s selectionPublicationFailureState) Modify(ctx context.Context, value reso
 
 func TestSelectionPublicationFailureDoesNotLaunch(t *testing.T) {
 	stateDir := t.TempDir()
-	store, closer, err := OpenState(stateDir)
+	store, closer, err := openTestState(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +250,7 @@ func newHostTestRuntime(t *testing.T, script *string, stateDir string, admission
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	store, storeCloser, err := OpenState(stateDir)
+	store, storeCloser, err := openTestState(stateDir)
 	if err != nil {
 		cancel()
 		t.Fatal(err)
@@ -392,7 +420,7 @@ func TestInterruptedAttemptIsReconstructedWithoutRerunning(t *testing.T) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	store, closer, err := OpenState(stateDir)
+	store, closer, err := openTestState(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -431,7 +459,7 @@ func TestInterruptedAttemptIsReconstructedWithoutRerunning(t *testing.T) {
 func TestSelectionWithoutTerminalEventIsInterruptedAfterRestart(t *testing.T) {
 	stateDir := t.TempDir()
 	script := fmt.Sprintf("printf ran > %q", filepath.Join(stateDir, "effect"))
-	store, closer, err := OpenState(stateDir)
+	store, closer, err := openTestState(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,7 +484,7 @@ func TestSelectionWithoutTerminalEventIsInterruptedAfterRestart(t *testing.T) {
 func TestOutputWithoutTerminalEventIsInterruptedAfterRestart(t *testing.T) {
 	stateDir := t.TempDir()
 	script := fmt.Sprintf("printf ran > %q", filepath.Join(stateDir, "effect"))
-	store, closer, err := OpenState(stateDir)
+	store, closer, err := openTestState(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -492,14 +520,33 @@ func TestOutputWithoutTerminalEventIsInterruptedAfterRestart(t *testing.T) {
 	}
 }
 
-func TestSelectionIsOnlyRestoredResource(t *testing.T) {
+func TestOnlyDurableResourcesAreRestored(t *testing.T) {
 	stateDir := t.TempDir()
-	store, closer, err := OpenState(stateDir)
+	store, closer, err := openTestState(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	script := string([]byte{0xff, 0x00, 'x'})
 	if err := publish(t.Context(), store, ResourceID, Selection{Script: script}); err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := retained.NewStore(filepath.Join(stateDir, "sessions"), store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	budget := 1234
+	native := "native-1"
+	record, err := retained.NewRecord(&sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", Model: "model"}, "printf exact", &budget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.NativeSessionID = &native
+	record.ExecutionPrincipal = &delegationpb.ServiceAccountIdentity{Account: &sandboxes.ServiceAccount{Namespace: "ns", Name: "account"}, Uid: "uid"}
+	if err := sessions.Write("session-1", record); err != nil {
+		t.Fatal(err)
+	}
+	record.Model = "new-model"
+	if err := sessions.Write("session-1", record); err != nil {
 		t.Fatal(err)
 	}
 	if err := publish(t.Context(), store, ResourceID, Request{Requested: true}); err != nil {
@@ -511,11 +558,30 @@ func TestSelectionIsOnlyRestoredResource(t *testing.T) {
 	if err := closer.Close(); err != nil {
 		t.Fatal(err)
 	}
-	restored, restoredCloser, err := OpenState(stateDir)
+	restored, restoredCloser, err := openTestState(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer restoredCloser.Close()
+	t.Cleanup(func() { _ = restoredCloser.Close() })
+	restoredSessions, err := retained.NewStore(filepath.Join(stateDir, "sessions"), restored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err := restoredSessions.SessionIDs()
+	if err != nil || len(ids) != 1 || ids[0] != "session-1" {
+		t.Fatalf("restored Session IDs = %v, %v", ids, err)
+	}
+	restoredRecord, err := restoredSessions.Read("session-1")
+	if err != nil || restoredRecord.Model != "new-model" || restoredRecord.SetupScript != record.SetupScript || restoredRecord.EventSourceID != record.EventSourceID || restoredRecord.NativeSessionID == nil || *restoredRecord.NativeSessionID != native || restoredRecord.TotalContextBudgetTokens == nil || *restoredRecord.TotalContextBudgetTokens != budget || restoredRecord.ExecutionPrincipal.GetAccount().GetName() != "account" || restoredRecord.ExecutionPrincipal.GetUid() != "uid" {
+		t.Fatalf("restored Session record = %+v, %v", restoredRecord, err)
+	}
+	restoredRecord.Model = "after-restart"
+	if err := restoredSessions.Write("session-1", restoredRecord); err != nil {
+		t.Fatal(err)
+	}
+	if updated, err := restoredSessions.Read("session-1"); err != nil || updated.Model != "after-restart" {
+		t.Fatalf("updated restored Session = %+v, %v", updated, err)
+	}
 	selection, found, err := ReadSelection(t.Context(), restored)
 	if err != nil || !found || selection.Script != script {
 		t.Fatalf("restored selection = (%+v, %t, %v)", selection, found, err)
@@ -526,11 +592,26 @@ func TestSelectionIsOnlyRestoredResource(t *testing.T) {
 	if _, found, err := ReadStatus(t.Context(), restored); err != nil || found {
 		t.Fatalf("restored bootstrap status = (%t, %v), want absent", found, err)
 	}
+	if err := restoredCloser.Close(); err != nil {
+		t.Fatal(err)
+	}
+	again, againCloser, err := openTestState(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer againCloser.Close()
+	againSessions, err := retained.NewStore(filepath.Join(stateDir, "sessions"), again)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated, err := againSessions.Read("session-1"); err != nil || updated.Model != "after-restart" {
+		t.Fatalf("reloaded Session after update = %+v, %v", updated, err)
+	}
 }
 
 func TestDifferingSelectedScriptIsRejectedAfterRestart(t *testing.T) {
 	stateDir := t.TempDir()
-	store, closer, err := OpenState(stateDir)
+	store, closer, err := openTestState(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}

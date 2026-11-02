@@ -15,9 +15,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
@@ -210,7 +212,7 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	lifecycleState := injectedState
 	var lifecycleStore io.Closer
 	if lifecycleState == nil {
-		lifecycleState, lifecycleStore, err = bootstrap.OpenState(config.StateDir)
+		lifecycleState, lifecycleStore, err = cosistate.Open(config.StateDir, lifecycle.Namespace, bootstrap.SelectionCodec(), retained.SessionRecordCodec())
 		if err != nil {
 			_ = owner.Close()
 			return nil, err

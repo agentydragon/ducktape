@@ -38,7 +38,7 @@ func newTestSource(t *testing.T, count int) (Source, *retained.Store, []*eventlo
 			t.Errorf("close journal: %v", err)
 		}
 	})
-	store, err := retained.NewStore(t.TempDir())
+	store, err := retained.NewStore(t.TempDir(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,7 +1,7 @@
 # Environment Runtime COSI map
 
 This is a map of the controllers and resources registered in the Runtime's **single COSI engine**
-and the single `environment-runtime` COSI namespace. Bootstrap selections have a persistent
+and the single `environment-runtime` COSI namespace. Bootstrap selections and Session records have a persistent
 backing store; the other resources are in memory. The namespace is not a process, cgroup, or
 Kubernetes namespace. Harness Host registers its controllers
 into the same engine. The Execution controller exists only when Execution
@@ -117,6 +117,7 @@ flowchart LR
   IS["HostIntentStatuses"]
   HI(["harness-host-intent"])
   SI["SessionInputs"]
+  Saved["SessionRecords<br/>(persistent)"]
   SD["SessionInspectionStatuses"]
   SO["SessionOperationStates"]
   SR["SessionLifecycleStatuses"]
@@ -138,6 +139,7 @@ flowchart LR
   HI -.->|admitted native apply| Peer
   Guard -.->|exact binding on direct calls and effects| Peer
   SM -->|publish| SI & SD & SO
+  Peer & SM <-->|read / write| Saved
   AM -->|publish| AI & AO
   Journal -->|publish| J & ACK
   PH -->|publish| PD & PI
@@ -202,8 +204,8 @@ full intent. Runtime accepts a report only after that exact intent is applied, s
 Execution fence cannot validate an older report.
 
 `EnvironmentRuntimeDesiredStates`, `HostIntents`, statuses, reports and operation state records are
-in-memory coordination state. `BootstrapSelections` alone has a COSI backing store; `BootstrapRequests`
-is live-only. The incarnation seal, bootstrap event log, Session records,
+in-memory coordination state. `BootstrapSelections` and `SessionRecords` have a COSI backing store; `BootstrapRequests`
+is live-only. The incarnation seal, bootstrap event log,
 journals and History acknowledgements have durable owners. Owner locks have process lifetimes even
 though their lock files remain on disk; see [lifecycle ownership](lifecycle.md#durable-owners). A
 process exit observation alone does not prove that its native process domain was fenced.

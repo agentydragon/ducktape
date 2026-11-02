@@ -91,7 +91,7 @@ func NewEmbedded(config Config, lifecycleState state.State, engine *cosiruntime.
 		}
 		workspaceSupervisor = supervisor
 	}
-	store, err := retained.NewStore(filepath.Join(config.StateDir, "sessions"))
+	store, err := retained.NewStore(filepath.Join(config.StateDir, "sessions"), lifecycleState)
 	if err != nil {
 		_ = owner.Close()
 		return nil, err
