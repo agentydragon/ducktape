@@ -388,7 +388,7 @@ func (s *failJournalSealPublicationOnce) Modify(ctx context.Context, value resou
 
 func (s *initialOperationFailureState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
 	if value.Metadata().Type() == session.OperationStateType {
-		desired, found, err := lifecycle.ReadDesired(ctx, s.State)
+		desired, found, err := lifecycle.ReadEnvironmentDesired(ctx, s.State)
 		if err == nil && found {
 			var armed *atomic.Bool
 			var failure error
