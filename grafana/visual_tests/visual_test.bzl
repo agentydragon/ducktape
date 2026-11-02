@@ -2,7 +2,7 @@
 
 load("//devinfra/python:defs.bzl", "py_test")
 
-def grafana_dashboard_visual_test(name, dashboard, src = "//grafana:dashboard_visual_test.py", fixture = None, fixture_data = None, deps = []):
+def grafana_dashboard_visual_test(name, dashboard, src = "//grafana/visual_tests:dashboard_visual_test.py", fixture = None, fixture_data = None, deps = []):
     """Declare a dashboard-specific screenshot scenario and Prometheus fixture.
 
     The default scenario uses shared synthetic rendering data. An optional custom
@@ -21,9 +21,9 @@ def grafana_dashboard_visual_test(name, dashboard, src = "//grafana:dashboard_vi
         requires_docker = True,
         tags = ["visual"],
         deps = ([fixture] if fixture else []) + [
-            "//grafana:synthetic",
-            "//grafana:visual_browser",
-            "//grafana:visual_harness",
+            "//grafana/visual_tests:synthetic",
+            "//grafana/visual_tests:visual_browser",
+            "//grafana/visual_tests:visual_harness",
             "//util/bazel:runfiles",
             "//util/testing:frontend_visual",
             "//util/testing:undeclared_outputs",

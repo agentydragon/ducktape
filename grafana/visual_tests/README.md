@@ -2,13 +2,13 @@
 
 Each checked-in source dashboard JSON has a neighboring
 `grafana_dashboard_visual_test` Bazel target. Generated deployment copies are
-covered by their source. The macro in `//grafana:visual_test.bzl` supplies the Docker,
+covered by their source. The macro in `//grafana/visual_tests:visual_test.bzl` supplies the Docker,
 runfiles and visual-publication wiring and uses a shared scenario by default.
 
 Declare a target beside the dashboard and optionally supply fixture data:
 
 ```bzl
-load("//grafana:visual_test.bzl", "grafana_dashboard_visual_test")
+load("//grafana/visual_tests:visual_test.bzl", "grafana_dashboard_visual_test")
 
 grafana_dashboard_visual_test(
     name = "dashboard_visual_test",

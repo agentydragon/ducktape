@@ -16,9 +16,9 @@ import pytest
 import pytest_bazel
 from playwright.async_api import async_playwright, expect
 
-from grafana.synthetic import synthetic_query
-from grafana.visual_browser import capture_dashboard
-from grafana.visual_harness import grafana_dashboard, record_stage
+from grafana.visual_tests.synthetic import synthetic_query
+from grafana.visual_tests.visual_browser import capture_dashboard
+from grafana.visual_tests.visual_harness import grafana_dashboard, record_stage
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import FROZEN_NOW_MS, deterministic_browser_context
 from util.testing.undeclared_outputs import undeclared_outputs_dir

@@ -1,7 +1,7 @@
 # gazelle:ignore
 
 load("//devinfra/python:defs.bzl", "py_library")
-load("//grafana:visual_test.bzl", "grafana_dashboard_visual_test")
+load("//grafana/visual_tests:visual_test.bzl", "grafana_dashboard_visual_test")
 
 exports_files(
     ["home-network-overview.json"],

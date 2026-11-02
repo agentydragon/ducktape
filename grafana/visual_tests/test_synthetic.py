@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 import pytest_bazel
 
-from grafana.synthetic import synthetic_query
-from grafana.visual_harness import _prepare_render_fixture
+from grafana.visual_tests.synthetic import synthetic_query
+from grafana.visual_tests.visual_harness import _prepare_render_fixture
 
 
 @pytest.mark.asyncio
