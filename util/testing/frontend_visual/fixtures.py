@@ -10,7 +10,8 @@ from playwright.async_api import Playwright, async_playwright, expect
 from util.testing.frontend_visual.capture import HarnessConfig, VisualHarness, VisualPage
 from util.testing.frontend_visual.page_capture import WAIT_TIMEOUT_MS
 from util.testing.frontend_visual.viewports import Viewport
-from util.testing.pytest_outputs import BoundTestOutputs, test_outputs
+from util.testing.output_writer import BoundTestOutputs
+from util.testing.pytest_outputs import test_outputs
 
 __all__ = ["test_outputs"]
 

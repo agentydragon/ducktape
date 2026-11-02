@@ -246,6 +246,7 @@ py_test(
     name = "test_test_output_pytest",
     srcs = ["test_test_output_pytest.py"],
     deps = [
+        ":output_writer",
         ":pytest_outputs",
         "//:conftest",
         "@pypi//pytest",

@@ -7,7 +7,8 @@ import os
 import stat
 import tempfile
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, Literal
 
@@ -242,3 +243,73 @@ def publish_file(
         label=label,
         title=title,
     )
+
+
+@dataclass(frozen=True)
+class BoundTestOutputs:
+    """Publish roles and checkpoints under one framework-neutral case identity."""
+
+    output_dir: Path
+    case_id: str
+
+    def publish(
+        self,
+        *,
+        checkpoint: str | None = None,
+        role: str,
+        data: bytes | str,
+        suffix: str,
+        label: str | None = None,
+        title: str | None = None,
+    ) -> Path:
+        return publish_output(
+            self.output_dir,
+            case_id=self.case_id,
+            checkpoint=checkpoint,
+            role=role,
+            data=data,
+            suffix=suffix,
+            label=label,
+            title=title,
+        )
+
+    def open(
+        self,
+        *,
+        role: str,
+        suffix: str,
+        checkpoint: str | None = None,
+        mode: Literal["w", "wb"] = "w",
+        label: str | None = None,
+        title: str | None = None,
+    ) -> AbstractContextManager[IO[Any]]:
+        """Return a file-style handle that publishes after successful close."""
+        return open_output(
+            self.output_dir,
+            case_id=self.case_id,
+            checkpoint=checkpoint,
+            role=role,
+            suffix=suffix,
+            mode=mode,
+            label=label,
+            title=title,
+        )
+
+    def publish_file(
+        self,
+        *,
+        source: Path,
+        role: str,
+        checkpoint: str | None = None,
+        label: str | None = None,
+        title: str | None = None,
+    ) -> Path:
+        return publish_file(
+            self.output_dir,
+            case_id=self.case_id,
+            checkpoint=checkpoint,
+            role=role,
+            source=source,
+            label=label,
+            title=title,
+        )

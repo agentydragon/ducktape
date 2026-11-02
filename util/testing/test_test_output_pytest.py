@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from util.testing.pytest_outputs import BoundTestOutputs, case_id_for_pytest_item
+from util.testing.output_writer import BoundTestOutputs
+from util.testing.pytest_outputs import case_id_for_pytest_item
 
 
 def test_bound_fixture_uses_repository_relative_node_id(test_outputs: BoundTestOutputs) -> None:

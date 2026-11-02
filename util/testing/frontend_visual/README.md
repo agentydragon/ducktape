@@ -79,6 +79,11 @@ writes the default screenshot (`checkpoint=None`) for that case. Use readable pa
 App-owned fixtures call `visual.open()` without passing an ID. Outside pytest, construct
 `VisualHarness(..., case_id=...)` with an explicit case identity.
 
+`VisualPage.outputs` is a `BoundTestOutputs` writer from `util.testing.output_writer`,
+bound to the page's output directory and case ID. Use `view.outputs.publish(...)` for
+additional roles or checkpoints alongside `view.capture()`; both publish under the same
+case identity. The writer is independent of pytest, so real-server pages can use it too.
+
 `test_outputs.publish(role="diagnostics", suffix="json", data=json.dumps(details))`
 accepts text (encoded as UTF-8) or bytes. Code that writes to a file handle can use
 `with test_outputs.open(role="diagnostics", suffix="json") as output:` and write

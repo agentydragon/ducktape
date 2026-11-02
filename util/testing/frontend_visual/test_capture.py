@@ -13,7 +13,7 @@ from playwright.async_api import Playwright, expect
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.testing.frontend_visual.capture import HarnessConfig, InlinePage, VisualHarness
 from util.testing.frontend_visual.viewports import Viewport
-from util.testing.pytest_outputs import BoundTestOutputs
+from util.testing.output_writer import BoundTestOutputs
 
 # gazelle:include_dep //util:playwright
 # gazelle:include_dep //util/testing/frontend_visual:fixtures
@@ -63,6 +63,28 @@ async def test_test_owns_interaction_and_capture(harness: VisualHarness) -> None
     assert path.suffix == ".png"
     assert path == _payload(harness.output_dir, role="screenshot", checkpoint=None)
     assert _record(harness.output_dir, role="screenshot", checkpoint=None)["label"] == "Opened panel"
+
+
+async def test_page_outputs_publish_additional_role_under_capture_case(harness: VisualHarness) -> None:
+    async with harness.open("plain") as view:
+        assert view.outputs.output_dir == view.output_dir
+        assert view.outputs.case_id == view.case_id
+        extra = view.outputs.publish(
+            checkpoint="layout", role="geometry", data='{"width":100}', suffix="json", label="Layout geometry"
+        )
+        screenshot = await view.capture("layout")
+        with pytest.raises(FileExistsError):
+            view.outputs.publish(checkpoint="layout", role="geometry", data="duplicate", suffix="json")
+
+    assert extra.read_text() == '{"width":100}'
+    assert screenshot == _payload(harness.output_dir, role="screenshot", checkpoint="layout")
+    assert _payload(harness.output_dir, role="diagnostics", checkpoint="layout").is_file()
+    assert {(record["case_id"], record["checkpoint"], record["role"]) for record in _records(harness.output_dir)} == {
+        (harness.case_id, "layout", "geometry"),
+        (harness.case_id, "layout", "diagnostics"),
+        (harness.case_id, "layout", "screenshot"),
+    }
+    assert _record(harness.output_dir, role="geometry", checkpoint="layout")["label"] == "Layout geometry"
 
 
 async def test_multiple_checkpoints_have_distinct_outputs(harness: VisualHarness) -> None:

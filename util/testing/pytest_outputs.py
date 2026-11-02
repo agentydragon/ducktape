@@ -1,82 +1,11 @@
 """Pytest binding for framework-neutral test output identities."""
 
-from contextlib import AbstractContextManager
-from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, Any, Literal
 
 import pytest
 
-from util.testing.output_writer import open_output, publish_file, publish_output
+from util.testing.output_writer import BoundTestOutputs
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-
-
-@dataclass(frozen=True)
-class BoundTestOutputs:
-    output_dir: Path
-    case_id: str
-
-    def publish(
-        self,
-        *,
-        checkpoint: str | None = None,
-        role: str,
-        data: bytes | str,
-        suffix: str,
-        label: str | None = None,
-        title: str | None = None,
-    ) -> Path:
-        return publish_output(
-            self.output_dir,
-            case_id=self.case_id,
-            checkpoint=checkpoint,
-            role=role,
-            data=data,
-            suffix=suffix,
-            label=label,
-            title=title,
-        )
-
-    def open(
-        self,
-        *,
-        role: str,
-        suffix: str,
-        checkpoint: str | None = None,
-        mode: Literal["w", "wb"] = "w",
-        label: str | None = None,
-        title: str | None = None,
-    ) -> AbstractContextManager[IO[Any]]:
-        """Return a file-style handle that publishes after successful close."""
-        return open_output(
-            self.output_dir,
-            case_id=self.case_id,
-            checkpoint=checkpoint,
-            role=role,
-            suffix=suffix,
-            mode=mode,
-            label=label,
-            title=title,
-        )
-
-    def publish_file(
-        self,
-        *,
-        source: Path,
-        role: str,
-        checkpoint: str | None = None,
-        label: str | None = None,
-        title: str | None = None,
-    ) -> Path:
-        return publish_file(
-            self.output_dir,
-            case_id=self.case_id,
-            checkpoint=checkpoint,
-            role=role,
-            source=source,
-            label=label,
-            title=title,
-        )
 
 
 def case_id_for_pytest_item(test_path: Path, nodeid: str, *, repo_root: Path) -> str:

@@ -33,7 +33,7 @@ from util.testing.frontend_visual.page_capture import (
     wait_for_stable,
 )
 from util.testing.frontend_visual.viewports import Viewport
-from util.testing.output_writer import publish_output
+from util.testing.output_writer import BoundTestOutputs, publish_output
 
 # `document.fonts.check` is true for a family no `@font-face` declares, so on its own it passes when the
 # stylesheet declaring the font never arrived (or the name is misspelled) and the page renders in a fallback.
@@ -212,6 +212,7 @@ class VisualPage:
         self.devtools_viewport = devtools_viewport
         self.expected_font_family = expected_font_family
         self.case_id = case_id
+        self.outputs = BoundTestOutputs(output_dir, case_id)
 
     async def check(self, *, context: str) -> None:
         self.errors.assert_none(context=context)
@@ -272,17 +273,13 @@ class VisualPage:
             "full_page": full_page,
             **page_diagnostics,
         }
-        publish_output(
-            self.output_dir,
-            case_id=self.case_id,
+        self.outputs.publish(
             checkpoint=checkpoint,
             role="diagnostics",
             data=json.dumps(diagnostics, ensure_ascii=False, separators=(",", ":")),
             suffix="json",
         )
-        return publish_output(
-            self.output_dir,
-            case_id=self.case_id,
+        return self.outputs.publish(
             checkpoint=checkpoint,
             role="screenshot",
             data=screenshot,
