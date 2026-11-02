@@ -11465,7 +11465,7 @@ metadata:
   name: quest-read
   namespace: agentplane-staging
 spec:
-  description: Quest availability API. Use https://quest.allegedly.works/openapi.json to discover the read-only routes. The bearer is substituted only for the listed lookup paths.
+  description: Quest read-only scheduling and open-orders API. Use https://quest.allegedly.works/openapi.json to discover the read-only routes. The bearer is substituted only for the listed lookup paths.
   source:
     secretRef:
       key: token
@@ -11501,6 +11501,7 @@ spec:
         - POST
       paths:
         - /guest/getPscsWithAvailability
+        - /api/getOpenEorders
       type: egress
 ---
 apiVersion: rbac.authorization.k8s.io/v1

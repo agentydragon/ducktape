@@ -604,7 +604,7 @@ def _quest_read(scope: Construct, *, namespace: str) -> None:
         namespace=namespace,
         credential=QUEST_READ_POLICY,
         description=(
-            "Quest availability API. Use https://quest.allegedly.works/openapi.json to discover "
+            "Quest read-only scheduling and open-orders API. Use https://quest.allegedly.works/openapi.json to discover "
             "the read-only routes. The bearer is substituted only for the listed lookup paths."
         ),
         secret="quest-agent-token",
@@ -622,12 +622,12 @@ def _quest_read(scope: Construct, *, namespace: str) -> None:
                 method=PolicySetSpecRulesMethods.GET,
                 paths=["/openapi.json", "/guest/getReasons/*", "/guest/getPscDetails/*"],
             ),
-            # Quest's availability search uses POST but is a read-only lookup.
+            # These Quest POSTs are read-only lookups; the order list contains sensitive health data.
             _rule(
                 QUEST_READ_POLICY,
                 "quest.allegedly.works",
                 method=PolicySetSpecRulesMethods.POST,
-                paths=["/guest/getPscsWithAvailability"],
+                paths=["/guest/getPscsWithAvailability", "/api/getOpenEorders"],
             ),
         ],
     )
