@@ -45,6 +45,19 @@ class ResultKey:
 
 
 @dataclass(frozen=True)
+class CollectionIssue:
+    message: str
+    result: ResultKey | None = None
+    related_results: tuple[ResultKey, ...] = ()
+    output: OutputKey | None = None
+    artifact: str | None = None
+    record: str | None = None
+    invocation: str | None = None
+    target: str | None = None
+    configuration: str | None = None
+
+
+@dataclass(frozen=True)
 class OutputObservation:
     key: OutputKey
     result: ResultKey
@@ -65,7 +78,7 @@ class ResultCoverage:
     overall_status: str | None
     record_count: int
     selected: bool
-    issues: tuple[str, ...]
+    issues: tuple[CollectionIssue, ...]
     retried_by: int | None = None
 
 
@@ -74,7 +87,7 @@ class CollectedOutputs:
     observations: tuple[OutputObservation, ...]
     selected: tuple[OutputObservation, ...]
     results: tuple[ResultCoverage, ...]
-    issues: tuple[str, ...]
+    issues: tuple[CollectionIssue, ...]
     complete: bool
 
 
@@ -357,21 +370,32 @@ def collect_materialized_outputs(
             else:
                 by_result[source.key] = source
 
-    errors: list[str] = []
-    per_result: dict[ResultKey, list[str]] = defaultdict(list)
+    errors: list[CollectionIssue] = []
+    per_result: dict[ResultKey, list[CollectionIssue]] = defaultdict(list)
     retried_by: dict[ResultKey, int] = {}
     fatal = False
 
     if targets is not None:
         missing_targets = included - {key.target for key in by_result}
-        errors.extend(f"{target}: no listed test results" for target in sorted(missing_targets))
+        errors.extend(CollectionIssue("no listed test results", target=target) for target in sorted(missing_targets))
         fatal = bool(missing_targets)
 
-    def issue(key: ResultKey, message: str) -> None:
+    def issue(
+        key: ResultKey,
+        message: str,
+        *,
+        output: OutputKey | None = None,
+        artifact: str | None = None,
+        record: str | None = None,
+        related_results: tuple[ResultKey, ...] = (),
+    ) -> None:
         nonlocal fatal
         fatal = True
-        errors.append(f"{key}: {message}")
-        per_result[key].append(message)
+        issue = CollectionIssue(
+            message, result=key, related_results=related_results, output=output, artifact=artifact, record=record
+        )
+        errors.append(issue)
+        per_result[key].append(issue)
 
     for key in duplicates:
         issue(key, "duplicate result identity")
@@ -415,7 +439,8 @@ def collect_materialized_outputs(
                 record = OutputRecord.model_validate_json(record_file.contents)
                 output_key = OutputKey(repository, key.target, record.case_id, record.checkpoint, record.role)
                 if output_key in claimed:
-                    raise ValueError(f"duplicate output identity {output_key!r}")
+                    issue(key, "duplicate output identity", output=output_key, record=record_file.name)
+                    continue
                 claimed.add(output_key)
                 payload_name = _PREFIX + record.path
                 payload = advertised.get(payload_name)
@@ -482,8 +507,14 @@ def collect_materialized_outputs(
             incomplete_configurations.add(configured)
             continue
         if overall == "FAILED":
+            invocation, target, configuration = configured
             errors.append(
-                f"{configured}: configured test summary failed; successful shards remain available for diagnosis"
+                CollectionIssue(
+                    "configured test summary failed; successful shards remain available for diagnosis",
+                    invocation=invocation,
+                    target=target,
+                    configuration=configuration,
+                )
             )
             fatal = True
         if total_run_count != len(keys):
@@ -515,8 +546,7 @@ def collect_materialized_outputs(
         for earlier in attempts:
             if earlier != terminal:
                 assert terminal.attempt is not None
-                detail = f"{earlier}: retried by attempt {terminal.attempt}"
-                errors.append(detail)
+                errors.append(CollectionIssue(f"retried by attempt {terminal.attempt}", result=earlier))
                 retried_by[earlier] = terminal.attempt
         status = by_result[terminal].status
         assert terminal.configuration is not None
@@ -535,7 +565,12 @@ def collect_materialized_outputs(
         claim = (result_key.invocation, result_key.target, result_key.configuration, result_key.run, observation.key)
         previous_claim = claims.setdefault(claim, result_key)
         if previous_claim != result_key:
-            issue(result_key, f"output identity {observation.key!r} also claimed by shard {previous_claim.shard}")
+            issue(
+                result_key,
+                "output identity also claimed across shards",
+                output=observation.key,
+                related_results=(previous_claim,),
+            )
 
     coverage: list[ResultCoverage] = []
     for key, source in sorted(by_result.items(), key=lambda pair: repr(pair[0])):

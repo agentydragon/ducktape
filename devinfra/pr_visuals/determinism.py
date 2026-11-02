@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shlex
 import subprocess
 import tempfile
@@ -20,7 +21,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from devinfra.pr_visuals.artifacts import Runner
-from devinfra.pr_visuals.collection import CollectedOutputs, OutputObservation, ResultCoverage, collect_outputs
+from devinfra.pr_visuals.collection import (
+    CollectedOutputs,
+    CollectionIssue,
+    OutputKey,
+    OutputObservation,
+    ResultCoverage,
+    collect_outputs,
+)
+from devinfra.pr_visuals.render_common import buildbuddy_url, shard_ranges
 from devinfra.pr_visuals.targets import TestRun, list_test_runs
 from util.bazel.workspace import get_build_workspace_directory
 
@@ -53,16 +62,12 @@ class Roster:
     configuration: str
     run: int
 
-    @property
-    def display(self) -> str:
-        return f"`{self.invocation}` (run {self.run})"
-
 
 @dataclass
 class Observation:
     """Which successful complete run roster produced each screenshot digest."""
 
-    by_digest: dict[str, list[str]] = field(default_factory=dict)
+    by_digest: dict[str, list[Roster]] = field(default_factory=dict)
     rosters: set[Roster] = field(default_factory=set)
     labels: set[str] = field(default_factory=set)
 
@@ -76,8 +81,8 @@ class Observations:
     screenshots: dict[Render, Observation]
     diagnostics: tuple[OutputObservation, ...]
     complete_rosters: dict[str, tuple[Roster, ...]]
-    incomplete_rosters: tuple[str, ...]
-    issues: tuple[str, ...]
+    incomplete_rosters: tuple[CollectionIssue, ...]
+    issues: tuple[CollectionIssue, ...]
     collection_complete: bool
 
 
@@ -226,7 +231,7 @@ def from_collection(
     results_by_target_invocation: dict[tuple[str, str], list[ResultCoverage]] = defaultdict(list)
     result_attempts: dict[tuple[str, str, str, int, int], list[ResultCoverage]] = defaultdict(list)
     configurations: dict[str, set[str]] = defaultdict(set)
-    incomplete: list[str] = []
+    incomplete: list[CollectionIssue] = []
 
     for result in collected.results:
         source = result.result
@@ -234,7 +239,7 @@ def from_collection(
         if source.configuration is not None:
             configurations[source.target].add(source.configuration)
         if source.configuration is None or source.run is None or source.shard is None or source.attempt is None:
-            incomplete.append(f"{source.invocation} / {source.target}: incomplete native test result identity")
+            incomplete.append(CollectionIssue("incomplete native test result identity", result=source))
             continue
         result_attempts[(source.invocation, source.target, source.configuration, source.run, source.shard)].append(
             result
@@ -244,7 +249,8 @@ def from_collection(
     # compatible profile exists, only a single configuration per target is comparable.
     ambiguous_targets = {target for target, values in configurations.items() if len(values) > 1}
     incomplete.extend(
-        f"{target}: multiple configurations have no declared comparison profile" for target in sorted(ambiguous_targets)
+        CollectionIssue("multiple configurations have no declared comparison profile", target=target)
+        for target in sorted(ambiguous_targets)
     )
 
     roster_shards: dict[tuple[str, str, str, int], list[ResultCoverage]] = defaultdict(list)
@@ -260,14 +266,25 @@ def from_collection(
         for target in sorted(expected_targets):
             rows = results_by_target_invocation.get((invocation, target), [])
             if not rows:
-                incomplete.append(f"{invocation} / {target}: no test result coverage; excluded from missing checks")
+                incomplete.append(
+                    CollectionIssue(
+                        "no test result coverage; excluded from missing checks", invocation=invocation, target=target
+                    )
+                )
                 continue
             target_rows = target_runs.get(invocation, {}).get(target, [])
             if not target_rows:
-                incomplete.append(f"{invocation} / {target}: no target test summary; excluded from missing checks")
+                incomplete.extend(
+                    CollectionIssue("no target test summary; excluded from missing checks", result=row.result)
+                    for row in rows
+                )
                 continue
             if any(row.status == "FAILED" for row in target_rows):
-                incomplete.append(f"{invocation} / {target}: test target failed; excluded from missing checks")
+                incomplete.append(
+                    CollectionIssue(
+                        "test target failed; excluded from missing checks", invocation=invocation, target=target
+                    )
+                )
 
     for roster_id, shard_results in roster_shards.items():
         invocation, target, configuration, run_number = roster_id
@@ -280,9 +297,11 @@ def from_collection(
             continue
         if not all(result.selected and not result.issues for result in shard_results):
             unusable_rosters.add(roster_id)
-            incomplete.append(
-                f"{invocation} / {target} / run {run_number}: incomplete or unsuccessful shard roster; "
-                "excluded from missing checks"
+            incomplete.extend(
+                CollectionIssue(
+                    "incomplete or unsuccessful shard roster; excluded from missing checks", result=result.result
+                )
+                for result in shard_results
             )
             continue
         roster = Roster(target, invocation, configuration, run_number)
@@ -301,7 +320,7 @@ def from_collection(
     diagnostics: list[OutputObservation] = [
         output for output in collected.observations if output.key.role != "screenshot"
     ]
-    for target, rosters in successful_rosters.items():
+    for rosters in successful_rosters.values():
         for roster in rosters[:]:
             roster_id = roster.invocation, roster.target, roster.configuration, roster.run
             outputs = selected_by_roster.get(roster_id, [])
@@ -312,9 +331,12 @@ def from_collection(
             if not claims:
                 rosters.remove(roster)
                 unusable_rosters.add(roster_id)
-                incomplete.append(
-                    f"{roster.display} / {target}: completed visual target emitted no screenshot outputs; "
-                    "excluded from missing checks"
+                incomplete.extend(
+                    CollectionIssue(
+                        "completed visual target emitted no screenshot outputs; excluded from missing checks",
+                        result=result.result,
+                    )
+                    for result in roster_shards[roster_id]
                 )
                 continue
             duplicates = [render for render, claims_for_render in claims.items() if len(claims_for_render) > 1]
@@ -325,7 +347,10 @@ def from_collection(
                 rosters.remove(roster)
                 unusable_rosters.add(roster_id)
                 reason = "duplicate screenshot identity across shards" if duplicates else "screenshot has no CAS digest"
-                incomplete.append(f"{roster.display} / {target}: {reason}; excluded from missing checks")
+                incomplete.extend(
+                    CollectionIssue(f"{reason}; excluded from missing checks", result=result.result)
+                    for result in roster_shards[roster_id]
+                )
                 continue
             for render, claims_for_render in claims.items():
                 output = claims_for_render[0]
@@ -333,7 +358,7 @@ def from_collection(
                 observation.rosters.add(roster)
                 observation.labels.add(output.label or "")
                 assert output.digest is not None
-                observation.by_digest.setdefault(output.digest, []).append(roster.display)
+                observation.by_digest.setdefault(output.digest, []).append(roster)
 
     # Sort and deduplicate report-only issues while preserving their readable source detail.
     return Observations(
@@ -364,7 +389,7 @@ def observe(
                 invocations, REPOSITORY, Path(output_directory), targets=targets, bbapi=bbapi, run=run
             )
         except Exception as exc:
-            collected = CollectedOutputs((), (), (), (f"output collection failed: {exc}",), False)
+            collected = CollectedOutputs((), (), (), (CollectionIssue(f"output collection failed: {exc}"),), False)
     return from_collection(collected, invocations, targets, target_runs)
 
 
@@ -401,7 +426,143 @@ def _identity(render: Render) -> str:
     return f"`{render.target}` — case `{render.case_id}`, checkpoint `{checkpoint}`, role `{render.role}`"
 
 
-def _image_report(observations: Observations) -> list[str]:
+def _invocation_reference(invocation: str, invocation_numbers: dict[str, int], available_invocations: set[str]) -> str:
+    number = invocation_numbers.get(invocation)
+    label = "invocation" if number is None else f"invocation {number}"
+    if invocation not in available_invocations:
+        return label
+    return f"[{label}]({buildbuddy_url(invocation)})"
+
+
+def _compact_identifier(value: str, candidates: set[str]) -> str:
+    prefix_length = min(8, len(value))
+    while prefix_length < len(value) and any(
+        candidate != value and len(candidate) >= prefix_length and candidate[:prefix_length] == value[:prefix_length]
+        for candidate in candidates
+    ):
+        prefix_length += 1
+    return value if prefix_length == len(value) else value[:prefix_length] + "…"
+
+
+def _result_reference(
+    invocation: str,
+    target: str,
+    configuration: str | None,
+    run: int | None,
+    attempt: int | None,
+    shards: set[int | None],
+    output: OutputKey | None,
+    artifact: str | None,
+    record: str | None,
+    invocation_numbers: dict[str, int],
+    available_invocations: set[str],
+    configurations: set[str],
+) -> str:
+    parts = [_inline_code(target)]
+    if configuration is not None:
+        parts.append(f"config `{_compact_identifier(configuration, configurations)}`")
+    if run is not None:
+        parts.append(f"run {run}")
+    parts.append(f"shards {shard_ranges(list(shards))}")
+    if attempt is not None:
+        parts.append(f"attempt {attempt}")
+    if output is not None:
+        checkpoint = "<default>" if output.checkpoint is None else output.checkpoint
+        parts.extend(
+            (
+                f"case {_inline_code(output.case_id)}",
+                f"checkpoint {_inline_code(checkpoint)}",
+                f"role {_inline_code(output.role)}",
+            )
+        )
+    if artifact is not None:
+        parts.append(f"artifact {_inline_code(artifact)}")
+    if record is not None:
+        parts.append(f"record {_inline_code(record)}")
+    return f"{_invocation_reference(invocation, invocation_numbers, available_invocations)} / " + ", ".join(parts)
+
+
+def _issue_lines(
+    issues: Sequence[CollectionIssue], invocation_numbers: dict[str, int], available_invocations: set[str]
+) -> list[str]:
+    by_result: dict[
+        tuple[str, str, str, str | None, int | None, int | None, OutputKey | None, str | None, str | None],
+        set[int | None],
+    ] = defaultdict(set)
+    by_scope: set[tuple[str, str | None, str | None, str | None]] = set()
+    configurations: set[str] = set()
+    for issue in issues:
+        if issue.configuration is not None:
+            configurations.add(issue.configuration)
+        if issue.result is None:
+            by_scope.add((issue.message, issue.invocation, issue.target, issue.configuration))
+            continue
+        for result in (issue.result, *issue.related_results):
+            if result.configuration is not None:
+                configurations.add(result.configuration)
+            by_result[
+                (
+                    issue.message,
+                    result.invocation,
+                    result.target,
+                    result.configuration,
+                    result.run,
+                    result.attempt,
+                    issue.output,
+                    issue.artifact,
+                    issue.record,
+                )
+            ].add(result.shard)
+
+    lines: list[str] = []
+    for (
+        message,
+        invocation,
+        target,
+        configuration,
+        run,
+        attempt,
+        output,
+        artifact,
+        record,
+    ), shards in by_result.items():
+        reference = _result_reference(
+            invocation,
+            target,
+            configuration,
+            run,
+            attempt,
+            shards,
+            output,
+            artifact,
+            record,
+            invocation_numbers,
+            available_invocations,
+            configurations,
+        )
+        lines.append(f"- {reference}: {message}")
+    for scope_message, scope_invocation, scope_target, scope_configuration in by_scope:
+        context: list[str] = []
+        if scope_invocation is not None:
+            context.append(_invocation_reference(scope_invocation, invocation_numbers, available_invocations))
+        if scope_target is not None:
+            context.append(_inline_code(scope_target))
+        if scope_configuration is not None:
+            context.append(f"config `{_compact_identifier(scope_configuration, configurations)}`")
+        prefix = " / ".join(context)
+        lines.append(f"- {prefix + ': ' if prefix else ''}{scope_message}")
+    return sorted(lines)
+
+
+def _inline_code(value: str) -> str:
+    delimiter = "`" * (max((len(run) for run in re.findall(r"`+", value)), default=0) + 1)
+    padding = " " if value.startswith("`") or value.endswith("`") else ""
+    return f"{delimiter}{padding}{value}{padding}{delimiter}"
+
+
+def _image_report(
+    observations: Observations, invocation_numbers: dict[str, int], available_invocations: set[str]
+) -> list[str]:
     if not observations.screenshots:
         return ["No screenshot records in the selected successful outputs.", ""]
     findings = analyze(observations)
@@ -415,7 +576,19 @@ def _image_report(observations: Observations) -> list[str]:
             seen = observations.screenshots[render]
             lines.append(f"- {_identity(render)}")
             for digest, rosters in sorted(seen.by_digest.items()):
-                lines.append(f"  - `{digest}`: {', '.join(rosters)}")
+                references = [
+                    f"{_invocation_reference(roster.invocation, invocation_numbers, available_invocations)} "
+                    f"/ `{roster.target}` (run {roster.run})"
+                    for roster in sorted(
+                        rosters,
+                        key=lambda roster: (
+                            invocation_numbers.get(roster.invocation, 0),
+                            roster.run,
+                            roster.configuration,
+                        ),
+                    )
+                ]
+                lines.append(f"  - `{digest}`: {', '.join(references)}")
         lines.append("")
     if findings.missing:
         lines += [f"### {len(findings.missing)} screenshot(s) are absent from complete rosters", ""]
@@ -444,14 +617,21 @@ def report(
     unavailable_invocations: Sequence[str] = (),
 ) -> str:
     """Screenshot reproducibility, non-screenshot outputs, and execution health."""
+    invocation_order = list(dict.fromkeys([*(execution.invocation for execution in executions), *invocations]))
+    invocation_numbers = {invocation: index for index, invocation in enumerate(invocation_order, start=1)}
+    available_invocations = set(invocations)
     lines = [f"# Visual determinism over {len(executions) or len(invocations)} attempted runs", ""]
     lines += [f"{len(invocations)} BuildBuddy invocation(s) were available for collection.", ""]
     if invocations:
         lines += ["Artifacts are retained in each invocation's undeclared test outputs:", ""]
-        lines += [f"{index + 1}. `{invocation}`" for index, invocation in enumerate(invocations)]
+        lines += [
+            f"{invocation_numbers[invocation]}. "
+            f"{_invocation_reference(invocation, invocation_numbers, available_invocations)}"
+            for invocation in invocations
+        ]
         lines += ["", "```bash", "bbapi artifact download <invocation> 'test.outputs/test-outputs/**' --all", "```", ""]
     lines += ["## Screenshot determinism", "", "Only role `screenshot` is diffed, by the payload CAS digest.", ""]
-    lines += _image_report(observations)
+    lines += _image_report(observations, invocation_numbers, available_invocations)
 
     if observations.diagnostics:
         roles = sorted({output.key.role for output in observations.diagnostics})
@@ -464,11 +644,11 @@ def report(
 
     if observations.incomplete_rosters:
         lines += ["", "## Failed or incomplete target rosters", ""]
-        lines += [f"- {issue}" for issue in observations.incomplete_rosters]
+        lines += _issue_lines(observations.incomplete_rosters, invocation_numbers, available_invocations)
         lines.append("")
     if observations.issues:
         lines += ["", "## Collector issues", ""]
-        lines += [f"- {issue}" for issue in observations.issues]
+        lines += _issue_lines(observations.issues, invocation_numbers, available_invocations)
         lines.append("")
     if not observations.collection_complete:
         lines += ["", "Output collection was incomplete; the check fails.", ""]
@@ -485,8 +665,8 @@ def report(
             else:
                 outcome = "BuildBuddy recorded the invocation"
             lines.append(
-                f"- `{execution.invocation}`: {outcome}; bbr exited {execution.returncode}. "
-                f"Command: `{shlex.join(execution.command)}`"
+                f"- {_invocation_reference(execution.invocation, invocation_numbers, available_invocations)}: {outcome}; "
+                f"bbr exited {execution.returncode}. Command: {_inline_code(shlex.join(execution.command))}"
             )
         lines.append("")
 

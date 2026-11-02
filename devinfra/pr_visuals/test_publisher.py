@@ -16,7 +16,14 @@ from PIL import Image
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.artifacts import BuildBuddyArtifact, list_ci_artifacts
-from devinfra.pr_visuals.collection import CollectedOutputs, OutputKey, ResultCoverage, ResultKey, SourceSummary
+from devinfra.pr_visuals.collection import (
+    CollectedOutputs,
+    CollectionIssue,
+    OutputKey,
+    ResultCoverage,
+    ResultKey,
+    SourceSummary,
+)
 from devinfra.pr_visuals.github_comment import (
     COMMENT_BUDGET,
     COMMENT_MARKER,
@@ -336,13 +343,31 @@ def test_download_marks_variant_and_target_status_issues(monkeypatch: pytest.Mon
         for run_number, body in enumerate((first, second), start=1)
     )
     coverage = (
-        ResultCoverage(observations[0].result, "PASSED", "FAILED", 1, True, ("target overall status FAILED",)),
-        ResultCoverage(observations[1].result, "PASSED", "FAILED", 1, True, ("target overall status FAILED",)),
+        ResultCoverage(
+            observations[0].result,
+            "PASSED",
+            "FAILED",
+            1,
+            True,
+            (CollectionIssue("target overall status FAILED", result=observations[0].result),),
+        ),
+        ResultCoverage(
+            observations[1].result,
+            "PASSED",
+            "FAILED",
+            1,
+            True,
+            (CollectionIssue("target overall status FAILED", result=observations[1].result),),
+        ),
     )
     monkeypatch.setattr(
         "devinfra.pr_visuals.publisher.collect_outputs",
         lambda *_a, **_k: CollectedOutputs(
-            observations, observations, coverage, ("target overall status FAILED",), False
+            observations,
+            observations,
+            coverage,
+            (CollectionIssue("target overall status FAILED", target="//ui:visual"),),
+            False,
         ),
     )
     tests = download_visual_tests(
@@ -362,19 +387,23 @@ def test_failed_shards_are_grouped_and_linked_in_comment_and_gallery(
 ) -> None:
     invocation = "d1fafe09-e2cf-5409-8fbc-7ab0308820c4"
     message = "terminal attempt has no confirmed successful result (status=FAILED)"
-    results = tuple(
-        ResultCoverage(
-            ResultKey(invocation, "//ui:visual", "abcdef0123456789", 1, shard, 1),
-            "FAILED",
-            "FAILED",
-            1,
-            False,
-            (message, "bad <script>"),
+    results = []
+    for shard in (1, 2, 3, 5, 10, 11):
+        result = ResultKey(invocation, "//ui:visual", "abcdef0123456789", 1, shard, 1)
+        results.append(
+            ResultCoverage(
+                result,
+                "FAILED",
+                "FAILED",
+                1,
+                False,
+                (CollectionIssue(message, result=result), CollectionIssue("bad <script>", result=result)),
+            )
         )
-        for shard in (1, 2, 3, 5, 10, 11)
-    )
+    results_tuple = tuple(results)
     monkeypatch.setattr(
-        "devinfra.pr_visuals.publisher.collect_outputs", lambda *_a, **_k: CollectedOutputs((), (), results, (), False)
+        "devinfra.pr_visuals.publisher.collect_outputs",
+        lambda *_a, **_k: CollectedOutputs((), (), results_tuple, (), False),
     )
     downloaded = download_visual_tests([invocation], tmp_path / "downloads", repository="owner/repo")
     bundle = build_bundle(
@@ -396,14 +425,67 @@ def test_failed_shards_are_grouped_and_linked_in_comment_and_gallery(
     assert not test.baseline_eligible
 
 
+def test_cross_shard_issue_keeps_output_identity_and_source_shards(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    invocation = "d1fafe09-e2cf-5409-8fbc-7ab0308820c4"
+    first = ResultKey(invocation, "//ui:visual", "config-a", 1, 1, 1)
+    second = ResultKey(invocation, "//ui:visual", "config-a", 1, 2, 1)
+    output = OutputKey("owner/repo", "//ui:visual", "dialog/mobile", "expanded", "screenshot")
+    issue = CollectionIssue(
+        "output identity also claimed across shards", result=second, related_results=(first,), output=output
+    )
+    coverage = ResultCoverage(second, "PASSED", "PASSED", 1, False, (issue,))
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.collect_outputs",
+        lambda *_a, **_k: CollectedOutputs((), (), (coverage,), (), False),
+    )
+
+    test = download_visual_tests([invocation], tmp_path / "downloads", repository="owner/repo")[0]
+
+    assert len(test.issues) == 1
+    assert test.issues[0].message == (
+        "output identity also claimed across shards: case 'dialog/mobile', checkpoint 'expanded', role 'screenshot'"
+    )
+    assert test.issues[0].source is not None
+    assert test.issues[0].source.shards == [1, 2]
+    assert "OutputKey(" not in test.issues[0].message
+
+
+def test_duplicate_output_issue_keeps_record_filename_in_publisher(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    result = ResultKey("invocation", "//ui:visual", "config-a", 1, 1, 1)
+    output = OutputKey("owner/repo", "//ui:visual", "dialog/mobile", "expanded", "screenshot")
+    issue = CollectionIssue(
+        "duplicate output identity",
+        result=result,
+        output=output,
+        record="test.outputs/test-outputs/records/duplicate.json",
+    )
+    coverage = ResultCoverage(result, "PASSED", "PASSED", 2, False, (issue,))
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.collect_outputs",
+        lambda *_a, **_k: CollectedOutputs((), (), (coverage,), (), False),
+    )
+
+    test = download_visual_tests(["invocation"], tmp_path / "downloads", repository="owner/repo")[0]
+
+    assert [entry.message for entry in test.issues] == [
+        "duplicate output identity: case 'dialog/mobile', checkpoint 'expanded', role 'screenshot', "
+        "record 'test.outputs/test-outputs/records/duplicate.json'"
+    ]
+
+
 def test_retry_notice_does_not_reclassify_an_issue_by_its_text(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    result_key = ResultKey("invocation", "//ui:visual", "cfg", 1, 1, 1)
     result = ResultCoverage(
-        ResultKey("invocation", "//ui:visual", "cfg", 1, 1, 1),
+        result_key,
         "FAILED",
         "FLAKY",
         1,
         False,
-        ("superseded by retry",),
+        (CollectionIssue("superseded by retry", result=result_key),),
         retried_by=2,
     )
     monkeypatch.setattr(

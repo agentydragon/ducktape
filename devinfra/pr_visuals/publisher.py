@@ -28,7 +28,7 @@ from PIL import Image
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.artifacts import Runner
 from devinfra.pr_visuals.check_run import upsert_check_run
-from devinfra.pr_visuals.collection import OutputObservation, ResultKey, collect_outputs
+from devinfra.pr_visuals.collection import CollectionIssue, OutputObservation, ResultKey, collect_outputs
 from devinfra.pr_visuals.gallery import review_test_page_data, templates
 from devinfra.pr_visuals.github_comment import (
     COMMENT_MARKER,
@@ -100,6 +100,41 @@ def _group_result_messages(results: Iterable[tuple[ResultKey, str]]) -> list[Rev
     groups: dict[tuple[str, str | None, int | None, int | None, str], set[int | None]] = defaultdict(set)
     for result, message in results:
         groups[result.invocation, result.configuration, result.run, result.attempt, message].add(result.shard)
+    return [
+        ReviewIssue(
+            message=message,
+            source=ReviewIssueSource(
+                invocation=invocation,
+                configuration=configuration,
+                run=run,
+                attempt=attempt,
+                shards=sorted(shards, key=lambda shard: (shard is None, shard or 0)),
+            ),
+        )
+        for (invocation, configuration, run, attempt, message), shards in groups.items()
+    ]
+
+
+def _collection_issue_message(issue: CollectionIssue) -> str:
+    details: list[str] = []
+    if issue.output is not None:
+        checkpoint = "<default>" if issue.output.checkpoint is None else issue.output.checkpoint
+        details.extend((f"case {issue.output.case_id!r}", f"checkpoint {checkpoint!r}", f"role {issue.output.role!r}"))
+    if issue.artifact is not None:
+        details.append(f"artifact {issue.artifact!r}")
+    if issue.record is not None:
+        details.append(f"record {issue.record!r}")
+    return issue.message if not details else f"{issue.message}: {', '.join(details)}"
+
+
+def _group_collection_issues(issues: Iterable[CollectionIssue]) -> list[ReviewIssue]:
+    groups: dict[tuple[str, str | None, int | None, int | None, str], set[int | None]] = defaultdict(set)
+    for issue in issues:
+        if issue.result is None:
+            raise ValueError("per-result collection issue has no result provenance")
+        message = _collection_issue_message(issue)
+        for result in (issue.result, *issue.related_results):
+            groups[result.invocation, result.configuration, result.run, result.attempt, message].add(result.shard)
     return [
         ReviewIssue(
             message=message,
@@ -407,7 +442,7 @@ def download_visual_tests(
     downloads: list[_Download] = []
     for target, selected in sorted(by_target.items()):
         target_results = [entry for entry in collected.results if entry.result.target == target]
-        issues = _group_result_messages((entry.result, message) for entry in target_results for message in entry.issues)
+        issues = _group_collection_issues(issue for entry in target_results for issue in entry.issues)
         if any(entry.overall_status not in ("PASSED", "FLAKY") for entry in target_results):
             issues.append(ReviewIssue(message="The overall test result did not complete successfully."))
         notices = _group_result_messages(
