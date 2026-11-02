@@ -277,7 +277,7 @@ class VisualPage:
             case_id=self.case_id,
             checkpoint=checkpoint,
             role="diagnostics",
-            data=(json.dumps(diagnostics, indent=2, ensure_ascii=False) + "\n").encode(),
+            data=json.dumps(diagnostics, ensure_ascii=False, separators=(",", ":")),
             suffix="json",
         )
         return publish_output(

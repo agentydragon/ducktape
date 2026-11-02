@@ -35,7 +35,8 @@ Automatic with a shared harness:
 - Other Python image producers (e.g. GNOME shell captures):
   the `test_outputs` pytest fixture binds each output to its full pytest node ID.
 - Other frameworks and languages can write the same versioned records and payloads
-  directly; Python callers can use `util.testing.output_writer.publish_output`.
+  directly; Python callers can use `util.testing.output_writer.publish_output`
+  with UTF-8 text or bytes, or `open_output` for file-style writes.
 
 ## Determinism checks
 

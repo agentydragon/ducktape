@@ -77,6 +77,14 @@ helpers. With `view`, `await view.capture()` writes the default screenshot
 (`checkpoint=None`) for that case. Use readable parameter IDs. App-owned fixtures
 pass `case_id=case_id` to `visual.open()`.
 
+`test_outputs.publish(role="diagnostics", suffix="json", data=json.dumps(details))`
+accepts text (encoded as UTF-8) or bytes. Code that writes to a file handle can use
+`with test_outputs.open(role="diagnostics", suffix="json") as output:` and write
+text to `output`; pass `mode="wb"` for bytes. The handle writes to a temporary file and
+publishes on successful exit. An exception publishes nothing, and a second write to
+the same case, checkpoint and role fails. Use `publish_file(...)` for an existing
+file.
+
 `view.capture()` accepts an optional checkpoint name and caption. Use a distinct
 checkpoint for each additional capture in one test. Pass a strict `Locator` to crop
 one component, omit it to capture the viewport, or use `full_page=True`. Crops

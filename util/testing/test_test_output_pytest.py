@@ -26,6 +26,21 @@ def test_bound_writer_can_publish_an_existing_file(tmp_path: Path) -> None:
     assert record["checkpoint"] is None
 
 
+def test_bound_writer_accepts_text_and_file_style_output(tmp_path: Path) -> None:
+    outputs = BoundTestOutputs(tmp_path / "outputs", "example/test.py::test_case")
+    payload = outputs.publish(role="diagnostics", checkpoint="first", data="猫", suffix="txt")
+    assert payload.read_bytes() == "猫".encode()
+
+    with outputs.open(role="diagnostics", checkpoint="second", suffix="json") as output:
+        json.dump({"ready": True}, output)
+    records = list((outputs.output_dir / "test-outputs" / "records").glob("*.json"))
+    assert len(records) == 2
+    second = next(
+        json.loads(path.read_text()) for path in records if json.loads(path.read_text())["checkpoint"] == "second"
+    )
+    assert json.loads((outputs.output_dir / "test-outputs" / second["path"]).read_text()) == {"ready": True}
+
+
 def test_case_id_uses_repo_file_and_retains_class_and_parameters(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     first = root / "a" / "test_same.py"

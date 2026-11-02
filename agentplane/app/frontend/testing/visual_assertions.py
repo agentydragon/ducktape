@@ -127,7 +127,7 @@ async def _rollout_geometry(view: VisualPage, state: str) -> None:
         case_id=view.case_id,
         checkpoint=f"geometry-{state}",
         role="diagnostics",
-        data=(json.dumps(geometry, indent=2) + "\n").encode(),
+        data=json.dumps(geometry, ensure_ascii=False, separators=(",", ":")),
         suffix="json",
     )
 
