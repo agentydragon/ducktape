@@ -11,13 +11,13 @@ from uuid import uuid4
 import httpx
 import pytest
 import pytest_bazel
-from google.protobuf.json_format import MessageToDict
+from google.protobuf.json_format import MessageToDict, ParseError
 from opentelemetry import trace
 from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags, TraceState
 
 from agentplane.app.testing import client as client_module
 from agentplane.app.testing.client import Client, SessionStreamError
-from agentplane.proto import event_log_pb2
+from agentplane.proto import event_log_pb2, session_pb2
 
 # A server answers one connection per call: `(after, writer)`. Raw sockets, because what is under
 # test is how the client reads a connection that dies, which an ASGI transport cannot produce.
@@ -141,7 +141,7 @@ async def test_open_session_preserves_override_presence(
     }
 
 
-async def test_app_config_client_adapts_proto_json_to_test_views() -> None:
+async def test_app_config_client_decodes_generated_proto_json() -> None:
     async def models(_after: int, writer: asyncio.StreamWriter) -> None:
         await _respond(
             writer,
@@ -185,17 +185,85 @@ async def test_app_config_client_adapts_proto_json_to_test_views() -> None:
 
     async with _app(models, presets) as (client, _):
         catalog = await client.models()
-        views = await client.presets()
+        presets_response = await client.presets()
 
     assert catalog.models[0].display_name == "Model A"
     assert catalog.harnesses == {"HARNESS_CODEX": ["model-a"]}
-    assert views[0].session_defaults.harness == "HARNESS_CODEX"
-    assert views[0].session_defaults.reasoning_effort is None
+    (preset,) = presets_response.presets
+    assert preset.session_defaults.harness == session_pb2.HARNESS_CODEX
+    assert not preset.session_defaults.HasField("reasoning_effort")
 
 
 async def test_resumes_after_the_last_entry_when_the_stream_closes_without_an_end_frame() -> None:
     async with _app(_first_two_then_close, _rest_then_end) as (client, _):
         assert await _cursors(client) == [1, 2, 3]
+
+
+async def test_runner_status_decodes_proto_json_and_preserves_optional_and_64_bit_fields() -> None:
+    async def status(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "200 OK",
+            json.dumps(
+                {
+                    "processes": [
+                        {
+                            "process_id": "process-1",
+                            "pid": "9223372036854775807",
+                            "harness": "HARNESS_CODEX",
+                            "state": 99,
+                            "assigned_session_ids": ["session-1"],
+                        }
+                    ],
+                    "sessions": [
+                        {
+                            "session_id": "session-1",
+                            "execution_state": "SESSION_EXECUTION_STATE_READY",
+                            "failure_cursor": "18446744073709551615",
+                            "busy": True,
+                        }
+                    ],
+                    "environment_runtime_boot_id": "boot-1",
+                    "lifecycle": {
+                        "desired_mode": "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_RUNNING",
+                        "desired_generation": "18446744073709551615",
+                        "progress_generation": "9223372036854775808",
+                        "progress_available": True,
+                        "progress_current": True,
+                        "stage": "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_RUNNING",
+                    },
+                }
+            ).encode(),
+            "application/json",
+        )
+
+    observed: list[str] = []
+    async with _app(status, requests=observed) as (client, _):
+        result = await client.runner_status("test-sandbox")
+
+    (process,) = result.processes
+    (session,) = result.sessions
+    assert process.pid == 9223372036854775807
+    assert process.harness == session_pb2.HARNESS_CODEX
+    assert process.state == 99
+    assert list(process.assigned_session_ids) == ["session-1"]
+    assert "authorization: bearer test-token\r\n" in observed[0].lower()
+    assert not session.HasField("process_id")
+    assert not session.HasField("native_session_id")
+    assert session.failure_cursor == 18446744073709551615
+    assert result.lifecycle.desired_generation == 18446744073709551615
+    assert result.lifecycle.progress_generation == 9223372036854775808
+
+
+async def test_runner_status_rejects_unknown_proto_json_fields() -> None:
+    async def status(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer, "200 OK", b'{"environment_runtime_boot_id":"boot-1","new_field":true}', "application/json"
+        )
+
+    async with _app(status) as (client, _):
+        with pytest.raises(ParseError, match="new_field"):
+            await client.runner_status("test-sandbox")
 
 
 async def _proxy_denied(after: int, writer: asyncio.StreamWriter) -> None:

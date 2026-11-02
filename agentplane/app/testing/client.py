@@ -1,8 +1,9 @@
 """A client for the Go integration app's HTTP surface, beside the runner's own client.
 
-Its Pydantic models describe the HTTP contracts used by this client and system tests. A session's
-events arrive as shared `EventEntry` messages rather than dictionaries to pick apart; callers
-dispatch on `entry.event.WhichOneof("observation")`.
+`runner_status()` and `presets()` return their generated protobuf messages. Pydantic models describe
+other HTTP contracts that this client projects. A session's events arrive as shared `EventEntry`
+messages rather than dictionaries to pick apart; callers dispatch on
+`entry.event.WhichOneof("observation")`.
 """
 
 from __future__ import annotations
@@ -26,17 +27,15 @@ from agentplane.app.testing.models import (
     BindingView,
     DecisionsSnapshot,
     DecisionsUnavailable,
-    EnvironmentRuntimeStatusView,
     NewSandbox,
     SandboxesSnapshot,
-    SandboxPresetView,
     SandboxView,
     ThreadMetadata,
     ThreadView,
     thread_view_from_proto_json,
 )
 from agentplane.egress.decisions import Decision
-from agentplane.proto import event_log_pb2
+from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 
@@ -121,29 +120,9 @@ class Client:
             }
         )
 
-    async def presets(self) -> list[SandboxPresetView]:
+    async def presets(self) -> app_service_pb2.ListSandboxPresetsResponse:
         response = await self._json("GET", "/upstream/app-config/v1/presets")
-        return [
-            SandboxPresetView.model_validate(
-                {
-                    "name": row["name"],
-                    "title": row["title"],
-                    "template": row["template"],
-                    "policy_sets": row["policySets"],
-                    "inbox_tags": row["inboxTags"],
-                    "session_defaults": {
-                        "harness": row["sessionDefaults"]["harness"],
-                        "model": row["sessionDefaults"]["model"],
-                        "cwd": row["sessionDefaults"]["cwd"],
-                        "reasoning_effort": row["sessionDefaults"].get("reasoningEffort"),
-                        "instructions": row["sessionDefaults"]["instructions"],
-                        "setup_script": row["sessionDefaults"]["setupScript"],
-                    },
-                    "bootstrap": row["bootstrap"],
-                }
-            )
-            for row in response["presets"]
-        ]
+        return ParseDict(response, app_service_pb2.ListSandboxPresetsResponse())
 
     async def create_sandbox(self, spec: NewSandbox) -> SandboxView:
         return SandboxView.model_validate(
@@ -153,8 +132,9 @@ class Client:
     async def sandbox(self, name: str) -> SandboxView:
         return SandboxView.model_validate(await self._json("GET", f"/sandboxes/{name}"))
 
-    async def runner_status(self, name: str) -> EnvironmentRuntimeStatusView:
-        return EnvironmentRuntimeStatusView.model_validate(await self._json("GET", f"/sandboxes/{name}/runner-status"))
+    async def runner_status(self, name: str) -> session_pb2.EnvironmentRuntimeStatus:
+        response = await self._json("GET", f"/sandboxes/{name}/runner-status")
+        return ParseDict(response, session_pb2.EnvironmentRuntimeStatus())
 
     async def sandbox_snapshots(self) -> AsyncGenerator[SandboxesSnapshot]:
         """Initial inventory and watch-triggered changes; the caller bounds the subscription.

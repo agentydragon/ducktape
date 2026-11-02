@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
@@ -273,14 +274,16 @@ async def codex_tool_oom(
             assert before.max > 0
             assert before.swap_max == before.oom_group == before.oom_group_kill == 0
             original = await client.runner_status(view.name)
-            evidence["runner_before"] = original.model_dump(mode="json")
+            evidence["runner_before"] = MessageToDict(
+                original, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
+            )
         (app_server,) = original.processes
-        assert app_server.pid is not None
-        assert app_server.state == "PROCESS_STATE_RUNNING"
-        assert app_server.assigned_session_ids == [str(agent.thread_id)]
+        assert app_server.HasField("pid")
+        assert app_server.state == session_pb2.PROCESS_STATE_RUNNING
+        assert list(app_server.assigned_session_ids) == [str(agent.thread_id)]
         (session,) = original.sessions
         assert session.process_id == app_server.process_id
-        assert session.native_session_id is not None
+        assert session.HasField("native_session_id")
 
         with tracer.start_as_current_span(
             "system_test.vm_oom.trigger_and_survival", record_exception=False, set_status_on_exception=False
@@ -300,11 +303,13 @@ async def codex_tool_oom(
 
             # Inspect the Runner before a follow-up could lazily start a replacement harness.
             survived = await client.runner_status(view.name)
-            evidence["runner_after_oom"] = survived.model_dump(mode="json")
+            evidence["runner_after_oom"] = MessageToDict(
+                survived, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
+            )
             assert survived.environment_runtime_boot_id == original.environment_runtime_boot_id
-            assert survived.processes == original.processes
+            assert list(survived.processes) == list(original.processes)
             assert survived.sessions[0].native_session_id == session.native_session_id
-            assert survived.sessions[0].execution_state == "SESSION_EXECUTION_STATE_READY"
+            assert survived.sessions[0].execution_state == session_pb2.SESSION_EXECUTION_STATE_READY
 
         # A fresh turn on the same native Session must execute commands through the surviving leaf.
         with tracer.start_as_current_span(
@@ -331,9 +336,11 @@ async def codex_tool_oom(
             assert execution.status is wire.CommandExecutionStatus.COMPLETED
             assert execution.exit_code == 0
             final = await client.runner_status(view.name)
-            evidence["runner_after_followup"] = final.model_dump(mode="json")
+            evidence["runner_after_followup"] = MessageToDict(
+                final, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
+            )
             assert final.environment_runtime_boot_id == original.environment_runtime_boot_id
-            assert final.processes == original.processes
+            assert list(final.processes) == list(original.processes)
             assert final.sessions[0].native_session_id == session.native_session_id
             current = await client.sandbox(view.name)
             assert current.pod is not None
