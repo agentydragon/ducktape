@@ -200,9 +200,9 @@ Keep these boundaries independently testable:
    results. The same logical identity emitted by distinct shards of the same
    configured run is a conflict even when bytes match. Retries and repeated
    runs stay distinct observations; never silently union failed or incomplete
-   attempts into a complete roster. Define and test selection of the authoritative
-   successful result for review, while retaining all observations for repeated
-   run determinism checks. Union disjoint shard outputs within an invocation;
+   attempts into a complete roster. Apply the result selection policy below
+   while retaining all observations for repeated run determinism checks. Union
+   disjoint shard outputs within an invocation;
    do not union different whole rosters from linked invocations. Missing data
    remains an explicit incomplete/error state rather than evidence that an image
    was removed.
@@ -227,6 +227,39 @@ commit-pinned review pages, shared-blob upload ordering, current affected-test
 selection, and human review of pixel changes. Behavioral and render-health tests
 remain hard gates.
 
+## Repeated runs and attempts
+
+Collect every result with its status and provenance. For visual review, process
+each invocation and configured run independently:
+
+1. For each shard in a run, select its confirmed terminal successful attempt.
+   Keep earlier failed attempts and their outputs for diagnosis and report that
+   a retry occurred. The record and payload must come from the same attempt. A
+   shard with no confirmed successful terminal result is failed or incomplete;
+   do not substitute a failed attempt's partial outputs or guess from attempt
+   numbers when terminal status is unknown.
+2. Assemble the selected shard outputs into that run's roster. Preserve a
+   conflict if distinct shards claim the same logical identity, even if their
+   payload bytes match. Do not use a missing result or missing declared file as
+   evidence that a screenshot was removed.
+3. Examine the successful runs for each logical screenshot. If all complete runs
+   have identical screenshot bytes, a normal review may show one representative
+   image while retaining every run's provenance and separately reporting any
+   retries or failed/incomplete runs. Missing observations remain visible; do
+   not silently treat an incomplete run as agreement.
+4. If successful runs produce different screenshot bytes, mark the screenshot
+   unstable and show the variants with their run provenance. The review may
+   show individually labelled baseline diffs, but must not silently select one
+   as the definitive result. The determinism checker compares the successful
+   repeated observations using the same collected identities and reports the
+   incomplete or failed runs separately.
+
+When comparing two invocations, apply this policy to each separately before
+matching logical screenshots. A prior failed attempt is never a baseline or a
+replacement for a missing successful result. A complete run's genuinely absent
+output can be classified as removed only when the relevant collection coverage
+is known; unknown or partial coverage remains incomplete.
+
 ## Migration and validation
 
 1. Inventory all producers, diagnostics, visual consumers, release/pin paths,
@@ -247,8 +280,10 @@ remain hard gates.
    without pytest or its identity scheme; exercise parallel writers,
    multiple checkpoints and roles, stable pytest roots and parameter IDs, and
    duplicate rejection. Exercise independent shards, multiple configurations,
-   retries, repeated runs, cache hits, partial failures, and missing files.
-   Confirm a resharded case matches its baseline and different cases never do.
+   retries, repeated runs with equal and different screenshot bytes, cache hits,
+   partial failures, and missing files. Confirm a resharded case matches its
+   baseline and different cases never do; failed attempts must not supply the
+   selected image or hide instability in successful runs.
 5. Run an end-to-end RBE visual test through BuildBuddy collection, per-blob S3
    publication, a before/after gallery, PR comment and determinism check. Verify
    published pages and images, historical and fallback baselines, and both
