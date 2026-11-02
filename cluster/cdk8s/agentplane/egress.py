@@ -123,6 +123,7 @@ _SESSION_DISPATCHER_GRPC_PATHS = (
 _ENVIRONMENT_SERVICE_READ_GRPC_PATHS = (
     "/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments",
     "/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment",
+    "/agentplane.sandboxes.environments.EnvironmentService/WatchEnvironment",
 )
 
 # The egress PolicySets created below that every environment ships. A name is exported

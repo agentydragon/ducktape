@@ -172,7 +172,7 @@ Before exposing the delegated path, demonstrate:
 
 - Direct and delegated calls by the same effective caller receive the same ordinary access checks;
   an actor's privileged membership cannot widen delegated access.
-- Delegated EnvironmentService exposes only its exact list/get methods and returns the same target
+- Delegated EnvironmentService exposes only its exact list/get/watch methods and returns the same target
   facts as direct access for the same ServiceAccount UID; foreign targets remain hidden as `NOT_FOUND`.
 - Forged callers from ordinary accounts, disallowed methods/namespaces, UID replacement,
   malformed/duplicate metadata and direct/delegated mode confusion are refused before effects.

@@ -2020,6 +2020,7 @@ spec:
       paths:
         - /agentplane.sandboxes.environments.EnvironmentService/ListEnvironments
         - /agentplane.sandboxes.environments.EnvironmentService/GetEnvironment
+        - /agentplane.sandboxes.environments.EnvironmentService/WatchEnvironment
       type: egress
     - policy:
         actions:

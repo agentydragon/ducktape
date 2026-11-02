@@ -216,6 +216,7 @@ class RunnerGateway(Construct):
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
                     "/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments",
                     "/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment",
+                    "/agentplane.sandboxes.environments.EnvironmentService/WatchEnvironment",
                 ],
             }
         settings = SettingsFile(
@@ -352,9 +353,11 @@ class RunnerGateway(Construct):
             rules=[
                 # Flux can apply RBAC before the image rolls: older Gateways still read workloads directly.
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
-                # SessionDispatcher checks the live UID of the Sandbox-owned execution account
-                # before normal writes and immediately before queued delivery.
-                RolePolicyRule(resources=[cast(IApiResource, ApiResource.SERVICE_ACCOUNTS)], verbs=["get"]),
+                # The environment watch observes account revocation; all reads and Session admission
+                # recheck the live UID of the Sandbox-owned execution account.
+                RolePolicyRule(
+                    resources=[cast(IApiResource, ApiResource.SERVICE_ACCOUNTS)], verbs=["get", "list", "watch"]
+                ),
                 RolePolicyRule(
                     resources=[
                         custom_resource("kubevirt.io", "virtualmachineinstances"),

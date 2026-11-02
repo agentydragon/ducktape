@@ -191,7 +191,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	if err := kubevirtv1.AddToScheme(scheme); err != nil {
 		return err
 	}
-	objects, err := client.New(config, client.Options{Scheme: scheme})
+	objects, err := client.NewWithWatch(config, client.Options{Scheme: scheme})
 	if err != nil {
 		return err
 	}

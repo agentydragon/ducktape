@@ -1,0 +1,333 @@
+package environments
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/watch"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+)
+
+var (
+	watchAPI        *kubeapiserver.Server
+	watchNamespaces atomic.Int32
+)
+
+func TestMain(m *testing.M) {
+	os.Exit(kubeapiserver.Run(m, func(server *kubeapiserver.Server) error {
+		watchAPI = server
+		return nil
+	}))
+}
+
+type watchFixture struct {
+	objects      client.WithWatch
+	rpc          environmentpb.EnvironmentServiceClient
+	target       *environmentpb.TargetHandle
+	ctx          context.Context
+	metadataRead <-chan struct{}
+}
+
+func newWatchFixture(t *testing.T) watchFixture {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	t.Cleanup(cancel)
+	namespace := fmt.Sprintf("test-environment-watch-%d", watchNamespaces.Add(1))
+	account, err := watchAPI.ServiceAccount(ctx, auth.Account{Namespace: namespace, Name: sandboxName})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheme := runtime.NewScheme()
+	if err := sandboxapi.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	objects, err := client.NewWithWatch(watchAPI.Config, client.Options{Scheme: scheme})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sandbox := sandboxObject("")
+	sandbox.Namespace = namespace
+	if err := objects.Create(ctx, sandbox); err != nil {
+		t.Fatal(err)
+	}
+	account.OwnerReferences = executionAccountObject(sandbox.UID).OwnerReferences
+	if err := objects.Update(ctx, account); err != nil {
+		t.Fatal(err)
+	}
+	metadataRead := make(chan struct{})
+	var metadataOnce sync.Once
+	observedObjects := interceptor.NewClient(objects, interceptor.Funcs{
+		Get: func(ctx context.Context, source client.WithWatch, key client.ObjectKey, object client.Object, options ...client.GetOption) error {
+			err := source.Get(ctx, key, object, options...)
+			if err == nil && object.GetAnnotations()["test.example/ignored"] == "changed" {
+				metadataOnce.Do(func() { close(metadataRead) })
+			}
+			return err
+		},
+	})
+	service, err := New(namespace, observedObjects, runtimeconfig.Catalog{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, err := auth.NewResolver(watchAPI.TokenReviews(), dispatcherAudience, []string{namespace}, auth.WithVerdictTTL(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection := grpcmethods.Serve(t, Methods(resolver), func(server *grpc.Server) {
+		environmentpb.RegisterEnvironmentServiceServer(server, service)
+	})
+	token, err := watchAPI.UnboundToken(ctx, auth.Account{Namespace: namespace, Name: sandboxName}, dispatcherAudience)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return watchFixture{
+		objects: objects, rpc: environmentpb.NewEnvironmentServiceClient(connection),
+		target:       &environmentpb.TargetHandle{Namespace: namespace, Name: sandboxName, Uid: string(sandbox.UID)},
+		ctx:          metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token),
+		metadataRead: metadataRead,
+	}
+}
+
+func (f watchFixture) sandbox(t *testing.T) *sandboxapi.Sandbox {
+	t.Helper()
+	var sandbox sandboxapi.Sandbox
+	if err := f.objects.Get(f.ctx, types.NamespacedName{Namespace: f.target.Namespace, Name: f.target.Name}, &sandbox); err != nil {
+		t.Fatal(err)
+	}
+	return &sandbox
+}
+
+func TestWatchEnvironmentSendsCurrentStateUpdatesAndFreshReconnectSnapshot(t *testing.T) {
+	f := newWatchFixture(t)
+	sandbox := f.sandbox(t)
+	sandbox.Status.OperatingMode = sandboxapi.OperatingModeSuspended
+	if err := f.objects.Status().Update(f.ctx, sandbox); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.rpc.GetEnvironment(f.ctx, &environmentpb.GetEnvironmentRequest{Target: f.target})
+	if err != nil || got.GetOperatingMode() != environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED {
+		t.Fatalf("GetEnvironment on a suspended target = %v, %v", got, err)
+	}
+	ctx, cancel := context.WithCancel(f.ctx)
+	stream, err := f.rpc.WatchEnvironment(ctx, &environmentpb.WatchEnvironmentRequest{Target: f.target})
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got.ObservedAt, initial.Environment.ObservedAt = nil, nil
+	if !proto.Equal(got, initial.Environment) {
+		t.Fatalf("initial watch snapshot = %v, want current Get snapshot %v", initial, got)
+	}
+
+	// A metadata-only change must not produce a duplicate snapshot just because observed_at changed.
+	sandbox = f.sandbox(t)
+	sandbox.Annotations = map[string]string{"test.example/ignored": "changed"}
+	if err := f.objects.Update(f.ctx, sandbox); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-f.metadataRead:
+	case <-f.ctx.Done():
+		t.Fatal("watch did not reread the metadata-only update")
+	}
+	sandbox = f.sandbox(t)
+	sandbox.Status.OperatingMode = sandboxapi.OperatingModeRunning
+	sandbox.Status.Conditions = []metav1.Condition{{
+		Type: sandboxapi.ConditionReady, Status: metav1.ConditionTrue, Reason: "RuntimeReady", LastTransitionTime: metav1.Now(),
+	}}
+	if err := f.objects.Status().Update(f.ctx, sandbox); err != nil {
+		t.Fatal(err)
+	}
+	ready, err := stream.Recv()
+	if err != nil || ready.GetEnvironment().GetReadiness().GetState() != environmentpb.ReadinessState_READINESS_STATE_READY {
+		t.Fatalf("next snapshot = %v, %v, want Ready without an unchanged intermediate snapshot", ready, err)
+	}
+	cancel()
+	if _, err := stream.Recv(); status.Code(err) != codes.Canceled {
+		t.Fatalf("canceled watch = %v, want Canceled", err)
+	}
+
+	reconnected, err := f.rpc.WatchEnvironment(f.ctx, &environmentpb.WatchEnvironmentRequest{Target: f.target})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := reconnected.Recv()
+	if err != nil || fresh.GetEnvironment().GetReadiness().GetState() != environmentpb.ReadinessState_READINESS_STATE_READY {
+		t.Fatalf("reconnected initial snapshot = %v, %v, want current Ready state", fresh, err)
+	}
+}
+
+func TestWatchEnvironmentEndsWhenTargetOrExecutionAccountIsNoLongerAccessible(t *testing.T) {
+	for _, change := range []string{"replace target", "delete target", "replace execution account", "remove account owner"} {
+		t.Run(change, func(t *testing.T) {
+			f := newWatchFixture(t)
+			stream, err := f.rpc.WatchEnvironment(f.ctx, &environmentpb.WatchEnvironmentRequest{Target: f.target})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := stream.Recv(); err != nil {
+				t.Fatal(err)
+			}
+			switch change {
+			case "replace target", "delete target":
+				if err := f.objects.Delete(f.ctx, f.sandbox(t)); err != nil {
+					t.Fatal(err)
+				}
+				if change == "replace target" {
+					replacement := sandboxObject("")
+					replacement.Namespace = f.target.Namespace
+					if err := f.objects.Create(f.ctx, replacement); err != nil {
+						t.Fatal(err)
+					}
+				}
+			case "replace execution account", "remove account owner":
+				var account corev1.ServiceAccount
+				if err := f.objects.Get(f.ctx, types.NamespacedName{Namespace: f.target.Namespace, Name: sandboxName}, &account); err != nil {
+					t.Fatal(err)
+				}
+				if change == "replace execution account" {
+					if err := f.objects.Delete(f.ctx, &account); err != nil {
+						t.Fatal(err)
+					}
+					replacement := executionAccountObject(types.UID(f.target.Uid))
+					replacement.Namespace, replacement.UID = f.target.Namespace, ""
+					if err := f.objects.Create(f.ctx, replacement); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					account.OwnerReferences = nil
+					if err := f.objects.Update(f.ctx, &account); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if _, err := stream.Recv(); status.Code(err) != codes.NotFound {
+				t.Fatalf("watch after %s = %v, want NotFound", change, err)
+			}
+		})
+	}
+}
+
+func TestWatchEnvironmentDelegationUsesTheEffectiveCaller(t *testing.T) {
+	rpc := serveDiscoveryWithDelegation(t, baseReader(t), runtimeconfig.Catalog{}, []string{
+		environmentpb.EnvironmentService_WatchEnvironment_FullMethodName,
+	})
+	effective := auth.Account{Namespace: discoveryNamespace, Name: sandboxName}
+	ctx, cancel := context.WithTimeout(delegatedBearing(t, actionsToken, effective, executionUID), 5*time.Second)
+	defer cancel()
+	stream, err := rpc.WatchEnvironment(ctx, &environmentpb.WatchEnvironmentRequest{
+		Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := stream.Recv()
+	if err != nil || got.GetEnvironment().GetExecutionAccount().GetUid() != executionUID {
+		t.Fatalf("delegated watch = %v, %v, want effective caller's environment", got, err)
+	}
+	for _, denied := range []struct {
+		name, token, uid string
+		want             codes.Code
+	}{
+		{name: "untrusted actor", token: untrustedToken, uid: executionUID, want: codes.PermissionDenied},
+		{name: "recreated caller", token: actionsToken, uid: "replaced-uid", want: codes.PermissionDenied},
+	} {
+		t.Run(denied.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(delegatedBearing(t, denied.token, effective, denied.uid), 5*time.Second)
+			defer cancel()
+			refused, err := rpc.WatchEnvironment(ctx, &environmentpb.WatchEnvironmentRequest{
+				Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+			})
+			if err == nil {
+				_, err = refused.Recv()
+			}
+			if status.Code(err) != denied.want {
+				t.Fatalf("watch error = %v, want %v", err, denied.want)
+			}
+		})
+	}
+}
+
+func TestWatchEnvironmentClosesBothSourcesOnWatchLoss(t *testing.T) {
+	for _, failure := range []string{"closed", "expired", "opening second watch"} {
+		t.Run(failure, func(t *testing.T) {
+			sources := make(chan *watch.RaceFreeFakeWatcher, 2)
+			objects := interceptor.NewClient(baseReader(t), interceptor.Funcs{
+				Watch: func(_ context.Context, _ client.WithWatch, object client.ObjectList, _ ...client.ListOption) (watch.Interface, error) {
+					if _, second := object.(*corev1.ServiceAccountList); second && failure == "opening second watch" {
+						return nil, errors.New("injected source failure")
+					}
+					source := watch.NewRaceFreeFake()
+					sources <- source
+					return source, nil
+				},
+			})
+			rpc := serveDiscovery(t, objects, runtimeconfig.Catalog{})
+			ctx, cancel := context.WithTimeout(bearing(t, matchingToken), 5*time.Second)
+			defer cancel()
+			stream, err := rpc.WatchEnvironment(ctx, &environmentpb.WatchEnvironmentRequest{
+				Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if failure == "opening second watch" {
+				if _, err := stream.Recv(); status.Code(err) != codes.Unavailable {
+					t.Fatalf("failed watch setup = %v, want Unavailable", err)
+				}
+			} else {
+				if _, err := stream.Recv(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			first := <-sources
+			switch failure {
+			case "closed":
+				first.Stop()
+			case "expired":
+				first.Error(&metav1.Status{Status: metav1.StatusFailure, Reason: metav1.StatusReasonExpired, Code: 410})
+			}
+			if failure != "opening second watch" {
+				if _, err := stream.Recv(); status.Code(err) != codes.Unavailable {
+					t.Fatalf("lost watch = %v, want Unavailable", err)
+				}
+				second := <-sources
+				if !second.IsStopped() {
+					t.Fatal("second source was not stopped when watch ended")
+				}
+			}
+			if !first.IsStopped() {
+				t.Fatal("first source was not stopped when watch ended")
+			}
+		})
+	}
+}

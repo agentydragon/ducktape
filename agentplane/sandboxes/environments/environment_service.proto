@@ -15,6 +15,11 @@ service EnvironmentService {
   rpc GetEnvironment(GetEnvironmentRequest) returns (EnvironmentDescriptor) {
     option (google.api.http) = {get: "/v1/environments/{target.namespace}/{target.name}"};
   }
+  // Sends the current snapshot, then updated snapshots of the exact target. Intermediate
+  // states may be coalesced; reconnecting starts a fresh observation without an event cursor.
+  rpc WatchEnvironment(WatchEnvironmentRequest) returns (stream WatchEnvironmentResponse) {
+    option (google.api.http) = {get: "/v1/environments/{target.namespace}/{target.name}:watch"};
+  }
 }
 
 message TargetHandle {
@@ -45,6 +50,15 @@ message ListEnvironmentsResponse {
 message GetEnvironmentRequest {
   // All three fields are required. A same-name replacement is not the requested target.
   TargetHandle target = 1;
+}
+
+message WatchEnvironmentRequest {
+  // All three fields are required. A same-name replacement is not the requested target.
+  TargetHandle target = 1;
+}
+
+message WatchEnvironmentResponse {
+  EnvironmentDescriptor environment = 1;
 }
 
 enum Availability {
