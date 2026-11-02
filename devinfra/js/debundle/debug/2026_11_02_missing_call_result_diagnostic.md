@@ -39,6 +39,16 @@ record when applicable. Future transfer paths that decline before modelling
 effects must use the same refusal branch. The enum is internal runtime state,
 not a saved-format compatibility layer.
 
+## F29: an opaque-call hint can send the author toward a premise
+
+An existing private CI log repeatedly suggests `purity: pure` or
+`fluent_exports` for opaque initializers. `purity/purity_type.rs` emits this
+generic hint without establishing either contract's prerequisites. Incomplete
+interpreter support can produce the same visible symptom. Next: make the hint
+direct authors to the source-backed cause and synchronous precision loss first;
+offer an annotation only with the required independent audit. A diagnostic is
+not evidence that a contract applies.
+
 ## Review and remaining work
 
 Source review traced every dispatcher exit, its outcome update, the ordered
