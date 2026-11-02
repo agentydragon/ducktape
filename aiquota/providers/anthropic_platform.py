@@ -115,6 +115,7 @@ class AnthropicPlatformProvider(Provider):
             return ProviderFetch(
                 fetched_at=now, result=FetchError(error="Anthropic Platform proxy URL is not configured")
             )
+        base_url = self.settings.url
         try:
             token = (
                 self.settings.token_path.expanduser().read_text().strip()
@@ -123,7 +124,7 @@ class AnthropicPlatformProvider(Provider):
             )
             if not token:
                 raise ValueError("Anthropic Platform proxy token is not configured")
-            organizations_url = self.settings.url.rstrip("/") + "/api/organizations"
+            organizations_url = base_url.rstrip("/") + "/api/organizations"
             headers = {"Authorization": f"Bearer {token}"}
             async with self.client_factory(self.name, {organizations_url}, API_TIMEOUT_SECS) as client:
                 response = await client.get(organizations_url, headers=headers)
@@ -145,15 +146,17 @@ class AnthropicPlatformProvider(Provider):
             )
 
         results = await asyncio.gather(
-            *(self._fetch_organization(organization, token) for organization in api_organizations)
+            *(self._fetch_organization(organization, token, base_url) for organization in api_organizations)
         )
         return ProviderFetch(
             fetched_at=now,
             result=FetchSuccess(anthropic_platform_credits=AnthropicPlatformCredits(organizations=results)),
         )
 
-    async def _fetch_organization(self, organization: _Organization, token: str) -> AnthropicPlatformOrganization:
-        url = self.settings.url.rstrip("/") + f"/api/organizations/{quote(organization.uuid, safe='')}/prepaid/credits"
+    async def _fetch_organization(
+        self, organization: _Organization, token: str, base_url: str
+    ) -> AnthropicPlatformOrganization:
+        url = base_url.rstrip("/") + f"/api/organizations/{quote(organization.uuid, safe='')}/prepaid/credits"
         try:
             async with self.client_factory(self.name, {url}, API_TIMEOUT_SECS) as client:
                 response = await client.get(url, headers={"Authorization": f"Bearer {token}"})

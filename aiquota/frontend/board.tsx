@@ -318,14 +318,14 @@ function anthropicTrancheLines(
   tranches: NonNullable<EffectiveQuota["anthropicPlatformCredits"]>["organizations"][number]["tranches"],
   label: string
 ): JSX.Element[] {
-  return tranches.flatMap((tranche) => {
+  return (tranches ?? []).flatMap((tranche) => {
     const granted = tranche.granted.credits;
     const remaining = tranche.remaining.credits;
     if (!granted || !remaining) return [];
     const expiry = tranche.expires_at ? new Date(tranche.expires_at).toLocaleString() : "unknown";
     const products = [
       ...new Set(
-        tranche.scope.applies_to.map((item) => {
+        (tranche.scope.applies_to ?? []).map((item) => {
           const qualifiers = [item.model_family, item.model_version].filter(Boolean).join(", ");
           return qualifiers ? `${item.product} (${qualifiers})` : item.product;
         })
