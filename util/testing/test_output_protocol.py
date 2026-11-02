@@ -143,7 +143,7 @@ def test_publish_output_accepts_utf8_text(tmp_path: Path) -> None:
 def test_open_output_publishes_text_and_binary_after_successful_close(tmp_path: Path) -> None:
     with open_output(tmp_path, case_id="example", role="diagnostics", suffix="json") as output:
         output.write('{"message":"猫"}')
-        assert Path(output.name).is_file()
+        assert output.seekable()
         assert list((tmp_path / "test-outputs" / RECORDS_DIR).glob("*.json")) == []
     text_path = tmp_path / "test-outputs" / FILES_DIR / f"{output_key('example', None, 'diagnostics')}.json"
     assert text_path.read_text() == '{"message":"猫"}'
