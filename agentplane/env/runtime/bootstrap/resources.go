@@ -107,7 +107,7 @@ func ReadSelection(ctx context.Context, reader controller.Reader) (Selection, bo
 	return Selection{Script: string(value.TypedSpec().Value.Script)}, true, nil
 }
 
-func publishSelection(ctx context.Context, writer state.State, id string, value Selection) error {
+func publishSelection(ctx context.Context, writer state.State, value Selection) error {
 	if err := validateScript(value.Script); err != nil {
 		return err
 	}

@@ -355,7 +355,7 @@ func (h *Host) runBootstrap(ctx context.Context) error {
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		if err := publishSelection(ctx, h.state, ResourceID, Selection{Script: *script}); err != nil {
+		if err := publishSelection(ctx, h.state, Selection{Script: *script}); err != nil {
 			return err
 		}
 		selected, found, err = ReadSelection(ctx, h.state)

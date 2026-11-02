@@ -65,7 +65,7 @@ func TestFailedDurablePutDoesNotExposeSelection(t *testing.T) {
 	backing := failedBackingStore{err: failure}
 	build := inmem.NewStateWithOptions(inmem.WithBackingStore(backing))
 	store := state.WrapCore(namespaced.NewState(func(ns resource.Namespace) state.CoreState { return build(ns) }))
-	if err := publishSelection(t.Context(), store, ResourceID, Selection{Script: "printf effect"}); !errors.Is(err, failure) {
+	if err := publishSelection(t.Context(), store, Selection{Script: "printf effect"}); !errors.Is(err, failure) {
 		t.Fatalf("selection write = %v, want backing store error", err)
 	}
 	if _, found, err := ReadSelection(t.Context(), store); err != nil || found {
@@ -426,7 +426,7 @@ func TestInterruptedAttemptIsReconstructedWithoutRerunning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := publishSelection(t.Context(), store, ResourceID, Selection{Script: script}); err != nil {
+	if err := publishSelection(t.Context(), store, Selection{Script: script}); err != nil {
 		t.Fatal(err)
 	}
 	if err := closer.Close(); err != nil {
@@ -465,7 +465,7 @@ func TestSelectionWithoutTerminalEventIsInterruptedAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := publishSelection(t.Context(), store, ResourceID, Selection{Script: script}); err != nil {
+	if err := publishSelection(t.Context(), store, Selection{Script: script}); err != nil {
 		t.Fatal(err)
 	}
 	if err := closer.Close(); err != nil {
@@ -490,7 +490,7 @@ func TestOutputWithoutTerminalEventIsInterruptedAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := publishSelection(t.Context(), store, ResourceID, Selection{Script: script}); err != nil {
+	if err := publishSelection(t.Context(), store, Selection{Script: script}); err != nil {
 		t.Fatal(err)
 	}
 	if err := closer.Close(); err != nil {
@@ -529,7 +529,7 @@ func TestOnlyDurableResourcesAreRestored(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := string([]byte{0xff, 0x00, 'x'})
-	if err := publishSelection(t.Context(), store, ResourceID, Selection{Script: script}); err != nil {
+	if err := publishSelection(t.Context(), store, Selection{Script: script}); err != nil {
 		t.Fatal(err)
 	}
 	sessions, err := retained.NewStore(filepath.Join(stateDir, "sessions"), store)
@@ -655,7 +655,7 @@ func TestDifferingSelectedScriptIsRejectedAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := publishSelection(t.Context(), store, ResourceID, Selection{Script: "printf one"}); err != nil {
+	if err := publishSelection(t.Context(), store, Selection{Script: "printf one"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := closer.Close(); err != nil {
