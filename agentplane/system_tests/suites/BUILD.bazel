@@ -103,6 +103,7 @@ k3s_suite(
 k3s_suite(
     name = "test_vm_profile",
     srcs = ["test_vm.py"],
+    main = "test_vm.py",
     profile_guest = True,
     stack = "vm",
     tags = ["manual"],

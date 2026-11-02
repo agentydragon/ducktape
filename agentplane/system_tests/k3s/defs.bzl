@@ -127,7 +127,7 @@ _STACKS = {
     "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, real_model = True, images = [_HARNESSES_LAYOUT]),
 }
 
-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False):
+def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, main = None):
     """Run one suite with retained infrastructure and fresh per-action application state."""
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
@@ -175,7 +175,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         name = name,
         size = "enormous",
         srcs = srcs,
-        main = srcs[0],
+        main = main,
         data = data,
         env = env,
         exec_properties = K3S_EXEC_PROPERTIES | properties,
