@@ -611,7 +611,9 @@ async def launcher_drives_only_the_sandbox_it_launched(
     assert target["name"] == name
     deleted = False
     try:
-        environment_target = json_format.ParseDict(target, environment_service_pb2.TargetHandle())
+        environment_target = environment_service_pb2.TargetHandle(
+            namespace=cluster.namespace, name=target["name"], uid=target["uid"]
+        )
         view = await wait_until_running(client, environment_target)
         assert view.target.uid == target["uid"]
         assert view.HasField("pod")

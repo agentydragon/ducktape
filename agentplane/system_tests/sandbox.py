@@ -258,14 +258,12 @@ async def _write_cleanup_diagnostics(cluster: Cluster, client: Client, name: str
         "last_live_snapshot": None if last_snapshot is None else [MessageToDict(row) for row in last_snapshot],
     }
 
-    async def app_state(key: str, operation: Callable[[], Coroutine[Any, Any, Any]]) -> None:
+    async def app_state(key: str, operation: Callable[[], Coroutine[Any, Any, Message]]) -> None:
         try:
             async with asyncio.timeout(10):
                 value = await operation()
-                diagnostic[key] = (
-                    MessageToDict(value, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
-                    if isinstance(value, Message)
-                    else value.model_dump(mode="json")
+                diagnostic[key] = MessageToDict(
+                    value, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
                 )
         except Exception as error:
             diagnostic[f"{key}_error"] = repr(error)
