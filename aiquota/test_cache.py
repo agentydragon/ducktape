@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -33,6 +34,64 @@ def test_cache_roundtrip(tmp_path: Path) -> None:
     assert restored is not None
     assert restored.providers[0].provider == "test"
     assert isinstance(restored.providers[0].last_output.result, FetchError)
+
+
+def test_cache_roundtrip_preserves_reset_credit_expiry_lookup_failure(tmp_path: Path) -> None:
+    cache = QuotaCache(path=tmp_path / "cache.json")
+    now = datetime.now(UTC)
+    output = ProviderFetch(
+        fetched_at=now, result=FetchSuccess(available_reset_credits=2, reset_credit_expiry_lookup_failed=True)
+    )
+    provider = _assemble("codex", output, prior=None)
+    cache.write(AllQuotas(providers=[provider], fetched_at=now))
+
+    restored = cache.read()
+
+    assert restored is not None
+    restored_provider = restored.providers[0]
+    assert isinstance(restored_provider.last_output.result, FetchSuccess)
+    assert (
+        restored_provider.last_output.result.available_reset_credits,
+        restored_provider.last_output.result.reset_credit_expiry_lookup_failed,
+    ) == (2, True)
+    assert restored_provider.last_success is not None
+    assert (
+        restored_provider.last_success.result.available_reset_credits,
+        restored_provider.last_success.result.reset_credit_expiry_lookup_failed,
+    ) == (2, True)
+
+
+def test_cache_reads_reset_credit_snapshot_without_new_failure_flag(tmp_path: Path) -> None:
+    now = datetime.now(UTC).isoformat()
+    path = tmp_path / "legacy-cache.json"
+    path.write_text(
+        json.dumps(
+            {
+                "providers": [
+                    {
+                        "provider": "codex",
+                        "last_output": {"fetched_at": now, "result": {"kind": "success", "available_reset_credits": 2}},
+                        "last_success": {
+                            "fetched_at": now,
+                            "result": {"kind": "success", "available_reset_credits": 2},
+                        },
+                    }
+                ],
+                "fetched_at": now,
+            }
+        )
+    )
+
+    restored = QuotaCache(path=path).read()
+
+    assert restored is not None
+    provider = restored.providers[0]
+    assert isinstance(provider.last_output.result, FetchSuccess)
+    assert provider.last_output.result.available_reset_credits == 2
+    assert provider.last_output.result.reset_credit_expiry_lookup_failed is False
+    assert provider.last_success is not None
+    assert provider.last_success.result.available_reset_credits == 2
+    assert provider.last_success.result.reset_credit_expiry_lookup_failed is False
 
 
 def test_cache_missing_returns_none(tmp_path: Path) -> None:
