@@ -183,32 +183,6 @@ harness. Runtime aggregates process fence proof; Host cannot restart or fence Ex
 Runtime exit requires the outer container fence before replacement. Local tools remain a deployment
 mode. See [executor isolation](../env/runtime/execution/docs/codex_executor.md).
 
-## Standalone execution service
-
-The separately runnable [`agentplane-execution-service`](../env/runtime/execution/README.md) owns the same
-Executor adapter and native backend without a Runner or native agent harness. Its real container
-acceptance client uses the private Unix socket. Production Gateway routing still reaches the
-Runner's embedded adapter; deploying the separate process and changing that route are separate work.
-
-```mermaid
-flowchart LR
-    caller[Trusted environment client]
-    subgraph environment[One Sandbox incarnation]
-        service[agentplane-execution-service]
-        native[Codex exec-server]
-        containment[Pod PID 1 or service-owned systemd scope]
-        service -->|loopback WebSocket: typed operation adaptation| native
-        service -->|launch, stop, fence| containment
-        containment -->|whole execution domain| native
-    end
-    caller -->|private Unix socket: Executor gRPC| service
-```
-
-The private directory and lifetime lock admit one local owner. Scope validation precedes dispatch;
-closing a unary caller does not imply its native operation stopped. Backend exit closes sessions and
-ends the service lifetime without replaying mutations. No new persistence or environment-attachment
-API is introduced.
-
 ## Telemetry
 
 ```mermaid

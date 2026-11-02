@@ -57,6 +57,10 @@ class ControlListener:
         self._ready_connection = 0
         self._connection_epoch = 0
 
+    @property
+    def connection_epoch(self) -> int:
+        return self._connection_epoch
+
     async def connect(self, endpoint: EnvironmentRuntimeControl, sandbox_uid: str) -> None:
         """Dial the Runner and establish its state watch, retrying until it is ready."""
         await self.disconnect()

@@ -1,12 +1,9 @@
-// Package service owns one environment's standalone execution process and gRPC listener.
+// Package service owns Runtime's embedded execution adapter and native backend.
 package service
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
@@ -16,51 +13,32 @@ import (
 // Config is immutable for a service lifetime. The environment owner supplies it;
 // a different incarnation requires stopping and fencing this service first.
 type Config struct {
-	Namespace        string                    `json:"namespace"`
-	SandboxName      string                    `json:"sandbox_name"`
-	SandboxUID       string                    `json:"sandbox_uid"`
-	IncarnationUID   string                    `json:"incarnation_uid"`
-	WorkingDirectory string                    `json:"working_directory"`
-	StateDir         string                    `json:"state_dir"`
-	SocketPath       string                    `json:"socket_path,omitempty"`
-	Binary           string                    `json:"binary"`
-	ContainerSocket  string                    `json:"container_socket,omitempty"`
-	ExecutorURL      string                    `json:"executor_url"`
-	Environment      map[string]string         `json:"environment"`
-	Backend          string                    `json:"backend"`
-	Readiness        codexexecserver.Readiness `json:"-"`
-	Systemd          *SystemdConfig            `json:"systemd,omitempty"`
-	// ProcessHost is supplied only by embedded Runtime, never by config files.
-	ProcessHost       *supervision.Host `json:"-"`
-	ProcessGeneration uint64            `json:"-"`
+	Namespace        string
+	SandboxName      string
+	SandboxUID       string
+	IncarnationUID   string
+	WorkingDirectory string
+	StateDir         string
+	Binary           string
+	ContainerSocket  string
+	ExecutorURL      string
+	Environment      map[string]string
+	Backend          string
+	Readiness        codexexecserver.Readiness
+	Systemd          *SystemdConfig
+	// ProcessHost binds native systemd work to Runtime's process finalizers.
+	ProcessHost       *supervision.Host
+	ProcessGeneration uint64
 }
 
 type SystemdConfig struct {
-	AgentUID          uint32                     `json:"agent_uid"`
-	AgentGID          uint32                     `json:"agent_gid"`
-	BlockDevices      []string                   `json:"block_devices"`
-	AggregateLimits   supervision.ResourceLimits `json:"aggregate_limits"`
-	ProcessLimits     supervision.ResourceLimits `json:"process_limits"`
-	OwnerUnit         string                     `json:"owner_unit,omitempty"`
-	LifetimeDirectory string                     `json:"lifetime_directory,omitempty"`
-}
-
-func Load(path string) (Config, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return Config{}, err
-	}
-	defer file.Close()
-	decoder := json.NewDecoder(file)
-	decoder.DisallowUnknownFields()
-	var config Config
-	if err := decoder.Decode(&config); err != nil {
-		return Config{}, err
-	}
-	if err := decoder.Decode(new(any)); err != io.EOF {
-		return Config{}, errors.New("execution configuration must contain exactly one JSON object")
-	}
-	return config.Resolve()
+	AgentUID          uint32
+	AgentGID          uint32
+	BlockDevices      []string
+	AggregateLimits   supervision.ResourceLimits
+	ProcessLimits     supervision.ResourceLimits
+	OwnerUnit         string
+	LifetimeDirectory string
 }
 
 // Resolve supplies the executor's compatible default readiness windows and validates the
@@ -89,9 +67,6 @@ func (c Config) validate() error {
 	if !filepath.IsAbs(c.StateDir) {
 		return errors.New("execution state directory must be absolute")
 	}
-	if c.SocketPath != "" && !filepath.IsAbs(c.SocketPath) {
-		return errors.New("execution socket path must be absolute")
-	}
 	if err := codexexecserver.ValidateURL(c.ExecutorURL); err != nil {
 		return err
 	}
@@ -101,10 +76,6 @@ func (c Config) validate() error {
 		}
 	}
 	switch c.Backend {
-	case "pod":
-		if c.Systemd != nil {
-			return errors.New("Pod execution cannot configure systemd")
-		}
 	case "companion":
 		if !filepath.IsAbs(c.ContainerSocket) || c.Systemd != nil || c.Binary != "" || c.WorkingDirectory != "" {
 			return errors.New("companion execution requires an absolute ownership socket; its process configuration belongs to the companion")
@@ -123,11 +94,4 @@ func (c Config) validate() error {
 		return fmt.Errorf("unknown execution backend %q", c.Backend)
 	}
 	return nil
-}
-
-func (c Config) Socket() string {
-	if c.SocketPath != "" {
-		return c.SocketPath
-	}
-	return filepath.Join(c.StateDir, "execution.sock")
 }

@@ -118,7 +118,7 @@ type NativeConfig struct {
 	Environment map[string]string
 	Supervisor  *supervision.Supervisor
 	// LaunchProcess binds an embedded native executor to Runtime's process
-	// controller. Standalone execution retains its own supervisor lifetime.
+	// controller.
 	LaunchProcess func(context.Context, supervision.ProcessConfig) (*supervision.ManagedProcess, error)
 }
 
@@ -200,7 +200,7 @@ func ProbeAt(endpoint string) Probe {
 	return func(ctx context.Context) error { return probe(ctx, endpoint) }
 }
 
-// Monitor bounds dispatcher liveness for standalone and embedded service lifetimes.
+// Monitor bounds dispatcher liveness for the embedded service lifetime.
 func Monitor(ctx context.Context, endpoint string) error {
 	ticker := time.NewTicker(healthInterval)
 	defer ticker.Stop()

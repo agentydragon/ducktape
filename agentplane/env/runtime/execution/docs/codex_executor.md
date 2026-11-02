@@ -2,8 +2,7 @@
 
 Environment Runtime embeds the Execution Service and owns its executor lifetime. Harness Host
 runs the shared Codex app-server and sets `CODEX_EXEC_SERVER_URL` to connect directly to the native
-exec-server's WebSocket endpoint. A standalone Execution Service is also available. An
-executor failure never enables local execution. Claude continues to execute in its own harness
+exec-server's WebSocket endpoint. An executor failure never enables local execution. Claude continues to execute in its own harness
 process.
 
 The executor is a resource boundary within the same Sandbox principal. It shares workspace, home,
