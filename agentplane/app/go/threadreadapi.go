@@ -323,8 +323,18 @@ func (s *appService) ListThreadMetadata(ctx context.Context, request *apppb.List
 			if err != nil {
 				return nil, status.Error(codes.Unavailable, "count archived Environment Threads")
 			}
-			for _, thread := range countPage.Threads {
-				if _, belongs := matching[thread.ID]; belongs && thread.Archived {
+			ids := make([]uuid.UUID, 0, len(countPage.Threads))
+			for _, row := range countPage.Threads {
+				if _, belongs := matching[row.ID]; belongs && row.Archived {
+					ids = append(ids, row.ID)
+				}
+			}
+			summaries, err := s.threadHistory.BatchGetSummaries(ctx, ids)
+			if err != nil {
+				return nil, status.Error(codes.Unavailable, "count archived Environment Threads")
+			}
+			for _, id := range ids {
+				if summary, present := summaries[id]; present && summary.Present && summary.SandboxUID == *listing.SandboxUID {
 					response.ArchivedCount++
 				}
 			}

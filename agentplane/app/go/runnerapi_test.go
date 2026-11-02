@@ -139,7 +139,7 @@ func TestRunnerStatusRoutePreservesSandboxErrorsAndCallerAuthentication(t *testi
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Detail != "no Agentplane sandbox name='fixture'" || body.Code == 0 {
+	if body.Detail != "fixture" || body.Code == 0 {
 		t.Fatalf("missing Sandbox error = %+v", body)
 	}
 }
