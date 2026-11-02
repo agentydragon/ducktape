@@ -3,15 +3,14 @@ package runtime
 import (
 	"context"
 	"errors"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
-	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"google.golang.org/protobuf/proto"
 )
 
 func TestExecutionSessionAdmissionClosesWhenRuntimeQuiesces(t *testing.T) {
@@ -94,7 +93,7 @@ func TestIncarnationReplacementFencesExecutionBeforeStartingSuccessor(t *testing
 	}
 	r := newLifecycleRuntime(t, config)
 	r.mu.Lock()
-	priorBinding := proto.Clone(r.intent.Binding).(*runtimepb.Binding)
+	priorGeneration := r.desired.Generation
 	r.mu.Unlock()
 	done := make(chan error, 1)
 	go func() { done <- r.adoptIncarnation(context.Background(), "successor") }()
@@ -124,9 +123,8 @@ func TestIncarnationReplacementFencesExecutionBeforeStartingSuccessor(t *testing
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	report := r.hostReportLocked()
-	if r.intent == nil || report == nil || r.intent.Binding.Generation <= priorBinding.Generation {
-		t.Fatalf("successor Host did not acknowledge its new binding: prior=%v intent=%v report=%v", priorBinding, r.intent, report)
+	if r.desired.Mode != lifecycle.Running || r.desired.IncarnationUID != "successor" || r.desired.Generation <= priorGeneration || !r.admissionOpen {
+		t.Fatalf("successor is not the accepted Running revision: prior=%d desired=%+v accepted=%t", priorGeneration, r.desired, r.admissionOpen)
 	}
 }
 
@@ -170,7 +168,7 @@ func TestCanceledAdoptionReconcilesExactDrainBeforeSuccessor(t *testing.T) {
 		t.Fatal("old generation did not start its fence")
 	}
 	r.mu.Lock()
-	previousGeneration := r.intent.Binding.Generation
+	previousGeneration := r.desired.Generation
 	r.mu.Unlock()
 	cancelEpoch()
 	once.Do(func() { close(release) })
@@ -181,7 +179,7 @@ func TestCanceledAdoptionReconcilesExactDrainBeforeSuccessor(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.mu.Lock()
-	finalGeneration := r.intent.Binding.Generation
+	finalGeneration := r.desired.Generation
 	r.mu.Unlock()
 	if finalGeneration != previousGeneration+1 {
 		t.Fatalf("successor replayed the old drain: final generation %d, canceled generation %d", finalGeneration, previousGeneration)
