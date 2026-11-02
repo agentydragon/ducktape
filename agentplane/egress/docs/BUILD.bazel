@@ -2,12 +2,6 @@ load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//devinfra/go:proto_openapi.bzl", "proto_openapi")
 
-filegroup(
-    name = "agents",
-    srcs = glob(["agents/**"]),
-    visibility = ["//agentplane/egress:__pkg__"],
-)
-
 proto_openapi(
     name = "rules_openapi",
     proto = "//agentplane/egress:egress_rules_proto",
