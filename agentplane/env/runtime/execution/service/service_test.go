@@ -18,24 +18,18 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/coder/websocket"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
-func TestOwnerLockFencesContenderAndSurvivesSocketReplacement(t *testing.T) {
+func TestOwnerLockFencesContender(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "service")
 	owner, err := lock(directory)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer owner.Close()
-	if err := os.WriteFile(filepath.Join(directory, "execution.sock"), []byte("stale socket"), 0600); err != nil {
-		t.Fatal(err)
-	}
 	if contender, err := lock(directory); err == nil {
 		_ = contender.Close()
 		t.Fatal("second service acquired the live execution owner lock")
@@ -108,29 +102,10 @@ func TestOwnerLockRejectsDirectoryAndOwnerSymlinks(t *testing.T) {
 	}
 }
 
-func TestSocketPathCanBeShortenedIndependentlyOfOwnerState(t *testing.T) {
-	config := Config{
-		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
-		IncarnationUID: "test-incarnation", StateDir: "/state/execution", SocketPath: "/state/e.sock",
-		ContainerSocket: "/run/agentplane/executor.sock", ExecutorURL: "ws://127.0.0.1:4501", Backend: "companion",
-	}
-	if err := config.Validate(); err != nil {
-		t.Fatal(err)
-	}
-	if got := config.Socket(); got != config.SocketPath {
-		t.Fatalf("Socket() = %q, want %q", got, config.SocketPath)
-	}
-
-	config.SocketPath = "relative.sock"
-	if err := config.Validate(); err == nil {
-		t.Fatal("Validate accepted a relative socket path")
-	}
-}
-
 func TestSystemdExecutionRequiresExplicitOwnerLifetime(t *testing.T) {
 	config := Config{
 		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
-		IncarnationUID: "test-incarnation", StateDir: "/state/execution", SocketPath: "/state/e.sock",
+		IncarnationUID: "test-incarnation", StateDir: "/state/execution",
 		Binary: "/bin/codex", WorkingDirectory: "/state", ExecutorURL: "ws://127.0.0.1:4501",
 		Backend: "systemd", Systemd: &SystemdConfig{},
 	}
@@ -147,12 +122,12 @@ func TestSystemdExecutionRequiresExplicitOwnerLifetime(t *testing.T) {
 func TestExecutionConfigResolvesCompatibleReadinessDefaultsAndRejectsInvalidWindows(t *testing.T) {
 	config := Config{
 		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
-		IncarnationUID: "test-incarnation", StateDir: "/state/execution", SocketPath: "/state/e.sock",
-		Binary: "/bin/codex", WorkingDirectory: "/state", ExecutorURL: "ws://127.0.0.1:4501", Backend: "pod",
+		IncarnationUID: "test-incarnation", StateDir: "/state/execution",
+		ContainerSocket: "/run/executor.sock", ExecutorURL: "ws://127.0.0.1:4501", Backend: "companion",
 	}
 	resolved, err := config.Resolve()
 	if err != nil {
-		t.Fatalf("resolve standalone config defaults: %v", err)
+		t.Fatalf("resolve embedded config defaults: %v", err)
 	}
 	want := codexexecserver.Readiness{Timeout: 20 * time.Second, ProbeTimeout: 2 * time.Second, ProbeInterval: 100 * time.Millisecond}
 	if resolved.Readiness != want {
@@ -191,10 +166,9 @@ func TestRunReturnsFencedBackendLossOnlyAfterCleanupFence(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			endpoint := testExecutorEndpoint(t)
 			stateDir := t.TempDir()
-			socketPath := filepath.Join(t.TempDir(), "e.sock")
 			config := Config{
 				Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
-				IncarnationUID: "test-incarnation", StateDir: stateDir, SocketPath: socketPath,
+				IncarnationUID: "test-incarnation", StateDir: stateDir,
 				ContainerSocket: filepath.Join(t.TempDir(), "companion.sock"), ExecutorURL: endpoint, Backend: "companion",
 			}
 			ctx, cancel := context.WithCancel(t.Context())
@@ -202,8 +176,9 @@ func TestRunReturnsFencedBackendLossOnlyAfterCleanupFence(t *testing.T) {
 			backendDone := make(chan error, 1)
 			stopEntered, releaseStop := make(chan struct{}), make(chan struct{})
 			stopResult := make(chan error, 1)
+			ready := make(chan struct{}, 1)
 			go func() {
-				stopResult <- run(ctx, config, func(context.Context) (*supervision.Instance, error) {
+				stopResult <- runWithReady(ctx, config, func(context.Context) (*supervision.Instance, error) {
 					return &supervision.Instance{
 						Done: backendDone,
 						Stop: func(context.Context) error {
@@ -212,10 +187,15 @@ func TestRunReturnsFencedBackendLossOnlyAfterCleanupFence(t *testing.T) {
 							return test.fenceErr
 						},
 					}, nil
-				})
+				}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} })
 			}()
-			serviceConn := waitTestService(t, ctx, socketPath)
-			defer serviceConn.Close()
+			select {
+			case <-ready:
+			case err := <-stopResult:
+				t.Fatalf("service exited before readiness: %v", err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("service did not publish readiness")
+			}
 			backendDone <- test.backendErr
 			select {
 			case <-stopEntered:
@@ -243,11 +223,11 @@ func TestRunReturnsFencedBackendLossOnlyAfterCleanupFence(t *testing.T) {
 	}
 }
 
-func TestEmbeddedServicePublishesDirectAdapterWithoutSocket(t *testing.T) {
+func TestEmbeddedServicePublishesDirectAdapter(t *testing.T) {
 	endpoint := testExecutorEndpoint(t)
 	config := Config{
 		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
-		IncarnationUID: "test-incarnation", StateDir: t.TempDir(), SocketPath: filepath.Join(t.TempDir(), "e.sock"),
+		IncarnationUID: "test-incarnation", StateDir: t.TempDir(),
 		ExecutorURL: endpoint, Backend: "companion", ContainerSocket: filepath.Join(t.TempDir(), "companion.sock"),
 	}
 	ctx, cancel := context.WithCancel(t.Context())
@@ -268,9 +248,6 @@ func TestEmbeddedServicePublishesDirectAdapterWithoutSocket(t *testing.T) {
 		t.Fatalf("embedded service exited before readiness: %v", err)
 	case <-time.After(5 * time.Second):
 		t.Fatal("embedded service did not publish readiness")
-	}
-	if _, err := os.Stat(config.Socket()); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("embedded Execution socket stat = %v, want absent socket", err)
 	}
 	cancel()
 	select {
@@ -395,8 +372,8 @@ func TestConfiguredReadinessControlsEmbeddedBackendProbes(t *testing.T) {
 	t.Cleanup(server.Close)
 	endpoint := "ws" + strings.TrimPrefix(server.URL, "http")
 	config := Config{
-		ExecutorURL: endpoint, SocketPath: filepath.Join(t.TempDir(), "e.sock"),
-		Readiness: codexexecserver.Readiness{Timeout: 900 * time.Millisecond, ProbeTimeout: probeTimeout, ProbeInterval: probeInterval},
+		ExecutorURL: endpoint,
+		Readiness:   codexexecserver.Readiness{Timeout: 900 * time.Millisecond, ProbeTimeout: probeTimeout, ProbeInterval: probeInterval},
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -460,8 +437,8 @@ func TestConfiguredReadinessDeadlineAndCancellationFenceBackend(t *testing.T) {
 		t.Cleanup(server.Close)
 		endpoint := "ws" + strings.TrimPrefix(server.URL, "http")
 		config := Config{
-			ExecutorURL: endpoint, SocketPath: filepath.Join(t.TempDir(), "e.sock"),
-			Readiness: codexexecserver.Readiness{Timeout: 150 * time.Millisecond, ProbeTimeout: 80 * time.Millisecond, ProbeInterval: 20 * time.Millisecond},
+			ExecutorURL: endpoint,
+			Readiness:   codexexecserver.Readiness{Timeout: 150 * time.Millisecond, ProbeTimeout: 80 * time.Millisecond, ProbeInterval: 20 * time.Millisecond},
 		}
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
@@ -515,8 +492,8 @@ func TestConfiguredReadinessDeadlineAndCancellationFenceBackend(t *testing.T) {
 		t.Cleanup(server.Close)
 		endpoint := "ws" + strings.TrimPrefix(server.URL, "http")
 		config := Config{
-			ExecutorURL: endpoint, SocketPath: filepath.Join(t.TempDir(), "e.sock"),
-			Readiness: codexexecserver.Readiness{Timeout: 5 * time.Second, ProbeTimeout: 4 * time.Second, ProbeInterval: 1 * time.Second},
+			ExecutorURL: endpoint,
+			Readiness:   codexexecserver.Readiness{Timeout: 5 * time.Second, ProbeTimeout: 4 * time.Second, ProbeInterval: 1 * time.Second},
 		}
 		ctx, cancel := context.WithCancel(t.Context())
 		ready := make(chan struct{}, 1)
@@ -584,41 +561,6 @@ func testExecutorEndpoint(t *testing.T) string {
 	}))
 	t.Cleanup(server.Close)
 	return "ws" + strings.TrimPrefix(server.URL, "http")
-}
-
-func waitTestService(t *testing.T, ctx context.Context, socketPath string) *grpc.ClientConn {
-	t.Helper()
-	ticker := time.NewTicker(20 * time.Millisecond)
-	defer ticker.Stop()
-	deadline, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	var connection *grpc.ClientConn
-	for {
-		if connection == nil {
-			var err error
-			connection, err = grpc.NewClient("unix://"+socketPath, grpc.WithTransportCredentials(insecure.NewCredentials()))
-			if err != nil {
-				select {
-				case <-deadline.Done():
-					t.Fatalf("dial Execution service: %v", err)
-				case <-ticker.C:
-					continue
-				}
-			}
-		}
-		checkCtx, checkCancel := context.WithTimeout(deadline, 100*time.Millisecond)
-		response, err := healthpb.NewHealthClient(connection).Check(checkCtx, &healthpb.HealthCheckRequest{Service: executorpb.Executor_ServiceDesc.ServiceName})
-		checkCancel()
-		if err == nil && response.Status == healthpb.HealthCheckResponse_SERVING {
-			return connection
-		}
-		select {
-		case <-deadline.Done():
-			_ = connection.Close()
-			t.Fatalf("Execution service did not become ready: %v", err)
-		case <-ticker.C:
-		}
-	}
 }
 
 func TestAdmissionRejectsForeignOrStaleScopeBeforeEffect(t *testing.T) {

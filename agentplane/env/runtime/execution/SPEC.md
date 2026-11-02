@@ -7,10 +7,8 @@ Codex exec-server; running a native agent harness or app-server is not required.
 ## Ownership and admission
 
 One Execution API lifetime owns one immutable Sandbox UID and incarnation and one native backend
-lifetime. In the normal topology it runs inside Environment Runtime; a standalone binary remains
-available for isolated use. Embedded Runtime calls the adapter directly after the native backend
-readiness probe; Host asks Runtime for in-process readiness. Standalone mode serves Executor RPCs
-on its private Unix socket, where filesystem access grants the environment's execution authority. Every
+lifetime inside Environment Runtime. Runtime calls the adapter directly after the native backend
+readiness probe; Host asks Runtime for in-process readiness. Every
 call carries the destination, incarnation and attributing Session; a foreign destination or stale
 incarnation is rejected before native dispatch. The service cannot adopt another environment or
 advance a Runner watch epoch. Callers supply Session and incarnation context with each request;
@@ -29,7 +27,7 @@ or provisioning authority. Invalid, foreign or stale Sandbox identities, an unsy
 inventory and uncertain Kubernetes reads receive no Gateway environment detail. Legacy Runner
 proxy calls keep their existing status behavior and do not receive this execution detail.
 
-The state-directory owner lock precedes socket replacement and native startup. Pod ownership is
+The state-directory owner lock precedes native startup. Pod ownership is
 PID 1 plus its private process namespace. On ordinary release, the companion stops exec-server,
 fences every remaining process in that namespace, and publishes a new idle generation only after
 the process table contains no workload process. Fence requests name the observed generation;
@@ -40,7 +38,7 @@ exec-server exits unexpectedly, the companion performs the same process-domain f
 ownership lease so Runtime can recover the backend. If the in-container fence fails, the companion
 exits and the outer runtime's whole-namespace cleanup supplies the stronger fence. VM ownership is the Runtime systemd unit, its lifetime marker and the explicit `execution-service`
 scope in `agentplane-executors.slice`, with startup fencing and stop proof from the shared supervisor.
-Standalone systemd use requires an explicit owner unit and lifetime directory. No second owner may start native work while the prior owner remains live. A
+No second owner may start native work while the prior owner remains live. A
 failed fence is not permission to launch a successor. Before taking the lock, the service opens its
 state directory without following symlinks and enforces mode `0700`; this restores private access
 when a persistent-volume remount adds `fsGroup` permissions.
@@ -81,8 +79,7 @@ desired-state demand. If that epoch is canceled or a newer demand arrives before
 published, the old startup is fenced before any successor is admitted. A proven fence returns
 the startup's readiness error to its caller; an uncertain startup fence remains terminal.
 
-The Execution API closes admission and held connections, joins direct adapter calls (or drains
-standalone gRPC calls), and stops its native
+The Execution API closes admission and held connections, joins direct adapter calls, and stops its native
 backend before releasing ownership. Pod cleanup fences all remaining processes in the companion's
 private namespace, including descendants that escaped a process group; if that proof fails, Pod
 exit invokes the runtime's whole-namespace fence. VM cleanup proves its execution cgroup empty;

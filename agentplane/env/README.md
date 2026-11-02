@@ -16,8 +16,7 @@ services' `/llms.txt` indexes.
 `//agentplane/env/runtime/cmd:agentplane-environment-runtime` runs the environment owner,
 Harness Host and Execution API in one process. Runtime owns bootstrap and public control; Host
 owns Sessions, harnesses and journals; Execution owns the native exec-server and execution adapter.
-`//agentplane/env/runtime/execution/cmd:agentplane-execution-service` remains independently runnable and
-provides the Pod execution companion.
+`//agentplane/env/runtime/execution/cmd:agentplane-execution-service` provides the Pod execution companion.
 
 Shared process machinery is in `env/runtime/supervision`; one-shot operation bookkeeping is in
 `env/oneoff`, shell execution in `env/scripts`, and Go deployment parsing in `env/configuration`.

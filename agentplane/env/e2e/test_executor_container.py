@@ -9,10 +9,12 @@ import shlex
 import socket
 import textwrap
 import time
+from collections.abc import AsyncIterator
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
+import grpc.aio
 import pytest
 import pytest_bazel
 
@@ -22,12 +24,14 @@ from agentplane.env.e2e.testing.driver import RunnerDriver, SessionFollow, Sessi
 from agentplane.env.e2e.testing.fixtures import ModelEndpoint
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.env.e2e.testing.process_fixtures import wait_for_exit
+from agentplane.env.runtime.control import environment_runtime_pb2, environment_runtime_pb2_grpc
+from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
 from agentplane.env.runtime.execution.testing.codex_exec_server_container import (
     CodexExecServerContainer,
     CodexExecServerContainerStatus,
     inspect_codex_exec_server_container,
 )
-from agentplane.proto import event_pb2, session_pb2
+from agentplane.proto import event_pb2, sandboxes_pb2, session_pb2
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 from third_party.containers import debian_slim
 from util.bazel.runfiles import get_required_path
@@ -346,6 +350,174 @@ async def test_executor_exit_does_not_join_escaped_output_readers(harness: sessi
             await asyncio.wait_for(wait_for_exit(pipe_holder_host_pid), timeout=10)
             idle = await _wait_for_generation(socket_path, generation, owned=False)
             assert idle.generation != generation
+
+
+async def test_process_output_resume_files_and_incarnation_fence(runner: RunningRunner, tmp_path: Path) -> None:
+    scope = executor_pb2.ExecutionScope(
+        destination=sandboxes_pb2.SandboxDestination(
+            owner=sandboxes_pb2.ServiceAccount(
+                namespace=runner.config.launch.sandbox.namespace, name=runner.config.launch.sandbox.name
+            ),
+            sandbox=runner.config.launch.sandbox.name,
+            sandbox_uid=runner.config.launch.sandbox.uid,
+        ),
+        expected_incarnation_uid=runner.gateway.control.incarnation_uid,
+        session_id="test-execution-session",
+    )
+    target = runner.control_endpoint.listen_address
+    async with grpc.aio.insecure_channel(target, options=[("grpc.enable_retries", 0)]) as channel:
+        async with asyncio.timeout(30):
+            await channel.channel_ready()
+        watch = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel).WatchState(
+            environment_runtime_pb2.WatchStateRequest(
+                sandbox_uid=scope.destination.sandbox_uid,
+                incarnation_uid=scope.expected_incarnation_uid,
+                connection_epoch=2,
+            )
+        )
+        first_watch = await watch.read()
+        assert isinstance(first_watch, environment_runtime_pb2.WatchStateResponse)
+        metadata = (
+            ("agentplane-sandbox-uid", scope.destination.sandbox_uid),
+            ("agentplane-incarnation-uid", scope.expected_incarnation_uid),
+            ("agentplane-environment-runtime-boot-id", first_watch.environment_runtime_boot_id),
+            ("agentplane-connection-epoch", "2"),
+        )
+        client = executor_pb2_grpc.ExecutorStub(channel)
+        stale = executor_pb2.ExecutionScope()
+        stale.CopyFrom(scope)
+        stale.expected_incarnation_uid = "old-incarnation"
+        with pytest.raises(grpc.aio.AioRpcError) as refused:
+            await client.OpenSession(
+                executor_pb2.OpenSessionRequest(scope=stale, request_id=uuid4().hex), metadata=metadata
+            ).read()
+        assert refused.value.code() == grpc.StatusCode.FAILED_PRECONDITION
+
+        opened = client.OpenSession(
+            executor_pb2.OpenSessionRequest(scope=scope, request_id=uuid4().hex), metadata=metadata
+        )
+        first = await anext(aiter(opened))
+        assert first.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
+        session = first.execution_session_id
+        process = uuid4().hex
+        started = await client.StartProcess(
+            executor_pb2.StartProcessRequest(
+                scope=scope,
+                execution_session_id=session,
+                request_id=uuid4().hex,
+                process_id=process,
+                argv=["/bin/sh", "-c", "printf first; read line; printf '%s' \"$line\""],
+                cwd=tmp_path.as_uri(),
+                pipe_stdin=True,
+            ),
+            metadata=metadata,
+            timeout=10,
+        )
+        assert started.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
+        assert started.process_id == process
+        before = bytearray()
+        cursor: int | None = None
+        async with asyncio.timeout(10):
+            while bytes(before) != b"first":
+                read = await client.ReadProcess(
+                    executor_pb2.ReadProcessRequest(
+                        scope=scope,
+                        execution_session_id=session,
+                        request_id=uuid4().hex,
+                        process_id=process,
+                        after_seq=cursor,
+                        max_bytes=1024,
+                        wait_ms=100,
+                    ),
+                    metadata=metadata,
+                    timeout=5,
+                )
+                assert read.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
+                before.extend(b"".join(chunk.data for chunk in read.chunks))
+                cursor = read.next_seq - 1 if read.next_seq else None
+        # Closing the gRPC stream detaches the native session; resume keeps the
+        # process identity and output cursor without starting the command again.
+        opened.cancel()
+        resumed = client.OpenSession(
+            executor_pb2.OpenSessionRequest(scope=scope, request_id=uuid4().hex, resume_session_id=session),
+            metadata=metadata,
+        )
+        resumed_responses = aiter(resumed)
+        response = await anext(resumed_responses)
+        assert response.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
+        assert response.execution_session_id == session
+        written = await client.WriteProcess(
+            executor_pb2.WriteProcessRequest(
+                scope=scope,
+                execution_session_id=session,
+                request_id=uuid4().hex,
+                process_id=process,
+                data=b"second\n",
+                write_id=uuid4().hex,
+            ),
+            metadata=metadata,
+            timeout=10,
+        )
+        assert written.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
+        output = bytearray()
+        async with asyncio.timeout(10):
+            while True:
+                read = await client.ReadProcess(
+                    executor_pb2.ReadProcessRequest(
+                        scope=scope,
+                        execution_session_id=session,
+                        request_id=uuid4().hex,
+                        process_id=process,
+                        after_seq=cursor,
+                        max_bytes=1024,
+                        wait_ms=100,
+                    ),
+                    metadata=metadata,
+                    timeout=5,
+                )
+                assert read.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
+                output.extend(b"".join(chunk.data for chunk in read.chunks))
+                cursor = read.next_seq - 1 if read.next_seq else None
+                if read.exited:
+                    assert read.exit_code == 0
+                    break
+        assert output == b"second"
+        authored = tmp_path / "authored.txt"
+        authored.write_bytes(b"retained authored file")
+        handle = uuid4().hex
+        file = await client.OpenFile(
+            executor_pb2.OpenFileRequest(
+                scope=scope,
+                execution_session_id=session,
+                request_id=uuid4().hex,
+                handle_id=handle,
+                path=authored.as_uri(),
+            ),
+            metadata=metadata,
+            timeout=10,
+        )
+        assert file.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
+        content = await client.ReadFile(
+            executor_pb2.ReadFileRequest(
+                scope=scope, execution_session_id=session, request_id=uuid4().hex, handle_id=handle, offset=9, length=8
+            ),
+            metadata=metadata,
+            timeout=10,
+        )
+        assert content.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
+        assert content.data == b"authored"
+        await runner.stop()
+        assert runner.process.returncode == 0
+        async with asyncio.timeout(10):
+            with pytest.raises(grpc.aio.AioRpcError) as ended:
+                await _drain(resumed_responses)
+        assert ended.value.code() in (grpc.StatusCode.CANCELLED, grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.ABORTED)
+        assert authored.read_bytes() == b"retained authored file"
+
+
+async def _drain(responses: AsyncIterator[executor_pb2.OpenSessionResponse]) -> None:
+    async for _ in responses:
+        pass
 
 
 if __name__ == "__main__":

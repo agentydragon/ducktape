@@ -1,10 +1,9 @@
 # Environment execution service
 
-`//agentplane/env/runtime/execution/cmd:agentplane-execution-service` serves the typed
-[`Executor` API](executor.proto) independently of a native harness, app-server, Runner journal,
-model provider or integration app. It owns one Codex exec-server and a private Unix gRPC socket.
-The generated Go and Python clients live with this protocol. [SPEC.md](SPEC.md) defines lifetime,
-admission and recovery guarantees.
+Environment Runtime embeds the typed [`Executor` API](executor.proto), independently of a native
+harness, app-server, model provider or integration app. It owns one Codex exec-server and calls the
+execution adapter directly. Generated Go and Python clients live with this protocol.
+[SPEC.md](SPEC.md) defines lifetime, admission and recovery guarantees.
 
 [Isolation and resources](ISOLATION.md) describes protection goals, the current shared Codex
 backend, process placement, collective resource limits and failure scope.
@@ -15,49 +14,13 @@ shutdown and fencing. Native protocol probing establishes readiness without a lo
 the `companion` subcommand runs as PID 1 in the isolated
 Codex container and owns the native
 exec-server namespace. Gateway and the central sampler continue to use the unchanged `Executor` wire
-protocol. The independent service is exercised by
-`//agentplane/env/runtime/execution/testing:test_service` using its actual executable as container PID 1,
-the pinned native exec-server and generated gRPC client, without a Runner or harness process.
+protocol. `//agentplane/env/e2e:test_executor_container` exercises process output, session resume,
+filesystem access, incarnation fencing and shutdown through Runtime with the real native executor.
 
-## Standalone invocation
+## Pod companion invocation
 
-Run `agentplane-execution-service --config /path/to/execution.json`. Configuration rejects unknown
-keys. A Pod configuration is:
-
-```json
-{
-  "namespace": "example-namespace",
-  "sandbox_name": "example-sandbox",
-  "sandbox_uid": "example-sandbox-uid",
-  "incarnation_uid": "example-incarnation-uid",
-  "state_dir": "/run/agentplane-execution",
-  "working_directory": "/workspace",
-  "binary": "/bin/codex",
-  "executor_url": "ws://127.0.0.1:4501",
-  "environment": { "HOME": "/home/runner", "PATH": "/bin:/usr/bin" },
-  "backend": "pod"
-}
-```
-
-`state_dir` is a private `0700` service directory. The listener is `state_dir/execution.sock`, mode
-`0600`; clients with access to it have the environment's execution authority. It is not exposed over
-TCP. Gateway remains the remote caller authorization and routing authority. The environment owner
-supplies immutable Sandbox and incarnation identity and must stop this process before changing them.
-Only the service may replace its socket: a nonblocking lifetime lock on
-`state_dir/.agentplane-execution-owner` prevents another service process from taking over.
-An environment owner may provide an absolute `socket_path` when the state directory is too deep for
-the Unix-domain socket path limit; omitting it preserves `state_dir/execution.sock`.
-
-`backend: "pod"` requires PID 1 in a private container PID namespace, with resource limits enforced
-by the outer runtime. `backend: "systemd"` requires a `systemd` object containing `agent_uid`,
-`agent_gid`, `block_devices`, `aggregate_limits`, `process_limits`, `owner_unit` and
-`lifetime_directory`. The configured systemd owner and `execution-service` scope fence transient
-services independently from Harness Host's workload scope. The embedding Runtime supplies its own
-unit and lifetime directory; standalone users must supply an appropriate systemd owner.
-`backend: "companion"` lets Runtime host the service while a separate
-container owns the native PID namespace. Set `container_socket` to the companion's absolute ownership
-socket, omit `binary`, `working_directory` and `systemd`, and keep the same `executor_url` on both
-sides. The environment owner starts the companion as PID 1 with:
+`//agentplane/env/runtime/execution/cmd:agentplane-execution-service` supplies the Pod companion
+entrypoint. The environment owner starts it as PID 1 in the execution container:
 
 ```sh
 agentplane-execution-service companion --socket /run/agentplane/executor/control.sock \
@@ -73,12 +36,11 @@ in-container proof fails, the companion exits so the outer runtime can fence the
 Runtime starts the API, waits for native protocol readiness, and joins its shutdown
 and 90-second backend fence before replacement. A failed cleanup is never an execution success receipt.
 
-All backends launch only `codex exec-server`; no harness configuration or provider credentials are
-required. The subprocess working directory is distinct from the private listener directory.
+All backends launch only `codex exec-server`; no harness configuration or provider credentials are required.
 
-Standard gRPC health becomes serving after a bounded native protocol readiness probe. The service
+Runtime publishes the adapter after a bounded native protocol readiness probe. The service
 probes native dispatch every five seconds with a three-second deadline; three consecutive failures
-end the service lifetime and fence the backend. Shutdown closes held sessions, drains gRPC and stops
+end the service lifetime and fence the backend. Shutdown closes held sessions, joins direct calls and stops
 the backend. Backend exit ends this service lifetime; Environment Runtime proves the old service
 fenced before attempting one replacement while the incarnation remains RUNNING. A failed fence or
 service start fails Runtime rather than starting an unfenced successor. Neither startup nor shutdown
@@ -87,11 +49,11 @@ replays execution requests.
 ## Source ownership
 
 - `adapter/`: typed process/file operations, native session and WebSocket lifetime, bounded frames and
-  cancellation, used by both embedded and standalone service modes.
+  cancellation.
 - `codexexecserver/`: native launch/probe/fence backends.
 - `companion/`: Pod PID-1 ownership protocol and its client, shared reaper integration.
-- `service/`: environment identity, state-directory ownership and serving lifetime.
-- `cmd/`: executable entrypoint; `testing/`: real container service acceptance.
+- `service/`: environment identity, state-directory ownership and embedded adapter lifetime.
+- `cmd/`: companion executable entrypoint; `testing/`: shared companion container fixtures.
 
 **Deviation:** the proto keeps the published `agentplane.executor` wire package while source and
 client import paths live under `env/runtime/execution`. Relocation changes neither RPC method names nor

@@ -8,6 +8,5 @@ go_binary(
     pure = "on",
     deps = [
         "//agentplane/env/runtime/execution/companion:executor",
-        "//agentplane/env/runtime/execution/service",
     ],
 )

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -14,29 +13,16 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
-	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/sethvargo/go-retry"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/health"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 )
 
 // ErrFencedBackendLoss reports an established executor backend loss after the
 // Execution adapter drained and the backend's process domain was fenced. For the
 // companion backend this includes proof of a fresh idle executor generation.
-// The command maps this specific outcome to a clean process exit so Runtime can
-// replace the API process without replacing the Harness Host.
+// Runtime can replace the API lifetime without replacing Harness Host.
 var ErrFencedBackendLoss = errors.New("execution backend loss was fenced")
-
-// Run owns the backend from startup fencing until shutdown. The caller must be
-// PID 1 for the direct pod backend: returning lets the container runtime fence escaped descendants.
-// Systemd callers supply an owner unit and lifetime directory; death of that
-// owner fences its bound transient native units.
-func Run(ctx context.Context, config Config) (result error) {
-	return runOwned(ctx, config, nil)
-}
 
 // RunEmbedded keeps the native backend under the Runtime process lifetime. The
 // ready callback publishes the typed adapter after native readiness.
@@ -60,8 +46,6 @@ func runOwned(ctx context.Context, config Config, ready func(executorpb.Executor
 	defer owner.Close()
 	var supervisor *supervision.Supervisor
 	switch config.Backend {
-	case "pod":
-		supervisor, err = supervision.NewPID1Supervisor(owner)
 	case "companion":
 		fence, finish := context.WithTimeout(ctx, 90*time.Second)
 		err = codexexecserver.FenceContainer(fence, config.ContainerSocket, "")
@@ -115,8 +99,7 @@ func lock(directory string) (*os.File, error) {
 	if err := syscall.Fstat(directoryFD, &info); err != nil {
 		return nil, err
 	}
-	// In standalone mode the socket admits trusted local environment components
-	// with full execution authority. Its mode is part of that authorization.
+	// Execution state is private to the environment owner.
 	if info.Mode&syscall.S_IFMT != syscall.S_IFDIR || info.Mode&0077 != 0 {
 		return nil, errors.New("execution state directory must be private (0700)")
 	}
@@ -130,10 +113,6 @@ func lock(directory string) (*os.File, error) {
 		return nil, fmt.Errorf("execution service already owns state directory: %w", err)
 	}
 	return owner, nil
-}
-
-func run(ctx context.Context, config Config, start codexexecserver.Start) (result error) {
-	return runWithReady(ctx, config, start, nil)
 }
 
 func runWithReady(ctx context.Context, config Config, start codexexecserver.Start, ready func(executorpb.ExecutorServer, context.Context)) (result error) {
@@ -216,62 +195,33 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 		return err
 	}
 	defer adapter.Close()
-	var server *grpc.Server
-	var healthServer *health.Server
-	var served <-chan error
-	if ready == nil {
-		// Only the state-directory lock holder may replace the previous socket.
-		if err := os.Remove(config.Socket()); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		listener, err := net.Listen("unix", config.Socket())
-		if err != nil {
-			return err
-		}
-		defer listener.Close()
-		if err := os.Chmod(config.Socket(), 0600); err != nil {
-			return err
-		}
-		server = grpc.NewServer()
-		executorpb.RegisterExecutorServer(server, adapter)
-		healthServer = health.NewServer()
-		healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
-		healthServer.SetServingStatus(executorpb.Executor_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
-		healthpb.RegisterHealthServer(server, healthServer)
-		serveResult := make(chan error, 1)
-		served = serveResult
-		go func() { serveResult <- server.Serve(listener) }()
-	} else {
-		// A lost backend must not be published as ready. Its stop still has to
-		// prove the process-domain fence before this service returns.
-		if lifetime.Err() != nil {
-			select {
-			case backendErr := <-backendDone:
-				if backendErr == nil {
-					err = errors.New("execution backend stopped")
-				} else {
-					err = backendErr
-				}
-			default:
-				if ctx.Err() == nil {
-					err = lifetime.Err()
-				}
+	// A lost backend must not be published as ready. Its stop still has to
+	// prove the process-domain fence before this service returns.
+	if lifetime.Err() != nil {
+		select {
+		case backendErr := <-backendDone:
+			if backendErr == nil {
+				err = errors.New("execution backend stopped")
+			} else {
+				err = backendErr
 			}
-		} else {
-			ready(adapter, lifetime)
+		default:
+			if ctx.Err() == nil {
+				err = lifetime.Err()
+			}
 		}
+	} else {
+		ready(adapter, lifetime)
 	}
 	if err == nil {
+		<-lifetime.Done()
+
 		select {
-		case err = <-served:
-		case <-lifetime.Done():
-			select {
-			case err = <-backendDone:
-				if err == nil {
-					err = errors.New("execution backend stopped")
-				}
-			default:
+		case err = <-backendDone:
+			if err == nil {
+				err = errors.New("execution backend stopped")
 			}
+		default:
 		}
 	}
 	if errors.Is(err, codexexecserver.ErrExecutionBackendLost) {
@@ -281,22 +231,13 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 	// Cancel sessions before draining RPCs: OpenSession streams are held until
 	// explicitly canceled, and a canceled unary call alone never stops native work.
 	cancel()
-	if healthServer != nil {
-		healthServer.Shutdown()
-	}
 	if closeErr := adapter.Close(); closeErr != nil {
 		err = errors.Join(err, closeErr)
-	}
-	if server != nil {
-		shutdown, finish := context.WithTimeout(context.Background(), 5*time.Second)
-		defer finish()
-		graceful.Stop(shutdown, server)
 	}
 	return err
 }
 
-// Filesystem access to the standalone Executor socket authenticates the environment owner.
-// Remote caller authorization and routing remain with Gateway. This service
+// Runtime authenticates the environment owner; Gateway authorizes remote callers. This service
 // checks one immutable incarnation; it cannot adopt or replace a Runner epoch.
 func (c Config) admit(ctx context.Context, scope *executorpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
 	if scope == nil || scope.Destination == nil || scope.Destination.Owner == nil || scope.SessionId == "" || len(scope.SessionId) > 128 {
