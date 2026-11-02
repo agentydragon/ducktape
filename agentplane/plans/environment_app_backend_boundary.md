@@ -26,21 +26,15 @@ Move or remove package-specific errors with their actual owners as callers migra
 handwritten `SandboxView` can be retired when its remaining routes and consumers use the generated
 contracts. These later ownership decisions do not gate the current Discovery cutover.
 
-## TODO: Remove the redundant frontend Sandbox view and fixture conversion
+## TODO: Remove the redundant frontend Sandbox view
 
-The app cutover in #13878 retains `sandboxView()` in `app/frontend/sandboxes/live.tsx`: it converts
-the generated `Sandbox` protobuf into the app's OpenAPI `SandboxView` for UI consumers. Its test
-helper `app/frontend/testing/sandbox_proto.ts` manually converts that view back into ProtoJSON,
-including field names, enum strings, durations and nested objects. These conversions duplicate the
-wire shape and can drift from the generated contract.
+The #13878 app cutover introduced the generated `Sandbox` protobuf for inventory data while the
+app's OpenAPI `SandboxView` remains part of its UI contract, leaving overlapping representations to
+reconcile. Test fixtures now use generated `Sandbox` messages and shared fixture builders (#13899,
+#13905); the fixture conversion work is complete.
 
-Migrate inventory UI consumers and fixtures to generated `Sandbox` messages. Construct fixture
-messages with the generated schema and serialize them with the protobuf JSON codec where a wire
-response is needed; delete the handwritten reverse conversion. Keep actual presentation derivations
-such as status labels local to the UI. Move remaining detail and mutation consumers to the owning
-generated contracts, then remove the redundant app `SandboxView` and production projection. The
-detail contract and the relationship between `Sandbox` and `EnvironmentDescriptor` still need to
-be resolved; this TODO does not select their API shape or change caller authorization.
-
-Cover inventory snapshots, updates and removals with generated fixture messages, including phase,
-duration, optional fields and Pod data, and preserve existing UI behavior and authorization checks.
+Migrate any remaining inventory consumers to generated `Sandbox` messages. Move remaining detail
+and mutation consumers to the owning generated contracts, then remove the redundant app `SandboxView`
+and production projection. Keep actual presentation derivations such as status labels local to the UI.
+The detail contract and relationship between `Sandbox` and `EnvironmentDescriptor` still need to be
+resolved; this TODO does not select their API shape or change caller authorization.
