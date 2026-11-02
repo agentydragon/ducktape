@@ -169,10 +169,13 @@ def test_persistence_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
         stack._baseline_write_marker(forged_marker)
         with pytest.raises(RuntimeError, match="PID was reused"):
             stack._baseline_open(binary, changed_fingerprint, layers_in_memory=True)
+        with pytest.raises(RuntimeError, match="PID was reused"):
+            stack._baseline_stop_previous()
         assert unrelated.poll() is None
         assert stack._baseline_process_start(unrelated.pid) == unrelated_ticks
         assert stack._baseline_identity(k3s, int(real_marker["identity"]["pid"])) == real_marker["identity"]
         marker = real_marker
+        stack._baseline_write_marker(marker)
         events.append({"step": "reused_pid", "unrelated_process_alive": True})
 
         # Removing the executor permission can still restore a formerly retained snapshot.
