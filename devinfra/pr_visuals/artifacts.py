@@ -12,7 +12,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic.alias_generators import to_camel
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -21,18 +22,22 @@ Runner = Callable[..., subprocess.CompletedProcess[str]]
 INVOCATION_ABSENT = "invocation not found"
 
 
-class BESFile(BaseModel):
+class BESModel(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel)
+
+
+class BESFile(BESModel):
     """Fields consumed from the native BES File JSON."""
 
     name: str
     uri: str
 
 
-class BESConfiguration(BaseModel):
+class BESConfiguration(BESModel):
     id: str
 
 
-class BESLabelId(BaseModel):
+class BESLabelId(BESModel):
     label: str
     configuration: BESConfiguration | None = None
     run: int | None = None
@@ -40,24 +45,24 @@ class BESLabelId(BaseModel):
     attempt: int | None = None
 
 
-class BESArtifactId(BaseModel):
-    test_result: BESLabelId | None = Field(default=None, alias="testResult")
-    target_completed: BESLabelId | None = Field(default=None, alias="targetCompleted")
+class BESArtifactId(BESModel):
+    test_result: BESLabelId | None = None
+    target_completed: BESLabelId | None = None
 
 
-class BESTestSummary(BaseModel):
-    overall_status: str | None = Field(default=None, alias="overallStatus")
-    total_run_count: int | None = Field(default=None, alias="totalRunCount")
-    run_count: int | None = Field(default=None, alias="runCount")
-    shard_count: int | None = Field(default=None, alias="shardCount")
-    attempt_count: int | None = Field(default=None, alias="attemptCount")
+class BESTestSummary(BESModel):
+    overall_status: str | None = None
+    total_run_count: int | None = None
+    run_count: int | None = None
+    shard_count: int | None = None
+    attempt_count: int | None = None
 
 
-class BuildBuddyArtifact(BaseModel):
+class BuildBuddyArtifact(BESModel):
     id: BESArtifactId
     file: BESFile
     status: str | None = None
-    test_summary: BESTestSummary | None = Field(default=None, alias="testSummary")
+    test_summary: BESTestSummary | None = None
 
     @property
     def label(self) -> str:

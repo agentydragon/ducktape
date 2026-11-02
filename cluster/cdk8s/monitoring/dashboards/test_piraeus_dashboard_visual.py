@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import shutil
 from pathlib import Path
 
 import pytest
@@ -18,7 +17,6 @@ from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual.capture import VisualPage
 from util.testing.frontend_visual.context import FROZEN_NOW_MS, deterministic_browser_context
 from util.testing.output_writer import BoundTestOutputs
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 pytest_plugins = ("util.testing.pytest_outputs",)
 
@@ -33,10 +31,7 @@ async def test_piraeus_dashboard_visual(tmp_path: Path, test_outputs: BoundTestO
                 playwright, viewport={"width": 1440, "height": 900}, frozen_now_ms=FROZEN_NOW_MS, color_scheme="dark"
             ) as context:
                 page = await context.new_page()
-                captures = tmp_path / "captures"
-                view = VisualPage(
-                    page, outputs=BoundTestOutputs(captures, test_outputs.case_id), title="Piraeus Grafana dashboard"
-                )
+                view = VisualPage(page, outputs=test_outputs, title="Piraeus Grafana dashboard")
                 query_errors: list[str] = []
                 checks: list[asyncio.Task[None]] = []
 
@@ -64,7 +59,6 @@ async def test_piraeus_dashboard_visual(tmp_path: Path, test_outputs: BoundTestO
                 assert await page.get_by_text("No data", exact=True).count() == 0
                 await asyncio.gather(*checks)
                 assert not query_errors, query_errors
-                shutil.copytree(captures / "test-outputs", undeclared_outputs_dir() / "test-outputs")
                 record_stage("captures complete")
 
 

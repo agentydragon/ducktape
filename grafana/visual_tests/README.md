@@ -67,8 +67,8 @@ Run a target on the remote Docker-capable executor, for example:
 bbr test //cluster/cdk8s/monitoring/dashboards:piraeus_dashboard_visual_test
 ```
 
-The output records and payloads are copied into undeclared outputs only after all captures succeed,
-so interrupted runs cannot publish a partial screenshot set. An initial run has
+The collector selects outputs from successful terminal test attempts, so a failed or interrupted
+run cannot advance the review baseline. An initial run has
 no before image until the target has a published devel baseline. The publisher
 labels a fallback baseline when it cannot find one for the exact base commit.
 

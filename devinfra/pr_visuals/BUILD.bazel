@@ -32,7 +32,6 @@ py_library(
 py_library(
     name = "collection",
     srcs = ["collection.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         ":artifacts",
         "//util/testing:output_records",

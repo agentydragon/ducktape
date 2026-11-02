@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import shutil
 from pathlib import Path
 
 import pytest
@@ -48,12 +47,7 @@ async def test_dashboard_visual(tmp_path: Path, test_outputs: BoundTestOutputs) 
                 await page.route(
                     "**/api/ds/query*", lambda route: replay_query(route, seen, fixture, dashboard, missing)
                 )
-                captures = tmp_path / "captures"
-                view = VisualPage(
-                    page,
-                    outputs=BoundTestOutputs(captures, test_outputs.case_id),
-                    title=f"{dashboard['title']} (recorded)",
-                )
+                view = VisualPage(page, outputs=test_outputs, title=f"{dashboard['title']} (recorded)")
                 start = FROZEN_NOW_MS - 24 * 60 * 60 * 1000
                 record_stage("loading dashboard with recorded query results")
                 await page.goto(
@@ -72,7 +66,6 @@ async def test_dashboard_visual(tmp_path: Path, test_outputs: BoundTestOutputs) 
                     await errors.first.click()
                     (undeclared_outputs_dir() / "panel-error.txt").write_text(await page.locator("body").inner_text())
                     raise AssertionError("Grafana reported a panel error")
-                shutil.copytree(captures / "test-outputs", undeclared_outputs_dir() / "test-outputs")
                 record_stage("captures complete")
 
 
