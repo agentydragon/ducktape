@@ -49,3 +49,27 @@ Use existing hosted checks for engine regressions, then inspect normal private
 integration artifacts for the selected edges, complete gate inventory and
 emitted output. The grammar argument establishes the rule's scope; it does not
 establish that the candidate has run or that these chunks now accept.
+
+## Existing CI expectations
+
+The first public [CI run 41440296015](https://github.com/agentydragon/ducktape/actions/runs/41440296015)
+at `2f0e9963b` compiled the candidate; 226 of 228 targets passed. Two existing
+targets failed: `native_operation_input_test` and
+`peel_factorize_landability_test`. The former required a local export list to
+have a sequenced edge to a fresh Set. Its runtime-output check and the other
+31 cases passed. The latter required an executable decorator closure to absorb
+an export declaration, rendering the proposal unaddressable. The reported
+proposal contains the class, decorator and surrounding console events, excludes
+the export list, and is marked landable. The real tail-to-decorator edge remains.
+
+Update those existing expectations to check the following executable observer's
+Set frontier, absence of local-export heap events, the complete landable
+decorator closure and its preserved runtime output. Keep the class-only split
+rejection and the existing temporary-array ordering assertion. The engine rule
+does not change in this repair; normal hosted CI must validate the updated
+expectations. Do not cancel a live canonical run to refresh a test-only pin.
+
+The proposal report also retains an export-only advisory row. It is explicitly
+unlandable, but can distract from the useful executable closure. A future
+presentation improvement can separate metadata-only advisory cells from the
+actionable proposals while retaining their explanation.
