@@ -9,8 +9,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/resource"

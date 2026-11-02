@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"google.golang.org/grpc"

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"

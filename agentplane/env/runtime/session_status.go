@@ -171,10 +171,12 @@ func sessionLifecycleBlocker(blocker harnesshostlifecycle.Blocker) *sessionpb.En
 
 func (r *Runtime) sessionFacts(ctx context.Context) (*environmentruntimestatepb.EnvironmentRuntimeFacts, error) {
 	r.mu.Lock()
- manager := r.sessions
- r.mu.Unlock()
- if manager == nil { return &environmentruntimestatepb.EnvironmentRuntimeFacts{}, nil }
- sessions := manager.Inventory()
+	manager := r.sessions
+	r.mu.Unlock()
+	if manager == nil {
+		return &environmentruntimestatepb.EnvironmentRuntimeFacts{}, nil
+	}
+	sessions := manager.Inventory()
 	var blockers []*sandboxpb.AutosuspendBlocker
 	setup := false
 	for _, s := range sessions {

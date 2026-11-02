@@ -691,6 +691,4 @@ func (r *Runtime) failureLocked() error {
 	return nil
 }
 
-var (
-	_ environmentruntimepb.EnvironmentRuntimeServer = (*Runtime)(nil)
-)
+var _ environmentruntimepb.EnvironmentRuntimeServer = (*Runtime)(nil)

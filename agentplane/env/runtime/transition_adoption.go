@@ -78,7 +78,8 @@ func (c *runtimeTransitionSequence) recordAdoptionOutcome(step runtimeTransition
 	}
 	if step.adoption.kind == adoptionIncarnation && outcome.adoption == adoptionRunningSuccessor {
 		uid := c.adoption.targetUID
-		c.steps = append(c.steps,
+		c.steps = append(
+			c.steps,
 			runtimeTransitionStep{stage: lifecycle.RuntimeTransitionExecutionStarting, adoption: adoptionBarrier{kind: adoptionExecutionStart, uid: uid}},
 			runtimeTransitionStep{stage: lifecycle.RuntimeTransitionIntentPublishing, adoption: adoptionBarrier{kind: adoptionPublishDesired, uid: uid, mode: lifecycle.Running}},
 			runtimeTransitionStep{stage: lifecycle.RuntimeTransitionBootstrapRequesting, adoption: adoptionBarrier{kind: adoptionBootstrap}},

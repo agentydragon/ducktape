@@ -84,8 +84,8 @@ func (r *Runtime) initializeSessions() error {
 		return err
 	}
 	r.mu.Lock()
- r.sessions = sessions
- r.mu.Unlock()
+	r.sessions = sessions
+	r.mu.Unlock()
 	if err := r.initializeSessionLifecycle(); err != nil {
 		return err
 	}

@@ -19,9 +19,9 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
-	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/cosi-project/runtime/pkg/resource"

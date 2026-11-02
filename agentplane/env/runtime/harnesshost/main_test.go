@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 )
 
 func TestMain(m *testing.M) {
