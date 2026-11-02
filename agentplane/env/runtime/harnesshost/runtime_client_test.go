@@ -283,3 +283,19 @@ func TestHostPublishesExactIntentAndIdleFacts(t *testing.T) {
 		t.Fatalf("Host report did not bind the same-generation fence: %v", second)
 	}
 }
+
+func TestHostReportControllerExitsCleanlyWithHost(t *testing.T) {
+	r, ctx := boundaryHost(t)
+	intent := &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: r.bootID, Generation: 1}, SandboxUid: "sandbox", Mode: runtimepb.LifecycleIntent_INACTIVE}
+	if err := r.ApplyIntent(ctx, intent); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-r.fatal:
+		t.Fatalf("normal Host shutdown reported failure: %v", err)
+	default:
+	}
+}

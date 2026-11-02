@@ -30,6 +30,9 @@ func (c *hostReportController) Run(ctx context.Context, engine controller.Runtim
 		changed := c.runner.changesSince()
 		intent, report, err := c.runner.reportSnapshot(ctx)
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
 			c.runner.fail(err)
 			return nil
 		}
