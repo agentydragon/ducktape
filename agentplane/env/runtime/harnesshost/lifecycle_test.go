@@ -445,7 +445,7 @@ func TestCloseWaitsForAdmission(t *testing.T) {
 		t.Fatalf("facts during admission = %v, want Admission blocker without idle token", facts)
 	}
 	closeDone := make(chan error, 1)
-	go func() { closeDone <- r.Close(context.Background()) }()
+	go func() { closeDone <- r.CloseJournals(context.Background()) }()
 	if err := harnesshostlifecycle.WatchStatus(ctx, r.lifecycle.state, func(runtime harnesshostlifecycle.Status) (bool, error) {
 		return runtime.Stage == harnesshostlifecycle.Draining, nil
 	}); err != nil {
@@ -522,15 +522,18 @@ func TestClosePublicationFailureKeepsAdmissionClosed(t *testing.T) {
 	t.Cleanup(func() {
 		store.failDesiredPublication.Store(false)
 		if r.closeDone == nil {
-			if err := r.Close(context.Background()); err != nil {
+			if err := r.CloseJournals(context.Background()); err != nil {
 				t.Errorf("close test Harness Host: %v", err)
 			}
 			return
 		}
 		<-r.closeDone
 		if r.closeErr != nil {
-			if err := r.finishClose(); err != nil {
-				t.Errorf("finish test Harness Host after injected failure: %v", err)
+			r.cancel()
+			<-r.lifecycle.done.Done()
+			r.lifecycle.workers.Wait()
+			if err := r.sessions.Close(); err != nil {
+				t.Errorf("close test Session journals after injected failure: %v", err)
 			}
 		}
 	})
@@ -546,7 +549,7 @@ func TestClosePublicationFailureKeepsAdmissionClosed(t *testing.T) {
 	}
 	s := r.sessions.Get(request.SessionId)
 	store.failDesiredPublication.Store(true)
-	if err := r.Close(context.Background()); !errors.Is(err, store.desiredPublicationErr) {
+	if err := r.CloseJournals(context.Background()); !errors.Is(err, store.desiredPublicationErr) {
 		t.Fatalf("Close with failed desired-state publication = %v, want injected failure", err)
 	}
 	if !r.isClosing() {
@@ -632,7 +635,7 @@ func TestAdmissionCompletionStateFailureIsReported(t *testing.T) {
 func TestCloseProgressesForEmptyRunner(t *testing.T) {
 	r := newBareRunner(t)
 	closeDone := make(chan error, 1)
-	go func() { closeDone <- r.Close(context.Background()) }()
+	go func() { closeDone <- r.CloseJournals(context.Background()) }()
 	if err := waitClose(t, closeDone); err != nil {
 		t.Fatalf("Close empty Harness Host: %v", err)
 	}

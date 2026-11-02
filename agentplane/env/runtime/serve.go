@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
@@ -17,7 +18,7 @@ const hostStartupTimeout = 90 * time.Second
 // Run starts the embedded Host coordinator and Gateway-facing control server.
 // Runtime owns the environment lifecycle and management-process lifetime.
 func (r *Runtime) Run(ctx context.Context) error {
-	if err := r.startHost(ctx); err != nil {
+	if err := r.startHost(); err != nil {
 		r.lifecycleStartMu.Lock()
 		unsafe := r.lifecycleInitErr != nil
 		r.lifecycleStartMu.Unlock()
@@ -58,7 +59,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 	return errors.Join(runErr, closeErr)
 }
 
-func (r *Runtime) startHost(ctx context.Context) error {
+func (r *Runtime) startHost() error {
 	r.lifecycleStartMu.Lock()
 	defer r.lifecycleStartMu.Unlock()
 	r.mu.Lock()
@@ -89,40 +90,103 @@ func (r *Runtime) startHost(ctx context.Context) error {
 		r.lifecycleInitErr = err
 		return err
 	}
-	hostCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	r.mu.Lock()
 	r.sessions = host
-	r.sessionWorkerCancel = cancel
 	r.sessionWorkerDone = make(chan struct{})
 	r.mu.Unlock()
 	bindErr := r.bindHost()
 	r.startLifecycleEngineLocked()
+	r.startIngress(host, r.config.HostIngress)
+	r.lifecycleWorkers.Add(1)
 	go func() {
-		r.sessionWorkerErr = host.Run(hostCtx, r.config.HostIngress, r)
+		defer r.lifecycleWorkers.Done()
+		select {
+		case err := <-host.Failures():
+			r.HostFailed(err)
+		case <-r.lifecycleDone:
+		}
+	}()
+	go func() {
+		r.sessionWorkerErr = host.Startup(r)
 		close(r.sessionWorkerDone)
-		r.mu.Lock()
-		closing := r.closing
-		r.mu.Unlock()
-		if !closing {
-			if r.sessionWorkerErr != nil {
-				r.fail(fmt.Errorf("Session worker stopped before Runtime shutdown: %w", r.sessionWorkerErr))
-			} else {
-				r.fail(errors.New("Session worker stopped before Runtime shutdown"))
-			}
+		if r.sessionWorkerErr != nil {
+			r.fail(fmt.Errorf("Session recovery failed: %w", r.sessionWorkerErr))
 		}
 	}()
 	return bindErr
 }
 
-func (r *Runtime) stopSessions(ctx context.Context) error {
-	r.sessionWorkerCancel()
-	if err := ctx.Err(); err != nil {
-		return err
+// startIngress starts Runtime's delivery worker after Session recovery.
+func (r *Runtime) startIngress(host *harnesshost.Host, endpoint configuration.Endpoint) {
+	ctx, cancel := context.WithCancel(context.Background())
+	worker := &ingressWorker{cancel: cancel, done: make(chan struct{})}
+	r.mu.Lock()
+	r.ingress = worker
+	r.mu.Unlock()
+	go func() {
+		defer close(worker.done)
+		select {
+		case <-r.sessionWorkerDone:
+		case <-ctx.Done():
+			return
+		}
+		if r.sessionWorkerErr != nil || ctx.Err() != nil {
+			return
+		}
+		reportFailure := func(err error) {
+			failure := fmt.Errorf("History ingress stopped: %w", err)
+			// Record the cause and revoke native admission before Host failure
+			// observation can retire the binding during Close.
+			r.fail(failure)
+			host.ReportFailure(failure)
+			worker.cancel()
+		}
+		run := r.deps.runIngress
+		if run == nil {
+			run = func(ctx context.Context, host *harnesshost.Host, endpoint configuration.Endpoint) error {
+				return host.IngressSupervisor(endpoint, reportFailure).Run(ctx)
+			}
+		}
+		if err := run(ctx, host, endpoint); err != nil && ctx.Err() == nil {
+			reportFailure(err)
+		}
+	}()
+}
+
+type ingressWorker struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+func (r *Runtime) stopIngress(ctx context.Context) error {
+	r.mu.Lock()
+	worker := r.ingress
+	r.mu.Unlock()
+	if worker == nil {
+		return nil
 	}
+	worker.cancel()
+	select {
+	case <-worker.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (r *Runtime) stopSessions(ctx context.Context) error {
 	if r.deps.stopSessions != nil {
 		return r.deps.stopSessions(ctx)
 	}
-	return nil
+	if r.sessions == nil {
+		return nil
+	}
+	select {
+	case <-r.sessionWorkerDone:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return r.sessions.BeginClose(ctx)
 }
 
 func (r *Runtime) waitSessionsClosed(ctx context.Context) error {
@@ -136,48 +200,47 @@ func (r *Runtime) closeSessions(ctx context.Context) error {
 	if r.deps.closeSessions != nil {
 		return r.deps.closeSessions(ctx)
 	}
-	return r.sessions.Close(ctx)
+	return r.sessions.CloseJournals(ctx)
 }
 
 func (r *Runtime) waitForInitialHost(ctx context.Context) error {
+	startupDone := r.sessionWorkerDone
 	for {
 		r.mu.Lock()
-		if r.failed || r.closing {
+		if failure := r.failureLocked(); failure != nil {
 			r.mu.Unlock()
-			return errors.New("Runtime failed or closed while starting Harness Host")
+			return failure
+		}
+		if r.closing {
+			r.mu.Unlock()
+			return errors.New("Runtime closed while starting Session component")
 		}
 		report := r.hostReportLocked()
 		ready := r.host != nil && r.host.active && r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_INACTIVE &&
 			report != nil && report.Ready && report.NativeStopped
 		changed := r.changes
-		workerDone := r.sessionWorkerDone
 		r.mu.Unlock()
 		if r.deps.afterInitialWaitSnapshot != nil {
 			r.deps.afterInitialWaitSnapshot()
 		}
-		// A completed Host may leave an already-published ready report behind.
-		// The lifetime exit takes precedence before exposing Gateway control.
-		select {
-		case <-workerDone:
-			return r.initialSessionWorkerExit()
-		default:
+		if startupDone != nil {
+			select {
+			case <-startupDone:
+				if r.sessionWorkerErr != nil {
+					return fmt.Errorf("Session recovery failed before initial lifecycle acknowledgement: %w", r.sessionWorkerErr)
+				}
+				startupDone = nil
+			default:
+			}
 		}
-		if ready {
+		if ready && startupDone == nil {
 			return nil
 		}
 		select {
 		case <-changed:
-		case <-workerDone:
-			return r.initialSessionWorkerExit()
+		case <-startupDone:
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
-}
-
-func (r *Runtime) initialSessionWorkerExit() error {
-	if r.sessionWorkerErr != nil {
-		return fmt.Errorf("Session worker stopped before initial lifecycle acknowledgement: %w", r.sessionWorkerErr)
-	}
-	return errors.New("Session worker stopped before initial lifecycle acknowledgement")
 }

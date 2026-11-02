@@ -352,7 +352,7 @@ func TestRuntimeRetainsOwnerWhenJoinedHostCleanupFails(t *testing.T) {
 	r := newLifecycleRuntime(t, config)
 	cleanupFailure := errors.New("injected Host owner release failure")
 	r.deps.closeSessions = func(ctx context.Context) error {
-		return errors.Join(r.sessions.Close(ctx), cleanupFailure)
+		return errors.Join(r.sessions.CloseJournals(ctx), cleanupFailure)
 	}
 	t.Cleanup(func() { _ = r.owner.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)

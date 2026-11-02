@@ -2,7 +2,7 @@
 
 The Environment Runtime is the authority for one Sandbox environment's identity, bootstrap,
 environment-owner lock, durable quiesce seal, Gateway control listener, and lifecycle of its
-Harness Host and embedded Execution API. It coordinates Host through direct lifecycle and Session
+Harness Host and embedded Execution API, including Runtime-owned History delivery. It coordinates Host through direct lifecycle and Session
 calls and serves the public `EnvironmentRuntime` API to the existing Runner Gateway. The Host
 owns Session records, journals and native harnesses under Runtime's environment owner.
 
@@ -42,7 +42,10 @@ under Runtime's environment owner. Its in-memory Session copy follows successful
 to one Session retain write order. If a native frame's record update fails, Host commits the raw frame
 and stops receiving so recovery can inspect that outcome. Journals and native continuations remain
 under `StateDir/sessions`; the Harness Host's latest History acknowledgement cursor and seal bit are
-persisted as `IngressAcks` COSI resources in `StateDir/runtime-resources.db`.
+persisted as `IngressAcks` COSI resources in `StateDir/runtime-resources.db`. Runtime starts its
+History delivery worker only after Host has recovered the Session inventory. Host supplies journal
+sources and writes the durable acknowledgements; a delivery failure closes Host admission and fails
+Runtime.
 An EnvironmentSeals write or delete error has an uncertain durable outcome: Runtime blocks admission
 and refuses further identity transitions until restart reloads the COSI state.
 All four durable resource types use COSI's protobuf resource encoding. Reload restores
@@ -66,8 +69,8 @@ publishes the full applied intent alongside the report. That intent is the repor
 the fact payload does not duplicate it. Runtime observes the resource and wakes
 waiters only when its intent application status matches that full intent, including a same-generation
 Execution fence update. An older ready sample cannot reopen admission during fence application.
-The Session worker has its own completion signal and error. An unexpected completion fails Runtime;
-Runtime joins it and the shared engine before closing journals or releasing the owner. Engine shutdown
+Runtime tracks Session recovery completion and its error directly. Recovery failure fails Runtime;
+Runtime joins History delivery and the shared engine before closing journals or releasing the owner. Engine shutdown
 joins both controllers before owner release.
 
 For quiesce and replacement, Runtime first asks Host to stop admissions and drain native work.
@@ -112,7 +115,7 @@ SIGTERM follows the same Host drain and Execution fence path. When shutdown does
 incarnation seal request, Runtime sends `CLOSING` with an empty seal UID; this drains local work
 without claiming a durable History seal. Runtime publishes a generation-bound Closing request to
 its COSI lifecycle engine. Its aggregate coordinator advances only after the matching Host native
-stop, Execution call drain and backend fence, optional exact History seal acknowledgement, Host join,
+stop, Execution call drain and backend fence, optional exact History seal acknowledgement, History worker join and Host close,
 and accepted bootstrap settlement. Blocking steps run in Runtime-owned workers. The aggregate's
 ready-to-join status is not a successful Close: Runtime then joins its engine and workers, fences
 the Pod PID namespace when applicable, and releases its environment owner lock last. A failed or uncertain

@@ -27,7 +27,7 @@ func TestCloseWaitersDoNotCancelSharedCleanup(t *testing.T) {
 	waitContext, stopWaiting := context.WithCancel(context.Background())
 	defer stopWaiting()
 	first := make(chan error, 1)
-	go func() { first <- r.Close(waitContext) }()
+	go func() { first <- r.CloseJournals(waitContext) }()
 	waitLifecycle(t, r, func() bool {
 		return r.lifecycle.desiredState().Mode == harnesshostlifecycle.Closing
 	}, "local shutdown intent")
@@ -44,18 +44,18 @@ func TestCloseWaitersDoNotCancelSharedCleanup(t *testing.T) {
 	}
 	expired, releaseExpired := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer releaseExpired()
-	if err := r.Close(expired); !errors.Is(err, context.DeadlineExceeded) {
+	if err := r.CloseJournals(expired); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expired concurrent Close waiter = %v, want context.DeadlineExceeded", err)
 	}
 	if err := r.ctx.Err(); err != nil {
 		t.Fatalf("Close waiter canceled the Host lifetime: %v", err)
 	}
 	finishSetup()
-	if err := r.Close(ctx); err != nil {
+	if err := r.CloseJournals(ctx); err != nil {
 		t.Fatalf("Close after setup finished = %v", err)
 	}
 	// Completion remains observable even when a later caller's context has expired.
-	if err := r.Close(expired); err != nil {
+	if err := r.CloseJournals(expired); err != nil {
 		t.Fatalf("already completed Close with expired context = %v", err)
 	}
 }
@@ -84,7 +84,7 @@ func TestCloseReportsExitedLifecycleEngine(t *testing.T) {
 		t.Fatal("lifecycle engine did not report its watch failure")
 	}
 	closed := make(chan error, 1)
-	go func() { closed <- r.Close(ctx) }()
+	go func() { closed <- r.CloseJournals(ctx) }()
 	select {
 	case err := <-closed:
 		if !errors.Is(err, failure) {

@@ -1,10 +1,10 @@
 # Environment lifecycle ownership
 
 Environment Runtime is the single lifecycle owner in the management process. It owns identity,
-bootstrap, public control, coordinated drain and the Session worker. The Session component owns
-native Sessions, setup, app-server, journals and History ingress. Execution Service owns typed
-execution and the native exec-server. Each component
-has distinct typed lifecycle resources in one Runtime-owned COSI engine. Runtime owns the engine
+bootstrap, public control, coordinated drain, Session recovery and History delivery. The Session
+component owns native Sessions, setup, app-server and journals. Execution Service owns typed
+execution and the native exec-server. Each component has distinct typed lifecycle resources in one
+Runtime-owned COSI engine. Runtime owns the engine
 and joins it after Host controllers reach Closed and before releasing its environment state owner.
 The Host still owns its Session, journal and native process resources; Runtime owns bootstrap and
 environment process resources. One process controller and registry own attempt finalizers in the shared namespace;
@@ -19,11 +19,13 @@ flowchart LR
     H["Harness Host"]
     E["Embedded Execution adapter / lifecycle"]
     B["Bootstrap"]
+    IWorker["History delivery worker"]
     R <-->|"direct bound Session calls"| H
     R -->|"HostIntents: shared COSI"| H
     H -->|"HostIntentStatuses / HostReports: shared COSI"| R
     R -->|"direct Executor calls; start / drain / fence"| E
     R -->|"request / wait"| B
+    R -->|"start after Session recovery; stop / join"| IWorker
     H -.->|"direct bootstrap wait / Execution readiness"| R
   end
   H -->|"supervise"| S["Session setup / Claude processes"]
@@ -33,8 +35,9 @@ flowchart LR
   E -.->|"VM: supervised launch and fence"| X
   E -.->|"Pod: Unix ownership lease / fence"| P["Pod executor companion"]
   P -.->|"launch / fence"| X
-  H -->|"gRPC journal push"| I["History ingress"]
-  I -->|"durable ACK"| H
+  H -->|"journal sources / durable ACK store"| IWorker
+  IWorker -->|"gRPC journal push"| I["History ingress"]
+  I -->|"ACK"| IWorker
 ```
 
 The VM exec-server is a supervised systemd workload. In a Pod it runs in the companion's private
@@ -70,7 +73,7 @@ Runtime owns external transport authentication, connection epochs and conditiona
 direct Session calls carry a copied exact binding. Host checks it at direct-call ingress
 and under its synchronous native admission lock. Model lookup does not hold that lock; a delayed
 reservation rechecks the binding before writing retained state. Command admission remains durable
-and idempotent. Unknown remote effects are never replayed after Session worker failure.
+and idempotent. Unknown remote effects are never replayed after Session or History delivery failure.
 Runtime installs the embedded Host and publishes its initial intent before Session recovery finishes.
 The Host-owned intent controller wakes when recovery completes and applies `HostIntents` only after
 startup. It checks the exact Runtime boot ID through a native admission gate that Runtime
@@ -85,7 +88,7 @@ not interchangeable just because two counters currently have the same number.
 | Identity                                 | Scope                                                                                                                                                                                                                                                             |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `runtime.Runtime`                        | Environment Runtime coordinator; owns the shared COSI engine and environment lifetime.                                                                                                                                                                            |
-| `harnesshost.Host`                       | Runtime-owned Session component; owns retained Sessions and native harness lifecycle. Runtime starts its worker once and observes completion directly.                                                                                                            |
+| `harnesshost.Host`                       | Runtime-owned Session component; owns retained Sessions and native harness lifecycle. Runtime starts its recovery and observes failures directly.                                                                                                                 |
 | `bootstrap.Host`                         | Runtime-owned bootstrap controller and one-shot operation; it is not a separately served host process.                                                                                                                                                            |
 | `codexappserver.Host`                    | One shared Codex app-server process and its protocol readers, used by Codex Sessions.                                                                                                                                                                             |
 | `supervision.Host`                       | A view over the shared process registry, bound to a domain lifetime and worker barrier; in Runtime's shared registry, process attempt IDs are global across the Runtime and Harness views.                                                                        |
@@ -123,8 +126,9 @@ sequenceDiagram
   R->>E: drain and stop; prove execution domain fenced
   R->>H: HostIntents: same binding, execution_fenced=true
   H->>H: seal final journal cursors
-  H->>I: final entries and seal
-  I->>H: durable ACK of exact sealed cursor
+  R->>I: final entries and seal via Runtime-owned delivery
+  I->>R: ACK of exact sealed cursor
+  R->>H: persist ACK in Host durable store
   H->>R: HostReports(intent, QUIESCED)
 ```
 
@@ -136,13 +140,13 @@ Host reports native cleanup only after admissions, setup, shared app-server, pro
 inspection writes settle. Runtime cannot turn an old report into a new generation's fence proof.
 Host waits for the matching Execution fence before sealing. Under-cursor or unsealed ACKs leave Host
 FLUSHING. CLOSING preserves an existing seal and waits for its journal seals; Runtime Close waits for
-Host quiescence and exact History ACKs before requesting Host close when a seal is present. CLOSING
+Host quiescence and exact History ACKs before stopping History delivery and requesting Host close when a seal is present. CLOSING
 without a seal performs native cleanup without ending the incarnation's history.
 
-Unexpected Session worker completion closes admission and starts local cleanup without inventing a seal. Local
-Close callers share one cleanup; cancellation ends only the caller's wait. Engine exit and teardown
-errors remain failures, and incomplete cleanup retains ownership. Controllers stop before worker joins;
-journals close after workers. Runtime retains the environment owner
+Session recovery or History delivery failure closes admission synchronously and Runtime starts
+cleanup without inventing a seal. Canceling a Close caller ends only that caller's wait. Engine exit
+and teardown errors remain failures, and incomplete cleanup retains ownership. Runtime joins History
+delivery before Session journals close; controllers stop before Session component workers join. Runtime retains the environment owner
 until its Host and Execution domains are fenced.
 
 Runtime's own COSI engine also runs its Close aggregate alongside bootstrap and process controllers.

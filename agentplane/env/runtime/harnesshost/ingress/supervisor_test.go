@@ -136,3 +136,56 @@ func TestSupervisorReportsDeliveryFailureAndRetriesUntilCancel(t *testing.T) {
 		t.Fatalf("supervisor shutdown: %v", err)
 	}
 }
+
+func TestSupervisorReportsFailureBeforeBlockedSiblingJoinsAndIgnoresCancellation(t *testing.T) {
+	waitCtx, timeout := context.WithTimeout(context.Background(), 5*time.Second)
+	defer timeout()
+	runCtx, cancel := context.WithCancel(waitCtx)
+	defer cancel()
+	blocked := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	defer releaseOnce.Do(func() { close(release) })
+	wantErr := errors.New("local Session delivery failed")
+	failures := make(chan error, 2)
+	supervisor := NewSupervisor(SupervisorConfig{
+		Store: newTestStore(t),
+		Inventory: func() []Source {
+			return []Source{{ID: "failing-session"}, {ID: "blocked-session"}}
+		},
+		Changes: func() <-chan struct{} { return make(chan struct{}) },
+		OnWorkerFailure: func(err error) {
+			failures <- err
+			cancel()
+		},
+	})
+	deliver := func(ctx context.Context, source Source) error {
+		if source.ID == "failing-session" {
+			<-blocked
+			return wantErr
+		}
+		close(blocked)
+		<-release
+		return ctx.Err()
+	}
+	runDone := make(chan error, 1)
+	go func() { runDone <- supervisor.supervise(runCtx, deliver) }()
+	if err := await(t, waitCtx, failures, "failure while sibling delivery is blocked"); !errors.Is(err, wantErr) {
+		t.Fatalf("reported worker failure = %v, want %v", err, wantErr)
+	}
+	select {
+	case err := <-runDone:
+		t.Fatalf("supervisor joined blocked sibling before failure callback: %v", err)
+	default:
+	}
+	cancel()
+	releaseOnce.Do(func() { close(release) })
+	if err := await(t, waitCtx, runDone, "canceled sibling join"); err != nil {
+		t.Fatalf("supervisor cancellation = %v", err)
+	}
+	select {
+	case err := <-failures:
+		t.Fatalf("ordinary cancellation reported as worker failure: %v", err)
+	default:
+	}
+}

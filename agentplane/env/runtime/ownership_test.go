@@ -37,7 +37,7 @@ func runOwnershipFixture(args []string) error {
 		return err
 	}
 	ctx := context.Background()
-	if err := r.startHost(ctx); err != nil {
+	if err := r.startHost(); err != nil {
 		return err
 	}
 	if err := r.waitForInitialHost(ctx); err != nil {

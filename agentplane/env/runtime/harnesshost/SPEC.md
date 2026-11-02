@@ -1,13 +1,14 @@
 # Harness Host
 
-Harness Host owns one environment's native Sessions, retained Session records, continuation state,
-journals and History ingress. Claude uses one native process per Session; Codex uses one shared
+Harness Host owns one environment's native Sessions, retained Session records, continuation state
+and journals. Runtime owns History delivery using Host journal sources and the durable ACK store.
+Claude uses one native process per Session; Codex uses one shared
 app-server with independent native threads. Host never adopts an environment incarnation, writes
 its seal marker, runs Sandbox bootstrap or launches the Execution Service.
 
 ## Runtime boundary
 
-Environment Runtime runs Host in the same process and provides shared configuration, a direct
+Environment Runtime starts Host Session recovery in the same process and provides shared configuration, a direct
 COSI lifecycle state and direct typed Session calls. Deployment mounts and filesystem access
 remain authoritative.
 Each native Session, shared Codex app-server and isolated workspace helper receives its 5-second
@@ -40,12 +41,13 @@ serves external WatchState, health, epoch ownership and Quiesce.
 3. Host reports `native_stopped` for the current binding.
 4. Runtime proves Execution fenced and sends `execution_fenced` for that binding. Host waits for
    successful application of the exact intent before sealing.
-5. A seal-bearing intent seals each journal at its final cursor. Host keeps History ingress alive
-   until the exact sealed cursor is acknowledged durably, then reports QUIESCED.
-6. Runtime stops and joins the Session worker before releasing the environment owner.
+5. A seal-bearing intent seals each journal at its final cursor. Runtime keeps History delivery alive
+   until the exact sealed cursor is acknowledged durably; Host then reports QUIESCED.
+6. Runtime joins History delivery, closes the Session component's native lifetime, joins its controllers
+   and workers, then closes Session journals before releasing the environment owner.
 
 A CLOSING intent may carry no seal (ordinary shutdown), or preserve the current incarnation's seal.
-An unexpected Session worker completion closes admission and triggers local cleanup without manufacturing a seal. Failed
+Session recovery or History delivery failure closes admission and Runtime triggers local cleanup without manufacturing a seal. Failed
 cleanup retains Runtime ownership. A Pod Runtime exit does not by itself fence escaped native descendants;
 abnormal replacement requires the outer container fence. VM native services use the Host's distinct
 systemd scope with the Runtime service's invocation marker.

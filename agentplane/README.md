@@ -19,7 +19,8 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
 - [History Service](history_service/README.md): retained Session history, read by the
   integration app and the Notification service.
 - [Environment Runtime](env/README.md) and [native drivers](native/README.md): manage the Sandbox
-  environment and run Claude Code or Codex through Harness Host, which journals Session activity.
+  environment and run Claude Code or Codex through Harness Host, which journals Session activity;
+  Runtime delivers those journals to History.
 - [Environment execution service](env/runtime/execution/README.md): typed process/filesystem API
   hosted by Environment Runtime.
 - [Egress proxy](egress/README.md): authenticates sandbox workloads and substitutes credentials.

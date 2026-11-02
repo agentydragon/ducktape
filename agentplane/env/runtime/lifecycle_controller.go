@@ -249,11 +249,20 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecyc
 		}
 		return nil
 	case lifecycle.RuntimeCloseHostFlushing:
-		if p.active && p.sealUID != "" {
+		if p.sealUID != "" && !p.active {
+			c.r.mu.Lock()
+			failure := c.r.failureLocked()
+			c.r.mu.Unlock()
+			return errors.Join(errors.New("Harness Host failed before exact sealed History acknowledgement was proved"), failure)
+		}
+		if p.sealUID != "" {
 			return c.r.waitForHostQuiesced(p.fenceCtx, p.binding)
 		}
 		return nil
 	case lifecycle.RuntimeCloseHostJoining:
+		if err := c.r.stopIngress(p.fenceCtx); err != nil {
+			return fmt.Errorf("join History ingress before Host journal close: %w", err)
+		}
 		if p.active {
 			if err := c.stopSessions(p.fenceCtx); err != nil {
 				return fmt.Errorf("stop and fence Harness Host: %w", err)
@@ -305,7 +314,9 @@ func (c *runtimeLifecycleController) prepare() error {
 	if p.active && p.sessionsStarted {
 		select {
 		case <-r.sessionWorkerDone:
-			p.active = false
+			if r.sessionWorkerErr != nil {
+				p.active = false
+			}
 		default:
 		}
 	}

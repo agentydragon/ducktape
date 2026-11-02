@@ -106,7 +106,7 @@ func runLifecycleBarrierTrace(t *testing.T, operation string, trace []string) {
 			finishSetup()
 		case "close":
 			completed = make(chan error, 1)
-			go func() { completed <- r.Close(context.Background()) }()
+			go func() { completed <- r.CloseJournals(context.Background()) }()
 			if !released["admission"] || !released["setup"] {
 				waitLifecycle(t, r, func() bool {
 					return r.lifecycle.desiredState().Mode == harnesshostlifecycle.Closing
