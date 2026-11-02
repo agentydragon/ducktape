@@ -36,6 +36,7 @@ flowchart LR
   IS["HostIntentStatuses"]
   R["HostReports"]
   BI["BootstrapRequests"]
+  BS["BootstrapSelections<br/>(persistent)"]
   BO["BootstrapOperationStates"]
   BR["BootstrapStatuses"]
   PD["ProcessDesiredStates"]
@@ -62,6 +63,7 @@ flowchart LR
   R -.->|read intent and report| API
   IS -.->|read exact applied status| API
   API -.->|request| BH
+  BH <-->|read / write selected script| BS
   BH -->|publish| BI & BO
   BI & BO & BR -->|QPrimary / QMapped| BC
   BC -->|write| BR
@@ -258,6 +260,9 @@ stateDiagram-v2
   Starting --> Exited: failed start and fenced
   Running --> Stopping: exit or teardown
   Pending --> Stopping: teardown
+  Pending --> Exited: teardown with no registered attempt or already fenced
+  Starting --> Exited: teardown already fenced
+  Running --> Exited: teardown already fenced
   Stopping --> Exited: process domain fenced
   Exited --> [*]: desired state destroyed
 ```
@@ -292,7 +297,8 @@ stateDiagram-v2
 ```
 
 Execution can recover a lost service only after fencing and subject to the same binding/demand
-checks. Bootstrap is a retained one-shot attempt; its request file and event log are durable.
+checks. Bootstrap is a retained one-shot attempt; its selected script is a persistent COSI resource
+and its event log is durable.
 
 ### Session and shared Codex app-server
 
@@ -330,8 +336,10 @@ still incomplete.
 ```mermaid
 flowchart LR
   Running --> Draining --> Halting --> Stopping
-  Stopping -->|seal requested| Fencing -->|matching Execution fence| Sealing
+  Stopping -->|seal requested; fence pending| Fencing -->|matching Execution fence| Sealing
+  Stopping -->|seal requested; fence already applied| Sealing
   Stopping -->|no seal; Close| Closed
+  Stopping -->|no seal; quiesce| Flushing
   Sealing -->|quiesce| Flushing -->|matching sealed ACKs| Quiesced
   Sealing -->|Close| Closed
 ```
