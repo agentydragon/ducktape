@@ -457,7 +457,8 @@ def _assert_application_namespaces_deleted(kubectl: certificates.Kubectl, baseli
 def _bootstrap_sql(baseline: Baseline) -> str:
     for resource in baseline.objects:
         if resource.get("kind") == "ConfigMap" and resource["metadata"]["name"] == BOOTSTRAP_CONFIG_MAP:
-            return resource["data"]["bootstrap.sql"]
+            bootstrap_sql: str = resource["data"]["bootstrap.sql"]
+            return bootstrap_sql
     raise ValueError("retained PostgreSQL baseline has no bootstrap ConfigMap")
 
 
