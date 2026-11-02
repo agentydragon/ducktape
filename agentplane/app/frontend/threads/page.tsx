@@ -58,9 +58,11 @@ function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean
 export interface ThreadPageProps {
   threadId: string;
   settingsOpen?: boolean;
+  /** Several Threads share the page in a docked workspace, which owns the document title. */
+  embedded?: boolean;
 }
 
-export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps): JSX.Element {
+export function ThreadPage({ threadId, settingsOpen = false, embedded = false }: ThreadPageProps): JSX.Element {
   const sync = useThreadSync();
   const threadsLive = useRequiredThreadsLive();
   const snapshotThread = threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId);
@@ -116,10 +118,11 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
     if (thread !== null) finishSessionCreate(threadId);
   }, [thread, threadId]);
   useEffect(() => {
+    if (embedded) return;
     document.title = settingsOpen
       ? appDocumentTitle("/", true)
       : threadDocumentTitle(thread?.name, threadId, tabStatus);
-  }, [thread?.name, tabStatus, threadId, settingsOpen]);
+  }, [thread?.name, tabStatus, threadId, settingsOpen, embedded]);
   return (
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
       <TopbarTitle>
