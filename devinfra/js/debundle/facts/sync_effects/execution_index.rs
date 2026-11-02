@@ -11293,7 +11293,9 @@ impl Visit for ExecutionIndex {
                 ArrowFunctionBody::FunctionBody(body) => {
                     LocalBody::lower(arrow.params.iter(), body)
                 }
-                ArrowFunctionBody::Expr(_) => None,
+                ArrowFunctionBody::Expr(expression) => {
+                    LocalBody::lower_expression(arrow.params.iter(), expression)
+                }
             })
             .flatten();
             index

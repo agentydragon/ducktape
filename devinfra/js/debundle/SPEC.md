@@ -2218,6 +2218,10 @@ provider query declines calls. This supplies no property-origin export identity
 proof.
 
 Ordered application bodies also create anonymous function and arrow closures.
+An expression-bodied arrow lowers directly to the same retained return
+operation as a block body; it uses the same parameter checks, source coverage,
+read/write census, live-cell instantiation and effect/result transfer. This
+does not add a second expression evaluator or broaden supported operators.
 Each activation instantiates distinct cells for its parameters and declarations
 referenced by nested callables. Cell references survive through intermediate
 closures, including references used only after suspension. Reads use current
