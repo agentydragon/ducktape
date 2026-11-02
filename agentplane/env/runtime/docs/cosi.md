@@ -18,11 +18,9 @@ synchronous reads. Host publishers and one-off workers are not COSI controllers.
 ```mermaid
 flowchart LR
   API{{"Runtime API / lifecycle owner"}}
-  Peer{{"Harness Host peer"}}
   BH{{"Bootstrap host / worker"}}
   PH{{"Runtime process host / workers"}}
   RC(["environment-runtime-close<br/>Close + transition sequence"])
-  HI(["environment-host-intent"])
   HO(["environment-host-report-observer"])
   BC(["bootstrap-lifecycle"])
   PC(["process-lifecycle"])
@@ -55,9 +53,6 @@ flowchart LR
   EC -->|write| ER
   EC -.->|start / stop| EH
   EH -.->|VM exec-server launch| PH
-  I -->|watch| HI
-  HI -->|write applying / result| IS
-  HI -.->|ApplyIntent| Peer
   IS & R -->|watch| HO
   HO -.->|wake / fence| API
   R -.->|read exact applied intent| API
@@ -85,7 +80,6 @@ COSI input subscriptions.
 | Controller                         | Watched inputs                                                                                           | Controller output                                                       | Other relevant work                                                                                                      |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `environment-runtime-close`        | `EnvironmentRuntimeDesiredStates`, `EnvironmentRuntimeTransitionRequests` (weak)                         | `EnvironmentRuntimeCloses`, `EnvironmentRuntimeTransitions` (exclusive) | Close and adopt/quiesce are coordinated by this one controller; workers publish completion by waking its loop.           |
-| `environment-host-intent`          | `HostIntents` (weak)                                                                                     | `HostIntentStatuses` (exclusive)                                        | Records applying before calling Host; an uncertain apply is not replayed.                                                |
 | `environment-host-report-observer` | `HostReports`, `HostIntentStatuses` (weak)                                                               | None                                                                    | Wakes Runtime waiters and starts the Execution fence for an exact applied report.                                        |
 | `bootstrap-lifecycle`              | `BootstrapInputs` (primary); `BootstrapRuntimes`, `BootstrapOperationResults` (mapped)                   | `BootstrapRuntimes` (exclusive)                                         | Host owns admitted one-off work and publishes operation completion. Runtime admission checks the environment generation. |
 | `process-lifecycle`                | `ProcessDesiredStates` (primary), `ProcessInputs` (mapped)                                               | `ProcessStatuses` (exclusive)                                           | Runtime host owns launch callbacks, live handles, observations and workers.                                              |
@@ -109,6 +103,9 @@ flowchart LR
   RR["RunnerRuntimes"]
   R["HostReports"]
   HR(["harness-host-report"])
+  I["HostIntents"]
+  IS["HostIntentStatuses"]
+  HI(["harness-host-intent"])
   SI["SessionInputs"]
   SD["SessionDrainInputs"]
   SO["NativeOperationResults"]
@@ -124,6 +121,9 @@ flowchart LR
   Native[("Session / setup / app-server<br/>process domains")]
 
   Peer -->|publish| RD & RI
+  I -->|watch| HI
+  HI -->|write applying / result| IS
+  HI -.->|admitted native apply| Peer
   SM -->|publish| SI & SD & SO
   AM -->|publish| AI & AO
   Journal -->|publish| J & ACK
@@ -146,13 +146,14 @@ flowchart LR
   HR -->|write full intent + report| R
 ```
 
-| Controller                   | Watched inputs                                                                                                                                                                            | Controller output                    | Selection / side effects                                                                                      |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `harness-host-report`        | `RunnerDesiredStates`, `RunnerRuntimes` (weak), plus Host change wakeups                                                                                                                  | `HostReports` (exclusive)            | Publishes inventory, blocker, idle and lifecycle facts with the full applied intent.                          |
-| `runner-lifecycle`           | `RunnerDesiredStates`, `RunnerInputs`, `SessionDrainInputs`, `SessionRuntimes`, `JournalSeals`, `IngressAcks`, `CodexAppServerRuntimes`, `ProcessDesiredStates`, `ProcessStatuses` (weak) | `RunnerRuntimes` (exclusive)         | Aggregates the Host drain barrier; explicitly queues its next step after changing status.                     |
-| `session-lifecycle`          | `SessionInputs` (primary); `RunnerDesiredStates`, `RunnerRuntimes`, `CodexAppServerRuntimes`, `NativeOperationResults` (mapped)                                                           | `SessionRuntimes` (exclusive)        | Per Session. App-server updates map only to Codex Sessions; operation results map to their Session.           |
-| `codex-app-server-lifecycle` | `CodexAppServerInputs` (primary); `RunnerDesiredStates`, `RunnerRuntimes`, `CodexAppServerOperationResults` (mapped)                                                                      | `CodexAppServerRuntimes` (exclusive) | Per shared app-server; native effects run in host-owned one-off workers.                                      |
-| `process-lifecycle`          | `ProcessDesiredStates` (primary), `ProcessInputs` (mapped)                                                                                                                                | `ProcessStatuses` (exclusive)        | The same single controller and registry shown above; per-domain contexts and worker barriers remain separate. |
+| Controller                   | Watched inputs                                                                                                                                                                            | Controller output                    | Selection / side effects                                                                                                                      |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `harness-host-report`        | `RunnerDesiredStates`, `RunnerRuntimes` (weak), plus Host change wakeups                                                                                                                  | `HostReports` (exclusive)            | Publishes inventory, blocker, idle and lifecycle facts with the full applied intent.                                                          |
+| `harness-host-intent`        | `HostIntents` (weak)                                                                                                                                                                      | `HostIntentStatuses` (exclusive)     | Checks startup and the synchronous Runtime connection gate, records Applying before the native effect, and fails closed on an unknown result. |
+| `runner-lifecycle`           | `RunnerDesiredStates`, `RunnerInputs`, `SessionDrainInputs`, `SessionRuntimes`, `JournalSeals`, `IngressAcks`, `CodexAppServerRuntimes`, `ProcessDesiredStates`, `ProcessStatuses` (weak) | `RunnerRuntimes` (exclusive)         | Aggregates the Host drain barrier; explicitly queues its next step after changing status.                                                     |
+| `session-lifecycle`          | `SessionInputs` (primary); `RunnerDesiredStates`, `RunnerRuntimes`, `CodexAppServerRuntimes`, `NativeOperationResults` (mapped)                                                           | `SessionRuntimes` (exclusive)        | Per Session. App-server updates map only to Codex Sessions; operation results map to their Session.                                           |
+| `codex-app-server-lifecycle` | `CodexAppServerInputs` (primary); `RunnerDesiredStates`, `RunnerRuntimes`, `CodexAppServerOperationResults` (mapped)                                                                      | `CodexAppServerRuntimes` (exclusive) | Per shared app-server; native effects run in host-owned one-off workers.                                                                      |
+| `process-lifecycle`          | `ProcessDesiredStates` (primary), `ProcessInputs` (mapped)                                                                                                                                | `ProcessStatuses` (exclusive)        | The same single controller and registry shown above; per-domain contexts and worker barriers remain separate.                                 |
 
 The process controller and its three resource types appear in both diagrams to show their callers;
 they are one controller and one set of resources. Each desired attempt records its process domain.

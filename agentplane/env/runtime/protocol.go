@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	"google.golang.org/grpc/codes"
@@ -14,23 +15,14 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type hostLifecyclePeer interface {
-	BootID() string
-	ApplyIntent(context.Context, *runtimepb.LifecycleIntent) error
-}
-
 // ConnectHost binds Host to the shared COSI lifecycle engine.
 // Neither component mutex is held across a call into the other component.
-func (r *Runtime) ConnectHost(ctx context.Context, client *harnesshost.Runner) error {
-	return r.connectHost(ctx, client, client)
-}
-
-func (r *Runtime) connectHost(ctx context.Context, client *harnesshost.Runner, peer hostLifecyclePeer) (resultErr error) {
-	bootID := peer.BootID()
+func (r *Runtime) ConnectHost(ctx context.Context, client *harnesshost.Runner) (resultErr error) {
+	bootID := client.BootID()
 	if bootID == "" {
 		return status.Error(codes.InvalidArgument, "Harness Host has no boot ID")
 	}
-	host := &hostLink{bootID: bootID, client: client, peer: peer, connected: true}
+	host := &hostLink{bootID: bootID, client: client, connected: true}
 	r.mu.Lock()
 	if r.closing || r.failed {
 		r.mu.Unlock()
@@ -41,6 +33,9 @@ func (r *Runtime) connectHost(ctx context.Context, client *harnesshost.Runner, p
 		return status.Error(codes.AlreadyExists, "another Harness Host is already connected")
 	}
 	r.host = host
+	if client != nil {
+		client.SetRuntimeConnection(r.bootID, bootID, true)
+	}
 	if r.intent == nil {
 		r.intent = &runtimepb.LifecycleIntent{
 			Binding:    &runtimepb.Binding{RuntimeBootId: r.bootID, HostBootId: bootID, Generation: 1},
@@ -53,6 +48,7 @@ func (r *Runtime) connectHost(ctx context.Context, client *harnesshost.Runner, p
 	}
 	if err := r.publishHostIntentLocked(); err != nil {
 		host.connected = false
+		r.revokeHostConnectionLocked()
 		r.changedLocked()
 		r.mu.Unlock()
 		return err
@@ -146,6 +142,7 @@ func (r *Runtime) disconnectHost(host *hostLink, cause error) {
 	r.mu.Lock()
 	if r.host == host && host.connected {
 		host.connected = false
+		r.revokeHostConnectionLocked()
 		r.changedLocked()
 		closing := r.closing
 		r.mu.Unlock()
@@ -244,13 +241,13 @@ func (r *Runtime) waitForExecutionFenced(ctx context.Context, binding *runtimepb
 		}
 		// Publishing the fence locally is not enough: stopping Host before it
 		// applies this update can make Close reject the delayed intent.
-		applied, _, err := cosi.Read(context.Background(), r.lifecycleState, hostIntentStatusResource(hostIntentStatus{}))
+		applied, _, err := cosi.Read(context.Background(), r.lifecycleState, lifecycle.HostIntentStatusResource(lifecycle.HostIntentStatus{}))
 		if err != nil {
 			r.mu.Unlock()
 			return err
 		}
 		if r.intent != nil && proto.Equal(r.intent.Binding, binding) && r.intent.ExecutionFenced &&
-			applied.Applied && applied.Intent == intentValue(r.intent) {
+			applied.Applied && applied.Intent == lifecycle.HostIntentFromProto(r.intent) {
 			r.mu.Unlock()
 			return nil
 		}

@@ -12,8 +12,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// RuntimeBridge is the in-process owner of Host lifecycle and bootstrap state.
-// Its callbacks are made without holding the Host mutex.
+// RuntimeBridge exposes Runtime-owned bootstrap and Execution readiness to the
+// embedded Host. Its callbacks are made without holding the Host mutex.
 type RuntimeBridge interface {
 	ConnectHost(context.Context, *Runner) error
 	WaitHostBootstrap(context.Context, *runtimepb.Binding) error
@@ -24,6 +24,24 @@ type bindingContextKey struct{}
 
 func withBinding(ctx context.Context, binding *runtimepb.Binding) context.Context {
 	return context.WithValue(ctx, bindingContextKey{}, proto.Clone(binding).(*runtimepb.Binding))
+}
+
+type runtimeConnection struct {
+	runtimeBootID string
+	hostBootID    string
+	connected     bool
+}
+
+// Runtime revokes this native connection gate synchronously, even if COSI is
+// unavailable. Intent application still comes only from the shared COSI store.
+func (r *Runner) SetRuntimeConnection(runtimeBootID, hostBootID string, connected bool) {
+	r.runtimeConnection.Store(&runtimeConnection{runtimeBootID: runtimeBootID, hostBootID: hostBootID, connected: connected})
+}
+
+// RuntimeConnectionMatches checks the native connection gate used by Host intent admission.
+func (r *Runner) RuntimeConnectionMatches(runtimeBootID, hostBootID string) bool {
+	connection := r.runtimeConnection.Load()
+	return connection != nil && connection.connected && connection.runtimeBootID == runtimeBootID && connection.hostBootID == hostBootID
 }
 
 func (r *Runner) BootID() string { return r.bootID }

@@ -22,6 +22,9 @@ func (r *Runner) Run(ctx context.Context, endpoint configuration.Endpoint, bridg
 	if err := r.sessions.Startup(r.ctx); err != nil {
 		return errors.Join(err, r.Close(context.WithoutCancel(ctx)))
 	}
+	r.mu.Lock()
+	r.startupComplete = true
+	r.mu.Unlock()
 	servingCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
 	var workers sync.WaitGroup

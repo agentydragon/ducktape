@@ -46,6 +46,8 @@ type Runner struct {
 	closeDone           chan struct{}
 	closeErr            error
 	closing             bool
+	startupComplete     bool
+	runtimeConnection   atomic.Pointer[runtimeConnection]
 	intent              *runtimepb.LifecycleIntent
 	bootstrapBinding    *runtimepb.Binding
 	ready               atomic.Bool
@@ -169,6 +171,7 @@ func (r *Runner) fail(err error) {
 	if err == nil {
 		return
 	}
+	r.runtimeConnection.Store(nil)
 	zap.L().Error("runner operation failed", zap.Error(err))
 	select {
 	case r.fatal <- err:
