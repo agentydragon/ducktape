@@ -19,16 +19,14 @@ disabled and a root shell when it is enabled.
 
 ## Simplify Environment Runtime reconciliation and coordination
 
-- Review the in-process Runtime–Harness Host connection, intent, report and wakeup paths. The two
-  components now share one process and engine; identify which connection and notification state can
-  be removed while preserving synchronous admission revocation, exact binding and applied-intent
-  checks, and fail-closed handling of uncertain effects.
-- Separate Host responsibilities: initialize the Session manager and controllers as Runtime
-  components, and give History journal delivery an explicit supervised lifetime. Evaluate whether
-  Host startup recovery and cleanup can be driven by the existing desired and status resources
-  without a separate Host run loop or connection protocol. Preserve synchronous admission
-  revocation and the order between native quiescence, Execution fencing, journal sealing and
-  acknowledgement, engine shutdown, and final worker and journal joins.
+- Make Runtime the single lifecycle owner for Sessions, replacing the separate Harness Host object
+  and its process-shaped lifetime, boot identity, binding gate and callbacks. Initialize the Session
+  manager and controllers as Runtime components and own History delivery as a Runtime worker.
+  Consolidate the overlapping Runtime/Host desired, applied-intent and report resources where one
+  owner and its COSI controllers can express the same transitions. Retain generations needed to
+  reject stale work, synchronous admission revocation even when COSI fails, and fail-closed handling
+  of uncertain effects. Preserve native quiescence, Execution fencing, journal seal and exact History
+  acknowledgement ordering, then join the engine and remaining workers before releasing ownership.
 - Systemd observations are typed; process start, exit and stop still use a revision wakeup and
   process-owned result slots. A start-fact prototype retained the live worker slot and required
   additional reads to reconcile COSI observations with completion and teardown. Revisit when a
