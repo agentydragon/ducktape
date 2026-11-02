@@ -31,6 +31,7 @@ import {
   type Sandbox,
 } from "../../../proto/sandboxes_pb";
 import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
+import { readySandbox, suspendedSandbox, testSandbox } from "../testing/sandbox";
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
 import "@mantine/core/styles.css";
 
@@ -98,6 +99,21 @@ const NULL_THREAD_FIELDS = {
 
 function ago(ms: number): string {
   return new Date(NOW - ms).toISOString();
+}
+
+function visualSandbox(sandbox: Sandbox, ageMs: number): Sandbox {
+  sandbox.namespace = "agentplane-visual";
+  sandbox.createdAt = timestampFromDate(new Date(ago(ageMs)));
+  const serviceAccount = sandbox.serviceAccount;
+  if (!serviceAccount) throw new Error(`Missing execution account on ${sandbox.name}`);
+  serviceAccount.namespace = sandbox.namespace;
+  if (sandbox.pod) sandbox.pod.namespace = sandbox.namespace;
+  return sandbox;
+}
+
+function requiredPod(sandbox: Sandbox): NonNullable<Sandbox["pod"]> {
+  if (!sandbox.pod) throw new Error(`Missing Pod on ${sandbox.name}`);
+  return sandbox.pod;
 }
 
 // Mock the legacy detail endpoint until it consumes the shared Sandbox proto.
@@ -174,157 +190,92 @@ function sandboxDetailFixture(value: Sandbox): SandboxView {
   };
 }
 
-const SANDBOXES: Sandbox[] = [
-  create(SandboxSchema, {
-    name: "ready-sandbox",
-    uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
-    namespace: "agentplane-visual",
-    createdAt: timestampFromDate(new Date(ago(3 * HOUR))),
-    operatingMode: "Running",
-    serviceAccount: { namespace: "agentplane-visual", name: "ready-sandbox" },
-    wakeOnSend: true,
-    idleSuspendAfter: { seconds: 3600n },
-    status: {
-      conditions: [{ type: "Ready", status: "True", reason: "PodReady", lastTransitionTime: ago(HOUR) }],
-    },
-    phase: SandboxPhase.RUNNING,
-    pod: {
-      name: "ready-sandbox",
-      namespace: "agentplane-visual",
-      uid: "visual-pod-a1b2",
-      deleting: false,
-      ownerReferences: [
-        {
-          apiVersion: "agentplane.allegedly.works/v1alpha1",
-          kind: "Sandbox",
-          name: "ready-sandbox",
-          uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
-          controller: true,
+const readySandboxFixture = visualSandbox(
+  readySandbox("ready-sandbox", "0f9c1d2e-0000-4000-8000-00000000a1b2"),
+  3 * HOUR
+);
+readySandboxFixture.wakeOnSend = true;
+readySandboxFixture.idleSuspendAfter = create(DurationSchema, { seconds: 3600n });
+readySandboxFixture.status = {
+  conditions: [{ type: "Ready", status: "True", reason: "PodReady", lastTransitionTime: ago(HOUR) }],
+};
+const readyPod = requiredPod(readySandboxFixture);
+readyPod.uid = "visual-pod-a1b2";
+readyPod.nodeName = "harness-node";
+readyPod.status = {
+  phase: "Running",
+  podIP: "10.0.0.7",
+  startTime: ago(2 * HOUR),
+  qosClass: "Burstable",
+  conditions: [
+    { type: "PodScheduled", status: "True", lastTransitionTime: ago(2 * HOUR) },
+    { type: "Ready", status: "True", lastTransitionTime: ago(HOUR) },
+  ],
+  containerStatuses: [{ name: "runner", state: { running: { startedAt: ago(HOUR) } }, ready: true, restartCount: 0 }],
+};
+
+const pendingSandboxFixture = visualSandbox(
+  readySandbox("pending-sandbox", "0f9c1d2e-0000-4000-8000-00000000c3d4"),
+  2 * 60_000
+);
+pendingSandboxFixture.wakeOnSend = false;
+pendingSandboxFixture.status = { conditions: [{ type: "Ready", status: "False", reason: "PodPending" }] };
+const pendingPod = requiredPod(pendingSandboxFixture);
+pendingPod.uid = "visual-pod-c3d4";
+pendingPod.nodeName = "harness-node";
+pendingPod.status = {
+  phase: "Pending",
+  conditions: [{ type: "Ready", status: "False", reason: "ContainersNotReady" }],
+  containerStatuses: [
+    {
+      name: "runner",
+      state: {
+        waiting: {
+          reason: "ImagePullBackOff",
+          message: 'Back-off pulling image "registry.test/runner:harness"',
         },
-      ],
-      nodeName: "harness-node",
-      status: {
-        phase: "Running",
-        podIP: "10.0.0.7",
-        startTime: ago(2 * HOUR),
-        qosClass: "Burstable",
-        conditions: [
-          { type: "PodScheduled", status: "True", lastTransitionTime: ago(2 * HOUR) },
-          { type: "Ready", status: "True", lastTransitionTime: ago(HOUR) },
-        ],
-        containerStatuses: [
-          { name: "runner", state: { running: { startedAt: ago(HOUR) } }, ready: true, restartCount: 0 },
-        ],
       },
+      ready: false,
+      restartCount: 0,
     },
-  }),
-  create(SandboxSchema, {
-    name: "pending-sandbox",
-    uid: "0f9c1d2e-0000-4000-8000-00000000c3d4",
-    namespace: "agentplane-visual",
-    createdAt: timestampFromDate(new Date(ago(2 * 60_000))),
-    operatingMode: "Running",
-    serviceAccount: { namespace: "agentplane-visual", name: "pending-sandbox" },
-    wakeOnSend: false,
-    status: { conditions: [{ type: "Ready", status: "False", reason: "PodPending" }] },
-    phase: SandboxPhase.RUNNING,
-    pod: {
-      name: "pending-sandbox",
-      namespace: "agentplane-visual",
-      uid: "visual-pod-c3d4",
-      deleting: false,
-      ownerReferences: [
-        {
-          apiVersion: "agentplane.allegedly.works/v1alpha1",
-          kind: "Sandbox",
-          name: "pending-sandbox",
-          uid: "0f9c1d2e-0000-4000-8000-00000000c3d4",
-          controller: true,
-        },
-      ],
-      nodeName: "harness-node",
-      status: {
-        phase: "Pending",
-        conditions: [{ type: "Ready", status: "False", reason: "ContainersNotReady" }],
-        containerStatuses: [
-          {
-            name: "runner",
-            state: {
-              waiting: {
-                reason: "ImagePullBackOff",
-                message: 'Back-off pulling image "registry.test/runner:harness"',
-              },
-            },
-            ready: false,
-            restartCount: 0,
-          },
-        ],
-      },
-    },
-  }),
-  create(SandboxSchema, {
-    name: "suspended-sandbox",
-    uid: "0f9c1d2e-0000-4000-8000-00000000e5f6",
-    namespace: "agentplane-visual",
-    createdAt: timestampFromDate(new Date(ago(48 * HOUR))),
-    operatingMode: "Suspended",
-    serviceAccount: { namespace: "agentplane-visual", name: "suspended-sandbox" },
-    wakeOnSend: false,
-    status: { conditions: [{ type: "Ready", status: "False", reason: "Suspended" }] },
-    phase: SandboxPhase.SUSPENDED,
-    pod: undefined,
-  }),
-];
+  ],
+};
+
+const suspendedSandboxFixture = visualSandbox(
+  suspendedSandbox("suspended-sandbox", "0f9c1d2e-0000-4000-8000-00000000e5f6"),
+  48 * HOUR
+);
+suspendedSandboxFixture.status = { conditions: [{ type: "Ready", status: "False", reason: "Suspended" }] };
+
+const SANDBOXES: Sandbox[] = [readySandboxFixture, pendingSandboxFixture, suspendedSandboxFixture];
 
 /** One Sandbox suspended because its runner was idle, and one because a requester suspended it. */
 function addSuspendedSandboxes(): void {
-  SANDBOXES.push(
-    create(SandboxSchema, {
-      name: "idle-suspended-sandbox",
-      uid: "0f9c1d2e-0000-4000-8000-00000000b7c8",
-      namespace: "agentplane-visual",
-      createdAt: timestampFromDate(new Date(ago(30 * HOUR))),
-      operatingMode: "Suspended",
-      serviceAccount: { namespace: "agentplane-visual", name: "idle-suspended-sandbox" },
-      wakeOnSend: true,
-      idleSuspendAfter: { seconds: 1800n },
-      suspendedBy: "Idle",
-      status: { conditions: [{ type: "Ready", status: "False", reason: "Stopped" }] },
-      phase: SandboxPhase.SUSPENDED,
-      pod: undefined,
-    }),
-    create(SandboxSchema, {
-      name: "requested-suspended-sandbox",
-      uid: "0f9c1d2e-0000-4000-8000-00000000d9e0",
-      namespace: "agentplane-visual",
-      createdAt: timestampFromDate(new Date(ago(26 * HOUR))),
-      operatingMode: "Suspended",
-      serviceAccount: { namespace: "agentplane-visual", name: "requested-suspended-sandbox" },
-      wakeOnSend: false,
-      idleSuspendAfter: { seconds: 7200n },
-      suspendedBy: "Requested",
-      status: { conditions: [{ type: "Ready", status: "False", reason: "Stopped" }] },
-      phase: SandboxPhase.SUSPENDED,
-      pod: undefined,
-    })
+  const idle = visualSandbox(
+    suspendedSandbox("idle-suspended-sandbox", "0f9c1d2e-0000-4000-8000-00000000b7c8"),
+    30 * HOUR
   );
+  idle.wakeOnSend = true;
+  idle.idleSuspendAfter = create(DurationSchema, { seconds: 1800n });
+  idle.suspendedBy = "Idle";
+  idle.status = { conditions: [{ type: "Ready", status: "False", reason: "Stopped" }] };
+
+  const requested = visualSandbox(
+    suspendedSandbox("requested-suspended-sandbox", "0f9c1d2e-0000-4000-8000-00000000d9e0"),
+    26 * HOUR
+  );
+  requested.idleSuspendAfter = create(DurationSchema, { seconds: 7200n });
+  requested.suspendedBy = "Requested";
+  requested.status = { conditions: [{ type: "Ready", status: "False", reason: "Stopped" }] };
+  SANDBOXES.push(idle, requested);
 }
 
 function addProvisioningSandbox(): void {
-  SANDBOXES.push(
-    create(SandboxSchema, {
-      name: "test-provisioning",
-      uid: "0f9c1d2e-0000-4000-8000-000000000007",
-      namespace: "agentplane-visual",
-      createdAt: timestampFromDate(new Date(ago(30_000))),
-      operatingMode: "Running",
-      serviceAccount: { namespace: "agentplane-visual", name: "test-provisioning" },
-      wakeOnSend: false,
-      status: {},
-      phase: SandboxPhase.CREATING,
-      pod: undefined,
-    })
-  );
+  const provisioning = visualSandbox(testSandbox("test-provisioning", "0f9c1d2e-0000-4000-8000-000000000007"), 30_000);
+  provisioning.operatingMode = "Running";
+  provisioning.status = {};
+  provisioning.phase = SandboxPhase.CREATING;
+  SANDBOXES.push(provisioning);
 }
 
 const TEST_CODER_POLICY_SETS = [
