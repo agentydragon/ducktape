@@ -522,7 +522,7 @@ def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
     }
 
 
-_SPIKE_ROOT = Path("/var/lib/k3s-persistence-pod-spike-v6")
+_SPIKE_ROOT = Path("/var/lib/k3s-persistence-spike-v7")
 _SPIKE_MARKER = _SPIKE_ROOT / "server.json"
 
 
@@ -558,14 +558,19 @@ def _spike_identity(k3s: K3s, pid: int) -> dict[str, str | int]:
     }
 
 
-def _spike_fingerprint(binary: Path, crds: list[Path], pki: list[dict[str, Any]], pki_images: dict[str, Path]) -> str:
-    digest = hashlib.sha256(b"k3s-persistence-pod-spike-v6\0")
+def _spike_fingerprint(
+    binary: Path, crds: list[Path], baseline: list[dict[str, Any]], images: dict[str, Path], *, layers_in_memory: bool
+) -> str:
+    digest = hashlib.sha256(b"k3s-persistence-spike-v7\0")
+    digest.update(b"tmpfs\0" if layers_in_memory else b"disk\0")
     for name, path in [
         ("k3s", binary),
         ("stack.py", Path(__file__)),
         ("bootstrap.py", Path(bootstrap.__file__)),
         ("certificates.py", Path(certificates.__file__)),
         ("iptables_rule.py", Path(iptables_rule.__file__)),
+        ("vm_sandboxes.py", Path(vm_sandboxes.__file__)),
+        ("block_storage.py", Path(block_storage.__file__)),
         *((f"crds/{path.name}", path) for path in crds),
     ]:
         # Names and fixed-size digests frame the inputs, including helper changes that affect the
@@ -573,8 +578,8 @@ def _spike_fingerprint(binary: Path, crds: list[Path], pki: list[dict[str, Any]]
         digest.update(name.encode() + b"\0")
         with path.open("rb") as source:
             digest.update(hashlib.file_digest(source, "sha256").digest())
-    digest.update(json.dumps(pki, sort_keys=True).encode())
-    for reference, rloc in sorted(pki_images.items()):
+    digest.update(json.dumps(baseline, sort_keys=True).encode())
+    for reference, rloc in sorted(images.items()):
         digest.update(reference.encode())
         layout = get_required_path(rloc.read_text().strip())
         # OCI index manifests bind the config and layer digests without hashing every layer tarball.
@@ -678,6 +683,10 @@ def _spike_evidence(
         for doc in pki
         if doc["kind"] == "Deployment"
     }
+    vm_controllers = vm_sandboxes.baseline_identity(k3s.kubectl) if fixture.vm_sandboxes else {}
+    if warm and vm_controllers != marker.get("vm_controller_uids", {}):
+        raise RuntimeError("retained virtualization identities changed; refusing to mark this baseline clean")
+    marker["vm_controller_uids"] = vm_controllers
     if warm and controllers != marker["pki_controller_uids"]:
         raise RuntimeError("retained PKI controller identities changed; refusing to mark this baseline clean")
     marker["pki_controller_uids"] = controllers
@@ -695,12 +704,19 @@ def _spike_evidence(
         ),
         "collector_namespace_uid": k3s.kubectl("get", "namespace", "monitoring", "-o", "jsonpath={.metadata.uid}"),
         "pki_controller_uids": controllers,
+        "vm_controller_uids": vm_controllers,
+        "workspace_storage_class_uid": (
+            k3s.kubectl("get", "storageclass", block_storage.STORAGE_CLASS, "-o", "jsonpath={.metadata.uid}")
+            if fixture.vm_sandboxes
+            else None
+        ),
+        "layers_in_memory": not fixture.vm_sandboxes,
         "model_endpoint": models.url if isinstance(models, rendered_fixture.LocalModel) else None,
     }
 
 
-def _spike_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture, marker: dict[str, Any]) -> None:
-    """Wait for fixture-owned resources to vanish, leaving only k3s and PKI controllers."""
+def _spike_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None:
+    """Wait for fixture-owned resources to vanish, leaving only the infrastructure baseline."""
     namespaces = [doc["metadata"]["name"] for doc in fixture.objects if doc["kind"] == "Namespace"]
     if set(namespaces) != {fixture.namespace, "systest-egress-credentials"}:
         raise RuntimeError(f"unexpected fixture namespaces: {namespaces}")
@@ -757,8 +773,13 @@ def _spike_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture, marker: di
     remaining_pvs = json.loads(k3s.kubectl("get", "pv", "-o", "json"))["items"]
     if any(item.get("spec", {}).get("claimRef", {}).get("namespace") in namespaces for item in remaining_pvs):
         raise RuntimeError("fixture-owned PersistentVolume survived cleanup")
-    marker["state"] = "clean"
-    _spike_write_marker(marker)
+    if fixture.vm_sandboxes:
+        if json.loads(k3s.kubectl("get", "vm,vmi", "-A", "-o", "json"))["items"]:
+            raise RuntimeError("fixture-owned virtual machines survived namespace deletion")
+        # The demand-driven provisioner owns this cluster-scoped object outside the rendered fixture.
+        k3s.kubectl("delete", "storageclass", block_storage.STORAGE_CLASS, "--wait=true")
+        if k3s.kubectl("get", "storageclass", block_storage.STORAGE_CLASS, "--ignore-not-found=true", "-o", "name"):
+            raise RuntimeError("fixture-owned StorageClass survived cleanup")
 
 
 @contextlib.contextmanager
@@ -771,6 +792,8 @@ def running_stack(
     persistence_spike = os.environ.get("K3S_PERSISTENCE_SPIKE") == "1"
     cert_manager, trust_manager = certificates.releases()
     pki_images = certificates.images(cert_manager + trust_manager)
+    releases = vm_sandboxes.releases() if fixture.vm_sandboxes else []
+    infrastructure_images = vm_sandboxes.images(releases) if releases else {}
     fixture_images = {_ci_image(rloc): rloc for rloc in inputs.image_layouts}
     guest_images = {_ci_image(rloc): rloc for rloc in inputs.guest_image_layouts}
     if fixture.vm_sandboxes != bool(guest_images):
@@ -789,12 +812,19 @@ def running_stack(
             )
             # A VM stack's layers would leave too little memory for its guests (README § Image layers in memory).
             if persistence_spike:
-                if fixture.vm_sandboxes:
-                    raise ValueError("the persistence spike only supports the Pod fixture")
                 k3s, spike_marker, spike_warm = _spike_open(
                     inputs.binary,
-                    _spike_fingerprint(inputs.binary, crds, cert_manager + trust_manager, pki_images),
-                    layers_in_memory=True,
+                    _spike_fingerprint(
+                        inputs.binary,
+                        crds,
+                        cert_manager
+                        + trust_manager
+                        + releases
+                        + (vm_sandboxes.baseline_objects() if fixture.vm_sandboxes else []),
+                        pki_images | infrastructure_images,
+                        layers_in_memory=not fixture.vm_sandboxes,
+                    ),
+                    layers_in_memory=not fixture.vm_sandboxes,
                 )
             else:
                 process = k3s.start(layers_in_memory=not fixture.vm_sandboxes)
@@ -848,28 +878,26 @@ def running_stack(
                 raise ValueError(f"Guest images are used by Deployments: {sorted(used)}")
             if missing := deployment_images - fixture_images.keys():
                 raise ValueError(f"Fixture workloads lack OCI layouts for: {sorted(missing)}")
-            if fixture.vm_sandboxes:
-                releases = vm_sandboxes.releases()
-                infrastructure_images = vm_sandboxes.images(releases)
+            install_baseline = not (persistence_spike and spike_warm)
+            if fixture.vm_sandboxes and install_baseline:
                 k3s.import_images(infrastructure_images)
             cleanup.callback(certificates.report, k3s.kubectl, cert_manager + trust_manager)
             # Import the next group's images during apply/readiness work for the preceding group. A single
             # worker preserves blob deduplication and joins before k3s teardown, including on setup failure.
             with ThreadPoolExecutor(max_workers=1, thread_name_prefix="image-import") as importing:
-                install_pki = not (persistence_spike and spike_warm)
                 pki_import = (
                     importing.submit(contextvars.copy_context().run, k3s.import_images, pki_images)
-                    if install_pki
+                    if install_baseline
                     else None
                 )
-                if fixture.vm_sandboxes:
+                if fixture.vm_sandboxes and install_baseline:
                     vm_sandboxes.install(k3s.kubectl, releases)
                     setup.add_event("KubeVirt and Kyverno applied")
                 # Applying a workload before its image is imported would pull it from the registry.
                 if pki_import is not None:
                     pki_import.result()
                 fixture_import = importing.submit(contextvars.copy_context().run, k3s.import_images, fixture_images)
-                if install_pki:
+                if install_baseline:
                     certificates.install(k3s.kubectl, cert_manager, trust_manager)
                 else:
                     for doc in cert_manager + trust_manager:
@@ -993,6 +1021,15 @@ def running_stack(
                     vm_sandboxes.report(k3s.kubectl, fixture.namespace)
                 )
         if persistence_spike:
-            _spike_clean(k3s, fixture, spike_marker)
+            # Stop the provisioner, forwards, profilers and guest log capture first. Their checks
+            # must pass before we can certify the baseline, while the API and retained node stay live.
+            cleanup.close()
+            _spike_clean(k3s, fixture)
+            # Namespace deletion releases all VM users of the loop devices. Certify clean only
+            # after their owned mappings detach and the per-action backing files are removed.
+            block_cleanup.close()
+            spike_marker["state"] = "clean"
+            _spike_write_marker(spike_marker)
+            spike_evidence["workspace_loop_devices_released"] = len(raw_block.devices)
             spike_evidence["cleanup"] = "complete"
             spike_output.write_text(json.dumps(spike_evidence))

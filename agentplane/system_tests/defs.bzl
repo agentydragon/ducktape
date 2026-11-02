@@ -26,7 +26,7 @@ _STACKS = {
     "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, real_model = True, images = [_HARNESSES_LAYOUT]),
 }
 
-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, persistence_spike = False):
+def _k3s_suite(name, srcs, deps, stack, tags, profile_guest, boot_evidence, persistence_spike):
     """Run a Python suite entrypoint against one session-scoped k3s stack."""
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
@@ -34,8 +34,6 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         fail("profile_guest requires the VM stack")
     if boot_evidence and stack != "vm":
         fail("boot_evidence requires the VM stack")
-    if persistence_spike and stack != "pod":
-        fail("the persistence spike requires the Pod stack")
     config = _STACKS[stack]
     layouts = K3S_SERVICE_LAYOUTS + config.images
     data = [config.fixture, K3S_BINARY, _CERT_MANAGER_INSTALL, _TRUST_MANAGER_INSTALL] + layouts
@@ -50,11 +48,6 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
     }
     properties = {}
     suite_tags = K3S_TAGS + tags
-    if persistence_spike:
-        env["K3S_PERSISTENCE_SPIKE"] = "1"
-        properties |= K3S_PERSISTENCE_SPIKE_PROPERTIES | {
-            "test.runner-recycling-key": "k3s-persistence-pod-spike-v6",
-        }
     if config.vm:
         # Six 1.5 GiB guests boot alongside k3s services; request the 20 GB worker estimate.
         properties["EstimatedComputeUnits"] = "8"
@@ -74,6 +67,11 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
     if config.real_model:
         properties["test.env-secrets"] = "OPENAI_API_KEY"
         suite_tags.append("live_openai_api")
+    if persistence_spike:
+        env["K3S_PERSISTENCE_SPIKE"] = "1"
+        properties |= K3S_PERSISTENCE_SPIKE_PROPERTIES | {
+            "test.runner-recycling-key": "k3s-persistence-spike-v7-" + ("vm" if config.vm else "pod"),
+        }
     py_test(
         name = name,
         size = "enormous",
@@ -87,3 +85,17 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
             "//agentplane/system_tests/k3s:system_test_target",
         ],
     )
+
+def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False):
+    """Declare the ordinary suite and a manual retained-infrastructure comparison."""
+    for persistence_spike in [False, True]:
+        _k3s_suite(
+            name = name + "_persistence_spike" if persistence_spike else name,
+            srcs = srcs,
+            deps = deps,
+            stack = stack,
+            tags = tags + (["manual"] if persistence_spike and "manual" not in tags else []),
+            profile_guest = profile_guest,
+            boot_evidence = boot_evidence,
+            persistence_spike = persistence_spike,
+        )

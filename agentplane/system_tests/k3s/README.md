@@ -15,10 +15,21 @@ node, and streams only the blobs containerd lacks ([measurements](debug/stack_ti
 VM system tests use a separate `test.runner-recycling-key` so their disk-backed layers and pod tests'
 tmpfs layers keep separate image stores.
 
-The manual `//agentplane/system_tests/suites:test_pod_persistence_spike` also retains live k3s and
-PKI controllers, with fresh application state per action. Its fingerprint invalidates changed
-baseline inputs; its experimental remote snapshot policy saves the refreshed baseline for later
-actions. Ordinary targets still stop k3s. See the [spike evidence](../../debug/k3s_persistence_spike.md).
+Every `k3s_suite` also declares a manual `<name>_persistence_spike` target from the same sources,
+fixture, dependencies and scenario flags. These retain live k3s and PKI controllers; VM variants also
+retain KubeVirt and Kyverno. The eight variants cover Pod, Dispatcher, both MCP suites, normal/manual/profile
+VM suites and real-model tests. The real-model variant still requires `OPENAI_API_KEY` and keeps its
+`live_openai_api` tag. Explicit runs must override CI's manual/live tag filters.
+
+Pod/MCP/real-model variants share one tmpfs snapshot family; VM variants share a separate disk-backed
+family with the ordinary VM resource estimate. Baseline fingerprints include the layer mode,
+installation/cleanup helpers, k3s, CRDs, PKI releases/images, and VM releases/images/configuration when
+applicable. Changed inputs rebuild cold. Remote snapshots save the refreshed baseline for later actions.
+Applications, PostgreSQL, model endpoints, MCP fixtures, certificates/trust and collectors are recreated.
+VM workspace claims, PVs, StorageClass and loop devices are removed before marking the baseline clean;
+guest shutdown and selected boot/profile checks remain enabled. Ordinary targets still stop k3s.
+The bare persistence and lifecycle probes remain separate diagnostics, rather than application variants.
+See the [spike evidence](../../debug/k3s_persistence_spike.md).
 
 Setup, each image import and teardown use the same OpenTelemetry tracer as the scenarios,
 writing completed spans immediately to `test-spans.jsonl` in undeclared outputs. The test log prints

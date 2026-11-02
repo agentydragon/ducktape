@@ -4,6 +4,7 @@ relay to each VM's launcher Pod (cluster/cdk8s/agentplane/launcher_relay.py). Bo
 production runs, from their release manifests, with their images from Bazel-pulled layouts.
 """
 
+import json
 import os
 import subprocess
 from collections.abc import Callable
@@ -88,6 +89,35 @@ def _kubevirt() -> dict[str, Any]:
             },
         },
     }
+
+
+def baseline_objects() -> list[dict[str, Any]]:
+    """The KubeVirt configuration applied after installing the operator release."""
+    return [_kubevirt()]
+
+
+def baseline_identity(kubectl: Kubectl) -> dict[str, str]:
+    """UIDs of the controllers and KubeVirt resource that make up the VM test baseline."""
+    resources = (
+        ("apps/v1/deployments/kubevirt/virt-operator", "deployment/virt-operator", KUBEVIRT_NAMESPACE),
+        ("apps/v1/deployments/kubevirt/virt-api", "deployment/virt-api", KUBEVIRT_NAMESPACE),
+        ("apps/v1/deployments/kubevirt/virt-controller", "deployment/virt-controller", KUBEVIRT_NAMESPACE),
+        ("apps/v1/daemonsets/kubevirt/virt-handler", "daemonset/virt-handler", KUBEVIRT_NAMESPACE),
+        (
+            "apps/v1/deployments/kyverno/kyverno-admission-controller",
+            f"deployment/{_KYVERNO_ADMISSION}",
+            KYVERNO_NAMESPACE,
+        ),
+        ("kubevirt.io/v1/kubevirts/kubevirt/kubevirt", "kubevirts.kubevirt.io/kubevirt", KUBEVIRT_NAMESPACE),
+    )
+    identities: dict[str, str] = {}
+    for key, resource, namespace in resources:
+        obj = json.loads(kubectl("get", resource, "-n", namespace, "-o", "json"))
+        uid = obj["metadata"]["uid"]
+        if not isinstance(uid, str) or not uid:
+            raise ValueError(f"{key} has no UID")
+        identities[key] = uid
+    return identities
 
 
 def _kyverno() -> list[dict[str, Any]]:

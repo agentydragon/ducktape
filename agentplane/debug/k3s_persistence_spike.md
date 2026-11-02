@@ -1,5 +1,27 @@
 # Hosted RBE k3s persistence spike (2026-11-01)
 
+## Expansion to every k3s application suite
+
+The v7 spike generates a manual `_persistence_spike` variant for every `k3s_suite` declaration,
+covering Pod, Dispatcher, MCP Actions, MCP Services, normal VM, manual VM, profile VM and real-model.
+The original targets and their CI selection are unchanged. Variant generation shares each declaration's
+sources, dependencies, fixture and profile/boot flags, so scenarios cannot drift between comparisons.
+
+The retained baseline is k3s plus cert-manager/trust-manager, with KubeVirt and Kyverno added for VM
+suites. VM snapshots have a separate recycling key, disk-backed image layers and the existing 8-unit
+resource estimate. Their fingerprint includes the exact KubeVirt configuration, operator releases and
+OCI image descriptors, layer mode, and installation/cleanup helpers. Warm readiness checks remain;
+evidence requires all six virtualization resource UIDs and four PKI Deployment UIDs to match the seed.
+
+Applications and PostgreSQL remain fresh, as do MCP fixtures, model endpoints, roots/intermediates,
+collectors and workspace disks. Successful teardown stops the provisioner and validates guest logs,
+removes fixture namespaces and cluster resources, confirms no VM/VMI or owned PV survives, deletes the
+provisioner's StorageClass, and detaches every owned loop device before certifying the baseline clean.
+Failures leave the marker dirty for a cold rebuild. The existing lifecycle and bare-cluster probes
+retain their diagnostic semantics.
+
+Validation results for this expansion are recorded below once the RBE actions complete.
+
 ## PostgreSQL reuse: no measured benefit, removed
 
 Retaining PostgreSQL while recreating its seven service databases passed all 13 cases in each of
@@ -7,7 +29,7 @@ five completed actions, but showed no overall timing benefit. The final warm pai
 243.190/230.097 s, with setup 45.001/42.998 s, versus the k3s/PKI-only pair's 233.994/220.454 s
 and setup 42.572/39.954 s. PostgreSQL verification took about 1 s and database reset 3–4 s;
 LLM ingress readiness still took 23–25 s. These selected small samples do not establish a causal
-regression. The PostgreSQL reuse implementation was removed; the retained baseline is k3s/PKI only.
+regression. The PostgreSQL reuse implementation was removed; PostgreSQL remains fresh per action.
 
 [Trial results](https://app.buildbuddy.io/invocation/7729cdcc-b174-488a-85ef-71c26683d01b) and
 [full historical evidence](https://github.com/agentydragon/ducktape/blob/c57ec9ebe9d81271c5a295c37407d6daa8f00ff0/agentplane/debug/k3s_persistence_spike.md)
