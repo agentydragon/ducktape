@@ -242,6 +242,7 @@ class VecmModel:
         degenerate (huge-magnitude) MAP — see header notes for the per-month
         log-density these defaults produce vs the statsmodels baseline.
         """
+        historical.require_consecutive_months()
         log_levels = np.log(historical.levels)
         if log_levels.shape[0] < 3:
             raise ValueError("VECM needs at least 3 observations to fit")
@@ -266,6 +267,7 @@ class VecmModel:
         Returns None when the requested origin doesn't have h observations
         available (so the scorer marks the row Unscored).
         """
+        historical.require_consecutive_months()
         if not self.params:
             raise RuntimeError("VecmModel has no fitted parameters; call fit() or from_trained_state() first")
         if horizon < 1:

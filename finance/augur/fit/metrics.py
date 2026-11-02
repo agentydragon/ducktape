@@ -113,6 +113,7 @@ def held_out_predictive_score(
     full series and is expected to condition on `levels[:t+1]` to predict
     `levels[t+1]`.
     """
+    historical.require_consecutive_months()
     if not 0.0 < train_fraction < 1.0:
         raise ValueError(f"train_fraction must be in (0, 1); got {train_fraction}")
     n_steps = historical.levels.shape[0] - 1
@@ -212,6 +213,7 @@ def rolling_origin_predictive_score(
     rolling-origin needs Fittable but the single-split scorer above only
     needs Scorable (no refit, caller-supplied training).
     """
+    historical.require_consecutive_months()
     if min_train < 2:
         raise ValueError(f"min_train must be >= 2; got {min_train}")
     if refit_every < 1:
@@ -334,6 +336,7 @@ def multi_step_predictive_score(
     """Score `model.predictive(..., horizon=h)` at every origin in the
     held-out window with `t + h ≤ n_steps`. Caller is responsible for any
     required fit (see `held_out_predictive_score` for the rationale)."""
+    historical.require_consecutive_months()
     if not 0.0 < train_fraction < 1.0:
         raise ValueError(f"train_fraction must be in (0, 1); got {train_fraction}")
     if not horizons:

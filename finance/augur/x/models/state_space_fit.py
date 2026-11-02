@@ -53,11 +53,21 @@ class FittedPrivateEquityStateSpaceFactor:
 
 
 def fit_state_space_artifact(
-    historical: HistoricalSeries, evidence: ExogenousEvidence, *, private_equity_config_paths: tuple[Path, ...] = ()
+    evidence: ExogenousEvidence,
+    *,
+    historical: HistoricalSeries | None = None,
+    private_equity_config_paths: tuple[Path, ...] = (),
 ) -> tuple[StateSpaceModelArtifact, ExogenousConditioningContext]:
-    private_factors = tuple(_fit_private_equity_factor(path, historical) for path in private_equity_config_paths)
-    artifact = StateSpaceModel.fit(
-        historical,
+    if private_equity_config_paths:
+        if historical is None:
+            raise ValueError("private-equity state-space fitting requires a contiguous HistoricalSeries")
+        private_factors = tuple(_fit_private_equity_factor(path, historical) for path in private_equity_config_paths)
+    else:
+        private_factors = ()
+    artifact = StateSpaceModel.fit_monthly_returns(
+        series_names=evidence.series_names,
+        monthly_log_returns=evidence.monthly_log_returns,
+        monthly_return_months=evidence.monthly_return_months,
         latest_observations={key.wire_id: point for key, point in evidence.latest_observations.items()},
         source_manifest=_source_manifest(evidence, private_factors),
         prior_manifest=_prior_manifest(evidence, private_factors),
@@ -194,6 +204,7 @@ def _source_manifest(
             "first": evidence.monthly_return_months[0],
             "last": evidence.monthly_return_months[-1],
             "count": len(evidence.monthly_return_months),
+            "observed": evidence.monthly_return_months,
         },
         "evidence_metadata": evidence.metadata.model_dump(mode="json"),
         "private_equity": {

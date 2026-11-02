@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 import pytest_bazel
 
@@ -51,6 +52,23 @@ def test_explicit_fred_only_evidence_is_synthesized_and_labeled(synthetic_eviden
     for factor, point in evidence.latest_observations.items():
         if isinstance(factor, HomeValueKey):
             assert point.source_id == f"public:{sources.FRED_SFXRSA.provenance_label}"
+
+
+def test_full_evidence_history_keeps_each_return_on_its_calendar_month(synthetic_evidence_dir: Path) -> None:
+    historical, evidence = load_evidence()
+
+    assert historical.months[1:] == evidence.monthly_return_months
+    np.testing.assert_allclose(np.diff(np.log(historical.levels), axis=0), evidence.monthly_log_returns)
+
+
+@pytest.mark.parametrize("fred_only", [False, True])
+def test_missing_cpi_month_is_rejected_by_both_loaders(synthetic_evidence_dir: Path, fred_only: bool) -> None:
+    cpi_path = synthetic_evidence_dir / sources.FRED_CPI.output_filename
+    lines = cpi_path.read_text().splitlines()
+    cpi_path.write_text("\n".join(line for line in lines if not line.startswith("2025-10-")) + "\n")
+
+    with pytest.raises(ValueError, match="gap or duplicate"):
+        load_evidence(fred_only=fred_only)
 
 
 def test_full_evidence_anchors_preserve_actual_source_units(synthetic_evidence_dir: Path) -> None:

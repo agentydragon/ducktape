@@ -37,7 +37,11 @@ from finance.augur.model.exogenous import (
     validate_sample_satisfies_request,
 )
 from finance.augur.model.float64 import LEVEL_DTYPE
-from finance.augur.model.path_models.scenarios import HistoricalSeries, historical_log_returns
+from finance.augur.model.path_models.scenarios import (
+    HistoricalSeries,
+    historical_log_returns,
+    require_increasing_calendar_months,
+)
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.provenance import stable_identity_digest
 from finance.augur.model.schemas import FrozenModel
@@ -184,10 +188,38 @@ class StateSpaceModel:
         prior_manifest: Mapping[str, Any],
         additional_factors: tuple[StateSpaceAdditionalFactor, ...] = (),
     ) -> StateSpaceModelArtifact:
+        return cls.fit_monthly_returns(
+            series_names=historical.series_names,
+            monthly_log_returns=historical_log_returns(historical),
+            monthly_return_months=historical.months[1:],
+            latest_observations=latest_observations,
+            source_manifest=source_manifest,
+            prior_manifest=prior_manifest,
+            additional_factors=additional_factors,
+        )
+
+    @classmethod
+    def fit_monthly_returns(
+        cls,
+        *,
+        series_names: tuple[LevelSeriesKey, ...],
+        monthly_log_returns: np.ndarray,
+        monthly_return_months: tuple[str, ...],
+        latest_observations: Mapping[str, ExogenousObservedPoint],
+        source_manifest: Mapping[str, Any],
+        prior_manifest: Mapping[str, Any],
+        additional_factors: tuple[StateSpaceAdditionalFactor, ...] = (),
+    ) -> StateSpaceModelArtifact:
+        """Fit iid monthly returns directly, retaining the calendar labels of observed transitions."""
+        require_increasing_calendar_months(monthly_return_months)
+        returns = np.asarray(monthly_log_returns, dtype=np.float64)
+        if returns.ndim != 2 or returns.shape != (len(monthly_return_months), len(series_names)):
+            raise ValueError("monthly return values and their factor/calendar labels have different shapes")
+        if not monthly_return_months:
+            raise ValueError("state-space training needs dated monthly return rows")
         # The artifact's on-disk factor identity is the wire-id string; the typed
-        # FactorKeys on `historical` project to it here, the artifact's write boundary.
-        base_factor_names = tuple(factor.wire_id for factor in historical.series_names)
-        returns = historical_log_returns(historical)
+        # FactorKeys on the input project to it at the artifact write boundary.
+        base_factor_names = tuple(factor.wire_id for factor in series_names)
         if returns.shape[0] < 3:
             raise ValueError("state-space training needs at least three monthly return rows")
         mean = returns.mean(axis=0)
@@ -229,7 +261,7 @@ class StateSpaceModel:
                 scale_priors[extra.private_equity_issuer_id] = extra.private_equity_scale_prior
 
         covariance = _nearest_positive_semidefinite(covariance)
-        trained_through_month = historical.months[-1]
+        trained_through_month = monthly_return_months[-1]
         merged_source_manifest = {
             **dict(source_manifest),
             "additional_factors": {extra.factor_name: {"source_ids": extra.source_ids} for extra in additional_factors},
@@ -330,6 +362,7 @@ class StateSpaceModel:
         return sampled
 
     def predictive(self, historical: HistoricalSeries, t: int, *, horizon: int = 1) -> dist.Distribution | None:
+        historical.require_consecutive_months()
         if horizon < 1:
             raise ValueError(f"horizon must be >= 1; got {horizon}")
         n_steps = historical.levels.shape[0] - 1
