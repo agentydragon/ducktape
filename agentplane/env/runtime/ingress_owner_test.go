@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
