@@ -125,7 +125,7 @@ func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
 				if _, err := s.Admit(ctx, &commandpb.Command{CommandId: "test-input", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "test input"}}}, false); err != nil {
 					t.Fatal(err)
 				}
-				if err := harnesshostlifecycle.PublishDesired(ctx, m.state, harnesshostlifecycle.Desired{Mode: harnesshostlifecycle.Quiescing, Generation: 1}); err != nil {
+				if err := harnesshostlifecycle.PublishEnvironmentDesired(ctx, m.state, harnesshostlifecycle.EnvironmentDesired{Mode: harnesshostlifecycle.Quiescing, Generation: 1}); err != nil {
 					t.Fatal(err)
 				}
 			})
@@ -183,7 +183,7 @@ func TestPreparationCompletingAfterShutdownCannotMakeSessionReady(t *testing.T) 
 			return nil
 		})
 		<-started
-		if err := harnesshostlifecycle.PublishDesired(context.Background(), m.state, harnesshostlifecycle.Desired{Mode: harnesshostlifecycle.Closing, Generation: 1}); err != nil {
+		if err := harnesshostlifecycle.PublishEnvironmentDesired(context.Background(), m.state, harnesshostlifecycle.EnvironmentDesired{Mode: harnesshostlifecycle.Closing, Generation: 1}); err != nil {
 			t.Fatal(err)
 		}
 	})

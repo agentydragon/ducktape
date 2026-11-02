@@ -15,10 +15,10 @@ import (
 	codexadapter "github.com/agentydragon/ducktape/agentplane/env/runtime/codex"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"github.com/cosi-project/runtime/pkg/controller"
@@ -345,7 +345,7 @@ func frameTestSessionWithControllerGate(t *testing.T, command []string, withCont
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := NewManager(Config{Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root), Scripts: scriptRunner, WaitBootstrap: bootstrapHost.Wait, Environment: func() Environment { return Environment{IncarnationUID: "test-incarnation"} }, EnsureWorkspace: func(_ context.Context, cwd string) (string, error) { return workspace.Resolve(cwd, filepath.Dir(root)) }, LaunchProcess: launch, ResolveModelConfig: func(context.Context, sessionpb.Harness, string) (*int, error) { return nil, nil }, Destination: func(string) string { return "test-destination" }, PublishSeal: func(string, *journal.SealState) error { return nil }, OnChange: func() {}, OnError: func(err error) {
+	m, err := NewManager(Config{Admission: testSessionAdmission(resources), Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root), Scripts: scriptRunner, WaitBootstrap: bootstrapHost.Wait, Environment: func() Environment { return Environment{IncarnationUID: "test-incarnation"} }, EnsureWorkspace: func(_ context.Context, cwd string) (string, error) { return workspace.Resolve(cwd, filepath.Dir(root)) }, LaunchProcess: launch, ResolveModelConfig: func(context.Context, sessionpb.Harness, string) (*int, error) { return nil, nil }, Destination: func(string) string { return "test-destination" }, PublishSeal: func(string, *journal.SealState) error { return nil }, OnChange: func() {}, OnError: func(err error) {
 		if err != nil && !errors.Is(err, context.Canceled) {
 			t.Error(err)
 		}
@@ -368,7 +368,7 @@ func frameTestSessionWithControllerGate(t *testing.T, command []string, withCont
 			t.Fatal(err)
 		}
 	}
-	if err := harnesshostlifecycle.PublishDesired(ctx, resources, harnesshostlifecycle.Desired{}); err != nil {
+	if err := harnesshostlifecycle.PublishEnvironmentDesired(ctx, resources, harnesshostlifecycle.EnvironmentDesired{Mode: lifecycle.Running}); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan struct{})
@@ -852,7 +852,7 @@ type testAggregateController struct{}
 
 func (*testAggregateController) Name() string { return "test-aggregate" }
 func (*testAggregateController) Inputs() []controller.Input {
-	return []controller.Input{{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.DesiredStateType, Kind: controller.InputWeak}}
+	return []controller.Input{{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.EnvironmentDesiredStateType, Kind: controller.InputWeak}}
 }
 
 func (*testAggregateController) Outputs() []controller.Output {
@@ -866,7 +866,7 @@ func (*testAggregateController) Run(ctx context.Context, r controller.Runtime, _
 			return nil
 		case <-r.EventCh():
 		}
-		desired, found, err := harnesshostlifecycle.ReadDesired(ctx, r)
+		desired, found, err := harnesshostlifecycle.ReadEnvironmentDesired(ctx, r)
 		if err != nil {
 			return err
 		}

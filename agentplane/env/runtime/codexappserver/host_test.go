@@ -124,8 +124,8 @@ func newFixtureWithOnChange(t *testing.T, onChange func()) *fixture {
 		t.Fatal(err)
 	}
 	processes := supervision.NewHost(ctx, f.store, lifecycle.Namespace, supervision.HarnessDomain, &f.workers, func(err error) { t.Errorf("process host: %v", err) })
-	admit := func(ctx context.Context, expected lifecycle.Desired, effect func(context.Context) error) error {
-		current, found, err := lifecycle.ReadDesired(ctx, f.store)
+	admit := func(ctx context.Context, expected lifecycle.EnvironmentDesired, effect func(context.Context) error) error {
+		current, found, err := lifecycle.ReadEnvironmentDesired(ctx, f.store)
 		if err != nil || !found || current != expected || current.Mode != lifecycle.Running {
 			return err
 		}
@@ -140,7 +140,7 @@ func newFixtureWithOnChange(t *testing.T, onChange func()) *fixture {
 		Context: ctx, State: f.store, Workers: &f.workers, Processes: processes,
 		Supervisor: supervision.NewSubprocessSupervisor(nil), StateDir: t.TempDir(),
 		RequestAdmission: func(ctx context.Context, effect func(context.Context) error) error {
-			current, found, err := lifecycle.ReadDesired(ctx, f.store)
+			current, found, err := lifecycle.ReadEnvironmentDesired(ctx, f.store)
 			if err != nil {
 				return err
 			}
@@ -157,7 +157,7 @@ func newFixtureWithOnChange(t *testing.T, onChange func()) *fixture {
 	if err := f.host.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := lifecycle.PublishDesired(ctx, f.store, lifecycle.Desired{Mode: lifecycle.Running, Generation: 1}); err != nil {
+	if err := lifecycle.PublishEnvironmentDesired(ctx, f.store, lifecycle.EnvironmentDesired{Mode: lifecycle.Running, Generation: 1}); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []controller.QController{&aggregateController{}, processes.Controller(), f.host.Controller()} {
@@ -186,18 +186,18 @@ type aggregateController struct{}
 func (*aggregateController) Name() string { return "codexappserver-test-aggregate" }
 func (*aggregateController) Settings() controller.QSettings {
 	return controller.QSettings{
-		Inputs:      []controller.Input{{Namespace: lifecycle.Namespace, Type: lifecycle.DesiredStateType, Kind: controller.InputQPrimary}},
+		Inputs:      []controller.Input{{Namespace: lifecycle.Namespace, Type: lifecycle.EnvironmentDesiredStateType, Kind: controller.InputQPrimary}},
 		Outputs:     []controller.Output{{Type: lifecycle.AggregateStatusType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(1)),
 	}
 }
 
 func (*aggregateController) MapInput(_ context.Context, _ *zap.Logger, _ controller.QRuntime, _ controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
-	return []resource.Pointer{resource.NewMetadata(lifecycle.Namespace, lifecycle.DesiredStateType, lifecycle.ResourceID, resource.VersionUndefined)}, nil
+	return []resource.Pointer{resource.NewMetadata(lifecycle.Namespace, lifecycle.EnvironmentDesiredStateType, lifecycle.ResourceID, resource.VersionUndefined)}, nil
 }
 
 func (*aggregateController) Reconcile(ctx context.Context, _ *zap.Logger, r controller.QRuntime, _ resource.Pointer) error {
-	desired, found, err := lifecycle.ReadDesired(ctx, r)
+	desired, found, err := lifecycle.ReadEnvironmentDesired(ctx, r)
 	if err != nil || !found {
 		return err
 	}
@@ -245,7 +245,7 @@ func TestDesiredChangeWakesHostWithoutStatusWrite(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("host did not reach readiness wait")
 	}
-	if err := lifecycle.PublishDesired(f.ctx, f.store, lifecycle.Desired{Mode: lifecycle.Quiescing, Generation: 2}); err != nil {
+	if err := lifecycle.PublishEnvironmentDesired(f.ctx, f.store, lifecycle.EnvironmentDesired{Mode: lifecycle.Quiescing, Generation: 2}); err != nil {
 		t.Fatal(err)
 	}
 	releaseWait()
@@ -327,7 +327,7 @@ func TestHostProgressesWithoutObserverAndDrainsEarlyFrames(t *testing.T) {
 	}
 	// The late attachment was only for the cutover assertion; its exit callback is not needed.
 	p.Release(late)
-	if err := lifecycle.PublishDesired(f.ctx, f.store, lifecycle.Desired{Mode: lifecycle.Closing, Generation: 2}); err != nil {
+	if err := lifecycle.PublishEnvironmentDesired(f.ctx, f.store, lifecycle.EnvironmentDesired{Mode: lifecycle.Closing, Generation: 2}); err != nil {
 		t.Fatal(err)
 	}
 	waitForStatus(t, f, func(current Status) bool { return current.Phase == Stopped && current.ProcessID == "" })
@@ -351,7 +351,7 @@ func TestFailedDrainRetainsOwnership(t *testing.T) {
 	f.host.mu.Lock()
 	f.host.drainEffect = func(context.Context) error { return stopFailure }
 	f.host.mu.Unlock()
-	if err := lifecycle.PublishDesired(f.ctx, f.store, lifecycle.Desired{Mode: lifecycle.Closing, Generation: 2}); err != nil {
+	if err := lifecycle.PublishEnvironmentDesired(f.ctx, f.store, lifecycle.EnvironmentDesired{Mode: lifecycle.Closing, Generation: 2}); err != nil {
 		t.Fatal(err)
 	}
 	failed := waitForStatus(t, f, func(current Status) bool { return current.StopError != "" })

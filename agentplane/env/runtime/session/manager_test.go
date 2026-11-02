@@ -10,10 +10,10 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -55,6 +55,7 @@ func withTestSessionFacilities(t *testing.T, config Config) Config {
 	if err != nil {
 		t.Fatal(err)
 	}
+	config.Admission = testSessionAdmission(config.State)
 	config.WaitBootstrap = bootstrapHost.Wait
 	config.LaunchProcess = launch
 	config.EnsureWorkspace = func(_ context.Context, cwd string) (string, error) {
@@ -396,5 +397,18 @@ func TestCodexExitBeforeProcessInstall(t *testing.T) {
 	defer s.mu.Unlock()
 	if s.process != nil || s.codexAppServer != nil || s.processID != "" {
 		t.Fatal("the exited process was left attached to the Session")
+	}
+}
+
+func testSessionAdmission(resources state.State) harnesshostlifecycle.EnvironmentAdmissionGuard {
+	return func(ctx context.Context, expected harnesshostlifecycle.EnvironmentDesired, work func(context.Context) error) error {
+		current, found, err := harnesshostlifecycle.ReadEnvironmentDesired(ctx, resources)
+		if err != nil {
+			return err
+		}
+		if !found || current != expected || current.Mode != harnesshostlifecycle.Running {
+			return nil
+		}
+		return work(ctx)
 	}
 }

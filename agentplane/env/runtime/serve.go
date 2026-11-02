@@ -207,42 +207,64 @@ func (r *Runtime) closeSessions(ctx context.Context) error {
 }
 
 func (r *Runtime) waitForInitialSessions(ctx context.Context) error {
- startupDone := r.sessionWorkerDone
- for {
-  r.mu.Lock()
-  if failure := r.failureLocked(); failure != nil { r.mu.Unlock(); return failure }
-  if r.closing { r.mu.Unlock(); return errors.New("Runtime closed while starting Session components") }
-  desired := r.desired
-  changed := r.changes
-  r.mu.Unlock()
-  if r.deps.afterInitialWaitSnapshot != nil { r.deps.afterInitialWaitSnapshot() }
-  if startupDone != nil {
-   select {
-   case <-startupDone:
-    if r.sessionWorkerErr != nil { return fmt.Errorf("Session recovery failed: %w", r.sessionWorkerErr) }
-    startupDone = nil
-   default:
-   }
-  }
-  progress, found, err := r.readSessionStatus(ctx)
-  if err != nil { return err }
-  if found && progress.Generation == desired.Generation {
-   if progress.Error != "" { return errors.New(progress.Error) }
-   if startupDone == nil && progress.Stage >= lifecycle.Flushing {
-    r.mu.Lock()
-    failure, closing, current := r.failureLocked(), r.closing, r.desired
-    r.mu.Unlock()
-    if failure != nil { return failure }
-    if closing { return errors.New("Runtime closed while starting Session components") }
-    if current == desired { return nil }
-    continue
-   }
-  }
-  select {
-  case <-changed:
-  case <-startupDone:
-  case <-ctx.Done(): return ctx.Err()
-  case <-r.lifecycleDone: return errors.New("Runtime lifecycle engine stopped during Session startup")
-  }
- }
+	startupDone := r.sessionWorkerDone
+	for {
+		r.mu.Lock()
+		if failure := r.failureLocked(); failure != nil {
+			r.mu.Unlock()
+			return failure
+		}
+		if r.closing {
+			r.mu.Unlock()
+			return errors.New("Runtime closed while starting Session components")
+		}
+		desired := r.desired
+		changed := r.changes
+		r.mu.Unlock()
+		if r.deps.afterInitialWaitSnapshot != nil {
+			r.deps.afterInitialWaitSnapshot()
+		}
+		if startupDone != nil {
+			select {
+			case <-startupDone:
+				if r.sessionWorkerErr != nil {
+					return fmt.Errorf("Session recovery failed: %w", r.sessionWorkerErr)
+				}
+				startupDone = nil
+			default:
+			}
+		}
+		progress, found, err := r.readSessionStatus(ctx)
+		if err != nil {
+			return err
+		}
+		if found && progress.Generation == desired.Generation {
+			if progress.Error != "" {
+				return errors.New(progress.Error)
+			}
+			if startupDone == nil && progress.NativeStopped {
+				r.mu.Lock()
+				failure, closing, current := r.failureLocked(), r.closing, r.desired
+				r.mu.Unlock()
+				if failure != nil {
+					return failure
+				}
+				if closing {
+					return errors.New("Runtime closed while starting Session components")
+				}
+				if current == desired {
+					return nil
+				}
+				continue
+			}
+		}
+		select {
+		case <-changed:
+		case <-startupDone:
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-r.lifecycleDone:
+			return errors.New("Runtime lifecycle engine stopped during Session startup")
+		}
+	}
 }

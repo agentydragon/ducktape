@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -102,7 +102,7 @@ func newSessionTestManager(t *testing.T, environment map[string]string, destinat
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := harnesshostlifecycle.PublishDesired(ctx, resources, harnesshostlifecycle.Desired{}); err != nil {
+	if err := harnesshostlifecycle.PublishEnvironmentDesired(ctx, resources, harnesshostlifecycle.EnvironmentDesired{Mode: lifecycle.Running}); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
