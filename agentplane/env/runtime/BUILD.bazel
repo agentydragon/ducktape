@@ -6,6 +6,7 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 go_library(
     name = "runtime",
     srcs = [
+        "coordinator_contracts.go",
         "environment_owner.go",
         "environment_state.go",
         "execution_lifecycle.go",

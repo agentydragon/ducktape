@@ -112,7 +112,11 @@ Ordinary unsealed Close drains work without creating a seal. Close preserving a 
 durable History acknowledgements. Runtime cancels and joins History before closing journals, stops
 and joins the engine before joining component workers, and releases its environment owner last.
 Canceling a Close caller ends only that caller's wait. Close first settles an accepted transition and
-its existing fence; failures retain ownership rather than manufacturing completion.
+its existing fence; failures retain ownership rather than manufacturing completion. Adoption and
+Quiesce use direct requests to the Runtime-owned coordinator; per-operation completion replaces
+private request/status resources. Close waits for its exact-generation coordinator completion before
+joining the engine. On coordinator exit, callers wake before worker joining so the transition mutex
+cannot deadlock shutdown. Accepted work and uncertain starts remain owned until joined or fenced.
 
 Session recovery or History delivery failure closes admission and starts local cleanup without
 inventing a seal. Failed native cleanup, engine failure or failed sealed delivery remains a failure.

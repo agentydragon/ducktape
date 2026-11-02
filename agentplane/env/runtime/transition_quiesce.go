@@ -14,12 +14,12 @@ type quiesceBarrierKind uint8
 const quiesceSeal quiesceBarrierKind = 1
 
 type quiescePlan struct {
-	request              lifecycle.RuntimeTransitionRequest
+	request              runtimeTransitionRequest
 	factsHaveIdleSince   bool
 	factsIdleSinceMicros int64
 }
 
-func (c *runtimeTransitionSequence) planQuiesce(request lifecycle.RuntimeTransitionRequest) (quiescePlan, []runtimeTransitionStep, error) {
+func (c *runtimeTransitionSequence) planQuiesce(request runtimeTransitionRequest) (quiescePlan, []runtimeTransitionStep, error) {
 	facts, err := c.r.facts()
 	if err != nil {
 		return quiescePlan{}, nil, err
@@ -29,7 +29,7 @@ func (c *runtimeTransitionSequence) planQuiesce(request lifecycle.RuntimeTransit
 		plan.factsHaveIdleSince = true
 		plan.factsIdleSinceMicros = facts.IdleSince.AsTime().UnixMicro()
 	}
-	return plan, []runtimeTransitionStep{{stage: lifecycle.RuntimeTransitionQuiesceSealing, quiesce: quiesceSeal}}, nil
+	return plan, []runtimeTransitionStep{{stage: runtimeTransitionQuiesceSealing, quiesce: quiesceSeal}}, nil
 }
 
 func (c *runtimeTransitionSequence) runQuiesceBarrier(ctx context.Context, kind quiesceBarrierKind) (runtimeTransitionOutcome, error) {

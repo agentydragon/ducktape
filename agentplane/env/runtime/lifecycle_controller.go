@@ -20,11 +20,15 @@ var errSessionComponentLost = errors.New("Session component became unavailable b
 type runtimeLifecycleController struct {
 	r          *Runtime
 	transition runtimeTransitionSequence
-	stage      lifecycle.RuntimeCloseStage
+	stage      runtimeCloseStage
 	generation uint64
 	plan       closePlan
 	op         *closeOperation
-	failure    string
+	failure    error
+	requests   chan *runtimeTransitionRequest
+	closeDone  chan struct{}
+	stopped    chan struct{}
+	result     runtimeCloseResult
 }
 
 type closePlan struct {
@@ -47,32 +51,32 @@ func (*runtimeLifecycleController) Name() string { return runtimeLifecycleContro
 func (*runtimeLifecycleController) Inputs() []controller.Input {
 	return []controller.Input{
 		{Namespace: lifecycle.Namespace, Type: lifecycle.EnvironmentDesiredStateType, Kind: controller.InputWeak},
-		{Namespace: lifecycle.Namespace, Type: lifecycle.RuntimeTransitionRequestType, Kind: controller.InputWeak},
 	}
 }
 
-func (*runtimeLifecycleController) Outputs() []controller.Output {
-	return []controller.Output{
-		{Type: lifecycle.RuntimeCloseStatusType, Kind: controller.OutputExclusive},
-		{Type: lifecycle.RuntimeTransitionStatusType, Kind: controller.OutputExclusive},
-	}
-}
+func (*runtimeLifecycleController) Outputs() []controller.Output { return nil }
 
 func (c *runtimeLifecycleController) Run(ctx context.Context, r controller.Runtime, _ *zap.Logger) error {
+	select {
+	case <-c.stopped:
+		return nil
+	default:
+	}
 	c.transition.engineCtx = ctx
 	// Close stages share this Run lifetime, independent of the Close caller.
 	// Cancel on any controller exit, including reconciliation failure.
 	closeCtx, cancelClose := context.WithCancel(context.Background())
 	defer func() {
-		// A transition caller holds transitionMu until it sees terminal status.
+		// A transition caller holds transitionMu until its accepted work settles.
 		// Wake it before joining workers so a Close Prepare worker cannot remain
 		// blocked behind that mutex when the engine exits unexpectedly.
 		c.r.mu.Lock()
-		if (c.op != nil || c.r.activeTransitionCtx != nil) && c.r.lifecycleControllerErr == nil {
+		if (c.op != nil || c.r.activeTransitionCancel != nil) && c.r.lifecycleControllerErr == nil {
 			c.r.lifecycleControllerErr = errors.New("Runtime lifecycle coordinator exited before active work settled")
 			c.r.changedLocked()
 		}
 		c.r.mu.Unlock()
+		close(c.stopped)
 		if c.plan.cancelFence != nil {
 			c.plan.cancelFence()
 		}
@@ -98,6 +102,10 @@ func (c *runtimeLifecycleController) Run(ctx context.Context, r controller.Runti
 		select {
 		case <-ctx.Done():
 			return nil
+		case request := <-c.requests:
+			if err := c.transition.begin(request); err != nil {
+				return err
+			}
 		case <-r.EventCh():
 		case <-closeDone:
 		case <-transitionDone:
@@ -110,14 +118,7 @@ func (c *runtimeLifecycleController) Run(ctx context.Context, r controller.Runti
 			c.r.fail(fmt.Errorf("reconcile Runtime Close: %w", err))
 			return err
 		}
-		if err := c.transition.reconcile(ctx, r); err != nil {
-			c.r.mu.Lock()
-			c.r.lifecycleControllerErr = err
-			c.r.changedLocked()
-			c.r.mu.Unlock()
-			c.r.fail(fmt.Errorf("reconcile Runtime transition: %w", err))
-			return err
-		}
+		c.transition.reconcile()
 		r.ResetRestartBackoff()
 	}
 }
@@ -129,7 +130,7 @@ func (c *runtimeLifecycleController) reconcile(ctx, closeCtx context.Context, r 
 	}
 	if c.generation == 0 {
 		c.generation = desired.Generation
-		c.stage = lifecycle.RuntimeClosePreparing
+		c.stage = runtimeClosePreparing
 	} else if c.generation != desired.Generation {
 		return fmt.Errorf("Runtime Close generation changed from %d to %d", c.generation, desired.Generation)
 	}
@@ -139,12 +140,13 @@ func (c *runtimeLifecycleController) reconcile(ctx, closeCtx context.Context, r 
 			workErr := c.op.err
 			c.op = nil
 			if workErr != nil {
-				c.stage = lifecycle.RuntimeCloseFailed
-				c.failure = workErr.Error()
+				c.stage = runtimeCloseFailed
+				c.failure = workErr
 				if c.plan.cancelFence != nil {
 					c.plan.cancelFence()
 				}
-				return c.publish(ctx, r)
+				c.publish()
+				return nil
 			}
 			next, err := nextRuntimeCloseStage(c.stage)
 			if err != nil {
@@ -155,10 +157,8 @@ func (c *runtimeLifecycleController) reconcile(ctx, closeCtx context.Context, r 
 			return nil
 		}
 	}
-	if err := c.publish(ctx, r); err != nil {
-		return err
-	}
-	if c.stage == lifecycle.RuntimeCloseReadyToJoin || c.stage == lifecycle.RuntimeCloseFailed {
+	c.publish()
+	if c.stage == runtimeCloseReadyToJoin || c.stage == runtimeCloseFailed {
 		if c.plan.cancelFence != nil {
 			c.plan.cancelFence()
 		}
@@ -176,33 +176,43 @@ func (c *runtimeLifecycleController) reconcile(ctx, closeCtx context.Context, r 
 
 // A completed worker advances to the next shutdown barrier. Keep the sequence
 // explicit so changing a status value cannot silently skip a fence or join.
-func nextRuntimeCloseStage(stage lifecycle.RuntimeCloseStage) (lifecycle.RuntimeCloseStage, error) {
+func nextRuntimeCloseStage(stage runtimeCloseStage) (runtimeCloseStage, error) {
 	switch stage {
-	case lifecycle.RuntimeClosePreparing:
-		return lifecycle.RuntimeCloseNativeStopping, nil
-	case lifecycle.RuntimeCloseNativeStopping:
-		return lifecycle.RuntimeCloseExecutionFencing, nil
-	case lifecycle.RuntimeCloseExecutionFencing:
-		return lifecycle.RuntimeCloseHistoryFlushing, nil
-	case lifecycle.RuntimeCloseHistoryFlushing:
-		return lifecycle.RuntimeCloseSessionsJoining, nil
-	case lifecycle.RuntimeCloseSessionsJoining:
-		return lifecycle.RuntimeCloseBootstrapSettling, nil
-	case lifecycle.RuntimeCloseBootstrapSettling:
-		return lifecycle.RuntimeCloseReadyToJoin, nil
+	case runtimeClosePreparing:
+		return runtimeCloseNativeStopping, nil
+	case runtimeCloseNativeStopping:
+		return runtimeCloseExecutionFencing, nil
+	case runtimeCloseExecutionFencing:
+		return runtimeCloseHistoryFlushing, nil
+	case runtimeCloseHistoryFlushing:
+		return runtimeCloseSessionsJoining, nil
+	case runtimeCloseSessionsJoining:
+		return runtimeCloseBootstrapSettling, nil
+	case runtimeCloseBootstrapSettling:
+		return runtimeCloseReadyToJoin, nil
 	default:
 		return 0, fmt.Errorf("unexpected completed Runtime Close stage %d", stage)
 	}
 }
 
-func (c *runtimeLifecycleController) publish(ctx context.Context, r controller.Runtime) error {
-	if err := lifecycle.WriteRuntimeCloseStatus(ctx, r, lifecycle.RuntimeCloseStatus{
-		Generation: c.generation, Stage: c.stage, Error: c.failure,
-	}); err != nil {
-		return err
+func (c *runtimeLifecycleController) publish() {
+	c.r.mu.Lock()
+	c.result = runtimeCloseResult{generation: c.generation, stage: c.stage, err: c.failure}
+	c.r.changedLocked()
+	c.r.mu.Unlock()
+	if c.stage == runtimeCloseReadyToJoin || c.stage == runtimeCloseFailed {
+		select {
+		case <-c.closeDone:
+		default:
+			close(c.closeDone)
+		}
 	}
-	c.r.changed()
-	return nil
+}
+
+func (c *runtimeLifecycleController) closeProgress() runtimeCloseResult {
+	c.r.mu.Lock()
+	defer c.r.mu.Unlock()
+	return c.result
 }
 
 func (c *runtimeLifecycleController) stopSessions(ctx context.Context) error {
@@ -212,20 +222,20 @@ func (c *runtimeLifecycleController) stopSessions(ctx context.Context) error {
 	return c.r.waitSessionsClosed(ctx)
 }
 
-func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecycle.RuntimeCloseStage) error {
+func (c *runtimeLifecycleController) runStage(ctx context.Context, stage runtimeCloseStage) error {
 	p := &c.plan
 	switch stage {
-	case lifecycle.RuntimeClosePreparing:
+	case runtimeClosePreparing:
 		return c.prepare()
-	case lifecycle.RuntimeCloseNativeStopping:
+	case runtimeCloseNativeStopping:
 		if p.sessionsStarted {
 			p.nativeCleanupErr = c.r.waitForNativeStop(p.fenceCtx, p.generation, true)
 			return nil
 		}
 		return nil
-	case lifecycle.RuntimeCloseExecutionFencing:
+	case runtimeCloseExecutionFencing:
 		return c.r.waitForExecutionFenced(p.fenceCtx, p.generation)
-	case lifecycle.RuntimeCloseHistoryFlushing:
+	case runtimeCloseHistoryFlushing:
 		if p.nativeCleanupErr != nil {
 			return errors.Join(p.nativeCleanupErr, p.sessionLossErr)
 		}
@@ -233,7 +243,7 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecyc
 			return c.r.waitSessionStage(p.fenceCtx, lifecycle.Quiesced)
 		}
 		return nil
-	case lifecycle.RuntimeCloseSessionsJoining:
+	case runtimeCloseSessionsJoining:
 		if err := c.r.stopIngress(p.fenceCtx); err != nil {
 			return fmt.Errorf("join History delivery: %w", err)
 		}
@@ -241,7 +251,7 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecyc
 			return c.stopSessions(p.fenceCtx)
 		}
 		return nil
-	case lifecycle.RuntimeCloseBootstrapSettling:
+	case runtimeCloseBootstrapSettling:
 		return c.r.waitBootstrapSettled(ctx)
 	default:
 		return fmt.Errorf("unexpected Runtime Close stage %d", stage)

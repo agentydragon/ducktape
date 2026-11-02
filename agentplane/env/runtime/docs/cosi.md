@@ -14,9 +14,6 @@ flowchart LR
   ED["EnvironmentRuntimeDesiredStates"]
   Count["EnvironmentAdmissionCounts"]
   RC(["environment-runtime-lifecycle"])
-  TR["EnvironmentRuntimeTransitionRequests"]
-  TS["EnvironmentRuntimeTransitionStatuses"]
-  Close["EnvironmentRuntimeCloseStatuses"]
   Agg(["environment-session-lifecycle"])
   Aggregate["EnvironmentSessionStatuses"]
   SC(["session-lifecycle"])
@@ -39,10 +36,10 @@ flowchart LR
   PS["ProcessStatuses"]
   Seal["JournalSeals / IngressAcks"]
 
-  API --> ED & Count & TR
-  ED & TR --> RC
-  RC --> TS & Close
-  RC -.->|"settle transitions and shutdown"| API
+  API --> ED & Count
+  ED --> RC
+  API -.->|"typed transition request"| RC
+  RC -.->|"operation and exact-generation Close completion"| API
   ED & Count & Inspect & SS & AS & PS & Seal & EI --> Agg
   Agg --> Aggregate
   SI & ED & Count & Aggregate & AS & SO --> SC
@@ -60,15 +57,15 @@ flowchart LR
 
 ## Writers and subscriptions
 
-| Controller                      | Watched inputs                                                                                                                                                      | Exclusive output and effect boundary                                                                         |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `environment-runtime-lifecycle` | Environment desired state and transition requests; its worker-completion channels                                                                                   | Close and transition statuses; Runtime-owned workers perform blocking transition/shutdown steps              |
+| Controller                      | Watched inputs                                                                                                                                                             | Exclusive output and effect boundary                                                                         |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `environment-runtime-lifecycle` | Environment desired state; direct transition requests and worker-completion channels                                                                                       | Direct operation completion; Runtime-owned workers perform blocking transition/shutdown steps                |
 | `environment-session-lifecycle` | Environment desired state, admission accounting, inspection and Session statuses, journal seals, ACKs, app-server status, process desired/status, Execution signals | Aggregate Session status; native cleanup, exact fence, seal and durable ACK predicates                       |
-| `session-lifecycle`             | Session snapshot (primary); desired state, accepted admissions, aggregate status, app-server status and operation states (mapped)                                   | Session lifecycle status; guarded per-Session prepare/dispatch registration and one-off halt/seal operations |
-| `codex-app-server-lifecycle`    | App-server signal (primary); desired state, accepted admissions, aggregate status, operation states and Execution status (mapped)                                   | App-server status; guarded initialization, cleanup and a separate live Execution-owner readiness check       |
-| `execution-lifecycle`           | Execution signal (primary), Execution status (mapped)                                                                                                               | Execution status; exact-attempt start/loss/fence observations, retaining an unfenced owner on failure        |
-| `bootstrap-lifecycle`           | Bootstrap request (primary), status and operation state (mapped)                                                                                                    | Bootstrap status; selected bytes and durable event sequence govern one accepted attempt                      |
-| `process-lifecycle`             | Process desired state (primary), observation (mapped)                                                                                                               | Process status; one attempt finalizer remains until its native domain is fenced                              |
+| `session-lifecycle`             | Session snapshot (primary); desired state, accepted admissions, aggregate status, app-server status and operation states (mapped)                                          | Session lifecycle status; guarded per-Session prepare/dispatch registration and one-off halt/seal operations |
+| `codex-app-server-lifecycle`    | App-server signal (primary); desired state, accepted admissions, aggregate status, operation states and Execution status (mapped)                                          | App-server status; guarded initialization, cleanup and a separate live Execution-owner readiness check       |
+| `execution-lifecycle`           | Execution signal (primary), Execution status (mapped)                                                                                                                      | Execution status; exact-attempt start/loss/fence observations, retaining an unfenced owner on failure        |
+| `bootstrap-lifecycle`           | Bootstrap request (primary), status and operation state (mapped)                                                                                                           | Bootstrap status; selected bytes and durable event sequence govern one accepted attempt                      |
+| `process-lifecycle`             | Process desired state (primary), observation (mapped)                                                                                                                      | Process status; one attempt finalizer remains until its native domain is fenced                              |
 
 Controller settings are authoritative for primary/mapped subscriptions. Synchronous reads can also
 inspect resources without subscribing to them. Registration is in [`runtime.go`](../runtime.go) and
@@ -85,7 +82,10 @@ Session snapshots carry demand, setup, pending commands, process liveness and in
 Session and app-server statuses record `EnvironmentGeneration`; demand and `ObservedDemand` are
 component request sequences, not native attempt counts. One-off operation slots survive controller
 restarts within the process and publish completion facts before their owning controller consumes them.
-Runtime transition preparation remains one-shot work and is not replayed by controller restart.
+Runtime transition requests, cancellation and completion remain inside its coordinator. Each caller
+waits for its accepted operation to settle, even after caller cancellation; Close cancels active
+transition work before waiting for the successor generation. The coordinator wakes callers before
+joining workers on exit and never replays accepted transition preparation after restart.
 
 The process registry supplies one controller and globally unique attempt IDs. Runtime and harness
 scoped views share that registry but retain distinct domains, native supervisors and worker joins.

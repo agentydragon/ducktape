@@ -68,9 +68,9 @@ func TestRuntimeCloseUncertainExecutionFenceRetainsOwner(t *testing.T) {
 	if got := execution.fences.Load(); got != 1 {
 		t.Fatalf("Execution fence attempts = %d, want one", got)
 	}
-	status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
-	if err != nil || !found || status.Stage != lifecycle.RuntimeCloseFailed {
-		t.Fatalf("Close aggregate = %+v, found=%t, err=%v", status, found, err)
+	progress := r.lifecycleCoordinator.closeProgress()
+	if progress.stage != runtimeCloseFailed {
+		t.Fatalf("Close progress = %+v", progress)
 	}
 	if owner, err := openEnvironmentOwner(config.StateDir); err == nil {
 		_ = owner.Close()
@@ -253,9 +253,9 @@ func TestRuntimeCloseFailureRetainsOwnerAndDoesNotRetrySessionStop(t *testing.T)
 	if got := stops.Load(); got != 1 {
 		t.Fatalf("Session stop calls = %d, want one", got)
 	}
-	status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
-	if err != nil || !found || status.Stage != lifecycle.RuntimeCloseFailed || !strings.Contains(status.Error, "injected Session join failure") {
-		t.Fatalf("Close aggregate = %+v, found=%t, err=%v", status, found, err)
+	progress := r.lifecycleCoordinator.closeProgress()
+	if progress.stage != runtimeCloseFailed || !strings.Contains(progress.err.Error(), "injected Session join failure") {
+		t.Fatalf("Close progress = %+v", progress)
 	}
 	if owner, err := openEnvironmentOwner(config.StateDir); err == nil {
 		_ = owner.Close()
@@ -605,44 +605,82 @@ func TestCloseCancelsBlockedAdoptionWithoutStartingSuccessor(t *testing.T) {
 }
 
 func TestEngineExitDuringCanceledExecutionStartJoinsTransitionAndRetainsOwner(t *testing.T) {
-	config := executionRuntimeConfig(t, "ws://unused", nil)
-	config.expectCloseError = true
-	start := config.deps.startExecution
-	entered := make(chan struct{})
-	config.deps.startExecution = func(ctx context.Context, config Config, uid string) (executionHandle, error) {
-		if uid == "successor" {
-			close(entered)
-			<-ctx.Done()
-			return nil, ctx.Err()
+	for _, lateHandle := range []bool{false, true} {
+		name := "canceled-start"
+		if lateHandle {
+			name = "late-start-handle"
 		}
-		return start(ctx, config, uid)
-	}
-	r := newLifecycleRuntime(t, config)
-	adoptionDone := make(chan error, 1)
-	go func() { adoptionDone <- r.adoptIncarnation(context.Background(), "successor") }()
-	select {
-	case <-entered:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("successor Execution start was not admitted")
-	}
-	r.lifecycleCancel()
-	select {
-	case <-r.lifecycleDone:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("Runtime lifecycle engine did not join its transition worker")
-	}
-	if err := waitClose(t, adoptionDone); err == nil {
-		t.Fatal("adoption succeeded after lifecycle engine exit")
-	}
-	r.mu.Lock()
-	unsafe := r.transitionUnsafe
-	r.mu.Unlock()
-	if unsafe == nil {
-		t.Fatal("engine exit did not record the unproved Execution fence")
-	}
-	if owner, err := openEnvironmentOwner(config.StateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("engine exit released environment owner without proving Execution fence")
+		t.Run(name, func(t *testing.T) {
+			config := executionRuntimeConfig(t, "ws://unused", nil)
+			config.expectCloseError = true
+			start := config.deps.startExecution
+			entered := make(chan struct{})
+			release := make(chan struct{})
+			var releaseOnce sync.Once
+			t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
+			orphan := newControllerExecutionHandle(nil)
+			config.deps.startExecution = func(ctx context.Context, config Config, uid string) (executionHandle, error) {
+				if uid == "successor" {
+					close(entered)
+					<-ctx.Done()
+					<-release
+					if lateHandle {
+						return orphan, nil
+					}
+					return nil, ctx.Err()
+				}
+				return start(ctx, config, uid)
+			}
+			r := newLifecycleRuntime(t, config)
+			adoptionDone := make(chan error, 1)
+			go func() { adoptionDone <- r.adoptIncarnation(context.Background(), "successor") }()
+			select {
+			case <-entered:
+			case <-time.After(lifecycleTestTimeout):
+				t.Fatal("successor Execution start was not admitted")
+			}
+			closed := make(chan error, 1)
+			go func() { closed <- r.Close(context.Background()) }()
+			waitRuntime(t, r, r.isClosing, "Close to cancel accepted adoption")
+			r.lifecycleCancel()
+			select {
+			case <-r.lifecycleCoordinator.stopped:
+			case <-time.After(lifecycleTestTimeout):
+				t.Fatal("Runtime coordinator did not announce exit before joining workers")
+			}
+			if err := waitClose(t, adoptionDone); err == nil {
+				t.Fatal("adoption succeeded after lifecycle engine exit")
+			}
+			if err := waitClose(t, closed); err == nil {
+				t.Fatal("Close succeeded with unsettled Execution startup")
+			}
+			releaseOnce.Do(func() { close(release) })
+			select {
+			case <-r.lifecycleDone:
+			case <-time.After(lifecycleTestTimeout):
+				t.Fatal("Runtime lifecycle engine did not join its transition worker")
+			}
+			workersDone := make(chan struct{})
+			go func() { r.lifecycleWorkers.Wait(); close(workersDone) }()
+			select {
+			case <-workersDone:
+			case <-time.After(lifecycleTestTimeout):
+				t.Fatal("accepted Execution start did not settle after engine exit")
+			}
+			if lateHandle && !orphan.stopRequested() {
+				t.Fatal("late Execution start escaped native fencing after engine exit")
+			}
+			r.mu.Lock()
+			unsafe := r.transitionUnsafe
+			r.mu.Unlock()
+			if unsafe == nil {
+				t.Fatal("engine exit did not record the unproved Execution fence")
+			}
+			if owner, err := openEnvironmentOwner(config.StateDir); err == nil {
+				_ = owner.Close()
+				t.Fatal("engine exit released environment owner without proving Execution fence")
+			}
+		})
 	}
 }
 
@@ -668,10 +706,6 @@ func TestFreshSessionAdmissionInvalidatesIdleToken(t *testing.T) {
 	}
 	if _, err := r.Quiesce(context.Background(), &sessionpb.QuiesceRequest{IfIdleSince: after.IdleSince}); err != nil {
 		t.Fatal(err)
-	}
-	request, found, err := lifecycle.ReadRuntimeTransitionRequest(context.Background(), r.lifecycleState)
-	if err != nil || !found || !request.HasIdleSince || request.IdleSinceMicros != after.IdleSince.AsTime().UnixMicro() {
-		t.Fatalf("conditional transition request = %+v, found=%v, err=%v", request, found, err)
 	}
 }
 
@@ -749,10 +783,7 @@ func TestRepeatedQuiesceKeepsCurrentLifecycleGeneration(t *testing.T) {
 	if _, err := r.Quiesce(client.ctx, request); err != nil {
 		t.Fatal(err)
 	}
-	firstStatus, found, err := lifecycle.ReadRuntimeTransitionStatus(context.Background(), r.lifecycleState)
-	if err != nil || !found || firstStatus.Stage != lifecycle.RuntimeTransitionDone {
-		t.Fatalf("first Quiesce transition = %+v, found=%t, err=%v", firstStatus, found, err)
-	}
+
 	waitRuntime(t, r, func() bool {
 		r.mu.Lock()
 		defer r.mu.Unlock()
@@ -765,10 +796,7 @@ func TestRepeatedQuiesceKeepsCurrentLifecycleGeneration(t *testing.T) {
 	if _, err := r.Quiesce(client.ctx, request); err != nil {
 		t.Fatal(err)
 	}
-	secondStatus, found, err := lifecycle.ReadRuntimeTransitionStatus(context.Background(), r.lifecycleState)
-	if err != nil || !found || secondStatus.Stage != lifecycle.RuntimeTransitionDone || secondStatus.Sequence <= firstStatus.Sequence {
-		t.Fatalf("repeated Quiesce transition = %+v, found=%t, err=%v; first=%+v", secondStatus, found, err, firstStatus)
-	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.desired != desired {
