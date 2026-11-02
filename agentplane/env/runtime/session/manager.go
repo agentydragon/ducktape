@@ -35,12 +35,11 @@ type Manager struct {
 	workers       int
 	publishMu     sync.Mutex
 
-	mu            sync.Mutex
-	loadMu        sync.Mutex
-	sessions      map[string]*Session
-	ready         map[string]bool
-	ownerErrors   map[string]error
-	ownersChanged chan struct{}
+	mu                   sync.Mutex
+	loadMu               sync.Mutex
+	sessions             map[string]*Session
+	ownerErrors          map[string]error
+	ownerFailuresChanged chan struct{}
 	// loadMu guards freshReservations; those records have not completed their first publication.
 	freshReservations map[string]struct{}
 }
@@ -63,7 +62,7 @@ func NewManager(config Config) (*Manager, error) {
 		publishSeal: config.PublishSeal,
 		changed:     config.OnChange, fail: config.OnError,
 		workers: config.ReconcileConcurrency, sessions: map[string]*Session{}, freshReservations: map[string]struct{}{},
-		ready: map[string]bool{}, ownerErrors: map[string]error{}, ownersChanged: make(chan struct{}),
+		ownerErrors: map[string]error{}, ownerFailuresChanged: make(chan struct{}),
 	}
 	m.dependencies = sessionDependencies{
 		admission: config.Admission,
@@ -131,21 +130,45 @@ func (m *Manager) ReserveFresh(ctx context.Context, id string, reserve func() er
 
 // Wait observes completion of the COSI-owned Session reconstruction.
 func (m *Manager) Wait(ctx context.Context, id string) (*Session, error) {
+	watchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	events := make(chan state.Event, 1)
+	if err := m.state.Watch(watchCtx, componentResource(id, OwnerStatus{}).Metadata(), events); err != nil {
+		return nil, err
+	}
 	for {
 		m.mu.Lock()
 		if err := m.ownerErrors[id]; err != nil {
 			m.mu.Unlock()
 			return nil, err
 		}
-		if m.ready[id] {
-			s := m.sessions[id]
-			m.mu.Unlock()
-			return s, nil
-		}
-		changed := m.ownersChanged
+		failed := m.ownerFailuresChanged
 		m.mu.Unlock()
 		select {
-		case <-changed:
+		case event, ok := <-events:
+			if !ok {
+				return nil, errors.New("Session owner status watch closed")
+			}
+			if event.Type == state.Errored {
+				if event.Error == nil {
+					return nil, errors.New("Session owner status watch failed")
+				}
+				return nil, event.Error
+			}
+			if event.Type != state.Created && event.Type != state.Updated {
+				continue
+			}
+			owner, ok := event.Resource.(*typed.Resource[OwnerStatus, componentExtension[OwnerStatus]])
+			if !ok {
+				return nil, fmt.Errorf("unexpected Session owner status %T", event.Resource)
+			}
+			if owner.TypedSpec().Ready {
+				if s := m.Get(id); s != nil {
+					return s, nil
+				}
+				return nil, fmt.Errorf("Session %s owner reports ready without a live Session", id)
+			}
+		case <-failed:
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-m.ctx.Done():
@@ -159,8 +182,8 @@ func (m *Manager) ownerFailed(id string, err error, failRuntime bool) {
 	if m.ownerErrors[id] == nil {
 		m.ownerErrors[id] = err
 	}
-	close(m.ownersChanged)
-	m.ownersChanged = make(chan struct{})
+	close(m.ownerFailuresChanged)
+	m.ownerFailuresChanged = make(chan struct{})
 	m.mu.Unlock()
 	if failRuntime {
 		m.fail(err)
@@ -191,19 +214,6 @@ func (m *Manager) RetryFresh(ctx context.Context, id string) error {
 		return err
 	}
 	return nil
-}
-
-func (m *Manager) ownerReady(id string) {
-	m.mu.Lock()
-	if m.ready[id] {
-		m.mu.Unlock()
-		return
-	}
-	m.ready[id] = true
-	close(m.ownersChanged)
-	m.ownersChanged = make(chan struct{})
-	m.mu.Unlock()
-	m.changed()
 }
 
 // Retained records are reconciled before publishing any schedulable Session reconcile snapshot.

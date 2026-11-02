@@ -63,10 +63,10 @@ func (c *sessionOwnerController) Reconcile(ctx context.Context, _ *zap.Logger, r
 		c.manager.ownerFailed(ptr.ID(), failure, !retryable)
 		return nil
 	}
-	if _, err := componentWrite(ctx, r, ptr.ID(), OwnerStatus{Ready: true}); err != nil {
+	_, err := componentWrite(ctx, r, ptr.ID(), OwnerStatus{Ready: true})
+	if err != nil {
 		c.manager.ownerFailed(ptr.ID(), fmt.Errorf("publish Session %s owner status: %w", ptr.ID(), err), true)
 		return nil
 	}
-	c.manager.ownerReady(ptr.ID())
 	return nil
 }
