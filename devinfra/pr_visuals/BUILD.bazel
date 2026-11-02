@@ -32,6 +32,7 @@ py_library(
 py_library(
     name = "collection",
     srcs = ["collection.py"],
+    visibility = ["//devinfra/pr_visuals/testing:__pkg__"],
     deps = [
         ":artifacts",
         "//util/testing:output_records",
@@ -72,6 +73,7 @@ py_test(
         ":determinism",
         ":targets",
         "//:conftest",
+        "//devinfra/pr_visuals/testing:outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -187,6 +189,8 @@ py_test(
         ":pull_request",
         "//:conftest",
         "//devinfra/buildbuddy/ci:invocation_ids",
+        "//devinfra/pr_visuals/testing:outputs",
+        "//util/testing:output_writer",
         "@pypi//botocore",
         "@pypi//pillow",
         "@pypi//pytest",
@@ -326,8 +330,11 @@ py_test(
     name = "test_collection",
     srcs = ["test_collection.py"],
     deps = [
+        ":artifacts",
         ":collection",
         "//:conftest",
+        "//devinfra/pr_visuals/testing:outputs",
+        "//util/testing:output_records",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from datetime import timedelta
@@ -24,6 +25,7 @@ from devinfra.pr_visuals.determinism import (
     visual_fleet,
 )
 from devinfra.pr_visuals.targets import TestRun as TargetRun, TestSummary as TargetTestSummary
+from devinfra.pr_visuals.testing.outputs import output_observation
 
 _TARGET = "//ui:visual"
 _REPOSITORY = "agentydragon/ducktape"
@@ -57,7 +59,7 @@ def _coverage(
 
 def _output(
     invocation: str,
-    digest: str,
+    contents: str,
     *,
     target: str = _TARGET,
     case_id: str = "dialog/mobile",
@@ -66,22 +68,12 @@ def _output(
     configuration: str = "config-a",
     run: int = 1,
     shard: int = 1,
+    attempt: int = 1,
     label: str | None = "Expanded dialog",
 ) -> OutputObservation:
-    result = ResultKey(invocation, target, configuration, run, shard, 1)
+    result = ResultKey(invocation, target, configuration, run, shard, attempt)
     key = OutputKey(_REPOSITORY, target, case_id, checkpoint, role)
-    return OutputObservation(
-        key,
-        result,
-        "PASSED",
-        f"bytestream://remote.buildbuddy.io/blobs/{digest}/1",
-        digest,
-        1,
-        "record-uri",
-        f"files/{case_id}.png",
-        label,
-        None,
-    )
+    return output_observation(contents.encode(), key=key, result=result, label=label)
 
 
 def _collection(
@@ -117,7 +109,9 @@ def test_identical_successful_screenshot_observations_compare_by_digest() -> Non
 
     assert analyze(observed) == Findings([], [])
     assert observed.screenshots[screenshot].runs_present == 2
-    assert observed.screenshots[screenshot].by_digest == {"same": ["`run-1` (run 1)", "`run-2` (run 1)"]}
+    assert observed.screenshots[screenshot].by_digest == {
+        hashlib.sha256(b"same").hexdigest(): ["`run-1` (run 1)", "`run-2` (run 1)"]
+    }
 
 
 def test_changed_digest_is_drift_for_the_same_logical_identity() -> None:
@@ -180,7 +174,7 @@ def test_retry_attempts_are_not_extra_rosters_and_terminal_success_is_used() -> 
     observed = from_collection(
         _collection(
             invocations,
-            outputs=(_output("run-1", "same"), _output("run-2", "same")),
+            outputs=(_output("run-1", "same", attempt=2), _output("run-2", "same")),
             results=(first_attempt, terminal_attempt, _coverage("run-2")),
             issues=("ResultKey(... attempt=1): retried by attempt 2",),
         ),

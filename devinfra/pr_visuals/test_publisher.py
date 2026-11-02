@@ -15,8 +15,8 @@ from botocore.exceptions import ClientError
 from PIL import Image
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
-from devinfra.pr_visuals.artifacts import list_ci_artifacts
-from devinfra.pr_visuals.collection import CollectedOutputs, OutputKey, OutputObservation, ResultCoverage, ResultKey
+from devinfra.pr_visuals.artifacts import BuildBuddyArtifact, list_ci_artifacts
+from devinfra.pr_visuals.collection import CollectedOutputs, OutputKey, ResultCoverage, ResultKey, SourceSummary
 from devinfra.pr_visuals.metadata import (
     BaselineMetadata,
     BaselinePointer,
@@ -49,6 +49,8 @@ from devinfra.pr_visuals.publisher import (
     write_baseline_pointers,
 )
 from devinfra.pr_visuals.pull_request import PullRequestRef
+from devinfra.pr_visuals.testing.outputs import Blob, output_observation, result_artifact
+from util.testing.output_writer import BoundTestOutputs
 
 
 def _png(path: Path, color: tuple[int, int, int, int] = (10, 20, 30, 255), size: tuple[int, int] = (8, 8)) -> Path:
@@ -281,31 +283,6 @@ def test_successful_build_only_run_has_no_visuals_without_waiting(
     assert [check["conclusion"] for check in publisher_run.checks] == ["neutral"]
 
 
-def _observation(
-    *,
-    case_id: str,
-    checkpoint: str | None,
-    digest: str,
-    uri: str,
-    configuration: str = "cfg",
-    run_number: int = 1,
-    status: str = "PASSED",
-) -> OutputObservation:
-    result = ResultKey("invocation", "//ui:visual", configuration, run_number, 0, 1)
-    return OutputObservation(
-        OutputKey("owner/repo", "//ui:visual", case_id, checkpoint, "screenshot"),
-        result,
-        status,
-        uri,
-        digest,
-        3,
-        "bytestream://record",
-        "files/screen.png",
-        case_id,
-        "UI",
-    )
-
-
 def _download_runner(blobs: dict[str, bytes]) -> Callable[..., subprocess.CompletedProcess[str]]:
     def run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         words = [str(part) for part in command]
@@ -319,10 +296,13 @@ def _download_runner(blobs: dict[str, bytes]) -> Callable[..., subprocess.Comple
 
 def test_download_preserves_case_and_checkpoint_identity(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     body = b"png"
-    digest = hashlib.sha256(body).hexdigest()
-    observations = (
-        _observation(case_id="a/test_visual.py::test_same", checkpoint=None, digest=digest, uri="bytestream://a"),
-        _observation(case_id="b/test_visual.py::test_same", checkpoint=None, digest=digest, uri="bytestream://b"),
+    observations = tuple(
+        output_observation(
+            body,
+            key=OutputKey("owner/repo", "//ui:visual", case_id, None, "screenshot"),
+            result=ResultKey("invocation", "//ui:visual", "cfg", 1, 1, 1),
+        )
+        for case_id in ("a/test_visual.py::test_same", "b/test_visual.py::test_same")
     )
     coverage = ResultCoverage(observations[0].result, "PASSED", "PASSED", 2, True, ())
     monkeypatch.setattr(
@@ -330,10 +310,7 @@ def test_download_preserves_case_and_checkpoint_identity(monkeypatch: pytest.Mon
         lambda *_a, **_k: CollectedOutputs(observations, observations, (coverage,), (), True),
     )
     tests = download_visual_tests(
-        ["invocation"],
-        tmp_path / "tests",
-        repository="owner/repo",
-        run=_download_runner({"bytestream://a": body, "bytestream://b": body}),
+        ["invocation"], tmp_path / "tests", repository="owner/repo", run=_download_runner({Blob(body).uri: body})
     )
     assert len(tests) == 1
     assert {asset.case_id for asset in tests[0].assets} == {
@@ -347,20 +324,13 @@ def test_download_preserves_case_and_checkpoint_identity(monkeypatch: pytest.Mon
 
 def test_download_marks_variant_and_target_status_issues(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     first, second = b"one", b"two"
-    observations = (
-        _observation(
-            case_id="a/test_visual.py::test_same",
-            checkpoint="expanded",
-            digest=hashlib.sha256(first).hexdigest(),
-            uri="bytestream://one",
-        ),
-        _observation(
-            case_id="a/test_visual.py::test_same",
-            checkpoint="expanded",
-            digest=hashlib.sha256(second).hexdigest(),
-            uri="bytestream://two",
-            run_number=2,
-        ),
+    observations = tuple(
+        output_observation(
+            body,
+            key=OutputKey("owner/repo", "//ui:visual", "a/test_visual.py::test_same", "expanded", "screenshot"),
+            result=ResultKey("invocation", "//ui:visual", "cfg", run_number, 1, 1),
+        )
+        for run_number, body in enumerate((first, second), start=1)
     )
     coverage = (
         ResultCoverage(observations[0].result, "PASSED", "FAILED", 1, True, ("target overall status FAILED",)),
@@ -376,7 +346,7 @@ def test_download_marks_variant_and_target_status_issues(monkeypatch: pytest.Mon
         ["invocation"],
         tmp_path / "tests",
         repository="owner/repo",
-        run=_download_runner({"bytestream://one": first, "bytestream://two": second}),
+        run=_download_runner({Blob(body).uri: body for body in (first, second)}),
     )
     assert len(tests[0].assets) == 1
     assert len(tests[0].assets[0].variants) == 2
@@ -385,21 +355,13 @@ def test_download_marks_variant_and_target_status_issues(monkeypatch: pytest.Mon
 
 
 def test_download_rejects_ambiguous_configurations(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    observations = (
-        _observation(
-            case_id="a/test_visual.py::test_same",
-            checkpoint=None,
-            digest=hashlib.sha256(b"one").hexdigest(),
-            uri="bytestream://one",
-        ),
-        _observation(
-            case_id="a/test_visual.py::test_same",
-            checkpoint=None,
-            digest=hashlib.sha256(b"two").hexdigest(),
-            uri="bytestream://two",
-            configuration="other",
-            run_number=2,
-        ),
+    observations = tuple(
+        output_observation(
+            body,
+            key=OutputKey("owner/repo", "//ui:visual", "a/test_visual.py::test_same", None, "screenshot"),
+            result=ResultKey("invocation", "//ui:visual", configuration, 1, 1, 1),
+        )
+        for configuration, body in (("cfg", b"one"), ("other", b"two"))
     )
     coverage = tuple(ResultCoverage(item.result, "PASSED", "PASSED", 1, True, ()) for item in observations)
     monkeypatch.setattr(
@@ -410,10 +372,97 @@ def test_download_rejects_ambiguous_configurations(monkeypatch: pytest.MonkeyPat
         ["invocation"],
         tmp_path / "tests",
         repository="owner/repo",
-        run=_download_runner({"bytestream://one": b"one", "bytestream://two": b"two"}),
+        run=_download_runner({Blob(body).uri: body for body in (b"one", b"two")}),
     )
     assert tests[0].configuration is None
     assert any("configurations" in issue for issue in tests[0].issues)
+
+
+def test_produced_outputs_survive_collection_and_content_addressed_publication(tmp_path: Path) -> None:
+    image = _png(tmp_path / "source.png").read_bytes()
+    failed_image = _png(tmp_path / "failed.png", color=(255, 0, 0, 255)).read_bytes()
+    artifacts: dict[str, list[BuildBuddyArtifact]] = {}
+    blobs: dict[str, bytes] = {}
+    downloaded: set[str] = set()
+    identities = {("dialog/mobile", None), ("dialog/mobile", "expanded"), ("dialog/desktop", None)}
+    specs = [
+        ("first", 1, 1, "FAILED"),
+        ("first", 1, 2, "PASSED"),
+        ("first", 2, 1, "PASSED"),
+        ("second", 1, 1, "PASSED"),
+        ("second", 2, 1, "PASSED"),
+    ]
+    for invocation, shard, attempt, status in specs:
+        root = tmp_path / "produced" / invocation / str(shard) / str(attempt)
+        case_id = "dialog/mobile" if shard == 1 else "dialog/desktop"
+        outputs = BoundTestOutputs(output_dir=root, case_id=case_id)
+        for checkpoint in [None, "expanded"] if shard == 1 else [None]:
+            outputs.publish(
+                checkpoint=checkpoint,
+                role="screenshot",
+                data=failed_image if status == "FAILED" else image,
+                suffix="png",
+                title="Dialog states",
+            )
+        outputs.publish(role="trace", data=b"diagnostics", suffix="zip")
+        result = ResultKey(invocation, "//ui:visual", "config-a", 1, shard, attempt)
+        summary = SourceSummary("FLAKY", 1, 2, 2, 3) if invocation == "first" else SourceSummary("PASSED", 1, 2, 1, 2)
+        for path in sorted((root / "test-outputs").rglob("*")):
+            if not path.is_file() or ".locks" in path.parts:
+                continue
+            blob = Blob(path.read_bytes())
+            blobs[blob.uri] = blob.contents
+            artifacts.setdefault(invocation, []).append(
+                result_artifact(
+                    "test.outputs/" + path.relative_to(root).as_posix(),
+                    blob.uri,
+                    result=result,
+                    summary=summary,
+                    status=status,
+                )
+            )
+
+    def run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        words = [str(part) for part in command]
+        if "artifact" in words:
+            invocation = words[words.index("list") + 1]
+            return subprocess.CompletedProcess(
+                command, 0, json.dumps([item.model_dump(by_alias=True) for item in artifacts[invocation]]), ""
+            )
+        manifest = json.loads(Path(words[words.index("--manifest") + 1]).read_text())
+        for item in manifest:
+            downloaded.add(item["uri"])
+            Path(item["destination"]).write_bytes(blobs[item["uri"]])
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    tests = download_visual_tests(["first", "second"], tmp_path / "downloaded", repository="owner/repo", run=run)
+    bundle = build_bundle(
+        tests,
+        tmp_path / "site",
+        commit_sha="a" * 40,
+        repository="owner/repo",
+        base_sha="b" * 40,
+        baseline_source=FakeBaselineSource({}),
+    )
+    review = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_bytes()).tests[0]
+    assert review.baseline_eligible
+    assert not review.issues
+    assert review.notices
+    assert {(asset.case_id, asset.checkpoint) for asset in review.assets} == identities
+    assert len({asset.path for asset in review.assets}) == len(identities)
+    assert all(asset.classification == "new" for asset in review.assets)
+    for asset in review.assets:
+        assert len(asset.variants) == 1
+        variant = asset.variants[0]
+        assert {(result.invocation, result.shard, result.attempt) for result in variant.results} == {
+            ("first", 1 if asset.case_id == "dialog/mobile" else 2, 2 if asset.case_id == "dialog/mobile" else 1),
+            ("second", 1 if asset.case_id == "dialog/mobile" else 2, 1),
+        }
+        assert (tmp_path / "site" / "assets" / f"{variant.sha256}.png").read_bytes() == image
+    assert Blob(image).uri in downloaded
+    assert Blob(failed_image).uri not in downloaded
+    assert Blob(b"diagnostics").uri not in downloaded
+    assert len(list((tmp_path / "site" / "assets").iterdir())) == 1
 
 
 def test_list_ci_failures_is_best_effort_and_deduplicates_labels() -> None:
