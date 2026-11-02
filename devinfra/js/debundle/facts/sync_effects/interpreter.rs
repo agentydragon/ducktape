@@ -831,6 +831,7 @@ struct LocalExecutionContext<'a, 'source, 'rule> {
     executor: &'a mut Executor<'source, 'rule>,
     outcome: &'a mut Outcome,
     owner: SourceUnitOrdinal,
+    callable: u32,
 }
 
 impl LocalContext for LocalExecutionContext<'_, '_, '_> {
@@ -848,6 +849,10 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             frame
                 .borrowed_records
                 .extend(self.executor.reachable_objects(&values));
+            // A later local assignment can discard the last alias of this
+            // external value. A truncated remainder can still reach it via
+            // an already captured reference, so preserve its capabilities.
+            frame.inputs.extend(values.iter().cloned());
         }
         // Timing is covered; the read alone cannot certify a closed input.
         Some(super::super::allocation_transfer::AllocationValue::opaque(
@@ -868,6 +873,51 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     fn heap(&mut self) -> super::super::allocation_transfer::LiteralHeap<'_> {
         self.executor.literal_heap()
     }
+    fn unproved_field_read(
+        &mut self,
+        frame: &mut LocalFrame,
+        receiver: &Id,
+        receivers: &Values,
+        property: &str,
+        span: Span,
+    ) -> Option<super::super::allocation_transfer::AllocationValue> {
+        let callee = ValueExpr::Member(
+            Arc::new(ValueExpr::Binding(receiver.clone())),
+            Some(property.to_owned()),
+            MemberKey::Static,
+            span.into(),
+        );
+        let call = Call::member_read(self.owner, Some(self.callable), callee, span);
+        // Retain established native, array and borrowed-record read proofs.
+        // The receiver is only a declarative cell, so the value projection
+        // cannot replay receiver code. Its judgment stays opaque; execution
+        // completeness is not a source or provider coverage certificate.
+        if self
+            .executor
+            .execute_call(&call, &frame.environment, &frame.environment, self.outcome)
+            && !self.outcome.unknown_call
+        {
+            let values =
+                self.executor
+                    .evaluate(&call.callee, &frame.environment, &frame.environment);
+            frame.inputs.extend(values.iter().cloned());
+            frame
+                .borrowed_records
+                .extend(self.executor.reachable_objects(&values));
+            return Some(super::super::allocation_transfer::AllocationValue::opaque(
+                values,
+            ));
+        }
+        self.executor.local_field_fallback(
+            frame,
+            receivers.clone(),
+            self.owner,
+            ExecutionOperation::MemberRead,
+            span,
+            self.outcome,
+        );
+        None
+    }
     fn unproved_field_write(
         &mut self,
         frame: &mut LocalFrame,
@@ -875,11 +925,13 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         values: &Values,
         span: Span,
     ) {
-        self.executor.local_field_write_fallback(
+        let mut reached = receivers.clone();
+        reached.extend(values.iter().cloned());
+        self.executor.local_field_fallback(
             frame,
-            receivers,
-            values,
+            reached,
             self.owner,
+            ExecutionOperation::PropertyWrite,
             span,
             self.outcome,
         );
@@ -7580,18 +7632,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     /// Stop the frame without replaying its earlier operations. An unproved
-    /// store may call a setter and publish any capability the remainder can
+    /// read or store may call an accessor and publish capabilities the remainder can
     /// reach, including objects whose local binding has since been replaced.
-    fn local_field_write_fallback(
+    fn local_field_fallback(
         &mut self,
         frame: &LocalFrame,
-        receivers: &Values,
-        values: &Values,
+        mut reached: Values,
         owner: SourceUnitOrdinal,
+        operation: ExecutionOperation,
         span: Span,
         outcome: &mut Outcome,
     ) {
-        let mut reached = frame.inputs.clone();
+        reached.extend(frame.inputs.iter().cloned());
         reached.extend(frame.environment.values().flatten().cloned());
         reached.extend(
             frame
@@ -7599,16 +7651,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .iter()
                 .map(|object| AbstractValue::Value(Value::Alloc(Kind::Object, *object))),
         );
-        reached.extend(receivers.iter().cloned());
-        reached.extend(values.iter().cloned());
         self.publish_values(&reached);
         let mut fallback = self.bounded_invocation_fallback(
             owner,
             &[reached],
             &frame.environment,
-            ExecutionPrecisionLossReason::UnsupportedOperation {
-                operation: ExecutionOperation::PropertyWrite,
-            },
+            ExecutionPrecisionLossReason::UnsupportedOperation { operation },
             HavocReach::Global {
                 cause: GlobalReachCause::UnmodelledOperation,
             },
@@ -7629,6 +7677,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         body: &LocalBody,
         environment: Context,
         owner: SourceUnitOrdinal,
+        callable: u32,
     ) -> Outcome {
         let mut frame = LocalFrame::new(environment);
         frame.borrowed_records = self.reachable_objects(&frame.inputs);
@@ -7644,6 +7693,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 executor: self,
                 outcome: &mut outcome,
                 owner,
+                callable,
             },
             body,
             &mut frame,
@@ -7838,8 +7888,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             // Keep existing record/input and array-iteration write proofs on
             // their established path until they consume ordered operations.
-            // In particular, an unrebound parameter cannot become a fresh
-            // receiver in this call-free, member-read-free local grammar.
+            // An unrebound parameter remains a borrowed receiver. Reads use
+            // the existing application proofs when the fresh-record check fails.
             let established_writes =
                 !callable.member_value_writes.is_empty()
                     && (self.state.array_iteration_depth > 0
@@ -7853,7 +7903,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 .any(|(binding, _)| binding == &write.receiver)
                         }));
             if !established_writes {
-                let outcome = self.execute_local_body(body, env, callable.owner);
+                let outcome = self.execute_local_body(body, env, callable.owner, key);
                 self.state.active.remove(&active_invocation);
                 self.state.invocation_depth -= 1;
                 self.remember_invocation(signature, &outcome);

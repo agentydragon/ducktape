@@ -19,6 +19,11 @@ pub(super) enum LocalExpression {
     Value(ValueExpr),
     Sequence(Arc<[Self]>),
     Assign(Id, Arc<Self>),
+    ReadField {
+        receiver: Id,
+        property: String,
+        span: Span,
+    },
     AssignField {
         receiver: Id,
         property: String,
@@ -86,6 +91,19 @@ impl LocalExpression {
                     .map(|expression| Self::lower(expression))
                     .collect::<Option<Arc<[_]>>>()?,
             )),
+            Expr::Member(member) => {
+                let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
+                    return None;
+                };
+                let MemberProp::Ident(property) = &member.prop else {
+                    return None;
+                };
+                Some(Self::ReadField {
+                    receiver: receiver.to_id(),
+                    property: property.sym.to_string(),
+                    span: member.span,
+                })
+            }
             Expr::Assign(assignment) if assignment.op == AssignOp::Assign => {
                 let value = Arc::new(Self::lower(&assignment.right)?);
                 match &assignment.left {
@@ -118,7 +136,7 @@ impl LocalExpression {
 
     fn local_targets(&self, bindings: &BTreeMap<Id, LocalBinding>) -> bool {
         match self {
-            Self::Value(_) => true,
+            Self::Value(_) | Self::ReadField { .. } => true,
             Self::Sequence(expressions) => expressions
                 .iter()
                 .all(|expression| expression.local_targets(bindings)),
@@ -140,6 +158,9 @@ impl LocalExpression {
                 }
             }
             Self::Assign(_, expression) => expression.reads(reads),
+            Self::ReadField { receiver, .. } => {
+                reads.insert(receiver.clone());
+            }
             Self::AssignField {
                 receiver, value, ..
             } => {

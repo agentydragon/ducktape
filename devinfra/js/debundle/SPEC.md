@@ -2164,11 +2164,15 @@ evaluator. Other supported bodies retain their existing strict source proof.
 Covered straight-line bodies use the same ordered local-operation executor as
 application execution. This includes local declarations and assignments,
 sequences, returns, and checked writes to existing own data fields of fresh
-ordinary records, including aliases and self-links. A provider query starts
+ordinary records, including aliases and self-links. A static dot-field read
+whose receiver is a simple binding uses that same fresh-record check and shared
+heap at its actual operation position. Only an existing own data field on a
+settled, fresh, unborrowed ordinary record supplies a covered read; copying its
+value proves no property or callable behavior on that value. A provider query starts
 with scoped opaque parameters and an empty private heap. Parameters,
 instantiated locals and checked private `var` captures can supply binding
 values. Every reached value judgment composes, including discarded expressions;
-input mutation, bindings outside that capture rule, unproved field writes and
+input mutation, bindings outside that capture rule, unproved field reads/writes and
 possible abrupt completion decline the summary. Argument retention is derived by traversing the returned graph,
 including cycles. The query uses no additional source parse or AST evaluator.
 
@@ -2186,9 +2190,16 @@ capture can alias one of them. Later opaque use promotes possible importer
 reads and rebinds and invalidates reached prefix heap properties; it does not
 grant getter-free access or a result-identity proof.
 
+Application field reads outside the fresh-record proof retain their existing
+native, array and borrowed-data checks. Possible getter effects use the normal
+conservative read transfer and truncate the remaining ordered body through the
+existing callback fallback. Earlier operations are not replayed. Read results
+from this application fallback remain opaque to the allocation-only judgment;
+synchronous completeness alone grants no provider certificate.
+
 Source coverage excludes async/generator functions, defaults/rest/destructuring,
 template syntax, other operators,
-member reads, computed/spread/accessor/prototype fields, calls and
+nested/computed/optional member reads, computed/spread/accessor/prototype fields, calls and
 unsupported control-flow statements. A source-covered throw still prevents the
 allocation-only certificate. Every operand, test and arm must retain source coverage
 and covered access evidence; an outer supported operation cannot hide an

@@ -15,6 +15,8 @@ use swc_ecma_ast::Id;
 
 pub(super) struct LocalFrame {
     pub(super) environment: Context,
+    /// Entry arguments/captures and external values read while executing.
+    /// Retained for a truncated remainder even after local aliases change.
     pub(super) inputs: Values,
     pub(super) borrowed_records: BTreeSet<u32>,
     pub(super) fresh_records: BTreeSet<u32>,
@@ -39,6 +41,17 @@ pub(super) trait LocalContext {
     fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape>;
     fn object_properties_are_settled(&self, allocation: u32) -> bool;
     fn heap(&mut self) -> LiteralHeap<'_>;
+    /// The receiver cell was read at this operation. A strict query refuses
+    /// an unproved field; application execution retains its existing proofs
+    /// and summarizes the remainder if getter effects remain unproved.
+    fn unproved_field_read(
+        &mut self,
+        frame: &mut LocalFrame,
+        receiver: &Id,
+        receivers: &Values,
+        property: &str,
+        span: Span,
+    ) -> Option<AllocationValue>;
     /// Application execution summarizes the remainder; a strict query refuses
     /// certification. Neither consumer retries already executed operations.
     fn unproved_field_write(
@@ -184,6 +197,29 @@ fn expression(
             }
             frame.environment.insert(binding.clone(), values.clone());
             Some(values)
+        }
+        LocalExpression::ReadField {
+            receiver,
+            property,
+            span,
+        } => {
+            let receivers = value(context, &ValueExpr::Binding(receiver.clone()), frame)?;
+            judgment.compose(&receivers.judgment);
+            let receivers = completing(receivers.values, frame);
+            if receivers.is_empty() {
+                return Some(Values::new());
+            }
+            if let Some(object) = own_data_field(context, &receivers, property, frame) {
+                // The shared write proof already requires a settled existing
+                // own data slot on a fresh, unborrowed ordinary record. It is
+                // deliberately not broadened for reads of other receivers.
+                let values = context.heap().properties[&object][&Some(property.clone())].clone();
+                return Some(completing(values, frame));
+            }
+            let result =
+                context.unproved_field_read(frame, receiver, &receivers, property, *span)?;
+            judgment.compose(&result.judgment);
+            Some(completing(result.values, frame))
         }
         LocalExpression::AssignField {
             receiver,

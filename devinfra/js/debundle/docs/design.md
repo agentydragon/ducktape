@@ -1193,6 +1193,18 @@ fails, the executor publishes reachable frame capabilities, widens native
 effects and uses the existing synchronous fallback closure for the remaining
 body. Earlier operations are not replayed. This local execution proof does not
 provide an owner-completion or foreign-provider certificate.
+Static dot-field reads from a simple binding now enter the same ordered
+executor. The fresh own-data guard is shared with field writes and is not
+weakened for borrowed records, arrays, missing fields or older allocation
+generations. A successful read copies the current shared heap slot without
+getter or coercion behavior. The normal application adapter retains the
+existing member-read transfer for receivers outside this narrow guard, so
+established native/array/borrowed-data checks still apply. An unproved getter
+read promotes its possible effects and truncates the remainder through the
+same callback fallback; it does not replay the earlier local operations.
+External values read into a frame remain retained for fallback after their
+last local alias is overwritten. This preserves capabilities reachable through
+an already evaluated reference; retention supplies no freshness proof.
 The strict provider consumer uses that same ordered-operation executor with
 scoped symbolic parameters and an isolated literal heap. Its binding adapter
 admits parameters, locals instantiated by the shared executor, and checked
