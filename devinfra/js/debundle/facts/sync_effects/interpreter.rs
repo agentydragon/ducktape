@@ -57,8 +57,8 @@ use crate::reports::schema::{
     AssumedEffectReason, CallbackFactoryUseKind, ConstructionRejection, ExecutionOperation,
     ExecutionPrecisionLoss, ExecutionPrecisionLossReason, GlobalReachCause, HavocReach,
     InferenceRule, LocalRecordFactoryRejection, NativeIntegrityCheck, NativeIntegrityGuard,
-    NativePrefixObservation, NativePrototypePropertyCheck, OrderedFieldReadRefusal,
-    RecordFactoryRejectionReason,
+    NativePrefixObservation, NativePrototypePropertyCheck, OrderedCallAdmissionRefusal,
+    OrderedFieldReadRefusal, RecordFactoryRejectionReason,
 };
 use imbl::OrdMap;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -114,9 +114,9 @@ impl Outcome {
         self.record_loss(loss);
     }
 
-    /// One record per reason and site, retaining distinct ordered-read
-    /// refusals. The same site can be reached with different inputs; its reach
-    /// is `global` if any reach was.
+    /// One record per reason and site, retaining distinct ordered-read and
+    /// call-admission refusals. The same site can be reached with different
+    /// inputs; its reach is `global` if any reach was.
     fn record_loss(&mut self, loss: ExecutionPrecisionLoss) {
         let losses = &mut self.effects.precision_losses;
         match losses.iter_mut().find(|existing| {
@@ -125,16 +125,21 @@ impl Outcome {
                     ExecutionPrecisionLossReason::UnsupportedOperation {
                         operation: existing_operation,
                         ordered_field_read_refusal: existing_refusal,
+                        ordered_call_admission_refusal: existing_call_refusal,
                     },
                     ExecutionPrecisionLossReason::UnsupportedOperation {
                         operation: loss_operation,
                         ordered_field_read_refusal: loss_refusal,
+                        ordered_call_admission_refusal: loss_call_refusal,
                     },
                 ) => {
                     existing_operation == loss_operation
                         && (existing_refusal == loss_refusal
                             || existing_refusal.is_none()
                             || loss_refusal.is_none())
+                        && (existing_call_refusal == loss_call_refusal
+                            || existing_call_refusal.is_none()
+                            || loss_call_refusal.is_none())
                 }
                 _ => existing.reason == loss.reason,
             };
@@ -143,20 +148,25 @@ impl Outcome {
                 && existing.span == loss.span
         }) {
             Some(existing) => {
-                if matches!(
-                    &existing.reason,
+                if let (
                     ExecutionPrecisionLossReason::UnsupportedOperation {
-                        ordered_field_read_refusal: None,
+                        ordered_field_read_refusal: existing_field_refusal,
+                        ordered_call_admission_refusal: existing_call_refusal,
                         ..
-                    }
-                ) && matches!(
-                    &loss.reason,
+                    },
                     ExecutionPrecisionLossReason::UnsupportedOperation {
-                        ordered_field_read_refusal: Some(_),
+                        ordered_field_read_refusal: loss_field_refusal,
+                        ordered_call_admission_refusal: loss_call_refusal,
                         ..
+                    },
+                ) = (&mut existing.reason, &loss.reason)
+                {
+                    if existing_field_refusal.is_none() {
+                        *existing_field_refusal = *loss_field_refusal;
                     }
-                ) {
-                    existing.reason = loss.reason.clone();
+                    if existing_call_refusal.is_none() {
+                        *existing_call_refusal = *loss_call_refusal;
+                    }
                 }
                 if existing.reach == HavocReach::Bounded {
                     existing.reach = loss.reach;
@@ -171,6 +181,7 @@ impl Outcome {
             ExecutionPrecisionLossReason::UnsupportedOperation {
                 operation,
                 ordered_field_read_refusal: None,
+                ordered_call_admission_refusal: None,
             },
             HavocReach::Global {
                 cause: GlobalReachCause::UnmodelledOperation,
@@ -1279,6 +1290,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             ExecutionPrecisionLossReason::UnsupportedOperation {
                 operation: ExecutionOperation::OpaqueExecution,
                 ordered_field_read_refusal: None,
+                ordered_call_admission_refusal: None,
             },
             span,
         );
@@ -1357,7 +1369,11 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         };
         let complete = outcome.complete && !outcome.unknown_call;
         let missing_result = complete && matches!(transfer, CallTransfer::EffectsOnly);
-        if (!complete || matches!(transfer, CallTransfer::UnsupportedOperands))
+        let admission_refusal = match &transfer {
+            CallTransfer::UnsupportedOperands(refusal) => Some(*refusal),
+            _ => None,
+        };
+        if (!complete || admission_refusal.is_some())
             && targets.iter().any(|value| {
                 matches!(
                     value,
@@ -1390,19 +1406,16 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         }
         // Preserve the partial call's effects and returned capabilities, then
         // summarize the remainder without repeating any operand or invocation.
-        self.fallback(
-            frame,
-            reached,
-            if missing_result {
-                ExecutionPrecisionLossReason::MissingCallResult
-            } else {
-                ExecutionPrecisionLossReason::UnsupportedOperation {
-                    operation: ExecutionOperation::OpaqueExecution,
-                    ordered_field_read_refusal: None,
-                }
-            },
-            span,
-        );
+        let fallback_reason = if missing_result {
+            ExecutionPrecisionLossReason::MissingCallResult
+        } else {
+            ExecutionPrecisionLossReason::UnsupportedOperation {
+                operation: ExecutionOperation::OpaqueExecution,
+                ordered_field_read_refusal: None,
+                ordered_call_admission_refusal: if complete { admission_refusal } else { None },
+            }
+        };
+        self.fallback(frame, reached, fallback_reason, span);
         None
     }
     fn literal_layout(&self, allocation: u32) -> super::super::allocation_transfer::LiteralLayout {
@@ -1474,6 +1487,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             ExecutionPrecisionLossReason::UnsupportedOperation {
                 operation: ExecutionOperation::MemberRead,
                 ordered_field_read_refusal: Some(refusal),
+                ordered_call_admission_refusal: None,
             },
             span,
         );
@@ -1494,6 +1508,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             ExecutionPrecisionLossReason::UnsupportedOperation {
                 operation: ExecutionOperation::PropertyWrite,
                 ordered_field_read_refusal: None,
+                ordered_call_admission_refusal: None,
             },
             span,
         );
@@ -9527,8 +9542,35 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             | AbstractValue::Value(Value::Prim(_))
                     )
                 });
-            if (!local_target && !abrupt) || (!abrupt && prepared_receiver_unused == Some(false)) {
-                return CallTransfer::UnsupportedOperands;
+            let admission_refusal = if !local_target && !abrupt {
+                let refusal = if targets.len() > 1 {
+                    OrderedCallAdmissionRefusal::MultipleTargets
+                } else {
+                    match targets.iter().next() {
+                        None
+                        | Some(AbstractValue::Value(Value::Top))
+                        | Some(AbstractValue::SymbolicInput(_)) => {
+                            OrderedCallAdmissionRefusal::UnknownTarget
+                        }
+                        Some(
+                            AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                            | AbstractValue::Closure(key, _),
+                        ) if self.inputs.index.callables.contains_key(key)
+                            && self.state.tainted_functions.contains(key) =>
+                        {
+                            OrderedCallAdmissionRefusal::TaintedLocalTarget
+                        }
+                        Some(_) => OrderedCallAdmissionRefusal::NonLocalTarget,
+                    }
+                };
+                Some(refusal)
+            } else if !abrupt && prepared_receiver_unused == Some(false) {
+                Some(OrderedCallAdmissionRefusal::UnsupportedReceiver)
+            } else {
+                None
+            };
+            if let Some(refusal) = admission_refusal {
+                return CallTransfer::UnsupportedOperands(refusal);
             }
         }
         let from_entries_source_callbacks = if call.kind == CallKind::Call && !needs_value {

@@ -362,9 +362,25 @@ proof completed but supplied no return-value transfer. The entry retains the
 call's lexical statement ordinal, source location and fallback reach. It may
 also appear as a `fallback_summary.loss` on assumed binding effects.
 The ordered body still stops and promotes its conservative remainder.
-Declining an ordered target or reporting incomplete effects does not establish
-this reason. Such paths retain their existing unsupported-operation or
-unknown-target explanations.
+Declining an ordered target does not establish this reason. Its
+`unsupported_operation` / `opaque_execution` loss may carry a typed
+`ordered_call_admission_refusal`; see [ordered call admission refusal](#ordered-call-admission-refusal).
+Incomplete invocation remains a generic unsupported-operation loss, and
+unknown-target classification remains a separate precision loss under the
+existing target rules.
+
+## Ordered call admission refusal
+
+`dependency_graph.json.gz.nodes[].synchronous_execution.precision_losses[]`
+may include `reason.ordered_call_admission_refusal` for a call whose already
+evaluated operands were declined by the ordered path. The values are
+`unknown_target`, `multiple_targets`, `non_local_target`,
+`tainted_local_target`, and `unsupported_receiver`. The reason retains only the
+first failed admission category, with the existing call source site and
+fallback reach. It does not retain target identities or alter call admission,
+effect promotion, reachability, or gate acceptance. A complete effects-only
+call uses `missing_call_result`; an incomplete invocation does not use this
+field.
 
 ## Ordered local member-read refusal
 

@@ -2989,7 +2989,13 @@ completed without supplying a return-value transfer. The body still truncates
 conservatively at that call. This does not report an unknown target or certify
 the rest of the body; a result transfer using the already evaluated operands is
 required to continue. A call rejected by the ordered operand path retains its
-unsupported-operation or unknown-target explanation.
+`unsupported_operation` / `opaque_execution` reason and may carry the typed
+`ordered_call_admission_refusal`: `unknown_target`, `multiple_targets`,
+`non_local_target`, `tainted_local_target`, or `unsupported_receiver`. It names
+the first ordered admission check that refused the already evaluated operands.
+Unknown-target classification remains a separate precision loss where the
+existing target rules produce it. Incomplete invocation and missing result
+transfer do not carry this admission reason.
 An `unsupported_operation` / `member_read` reason may also carry the optional
 `ordered_field_read_refusal` field from the shared ordered own-data guard:
 `receiver_not_singleton`, `receiver_not_object`, `borrowed_receiver`,
@@ -2999,7 +3005,8 @@ first refusal condition at that operation's original source span. For
 `allocation_not_fresh`, the analysis does not distinguish a reused allocation
 site from another reason freshness was not established. This explanation does
 not change effect promotion.
-These records do not change gate acceptance or emitted JavaScript.
+The ordered call-admission explanation does not change target admission,
+fallback effects, reachability, gate acceptance, or emitted JavaScript.
 
 Each record's `reach` classifies the code the conservative path stands for.
 `{"kind": "bounded"}`: known source code, namely a rejected local construction
