@@ -26,7 +26,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -334,29 +333,6 @@ func (s *threadMetadataService) ListThreadMetadata(ctx context.Context, request 
 		}
 	}
 	return response, nil
-}
-
-func (s *threadMetadataService) WatchThreadMetadata(
-	_ *threadmetadatapb.WatchThreadMetadataRequest,
-	stream grpc.ServerStreamingServer[threadmetadatapb.WatchThreadMetadataResponse],
-) error {
-	watch, err := s.newThreadMetadataWatch(stream.Context())
-	if err != nil {
-		return err
-	}
-	defer watch.unsubscribe()
-	for {
-		response, err := watch.next()
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if err := stream.Send(response); err != nil {
-			return err
-		}
-	}
 }
 
 type threadMetadataWatch struct {
