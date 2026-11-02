@@ -22,9 +22,10 @@ are answered by running rather than by reading:
 1. **Current-Squid port.** The header directives are unchanged since Squid 2.x,
    but the TLS ones moved. Partly a rename (`ssl_crtd` → `security_file_certgen`)
    — but see the findings below, because one of them is not a rename and the
-   difference is silent. The image tracks the newest stable series (7.x today,
-   via `alpine:3.23`) rather than whatever the base image happens to carry:
-   upstream supports only the newest series, and answering these questions on a
+   difference is silent. The final experiment image used Debian's
+   `squid-openssl` 7.x package (see the image recipe in Git history below).
+   Earlier runs used Alpine; the version for each run is recorded in Findings.
+   Upstream supports only the newest series, and answering these questions on a
    Squid we would not deploy is how a silently-changed directive reaches a
    fence.
 2. **Destination scoping.** Every rule is `(placeholder AND destination)`.
@@ -38,7 +39,11 @@ are answered by running rather than by reading:
 5. **Caching.** `cache_mem` with no `cache_dir`, plus an explicit
    `cache deny has_auth` so an authenticated response cannot be stored.
 
-## Running it
+## Historical test command
+
+This command was used while the spike was deployed. The archived manifests are
+not reconciled by the active cluster configuration, so it requires a deliberate
+revival before it can run again.
 
 ```bash
 kubectl -n squid-egress-spike exec deploy/squid-spike -c squid -- \
@@ -176,10 +181,10 @@ scoping the `deny` did not disturb the path it shares with the `add`.
   responses — the `cache deny has_auth` half is the security-relevant one and it
   is confirmed.
 
-## Pull credential
+## Historical pull credential
 
-The image is private, and the `forgejo-images-creds` pull secret reaches this
-namespace by **reflector mirroring** — `squid-egress-spike` must appear in both
+The image was private, and the `forgejo-images-creds` pull secret reached this
+namespace by **reflector mirroring** — `squid-egress-spike` had to appear in both
 `reflection-allowed-namespaces` and `reflection-auto-namespaces` on
 <../../../k8s/forgejo-images/registry-creds.sops.yaml>. That is a grant of one
 dockerconfigjson and nothing else, and it is the mechanism
@@ -193,18 +198,28 @@ secret in `flux-system` (the GitHub App, four PATs, the Route 53 credentials,
 `ci-age-key`). Wrong trade for a directory whose own README opens by saying it
 holds no real credentials.
 
-## Ordering when this first lands
+## Image recipe and revival
 
-The image does not exist until `.github/workflows/squid-ssl-image.yml` runs on
-`devel`. Until then the Deployment references a placeholder tag and the
-`squid-egress-spike-app` Kustomization stays un-ready; Flux replaces the tag via
-the `$imagepolicy` marker once CI publishes, and it self-heals. Same transient
-as any first-push image here — see <../../../docs/container-images.md>.
+Automatic image publishing was retired with this spike. The final Dockerfile and
+its verification/push workflow can be recovered from Git history at commit
+`62387f53477a139fdfa0681759f1c421b5653a39`:
+
+```bash
+git show 62387f53477a139fdfa0681759f1c421b5653a39:cluster/images/squid-ssl/Dockerfile
+git show 62387f53477a139fdfa0681759f1c421b5653a39:.github/workflows/squid-ssl-image.yml
+```
+
+The archived Deployment retains its last image tag and `$imagepolicy` markers
+as historical state. To revive it, restore or replace the image build and
+publication path, check the current package and registry credentials, and update
+the Deployment tag before resuming Flux reconciliation. No active Squid image
+automation declaration exists in the tracked cluster source at retirement.
 
 ## Disposal
 
 This is a spike, not infrastructure. The active cluster wiring and live objects
 are retired; this archive keeps the experiment's findings and suspended Flux
-declarations as reference material. Delete the archive together with
-`cluster/images/squid-ssl/`, the workflow, and the two
-Squid image automation declaration when that reference is no longer useful.
+declarations as reference material. The automatic image workflow and image
+source were retired separately; the recipe remains recoverable from Git history
+above. Keep this archive until its findings and revival package are no longer
+useful.

@@ -74,8 +74,8 @@ jobs:
       bazel_test_source_commit: ${{ needs.bazel-ci.outputs.test_source_commit }}
     secrets: inherit
 
-  # push-images also pushes the props agent images (props-agents job) to the
-  # props registry, gated on props tests — see push-images.yml.
+  # push-images retains a disabled props-agents job. Whether to revive Props
+  # image publishing remains undecided; see push-images.yml and props/TODO.md.
   push-images:
     needs: [bazel-ci]
     if: always() && !cancelled() && github.event_name == 'push' && needs.bazel-ci.result != 'cancelled'

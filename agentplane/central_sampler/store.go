@@ -3300,10 +3300,6 @@ func checkInterrupt(ctx context.Context, tx *sql.Tx, owner Owner) error {
 	return InterruptPendingError{}
 }
 
-func (s *Store) checkInterrupt(ctx context.Context, tx *sql.Tx, owner Owner) error {
-	return checkInterrupt(ctx, tx, owner)
-}
-
 func (s *Store) checkRecovery(ctx context.Context, tx *sql.Tx, owner Owner) error {
 	var id string
 	err := tx.QueryRowContext(ctx, `SELECT id::text FROM sampler_intent WHERE conversation_id=$1 AND generation<>$2 AND result IS NULL LIMIT 1`, owner.ConversationID, owner.Generation).Scan(&id)

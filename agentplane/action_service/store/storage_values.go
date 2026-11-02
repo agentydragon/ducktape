@@ -43,14 +43,6 @@ func stateStored(state action_servicepb.ActionState) (string, bool) {
 	return "", false
 }
 
-func storedStateNames() []string {
-	states := make([]string, len(storedStates))
-	for i, known := range storedStates {
-		states[i] = known.text
-	}
-	return states
-}
-
 // errInvalidActor marks a well-formed protobuf actor whose identity is incomplete.
 var errInvalidActor = errors.New("invalid Action actor")
 

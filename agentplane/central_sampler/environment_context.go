@@ -17,11 +17,6 @@ type EnvironmentContext struct {
 	CurrentDate string  `json:"current_date"`
 }
 
-func (c EnvironmentContext) equal(other EnvironmentContext) bool {
-	sameShell := c.Shell == nil && other.Shell == nil || c.Shell != nil && other.Shell != nil && *c.Shell == *other.Shell
-	return c.Cwd == other.Cwd && c.CurrentDate == other.CurrentDate && sameShell
-}
-
 // currentEnvironmentContext mirrors Codex's local date rendering (`chrono::Local`, `%Y-%m-%d`)
 // from core/src/session/world_state.rs Session::build_world_state_for_step.
 func currentEnvironmentContext(cwd string, shell *string, now time.Time) EnvironmentContext {

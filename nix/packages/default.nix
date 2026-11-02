@@ -479,7 +479,6 @@ rec {
 
   aw-watcher-tmux = pkgs.callPackage ./aw-watcher-tmux.nix { };
 
-  gnome-shell-aiquota = aiquota;
   tana-outliner = pkgs.callPackage ./tana-outliner.nix { };
   gmail-mcp = pkgs.callPackage ./gmail-mcp.nix { };
   foxflss = pkgs.callPackage ./foxflss.nix { };
