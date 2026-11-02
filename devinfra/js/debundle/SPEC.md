@@ -2216,6 +2216,10 @@ callback fallback at that call site without replaying prior operations.
 Invocation results remain opaque to the allocation-only judgment; a strict
 provider query declines calls. This supplies neither live captured cells nor a
 property-origin export identity proof.
+Call-containing bodies remain outside the migrated allocation-only provider
+query and keep their established foreign-call derivation where supported.
+This classification happens before selecting a query; a failed migrated
+query still never retries the legacy evaluator.
 
 Source coverage excludes async/generator functions, defaults/rest/destructuring,
 template syntax, other operators,

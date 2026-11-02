@@ -40,6 +40,10 @@ return values from that outcome, rather than evaluating the call separately to
 obtain its value. Known effects, including rebinds and proof dependencies,
 follow the same merge as the ordinary call adapter. Results stay opaque to the
 allocation-only judgment. Strict provider queries decline this operation.
+The source collector caches whether an ordered body contains calls. The
+foreign-call collector uses that classification before choosing its query:
+call-containing bodies keep the established derivation for supported callback
+wrappers. A failed migrated allocation-only query still has no legacy retry.
 
 Objects reachable through the callee or arguments become borrowed in the
 caller before the invocation. This prevents retaining a fresh own-data
