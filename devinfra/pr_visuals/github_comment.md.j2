@@ -65,8 +65,8 @@
 ⚠️ stale baseline ({% if test.base_sha %}<code>{{ test.base_sha[:8] }}</code>{% else %}an unavailable commit{% endif %}, not merge base {% if test.merge_base_sha %}<code>{{ test.merge_base_sha[:8] }}</code>{% else %}the merge base{% endif %})
 {%- endmacro %}
 
-{% macro issue(issue) -%}
-{{ issue.message }}{% if issue.source %} ({{ 'shard' if issue.source.shards | length == 1 else 'shards' }} {{ issue.source.shards | shard_ranges }} · run {{ issue.source.run or 'unknown' }} · attempt {{ issue.source.attempt or 'unknown' }}{% if issue.source.configuration %} · config {{ issue.source.configuration[:8] }}{% endif %}) · <a href="{{ issue.source.invocation | buildbuddy_url }}">BuildBuddy</a>{% endif %}
+{% macro issue(issue, invocation_labels, configuration_labels) -%}
+{{ issue.message }}{% if issue.source %} ({{ 'shard' if issue.source.shards | length == 1 else 'shards' }} {{ issue.source.shards | shard_ranges }} · run {{ issue.source.run if issue.source.run is not none else 'unknown' }} · attempt {{ issue.source.attempt if issue.source.attempt is not none else 'unknown' }}{% if issue.source.configuration %} · config {{ configuration_labels[issue.source.configuration] }}{% endif %}) · <a href="{{ issue.source.invocation | buildbuddy_url }}">BuildBuddy {{ invocation_labels[issue.source.invocation] }}</a>{% endif %}
 {%- endmacro %}
 
 {% macro image(url, alt) -%}
@@ -85,7 +85,7 @@
 {% if asset.classification == 'unstable' %}
 <ul>
 {% for variant in item.urls.variants %}
-<li>{{ image(variant.url, asset.label) }}</li>
+<li>{{ image(variant.url, asset.label) }}{% if variant.provenance %}<br>{% for source in variant.provenance %}run {{ source.run if source.run is not none else 'unknown' }} · {{ 'shard' if source.shards | length == 1 else 'shards' }} {{ source.shards | shard_ranges }} · attempt {{ source.attempt if source.attempt is not none else 'unknown' }}{% if source.configuration_label %} · config {{ source.configuration_label }}{% endif %} · <a href="{{ source.invocation_url }}">BuildBuddy {{ source.invocation_label }}</a>{% if not loop.last %}; {% endif %}{% endfor %}{% endif %}</li>
 {% endfor %}
 </ul>
 {% elif asset.classification == 'modified' %}
@@ -100,12 +100,12 @@
 {% endif %}
 {%- endmacro %}
 
-{% macro target(test, impact, gallery_url, ci_details_url, assets, open_section, inline_limit) -%}
+{% macro target(test, impact, gallery_url, ci_details_url, assets, open_section, inline_limit, issue_invocation_labels, issue_configuration_labels) -%}
 <details{% if open_section %} open{% endif %}>
-<summary><code>{{ test.target_label }}</code> — {{ counts(test) }}{% if impact is not none %} · largest change {{ '%.1f' | format(impact * 100) }}%{% endif %} · {{ test.title }} · <a href="{{ gallery_url }}">link</a>{% if ci_details_url %} · <a href="{{ ci_details_url }}">request rerun</a>{% endif %}</summary>
+<summary><code>{{ test.target_label }}</code> — {{ counts(test) }}{% if impact is not none %} · largest change {{ '%.1f' | format(impact * 100) }}%{% endif %}{% if test.title != test.target_label %} · {{ test.title }}{% endif %} · <a href="{{ gallery_url }}">link</a>{% if ci_details_url %} · <a href="{{ ci_details_url }}">request rerun</a>{% endif %}</summary>
 
 {% if test.issues %}
-<ul>{% for problem in test.issues %}<li>⚠️ {{ issue(problem) }}</li>{% endfor %}</ul>
+<ul>{% for problem in test.issues %}<li>⚠️ {{ issue(problem, issue_invocation_labels, issue_configuration_labels) }}</li>{% endfor %}</ul>
 {% endif %}
 {% for item in assets %}
 {% if assets | length <= inline_limit %}

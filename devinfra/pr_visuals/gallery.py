@@ -10,6 +10,7 @@ from devinfra.pr_visuals.render_common import (
     asset_page_data,
     buildbuddy_url,
     ordered_assets,
+    provenance_labels_for_test,
     shard_ranges,
     test_impact_key,
 )
@@ -30,8 +31,22 @@ def review_test_page_data(
     test: ReviewTest, *, asset_base: str, page_url: str, shared_asset_base: str
 ) -> dict[str, Any]:
     page = test.model_dump(exclude_none=True)
+    invocation_labels, configuration_labels = provenance_labels_for_test(test)
+    for issue in [*page["issues"], *page["notices"]]:
+        if issue.get("source") is not None:
+            source = issue["source"]
+            source["invocation_label"] = invocation_labels[source["invocation"]]
+            if source.get("configuration") is not None:
+                source["configuration_label"] = configuration_labels[source["configuration"]]
     page["assets"] = [
-        asset_page_data(asset, asset_base=asset_base, page_url=page_url, shared_asset_base=shared_asset_base)
+        asset_page_data(
+            asset,
+            asset_base=asset_base,
+            page_url=page_url,
+            shared_asset_base=shared_asset_base,
+            invocation_labels=invocation_labels,
+            configuration_labels=configuration_labels,
+        )
         for asset in ordered_assets(test.assets)
     ]
     impact_key = test_impact_key(test)
@@ -39,6 +54,11 @@ def review_test_page_data(
     page["sort_largest_change"] = -impact_key[0]
     if test.preview is not None:
         page["preview"] = asset_page_data(
-            test.preview, asset_base=asset_base, page_url=page_url, shared_asset_base=shared_asset_base
+            test.preview,
+            asset_base=asset_base,
+            page_url=page_url,
+            shared_asset_base=shared_asset_base,
+            invocation_labels=invocation_labels,
+            configuration_labels=configuration_labels,
         )
     return page
