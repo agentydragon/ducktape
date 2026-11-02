@@ -50,7 +50,7 @@ func bindingContext(ctx context.Context, binding *runtimepb.Binding) context.Con
 	return withBinding(ctx, binding)
 }
 
-func publishHostIntentStatus(ctx context.Context, r *Runner, intent *runtimepb.LifecycleIntent, applied bool) error {
+func publishHostIntentStatus(ctx context.Context, r *Host, intent *runtimepb.LifecycleIntent, applied bool) error {
 	value := runnerlifecycle.HostIntentStatus{Intent: runnerlifecycle.HostIntentFromProto(intent), Applied: applied}
 	return cosi.Publish(ctx, r.lifecycle.state, runnerlifecycle.HostIntentStatusResource(value), value, "harness-host-intent")
 }
