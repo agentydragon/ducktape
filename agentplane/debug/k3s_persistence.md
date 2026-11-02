@@ -174,6 +174,12 @@ The successful final run does not erase these earlier failures:
   execution produced the logical test result in each case; logical run/attempt counts alone hide
   this physical work. No snapshot-save failure or causal link to persistence is established.
 
+  [The follow-up kernel investigation](../../devinfra/buildbuddy/debug/2026_11_02_scheduler_kernel_panic.md)
+  found two further mainline crashes and matched the hosted kernel and faulting
+  instructions to the vulnerable implementation of CVE-2021-47209. A fresh-boot
+  crash rules out snapshot restore as a requirement. The provider kernel needs a
+  patched-rollout comparison; the exact corrupting race remains unconfirmed.
+
 Ordinary required CI checks passed at the measured runtime source. Persistence is now enabled in the
 standard suite targets. The recorded reliability issues remain unresolved; setup savings do not
 establish reliable fleet warm availability or an end-to-end 2x CI improvement.
