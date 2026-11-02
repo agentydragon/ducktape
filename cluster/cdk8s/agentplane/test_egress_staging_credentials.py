@@ -104,6 +104,31 @@ def test_quest_bearer_has_its_own_secret_and_network_access(scratch_chart: Chart
     )
     assert credential["spec"]["source"] == {"secretRef": {"name": "quest-agent-token", "key": "token"}}
     assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}]
+    policy = next(obj for obj in objects if obj["kind"] == "PolicySet" and obj["metadata"]["name"] == "quest-read")
+    rules = policy["spec"]["rules"]
+    assert [rule["methods"] for rule in rules] == [["GET"], ["POST"]]
+    assert all(rule["hosts"] == ["openai-platform.allegedly.works"] for rule in rules)
+    assert rules[0]["paths"] == [
+        "/quest/openapi.json",
+        "/quest/guest/getReasons/*",
+        "/quest/guest/getPscDetails/*",
+        "/quest/api/getInsuranceProfile",
+        "/quest/guest/getTokenBasicInfoAPI/*",
+        "/quest/guest/getEncounterInfo/appointment",
+        "/quest/guest/getEncounterInfo/demographics",
+        "/quest/guest/getEncounterInfo/insurance",
+        "/quest/guest/getEncounterInfo/secondaryInsurance",
+        "/quest/guest/getPayorList/*",
+        "/quest/guest/getAppointment/*",
+    ]
+    assert rules[1]["paths"] == [
+        "/quest/guest/getPscsWithAvailability",
+        "/quest/api/getOpenEorders",
+        "/quest/api/getUserDemographics",
+        "/quest/guest/examoneEligibility",
+        "/quest/guest/verifyInsurance/V2",
+        "/quest/guest/getPricing",
+    ]
     network = next(
         obj
         for obj in objects
@@ -111,9 +136,14 @@ def test_quest_bearer_has_its_own_secret_and_network_access(scratch_chart: Chart
     )
     assert {
         "toEndpoints": [
-            {"matchLabels": {"app": "quest-diagnostics", "k8s:io.kubernetes.pod.namespace": "quest-diagnostics"}}
+            {
+                "matchLabels": {
+                    "app": "openai-platform-session",
+                    "k8s:io.kubernetes.pod.namespace": "openai-platform-session",
+                }
+            }
         ],
-        "toPorts": [{"ports": [{"port": "8082", "protocol": "TCP"}]}],
+        "toPorts": [{"ports": [{"port": "8080", "protocol": "TCP"}]}],
     } in network["spec"]["egress"]
 
 
