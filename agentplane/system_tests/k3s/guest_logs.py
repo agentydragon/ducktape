@@ -93,19 +93,37 @@ def systemd_supervision_passed(incarnation_uid: str) -> bool:
     )
 
 
-def _copy(log_root: Path, scopes: dict[str, Path], stop: threading.Event) -> None:
+def _copy(
+    log_root: Path,
+    scopes: dict[str, Path],
+    storage_root: Path,
+    namespace: str,
+    destination: Path,
+    stop: threading.Event,
+) -> None:
     # Open descriptors keep the last bytes readable after suspend/delete unlinks the source.
     opened: set[tuple[int, int]] = set()
     streams: list[tuple[BinaryIO, BinaryIO]] = []
+    journals: list[tuple[BinaryIO, BinaryIO]] = []
     with ExitStack() as files:
         while True:
-            for pattern, destination in scopes.items():
+            for pattern, log_destination in scopes.items():
                 for path in log_root.glob(pattern):
-                    _retain(path, destination, opened, streams, files)
+                    _retain(path, log_destination, opened, streams, files)
             for reader, writer in streams:
                 shutil.copyfileobj(reader, writer)
                 writer.flush()
+            for path in storage_root.glob(f"pvc-*_{namespace}_*-state/.systemd-journal/*/*.journal*"):
+                _retain(path, destination / "journals", opened, journals, files, journal=True)
             if stop.is_set():
+                # Journald updates headers and entry objects in place. Recopy the whole file
+                # after guest teardown, including from unlinked inodes, rather than tailing it.
+                for reader, writer in journals:
+                    reader.seek(0)
+                    writer.seek(0)
+                    shutil.copyfileobj(reader, writer)
+                    writer.truncate()
+                    writer.flush()
                 return
             stop.wait(0.1)
 
@@ -116,6 +134,8 @@ def _retain(
     opened: set[tuple[int, int]],
     streams: list[tuple[BinaryIO, BinaryIO]],
     files: ExitStack,
+    *,
+    journal: bool = False,
 ) -> None:
     try:
         source = path.open("rb")
@@ -127,11 +147,19 @@ def _retain(
         identity = (stat.st_dev, stat.st_ino)
         if identity in opened:
             return
-        target = destination / path.parent.parent.name / f"{path.name}-{identity[1]}.cri.log"
+        if journal:
+            target = destination / path.parents[2].name / path.parent.name / f"{identity[1]}-{path.name}"
+        else:
+            target = destination / path.parent.parent.name / f"{path.name}-{identity[1]}.cri.log"
         target.parent.mkdir(parents=True, exist_ok=True)
         # dup the open descriptor, retaining the inode even if its pathname disappears.
-        retained = files.enter_context(os.fdopen(os.dup(source.fileno()), "rb"))
-        streams.append((retained, files.enter_context(target.open("wb"))))
+        retained = files.enter_context(os.fdopen(os.dup(source.fileno()), "rb", buffering=0 if journal else -1))
+        writer = files.enter_context(target.open("wb"))
+        streams.append((retained, writer))
+        if journal:
+            # An initial snapshot also leaves evidence if the test driver is killed outright.
+            shutil.copyfileobj(retained, writer)
+            writer.flush()
         opened.add(identity)
 
 
@@ -151,13 +179,14 @@ def _require_shutdown(consoles: Path) -> None:
 def capture(
     *,
     log_root: Path,
+    storage_root: Path,
     namespace: str,
     kubevirt_namespace: str,
     destination: Path,
     validate_shutdown: Callable[[], bool],
     require_boot_evidence: bool = False,
 ) -> Iterator[None]:
-    """Retain guest, launcher relay, and virt-handler logs; validate only successful teardown.
+    """Retain guest journals, console, launcher relay and virt-handler logs.
 
     A pytest session fixture exits normally even when its tests failed, so its caller supplies a
     teardown-time predicate in addition to the exception-unwind protection here.
@@ -170,7 +199,7 @@ def capture(
     }
     stop = threading.Event()
     with ThreadPoolExecutor(max_workers=1, thread_name_prefix="vm-guest-logs") as executor:
-        copying = executor.submit(_copy, log_root, scopes, stop)
+        copying = executor.submit(_copy, log_root, scopes, storage_root, namespace, destination, stop)
         try:
             yield
         except BaseException:

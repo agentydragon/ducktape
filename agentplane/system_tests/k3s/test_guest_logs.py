@@ -75,6 +75,7 @@ def test_retains_unlinked_logs_and_new_incarnations(tmp_path: Path) -> None:
     with (
         capture(
             log_root=logs,
+            storage_root=tmp_path / "storage",
             namespace="systest",
             kubevirt_namespace="kubevirt",
             destination=outputs,
@@ -118,6 +119,7 @@ def test_requires_shutdown_for_each_launcher(tmp_path: Path) -> None:
         pytest.raises(GuestShutdownError, match="systest_virt-launcher-test_uid-two"),
         capture(
             log_root=logs,
+            storage_root=tmp_path / "storage",
             namespace="systest",
             kubevirt_namespace="kubevirt",
             destination=outputs,
@@ -125,6 +127,43 @@ def test_requires_shutdown_for_each_launcher(tmp_path: Path) -> None:
         ),
     ):
         pass
+
+
+def test_retains_native_journal_header_changes_after_unlink_on_failure(tmp_path: Path) -> None:
+    storage = tmp_path / "storage"
+    source = storage / "pvc-one_systest_vm-state/.systemd-journal/machine/system.journal"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"initial header\x00entries")
+    foreign = storage / "pvc-two_other_vm-state/.systemd-journal/machine/system.journal"
+    foreign.parent.mkdir(parents=True)
+    foreign.write_bytes(b"FOREIGN_JOURNAL")
+    outputs = tmp_path / "artifacts"
+
+    def fail_scenario() -> None:
+        with (
+            capture(
+                log_root=tmp_path / "pods",
+                storage_root=storage,
+                namespace="systest",
+                kubevirt_namespace="kubevirt",
+                destination=outputs,
+                validate_shutdown=lambda: True,
+            ),
+            source.open("r+b") as journal,
+        ):
+            for attempt in Retrying(stop=stop_after_delay(5), wait=wait_fixed(0.01), reraise=True):
+                with attempt:
+                    assert [path.read_bytes() for path in outputs.rglob("*.journal")] == [b"initial header\x00entries"]
+            source.unlink()
+            journal.seek(0)
+            journal.write(b"updated header\x00entries\x00shutdown")
+            journal.flush()
+            raise ValueError("scenario failed")
+
+    with pytest.raises(ValueError, match="scenario failed"):
+        fail_scenario()
+
+    assert [path.read_bytes() for path in outputs.rglob("*.journal")] == [b"updated header\x00entries\x00shutdown"]
 
 
 def test_retains_failure_evidence_without_masking_exception(tmp_path: Path) -> None:
@@ -137,6 +176,7 @@ def test_retains_failure_evidence_without_masking_exception(tmp_path: Path) -> N
         pytest.raises(ValueError, match="original scenario failure") as caught,
         capture(
             log_root=logs,
+            storage_root=tmp_path / "storage",
             namespace="systest",
             kubevirt_namespace="kubevirt",
             destination=outputs,
@@ -157,6 +197,7 @@ def test_session_failures_disable_validation_at_teardown(tmp_path: Path) -> None
     failures = 0
     with capture(
         log_root=logs,
+        storage_root=tmp_path / "storage",
         namespace="systest",
         kubevirt_namespace="kubevirt",
         destination=outputs,
@@ -183,6 +224,7 @@ def test_successful_teardown_requires_complete_evidence_from_selected_guest(tmp_
 
     with capture(
         log_root=logs,
+        storage_root=tmp_path / "storage",
         namespace="systest",
         kubevirt_namespace="kubevirt",
         destination=outputs,
@@ -222,6 +264,7 @@ def test_successful_teardown_reports_incomplete_boot_evidence(tmp_path: Path, ev
         pytest.raises(GuestBootEvidenceError, match=message),
         capture(
             log_root=logs,
+            storage_root=tmp_path / "storage",
             namespace="systest",
             kubevirt_namespace="kubevirt",
             destination=outputs,
@@ -259,6 +302,7 @@ def test_successful_teardown_collects_evidence_split_across_rotated_guest_logs(t
 
     with capture(
         log_root=logs,
+        storage_root=tmp_path / "storage",
         namespace="systest",
         kubevirt_namespace="kubevirt",
         destination=outputs,
@@ -286,6 +330,7 @@ def test_retains_only_scoped_console_compute_relay_and_handler_logs(tmp_path: Pa
         path.write_text(content)
     with capture(
         log_root=logs,
+        storage_root=tmp_path / "storage",
         namespace="systest",
         kubevirt_namespace="kubevirt",
         destination=outputs,
