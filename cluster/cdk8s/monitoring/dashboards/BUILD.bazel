@@ -25,10 +25,16 @@ py_library(
 )
 
 grafana_dashboard_visual_test(
-    name = "piraeus_dashboard_visual_test",
+    name = "piraeus_query_backed_visual_test",
     src = "test_piraeus_dashboard_visual.py",
     dashboard = ":piraeus-storage.json",
     fixture = ":piraeus_metrics",
+)
+
+grafana_dashboard_visual_test(
+    name = "piraeus_dashboard_visual_test",
+    dashboard = ":piraeus-storage.json",
+    fixture_data = ":visual_fixtures/piraeus-storage.json",
 )
 
 grafana_dashboard_visual_test(
@@ -52,6 +58,7 @@ grafana_dashboard_visual_test(
 grafana_dashboard_visual_test(
     name = "home_network_overview_dashboard_visual_test",
     dashboard = ":home-network-overview.json",
+    fixture_data = ":visual_fixtures/home-network-overview.json",
 )
 
 grafana_dashboard_visual_test(

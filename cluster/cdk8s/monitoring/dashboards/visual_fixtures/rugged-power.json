@@ -1,8 +1,47 @@
 {
-  "variables": {
-    "instance": ["node-a", "node-b"]
+  "panels": {
+    "1": {
+      "A": {
+        "frames": []
+      }
+    },
+    "2": {
+      "A": {
+        "frames": []
+      }
+    },
+    "3": {
+      "A": {
+        "frames": []
+      },
+      "B": {
+        "frames": []
+      },
+      "C": {
+        "frames": []
+      }
+    },
+    "4": {
+      "A": {
+        "frames": []
+      }
+    },
+    "5": {
+      "A": {
+        "frames": []
+      }
+    }
   },
-  "labels": {
-    "instance": ["node-a", "node-b"]
+  "variables": {
+    "instance": []
+  },
+  "capture_notes": {
+    "1/A": "selected All in place of an empty dashboard variable",
+    "2/A": "selected All in place of an empty dashboard variable",
+    "4/A": "selected All in place of an empty dashboard variable",
+    "5/A": "selected All in place of an empty dashboard variable",
+    "3/A": "selected All in place of an empty dashboard variable",
+    "3/B": "selected All in place of an empty dashboard variable",
+    "3/C": "selected All in place of an empty dashboard variable"
   }
 }

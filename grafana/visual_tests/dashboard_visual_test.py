@@ -1,4 +1,4 @@
-"""Render a dashboard with deterministic, synthetic datasource responses.
+"""Render a dashboard with recorded, sanitized datasource responses.
 
 This scenario tests dashboard appearance, not query execution. A dashboard can
 provide a custom scenario with real isolated datasources when query behavior matters.
@@ -16,7 +16,7 @@ import pytest
 import pytest_bazel
 from playwright.async_api import async_playwright, expect
 
-from grafana.visual_tests.synthetic import synthetic_query
+from grafana.visual_tests.recorded import replay_query, validate_fixture
 from grafana.visual_tests.visual_browser import capture_dashboard
 from grafana.visual_tests.visual_harness import grafana_dashboard, record_stage
 from util.bazel.runfiles import get_required_path
@@ -29,12 +29,11 @@ from util.testing.visual_capture import VisualPage
 async def test_dashboard_visual(tmp_path: Path) -> None:
     dashboard_path = get_required_path(os.environ["GRAFANA_DASHBOARD_RLOCATION"])
     dashboard = json.loads(dashboard_path.read_text())
-    log_panels = {str(panel["id"]) for panel in dashboard.get("panels", []) if panel.get("type") == "logs"}
-    fixture_path = os.environ.get("GRAFANA_FIXTURE_RLOCATION")
-    fixture = json.loads(get_required_path(fixture_path).read_text()) if fixture_path else {}
-    samples = "# TYPE fixture gauge\nfixture 1 1704067200\n# EOF\n"
+    fixture_path = os.environ["GRAFANA_FIXTURE_RLOCATION"]
+    fixture = json.loads(get_required_path(fixture_path).read_text())
+    validate_fixture(dashboard, fixture)
     with grafana_dashboard(
-        tmp_path, dashboard_path, samples, render_fixture=True, variables=fixture.get("variables", {})
+        tmp_path, dashboard_path, "", render_fixture=True, variables=fixture.get("variables", {})
     ) as base_url:
         async with async_playwright() as playwright:
             async with deterministic_browser_context(
@@ -42,11 +41,14 @@ async def test_dashboard_visual(tmp_path: Path) -> None:
             ) as context:
                 page = await context.new_page()
                 seen = asyncio.Event()
-                await page.route("**/api/ds/query*", lambda route: synthetic_query(route, seen, fixture, log_panels))
+                missing: list[str] = []
+                await page.route(
+                    "**/api/ds/query*", lambda route: replay_query(route, seen, fixture, dashboard, missing)
+                )
                 captures = tmp_path / "captures"
-                view = VisualPage(page, output_dir=captures, title=f"{dashboard['title']} (synthetic)")
+                view = VisualPage(page, output_dir=captures, title=f"{dashboard['title']} (recorded)")
                 start = FROZEN_NOW_MS - 24 * 60 * 60 * 1000
-                record_stage("loading dashboard with synthetic query results")
+                record_stage("loading dashboard with recorded query results")
                 await page.goto(
                     f"{base_url}/d/{dashboard['uid']}/dashboard?orgId=1&kiosk=1&render=1&fullPageImage=true&from={start}&to={FROZEN_NOW_MS}",
                     wait_until="domcontentloaded",
@@ -55,6 +57,7 @@ async def test_dashboard_visual(tmp_path: Path) -> None:
                 await asyncio.wait_for(seen.wait(), timeout=20)
                 record_stage("capturing full dashboard")
                 await capture_dashboard(view)
+                assert not missing, f"missing recorded datasource results: {missing}"
                 assert await page.get_by_text("Data is missing a string field", exact=True).count() == 0
                 errors = page.get_by_test_id("data-testid Panel status error")
                 if await errors.count():

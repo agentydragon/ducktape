@@ -180,5 +180,8 @@ def _prepare_render_fixture(dashboard: dict, variables: dict[str, list[str]]) ->
     for variable in dashboard.get("templating", {}).get("list", []):
         if variable.get("type") != "query":
             continue
-        values = variables.get(variable.get("name"), ["example", "other"])
+        name = variable["name"]
+        if name not in variables:
+            raise ValueError(f"missing recorded choices for dashboard variable {name}")
+        values = variables[name]
         variable.update(type="custom", query=",".join(values), options=[], current={})

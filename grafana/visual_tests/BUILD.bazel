@@ -10,13 +10,9 @@ package(
 exports_files(["dashboard_visual_test.py"])
 
 py_library(
-    name = "synthetic",
-    srcs = ["synthetic.py"],
-    deps = [
-        "//util/testing:frontend_visual",
-        "//util/testing:undeclared_outputs",
-        "@pypi//playwright",
-    ],
+    name = "recorded",
+    srcs = ["recorded.py"],
+    deps = ["@pypi//playwright"],
 )
 
 py_library(
@@ -45,10 +41,10 @@ py_library(
 )
 
 py_test(
-    name = "test_synthetic",
-    srcs = ["test_synthetic.py"],
+    name = "test_recorded",
+    srcs = ["test_recorded.py"],
     deps = [
-        ":synthetic",
+        ":recorded",
         ":visual_harness",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

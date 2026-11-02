@@ -44,4 +44,5 @@ py_library(
 grafana_dashboard_visual_test(
     name = "dashboard_visual_test",
     dashboard = ":dashboard.json",
+    fixture_data = ":dashboard_visual_fixture.json",
 )

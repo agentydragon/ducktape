@@ -5,7 +5,7 @@ Each checked-in source dashboard JSON has a neighboring
 covered by their source. The macro in `//grafana/visual_tests:visual_test.bzl` supplies the Docker,
 runfiles and visual-publication wiring and uses a shared scenario by default.
 
-Declare a target beside the dashboard and optionally supply fixture data:
+Declare a target beside the dashboard and supply its fixture data:
 
 ```bzl
 load("//grafana/visual_tests:visual_test.bzl", "grafana_dashboard_visual_test")
@@ -17,38 +17,44 @@ grafana_dashboard_visual_test(
 )
 ```
 
-The shared scenario starts isolated Grafana and supplies fixed synthetic query
+The shared scenario starts isolated Grafana and replays dashboard-owned query
 responses. It renders the dashboard in kiosk mode, activates lazy panels, waits
 for queries to finish, then publishes one full-page screenshot via
 `visual-review.json`. For this appearance-only fixture it converts query
 variables to fixed choices, maps Loki and ClickHouse datasource references to
-the built-in Prometheus frontend, and intercepts datasource queries. By default
-it returns generic numeric series or bounded table rows. `fixture_data` can
-provide choices for query variables, pairs of label values for queries,
-and panel-specific table columns or series names. For example:
+the built-in Prometheus frontend, and intercepts datasource queries. Each fixture
+explicitly provides choices for query variables and a Grafana response for every
+panel and query. For example:
 
 ```json
 {
   "variables": { "node": ["node-a", "node-b"] },
-  "labels": { "node": ["node-a", "node-b"] },
   "panels": {
-    "1": { "series": ["first", "second"] },
-    "2": { "table": [{ "name": "status", "type": "string", "values": ["ready", "pending"] }] }
+    "1": {
+      "A": {
+        "frames": [{ "schema": { "fields": [{ "name": "Value", "type": "number" }] }, "data": { "values": [[42]] } }]
+      }
+    }
   }
 }
 ```
 
-Labels are selected by their presence in the query expression or legend format.
-Each label supplies exactly two values, one per synthetic row or series. Panel IDs and
-their table columns belong to the dashboard's fixture; see AIQuota for an example.
+The fixtures were captured from live Grafana responses over representative time
+ranges, then trimmed. Identifying strings and log contents are replaced with
+placeholders; selected storage, memory and CPU values retain their measured
+scale and history. Other numeric series are normalized. Capture notes identify
+queries that needed a correction to obtain data. An absent query or variable
+fixture fails the test; an explicitly empty frame represents a real empty result.
+Repeated panels can provide `variant_variable` and `variants` keyed by the
+selected fixture value, so each repeated row uses its own recorded data.
 
 This scenario does **not** execute or validate PromQL, LogQL or SQL, datasource
-plugins, production substitutions, or dashboard-specific data shapes. Panels
-without tailored fixtures may not look like production. A green test only
-means Grafana loaded and produced these synthetic screenshots. Add a custom
-scenario and fixture where richer coverage is needed.
+plugins, or production substitutions. The fixtures preserve captured data shapes,
+but may not cover every variable choice or current live state. A green test only
+means Grafana loaded and produced these recorded-data screenshots. Add a custom
+scenario and fixture where query execution coverage is needed.
 
-The Piraeus target demonstrates that extension: it uses the actual dashboard
+The additional Piraeus query-backed target demonstrates that extension: it uses the dashboard
 queries against a fixed synthetic Prometheus TSDB and captures the full
 dashboard. Its target, scenario, and metrics fixture live beside the JSON.
 Neither mode contacts production or reads cluster credentials.
