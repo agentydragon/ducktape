@@ -59,6 +59,7 @@ async def test_dashboard_visual(tmp_path: Path) -> None:
                 await capture_dashboard(view)
                 assert not missing, f"missing recorded datasource results: {missing}"
                 assert await page.get_by_text("Data is missing a string field", exact=True).count() == 0
+                assert await page.get_by_text("An unexpected error happened", exact=True).count() == 0
                 errors = page.get_by_test_id("data-testid Panel status error")
                 if await errors.count():
                     await errors.first.click()

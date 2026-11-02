@@ -54,11 +54,11 @@
                   1738409372891, 1738409387891, 1738409407891, 1738409422891, 1738409442891, 1738409457891
                 ],
                 [
-                  1, 27.5, 27.5, 27.5, 27.5, 27.5, 27.5, 27.5, 27.5, 1, 1, 1, 1, 1, 1, 27.5, 27.5, 27.5, 1, 1, 1, 1, 1,
-                  1, 1, 1, 27.5, 42.5, 42.5, 42.5, 42.5, 50.0, 57.5, 57.5, 57.5, 57.5, 57.5, 57.5, 57.5, 57.5, 57.5,
-                  57.5, 57.5, 50.0, 35.0, 35.0, 35.0, 35.0, 27.5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 42.5, 42.5, 42.5,
-                  42.5, 42.5, 42.5, 42.5, 57.5, 57.5, 57.5, 57.5, 57.5, 80.0, 80.0, 80.0, 80.0, 80.0, 72.5, 57.5, 57.5,
-                  57.5, 57.5, 57.5, 50.0, 35.0, 35.0, 35.0, 35.0, 35.0, 27.5
+                  1, 2.75, 2.75, 2.75, 2.75, 2.75, 2.75, 2.75, 2.75, 1, 1, 1, 1, 1, 1, 2.75, 2.75, 2.75, 1, 1, 1, 1, 1,
+                  1, 1, 1, 2.75, 4.25, 4.25, 4.25, 4.25, 5.0, 5.75, 5.75, 5.75, 5.75, 5.75, 5.75, 5.75, 5.75, 5.75,
+                  5.75, 5.75, 5.0, 3.5, 3.5, 3.5, 3.5, 2.75, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4.25, 4.25, 4.25, 4.25,
+                  4.25, 4.25, 4.25, 5.75, 5.75, 5.75, 5.75, 5.75, 8.0, 8.0, 8.0, 8.0, 8.0, 7.25, 5.75, 5.75, 5.75, 5.75,
+                  5.75, 5.0, 3.5, 3.5, 3.5, 3.5, 3.5, 2.75
                 ]
               ]
             }
@@ -168,7 +168,7 @@
               ]
             },
             "data": {
-              "values": [[1738411148211], [50]]
+              "values": [[1738411148211], [5.0]]
             }
           }
         ]
@@ -334,7 +334,10 @@
             "schema": {
               "refId": "A",
               "meta": {
-                "typeVersion": [0, 0]
+                "typeVersion": [0, 0],
+                "custom": {
+                  "frameType": "LabeledTimeValues"
+                }
               },
               "fields": [
                 {
@@ -359,17 +362,22 @@
                   }
                 },
                 {
-                  "name": "field_4",
+                  "name": "tsNs",
                   "type": "string",
                   "typeInfo": {
                     "frame": "string"
                   }
                 },
                 {
-                  "name": "field_5",
+                  "name": "labelTypes",
                   "type": "other",
                   "typeInfo": {
                     "frame": "json.RawMessage"
+                  },
+                  "config": {
+                    "custom": {
+                      "hidden": true
+                    }
                   }
                 },
                 {
@@ -384,26 +392,146 @@
             "data": {
               "values": [
                 [
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  },
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  },
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  },
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  },
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  },
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  },
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  },
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  },
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  },
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  },
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  },
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  },
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  },
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  },
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  },
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  },
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  },
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  },
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  },
+                  {
+                    "detected_level": "info",
+                    "job": "job-2",
+                    "level": "info",
+                    "node": "node-a",
+                    "service_name": "service-name-1"
+                  }
                 ],
                 [
                   1738410968863, 1738409458409, 1738409160685, 1738409160383, 1738409144356, 1738409068882,
@@ -434,48 +562,168 @@
                   "redacted log entry 20"
                 ],
                 [
-                  "tsns-1",
-                  "tsns-2",
-                  "tsns-3",
-                  "tsns-4",
-                  "tsns-5",
-                  "tsns-6",
-                  "tsns-7",
-                  "tsns-8",
-                  "tsns-9",
-                  "tsns-10",
-                  "tsns-11",
-                  "tsns-12",
-                  "tsns-13",
-                  "tsns-14",
-                  "tsns-15",
-                  "tsns-16",
-                  "tsns-17",
-                  "tsns-18",
-                  "tsns-19",
-                  "tsns-20"
+                  "1738410968863022000",
+                  "1738409458409551000",
+                  "1738409160685645000",
+                  "1738409160383619000",
+                  "1738409144356526000",
+                  "1738409068882097000",
+                  "1738409066204655000",
+                  "1738408973389527000",
+                  "1738408952008533000",
+                  "1738408951717727000",
+                  "1738408834593637000",
+                  "1738408508580560000",
+                  "1738408146264571000",
+                  "1738408143661645000",
+                  "1738408125354533000",
+                  "1738408057167555000",
+                  "1738408056781636000",
+                  "1738407919167711000",
+                  "1738407848617614000",
+                  "1738407603934551000"
                 ],
                 [
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null,
-                  null
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  },
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  },
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  },
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  },
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  },
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  },
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  },
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  },
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  },
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  },
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  },
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  },
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  },
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  },
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  },
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  },
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  },
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  },
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  },
+                  {
+                    "detected_level": "S",
+                    "job": "I",
+                    "level": "I",
+                    "node": "I",
+                    "service_name": "I"
+                  }
                 ],
                 [
                   "id-1",
@@ -499,6 +747,17 @@
                   "id-19",
                   "id-20"
                 ]
+              ],
+              "nanos": [
+                null,
+                [
+                  22000, 551000, 645000, 619000, 526000, 97000, 655000, 527000, 533000, 727000, 637000, 560000, 571000,
+                  645000, 533000, 555000, 636000, 711000, 614000, 551000
+                ],
+                null,
+                null,
+                null,
+                null
               ]
             }
           }
