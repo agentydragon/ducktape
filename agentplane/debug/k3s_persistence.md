@@ -2,8 +2,8 @@
 
 ## Expansion to every k3s application suite
 
-Persistence is the default for every `k3s_suite` declaration: Pod, Dispatcher, MCP Actions,
-MCP Services, normal VM, manual VM, profile VM and real-model. Their standard targets use retained
+Persistence is the default for every `k3s_suite` declaration: Pod, Dispatcher, all MCP suites,
+normal VM, manual VM, profile VM and real-model. Their standard targets use retained
 infrastructure directly; the separate manual comparison targets have been removed. Existing manual
 and live-model tags continue to control suite selection. Application fixtures remain fresh per action.
 
@@ -23,6 +23,25 @@ retain their diagnostic semantics.
 The current snapshot families are `k3s-persistence-v7-{pod,vm}`. Every application stack uses
 persistence without an environment opt-in. Historical commands and commit-pinned links below retain
 the comparison-target names used when those measurements were collected.
+
+### Default enablement validation
+
+PR head `0e453d3e5a7b1b6124481cf93b106ec9dadd061a` enabled persistence directly in every standard
+suite, removed the environment opt-in and deleted the parallel comparison targets.
+[The focused RBE build](https://app.buildbuddy.io/invocation/4fd95865-e48a-496b-b099-972f9935283a)
+passed all eight standard targets present on that branch plus the changed stack library and its
+lint/type aspects. [The naming/lifecycle run](https://app.buildbuddy.io/invocation/0e1d24b8-9d8e-483a-922f-c747862a32c5)
+also passed the real-k3s lifecycle checks, cross-action probe and full 13-case Pod suite.
+
+[Ordinary merge CI](https://app.buildbuddy.io/invocation/5ca7fb3e-a586-5644-9092-692289673982)
+completed successfully at synthetic merge `4994d4f86a4f9c8b84eb7aeeae3d8a47211df6ab`, including
+seven standard k3s suites: Pod, Dispatcher, VM, MCP Actions, MCP Services, MCP Delegation and MCP Parent
+Delegation. The last two were added on devel during this work and inherited persistence through the
+shared macro. Their existing target names need no additional flags. All seven emitted
+`persistence-suite.json` with cleanup complete; VM cleanup released its three owned loop devices.
+The standard snapshot families rebuilt cold after the implementation fingerprint changed. This
+validates default activation, rather than a new warm-timing comparison. Required Bazel, import and
+pre-commit checks passed at that head. Subsequent changes in this update are documentation only.
 
 ### Non-VM cold and warm results
 
@@ -141,7 +160,7 @@ establish reliable fleet warm availability or an end-to-end 2x CI improvement.
 
 Each command uses `bbr test --config=ci --test_tag_filters= --nocache_test_results` with the explicit
 standard suite labels. The final all-suite command additionally passes `--test_arg=--log-cli-level=WARNING`
-so successful cleanup's API warnings remain visible. The eight labels are:
+so successful cleanup's API warnings remain visible. The original eight suite labels are:
 
 - `//agentplane/system_tests/suites:test_pod`
 - `//agentplane/system_tests/suites:test_dispatcher`

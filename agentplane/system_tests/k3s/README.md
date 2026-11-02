@@ -10,7 +10,7 @@ containerd keeps unpacked image layers (its overlayfs snapshotter's root) on a t
 with VM Sandboxes ([measurements](debug/stack_timings.md#image-layers-in-memory-2026-10-21)).
 
 Every `k3s_suite` retains live k3s and cert-manager/trust-manager in hosted RBE snapshots. VM suites
-also retain KubeVirt and Kyverno. This is the default for Pod, Dispatcher, both MCP suites,
+also retain KubeVirt and Kyverno. This is the default for Pod, Dispatcher, all MCP suites,
 normal/manual/profile VM suites and real-model tests; there are no separate persistence variants.
 The existing manual/live tags still determine which suites run in CI, and real-model tests require
 `OPENAI_API_KEY`.
