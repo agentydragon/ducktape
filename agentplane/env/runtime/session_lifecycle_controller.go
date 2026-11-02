@@ -21,7 +21,7 @@ type sessionLifecycleController struct{ runtime *Runtime }
 func (*sessionLifecycleController) Name() string { return sessionLifecycleControllerName }
 func (*sessionLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{lifecycle.EnvironmentDesiredStateType, executionSignalType, lifecycle.AdmissionCountType, session.InspectionStatusType, session.LifecycleStatusType, journalSealType, retained.IngressAckType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
+	for _, kind := range []string{lifecycle.EnvironmentDesiredStateType, executionSignalType, lifecycle.AdmissionCountType, session.OwnerStatusType, session.InspectionStatusType, session.LifecycleStatusType, journalSealType, retained.IngressAckType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
 		inputs = append(inputs, controller.Input{Namespace: lifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -89,8 +89,18 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		return err
 	}
 	for _, id := range ids {
-		if _, err := c.runtime.sessions.Load(ctx, id); err != nil {
+		owner, found, err := session.ReadOwnerStatus(ctx, r, id)
+		if err != nil {
 			return err
+		}
+		if !found || !owner.Ready {
+			current.Stage = lifecycle.Draining
+			current.Blocker = lifecycle.Blocker{
+				Kind: lifecycle.SessionHaltPending, ResourceType: session.OwnerStatusType,
+				ResourceID: id, ResourcePresent: found, Error: owner.Error,
+			}
+			current.Error = owner.Error
+			return write()
 		}
 	}
 	if current.Stage < lifecycle.Halting {

@@ -17,6 +17,10 @@ flowchart LR
   Agg(["environment-session-lifecycle"])
   Aggregate["EnvironmentSessionStatuses"]
   SC(["session-lifecycle"])
+  SOwner(["session-owner"])
+  SR["SessionRecords"]
+  Retry["SessionOwnerRetries"]
+  OwnerStatus["SessionOwnerStatuses"]
   SI["SessionReconcileSnapshots"]
   SS["SessionLifecycleStatuses"]
   Inspect["SessionInspectionStatuses"]
@@ -39,9 +43,12 @@ flowchart LR
   ED --> RC
   API -.->|"typed transition request"| RC
   RC -.->|"operation and exact-generation Close completion"| API
-  ED & Count & Inspect & SS & AS & PS & Seal & EI --> Agg
+  ED & Count & OwnerStatus & Inspect & SS & AS & PS & Seal & EI --> Agg
   Agg --> Aggregate
-  SI & ED & Count & Aggregate & AS & SO --> SC
+  SR --> SOwner --> OwnerStatus
+  API --> Retry --> SOwner
+  SOwner --> SI
+  SI & OwnerStatus & ED & Count & Aggregate & AS & SO --> SC
   SC --> SS
   AI & ED & Count & Aggregate & ES --> AC
   AC --> AS
@@ -59,8 +66,9 @@ flowchart LR
 | Controller                      | Watched inputs                                                                                                                                                      | Exclusive output and effect boundary                                                                         |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `environment-runtime-lifecycle` | Environment desired state; direct transition requests and worker-completion channels                                                                                | Direct operation completion; Runtime-owned workers perform blocking transition/shutdown steps                |
+| `session-owner`                 | Session record (primary); explicit fresh-reservation retry (mapped)                                                                                                 | Session owner status; construct and recover one live Session and its journal                                 |
 | `environment-session-lifecycle` | Environment desired state, admission accounting, inspection and Session statuses, journal seals, ACKs, app-server status, process desired/status, Execution signals | Aggregate Session status; native cleanup, exact fence, seal and durable ACK predicates                       |
-| `session-lifecycle`             | Session snapshot (primary); desired state, accepted admissions, aggregate status, app-server status and operation states (mapped)                                   | Session lifecycle status; guarded per-Session prepare/dispatch registration and one-off halt/seal operations |
+| `session-lifecycle`             | Session snapshot (primary); owner status, desired state, admissions, aggregate status, app-server status and operation states (mapped)                              | Session lifecycle status; guarded per-Session prepare/dispatch registration and one-off halt/seal operations |
 | `codex-app-server-lifecycle`    | App-server signal including operation revisions (primary); desired state, accepted admissions, aggregate status and Execution status (mapped)                       | App-server status; guarded initialization, cleanup and a separate live Execution-owner readiness check       |
 | `execution-lifecycle`           | Execution signal (primary), Execution status (mapped)                                                                                                               | Execution status; exact-attempt start/loss/fence observations, retaining an unfenced owner on failure        |
 | `bootstrap-lifecycle`           | Bootstrap request (primary), status and operation state (mapped)                                                                                                    | Bootstrap status; selected bytes and durable event sequence govern one accepted attempt                      |
@@ -76,6 +84,14 @@ resource contains outstanding accepted work and `AcceptedGeneration`, the last R
 accepted by the synchronous gate. It wakes controllers after transition-owned recovery finishes;
 it neither copies lifecycle configuration nor authorizes a stale effect. Native registration still
 checks Runtime's live gate under its mutex.
+
+The `session-owner` controller reconciles each retained Session record. Startup waits for the
+initial inventory's owner statuses before History starts, and shutdown waits for every retained
+Session owner before evaluating its other barriers. A fresh reservation is marked under the owner
+lock before the controller can load it, so it is not mistaken for an interrupted retained Session.
+Owner status is live-only; journal recovery and the durable record remain authoritative on restart.
+An explicitly retried fresh reservation wakes the owner through a live-only `SessionOwnerRetries`
+resource after a pre-publication failure; it does not replay a native effect or interrupted setup.
 
 Session snapshots carry demand, setup, pending commands, process liveness and inspection facts.
 Session and app-server statuses record `EnvironmentGeneration`; demand and `ObservedDemand` are

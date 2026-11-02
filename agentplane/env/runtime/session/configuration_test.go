@@ -75,7 +75,7 @@ func TestConfigurationBatchPublicationAndRecovery(t *testing.T) {
 			manager.mu.Lock()
 			delete(manager.sessions, s.id)
 			manager.mu.Unlock()
-			recovered, err := manager.Load(ctx, s.id)
+			recovered, err := manager.load(ctx, s.id)
 			if err != nil {
 				t.Fatal(err)
 			}

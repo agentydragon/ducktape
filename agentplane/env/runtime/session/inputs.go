@@ -14,6 +14,10 @@ import (
 )
 
 func (m *Manager) publishSession(s *Session, demand bool) {
+	m.fail(m.publishSessionState(s, demand))
+}
+
+func (m *Manager) publishSessionState(s *Session, demand bool) error {
 	m.publishMu.Lock()
 	defer m.publishMu.Unlock()
 	var input ReconcileSnapshot
@@ -29,7 +33,7 @@ func (m *Manager) publishSession(s *Session, demand bool) {
 	s.mu.Unlock()
 	input.DispatchBlocked = adapter == nil || adapter.BlocksCommandDispatch()
 	// COSI retries this updater on conflict, so each demand increment starts from the current spec.
-	m.fail(safe.StateModify(m.ctx, m.state, componentResource(s.id, ReconcileSnapshot{}), func(current *typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]) error {
+	if err := safe.StateModify(m.ctx, m.state, componentResource(s.id, ReconcileSnapshot{}), func(current *typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]) error {
 		next := input
 		next.Demand = current.TypedSpec().Demand
 		if demand {
@@ -37,9 +41,11 @@ func (m *Manager) publishSession(s *Session, demand bool) {
 		}
 		*current.TypedSpec() = next
 		return nil
-	}, state.WithUpdateOwner(lifecycle.EnvironmentOwner)))
+	}, state.WithUpdateOwner(lifecycle.EnvironmentOwner)); err != nil {
+		return err
+	}
 	drain := InspectionStatus{Inspecting: input.Inspections != 0 || input.InspectionRunning}
-	m.fail(publish(m.ctx, m.state, s.id, drain))
+	return publish(m.ctx, m.state, s.id, drain)
 }
 
 func (s *Session) wake() {

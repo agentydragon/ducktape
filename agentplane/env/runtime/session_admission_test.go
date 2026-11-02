@@ -379,6 +379,47 @@ type failJournalSealPublicationOnce struct {
 	fail    atomic.Bool
 }
 
+type failSessionOwnerPublication struct {
+	state.State
+	typ     string
+	failure error
+	armed   atomic.Bool
+}
+
+func (s *failSessionOwnerPublication) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
+	if value.Metadata().Type() == s.typ && s.armed.CompareAndSwap(true, false) {
+		return s.failure
+	}
+	return s.State.Modify(ctx, value, update, opts...)
+}
+
+func TestOpenSessionFailsWhenOwnerPublicationFails(t *testing.T) {
+	for _, resourceType := range []string{session.ReconcileSnapshotType, session.InspectionStatusType} {
+		t.Run(resourceType, func(t *testing.T) {
+			proxy := modelConfigServer(t)
+			workspace := t.TempDir()
+			failure := errors.New("injected Session publication failure")
+			resources := &failSessionOwnerPublication{State: state.WrapCore(namespaced.NewState(inmem.Build)), typ: resourceType, failure: failure}
+			config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
+			config.expectCloseError = true
+			r := newSessionTestRuntimeWithState(t, config, resources)
+			resources.armed.Store(true)
+			request := openLifecycleSession("publication-failure", filepath.Join(workspace, "project"))
+			if _, err := r.OpenSession(sessionCallContext(r, context.Background()), request); status.Code(err) != codes.Unavailable {
+				t.Fatalf("OpenSession error = %v, want Unavailable", err)
+			}
+			select {
+			case err := <-r.fatal:
+				if !errors.Is(err, failure) {
+					t.Fatalf("Runtime failure = %v, want %v", err, failure)
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("Session publication failure did not fail Runtime")
+			}
+		})
+	}
+}
+
 func (s *failJournalSealPublicationOnce) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
 	if value.Metadata().Type() == journalSealType && s.fail.CompareAndSwap(true, false) {
 		return s.failure

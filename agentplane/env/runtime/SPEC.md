@@ -81,7 +81,8 @@ live Runtime-owned executor lifetime; backend loss closes admission without wait
 
 ## Startup, Quiesce and Close
 
-Runtime recovers Sessions, observes exact-generation native cleanup and starts History only after
+The COSI Session owner reconciles retained records into live Sessions and reports recovery success
+or failure. Runtime waits for the initial inventory, observes exact-generation native cleanup and starts History only after
 successful recovery. Public control listens after that startup barrier. Runtime failure or Close
 wakes startup waiters even while recovery is unfinished.
 

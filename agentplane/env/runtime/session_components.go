@@ -94,6 +94,9 @@ func (r *Runtime) initializeSessions() error {
 			return err
 		}
 	}
+	if err := r.lifecycleEngine.RegisterQController(r.sessions.OwnerController()); err != nil {
+		return err
+	}
 	return r.lifecycleEngine.RegisterQController(r.sessions.Controller())
 }
 

@@ -17,10 +17,146 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+	"go.uber.org/zap"
 )
+
+func startSessionOwner(t *testing.T, ctx context.Context, resources state.State, manager *Manager) {
+	t.Helper()
+	engine, err := cosiruntime.NewRuntime(resources, zap.L())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.RegisterQController(manager.OwnerController()); err != nil {
+		t.Fatal(err)
+	}
+	engineCtx, cancel := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() { done <- engine.Run(engineCtx) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("Session owner engine: %v", err)
+		}
+	})
+}
+
+func TestSessionOwnerReconcilesRetainedRecord(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	root := t.TempDir()
+	resources := state.WrapCore(namespaced.NewState(inmem.Build))
+	store, err := retained.NewStore(filepath.Join(root, "sessions"), resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := retained.NewRecord(&sessionpb.SessionSpec{
+		Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: root, Model: "test-model",
+	}, "echo interrupted", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Write("retained", record); err != nil {
+		t.Fatal(err)
+	}
+	failures := make(chan error, 1)
+	m, err := NewManager(withTestSessionFacilities(t, Config{
+		Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root),
+		Destination: func(string) string { return "test-destination" },
+		PublishSeal: func(string, *journal.SealState) error { return nil },
+		OnChange:    func() {}, OnError: func(err error) {
+			if err != nil {
+				failures <- err
+			}
+		},
+		ReconcileConcurrency: 1,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := m.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	startSessionOwner(t, ctx, resources, m)
+	if err := m.Startup(ctx); err != nil {
+		t.Fatal(err)
+	}
+	s, err := m.Wait(ctx, "retained")
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, found, err := ReadOwnerStatus(ctx, resources, "retained")
+	if err != nil || !found || !owner.Ready || owner.Error != "" {
+		t.Fatalf("owner status = %+v, found %v, err %v", owner, found, err)
+	}
+	entries, err := s.journal.Since(ctx, 0, 10)
+	if err != nil || len(entries) != 1 || entries[0].GetEvent().GetSetupInterrupted() == nil {
+		t.Fatalf("retained setup recovery = %v, err %v", entries, err)
+	}
+	select {
+	case err := <-failures:
+		t.Fatalf("Session owner failed: %v", err)
+	default:
+	}
+}
+
+func TestSessionOwnerReportsRecoveryFailure(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	root := t.TempDir()
+	resources := state.WrapCore(namespaced.NewState(inmem.Build))
+	store, err := retained.NewStore(filepath.Join(root, "sessions"), resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := retained.NewRecord(&sessionpb.SessionSpec{
+		Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: filepath.Dir(root), Model: "test-model",
+	}, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Write("invalid", record); err != nil {
+		t.Fatal(err)
+	}
+	failures := make(chan error, 1)
+	m, err := NewManager(withTestSessionFacilities(t, Config{
+		Context: ctx, State: resources, Store: store, WorkspaceRoot: root,
+		Destination: func(string) string { return "test-destination" },
+		PublishSeal: func(string, *journal.SealState) error { return nil },
+		OnChange:    func() {}, OnError: func(err error) {
+			if err != nil {
+				failures <- err
+			}
+		},
+		ReconcileConcurrency: 1,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := m.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	startSessionOwner(t, ctx, resources, m)
+	if _, err := m.Wait(ctx, "invalid"); err == nil {
+		t.Fatal("Session with an invalid workspace was marked ready")
+	}
+	owner, found, err := ReadOwnerStatus(ctx, resources, "invalid")
+	if err != nil || !found || owner.Ready || owner.Error == "" {
+		t.Fatalf("owner status = %+v, found %v, err %v", owner, found, err)
+	}
+	select {
+	case <-failures:
+	case <-ctx.Done():
+		t.Fatal("Session recovery failure was not reported")
+	}
+}
 
 func withTestSessionFacilities(t *testing.T, config Config) Config {
 	t.Helper()
@@ -113,6 +249,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	startSessionOwner(t, ctx, resources, m)
 	const loaders = 8
 	loaded := make([]*Session, loaders)
 	loadErrors := make(chan error, loaders+1)
@@ -128,7 +265,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			s, err := m.Load(ctx, "one-session")
+			s, err := m.load(ctx, "one-session")
 			loaded[i] = s
 			if err != nil {
 				loadErrors <- err
@@ -185,7 +322,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 		}
 		go func() {
 			close(started)
-			s, err := m.Load(ctx, "fresh-session")
+			s, err := m.load(ctx, "fresh-session")
 			competingLoad <- loadResult{s, err}
 		}()
 		<-started
@@ -295,7 +432,7 @@ func TestReopenRetryKeepsCOSIIngressAcknowledgementAfterJournalReopened(t *testi
 			t.Errorf("close session manager: %v", err)
 		}
 	})
-	if _, err := m.Load(ctx, "reopen-session"); !errors.Is(err, publishErr) {
+	if _, err := m.load(ctx, "reopen-session"); !errors.Is(err, publishErr) {
 		t.Fatalf("initial load error = %v, want %v after durable journal and acknowledgement reopen", err, publishErr)
 	}
 	if m.Get("reopen-session") != nil {
@@ -310,7 +447,7 @@ func TestReopenRetryKeepsCOSIIngressAcknowledgementAfterJournalReopened(t *testi
 	}
 	environment.Quiesced = true
 
-	s, err := m.Load(ctx, "reopen-session")
+	s, err := m.load(ctx, "reopen-session")
 	if err != nil {
 		t.Fatalf("retry load after durable journal reopen: %v", err)
 	}

@@ -25,6 +25,7 @@ func (c *sessionLifecycleController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
 			{Namespace: lifecycle.Namespace, Type: ReconcileSnapshotType, Kind: controller.InputQPrimary},
+			{Namespace: lifecycle.Namespace, Type: OwnerStatusType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.EnvironmentDesiredStateType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.AdmissionCountType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.AggregateStatusType, Kind: controller.InputQMapped},
@@ -37,6 +38,9 @@ func (c *sessionLifecycleController) Settings() controller.QSettings {
 }
 
 func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
+	if ptr.Type() == OwnerStatusType {
+		return []resource.Pointer{resource.NewMetadata(lifecycle.Namespace, ReconcileSnapshotType, ptr.ID(), resource.VersionUndefined)}, nil
+	}
 	if ptr.Type() == OperationStateType {
 		result, found, err := componentRead[operationState](ctx, r, ptr.ID())
 		if err != nil || !found || result.Controller != ControllerName || result.Session == "" {
@@ -59,6 +63,10 @@ func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger
 }
 
 func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr resource.Pointer) error {
+	owner, found, err := componentRead[OwnerStatus](ctx, r, ptr.ID())
+	if err != nil || !found || !owner.Ready {
+		return err
+	}
 	s := c.manager.Get(ptr.ID())
 	if s == nil {
 		return nil

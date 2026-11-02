@@ -18,6 +18,8 @@ const (
 	ReconcileSnapshotType = "SessionReconcileSnapshots.agentplane"
 	InspectionStatusType  = "SessionInspectionStatuses.agentplane"
 	LifecycleStatusType   = "SessionLifecycleStatuses.agentplane"
+	OwnerStatusType       = "SessionOwnerStatuses.agentplane"
+	ownerRetryType        = "SessionOwnerRetries.agentplane"
 	OperationStateType    = "SessionOperationStates.agentplane"
 	ControllerName        = "session-lifecycle"
 )
@@ -49,6 +51,14 @@ type ReconcileSnapshot struct {
 // InspectionStatus changes only when inspection work starts or settles. The Runtime
 // lifecycle controller needs this barrier, not every Session dispatch dependency.
 type InspectionStatus struct{ Inspecting bool }
+
+// OwnerStatus reports that the live owner has recovered the durable Session.
+type OwnerStatus struct {
+	Ready bool
+	Error string
+}
+
+type ownerRetry struct{ Revision uint64 }
 
 type LifecycleStatus struct {
 	Phase                 Phase
@@ -111,6 +121,10 @@ func (ReconcileSnapshot) resourceType() resource.Type       { return ReconcileSn
 func (value ReconcileSnapshot) DeepCopy() ReconcileSnapshot { return value }
 func (LifecycleStatus) resourceType() resource.Type         { return LifecycleStatusType }
 func (value LifecycleStatus) DeepCopy() LifecycleStatus     { return value }
+func (OwnerStatus) resourceType() resource.Type             { return OwnerStatusType }
+func (value OwnerStatus) DeepCopy() OwnerStatus             { return value }
+func (ownerRetry) resourceType() resource.Type              { return ownerRetryType }
+func (value ownerRetry) DeepCopy() ownerRetry               { return value }
 func (operationState) resourceType() resource.Type          { return OperationStateType }
 func (value operationState) DeepCopy() operationState       { return value }
 
@@ -118,4 +132,8 @@ func (InspectionStatus) resourceType() resource.Type      { return InspectionSta
 func (value InspectionStatus) DeepCopy() InspectionStatus { return value }
 func ReadInspectionStatus(ctx context.Context, reader controller.Reader, id string) (InspectionStatus, bool, error) {
 	return componentRead[InspectionStatus](ctx, reader, id)
+}
+
+func ReadOwnerStatus(ctx context.Context, reader controller.Reader, id string) (OwnerStatus, bool, error) {
+	return componentRead[OwnerStatus](ctx, reader, id)
 }

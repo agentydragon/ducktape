@@ -92,7 +92,10 @@ func (r *Runtime) OpenSession(ctx context.Context, request *environmentruntimepb
 		if !compatibleExecutionPrincipal(record.ExecutionPrincipal, request.GetExecutionPrincipal()) {
 			return nil, status.Error(codes.AlreadyExists, "session exists with a different execution principal")
 		}
-		s, err := r.sessions.Load(r.lifecycleContext, request.SessionId)
+		if err := r.sessions.RetryFresh(r.lifecycleContext, request.SessionId); err != nil {
+			return nil, rpcError(err)
+		}
+		s, err := r.sessions.Wait(r.lifecycleContext, request.SessionId)
 		if err != nil {
 			return nil, rpcError(err)
 		}
@@ -179,7 +182,7 @@ func (r *Runtime) admit(ctx context.Context, id string, c *commandpb.Command) (e
 	if !exists {
 		return nil, status.Error(codes.NotFound, "no such session")
 	}
-	s, err := r.sessions.Load(r.lifecycleContext, id)
+	s, err := r.sessions.Wait(r.lifecycleContext, id)
 	if err != nil {
 		return nil, rpcError(err)
 	}
