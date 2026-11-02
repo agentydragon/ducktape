@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 
-from util.testing.gnome import GnomeSession, exec_output, wait_until
+from util.testing.gnome.session import GnomeSession, exec_output, wait_until
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 

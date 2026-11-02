@@ -8,9 +8,9 @@ import pytest
 import pytest_bazel
 from docker.models.containers import Container, ExecResult
 
-from util.testing import gnome
-from util.testing.gnome import GnomeSession
-from util.testing.gnome_fake_daemon import fake_daemon
+from util.testing.gnome import session
+from util.testing.gnome.fake_daemon import fake_daemon
+from util.testing.gnome.session import GnomeSession
 
 
 def _exec_result(exit_code: int, stdout: bytes = b"", stderr: bytes = b"") -> ExecResult:
@@ -71,7 +71,7 @@ def test_session_log_error_preserves_startup_failure(
     container = MagicMock()
     container.__enter__.return_value = container
     container.get_wrapped_container.return_value = Container()
-    monkeypatch.setattr(gnome, "DockerContainer", lambda image: container)
+    monkeypatch.setattr(session, "DockerContainer", lambda image: container)
     monkeypatch.setattr(GnomeSession, "boot", lambda session: None)
     monkeypatch.setattr(GnomeSession, "wait_for_paint", lambda session: None)
     startup_error = RuntimeError("GNOME startup failed")
@@ -87,7 +87,7 @@ def test_session_log_error_preserves_startup_failure(
     monkeypatch.setattr(GnomeSession, "save_log", save_log)
     with (
         pytest.raises(RuntimeError if startup_fails else OSError) as raised,
-        gnome.gnome_session(
+        session.gnome_session(
             "test-image",
             extension_dir=tmp_path,
             extension="test@example.invalid",

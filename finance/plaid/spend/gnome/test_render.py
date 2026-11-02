@@ -20,8 +20,8 @@ import pytest_bazel
 
 from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
-from util.testing.gnome import GnomeMenuCapture, GnomeSession, gnome_session, string_reply, wait_until
-from util.testing.gnome_fake_daemon import fake_daemon
+from util.testing.gnome.fake_daemon import fake_daemon
+from util.testing.gnome.session import GnomeMenuCapture, GnomeSession, gnome_session, string_reply, wait_until
 from util.testing.output_writer import BoundTestOutputs
 
 _GNOME_SHELL_TEST = OciImage("_main/gnome/test_image/gnome_shell_test.rloc", "gnome-shell-test:pinned")
