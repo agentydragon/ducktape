@@ -36,6 +36,22 @@ pub struct GlobalAccessEvidence {
     pub assumptions: Vec<AssumedEffectReason>,
 }
 
+impl GlobalAccessEvidence {
+    fn record_assumption(&mut self, reason: &AssumedEffectReason) {
+        if let Some(existing) = self
+            .assumptions
+            .iter_mut()
+            .find(|existing| existing.same_report_category(reason))
+        {
+            if reason.is_canonical_predecessor(existing) {
+                *existing = reason.clone();
+            }
+            return;
+        }
+        self.assumptions.push(reason.clone());
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct GlobalMayAccess {
     pub site: GlobalAccessSite,
@@ -46,9 +62,7 @@ impl GlobalAccessEvidence {
     fn extend(&mut self, other: &Self) {
         self.dependencies.extend(&other.dependencies);
         for reason in &other.assumptions {
-            if !self.assumptions.contains(reason) {
-                self.assumptions.push(reason.clone());
-            }
+            self.record_assumption(reason);
         }
     }
 }
@@ -85,9 +99,7 @@ impl EvaluationEffects {
     pub(crate) fn assume(&mut self, reason: Option<&AssumedEffectReason>) {
         if let Some(reason) = reason {
             for evidence in self.global_accesses.values_mut() {
-                if !evidence.assumptions.contains(reason) {
-                    evidence.assumptions.push(reason.clone());
-                }
+                evidence.record_assumption(reason);
             }
         }
     }

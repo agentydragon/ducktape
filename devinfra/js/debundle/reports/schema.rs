@@ -20,6 +20,29 @@ pub struct SourceLocation {
     pub start_column: Option<usize>,
 }
 
+/// Exact property lookup that made accessor execution possible. The owner is
+/// the source unit containing the lookup, and the span uses SWC byte positions
+/// in the analyzed source program.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct PossibleGetterLookupSite {
+    /// `SourceUnitOrdinal` in the analyzed chunk, not a graph node ID.
+    pub lexical_owner: SourceUnitOrdinal,
+    /// SWC byte positions in the analyzed source program.
+    pub span_start: u32,
+    pub span_end: u32,
+}
+
+/// Source of the closure promoted by a possible getter read.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PossibleGetterPromotion {
+    /// The lazy body of one source owner was promoted.
+    LazyOwner { source_owner: SourceUnitOrdinal },
+    /// Raw callbacks reachable through the receiver were promoted without a
+    /// single source owner identifying that callback set.
+    RawCallbacks,
+}
+
 /// Accumulates the minimum start-line and maximum end-line across a
 /// collection of `SourceLocation`s. Used to compute the
 /// `source_line_range` field of `AtomicGroupReport` and similar.
@@ -944,7 +967,10 @@ pub enum AssumedEffectReason {
     PossibleSetter,
     /// A read on an object whose descriptors or prototype may have changed
     /// invokes an accessor installed by code the interpreter did not follow.
-    PossibleGetter,
+    PossibleGetter {
+        lookup: PossibleGetterLookupSite,
+        promotion: PossibleGetterPromotion,
+    },
     /// The whole lazy body of a callable the interpreter executed but could
     /// not model (`callable_inputs`, `array_iteration`), beyond what that
     /// execution reached.
@@ -968,7 +994,21 @@ impl std::fmt::Display for AssumedEffectReason {
                 f.write_str("an escaped callback's closure (`escaped_callback_closure`)")
             }
             Self::PossibleSetter => f.write_str("a possible setter (`possible_setter`)"),
-            Self::PossibleGetter => f.write_str("a possible getter (`possible_getter`)"),
+            Self::PossibleGetter { lookup, promotion } => {
+                write!(
+                    f,
+                    "a possible getter (`possible_getter`, lookup unit:{} span {}..{}",
+                    lookup.lexical_owner, lookup.span_start, lookup.span_end
+                )?;
+                match promotion {
+                    PossibleGetterPromotion::LazyOwner { source_owner } => {
+                        write!(f, ", promoted source owner unit:{source_owner})")
+                    }
+                    PossibleGetterPromotion::RawCallbacks => {
+                        f.write_str(", raw callback fallback without one owner)")
+                    }
+                }
+            }
             Self::WholeBodyPromotion { operation } => {
                 let operation = serde_json::to_value(operation)
                     .expect("execution operations serialize as strings");
@@ -984,6 +1024,38 @@ impl std::fmt::Display for AssumedEffectReason {
             Self::UnresolvedCallClosure => {
                 f.write_str("an unresolved at-init call's closure (`unresolved_call_closure`)")
             }
+        }
+    }
+}
+
+impl AssumedEffectReason {
+    /// Whether two reasons belong to the same report category. Detailed
+    /// possible-getter witnesses intentionally share one category so summary
+    /// evidence can retain one deterministic witness without growing with
+    /// every getter lookup and promoted owner.
+    pub(crate) fn same_report_category(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (Self::PossibleGetter { .. }, Self::PossibleGetter { .. })
+        ) || self == other
+    }
+
+    /// Whether this detailed witness sorts before `other` within the same
+    /// report category. Possible-getter witnesses use source coordinates so
+    /// merge order cannot select a different representative.
+    pub(crate) fn is_canonical_predecessor(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::PossibleGetter {
+                    lookup: left_lookup,
+                    promotion: left_promotion,
+                },
+                Self::PossibleGetter {
+                    lookup: right_lookup,
+                    promotion: right_promotion,
+                },
+            ) => (left_lookup, left_promotion) < (right_lookup, right_promotion),
+            _ => false,
         }
     }
 }

@@ -223,6 +223,14 @@ one, because the timeline joins each effect only to its nearest neighbour: an
 assumed write between two observed ones would otherwise carry their order on
 edges the premise may inert.
 
+`PossibleGetter` retains the triggering lookup's lexical source unit and SWC
+span, plus either the promoted lazy source owner or an explicit raw-callback
+classification when no one owner is identified. The fallback-only map still
+keeps one representative reason per binding, with observed effects clearing
+that reason. The report-only global-access summary chooses the lexicographically
+smallest possible-getter witness per access site rather than retaining every
+lookup/owner combination.
+
 `argument_inputs` is a SHA-bound premise about one positional parameter of one
 direct, stable local function declaration. It says that this helper and its
 callees do not mutate, retain, return, publish, or expose that argument graph
