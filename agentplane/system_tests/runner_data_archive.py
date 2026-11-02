@@ -37,6 +37,16 @@ def _backup(source: Path, destination: Path) -> dict[str, Any]:
     }
 
 
+def _add_tree(output: tarfile.TarFile, source: Path, arcname: str, excluded: set[Path]) -> None:
+    if source in excluded:
+        return
+    is_directory = source.is_dir() and not source.is_symlink()
+    output.add(source, arcname=arcname, recursive=False)
+    if is_directory:
+        for child in sorted(source.iterdir()):
+            _add_tree(output, child, f"{arcname}/{child.name}", excluded)
+
+
 def capture(plan_path: Path) -> int:
     plan = json.loads(plan_path.read_text())
     manifest: dict[str, Any] = {"archive": "pending", "backups": {}}
@@ -54,6 +64,14 @@ def capture(plan_path: Path) -> int:
             manifest["backups"][name] = {"error": f"{type(error).__name__}: {error}"}
         persist()
 
+    # The consistent backup contains the database contents. Its live SQLite sidecars can
+    # appear or disappear while the archive walks a mounted directory.
+    backed_sidecars = {
+        Path(f"{item['source']}{suffix}")
+        for item in plan["backups"]
+        if "path" in manifest["backups"][item["name"]]
+        for suffix in ("-journal", "-wal", "-shm")
+    }
     archive = Path(plan["archive"])
     partial_archive = Path(plan["partial_archive"])
     try:
@@ -63,7 +81,7 @@ def capture(plan_path: Path) -> int:
                 source = Path(mount["source"])
                 if not source.exists():
                     raise FileNotFoundError(source)
-                output.add(source, arcname=mount["destination"].lstrip("/"), recursive=True)
+                _add_tree(output, source, mount["destination"].lstrip("/"), backed_sidecars)
         partial_archive.replace(archive)
         manifest["archive"] = "complete"
         manifest["archive_path"] = str(archive)
