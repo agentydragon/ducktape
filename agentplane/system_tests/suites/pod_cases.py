@@ -170,6 +170,13 @@ async def two_harness_threads_keep_their_context_after_sandbox_suspend_resume(re
         )
 
 
+async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(resources: Resources) -> None:
+    async with resources.open() as (client, sandboxes):
+        await suspend_resume.agent_resumes_an_idle_suspended_pod_with_its_execution_account(
+            resources.cluster, client, resources.dispatcher, sandboxes, resources.scripted
+        )
+
+
 async def an_unknown_thread_is_not_found(resources: Resources) -> None:
     async with resources.http() as http:
         await thread_stream.an_unknown_thread_is_not_found(http)
@@ -215,6 +222,10 @@ SCENARIOS = (
     pytest.param(fresh_workspace_storage_survives_replacement),
     pytest.param(codex_standing_instructions_after_suspend_and_compact, marks=pytest.mark.scripted_model),
     pytest.param(two_harness_threads_keep_their_context_after_sandbox_suspend_resume, marks=pytest.mark.scripted_model),
+    pytest.param(
+        agent_resumes_an_idle_suspended_pod_with_its_execution_account,
+        marks=[pytest.mark.scripted_model, pytest.mark.timeout(600)],
+    ),
     pytest.param(an_unknown_thread_is_not_found),
     pytest.param(
         every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event, marks=pytest.mark.scripted_model
