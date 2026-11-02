@@ -103,6 +103,7 @@ go_test(
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
         "@org_uber_go_zap//:zap",
+        "@org_uber_go_zap//zaptest/observer",
     ],
 )
 

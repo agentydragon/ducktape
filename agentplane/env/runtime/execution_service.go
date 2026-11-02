@@ -10,6 +10,7 @@ import (
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/service"
+	"go.uber.org/zap"
 )
 
 const (
@@ -57,6 +58,15 @@ func newExecutionServiceHandle(config service.Config, run func(context.Context, 
 		case errors.Is(err, service.ErrFencedBackendLoss):
 			// service.RunEmbedded returns this only after adapter shutdown and native
 			// process-domain fencing have completed.
+			zap.L().Warn(
+				"embedded Execution backend loss fenced",
+				zap.String("sandbox_namespace", config.Namespace),
+				zap.String("sandbox_name", config.SandboxName),
+				zap.String("sandbox_uid", config.SandboxUID),
+				zap.String("incarnation_uid", config.IncarnationUID),
+				zap.String("backend", config.Backend),
+				zap.String("loss_reason", err.Error()),
+			)
 		case err == nil && h.expectedStop:
 		case err == nil:
 			h.result = childExit{code: 1, err: errors.New("embedded Execution service exited without a stop request or backend fence")}
