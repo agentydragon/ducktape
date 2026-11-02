@@ -19,6 +19,7 @@ FIXTURE_NAMES = (
     "stale_fallback",
     "paid_credits",
     "openai_platform_credits",
+    "anthropic_platform_credits",
     "claude_prepaid_balance",
     "claude_prepaid_balance_unavailable",
     "reset_credit_expiry_unavailable",

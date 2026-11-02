@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     claude_proxy_ca: Path | None = None
     cli_proxy_api_key: SecretStr | None = Field(default=None, validation_alias="AIQUOTA_CLIPROXY_API_KEY")
     openai_platform_token: SecretStr | None = None
+    anthropic_platform_token: SecretStr | None = None
     clickhouse_url: str | None = None
     clickhouse_username: str = "aiquota_ingest"
     clickhouse_password: SecretStr | None = None

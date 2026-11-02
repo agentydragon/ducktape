@@ -8,6 +8,8 @@ from pydantic import BaseModel
 
 from aiquota.models import (
     AllQuotas,
+    AnthropicPlatformCredits,
+    AnthropicPlatformTranche,
     FetchSuccess,
     PlatformCredits,
     PrepaidBalance,
@@ -63,6 +65,7 @@ class ProviderView(BaseModel):
     burn: BurnStatus | None
     display_windows: list[WindowView]
     display_platform_credits: PlatformCredits | None = None
+    display_anthropic_platform_credits: AnthropicPlatformCredits | None = None
     summary_tint: Tint
     summary_index: int | None
 
@@ -132,6 +135,24 @@ def _provider_view(pq: ProviderQuota, now: datetime) -> ProviderView:
         if credits is not None
         else None
     )
+    anthropic_credits = source.anthropic_platform_credits if source is not None else None
+    display_anthropic_credits = (
+        anthropic_credits.model_copy(
+            update={
+                "organizations": [
+                    organization.model_copy(
+                        update={
+                            "tranches": _active_anthropic_tranches(organization.tranches, now),
+                            "promo_tranches": _active_anthropic_tranches(organization.promo_tranches, now),
+                        }
+                    )
+                    for organization in anthropic_credits.organizations
+                ]
+            }
+        )
+        if anthropic_credits is not None
+        else None
+    )
     return ProviderView(
         provider=pq.provider,
         display=selection,
@@ -143,9 +164,23 @@ def _provider_view(pq: ProviderQuota, now: datetime) -> ProviderView:
         burn=status_for(pq.provider, now),
         display_windows=display_windows,
         display_platform_credits=display_credits,
+        display_anthropic_platform_credits=display_anthropic_credits,
         summary_tint=tint,
         summary_index=index,
     )
+
+
+def _active_anthropic_tranches(
+    tranches: list[AnthropicPlatformTranche], now: datetime
+) -> list[AnthropicPlatformTranche]:
+    """Keep funded Anthropic tranches whose reported expiry is still in the future."""
+    return [
+        tranche
+        for tranche in tranches
+        if (tranche.expires_at is None or tranche.expires_at > now)
+        and tranche.remaining.credits is not None
+        and tranche.remaining.credits.amount_minor > 0
+    ]
 
 
 def _window_view(window: QuotaWindow, now: datetime, is_short: bool) -> WindowView:

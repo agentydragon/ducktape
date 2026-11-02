@@ -132,6 +132,14 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
             assert "OpenAI API balance" in credits
             assert "$125.75" in credits
             assert "expires" in credits
+        elif fixture_name == "anthropic_platform_credits":
+            credits = string_reply(session.call("GetPrepaidText", "anthropic_platform"))
+            assert "Main org balance" in credits
+            assert "$123.45" in credits
+            assert "Promo grant" in credits
+            assert "scope: claude_api (sonnet), claude_code" in credits
+            assert "scope: unscoped" not in credits
+            assert "Expired grant" not in credits
         elif fixture_name == "wire_fields":
             rows = json.loads(string_reply(session.call("GetWindowRows", "codex")))
             assert len(rows) == 1

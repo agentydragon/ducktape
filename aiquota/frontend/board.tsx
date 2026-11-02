@@ -37,6 +37,7 @@ const PROVIDER_NAMES: Record<string, string> = {
   claude: "Claude",
   codex: "Codex",
   openai_platform: "OpenAI API",
+  anthropic_platform: "Anthropic API",
   zai: "z.ai",
 };
 
@@ -97,6 +98,7 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
           ))}
         </div>
       )}
+      {quota.anthropicPlatformCredits && <AnthropicPlatformCreditsStrip credits={quota.anthropicPlatformCredits} />}
       {quota.resetCredits !== null && (
         <ResetCreditsStrip
           count={quota.resetCredits}
@@ -111,7 +113,8 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
         : quota.windows.length === 0
           ? quota.error === null &&
             quota.prepaidBalance === null &&
-            quota.platformCredits == null && <p className="aiquota-empty">No quota data.</p>
+            quota.platformCredits == null &&
+            quota.anthropicPlatformCredits == null && <p className="aiquota-empty">No quota data.</p>
           : quota.windows.map((window) => (
               <WindowRow
                 key={`${window.name ?? ""}-${window.window_seconds}`}
@@ -280,6 +283,64 @@ function PrepaidBalanceStrip({
       {staleSince && ` (stale ${formatAge((now - Date.parse(staleSince)) / 1000)})`}
     </p>
   );
+}
+
+function AnthropicPlatformCreditsStrip({
+  credits,
+}: {
+  credits: NonNullable<EffectiveQuota["anthropicPlatformCredits"]>;
+}): JSX.Element {
+  if (credits.organizations.length === 0) return <p className="aiquota-aside">No Anthropic API organizations.</p>;
+  return (
+    <div className="aiquota-aside">
+      {credits.organizations.map((organization) => {
+        const balance = organization.balance?.credits;
+        return (
+          <section key={organization.uuid}>
+            <p>
+              {organization.name} balance ·{" "}
+              {balance
+                ? formatPrepaidBalance(balance.amount_minor, balance.exponent, organization.currency ?? "USD")
+                : organization.error
+                  ? `lookup failed: ${organization.error}`
+                  : "unavailable"}
+            </p>
+            {anthropicTrancheLines(organization.tranches, "Grant")}
+            {anthropicTrancheLines(organization.promo_tranches, "Promo grant")}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function anthropicTrancheLines(
+  tranches: NonNullable<EffectiveQuota["anthropicPlatformCredits"]>["organizations"][number]["tranches"],
+  label: string
+): JSX.Element[] {
+  return tranches.flatMap((tranche) => {
+    const granted = tranche.granted.credits;
+    const remaining = tranche.remaining.credits;
+    if (!granted || !remaining) return [];
+    const expiry = tranche.expires_at ? new Date(tranche.expires_at).toLocaleString() : "unknown";
+    const products = [
+      ...new Set(
+        tranche.scope.applies_to.map((item) => {
+          const qualifiers = [item.model_family, item.model_version].filter(Boolean).join(", ");
+          return qualifiers ? `${item.product} (${qualifiers})` : item.product;
+        })
+      ),
+    ].sort();
+    const isUnrestricted = ["unrestricted", "unscoped"].includes(tranche.scope.kind) && products.length === 0;
+    const scope = isUnrestricted ? "" : ` · scope: ${products.join(", ") || tranche.scope.kind}`;
+    return [
+      <p key={tranche.id}>
+        {label} {formatPrepaidBalance(remaining.amount_minor, remaining.exponent, tranche.currency)} /{" "}
+        {formatPrepaidBalance(granted.amount_minor, granted.exponent, tranche.currency)} · expires {expiry}
+        {scope}
+      </p>,
+    ];
+  });
 }
 
 function formatCreditBalance(raw: string | null | undefined): string {

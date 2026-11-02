@@ -954,6 +954,7 @@ py_library(
         ":service_ref",
         "//aiquota:config",
         "//aiquota:settings",
+        "//aiquota/providers:anthropic_platform_lib",
         "//aiquota/providers:claude_lib",
         "//aiquota/providers:codex_lib",
         "//aiquota/providers:openai_platform_lib",

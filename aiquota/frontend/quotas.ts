@@ -7,6 +7,7 @@ export type EffectiveQuota = {
   extraSpend: ExtraSpend | null;
   paidCredits: PaidCredits | null;
   platformCredits: FetchSuccess["platform_credits"];
+  anthropicPlatformCredits: FetchSuccess["anthropic_platform_credits"];
   prepaidBalance: PrepaidBalance | null;
   prepaidStaleSince: string | null;
   resetCredits: number | null;
@@ -25,6 +26,7 @@ export function effectiveQuota(provider: ProviderView): EffectiveQuota {
     extraSpend: result?.extra_spend ?? null,
     paidCredits: result?.paid_credits ?? null,
     platformCredits: provider.display_platform_credits ?? null,
+    anthropicPlatformCredits: provider.display_anthropic_platform_credits ?? null,
     prepaidBalance: provider.display.prepaid_balance ?? null,
     prepaidStaleSince: provider.display.prepaid_stale_since ?? null,
     resetCredits: result?.available_reset_credits ?? null,

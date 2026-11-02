@@ -6,11 +6,21 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from rich.text import Text
 
-from aiquota.models import AllQuotas, ExtraSpend, FetchSuccess, PaidCredits, PrepaidBalance, PrepaidBalanceAvailable
+from aiquota.models import (
+    AllQuotas,
+    AnthropicPlatformCredits,
+    AnthropicPlatformScope,
+    ExtraSpend,
+    FetchSuccess,
+    PaidCredits,
+    PrepaidBalance,
+    PrepaidBalanceAvailable,
+)
 from aiquota.render.format import (
     format_age,
     format_burn,
     format_known_reset_credit_expiries,
+    format_minor_currency,
     format_peak_schedule,
     format_prepaid_balance,
 )
@@ -74,6 +84,7 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
             status = " · scheduled" if grant.is_scheduled else " · held" if grant.is_held_for_prepaid_transition else ""
             remaining = grant.granted_usd - grant.used_usd
             platform_lines.append(f"Grant ${remaining:,.2f} / ${grant.granted_usd:,.2f} · expires {expiry}{status}")
+    anthropic_lines = _format_anthropic_platform_credits(pv.display_anthropic_platform_credits, tz)
 
     if error and not windows:
         return Text(
@@ -91,6 +102,7 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
             + (f"  {credit_line}" if credit_line else "")
             + (f"\n  {prepaid_balance_line}" if prepaid_balance_line else "")
             + ("".join(f"\n  {line} (stale)" for line in platform_lines))
+            + ("".join(f"\n  {line} (stale)" for line in anthropic_lines))
         )
 
     if pv.currently_over_plan or pv.paid_credits_active:
@@ -124,6 +136,7 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
     if prepaid_balance_line:
         lines.append(f"  {prepaid_balance_line}")
     lines.extend(f"  {line}" for line in platform_lines)
+    lines.extend(f"  {line}" for line in anthropic_lines)
     lines.extend(_burn_lines(pv, now, tz))
     parts = [Text(line) for line in lines]
     colors = {"cool": "blue", "ok": "white", "warn": "yellow", "hot": "red", "unknown": "white", "stale": "yellow"}
@@ -139,7 +152,13 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
     )
     if extra_line is not None:
         parts.append(Text(extra_line))
-    if not windows and extra_line is None and prepaid_balance_line is None and not platform_lines:
+    if (
+        not windows
+        and extra_line is None
+        and prepaid_balance_line is None
+        and not platform_lines
+        and not anthropic_lines
+    ):
         # Gate on "nothing substantive was reported", not on line count — the
         # burn schedule adds lines without saying anything about quota.
         parts.append(Text("  no data"))
@@ -227,6 +246,8 @@ def _provider_label(
 ) -> str:
     if provider == "openai_platform":
         provider = "OpenAI API"
+    if provider == "anthropic_platform":
+        provider = "Anthropic API"
     if reset_credits is None:
         return provider
     noun = "reset" if reset_credits == 1 else "resets"
@@ -236,6 +257,52 @@ def _provider_label(
     if expiries := format_known_reset_credit_expiries(reset_credit_expiries, tz):
         return f"{label} · known expiries: {expiries}"
     return label
+
+
+def _format_anthropic_platform_credits(credits: AnthropicPlatformCredits | None, tz: tzinfo | None) -> list[str]:
+    if credits is None:
+        return []
+    lines: list[str] = []
+    for organization in credits.organizations:
+        if organization.error is not None:
+            lines.append(f"{organization.name} · billing lookup failed: {organization.error}")
+            continue
+        balance = organization.balance.credits if organization.balance is not None else None
+        if balance is None:
+            lines.append(f"{organization.name} · balance unavailable")
+        else:
+            currency = organization.currency or "USD"
+            amount = format_minor_currency(balance.amount_minor, balance.exponent, currency)
+            lines.append(f"{organization.name} balance · {amount}")
+        for label, tranches in (("Grant", organization.tranches), ("Promo grant", organization.promo_tranches)):
+            for tranche in tranches:
+                granted = tranche.granted.credits
+                remaining = tranche.remaining.credits
+                if granted is None or remaining is None:
+                    continue
+                original = format_minor_currency(granted.amount_minor, granted.exponent, tranche.currency)
+                available = format_minor_currency(remaining.amount_minor, remaining.exponent, tranche.currency)
+                expiry = (
+                    tranche.expires_at.astimezone(tz).strftime("%Y-%m-%d %H:%M %Z") if tranche.expires_at else "unknown"
+                )
+                scope = _anthropic_scope_label(tranche.scope)
+                suffix = f" · {scope}" if scope else ""
+                lines.append(f"{label} {available} / {original} · expires {expiry}{suffix}")
+    return lines
+
+
+def _anthropic_scope_label(scope: AnthropicPlatformScope) -> str | None:
+    if scope.kind in {"unrestricted", "unscoped"} and not scope.applies_to:
+        return None
+    products = sorted(
+        {
+            f"{item.product} ({', '.join(value for value in (item.model_family, item.model_version) if value)})"
+            if item.model_family or item.model_version
+            else item.product
+            for item in scope.applies_to
+        }
+    )
+    return f"scope: {', '.join(products)}" if products else f"scope: {scope.kind}"
 
 
 def _format_extra_active(extra: ExtraSpend | None) -> str:

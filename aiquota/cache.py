@@ -14,6 +14,7 @@ from aiquota.models import (
     SuccessfulProviderFetch,
     is_substantive,
 )
+from aiquota.providers.anthropic_platform import AnthropicPlatformProvider
 from aiquota.providers.base import Provider
 from aiquota.providers.claude import ClaudeProvider
 from aiquota.providers.cli_proxy_api import CLIProxyAPIManagementClient
@@ -120,6 +121,7 @@ def _instantiate(
         (ClaudeProvider(config.claude, client_factory, management_client), config.claude.enabled),
         (CodexProvider(config.codex, client_factory, management_client), config.codex.enabled),
         (OpenAIPlatformProvider(config.openai_platform, client_factory), config.openai_platform.enabled),
+        (AnthropicPlatformProvider(config.anthropic_platform, client_factory), config.anthropic_platform.enabled),
         (ZaiProvider(config.zai, client_factory), config.zai.enabled),
     ]
     return [p for p, enabled in candidates if enabled]

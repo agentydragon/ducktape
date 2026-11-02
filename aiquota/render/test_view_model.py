@@ -5,6 +5,12 @@ import pytest_bazel
 
 from aiquota.models import (
     AllQuotas,
+    AnthropicPlatformCreditAmount,
+    AnthropicPlatformCredits,
+    AnthropicPlatformCreditValue,
+    AnthropicPlatformOrganization,
+    AnthropicPlatformScope,
+    AnthropicPlatformTranche,
     ExtraSpend,
     FetchError,
     FetchSuccess,
@@ -219,3 +225,56 @@ def test_display_selection_retains_prepaid_balance_with_its_own_timestamp() -> N
     assert view.display.source == "current"
     assert view.display.prepaid_balance == balance
     assert view.display.prepaid_stale_since == older
+
+
+def test_anthropic_platform_expiries_filter_without_losing_provider_response() -> None:
+    def tranche(identifier: str, expires_at: datetime | None, amount_minor: int) -> AnthropicPlatformTranche:
+        amount = AnthropicPlatformCreditValue(
+            credits=AnthropicPlatformCreditAmount(amount_minor=amount_minor, exponent=2)
+        )
+        return AnthropicPlatformTranche(
+            id=identifier,
+            currency="USD",
+            granted_at=_NOW - timedelta(days=1),
+            expires_at=expires_at,
+            granted=amount,
+            remaining=amount,
+            scope=AnthropicPlatformScope(kind="unscoped"),
+        )
+
+    credits = AnthropicPlatformCredits(
+        organizations=[
+            AnthropicPlatformOrganization(
+                uuid="org-1",
+                name="Main org",
+                currency="USD",
+                balance=AnthropicPlatformCreditValue(
+                    credits=AnthropicPlatformCreditAmount(amount_minor=12345, exponent=2)
+                ),
+                tranches=[
+                    tranche("current", _NOW + timedelta(hours=1), 5000),
+                    tranche("at-boundary", _NOW, 2000),
+                    tranche("expired", _NOW - timedelta(seconds=1), 1000),
+                    tranche("empty", None, 0),
+                ],
+            )
+        ]
+    )
+    success = FetchSuccess(anthropic_platform_credits=credits)
+    quota = AllQuotas(
+        fetched_at=_NOW,
+        providers=[
+            ProviderQuota(provider="anthropic_platform", last_output=ProviderFetch(fetched_at=_NOW, result=success))
+        ],
+    )
+
+    first = to_view(quota, _NOW).providers[0]
+
+    assert first.display_anthropic_platform_credits is not None
+    assert [item.id for item in first.display_anthropic_platform_credits.organizations[0].tranches] == ["current"]
+    assert isinstance(first.last_output.result, FetchSuccess)
+    assert first.last_output.result.anthropic_platform_credits == credits
+
+    later = to_view(quota, _NOW + timedelta(hours=1)).providers[0]
+    assert later.display_anthropic_platform_credits is not None
+    assert later.display_anthropic_platform_credits.organizations[0].tranches == []

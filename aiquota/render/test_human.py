@@ -216,6 +216,23 @@ def test_openai_platform_grants_survive_a_failed_refresh_as_stale() -> None:
     assert "expires 2026-02-01 00:00 UTC" in rendered
 
 
+def test_anthropic_platform_lists_org_balances_and_active_scoped_grants() -> None:
+    fixture = load_quota_fixture(get_required_path("_main/aiquota/testing/fixtures/anthropic_platform_credits.yaml"))
+
+    rendered = human.render(fixture, now=_FETCHED_AT, tz=UTC)
+
+    assert rendered.startswith("Anthropic API\n")
+    assert "Main org balance · $123.45" in rendered
+    assert "Secondary org balance · $50.00" in rendered
+    assert "Grant $85.00 / $100.00 · expires 2026-07-01 00:00 UTC" in rendered
+    assert "scope: unscoped" not in rendered
+    assert (
+        "Promo grant $25.00 / $30.00 · expires 2026-05-01 00:00 UTC · scope: claude_api (sonnet), claude_code"
+        in rendered
+    )
+    assert "Expired grant" not in rendered
+
+
 def test_renders_banked_reset_count_from_live_usage() -> None:
     output = ProviderFetch(
         fetched_at=_FETCHED_AT,

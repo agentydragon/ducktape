@@ -1,4 +1,13 @@
 # serializer version: 1
+# name: test_renders_shared_fixture[anthropic_platform_credits]
+  '''
+  Anthropic API
+    Main org balance · $123.45
+    Grant $85.00 / $100.00 · expires 2026-07-01 00:00 UTC
+    Promo grant $25.00 / $30.00 · expires 2026-05-01 00:00 UTC · scope: claude_api (sonnet), claude_code
+    Secondary org balance · $50.00
+  '''
+# ---
 # name: test_renders_shared_fixture[binding_summary]
   '''
   claude

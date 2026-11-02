@@ -55,10 +55,15 @@ def format_age(seconds: float) -> str:
 
 def format_prepaid_balance(balance: PrepaidBalanceAvailable) -> str:
     """Format minor units without converting the provider balance to float."""
-    sign = "-" if balance.amount_minor < 0 else ""
-    amount = Decimal(abs(balance.amount_minor)).scaleb(-balance.exponent)
-    value = f"{amount:,.{balance.exponent}f}"
-    return f"{sign}${value}" if balance.currency == "USD" else f"{sign}{value} {balance.currency}"
+    return format_minor_currency(balance.amount_minor, balance.exponent, balance.currency)
+
+
+def format_minor_currency(amount_minor: int, exponent: int, currency: str) -> str:
+    """Format provider-reported minor units without converting to float."""
+    sign = "-" if amount_minor < 0 else ""
+    amount = Decimal(abs(amount_minor)).scaleb(-exponent)
+    value = f"{amount:,.{exponent}f}"
+    return f"{sign}${value}" if currency == "USD" else f"{sign}{value} {currency}"
 
 
 def format_known_reset_credit_expiries(expiries: list[datetime], tz: tzinfo | None = None) -> str | None:

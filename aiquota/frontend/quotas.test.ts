@@ -5,7 +5,7 @@ import { effectiveQuota } from "./quotas";
 describe("effectiveQuota", () => {
   it("renders the server-selected stale snapshot even when current data differs", () => {
     const provider = {
-      provider: "codex",
+      provider: "anthropic_platform",
       last_output: { fetched_at: "2026-01-15T12:00:00Z", result: { kind: "error", error: "offline" } },
       display: {
         source: "last_success",
@@ -16,10 +16,16 @@ describe("effectiveQuota", () => {
       },
       display_windows: [],
       display_platform_credits: null,
+      display_anthropic_platform_credits: {
+        organizations: [{ uuid: "org-1", name: "Org", tranches: [], promo_tranches: [] }],
+      },
     } as unknown as ProviderView;
+
     const result = effectiveQuota(provider);
+
     expect(result.resetCredits).toBe(0);
     expect(result.staleSince).toBe("2026-01-14T12:00:00Z");
     expect(result.error).toBe("offline");
+    expect(result.anthropicPlatformCredits?.organizations[0]?.uuid).toBe("org-1");
   });
 });

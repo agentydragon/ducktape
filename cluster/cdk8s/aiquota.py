@@ -41,6 +41,7 @@ from external_secrets_crds.io.external_secrets import (
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from aiquota.config import CLIProxyAPISettings, Config
+from aiquota.providers.anthropic_platform import AnthropicPlatformSettings
 from aiquota.providers.claude import ClaudeSettings
 from aiquota.providers.codex import CodexSettings
 from aiquota.providers.openai_platform import OpenAIPlatformSettings
@@ -85,6 +86,9 @@ _CONFIG = Config(
     codex=CodexSettings(enabled=True),
     openai_platform=OpenAIPlatformSettings(
         enabled=True, url="http://platform-sessions.platform-sessions.svc:8080/openai"
+    ),
+    anthropic_platform=AnthropicPlatformSettings(
+        enabled=True, url="http://openai-platform-session.openai-platform-session.svc:8080"
     ),
     zai=ZaiSettings(enabled=False),
 )
@@ -225,6 +229,11 @@ class Aiquota(Construct):
                 )
                 .key("token")
                 .env_value(self, "openai-platform-token-ref", optional=True),
+                env_name(Settings, "anthropic_platform_token"): SecretRef(
+                    namespace=NAMESPACE, name="openai-platform-read-token"
+                )
+                .key("token")
+                .env_value(self, "anthropic-platform-token-ref", optional=True),
                 env_name(Settings, "clickhouse_url"): EnvValue.from_value(client.HTTP.url),
                 env_name(Settings, "clickhouse_database"): EnvValue.from_value("aiquota"),
                 env_name(Settings, "clickhouse_username"): _CLICKHOUSE.key("username").env_value(

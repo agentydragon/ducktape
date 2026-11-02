@@ -148,6 +148,45 @@ function formatPrepaidBalance(balance) {
   return `Claude prepaid balance · ${sharedFormatPrepaidBalance(balance.amount_minor, balance.exponent, balance.currency)}`;
 }
 
+function formatAnthropicPlatformCredits(credits) {
+  if (!credits) return [];
+  if (credits.organizations.length === 0) return ["No Anthropic API organizations"];
+  return credits.organizations.flatMap((organization) => {
+    const balance = organization.balance?.credits;
+    const lines = [
+      balance
+        ? `${organization.name} balance · ${sharedFormatPrepaidBalance(balance.amount_minor, balance.exponent, organization.currency ?? "USD")}`
+        : `${organization.name} · ${organization.error ? `billing lookup failed: ${organization.error}` : "balance unavailable"}`,
+    ];
+    const appendTranches = (tranches, label) => {
+      for (const tranche of tranches) {
+        const granted = tranche.granted.credits;
+        const remaining = tranche.remaining.credits;
+        if (!granted || !remaining) continue;
+        const expiry = tranche.expires_at ? new Date(tranche.expires_at).toLocaleString() : "unknown";
+        const products = [
+          ...new Set(
+            tranche.scope.applies_to.map((item) => {
+              const qualifiers = [item.model_family, item.model_version].filter(Boolean).join(", ");
+              return qualifiers ? `${item.product} (${qualifiers})` : item.product;
+            })
+          ),
+        ].sort();
+        const scope =
+          ["unrestricted", "unscoped"].includes(tranche.scope.kind) && products.length === 0
+            ? ""
+            : ` · scope: ${products.join(", ") || tranche.scope.kind}`;
+        lines.push(
+          `${label} ${sharedFormatPrepaidBalance(remaining.amount_minor, remaining.exponent, tranche.currency)} / ${sharedFormatPrepaidBalance(granted.amount_minor, granted.exponent, tranche.currency)} · expires ${expiry}${scope}`
+        );
+      }
+    };
+    appendTranches(organization.tranches, "Grant");
+    appendTranches(organization.promo_tranches, "Promo grant");
+    return lines;
+  });
+}
+
 // Peak-burn formatting. The policy (is it peak, which windows are next) is
 // decided in aiquota/peak_windows.py and delivered as state.burn; this only
 // formats it. Instants arrive absolute and are shown in the viewer's local
@@ -188,6 +227,7 @@ function emptyProviderState() {
     extraSpend: null,
     paidCredits: null,
     platformCredits: null,
+    anthropicPlatformCredits: null,
     prepaidBalance: null,
     prepaidStaleSince: null,
     availableResetCredits: null,
@@ -208,6 +248,7 @@ const PROVIDER_DEFS = [
   { id: "claude", label: "Claude", iconFile: "claude-symbolic.svg" },
   { id: "codex", label: "Codex", iconFile: "openai-symbolic.svg" },
   { id: "openai_platform", label: "OpenAI API", iconFile: "openai-symbolic.svg" },
+  { id: "anthropic_platform", label: "Anthropic API", iconFile: "claude-symbolic.svg" },
   { id: "zai", label: "z.ai", iconFile: "zai-symbolic.svg" },
 ];
 
@@ -761,6 +802,7 @@ const QuotaIndicator = GObject.registerClass(
           extraSpend: this._mapExtraSpend(result?.extra_spend),
           paidCredits: result?.paid_credits ?? null,
           platformCredits: pq.display_platform_credits ?? null,
+          anthropicPlatformCredits: pq.display_anthropic_platform_credits ?? null,
           prepaidBalance: selected.prepaid_balance ?? null,
           prepaidStaleSince: selected.prepaid_stale_since ? new Date(selected.prepaid_stale_since).getTime() : null,
           availableResetCredits: result?.available_reset_credits ?? null,
@@ -868,10 +910,14 @@ const QuotaIndicator = GObject.registerClass(
           this._renderExtraActiveRow(p.windowRows[0], windows);
           p.windowRows.slice(1).forEach((row) => (row.visible = false));
         } else {
-          const { windows, staleAge, platformCredits } = effectiveState(p.state);
-          if (windows.length === 0 && platformCredits == null) this._renderPopupRow(p.windowRows[0], null, staleAge);
+          const { windows, staleAge, platformCredits, anthropicPlatformCredits } = effectiveState(p.state);
+          if (windows.length === 0 && platformCredits == null && anthropicPlatformCredits == null)
+            this._renderPopupRow(p.windowRows[0], null, staleAge);
           windows.forEach((window, index) => this._renderPopupRow(p.windowRows[index], window, staleAge));
-          const rowCount = windows.length === 0 && platformCredits != null ? 0 : Math.max(1, windows.length);
+          const rowCount =
+            windows.length === 0 && (platformCredits != null || anthropicPlatformCredits != null)
+              ? 0
+              : Math.max(1, windows.length);
           p.windowRows.forEach((row, index) => (row.visible = index < rowCount));
         }
       }
@@ -926,15 +972,19 @@ const QuotaIndicator = GObject.registerClass(
       const credits = effective.platformCredits;
       const money = (value) =>
         new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(Number(value));
-      const text = credits
+      const lines = credits
         ? [
             `OpenAI API balance · ${money(credits.total_available_usd)}`,
             ...credits.grants.map(
               (grant) =>
                 `Grant ${money(Number(grant.granted_usd) - Number(grant.used_usd))} / ${money(grant.granted_usd)} · expires ${grant.expires_at ? new Date(grant.expires_at).toLocaleString() : "unknown"}${grant.is_scheduled ? " · scheduled" : grant.is_held_for_prepaid_transition ? " · held" : ""}`
             ),
-          ].join("\n")
-        : formatPrepaidBalance(effective.prepaidBalance);
+          ]
+        : [];
+      lines.push(...formatAnthropicPlatformCredits(effective.anthropicPlatformCredits));
+      const prepaid = formatPrepaidBalance(effective.prepaidBalance);
+      if (prepaid) lines.push(prepaid);
+      const text = lines.length > 0 ? lines.join("\n") : null;
       item.visible = text != null;
       if (text != null) {
         const age =

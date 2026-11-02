@@ -1,0 +1,89 @@
+providers:
+  - provider: anthropic_platform
+    last_output:
+      fetched_at: "2026-01-15T12:00:00Z"
+      result:
+        kind: success
+        anthropic_platform_credits:
+          organizations:
+            - uuid: "00000000-0000-0000-0000-000000000001"
+              name: Main org
+              currency: USD
+              balance:
+                credits:
+                  amount_minor: 12345
+                  exponent: 2
+                money: null
+              tranches:
+                - id: main-grant
+                  name: null
+                  currency: USD
+                  granted_at: "2026-01-01T00:00:00Z"
+                  expires_at: "2026-07-01T00:00:00Z"
+                  granted:
+                    credits:
+                      amount_minor: 10000
+                      exponent: 2
+                    money: null
+                  remaining:
+                    credits:
+                      amount_minor: 8500
+                      exponent: 2
+                    money: null
+                  scope:
+                    kind: unscoped
+                    applies_to: []
+                - id: expired-grant
+                  name: Expired grant
+                  currency: USD
+                  granted_at: "2025-01-01T00:00:00Z"
+                  expires_at: "2026-01-10T00:00:00Z"
+                  granted:
+                    credits:
+                      amount_minor: 5000
+                      exponent: 2
+                    money: null
+                  remaining:
+                    credits:
+                      amount_minor: 2500
+                      exponent: 2
+                    money: null
+                  scope:
+                    kind: unscoped
+                    applies_to: []
+              promo_tranches:
+                - id: promo-grant
+                  name: Partner credits
+                  currency: USD
+                  granted_at: "2026-01-01T00:00:00Z"
+                  expires_at: "2026-05-01T00:00:00Z"
+                  granted:
+                    credits:
+                      amount_minor: 3000
+                      exponent: 2
+                    money: null
+                  remaining:
+                    credits:
+                      amount_minor: 2500
+                      exponent: 2
+                    money: null
+                  scope:
+                    kind: scoped
+                    applies_to:
+                      - product: claude_code
+                        model_family: null
+                        model_version: null
+                      - product: claude_api
+                        model_family: sonnet
+                        model_version: null
+            - uuid: "00000000-0000-0000-0000-000000000002"
+              name: Secondary org
+              currency: USD
+              balance:
+                credits:
+                  amount_minor: 5000
+                  exponent: 2
+                money: null
+              tranches: []
+              promo_tranches: []
+fetched_at: "2026-01-15T12:00:00Z"
