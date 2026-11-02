@@ -72,7 +72,7 @@ func ServerCommand(launch harness.LaunchConfig) ([]string, error) {
 }
 
 // ServerEnvironment is the shared app-server's own environment: its Codex home and model credentials.
-// The Runner adds it to the runner-wide harness environment.
+// The Host adds it to the shared harness environment.
 func ServerEnvironment(launch harness.LaunchConfig, store string) map[string]string {
 	return map[string]string{"CODEX_HOME": store, "OPENAI_API_KEY": launch.Token, "OPENAI_BASE_URL": launch.BaseURL}
 }
