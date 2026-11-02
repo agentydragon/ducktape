@@ -99,7 +99,7 @@ func shouldApplyHostIntent(found bool, desired harnesshostlifecycle.HostIntent, 
 
 func (c *hostIntentController) eligible(desired harnesshostlifecycle.HostIntent) bool {
 	c.host.mu.Lock()
-	startup := c.host.startupComplete && !c.host.closing && c.host.bootID == desired.HostBootID
+	startup := c.host.startupComplete && !c.host.closing
 	c.host.mu.Unlock()
-	return startup && c.host.RuntimeBindingMatches(desired.RuntimeBootID, desired.HostBootID)
+	return startup && c.host.RuntimeBindingMatches(desired.RuntimeBootID)
 }

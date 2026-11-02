@@ -39,7 +39,7 @@ standalone Execution retains its independent supervisor. Execution's managed fen
 90 seconds, independent of the unit's 5-second systemd stop grace.
 
 Runtime coordinates its embedded process owners with direct calls. Host reports native stop against the
-exact Runtime/Host boot IDs and lifecycle generation. Runtime fences Execution before authorizing
+exact Runtime boot ID and lifecycle generation. Runtime fences Execution before authorizing
 Host sealing and waits for the matching seal/History ACK before completing quiesce. The
 [Host protocol](../../harnesshost/SPEC.md) and [environment lifecycle](../../docs/lifecycle.md) define those
 barriers. Host lifetime loss closes admission and drains native work without inventing a seal.

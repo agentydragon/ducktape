@@ -17,11 +17,7 @@ import (
 // bindHost installs the one embedded Host and publishes its initial intent.
 // Caller holds lifecycleStartMu so Close cannot race Host initialization.
 func (r *Runtime) bindHost(client *harnesshost.Host) error {
-	bootID := client.BootID()
-	if bootID == "" {
-		return status.Error(codes.InvalidArgument, "Harness Host has no boot ID")
-	}
-	host := &hostBinding{bootID: bootID, client: client, active: true}
+	host := &hostBinding{client: client, active: true}
 	r.mu.Lock()
 	if r.closing || r.failed {
 		r.mu.Unlock()
@@ -32,9 +28,9 @@ func (r *Runtime) bindHost(client *harnesshost.Host) error {
 		return status.Error(codes.AlreadyExists, "Runtime already owns a Harness Host")
 	}
 	r.host = host
-	client.SetRuntimeBinding(r.bootID, bootID, true)
+	client.SetRuntimeBinding(r.bootID, true)
 	r.intent = &runtimepb.LifecycleIntent{
-		Binding:    &runtimepb.Binding{RuntimeBootId: r.bootID, HostBootId: bootID, Generation: 1},
+		Binding:    &runtimepb.Binding{RuntimeBootId: r.bootID, Generation: 1},
 		SandboxUid: r.config.Launch.Sandbox.UID, Mode: runtimepb.LifecycleIntent_INACTIVE,
 	}
 	if err := r.publishHostIntentLocked(); err != nil {
@@ -155,7 +151,7 @@ func (r *Runtime) WaitHostBootstrap(ctx context.Context, binding *runtimepb.Bind
 	}
 	r.mu.Lock()
 	valid := binding != nil && r.host != nil && r.host.active && r.lastRunning != nil &&
-		proto.Equal(binding, r.lastRunning) && binding.RuntimeBootId == r.bootID && binding.HostBootId == r.host.bootID
+		proto.Equal(binding, r.lastRunning) && binding.RuntimeBootId == r.bootID
 	r.mu.Unlock()
 	if !valid {
 		return status.Error(codes.FailedPrecondition, "bootstrap wait is outside the admitted environment binding")
@@ -198,7 +194,7 @@ func (r *Runtime) setIntentLocked(mode runtimepb.LifecycleIntent_Mode, incarnati
 		generation = r.intent.Binding.Generation + 1
 	}
 	r.intent = &runtimepb.LifecycleIntent{
-		Binding:    &runtimepb.Binding{RuntimeBootId: r.bootID, HostBootId: r.host.bootID, Generation: generation},
+		Binding:    &runtimepb.Binding{RuntimeBootId: r.bootID, Generation: generation},
 		SandboxUid: r.config.Launch.Sandbox.UID, IncarnationUid: incarnationUID,
 		Mode: mode, SealUid: sealUID, ExecutionFenced: executionFenced,
 	}

@@ -83,7 +83,6 @@ type executionHandle interface {
 }
 
 type hostBinding struct {
-	bootID string
 	client *harnesshost.Host
 	active bool
 }

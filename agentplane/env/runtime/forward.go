@@ -100,8 +100,7 @@ func (r *Runtime) GetStatus(ctx context.Context, request *sessionpb.GetStatusReq
 	if err != nil {
 		return nil, err
 	}
-	// The public boot ID fences the Gateway epoch; Host's private boot ID
-	// stays inside its lifecycle binding.
+	// Runtime owns the boot identity reported to Gateway.
 	response.EnvironmentRuntimeBootId = r.bootID
 	return response, nil
 }

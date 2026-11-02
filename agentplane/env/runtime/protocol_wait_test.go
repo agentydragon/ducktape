@@ -33,7 +33,7 @@ func (h *uncertainFenceHandle) StopAndFence(context.Context) error {
 }
 
 func TestUncertainExecutionFenceIsNotRetriedForBinding(t *testing.T) {
-	binding := &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 1}
+	binding := &runtimepb.Binding{RuntimeBootId: "runtime", Generation: 1}
 	handle := &uncertainFenceHandle{}
 	r := newExecutionControllerRuntime(t, func(context.Context, Config, string) (executionHandle, error) {
 		return handle, nil
@@ -81,7 +81,7 @@ func TestUnmanagedExecutionOwnerCannotClaimFence(t *testing.T) {
 }
 
 func TestWaitForHostQuiescedWakesForFinalReportPublishedAfterSnapshot(t *testing.T) {
-	binding := &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 1}
+	binding := &runtimepb.Binding{RuntimeBootId: "runtime", Generation: 1}
 	host := &hostBinding{active: true}
 	report := &runtimepb.HostReport{
 		Ready: true,

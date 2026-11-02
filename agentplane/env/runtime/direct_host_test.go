@@ -61,10 +61,10 @@ func (s *failedHostIntentPublishState) Modify(ctx context.Context, value resourc
 
 func TestHostIntentPublicationFailureRevokesNativeConnection(t *testing.T) {
 	client := &harnesshost.Host{}
-	client.SetRuntimeBinding("runtime", "host", true)
-	intent := &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 1}}
+	client.SetRuntimeBinding("runtime", true)
+	intent := &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "runtime", Generation: 1}}
 	r := &Runtime{
-		bootID: "runtime", host: &hostBinding{bootID: "host", client: client, active: true}, intent: intent,
+		bootID: "runtime", host: &hostBinding{client: client, active: true}, intent: intent,
 		lifecycleState: &failedHostIntentPublishState{State: state.WrapCore(namespaced.NewState(inmem.Build))},
 		changes:        make(chan struct{}), fatal: make(chan error, 1),
 	}
@@ -74,7 +74,7 @@ func TestHostIntentPublicationFailureRevokesNativeConnection(t *testing.T) {
 	if !r.failed || r.failureErr == nil {
 		t.Fatal("failed intent publication did not fail Runtime")
 	}
-	if client.RuntimeBindingMatches("runtime", "host") {
+	if client.RuntimeBindingMatches("runtime") {
 		t.Fatal("failed publication left Host admitted for native intent application")
 	}
 }
@@ -106,8 +106,8 @@ func publishAppliedHostIntent(t *testing.T, r *Runtime) {
 func TestExecutionFenceWaitsForExactHostApplication(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
 	defer cancel()
-	binding := &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 1}
-	r := &Runtime{bootID: "runtime", host: &hostBinding{bootID: "host", active: true}, intent: &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_QUIESCING}, changes: make(chan struct{}), fatal: make(chan error, 1)}
+	binding := &runtimepb.Binding{RuntimeBootId: "runtime", Generation: 1}
+	r := &Runtime{bootID: "runtime", host: &hostBinding{active: true}, intent: &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_QUIESCING}, changes: make(chan struct{}), fatal: make(chan error, 1)}
 	startHostReportObserver(t, r)
 	publishAppliedHostIntent(t, r)
 	old := lifecycle.HostReport{Intent: proto.Clone(r.intent).(*runtimepb.LifecycleIntent), Report: &runtimepb.HostReport{Ready: true, Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{}}}
@@ -145,8 +145,8 @@ func TestExecutionFenceWaitsForExactHostApplication(t *testing.T) {
 }
 
 func TestDirectHostReportRequiresExactAppliedIntent(t *testing.T) {
-	binding := &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 2}
-	host := &hostBinding{bootID: "host", active: true}
+	binding := &runtimepb.Binding{RuntimeBootId: "runtime", Generation: 2}
+	host := &hostBinding{active: true}
 	r := &Runtime{host: host, intent: &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_RUNNING}, changes: make(chan struct{})}
 	r.lifecycleState = state.WrapCore(namespaced.NewState(inmem.Build))
 	publishAppliedHostIntent(t, r)
@@ -190,13 +190,13 @@ func TestHostReportWaitsAcrossReadAndSubscription(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
 			defer cancel()
-			binding := &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 3}
+			binding := &runtimepb.Binding{RuntimeBootId: "runtime", Generation: 3}
 			intent := &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_RUNNING}
 			base := state.WrapCore(namespaced.NewState(inmem.Build))
 			paused := &pausedHostReportReadState{State: base, read: make(chan struct{}), resume: make(chan struct{})}
 			defer paused.release()
 			r := &Runtime{
-				host: &hostBinding{bootID: "host", active: true}, intent: intent,
+				host: &hostBinding{active: true}, intent: intent,
 				lifecycleState: paused, changes: make(chan struct{}), fatal: make(chan error, 1),
 			}
 			publishAppliedHostIntent(t, r)
@@ -249,9 +249,9 @@ func TestHostReportWaitsPreserveFailureAndDisconnectPrecedence(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
 			defer cancel()
-			binding := &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 1}
+			binding := &runtimepb.Binding{RuntimeBootId: "runtime", Generation: 1}
 			r := &Runtime{
-				host: &hostBinding{bootID: "host", active: true}, intent: &runtimepb.LifecycleIntent{Binding: binding},
+				host: &hostBinding{active: true}, intent: &runtimepb.LifecycleIntent{Binding: binding},
 				lifecycleState: state.WrapCore(namespaced.NewState(inmem.Build)), changes: make(chan struct{}), fatal: make(chan error, 1),
 			}
 			result := make(chan error, 1)

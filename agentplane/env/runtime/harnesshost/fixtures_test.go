@@ -29,8 +29,8 @@ func bindHost(r *Host, incarnation string) error {
 		generation = r.intent.Binding.Generation + 1
 	}
 	r.mu.Unlock()
-	r.SetRuntimeBinding("test-runtime", r.bootID, true)
-	return r.ApplyIntent(r.ctx, &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "test-runtime", HostBootId: r.bootID, Generation: generation}, SandboxUid: r.config.Launch.Sandbox.UID, IncarnationUid: incarnation, Mode: runtimepb.LifecycleIntent_RUNNING})
+	r.SetRuntimeBinding("test-runtime", true)
+	return r.ApplyIntent(r.ctx, &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "test-runtime", Generation: generation}, SandboxUid: r.config.Launch.Sandbox.UID, IncarnationUid: incarnation, Mode: runtimepb.LifecycleIntent_RUNNING})
 }
 
 func hostContext(r *Host, ctx context.Context) context.Context {

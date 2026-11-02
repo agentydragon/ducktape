@@ -39,7 +39,7 @@ func (r *Host) ListSessions(ctx context.Context, _ *sessionpb.ListSessionsReques
 }
 
 func (r *Host) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
-	result := &sessionpb.EnvironmentRuntimeStatus{EnvironmentRuntimeBootId: r.bootID}
+	result := &sessionpb.EnvironmentRuntimeStatus{}
 	for _, s := range r.sessions.Inventory() {
 		row, process := s.Status()
 		result.Sessions = append(result.Sessions, row)

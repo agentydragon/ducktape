@@ -19,7 +19,7 @@ import (
 )
 
 func TestHostIntentDecisionFailsClosedOnUnknownEffect(t *testing.T) {
-	old := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", HostBootID: "host", Generation: 1}
+	old := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1}
 	next := old
 	next.Generation++
 	if shouldApplyHostIntent(true, next, true, harnesshostlifecycle.HostIntentStatus{Intent: old}) {
@@ -37,15 +37,15 @@ func TestHostIntentDecisionFailsClosedOnUnknownEffect(t *testing.T) {
 }
 
 func TestHostIntentAdmissionRequiresStartupAndExactConnection(t *testing.T) {
-	desired := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", HostBootID: "host", Generation: 1}
-	controller := &hostIntentController{host: &Host{bootID: "host"}}
+	desired := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1}
+	controller := &hostIntentController{host: &Host{}}
 	if controller.eligible(desired) {
 		t.Fatal("intent applied before Session startup")
 	}
 	controller.host.startupComplete = true
-	connection := &runtimeBinding{runtimeBootID: "runtime", hostBootID: "host", active: true}
+	connection := &runtimeBinding{runtimeBootID: "runtime", active: true}
 	controller.host.runtimeBinding.Store(connection)
-	if !controller.host.RuntimeBindingMatches(desired.RuntimeBootID, desired.HostBootID) {
+	if !controller.host.RuntimeBindingMatches(desired.RuntimeBootID) {
 		t.Fatal("exact active Host binding was rejected")
 	}
 	if !controller.eligible(desired) {
@@ -54,7 +54,6 @@ func TestHostIntentAdmissionRequiresStartupAndExactConnection(t *testing.T) {
 	for name, mutate := range map[string]func(*runtimeBinding){
 		"disconnected":         func(v *runtimeBinding) { v.active = false },
 		"Runtime boot changed": func(v *runtimeBinding) { v.runtimeBootID = "other-runtime" },
-		"Host boot changed":    func(v *runtimeBinding) { v.hostBootID = "other-host" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			invalid := *connection
@@ -73,10 +72,10 @@ func TestHostIntentAdmissionRequiresStartupAndExactConnection(t *testing.T) {
 
 func TestHostFailureCannotReopenRuntimeBinding(t *testing.T) {
 	runner := &Host{fatal: make(chan error, 1)}
-	runner.SetRuntimeBinding("runtime", "host", true)
+	runner.SetRuntimeBinding("runtime", true)
 	runner.fail(context.Canceled)
-	runner.SetRuntimeBinding("runtime", "host", true)
-	if runner.RuntimeBindingMatches("runtime", "host") {
+	runner.SetRuntimeBinding("runtime", true)
+	if runner.RuntimeBindingMatches("runtime") {
 		t.Fatal("a failed Host was reconnected for intent application")
 	}
 }
@@ -103,8 +102,8 @@ func TestHostIntentPublishedBeforeStartupIsAppliedAfterRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := &Host{bootID: "host", fatal: make(chan error, 1), startupDone: make(chan struct{})}
-	runner.SetRuntimeBinding("runtime", "host", true)
+	runner := &Host{fatal: make(chan error, 1), startupDone: make(chan struct{})}
+	runner.SetRuntimeBinding("runtime", true)
 	var calls atomic.Int32
 	if err := engine.RegisterController(&hostIntentController{host: runner, apply: func(context.Context, *runtimepb.LifecycleIntent) error {
 		calls.Add(1)
@@ -112,7 +111,7 @@ func TestHostIntentPublishedBeforeStartupIsAppliedAfterRecovery(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	desired := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", HostBootID: "host", Generation: 1}
+	desired := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1}
 	if err := cosi.Publish(ctx, store, harnesshostlifecycle.HostIntentResource(desired), desired, harnesshostlifecycle.EnvironmentOwner); err != nil {
 		t.Fatal(err)
 	}
@@ -167,14 +166,14 @@ func TestHostDisconnectAfterApplyingMarkerSkipsNativeEffect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := &Host{bootID: "host", startupComplete: true, fatal: make(chan error, 1)}
-	runner.SetRuntimeBinding("runtime", "host", true)
+	runner := &Host{startupComplete: true, fatal: make(chan error, 1)}
+	runner.SetRuntimeBinding("runtime", true)
 	var calls atomic.Int32
 	controller := &hostIntentController{host: runner, apply: func(context.Context, *runtimepb.LifecycleIntent) error { calls.Add(1); return nil }}
 	if err := engine.RegisterController(controller); err != nil {
 		t.Fatal(err)
 	}
-	desired := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", HostBootID: "host", Generation: 1, SandboxUID: "sandbox"}
+	desired := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1, SandboxUID: "sandbox"}
 	if err := cosi.Publish(ctx, store, harnesshostlifecycle.HostIntentResource(desired), desired, harnesshostlifecycle.EnvironmentOwner); err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +186,7 @@ func TestHostDisconnectAfterApplyingMarkerSkipsNativeEffect(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("Host never recorded Applying")
 	}
-	runner.SetRuntimeBinding("runtime", "host", false)
+	runner.SetRuntimeBinding("runtime", false)
 	close(store.release)
 	_, err = store.WatchFor(ctx, harnesshostlifecycle.HostIntentStatusResource(harnesshostlifecycle.HostIntentStatus{}).Metadata(),
 		state.WithEventTypes(state.Created, state.Updated),
@@ -213,8 +212,8 @@ func TestHostIntentControllerFailsOnInterruptedApplication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := &Host{bootID: "host", startupComplete: true, fatal: make(chan error, 1)}
-	runner.SetRuntimeBinding("runtime", "host", true)
+	runner := &Host{startupComplete: true, fatal: make(chan error, 1)}
+	runner.SetRuntimeBinding("runtime", true)
 	var calls atomic.Int32
 	if err := engine.RegisterController(&hostIntentController{host: runner, apply: func(context.Context, *runtimepb.LifecycleIntent) error {
 		calls.Add(1)
@@ -222,7 +221,7 @@ func TestHostIntentControllerFailsOnInterruptedApplication(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	old := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", HostBootID: "host", Generation: 1}
+	old := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1}
 	current := harnesshostlifecycle.HostIntentStatus{Intent: old}
 	if err := cosi.Publish(ctx, store, harnesshostlifecycle.HostIntentStatusResource(current), current, "harness-host-intent"); err != nil {
 		t.Fatal(err)

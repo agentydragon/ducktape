@@ -97,10 +97,10 @@ func TestInitialHostWaitOrdersReadyReportAndExit(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
 			host := &observedHostExit{done: make(chan struct{}), subscribed: make(chan struct{}), err: errors.New("Host exited")}
-			binding := &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 1}
+			binding := &runtimepb.Binding{RuntimeBootId: "runtime", Generation: 1}
 			intent := &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_INACTIVE}
 			r := &Runtime{
-				hostLifetime: host, host: &hostBinding{bootID: "host", active: true}, intent: intent,
+				hostLifetime: host, host: &hostBinding{active: true}, intent: intent,
 				lifecycleState: state.WrapCore(namespaced.NewState(inmem.Build)), changes: make(chan struct{}), fatal: make(chan error, 1),
 			}
 			publishAppliedHostIntent(t, r)
@@ -172,7 +172,7 @@ func TestClosePreparationTreatsExitedHostAsDisconnected(t *testing.T) {
 	t.Cleanup(func() { _ = r.owner.Close() })
 	host := &observedHostExit{done: make(chan struct{}), subscribed: make(chan struct{})}
 	r.hostLifetime = host
-	r.host = &hostBinding{bootID: "host", active: true}
+	r.host = &hostBinding{active: true}
 	close(host.done)
 	coordinator := &runtimeLifecycleController{r: r}
 	if err := coordinator.prepare(); err != nil {
