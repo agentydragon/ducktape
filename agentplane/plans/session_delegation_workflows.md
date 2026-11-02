@@ -1,7 +1,7 @@
 # Caller-privilege Session delegation
 
-Status: **existing-environment tools and scripted acceptance implemented; natural-agent usability
-and staging tool exposure remain open; fresh provisioning deferred.** The remaining
+Status: **existing-environment tools and scripted acceptance implemented; staging activation approved;
+natural-agent usability is an operator follow-up; fresh provisioning deferred.** The remaining
 workflow capstone is tracked under
 [`THREAD_CREATE_AUTHORIZATION`](task_dag.md#thread_create_authorization--caller-privilege-delegation-capstone).
 The direct MCP names are `environments__list`, `environments__get`, and seven `sessions__*`
@@ -730,7 +730,8 @@ a reply address nor a creator/parent edge grants send/read access.
 
 - **Natural-agent usability:** complete the capstone below using the implemented discovery,
   guidance, tools and result projections. The scripted external MCP and parent CLI suites are
-  landed protocol/workflow evidence, not proof of unaided discovery.
+  landed protocol/workflow evidence, not proof of unaided discovery. The operator will test with
+  a prompt later; this is not a merge or rollout gate (operator, 2026-11-02 UTC).
 - **Staging direct-tool exposure:** [#13514](https://github.com/agentydragon/ducktape/pull/13514)
   now configures the nine-tool contract, including `sessions__get` and `sessions__read_turns`.
   Validate the rendered catalogue and exact-head CI; preserve `basic` auto-approval and effective-caller enforcement.
@@ -753,15 +754,15 @@ has a reviewed migration. Avoid a second general authorization owner in the new 
 
 ## Remaining usability capstone and exposure order
 
-1. **Exercise natural delegation through the implemented interfaces.** Give a real agent an
+1. **Enable the reviewed staging catalogue.** The operator approved merging #13514 after
+   automated checks, with activation/rollback instructions retained. Backend and guidance rollout
+   gates already discharged are not new work.
+2. **Evaluate natural delegation through normal use.** Give a real agent an
    ordinary assignment and verify it discovers the target and schemas, prepares its directory,
    opens a child, submits separate input and reads a correlated result. Include follow-up and
    control/recovery when needed. Cover an existing-environment parent and an external MCP caller
-   without private fixture handles or a prescribed tool script. An isolated opt-in fixture can
-   establish this before general staging exposure. Replan concrete backend gaps if discovered.
-2. **Enable the reviewed staging catalogue separately.** Finish the updated configuration checks,
-   retain activation/rollback instructions and complete the usability capstone before exposing
-   the tools broadly. Backend and guidance rollout gates already discharged are not new work.
+   without private fixture handles or a prescribed tool script. The operator may run a prompt
+   later; it does not gate staging activation. Replan concrete backend gaps if discovered.
 
 Reuse the scripted suites and owning service tests for published-schema behavior, separate opening
 and first input, command correlation and app-independent operation. Preserve authorization and
