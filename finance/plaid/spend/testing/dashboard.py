@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from finance.plaid.spend.allowance import (
@@ -27,13 +28,16 @@ from finance.plaid.spend.allowance import (
     TransactionDecision,
     calculate,
 )
-from finance.plaid.spend.card_projection import CardAccount, project_card
 from finance.plaid.spend.configuration import CardConfig, SpendConfiguration
 from finance.plaid.spend.models import (
+    AlertState,
     AllowanceConfigurationView,
     CardConfigurationView,
+    CardView,
+    ProvisionalCardPeriod,
     SpendConfigurationView,
     SpendView,
+    StatementCycle,
     StatementReason,
 )
 from finance.plaid.spend.reconciliation_views import allowance_view
@@ -206,33 +210,49 @@ def scenario(
             decisions=decisions,
         )
     )
-    accounts = {
-        ledger.CARD: (
-            CardAccount(ledger.CARD, "Example card", "Sample Bank", "0000", "USD", ledger.LAST_SYNCED),
-            date(2026, 10, 1),
-            True,
+    configured_cards = {card.account_id: card for card in configuration.cards}
+    cards = [
+        CardView(
+            account_id=ledger.CARD,
+            label=configured_cards[ledger.CARD].label,
+            account_name="Example card",
+            institution_name="Sample Bank",
+            mask="0000",
+            currency="USD",
+            statement_period=StatementCycle(start=date(2026, 10, 1), through=ledger.NOW.date()),
+            spend_minor_units=22000,
+            posted_minor_units=20500,
+            pending_minor_units=1500,
+            limit_minor_units=configured_cards[ledger.CARD].limit_minor_units,
+            alert_threshold_percent=configured_cards[ledger.CARD].alert_threshold_percent,
+            spend_percent=Decimal(22),
+            alert_state=AlertState.NORMAL,
+            last_synced_at=ledger.LAST_SYNCED,
         ),
-        ledger.NEW_CARD: (
-            CardAccount(ledger.NEW_CARD, "New example card", "Sample Credit Union", "1111", "USD", ledger.LAST_SYNCED),
-            date(2026, 10, 10),
-            False,
+        CardView(
+            account_id=ledger.NEW_CARD,
+            label=configured_cards[ledger.NEW_CARD].label,
+            account_name="New example card",
+            institution_name="Sample Credit Union",
+            mask="1111",
+            currency="USD",
+            statement_period=ProvisionalCardPeriod(start=date(2026, 10, 10), through=ledger.NOW.date()),
+            spend_minor_units=3900,
+            posted_minor_units=3900,
+            pending_minor_units=0,
+            limit_minor_units=configured_cards[ledger.NEW_CARD].limit_minor_units,
+            alert_threshold_percent=configured_cards[ledger.NEW_CARD].alert_threshold_percent,
+            spend_percent=None,
+            alert_state=AlertState.UNAVAILABLE,
+            last_synced_at=ledger.LAST_SYNCED,
         ),
+    ]
+    # These synthetic card transactions all count toward their statement totals.
+    statement_decisions = {
+        (transaction.account_id, transaction.transaction_id): (StatementReason.COUNTED, int(transaction.amount * 100))
+        for transaction in transactions
+        if transaction.account_id in {ledger.CARD, ledger.NEW_CARD}
     }
-    cards = []
-    statement_decisions: dict[tuple[str, str], tuple[StatementReason, int]] = {}
-    for card in configuration.cards:
-        account, cycle_start, statement_available = accounts[card.account_id]
-        card_view, card_decisions = project_card(
-            account,
-            card,
-            cycle_start=cycle_start,
-            statement_available=statement_available,
-            transactions=[transaction for transaction in transactions if transaction.account_id == account.account_id],
-            time_zone=configuration.time_zone,
-            today=ledger.NOW.date(),
-        )
-        cards.append(card_view)
-        statement_decisions.update(card_decisions)
     return Scenario(
         configuration=configuration,
         transactions=transactions,

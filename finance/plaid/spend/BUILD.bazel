@@ -46,7 +46,6 @@ py_library(
     srcs = ["service.py"],
     deps = [
         ":allowance",
-        ":card_projection",
         ":configuration",
         ":models",
         ":policy_queries",
@@ -55,10 +54,10 @@ py_library(
         ":reconciliation_views",
         ":statement_queries",
         ":sustainability",
-        ":transaction_projection",
         "//finance/plaid/db:models",
         "@pypi//anyio",
         "@pypi//asyncpg",
+        "@pypi//babel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -169,7 +168,6 @@ py_test(
         ":portfolio_models",
         ":service",
         ":sustainability",
-        ":transaction_projection",
         "//:conftest",
         "@pypi//asyncpg",
         "@pypi//pytest",
@@ -429,43 +427,5 @@ py_library(
     deps = [
         "//finance/plaid/db:models",
         "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "transaction_projection",
-    srcs = ["transaction_projection.py"],
-    visibility = ["//finance/plaid/spend:__subpackages__"],
-    deps = [
-        ":allowance",
-        ":configuration",
-        ":models",
-        "@pypi//babel",
-    ],
-)
-
-py_library(
-    name = "card_projection",
-    srcs = ["card_projection.py"],
-    visibility = ["//finance/plaid/spend/testing:__pkg__"],
-    deps = [
-        ":allowance",
-        ":configuration",
-        ":models",
-        "@pypi//babel",
-    ],
-)
-
-py_test(
-    name = "test_card_projection",
-    srcs = ["test_card_projection.py"],
-    deps = [
-        ":allowance",
-        ":card_projection",
-        ":configuration",
-        ":conftest",
-        ":models",
-        "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )

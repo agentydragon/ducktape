@@ -13,6 +13,7 @@ from decimal import Decimal
 
 import anyio
 import asyncpg
+from babel.numbers import get_currency_precision
 from sqlalchemy import text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import SQLAlchemyError
@@ -20,9 +21,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from finance.plaid.db.models import async_session_factory
 from finance.plaid.spend.allowance import (
+    AccountingPolicy,
     AllowanceView,
+    CreditTreatment,
+    Disposition,
     EstimatePeriodId,
     ForecastView,
+    Kind,
     PaceAlert,
     Period,
     PeriodId,
@@ -30,20 +35,31 @@ from finance.plaid.spend.allowance import (
     Transaction,
     TransactionDecision,
     TransactionPeriodId,
+    accounting_disposition,
     calculate,
     daily_reference,
+    prepare_accounting,
     round_minor_units,
 )
-from finance.plaid.spend.card_projection import CardAccount, project_card
 from finance.plaid.spend.configuration import SpendConfiguration
 from finance.plaid.spend.models import (
+    AlertState,
     AllowanceConfigurationView,
+    AnalysisCategoryView,
     CardConfigurationView,
+    CardView,
+    ExcludedFlowSummary,
+    PaceEffect,
     PlaidTransactionDetails,
+    ProvisionalCardPeriod,
     SpendConfigurationView,
+    SpendTransactionRow,
     SpendTransactionsView,
     SpendView,
+    StatementCycle,
     StatementReason,
+    TransactionPeriodSummary,
+    UnavailableCardPeriod,
 )
 from finance.plaid.spend.policy_queries import select_policy_accounts, select_policy_transactions
 from finance.plaid.spend.portfolio import CoinbaseClient, read_portfolio
@@ -62,11 +78,31 @@ from finance.plaid.spend.sustainability import (
     disabled_view,
     empty_portfolio,
 )
-from finance.plaid.spend.transaction_projection import project_transactions_view
 
 logger = logging.getLogger(__name__)
 
 _CHANNEL = "plaid_spend_changed"
+
+
+def summarize_excluded_flows(rows: list[SpendTransactionRow]) -> list[ExcludedFlowSummary]:
+    """Summarize only policy exclusions; other accounting dispositions stay separate."""
+    groups: dict[tuple[str, str], list[SpendTransactionRow]] = defaultdict(list)
+    uncategorized = AnalysisCategoryView(id="uncategorized", label="Uncategorized", color="#64748B")
+    for row in rows:
+        if row.disposition == Disposition.EXCLUDED:
+            category = row.category or uncategorized
+            groups[category.id, row.currency].append(row)
+    return [
+        ExcludedFlowSummary(
+            category=group[0].category or uncategorized,
+            currency=currency,
+            debit_minor_units=sum(max(row.amount_minor_units, 0) for row in group),
+            credit_minor_units=sum(max(-row.amount_minor_units, 0) for row in group),
+            transaction_count=len(group),
+            pending_count=sum(row.pending for row in group),
+        )
+        for (_, currency), group in sorted(groups.items())
+    ]
 
 
 class SpendService:
@@ -257,25 +293,102 @@ class SpendService:
         cards = []
         for account in account_rows:
             account_id = account["account_id"]
-            card, decisions = project_card(
-                CardAccount(
+            card_config = card_configs[account_id]
+            if (cycle_start := cycle_starts.get(account_id)) is None:
+                cards.append(
+                    CardView(
+                        account_id=account_id,
+                        label=card_config.label,
+                        account_name=account["account_name"],
+                        institution_name=account["institution_name"],
+                        mask=account["mask"],
+                        currency=account["currency"],
+                        statement_period=UnavailableCardPeriod(),
+                        spend_minor_units=None,
+                        posted_minor_units=None,
+                        pending_minor_units=None,
+                        limit_minor_units=card_config.limit_minor_units,
+                        alert_threshold_percent=card_config.alert_threshold_percent,
+                        spend_percent=None,
+                        alert_state=AlertState.UNAVAILABLE,
+                        last_synced_at=_as_utc(account["last_synced_at"]),
+                    )
+                )
+                continue
+
+            posted_minor_units = 0
+            pending_minor_units = 0
+            prepared = prepare_accounting(
+                transactions_by_account.get(account_id, []),
+                time_zone=self._configuration.time_zone,
+                today=today,
+                minor_unit_precision=get_currency_precision(account["currency"]),
+            )
+            accounting_policy = AccountingPolicy(
+                currency=account["currency"],
+                counted_kinds=frozenset(Kind),
+                credits=CreditTreatment.ALL,
+                honor_reversals=False,
+                exclude_card_payments=True,
+            )
+            for entry in prepared.entries:
+                transaction = entry.transaction
+                key = (account_id, transaction.transaction_id)
+                # Statements intentionally use posting dates, not purchase days.
+                if not cycle_start <= transaction.date <= today:
+                    if statement_decisions is not None:
+                        statement_decisions[key] = (StatementReason.OUTSIDE_CYCLE, 0)
+                    continue
+                disposition = accounting_disposition(entry, accounting_policy)
+                amount_minor_units = entry.amount_minor_units if disposition == Disposition.COUNTED else 0
+                if statement_decisions is not None:
+                    statement_decisions[key] = (StatementReason(disposition), amount_minor_units)
+                if transaction.pending:
+                    pending_minor_units += amount_minor_units
+                else:
+                    posted_minor_units += amount_minor_units
+
+            spend_minor_units = posted_minor_units + pending_minor_units
+            limit_minor_units = card_config.limit_minor_units
+            statement_available = account_id in statement_account_ids
+            spend_percent = (
+                Decimal(spend_minor_units) * Decimal(100) / Decimal(limit_minor_units)
+                if limit_minor_units is not None and statement_available
+                else None
+            )
+            if not statement_available:
+                alert_state = AlertState.UNAVAILABLE
+            elif spend_percent is not None and spend_percent >= 100:
+                alert_state = AlertState.EXCEEDED
+            elif (
+                spend_percent is not None
+                and card_config.alert_threshold_percent is not None
+                and spend_percent >= card_config.alert_threshold_percent
+            ):
+                alert_state = AlertState.WARNING
+            else:
+                alert_state = AlertState.NORMAL
+            cards.append(
+                CardView(
                     account_id=account_id,
+                    label=card_config.label,
                     account_name=account["account_name"],
                     institution_name=account["institution_name"],
                     mask=account["mask"],
                     currency=account["currency"],
+                    statement_period=StatementCycle(start=cycle_start, through=today)
+                    if statement_available
+                    else ProvisionalCardPeriod(start=cycle_start, through=today),
+                    spend_minor_units=spend_minor_units,
+                    posted_minor_units=posted_minor_units,
+                    pending_minor_units=pending_minor_units,
+                    limit_minor_units=limit_minor_units,
+                    alert_threshold_percent=card_config.alert_threshold_percent,
+                    spend_percent=spend_percent,
+                    alert_state=alert_state,
                     last_synced_at=_as_utc(account["last_synced_at"]),
-                ),
-                card_configs[account_id],
-                cycle_start=cycle_starts.get(account_id),
-                statement_available=account_id in statement_account_ids,
-                transactions=transactions_by_account.get(account_id, []),
-                time_zone=self._configuration.time_zone,
-                today=today,
+                )
             )
-            cards.append(card)
-            if statement_decisions is not None:
-                statement_decisions.update(decisions)
         return SpendView(
             generated_at=generated_at,
             cards=cards,
@@ -298,15 +411,129 @@ class SpendService:
             statement_decisions=statement_decisions,
             transaction_details=details_by_key,
         )
-        return project_transactions_view(
-            configuration=self._configuration,
-            view=view,
-            decisions=decisions,
-            card_transactions=card_rows,
-            statement_decisions=statement_decisions,
-            details_by_key=details_by_key,
-            account_labels=labels,
+        today = self.report_day(view.generated_at)
+        cycle_report = (
+            next((report for report in view.allowance.spend_periods if report.period.id == PeriodId.CREDIT_CYCLE), None)
+            if view.allowance is not None
+            else None
+        )
+        actual_period_id = PeriodId.ROLLING_30D if period == PeriodId.CREDIT_CYCLE and cycle_report is None else period
+        report_period = Period.for_id(
+            PeriodId(actual_period_id), today, cycle_report.period.start if cycle_report else None
+        )
+        start = report_period.start
+        card_currencies = {card.account_id: card.currency for card in view.cards}
+        card_cycle_starts = {
+            card.account_id: card.statement_period.start if card.statement_period.kind != "unavailable" else None
+            for card in view.cards
+        }
+        card_ids = {card.account_id for card in self._configuration.cards if card.enabled}
+        allowance_ids = self._configuration.allowance.spending_account_ids if self._configuration.allowance else set()
+        allowance_policy = self._configuration.allowance
+        labels.update({card.account_id: card.label for card in self._configuration.cards if card.enabled})
+        rows: list[SpendTransactionRow] = []
+        seen: set[tuple[str, str]] = set()
+
+        zone = self._configuration.time_zone
+
+        def add_row(transaction: Transaction, decision: TransactionDecision | None) -> None:
+            day = transaction.report_day(zone)
+            if not start <= day <= today:
+                return
+            key = (transaction.account_id, transaction.transaction_id)
+            if key in seen:
+                return
+            seen.add(key)
+            statement = statement_decisions.get(key)
+            details = details_by_key.get(key, PlaidTransactionDetails())
+            is_card = transaction.account_id in card_ids
+            currency = transaction.currency or card_currencies.get(transaction.account_id) or "USD"
+            card_cycle_start = card_cycle_starts.get(transaction.account_id)
+            if statement is not None:
+                statement_reason = statement[0]
+            elif is_card and card_cycle_start is not None and transaction.date < card_cycle_start:
+                statement_reason = StatementReason.OUTSIDE_CYCLE
+            elif is_card:
+                statement_reason = StatementReason.UNAVAILABLE
+            else:
+                statement_reason = None
+            category = None
+            if decision is not None and allowance_policy is not None:
+                category_id = (
+                    decision.rule.analysis_category
+                    if decision.rule is not None and decision.rule.analysis_category is not None
+                    else "unclassified"
+                )
+                category_config = allowance_policy.analysis_categories[category_id]
+                category = AnalysisCategoryView(
+                    id=category_id, label=category_config.label, color=category_config.color
+                )
+            rows.append(
+                SpendTransactionRow(
+                    date=day,
+                    plaid_date=transaction.date,
+                    account_label=labels.get(transaction.account_id, "Account"),
+                    name=transaction.name,
+                    merchant_name=transaction.merchant_name,
+                    amount_minor_units=_amount_minor_units(transaction.amount, currency),
+                    currency=currency,
+                    pending=transaction.pending,
+                    allowance_in_scope=transaction.account_id in allowance_ids,
+                    disposition=decision.disposition if decision else None,
+                    rule_number=decision.rule_number if decision else None,
+                    rule=decision.rule if decision else None,
+                    reversal_pair=decision.reversal_pair if decision else None,
+                    effective_kind=decision.effective_kind if decision else None,
+                    allowance_minor_units=decision.allowance_minor_units if decision else 0,
+                    pace_effects=[
+                        PaceEffect(
+                            period_id=period_id,
+                            amount_minor_units=decision.pace_effects_minor_units.get(period_id, 0) if decision else 0,
+                        )
+                        for period_id in PeriodId
+                        if period_id.rolling_days is not None
+                    ],
+                    statement_minor_units=statement[1]
+                    if statement
+                    else 0
+                    if statement_reason == StatementReason.OUTSIDE_CYCLE
+                    else None,
+                    statement_reason=statement_reason,
+                    pfc_primary=transaction.pfc_primary,
+                    pfc_detailed=transaction.pfc_detailed,
+                    merchant_category_code=transaction.merchant_category_code,
+                    category=category,
+                    counterparties=transaction.counterparties or [],
+                    details=details,
+                )
+            )
+
+        for decision in decisions:
+            add_row(decision.transaction, decision)
+        for transaction in card_rows:
+            add_row(transaction, None)
+        rows.sort(key=lambda row: (row.date, abs(row.amount_minor_units)), reverse=True)
+        unmatched_rows = [
+            row
+            for row in rows
+            if row.allowance_in_scope
+            and row.disposition == Disposition.COUNTED
+            and row.amount_minor_units > 0
+            and (row.effective_kind is None or row.effective_kind == Kind.REVIEW)
+        ]
+        return SpendTransactionsView(
+            generated_at=view.generated_at,
             requested_period_id=period,
+            period=report_period,
+            summary=TransactionPeriodSummary(
+                transaction_count=len(rows),
+                net_allowance_spend_minor_units=sum(row.allowance_minor_units for row in rows),
+                unmatched_charge_count=len(unmatched_rows),
+                unmatched_charge_minor_units=sum(row.allowance_minor_units for row in unmatched_rows),
+                excluded_flows=summarize_excluded_flows(rows),
+            ),
+            allowance=view.allowance,
+            rows=rows,
         )
 
     async def _read_allowance(
@@ -550,6 +777,10 @@ def _cycle_start(last_statement_issue_date: str | None) -> date | None:
     if last_statement_issue_date is None:
         return None
     return date.fromisoformat(last_statement_issue_date) + timedelta(days=1)
+
+
+def _amount_minor_units(major_units: Decimal, currency: str) -> int:
+    return round_minor_units(major_units, get_currency_precision(currency))
 
 
 def _as_utc(value: datetime | None) -> datetime | None:

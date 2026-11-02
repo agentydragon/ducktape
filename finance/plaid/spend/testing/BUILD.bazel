@@ -16,7 +16,6 @@ py_library(
     deps = [
         ":ledger",
         "//finance/plaid/spend:allowance",
-        "//finance/plaid/spend:card_projection",
         "//finance/plaid/spend:configuration",
         "//finance/plaid/spend:models",
         "//finance/plaid/spend:reconciliation_views",
