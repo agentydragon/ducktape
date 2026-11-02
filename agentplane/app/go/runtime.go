@@ -178,11 +178,11 @@ func run(ctx context.Context, config Config) error {
 		return fmt.Errorf("configure Environment Service client: %w", err)
 	}
 	defer environmentConn.Close()
-	environments, err := sandboxes.NewEnvironmentReader(config.SandboxNamespace, environmentpb.NewEnvironmentServiceClient(environmentConn))
+	environments, err := sandboxes.NewEnvironmentReader(environmentpb.NewEnvironmentServiceClient(environmentConn))
 	if err != nil {
 		return fmt.Errorf("configure Environment Service reader: %w", err)
 	}
-	appBridge, err := bridge.New(environments, runner, dispatcher)
+	appBridge, err := bridge.New(config.SandboxNamespace, environments, runner, dispatcher)
 	if err != nil {
 		return fmt.Errorf("configure Runner bridge: %w", err)
 	}
@@ -353,7 +353,7 @@ func run(ctx context.Context, config Config) error {
 	if err := registerThreadMetadataGateway(server, app); err != nil {
 		return fmt.Errorf("register Thread metadata facade: %w", err)
 	}
-	if err := RegisterThreadReadRoutes(server, threadStore, history, environments, runner); err != nil {
+	if err := RegisterThreadReadRoutes(server, config.SandboxNamespace, threadStore, history, environments, runner); err != nil {
 		return fmt.Errorf("register Thread routes: %w", err)
 	}
 	RegisterOperatorRoutes(server, policies, federator, actionClient, actionCallbackHTTP, config.ActionFederation.ServiceURL)
@@ -361,7 +361,7 @@ func run(ctx context.Context, config Config) error {
 	server.RegisterRawRoute("POST /telemetry/v1/traces", traceRelayHandler(), true)
 	RegisterStreamingRoutes(server, StreamingDependencies{
 		Auth: appAuth, Updates: wakeupHub, UpdatesConnected: wakeupHub.Connected,
-		Live: liveIndex, Sandboxes: environments, Threads: threadStore, History: history, HistoryFollower: historyReaderClient,
+		SandboxNamespace: config.SandboxNamespace, Live: liveIndex, Sandboxes: environments, Threads: threadStore, History: history, HistoryFollower: historyReaderClient,
 		ActionPolicy: actionClient, Federator: federator,
 		ActionServiceURL: config.ActionFederation.ServiceURL,
 		DispatcherHTTP:   dispatcherGateway, EnvironmentHTTP: environmentGateway, ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,

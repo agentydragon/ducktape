@@ -29,9 +29,9 @@ type fakeSandboxGetter struct {
 	uid     string
 }
 
-func (f *fakeSandboxGetter) GetExactUID(_ context.Context, name, uid string) (*environmentpb.EnvironmentDescriptor, error) {
-	f.name = name
-	f.uid = uid
+func (f *fakeSandboxGetter) GetExact(_ context.Context, target *environmentpb.TargetHandle) (*environmentpb.EnvironmentDescriptor, error) {
+	f.name = target.GetName()
+	f.uid = target.GetUid()
 	return f.sandbox, f.err
 }
 
@@ -101,7 +101,7 @@ func TestOpenSessionPreservesIdentitySpecAndOptionalSetupScript(t *testing.T) {
 	dispatcher := &fakeDispatcher{opening: &dispatcherpb.SessionOpening{
 		SessionId: sessionID.String(), Sandbox: "operator-sandbox", SandboxUid: "sandbox-uid",
 	}}
-	bridge, err := New(&fakeSandboxGetter{}, nil, dispatcher)
+	bridge, err := New("operators", &fakeSandboxGetter{}, nil, dispatcher)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestOpenSessionForwardsNilUUIDLikePythonRoute(t *testing.T) {
 	dispatcher := &fakeDispatcher{opening: &dispatcherpb.SessionOpening{
 		SessionId: uuid.Nil.String(), Sandbox: "operator-sandbox", SandboxUid: "sandbox-uid",
 	}}
-	bridge, err := New(&fakeSandboxGetter{}, nil, dispatcher)
+	bridge, err := New("operators", &fakeSandboxGetter{}, nil, dispatcher)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestOpenSessionForwardsNilUUIDLikePythonRoute(t *testing.T) {
 func TestOpenSessionTimeoutCarriesStableIdempotencyKey(t *testing.T) {
 	sessionID := uuid.New()
 	dispatcher := &fakeDispatcher{err: &RequestTimeoutError{Cause: context.DeadlineExceeded}}
-	bridge, err := New(&fakeSandboxGetter{}, nil, dispatcher)
+	bridge, err := New("operators", &fakeSandboxGetter{}, nil, dispatcher)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestSessionOpeningHidesWrongSandboxAndSession(t *testing.T) {
 		{SessionId: uuid.NewString(), Sandbox: "operator-sandbox"},
 		{},
 	} {
-		bridge, err := New(&fakeSandboxGetter{}, nil, &fakeDispatcher{opening: opening})
+		bridge, err := New("operators", &fakeSandboxGetter{}, nil, &fakeDispatcher{opening: opening})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -200,7 +200,7 @@ func TestRunnerRoutesUseCurrentSandboxIdentityAndReturnProxiedValues(t *testing.
 	status := &sessionpb.EnvironmentRuntimeStatus{EnvironmentRuntimeBootId: "boot-1"}
 	runner := &fakeRunner{list: list, status: status}
 	getter := &fakeSandboxGetter{sandbox: sandbox}
-	bridge, err := New(getter, runner, &fakeDispatcher{})
+	bridge, err := New("operators", getter, runner, &fakeDispatcher{})
 	if err != nil {
 		t.Fatal(err)
 	}

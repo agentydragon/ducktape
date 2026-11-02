@@ -22,7 +22,7 @@ import (
 
 // SandboxGetter returns the caller-authorized descriptor for an exact Sandbox incarnation.
 type SandboxGetter interface {
-	GetExactUID(context.Context, string, string) (*environmentpb.EnvironmentDescriptor, error)
+	GetExact(context.Context, *environmentpb.TargetHandle) (*environmentpb.EnvironmentDescriptor, error)
 }
 
 // Dispatcher is the narrow unary surface used by the RunnerBridge.
@@ -41,17 +41,18 @@ type RunnerProxy interface {
 
 // RunnerBridge joins the app's Sandbox identity, Dispatcher and Runner services.
 type RunnerBridge struct {
+	namespace  string
 	sandboxes  SandboxGetter
 	runner     RunnerProxy
 	dispatcher Dispatcher
 }
 
 // New constructs the bridge. Runner may be nil for callers using only Session openings.
-func New(sandboxes SandboxGetter, runner RunnerProxy, dispatcher Dispatcher) (*RunnerBridge, error) {
-	if sandboxes == nil || dispatcher == nil {
+func New(namespace string, sandboxes SandboxGetter, runner RunnerProxy, dispatcher Dispatcher) (*RunnerBridge, error) {
+	if namespace == "" || sandboxes == nil || dispatcher == nil {
 		return nil, errors.New("Sandbox getter and Session Dispatcher are required")
 	}
-	return &RunnerBridge{sandboxes: sandboxes, runner: runner, dispatcher: dispatcher}, nil
+	return &RunnerBridge{namespace: namespace, sandboxes: sandboxes, runner: runner, dispatcher: dispatcher}, nil
 }
 
 // OpenSession queues one immutable Session specification. The caller-minted
@@ -141,12 +142,12 @@ func (b *RunnerBridge) currentSandbox(ctx context.Context, name, uid string) (*e
 	if name == "" || uid == "" {
 		return nil, errors.New("Sandbox name and UID are required")
 	}
-	sandbox, err := b.sandboxes.GetExactUID(ctx, name, uid)
+	sandbox, err := b.sandboxes.GetExact(ctx, &environmentpb.TargetHandle{Namespace: b.namespace, Name: name, Uid: uid})
 	if err != nil {
 		return nil, err
 	}
 	if sandbox == nil || sandbox.GetTarget() == nil || sandbox.GetTarget().GetName() != name ||
-		sandbox.GetTarget().GetUid() != uid || sandbox.GetTarget().GetNamespace() == "" {
+		sandbox.GetTarget().GetUid() != uid || sandbox.GetTarget().GetNamespace() != b.namespace {
 		return nil, fmt.Errorf("Sandbox %q has incomplete or mismatched identity", name)
 	}
 	return sandbox, nil

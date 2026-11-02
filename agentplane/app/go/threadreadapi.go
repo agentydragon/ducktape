@@ -51,7 +51,7 @@ type threadReadHistory interface {
 }
 
 type threadSandboxInventory interface {
-	GetExactUID(context.Context, string, string) (*environmentpb.EnvironmentDescriptor, error)
+	GetExact(context.Context, *environmentpb.TargetHandle) (*environmentpb.EnvironmentDescriptor, error)
 }
 
 type threadEnvironmentRuntimeStatusReader interface {
@@ -146,6 +146,7 @@ func (b *threadRenameBody) UnmarshalJSON(data []byte) error {
 // The inventory and Environment Runtime status reader are required for the archive guard.
 func RegisterThreadReadRoutes(
 	server *HTTPServer,
+	namespace string,
 	store threadReadStore,
 	history threadReadHistory,
 	inventory threadSandboxInventory,
@@ -209,7 +210,7 @@ func RegisterThreadReadRoutes(
 		if _, err := makeThreadView(*thread, summary); err != nil {
 			return nil, threadReadHTTPError(err)
 		}
-		if err := ensureThreadArchivable(ctx, *thread, summary, inventory, environmentRuntime); err != nil {
+		if err := ensureThreadArchivable(ctx, namespace, *thread, summary, inventory, environmentRuntime); err != nil {
 			return nil, threadArchiveHTTPError(err)
 		}
 		if _, err := store.Archive(ctx, input.ThreadID); err != nil {
@@ -633,14 +634,14 @@ func makeThreadView(thread threads.Thread, summary historydata.FoldSummary) (thr
 
 func stringPointer(value string) *string { return &value }
 
-func ensureThreadArchivable(ctx context.Context, thread threads.Thread, summary historydata.FoldSummary, inventory threadSandboxInventory, environmentRuntime threadEnvironmentRuntimeStatusReader) error {
+func ensureThreadArchivable(ctx context.Context, namespace string, thread threads.Thread, summary historydata.FoldSummary, inventory threadSandboxInventory, environmentRuntime threadEnvironmentRuntimeStatusReader) error {
 	if inventory == nil {
 		return errors.New("Sandbox inventory is unavailable")
 	}
 	if summary.SandboxUID == "" {
 		return errors.New("Thread has no Sandbox UID; its Environment cannot be identified")
 	}
-	sandbox, err := inventory.GetExactUID(ctx, summary.Sandbox, summary.SandboxUID)
+	sandbox, err := inventory.GetExact(ctx, &environmentpb.TargetHandle{Namespace: namespace, Name: summary.Sandbox, Uid: summary.SandboxUID})
 	if status.Code(err) == codes.NotFound {
 		return nil // This exact Environment is gone, so it cannot have a running harness.
 	}

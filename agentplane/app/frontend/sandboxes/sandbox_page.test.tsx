@@ -382,6 +382,9 @@ it("does not join an old detail frame to a same-name replacement", async () => {
   await render(async () => Response.json([]));
   expect(container.textContent).not.toContain("Old incarnation thread");
   expect(container.textContent).not.toContain("There is no sandbox startup-test any more.");
+  expect(container.querySelector('[aria-label="Sandbox status: Ready"]')).not.toBeNull();
+  if (newThread().getAttribute("aria-expanded") !== "true") await act(async () => newThread().click());
+  expect(createThreadButton().disabled).toBe(false);
 });
 
 it("does not use an incomplete target as an environment identity", async () => {

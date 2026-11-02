@@ -244,7 +244,8 @@ func (f *threadReadInventoryFake) Get(context.Context, string) (*environmentpb.E
 	return f.sandbox, f.err
 }
 
-func (f *threadReadInventoryFake) GetExactUID(_ context.Context, name, uid string) (*environmentpb.EnvironmentDescriptor, error) {
+func (f *threadReadInventoryFake) GetExact(_ context.Context, target *environmentpb.TargetHandle) (*environmentpb.EnvironmentDescriptor, error) {
+	name, uid := target.GetName(), target.GetUid()
 	f.exactName, f.exactUID = name, uid
 	if f.err != nil {
 		return nil, f.err
@@ -492,7 +493,7 @@ func TestThreadRenameBodyRequiresOneKnownField(t *testing.T) {
 
 func TestThreadReadRouteRegistrationPublishesOpenAPIPaths(t *testing.T) {
 	server := NewHTTPServer(nil)
-	if err := RegisterThreadReadRoutes(server, nil, nil, nil, nil); err != nil {
+	if err := RegisterThreadReadRoutes(server, "tools", nil, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	recorder := httptest.NewRecorder()
@@ -541,7 +542,7 @@ func TestEnsureThreadArchivableRejectsBusyEnvironmentRuntime(t *testing.T) {
 	}
 	inventory := &threadReadInventoryFake{sandbox: sandbox}
 	environmentRuntime := &threadReadEnvironmentRuntimeFake{status: &sessionpb.EnvironmentRuntimeStatus{Sessions: []*sessionpb.SessionStatus{{SessionId: id.String(), Busy: true}}}}
-	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox", SandboxUID: "sandbox-uid"}, inventory, environmentRuntime); !errors.Is(err, errThreadBusy) {
+	if err := ensureThreadArchivable(context.Background(), "tools", thread, historydata.FoldSummary{Sandbox: "sandbox", SandboxUID: "sandbox-uid"}, inventory, environmentRuntime); !errors.Is(err, errThreadBusy) {
 		t.Fatalf("busy Environment Runtime archive check = %v, want errThreadBusy", err)
 	}
 	if inventory.exactName != "sandbox" || inventory.exactUID != "sandbox-uid" {
@@ -551,11 +552,11 @@ func TestEnsureThreadArchivableRejectsBusyEnvironmentRuntime(t *testing.T) {
 		t.Fatalf("runtime status target = %v, want exact Sandbox UID", environmentRuntime.target)
 	}
 	environmentRuntime.status.Sessions[0].Busy = false
-	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox", SandboxUID: "sandbox-uid"}, inventory, environmentRuntime); err != nil {
+	if err := ensureThreadArchivable(context.Background(), "tools", thread, historydata.FoldSummary{Sandbox: "sandbox", SandboxUID: "sandbox-uid"}, inventory, environmentRuntime); err != nil {
 		t.Fatalf("idle Environment Runtime archive check = %v, want nil", err)
 	}
 	sandbox.OperatingMode = environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED
-	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox", SandboxUID: "sandbox-uid"}, inventory, environmentRuntime); !errors.Is(err, errThreadEnvironmentRuntimeUnready) {
+	if err := ensureThreadArchivable(context.Background(), "tools", thread, historydata.FoldSummary{Sandbox: "sandbox", SandboxUID: "sandbox-uid"}, inventory, environmentRuntime); !errors.Is(err, errThreadEnvironmentRuntimeUnready) {
 		t.Fatalf("unready Environment Runtime archive check = %v, want errThreadEnvironmentRuntimeUnready", err)
 	}
 }
@@ -616,7 +617,7 @@ func TestRenameThreadReturnsNotFoundWhenHistorySessionIsMissing(t *testing.T) {
 	t.Cleanup(server.Close)
 	id := uuid.New()
 	store := &threadReadStoreFake{rows: []threads.Thread{{ID: id}}}
-	if err := RegisterThreadReadRoutes(server, store, &threadReadHistoryFake{}, nil, nil); err != nil {
+	if err := RegisterThreadReadRoutes(server, "tools", store, &threadReadHistoryFake{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodPatch, "/threads/"+id.String(), strings.NewReader(`{"name":"renamed"}`))

@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -156,8 +157,8 @@ func (a *Access) SetWakeOnSend(ctx context.Context, name, uid string, wakeOnSend
 func (a *Access) SetIdleSuspendAfter(ctx context.Context, name, uid string, value *durationpb.Duration) error {
 	var duration *metav1.Duration
 	if value != nil {
-		if err := value.CheckValid(); err != nil || value.AsDuration() < time.Minute {
-			return &InvalidSandboxError{Reason: "idle suspend duration must be at least one minute"}
+		if err := validateIdleSuspendAfter(value); err != nil {
+			return err
 		}
 		duration = &metav1.Duration{Duration: value.AsDuration()}
 	}
@@ -371,9 +372,17 @@ func validateCreate(request *sandboxespb.CreateSandboxRequest) error {
 		return &InvalidSandboxError{Reason: "script exceeds 65536 characters"}
 	}
 	if request.IdleSuspendAfter != nil {
-		if err := request.IdleSuspendAfter.CheckValid(); err != nil || request.IdleSuspendAfter.AsDuration() < time.Minute {
-			return &InvalidSandboxError{Reason: "idle suspend duration must be at least one minute"}
+		if err := validateIdleSuspendAfter(request.IdleSuspendAfter); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+// Reject protobuf durations that saturate when converted to Go's narrower duration range.
+func validateIdleSuspendAfter(value *durationpb.Duration) error {
+	if err := value.CheckValid(); err != nil || value.AsDuration() < time.Minute || !proto.Equal(value, durationpb.New(value.AsDuration())) {
+		return &InvalidSandboxError{Reason: "idle suspend duration must be at least one minute and representable"}
 	}
 	return nil
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/management"
 	"github.com/danielgtaylor/huma/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -68,7 +69,7 @@ func RegisterPolicyRoutes(server *HTTPServer, config Config, environments *sandb
 		OperationID: "listSandboxEgress", Method: http.MethodGet, Path: "/sandboxes/{name}/egress", Tags: []string{"sandboxes"},
 		Summary: "List policy bindings for a Sandbox's ServiceAccount",
 	}, func(ctx context.Context, input *sandboxEgressInput) (*sandboxEgressOutput, error) {
-		sandbox, err := environments.GetExactUID(ctx, input.Name, input.UID)
+		sandbox, err := environments.GetExact(ctx, &environmentpb.TargetHandle{Namespace: config.SandboxNamespace, Name: input.Name, Uid: input.UID})
 		if err != nil {
 			return nil, sandboxHTTPError(err)
 		}
@@ -87,7 +88,7 @@ func RegisterPolicyRoutes(server *HTTPServer, config Config, environments *sandb
 		OperationID: "grantSandboxPolicySets", Method: http.MethodPost, Path: "/sandboxes/{name}/policy-bindings", Tags: []string{"sandboxes"},
 		Summary: "Grant policy sets to a running Sandbox", DefaultStatus: http.StatusCreated,
 	}, func(ctx context.Context, input *sandboxPolicyGrantInput) (*policyBindingOutput, error) {
-		sandbox, err := environments.GetExactUID(ctx, input.Name, input.Body.UID)
+		sandbox, err := environments.GetExact(ctx, &environmentpb.TargetHandle{Namespace: config.SandboxNamespace, Name: input.Name, Uid: input.Body.UID})
 		if err != nil {
 			return nil, sandboxHTTPError(err)
 		}

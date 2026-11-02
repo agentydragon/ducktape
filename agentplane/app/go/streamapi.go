@@ -61,8 +61,8 @@ type streamLiveInventory interface {
 }
 
 type streamSandboxInventory interface {
-	GetExactUID(context.Context, string, string) (*environmentpb.EnvironmentDescriptor, error)
-	WatchChanges(context.Context, string, string) <-chan struct{}
+	GetExact(context.Context, *environmentpb.TargetHandle) (*environmentpb.EnvironmentDescriptor, error)
+	Watch(context.Context, *environmentpb.TargetHandle) <-chan sandboxes.EnvironmentObservation
 }
 
 type streamHistoryStore interface {
@@ -76,6 +76,7 @@ type StreamingDependencies struct {
 	Auth             *auth.Auth
 	Updates          auth.ChangeSource
 	UpdatesConnected func() bool
+	SandboxNamespace string
 	Live             streamLiveInventory
 	Sandboxes        streamSandboxInventory
 	Threads          threadReadStore
@@ -253,41 +254,48 @@ func (r *streamingRoutes) liveSandbox(w http.ResponseWriter, request *http.Reque
 func (r *streamingRoutes) produceSandboxDetail(ctx context.Context, key sandboxDetailKey, publish func(sandboxDetail)) error {
 	liveChanges, stopLive := r.deps.Live.Subscribe()
 	defer stopLive()
-	environmentChanges := r.deps.Sandboxes.WatchChanges(ctx, key.name, key.uid)
+	target := &environmentpb.TargetHandle{Namespace: r.deps.SandboxNamespace, Name: key.name, Uid: key.uid}
+	observations := r.deps.Sandboxes.Watch(ctx, target)
+	var descriptor *environmentpb.EnvironmentDescriptor
 	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case observation, ok := <-observations:
+			if !ok {
+				return nil
+			}
+			if observation.Err != nil {
+				if status.Code(observation.Err) == codes.NotFound {
+					publish(sandboxDetail{})
+					return nil
+				}
+				return observation.Err
+			}
+			descriptor = observation.Descriptor
+			if descriptor == nil || !proto.Equal(descriptor.GetTarget(), target) {
+				return fmt.Errorf("Environment %q has incomplete or mismatched identity", key.name)
+			}
+		case <-liveChanges:
+			if descriptor == nil {
+				continue
+			}
+		}
 		snapshot, err := r.deps.Live.Snapshot(ctx)
 		if err != nil {
 			return err
 		}
 		detail := sandboxDetail{policyGeneration: snapshot.PolicyGeneration, watch: healthView(snapshot.Watch)}
-		descriptor, getErr := r.deps.Sandboxes.GetExactUID(ctx, key.name, key.uid)
-		if status.Code(getErr) == codes.NotFound {
-			descriptor, getErr = nil, nil
-		}
-		if getErr != nil {
-			return getErr
-		}
-		if descriptor != nil {
-			target := descriptor.GetTarget()
-			if target == nil || target.GetName() != key.name || target.GetUid() != key.uid {
-				return fmt.Errorf("Environment %q has incomplete or mismatched identity", key.name)
-			}
-			detail.sandboxUID = &target.Uid
-			if account := descriptor.GetExecutionAccount(); account != nil {
-				detail.subject = &sandboxespb.ServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}
-				detail.bindings, err = policyaccess.BindingsFromSnapshot(snapshot.PolicyBindings, snapshot.PolicySets, snapshot.EgressCredentials, detail.subject)
-				if err != nil {
-					return err
-				}
+		uid := descriptor.GetTarget().GetUid()
+		detail.sandboxUID = &uid
+		if account := descriptor.GetExecutionAccount(); account != nil {
+			detail.subject = &sandboxespb.ServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}
+			detail.bindings, err = policyaccess.BindingsFromSnapshot(snapshot.PolicyBindings, snapshot.PolicySets, snapshot.EgressCredentials, detail.subject)
+			if err != nil {
+				return err
 			}
 		}
 		publish(detail)
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-liveChanges:
-		case <-environmentChanges:
-		}
 	}
 }
 
@@ -306,34 +314,44 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 	changes, unsubscribe := r.deps.Live.Subscribe()
 	defer unsubscribe()
 	name := request.PathValue("name")
-	environmentChanges := r.deps.Sandboxes.WatchChanges(ctx, name, uid)
+	target := &environmentpb.TargetHandle{Namespace: r.deps.SandboxNamespace, Name: name, Uid: uid}
+	observations := r.deps.Sandboxes.Watch(ctx, target)
+	var descriptor *environmentpb.EnvironmentDescriptor
 	if err := startSSE(w); err != nil {
 		return
 	}
+	applyObservation := func(observation sandboxes.EnvironmentObservation, ok bool) bool {
+		if !ok {
+			return false
+		}
+		if observation.Err != nil {
+			_ = writeSSE(w, "snapshot", liveDecisionsFrame{Watching: false, Decisions: decisionsUnavailable{Detail: grpcFailure(observation.Err)}}, nil)
+			return false
+		}
+		descriptor = observation.Descriptor
+		return descriptor != nil && proto.Equal(descriptor.GetTarget(), target)
+	}
 	for {
+		// A disconnected or replaced Environment must be observed before reopening Egress.
+		select {
+		case observation, ok := <-observations:
+			if !applyObservation(observation, ok) {
+				return
+			}
+		default:
+		}
 		_, err := r.deps.Live.Snapshot(ctx)
 		if err != nil {
 			return
 		}
-		descriptor, getErr := r.deps.Sandboxes.GetExactUID(ctx, name, uid)
-		if status.Code(getErr) == codes.NotFound {
-			descriptor, getErr = nil, nil
-		}
-		if getErr != nil || descriptor == nil {
-			if getErr != nil {
-				if writeSSE(w, "snapshot", liveDecisionsFrame{Watching: false, Decisions: decisionsUnavailable{Detail: grpcFailure(getErr)}}, nil) != nil {
-					return
-				}
-			} else if writeSSE(w, "snapshot", liveDecisionsFrame{Watching: false, Decisions: decisionsUnavailable{Detail: "no sandbox " + name}}, nil) != nil {
-				return
-			}
+		if descriptor == nil {
 			select {
 			case <-ctx.Done():
 				return
-			case <-changes:
-				continue
-			case <-environmentChanges:
-				continue
+			case observation, ok := <-observations:
+				if !applyObservation(observation, ok) {
+					return
+				}
 			}
 		}
 		account := descriptor.GetExecutionAccount()
@@ -346,7 +364,10 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 				return
 			case <-changes:
 				continue
-			case <-environmentChanges:
+			case observation, ok := <-observations:
+				if !applyObservation(observation, ok) {
+					return
+				}
 				continue
 			}
 		}
@@ -357,8 +378,14 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 			if writeSSE(w, "snapshot", liveDecisionsFrame{Watching: false, Decisions: decisionsUnavailable{Detail: grpcFailure(err)}}, nil) != nil {
 				return
 			}
-			if !waitContext(ctx, time.Second) {
+			select {
+			case <-ctx.Done():
 				return
+			case observation, ok := <-observations:
+				if !applyObservation(observation, ok) {
+					return
+				}
+			case <-time.After(time.Second):
 			}
 			continue
 		}
@@ -395,10 +422,15 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 				stopWatch()
 				return
 			case <-changes:
-				// Recheck the exact Sandbox and execution account before continuing the stream.
+				// Policy changes restart the Egress stream using the observed account.
 				streamEnded = true
 				break
-			case <-environmentChanges:
+			case observation, ok := <-observations:
+				if !applyObservation(observation, ok) {
+					timer.Stop()
+					stopWatch()
+					return
+				}
 				streamEnded = true
 				break
 			case <-timer.C:
@@ -459,8 +491,14 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 			return
 		}
 		_ = watching
-		if !waitContext(ctx, time.Second) {
+		select {
+		case <-ctx.Done():
 			return
+		case observation, ok := <-observations:
+			if !applyObservation(observation, ok) {
+				return
+			}
+		case <-time.After(time.Second):
 		}
 	}
 }
@@ -703,7 +741,7 @@ func (r *streamingRoutes) sandboxNotifications(w http.ResponseWriter, request *h
 		return
 	}
 	defer cancel()
-	sandbox, err := r.deps.Sandboxes.GetExactUID(ctx, request.PathValue("name"), uid)
+	sandbox, err := r.deps.Sandboxes.GetExact(ctx, &environmentpb.TargetHandle{Namespace: r.deps.SandboxNamespace, Name: request.PathValue("name"), Uid: uid})
 	if err != nil {
 		_ = sandboxHTTPErrorToRaw(w, err)
 		return
@@ -840,7 +878,7 @@ func (r *streamingRoutes) console(w http.ResponseWriter, request *http.Request) 
 		return
 	}
 	defer cancel()
-	sandbox, err := r.deps.Sandboxes.GetExactUID(ctx, request.PathValue("name"), uid)
+	sandbox, err := r.deps.Sandboxes.GetExact(ctx, &environmentpb.TargetHandle{Namespace: r.deps.SandboxNamespace, Name: request.PathValue("name"), Uid: uid})
 	if err != nil {
 		_ = sandboxHTTPErrorToRaw(w, err)
 		return

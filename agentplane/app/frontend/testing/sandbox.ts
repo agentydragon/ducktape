@@ -4,16 +4,18 @@ import { SandboxPhase, SandboxPodSchema } from "../../../proto/sandboxes_pb";
 import {
   EnvironmentDescriptorSchema,
   OperatingMode,
+  ReadinessSchema,
+  ReadinessState,
   type EnvironmentDescriptor,
 } from "../../../sandboxes/environments/environment_service_pb";
 
 /** A fresh Sandbox with a fixed creation time, identity, and execution account. */
-export function testSandbox(name: string, uid: string): EnvironmentDescriptor {
-  const namespace = "agentplane-test";
+export function testSandbox(name: string, uid: string, namespace = "agentplane-test"): EnvironmentDescriptor {
   return create(EnvironmentDescriptorSchema, {
     target: { name, uid, namespace },
     createdAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),
     executionAccount: { namespace, name, uid: `${uid}-account` },
+    readiness: { state: ReadinessState.NOT_READY, reason: "ReadyConditionUnavailable" },
   });
 }
 
@@ -21,6 +23,7 @@ export function testSandbox(name: string, uid: string): EnvironmentDescriptor {
 export function readySandbox(name: string, uid: string): EnvironmentDescriptor {
   const sandbox = testSandbox(name, uid);
   sandbox.operatingMode = OperatingMode.RUNNING;
+  sandbox.readiness = create(ReadinessSchema, { state: ReadinessState.READY });
   sandbox.phase = SandboxPhase.RUNNING;
   sandbox.status = { conditions: [{ type: "Ready", status: "True" }] };
   sandbox.pod = create(SandboxPodSchema, {
@@ -40,6 +43,7 @@ export function readySandbox(name: string, uid: string): EnvironmentDescriptor {
 export function suspendedSandbox(name: string, uid: string): EnvironmentDescriptor {
   const sandbox = testSandbox(name, uid);
   sandbox.operatingMode = OperatingMode.SUSPENDED;
+  sandbox.readiness = create(ReadinessSchema, { state: ReadinessState.NOT_READY, reason: "Suspended" });
   sandbox.phase = SandboxPhase.SUSPENDED;
   sandbox.status = {};
   return sandbox;

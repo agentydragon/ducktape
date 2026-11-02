@@ -27,9 +27,12 @@ import {
   AccountHandleSchema,
   EnvironmentDescriptorSchema,
   OperatingMode,
+  ReadinessSchema,
+  ReadinessState,
   type EnvironmentDescriptor,
 } from "../../../sandboxes/environments/environment_service_pb";
 import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
+import { testSandbox } from "../testing/sandbox";
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
 import "@mantine/core/styles.css";
 
@@ -99,49 +102,68 @@ function ago(ms: number): string {
   return new Date(NOW - ms).toISOString();
 }
 
+function visualSandbox(
+  init: MessageInitShape<typeof EnvironmentDescriptorSchema>,
+  ready = false
+): EnvironmentDescriptor {
+  const result = create(EnvironmentDescriptorSchema, init);
+  const target = result.target;
+  if (!target?.namespace || !target.name || !target.uid) throw new Error("Visual Environment needs an exact target");
+  const base = testSandbox(target.name, target.uid, target.namespace);
+  if (result.executionAccount && !result.executionAccount.uid) result.executionAccount.uid = base.executionAccount!.uid;
+  result.readiness = create(ReadinessSchema, {
+    state: ready ? ReadinessState.READY : ReadinessState.NOT_READY,
+    reason: ready ? "PodReady" : "NotReady",
+  });
+  return result;
+}
+
 const SANDBOXES: EnvironmentDescriptor[] = [
-  create(EnvironmentDescriptorSchema, {
-    target: { name: "ready-sandbox", uid: "0f9c1d2e-0000-4000-8000-00000000a1b2", namespace: "agentplane-visual" },
-    createdAt: timestampFromDate(new Date(ago(3 * HOUR))),
-    operatingMode: OperatingMode.RUNNING,
-    executionAccount: { namespace: "agentplane-visual", name: "ready-sandbox" },
-    wakeOnSend: true,
-    idleSuspendAfter: { seconds: 3600n },
-    status: {
-      conditions: [{ type: "Ready", status: "True", reason: "PodReady", lastTransitionTime: ago(HOUR) }],
-    },
-    phase: SandboxPhase.RUNNING,
-    pod: {
-      name: "ready-sandbox",
-      namespace: "agentplane-visual",
-      uid: "visual-pod-a1b2",
-      deleting: false,
-      ownerReferences: [
-        {
-          apiVersion: "agentplane.allegedly.works/v1alpha1",
-          kind: "Sandbox",
-          name: "ready-sandbox",
-          uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
-          controller: true,
-        },
-      ],
-      nodeName: "harness-node",
+  visualSandbox(
+    {
+      target: { name: "ready-sandbox", uid: "0f9c1d2e-0000-4000-8000-00000000a1b2", namespace: "agentplane-visual" },
+      createdAt: timestampFromDate(new Date(ago(3 * HOUR))),
+      operatingMode: OperatingMode.RUNNING,
+      executionAccount: { namespace: "agentplane-visual", name: "ready-sandbox" },
+      wakeOnSend: true,
+      idleSuspendAfter: { seconds: 3600n },
       status: {
-        phase: "Running",
-        podIP: "10.0.0.7",
-        startTime: ago(2 * HOUR),
-        qosClass: "Burstable",
-        conditions: [
-          { type: "PodScheduled", status: "True", lastTransitionTime: ago(2 * HOUR) },
-          { type: "Ready", status: "True", lastTransitionTime: ago(HOUR) },
+        conditions: [{ type: "Ready", status: "True", reason: "PodReady", lastTransitionTime: ago(HOUR) }],
+      },
+      phase: SandboxPhase.RUNNING,
+      pod: {
+        name: "ready-sandbox",
+        namespace: "agentplane-visual",
+        uid: "visual-pod-a1b2",
+        deleting: false,
+        ownerReferences: [
+          {
+            apiVersion: "agentplane.allegedly.works/v1alpha1",
+            kind: "Sandbox",
+            name: "ready-sandbox",
+            uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
+            controller: true,
+          },
         ],
-        containerStatuses: [
-          { name: "runner", state: { running: { startedAt: ago(HOUR) } }, ready: true, restartCount: 0 },
-        ],
+        nodeName: "harness-node",
+        status: {
+          phase: "Running",
+          podIP: "10.0.0.7",
+          startTime: ago(2 * HOUR),
+          qosClass: "Burstable",
+          conditions: [
+            { type: "PodScheduled", status: "True", lastTransitionTime: ago(2 * HOUR) },
+            { type: "Ready", status: "True", lastTransitionTime: ago(HOUR) },
+          ],
+          containerStatuses: [
+            { name: "runner", state: { running: { startedAt: ago(HOUR) } }, ready: true, restartCount: 0 },
+          ],
+        },
       },
     },
-  }),
-  create(EnvironmentDescriptorSchema, {
+    true
+  ),
+  visualSandbox({
     target: { name: "pending-sandbox", uid: "0f9c1d2e-0000-4000-8000-00000000c3d4", namespace: "agentplane-visual" },
     createdAt: timestampFromDate(new Date(ago(2 * 60_000))),
     operatingMode: OperatingMode.RUNNING,
@@ -183,7 +205,7 @@ const SANDBOXES: EnvironmentDescriptor[] = [
       },
     },
   }),
-  create(EnvironmentDescriptorSchema, {
+  visualSandbox({
     target: { name: "suspended-sandbox", uid: "0f9c1d2e-0000-4000-8000-00000000e5f6", namespace: "agentplane-visual" },
     createdAt: timestampFromDate(new Date(ago(48 * HOUR))),
     operatingMode: OperatingMode.SUSPENDED,
@@ -198,7 +220,7 @@ const SANDBOXES: EnvironmentDescriptor[] = [
 /** One Sandbox suspended because its runner was idle, and one because a requester suspended it. */
 function addSuspendedSandboxes(): void {
   SANDBOXES.push(
-    create(EnvironmentDescriptorSchema, {
+    visualSandbox({
       target: {
         name: "idle-suspended-sandbox",
         uid: "0f9c1d2e-0000-4000-8000-00000000b7c8",
@@ -214,7 +236,7 @@ function addSuspendedSandboxes(): void {
       phase: SandboxPhase.SUSPENDED,
       pod: undefined,
     }),
-    create(EnvironmentDescriptorSchema, {
+    visualSandbox({
       target: {
         name: "requested-suspended-sandbox",
         uid: "0f9c1d2e-0000-4000-8000-00000000d9e0",
@@ -235,7 +257,7 @@ function addSuspendedSandboxes(): void {
 
 function addProvisioningSandbox(): void {
   SANDBOXES.push(
-    create(EnvironmentDescriptorSchema, {
+    visualSandbox({
       target: {
         name: "test-provisioning",
         uid: "0f9c1d2e-0000-4000-8000-000000000007",

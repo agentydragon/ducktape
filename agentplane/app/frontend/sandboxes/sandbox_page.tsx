@@ -144,7 +144,7 @@ export function SandboxPage({
   const threadLive = useThreadsLive(threadRequest, null);
   // Never combine policy or thread data from an old incarnation with its same-name replacement.
   const matches = !!target && target.uid === live.snapshot?.sandbox_uid;
-  const sandbox = matches ? (candidate ?? null) : null;
+  const sandbox = target ? (candidate ?? null) : null;
   const deleted = sandboxInventoryFresh(inventory) && !candidate;
   const detail = matches ? live.snapshot : null;
   const vmConsoleAvailable = hasVmConsole(sandbox);

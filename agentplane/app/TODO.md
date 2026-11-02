@@ -1,3 +1,8 @@
 # App TODOs
 
 - [ ] Consider loading the app config into protobuf messages and using a unified representation through config loading and the generated AppConfig API.
+- [ ] Define which `EnvironmentDescriptor` status facts are authoritative for product behavior. The descriptor currently combines typed readiness, lifecycle and autosuspend facts with opaque Sandbox/Pod status used by diagnostics; consider a named diagnostics submessage while preserving operator visibility and the distinct semantics of derived phase.
+- [ ] Move the reusable Environment target identity to a neutral protobuf home and migrate compatible Session, Dispatcher, app and frontend callers. Keep resource-specific identities distinct and retain the original UID fence for persisted, unconfirmed commands without replaying them.
+- [ ] Give Environment-filtered Thread metadata a bounded cross-service query: avoid building full Thread views only to project them back to metadata, repeated History lookups, and scanning all metadata pages for archived counts on each refresh. Preserve History and app ownership boundaries and pagination semantics.
+- [ ] Investigate generated HTTP clients and reusable per-language watch reducers for protobuf services. EnvironmentService's TypeScript and Python callers currently repeat route spelling and snapshot/upsert/removal assembly; preserve authentication, cancellation, stream error and reconnect behavior.
+- [ ] Revisit `sandboxes/management`'s Python-compatible create-intent JSON serialization. Determine whether any outstanding or persisted receipts still require the old bytes before changing the format, and preserve reconciliation of uncertain create outcomes.

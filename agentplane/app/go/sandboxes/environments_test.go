@@ -16,6 +16,7 @@ type fakeEnvironmentService struct {
 	request       *environmentpb.GetEnvironmentRequest
 	err           error
 	watchRequests chan *environmentpb.WatchEnvironmentRequest
+	stream        grpc.ServerStreamingClient[environmentpb.WatchEnvironmentResponse]
 }
 
 func (f *fakeEnvironmentService) GetEnvironment(_ context.Context, request *environmentpb.GetEnvironmentRequest, _ ...grpc.CallOption) (*environmentpb.EnvironmentDescriptor, error) {
@@ -23,22 +24,60 @@ func (f *fakeEnvironmentService) GetEnvironment(_ context.Context, request *envi
 	return nil, f.err
 }
 
-func (f *fakeEnvironmentService) WatchEnvironment(_ context.Context, request *environmentpb.WatchEnvironmentRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[environmentpb.WatchEnvironmentResponse], error) {
-	if f.watchRequests != nil {
-		f.watchRequests <- proto.Clone(request).(*environmentpb.WatchEnvironmentRequest)
-	}
-	return nil, f.err
+type environmentStream struct {
+	grpc.ServerStreamingClient[environmentpb.WatchEnvironmentResponse]
+	frames []*environmentpb.WatchEnvironmentResponse
 }
 
-func TestEnvironmentWatchUsesExactTargetAndSignalsFailure(t *testing.T) {
-	service := &fakeEnvironmentService{err: status.Error(codes.Unavailable, "watch disconnected"), watchRequests: make(chan *environmentpb.WatchEnvironmentRequest, 1)}
-	reader, err := NewEnvironmentReader("team", service)
+func (s *environmentStream) Recv() (*environmentpb.WatchEnvironmentResponse, error) {
+	if len(s.frames) == 0 {
+		return nil, status.Error(codes.NotFound, "target replaced")
+	}
+	frame := s.frames[0]
+	s.frames = s.frames[1:]
+	return frame, nil
+}
+
+func TestEnvironmentWatchDeliversSnapshotsAndTerminalErrorWithoutGet(t *testing.T) {
+	target := &environmentpb.TargetHandle{Namespace: "team", Name: "worker", Uid: "uid"}
+	descriptor := &environmentpb.EnvironmentDescriptor{Target: target}
+	service := &fakeEnvironmentService{stream: &environmentStream{frames: []*environmentpb.WatchEnvironmentResponse{{Environment: descriptor}}}}
+	reader, err := NewEnvironmentReader(service)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	changes := reader.WatchChanges(ctx, "worker", "opaque-uid")
+	observations := reader.Watch(ctx, target)
+	first := <-observations
+	if first.Err != nil || !proto.Equal(first.Descriptor, descriptor) {
+		t.Fatalf("watch snapshot = %v, %v", first.Descriptor, first.Err)
+	}
+	last := <-observations
+	if status.Code(last.Err) != codes.NotFound || service.request != nil {
+		t.Fatalf("watch terminal error = %v, get request = %v", last.Err, service.request)
+	}
+	if _, ok := <-observations; ok {
+		t.Fatal("watch did not close after terminal error")
+	}
+}
+
+func (f *fakeEnvironmentService) WatchEnvironment(_ context.Context, request *environmentpb.WatchEnvironmentRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[environmentpb.WatchEnvironmentResponse], error) {
+	if f.watchRequests != nil {
+		f.watchRequests <- proto.Clone(request).(*environmentpb.WatchEnvironmentRequest)
+	}
+	return f.stream, f.err
+}
+
+func TestEnvironmentWatchUsesExactTargetAndSignalsFailure(t *testing.T) {
+	service := &fakeEnvironmentService{err: status.Error(codes.Unavailable, "watch disconnected"), watchRequests: make(chan *environmentpb.WatchEnvironmentRequest, 1)}
+	reader, err := NewEnvironmentReader(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	changes := reader.Watch(ctx, &environmentpb.TargetHandle{Namespace: "team", Name: "worker", Uid: "opaque-uid"})
 	select {
 	case request := <-service.watchRequests:
 		want := &environmentpb.TargetHandle{Namespace: "team", Name: "worker", Uid: "opaque-uid"}
@@ -49,7 +88,10 @@ func TestEnvironmentWatchUsesExactTargetAndSignalsFailure(t *testing.T) {
 		t.Fatal("watch was not started")
 	}
 	select {
-	case <-changes:
+	case observation := <-changes:
+		if status.Code(observation.Err) != codes.Unavailable {
+			t.Fatalf("watch error = %v", observation.Err)
+		}
 	case <-time.After(time.Second):
 		t.Fatal("watch failure did not trigger a refresh")
 	}
@@ -57,11 +99,11 @@ func TestEnvironmentWatchUsesExactTargetAndSignalsFailure(t *testing.T) {
 
 func TestEnvironmentReaderForwardsExactTargetAndServiceError(t *testing.T) {
 	service := &fakeEnvironmentService{err: status.Error(codes.NotFound, "target replaced")}
-	reader, err := NewEnvironmentReader("team", service)
+	reader, err := NewEnvironmentReader(service)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = reader.GetExactUID(context.Background(), "worker", "opaque-uid")
+	_, err = reader.GetExact(context.Background(), &environmentpb.TargetHandle{Namespace: "team", Name: "worker", Uid: "opaque-uid"})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("error = %v, want NotFound", err)
 	}

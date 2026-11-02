@@ -75,36 +75,41 @@ func (s *Service) WatchEnvironment(request *environmentpb.WatchEnvironmentReques
 		}
 		podName = currentPodName
 
-		var event watch.Event
-		var open bool
-		podEvent := false
-		select {
-		case <-ctx.Done():
-			return status.FromContextError(ctx.Err()).Err()
-		case <-recheck.C:
-			if err := auth.RevalidateStream(ctx); err != nil {
-				return err
-			}
-			continue
-		case event, open = <-sandboxes.ResultChan():
-		case event, open = <-accounts.ResultChan():
-		case event, open = <-pods.ResultChan():
-			podEvent = true
-		}
-		if !open {
-			return watchFailure(ctx, errors.New("Kubernetes environment watch closed"))
-		}
-		if event.Type == watch.Error {
-			return watchFailure(ctx, apierrors.FromObject(event.Object))
-		}
-		if podEvent {
-			object, ok := event.Object.(metav1.Object)
-			if !ok {
-				return watchFailure(ctx, errors.New("Kubernetes Pod watch returned a non-object"))
-			}
-			if object.GetName() != podName {
+		// Keep consuming unrelated Pod events and periodic authorization checks without
+		// rebuilding the descriptor. Only a relevant object change needs a fresh read.
+		for {
+			var event watch.Event
+			var open bool
+			podEvent := false
+			select {
+			case <-ctx.Done():
+				return status.FromContextError(ctx.Err()).Err()
+			case <-recheck.C:
+				if err := auth.RevalidateStream(ctx); err != nil {
+					return err
+				}
 				continue
+			case event, open = <-sandboxes.ResultChan():
+			case event, open = <-accounts.ResultChan():
+			case event, open = <-pods.ResultChan():
+				podEvent = true
 			}
+			if !open {
+				return watchFailure(ctx, errors.New("Kubernetes environment watch closed"))
+			}
+			if event.Type == watch.Error {
+				return watchFailure(ctx, apierrors.FromObject(event.Object))
+			}
+			if podEvent {
+				object, ok := event.Object.(metav1.Object)
+				if !ok {
+					return watchFailure(ctx, errors.New("Kubernetes Pod watch returned a non-object"))
+				}
+				if object.GetName() != podName {
+					continue
+				}
+			}
+			break
 		}
 	}
 }

@@ -3,7 +3,6 @@ package sandboxes
 import (
 	"context"
 	"errors"
-	"time"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"google.golang.org/grpc"
@@ -15,58 +14,60 @@ type EnvironmentService interface {
 	WatchEnvironment(context.Context, *environmentpb.WatchEnvironmentRequest, ...grpc.CallOption) (grpc.ServerStreamingClient[environmentpb.WatchEnvironmentResponse], error)
 }
 
-// WatchChanges signals when the exact environment changes or its watch fails. Reconnection starts
-// a fresh service snapshot; cancellation stops the watch and its retry loop.
-func (r *EnvironmentReader) WatchChanges(ctx context.Context, name, uid string) <-chan struct{} {
-	changes := make(chan struct{}, 1)
+// EnvironmentObservation is one authorized watch snapshot or its terminal stream error.
+type EnvironmentObservation struct {
+	Descriptor *environmentpb.EnvironmentDescriptor
+	Err        error
+}
+
+// Watch returns the service's exact-target snapshots. Stream errors end the observation;
+// the HTTP stream consumer ends too, so its normal reconnect starts a fresh authorized watch.
+func (r *EnvironmentReader) Watch(ctx context.Context, target *environmentpb.TargetHandle) <-chan EnvironmentObservation {
+	observations := make(chan EnvironmentObservation)
 	go func() {
-		request := &environmentpb.WatchEnvironmentRequest{Target: &environmentpb.TargetHandle{Namespace: r.namespace, Name: name, Uid: uid}}
-		for ctx.Err() == nil {
-			stream, err := r.service.WatchEnvironment(ctx, request)
-			if err == nil {
-				for {
-					_, err = stream.Recv()
-					if err != nil {
-						break
-					}
-					select {
-					case changes <- struct{}{}:
-					default:
-					}
-				}
-			}
+		defer close(observations)
+		send := func(observation EnvironmentObservation) bool {
 			select {
-			case changes <- struct{}{}:
-			default:
-			}
-			timer := time.NewTimer(time.Second)
-			select {
+			case observations <- observation:
+				return true
 			case <-ctx.Done():
-				timer.Stop()
+				return false
+			}
+		}
+		stream, err := r.service.WatchEnvironment(ctx, &environmentpb.WatchEnvironmentRequest{Target: target})
+		if err != nil {
+			send(EnvironmentObservation{Err: err})
+			return
+		}
+		for {
+			frame, err := stream.Recv()
+			if err != nil {
+				send(EnvironmentObservation{Err: err})
 				return
-			case <-timer.C:
+			}
+			if frame.GetEnvironment() == nil {
+				send(EnvironmentObservation{Err: errors.New("Environment watch returned an empty snapshot")})
+				return
+			}
+			if !send(EnvironmentObservation{Descriptor: frame.GetEnvironment()}) {
+				return
 			}
 		}
 	}()
-	return changes
+	return observations
 }
 
-// EnvironmentReader forwards exact-target gets using the app's configured namespace. The service
+// EnvironmentReader forwards exact-target gets and watches. The service
 // owns target validation, authorization and incarnation fencing.
 type EnvironmentReader struct {
-	namespace string
-	service   EnvironmentService
+	service EnvironmentService
 }
 
-func NewEnvironmentReader(namespace string, service EnvironmentService) (*EnvironmentReader, error) {
-	if namespace == "" || service == nil {
-		return nil, errors.New("Sandbox namespace and Environment Service are required")
+func NewEnvironmentReader(service EnvironmentService) (*EnvironmentReader, error) {
+	if service == nil {
+		return nil, errors.New("Environment Service is required")
 	}
-	return &EnvironmentReader{namespace: namespace, service: service}, nil
-}
-
-func (r *EnvironmentReader) GetExactUID(ctx context.Context, name, uid string) (*environmentpb.EnvironmentDescriptor, error) {
-	return r.GetExact(ctx, &environmentpb.TargetHandle{Namespace: r.namespace, Name: name, Uid: uid})
+	return &EnvironmentReader{service: service}, nil
 }
 
 func (r *EnvironmentReader) GetExact(ctx context.Context, target *environmentpb.TargetHandle) (*environmentpb.EnvironmentDescriptor, error) {

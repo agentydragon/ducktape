@@ -62,6 +62,64 @@ type switchableReviews struct {
 	calls   atomic.Int32
 }
 
+type observedPodWatch struct {
+	watch.Interface
+	selected chan struct{}
+}
+
+func (w *observedPodWatch) ResultChan() <-chan watch.Event {
+	select {
+	case w.selected <- struct{}{}:
+	default:
+	}
+	return w.Interface.ResultChan()
+}
+
+func TestWatchEnvironmentDoesNotReadForUnrelatedPods(t *testing.T) {
+	var reads atomic.Int32
+	pods := watch.NewRaceFreeFake()
+	selected := make(chan struct{}, 2)
+	objects := interceptor.NewClient(baseReader(t), interceptor.Funcs{
+		Get: func(ctx context.Context, source client.WithWatch, key client.ObjectKey, object client.Object, options ...client.GetOption) error {
+			reads.Add(1)
+			return source.Get(ctx, key, object, options...)
+		},
+		Watch: func(_ context.Context, _ client.WithWatch, object client.ObjectList, _ ...client.ListOption) (watch.Interface, error) {
+			if _, ok := object.(*corev1.PodList); ok {
+				return &observedPodWatch{Interface: pods, selected: selected}, nil
+			}
+			return watch.NewRaceFreeFake(), nil
+		},
+	})
+	rpc := serveDiscovery(t, objects, runtimeconfig.Catalog{})
+	ctx, cancel := context.WithCancel(bearing(t, matchingToken))
+	defer cancel()
+	stream, err := rpc.WatchEnvironment(ctx, &environmentpb.WatchEnvironmentRequest{
+		Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Recv(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-selected:
+	case <-time.After(time.Second):
+		t.Fatal("initial Pod watch select was not reached")
+	}
+	before := reads.Load()
+	pods.Add(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "unrelated", Namespace: discoveryNamespace}})
+	select {
+	case <-selected:
+	case <-time.After(time.Second):
+		t.Fatal("unrelated Pod event was not consumed")
+	}
+	if got := reads.Load(); got != before {
+		t.Fatalf("unrelated Pod event caused %d additional object reads", got-before)
+	}
+}
+
 func (r *switchableReviews) Create(ctx context.Context, review *authenticationv1.TokenReview, opts metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
 	r.calls.Add(1)
 	if r.revoked.Load() {

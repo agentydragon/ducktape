@@ -237,6 +237,25 @@ func TestMutationsRefuseTeardown(t *testing.T) {
 	}
 }
 
+func TestIdleSuspendRejectsUnrepresentableDurations(t *testing.T) {
+	access, objects := newAccess(t, testSandbox("paused", "sandbox-uid", sandboxapi.OperatingModeSuspended))
+	for _, value := range []*durationpb.Duration{
+		{Seconds: 9223372037},
+		{Seconds: 9223372036, Nanos: 854775808},
+	} {
+		request := &sandboxespb.CreateSandboxRequest{Name: "new", Template: "pod", IdleSuspendAfter: value}
+		if _, err := access.Create(context.Background(), request); err == nil {
+			t.Errorf("Create accepted unrepresentable duration %v", value)
+		}
+		if err := access.SetIdleSuspendAfter(context.Background(), "paused", "sandbox-uid", value); err == nil {
+			t.Errorf("SetIdleSuspendAfter accepted unrepresentable duration %v", value)
+		}
+	}
+	if got := readSandbox(t, objects, "paused").Spec.IdleSuspendAfter; got != nil {
+		t.Fatalf("rejected updates changed idle suspend policy: %v", got)
+	}
+}
+
 func TestDeleteRequiresReportedSuspensionAndUsesUIDFence(t *testing.T) {
 	running := testSandbox("running", "uid-running", sandboxapi.OperatingModeRunning)
 	unknown := testSandbox("unknown", "uid-unknown", "")

@@ -17,6 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/liveinventory"
 	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
+	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	"github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
@@ -133,10 +134,11 @@ func (f *streamTestEnvironments) Get(_ context.Context, name string) (*environme
 	return proto.Clone(f.descriptor).(*environmentpb.EnvironmentDescriptor), nil
 }
 
-func (f *streamTestEnvironments) GetExactUID(_ context.Context, name, uid string) (*environmentpb.EnvironmentDescriptor, error) {
+func (f *streamTestEnvironments) GetExact(_ context.Context, target *environmentpb.TargetHandle) (*environmentpb.EnvironmentDescriptor, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.exactGets++
+	name, uid := target.GetName(), target.GetUid()
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -146,8 +148,38 @@ func (f *streamTestEnvironments) GetExactUID(_ context.Context, name, uid string
 	return proto.Clone(f.descriptor).(*environmentpb.EnvironmentDescriptor), nil
 }
 
-func (f *streamTestEnvironments) WatchChanges(context.Context, string, string) <-chan struct{} {
-	return f.changes
+func (f *streamTestEnvironments) Watch(ctx context.Context, target *environmentpb.TargetHandle) <-chan sandboxes.EnvironmentObservation {
+	observations := make(chan sandboxes.EnvironmentObservation)
+	go func() {
+		defer close(observations)
+		for {
+			f.mu.Lock()
+			var value *environmentpb.EnvironmentDescriptor
+			var err error
+			if f.err != nil {
+				err = f.err
+			} else if f.descriptor == nil || !proto.Equal(f.descriptor.GetTarget(), target) {
+				err = status.Error(codes.NotFound, "Environment not found")
+			} else {
+				value = proto.Clone(f.descriptor).(*environmentpb.EnvironmentDescriptor)
+			}
+			f.mu.Unlock()
+			select {
+			case observations <- sandboxes.EnvironmentObservation{Descriptor: value, Err: err}:
+			case <-ctx.Done():
+				return
+			}
+			if err != nil {
+				return
+			}
+			select {
+			case <-f.changes:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return observations
 }
 
 func (f *streamTestEnvironments) set(descriptor *environmentpb.EnvironmentDescriptor) {
@@ -227,7 +259,7 @@ func TestEgressDecisionStreamSnapshotsUpdatesAndDisconnect(t *testing.T) {
 	}}
 	server := NewHTTPServer(nil)
 	environments := &streamTestEnvironments{descriptor: testEnvironment("tools", "demo", "sandbox-uid", "tools", "demo")}
-	routes := &streamingRoutes{server: server, deps: StreamingDependencies{Live: live, Sandboxes: environments, Egress: watcher}}
+	routes := &streamingRoutes{server: server, deps: StreamingDependencies{SandboxNamespace: "tools", Live: live, Sandboxes: environments, Egress: watcher}}
 	ctx, cancel := context.WithCancel(context.Background())
 	request := httptest.NewRequest(http.MethodGet, "/live/sandboxes/demo/egress/decisions?sandbox_uid=sandbox-uid", nil).WithContext(ctx)
 	request.SetPathValue("name", "demo")
@@ -1143,7 +1175,7 @@ func newLiveFramesFixture() *liveFramesFixture {
 		sandboxUIDs: map[uuid.UUID]string{liveFramesFirstThread: liveFramesSandboxUID, liveFramesSecondThread: liveFramesSandboxUID},
 	}
 	f.routes = newStreamingRoutes(NewHTTPServer(nil), StreamingDependencies{
-		Live: f.live, Sandboxes: f.envs, Threads: f.store, History: history, Updates: f.updates,
+		SandboxNamespace: "tools", Live: f.live, Sandboxes: f.envs, Threads: f.store, History: history, Updates: f.updates,
 	})
 	return f
 }
