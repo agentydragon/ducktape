@@ -10,8 +10,8 @@ TimeoutStopSec=2s
 ExecStart=/usr/sbin/agentplane-boot-evidence
 Environment=PATH=/usr/sbin:/usr/bin
 Environment=LC_ALL=C
-StandardOutput=journal+console
-StandardError=journal+console
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

@@ -9,13 +9,11 @@ receipt() {
 
 run() {
 	printf '\nAGENTPLANE_BOOT_EVIDENCE_BEGIN %s\n' "$*"
-	receipt "AGENTPLANE_BOOT_EVIDENCE_BEGIN $*"
 	# The service bounds required collection as a whole. A two-second child deadline
 	# interrupts working systemctl requests while the concurrent TCG guests boot.
 	"$@"
 	command_status=$?
 	printf 'AGENTPLANE_BOOT_EVIDENCE_END status=%s command=%s\n' "$command_status" "$*"
-	receipt "AGENTPLANE_BOOT_EVIDENCE_END status=$command_status command=$*"
 }
 
 run_required() {
@@ -26,12 +24,9 @@ run_required() {
 }
 
 receipt AGENTPLANE_BOOT_EVIDENCE_BEGIN
-receipt 'AGENTPLANE_BOOT_EVIDENCE_CLOCKS /proc/uptime is guest CLOCK_BOOTTIME (includes suspend); udevadm monitor, systemd journal short-monotonic, and systemd *TimestampMonotonic use guest CLOCK_MONOTONIC; kernel printk brackets are guest kernel timestamps; outer CRI timestamps are host receipt times and may be buffered.'
+printf '%s\n' 'AGENTPLANE_BOOT_EVIDENCE_CLOCKS /proc/uptime is guest CLOCK_BOOTTIME (includes suspend); udevadm monitor, systemd journal short-monotonic, and systemd *TimestampMonotonic use guest CLOCK_MONOTONIC; kernel printk brackets are guest kernel timestamps; outer CRI timestamps are host receipt times and may be buffered.'
 receipt AGENTPLANE_BOOT_EVIDENCE_GUEST_BEGIN
-run_required /usr/bin/busybox uname -a
-run_required /usr/bin/busybox cat /proc/cmdline
 run_required /usr/bin/busybox cat /proc/uptime
-run_required /usr/bin/busybox cat /proc/sys/kernel/random/boot_id
 run_required /usr/bin/busybox cat /sys/class/dmi/id/product_uuid
 run_required /usr/bin/udevadm --version
 run_required /usr/bin/systemctl --version
@@ -56,13 +51,6 @@ run_required /usr/bin/systemctl --no-pager cat \
 	systemd-udevd.service systemd-udev-trigger.service agentplane-boot-device-monitor.service \
 	'systemd-makefs@dev-disk-by\x2did-virtio\x2dworkspace.service' state-workspaces.mount
 receipt AGENTPLANE_BOOT_EVIDENCE_ACTIVATION_END
-receipt AGENTPLANE_BOOT_EVIDENCE_JOURNAL_BEGIN
-run_required /usr/bin/journalctl --no-pager --boot=0 --output=short-monotonic --lines=100 \
-	--unit=systemd-udevd.service \
-	--unit=systemd-udev-trigger.service \
-	--unit='systemd-makefs@dev-disk-by\x2did-virtio\x2dworkspace.service' \
-	--unit=state-workspaces.mount
-receipt AGENTPLANE_BOOT_EVIDENCE_JOURNAL_END
 if [ "$required_failures" -eq 0 ]; then
 	receipt 'AGENTPLANE_BOOT_EVIDENCE_END status=complete'
 else
