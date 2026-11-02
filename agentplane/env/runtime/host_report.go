@@ -65,7 +65,7 @@ func (r *Runtime) hostReportLocked() *runtimepb.HostReport {
 	current, found, err := cosi.Read(context.Background(), r.lifecycleState, lifecycle.HostReportResource(lifecycle.HostReport{}))
 	if err != nil {
 		r.failed = true
-		r.revokeHostConnectionLocked()
+		r.revokeHostBindingLocked()
 		if r.failureErr == nil {
 			r.failureErr = fmt.Errorf("read Host report: %w", err)
 		}
@@ -82,7 +82,7 @@ func (r *Runtime) hostReportLocked() *runtimepb.HostReport {
 	applied, _, err := cosi.Read(context.Background(), r.lifecycleState, lifecycle.HostIntentStatusResource(lifecycle.HostIntentStatus{}))
 	if err != nil {
 		r.failed = true
-		r.revokeHostConnectionLocked()
+		r.revokeHostBindingLocked()
 		if r.failureErr == nil {
 			r.failureErr = fmt.Errorf("read Host intent status: %w", err)
 		}

@@ -79,10 +79,13 @@ func newLifecycleRunnerWithState(t *testing.T, config runtimeTestConfig, store s
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.startLifecycleEngine()
 	ctx, cancel := context.WithCancel(context.Background())
 	child := &localHostLifetime{host: host, cancel: cancel, done: make(chan struct{})}
 	r.hostLifetime = child
+	if err := r.bindHost(host); err != nil {
+		t.Fatal(err)
+	}
+	r.startLifecycleEngine()
 	go func() { child.err = host.Run(ctx, configuration.Endpoint{Target: historyTarget}, r); close(child.done) }()
 	t.Cleanup(func() {
 		closeCtx, closeCancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)

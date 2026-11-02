@@ -30,7 +30,7 @@ type runtimeLifecycleController struct {
 type closePlan struct {
 	binding           *runtimepb.Binding
 	sealUID           string
-	connected         bool
+	active            bool
 	host              hostLifetime
 	executionMayExist bool
 	hostRunErr        error
@@ -224,7 +224,7 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecyc
 	case lifecycle.RuntimeClosePreparing:
 		return c.prepare()
 	case lifecycle.RuntimeCloseNativeStopping:
-		if p.connected {
+		if p.active {
 			return c.r.waitForHostNativeStopped(p.fenceCtx, p.binding)
 		}
 		if p.host != nil {
@@ -239,7 +239,7 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecyc
 		}
 		return nil
 	case lifecycle.RuntimeCloseExecutionFencing:
-		if p.connected {
+		if p.active {
 			c.r.maybeFenceExecution(p.binding)
 			return c.r.waitForExecutionFenced(p.fenceCtx, p.binding)
 		}
@@ -250,19 +250,19 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecyc
 		}
 		return nil
 	case lifecycle.RuntimeCloseHostFlushing:
-		if p.connected && p.sealUID != "" {
+		if p.active && p.sealUID != "" {
 			return c.r.waitForHostQuiesced(p.fenceCtx, p.binding)
 		}
 		return nil
 	case lifecycle.RuntimeCloseHostJoining:
-		if p.connected {
+		if p.active {
 			if err := stopHost(p.fenceCtx, p.host); err != nil {
 				return fmt.Errorf("stop and fence Harness Host: %w", err)
 			}
 		}
 		c.r.mu.Lock()
 		if c.r.host != nil {
-			c.r.host.connected = false
+			c.r.host.active = false
 		}
 		c.r.mu.Unlock()
 		return nil
@@ -302,16 +302,16 @@ func (c *runtimeLifecycleController) prepare() error {
 	p := &c.plan
 	p.sealUID = sealUID
 	p.host = r.hostLifetime
-	p.connected = r.host != nil && r.host.connected
-	if p.connected && p.host != nil {
+	p.active = r.host != nil && r.host.active
+	if p.active && p.host != nil {
 		select {
 		case <-p.host.Done():
-			p.connected = false
+			p.active = false
 		default:
 		}
 	}
 	p.executionMayExist = r.config.CodexExecServer != nil || r.executionOwner != nil
-	if p.connected {
+	if p.active {
 		mode := runtimepb.LifecycleIntent_CLOSING
 		if sealUID != "" {
 			mode = runtimepb.LifecycleIntent_QUIESCING

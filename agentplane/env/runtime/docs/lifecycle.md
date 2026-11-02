@@ -70,9 +70,10 @@ direct Session calls carry a copied exact binding. Host checks it at direct-call
 and under its synchronous native admission lock. Model lookup does not hold that lock; a delayed
 reservation rechecks the binding before writing retained state. Command admission remains durable
 and idempotent. Unknown remote effects are never replayed after a Host lifetime failure.
-The Host-owned intent controller applies `HostIntents` after Session startup. It checks the exact
-Runtime and Host boot IDs through a native connection gate that Runtime revokes synchronously on
-disconnect or failure, even if COSI publication fails. It records Applying before the native effect;
+Runtime installs the embedded Host and publishes its initial intent before Session recovery finishes.
+The Host-owned intent controller wakes when recovery completes and applies `HostIntents` only after
+startup. It checks the exact Runtime and Host boot IDs through a native admission gate that Runtime
+revokes synchronously on Host or Runtime failure, even if COSI publication fails. It records Applying before the native effect;
 an interrupted application fails the Host and cannot be replayed on controller restart.
 
 ### Identity scopes
@@ -83,7 +84,7 @@ not interchangeable just because two counters currently have the same number.
 | Identity                                 | Scope                                                                                                                                                                                                                                                             |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `runtime.Runtime`                        | Environment Runtime coordinator; owns the shared COSI engine and environment lifetime.                                                                                                                                                                            |
-| `harnesshost.Host`                       | Embedded Harness Host lifetime; owns retained Sessions and native harness lifecycle. A production Runtime starts it once; unexpected bridge loss fails that Runtime.                                                                                              |
+| `harnesshost.Host`                       | Embedded Harness Host lifetime; owns retained Sessions and native harness lifecycle. A production Runtime starts it once; an unexpected Host failure fails that Runtime.                                                                                          |
 | `bootstrap.Host`                         | Runtime-owned bootstrap controller and one-shot operation; it is not a separately served host process.                                                                                                                                                            |
 | `codexappserver.Host`                    | One shared Codex app-server process and its protocol readers, used by Codex Sessions.                                                                                                                                                                             |
 | `supervision.Host`                       | A view over the shared process registry, bound to a domain lifetime and worker barrier; in Runtime's shared registry, process attempt IDs are global across the Runtime and Harness views.                                                                        |

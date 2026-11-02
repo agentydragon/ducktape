@@ -37,7 +37,7 @@ func (executionHealthEvent) resourceType() resource.Type {
 }
 func (v executionHealthEvent) DeepCopy() executionHealthEvent { return v }
 
-func (h *executionHealth) ConnectHost(ctx context.Context, _ *Host) error { return ctx.Err() }
+func (h *executionHealth) HostFailed(error) {}
 func (h *executionHealth) WaitHostBootstrap(ctx context.Context, _ *runtimepb.Binding) error {
 	return ctx.Err()
 }

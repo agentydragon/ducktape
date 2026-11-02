@@ -20,11 +20,14 @@ func (r *Host) Run(ctx context.Context, endpoint configuration.Endpoint, bridge 
 	r.runtimeBridge = bridge
 	r.mu.Unlock()
 	if err := r.sessions.Startup(r.ctx); err != nil {
+		r.fail(err)
+		bridge.HostFailed(err)
 		return errors.Join(err, r.Close(context.WithoutCancel(ctx)))
 	}
 	r.mu.Lock()
 	r.startupComplete = true
 	r.mu.Unlock()
+	close(r.startupDone)
 	servingCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
 	var workers sync.WaitGroup
@@ -33,16 +36,11 @@ func (r *Host) Run(ctx context.Context, endpoint configuration.Endpoint, bridge 
 			r.fail(err)
 		}
 	})
-	workers.Go(func() {
-		err := bridge.ConnectHost(servingCtx, r)
-		if servingCtx.Err() == nil {
-			r.fail(errors.Join(errors.New("Runtime Host coordinator ended"), err))
-		}
-	})
 	var failure error
 	select {
 	case <-ctx.Done():
 	case failure = <-r.fatal:
+		bridge.HostFailed(failure)
 	}
 	// Accepted native effects and their journals settle before the coordinator
 	// is canceled; Runtime waits for this joined lifetime before releasing its lock.

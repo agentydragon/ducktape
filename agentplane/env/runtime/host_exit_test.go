@@ -100,7 +100,7 @@ func TestInitialHostWaitOrdersReadyReportAndExit(t *testing.T) {
 			binding := &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 1}
 			intent := &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_INACTIVE}
 			r := &Runtime{
-				hostLifetime: host, host: &hostLink{bootID: "host", connected: true}, intent: intent,
+				hostLifetime: host, host: &hostBinding{bootID: "host", active: true}, intent: intent,
 				lifecycleState: state.WrapCore(namespaced.NewState(inmem.Build)), changes: make(chan struct{}), fatal: make(chan error, 1),
 			}
 			publishAppliedHostIntent(t, r)
@@ -172,14 +172,14 @@ func TestClosePreparationTreatsExitedHostAsDisconnected(t *testing.T) {
 	t.Cleanup(func() { _ = r.owner.Close() })
 	host := &observedHostExit{done: make(chan struct{}), subscribed: make(chan struct{})}
 	r.hostLifetime = host
-	r.host = &hostLink{bootID: "host", connected: true}
+	r.host = &hostBinding{bootID: "host", active: true}
 	close(host.done)
 	coordinator := &runtimeLifecycleController{r: r}
 	if err := coordinator.prepare(); err != nil {
 		t.Fatal(err)
 	}
 	defer coordinator.plan.cancelFence()
-	if coordinator.plan.connected || coordinator.plan.binding != nil || coordinator.plan.host != host {
+	if coordinator.plan.active || coordinator.plan.binding != nil || coordinator.plan.host != host {
 		t.Fatalf("Close plan after Host exit = %+v, want disconnected Host with cleanup ownership", coordinator.plan)
 	}
 }

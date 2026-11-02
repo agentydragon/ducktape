@@ -47,7 +47,8 @@ type Host struct {
 	closeErr            error
 	closing             bool
 	startupComplete     bool
-	runtimeConnection   atomic.Pointer[runtimeConnection]
+	startupDone         chan struct{}
+	runtimeBinding      atomic.Pointer[runtimeBinding]
 	intent              *runtimepb.LifecycleIntent
 	bootstrapBinding    *runtimepb.Binding
 	ready               atomic.Bool
@@ -88,7 +89,7 @@ func NewEmbedded(config Config, lifecycleState state.State, engine *cosiruntime.
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &Host{config: config, supervisor: supervisor, workspaceSupervisor: workspaceSupervisor, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, changes: make(chan struct{}), fatal: make(chan error, 1)}
+	r := &Host{config: config, supervisor: supervisor, workspaceSupervisor: workspaceSupervisor, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, changes: make(chan struct{}), startupDone: make(chan struct{}), fatal: make(chan error, 1)}
 	r.scripts, err = scripts.New(scripts.Config{HarnessEnvironment: config.HarnessEnvironment, LaunchProcess: func(ctx context.Context, owner string, cfg supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
 		return r.launchProcess(ctx, owner, r.supervisor, cfg)
 	}})
@@ -159,11 +160,11 @@ func (r *Host) fail(err error) {
 		return
 	}
 	for {
-		current := r.runtimeConnection.Load()
+		current := r.runtimeBinding.Load()
 		if current != nil && current.failed {
 			break
 		}
-		if r.runtimeConnection.CompareAndSwap(current, &runtimeConnection{failed: true}) {
+		if r.runtimeBinding.CompareAndSwap(current, &runtimeBinding{failed: true}) {
 			break
 		}
 	}

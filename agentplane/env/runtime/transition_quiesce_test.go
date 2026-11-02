@@ -79,18 +79,18 @@ func TestQuiesceStatusBarrierRequiresConnectedCurrentHostBinding(t *testing.T) {
 		t.Fatalf("stale Host status binding = %v, want unavailable", err)
 	}
 	binding.Generation++
-	host.client.SetRuntimeConnection(r.bootID, host.bootID, false)
-	defer host.client.SetRuntimeConnection(r.bootID, host.bootID, true)
+	host.client.SetRuntimeBinding(r.bootID, host.bootID, false)
+	defer host.client.SetRuntimeBinding(r.bootID, host.bootID, true)
 	if _, err := c.runQuiesceBarrier(context.Background(), quiesceCheckHostStatus); status.Code(err) != codes.Unavailable {
 		t.Fatalf("revoked Host connection gate = %v, want unavailable", err)
 	}
-	host.client.SetRuntimeConnection(r.bootID, host.bootID, true)
+	host.client.SetRuntimeBinding(r.bootID, host.bootID, true)
 	r.mu.Lock()
-	host.connected = false
+	host.active = false
 	r.mu.Unlock()
 	t.Cleanup(func() {
 		r.mu.Lock()
-		host.connected = true
+		host.active = true
 		r.mu.Unlock()
 	})
 	if _, err := c.runQuiesceBarrier(context.Background(), quiesceCheckHostStatus); status.Code(err) != codes.Unavailable {

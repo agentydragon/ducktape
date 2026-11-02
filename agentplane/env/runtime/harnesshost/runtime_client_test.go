@@ -330,9 +330,7 @@ type bootstrapBindingRecorder struct {
 	binding *runtimepb.Binding
 }
 
-func (c *bootstrapBindingRecorder) ConnectHost(ctx context.Context, _ *Host) error {
-	return ctx.Err()
-}
+func (c *bootstrapBindingRecorder) HostFailed(error) {}
 
 func (c *bootstrapBindingRecorder) HostExecutionReady(context.Context) (bool, error) {
 	return true, nil

@@ -123,7 +123,7 @@ flowchart LR
   RR["HarnessHostLifecycleStatuses"]
   R["HostReports"]
   HR(["harness-host-report"])
-  Guard{{"Synchronous connection /<br/>admission guards"}}
+  Guard{{"Synchronous binding /<br/>admission guards"}}
   I["HostIntents"]
   IS["HostIntentStatuses"]
   HI(["harness-host-intent"])
@@ -145,6 +145,7 @@ flowchart LR
 
   Peer -->|publish| RD & RI
   I -->|watch| HI
+  Peer -.->|startup completion wakeup| HI
   HI -->|write applying / result| IS
   Guard -.->|exact boot IDs and startup| HI
   HI -.->|admitted native apply| Peer
@@ -175,7 +176,7 @@ flowchart LR
 | Controller                   | Watched inputs                                                                                                                                                                                                                                     | Controller output                          | Selection / side effects                                                                                                                      |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `harness-host-report`        | `HarnessHostDesiredStates`, `HarnessHostLifecycleStatuses` (weak), plus Host change wakeups                                                                                                                                                        | `HostReports` (exclusive)                  | Publishes inventory, blocker, idle and lifecycle facts with the full sampled intent.                                                          |
-| `harness-host-intent`        | `HostIntents` (weak)                                                                                                                                                                                                                               | `HostIntentStatuses` (exclusive)           | Checks startup and the synchronous Runtime connection gate, records Applying before the native effect, and fails closed on an unknown result. |
+| `harness-host-intent`        | `HostIntents` (weak), plus Host startup wakeups                                                                                                                                                                                                    | `HostIntentStatuses` (exclusive)           | Checks startup and the synchronous Runtime binding gate, records Applying before the native effect, and fails closed on an unknown result.    |
 | `harness-host-lifecycle`     | `HarnessHostDesiredStates`, `HarnessHostAdmissionCounts`, `HostIntentStatuses`, `SessionInspectionStatuses`, `SessionLifecycleStatuses`, `JournalSeals`, `IngressAcks`, `CodexAppServerStatuses`, `ProcessDesiredStates`, `ProcessStatuses` (weak) | `HarnessHostLifecycleStatuses` (exclusive) | Aggregates the Host drain barrier; explicitly queues its next step after changing status.                                                     |
 | `session-lifecycle`          | `SessionReconcileSnapshots` (primary); `HarnessHostDesiredStates`, `HarnessHostLifecycleStatuses`, `CodexAppServerStatuses`, `SessionOperationStates` (mapped)                                                                                     | `SessionLifecycleStatuses` (exclusive)     | Per Session. App-server updates map only to Codex Sessions; operation state records map to their Session.                                     |
 | `codex-app-server-lifecycle` | `CodexAppServerLifecycleSignals` (primary); `HarnessHostDesiredStates`, `HarnessHostLifecycleStatuses`, `CodexAppServerOperationStates`, `ExecutionStatuses` (mapped)                                                                              | `CodexAppServerStatuses` (exclusive)       | Per shared app-server; native effects run in host-owned one-off workers. Execution status changes wake a separate live-owner readiness check. |
@@ -206,8 +207,8 @@ it is not desired runtime configuration. Reconciliation starts a dedicated Claud
 or attaches a Codex Session thread to the shared app-server. A Codex Session's process ID identifies
 that shared app-server; its per-Session attachment and router state remains in memory.
 
-Runtime synchronously revokes the native connection gate when its Host connection ends or Runtime
-fails, including when a COSI write fails. Host admission also checks the exact binding under its
+Runtime synchronously revokes the native binding gate when Host or Runtime fails, including when a
+COSI write fails. Host admission also checks the exact binding under its
 mutex before durable work. The Host intent controller records Applying before calling the native
 apply path; an interrupted application fails closed rather than replaying the effect. The report
 controller wakes on both Harness Host COSI changes and Host inventory notifications, and snapshots the

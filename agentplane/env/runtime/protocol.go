@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
@@ -15,60 +14,56 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// ConnectHost binds Host to the shared COSI lifecycle engine.
-// Neither component mutex is held across a call into the other component.
-func (r *Runtime) ConnectHost(ctx context.Context, client *harnesshost.Host) (resultErr error) {
+// bindHost installs the one embedded Host and publishes its initial intent.
+// Caller holds lifecycleStartMu so Close cannot race Host initialization.
+func (r *Runtime) bindHost(client *harnesshost.Host) error {
 	bootID := client.BootID()
 	if bootID == "" {
 		return status.Error(codes.InvalidArgument, "Harness Host has no boot ID")
 	}
-	host := &hostLink{bootID: bootID, client: client, connected: true}
+	host := &hostBinding{bootID: bootID, client: client, active: true}
 	r.mu.Lock()
 	if r.closing || r.failed {
 		r.mu.Unlock()
 		return status.Error(codes.Unavailable, "environment Runtime is closing or failed")
 	}
-	if r.host != nil && r.host.connected {
+	if r.host != nil {
 		r.mu.Unlock()
-		return status.Error(codes.AlreadyExists, "another Harness Host is already connected")
+		return status.Error(codes.AlreadyExists, "Runtime already owns a Harness Host")
 	}
 	r.host = host
-	if client != nil {
-		client.SetRuntimeConnection(r.bootID, bootID, true)
-	}
-	if r.intent == nil {
-		r.intent = &runtimepb.LifecycleIntent{
-			Binding:    &runtimepb.Binding{RuntimeBootId: r.bootID, HostBootId: bootID, Generation: 1},
-			SandboxUid: r.config.Launch.Sandbox.UID, Mode: runtimepb.LifecycleIntent_INACTIVE,
-		}
-	} else {
-		r.intent = proto.Clone(r.intent).(*runtimepb.LifecycleIntent)
-		r.intent.Binding.HostBootId = bootID
-		r.intent.Binding.Generation++
+	client.SetRuntimeBinding(r.bootID, bootID, true)
+	r.intent = &runtimepb.LifecycleIntent{
+		Binding:    &runtimepb.Binding{RuntimeBootId: r.bootID, HostBootId: bootID, Generation: 1},
+		SandboxUid: r.config.Launch.Sandbox.UID, Mode: runtimepb.LifecycleIntent_INACTIVE,
 	}
 	if err := r.publishHostIntentLocked(); err != nil {
-		host.connected = false
-		r.revokeHostConnectionLocked()
+		host.active = false
+		r.revokeHostBindingLocked()
 		r.changedLocked()
 		r.mu.Unlock()
 		return err
 	}
 	r.changedLocked()
 	r.mu.Unlock()
-	defer func() { r.disconnectHost(host, resultErr) }()
+	return nil
+}
 
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-r.lifecycleDone:
-		return errors.New("Runtime lifecycle engine stopped")
+func (r *Runtime) HostFailed(err error) {
+	r.mu.Lock()
+	host := r.host
+	r.mu.Unlock()
+	if host == nil {
+		r.fail(fmt.Errorf("Harness Host failed: %w", err))
+		return
 	}
+	r.retireHost(host, err)
 }
 
 func (r *Runtime) maybeFenceExecution(binding *runtimepb.Binding) {
 	r.mu.Lock()
 	report := r.hostReportLocked()
-	if r.host == nil || !r.host.connected || r.intent == nil || !proto.Equal(r.intent.Binding, binding) ||
+	if r.host == nil || !r.host.active || r.intent == nil || !proto.Equal(r.intent.Binding, binding) ||
 		r.intent.ExecutionFenced || report == nil || !report.Ready || !report.NativeStopped ||
 		(r.intent.Mode != runtimepb.LifecycleIntent_QUIESCING && r.intent.Mode != runtimepb.LifecycleIntent_CLOSING) {
 		r.mu.Unlock()
@@ -138,16 +133,16 @@ func (r *Runtime) waitForExecutionCalls(ctx context.Context) error {
 	}
 }
 
-func (r *Runtime) disconnectHost(host *hostLink, cause error) {
+func (r *Runtime) retireHost(host *hostBinding, cause error) {
 	r.mu.Lock()
-	if r.host == host && host.connected {
-		host.connected = false
-		r.revokeHostConnectionLocked()
+	if r.host == host && host.active {
+		host.active = false
+		r.revokeHostBindingLocked()
 		r.changedLocked()
 		closing := r.closing
 		r.mu.Unlock()
-		if !closing && cause != nil && !errors.Is(cause, context.Canceled) {
-			r.fail(fmt.Errorf("Harness Host lifecycle connection lost before fence acknowledgement: %w", cause))
+		if !closing && cause != nil {
+			r.fail(fmt.Errorf("Harness Host failed before fence acknowledgement: %w", cause))
 		}
 		return
 	}
@@ -159,7 +154,7 @@ func (r *Runtime) WaitHostBootstrap(ctx context.Context, binding *runtimepb.Bind
 		return status.FromContextError(err).Err()
 	}
 	r.mu.Lock()
-	valid := binding != nil && r.host != nil && r.host.connected && r.lastRunning != nil &&
+	valid := binding != nil && r.host != nil && r.host.active && r.lastRunning != nil &&
 		proto.Equal(binding, r.lastRunning) && binding.RuntimeBootId == r.bootID && binding.HostBootId == r.host.bootID
 	r.mu.Unlock()
 	if !valid {
@@ -220,7 +215,7 @@ func (r *Runtime) setExecutionFenced(binding *runtimepb.Binding) error {
 	if r.intent.ExecutionFenced {
 		return nil
 	}
-	if r.host == nil || !r.host.connected {
+	if r.host == nil || !r.host.active {
 		return status.Error(codes.Unavailable, "Harness Host connection was lost before publishing Execution fence")
 	}
 	r.intent.ExecutionFenced = true
@@ -235,7 +230,7 @@ func (r *Runtime) waitForExecutionFenced(ctx context.Context, binding *runtimepb
 			r.mu.Unlock()
 			return failure
 		}
-		if r.host == nil || !r.host.connected {
+		if r.host == nil || !r.host.active {
 			r.mu.Unlock()
 			return status.Error(codes.Unavailable, "Harness Host connection was lost before Execution fence")
 		}
@@ -278,7 +273,7 @@ func (r *Runtime) waitForAppliedHostReport(
 			r.mu.Unlock()
 			return nil, failure
 		}
-		if r.host == nil || !r.host.connected {
+		if r.host == nil || !r.host.active {
 			r.mu.Unlock()
 			return nil, disconnected
 		}
@@ -320,7 +315,7 @@ func (r *Runtime) hostQuiescenceWaitSnapshot(binding *runtimepb.Binding) (bool, 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	report := r.hostReportLocked()
-	if r.host != nil && r.host.connected && report != nil && report.Ready &&
+	if r.host != nil && r.host.active && report != nil && report.Ready &&
 		r.intent != nil && proto.Equal(r.intent.Binding, binding) &&
 		report.Facts.GetQuiesceStage() == environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED {
 		return true, nil, nil
@@ -328,7 +323,7 @@ func (r *Runtime) hostQuiescenceWaitSnapshot(binding *runtimepb.Binding) (bool, 
 	if failure := r.failureLocked(); failure != nil {
 		return false, nil, failure
 	}
-	if r.host == nil || !r.host.connected {
+	if r.host == nil || !r.host.active {
 		return false, nil, status.Error(codes.Unavailable, "Harness Host lifecycle connection is unavailable")
 	}
 	return false, r.changes, nil
