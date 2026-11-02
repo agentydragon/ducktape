@@ -11469,7 +11469,7 @@ metadata:
   name: quest-read
   namespace: agentplane-staging
 spec:
-  description: Quest scheduling, account, and insurance lookup API. Use https://quest.allegedly.works/openapi.json to discover the available routes. The bearer is substituted only for the listed lookup paths.
+  description: Quest scheduling, account, and insurance lookup API. Use https://openai-platform.allegedly.works/quest/openapi.json to discover the available routes. The bearer is substituted only for the listed lookup paths.
   source:
     secretRef:
       key: token
@@ -11489,35 +11489,35 @@ spec:
     - credentialRef:
         name: quest-read
       hosts:
-        - quest.allegedly.works
+        - openai-platform.allegedly.works
       methods:
         - GET
       paths:
-        - /openapi.json
-        - /guest/getReasons/*
-        - /guest/getPscDetails/*
-        - /api/getInsuranceProfile
-        - /guest/getTokenBasicInfoAPI/*
-        - /guest/getEncounterInfo/appointment
-        - /guest/getEncounterInfo/demographics
-        - /guest/getEncounterInfo/insurance
-        - /guest/getEncounterInfo/secondaryInsurance
-        - /guest/getPayorList/*
-        - /guest/getAppointment/*
+        - /quest/openapi.json
+        - /quest/guest/getReasons/*
+        - /quest/guest/getPscDetails/*
+        - /quest/api/getInsuranceProfile
+        - /quest/guest/getTokenBasicInfoAPI/*
+        - /quest/guest/getEncounterInfo/appointment
+        - /quest/guest/getEncounterInfo/demographics
+        - /quest/guest/getEncounterInfo/insurance
+        - /quest/guest/getEncounterInfo/secondaryInsurance
+        - /quest/guest/getPayorList/*
+        - /quest/guest/getAppointment/*
       type: egress
     - credentialRef:
         name: quest-read
       hosts:
-        - quest.allegedly.works
+        - openai-platform.allegedly.works
       methods:
         - POST
       paths:
-        - /guest/getPscsWithAvailability
-        - /api/getOpenEorders
-        - /api/getUserDemographics
-        - /guest/examoneEligibility
-        - /guest/verifyInsurance/V2
-        - /guest/getPricing
+        - /quest/guest/getPscsWithAvailability
+        - /quest/api/getOpenEorders
+        - /quest/api/getUserDemographics
+        - /quest/guest/examoneEligibility
+        - /quest/guest/verifyInsurance/V2
+        - /quest/guest/getPricing
       type: egress
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -12262,11 +12262,11 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            app: quest-diagnostics
-            k8s:io.kubernetes.pod.namespace: quest-diagnostics
+            app: openai-platform-session
+            k8s:io.kubernetes.pod.namespace: openai-platform-session
       toPorts:
         - ports:
-            - port: "8082"
+            - port: "8080"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
