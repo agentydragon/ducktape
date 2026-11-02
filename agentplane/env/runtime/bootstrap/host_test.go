@@ -95,13 +95,13 @@ func TestControllerInitialOperationPublicationFailureBecomesTerminal(t *testing.
 		}
 		workers.Wait()
 	})
-	if _, err := safe.StateWatchFor[*typed.Resource[Runtime, componentExtension[Runtime]]](
+	if _, err := safe.StateWatchFor[*typed.Resource[Status, componentExtension[Status]]](
 		ctx, store,
-		componentResource(ResourceID, Runtime{}).Metadata(), state.WithEventTypes(state.Created, state.Updated),
+		componentResource(ResourceID, Status{}).Metadata(), state.WithEventTypes(state.Created, state.Updated),
 		state.WithCondition(func(value resource.Resource) (bool, error) {
-			current, ok := value.(*typed.Resource[Runtime, componentExtension[Runtime]])
+			current, ok := value.(*typed.Resource[Status, componentExtension[Status]])
 			if !ok {
-				return false, fmt.Errorf("unexpected bootstrap runtime resource %T", value)
+				return false, fmt.Errorf("unexpected bootstrap status resource %T", value)
 			}
 			return current.TypedSpec().Phase == Failed, nil
 		}),
@@ -112,9 +112,9 @@ func TestControllerInitialOperationPublicationFailureBecomesTerminal(t *testing.
 	if got := effects.Load(); got != 0 {
 		t.Fatalf("bootstrap effects = %d, want 0", got)
 	}
-	current, found, err := ReadRuntime(ctx, store)
+	current, found, err := ReadStatus(ctx, store)
 	if err != nil || !found || current.Phase != Failed || current.Error == "" {
-		t.Fatalf("bootstrap runtime = %+v, found=%t, error=%v", current, found, err)
+		t.Fatalf("bootstrap status = %+v, found=%t, error=%v", current, found, err)
 	}
 	settled, err := host.Settled(ctx)
 	if err != nil || !settled {
@@ -307,9 +307,9 @@ func TestWaitCancellationDoesNotCancelAttemptAndDurableSuccessDoesNotRerun(t *te
 	if data, err := os.ReadFile(count); err != nil || string(data) != "b" {
 		t.Fatalf("bootstrap script count after recovery = %q, %v; want no rerun", data, err)
 	}
-	runtimeState, found, err := ReadRuntime(ctx, second.state)
-	if err != nil || !found || runtimeState.Phase != Succeeded {
-		t.Fatalf("restored bootstrap runtime = (%+v, found=%t, err=%v), want succeeded", runtimeState, found, err)
+	bootstrapStatus, found, err := ReadStatus(ctx, second.state)
+	if err != nil || !found || bootstrapStatus.Phase != Succeeded {
+		t.Fatalf("restored bootstrap status = (%+v, found=%t, err=%v), want succeeded", bootstrapStatus, found, err)
 	}
 }
 
@@ -351,9 +351,9 @@ func TestInterruptedAttemptIsReconstructedWithoutRerunning(t *testing.T) {
 	if _, err := os.Stat(count); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("interrupted bootstrap script ran again: %v", err)
 	}
-	runtimeState, found, err := ReadRuntime(ctx, r.state)
-	if err != nil || !found || runtimeState.Phase != Interrupted {
-		t.Fatalf("restored interrupted runtime = (%+v, found=%t, err=%v), want interrupted", runtimeState, found, err)
+	bootstrapStatus, found, err := ReadStatus(ctx, r.state)
+	if err != nil || !found || bootstrapStatus.Phase != Interrupted {
+		t.Fatalf("restored interrupted runtime = (%+v, found=%t, err=%v), want interrupted", bootstrapStatus, found, err)
 	}
 }
 

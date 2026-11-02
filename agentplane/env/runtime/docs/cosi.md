@@ -3,7 +3,7 @@
 This is a map of the controllers and resources registered in the Runtime's **single in-memory
 COSI engine** and the single `environment-runtime` COSI namespace. That namespace is not a
 process, cgroup, Kubernetes namespace, or durable store. Harness Host registers its controllers
-into the same engine. The embedded Execution controller exists only when Execution
+into the same engine. The Execution controller exists only when Execution
 is configured; the Codex app-server controller exists only when Codex is configured.
 
 Resource names below omit the common `.agentplane` suffix. A solid arrow means a resource is
@@ -20,28 +20,28 @@ flowchart LR
   API{{"Runtime API / lifecycle owner"}}
   BH{{"Bootstrap host / worker"}}
   PH{{"Runtime process host / workers"}}
-  RC(["environment-runtime-close<br/>Close + transition sequence"])
+  RC(["environment-runtime-lifecycle<br/>Close + transition sequence"])
   HO(["environment-host-report-observer"])
   BC(["bootstrap-lifecycle"])
   PC(["process-lifecycle"])
-  EC(["embedded-execution-lifecycle"])
-  EH{{"Embedded Execution host / service"}}
+  EC(["execution-lifecycle"])
+  EH{{"Execution host / service"}}
   CW{{"Close / transition workers"}}
   ED["EnvironmentRuntimeDesiredStates"]
   TR["EnvironmentRuntimeTransitionRequests"]
-  TS["EnvironmentRuntimeTransitions"]
-  CL["EnvironmentRuntimeCloses"]
+  TS["EnvironmentRuntimeTransitionStatuses"]
+  CL["EnvironmentRuntimeCloseStatuses"]
   I["HostIntents"]
   IS["HostIntentStatuses"]
   R["HostReports"]
   BI["BootstrapInputs"]
   BO["BootstrapOperationResults"]
-  BR["BootstrapRuntimes"]
+  BR["BootstrapStatuses"]
   PD["ProcessDesiredStates"]
   PI["ProcessInputs"]
   PS["ProcessStatuses"]
-  EI["EmbeddedExecutionInputs"]
-  ER["EmbeddedExecutionRuntimes"]
+  EI["ExecutionInputs"]
+  ER["ExecutionStatuses"]
   Native[("Bootstrap scripts / VM exec-server<br/>and process domain")]
 
   API -->|publish| ED & TR & I
@@ -74,9 +74,8 @@ flowchart LR
   PS -.->|read / watch| PH
 ```
 
-The optional embedded Execution controller shares the namespace and engine. Its host publishes `EmbeddedExecutionInputs` with desired UID/demand and generation-bound start, loss and fence completion facts; `embedded-execution-lifecycle` reads those inputs and
-its own `EmbeddedExecutionRuntimes`, and writes the latter. Its effect starts/stops the embedded
-service; for a VM, that service uses the Runtime process host above to launch the native exec-server.
+The optional Execution controller shares the namespace and engine. Its host publishes `ExecutionInputs` with desired UID/demand and generation-bound start, loss and fence completion facts; `execution-lifecycle` reads those inputs and
+its own `ExecutionStatuses`, and writes the latter. Its effect starts and stops the service; for a VM, that service uses the Runtime process host above to launch the native exec-server.
 In a Pod the native executor is in the separate companion container. The Runtime's transition and
 Close workers call and wait on these components, so those effect dependencies are not additional
 COSI input subscriptions.
@@ -86,13 +85,13 @@ its completion channel; the published transition or Close status is the observab
 a durable work queue. A blocking Host binding check stays in a worker so Close can preempt a
 transition. An uncertain effect retains ownership and is not automatically replayed.
 
-| Controller                         | Watched inputs                                                                                           | Controller output                                                       | Other relevant work                                                                                                      |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `environment-runtime-close`        | `EnvironmentRuntimeDesiredStates`, `EnvironmentRuntimeTransitionRequests` (weak)                         | `EnvironmentRuntimeCloses`, `EnvironmentRuntimeTransitions` (exclusive) | Close and adopt/quiesce are coordinated by this one controller; workers publish completion by waking its loop.           |
-| `environment-host-report-observer` | `HostReports`, `HostIntentStatuses` (weak)                                                               | None                                                                    | Wakes Runtime waiters and starts the Execution fence for an exact applied report.                                        |
-| `bootstrap-lifecycle`              | `BootstrapInputs` (primary); `BootstrapRuntimes`, `BootstrapOperationResults` (mapped)                   | `BootstrapRuntimes` (exclusive)                                         | Host owns admitted one-off work and publishes operation completion. Runtime admission checks the environment generation. |
-| `process-lifecycle`                | `ProcessDesiredStates` (primary), `ProcessInputs` (mapped)                                               | `ProcessStatuses` (exclusive)                                           | Runtime host owns launch callbacks, live handles, observations and workers.                                              |
-| `embedded-execution-lifecycle`     | `EmbeddedExecutionInputs` (primary), `EmbeddedExecutionRuntimes` (mapped), both in `environment-runtime` | `EmbeddedExecutionRuntimes` (exclusive)                                 | Runtime host publishes typed completion facts; the controller retains an unfenced owner on failure.                      |
+| Controller                         | Watched inputs                                                                           | Controller output                                                                     | Other relevant work                                                                                                      |
+| ---------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `environment-runtime-lifecycle`    | `EnvironmentRuntimeDesiredStates`, `EnvironmentRuntimeTransitionRequests` (weak)         | `EnvironmentRuntimeCloseStatuses`, `EnvironmentRuntimeTransitionStatuses` (exclusive) | Close and adopt/quiesce are coordinated by this one controller; workers publish completion by waking its loop.           |
+| `environment-host-report-observer` | `HostReports`, `HostIntentStatuses` (weak)                                               | None                                                                                  | Wakes Runtime waiters and starts the Execution fence for an exact applied report.                                        |
+| `bootstrap-lifecycle`              | `BootstrapInputs` (primary); `BootstrapStatuses`, `BootstrapOperationResults` (mapped)   | `BootstrapStatuses` (exclusive)                                                       | Host owns admitted one-off work and publishes operation completion. Runtime admission checks the environment generation. |
+| `process-lifecycle`                | `ProcessDesiredStates` (primary), `ProcessInputs` (mapped)                               | `ProcessStatuses` (exclusive)                                                         | Runtime host owns launch callbacks, live handles, observations and workers.                                              |
+| `execution-lifecycle`              | `ExecutionInputs` (primary), `ExecutionStatuses` (mapped), both in `environment-runtime` | `ExecutionStatuses` (exclusive)                                                       | Runtime host publishes typed completion facts; the controller retains an unfenced owner on failure.                      |
 
 ## Harness Host
 
@@ -122,8 +121,8 @@ flowchart LR
   SR["SessionLifecycleStatuses"]
   AI["CodexAppServerInputs"]
   AO["CodexAppServerOperationResults"]
-  AR["CodexAppServerRuntimes"]
-  ER["EmbeddedExecutionRuntimes"]
+  AR["CodexAppServerStatuses"]
+  ER["ExecutionStatuses"]
   J["JournalSeals"]
   ACK["IngressAcks"]
   PD["ProcessDesiredStates"]
@@ -163,9 +162,9 @@ flowchart LR
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `harness-host-report`                       | `RunnerDesiredStates`, `RunnerRuntimes` (weak), plus Host change wakeups                                                                                                                                                 | `HostReports` (exclusive)              | Publishes inventory, blocker, idle and lifecycle facts with the full sampled intent.                                                          |
 | `harness-host-intent`                       | `HostIntents` (weak)                                                                                                                                                                                                     | `HostIntentStatuses` (exclusive)       | Checks startup and the synchronous Runtime connection gate, records Applying before the native effect, and fails closed on an unknown result. |
-| Harness Host lifecycle (`runner-lifecycle`) | `RunnerDesiredStates`, `RunnerInputs`, `HostIntentStatuses`, `SessionDrainInputs`, `SessionLifecycleStatuses`, `JournalSeals`, `IngressAcks`, `CodexAppServerRuntimes`, `ProcessDesiredStates`, `ProcessStatuses` (weak) | `RunnerRuntimes` (exclusive)           | Aggregates the Host drain barrier; explicitly queues its next step after changing status.                                                     |
-| `session-lifecycle`                         | `SessionInputs` (primary); `RunnerDesiredStates`, `RunnerRuntimes`, `CodexAppServerRuntimes`, `NativeOperationResults` (mapped)                                                                                          | `SessionLifecycleStatuses` (exclusive) | Per Session. App-server updates map only to Codex Sessions; operation results map to their Session.                                           |
-| `codex-app-server-lifecycle`                | `CodexAppServerInputs` (primary); `RunnerDesiredStates`, `RunnerRuntimes`, `CodexAppServerOperationResults`, `EmbeddedExecutionRuntimes` (mapped)                                                                        | `CodexAppServerRuntimes` (exclusive)   | Per shared app-server; native effects run in host-owned one-off workers. Execution changes wake a separate live-owner readiness check.        |
+| Harness Host lifecycle (`runner-lifecycle`) | `RunnerDesiredStates`, `RunnerInputs`, `HostIntentStatuses`, `SessionDrainInputs`, `SessionLifecycleStatuses`, `JournalSeals`, `IngressAcks`, `CodexAppServerStatuses`, `ProcessDesiredStates`, `ProcessStatuses` (weak) | `RunnerRuntimes` (exclusive)           | Aggregates the Host drain barrier; explicitly queues its next step after changing status.                                                     |
+| `session-lifecycle`                         | `SessionInputs` (primary); `RunnerDesiredStates`, `RunnerRuntimes`, `CodexAppServerStatuses`, `NativeOperationResults` (mapped)                                                                                          | `SessionLifecycleStatuses` (exclusive) | Per Session. App-server updates map only to Codex Sessions; operation results map to their Session.                                           |
+| `codex-app-server-lifecycle`                | `CodexAppServerInputs` (primary); `RunnerDesiredStates`, `RunnerRuntimes`, `CodexAppServerOperationResults`, `ExecutionStatuses` (mapped)                                                                                | `CodexAppServerStatuses` (exclusive)   | Per shared app-server; native effects run in host-owned one-off workers. Execution status changes wake a separate live-owner readiness check. |
 | `process-lifecycle`                         | `ProcessDesiredStates` (primary), `ProcessInputs` (mapped)                                                                                                                                                               | `ProcessStatuses` (exclusive)          | The same single controller and registry shown above; per-domain contexts and worker barriers remain separate.                                 |
 
 The process controller and its three resource types appear in both diagrams to show their callers;

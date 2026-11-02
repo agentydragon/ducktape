@@ -93,13 +93,13 @@ func newExecutionControllerRuntime(t *testing.T, start func(context.Context, Con
 	return r
 }
 
-func waitExecutionState(t *testing.T, r *Runtime, condition func(executionState) bool) executionState {
+func waitExecutionStatus(t *testing.T, r *Runtime, condition func(executionStatus) bool) executionStatus {
 	t.Helper()
 	deadline := time.NewTimer(3 * time.Second)
 	defer deadline.Stop()
 	for {
 		changed := r.changesSince()
-		current, _, err := cosiExecutionState(r)
+		current, _, err := cosiExecutionStatus(r)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -114,8 +114,8 @@ func waitExecutionState(t *testing.T, r *Runtime, condition func(executionState)
 	}
 }
 
-func cosiExecutionState(r *Runtime) (executionState, bool, error) {
-	return cosi.Read(context.Background(), r.lifecycleState, executionStateResource(executionState{}))
+func cosiExecutionStatus(r *Runtime) (executionStatus, bool, error) {
+	return cosi.Read(context.Background(), r.lifecycleState, executionStatusResource(executionStatus{}))
 }
 
 func TestExecutionControllerFencesBeforeReplacementAndDoesNotReplay(t *testing.T) {
@@ -150,7 +150,7 @@ func TestExecutionControllerFencesBeforeReplacementAndDoesNotReplay(t *testing.T
 	case <-time.After(time.Second):
 		t.Fatal("backend loss did not begin fence")
 	}
-	current := waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionStopping })
+	current := waitExecutionStatus(t, r, func(s executionStatus) bool { return s.Phase == executionStopping })
 	if current.FencedGeneration == current.Generation || starts.Load() != 1 {
 		t.Fatalf("successor before fence proof: state=%+v starts=%d", current, starts.Load())
 	}
@@ -166,7 +166,7 @@ func TestExecutionControllerFencesBeforeReplacementAndDoesNotReplay(t *testing.T
 	case <-time.After(3 * time.Second):
 		t.Fatal("fenced loss did not launch successor")
 	}
-	current = waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionReady && s.Generation == 2 })
+	current = waitExecutionStatus(t, r, func(s executionStatus) bool { return s.Phase == executionReady && s.Generation == 2 })
 	if current.FencedGeneration != 1 {
 		t.Fatalf("replacement missing prior fence evidence: %+v", current)
 	}
@@ -190,7 +190,7 @@ func TestExecutionControllerFailedFenceIsTerminal(t *testing.T) {
 	}
 	first := <-started
 	first.exited <- childExit{}
-	current := waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionFailed })
+	current := waitExecutionStatus(t, r, func(s executionStatus) bool { return s.Phase == executionFailed })
 	input, _, err := cosi.Read(context.Background(), r.lifecycleState, executionInputResource(executionInput{}))
 	if err != nil {
 		t.Fatal(err)
@@ -242,7 +242,7 @@ func TestExecutionControllerImmediateExitAndLatePriorLoss(t *testing.T) {
 	if first == second {
 		t.Fatal("recovery reused the exited owner")
 	}
-	current := waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionReady && s.Generation == 2 })
+	current := waitExecutionStatus(t, r, func(s executionStatus) bool { return s.Phase == executionReady && s.Generation == 2 })
 	if current.FencedGeneration != 1 || starts.Load() != 2 {
 		t.Fatalf("immediate loss did not fence before one replacement: state=%+v starts=%d", current, starts.Load())
 	}
@@ -289,7 +289,7 @@ func TestExecutionControllerImmediateExitAndLatePriorLoss(t *testing.T) {
 	if third == second {
 		t.Fatal("second loss reused its exited owner")
 	}
-	current = waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionReady && s.Generation == 3 })
+	current = waitExecutionStatus(t, r, func(s executionStatus) bool { return s.Phase == executionReady && s.Generation == 3 })
 	if current.FencedGeneration != 2 || starts.Load() != 3 {
 		t.Fatalf("current loss did not fence and recover: state=%+v starts=%d", current, starts.Load())
 	}
@@ -362,7 +362,7 @@ func TestExecutionControllerStopSuppressesRecoveryAndJoinsCanceledWait(t *testin
 	if starts.Load() != 1 {
 		t.Fatalf("quiesce restarted backend %d times", starts.Load())
 	}
-	current := waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionStopped })
+	current := waitExecutionStatus(t, r, func(s executionStatus) bool { return s.Phase == executionStopped })
 	if current.FencedGeneration != current.Generation {
 		t.Fatalf("stop lacked fence evidence: %+v", current)
 	}
@@ -478,7 +478,7 @@ func TestExecutionControllerLossDuringQuiesceDoesNotRestart(t *testing.T) {
 	r.intent.Mode = runtimepb.LifecycleIntent_QUIESCING
 	r.mu.Unlock()
 	first.exited <- childExit{}
-	current := waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionStopped && s.FencedGeneration == s.Generation })
+	current := waitExecutionStatus(t, r, func(s executionStatus) bool { return s.Phase == executionStopped && s.FencedGeneration == s.Generation })
 	if starts.Load() != 1 {
 		t.Fatalf("quiescing launched successor: state=%+v starts=%d", current, starts.Load())
 	}
@@ -560,7 +560,7 @@ func TestExecutionControllerFencedStartupErrorReturnsToLiveCaller(t *testing.T) 
 	if starts.Load() != 1 {
 		t.Fatalf("fenced startup retried under same demand: %d", starts.Load())
 	}
-	current := waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionStopped && s.AwaitDemand })
+	current := waitExecutionStatus(t, r, func(s executionStatus) bool { return s.Phase == executionStopped && s.AwaitDemand })
 	if current.FencedGeneration != current.Generation {
 		t.Fatalf("fenced startup lacked proof: %+v", current)
 	}
@@ -577,7 +577,7 @@ func TestExecutionControllerUncertainStartupRetainsOwner(t *testing.T) {
 	if err := r.startExecutionForUID(t.Context(), "incarnation"); err == nil {
 		t.Fatal("uncertain unready startup returned success")
 	}
-	current := waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionFailed })
+	current := waitExecutionStatus(t, r, func(s executionStatus) bool { return s.Phase == executionFailed })
 	if current.FencedGeneration == current.Generation {
 		t.Fatalf("uncertain startup recorded false fence proof: %+v", current)
 	}
@@ -640,7 +640,7 @@ func TestExecutionControllerDoesNotPublishStaleSameUIDStart(t *testing.T) {
 	r.executionLifecycle.mu.Lock()
 	r.executionLifecycle.startContexts[input.Demand] = t.Context()
 	r.executionLifecycle.mu.Unlock()
-	if err := cosi.Publish(context.Background(), r.lifecycleState, executionInputResource(input), input, "embedded-execution-host"); err != nil {
+	if err := cosi.Publish(context.Background(), r.lifecycleState, executionInputResource(input), input, "execution-host"); err != nil {
 		t.Fatal(err)
 	}
 	close(releaseStart)
@@ -651,7 +651,7 @@ func TestExecutionControllerDoesNotPublishStaleSameUIDStart(t *testing.T) {
 	if err := <-firstDone; !errors.Is(err, context.Canceled) {
 		t.Fatalf("first epoch result = %v", err)
 	}
-	current := waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionReady && s.Demand == input.Demand })
+	current := waitExecutionStatus(t, r, func(s executionStatus) bool { return s.Phase == executionReady && s.Demand == input.Demand })
 	if current.Generation != 2 || current.FencedGeneration != 1 || starts.Load() != 2 {
 		t.Fatalf("stale start served a newer epoch: state=%+v starts=%d", current, starts.Load())
 	}

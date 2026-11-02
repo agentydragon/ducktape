@@ -18,15 +18,15 @@ const (
 	Namespace                    = "environment-runtime"
 	DesiredStateType             = "RunnerDesiredStates.agentplane"
 	AggregateStatusType          = "RunnerRuntimes.agentplane"
-	RuntimeCloseStatusType       = "EnvironmentRuntimeCloses.agentplane"
+	RuntimeCloseStatusType       = "EnvironmentRuntimeCloseStatuses.agentplane"
 	RuntimeTransitionRequestType = "EnvironmentRuntimeTransitionRequests.agentplane"
-	RuntimeTransitionStatusType  = "EnvironmentRuntimeTransitions.agentplane"
+	RuntimeTransitionStatusType  = "EnvironmentRuntimeTransitionStatuses.agentplane"
 	ResourceID                   = "runner"
 	HostOwner                    = "runner-host"
 	EnvironmentDesiredStateType  = "EnvironmentRuntimeDesiredStates.agentplane"
-	// EmbeddedExecutionRuntimeType is observed by the app-server controller to
+	// ExecutionStatusType is observed by the app-server controller to
 	// wake its live Execution readiness check.
-	EmbeddedExecutionRuntimeType = "EmbeddedExecutionRuntimes.agentplane"
+	ExecutionStatusType = "ExecutionStatuses.agentplane"
 	EnvironmentResourceID        = "environment-runtime"
 	EnvironmentOwner             = "environment-runtime"
 )

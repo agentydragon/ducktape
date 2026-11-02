@@ -23,10 +23,10 @@ func (*LifecycleController) Settings() controller.QSettings {
 			{Namespace: lifecycle.Namespace, Type: InputType, Kind: controller.InputQPrimary},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.DesiredStateType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.AggregateStatusType, Kind: controller.InputQMapped},
-			{Namespace: lifecycle.Namespace, Type: lifecycle.EmbeddedExecutionRuntimeType, Kind: controller.InputQMapped},
+			{Namespace: lifecycle.Namespace, Type: lifecycle.ExecutionStatusType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: OperationType, Kind: controller.InputQMapped},
 		},
-		Outputs:     []controller.Output{{Type: RuntimeType, Kind: controller.OutputExclusive}},
+		Outputs:     []controller.Output{{Type: StatusType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(1)),
 	}
 }
@@ -42,7 +42,7 @@ func (*LifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r contr
 }
 
 func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r controller.QRuntime, _ resource.Pointer) error {
-	// A Desired change must wake blocked attachments even when it leaves Runtime unchanged.
+	// A Desired change must wake blocked attachments even when it leaves status unchanged.
 	if c.host != nil {
 		c.host.notify()
 	}
@@ -50,7 +50,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	if err != nil || !found {
 		return err
 	}
-	current, _, err := ReadRuntime(ctx, r)
+	current, _, err := ReadStatus(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -71,7 +71,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		return err
 	}
 	if server == nil {
-		current = Runtime{Phase: Stopped}
+		current = Status{Phase: Stopped}
 		return write()
 	}
 
@@ -399,7 +399,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 func (server *Host) executorDependency(
 	ctx context.Context,
 	r controller.QRuntime,
-	current *Runtime,
+	current *Status,
 	now time.Time,
 ) (bool, error, error) {
 	if server.deps.ExecServerURL == "" {

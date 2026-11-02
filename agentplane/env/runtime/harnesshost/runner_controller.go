@@ -26,7 +26,7 @@ func hostFenceMatches(applied runnerlifecycle.HostIntentStatus, intent *runtimep
 func (*runnerLifecycleController) Name() string { return runnerControllerName }
 func (*runnerLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{runnerlifecycle.DesiredStateType, runnerlifecycle.HostIntentStatusType, runnerInputType, session.DrainInputType, session.LifecycleStatusType, journalSealType, ingressAckType, codexappserver.RuntimeType, supervision.DesiredStateType, supervision.StatusType} {
+	for _, kind := range []string{runnerlifecycle.DesiredStateType, runnerlifecycle.HostIntentStatusType, runnerInputType, session.DrainInputType, session.LifecycleStatusType, journalSealType, ingressAckType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
 		inputs = append(inputs, controller.Input{Namespace: runnerlifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -160,14 +160,14 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		}
 	}
 	if c.l.runner.codexAppServer != nil {
-		runtime, found, err := codexappserver.ReadRuntime(ctx, r)
+		runtime, found, err := codexappserver.ReadStatus(ctx, r)
 		if err != nil {
 			return err
 		}
 		if runtime.StopError != "" {
 			current.Error = runtime.StopError
 			current.Blocker = runnerlifecycle.Blocker{
-				Kind: runnerlifecycle.CodexAppServerPending, ResourceType: codexappserver.RuntimeType,
+				Kind: runnerlifecycle.CodexAppServerPending, ResourceType: codexappserver.StatusType,
 				Error: runtime.StopError, ResourceID: codexappserver.ResourceID,
 				ProcessID: runtime.ProcessID, ResourcePresent: found,
 			}
@@ -175,7 +175,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		}
 		if !found || runtime.Phase != codexappserver.Stopped {
 			current.Blocker = runnerlifecycle.Blocker{
-				Kind: runnerlifecycle.CodexAppServerPending, ResourceType: codexappserver.RuntimeType,
+				Kind: runnerlifecycle.CodexAppServerPending, ResourceType: codexappserver.StatusType,
 				ResourceID: codexappserver.ResourceID, ProcessID: runtime.ProcessID, ResourcePresent: found,
 			}
 			return write()
