@@ -54,7 +54,7 @@ ts_library(
         "//haku/console/frontend:tool_call_card",
         "//haku/console/frontend:tool_call_record",
         "//haku/console/frontend:tool_call_state",
-        "//haku/console/frontend/tool_rendering:variant",
+        "//haku/console/frontend/tool_rendering:vocabulary",
     ],
 )
 
@@ -69,7 +69,7 @@ ts_library(
         "//:node_modules/@types/react-dom",
         "//:node_modules/react-dom",
         "//haku/console/frontend:theme",
-        "//haku/console/frontend/tool_rendering:variant",
+        "//haku/console/frontend/tool_rendering:vocabulary",
     ],
 )
 
