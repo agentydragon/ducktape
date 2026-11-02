@@ -90,21 +90,21 @@ type Dependencies struct {
 
 // Host owns the one shared Codex process and its protocol readers.
 type Host struct {
-	deps                        Dependencies
-	launch                      harness.LaunchConfig
-	store                       string
-	handshakeMu                 sync.Mutex
-	inputMu                     sync.Mutex
-	mu                          sync.Mutex
-	current                     *Process
-	initializingOwner           *Attachment
-	initializingOwnerGeneration uint64
-	initializing                *oneoff.Operation
-	draining                    *oneoff.Operation
-	initializationGeneration    uint64
-	drainEffect                 func(context.Context) error
-	changeMu                    sync.Mutex
-	changed                     chan struct{}
+	deps                            Dependencies
+	launch                          harness.LaunchConfig
+	store                           string
+	handshakeMu                     sync.Mutex
+	inputMu                         sync.Mutex
+	mu                              sync.Mutex
+	current                         *Process
+	initializingOwner               *Attachment
+	initializingOwnerHostGeneration uint64
+	initializing                    *oneoff.Operation
+	draining                        *oneoff.Operation
+	initializationHostGeneration    uint64
+	drainEffect                     func(context.Context) error
+	changeMu                        sync.Mutex
+	changed                         chan struct{}
 }
 
 // Process is a process-incarnation handle. It never exposes routing or mutable host state.
@@ -247,14 +247,14 @@ func (c *Host) Host(ctx context.Context, s *Attachment) (*Process, error) {
 			}
 			settled := p == nil
 			c.mu.Unlock()
-			if settled && currentStatus.Attempt >= demand {
+			if settled && currentStatus.ObservedDemand >= demand {
 				return false, errors.New("Codex app-server exited before the Session could attach")
 			}
 		}
 		// Initialization errors may be published before cancellation has finished draining a
 		// process that was started concurrently with executor readiness. Do not release waiters
 		// until the controller has settled that process.
-		if currentStatus.Phase == Stopped && currentStatus.Attempt >= demand {
+		if currentStatus.Phase == Stopped && currentStatus.ObservedDemand >= demand {
 			terminal := currentStatus.Error
 			if currentStatus.StopError != "" {
 				if terminal != "" {
@@ -288,9 +288,9 @@ func (c *Host) RequestLocked(ctx context.Context, s *Attachment) (uint64, error)
 	defer c.inputMu.Unlock()
 	c.mu.Lock()
 	if c.current == nil || !c.current.Running() {
-		if c.initializingOwner == nil || c.initializingOwnerGeneration != desired.Generation {
+		if c.initializingOwner == nil || c.initializingOwnerHostGeneration != desired.Generation {
 			c.initializingOwner = s
-			c.initializingOwnerGeneration = desired.Generation
+			c.initializingOwnerHostGeneration = desired.Generation
 		}
 	}
 	c.mu.Unlock()
@@ -316,7 +316,7 @@ func (c *Host) clearInitializingOwner(owner *Attachment) {
 	c.mu.Lock()
 	if c.initializingOwner == owner {
 		c.initializingOwner = nil
-		c.initializingOwnerGeneration = 0
+		c.initializingOwnerHostGeneration = 0
 	}
 	c.mu.Unlock()
 }
@@ -427,7 +427,7 @@ func (c *Host) publishExit(p *Process) {
 		err = errors.New("Codex input disappeared before process exit was observed")
 	}
 	if err == nil {
-		input.ExitGeneration++
+		input.ExitSequence++
 		input.ExitProcessID = p.process.ID()
 		if readerErr := p.readError(); readerErr != nil {
 			input.ExitError = readerErr.Error()

@@ -88,17 +88,17 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			} else {
 				current.Error = op.Err().Error()
 			}
-			current.Attempt = input.Demand
+			current.ObservedDemand = input.Demand
 			current.ExecServerReadyDeadline = time.Time{}
 		} else {
 			server.mu.Lock()
 			p := server.current
-			generation := server.initializationGeneration
+			hostGeneration := server.initializationHostGeneration
 			server.initializingOwner = nil
-			server.initializingOwnerGeneration = 0
+			server.initializingOwnerHostGeneration = 0
 			live := p != nil && p.Running()
 			server.mu.Unlock()
-			if live && desiredState.Mode == lifecycle.Running && generation == desiredState.Generation {
+			if live && desiredState.Mode == lifecycle.Running && hostGeneration == desiredState.Generation {
 				ready, dependencyErr, err := server.executorDependency(ctx, r, &current, time.Now())
 				if err != nil {
 					return err
@@ -106,16 +106,16 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				if current.Error != "" {
 					current.Phase = Initializing
 					current.ProcessID = p.ID()
-					current.Attempt = input.Demand
+					current.ObservedDemand = input.Demand
 				} else if dependencyErr != nil {
 					current.Phase = Initializing
 					current.ProcessID = p.ID()
-					current.Attempt = input.Demand
+					current.ObservedDemand = input.Demand
 					current.Error = dependencyErr.Error()
 				} else if ready {
 					current.Phase = Ready
 					current.ProcessID = p.ID()
-					current.Attempt = input.Demand
+					current.ObservedDemand = input.Demand
 					current.Error = ""
 					current.StopError = ""
 					current.ExecServerReadyDeadline = time.Time{}
@@ -150,8 +150,8 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	initializing = server.initializing
 	draining = server.draining
 	server.mu.Unlock()
-	if input.ExitGeneration > current.ExitGeneration {
-		current.ExitGeneration = input.ExitGeneration
+	if input.ExitSequence > current.ExitSequence {
+		current.ExitSequence = input.ExitSequence
 		if current.ProcessID == input.ExitProcessID && initializing == nil && draining == nil {
 			current.Phase = Stopped
 			current.ProcessID = ""
@@ -163,20 +163,20 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			}
 		}
 	}
-	if desiredState.Mode == lifecycle.Running && current.Generation != desiredState.Generation {
+	if desiredState.Mode == lifecycle.Running && current.HostGeneration != desiredState.Generation {
 		server.mu.Lock()
 		inactive := server.initializing == nil && server.draining == nil && server.current == nil
-		if inactive && server.initializingOwnerGeneration != desiredState.Generation {
+		if inactive && server.initializingOwnerHostGeneration != desiredState.Generation {
 			server.initializingOwner = nil
-			server.initializingOwnerGeneration = 0
+			server.initializingOwnerHostGeneration = 0
 		}
 		server.mu.Unlock()
 		if inactive {
-			// Demand and attempts are scoped to a Harness Host incarnation. A resumed Host must wait for
+			// Demand sequences are scoped to a Harness Host generation. A resumed Host must wait for
 			// fresh demand rather than replaying the previous incarnation's Codex startup request.
-			current.Generation = desiredState.Generation
-			current.Attempt = 0
-			current.ExitGeneration = input.ExitGeneration
+			current.HostGeneration = desiredState.Generation
+			current.ObservedDemand = 0
+			current.ExitSequence = input.ExitSequence
 			current.Error = ""
 			current.StopError = ""
 			current.ExecServerReadyDeadline = time.Time{}
@@ -216,7 +216,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			server.mu.Lock()
 			if server.current == nil && server.initializing == nil && server.draining == nil {
 				server.initializingOwner = nil
-				server.initializingOwnerGeneration = 0
+				server.initializingOwnerHostGeneration = 0
 			}
 			server.mu.Unlock()
 			current.Phase = Stopped
@@ -247,7 +247,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				return err
 			}
 			if dependencyErr != nil {
-				current.Attempt = input.Demand
+				current.ObservedDemand = input.Demand
 				current.Error = dependencyErr.Error()
 				initializing.Cancel()
 			} else if ready {
@@ -271,12 +271,12 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	if p != nil {
 		if p.Running() {
 			if current.Phase == Ready && current.ProcessID == p.ID() {
-				if current.Attempt < input.Demand {
-					current.Attempt = input.Demand
+				if current.ObservedDemand < input.Demand {
+					current.ObservedDemand = input.Demand
 				}
 				return write()
 			}
-			if current.Phase == Initializing && current.Generation == desiredState.Generation {
+			if current.Phase == Initializing && current.HostGeneration == desiredState.Generation {
 				ready, dependencyErr, err := server.executorDependency(ctx, r, &current, time.Now())
 				if err != nil {
 					return err
@@ -286,7 +286,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				} else if dependencyErr == nil && ready {
 					current.Phase = Ready
 					current.ProcessID = p.ID()
-					current.Attempt = input.Demand
+					current.ObservedDemand = input.Demand
 					current.Error = ""
 					current.StopError = ""
 					current.ExecServerReadyDeadline = time.Time{}
@@ -295,7 +295,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				if dependencyErr != nil {
 					current.Phase = Draining
 					current.ProcessID = p.ID()
-					current.Attempt = input.Demand
+					current.ObservedDemand = input.Demand
 					current.Error = dependencyErr.Error()
 					current.ExecServerReadyDeadline = time.Time{}
 					if err := server.startOperation(&server.draining, server.drainProcess); err != nil {
@@ -324,7 +324,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			return write()
 		}
 	}
-	if input.Demand <= current.Attempt {
+	if input.Demand <= current.ObservedDemand {
 		current.Phase = Stopped
 		current.ProcessID = ""
 		return write()
@@ -336,7 +336,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	}
 	if dependencyErr != nil {
 		current.Phase = Stopped
-		current.Attempt = input.Demand
+		current.ObservedDemand = input.Demand
 		current.Error = dependencyErr.Error()
 		current.ProcessID = ""
 		current.ExecServerReadyDeadline = time.Time{}
@@ -347,8 +347,8 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	}
 
 	current.Phase = Initializing
-	current.Generation = desiredState.Generation
-	current.Attempt = input.Demand
+	current.HostGeneration = desiredState.Generation
+	current.ObservedDemand = input.Demand
 	current.ProcessID = ""
 	current.Error = ""
 	if err := write(); err != nil {
@@ -363,20 +363,20 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			return nil
 		}
 		owner := server.initializingOwner
-		if server.initializingOwnerGeneration != desiredState.Generation {
+		if server.initializingOwnerHostGeneration != desiredState.Generation {
 			owner = nil
 		}
-		server.initializationGeneration = desiredState.Generation
+		server.initializationHostGeneration = desiredState.Generation
 		server.mu.Unlock()
 		if err := server.startOperation(&server.initializing, func(ctx context.Context) error {
 			return server.initialize(ctx, owner, desiredState.Generation)
 		}); err != nil {
 			server.mu.Lock()
 			server.initializingOwner = nil
-			server.initializingOwnerGeneration = 0
+			server.initializingOwnerHostGeneration = 0
 			server.mu.Unlock()
 			current.Phase = Stopped
-			current.Attempt = input.Demand
+			current.ObservedDemand = input.Demand
 			current.ProcessID = ""
 			current.Error = err.Error()
 			current.ExecServerReadyDeadline = time.Time{}
@@ -384,7 +384,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		}
 		server.mu.Lock()
 		server.initializingOwner = nil
-		server.initializingOwnerGeneration = 0
+		server.initializingOwnerHostGeneration = 0
 		server.mu.Unlock()
 		return nil
 	}); err != nil {
