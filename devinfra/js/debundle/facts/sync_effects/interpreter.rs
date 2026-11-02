@@ -7832,10 +7832,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if !unsupported_inputs
             && self.inputs.index.dynamic_scope_owners.is_empty()
             && let Some(body) = &callable.local_body
-            && body.reads().iter().all(|binding| {
-                body.bindings.contains_key(binding)
-                    || env.contains_key(binding)
-                    || self.inputs.top_bindings.contains(binding)
+            && body.free_reads().iter().all(|binding| {
+                env.contains_key(binding) || self.inputs.top_bindings.contains(binding)
             })
         {
             // Keep existing record/input and array-iteration write proofs on

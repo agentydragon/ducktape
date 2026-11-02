@@ -110,10 +110,7 @@ pub(super) fn derive(index: &ExecutionIndex, callable: u32) -> Option<DerivedFor
     if let Some(expression) = &body.allocation_return {
         expression.bindings(&mut reads);
     } else {
-        reads = body.local_body.as_ref()?.reads();
-        for binding in body.local_body.as_ref()?.bindings.keys() {
-            reads.remove(binding);
-        }
+        reads.extend(body.local_body.as_ref()?.free_reads().iter().cloned());
     }
     for binding in bindings.keys() {
         reads.remove(binding);

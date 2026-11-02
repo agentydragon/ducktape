@@ -39,6 +39,9 @@ pub(super) enum LocalOperation {
 pub(super) struct LocalBody {
     pub(super) bindings: BTreeMap<Id, LocalBinding>,
     pub(super) operations: Arc<[LocalOperation]>,
+    /// Sorted source reads outside this body's parameters and declarations.
+    /// Shared across body clones and reused by every invocation/provider query.
+    free_reads: Option<Arc<[Id]>>,
 }
 
 fn simple_binding(pattern: &Pat) -> Option<Id> {
@@ -215,32 +218,29 @@ impl LocalBody {
                 _ => return None,
             }
         }
-        let body = Self {
-            bindings,
-            operations: operations.into(),
-        };
-        let local_targets = body
-            .expressions()
-            .all(|expression| expression.local_targets(&body.bindings));
-        local_targets.then_some(body)
-    }
-
-    pub(super) fn reads(&self) -> BTreeSet<Id> {
+        if !Self::expressions(&operations).all(|expression| expression.local_targets(&bindings)) {
+            return None;
+        }
         let mut reads = BTreeSet::new();
-        for expression in self.expressions() {
+        for expression in Self::expressions(&operations) {
             expression.reads(&mut reads);
         }
-        reads
+        reads.retain(|binding| !bindings.contains_key(binding));
+        Some(Self {
+            bindings,
+            operations: operations.into(),
+            free_reads: (!reads.is_empty()).then(|| reads.into_iter().collect()),
+        })
     }
 
-    fn expressions(&self) -> impl Iterator<Item = &LocalExpression> {
-        self.operations
-            .iter()
-            .filter_map(|operation| match operation {
-                LocalOperation::Initialize(_, value) | LocalOperation::Return(value) => {
-                    value.as_ref()
-                }
-                LocalOperation::Evaluate(value) | LocalOperation::Throw(value) => Some(value),
-            })
+    pub(super) fn free_reads(&self) -> &[Id] {
+        self.free_reads.as_deref().unwrap_or_default()
+    }
+
+    fn expressions(operations: &[LocalOperation]) -> impl Iterator<Item = &LocalExpression> {
+        operations.iter().filter_map(|operation| match operation {
+            LocalOperation::Initialize(_, value) | LocalOperation::Return(value) => value.as_ref(),
+            LocalOperation::Evaluate(value) | LocalOperation::Throw(value) => Some(value),
+        })
     }
 }
