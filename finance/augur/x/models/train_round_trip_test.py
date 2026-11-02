@@ -17,15 +17,17 @@ import pytest_bazel
 import yaml
 from pydantic import TypeAdapter
 
-from finance.augur.fit.data import load_evidence
+from finance.augur.fit.data import load_evidence, load_evidence_segments
 from finance.augur.fit.evidence_data import load_exogenous_evidence
+from finance.augur.fit.metrics import ScoredHeldOutResult, held_out_predictive_score
+from finance.augur.model.conditioning import ObservationUnits
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.series import HomeValueKey, InflationKey, LevelSeriesKey, RentKey
 from finance.augur.x.models.provider_config import ProviderConfig
 from finance.augur.x.models.state_space import StateSpaceProviderConfig
 from finance.augur.x.models.state_space_fit import fit_state_space_artifact
 from finance.augur.x.models.train import main as train_main
-from finance.augur.x.models.vecm import VecmProviderConfig
+from finance.augur.x.models.vecm import VecmConfig, VecmModel, VecmProviderConfig
 from finance.evidence import sources
 
 _ADAPTER: TypeAdapter[ProviderConfig] = TypeAdapter(ProviderConfig)
@@ -133,14 +135,66 @@ def test_state_space_training_uses_dated_one_month_returns_across_a_cpi_gap(
     assert artifact["monthly_log_return_mu"][InflationKey().wire_id] == pytest.approx(expected_mu)
 
 
+def test_gapped_evidence_trains_and_scores_vecm_from_real_dated_levels(
+    tmp_path: Path, synthetic_evidence_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cpi_path = synthetic_evidence_dir / sources.FRED_CPI.output_filename
+    lines = cpi_path.read_text().splitlines()
+    cpi_path.write_text("\n".join(line for line in lines if not line.startswith("2025-10-")) + "\n")
+    historical, evidence = load_evidence_segments()
+    assert historical.gaps[0].missing_months == ("2025-10",)
+
+    transitions = historical.transition_pairs
+    train_end = round(len(transitions) * 0.9)
+    model = VecmModel(config=VecmConfig(n_iters=5, seed=13))
+    model.fit_dated(historical.prefix_through(transitions[train_end - 1][1]))
+    scored = held_out_predictive_score(model, historical, train_fraction=0.9)
+
+    assert isinstance(scored, ScoredHeldOutResult)
+    assert scored.calendar_coverage is not None
+    assert scored.calendar_coverage.gaps[0][2] == ("2025-10",)
+    assert scored.held_out_count == len(transitions) - train_end
+    assert scored.joint_log_density_per_month == pytest.approx(scored.joint_log_density_total / scored.held_out_count)
+
+    out_manifest = tmp_path / "gapped_vecm_provider.yaml"
+    monkeypatch.setattr("finance.augur.x.models.train.VecmConfig", lambda: VecmConfig(n_iters=5, seed=13))
+    train_main(["--model", "vecm", "--out-provider-config", str(out_manifest)])
+    parsed = _ADAPTER.validate_python(yaml.safe_load(out_manifest.read_text(encoding="utf-8")))
+    assert isinstance(parsed, VecmProviderConfig)
+    state = parsed.trained_state
+    assert state.calendar_gaps[0].missing_months == ("2025-10",)
+    assert sum(segment.used_transition_count for segment in state.training_segments) == len(transitions)
+    assert state.train_months == historical.months
+    assert state.as_of_month == historical.months[-1]
+    assert {point.observed_at.strftime("%Y-%m") for point in parsed.latest_observations.values()} == {
+        historical.months[-1]
+    }
+    assert parsed.latest_observations["security:SPY"].units == ObservationUnits.USD_PER_UNIT
+    assert parsed.latest_observations["security:SPY"].source_id == f"public:{sources.YAHOO_SPY.provenance_label}"
+    # FRED's SP500 price index remains auxiliary; it is not substituted for SPY adjusted close.
+    assert evidence.metadata.auxiliary_observations["sp500_price"].source_id == (
+        f"public:{sources.FRED_SP500.provenance_label}"
+    )
+
+
 def test_state_space_fit_rejects_history_from_different_evidence(synthetic_evidence_dir: Path) -> None:
     historical, evidence = load_evidence()
+    different_levels = evidence.monthly_level_values.copy()
+    different_levels[0, 0] += 0.01
+    inconsistent_evidence = replace(evidence, monthly_level_values=different_levels)
+
+    with pytest.raises(ValueError, match="historical levels do not match"):
+        fit_state_space_artifact(inconsistent_evidence, historical=historical)
+
+
+def test_state_space_fit_rejects_returns_inconsistent_with_dated_levels(synthetic_evidence_dir: Path) -> None:
+    _, evidence = load_evidence()
     different_returns = evidence.monthly_log_returns.copy()
     different_returns[0, 0] += 0.01
     inconsistent_evidence = replace(evidence, monthly_log_returns=different_returns)
 
-    with pytest.raises(ValueError, match="HistoricalSeries returns do not match"):
-        fit_state_space_artifact(inconsistent_evidence, historical=historical)
+    with pytest.raises(ValueError, match="monthly returns do not match"):
+        fit_state_space_artifact(inconsistent_evidence)
 
 
 if __name__ == "__main__":

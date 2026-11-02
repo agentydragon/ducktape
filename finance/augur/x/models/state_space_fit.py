@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 from finance.augur.dates import months_between
-from finance.augur.fit.evidence_data import ExogenousEvidence
+from finance.augur.fit.evidence_data import ExogenousEvidence, _one_month_returns_from_aligned_levels
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.conditioning import (
     ExogenousConditioningContext,
@@ -21,7 +21,7 @@ from finance.augur.model.conditioning import (
     ObservationTreatment,
     ObservationUnits,
 )
-from finance.augur.model.path_models.scenarios import HistoricalSeries, historical_log_returns
+from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries
 from finance.augur.model.series import SP500_KEY, IssuerId
 from finance.augur.x.models.private_equity_fit import (
     PriceObservation,
@@ -55,14 +55,16 @@ class FittedPrivateEquityStateSpaceFactor:
 def fit_state_space_artifact(
     evidence: ExogenousEvidence,
     *,
-    historical: HistoricalSeries | None = None,
+    historical: DatedHistoricalSeries | HistoricalSeries | None = None,
     private_equity_config_paths: tuple[Path, ...] = (),
 ) -> tuple[StateSpaceModelArtifact, ExogenousConditioningContext]:
     if historical is not None:
         _validate_historical_matches_evidence(historical, evidence)
+    else:
+        _validate_evidence_monthly_returns(evidence)
     if private_equity_config_paths:
         if historical is None:
-            raise ValueError("private-equity state-space fitting requires a contiguous HistoricalSeries")
+            raise ValueError("private-equity state-space fitting requires dated aligned level evidence")
         private_factors = tuple(_fit_private_equity_factor(path, historical) for path in private_equity_config_paths)
     else:
         private_factors = ()
@@ -79,17 +81,37 @@ def fit_state_space_artifact(
     return artifact, conditioning
 
 
-def _validate_historical_matches_evidence(historical: HistoricalSeries, evidence: ExogenousEvidence) -> None:
+def _validate_historical_matches_evidence(
+    historical: DatedHistoricalSeries | HistoricalSeries, evidence: ExogenousEvidence
+) -> None:
     if historical.series_names != evidence.series_names:
-        raise ValueError("HistoricalSeries factors do not match the supplied exogenous evidence")
-    if historical.months[1:] != evidence.monthly_return_months:
-        raise ValueError("HistoricalSeries dates do not match the supplied exogenous evidence")
-    historical_returns = historical_log_returns(historical)
-    evidence_returns = np.asarray(evidence.monthly_log_returns, dtype=np.float64)
-    if historical_returns.shape != evidence_returns.shape or not np.allclose(
-        historical_returns, evidence_returns, rtol=1e-12, atol=1e-12
+        raise ValueError("historical factors do not match the supplied exogenous evidence")
+    if historical.months != evidence.monthly_level_months:
+        raise ValueError("historical dates do not match the supplied exogenous level evidence")
+    historical_levels = np.asarray(historical.levels, dtype=np.float64)
+    evidence_levels = np.asarray(evidence.monthly_level_values, dtype=np.float64)
+    if historical_levels.shape != evidence_levels.shape or not np.allclose(
+        historical_levels, evidence_levels, rtol=1e-12, atol=1e-12
     ):
-        raise ValueError("HistoricalSeries returns do not match the supplied exogenous evidence")
+        raise ValueError("historical levels do not match the supplied exogenous evidence")
+    _validate_evidence_monthly_returns(evidence)
+
+
+def _validate_evidence_monthly_returns(evidence: ExogenousEvidence) -> None:
+    evidence_levels = np.asarray(evidence.monthly_level_values, dtype=np.float64)
+    DatedHistoricalSeries(
+        series_names=evidence.series_names, levels=evidence_levels, months=evidence.monthly_level_months
+    )
+    expected_months, expected_returns = _one_month_returns_from_aligned_levels(
+        evidence.monthly_level_months, evidence_levels
+    )
+    evidence_returns = np.asarray(evidence.monthly_log_returns, dtype=np.float64)
+    if (
+        expected_months != evidence.monthly_return_months
+        or evidence_returns.shape != expected_returns.shape
+        or not np.allclose(evidence_returns, expected_returns, rtol=1e-12, atol=1e-12)
+    ):
+        raise ValueError("evidence monthly returns do not match its aligned dated level observations")
 
 
 def _conditioning_from_evidence(
@@ -104,7 +126,9 @@ def _conditioning_from_evidence(
     return ExogenousConditioningContext(start_at=start_at, observations=observations)
 
 
-def _fit_private_equity_factor(config_path: Path, historical: HistoricalSeries) -> FittedPrivateEquityStateSpaceFactor:
+def _fit_private_equity_factor(
+    config_path: Path, historical: DatedHistoricalSeries | HistoricalSeries
+) -> FittedPrivateEquityStateSpaceFactor:
     config = load_training_config(config_path)
     observations_path = _resolve_path(config.observations_path, config_path.parent)
     observations = load_price_observations_jsonl(observations_path)
@@ -147,7 +171,7 @@ def _fit_private_equity_factor(config_path: Path, historical: HistoricalSeries) 
 
 
 def _estimate_sp500_coupling(
-    observations: list[PriceObservation], historical: HistoricalSeries
+    observations: list[PriceObservation], historical: DatedHistoricalSeries | HistoricalSeries
 ) -> dict[str, float | int]:
     rows: list[tuple[float, float]] = []
     for start, end in pairwise(sorted(observations, key=lambda obs: obs.observed_at)):
@@ -185,7 +209,7 @@ def _estimate_sp500_coupling(
 
 
 def _historical_cumulative_return(
-    historical: HistoricalSeries, factor_name: str, start: date, end: date
+    historical: DatedHistoricalSeries | HistoricalSeries, factor_name: str, start: date, end: date
 ) -> float | None:
     try:
         factor_idx = [factor.wire_id for factor in historical.series_names].index(factor_name)
@@ -209,9 +233,21 @@ def _historical_cumulative_return(
     return float(log_levels[end_idx] - log_levels[start_idx])
 
 
-def _monthly_sigma(historical: HistoricalSeries, factor_name: str) -> float:
+def _monthly_sigma(historical: DatedHistoricalSeries | HistoricalSeries, factor_name: str) -> float:
     factor_idx = [factor.wire_id for factor in historical.series_names].index(factor_name)
-    returns = np.diff(np.log(historical.levels[:, factor_idx]))
+    if isinstance(historical, DatedHistoricalSeries):
+        pairs = historical.transition_pairs
+    else:
+        historical.require_consecutive_months()
+        pairs = tuple((index, index + 1) for index in range(len(historical.months) - 1))
+    if len(pairs) < 2:
+        raise ValueError(f"need at least two consecutive monthly returns to estimate {factor_name} volatility")
+    returns = np.asarray(
+        [
+            np.log(historical.levels[end, factor_idx]) - np.log(historical.levels[start, factor_idx])
+            for start, end in pairs
+        ]
+    )
     return float(np.std(returns, ddof=1))
 
 
@@ -225,6 +261,12 @@ def _source_manifest(
             "last": evidence.monthly_return_months[-1],
             "count": len(evidence.monthly_return_months),
             "observed": evidence.monthly_return_months,
+        },
+        "monthly_level_months": {
+            "first": evidence.monthly_level_months[0],
+            "last": evidence.monthly_level_months[-1],
+            "count": len(evidence.monthly_level_months),
+            "observed": evidence.monthly_level_months,
         },
         "evidence_metadata": evidence.metadata.model_dump(mode="json"),
         "private_equity": {

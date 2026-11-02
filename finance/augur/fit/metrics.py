@@ -27,7 +27,104 @@ import numpy as np
 
 from finance.augur.fit.model import FittableScorable, Scorable
 from finance.augur.fit.scoring import gaussian_crps, joint_log_density, marginal_log_densities
-from finance.augur.model.path_models.scenarios import HistoricalSeries
+from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries
+
+_HistoricalInput = HistoricalSeries | DatedHistoricalSeries
+
+
+@dataclass(frozen=True)
+class CalendarCoverage:
+    """Observed calendar coverage and transitions eligible for monthly scoring."""
+
+    observed_level_count: int
+    contiguous_segment_count: int
+    usable_transition_count: int
+    cross_gap_pair_count: int
+    omitted_month_count: int
+    segments: tuple[tuple[str, str, int], ...]
+    gaps: tuple[tuple[str, str, tuple[str, ...]], ...]
+
+
+def _coverage(historical: DatedHistoricalSeries) -> CalendarCoverage:
+    return CalendarCoverage(
+        observed_level_count=len(historical.months),
+        contiguous_segment_count=len(historical.segments),
+        usable_transition_count=len(historical.transition_pairs),
+        cross_gap_pair_count=len(historical.gaps),
+        omitted_month_count=sum(len(gap.missing_months) for gap in historical.gaps),
+        segments=tuple(
+            (segment.months[0], segment.months[-1], segment.transition_count) for segment in historical.segments
+        ),
+        gaps=tuple((gap.before_month, gap.after_month, gap.missing_months) for gap in historical.gaps),
+    )
+
+
+def calendar_coverage(historical: DatedHistoricalSeries) -> CalendarCoverage:
+    """Report observed spans and the cross-gap pairs excluded from monthly fitting/scoring."""
+    return _coverage(historical)
+
+
+@dataclass(frozen=True)
+class _TransitionOrigin:
+    """One observed one-month transition and the consecutive history containing it."""
+
+    index: int
+    start_row: int
+    end_row: int
+    segment: HistoricalSeries
+    local_origin: int
+
+
+def _transition_origins(historical: _HistoricalInput) -> tuple[_TransitionOrigin, ...]:
+    """Flatten only real consecutive transitions while retaining their segment-local origins."""
+    if isinstance(historical, DatedHistoricalSeries):
+        segments = tuple(
+            (
+                segment.start_index,
+                HistoricalSeries(series_names=historical.series_names, levels=segment.levels, months=segment.months),
+            )
+            for segment in historical.segments
+            if segment.transition_count > 0
+        )
+    else:
+        historical.require_consecutive_months()
+        segments = ((0, historical),)
+
+    origins: list[_TransitionOrigin] = []
+    for start_row, segment in segments:
+        for local_origin in range(len(segment.months) - 1):
+            origins.append(
+                _TransitionOrigin(
+                    index=len(origins),
+                    start_row=start_row + local_origin,
+                    end_row=start_row + local_origin + 1,
+                    segment=segment,
+                    local_origin=local_origin,
+                )
+            )
+    return tuple(origins)
+
+
+def _calendar_coverage(historical: _HistoricalInput) -> CalendarCoverage | None:
+    return _coverage(historical) if isinstance(historical, DatedHistoricalSeries) else None
+
+
+def fit_for_scoring(model: FittableScorable, historical: _HistoricalInput) -> None:
+    """Fit from real dated observations, requiring explicit support when gaps exist."""
+    if isinstance(historical, HistoricalSeries):
+        historical.require_consecutive_months()
+        model.fit(historical)
+        return
+    # `fit_dated` is an optional model capability for preserving gaps in fitting.
+    fit_dated = getattr(model, "fit_dated", None)
+    if callable(fit_dated):
+        fit_dated(historical)
+        return
+    if historical.gaps:
+        raise TypeError(f"{model.label} does not support fitting dated histories with calendar gaps")
+    model.fit(
+        HistoricalSeries(series_names=historical.series_names, levels=historical.levels, months=historical.months)
+    )
 
 
 @dataclass(frozen=True)
@@ -82,6 +179,7 @@ class ScoredHeldOutResult:
     joint_log_density_total: float
     joint_log_density_per_month: float
     factor_breakdown: FactorBreakdown | None
+    calendar_coverage: CalendarCoverage | None = None
 
 
 @dataclass(frozen=True)
@@ -92,13 +190,14 @@ class UnscoredHeldOutResult:
     train_end: int
     held_out_count: int
     unscored_reason: str
+    calendar_coverage: CalendarCoverage | None = None
 
 
 HeldOutResult = ScoredHeldOutResult | UnscoredHeldOutResult
 
 
 def held_out_predictive_score(
-    model: Scorable, historical: HistoricalSeries, *, train_fraction: float = 0.8
+    model: Scorable, historical: _HistoricalInput, *, train_fraction: float = 0.8
 ) -> HeldOutResult:
     """Score `model.predictive(...)` over the held-out window of `historical`.
 
@@ -109,14 +208,16 @@ def held_out_predictive_score(
     computed from `train_fraction` and surfaced on the result for
     auditability.
 
-    During scoring `predictive(historical, t, horizon=1)` is called with the
-    full series and is expected to condition on `levels[:t+1]` to predict
-    `levels[t+1]`.
+    During scoring `predictive(history, local_origin, horizon=1)` is called
+    with the full contiguous segment containing that origin. It is expected
+    to condition on `history.levels[:local_origin+1]` to predict the next
+    observed month. Origins are indexed globally across eligible transitions
+    in the result, while each model call uses the segment-local index.
     """
-    historical.require_consecutive_months()
     if not 0.0 < train_fraction < 1.0:
         raise ValueError(f"train_fraction must be in (0, 1); got {train_fraction}")
-    n_steps = historical.levels.shape[0] - 1
+    transitions = _transition_origins(historical)
+    n_steps = len(transitions)
     if n_steps < 2:
         raise ValueError("need at least two transitions to split into train and test")
     train_end = max(1, round(n_steps * train_fraction))
@@ -126,23 +227,25 @@ def held_out_predictive_score(
         )
 
     held_out_count = n_steps - train_end
-    # Report labels are the factors' wire ids — the metric breakdown is a human-readable
-    # {factor_label: score} report; the typed LevelSeriesKey identity rides on `historical`.
     factor_labels = tuple(factor.wire_id for factor in historical.series_names)
     log_densities: list[float] = []
     marginal_totals: dict[str, float] = dict.fromkeys(factor_labels, 0.0)
     crps_totals: dict[str, float] = dict.fromkeys(factor_labels, 0.0)
     log_levels = np.log(historical.levels)
-    for t in range(train_end, n_steps):
-        pred = model.predictive(historical, t, horizon=1)
+    coverage = _calendar_coverage(historical)
+    for transition in transitions[train_end:]:
+        pred = model.predictive(transition.segment, transition.local_origin, horizon=1)
         if pred is None:
             return UnscoredHeldOutResult(
                 model_label=model.label,
                 train_end=train_end,
                 held_out_count=held_out_count,
-                unscored_reason=f"{model.label}.predictive returned None at t={t}",
+                unscored_reason=(
+                    f"{model.label}.predictive returned None at {transition.segment.months[transition.local_origin]}"
+                ),
+                calendar_coverage=coverage,
             )
-        observed = log_levels[t + 1] - log_levels[t]
+        observed = log_levels[transition.end_row] - log_levels[transition.start_row]
         log_densities.append(joint_log_density(pred, observed))
         for name, value in marginal_log_densities(pred, observed, factor_labels).items():
             marginal_totals[name] += value
@@ -163,6 +266,7 @@ def held_out_predictive_score(
         joint_log_density_total=total,
         joint_log_density_per_month=total / held_out_count,
         factor_breakdown=factor_breakdown,
+        calendar_coverage=coverage,
     )
 
 
@@ -182,6 +286,7 @@ class ScoredRollingOriginResult:
     origin_scores: tuple[OriginScore, ...]
     uncertainty_unestimated_reason: str
     factor_breakdown: FactorBreakdown | None
+    calendar_coverage: CalendarCoverage | None = None
 
 
 @dataclass(frozen=True)
@@ -192,6 +297,7 @@ class UnscoredRollingOriginResult:
     n_origins: int
     origin_scores: tuple[OriginScore, ...]
     unscored_reason: str
+    calendar_coverage: CalendarCoverage | None = None
 
 
 RollingOriginResult = ScoredRollingOriginResult | UnscoredRollingOriginResult
@@ -199,7 +305,7 @@ RollingOriginResult = ScoredRollingOriginResult | UnscoredRollingOriginResult
 
 def rolling_origin_predictive_score(
     model_factory: Callable[[], FittableScorable],
-    historical: HistoricalSeries,
+    historical: _HistoricalInput,
     *,
     min_train: int = 60,
     refit_every: int = 1,
@@ -213,12 +319,12 @@ def rolling_origin_predictive_score(
     rolling-origin needs Fittable but the single-split scorer above only
     needs Scorable (no refit, caller-supplied training).
     """
-    historical.require_consecutive_months()
     if min_train < 2:
         raise ValueError(f"min_train must be >= 2; got {min_train}")
     if refit_every < 1:
         raise ValueError(f"refit_every must be >= 1; got {refit_every}")
-    n_steps = historical.levels.shape[0] - 1
+    transitions = _transition_origins(historical)
+    n_steps = len(transitions)
     if min_train >= n_steps:
         raise ValueError(f"min_train {min_train} leaves no held-out months (n_steps={n_steps})")
 
@@ -230,20 +336,26 @@ def rolling_origin_predictive_score(
     marginal_totals: dict[str, float] = dict.fromkeys(factor_labels, 0.0)
     crps_totals: dict[str, float] = dict.fromkeys(factor_labels, 0.0)
     log_levels = np.log(historical.levels)
+    coverage = _calendar_coverage(historical)
 
-    for t in range(min_train, n_steps):
+    for transition in transitions[min_train:]:
+        t = transition.index
         if fit_cache is None or (t - min_train) % refit_every == 0:
             current_fit = model_factory()
-            train_series = HistoricalSeries(
-                series_names=historical.series_names,
-                levels=historical.levels[: t + 1],
-                months=historical.months[: t + 1],
-            )
-            current_fit.fit(train_series)
+            train_series: _HistoricalInput
+            if isinstance(historical, DatedHistoricalSeries):
+                train_series = historical.prefix_through(transition.start_row)
+            else:
+                train_series = HistoricalSeries(
+                    series_names=historical.series_names,
+                    levels=historical.levels[: transition.start_row + 1],
+                    months=historical.months[: transition.start_row + 1],
+                )
+            fit_for_scoring(current_fit, train_series)
             fit_cache = current_fit
             fit_origin = t
         assert fit_cache is not None  # narrowing for type-checkers
-        pred = fit_cache.predictive(historical, t, horizon=1)
+        pred = fit_cache.predictive(transition.segment, transition.local_origin, horizon=1)
         if pred is None:
             return UnscoredRollingOriginResult(
                 model_label=label_holder,
@@ -251,12 +363,18 @@ def rolling_origin_predictive_score(
                 refit_every=refit_every,
                 n_origins=t - min_train,
                 origin_scores=tuple(origin_scores),
-                unscored_reason=(f"{label_holder}.predictive returned None at t={t} (fit at origin {fit_origin})"),
+                unscored_reason=(
+                    f"{label_holder}.predictive returned None at "
+                    f"{transition.segment.months[transition.local_origin]} (fit at transition {fit_origin})"
+                ),
+                calendar_coverage=coverage,
             )
-        observed = log_levels[t + 1] - log_levels[t]
+        observed = log_levels[transition.end_row] - log_levels[transition.start_row]
         origin_scores.append(
             OriginScore(
-                origin_index=t, origin_month=historical.months[t], joint_log_density=joint_log_density(pred, observed)
+                origin_index=t,
+                origin_month=transition.segment.months[transition.local_origin],
+                joint_log_density=joint_log_density(pred, observed),
             )
         )
         for name, value in marginal_log_densities(pred, observed, factor_labels).items():
@@ -282,6 +400,7 @@ def rolling_origin_predictive_score(
         origin_scores=tuple(origin_scores),
         uncertainty_unestimated_reason=DEPENDENT_ORIGIN_UNCERTAINTY,
         factor_breakdown=factor_breakdown,
+        calendar_coverage=coverage,
     )
 
 
@@ -296,6 +415,8 @@ class ScoredMultiStepRow:
     joint_log_density_per_origin: float
     origin_scores: tuple[OriginScore, ...]
     uncertainty_unestimated_reason: str
+    candidate_origins: int = 0
+    excluded_cross_gap_origins: int = 0
 
 
 @dataclass(frozen=True)
@@ -304,6 +425,8 @@ class UnscoredMultiStepRow:
     n_origins: int
     origin_scores: tuple[OriginScore, ...]
     unscored_reason: str
+    candidate_origins: int = 0
+    excluded_cross_gap_origins: int = 0
 
 
 MultiStepRow = ScoredMultiStepRow | UnscoredMultiStepRow
@@ -324,11 +447,12 @@ class MultiStepResult:
     train_end: int
     horizons: tuple[int, ...]
     rows: tuple[MultiStepRow, ...]
+    calendar_coverage: CalendarCoverage | None = None
 
 
 def multi_step_predictive_score(
     model: Scorable,
-    historical: HistoricalSeries,
+    historical: _HistoricalInput,
     *,
     horizons: tuple[int, ...] = (1, 6, 12),
     train_fraction: float = 0.8,
@@ -336,12 +460,12 @@ def multi_step_predictive_score(
     """Score `model.predictive(..., horizon=h)` at every origin in the
     held-out window with `t + h ≤ n_steps`. Caller is responsible for any
     required fit (see `held_out_predictive_score` for the rationale)."""
-    historical.require_consecutive_months()
     if not 0.0 < train_fraction < 1.0:
         raise ValueError(f"train_fraction must be in (0, 1); got {train_fraction}")
     if not horizons:
         raise ValueError("horizons must be non-empty")
-    n_steps = historical.levels.shape[0] - 1
+    transitions = _transition_origins(historical)
+    n_steps = len(transitions)
     train_end = max(1, round(n_steps * train_fraction))
     if train_end >= n_steps:
         raise ValueError(
@@ -350,19 +474,28 @@ def multi_step_predictive_score(
 
     log_levels = np.log(historical.levels)
     horizon_rows: list[MultiStepRow] = []
+    coverage = _calendar_coverage(historical)
     for h in horizons:
         scores: list[OriginScore] = []
         unscored_reason: str | None = None
-        for t in range(train_end, n_steps - h + 1):
-            pred = model.predictive(historical, t, horizon=h)
+        candidate_transitions = transitions[train_end : max(train_end, n_steps - h + 1)]
+        excluded_cross_gap = 0
+        for transition in candidate_transitions:
+            if transition.local_origin + h > len(transition.segment.months) - 1:
+                excluded_cross_gap += 1
+                continue
+            pred = model.predictive(transition.segment, transition.local_origin, horizon=h)
             if pred is None:
-                unscored_reason = f"{model.label}.predictive returned None at t={t}, h={h}"
+                unscored_reason = (
+                    f"{model.label}.predictive returned None at "
+                    f"{transition.segment.months[transition.local_origin]}, h={h}"
+                )
                 break
-            observed = log_levels[t + h] - log_levels[t]
+            observed = log_levels[transition.start_row + h] - log_levels[transition.start_row]
             scores.append(
                 OriginScore(
-                    origin_index=t,
-                    origin_month=historical.months[t],
+                    origin_index=transition.index,
+                    origin_month=transition.segment.months[transition.local_origin],
                     joint_log_density=joint_log_density(pred, observed),
                 )
             )
@@ -372,7 +505,13 @@ def multi_step_predictive_score(
                     horizon_months=h,
                     n_origins=len(scores),
                     origin_scores=tuple(scores),
-                    unscored_reason=unscored_reason or f"no origins available for horizon {h}",
+                    unscored_reason=unscored_reason
+                    or (
+                        f"no within-segment origins available for horizon {h} "
+                        f"({excluded_cross_gap} crossed omitted calendar gaps)"
+                    ),
+                    candidate_origins=len(candidate_transitions),
+                    excluded_cross_gap_origins=excluded_cross_gap,
                 )
             )
             continue
@@ -385,9 +524,15 @@ def multi_step_predictive_score(
                 joint_log_density_per_origin=per_origin,
                 origin_scores=tuple(scores),
                 uncertainty_unestimated_reason=DEPENDENT_ORIGIN_UNCERTAINTY,
+                candidate_origins=len(candidate_transitions),
+                excluded_cross_gap_origins=excluded_cross_gap,
             )
         )
 
     return MultiStepResult(
-        model_label=model.label, train_end=train_end, horizons=tuple(horizons), rows=tuple(horizon_rows)
+        model_label=model.label,
+        train_end=train_end,
+        horizons=tuple(horizons),
+        rows=tuple(horizon_rows),
+        calendar_coverage=coverage,
     )

@@ -26,7 +26,7 @@ from finance.augur.fit.metrics import (
     multi_step_predictive_score,
     rolling_origin_predictive_score,
 )
-from finance.augur.model.path_models.scenarios import HistoricalSeries, historical_log_returns
+from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries, historical_log_returns
 from finance.augur.model.series import (
     SP500_SYMBOL,
     HomeValueKey,
@@ -88,6 +88,9 @@ class _ConstantGaussianModel:
     def fit(self, historical: HistoricalSeries) -> None:
         del historical
 
+    def fit_dated(self, historical: DatedHistoricalSeries) -> None:
+        del historical
+
     def predictive(self, historical: HistoricalSeries, t: int, *, horizon: int = 1) -> dist.Distribution | None:
         # iid Δr ~ N(mu, σ²) → cumulative h-step is N(h·mu, h·σ²).
         del historical, t
@@ -121,6 +124,16 @@ def _toy_historical(n_steps: int, *, mu: np.ndarray, sigma: np.ndarray, seed: in
     return HistoricalSeries(series_names=_synthetic_factor_keys(n_factors), levels=levels, months=months)
 
 
+def _toy_gapped_history() -> DatedHistoricalSeries:
+    source = _toy_historical(12, mu=np.array([0.001]), sigma=np.array([0.02]), seed=7)
+    keep = np.arange(len(source.months)) != 6
+    return DatedHistoricalSeries(
+        series_names=source.series_names,
+        levels=source.levels[keep],
+        months=tuple(month for index, month in enumerate(source.months) if keep[index]),
+    )
+
+
 def test_predictive_scorers_reject_gapped_calendar() -> None:
     continuous = _toy_historical(12, mu=np.array([0.001]), sigma=np.array([0.02]), seed=7)
     gapped = HistoricalSeries(
@@ -135,6 +148,38 @@ def test_predictive_scorers_reject_gapped_calendar() -> None:
         rolling_origin_predictive_score(_UnscoredModel, gapped, min_train=3)
     with pytest.raises(ValueError, match="requires consecutive calendar months"):
         multi_step_predictive_score(_UnscoredModel(), gapped, horizons=(1,))
+
+
+def test_dated_scorers_use_only_consecutive_transitions_and_report_gap_exclusions() -> None:
+    historical = _toy_gapped_history()
+    model = _ConstantGaussianModel(mu=np.array([0.001]), sigma=np.array([0.02]))
+
+    held_out = held_out_predictive_score(model, historical, train_fraction=0.5)
+    assert isinstance(held_out, ScoredHeldOutResult)
+    assert held_out.train_end == 5
+    assert held_out.held_out_count == 5
+    assert held_out.calendar_coverage is not None
+    assert held_out.calendar_coverage.usable_transition_count == 10
+    assert held_out.calendar_coverage.cross_gap_pair_count == 1
+    assert held_out.calendar_coverage.omitted_month_count == 1
+    assert held_out.calendar_coverage.gaps[0][2] == ("2000-07",)
+
+    rolling = rolling_origin_predictive_score(
+        lambda: _ConstantGaussianModel(mu=np.array([0.001]), sigma=np.array([0.02])),
+        historical,
+        min_train=2,
+        refit_every=2,
+    )
+    assert isinstance(rolling, ScoredRollingOriginResult)
+    assert rolling.n_origins == 8
+    assert all(score.origin_month != "2000-07" for score in rolling.origin_scores)
+
+    multi_step = multi_step_predictive_score(model, historical, horizons=(2,), train_fraction=0.25)
+    row = multi_step.rows[0]
+    assert isinstance(row, ScoredMultiStepRow)
+    assert row.candidate_origins == 7
+    assert row.excluded_cross_gap_origins == 1
+    assert row.n_origins == 6
 
 
 class TestHeldOutPredictiveScore:

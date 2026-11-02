@@ -39,28 +39,28 @@ checked-in Agentplane code directly loading these finance datasets.
 
 ## Findings
 
-### A. Disconnected return months are rebuilt into a continuous training history
+### A. Keep calendar gaps through fitting and scoring
 
-**High: model input correctness.** [`_monthly_unit_returns`](../fit/evidence_data.py)
-selects one-month returns, and the evidence loader intersects those return months across
-series. That keeps a return spanning an individual source gap out of the aligned matrix.
-However, [`_historical_from_log_returns`](../fit/data.py) cumulatively sums the retained
-returns even if their calendar labels have gaps, producing one continuous `HistoricalSeries`.
-For example, if the retained rows jump from September to December, the December one-month
-return is applied to the September reconstructed level; the intervening changes are absent.
-The [VECM fit](../x/models/vecm.py) and [state-space fit](../x/models/state_space.py)
-operate on adjacent array rows as monthly steps. The FRED-only path separately computes
-`np.diff` over adjacent retained level rows without checking their calendar spacing.
+**High: model input correctness.** `load_evidence_segments` retains aligned actual monthly
+levels and their `YYYY-MM` labels in `DatedHistoricalSeries`. The full and FRED-only paths
+derive returns only for adjacent calendar months; `load_evidence` rejects a gapped history
+when a caller requires `HistoricalSeries`.
 
-The related [`_historical_cumulative_return`](../x/models/state_space_fit.py) sums whatever
-observations fall within a requested interval and returns a value if any match; it does not
-establish that the complete interval was observed. This matters to its private-equity/SP500
-coupling estimate.
+The VECM now keeps every observed level in one global per-factor normalization, but its
+likelihood uses only within-segment one-month transitions. Segment boundaries and omitted
+months are recorded with the fitted state. Its terminal latent state and absolute factor
+anchors use the same final common as-of month. The SP500 model factor is Yahoo SPY adjusted
+USD; the separate FRED SP500 price index remains an auxiliary observation for private-equity
+coupling. State-space return fitting consumes the dated one-month returns directly, and its
+private-equity/SP500 estimate uses an interval only when every calendar month in that interval
+has an observed level. Scoring uses the same eligible dated transitions and reports gaps and
+multi-step origins excluded across them.
 
-Keep dates and missingness through the fit boundary. Each fitter should use real dated
-transitions, fit contiguous segments, or reject a gap it cannot handle. Test a source gap,
-the aligned result, and the actual fitter or scoring consumer. Do not interpolate or silently
-concatenate disconnected returns without an explicit modeling decision.
+The October 2025 CPI gap remains in the actual evidence: no level or return is inserted for
+that month, and the VECM does not treat the surrounding rows as a monthly pair. Coverage is
+reported because fewer transitions and forecast origins contribute to fit and scores. The
+focused regressions exercise a gapped loader-to-fit/score path and continuous input, but do not
+claim a full real-evidence training run or a fitted production artifact.
 
 ### B. CPI calibration history loses calendar identity
 

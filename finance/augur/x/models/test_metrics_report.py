@@ -9,7 +9,7 @@ import pytest
 import pytest_bazel
 from numpyro import distributions as dist
 
-from finance.augur.model.path_models.scenarios import HistoricalSeries
+from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries
 from finance.augur.model.series import InflationKey
 from finance.augur.x.models.metrics_report import ModelMetricSpec, main
 
@@ -20,6 +20,9 @@ class _TestGaussian:
     def fit(self, historical: HistoricalSeries) -> None:
         del historical
 
+    def fit_dated(self, historical: DatedHistoricalSeries) -> None:
+        del historical
+
     def predictive(self, historical: HistoricalSeries, t: int, *, horizon: int = 1) -> dist.Distribution:
         del historical, t
         return dist.MultivariateNormal(jnp.zeros(1), covariance_matrix=jnp.eye(1) * horizon)
@@ -27,12 +30,12 @@ class _TestGaussian:
 
 @pytest.fixture
 def report_inputs(monkeypatch: pytest.MonkeyPatch) -> None:
-    historical = HistoricalSeries(
+    historical = DatedHistoricalSeries(
         series_names=(InflationKey(),),
         levels=np.ones((11, 1)),
         months=tuple(f"2000-{month:02d}" for month in range(1, 12)),
     )
-    monkeypatch.setattr("finance.augur.x.models.metrics_report.load_historical", lambda: historical)
+    monkeypatch.setattr("finance.augur.x.models.metrics_report.load_evidence_segments", lambda: (historical, None))
     monkeypatch.setattr(
         "finance.augur.x.models.metrics_report._ACTIVE_MODEL_METRIC_SPECS",
         (ModelMetricSpec(label="test_report", build_scorable=_TestGaussian, build_fittable_scorable=_TestGaussian),),

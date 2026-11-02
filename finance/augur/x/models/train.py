@@ -33,7 +33,7 @@ from pathlib import Path
 
 import yaml
 
-from finance.augur.fit.data import load_evidence
+from finance.augur.fit.data import aligned_as_of_observations, load_evidence_segments
 from finance.augur.fit.evidence_data import load_exogenous_evidence
 from finance.augur.x.models.provider_config import StateSpaceProviderConfig, VecmProviderConfig
 from finance.augur.x.models.state_space import write_state_space_artifact
@@ -93,12 +93,12 @@ def main(argv: list[str] | None = None) -> int:
 
     fitted: VecmProviderConfig | StateSpaceProviderConfig | StructuralMacroFittedDefaults
     if args.model == "vecm":
-        historical, evidence = load_evidence()
+        historical, evidence = load_evidence_segments()
         model = VecmModel(config=VecmConfig())
-        model.fit(historical)
+        model.fit_dated(historical)
         fitted = VecmProviderConfig(
             trained_state=model.to_trained_state(),
-            latest_observations={key.wire_id: point for key, point in evidence.latest_observations.items()},
+            latest_observations={key.wire_id: point for key, point in aligned_as_of_observations(evidence).items()},
             evidence_metadata=evidence.metadata,
             current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
         )
@@ -106,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
         if out_blob is None:
             raise ValueError("--out-blob is required for --model state_space")
         if args.private_equity_config:
-            historical, evidence = load_evidence()
+            historical, evidence = load_evidence_segments()
         else:
             historical = None
             evidence = load_exogenous_evidence()

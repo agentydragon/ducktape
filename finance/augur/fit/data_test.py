@@ -8,7 +8,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.fit import evidence_data
-from finance.augur.fit.data import load_evidence
+from finance.augur.fit.data import aligned_as_of_observations, load_evidence, load_evidence_segments
 from finance.augur.model.conditioning import ObservationUnits
 from finance.augur.model.series import SP500_KEY, HomeValueKey, RentKey
 from finance.evidence import sources
@@ -54,6 +54,22 @@ def test_explicit_fred_only_evidence_is_synthesized_and_labeled(synthetic_eviden
             assert point.source_id == f"public:{sources.FRED_SFXRSA.provenance_label}"
 
 
+def test_fred_only_dated_levels_preserve_gap_without_fabricating_a_return(synthetic_evidence_dir: Path) -> None:
+    cpi_path = synthetic_evidence_dir / sources.FRED_CPI.output_filename
+    lines = cpi_path.read_text().splitlines()
+    cpi_path.write_text("\n".join(line for line in lines if not line.startswith("2025-10-")) + "\n")
+
+    history, evidence = load_evidence_segments(fred_only=True)
+
+    assert history.gaps[0].before_month == "2025-09"
+    assert history.gaps[0].after_month == "2025-11"
+    assert history.gaps[0].missing_months == ("2025-10",)
+    assert all(len(segment.months) == segment.end_index - segment.start_index + 1 for segment in history.segments)
+    assert "2025-10" not in evidence.monthly_return_months
+    assert "2025-11" not in evidence.monthly_return_months
+    assert "2025-12" in evidence.monthly_return_months
+
+
 def test_full_evidence_history_keeps_each_return_on_its_calendar_month(synthetic_evidence_dir: Path) -> None:
     historical, evidence = load_evidence()
 
@@ -67,8 +83,19 @@ def test_missing_cpi_month_is_rejected_by_both_loaders(synthetic_evidence_dir: P
     lines = cpi_path.read_text().splitlines()
     cpi_path.write_text("\n".join(line for line in lines if not line.startswith("2025-10-")) + "\n")
 
-    with pytest.raises(ValueError, match="gap or duplicate"):
+    with pytest.raises(ValueError, match="calendar gaps"):
         load_evidence(fred_only=fred_only)
+
+    segmented, evidence = load_evidence_segments(fred_only=fred_only)
+    assert segmented.gaps[0].missing_months == ("2025-10",)
+    assert segmented.transition_pairs
+    assert len(segmented.transition_pairs) == len(evidence.monthly_return_months)
+    np.testing.assert_array_equal(segmented.levels, evidence.monthly_level_values)
+    assert segmented.months == evidence.monthly_level_months
+    expected_returns = np.asarray(
+        [np.log(segmented.levels[end]) - np.log(segmented.levels[start]) for start, end in segmented.transition_pairs]
+    )
+    np.testing.assert_allclose(expected_returns, evidence.monthly_log_returns)
 
 
 def test_fred_only_preserves_a_negative_latest_mortgage_rate(synthetic_evidence_dir: Path) -> None:
@@ -112,6 +139,22 @@ def test_full_evidence_anchors_preserve_actual_source_units(synthetic_evidence_d
     assert evidence.metadata.auxiliary_observations["sp500_price"].units == ObservationUnits.INDEX_POINTS
     assert evidence.metadata.auxiliary_observations["mortgage30"].units == ObservationUnits.PERCENT
     assert evidence.metadata.return_sources
+
+
+def test_vecm_anchors_use_one_common_month_and_spy_adjusted_levels(synthetic_evidence_dir: Path) -> None:
+    history, evidence = load_evidence_segments()
+    anchors = aligned_as_of_observations(evidence)
+    as_of = history.months[-1]
+    sp500_index = evidence.series_names.index(SP500_KEY)
+
+    assert {point.observed_at.isoformat() for point in anchors.values()} == {f"{as_of}-01"}
+    assert anchors[SP500_KEY].source_id == f"public:{sources.YAHOO_SPY.provenance_label}"
+    assert anchors[SP500_KEY].units == ObservationUnits.USD_PER_UNIT
+    assert anchors[SP500_KEY].value == pytest.approx(evidence.monthly_level_values[-1, sp500_index])
+    assert (
+        evidence.metadata.auxiliary_observations["sp500_price"].source_id
+        == f"public:{sources.FRED_SP500.provenance_label}"
+    )
 
 
 def test_full_evidence_reads_each_zillow_table_once_for_all_cities(

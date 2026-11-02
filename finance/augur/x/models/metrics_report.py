@@ -29,14 +29,15 @@ from pathlib import Path
 from typing import Any, cast
 
 from finance.augur.api.config import load_augur_config
-from finance.augur.fit.data import load_historical
+from finance.augur.fit.data import load_evidence_segments
 from finance.augur.fit.metrics import (
+    calendar_coverage,
+    fit_for_scoring,
     held_out_predictive_score,
     multi_step_predictive_score,
     rolling_origin_predictive_score,
 )
 from finance.augur.fit.model import FittableScorable, Scorable
-from finance.augur.model.path_models.scenarios import HistoricalSeries
 from finance.augur.x.models.independent import IndependentProviderConfig
 from finance.augur.x.models.provider_config import CompositeProviderConfig
 from finance.augur.x.models.vecm import VecmConfig, VecmModel
@@ -83,7 +84,7 @@ _ACTIVE_MODEL_METRIC_SPECS: tuple[ModelMetricSpec, ...] = (
 def evaluate_all(
     *, train_fraction: float = 0.8, rolling_min_train: int = 60, multi_step_horizons: tuple[int, ...] = (1, 6, 12)
 ) -> dict[str, Any]:
-    historical = load_historical()
+    historical, _evidence = load_evidence_segments()
     held_out_rows: list[dict[str, Any]] = []
     rolling_rows: list[dict[str, Any]] = []
     multi_step_rows: list[dict[str, Any]] = []
@@ -91,15 +92,14 @@ def evaluate_all(
         held_out_model = spec.build_scorable()
         if spec.build_fittable_scorable is not None:
             # Fittable: train on the prefix before scoring.
-            fit_train_end = max(1, round((historical.levels.shape[0] - 1) * train_fraction))
-            # Mutating fit on a fresh instance avoids leaking state across calls.
-            train_series = HistoricalSeries(
-                series_names=historical.series_names,
-                levels=historical.levels[: fit_train_end + 1],
-                months=historical.months[: fit_train_end + 1],
-            )
+            transitions = historical.transition_pairs
+            fit_train_end = max(1, round(len(transitions) * train_fraction))
+            if fit_train_end >= len(transitions):
+                raise ValueError("train_fraction leaves no held-out consecutive monthly transitions")
+            _, last_training_row = transitions[fit_train_end - 1]
+            train_series = historical.prefix_through(last_training_row)
             fittable = spec.build_fittable_scorable()
-            fittable.fit(train_series)
+            fit_for_scoring(fittable, train_series)
             held_out_model = fittable
         held_out = held_out_predictive_score(held_out_model, historical, train_fraction=train_fraction)
         held_out_rows.append({"model": spec.label, **asdict(held_out)})
@@ -120,9 +120,10 @@ def evaluate_all(
         multi_step_rows.append({"model": spec.label, **asdict(multi_step)})
     return {
         "factor_names": [key.wire_id for key in historical.series_names],
-        "n_steps": historical.levels.shape[0] - 1,
+        "n_steps": len(historical.transition_pairs),
         "first_month": historical.months[0],
         "last_month": historical.months[-1],
+        "calendar_coverage": asdict(calendar_coverage(historical)),
         "train_fraction": train_fraction,
         "rolling_min_train": rolling_min_train,
         "multi_step_horizons": list(multi_step_horizons),
@@ -130,7 +131,9 @@ def evaluate_all(
         "rolling_origin": rolling_rows,
         "multi_step": multi_step_rows,
         "score_reporting_note": (
-            "Scores are descriptive, not significance rankings. Non-finite scores are retained: "
+            "Monthly transitions across calendar gaps are excluded; multi-step origins whose horizon "
+            "would cross an omitted span are counted and excluded. Scores are descriptive, not significance rankings. "
+            "Non-finite scores are retained: "
             "NaN means undefined; Infinity and -Infinity are signed non-finite values. "
             "In JSON these values are strings, not omitted origins or nulls."
         ),

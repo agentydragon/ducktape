@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 import pytest_bazel
 
-from finance.augur.model.path_models.scenarios import HistoricalSeries
+from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries
 from finance.augur.model.series import SP500_KEY
-from finance.augur.x.models.state_space_fit import _historical_cumulative_return
+from finance.augur.x.models.state_space_fit import _historical_cumulative_return, _monthly_sigma
 
 
 def _historical_series(months: tuple[str, ...], levels: tuple[float, ...]) -> HistoricalSeries:
@@ -41,6 +41,16 @@ def test_sp500_cumulative_return_rejects_incomplete_interval_coverage(start: dat
     )
 
     assert _historical_cumulative_return(historical, SP500_KEY.wire_id, start, end) is None
+
+
+def test_monthly_sigma_excludes_the_observed_pair_across_a_calendar_gap() -> None:
+    historical = DatedHistoricalSeries(
+        series_names=(SP500_KEY,),
+        levels=np.asarray([100.0, 110.0, 1000.0, 1100.0], dtype=np.float64)[:, None],
+        months=("2024-01", "2024-02", "2024-04", "2024-05"),
+    )
+
+    assert _monthly_sigma(historical, SP500_KEY.wire_id) == pytest.approx(0.0)
 
 
 if __name__ == "__main__":
