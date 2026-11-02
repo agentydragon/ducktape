@@ -21,7 +21,7 @@ type sessionLifecycleController struct{ runtime *Runtime }
 func (*sessionLifecycleController) Name() string { return sessionLifecycleControllerName }
 func (*sessionLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{harnesshostlifecycle.EnvironmentDesiredStateType, harnesshostlifecycle.ExecutionStatusType, executionSignalType, environmentAdmissionCountType, session.InspectionStatusType, session.LifecycleStatusType, journalSealType, retained.IngressAckType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
+	for _, kind := range []string{harnesshostlifecycle.EnvironmentDesiredStateType, harnesshostlifecycle.ExecutionStatusType, executionSignalType, harnesshostlifecycle.AdmissionCountType, session.InspectionStatusType, session.LifecycleStatusType, journalSealType, retained.IngressAckType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
 		inputs = append(inputs, controller.Input{Namespace: harnesshostlifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -79,7 +79,7 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 	if admissions != 0 {
 		current.Stage = harnesshostlifecycle.Draining
 		current.Blocker = harnesshostlifecycle.Blocker{
-			Kind: harnesshostlifecycle.AdmissionsPending, ResourceType: environmentAdmissionCountType,
+			Kind: harnesshostlifecycle.AdmissionsPending, ResourceType: harnesshostlifecycle.AdmissionCountType,
 			ResourceID: harnesshostlifecycle.ResourceID, ResourcePresent: true, Admissions: uint64(admissions),
 		}
 		return write()
@@ -299,7 +299,7 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		if admissions != 0 {
 			c.runtime.mu.Unlock()
 			current.Blocker = harnesshostlifecycle.Blocker{
-				Kind: harnesshostlifecycle.AdmissionsPending, ResourceType: environmentAdmissionCountType,
+				Kind: harnesshostlifecycle.AdmissionsPending, ResourceType: harnesshostlifecycle.AdmissionCountType,
 				ResourceID: harnesshostlifecycle.ResourceID, ResourcePresent: true, Admissions: uint64(admissions),
 			}
 			return write()

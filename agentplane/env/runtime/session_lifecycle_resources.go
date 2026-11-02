@@ -12,7 +12,6 @@ import (
 )
 
 const (
-	environmentAdmissionCountType  = "EnvironmentAdmissionCounts.agentplane"
 	journalSealType                = "JournalSeals.agentplane"
 	sessionLifecycleControllerName = "environment-session-lifecycle"
 )
@@ -43,7 +42,8 @@ func lifecycleRead[T lifecycleSpec[T]](ctx context.Context, reader controller.Re
 }
 
 type environmentAdmissionCountSpec struct {
-	Admissions int
+	Admissions         int
+	AcceptedGeneration uint64
 }
 type journalSealSpec struct {
 	Present        bool
@@ -52,7 +52,7 @@ type journalSealSpec struct {
 }
 
 func (environmentAdmissionCountSpec) resourceType() resource.Type {
-	return environmentAdmissionCountType
+	return harnesshostlifecycle.AdmissionCountType
 }
 func (value environmentAdmissionCountSpec) DeepCopy() environmentAdmissionCountSpec { return value }
 

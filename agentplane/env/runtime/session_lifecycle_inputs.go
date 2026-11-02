@@ -47,6 +47,9 @@ func (r *Runtime) changeAdmissionsLocked(delta int) error {
 		next += uint64(delta)
 	}
 	value := environmentAdmissionCountSpec{Admissions: int(next)}
+	if r.admissionOpen {
+		value.AcceptedGeneration = r.desired.Generation
+	}
 	// Count publication is part of the synchronous admission gate. An uncertain
 	// write must close admission even if the backing store committed it.
 	if err := cosi.Publish(r.lifecycleContext, r.lifecycleState, lifecycleResourceFor(harnesshostlifecycle.ResourceID, value), value, harnesshostlifecycle.EnvironmentOwner); err != nil {

@@ -22,6 +22,7 @@ func (*LifecycleController) Settings() controller.QSettings {
 		Inputs: []controller.Input{
 			{Namespace: lifecycle.Namespace, Type: LifecycleSignalType, Kind: controller.InputQPrimary},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.EnvironmentDesiredStateType, Kind: controller.InputQMapped},
+			{Namespace: lifecycle.Namespace, Type: lifecycle.AdmissionCountType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.AggregateStatusType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.ExecutionStatusType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: OperationStateType, Kind: controller.InputQMapped},
@@ -346,17 +347,17 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		current.ExecServerReadyDeadline = time.Time{}
 	}
 
-	current.Phase = Initializing
-	current.HostGeneration = desiredState.Generation
-	current.ObservedDemand = input.Demand
-	current.ProcessID = ""
-	current.Error = ""
-	if err := write(); err != nil {
-		return err
-	}
-
 	// The Harness Host admission barrier fences initialization against Close and Quiesce.
 	if err := server.deps.Admission(ctx, desiredState, func(ctx context.Context) error {
+		current.Phase = Initializing
+		current.HostGeneration = desiredState.Generation
+		current.ObservedDemand = input.Demand
+		current.ProcessID = ""
+		current.Error = ""
+		if err := write(); err != nil {
+			return err
+		}
+
 		server.mu.Lock()
 		if server.initializing != nil || server.current != nil {
 			server.mu.Unlock()

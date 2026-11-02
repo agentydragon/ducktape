@@ -16,6 +16,7 @@ import (
 
 const (
 	Namespace                    = "environment-runtime"
+	AdmissionCountType           = "EnvironmentAdmissionCounts.agentplane"
 	AggregateStatusType          = "EnvironmentSessionStatuses.agentplane"
 	RuntimeCloseStatusType       = "EnvironmentRuntimeCloseStatuses.agentplane"
 	RuntimeTransitionRequestType = "EnvironmentRuntimeTransitionRequests.agentplane"

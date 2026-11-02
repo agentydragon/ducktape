@@ -100,6 +100,11 @@ func (r *Runtime) publishDesired(ctx context.Context, mode lifecycle.Mode, uid, 
 		return 0, status.Error(codes.Unavailable, "environment lifecycle changed before acceptance")
 	}
 	r.admissionOpen = mode == lifecycle.Running
+	if mode == lifecycle.Running {
+		if err := r.changeAdmissionsLocked(0); err != nil {
+			return 0, err
+		}
+	}
 	r.changedLocked()
 	return desired.Generation, nil
 }
@@ -199,6 +204,11 @@ func (r *Runtime) waitSessionStage(ctx context.Context, minimum lifecycle.Stage)
 
 func (r *Runtime) waitForNativeStopped(ctx context.Context, generation uint64) error {
 	return r.waitForLifecycle(ctx, func() (bool, error) {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if r.desired.Generation != generation {
+			return false, status.Error(codes.Aborted, "native-stop generation was superseded")
+		}
 		current, found, err := r.readSessionStatus(ctx)
 		if err != nil {
 			return false, err
@@ -210,11 +220,6 @@ func (r *Runtime) waitForNativeStopped(ctx context.Context, generation uint64) e
 			if current.NativeStopped {
 				return true, nil
 			}
-		}
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		if r.desired.Generation != generation {
-			return false, status.Error(codes.Aborted, "native-stop generation was superseded")
 		}
 		return false, r.failureLocked()
 	})

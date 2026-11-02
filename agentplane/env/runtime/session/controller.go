@@ -26,6 +26,7 @@ func (c *sessionLifecycleController) Settings() controller.QSettings {
 		Inputs: []controller.Input{
 			{Namespace: harnesshostlifecycle.Namespace, Type: ReconcileSnapshotType, Kind: controller.InputQPrimary},
 			{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.EnvironmentDesiredStateType, Kind: controller.InputQMapped},
+			{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.AdmissionCountType, Kind: controller.InputQMapped},
 			{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.AggregateStatusType, Kind: controller.InputQMapped},
 			{Namespace: harnesshostlifecycle.Namespace, Type: codexappserver.StatusType, Kind: controller.InputQMapped},
 			{Namespace: harnesshostlifecycle.Namespace, Type: OperationStateType, Kind: controller.InputQMapped},
@@ -313,13 +314,13 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		s.mu.Lock()
 		resuming := s.record.NativeSessionId != nil && started
 		s.mu.Unlock()
-		current.Phase, current.ObservedDemand, current.Resuming = Preparing, input.Demand, resuming
-		current.ProcessStopped = false
-		current.Error = ""
-		if err := write(); err != nil {
-			return err
-		}
 		if err := s.deps.admission(ctx, desiredState, func(context.Context) error {
+			current.Phase, current.ObservedDemand, current.Resuming = Preparing, input.Demand, resuming
+			current.ProcessStopped = false
+			current.Error = ""
+			if err := write(); err != nil {
+				return err
+			}
 			_, err := s.startOperation(&s.preparation, func(ctx context.Context) error {
 				err := s.ensureReady(ctx)
 				if err == nil {
