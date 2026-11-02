@@ -262,6 +262,16 @@ func (r *Runtime) waitForExecutionFenced(ctx context.Context, binding *runtimepb
 }
 
 func (r *Runtime) waitForHostReady(ctx context.Context, binding *runtimepb.Binding) (*runtimepb.HostReport, error) {
+	return r.waitForAppliedHostReport(ctx, binding, nil,
+		status.Error(codes.Unavailable, "Harness Host lifecycle connection is unavailable"))
+}
+
+// Keep the report read and change subscription under Runtime.mu so a report
+// published between them cannot leave a waiter asleep. hostReportLocked also
+// requires the complete intent, including its fence, to have been applied.
+func (r *Runtime) waitForAppliedHostReport(
+	ctx context.Context, binding *runtimepb.Binding, accept func(*runtimepb.HostReport) bool, disconnected error,
+) (*runtimepb.HostReport, error) {
 	for {
 		r.mu.Lock()
 		if failure := r.failureLocked(); failure != nil {
@@ -270,10 +280,11 @@ func (r *Runtime) waitForHostReady(ctx context.Context, binding *runtimepb.Bindi
 		}
 		if r.host == nil || !r.host.connected {
 			r.mu.Unlock()
-			return nil, status.Error(codes.Unavailable, "Harness Host lifecycle connection is unavailable")
+			return nil, disconnected
 		}
 		report := r.hostReportLocked()
-		if report != nil && report.Ready && r.intent != nil && proto.Equal(r.intent.Binding, binding) {
+		if report != nil && report.Ready && r.intent != nil && proto.Equal(r.intent.Binding, binding) &&
+			(accept == nil || accept(report)) {
 			snapshot := proto.Clone(report).(*runtimepb.HostReport)
 			r.mu.Unlock()
 			return snapshot, nil
