@@ -119,7 +119,8 @@ pub use evaluation_effects::{
     GlobalAccessEvidence, GlobalAccessKind, GlobalAccessSite, GlobalMayAccess,
 };
 pub use initialization_effects::{
-    InitializationEffectEvidence, InitializationEffects, UnknownEffectCoverage,
+    InitializationEffectEvidence, InitializationEffects, OwnerInitializationCoverageRefusal,
+    OwnerInitializationCoverageRefusalReason, UnknownEffectCoverage,
 };
 pub use item_views::{TopLevelItemView, top_level_item_views};
 pub use local_effects::local_namespace_iife_target;

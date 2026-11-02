@@ -46,8 +46,8 @@ use crate::facts::statement_facts::{
 };
 use crate::facts::value_flow::ChunkValueFlow;
 use crate::facts::{
-    LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableShapes,
-    StableArraySpreadShapes,
+    LocalClassConstructionProof, LocalClassConstructionShapes,
+    OwnerInitializationCoverageRefusalReason, SetIterableShapes, StableArraySpreadShapes,
 };
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::reports::schema::{
@@ -5763,7 +5763,10 @@ struct ExecutionIndex {
     fresh_instance_field_writes: BTreeSet<SourceUnitOrdinal>,
     top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
     top_assignments: Vec<Vec<(Id, ValueExpr)>>,
-    noninvoking_initializers: BTreeMap<SourceUnitOrdinal, OriginalInitializer>,
+    original_initializers: BTreeMap<
+        SourceUnitOrdinal,
+        Result<OriginalInitializer, OwnerInitializationCoverageRefusalReason>,
+    >,
     top_definite_initializers: Vec<BTreeSet<Id>>,
     const_call_owners: BTreeSet<SourceUnitOrdinal>,
     top_member_value_writes: Vec<Vec<MemberValueWrite>>,
@@ -5943,7 +5946,7 @@ impl Default for ExecutionIndex {
             fresh_instance_field_writes: BTreeSet::new(),
             top_dynamic_property_receivers: Vec::new(),
             top_assignments: Vec::new(),
-            noninvoking_initializers: BTreeMap::new(),
+            original_initializers: BTreeMap::new(),
             top_definite_initializers: Vec::new(),
             const_call_owners: BTreeSet::new(),
             top_member_value_writes: Vec::new(),
@@ -8501,13 +8504,10 @@ impl ExecutionIndex {
             }
         }
         for (ordinal, item) in body.iter().enumerate() {
-            if let Some(initializer) =
-                OriginalInitializer::collect(item, SourceUnitOrdinal(ordinal))
-            {
-                index
-                    .noninvoking_initializers
-                    .insert(SourceUnitOrdinal(ordinal), initializer);
-            }
+            index.original_initializers.insert(
+                SourceUnitOrdinal(ordinal),
+                OriginalInitializer::collect(item, SourceUnitOrdinal(ordinal)),
+            );
             fresh_steps.push(fresh_value_step(item.as_module_item()));
             if index.global_guards_requested {
                 index.deferred_global_candidates[ordinal] =

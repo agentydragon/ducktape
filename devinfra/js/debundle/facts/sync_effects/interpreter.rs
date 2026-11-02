@@ -44,8 +44,8 @@ use crate::facts::sync_effects::property_inference::{
 use crate::facts::value_flow::{ChunkValueFlow, Values as FlowValues};
 use crate::facts::{
     DataflowOpacityCause, LocalClassConstructionProof, LocalClassConstructionShapes,
-    NativeOwnDataReadDiagnostic, SetIterableShapes, StatementPurityContext,
-    set_iterables::SetIterableProof,
+    NativeOwnDataReadDiagnostic, OwnerInitializationCoverageRefusalReason, SetIterableShapes,
+    StatementPurityContext, set_iterables::SetIterableProof,
 };
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::{ChunkCodeGraph, Effects};
@@ -10220,9 +10220,20 @@ impl Executor<'_, '_> {
         let global_object_aliases = self.global_object_aliases(fact);
         let calls = &index.top_calls[owner.0];
         let assignments = &index.top_assignments[owner.0];
-        let initializer_source = index.noninvoking_initializers.get(&owner).filter(|source| {
-            matches!(assignments.as_slice(), [(binding, _)] if source.matches_binding(owner, binding))
-        });
+        let (initializer_source, mut initialization_coverage_refusal) = match index
+            .original_initializers
+            .get(&owner)
+            .expect("every source owner is collected")
+        {
+            Ok(source) if matches!(assignments.as_slice(), [(binding, _)] if source.matches_binding(owner, binding)) => {
+                (Some(source), None)
+            }
+            Ok(_) => (
+                None,
+                Some(OwnerInitializationCoverageRefusalReason::OwnerBindingMismatch),
+            ),
+            Err(reason) => (None, Some(*reason)),
+        };
         let mut evaluated_initializer = None;
         let needed = &inputs.needed_bindings;
         let mut top_env = std::mem::take(&mut self.state.top_env);
@@ -10505,17 +10516,21 @@ impl Executor<'_, '_> {
                 continue;
             }
             let values = if let Some(source) = initializer_source {
-                let RuntimeValue::Initializer { values, evaluated } =
-                    self.request(RuntimeOperation::EvaluateInitializer {
-                        source: source.clone(),
-                        expression: expression.clone(),
-                        environment: top_env.clone(),
-                        captures: top_captures.clone(),
-                    })
+                let RuntimeValue::Initializer {
+                    values,
+                    evaluated,
+                    refusal,
+                } = self.request(RuntimeOperation::EvaluateInitializer {
+                    source: source.clone(),
+                    expression: expression.clone(),
+                    environment: top_env.clone(),
+                    captures: top_captures.clone(),
+                })
                 else {
                     unreachable!("checked initializer transfers produce initializer results");
                 };
                 evaluated_initializer = evaluated;
+                initialization_coverage_refusal = initialization_coverage_refusal.or(refusal);
                 values
             } else {
                 self.evaluate(expression, &top_env, &top_captures)
@@ -10675,6 +10690,24 @@ impl Executor<'_, '_> {
         {
             outcome.effects.completed_initialization =
                 source.complete(evaluated, owner, &self.state.initialized_bindings);
+        }
+        if outcome.effects.completed_initialization.is_none() {
+            if initialization_coverage_refusal.is_none() {
+                initialization_coverage_refusal = Some(if outcome.unknown_call {
+                    OwnerInitializationCoverageRefusalReason::UnknownCall
+                } else if !outcome.effects.precision_losses.is_empty() {
+                    OwnerInitializationCoverageRefusalReason::PrecisionLoss
+                } else if !outcome.effects.uninitialized_reads.is_empty() {
+                    OwnerInitializationCoverageRefusalReason::UninitializedRead
+                } else if !outcome.complete {
+                    OwnerInitializationCoverageRefusalReason::IncompleteExecution
+                } else if evaluated_initializer.is_none() {
+                    OwnerInitializationCoverageRefusalReason::InitializerResultUnproved
+                } else {
+                    OwnerInitializationCoverageRefusalReason::BindingNotInitialized
+                });
+            }
+            outcome.effects.initialization_coverage_refusal = initialization_coverage_refusal;
         }
         outcome.effects
     }

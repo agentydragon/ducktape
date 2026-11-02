@@ -43,6 +43,12 @@ requires broader operation coverage and actual emitted-order validation.
 appear pure and synchronously complete while its effect report still carried three unknown
 domains. Those facts alone do not certify the whole original evaluation
 envelope. The SPEC now names the accepted local-cell read and its remaining
-import/global/initialization limits. A future report should expose the
-original-owner coverage refusal category and site so these missing proofs
-can be identified without tracing the private certificate producer.
+import/global/initialization limits. F10 asked for the original-owner
+coverage refusal category and site so these missing proofs could be identified
+without tracing the private certificate producer. The report now counts typed
+refusal reasons and includes one compact reason plus the existing owner source
+location in bounded conflict examples and JSONL.
+The collector records unsupported original-owner envelopes once. A failed
+dedicated root evaluation is reported as `initializer_result_unproved`;
+imported, non-local and uninitialized reads remain conservative without
+claiming a more specific cause.

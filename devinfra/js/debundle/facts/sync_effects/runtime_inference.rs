@@ -13,7 +13,10 @@ use super::runtime_models::{self, ModelOperation, ModelResult};
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::evaluation_effects::EvaluationEffects;
 use crate::facts::statement_facts::SynchronousCalls;
-use crate::facts::{CompletedPurity, LocalRecordFactoryPurityCertificate, PreparedPurity};
+use crate::facts::{
+    CompletedPurity, LocalRecordFactoryPurityCertificate, OwnerInitializationCoverageRefusalReason,
+    PreparedPurity,
+};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::reports::schema::{NativeProgramPointKind, NativeProgramPointStep};
 use source_identity::SourceUnitOrdinal;
@@ -96,6 +99,7 @@ pub(super) enum RuntimeValue {
     Initializer {
         values: Values,
         evaluated: Option<EvaluatedInitializer>,
+        refusal: Option<OwnerInitializationCoverageRefusalReason>,
     },
     Outcome(Box<Outcome>),
     Callbacks(CallbackResult),
@@ -489,7 +493,14 @@ impl RuntimeRules<'_, '_> {
                     .reads_are_initialized(|binding| executor.initialized_local_binding(binding));
                 let values = executor.evaluate_transfer(&expression, &environment, &captures);
                 let evaluated = source.evaluated(&expression, &values, initialized_reads);
-                RuntimeValue::Initializer { values, evaluated }
+                let refusal = evaluated
+                    .is_none()
+                    .then_some(OwnerInitializationCoverageRefusalReason::InitializerResultUnproved);
+                RuntimeValue::Initializer {
+                    values,
+                    evaluated,
+                    refusal,
+                }
             }
             RuntimeOperation::Invoke {
                 callable,

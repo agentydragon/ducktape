@@ -305,6 +305,13 @@ and streams remain inside the existing reports tree.
 Full semantic precision remains incomplete; see
 <docs/wire_format.md#translation-validation>.
 
+`coverage.owner_coverage_refusals` counts typed reasons why an original
+owner's whole-initialization certificate was not sealed. Bounded examples
+include an optional refusal and existing source location for each endpoint;
+JSONL carries the same refusal inside each endpoint's opacity record. Reasons
+identify only the refused proof boundary, never source bindings or expressions.
+They explain the report and do not change the certificate or coverage.
+
 Canonical runtime transfers additionally compose static global-property
 may-accesses into these reports, retaining lexical source-operation sites,
 proof dependencies and conservative callback assumptions. They do not alter

@@ -151,7 +151,13 @@ the legacy report's forward-edge and placement diagnostics.
 `coverage.unknown_coverage` counts missing global/property/host domains
 independently of legacy dataflow opacity, execution incompleteness and heap
 opacity. Unknown domains remain global Havoc; `full_semantic_precision` is
-false. `examples` retains at most twenty deterministic pairs, each with at
+false. `coverage.owner_coverage_refusals` counts typed reasons why an original
+owner's whole-initialization certificate was not sealed. Bounded examples
+include an optional refusal and existing source location for each endpoint;
+JSONL carries the same refusal inside each endpoint's opacity record. Reasons
+identify only the refused proof boundary, never source bindings or expressions.
+They explain the report and do not change the certificate or coverage.
+`examples` retains at most twenty deterministic pairs, each with at
 most twenty conflicting cells and their access provenance. Each sampled pair
 retains its exact `cell_count` and `cells_truncated` marker;
 `examples_truncated` makes omitted pairs explicit. Counts remain exact when
@@ -166,7 +172,10 @@ summary examples. It includes `runs_first`, `runs_later`, every `cells` entry
 with access provenance, exact `cell_count`, `havoc`, typed `disposition`,
 `premise_locations`, and `legacy_edge_conflict`. `first_opacity` and
 `later_opacity` retain each endpoint's unknown coverage, dataflow opacity,
-execution completeness/losses and heap opacity. Cells serialize one at a time;
+execution completeness/losses, heap opacity and an optional typed
+`owner_coverage_refusal` with its existing source location when available.
+Bounded examples expose the same optional information as
+`first_owner_coverage_refusal` and `later_owner_coverage_refusal`. Cells serialize one at a time;
 the export does not retain a full-row or global pair vector. Empty streams
 are valid when the summary counts zero pairs. A write failure can leave a
 partial file; compare row/cell counts to the sibling summary, which is written

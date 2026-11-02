@@ -11,6 +11,7 @@ use source_identity::SourceUnitOrdinal;
 
 use super::evaluation_effects::{GlobalAccessKind, GlobalMayAccess};
 use super::{DataflowOpacityCause, EffectCell, StatementFacts, StatementKind};
+use crate::reports::schema::SourceLocation;
 use crate::reports::schema::{AssumedEffectReason, ExecutionPrecisionLoss};
 
 #[derive(Debug, Clone, Serialize)]
@@ -77,6 +78,33 @@ pub enum UnknownEffectCoverage {
     HostEffects,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OwnerInitializationCoverageRefusalReason {
+    UnsupportedOwnerKind,
+    ExportedOwner,
+    SplitDeclaration,
+    UnsupportedBindingShape,
+    MissingInitializer,
+    UnsupportedInitializer,
+    OwnerBindingMismatch,
+    InitializerResultUnproved,
+    UnknownCall,
+    PrecisionLoss,
+    UninitializedRead,
+    IncompleteExecution,
+    BindingNotInitialized,
+    NoExecutionSummary,
+    RefusalUnavailable,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OwnerInitializationCoverageRefusal {
+    pub reason: OwnerInitializationCoverageRefusalReason,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
 #[derive(Debug, Clone)]
 pub struct InitializationEffects {
     pub ordinal: SourceUnitOrdinal,
@@ -89,6 +117,7 @@ pub struct InitializationEffects {
     pub incomplete_execution: bool,
     pub execution_losses: Vec<ExecutionPrecisionLoss>,
     pub opaque_heap: bool,
+    pub owner_coverage_refusal: Option<OwnerInitializationCoverageRefusal>,
 }
 
 impl InitializationEffects {
@@ -128,6 +157,7 @@ impl StatementFacts {
             incomplete_execution: false,
             execution_losses: Vec::new(),
             opaque_heap: self.heap_contents.opaque,
+            owner_coverage_refusal: None,
         };
         // These statement kinds execute no body at module evaluation. In
         // particular their lazy reads and export heap opacity are irrelevant.
@@ -251,6 +281,18 @@ impl StatementFacts {
             }
         } else {
             effects.incomplete_execution = true;
+        }
+        if !effects.unknown_coverage.is_empty() {
+            let reason = match &self.synchronous_calls {
+                Some(calls) => calls
+                    .initialization_coverage_refusal
+                    .unwrap_or(OwnerInitializationCoverageRefusalReason::RefusalUnavailable),
+                None => OwnerInitializationCoverageRefusalReason::NoExecutionSummary,
+            };
+            effects.owner_coverage_refusal = Some(OwnerInitializationCoverageRefusal {
+                reason,
+                source_location: self.source_location.clone(),
+            });
         }
         effects
     }
