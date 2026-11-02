@@ -18,8 +18,8 @@ import (
 	"go.etcd.io/bbolt"
 )
 
-// OpenState keeps the existing COSI namespace, but backs only the immutable
-// bootstrap selection. A fresh process never restores admission or process facts.
+// OpenState backs only the immutable bootstrap selection in the lifecycle
+// namespace. A fresh process never restores admission or process facts.
 func OpenState(stateDir string) (state.State, *bolt.BackingStore, error) {
 	backing, err := bolt.NewBackingStore(func() (*bbolt.DB, error) {
 		return bbolt.Open(filepath.Join(stateDir, "bootstrap-selections.db"), 0o600, nil)
