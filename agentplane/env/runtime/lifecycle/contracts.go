@@ -251,11 +251,7 @@ func ReadRuntimeTransitionStatus(ctx context.Context, reader controller.Reader) 
 	return *value.TypedSpec(), true, nil
 }
 
-func WriteRuntimeTransitionStatus(ctx context.Context, writer controller.ReaderWriter, value RuntimeTransitionStatus) error {
-	current, found, err := ReadRuntimeTransitionStatus(ctx, writer)
-	if err != nil || found && current == value {
-		return err
-	}
+func WriteRuntimeTransitionStatus(ctx context.Context, writer controller.Writer, value RuntimeTransitionStatus) error {
 	resource := typed.NewResource[RuntimeTransitionStatus, runtimeTransitionStatusExtension](
 		resource.NewMetadata(Namespace, RuntimeTransitionStatusType, EnvironmentResourceID, resource.VersionUndefined), value,
 	)
@@ -285,11 +281,7 @@ func ReadRuntimeCloseStatus(ctx context.Context, reader controller.Reader) (Runt
 }
 
 // WriteRuntimeCloseStatus is exclusive to the Runtime aggregate controller.
-func WriteRuntimeCloseStatus(ctx context.Context, writer controller.ReaderWriter, value RuntimeCloseStatus) error {
-	current, found, err := ReadRuntimeCloseStatus(ctx, writer)
-	if err != nil || found && current == value {
-		return err
-	}
+func WriteRuntimeCloseStatus(ctx context.Context, writer controller.Writer, value RuntimeCloseStatus) error {
 	resource := typed.NewResource[RuntimeCloseStatus, runtimeCloseStatusExtension](
 		resource.NewMetadata(Namespace, RuntimeCloseStatusType, EnvironmentResourceID, resource.VersionUndefined), value,
 	)

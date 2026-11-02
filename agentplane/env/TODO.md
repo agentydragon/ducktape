@@ -35,12 +35,6 @@ disabled and a root shell when it is enabled.
 COSI runtime is pinned in `third_party/go.mod`; evaluate its APIs against the actual ownership and
 teardown contracts rather than treating every controller as a simple resource transform.
 
-- The Runtime Close and transition status writers in `lifecycle/contracts.go` discard any change
-  result. Consider calling `safe.WriterModify` directly:
-  COSI suppresses equal updates and retries update conflicts. Its phase check still runs for a
-  no-op, unlike the current early return. On an existing resource the direct path reads twice, so
-  it saves a read on changed writes but loses the current one-read no-op fast path; measure before
-  claiming a performance improvement. Keep process fence ordering.
 - `env/cosi.Write` also serves Bootstrap, Session, Codex app-server and Execution status writes,
   where `changed` wakes Runtime, Host or app-server waiters. The Harness Host aggregate has a
   separate `WriteStatus` with the same pre-read; it queues another reconcile on change because it
