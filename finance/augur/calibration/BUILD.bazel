@@ -18,6 +18,7 @@ py_library(
     srcs = ["resolvers.py"],
     deps = [
         ":platform",
+        "//finance:calendar_months",
         "//finance/augur:dates",
         "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
@@ -221,6 +222,7 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/fit:evidence_data",
         "//finance/augur/model:series",
+        "//finance/evidence:loading",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -39,17 +39,12 @@ from finance.augur.calibration.platform import Direction
 from finance.augur.dates import months_between
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode
+from finance.calendar_months import offset_calendar_month
 
 
 def months_after(anchor: date, when: date) -> int:
     """Month offset of `when` from `anchor` (floored). May be negative if `when` precedes `anchor`."""
     return math.floor(months_between(anchor, when))
-
-
-def _calendar_month_offset(month: date, offset: int) -> date:
-    """First day of the calendar month `offset` months from `month`."""
-    absolute_month = month.year * 12 + month.month - 1 + offset
-    return date(absolute_month // 12, absolute_month % 12 + 1, 1)
 
 
 # An IPO is preempted by any absorbing pre-IPO exit: collapse, forced recovery
@@ -227,7 +222,9 @@ def inflation_yoy_counts(
     horizon). For the denominator: when `at_month - window` is still within the path it's the
     sampled value; when it falls BEFORE `as_of` (month 0), the exact calendar month is looked up
     in `history`. A missing real month leaves the market UNRESOLVED; observations are never
-    shifted, fabricated, or interpolated to fill a gap.
+    shifted, fabricated, or interpolated to fill a gap. Publication lag remains an approximation
+    for the sampled path's month-0 numerator: its CPI anchor is the latest observed value, even
+    when that observation predates `as_of`.
     """
     n = int(matrix.shape[0])
     if at_month < 0 or at_month > horizon_months:
@@ -236,7 +233,7 @@ def inflation_yoy_counts(
     if lookback >= 0:
         denominator: npt.NDArray[np.float64] | np.float64 | float = matrix[:, lookback]
     elif history is not None:
-        history_month = _calendar_month_offset(as_of, lookback)
+        history_month = offset_calendar_month(as_of, lookback)
         if history_month not in history:
             return ResolutionCounts(yes=0, no=0, unresolved=n)
         denominator = history[history_month]  # real index value, broadcasts over rollouts
@@ -273,7 +270,7 @@ def inflation_yoy_bucket_counts(
     if lookback >= 0:
         denominator: npt.NDArray[np.float64] | np.float64 | float = matrix[:, lookback]
     elif history is not None:
-        history_month = _calendar_month_offset(as_of, lookback)
+        history_month = offset_calendar_month(as_of, lookback)
         if history_month not in history:
             return None
         denominator = history[history_month]

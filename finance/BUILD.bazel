@@ -2,6 +2,12 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
+    name = "calendar_months",
+    srcs = ["calendar_months.py"],
+    visibility = ["//finance:__subpackages__"],
+)
+
+py_library(
     name = "gnucash_util",
     srcs = ["gnucash_util.py"],
     visibility = ["//finance:__subpackages__"],

@@ -10,6 +10,7 @@ py_library(
     deps = [
         ":snapshot",
         ":sources",
+        "//finance:calendar_months",
         "@pypi//polars",
     ],
 )

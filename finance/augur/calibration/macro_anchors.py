@@ -14,6 +14,7 @@ when CPI publication lags the model date or the source has gaps.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import date
 
@@ -66,9 +67,15 @@ def _level_on_or_before(series: list[MonthlyLevel], anchor_month: date, *, wire:
     observations = _observations_on_or_before(series, anchor_month)
     if not observations:
         raise ValueError(f"vendored series {wire!r} has no observation on or before {anchor_month}")
-    return observations[-1].value
+    return _positive_finite_level(observations[-1], wire=wire)
 
 
 def _dated_history(series: list[MonthlyLevel], anchor_month: date) -> dict[date, float]:
     """Keep each observed CPI value under its actual month, without filling source gaps."""
-    return {obs.month: obs.value for obs in series if obs.month < anchor_month}
+    return {obs.month: _positive_finite_level(obs, wire="inflation") for obs in series if obs.month < anchor_month}
+
+
+def _positive_finite_level(observation: MonthlyLevel, *, wire: str) -> float:
+    if not math.isfinite(observation.value) or observation.value <= 0:
+        raise ValueError(f"vendored series {wire!r} has invalid level {observation.value!r} at {observation.month}")
+    return observation.value

@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, PositiveFloat, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from finance.augur.calibration.platform import Direction
 from finance.augur.model.series import IssuerId
@@ -67,6 +67,7 @@ class KalshiRef(BaseModel):
 
 
 PlatformRef = Annotated[ManifoldRef | PolymarketRef | KalshiRef, Field(discriminator="platform")]
+PositiveFiniteFloat = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 
 
 def _extract_platform_ref(data: dict[str, Any]) -> dict[str, Any]:
@@ -118,7 +119,7 @@ class CatalogMetadata(BaseModel):
     # OPTIONAL replacement for derived CPI-U history. Keys are first-of-month dates before
     # `model_anchor_date`; values are index levels. Missing months stay missing and make only
     # lookbacks requiring those months unresolved.
-    inflation_history: dict[date, PositiveFloat] = Field(default_factory=dict)
+    inflation_history: dict[date, PositiveFiniteFloat] = Field(default_factory=dict)
 
     @property
     def model_anchor_date(self) -> date:

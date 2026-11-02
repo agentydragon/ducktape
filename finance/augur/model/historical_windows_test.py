@@ -37,6 +37,7 @@ from finance.augur.model.series import (
     SecurityKey,
     SecuritySymbol,
 )
+from finance.calendar_months import is_next_calendar_month
 from finance.evidence import loading, sources
 from finance.evidence.snapshot import EvidenceSnapshot
 
@@ -631,7 +632,7 @@ def test_a_hole_in_the_ex_us_series_splits_replayable_windows() -> None:
         index = joint.months.index(start)
         dates = joint.months[index : index + 13]
         assert len(dates) == 13
-        assert all(loading.is_next_calendar_month(left, right) for left, right in pairwise(dates))
+        assert all(is_next_calendar_month(left, right) for left, right in pairwise(dates))
         assert path.equity_total_return_index is not None
 
 
