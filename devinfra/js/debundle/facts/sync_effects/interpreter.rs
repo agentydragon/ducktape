@@ -9558,14 +9558,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         | Some(AbstractValue::SymbolicInput(_)) => {
                             OrderedCallAdmissionRefusal::UnknownTarget
                         }
-                        Some(
-                            AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                            | AbstractValue::Closure(key, _),
-                        ) if self.inputs.index.callables.contains_key(key)
-                            && self.state.tainted_functions.contains(key) =>
-                        {
-                            OrderedCallAdmissionRefusal::TaintedLocalTarget
-                        }
                         Some(_) => OrderedCallAdmissionRefusal::NonLocalTarget,
                     }
                 };

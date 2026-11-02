@@ -375,7 +375,7 @@ existing target rules.
 may include `reason.ordered_call_admission_refusal` for a call whose already
 evaluated operands were declined by the ordered path. The values are
 `unknown_target`, `multiple_targets`, `non_local_target`,
-`tainted_local_target`, and `unsupported_receiver`. The reason retains only the
+and `unsupported_receiver`. The reason retains only the
 first failed admission category, with the existing call source site and
 fallback reach. It does not retain target identities or alter call admission,
 effect promotion, reachability, or gate acceptance. A complete effects-only

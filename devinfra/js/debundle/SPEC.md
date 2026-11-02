@@ -2997,7 +2997,7 @@ the rest of the body; a result transfer using the already evaluated operands is
 required to continue. A call rejected by the ordered operand path retains its
 `unsupported_operation` / `opaque_execution` reason and may carry the typed
 `ordered_call_admission_refusal`: `unknown_target`, `multiple_targets`,
-`non_local_target`, `tainted_local_target`, or `unsupported_receiver`. It names
+`non_local_target`, or `unsupported_receiver`. It names
 the first ordered admission check that refused the already evaluated operands.
 Unknown-target classification remains a separate precision loss where the
 existing target rules produce it. Incomplete invocation and missing result
