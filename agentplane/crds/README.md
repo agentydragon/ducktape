@@ -12,3 +12,7 @@ expected manifests as test artifacts when they drift. PolicyBinding's Go schema 
 validation and the condition list's field ownership; source and target union constraints use
 generated CEL rules. `//agentplane/crds:test_sandbox_admission` and
 `//agentplane/crds:test_policyset_admission` exercise the schemas through the real API server.
+
+`Sandbox.spec.resumePolicy.allowOwnServiceAccount` is optional and defaults to false. Its schema
+prepares for explicit resume authorization; the current Dispatcher wake path still uses its
+existing caller grants and `wakeOnSend`. Setting this field alone does not enable that future API.
