@@ -24,6 +24,14 @@ _BROWSER_IMAGE_EXEC_PROPERTIES = {
     ]),
 }
 
+# The app bridge fixture starts PostgreSQL 18; `requires_docker` starts the pinned Ryuk image.
+_BRIDGE_IMAGE_EXEC_PROPERTIES = {
+    "test.runner-recycling-key": "app-bridge-images-v1-" + "-".join([
+        POSTGRES_18_DIGEST,
+        RYUK_DIGEST,
+    ]),
+}
+
 proto_library(
     name = "app_service_proto",
     srcs = ["app_service.proto"],
@@ -223,7 +231,7 @@ py_test(
         "DOCKER_HOST": "tcp://127.0.0.1:2375",
         "OTEL_SDK_DISABLED": "true",
     },
-    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
+    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES | _BRIDGE_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     shard_count = 2,
     target_compatible_with = [
