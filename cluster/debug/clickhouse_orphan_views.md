@@ -113,3 +113,27 @@ GROUP BY
     project_id,
     id;
 ```
+
+## Cleanup verification
+
+The one-time Job `clickhouse-orphan-views-cleanup-v1` completed at
+`2026-11-01T08:50:04Z` with `succeeded=1`, `SuccessCriteriaMet=True`, and
+`Complete=True`. Its logs show checks and cleanup against the configured hosts
+`chi-clickhouse-default-0-0` and `chi-clickhouse-default-0-1`.
+
+Those hostnames no longer describe the current replica set. At
+`2026-11-02T04:15Z`, the `chi-clickhouse-default-0-0` Service was absent;
+`chi-clickhouse-default-0-1` selected pod `chi-clickhouse-default-0-1-0`, and
+the other replica was Service/pod `chi-clickhouse-default-0-3` /
+`chi-clickhouse-default-0-3-0`. The `0-3-0` pod and PVC were created at
+`2026-11-01T09:06:39Z`, after Job completion; its new PVC has no
+`spec.dataSource`. Its local view state cannot be attributed to the Job. A
+read-only `system.tables` count on each current pod returned zero rows matching
+either historical view (`traces_30d_amt_mv`, `traces_7d_amt_mv`). The current
+replicas were therefore checked independently after the endpoint and storage
+changes.
+
+Keep the captured definitions above for recovery. Their source and target tables
+were absent when captured, so check current Langfuse migrations and view
+dependencies before restoring either definition. A replacement replica can have
+independent local state; verify each replica directly.

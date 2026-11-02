@@ -111,7 +111,6 @@ from cluster.cdk8s.cli_proxy_api import cli_proxy_api
 from cluster.cdk8s.clickhouse import (
     installation as clickhouse_installation,
     operator as clickhouse_operator,
-    orphan_views_cleanup as clickhouse_orphan_views_cleanup,
     schema as clickhouse_schema,
 )
 from cluster.cdk8s.cpap_sync import app as cpap_sync_app
@@ -735,14 +734,6 @@ def generate_manifests(root: Path) -> None:
     goldilocks_artifact = artifact("goldilocks", goldilocks.OUTPUT_DIR)
     goldilocks.goldilocks(
         flux_chart, write_directory(root, goldilocks_artifact, goldilocks.chart), kyverno_kustomization
-    )
-    clickhouse_orphan_views_cleanup_artifact = artifact(
-        "clickhouse-orphan-views-cleanup", clickhouse_orphan_views_cleanup.OUTPUT_DIR
-    )
-    clickhouse_orphan_views_cleanup.cleanup(
-        flux_chart,
-        write_directory(root, clickhouse_orphan_views_cleanup_artifact, clickhouse_orphan_views_cleanup.chart),
-        clickhouse_operator_kustomization,
     )
     clickhouse_schema_artifact = artifact("clickhouse-schema", clickhouse_schema.OUTPUT_DIR)
     clickhouse_schema.clickhouse_schema(
@@ -2048,7 +2039,6 @@ def generate_manifests(root: Path) -> None:
             cli_proxy_api_artifact,
             clickhouse_operator_artifact,
             clickhouse_schema_artifact,
-            clickhouse_orphan_views_cleanup_artifact,
             cpap_sync_artifact,
             dcgm_exporter_artifact,
             descheduler_artifact,

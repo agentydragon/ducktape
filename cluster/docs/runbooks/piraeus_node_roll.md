@@ -253,12 +253,14 @@ it. Verify both data and Keeper health before moving another affected member.
 For fresh native MergeTree storage, replay captured `CREATE` definitions after
 guarded `SYSTEM DROP REPLICA` for the exact retired, inactive replica.
 The historical `traces_30d_amt_mv` and `traces_7d_amt_mv` definitions were
-orphaned: their source and target tables were absent. The guarded Flux cleanup
-for the existing ClickHouse replicas preserves their captured definitions in
-[the investigation](../../debug/clickhouse_orphan_views.md). Verify current
-Langfuse migrations and view dependencies before restoring any old definition.
-A partially initialized replica can retain its own local copies, so check it
-separately before accepting its schema.
+orphaned: their source and target tables were absent. The one-time guarded Flux
+cleanup ran to completion on 2026-11-01 and has been retired. Current replicas
+were checked separately; [the investigation](../../debug/clickhouse_orphan_views.md)
+records the endpoint mapping and read-only view counts. Keep the captured
+definitions for recovery, but verify current Langfuse migrations and view
+dependencies before restoring any old definition. A partially initialized
+replica can retain its own local copies, so check it separately before accepting
+its schema.
 
 #### Forgejo Valkey replica
 
