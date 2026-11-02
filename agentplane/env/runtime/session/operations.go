@@ -5,7 +5,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
-	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/resource/typed"
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 )
 
@@ -18,18 +19,13 @@ const (
 	stopQuiesce
 )
 
-func (m *Manager) publishOperation(sessionID, operationID string, done bool) error {
-	return publish(m.ctx, m.state, operationID, operationState{Session: sessionID, Controller: ControllerName, Done: done})
-}
-
-func (m *Manager) forgetOperation(op *oneoff.Operation) {
-	if op == nil {
-		return
-	}
-	err := m.state.Destroy(m.ctx, resource.NewMetadata(lifecycle.Namespace, OperationStateType, op.ID(), resource.VersionUndefined), state.WithDestroyOwner(lifecycle.EnvironmentOwner))
-	if !state.IsNotFoundError(err) {
-		m.fail(err)
-	}
+func (m *Manager) signalOperation(sessionID string) error {
+	// Completion holds the Session mutex. Do not take publishMu here: snapshot
+	// publication holds publishMu while reading Session fields under that mutex.
+	return safe.StateModify(m.ctx, m.state, componentResource(sessionID, ReconcileSnapshot{}), func(current *typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]) error {
+		current.TypedSpec().OperationRevision++
+		return nil
+	}, state.WithUpdateOwner(lifecycle.EnvironmentOwner))
 }
 
 func (s *Session) startOperation(slot **oneoff.Operation, work func(context.Context) error) (*oneoff.Operation, error) {
@@ -46,7 +42,7 @@ func (s *Session) startOperation(slot **oneoff.Operation, work func(context.Cont
 
 	err := op.Start(
 		&s.mu,
-		func(done bool) error { return s.deps.publishOperation(s.id, op.ID(), done) },
+		func(bool) error { return s.deps.signalOperation(s.id) },
 		s.deps.fail,
 		work,
 		s.wake,

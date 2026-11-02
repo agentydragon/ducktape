@@ -70,7 +70,10 @@ revision on its lifecycle signal independently of demand; demand resets and conc
 preserve that revision. Completion publication and local finish share the slot mutex before consumption.
 Session/app-server statuses carry the observed
 `EnvironmentGeneration`; demand sequences, Execution attempt generations, operation IDs and process
-attempt IDs remain distinct identities. One process controller and registry serve separate Runtime
+attempt IDs remain distinct identities. Session one-off starts and completions advance the existing
+Session reconcile snapshot's `OperationRevision`, independently of execution demand. Completion
+publication and local completion hold the slot mutex, so a woken controller consumes the finished
+operation after its result is published. One process controller and registry serve separate Runtime
 and harness domains without combining their native containment or cleanup proofs.
 
 External authentication, Sandbox/incarnation authorization and Gateway epochs remain in

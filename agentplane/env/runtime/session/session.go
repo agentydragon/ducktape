@@ -85,7 +85,7 @@ type sessionDependencies struct {
 	launchProcess      func(context.Context, string, supervision.ProcessConfig) (*supervision.ManagedProcess, error)
 	resolveModelConfig func(context.Context, sessionpb.Harness, string) (*int, error)
 	publish            func(*Session, bool)
-	publishOperation   func(string, string, bool) error
+	signalOperation    func(string) error
 	changed            func()
 	fail               func(error)
 }

@@ -72,7 +72,7 @@ func NewManager(config Config) (*Manager, error) {
 		codexAppServer: config.CodexAppServer, waitBootstrap: config.WaitBootstrap, environmentState: config.Environment,
 		ensureWorkspace: config.EnsureWorkspace, launchProcess: config.LaunchProcess,
 		resolveModelConfig: config.ResolveModelConfig,
-		publish:            m.publishSession, publishOperation: m.publishOperation,
+		publish:            m.publishSession, signalOperation: m.signalOperation,
 		changed: config.OnChange, fail: config.OnError,
 	}
 	return m, nil
@@ -347,12 +347,10 @@ func (m *Manager) ResetDemand() error {
 	m.publishMu.Lock()
 	defer m.publishMu.Unlock()
 	for _, s := range m.Inventory() {
-		input, _, err := componentRead[ReconcileSnapshot](m.ctx, m.state, s.id)
-		if err != nil {
-			return err
-		}
-		input.Demand = 0
-		if err := publish(m.ctx, m.state, s.id, input); err != nil {
+		if err := safe.StateModify(m.ctx, m.state, componentResource(s.id, ReconcileSnapshot{}), func(current *typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]) error {
+			current.TypedSpec().Demand = 0
+			return nil
+		}, state.WithUpdateOwner(lifecycle.EnvironmentOwner)); err != nil {
 			return err
 		}
 	}
