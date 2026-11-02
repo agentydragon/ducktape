@@ -327,6 +327,8 @@ py_test(
     exec_properties = {
         # Keep snapshots seeded by this suite. Bump the version when MODULE.bazel pins
         # for postgres_18, electric_1_8_1, ryuk, or nginx_unprivileged change.
+        # TODO: Move those pins to devinfra/image_pins.json and derive this key from
+        # @image_pins//:pins.bzl digest constants instead of bumping it manually.
         "test.runner-recycling-key": "thread-browser-images-v1",
     },
     requires_docker = True,
