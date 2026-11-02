@@ -212,7 +212,7 @@ func (c *runtimeTransitionSequence) planAdoption(ctx context.Context, uid string
 		r.mu.Lock()
 		report := r.hostReportLocked()
 		alreadyRunning := r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_RUNNING && r.intent.IncarnationUid == uid &&
-			r.host != nil && report != nil && report.Ready && proto.Equal(report.Binding, r.intent.Binding)
+			r.host != nil && report != nil && report.Ready
 		mode := runtimepb.LifecycleIntent_INACTIVE
 		if r.intent != nil {
 			plan.priorBinding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)

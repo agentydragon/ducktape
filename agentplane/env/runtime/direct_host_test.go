@@ -82,7 +82,7 @@ func TestExecutionFenceWaitsForExactHostApplication(t *testing.T) {
 	r := &Runtime{bootID: "runtime", host: &hostLink{bootID: "host", connected: true}, intent: &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_QUIESCING}, changes: make(chan struct{}), fatal: make(chan error, 1)}
 	startHostReportObserver(t, r)
 	publishAppliedHostIntent(t, r)
-	old := lifecycle.HostReport{Intent: proto.Clone(r.intent).(*runtimepb.LifecycleIntent), Report: &runtimepb.HostReport{Binding: binding, Ready: true, Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{}}}
+	old := lifecycle.HostReport{Intent: proto.Clone(r.intent).(*runtimepb.LifecycleIntent), Report: &runtimepb.HostReport{Ready: true, Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{}}}
 	if err := cosi.Publish(ctx, r.lifecycleState, lifecycle.HostReportResource(old), old, "harness-host-report"); err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestDirectHostReportRequiresExactAppliedIntent(t *testing.T) {
 	r := &Runtime{host: host, intent: &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_RUNNING}, changes: make(chan struct{})}
 	r.lifecycleState = state.WrapCore(namespaced.NewState(inmem.Build))
 	publishAppliedHostIntent(t, r)
-	report := &runtimepb.HostReport{Binding: proto.Clone(binding).(*runtimepb.Binding), Ready: true, Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{}}
+	report := &runtimepb.HostReport{Ready: true, Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{}}
 	staleIntent := proto.Clone(r.intent).(*runtimepb.LifecycleIntent)
 	staleIntent.Binding.Generation--
 	value := lifecycle.HostReport{Intent: staleIntent, Report: report}
@@ -139,6 +139,13 @@ func TestDirectHostReportRequiresExactAppliedIntent(t *testing.T) {
 	report.Ready = false
 	if got := r.hostReportLocked(); got == nil || !got.Ready {
 		t.Fatalf("published report was not immutable: %v", got)
+	}
+	prior := proto.Clone(binding).(*runtimepb.Binding)
+	prior.Generation--
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := r.waitForHostReady(canceled, prior); !errors.Is(err, context.Canceled) {
+		t.Fatalf("old binding accepted current Host report: %v", err)
 	}
 	r.intent.ExecutionFenced = true
 	if r.hostReportLocked() != nil {

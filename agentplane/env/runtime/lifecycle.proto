@@ -13,7 +13,8 @@ message Binding {
 }
 
 message HostReport {
-  Binding binding = 1;
+  reserved 1;
+  reserved "binding";
   bool ready = 2;
   bool native_stopped = 3;
   agentplane.proto.EnvironmentRuntimeFacts facts = 4;

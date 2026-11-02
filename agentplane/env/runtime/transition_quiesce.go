@@ -65,8 +65,7 @@ func (c *runtimeTransitionSequence) runQuiesceBarrier(ctx context.Context, kind 
 		if !r.state.Lameduck() && plan.request.HasIdleSince &&
 			(!plan.factsHaveIdleSince || plan.factsIdleSinceMicros != plan.request.IdleSinceMicros ||
 				r.activeAdmissions != 0 || r.activeExecutionCalls != 0 || r.executionOwner.recovering() ||
-				r.host == nil || report == nil || !report.Ready || r.intent == nil ||
-				!proto.Equal(report.Binding, r.intent.Binding) || report.Facts == nil ||
+				r.host == nil || report == nil || !report.Ready || r.intent == nil || report.Facts == nil ||
 				report.Facts.IdleSince == nil ||
 				report.Facts.IdleSince.AsTime().UnixMicro() != plan.request.IdleSinceMicros) {
 			return runtimeTransitionOutcome{}, status.Error(codes.Aborted, "the Sandbox is busy or its idle_since differs")
@@ -87,7 +86,7 @@ func (c *runtimeTransitionSequence) runQuiesceBarrier(ctx context.Context, kind 
 		if plan.current {
 			plan.host = r.host
 			plan.binding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
-			plan.currentReport = report != nil && report.Ready && proto.Equal(report.Binding, plan.binding)
+			plan.currentReport = report != nil && report.Ready
 		}
 		plan.retry = !plan.current
 		return runtimeTransitionOutcome{quiesce: &plan}, nil

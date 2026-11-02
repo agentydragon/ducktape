@@ -105,7 +105,7 @@ func TestInitialHostWaitOrdersReadyReportAndExit(t *testing.T) {
 			}
 			publishAppliedHostIntent(t, r)
 			report := lifecycle.HostReport{Intent: proto.Clone(intent).(*runtimepb.LifecycleIntent), Report: &runtimepb.HostReport{
-				Binding: proto.Clone(binding).(*runtimepb.Binding), Ready: true, NativeStopped: true,
+				Ready: true, NativeStopped: true,
 			}}
 			if err := cosi.Publish(ctx, r.lifecycleState, lifecycle.HostReportResource(report), report, "harness-host-report"); err != nil {
 				t.Fatal(err)

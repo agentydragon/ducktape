@@ -79,7 +79,7 @@ func (r *Host) reportSnapshot(ctx context.Context) (*runtimepb.LifecycleIntent, 
 	if !proto.Equal(sampled, r.intent) {
 		return nil, nil, nil
 	}
-	report := &runtimepb.HostReport{Binding: proto.Clone(sampled.Binding).(*runtimepb.Binding), Ready: r.ready.Load(), NativeStopped: r.nativeStopped, Facts: facts}
+	report := &runtimepb.HostReport{Ready: r.ready.Load(), NativeStopped: r.nativeStopped, Facts: facts}
 	current, _, err := harnesshostlifecycle.ReadStatus(ctx, r.lifecycle.state)
 	if err != nil {
 		return nil, nil, err
