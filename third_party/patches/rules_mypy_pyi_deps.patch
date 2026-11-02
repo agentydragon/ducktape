@@ -1,8 +1,7 @@
 diff --git a/mypy/private/mypy.bzl b/mypy/private/mypy.bzl
 --- a/mypy/private/mypy.bzl
 +++ b/mypy/private/mypy.bzl
-@@ -115,9 +115,12 @@
- 
+@@ -116,7 +116,10 @@
      type_mapping = dict(zip([k.label for k in ctx.attr._types_keys], ctx.attr._types_values))
      dep_with_stubs = [_.label.workspace_root + "/site-packages" for _ in ctx.attr._types_keys]
 +    # rules_python keeps pyi_deps out of runtime runfiles, but mypy still needs
