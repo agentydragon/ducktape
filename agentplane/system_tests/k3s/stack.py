@@ -540,6 +540,26 @@ def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
 
 _BASELINE_ROOT = Path("/var/lib/k3s-persistence-v7")
 _BASELINE_MARKER = _BASELINE_ROOT / "server.json"
+_RETAINED_LOG_LIMIT = 8 * 1024 * 1024
+
+
+def _capture_retained_logs(data_dir: Path, outputs: Path) -> None:
+    """Retain bounded daemon logs even when attaching to or stopping the baseline fails."""
+    sources = {
+        "k3s-retained.log": _BASELINE_ROOT / "k3s.log",
+        "containerd-retained.log": data_dir / "agent/containerd/containerd.log",
+        "containerd-teardown-retained.log": _BASELINE_ROOT / "containerd-teardown.log",
+    }
+    for name, source in sources.items():
+        try:
+            with source.open("rb") as log, (outputs / name).open("wb") as destination:
+                log.seek(0, os.SEEK_END)
+                log.seek(max(0, log.tell() - _RETAINED_LOG_LIMIT))
+                destination.write(log.read(_RETAINED_LOG_LIMIT))
+        except FileNotFoundError:
+            continue
+        except OSError:
+            logger.exception("could not capture retained k3s log %s", source)
 
 
 def _baseline_process_start(pid: int) -> str | None:
@@ -848,6 +868,9 @@ def running_stack(
             # A VM stack's layers would leave too little memory for its guests (README § Image layers in memory).
             baseline_warm = False
             if persist_infrastructure:
+                # The retained daemon writes outside this action's outputs, even on cold start.
+                # Register before attach so a failed baseline shutdown also leaves its logs.
+                trace_cleanup.callback(_capture_retained_logs, k3s.data_dir, undeclared_outputs_dir())
                 k3s, baseline_marker, baseline_warm = _baseline_open(
                     inputs.binary,
                     _baseline_fingerprint(

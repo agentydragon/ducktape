@@ -25,6 +25,28 @@ def test_no_retention_without_executor_permission(
     assert not baseline.exists()
 
 
+def test_retained_daemon_logs_are_bounded_and_survive_a_missing_log(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    baseline = tmp_path / "baseline"
+    baseline.mkdir()
+    (baseline / "k3s.log").write_text("earlier log\nrecent log\n")
+    data = tmp_path / "data"
+    containerd = data / "agent/containerd"
+    containerd.mkdir(parents=True)
+    (containerd / "containerd.log").write_text("containerd tail\n")
+    outputs = tmp_path / "outputs"
+    outputs.mkdir()
+    monkeypatch.setattr(stack, "_BASELINE_ROOT", baseline)
+    monkeypatch.setattr(stack, "_RETAINED_LOG_LIMIT", 11)
+
+    stack._capture_retained_logs(data, outputs)
+
+    assert (outputs / "k3s-retained.log").read_text() == "recent log\n"
+    assert (outputs / "containerd-retained.log").read_text() == "inerd tail\n"
+    assert not (outputs / "containerd-teardown-retained.log").exists()
+
+
 if __name__ == "__main__":
     import pytest_bazel
 
