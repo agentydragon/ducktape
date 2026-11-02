@@ -28,7 +28,7 @@ from study_casino.changelog import LATEST_CHANGELOG_ID
 from study_casino.config import Settings
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
-from util.testing.frontend_visual.capture import VisualPage
+from util.testing.frontend_visual.capture import VisualPage, open_visual_page
 from util.testing.frontend_visual.context import deterministic_browser_context
 from util.testing.output_writer import BoundTestOutputs
 from util.testing.postgres import DatabaseNames, PostgresDatabaseTemplate
@@ -56,13 +56,14 @@ FROZEN_NOW_MS = 1_779_768_000_000  # 2026-05-15T12:00:00Z.
 async def view(
     playwright: Playwright, casino_server: str, viewport: ViewportSize, query: str, test_outputs: BoundTestOutputs
 ) -> AsyncIterator[VisualPage]:
-    async with deterministic_browser_context(
-        playwright, viewport=viewport, frozen_now_ms=FROZEN_NOW_MS, color_scheme="dark"
-    ) as context:
-        page = await context.new_page()
-        with VisualPage(page, outputs=test_outputs, title="Study Casino views") as view:
-            await page.goto(f"{casino_server}/{query}", wait_until="domcontentloaded", timeout=30_000)
-            yield view
+    async with (
+        deterministic_browser_context(
+            playwright, viewport=viewport, frozen_now_ms=FROZEN_NOW_MS, color_scheme="dark"
+        ) as context,
+        open_visual_page(context, test_outputs, title="Study Casino views") as view,
+    ):
+        await view.page.goto(f"{casino_server}/{query}", wait_until="domcontentloaded", timeout=30_000)
+        yield view
 
 
 @pytest.fixture(scope="module")

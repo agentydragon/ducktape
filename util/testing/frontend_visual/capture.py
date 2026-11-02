@@ -12,7 +12,7 @@ import shutil
 import sys
 import tempfile
 from collections.abc import AsyncIterator, Mapping
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import TracebackType
@@ -318,6 +318,24 @@ class VisualPage:
             label=label or checkpoint or self.case_id,
             title=self.title,
         )
+
+
+@asynccontextmanager
+async def open_visual_page(
+    context: BrowserContext, outputs: BoundTestOutputs, *, title: str, trace: bool = False
+) -> AsyncIterator[VisualPage]:
+    """Create a monitored page in an existing context, before any navigation.
+
+    The caller owns the browser context and can configure routes, cookies, and other
+    app-specific state on the yielded page. Tracing follows the shared output policy.
+    """
+    async with AsyncExitStack() as stack:
+        if trace:
+            await stack.enter_async_context(playwright_trace(context, outputs))
+        page = await context.new_page()
+        stack.push_async_callback(page.close)
+        with VisualPage(page, outputs=outputs, title=title) as view:
+            yield view
 
 
 class VisualHarness:

@@ -70,6 +70,12 @@ The shared pytest plugin also provides a per-test `view` yield fixture, with ord
 an unnamed harness and closes its isolated browser context after the test. App-specific
 fixtures can depend on it to prepare reusable state without hiding test interactions.
 
+For a real server or an otherwise app-owned browser context, use
+`async with open_visual_page(context, test_outputs, title="...") as view:`. It creates
+and closes the page, records load errors before navigation, and optionally enables the
+shared trace policy with `trace=True`. The caller owns the context, cookies, routes,
+and navigation.
+
 The root pytest configuration provides `test_outputs`, a generic fixture bound to the full
 repository-relative pytest node ID, including parameter IDs. It can publish any output role via
 `test_outputs.publish(...)`; `test_outputs.case_id` exposes the same ID for browser and native UI

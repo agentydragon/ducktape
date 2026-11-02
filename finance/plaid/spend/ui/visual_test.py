@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -17,7 +18,7 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from playwright.async_api import Locator, Page, Playwright, Route, expect
+from playwright.async_api import Locator, Page, Playwright, Route, ViewportSize, expect
 
 from finance.plaid.spend.allowance import (
     AllOf,
@@ -80,7 +81,7 @@ from finance.plaid.spend.sustainability import (
 )
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
-from util.testing.frontend_visual.capture import VisualPage, playwright_trace
+from util.testing.frontend_visual.capture import VisualPage, open_visual_page
 from util.testing.frontend_visual.context import deterministic_browser_context
 from util.testing.output_writer import BoundTestOutputs
 
@@ -95,38 +96,39 @@ _FROZEN_NOW_MS = int(datetime(2026, 10, 15, tzinfo=UTC).timestamp() * 1000)
 _TRANSACTION_VIEWPORTS = [(1280, 960), (390, 844), (320, 720)]
 
 
-@pytest.fixture
-async def page(playwright: Playwright, test_outputs: BoundTestOutputs) -> AsyncIterator[Page]:
+@asynccontextmanager
+async def _spend_view(
+    playwright: Playwright, test_outputs: BoundTestOutputs, viewport: ViewportSize, *, has_touch: bool = False
+) -> AsyncIterator[VisualPage]:
     async with (
         deterministic_browser_context(
-            playwright, viewport={"width": 1280, "height": 960}, frozen_now_ms=_FROZEN_NOW_MS
+            playwright, viewport=viewport, frozen_now_ms=_FROZEN_NOW_MS, has_touch=has_touch
         ) as context,
-        playwright_trace(context, test_outputs),
+        open_visual_page(context, test_outputs, title="Spend", trace=True) as view,
     ):
-        yield await context.new_page()
-
-
-@pytest.fixture
-async def touch_page(playwright: Playwright, test_outputs: BoundTestOutputs) -> AsyncIterator[Page]:
-    async with (
-        deterministic_browser_context(
-            playwright, viewport={"width": 390, "height": 844}, frozen_now_ms=_FROZEN_NOW_MS, has_touch=True
-        ) as context,
-        playwright_trace(context, test_outputs),
-    ):
-        yield await context.new_page()
-
-
-@pytest.fixture
-def view(page: Page, test_outputs: BoundTestOutputs) -> Iterator[VisualPage]:
-    with VisualPage(page, outputs=test_outputs, title="Spend") as view:
         yield view
 
 
 @pytest.fixture
-def touch_view(touch_page: Page, test_outputs: BoundTestOutputs) -> Iterator[VisualPage]:
-    with VisualPage(touch_page, outputs=test_outputs, title="Spend") as view:
+async def view(playwright: Playwright, test_outputs: BoundTestOutputs) -> AsyncIterator[VisualPage]:
+    async with _spend_view(playwright, test_outputs, {"width": 1280, "height": 960}) as view:
         yield view
+
+
+@pytest.fixture
+async def touch_view(playwright: Playwright, test_outputs: BoundTestOutputs) -> AsyncIterator[VisualPage]:
+    async with _spend_view(playwright, test_outputs, {"width": 390, "height": 844}, has_touch=True) as view:
+        yield view
+
+
+@pytest.fixture
+def page(view: VisualPage) -> Page:
+    return view.page
+
+
+@pytest.fixture
+def touch_page(touch_view: VisualPage) -> Page:
+    return touch_view.page
 
 
 async def _expand_accordion(control: Locator) -> None:

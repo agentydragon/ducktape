@@ -12,7 +12,14 @@ import pytest_bazel
 from playwright.async_api import BrowserContext, Page, Playwright, expect
 
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
-from util.testing.frontend_visual.capture import HarnessConfig, InlinePage, VisualHarness, VisualPage, playwright_trace
+from util.testing.frontend_visual.capture import (
+    HarnessConfig,
+    InlinePage,
+    VisualHarness,
+    VisualPage,
+    open_visual_page,
+    playwright_trace,
+)
 from util.testing.frontend_visual.viewports import Viewport
 from util.testing.output_records import output_key
 from util.testing.output_writer import BoundTestOutputs
@@ -55,6 +62,23 @@ async def test_visual_page_preserves_existing_failure(page: Page, tmp_path: Path
     with pytest.raises(ValueError, match="original failure") as caught:
         await _crash_visual_page(page, outputs, fail_test=True)
     assert any("browser crash" in note for note in getattr(caught.value, "__notes__", []))
+
+
+async def test_open_visual_page_monitors_navigation_and_closes_page(page: Page, tmp_path: Path) -> None:
+    outputs = BoundTestOutputs(tmp_path, "example::test")
+    captured_page: Page | None = None
+
+    async def navigate_to_crash() -> None:
+        nonlocal captured_page
+        async with open_visual_page(page.context, outputs, title="Example") as view:
+            captured_page = view.page
+            async with view.page.expect_event("pageerror"):
+                await view.page.goto("data:text/html,<script>throw new Error('load crash')</script>")
+
+    with pytest.raises(AssertionError, match="load crash"):
+        await navigate_to_crash()
+    assert captured_page is not None
+    assert captured_page.is_closed()
 
 
 @pytest.fixture
