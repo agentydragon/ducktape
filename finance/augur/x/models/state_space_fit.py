@@ -73,6 +73,8 @@ def fit_state_space_artifact(
         latest_observations={key.wire_id: point for key, point in evidence.latest_observations.items()},
         source_manifest=_source_manifest(evidence, private_factors),
         prior_manifest=_prior_manifest(evidence, private_factors),
+        public_evidence_revision=evidence.public_evidence_revision,
+        public_evidence_source_sha256=evidence.public_evidence_source_sha256,
         additional_factors=tuple(factor.factor for factor in private_factors),
     )
     conditioning = _conditioning_from_evidence(evidence, private_factors)

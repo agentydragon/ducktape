@@ -225,6 +225,8 @@ class VecmModel:
     # Deployment-layer config.
     latest_observations: dict[str, ExogenousObservedPoint] = field(default_factory=dict)
     evidence_metadata: EvidenceMetadata = field(default_factory=EvidenceMetadata)
+    public_evidence_revision: str | None = None
+    public_evidence_source_sha256: dict[str, str] = field(default_factory=dict)
 
     # Provenance.
     model_version_id: str = ""
@@ -324,6 +326,8 @@ class VecmModel:
                 "scenario_generator_version_id": "vecm_numpyro:v1",
                 "evidence_set_id": self.evidence_set_id,
                 "calibration_artifact_id": self.calibration_artifact_id,
+                "public_evidence_revision": self.public_evidence_revision,
+                "public_evidence_source_sha256": self.public_evidence_source_sha256,
                 "notes": ("sampled by VecmModel (NumPyro)",),
                 "exogenous_provider_label": self.label,
             },
@@ -351,6 +355,8 @@ class VecmModel:
         latest_observations: Mapping[str, ExogenousObservedPoint],
         evidence_metadata: EvidenceMetadata,
         evidence_source_id: str,
+        public_evidence_revision: str | None = None,
+        public_evidence_source_sha256: Mapping[str, str] | None = None,
         config: VecmConfig | None = None,
     ) -> VecmModel:
         """Rebuild post-fit state from `to_trained_state(...)`'s output, attach
@@ -364,6 +370,8 @@ class VecmModel:
             train_log_levels=np.asarray(trained_state.train_log_levels, dtype=LEVEL_DTYPE),
             latest_observations=dict(latest_observations),
             evidence_metadata=evidence_metadata,
+            public_evidence_revision=public_evidence_revision,
+            public_evidence_source_sha256=dict(public_evidence_source_sha256 or {}),
         )
         model._compute_provenance(evidence_source_id)
         return model
@@ -464,6 +472,8 @@ class VecmModel:
                 "factor_names": [factor.wire_id for factor in self.factor_names],
                 "latest_observations": self.latest_observations,
                 "evidence_metadata": self.evidence_metadata,
+                "public_evidence_revision": self.public_evidence_revision,
+                "public_evidence_source_sha256": self.public_evidence_source_sha256,
             }
         )
         self.calibration_artifact_id = "calibration_artifact:" + stable_identity_digest(
@@ -501,6 +511,22 @@ class VecmProviderConfig(FrozenModel):
     )
     evidence_metadata: EvidenceMetadata
     current_mortgage30_rate_pct: float
+    public_evidence_revision: str | None = Field(
+        default=None,
+        description=(
+            "Git revision for the captured public EvidenceSource files used by this fit. None means "
+            "no Git revision was available (or the field is absent from a legacy artifact); plain "
+            "directory capture does not claim atomicity."
+        ),
+    )
+    public_evidence_source_sha256: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "SHA-256 of the exact captured public EvidenceSource bytes parsed for this fit, keyed by "
+            "stable source label. This excludes private inputs; an empty map may mean a legacy artifact "
+            "has no recorded hashes. Plain-directory hashes do not claim atomicity."
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_observations(self) -> VecmProviderConfig:
@@ -518,4 +544,6 @@ class VecmProviderConfig(FrozenModel):
             latest_observations=self.latest_observations,
             evidence_metadata=self.evidence_metadata,
             evidence_source_id=evidence_source_id,
+            public_evidence_revision=self.public_evidence_revision,
+            public_evidence_source_sha256=self.public_evidence_source_sha256,
         )
