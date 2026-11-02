@@ -66,7 +66,7 @@ the time a session is usable, we complete the step CCR skipped: write `/etc/baze
 (the system bazelrc, read by every Bazel invocation including `bb`/`bbr`) pointing the JVM
 at it — the same store the session bazelrc already uses for `bazelisk`.
 
-<../heal*ccr_bazel_trust.sh> does this idempotently and only when `/etc/bazel.bazelrc` is
+<../heal_ccr_bazel_trust.sh> does this idempotently and only when `/etc/bazel.bazelrc` is
 absent (CCR writes it on a \_successful* seed), so a healthy session is never clobbered and a
 non-CCR machine is a no-op. It is invoked from <../web_setup.sh> so fresh sessions self-heal.
 

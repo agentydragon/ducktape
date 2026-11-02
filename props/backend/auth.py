@@ -18,7 +18,7 @@ This module provides:
 - Credential validation with access level determination
 - Request identity resolution with DB lookup for agent types
 - FastAPI dependency for per-request auth (get_request_identity)
-- Dependency functions for ACL enforcement (require_admin_access, etc.)
+- Dependency functions for critic-run and evaluator-or-admin access
 """
 
 from __future__ import annotations
@@ -243,14 +243,6 @@ def require_critic_run_access(auth: Auth) -> RequestIdentity:
     if not (is_admin_or_evaluator(auth) or is_critic_dev_agent(auth)):
         raise HTTPException(status_code=403, detail=f"{auth} not allowed to run critics")
     return auth
-
-
-def require_admin_access(auth: Auth) -> None:
-    """FastAPI dependency requiring admin access. Raises HTTPException 403 if not admin."""
-    if isinstance(auth, SessionIdentity):
-        return  # SSO grants admin
-    if not (isinstance(auth, AuthenticatedIdentity) and isinstance(auth.role, AdminRole)):
-        raise HTTPException(status_code=403, detail="Admin access required")
 
 
 def require_evaluator_or_admin_access(auth: Auth) -> None:

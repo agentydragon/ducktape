@@ -113,14 +113,13 @@ editing a route.
       `terraform/main/infrastructure.tf`) at `oci-cache`; machine-config changes reboot nodes,
       so use the maintenance procedure in <../k8s/oci-cache/README.md> § Node-level pull-through.
 
-- [ ] Fast token rotation on cluster reprovision: `claude-token-rotation` CronJob runs
-      biweekly (1st/15th), so after a cluster rebuild the SOPS-encrypted token in
-      `secrets/claude-web-k8s-jwt.yaml` is stale until the next scheduled run. Need a
-      mechanism to rotate immediately on reprovision — e.g., trigger the job from
-      bootstrap, or add a post-bootstrap hook. Also consider whether the bootstrap script
-      itself should decrypt the new token and inject it into the local environment so
-      Claude Code sessions work immediately without waiting for the git push + re-source
-      cycle.
+- [ ] **Token availability after cluster reprovision**: `authentik-jwt-rotation` checks
+      hourly but normally mints only when the stored token has 24 hours or less remaining
+      (about every 44 days). The current phases in <../bootstrap.py> do not invoke the
+      rotator; decide whether reprovision needs an immediate mint and, if so, trigger one
+      after the rotator is available. Separately decide whether bootstrap or session
+      startup should make the newly minted token available before the rotator's Git
+      commit/push and local re-source cycle.
 - [ ] Decouple wyrm2 from tofu: `module.wyrm2` in the same TF root as the cluster means
       any `tofu apply` risks rebooting wyrm2 (the machine running tofu). The `--exclude`
       flag is a workaround but error-prone. Options: separate TF root for wyrm2, or manage

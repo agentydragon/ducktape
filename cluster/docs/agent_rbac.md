@@ -540,8 +540,9 @@ Claude Code web sessions authenticate via an **Authentik-issued OIDC JWT**
 that carries `groups: ["kubectl-sandbox-users"]`; kube-apiserver's
 `AuthenticationConfiguration` maps that claim to
 `oidc-ksbx-groups:kubectl-sandbox-users`, the Group every binding below
-subjects on. JWTs are minted biweekly by the `authentik-jwt-rotation`
-CronJob in the `agents-infra` namespace — see <../cdk8s/authentik_jwt_rotation.py>.
+subjects on. The `authentik-jwt-rotation` CronJob in `agents-infra` checks
+hourly and normally mints when a token has 24 hours or less remaining (about
+every 44 days); see <../cdk8s/authentik/jwt_rotation.py>.
 
 Machine JWTs from the `kubectl-sandbox-client-credentials` provider use a
 separate explicit Authentik allowlist for effective groups. The normal provider
