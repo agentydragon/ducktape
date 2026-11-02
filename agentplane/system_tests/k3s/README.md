@@ -27,7 +27,7 @@ installation/cleanup helpers, k3s, CRDs, PKI releases/images, and VM releases/im
 applicable. Changed inputs rebuild cold. Remote snapshots save the refreshed baseline for later actions.
 Applications, PostgreSQL, model endpoints, MCP fixtures, certificates/trust and collectors are recreated.
 VM workspace claims, PVs, StorageClass and loop devices are removed before marking the baseline clean;
-guest shutdown and selected boot/profile checks remain enabled. Ordinary targets still stop k3s.
+guest shutdown checks and the selected boot/profile settings are preserved. Ordinary targets still stop k3s.
 The bare persistence and lifecycle probes remain separate diagnostics, rather than application variants.
 See the [spike evidence](../../debug/k3s_persistence_spike.md).
 

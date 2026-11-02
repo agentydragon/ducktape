@@ -20,7 +20,139 @@ provisioner's StorageClass, and detaches every owned loop device before certifyi
 Failures leave the marker dirty for a cold rebuild. The existing lifecycle and bare-cluster probes
 retain their diagnostic semantics.
 
-Validation results for this expansion are recorded below once the RBE actions complete.
+### Non-VM cold and warm results
+
+Source `4a190b1991a0748884e0431d84371901c1074f52` passed all five non-VM suites in both the
+[cold wave](https://app.buildbuddy.io/invocation/8752f1b1-ad4d-412f-a7f2-dccbe85a0f71) and repeats
+([Pod/Dispatcher/real-model](https://app.buildbuddy.io/invocation/e7fcb343-9437-495a-97fa-1815a9631a4b),
+[MCP](https://app.buildbuddy.io/invocation/544152d9-3e5f-4882-8c0a-6c0077aecc40)).
+The enclosing cold invocation failed because of the VM outcomes described below; its five non-VM
+suite results and the lifecycle probe passed.
+
+| Suite        | Cases per action | Cold setup | Warm setup | Cold TestRunner wall | Warm TestRunner wall |
+| ------------ | ---------------: | ---------: | ---------: | -------------------: | -------------------: |
+| Pod          |               13 |    141.7 s |     37.6 s |              329.5 s |              224.6 s |
+| Dispatcher   |                3 |    136.6 s |     39.6 s |              264.2 s |              167.3 s |
+| Real-model   |                4 |    146.1 s |     40.3 s |              286.7 s |              189.6 s |
+| MCP Actions  |                5 |    176.2 s |     39.1 s |              352.4 s |              212.3 s |
+| MCP Services |                5 |    196.1 s |     51.8 s |              349.9 s |              213.7 s |
+
+Each pair ran exactly the same JUnit case identities, with no skips or failures. All five repeats
+reported warm, matching a cold seed's complete k3s and PKI identities. Pod and Dispatcher restored
+an MCP Actions seed, demonstrating reuse across different application fixtures. The five fresh UID
+fields (application namespace, PostgreSQL Pod, root Certificate, root Secret and collector namespace)
+were pairwise distinct across all ten actions; every cleanup completed. Warm setup fell by 71–78%,
+while action time fell by 32–40% in these selected pairs. They are not a fleet hit-rate estimate,
+a controlled estimate of causal savings, or an end-to-end CI speedup.
+
+### VM cleanup repair and trials
+
+The initial profile and manual VM actions passed their scenario bodies but failed teardown's
+cluster-resource absence check. That check treated `kubectl` stdout plus stderr as resource names;
+the fixture uses the deprecated Kyverno ClusterPolicy API, which emits warnings. Source
+`4e5ce89345f5a547d158f6420666aa5c62ee55fc` separates resource stdout from diagnostic stderr and includes
+actual leftover names in any failure. No scenario assertion, timeout, shutdown or storage check changed.
+The initial normal VM action first reported native status 14, `error pausing VM` with an unavailable
+Firecracker socket and no JUnit. A later physical execution of the same action produced a passing
+scenario body but a boot-evidence teardown error: the selected guest lacked a monitor-readiness
+receipt. BuildBuddy exposed one logical test run/attempt despite the two physical executions. The
+stdout repair occurs after guest-log validation and does not explain this separate receipt failure;
+a later pass is not evidence that it was repaired.
+
+[The repaired VM wave](https://app.buildbuddy.io/invocation/fd9d3fc8-81f8-44af-a21c-2cf7d798a178)
+passed the normal and profile suites through cleanup. Both rebuilt cold after the source fingerprint
+change, retained the existing digest-addressed image store, and released three workspace loop devices.
+Normal VM setup was 95.0 s and TestRunner wall 374.2 s; profile setup was 95.5 s and wall 368.2 s.
+A cold baseline rebuild is not necessarily an empty image cache.
+
+### Final all-suite validation
+
+[The final all-suite invocation](https://app.buildbuddy.io/invocation/a690a9d1-34b8-4b9a-ada6-2689937e3f83)
+completed successfully at runtime source `4e5ce89345f5a547d158f6420666aa5c62ee55fc`: eight suites,
+35 JUnit cases, no failures/errors/skips, with cleanup complete in every action. The normal and profile
+VM targets each contain one batch case running three concurrent scenarios; manual VM has three cases.
+This explicit command includes manual/live targets that ordinary PR CI excludes, so its 863 s wall
+is not an ordinary CI latency measurement.
+
+| Suite        |   Cases | Baseline outcome                       |   Setup | Successful TestRunner wall |
+| ------------ | ------: | -------------------------------------- | ------: | -------------------------: |
+| Pod          |      13 | Cold rebuild                           |  71.2 s |                    256.5 s |
+| Dispatcher   |       3 | Cold rebuild                           |  80.6 s |                    203.6 s |
+| Real-model   |       4 | Cold rebuild                           |  65.2 s |                    192.2 s |
+| MCP Actions  |       5 | Cold rebuild                           |  71.4 s |                    244.6 s |
+| MCP Services |       5 | Cold rebuild                           |  74.7 s |                    235.0 s |
+| VM           | 1 batch | Warm                                   |  38.6 s |                    303.8 s |
+| VM manual    |       3 | Warm                                   |  41.6 s |                    857.7 s |
+| VM profile   | 1 batch | Cold fallback after a physical failure | 123.0 s |                    560.4 s |
+
+The five non-VM targets restored prior snapshots but rebuilt because the helper change invalidated
+their fingerprints. Their kernel boot IDs survived while k3s process/start, node, kube-system and PKI
+identities changed. They are not warm hits. The normal and manual VM actions instead retained the
+fixed-cold normal VM seed's complete k3s identity, four PKI Deployment UIDs and six virtualization
+resource UIDs. All five fresh application/database/certificate/collector UID fields changed from the
+seed and were pairwise distinct across all eight final actions. Each VM action also created a fresh
+workspace StorageClass, completed cleanup and detached all three owned loop devices.
+
+Normal VM setup went from 95.0 to 38.6 s; action wall went from 374.2 to 303.8 s in this selected pair.
+The final profile action passed after a separate physical execution failed; its successful action was
+a cold fallback, so profile-specific warm reuse is not established. Final warning-level logs show the
+GET's Kyverno deprecation warning during successful teardown with no remaining resource names,
+confirming the stdout/stderr cleanup mechanism. The profile-image variant used its default native
+profiling setting; optional `AGENTPLANE_VM_NATIVE_PROFILE=1` was not added to these commands.
+
+### Reliability findings retained from failed trials
+
+The successful final run does not erase these earlier failures:
+
+- The repaired-cold manual VM target passed its first storage case, then failed two 300 s Sandbox
+  readiness waits with unbound workspace PVs. Its background provisioner had exited on a 10 s
+  Kubernetes PVC-list read timeout, surfaced when teardown joined that worker. The fixture remained
+  dirty. The final warm manual run passed all three cases, but does not establish that this failure
+  was repaired. A concrete follow-up is bounded retry of that read-only list operation and prompt
+  propagation of terminal provisioner failures, preserving claim-UID ownership and avoiding replay
+  of uncertain PV creation.
+- The original normal VM's later physical execution passed its scenarios but failed its boot-evidence
+  assertion. Its selected console contains no monitor-readiness receipt. The guest monitor unit
+  reported ready to systemd, then exited status 1 before emitting the receipt; the reporter independently
+  recorded the failed unit. This is a guest-side failure rather than rejection of a present CRI marker.
+  The exact command failure between notification and receipt is not observable from retained logs.
+  The cleanup repair occurs later and does not address this issue; command-level guest diagnostics
+  are the next evidence needed.
+- Two physical VM actions (original normal VM and final profile VM) hit Linux 5.15 guest kernel
+  general-protection faults in scheduler load-average code, followed by kernel panic and Firecracker
+  exiting. The native `error pausing VM`/refused socket is downstream, during workspace output syncing
+  after guest execution. The matching public
+  [BuildBuddy callsite](https://github.com/buildbuddy-io/buildbuddy/blob/acaf608b95780c2b0681b0205182c38bf5b6237d/enterprise/server/remote_execution/containers/firecracker/firecracker.go#L3307-L3355)
+  is distinct from post-action snapshot recycling; the hosted code version is unconfirmed. Native
+  `serverLogs.vm_log_tail.txt` proves the panics and VMM exits, but not what corrupted the kernel
+  pointers. Provider crash capture and host/VMM logs are needed for that boundary. A later physical
+  execution produced the logical test result in each case; logical run/attempt counts alone hide
+  this physical work. No snapshot-save failure or causal link to persistence is established.
+
+Ordinary required CI checks passed at the tested runtime source. These findings keep the feature a
+manual spike: setup savings are demonstrated, but reliable fleet warm availability and an end-to-end
+2x CI improvement are not established.
+
+### Reproduction and limits
+
+Each command uses `bbr test --config=ci --test_tag_filters= --nocache_test_results` with the explicit
+variant labels. The final all-suite command additionally passes `--test_arg=--log-cli-level=WARNING`
+so successful cleanup's API warnings remain visible. The eight labels are:
+
+- `//agentplane/system_tests/suites:test_pod_persistence_spike`
+- `//agentplane/system_tests/suites:test_dispatcher_persistence_spike`
+- `//agentplane/system_tests/suites:test_vm_persistence_spike`
+- `//agentplane/system_tests/suites:test_vm_manual_persistence_spike`
+- `//agentplane/system_tests/suites:test_vm_profile_persistence_spike`
+- `//agentplane/system_tests/suites:test_real_model_persistence_spike`
+- `//agentplane/system_tests/suites/mcp:test_actions_persistence_spike`
+- `//agentplane/system_tests/suites/mcp:test_services_persistence_spike`
+
+The real-model target still requests the existing `OPENAI_API_KEY` secret. Changed Python libraries
+were also named directly for lint/type aspects; repository hooks passed. Raw invocation, native action,
+JUnit, span and persistence identity artifacts remain under the task scratch directory's `all-k3s/`.
+Snapshot-save cost, eviction behavior, hardware partitions and fleet warm availability remain limits
+on a production decision. Ordinary targets do not opt in; no production rollout is claimed.
 
 ## PostgreSQL reuse: no measured benefit, removed
 
