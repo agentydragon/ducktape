@@ -8,6 +8,8 @@ Scripted targets take the `harnesses/environment_tools_layout` image, which carr
 
 containerd keeps unpacked image layers (its overlayfs snapshotter's root) on a tmpfs, except on a stack
 with VM Sandboxes ([measurements](debug/stack_timings.md#image-layers-in-memory-2026-10-21)).
+The stack pins its imported OCI images in containerd's CRI metadata. Kubelet image GC can otherwise
+delete an image before a later Sandbox uses it; these fixture-local tags cannot be pulled from a registry.
 
 Every `k3s_suite` retains live k3s and cert-manager/trust-manager in hosted BuildBuddy RBE snapshots. VM suites
 also retain KubeVirt and Kyverno. This is the default for Pod, Dispatcher, all MCP suites,
