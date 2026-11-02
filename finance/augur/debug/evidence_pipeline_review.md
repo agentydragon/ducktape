@@ -117,20 +117,13 @@ operation-scoped in-memory cache; measure before adding persistence. A persisten
 must include the source-content identity and parser/version identity, including any
 selection-specific parameters.
 
-### F. Source labels do not identify the evidence used for a fit
+### F. Recording the input to a fit is the caller's responsibility
 
-**Medium: reproducibility and consistency.** The scraper's
-[`EvidenceManifest`](../../scraper/fetch.py) records fetch times, and Augur's
-[`EvidenceMetadata`](../model/evidence.py) records useful source labels, dates and coverage.
-The paths reviewed do not bind a fit to a particular evidence-repository commit or source-byte
-hashes. Two runs naming the same source and date range may use different source revisions.
-A cache that reads individual files lazily from a moving checkout could also combine revisions
-if the checkout changes during an operation.
-
-Pin one snapshot for an operation and carry its identity, source identities/content hashes,
-observation spans and transformations into the fitted artifact or study result. Explicitly
-identify one-shot upstream fetches too. A snapshot identity and cache key are related but
-separate from a freshness policy.
+The training caller chooses the data supplied to a fit. If it needs a record of the exact
+input, it can save that information alongside its work; fitted artifacts do not need to embed
+source revisions or file hashes. The operation-scoped frame cache reads a source on first use
+and reuses its parsed frame. A caller that needs all files to come from a fixed checkout must
+arrange that itself; the cache does not pin Git or promise an atomic multi-file read.
 
 ### G. Intermediate shapes repeatedly discard and rebuild structure
 
@@ -168,12 +161,10 @@ archive naturally contains several. A consumer selects the data it needs and dec
 align it. The following is illustrative; these APIs do not exist yet:
 
 ```python
-# One stable snapshot and cache for this operation.
-snapshot = EvidenceSnapshot.open(evidence_dir, revision="...")
-
-# Each source/table is parsed once within the snapshot.
-factors = snapshot.table(FRENCH_FACTORS, table="monthly")
-zillow = snapshot.table(ZILLOW_ZHVI, table="cities")
+# Parse each source once within this operation.
+cache = EvidenceFrameCache(evidence_dir)
+factors = cache.frame(FRENCH_FACTORS)
+zillow = cache.frame(ZILLOW_ZHVI)
 
 us_equity = market_total_return(factors)
 sf_home_values = city_monthly_values(zillow, city="San Francisco", state="CA")
@@ -183,7 +174,7 @@ training = align_for_fit(
     {"equity": us_equity, "home_value": sf_home_values},
     missing="preserve",
 )
-artifact = fit_model(training, provenance=snapshot.provenance())
+artifact = fit_model(training)
 ```
 
 Keep source tables, consumer-selected observations and sampled runtime paths distinct. The
@@ -193,6 +184,6 @@ units and observation semantics should accompany frames, without turning every d
 single universal table.
 
 Fix A–C first so a shared interface does not propagate the existing calendar and value
-mistakes. Then establish snapshot identity and a source-table boundary, migrate one complete
-fitting path, and use that experience to migrate the remaining consumers. A broader cache,
-additional source coverage and multi-equity modeling are separate decisions.
+mistakes. Then establish a source-table boundary, migrate one complete fitting path, and use
+that experience to migrate the remaining consumers. A broader cache, additional source
+coverage and multi-equity modeling are separate decisions.

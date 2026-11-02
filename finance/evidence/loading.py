@@ -27,7 +27,6 @@ import polars as pl
 
 from finance.calendar_months import is_next_calendar_month as _is_next_calendar_month
 from finance.evidence import sources
-from finance.evidence.snapshot import EvidenceSnapshot
 from finance.evidence.sources import EvidenceKind, EvidenceSource
 
 
@@ -50,14 +49,14 @@ def source_bytes(evidence_dir: Path, source: EvidenceSource) -> bytes:
 class EvidenceFrameCache:
     """Read and parse each requested source once, retaining its source-shaped Polars frame."""
 
-    def __init__(self, snapshot: EvidenceSnapshot) -> None:
-        self.snapshot = snapshot
+    def __init__(self, evidence_dir: Path) -> None:
+        self.evidence_dir = evidence_dir
         self._frames: dict[EvidenceSource, pl.DataFrame] = {}
         self._monthly_frames: dict[EvidenceSource, pl.DataFrame] = {}
 
     def frame(self, source: EvidenceSource) -> pl.DataFrame:
         if source not in self._frames:
-            self._frames[source] = evidence_series_frame(self.snapshot.source_bytes(source), source)
+            self._frames[source] = evidence_series_frame(source_bytes(self.evidence_dir, source), source)
         return self._frames[source]
 
     def monthly_frame(self, source: EvidenceSource) -> pl.DataFrame:
