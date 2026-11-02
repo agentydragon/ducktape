@@ -25,15 +25,20 @@ func TestSystemdOwnerValidate(t *testing.T) {
 
 func TestSystemdScopeIdentity(t *testing.T) {
 	const stateDir, sandboxUID = "/state/sandbox", "sandbox-uid"
-	runnerIdentity := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: runtimeUnit, LifetimeDirectory: runtimeLifetimeDirectory, ScopeID: SystemdEnvironmentRuntimeScopeID})
-	if want := stateDir + "\x00" + sandboxUID; runnerIdentity != want {
-		t.Fatalf("Runtime scope identity = %q, want legacy identity %q", runnerIdentity, want)
-	}
-	runtime := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: "agentplane-environment-runtime.service", LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: SystemdEnvironmentRuntimeScopeID})
-	harness := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: runtimeUnit, LifetimeDirectory: runtimeLifetimeDirectory, ScopeID: "harness"})
-	execution := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: runtimeUnit, LifetimeDirectory: runtimeLifetimeDirectory, ScopeID: "execution-service"})
-	if runtime != runnerIdentity || harness == runtime || execution == runtime || execution == harness {
-		t.Fatal("distinct systemd owners shared a native process scope")
+	identities := make(map[string]SystemdScopeID)
+	for _, scope := range []SystemdScopeID{SystemdEnvironmentRuntimeScopeID, "harness", "execution-service"} {
+		owner := SystemdOwner{Unit: runtimeUnit, LifetimeDirectory: runtimeLifetimeDirectory, ScopeID: scope}
+		identity := systemdScopeIdentity(stateDir, sandboxUID, owner)
+		if want := stateDir + "\x00" + sandboxUID + "\x00" + string(scope); identity != want {
+			t.Fatalf("scope %q identity = %q, want %q", scope, identity, want)
+		}
+		if previous, exists := identities[identity]; exists {
+			t.Fatalf("scopes %q and %q shared a native process scope", previous, scope)
+		}
+		identities[identity] = scope
+		if identity == systemdScopeIdentity(stateDir+"-other", sandboxUID, owner) || identity == systemdScopeIdentity(stateDir, sandboxUID+"-other", owner) {
+			t.Fatalf("scope %q did not distinguish Sandbox state owners", scope)
+		}
 	}
 }
 
