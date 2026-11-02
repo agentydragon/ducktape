@@ -84,7 +84,7 @@ _CONFIG = Config(
     claude=ClaudeSettings(enabled=True),
     codex=CodexSettings(enabled=True),
     openai_platform=OpenAIPlatformSettings(
-        enabled=True, url="http://openai-platform-session.openai-platform-session.svc:8080"
+        enabled=True, url="http://platform-sessions.platform-sessions.svc:8080/openai"
     ),
     zai=ZaiSettings(enabled=False),
 )
@@ -195,7 +195,7 @@ class Aiquota(Construct):
                 labels=SERVICE.pods.selector,
                 annotations={
                     "description": "AI subscription quotas and OpenAI Platform credits.",
-                    "secret.reloader.stakater.com/reload": "openai-platform-read-token",
+                    "secret.reloader.stakater.com/reload": "platform-sessions-read-token",
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=SERVICE.pods.selector),
@@ -221,7 +221,7 @@ class Aiquota(Construct):
                     self, "cli-proxy-api-management-ref"
                 ),
                 env_name(Settings, "openai_platform_token"): SecretRef(
-                    namespace=NAMESPACE, name="openai-platform-read-token"
+                    namespace=NAMESPACE, name="platform-sessions-read-token"
                 )
                 .key("token")
                 .env_value(self, "openai-platform-token-ref", optional=True),

@@ -61,11 +61,11 @@ def chart(app: App) -> Chart:
     )
     opentofu.secret_access(
         chart,
-        "openai-platform-secrets",
+        "platform-sessions-secrets",
         identity=identity,
-        namespace="openai-platform-session",
+        namespace="platform-sessions",
         read=[],
-        write=["openai-platform-oidc"],
+        write=["platform-sessions-oidc"],
     )
     opentofu.gitops_workspace(
         chart,

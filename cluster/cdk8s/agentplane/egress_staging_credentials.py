@@ -67,10 +67,10 @@ GOOGLE_READONLY_POLICY = "google-readonly"
 ACTIVITYWATCH_READ_POLICY = "activitywatch-read"
 AIQUOTA_READ_POLICY = "aiquota-read"
 QUEST_READ_POLICY = "quest-read"
-PLATFORM_SESSION_API = ServiceRef(
-    name="openai-platform-session",
+PLATFORM_SESSIONS_API = ServiceRef(
+    name="platform-sessions",
     port=Port(name="http", number=8080),
-    pods=Pods(namespace="openai-platform-session", labels=(("app", "openai-platform-session"),)),
+    pods=Pods(namespace="platform-sessions", labels=(("app", "platform-sessions"),)),
 )
 PLAID_PGWEB_CREDENTIAL = "plaid-pgweb"
 # Credentials whose egress rules ride in the Action PolicySets that approve the same system's
@@ -116,7 +116,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
             authentik.SERVER.egress(),  # _grocy_sf_readonly: the public route targets Authentik's outpost.
             activitywatch.READ.egress(),  # _activitywatch_read: bearer read sidecar.
             AIQUOTA_SERVICE.egress(),  # _aiquota_read: public Gateway and internal Service routes.
-            PLATFORM_SESSION_API.egress(),  # _quest_read: public Gateway's read-only API backend.
+            PLATFORM_SESSIONS_API.egress(),  # _quest_read: public Gateway's read-only API backend.
             clickhouse.HTTP.egress(),  # _aiquota_read: typed history.
             mailbox.HTTP.egress(),  # _haku_mailbox: application policy excludes management APIs.
             plaid_pgweb.SERVICE.egress(),  # _plaid_pgweb.
@@ -605,7 +605,7 @@ def _quest_read(scope: Construct, *, namespace: str) -> None:
         credential=QUEST_READ_POLICY,
         description=(
             "Quest scheduling, account, and insurance lookup API. Use "
-            "https://openai-platform.allegedly.works/quest/openapi.json to discover the available routes. "
+            "https://platform-sessions.allegedly.works/quest/openapi.json to discover the available routes. "
             "The bearer is substituted only for the listed lookup paths."
         ),
         secret="quest-agent-token",
@@ -619,7 +619,7 @@ def _quest_read(scope: Construct, *, namespace: str) -> None:
         rules=[
             _rule(
                 QUEST_READ_POLICY,
-                "openai-platform.allegedly.works",
+                "platform-sessions.allegedly.works",
                 method=PolicySetSpecRulesMethods.GET,
                 paths=[
                     "/quest/openapi.json",
@@ -638,7 +638,7 @@ def _quest_read(scope: Construct, *, namespace: str) -> None:
             # Quest uses POST for these lookups; their inputs and outputs can contain sensitive health data.
             _rule(
                 QUEST_READ_POLICY,
-                "openai-platform.allegedly.works",
+                "platform-sessions.allegedly.works",
                 method=PolicySetSpecRulesMethods.POST,
                 paths=[
                     "/quest/guest/getPscsWithAvailability",
