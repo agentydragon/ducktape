@@ -10371,6 +10371,17 @@ spec:
               protocol: TCP
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: ankiweb-sync
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - "*.ankiweb.net"
+      type: egress
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding
 metadata:
   annotations:
@@ -10382,52 +10393,9 @@ spec:
     - haku-ui
     - home-assistant-reads
     - grocy-sf-reads
+    - ankiweb-sync
   subject:
     name: haku-ui
-    namespace: haku-sandbox
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
-  name: haku-anki
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - "*.ankiweb.net"
-      type: egress
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: haku-anki
-  namespace: agentplane-staging
-spec:
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: egress
-  ingress:
-    - fromEndpoints:
-        - matchLabels:
-            io.cilium.k8s.policy.serviceaccount: haku-anki
-            k8s:io.kubernetes.pod.namespace: haku-sandbox
-      toPorts:
-        - ports:
-            - port: "8888"
-              protocol: TCP
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicyBinding
-metadata:
-  annotations:
-    description: "What haku-anki (haku-sandbox) may reach: AnkiWeb."
-  name: haku-anki
-  namespace: agentplane-staging
-spec:
-  policySets:
-    - haku-anki
-  subject:
-    name: haku-anki
     namespace: haku-sandbox
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1

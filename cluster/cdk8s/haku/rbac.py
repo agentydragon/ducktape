@@ -11,7 +11,7 @@ from cdk8s_plus_34 import k8s
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.haku import anki_egress, ui_egress
+from cluster.cdk8s.haku import ui_egress
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -57,25 +57,9 @@ def chart(app: App) -> Chart:
             annotations={
                 "description": (
                     "The principal haku-ui reaches agentplane-staging as: Home Assistant and Grocy reads through "
-                    "the egress proxy, and <tool-call> Action requests that wait for the operator. Its grants "
-                    "stay a subset of claude-ai's (haku/ui_egress.py)."
-                )
-            },
-        ),
-        automount_service_account_token=False,
-    )
-    # haku-anki's egress identity (anki_egress.py): the account its Agentplane egress sidecar authenticates as.
-    # Not an Action caller (no caller label) and no Kubernetes permissions.
-    k8s.KubeServiceAccount(
-        chart,
-        "haku-anki-service-account",
-        metadata=k8s.ObjectMeta(
-            name=anki_egress.SERVICE_ACCOUNT,
-            namespace=NAMESPACE,
-            annotations={
-                "description": (
-                    "The principal haku-anki reaches AnkiWeb as, through the Agentplane egress proxy "
-                    "(haku/anki_egress.py). It calls no Action and holds no Kubernetes permission."
+                    "the egress proxy, and <tool-call> Action requests that wait for the operator. haku-anki runs as "
+                    "this account too, for AnkiWeb sync (haku/anki_egress.py). Its grants stay within claude-ai's "
+                    "(haku/ui_egress.py) except AnkiWeb."
                 )
             },
         ),

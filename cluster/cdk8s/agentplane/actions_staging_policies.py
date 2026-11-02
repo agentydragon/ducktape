@@ -722,6 +722,8 @@ def add_staging_action_policies(scope: Construct) -> None:
     # route it submits requests on. A subset of claude-ai's grants by construction, and not
     # claude-ai itself, which auto-approves sandbox create and exec.
     haku_ui_egress.add_gateway_resources(scope, namespace=_NAMESPACE)
+    # haku-anki shares this account (haku/anki_egress.py): AnkiWeb sync, the one external host it needs.
+    haku_anki_egress.add_policy_set(scope, namespace=_NAMESPACE)
     _binding(
         scope,
         "policybinding-haku-ui",
@@ -731,22 +733,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             annotations={"description": "What haku-ui (haku-sandbox) may reach and have auto-approved."},
         ),
         subject=PolicyBindingSpecSubject(namespace=haku_ui_egress.NAMESPACE, name=haku_ui_egress.SERVICE_ACCOUNT),
-        policy_sets=[haku_ui_egress.POLICY, HOME_ASSISTANT_READS_SET, GROCY_SF_READS_SET],
-    )
-
-    # haku-anki, as its own egress identity in haku-sandbox (haku/anki_egress.py): AnkiWeb sync and nothing
-    # else. Not an Action caller, so the binding grants egress only.
-    haku_anki_egress.add_gateway_resources(scope, namespace=_NAMESPACE)
-    _binding(
-        scope,
-        "policybinding-haku-anki",
-        metadata=ApiObjectMetadata(
-            name=haku_anki_egress.SERVICE_ACCOUNT,
-            namespace=_NAMESPACE,
-            annotations={"description": "What haku-anki (haku-sandbox) may reach: AnkiWeb."},
-        ),
-        subject=PolicyBindingSpecSubject(namespace=haku_anki_egress.NAMESPACE, name=haku_anki_egress.SERVICE_ACCOUNT),
-        policy_sets=[haku_anki_egress.POLICY],
+        policy_sets=[haku_ui_egress.POLICY, HOME_ASSISTANT_READS_SET, GROCY_SF_READS_SET, haku_anki_egress.POLICY],
     )
 
     # Haku-like sandboxes get Coinbase only through this explicit combined PolicySet selection.

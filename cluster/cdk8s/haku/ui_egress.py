@@ -69,20 +69,14 @@ def add_gateway_resources(scope: Construct, *, namespace: str) -> None:
             )
         ],
     )
-    allow_gateway_ingress(scope, namespace=namespace, name=POLICY, service_account=SERVICE_ACCOUNT)
-
-
-def allow_gateway_ingress(scope: Construct, *, namespace: str, name: str, service_account: str) -> None:
-    """Admit pods running as `service_account` in haku-sandbox to the egress gateway, from the Agentplane
-    namespace `namespace`. Shared by every haku-sandbox workload that carries an egress sidecar."""
     NetworkPolicy(
         scope,
         "gateway-network",
-        metadata=ApiObjectMetadata(name=name, namespace=namespace),
+        metadata=ApiObjectMetadata(name=POLICY, namespace=namespace),
         endpoint_selector=GATEWAY.pods.selector,
         ingress=[
             IngressRule.from_endpoints(
-                {"k8s:io.kubernetes.pod.namespace": NAMESPACE, "io.cilium.k8s.policy.serviceaccount": service_account},
+                {"k8s:io.kubernetes.pod.namespace": NAMESPACE, "io.cilium.k8s.policy.serviceaccount": SERVICE_ACCOUNT},
                 ports=[GATEWAY.pod_port],
             )
         ],

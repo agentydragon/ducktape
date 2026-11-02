@@ -1,4 +1,4 @@
-"""haku-anki's egress identity: AnkiWeb and nothing else, per workload."""
+"""haku-anki's AnkiWeb egress: one PolicySet, carried by the shared haku-ui account."""
 
 from __future__ import annotations
 
@@ -10,38 +10,21 @@ import pytest_bazel
 from cdk8s import App, Testing as Cdk8sTesting
 from more_itertools import one
 
-from agentplane.action_service.policies.resources import CALLER_LABEL
 from cluster.cdk8s.agentplane import staging
-from cluster.cdk8s.haku import anki_egress, rbac as haku_rbac
+from cluster.cdk8s.haku import anki_egress, ui_egress
 
 
 @pytest.fixture(scope="module")
 def resources(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
-    app = scratch_app_factory()
-    return [
-        doc
-        for chart in (staging.chart(app), haku_rbac.chart(app))
-        for doc in cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    ]
+    return cast(list[dict[str, Any]], Cdk8sTesting.synth(staging.chart(scratch_app_factory())))
 
 
-def _named(resources: list[dict[str, Any]], kind: str, name: str, namespace: str) -> dict[str, Any]:
-    return one(
-        d
-        for d in resources
-        if d["kind"] == kind and d["metadata"]["name"] == name and d["metadata"].get("namespace") == namespace
-    )
-
-
-def test_service_account_is_not_an_action_caller_and_mounts_no_token(resources: list[dict[str, Any]]) -> None:
-    account = _named(resources, "ServiceAccount", anki_egress.SERVICE_ACCOUNT, anki_egress.NAMESPACE)
-
-    assert CALLER_LABEL not in account["metadata"].get("labels", {})
-    assert account["automountServiceAccountToken"] is False
+def _named(resources: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
+    return one(d for d in resources if d["kind"] == kind and d["metadata"]["name"] == name)
 
 
 def test_policy_reaches_ankiweb_only_and_presents_no_credential(resources: list[dict[str, Any]]) -> None:
-    policy = _named(resources, "PolicySet", anki_egress.POLICY, "agentplane-staging")
+    policy = _named(resources, "PolicySet", anki_egress.POLICY)
     (rule,) = policy["spec"]["rules"]
 
     assert rule["type"] == "egress"
@@ -51,23 +34,18 @@ def test_policy_reaches_ankiweb_only_and_presents_no_credential(resources: list[
         assert absent not in rule, absent
 
 
-def test_binding_grants_that_one_policy_to_that_one_account(resources: list[dict[str, Any]]) -> None:
-    binding = _named(resources, "PolicyBinding", anki_egress.SERVICE_ACCOUNT, "agentplane-staging")
+def test_the_shared_haku_ui_account_carries_it(resources: list[dict[str, Any]]) -> None:
+    binding = _named(resources, "PolicyBinding", ui_egress.SERVICE_ACCOUNT)
 
-    assert binding["spec"]["subject"] == {"namespace": anki_egress.NAMESPACE, "name": anki_egress.SERVICE_ACCOUNT}
-    assert binding["spec"]["policySets"] == [anki_egress.POLICY]
+    assert anki_egress.POLICY in binding["spec"]["policySets"]
+    assert binding["spec"]["subject"] == {"namespace": ui_egress.NAMESPACE, "name": ui_egress.SERVICE_ACCOUNT}
 
 
-def test_gateway_admits_only_that_account_from_haku_sandbox(resources: list[dict[str, Any]]) -> None:
-    policy = _named(resources, "CiliumNetworkPolicy", anki_egress.POLICY, "agentplane-staging")
-    (ingress,) = policy["spec"]["ingress"]
-    (peer,) = ingress["fromEndpoints"]
+def test_haku_anki_has_no_account_or_binding_of_its_own(resources: list[dict[str, Any]]) -> None:
+    """It runs as haku-ui on purpose (haku/anki_egress.py); a separate identity would be a design change."""
+    bound_subjects = {d["spec"]["subject"]["name"] for d in resources if d["kind"] == "PolicyBinding"}
 
-    assert peer["matchLabels"] == {
-        "k8s:io.kubernetes.pod.namespace": anki_egress.NAMESPACE,
-        "io.cilium.k8s.policy.serviceaccount": anki_egress.SERVICE_ACCOUNT,
-    }
-    assert [p["port"] for p in one(ingress["toPorts"])["ports"]] == ["8888"]
+    assert "haku-anki" not in bound_subjects
 
 
 if __name__ == "__main__":
