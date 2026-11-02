@@ -22,6 +22,8 @@ from finance.evidence.loading import (
     require_contiguous_months,
     source_bytes,
     yahoo_adjusted_close_frame,
+    zillow_city_series_frame,
+    zillow_city_table,
 )
 from finance.evidence.sources import (
     EVIDENCE_SOURCES,
@@ -50,6 +52,26 @@ def test_fred_frame_parses_and_drops_empty_values() -> None:
 def test_fred_frame_rejects_missing_series_column() -> None:
     with pytest.raises(ValueError, match=re.escape(FRED_CPI.provenance_label)):
         fred_series_frame(b"observation_date,OTHER\n2024-12-31,1.0\n", FRED_CPI)
+
+
+def test_zillow_table_selects_multiple_cities_without_losing_source_rows() -> None:
+    data = (
+        b"RegionType,RegionName,State,2024-01-31,2024-02-29\ncity,San Francisco,CA,100,110\ncity,Vallejo,CA,200,220\n"
+    )
+    table = zillow_city_table(data, ZILLOW_ZHVI)
+    sf = zillow_city_series_frame(table, ZILLOW_ZHVI, region_name="San Francisco", state="CA")
+    vallejo = zillow_city_series_frame(table, ZILLOW_ZHVI, region_name="Vallejo", state="CA")
+    assert table.height == 2
+    assert sf["month"].to_list() == [date(2024, 1, 1), date(2024, 2, 1)]
+    assert sf["value"].to_list() == [100.0, 110.0]
+    assert vallejo["value"].to_list() == [200.0, 220.0]
+    with pytest.raises(ValueError, match="does not contain a city row"):
+        zillow_city_series_frame(table, ZILLOW_ZHVI, region_name="Oakland", state="CA")
+
+
+def test_zillow_table_rejects_a_missing_city_identity_column() -> None:
+    with pytest.raises(ValueError, match="missing columns"):
+        zillow_city_table(b"RegionName,State,2024-01-31\nVallejo,CA,200\n", ZILLOW_ZHVI)
 
 
 def _yahoo_payload(points: list[tuple[datetime, float | None]], *, granularity: str = "1d") -> bytes:
