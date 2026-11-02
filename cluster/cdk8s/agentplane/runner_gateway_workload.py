@@ -128,7 +128,9 @@ class RunnerGateway(Construct):
         *,
         database_url: EnvValue,
         dispatcher_callers: Mapping[ServiceAccountRef, Pods],
+        operator_callers: Mapping[ServiceAccountRef, Pods] | None = None,
         delegation_actor: ServiceAccountRef | None,
+        extra_delegated_methods: tuple[str, ...] = (),
         gateway_callers: Mapping[ServiceAccountRef, Pods],
         wake_callers: frozenset[ServiceAccountRef],
         sandbox_controller: tuple[ServiceAccountRef, Pods],
@@ -143,6 +145,8 @@ class RunnerGateway(Construct):
             raise ValueError("Runner Gateway needs explicit Dispatcher and proxy caller grants")
         if not wake_callers <= dispatcher_callers.keys():
             raise ValueError("wake callers must also be Dispatcher callers")
+        if extra_delegated_methods and delegation_actor is None:
+            raise ValueError("extra delegated methods require a delegation actor")
 
         namespace = env.namespace
         self.env = env
@@ -170,6 +174,7 @@ class RunnerGateway(Construct):
             }.items()
         }
         dispatcher_accounts = sorted(map(_account, dispatcher_callers))
+        operator_accounts = sorted(map(_account, operator_callers or {}))
         gateway_accounts = sorted(map(_account, proxy_callers))
         wake_accounts = sorted(map(_account, wake_callers))
         central_sampler_account = ServiceAccountRef(namespace=namespace, name=central_sampler.NAME)
@@ -199,6 +204,7 @@ class RunnerGateway(Construct):
                 else {}
             ),
             **({"wake_callers": wake_accounts} if wake_accounts else {}),
+            **({"operator_callers": operator_accounts} if operator_accounts else {}),
         }
         if delegation_actor is not None:
             content["delegation"] = {
@@ -218,6 +224,7 @@ class RunnerGateway(Construct):
                     "/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments",
                     "/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment",
                     "/agentplane.sandboxes.environments.EnvironmentService/WatchEnvironment",
+                    *extra_delegated_methods,
                 ],
             }
         settings = SettingsFile(
@@ -386,7 +393,13 @@ class RunnerGateway(Construct):
         ).add_subjects(service_account)
 
 
-def serving_chart(app: App, *, env: Environment) -> Chart:
+def serving_chart(
+    app: App,
+    *,
+    env: Environment,
+    operator_callers: Mapping[ServiceAccountRef, Pods] | None = None,
+    extra_delegated_methods: tuple[str, ...] = (),
+) -> Chart:
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     callers = {
         ServiceAccountRef(namespace=env.namespace, name=app_component.NAME): app_component.service(env.namespace).pods,
@@ -405,11 +418,13 @@ def serving_chart(app: App, *, env: Environment) -> Chart:
         env,
         database_url=dispatcher_database_url,
         dispatcher_callers=callers | orchestration | session_delegation,
+        operator_callers=operator_callers,
         delegation_actor=(
             ServiceAccountRef(namespace=env.namespace, name=actions.NAME)
             if env.actions.orchestration_v1 is not None or env.actions.session_delegation is not None
             else None
         ),
+        extra_delegated_methods=extra_delegated_methods,
         gateway_callers=callers,
         # The orchestration_v1 group sends input that wakes a Sandbox launched with wakeOnSend.
         wake_callers=env.wake_caller_accounts | orchestration.keys(),

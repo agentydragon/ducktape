@@ -10,6 +10,7 @@ from cdk8s import App, Chart, Testing as Cdk8sTesting
 from more_itertools import one
 
 from agentplane.runner_gateway.settings import Settings
+from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.agentplane import (
     actions,
     app,
@@ -100,6 +101,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
         f"{staging.ENV.namespace}/{notifications.NAME}",
         f"{staging.ENV.namespace}/{actions.NAME}",
     }
+    assert "operator_callers" not in settings
     assert f"{staging.ENV.namespace}/{runner_gateway.NAME}" in settings["gateway_callers"]
     assert f"{staging.ENV.namespace}/{app.NAME}" in settings["wake_callers"]
     assert not pod.get("initContainers")
@@ -192,6 +194,31 @@ def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manif
     ]
 
 
+def test_empty_operator_callers_are_omitted(scratch_app: App) -> None:
+    chart = runner_gateway_workload.serving_chart(scratch_app, env=staging.ENV, operator_callers={})
+    docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
+    settings = yaml.safe_load(_resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
+
+    assert "operator_callers" not in settings
+
+
+def test_gateway_can_explicitly_configure_operator_and_delegated_resume(scratch_app: App) -> None:
+    env = replace(staging.ENV, namespace="test-agentplane", wake_caller_accounts=frozenset())
+    operator = ServiceAccountRef(namespace=env.namespace, name=app.NAME)
+    resume_method = "/agentplane.sandboxes.environments.EnvironmentService/ResumeEnvironment"
+    chart = runner_gateway_workload.serving_chart(
+        scratch_app,
+        env=env,
+        operator_callers={operator: app.service(env.namespace).pods},
+        extra_delegated_methods=(resume_method,),
+    )
+    docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
+    settings = yaml.safe_load(_resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
+
+    assert settings["operator_callers"] == [f"{env.namespace}/{app.NAME}"]
+    assert resume_method in settings["delegation"]["methods"]
+
+
 def test_session_delegation_is_a_dispatcher_caller_without_wake_authority(scratch_app: App) -> None:
     env = replace(
         staging.ENV,
@@ -211,6 +238,7 @@ def test_session_delegation_is_a_dispatcher_caller_without_wake_authority(scratc
         f"{env.namespace}/{notifications.NAME}",
         f"{env.namespace}/{actions.NAME}",
     }
+    assert "operator_callers" not in settings
     assert f"{env.namespace}/{actions.NAME}" not in settings["wake_callers"]
 
 

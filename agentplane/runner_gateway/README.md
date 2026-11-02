@@ -1,8 +1,11 @@
 # Runner Gateway
 
-The Runner Gateway combines durable Session Dispatcher admission and delivery, read-only
-`EnvironmentService`, and a Sandbox-fenced Runner proxy. Discovery and Dispatcher share the
-Gateway listener and Dispatcher TokenReview audience. The Gateway dials each Runner's native gRPC
+The Runner Gateway combines durable Session Dispatcher admission and delivery, the
+`EnvironmentService` inventory and explicit-resume API, and a Sandbox-fenced Runner proxy. The
+explicit API uses the shared lifecycle manager; the existing `DeliveryWorker` remains on its
+catalog-backed automatic-wake path until its separate integration.
+EnvironmentService and Dispatcher share the Gateway listener and Dispatcher TokenReview audience.
+The Gateway dials each Runner's native gRPC
 server on private port `9090`. Its public `listen_address` serves Dispatcher and proxies for the
 Runner and optional Executor services with the existing caller authorization. The Sandbox
 Controller owns `Sandbox.status`.
@@ -40,7 +43,11 @@ conversation and from Runner admission.
   [`settings.py`](settings.py) is the authoring schema), including the optional `http_listen_address`
   for the Dispatcher's HTTP/JSON facade (none when unset). The independent `delegation` policy names
   an Actions actor, caller namespace scope, and exact full RPC methods; it can include the
-  `EnvironmentService` read methods without delegating other Gateway methods.
+  `EnvironmentService` list/get/watch methods and, when separately configured, `ResumeEnvironment`, without
+  delegating other Gateway methods. `operator_callers` is optional and defaults empty; it is
+  restricted to direct, Pod-bound callers and gives only its configured operator broker the
+  requested-stop override. No deployment caller or delegated-method activation is part of this
+  backend slice.
 - `gateway/`: Runner connections, authenticated proxy, Sandbox/Pod validation and connection ownership.
 - `dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.
 - `migrations/`: Goose migrations for the Dispatcher database.

@@ -8,8 +8,10 @@ import (
 	"time"
 
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
+	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -47,6 +49,31 @@ const (
 )
 
 type tokenReviewStub map[string]authenticationv1.UserInfo
+
+type unusedWakeBudget struct{}
+
+func (unusedWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.ServiceAccount, string, int64) (time.Duration, error) {
+	return 0, nil
+}
+
+func discoveryLifecycle(t *testing.T, objects client.WithWatch, wakeCallers []auth.Account) *lifecycle.Manager {
+	t.Helper()
+	manager, err := lifecycle.NewManager(lifecycle.Options{
+		Namespace: discoveryNamespace, Objects: objects, WakeBudget: unusedWakeBudget{}, WakeCallers: wakeCallers,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return manager
+}
+
+func discoveryWakeCallerSet(accounts []auth.Account) map[auth.Account]struct{} {
+	result := make(map[auth.Account]struct{}, len(accounts))
+	for _, account := range accounts {
+		result[account] = struct{}{}
+	}
+	return result
+}
 
 func (s tokenReviewStub) Create(_ context.Context, request *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
 	user, ok := s[request.Spec.Token]
@@ -93,8 +120,18 @@ func serveDiscoveryWithDelegation(
 	catalog runtimeconfig.Catalog,
 	delegatedMethods []string,
 ) environmentpb.EnvironmentServiceClient {
+	return serveDiscoveryWithOptions(t, objects, catalog, delegatedMethods, nil)
+}
+
+func serveDiscoveryWithOptions(
+	t *testing.T,
+	objects client.WithWatch,
+	catalog runtimeconfig.Catalog,
+	delegatedMethods []string,
+	wakeCallers []auth.Account,
+) environmentpb.EnvironmentServiceClient {
 	t.Helper()
-	service, err := New(discoveryNamespace, objects, catalog, nil, nil)
+	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeCallers), discoveryWakeCallerSet(wakeCallers), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,8 +181,10 @@ func readerWithObjects(t *testing.T, objects ...client.Object) client.WithWatch 
 func sandboxObject(uid types.UID) *sandboxapi.Sandbox {
 	return &sandboxapi.Sandbox{
 		ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: sandboxName, UID: uid},
-		Spec:       sandboxapi.SandboxSpec{Template: "runner-vm"},
-		Status:     sandboxapi.SandboxStatus{OperatingMode: sandboxapi.OperatingModeRunning},
+		Spec: sandboxapi.SandboxSpec{
+			Template: "runner-vm", Running: true, ResumePolicy: &sandboxapi.ResumePolicy{AllowOwnServiceAccount: true},
+		},
+		Status: sandboxapi.SandboxStatus{OperatingMode: sandboxapi.OperatingModeRunning},
 	}
 }
 
@@ -192,7 +231,8 @@ func delegatedBearing(t *testing.T, token string, account auth.Account, uid stri
 }
 
 func TestListAndGetReturnTheExactExecutionAccountIdentity(t *testing.T) {
-	rpc := serveDiscovery(t, baseReader(t), runtimeconfig.Catalog{})
+	objects := baseReader(t)
+	rpc := serveDiscovery(t, objects, runtimeconfig.Catalog{})
 	listed, err := rpc.ListEnvironments(bearing(t, matchingToken), &environmentpb.ListEnvironmentsRequest{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
@@ -213,6 +253,115 @@ func TestListAndGetReturnTheExactExecutionAccountIdentity(t *testing.T) {
 	}
 	if got.GetTarget().GetUid() != sandboxUID || got.GetExecutionAccount().GetUid() != executionUID {
 		t.Fatalf("GetEnvironment returned target/account %+v / %+v", got.GetTarget(), got.GetExecutionAccount())
+	}
+	if got.GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_AVAILABLE ||
+		got.GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_ALLOWED_OWN_SERVICE_ACCOUNT {
+		t.Fatalf("explicit resume eligibility = %+v", got.GetResumeEligibility())
+	}
+	if got.GetWakeGeneration() != 0 || got.GetResumeToken() != lifecycle.NewResumeToken(lifecycle.Target{
+		Namespace: discoveryNamespace, Name: sandboxName, UID: sandboxUID,
+	}, 0) {
+		t.Fatalf("generation-bound resume precondition = generation %d, token %q", got.GetWakeGeneration(), got.GetResumeToken())
+	}
+	var unchanged sandboxapi.Sandbox
+	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, &unchanged); err != nil {
+		t.Fatal(err)
+	}
+	if !unchanged.Spec.Running || unchanged.Spec.WakeGeneration != 0 {
+		t.Fatalf("discovery changed Sandbox desired state: running=%t generation=%d", unchanged.Spec.Running, unchanged.Spec.WakeGeneration)
+	}
+}
+
+func TestDiscoverResumeAndReadThroughOneService(t *testing.T) {
+	sandbox := sandboxObject(sandboxUID)
+	sandbox.Spec.WakeGeneration = 7
+	sandbox.Status.OperatingMode = sandboxapi.OperatingModeSuspended
+	sandbox.Status.StopStage = sandboxapi.StopStageStopped
+	by := sandboxapi.SuspendedByIdle
+	sandbox.Status.SuspendedBy = &by
+	sandbox.Status.SuspendedAtWakeGeneration = proto.Int64(7)
+	objects := readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID))
+	rpc := serveDiscovery(t, objects, runtimeconfig.Catalog{})
+	ctx := bearing(t, matchingToken)
+	listed, err := rpc.ListEnvironments(ctx, &environmentpb.ListEnvironmentsRequest{Limit: 1})
+	if err != nil || len(listed.GetItems()) != 1 {
+		t.Fatalf("ListEnvironments = %+v, %v", listed, err)
+	}
+	descriptor := listed.Items[0]
+	resumed, err := rpc.ResumeEnvironment(ctx, &environmentpb.ResumeEnvironmentRequest{
+		Target: descriptor.Target, ResumeToken: descriptor.ResumeToken,
+	})
+	if err != nil || resumed.GetOutcome() != environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED || resumed.GetWakeGeneration() != 8 {
+		t.Fatalf("ResumeEnvironment = %+v, %v", resumed, err)
+	}
+	current, err := rpc.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: descriptor.Target})
+	if err != nil || current.GetWakeGeneration() != 8 || current.GetResumeToken() == descriptor.GetResumeToken() {
+		t.Fatalf("GetEnvironment after resume = %+v, %v", current, err)
+	}
+	if current.GetReadiness().GetState() != environmentpb.ReadinessState_READINESS_STATE_NOT_READY {
+		t.Fatalf("resume acceptance invented readiness: %+v", current.GetReadiness())
+	}
+}
+
+func TestDiscoveryReportsResumeDenialAndReadinessFactsWithoutEffects(t *testing.T) {
+	sandbox := sandboxObject(sandboxUID)
+	sandbox.Spec.ResumePolicy = &sandboxapi.ResumePolicy{AllowOwnServiceAccount: false}
+	objects := readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID))
+	rpc := serveDiscovery(t, objects, runtimeconfig.Catalog{})
+	target := &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
+	got, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
+		Target: target,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetReadiness().GetState() != environmentpb.ReadinessState_READINESS_STATE_NOT_READY ||
+		got.GetReadiness().GetReason() != "ReadyConditionUnavailable" {
+		t.Fatalf("current readiness descriptor = %+v", got.GetReadiness())
+	}
+	if got.GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED ||
+		got.GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED || got.GetResumeToken() != "" {
+		t.Fatalf("denied resume facts = eligibility %+v token=%q", got.GetResumeEligibility(), got.GetResumeToken())
+	}
+	var unchanged sandboxapi.Sandbox
+	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, &unchanged); err != nil {
+		t.Fatal(err)
+	}
+	if !unchanged.Spec.Running || unchanged.Spec.WakeGeneration != 0 {
+		t.Fatalf("discovery changed Sandbox desired state: running=%t generation=%d", unchanged.Spec.Running, unchanged.Spec.WakeGeneration)
+	}
+}
+
+func TestLegacyWakeOnSendAvailabilityIsSeparateFromExplicitResumeEligibility(t *testing.T) {
+	sandbox := sandboxObject(sandboxUID)
+	sandbox.Spec.WakeOnSend = true
+	sandbox.Spec.ResumePolicy = &sandboxapi.ResumePolicy{AllowOwnServiceAccount: false}
+	sandbox.Status.OperatingMode = sandboxapi.OperatingModeSuspended
+	sandbox.Status.StopStage = sandboxapi.StopStageStopped
+	objects := readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID))
+	rpc := serveDiscoveryWithOptions(t, objects, runtimeconfig.Catalog{}, nil, []auth.Account{{
+		Namespace: discoveryNamespace, Name: sandboxName,
+	}})
+	got, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
+		Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetResume() != environmentpb.ResumeState_RESUME_STATE_AVAILABLE {
+		t.Fatalf("automatic wake projection = %s, want broker-enabled availability", got.GetResume())
+	}
+	if got.GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED ||
+		got.GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED ||
+		got.GetResumeToken() != "" {
+		t.Fatalf("explicit resume projection = %+v token=%q, want policy denial and no token", got.GetResumeEligibility(), got.GetResumeToken())
+	}
+	var unchanged sandboxapi.Sandbox
+	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, &unchanged); err != nil {
+		t.Fatal(err)
+	}
+	if !unchanged.Spec.Running || unchanged.Spec.WakeGeneration != 0 {
+		t.Fatalf("wake assessment changed Sandbox desired state: running=%t generation=%d", unchanged.Spec.Running, unchanged.Spec.WakeGeneration)
 	}
 }
 
@@ -237,6 +386,10 @@ func TestDelegatedActionsUseTheEffectiveCallerAndKeepTargetUIDFences(t *testing.
 	}
 	if got.GetExecutionAccount().GetUid() != executionUID {
 		t.Fatalf("delegated GetEnvironment execution account = %+v", got.GetExecutionAccount())
+	}
+	if got.GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_AVAILABLE ||
+		got.GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_ALLOWED_OWN_SERVICE_ACCOUNT {
+		t.Fatalf("delegated resume eligibility used the actor instead of effective caller: %+v", got.GetResumeEligibility())
 	}
 
 	for _, target := range []*environmentpb.TargetHandle{
@@ -345,6 +498,9 @@ func TestDelegatedDiscoveryRequiresOneValidEnvelopeAndAnOptedInMethod(t *testing
 	})
 	if _, err := listOnly.GetEnvironment(valid, &environmentpb.GetEnvironmentRequest{Target: target}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("delegated GetEnvironment without method opt-in error = %v, want Unauthenticated", err)
+	}
+	if _, err := rpc.ResumeEnvironment(valid, &environmentpb.ResumeEnvironmentRequest{Target: target}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("delegated reads granted resume without method opt-in: %v", err)
 	}
 }
 
@@ -573,7 +729,8 @@ func TestEveryGeneratedRPCRequiresReviewedServiceAccountAdmission(t *testing.T) 
 		return Methods(resolver)
 	}
 	register := func(server *grpc.Server) {
-		service, err := New(discoveryNamespace, baseReader(t), runtimeconfig.Catalog{}, nil, nil)
+		objects := baseReader(t)
+		service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -605,9 +762,15 @@ func TestEveryGeneratedRPCRequiresReviewedServiceAccountAdmission(t *testing.T) 
 func TestInventoryReaderListAndGetAreBroadButOrdinaryCallersStayScoped(t *testing.T) {
 	other := sandboxObject("other-uid")
 	other.Name = "other"
-	objects := readerWithObjects(t, sandboxObject(sandboxUID), executionAccountObject(sandboxUID), other)
+	terminating := sandboxObject("deleting-uid")
+	terminating.Name = "deleting"
+	deletion := metav1.Now()
+	terminating.DeletionTimestamp = &deletion
+	terminating.Finalizers = []string{"test.example/retain"}
+	terminating.Status.OperatingMode = sandboxapi.OperatingModeSuspended
+	objects := readerWithObjects(t, sandboxObject(sandboxUID), executionAccountObject(sandboxUID), other, terminating)
 	reader := auth.Account{Namespace: discoveryNamespace, Name: "actions"}
-	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, nil, map[auth.Account]struct{}{reader: {}})
+	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), nil, map[auth.Account]struct{}{reader: {}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -622,16 +785,23 @@ func TestInventoryReaderListAndGetAreBroadButOrdinaryCallersStayScoped(t *testin
 		t.Fatalf("own list = %v, %v", own, err)
 	}
 	all, err := rpc.ListEnvironments(bearing(t, actionsToken), &environmentpb.ListEnvironmentsRequest{Limit: 10})
-	if err != nil || len(all.GetItems()) != 2 {
+	if err != nil || len(all.GetItems()) != 3 {
 		t.Fatalf("reader list = %v, %v", all, err)
 	}
-	target := &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: "other", Uid: "other-uid"}
-	if _, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{Target: target}); status.Code(err) != codes.NotFound {
-		t.Fatalf("own get = %v", err)
-	}
-	got, err := rpc.GetEnvironment(bearing(t, actionsToken), &environmentpb.GetEnvironmentRequest{Target: target})
-	if err != nil || got.GetTarget().GetName() != "other" || got.ExecutionAccount != nil {
-		t.Fatalf("reader get = %v, %v", got, err)
+	for _, target := range []*environmentpb.TargetHandle{
+		{Namespace: discoveryNamespace, Name: "other", Uid: "other-uid"},
+		{Namespace: discoveryNamespace, Name: "deleting", Uid: "deleting-uid"},
+	} {
+		if _, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{Target: target}); status.Code(err) != codes.NotFound {
+			t.Fatalf("own get = %v", err)
+		}
+		got, err := rpc.GetEnvironment(bearing(t, actionsToken), &environmentpb.GetEnvironmentRequest{Target: target})
+		if err != nil || got.GetTarget().GetName() != target.Name || got.ExecutionAccount != nil {
+			t.Fatalf("reader get = %v, %v", got, err)
+		}
+		if target.Name == "deleting" && (got.ResumeEligibility != nil || got.ResumeToken != "" || got.Resume != environmentpb.ResumeState_RESUME_STATE_NOT_AVAILABLE) {
+			t.Fatalf("deleting environment advertises resume: %v", got)
+		}
 	}
 }
 
@@ -639,7 +809,8 @@ func TestDelegatedActorDoesNotLendInventoryReaderGrant(t *testing.T) {
 	actor := auth.Account{Namespace: discoveryNamespace, Name: "actions"}
 	other := sandboxObject("other-uid")
 	other.Name = "other"
-	service, err := New(discoveryNamespace, readerWithObjects(t, sandboxObject(sandboxUID), executionAccountObject(sandboxUID), other), runtimeconfig.Catalog{}, nil, map[auth.Account]struct{}{actor: {}})
+	objects := readerWithObjects(t, sandboxObject(sandboxUID), executionAccountObject(sandboxUID), other)
+	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), nil, map[auth.Account]struct{}{actor: {}})
 	if err != nil {
 		t.Fatal(err)
 	}

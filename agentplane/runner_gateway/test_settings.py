@@ -22,6 +22,7 @@ def _settings(runner_security: object, *, kubernetes_client_qps: float = 0) -> S
                 "gateway_audience": "test-gateway",
                 "dispatcher_callers": {"test-app/test-dispatcher"},
                 "gateway_callers": {"test-app/test-gateway"},
+                "operator_callers": {"test-app/test-dispatcher"},
                 "runner_security": runner_security,
                 "kubernetes_client_qps": kubernetes_client_qps,
             }
@@ -58,6 +59,15 @@ def test_gateway_accepts_kubernetes_client_qps_modes(qps: float) -> None:
 def test_gateway_rejects_invalid_kubernetes_client_qps(qps: float) -> None:
     with pytest.raises(ValidationError):
         _settings({"mode": "insecure"}, kubernetes_client_qps=qps)
+
+
+def test_operator_callers_are_an_optional_subset_of_dispatcher_callers() -> None:
+    settings = _settings({"mode": "insecure"})
+    assert settings.operator_callers == {"test-app/test-dispatcher"}
+    source = settings.model_dump()
+    source["operator_callers"] = {"test-app/other"}
+    with pytest.raises(ValidationError, match="operator_callers must be a subset"):
+        Settings.model_validate(source)
 
 
 if __name__ == "__main__":

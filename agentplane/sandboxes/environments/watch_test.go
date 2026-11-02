@@ -12,6 +12,7 @@ import (
 
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -114,7 +115,11 @@ func newWatchFixture(t *testing.T) watchFixture {
 	if _, err := watchAPI.ServiceAccount(ctx, readerAccount); err != nil {
 		t.Fatal(err)
 	}
-	service, err := New(namespace, observedObjects, runtimeconfig.Catalog{}, nil, map[auth.Account]struct{}{readerAccount: {}})
+	manager, err := lifecycle.NewManager(lifecycle.Options{Namespace: namespace, Objects: observedObjects, WakeBudget: unusedWakeBudget{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(namespace, observedObjects, runtimeconfig.Catalog{}, manager, nil, map[auth.Account]struct{}{readerAccount: {}})
 	if err != nil {
 		t.Fatal(err)
 	}

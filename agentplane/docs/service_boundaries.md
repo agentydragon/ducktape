@@ -94,9 +94,11 @@ remain HTTP at their owning components. They are protocol endpoints, not alterna
   state volumes and controller-owned grants. It owns `Sandbox.status`, including quiescing facts,
   and asks the Runner Gateway to seal Sessions before stopping or deleting a runner.
 - **Runner Gateway:** runner control stream, verified destination bindings, the per-Sandbox Runner
-  Proxy and read-only Sandbox inventory. It also hosts the `EnvironmentService` API in `sandboxes/environments`, which
-  returns existing-target facts only after exact ServiceAccount UID and Sandbox-owner checks. It does
-  not provision or grant target access. The Gateway does not own Session records or command admission.
+  Proxy and `EnvironmentService` RPCs. The service returns existing-target facts only after exact
+  ServiceAccount UID and Sandbox-owner checks, and delegates explicit resume to the lifecycle
+  manager. Automatic delivery remains on its catalog-backed wake path until a separate integration.
+  The service does not provision or grant target access. The Gateway does not own Session records
+  or command admission.
   The app and Dispatcher use the proxy for live Runner RPCs; the Dispatcher owns sender-facing durable
   command admission and delivery state. The retired `sandbox_commands` database resource is absent
   from current manifests.

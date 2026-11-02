@@ -28,6 +28,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/environments"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/util/netlistener"
@@ -93,6 +94,22 @@ func accountNamespaces(accounts []auth.Account, extra *auth.Account, additional 
 		result = append(result, name)
 	}
 	return result
+}
+
+type lifecycleWakeBudget struct {
+	store *dispatcher.Store
+}
+
+func (b lifecycleWakeBudget) ReserveWakeAttempt(
+	ctx context.Context,
+	caller lifecycle.ServiceAccount,
+	sandboxUID string,
+	generation int64,
+) (time.Duration, error) {
+	return b.store.ReserveWakeAttempt(ctx, dispatcher.ServiceAccountIdentity{
+		Account: dispatcher.Account{Namespace: caller.Namespace, Name: caller.Name},
+		UID:     caller.UID,
+	}, sandboxUID, generation)
 }
 
 func waitForListener(ctx context.Context, hub *dispatcher.WatchHub, failed <-chan error) error {
@@ -221,11 +238,21 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	}
 	defer db.Close()
 	store := dispatcher.NewStore(db, c.QueueCap)
+	lifecycleManager, err := lifecycle.NewManager(lifecycle.Options{
+		Namespace: c.Namespace, Objects: objects, WakeBudget: lifecycleWakeBudget{store: store},
+		WakeCallers: c.WakeCallers, OperatorCallers: c.OperatorCallers,
+	})
+	if err != nil {
+		return err
+	}
 	catalog, err := dispatcher.NewKubernetesSandboxes(inventory, objects, c.Namespace)
 	if err != nil {
 		return err
 	}
-	environmentService, err := environments.New(c.Namespace, objects, c.RuntimeCatalog, accountSet(c.WakeCallers), accountSet(c.EnvironmentReaders))
+	environmentService, err := environments.New(
+		c.Namespace, objects, c.RuntimeCatalog, lifecycleManager,
+		accountSet(c.WakeCallers), accountSet(c.EnvironmentReaders),
+	)
 	if err != nil {
 		return err
 	}

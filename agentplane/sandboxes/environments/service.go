@@ -1,5 +1,4 @@
-// Package environments exposes only existing managed Sandboxes whose live execution
-// ServiceAccount is the reviewed caller's exact account UID.
+// Package environments serves discovery and lifecycle operations for existing managed environments.
 package environments
 
 import (
@@ -9,8 +8,10 @@ import (
 	"slices"
 	"time"
 
+	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -24,7 +25,7 @@ import (
 
 const maxLimit = 100
 
-// Service serves the inventory of one namespace. The client is uncached so every page and exact
+// Service serves environment inventory and explicit lifecycle requests in one namespace. The client is uncached so every page and exact
 // lookup starts from a current API-server view; ExecutionAccount rereads each candidate's UID and
 // controller-owned account before it is returned.
 type Service struct {
@@ -34,6 +35,7 @@ type Service struct {
 	objects                client.WithWatch
 	sandboxes              *sandboxreader.Reader
 	runtime                runtimeconfig.Catalog
+	lifecycle              *lifecycle.Manager
 	wakeCallers            map[auth.Account]struct{}
 	readers                map[auth.Account]struct{}
 	collectionAuthInterval time.Duration
@@ -43,11 +45,12 @@ func New(
 	namespace string,
 	objects client.WithWatch,
 	runtime runtimeconfig.Catalog,
+	lifecycleManager *lifecycle.Manager,
 	wakeCallers map[auth.Account]struct{},
 	readers map[auth.Account]struct{},
 ) (*Service, error) {
-	if namespace == "" || objects == nil {
-		return nil, errors.New("Sandbox namespace and uncached Kubernetes watch client are required")
+	if namespace == "" || objects == nil || lifecycleManager == nil {
+		return nil, errors.New("Sandbox namespace, uncached Kubernetes watch client, and lifecycle manager are required")
 	}
 	sandboxes, err := sandboxreader.New(namespace, objects)
 	if err != nil {
@@ -57,7 +60,11 @@ func New(
 	for account := range wakeCallers {
 		wake[account] = struct{}{}
 	}
-	return &Service{namespace: namespace, objects: objects, sandboxes: sandboxes, runtime: runtime, wakeCallers: wake, readers: readers, collectionAuthInterval: auth.DefaultVerdictTTL}, nil
+	return &Service{
+		namespace: namespace, objects: objects, sandboxes: sandboxes, runtime: runtime,
+		lifecycle: lifecycleManager, wakeCallers: wake, readers: readers,
+		collectionAuthInterval: auth.DefaultVerdictTTL,
+	}, nil
 }
 
 // Methods admits direct TokenReview-verified ServiceAccounts in the configured Resolver namespaces.
@@ -70,7 +77,14 @@ func Methods(resolver *auth.Resolver) auth.Methods {
 		environmentpb.EnvironmentService_WatchEnvironments_FullMethodName: rule,
 		environmentpb.EnvironmentService_GetEnvironment_FullMethodName:    rule,
 		environmentpb.EnvironmentService_WatchEnvironment_FullMethodName:  rule,
+		environmentpb.EnvironmentService_ResumeEnvironment_FullMethodName: rule,
 	}
+}
+
+// ResumeEnvironment rechecks lifecycle authority and requests desired running state.
+// Acceptance does not imply readiness and never starts a Session or replays execution.
+func (s *Service) ResumeEnvironment(ctx context.Context, request *environmentpb.ResumeEnvironmentRequest) (*environmentpb.ResumeEnvironmentResponse, error) {
+	return s.lifecycle.ResumeEnvironment(ctx, request)
 }
 
 func caller(ctx context.Context) (auth.ServiceAccountPrincipal, error) {
@@ -129,7 +143,7 @@ func (s *Service) ListEnvironments(ctx context.Context, request *environmentpb.L
 		if status.Code(err) == codes.NotFound {
 			return response, nil
 		}
-		slog.ErrorContext(ctx, "Environment discovery Sandbox read failed", "error", err)
+		slog.ErrorContext(ctx, "Environment inventory Sandbox read failed", "error", err)
 		return nil, status.Error(codes.Unavailable, "Sandbox inventory is unavailable")
 	}
 	if deleting(view.Resource) {
@@ -137,11 +151,15 @@ func (s *Service) ListEnvironments(ctx context.Context, request *environmentpb.L
 	}
 	execution, found, err := s.sandboxes.ExecutionAccount(ctx, view.Identity)
 	if err != nil {
-		slog.ErrorContext(ctx, "Environment discovery execution account read failed", "error", err)
+		slog.ErrorContext(ctx, "Environment inventory execution account read failed", "error", err)
 		return nil, status.Error(codes.Unavailable, "Sandbox execution account is unavailable")
 	}
 	if found && callerMatches(identity, execution) {
-		response.Items = append(response.Items, s.describe(view.Resource, execution, identity))
+		descriptor, err := s.describe(ctx, view.Resource, execution, identity)
+		if err != nil {
+			return nil, err
+		}
+		response.Items = append(response.Items, descriptor)
 	}
 	return response, nil
 }
@@ -164,7 +182,10 @@ func (s *Service) listAll(ctx context.Context, request *environmentpb.ListEnviro
 		if err != nil {
 			return nil, status.Error(codes.Unavailable, "Sandbox execution account is unavailable")
 		}
-		descriptor := s.describe(object, execution, identity)
+		descriptor, err := s.describe(ctx, object, execution, identity)
+		if err != nil {
+			return nil, err
+		}
 		if !found {
 			descriptor.ExecutionAccount = nil
 		}
@@ -185,26 +206,38 @@ func (s *Service) GetEnvironment(ctx context.Context, request *environmentpb.Get
 	if target.GetNamespace() != s.namespace {
 		return nil, status.Error(codes.NotFound, "environment not found")
 	}
-	view, err := s.sandboxes.Get(ctx, target.GetName())
+	return s.getEnvironment(ctx, target.GetName(), target.GetUid(), identity)
+}
+
+func (s *Service) getEnvironment(
+	ctx context.Context,
+	name string,
+	uid string,
+	identity auth.ServiceAccountPrincipal,
+) (*environmentpb.EnvironmentDescriptor, error) {
+	view, err := s.sandboxes.Get(ctx, name)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return nil, status.Error(codes.NotFound, "environment not found")
 		}
-		slog.ErrorContext(ctx, "Environment discovery Sandbox read failed", "error", err)
+		slog.ErrorContext(ctx, "Environment inventory Sandbox read failed", "error", err)
 		return nil, status.Error(codes.Unavailable, "Sandbox inventory is unavailable")
 	}
-	if view.Identity.UID != target.GetUid() || (deleting(view.Resource) && !s.broadReader(ctx, identity)) {
+	if view.Identity.UID != uid || (deleting(view.Resource) && !s.broadReader(ctx, identity)) {
 		return nil, status.Error(codes.NotFound, "environment not found")
 	}
 	execution, found, err := s.sandboxes.ExecutionAccount(ctx, view.Identity)
 	if err != nil {
-		slog.ErrorContext(ctx, "Environment discovery execution account read failed", "error", err)
+		slog.ErrorContext(ctx, "Environment inventory execution account read failed", "error", err)
 		return nil, status.Error(codes.Unavailable, "Sandbox execution account is unavailable")
 	}
 	if !s.broadReader(ctx, identity) && (!found || !callerMatches(identity, execution)) {
 		return nil, status.Error(codes.NotFound, "environment not found")
 	}
-	descriptor := s.describe(view.Resource, execution, identity)
+	descriptor, err := s.describe(ctx, view.Resource, execution, identity)
+	if err != nil {
+		return nil, err
+	}
 	if !found {
 		descriptor.ExecutionAccount = nil
 	}
@@ -216,10 +249,11 @@ func deleting(object *api.Sandbox) bool {
 }
 
 func (s *Service) describe(
+	ctx context.Context,
 	object *api.Sandbox,
 	execution sandboxreader.ServiceAccountIdentity,
 	caller auth.ServiceAccountPrincipal,
-) *environmentpb.EnvironmentDescriptor {
+) (*environmentpb.EnvironmentDescriptor, error) {
 	condition := meta.FindStatusCondition(object.Status.Conditions, api.ConditionReady)
 	readiness := &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_NOT_READY}
 	if condition == nil {
@@ -239,12 +273,21 @@ func (s *Service) describe(
 		resume = environmentpb.ResumeState_RESUME_STATE_NOT_REQUIRED
 	case api.OperatingModeSuspended:
 		mode = environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED
-		_, callerCanWake := s.wakeCallers[auth.Account{Namespace: caller.Account.Namespace, Name: caller.Account.Name}]
+		resume = environmentpb.ResumeState_RESUME_STATE_NOT_AVAILABLE
+		_, callerCanWake := s.wakeCallers[caller.Account]
 		if object.Status.StopStage != api.StopStageQuiescing && object.Status.StopStage != api.StopStageDeleting &&
 			object.Spec.WakeOnSend && callerCanWake {
 			resume = environmentpb.ResumeState_RESUME_STATE_AVAILABLE
-		} else {
-			resume = environmentpb.ResumeState_RESUME_STATE_NOT_AVAILABLE
+		}
+	}
+	target := lifecycle.Target{Namespace: object.Namespace, Name: object.Name, UID: string(object.UID)}
+	var eligibility *environmentlifecyclepb.ResumeEligibility
+	generation := object.Spec.WakeGeneration
+	if !deleting(object) {
+		var err error
+		eligibility, generation, err = s.lifecycle.Eligibility(ctx, target)
+		if err != nil {
+			return nil, err
 		}
 	}
 	descriptor := &environmentpb.EnvironmentDescriptor{
@@ -262,13 +305,18 @@ func (s *Service) describe(
 		StopStage:                  string(object.Status.StopStage),
 		WakeOnSend:                 object.Spec.WakeOnSend,
 		Resume:                     resume,
+		ResumeEligibility:          eligibility,
+		WakeGeneration:             generation,
+	}
+	if eligibility.GetState() == environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_AVAILABLE {
+		descriptor.ResumeToken = lifecycle.NewResumeToken(target, generation)
 	}
 	if object.Status.Incarnation != nil {
 		descriptor.RuntimeIncarnationUid = object.Status.Incarnation.UID
 	}
 	template, known := s.runtime.Templates[object.Spec.Template]
 	if !known {
-		return descriptor
+		return descriptor, nil
 	}
 	if template.WorkspaceRoot == "" {
 		descriptor.Workspace.Availability = environmentpb.Availability_AVAILABILITY_ABSENT
@@ -285,7 +333,7 @@ func (s *Service) describe(
 	} else {
 		descriptor.ConfigurationsAvailability = environmentpb.Availability_AVAILABILITY_CONFIGURED
 	}
-	return descriptor
+	return descriptor, nil
 }
 
 func configuredChoices(catalog runtimeconfig.ModelCatalog) []*environmentpb.RuntimeConfiguration {
