@@ -1,6 +1,5 @@
-from google.rpc import status_pb2
-
 from devinfra.python.proto_integration import status_envelope_pb2
+from google.rpc import status_pb2
 
 
 def make_status(code: int, message: str) -> status_pb2.Status:
