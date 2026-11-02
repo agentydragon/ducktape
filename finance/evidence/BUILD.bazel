@@ -9,6 +9,7 @@ py_library(
     srcs = ["loading.py"],
     deps = [
         ":sources",
+        "//finance:calendar_months",
         "@pypi//polars",
     ],
 )
