@@ -115,7 +115,7 @@ func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamin
 		index(name, podName)
 		old := previous[name]
 		if old != nil && (item == nil || old.Uid != item.Uid) {
-			if err := sendCollection(ctx, stream, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_Removed{Removed: &environmentpb.EnvironmentRemoved{Namespace: old.Namespace, Name: old.Name, Uid: old.Uid}}}); err != nil {
+			if err := sendCollection(ctx, stream, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_Removed{Removed: &environmentpb.TargetHandle{Namespace: old.Namespace, Name: old.Name, Uid: old.Uid}}}); err != nil {
 				return err
 			}
 			delete(previous, name)

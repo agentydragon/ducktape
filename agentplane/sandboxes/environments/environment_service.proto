@@ -59,15 +59,9 @@ message WatchEnvironmentsResponse {
     SandboxChunk snapshot = 1;
     google.protobuf.Empty snapshot_complete = 2;
     agentplane.proto.Sandbox upsert = 3;
-    EnvironmentRemoved removed = 4;
+    // Deleted or no longer visible; the UID fences same-name replacement.
+    TargetHandle removed = 4;
   }
-}
-
-// A Sandbox was deleted or is no longer visible to this caller. UID fences same-name replacement.
-message EnvironmentRemoved {
-  string namespace = 1;
-  string name = 2;
-  string uid = 3;
 }
 
 message SandboxChunk {
