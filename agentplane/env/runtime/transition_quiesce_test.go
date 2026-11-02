@@ -39,7 +39,7 @@ func TestQuiesceStatusRetryRequiresExactCurrentHostGeneration(t *testing.T) {
 
 func TestQuiesceStatusBarrierRejectsStaleHostBinding(t *testing.T) {
 	proxy := modelConfigServer(t)
-	r := newLifecycleRunner(t, lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false"))
+	r := newLifecycleRuntime(t, lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false"))
 	r.mu.Lock()
 	host := r.host
 	binding := proto.Clone(r.intent.Binding).(*runtimepb.Binding)

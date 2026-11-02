@@ -55,7 +55,7 @@ func TestRuntimeCloseUncertainExecutionFenceRetainsOwner(t *testing.T) {
 	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
 		return execution, nil
 	}
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleRuntime(t, config)
 	r.mu.Lock()
 	owned := r.executionOwner.handle
 	r.mu.Unlock()
@@ -101,7 +101,7 @@ func TestRuntimeCloseRetainsOwnerAfterRejectedLiveExecutionStart(t *testing.T) {
 			config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
 				return first, nil
 			}
-			r := newLifecycleRunner(t, config)
+			r := newLifecycleRuntime(t, config)
 			current, found, err := cosiExecutionState(r)
 			if err != nil || !found || current.Phase != executionReady {
 				t.Fatalf("Execution before rejected start = %+v, found=%t, err=%v", current, found, err)
@@ -190,7 +190,7 @@ func TestRuntimeCloseJoinsInFlightAutomaticExecutionFence(t *testing.T) {
 	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
 		return execution, nil
 	}
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleRuntime(t, config)
 	defer func() {
 		select {
 		case <-execution.release:
@@ -249,7 +249,7 @@ func TestRuntimeCloseFailureRetainsOwnerAndDoesNotRetryHostStop(t *testing.T) {
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
 	config.expectCloseError = true
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleRuntime(t, config)
 	host := &failingCloseHostLifetime{hostLifetime: r.hostLifetime}
 	r.mu.Lock()
 	r.hostLifetime = host
@@ -340,7 +340,7 @@ func TestRuntimeCloseBeforeRunStartsAndJoinsLifecycleEngine(t *testing.T) {
 
 func TestEmbeddedHostAndRuntimeKeepDistinctDesiredResources(t *testing.T) {
 	proxy := modelConfigServer(t)
-	r := newLifecycleRunner(t, lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false"))
+	r := newLifecycleRuntime(t, lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false"))
 	runtimeDesired, runtimeFound, err := lifecycle.ReadEnvironmentDesired(context.Background(), r.lifecycleState)
 	if err != nil || !runtimeFound {
 		t.Fatalf("Runtime desired resource: found=%t err=%v", runtimeFound, err)
@@ -367,7 +367,7 @@ func TestRuntimeRetainsOwnerWhenJoinedHostCleanupFails(t *testing.T) {
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
 	config.expectCloseError = true
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleRuntime(t, config)
 	cleanupFailure := errors.New("injected Host owner release failure")
 	r.hostLifetime = failingHostCleanup{hostLifetime: r.hostLifetime, err: cleanupFailure}
 	t.Cleanup(func() { _ = r.owner.Close() })
@@ -533,7 +533,7 @@ func TestCloseCancelsBlockedAdoptionWithoutStartingSuccessor(t *testing.T) {
 			return nil
 		}}, nil
 	}
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleRuntime(t, config)
 	adoptionDone := make(chan error, 1)
 	go func() { adoptionDone <- r.adoptIncarnation(context.Background(), "successor") }()
 	select {
@@ -576,7 +576,7 @@ func TestEngineExitDuringCanceledExecutionStartJoinsTransitionAndRetainsOwner(t 
 		}
 		return start(ctx, config, uid)
 	}
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleRuntime(t, config)
 	adoptionDone := make(chan error, 1)
 	go func() { adoptionDone <- r.adoptIncarnation(context.Background(), "successor") }()
 	select {
@@ -608,7 +608,7 @@ func TestEngineExitDuringCanceledExecutionStartJoinsTransitionAndRetainsOwner(t 
 func TestFreshSessionAdmissionInvalidatesIdleToken(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	r := newLifecycleRunner(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	r := newLifecycleRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
 	before, err := r.facts()
 	if err != nil || before.GetIdleSince() == nil {
@@ -647,7 +647,7 @@ func TestEmbeddedHostLifecycleLossStillFencesExecution(t *testing.T) {
 		}
 		return handle, err
 	}
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleRuntime(t, config)
 	var execution *localExecutionHandle
 	select {
 	case execution = <-started:
@@ -671,7 +671,7 @@ func TestEmbeddedHostLifecycleLossStillFencesExecution(t *testing.T) {
 func TestRepeatedQuiesceKeepsCurrentLifecycleGeneration(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	r := newLifecycleRunner(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	r := newLifecycleRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
 	facts, err := r.facts()
 	if err != nil || facts.GetIdleSince() == nil {
@@ -722,7 +722,7 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, workspace, &bootstrapScript, "/bin/false")
 	config.StateDir = root
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleRuntime(t, config)
 	t.Cleanup(func() { _ = os.WriteFile(bootstrapRelease, nil, 0600); _ = os.WriteFile(setupRelease, nil, 0600) })
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
 	request := openLifecycleSession("session-1", filepath.Join(workspace, "project"))
@@ -760,7 +760,7 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 			t.Fatalf("effect %s=%q, %v", path, data, err)
 		}
 	}
-	restarted := newLifecycleRunner(t, config)
+	restarted := newLifecycleRuntime(t, config)
 	successor := startDirectExecutionTestClient(t, restarted, "test-incarnation")
 	if _, err := successor.runner.OpenSession(successor.callCtx, request); err != nil {
 		t.Fatal(err)

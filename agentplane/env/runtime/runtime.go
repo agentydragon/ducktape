@@ -82,7 +82,7 @@ type executionHandle interface {
 
 type hostLink struct {
 	bootID    string
-	client    *harnesshost.Runner
+	client    *harnesshost.Host
 	connected bool
 }
 

@@ -33,7 +33,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func closeRunnerForTest(t *testing.T, r *Runner) error {
+func closeHostForTest(t *testing.T, r *Host) error {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -48,7 +48,7 @@ func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 	}))
 	defer proxy.Close()
 	workspace := t.TempDir()
-	r := newLifecycleRunner(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	r := newLifecycleHost(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
 	request := openLifecycleSession("session-1", filepath.Join(workspace, "project"))
 	opened, err := r.OpenSession(hostContext(r, context.Background()), request)
 	if err != nil {
@@ -89,7 +89,7 @@ func TestOpenSessionRetryUsesPersistedSetupAfterSealPublicationFailure(t *testin
 		failure: failure,
 	}
 	resources.fail.Store(true)
-	r, err := newTestRunner(lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), resources)
+	r, err := newTestHost(lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), resources)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,8 +100,8 @@ func TestOpenSessionRetryUsesPersistedSetupAfterSealPublicationFailure(t *testin
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := closeRunnerForTest(t, r); err != nil {
-			t.Errorf("close test runner: %v", err)
+		if err := closeHostForTest(t, r); err != nil {
+			t.Errorf("close test host: %v", err)
 		}
 	})
 
@@ -209,7 +209,7 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleHost(t, config)
 	request := openLifecycleSession(sessionID, filepath.Join(workspace, "project"))
 	if _, err := r.OpenSession(hostContext(r, context.Background()), request); err != nil {
 		t.Fatalf("open recovered Session without resupplying setup source: %v", err)
@@ -218,8 +218,8 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 	if err != nil || !found || input.Setup != sessionpb.SetupState_SETUP_STATE_INTERRUPTED || !input.SetupRequested {
 		t.Fatalf("recovered setup input = %+v, found=%t, err=%v; want retained but interrupted", input, found, err)
 	}
-	if err := closeRunnerForTest(t, r); err != nil {
-		t.Fatalf("close recovered Runner: %v", err)
+	if err := closeHostForTest(t, r); err != nil {
+		t.Fatalf("close recovered Host: %v", err)
 	}
 	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("retained setup source replayed after restart: stat marker err=%v", err)
@@ -250,7 +250,7 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 func TestInvalidInputAndStaleTurnNeverAdmitCommands(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	r := newLifecycleRunner(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	r := newLifecycleHost(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
 	if _, err := r.OpenSession(hostContext(r, context.Background()), openLifecycleSession("bad/session", workspace)); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("invalid session ID error = %v, want InvalidArgument", err)
 	}
@@ -275,7 +275,7 @@ func TestInvalidInputAndStaleTurnNeverAdmitCommands(t *testing.T) {
 func TestStartupFailureSettlesAdmissionAndReturnsToIdle(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	r := newLifecycleRunner(t, lifecycleConfig(t, proxy.URL, workspace, nil, filepath.Join(t.TempDir(), "missing-harness")))
+	r := newLifecycleHost(t, lifecycleConfig(t, proxy.URL, workspace, nil, filepath.Join(t.TempDir(), "missing-harness")))
 	if _, err := r.OpenSession(hostContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +374,7 @@ func (s *initialOperationFailureState) Modify(ctx context.Context, value resourc
 	return s.State.Modify(ctx, value, update, opts...)
 }
 
-func failedInitialOperationRunner(t *testing.T, failTeardown bool) (*Runner, *initialOperationFailureState, string) {
+func failedInitialOperationHost(t *testing.T, failTeardown bool) (*Host, *initialOperationFailureState, string) {
 	t.Helper()
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
@@ -395,7 +395,7 @@ func failedInitialOperationRunner(t *testing.T, failTeardown bool) (*Runner, *in
 	}
 	store.failInitial.Store(true)
 	store.failTeardown.Store(failTeardown)
-	r, err := newTestRunner(lifecycleConfig(t, proxy.URL, workspace, nil, binary), store)
+	r, err := newTestHost(lifecycleConfig(t, proxy.URL, workspace, nil, binary), store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -431,7 +431,7 @@ func failedInitialOperationRunner(t *testing.T, failTeardown bool) (*Runner, *in
 	select {
 	case err := <-r.fatal:
 		if !strings.Contains(err.Error(), initialFailure.Error()) {
-			t.Fatalf("Runner failure = %v, want publication failure", err)
+			t.Fatalf("Host failure = %v, want publication failure", err)
 		}
 	case <-ctx.Done():
 		t.Fatal("initial operation publication failure was not reported")
@@ -440,7 +440,7 @@ func failedInitialOperationRunner(t *testing.T, failTeardown bool) (*Runner, *in
 }
 
 func TestCloseSettlesAfterInitialOperationPublicationFailure(t *testing.T) {
-	r, _, marker := failedInitialOperationRunner(t, false)
+	r, _, marker := failedInitialOperationHost(t, false)
 
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
@@ -456,7 +456,7 @@ func TestCloseSettlesAfterInitialOperationPublicationFailure(t *testing.T) {
 		select {
 		case <-closeDone:
 		case <-time.After(time.Second):
-			t.Fatal("Close did not return after Runner cancellation")
+			t.Fatal("Close did not return after Host cancellation")
 		}
 		t.Fatal("Close hung after initial operation publication failure")
 	}
@@ -466,7 +466,7 @@ func TestCloseSettlesAfterInitialOperationPublicationFailure(t *testing.T) {
 }
 
 func TestCloseReportsTeardownOperationPublicationFailureAndRetainsOwner(t *testing.T) {
-	r, store, marker := failedInitialOperationRunner(t, true)
+	r, store, marker := failedInitialOperationHost(t, true)
 	closeCtx, cancelClose := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancelClose()
 	closeDone := make(chan error, 1)
@@ -486,7 +486,7 @@ func TestCloseReportsTeardownOperationPublicationFailureAndRetainsOwner(t *testi
 		select {
 		case <-closeDone:
 		case <-time.After(time.Second):
-			t.Fatal("Close did not return after Runner cancellation")
+			t.Fatal("Close did not return after Host cancellation")
 		}
 		t.Fatal("Close hung after teardown operation publication failure")
 	}
@@ -496,7 +496,7 @@ func TestCloseReportsTeardownOperationPublicationFailureAndRetainsOwner(t *testi
 	otherOwner, err := retained.OpenOwner(filepath.Join(r.config.StateDir, "harness-host"))
 	if err == nil {
 		_ = otherOwner.Close()
-		t.Fatal("Runner released the state owner although shutdown cleanup failed")
+		t.Fatal("Host released the state owner although shutdown cleanup failed")
 	}
 }
 
@@ -525,7 +525,7 @@ func TestQuiesceDoesNotWaitForModelLookupOrCreateLateSession(t *testing.T) {
 	}))
 	t.Cleanup(proxy.Close)
 	workspace := t.TempDir()
-	r := newLifecycleRunner(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	r := newLifecycleHost(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
 	openStarted = true
 	go func() {
 		_, err := r.OpenSession(hostContext(r, context.Background()), openLifecycleSession("late-session", filepath.Join(workspace, "project")))
@@ -606,14 +606,14 @@ func modelConfigServer(t *testing.T) *httptest.Server {
 	return server
 }
 
-func newLifecycleRunner(t *testing.T, config Config) *Runner {
+func newLifecycleHost(t *testing.T, config Config) *Host {
 	t.Helper()
-	return newLifecycleRunnerWithState(t, config, nil)
+	return newLifecycleHostWithState(t, config, nil)
 }
 
-func newLifecycleRunnerWithState(t *testing.T, config Config, store state.State) *Runner {
+func newLifecycleHostWithState(t *testing.T, config Config, store state.State) *Host {
 	t.Helper()
-	r, err := newTestRunner(config, store)
+	r, err := newTestHost(config, store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -627,7 +627,7 @@ func newLifecycleRunnerWithState(t *testing.T, config Config, store state.State)
 	}
 	t.Cleanup(func() {
 		if err := r.Close(context.Background()); err != nil {
-			t.Errorf("close test runner: %v", err)
+			t.Errorf("close test host: %v", err)
 		}
 	})
 	return r
@@ -657,7 +657,7 @@ func TestScriptOutputFailureStopsProcessAndReturnsCause(t *testing.T) {
 func TestScriptRunPreservesEnvironmentStreamsAndExitStatus(t *testing.T) {
 	t.Setenv("SCRIPT_RUNNER_INHERITED", "before")
 	t.Setenv("SCRIPT_RUNNER_CONFIG", "ambient")
-	r, err := newTestRunner(Config{
+	r, err := newTestHost(Config{
 		StateDir:           t.TempDir(),
 		HarnessEnvironment: map[string]string{"SCRIPT_RUNNER_CONFIG": "configured"},
 	}, nil)
@@ -666,7 +666,7 @@ func TestScriptRunPreservesEnvironmentStreamsAndExitStatus(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		if err := r.Close(context.Background()); err != nil {
-			t.Errorf("close test runner: %v", err)
+			t.Errorf("close test host: %v", err)
 		}
 	})
 	t.Setenv("SCRIPT_RUNNER_INHERITED", "after")

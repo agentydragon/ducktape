@@ -54,7 +54,7 @@ func (h *localExecutionHandle) exitWithoutFence(code int) {
 
 func newExecutionRuntime(t *testing.T, url string, acquire func(context.Context) (string, error)) *Runtime {
 	t.Helper()
-	return newLifecycleRunner(t, executionRuntimeConfig(t, url, acquire))
+	return newLifecycleRuntime(t, executionRuntimeConfig(t, url, acquire))
 }
 
 func executionRuntimeConfig(t *testing.T, url string, acquire func(context.Context) (string, error)) runtimeTestConfig {

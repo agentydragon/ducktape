@@ -76,23 +76,23 @@ func (s *runnerAdmissionProbeState) Modify(ctx context.Context, target resource.
 	return s.State.Modify(ctx, target, update, options...)
 }
 
-func lifecycleTestSession(t *testing.T) (*Runner, *session.Session) {
+func lifecycleTestSession(t *testing.T) (*Host, *session.Session) {
 	t.Helper()
 	workspace := t.TempDir()
 	proxy := modelConfigServer(t)
-	r := newLifecycleRunner(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	r := newLifecycleHost(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
 	if _, err := r.OpenSession(hostContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	return r, r.sessions.Get("session-1")
 }
 
-func lifecycleTestBlockedSetup(t *testing.T) (*Runner, *session.Session, func()) {
+func lifecycleTestBlockedSetup(t *testing.T) (*Host, *session.Session, func()) {
 	t.Helper()
 	return lifecycleTestBlockedSetupWithState(t, nil)
 }
 
-func lifecycleTestBlockedSetupWithState(t *testing.T, store state.State) (*Runner, *session.Session, func()) {
+func lifecycleTestBlockedSetupWithState(t *testing.T, store state.State) (*Host, *session.Session, func()) {
 	t.Helper()
 	workspace := t.TempDir()
 	gate := filepath.Join(workspace, "setup-gate")
@@ -107,7 +107,7 @@ func lifecycleTestBlockedSetupWithState(t *testing.T, store state.State) (*Runne
 	}
 	t.Cleanup(func() { _ = pipe.Close() })
 	proxy := modelConfigServer(t)
-	r := newLifecycleRunnerWithState(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), store)
+	r := newLifecycleHostWithState(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), store)
 	var once sync.Once
 	release := func() {
 		once.Do(func() {
@@ -144,12 +144,12 @@ func lifecycleTestBlockedSetupWithState(t *testing.T, store state.State) (*Runne
 	}
 }
 
-func sessionStopping(r *Runner, s *session.Session) bool {
+func sessionStopping(r *Host, s *session.Session) bool {
 	current, found, err := session.ReadLifecycleStatus(r.ctx, r.lifecycle.state, s.ID())
 	return err == nil && found && current.Phase == session.Stopping
 }
 
-func waitLifecycle(t *testing.T, r *Runner, predicate func() bool, want string) {
+func waitLifecycle(t *testing.T, r *Host, predicate func() bool, want string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
@@ -179,7 +179,7 @@ func waitClose(t *testing.T, done <-chan error) error {
 	}
 }
 
-func runnerLifecycleSnapshot(t *testing.T, r *Runner) *sessionpb.EnvironmentRuntimeLifecycleStatus {
+func runnerLifecycleSnapshot(t *testing.T, r *Host) *sessionpb.EnvironmentRuntimeLifecycleStatus {
 	t.Helper()
 	response, err := r.GetStatus(context.Background(), &sessionpb.GetStatusRequest{})
 	if err != nil {
@@ -260,7 +260,7 @@ func holdJournalBatch(t *testing.T, ctx context.Context, s *session.Session) fun
 
 // Restore only after the failed handler has settled; production must never
 // recreate missing authoritative accounting as an idle (zero) count.
-func removeAdmissionState(t *testing.T, r *Runner) func() {
+func removeAdmissionState(t *testing.T, r *Host) func() {
 	t.Helper()
 	ptr := lifecycleResourceFor("runner", runnerInputSpec{}).Metadata()
 	r.mu.Lock()
@@ -280,7 +280,7 @@ func removeAdmissionState(t *testing.T, r *Runner) func() {
 }
 
 // The controller creates its output; COSI watches creation and retries version conflicts.
-func modifyLifecycleForTest[T lifecycleSpec[T]](ctx context.Context, r *Runner, id, owner string, modify func(*T)) error {
+func modifyLifecycleForTest[T lifecycleSpec[T]](ctx context.Context, r *Host, id, owner string, modify func(*T)) error {
 	var zero T
 	ptr := lifecycleResourceFor(id, zero).Metadata()
 	if _, err := safe.StateWatchFor[*typed.Resource[T, lifecycleExtension[T]]](ctx, r.lifecycle.state, ptr,
@@ -499,7 +499,7 @@ func TestClosePublicationFailureKeepsAdmissionClosed(t *testing.T) {
 	}
 	workspace := t.TempDir()
 	proxy := modelConfigServer(t)
-	r, err := newTestRunner(lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), store)
+	r, err := newTestHost(lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -507,14 +507,14 @@ func TestClosePublicationFailureKeepsAdmissionClosed(t *testing.T) {
 		store.failDesiredPublication.Store(false)
 		if r.closeDone == nil {
 			if err := r.Close(context.Background()); err != nil {
-				t.Errorf("close test Runner: %v", err)
+				t.Errorf("close test Host: %v", err)
 			}
 			return
 		}
 		<-r.closeDone
 		if r.closeErr != nil {
 			if err := r.finishClose(); err != nil {
-				t.Errorf("finish test Runner after injected failure: %v", err)
+				t.Errorf("finish test Host after injected failure: %v", err)
 			}
 		}
 	})
@@ -603,10 +603,10 @@ func TestAdmissionCompletionStateFailureIsReported(t *testing.T) {
 	select {
 	case err := <-r.fatal:
 		if !state.IsNotFoundError(err) {
-			t.Fatalf("Runner failure = %v, want missing admission state", err)
+			t.Fatalf("Host failure = %v, want missing admission state", err)
 		}
 	default:
-		t.Fatal("accounting completion failure did not reach Runner supervision")
+		t.Fatal("accounting completion failure did not reach Host supervision")
 	}
 	if facts, err := r.facts(); err == nil {
 		t.Fatalf("failed completion returned facts: %v", facts)
@@ -618,11 +618,11 @@ func TestCloseProgressesForEmptyRunner(t *testing.T) {
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
 	if err := waitClose(t, closeDone); err != nil {
-		t.Fatalf("Close empty Runner: %v", err)
+		t.Fatalf("Close empty Host: %v", err)
 	}
 	current, found, err := runnerlifecycle.ReadStatus(context.Background(), r.lifecycle.state)
 	if err != nil || !found || current.Stage != runnerlifecycle.Closed {
-		t.Fatalf("empty Runner runtime after Close = %+v, found=%v err=%v; want CLOSED", current, found, err)
+		t.Fatalf("empty Host runtime after Close = %+v, found=%v err=%v; want CLOSED", current, found, err)
 	}
 }
 
@@ -643,7 +643,7 @@ func TestJournalAndAcknowledgementChangesWakeObservers(t *testing.T) {
 	select {
 	case <-changes:
 	default:
-		t.Fatal("journal/acknowledgement changes did not wake Runner observers")
+		t.Fatal("journal/acknowledgement changes did not wake Host observers")
 	}
 }
 

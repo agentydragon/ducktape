@@ -23,7 +23,7 @@ type executionHealth struct {
 	mu       sync.Mutex
 	serving  bool
 	failure  error
-	runner   *Runner
+	host     *Host
 	t        *testing.T
 	revision uint64
 }
@@ -37,7 +37,7 @@ func (executionHealthEvent) resourceType() resource.Type {
 }
 func (v executionHealthEvent) DeepCopy() executionHealthEvent { return v }
 
-func (h *executionHealth) ConnectHost(ctx context.Context, _ *Runner) error { return ctx.Err() }
+func (h *executionHealth) ConnectHost(ctx context.Context, _ *Host) error { return ctx.Err() }
 func (h *executionHealth) WaitHostBootstrap(ctx context.Context, _ *runtimepb.Binding) error {
 	return ctx.Err()
 }
@@ -61,12 +61,12 @@ func (h *executionHealth) set(serving bool, err error) {
 	h.revision++
 	revision := h.revision
 	h.mu.Unlock()
-	if err := publishLifecycle(h.runner.lifecycle, "embedded-execution", executionHealthEvent{Revision: revision}); err != nil {
+	if err := publishLifecycle(h.host.lifecycle, "embedded-execution", executionHealthEvent{Revision: revision}); err != nil {
 		h.t.Fatalf("publish execution status: %v", err)
 	}
 }
 
-func codexHealthRunner(t *testing.T, timeout time.Duration) (*Runner, *executionHealth, string) {
+func codexHealthRunner(t *testing.T, timeout time.Duration) (*Host, *executionHealth, string) {
 	t.Helper()
 	root := t.TempDir()
 	health := &executionHealth{t: t}
@@ -75,8 +75,8 @@ func codexHealthRunner(t *testing.T, timeout time.Duration) (*Runner, *execution
 	config.Codex = &harness.LaunchConfig{Binary: codexAppServerTestBinary(t, marker), BaseURL: "https://codex.example.invalid/v1", Token: "test"}
 	config.ExecServerURL = "ws://127.0.0.1:4599"
 	config.CodexAppServerReadiness = codexappserver.Readiness{ExecServerDependencyTimeout: timeout}
-	runner := newLifecycleRunner(t, config)
-	health.runner = runner
+	runner := newLifecycleHost(t, config)
+	health.host = runner
 	runner.mu.Lock()
 	runner.runtimeBridge = health
 	runner.mu.Unlock()
@@ -166,7 +166,7 @@ func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
 	}
 }
 
-func forceStopTestRunner(t *testing.T, r *Runner) {
+func forceStopTestRunner(t *testing.T, r *Host) {
 	t.Helper()
 	select {
 	case <-r.lifecycle.done.Done():
@@ -176,11 +176,11 @@ func forceStopTestRunner(t *testing.T, r *Runner) {
 	}
 	r.lifecycle.workers.Wait()
 	if err := r.owner.Close(); err != nil {
-		t.Errorf("close test Runner state owner: %v", err)
+		t.Errorf("close test Host state owner: %v", err)
 	}
 }
 
-func codexAppServerRuntime(t *testing.T, r *Runner) codexappserver.Runtime {
+func codexAppServerRuntime(t *testing.T, r *Host) codexappserver.Runtime {
 	t.Helper()
 	current, _, err := codexappserver.ReadRuntime(r.ctx, r.lifecycle.state)
 	if err != nil {
@@ -189,7 +189,7 @@ func codexAppServerRuntime(t *testing.T, r *Runner) codexappserver.Runtime {
 	return current
 }
 
-func waitCodex(t *testing.T, r *Runner, predicate func(codexappserver.Runtime) bool, want string) codexappserver.Runtime {
+func waitCodex(t *testing.T, r *Host, predicate func(codexappserver.Runtime) bool, want string) codexappserver.Runtime {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
@@ -207,7 +207,7 @@ func waitCodex(t *testing.T, r *Runner, predicate func(codexappserver.Runtime) b
 	}
 }
 
-func codexAppServerDemand(t *testing.T, r *Runner) uint64 {
+func codexAppServerDemand(t *testing.T, r *Host) uint64 {
 	t.Helper()
 	input, found, err := codexappserver.ReadInput(r.ctx, r.lifecycle.state)
 	if err != nil {
@@ -219,7 +219,7 @@ func codexAppServerDemand(t *testing.T, r *Runner) uint64 {
 	return input.Demand
 }
 
-func waitCodexDemand(t *testing.T, r *Runner, want uint64) uint64 {
+func waitCodexDemand(t *testing.T, r *Host, want uint64) uint64 {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
@@ -237,7 +237,7 @@ func waitCodexDemand(t *testing.T, r *Runner, want uint64) uint64 {
 	}
 }
 
-func updateLifecycleValueForTest[T lifecycleSpec[T]](t *testing.T, r *Runner, id, owner string, spec T) {
+func updateLifecycleValueForTest[T lifecycleSpec[T]](t *testing.T, r *Host, id, owner string, spec T) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(r.ctx, lifecycleTestTimeout)
 	defer cancel()
@@ -246,7 +246,7 @@ func updateLifecycleValueForTest[T lifecycleSpec[T]](t *testing.T, r *Runner, id
 	}
 }
 
-func requestCodexAppServer(r *Runner) (uint64, error) {
+func requestCodexAppServer(r *Host) (uint64, error) {
 	var demand uint64
 	err := r.admitCodexRequest(r.ctx, func(ctx context.Context) error {
 		var err error

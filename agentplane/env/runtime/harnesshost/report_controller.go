@@ -11,7 +11,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type hostReportController struct{ runner *Runner }
+type hostReportController struct{ host *Host }
 
 func (*hostReportController) Name() string { return "harness-host-report" }
 func (*hostReportController) Inputs() []controller.Input {
@@ -27,13 +27,13 @@ func (*hostReportController) Outputs() []controller.Output {
 
 func (c *hostReportController) Run(ctx context.Context, engine controller.Runtime, _ *zap.Logger) error {
 	for {
-		changed := c.runner.changesSince()
-		intent, report, err := c.runner.reportSnapshot(ctx)
+		changed := c.host.changesSince()
+		intent, report, err := c.host.reportSnapshot(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
-			c.runner.fail(err)
+			c.host.fail(err)
 			return nil
 		}
 		if intent != nil && report != nil {
@@ -60,7 +60,7 @@ func (c *hostReportController) Run(ctx context.Context, engine controller.Runtim
 
 // Capture the complete intent on both sides of mutable inventory sampling.
 // In particular, an old same-generation report cannot be tagged with a new fence.
-func (r *Runner) reportSnapshot(ctx context.Context) (*runtimepb.LifecycleIntent, *runtimepb.HostReport, error) {
+func (r *Host) reportSnapshot(ctx context.Context) (*runtimepb.LifecycleIntent, *runtimepb.HostReport, error) {
 	r.mu.Lock()
 	var sampled *runtimepb.LifecycleIntent
 	if r.intent != nil {

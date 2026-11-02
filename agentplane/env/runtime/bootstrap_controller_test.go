@@ -49,7 +49,7 @@ func TestCanceledBootstrapWaiterDoesNotCancelWorkAndCloseWaits(t *testing.T) {
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, workspace, &script, "/bin/false")
 	config.StateDir = stateDir
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleRuntime(t, config)
 	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0o600) })
 
 	waitForFile(t, started)
@@ -106,7 +106,7 @@ func TestCanceledBootstrapWaiterDoesNotCancelWorkAndCloseWaits(t *testing.T) {
 		t.Fatalf("bootstrap effect after close = %q, %v; want one execution", data, err)
 	}
 
-	restarted := newLifecycleRunner(t, config)
+	restarted := newLifecycleRuntime(t, config)
 	ctx, cancel = context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
 	waitRuntime(t, restarted, func() bool { settled, err := restarted.bootstrapHost.Settled(ctx); return err == nil && settled }, "bootstrap settlement")
@@ -127,7 +127,7 @@ func TestRuntimeCloseEngineCancelJoinsBootstrapWaitAndRetainsOwner(t *testing.T)
 	config := lifecycleConfig(t, proxy.URL, t.TempDir(), &script, "/bin/false")
 	config.StateDir = stateDir
 	config.expectCloseError = true
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleRuntime(t, config)
 	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0o600) })
 	waitForFile(t, started)
 	closeDone := make(chan error, 1)
@@ -160,7 +160,7 @@ func TestBootstrapRuntimeFailureDoesNotLeaveLogDerivedBusyFact(t *testing.T) {
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, workspace, &script, "/bin/false")
 	config.StateDir = stateDir
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleRuntime(t, config)
 	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0o600) })
 	waitForFile(t, started)
 

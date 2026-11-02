@@ -21,12 +21,12 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func boundaryHost(t *testing.T) (*Runner, context.Context) {
+func boundaryHost(t *testing.T) (*Host, context.Context) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 	root := t.TempDir()
-	r, err := newTestRunner(Config{StateDir: root, Launch: configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{UID: "sandbox"}}}, nil)
+	r, err := newTestHost(Config{StateDir: root, Launch: configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{UID: "sandbox"}}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func boundaryHost(t *testing.T) (*Runner, context.Context) {
 	return r, ctx
 }
 
-func intentFor(r *Runner, generation uint64, mode runtimepb.LifecycleIntent_Mode) *runtimepb.LifecycleIntent {
+func intentFor(r *Host, generation uint64, mode runtimepb.LifecycleIntent_Mode) *runtimepb.LifecycleIntent {
 	intent := &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: r.bootID, Generation: generation}, SandboxUid: "sandbox", IncarnationUid: "incarnation", Mode: mode}
 	if mode == runtimepb.LifecycleIntent_QUIESCING || mode == runtimepb.LifecycleIntent_CLOSING {
 		intent.SealUid = intent.IncarnationUid
@@ -50,7 +50,7 @@ func bindingContext(ctx context.Context, binding *runtimepb.Binding) context.Con
 	return withBinding(ctx, binding)
 }
 
-func publishHostIntentStatus(ctx context.Context, r *Runner, intent *runtimepb.LifecycleIntent, applied bool) error {
+func publishHostIntentStatus(ctx context.Context, r *Host, intent *runtimepb.LifecycleIntent, applied bool) error {
 	value := runnerlifecycle.HostIntentStatus{Intent: runnerlifecycle.HostIntentFromProto(intent), Applied: applied}
 	return cosi.Publish(ctx, r.lifecycle.state, runnerlifecycle.HostIntentStatusResource(value), value, "harness-host-intent")
 }
@@ -215,7 +215,7 @@ type bootstrapBindingRecorder struct {
 	binding *runtimepb.Binding
 }
 
-func (c *bootstrapBindingRecorder) ConnectHost(ctx context.Context, _ *Runner) error {
+func (c *bootstrapBindingRecorder) ConnectHost(ctx context.Context, _ *Host) error {
 	return ctx.Err()
 }
 

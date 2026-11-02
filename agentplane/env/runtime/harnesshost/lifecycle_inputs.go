@@ -30,7 +30,7 @@ func (l *lifecycle) publishAck(id string, ack retained.Acknowledgement) error {
 
 // Host publishers serialize compound snapshots; COSI handles conflicts and no-op updates.
 func publishLifecycle[T lifecycleSpec[T]](l *lifecycle, id string, value T) error {
-	return cosi.Publish(l.runner.ctx, l.state, lifecycleResourceFor(id, value), value, "runner-host")
+	return cosi.Publish(l.host.ctx, l.state, lifecycleResourceFor(id, value), value, "runner-host")
 }
 
 func (l *lifecycle) admissionCount(ctx context.Context) (int, error) {
@@ -41,9 +41,9 @@ func (l *lifecycle) admissionCount(ctx context.Context) (int, error) {
 	return input.TypedSpec().Admissions, nil
 }
 
-// Caller holds Runner.mu: accounting must precede durable admission and serialize with closing.
+// Caller holds Host.mu: accounting must precede durable admission and serialize with closing.
 func (l *lifecycle) changeAdmissionsLocked(delta int) error {
-	_, err := safe.StateUpdateWithConflicts(l.runner.ctx, l.state, lifecycleResourceFor("runner", runnerInputSpec{}).Metadata(), func(value *typed.Resource[runnerInputSpec, lifecycleExtension[runnerInputSpec]]) error {
+	_, err := safe.StateUpdateWithConflicts(l.host.ctx, l.state, lifecycleResourceFor("runner", runnerInputSpec{}).Metadata(), func(value *typed.Resource[runnerInputSpec, lifecycleExtension[runnerInputSpec]]) error {
 		input := value.TypedSpec()
 		if input.Admissions+delta < 0 {
 			return errors.New("runner admission count would become negative")

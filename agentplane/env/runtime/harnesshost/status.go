@@ -20,7 +20,7 @@ const (
 	autosuspendExecution = "ExecutorRelay"
 )
 
-func (r *Runner) ListSessions(ctx context.Context, _ *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
+func (r *Host) ListSessions(ctx context.Context, _ *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
 	if desiredState := r.lifecycle.desiredState(); desiredState.Mode != runnerlifecycle.Running {
 		minimum := runnerlifecycle.Flushing
 		if desiredState.Mode == runnerlifecycle.Closing {
@@ -38,7 +38,7 @@ func (r *Runner) ListSessions(ctx context.Context, _ *sessionpb.ListSessionsRequ
 	return result, nil
 }
 
-func (r *Runner) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
+func (r *Host) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	result := &sessionpb.EnvironmentRuntimeStatus{EnvironmentRuntimeBootId: r.bootID}
 	for _, s := range r.sessions.Inventory() {
 		row, process := s.Status()
@@ -163,11 +163,11 @@ func runnerLifecycleBlocker(blocker runnerlifecycle.Blocker) *sessionpb.Environm
 	}
 }
 
-func (r *Runner) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, error) {
+func (r *Host) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, error) {
 	return r.factsWithContext(r.ctx)
 }
 
-func (r *Runner) factsWithContext(ctx context.Context) (*environmentruntimestatepb.EnvironmentRuntimeFacts, error) {
+func (r *Host) factsWithContext(ctx context.Context) (*environmentruntimestatepb.EnvironmentRuntimeFacts, error) {
 	sessions := r.sessions.Inventory()
 	var blockers []*sandboxpb.AutosuspendBlocker
 	setup := false

@@ -168,9 +168,9 @@ func TestIngressSupervisorPublishesSealedAcknowledgementToQuiesce(t *testing.T) 
 	}
 }
 
-func newBareRunner(t *testing.T) *Runner {
+func newBareRunner(t *testing.T) *Host {
 	t.Helper()
-	runner, err := newTestRunner(Config{StateDir: t.TempDir()}, nil)
+	runner, err := newTestHost(Config{StateDir: t.TempDir()}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func newBareRunner(t *testing.T) *Runner {
 	}
 	t.Cleanup(func() {
 		if err := runner.Close(context.Background()); err != nil {
-			t.Errorf("close test runner: %v", err)
+			t.Errorf("close test host: %v", err)
 		}
 	})
 	return runner

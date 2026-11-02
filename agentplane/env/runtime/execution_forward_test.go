@@ -264,7 +264,7 @@ func TestDirectUnaryExecutionCallHoldsAdmissionUntilCompletion(t *testing.T) {
 	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
 		return &executionServiceHandle{executor: executor, fence: func(context.Context) error { return nil }}, nil
 	}
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleRuntime(t, config)
 	client := startDirectExecutionTestClient(t, r, "incarnation-1")
 	completed := make(chan error, 1)
 	go func() {
@@ -366,7 +366,7 @@ func TestDirectExecutionAdmissionClosesOnBackendLossBeforeControllerEvent(t *tes
 			fence: func(context.Context) error { return nil },
 		}, nil
 	}
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleRuntime(t, config)
 	client := startDirectExecutionTestClient(t, r, "incarnation-1")
 	loseBackend()
 	_, err := client.executor.StartProcess(client.callCtx, &executorpb.StartProcessRequest{Scope: client.scope("lost-backend-session")})

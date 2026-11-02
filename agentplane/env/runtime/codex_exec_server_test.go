@@ -92,7 +92,7 @@ func TestIncarnationReplacementFencesExecutionBeforeStartingSuccessor(t *testing
 			return nil
 		}}, nil
 	}
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleRuntime(t, config)
 	r.mu.Lock()
 	priorBinding := proto.Clone(r.intent.Binding).(*runtimepb.Binding)
 	r.mu.Unlock()
@@ -161,7 +161,7 @@ func TestCanceledAdoptionReconcilesExactDrainBeforeSuccessor(t *testing.T) {
 			return nil
 		}}, nil
 	}
-	r := newLifecycleRunner(t, config)
+	r := newLifecycleRuntime(t, config)
 	epoch, cancelEpoch := context.WithCancel(context.Background())
 	firstDone := make(chan error, 1)
 	go func() { firstDone <- r.adoptIncarnation(epoch, "successor") }()

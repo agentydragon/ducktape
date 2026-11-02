@@ -124,7 +124,7 @@ func (r *Runtime) startHost(ctx context.Context) error {
 // runs in the same management process. Its context is independent of the
 // Runtime Run caller, so a signal cannot bypass the coordinated drain.
 type embeddedHostLifetime struct {
-	host   *harnesshost.Runner
+	host   *harnesshost.Host
 	cancel context.CancelFunc
 	done   chan struct{}
 	err    error
