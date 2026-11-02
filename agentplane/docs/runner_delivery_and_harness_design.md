@@ -245,7 +245,7 @@ Dispatcher PostgreSQL alone does not remove CNPG. Current manifests declare the 
 `app`, `sandbox_service`, `actions`, `egress`, `notifications` and `session_dispatcher`; the retired
 `sandbox_commands` database is not part of the current manifests. The Indexing service also has a
 separate PostgreSQL dependency. See the
-[service database inventory](../README.md#system-overview).
+[service database inventory](system_overview.md#database-inventory).
 
 The decision should recommend one of: retain the separate queue; change its boundary/placement while
 preserving its contract; or replace it with a specifically defined direct-admission contract. State

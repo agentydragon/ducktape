@@ -44,8 +44,8 @@ separate and reuse shared machinery instead of inventing forwarded-identity head
 ## System overview diagram
 
 A PR that adds, removes, splits or renames a service or Deployment, or changes traffic between them
-(caller/callee, protocol, an edge going live), updates the [README system overview](README.md#system-overview)
-and [focused diagrams](docs/system_overview.md) in the same PR. Draw boundaries and traffic, not a
+(caller/callee, protocol, an edge going live), updates the [system overview and focused diagrams](docs/system_overview.md#system-overview)
+in the same PR. Draw boundaries and traffic, not a
 deployment or replica snapshot; dash runner-initiated platform routes.
 
 ## Deployed state is disposable
