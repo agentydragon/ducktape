@@ -54,3 +54,20 @@ disables memo reuse for tainted functions as required by its new admission.
 The existing memo callers for other functions need an audit of each reachable
 heap/descriptor/native invalidation against the signature; do not assume that
 the binding-prefix revision covers every state mutation.
+
+## F37: ordered execution can invalidate a diagnostic fixture's control flow
+
+Normal hosted CI at `8635a05019d5b1d96a977c6f2df749a3df39d216` compiled and
+passed 227 of 228 selected targets. BuildBuddy
+`57bc8c12-fff8-571d-997e-8bd5065cd118` reports the sole failure in
+`small_callback_pool_formals_keep_callbacks_and_unknown_values`. Its second
+fixture calls `captured()` before `candidate()`. The captured reader accesses
+`later` before its `const` initialization, so the exact closure call throws
+and ordered execution correctly stops before the candidate invocation.
+
+The existing fixture now calls `candidate()` first, preserving every assertion
+about its unknown-target diagnostic and the reader's early dependency. The
+source-summary path's flattening had concealed the old fixture's unreachable
+assertion. No new test was added or run locally; normal hosted CI checks the
+adjusted fixture. When an ordered transfer removes a diagnostic, inspect
+earlier abrupt paths before restoring the old loss or weakening the assertion.

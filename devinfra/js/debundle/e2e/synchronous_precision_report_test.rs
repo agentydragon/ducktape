@@ -548,7 +548,7 @@ fn large_callback_pool_reports_the_actual_pool_bound() {
 fn small_callback_pool_formals_keep_callbacks_and_unknown_values() {
     for relay in [
         "function relay(candidate) { candidate(); }",
-        "function factory(captured) { return function relay(candidate) { captured(); candidate(); }; }\nconst relay = factory(read);",
+        "function factory(captured) { return function relay(candidate) { candidate(); captured(); }; }\nconst relay = factory(read);",
     ] {
         let source = format!(
             "function read() {{ return later; }}\n{relay}\nconst result = JSON.stringify([relay, read]);\nconst later = 7;\nconsole.log(result);\n"
