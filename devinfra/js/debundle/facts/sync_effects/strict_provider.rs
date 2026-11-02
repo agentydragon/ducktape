@@ -71,6 +71,18 @@ impl LocalContext for ProviderContext<'_> {
     fn heap(&mut self) -> LiteralHeap<'_> {
         AllocationContext::heap(self)
     }
+    fn unproved_field_read(
+        &mut self,
+        _frame: &mut LocalFrame,
+        _receiver: &Id,
+        _receivers: &Values,
+        _property: &str,
+        _span: Span,
+    ) -> Option<AllocationValue> {
+        // Symbolic inputs and captures prove no descriptor or getter behavior.
+        // Only the shared fresh own-data transfer can certify a field read.
+        None
+    }
     fn unproved_field_write(
         &mut self,
         _frame: &mut LocalFrame,

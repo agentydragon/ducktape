@@ -1057,6 +1057,29 @@ struct Call {
     has_spread: bool,
 }
 
+impl Call {
+    fn member_read(
+        owner: SourceUnitOrdinal,
+        caller: Option<u32>,
+        callee: ValueExpr,
+        span: Span,
+    ) -> Self {
+        Self {
+            kind: CallKind::LocalMemberRead,
+            callee,
+            args: Vec::new(),
+            span,
+            caller,
+            owner,
+            plain_object_sources: false,
+            no_sync_arguments: false,
+            no_reentry_candidate: false,
+            no_reentry_record_candidate: false,
+            has_spread: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct RetainedCallbackCall {
     namespace_member: Option<(Id, String)>,
@@ -11404,24 +11427,17 @@ impl Visit for ExecutionIndex {
         if !self.member_write_sites.contains(&member.span.into())
             && !self.direct_call_members.contains(&member.span.into())
         {
-            self.record_call(Call {
-                kind: CallKind::LocalMemberRead,
-                callee: ValueExpr::Member(
+            self.record_call(Call::member_read(
+                self.owner,
+                self.current,
+                ValueExpr::Member(
                     Arc::new(ValueExpr::from_expr(&member.obj)),
                     static_prop(&member.prop),
                     MemberKey::of(&member.prop),
                     member.span.into(),
                 ),
-                args: Vec::new(),
-                span: member.span,
-                caller: self.current,
-                owner: self.owner,
-                plain_object_sources: false,
-                no_sync_arguments: false,
-                no_reentry_candidate: false,
-                no_reentry_record_candidate: false,
-                has_spread: false,
-            });
+                member.span,
+            ));
         }
     }
 
