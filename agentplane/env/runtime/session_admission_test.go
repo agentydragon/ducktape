@@ -37,10 +37,7 @@ func closeRuntimeForTest(t *testing.T, r *Runtime) error {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	closed := make(chan error, 1)
-	go func() { closed <- r.Close(ctx) }()
-	acknowledgeSealedSessionsForClose(t, r)
-	return <-closed
+	return r.Close(ctx)
 }
 
 func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {

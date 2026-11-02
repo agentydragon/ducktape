@@ -7,7 +7,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
@@ -42,17 +41,6 @@ func newSessionTestRuntimeWithState(t *testing.T, config runtimeTestConfig, reso
 	// which observes and acknowledges seals published later by Runtime.Close.
 	t.Cleanup(func() { close(cleanupDelivery) })
 	return r
-}
-
-func acknowledgeSealedSessionsForClose(t *testing.T, r *Runtime) {
-	t.Helper()
-	for _, s := range r.sessions.Inventory() {
-		waitLifecycle(t, r, func() bool { return s.EventJournal().SealState() != nil }, "Close to publish the Session seal")
-		seal := s.EventJournal().SealState()
-		if err := r.store.WriteAcknowledgement(s.ID(), retained.Acknowledgement{Cursor: seal.Cursor, Sealed: true}); err != nil {
-			t.Fatalf("acknowledge published Session seal: %v", err)
-		}
-	}
 }
 
 func sessionCallContext(r *Runtime, ctx context.Context) context.Context {

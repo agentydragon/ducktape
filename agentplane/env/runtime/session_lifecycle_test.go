@@ -451,7 +451,6 @@ func TestCloseWaitsForAdmission(t *testing.T) {
 	if err := <-inputDone; status.Code(err) != codes.Aborted {
 		t.Fatalf("late input admission error = %v, want Aborted", err)
 	}
-	acknowledgeSealedSessionsForClose(t, r)
 	if err := waitClose(t, closeDone); err != nil {
 		t.Fatalf("Close after admission completion: %v", err)
 	}
@@ -553,7 +552,15 @@ func TestMissingAdmissionStateRejectsDurableWork(t *testing.T) {
 }
 
 func TestAdmissionCompletionStateFailureIsReported(t *testing.T) {
-	r, s := lifecycleTestSession(t)
+	workspace := t.TempDir()
+	proxy := modelConfigServer(t)
+	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
+	config.expectCloseError = true
+	r := newSessionTestRuntime(t, config)
+	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+		t.Fatal(err)
+	}
+	s := r.sessions.Get("session-1")
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
 	releaseBatch := holdJournalBatch(t, ctx, s)
