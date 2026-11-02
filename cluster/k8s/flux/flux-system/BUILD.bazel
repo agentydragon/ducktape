@@ -1,6 +1,5 @@
-filegroup(
-    name = "source_watcher_crd_bundle",
-    srcs = ["gotk-components.yaml"],
+exports_files(
+    ["gotk-components.yaml"],
     visibility = ["//cluster/cdk8s/providers/source_watcher:__pkg__"],
 )
 
