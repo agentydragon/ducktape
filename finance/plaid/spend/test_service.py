@@ -294,7 +294,7 @@ async def test_purchase_days_match_allowance_and_list_without_changing_statement
     }
     assert set(late_post_json["statement"]) == {"amount_minor_units", "reason"}
     assert late_post_json["allowance"]["in_scope"] is True
-    assert late_post_json["statement"] == {"amount_minor_units": None, "reason": StatementReason.UNAVAILABLE}
+    assert late_post_json["statement"] == {"amount_minor_units": 0, "reason": StatementReason.OUTSIDE_CYCLE}
     assert rolling.summary.net_allowance_spend_minor_units == 2_200
     assert len(rolling.rows) == 5
     assert min(row.transaction.date for row in rolling.rows) == activation - timedelta(days=1)
@@ -552,7 +552,10 @@ async def test_prior_purchases_are_queried_for_pace_but_not_balance(
     service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
     async with service.lifespan():
         allowance = (await service.read_view()).allowance
+        transactions = await service.read_transactions(period=PeriodId.ROLLING_30D)
     assert allowance is not None
+    assert transactions.rows
+    assert all(row.statement.amount_minor_units is None and row.statement.reason is None for row in transactions.rows)
     assert allowance.available_minor_units == 10_000
     observed = {report.period.id: report.observed_daily_minor_units for report in allowance.recorded_pace_periods}
     assert observed[PeriodId.ROLLING_7D] == 1_000
