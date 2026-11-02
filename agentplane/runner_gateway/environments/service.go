@@ -353,12 +353,12 @@ func (s *Service) describe(
 		slog.ErrorContext(ctx, "Environment inventory projection failed", "error", err)
 		return nil, status.Error(codes.Unavailable, "Sandbox inventory is unavailable")
 	}
-	resume := environmentpb.ResumeState_RESUME_STATE_UNSPECIFIED
+	automaticWake := environmentpb.AutomaticWakeState_AUTOMATIC_WAKE_STATE_UNSPECIFIED
 	switch object.Status.OperatingMode {
 	case api.OperatingModeRunning:
-		resume = environmentpb.ResumeState_RESUME_STATE_NOT_REQUIRED
+		automaticWake = environmentpb.AutomaticWakeState_AUTOMATIC_WAKE_STATE_NOT_REQUIRED
 	case api.OperatingModeSuspended:
-		resume = environmentpb.ResumeState_RESUME_STATE_NOT_AVAILABLE
+		automaticWake = environmentpb.AutomaticWakeState_AUTOMATIC_WAKE_STATE_NOT_AVAILABLE
 	}
 	target := lifecycle.Target{Namespace: object.Namespace, Name: object.Name, UID: string(object.UID)}
 	var eligibility *environmentlifecyclepb.ResumeEligibility
@@ -379,14 +379,14 @@ func (s *Service) describe(
 				return nil, status.Error(codes.Unavailable, "automatic wake eligibility is unavailable")
 			}
 			if wake.GetState() == environmentlifecyclepb.WakeState_WAKE_STATE_ELIGIBLE {
-				resume = environmentpb.ResumeState_RESUME_STATE_AVAILABLE
+				automaticWake = environmentpb.AutomaticWakeState_AUTOMATIC_WAKE_STATE_AVAILABLE
 			}
 		}
 	}
 	descriptor.ExecutionAccount = &environmentpb.AccountHandle{
 		Namespace: execution.Namespace, Name: execution.Name, Uid: execution.UID,
 	}
-	descriptor.Resume = resume
+	descriptor.AutomaticWake = automaticWake
 	descriptor.ResumeEligibility = eligibility
 	descriptor.WakeGeneration = generation
 	if eligibility.GetState() == environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_AVAILABLE {

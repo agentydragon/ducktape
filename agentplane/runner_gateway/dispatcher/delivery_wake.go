@@ -137,7 +137,7 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 	}
 
 	if work.wakeAssessment.GetState() == environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN &&
-		(work.wakeAssessment.TargetGeneration == nil || work.wakeAssessment.GetTargetGeneration() == uint64(sandbox.WakeGeneration)) {
+		(work.wakeAssessment.TargetGeneration == nil || work.wakeAssessment.GetTargetGeneration() == sandbox.WakeGeneration) {
 		// An uncertain patch reply is durable. Reassess only after the observed Sandbox generation
 		// changes; this leaves the same uncertain generation untouched for explicit reconciliation.
 		if err := w.recordAssessment(ctx, work, owner, blocker, work.wakeAssessment); err != nil {
@@ -294,7 +294,7 @@ func assessmentFor(
 ) *environmentpb.WakeAssessment {
 	assessment := &environmentpb.WakeAssessment{
 		State: state, Reason: reason, ObservedAt: timestamppb.Now(),
-		TargetGeneration: proto.Uint64(uint64(sandbox.WakeGeneration)), Error: errStatus,
+		TargetGeneration: proto.Int64(sandbox.WakeGeneration), Error: errStatus,
 	}
 	if previous != nil {
 		old := proto.Clone(previous).(*environmentpb.WakeAssessment)
@@ -319,7 +319,7 @@ func completeAssessmentObservation(sandbox SandboxSnapshot, assessment *environm
 		result.ObservedAt = timestamppb.Now()
 	}
 	if result.TargetGeneration == nil {
-		result.TargetGeneration = proto.Uint64(uint64(sandbox.WakeGeneration))
+		result.TargetGeneration = proto.Int64(sandbox.WakeGeneration)
 	}
 	return result
 }

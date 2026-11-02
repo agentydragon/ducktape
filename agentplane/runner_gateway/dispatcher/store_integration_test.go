@@ -221,7 +221,7 @@ func TestWakeAssessmentRoundTripsForDispatchAndOpening(t *testing.T) {
 	assessment := &environmentpb.WakeAssessment{
 		State:      environmentpb.WakeState_WAKE_STATE_DENIED,
 		Reason:     environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED,
-		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(7),
+		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(7),
 	}
 	if err := store.SetDeliveryAssessment(ctx, dispatch.CommandID, *owner, false, blocker, assessment); err != nil {
 		t.Fatal(err)
@@ -283,7 +283,7 @@ func TestExpiredWakeFailureStoresTypedAssessmentWithTerminalDelivery(t *testing.
 	assessment := &environmentpb.WakeAssessment{
 		State:      environmentpb.WakeState_WAKE_STATE_FAILED,
 		Reason:     environmentpb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE,
-		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(5),
+		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(5),
 		Error: status.New(codes.DeadlineExceeded, "Sandbox did not become Ready before the wake deadline").Proto(),
 	}
 	failed, _, remaining, err := store.FailExpiredWake(ctx, dispatch.CommandID, *owner, false,
@@ -952,7 +952,7 @@ func TestWatchDispatchesPublishesWakeOnlyReceiptChanges(t *testing.T) {
 	assessment := &environmentpb.WakeAssessment{
 		State:      environmentpb.WakeState_WAKE_STATE_DENIED,
 		Reason:     environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED,
-		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(11),
+		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(11),
 	}
 	if err := store.SetDeliveryAssessment(base, dispatch.CommandID, *owner, false, blocker, assessment); err != nil {
 		t.Fatal(err)
@@ -1094,7 +1094,7 @@ type testWake struct{}
 func (testWake) RequestWake(_ context.Context, _ lifecycle.Target, _ lifecycle.ServiceAccount) (*environmentpb.WakeAssessment, error) {
 	return &environmentpb.WakeAssessment{
 		State:      environmentpb.WakeState_WAKE_STATE_NOT_NEEDED,
-		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(0),
+		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(0),
 	}, nil
 }
 
@@ -1107,7 +1107,7 @@ func (w *rateLimitedWake) RequestWake(_ context.Context, _ lifecycle.Target, _ l
 	return &environmentpb.WakeAssessment{
 		State:      environmentpb.WakeState_WAKE_STATE_RATE_LIMITED,
 		Reason:     environmentpb.WakeReason_WAKE_REASON_WAKE_BUDGET_EXHAUSTED,
-		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(1),
+		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(1),
 		RetryAt: timestamppb.New(time.Now().Add(time.Minute)),
 	}, nil
 }
@@ -1448,7 +1448,7 @@ func TestWorkerKeepsWakeBlockedWorkQueuedAndObservable(t *testing.T) {
 			if tc.assessment != nil {
 				assessment := proto.Clone(tc.assessment).(*environmentpb.WakeAssessment)
 				assessment.ObservedAt = timestamppb.Now()
-				assessment.TargetGeneration = proto.Uint64(7)
+				assessment.TargetGeneration = proto.Int64(7)
 				wake = &scriptedWake{assessments: []*environmentpb.WakeAssessment{assessment}}
 			}
 			fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
@@ -1494,7 +1494,7 @@ func TestWorkerPersistsRateLimitForDispatchAndOpening(t *testing.T) {
 			assessment := &environmentpb.WakeAssessment{
 				State:      environmentpb.WakeState_WAKE_STATE_RATE_LIMITED,
 				Reason:     environmentpb.WakeReason_WAKE_REASON_WAKE_BUDGET_EXHAUSTED,
-				ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(7),
+				ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(7),
 				RetryAt: timestamppb.New(time.Now().Add(time.Minute)),
 			}
 			wake := &scriptedWake{assessments: []*environmentpb.WakeAssessment{assessment}}
@@ -1552,12 +1552,12 @@ func TestWorkerPersistsRateLimitForDispatchAndOpening(t *testing.T) {
 func TestWorkerRetriesAuthorizedWakeAfterDenialUsingEffectiveCaller(t *testing.T) {
 	requested := &environmentpb.WakeAssessment{
 		State:      environmentpb.WakeState_WAKE_STATE_REQUESTED,
-		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(7),
+		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(7),
 	}
 	wake := &scriptedWake{assessments: []*environmentpb.WakeAssessment{
 		{
 			State: environmentpb.WakeState_WAKE_STATE_DENIED, Reason: environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED,
-			ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(7),
+			ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(7),
 		},
 		requested,
 	}}
@@ -1601,7 +1601,7 @@ func TestWorkerDoesNotRepeatUnknownWakeInSameGeneration(t *testing.T) {
 	wake := &scriptedWake{assessments: []*environmentpb.WakeAssessment{
 		{
 			State: environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN, Reason: environmentpb.WakeReason_WAKE_REASON_OUTCOME_UNKNOWN,
-			ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(7),
+			ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(7),
 			Error: status.New(codes.Unavailable, "patch reply was lost").Proto(),
 		},
 		{State: environmentpb.WakeState_WAKE_STATE_DENIED, Reason: environmentpb.WakeReason_WAKE_REASON_TARGET_CHANGED},
