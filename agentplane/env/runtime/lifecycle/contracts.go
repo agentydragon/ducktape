@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
@@ -93,10 +94,7 @@ func PublishEnvironmentDesired(ctx context.Context, writer state.State, value En
 	resource := typed.NewResource[EnvironmentDesired, environmentDesiredExtension](
 		resource.NewMetadata(Namespace, EnvironmentDesiredStateType, EnvironmentResourceID, resource.VersionUndefined), value,
 	)
-	return safe.StateModify(ctx, writer, resource, func(current *typed.Resource[EnvironmentDesired, environmentDesiredExtension]) error {
-		*current.TypedSpec() = value
-		return nil
-	}, state.WithUpdateOwner(EnvironmentOwner))
+	return cosi.Publish(ctx, writer, resource, value, EnvironmentOwner)
 }
 
 func (value Desired) DeepCopy() Desired { return value }
@@ -239,10 +237,7 @@ func PublishRuntimeTransitionRequest(ctx context.Context, writer state.State, va
 	resource := typed.NewResource[RuntimeTransitionRequest, runtimeTransitionRequestExtension](
 		resource.NewMetadata(Namespace, RuntimeTransitionRequestType, EnvironmentResourceID, resource.VersionUndefined), value,
 	)
-	return safe.StateModify(ctx, writer, resource, func(current *typed.Resource[RuntimeTransitionRequest, runtimeTransitionRequestExtension]) error {
-		*current.TypedSpec() = value
-		return nil
-	}, state.WithUpdateOwner(EnvironmentOwner))
+	return cosi.Publish(ctx, writer, resource, value, EnvironmentOwner)
 }
 
 func ReadRuntimeTransitionStatus(ctx context.Context, reader controller.Reader) (RuntimeTransitionStatus, bool, error) {
@@ -361,10 +356,7 @@ func WatchStatus(ctx context.Context, reader state.State, condition func(Status)
 // this function owns only typed publication of the shared desired-state resource.
 func PublishDesired(ctx context.Context, writer state.State, value Desired) error {
 	resource := desiredResource(value)
-	return safe.StateModify(ctx, writer, resource, func(current *typed.Resource[Desired, desiredExtension]) error {
-		*current.TypedSpec() = value
-		return nil
-	}, state.WithUpdateOwner(HostOwner))
+	return cosi.Publish(ctx, writer, resource, value, HostOwner)
 }
 
 // WriteStatus is used only by the Harness Host aggregate controller, which exclusively owns this output.
