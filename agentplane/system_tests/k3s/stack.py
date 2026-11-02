@@ -820,6 +820,7 @@ def _baseline_evidence(
     }
 
 
+@tracer.start_as_current_span("system_test.stack.baseline.clean")
 def _baseline_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None:
     """Wait for fixture-owned resources to vanish, leaving only the infrastructure baseline."""
     namespaces = [doc["metadata"]["name"] for doc in fixture.objects if doc["kind"] == "Namespace"]
@@ -834,10 +835,17 @@ def _baseline_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None
         if item.get("spec", {}).get("claimRef", {}).get("namespace") in namespaces
     ]
     for namespace in namespaces:
-        k3s.kubectl("delete", "namespace", namespace, "--wait=true", "--timeout=60s")
+        with tracer.start_as_current_span(
+            "system_test.stack.namespace.delete", attributes={"k8s.namespace.name": namespace}
+        ):
+            k3s.kubectl("delete", "namespace", namespace, "--wait=true", "--timeout=60s")
     for name in owned_pvs:
-        k3s.kubectl("delete", "pv", name, "--ignore-not-found=true", "--wait=true", "--timeout=60s")
-    k3s.kubectl("delete", "namespace", "monitoring", "--ignore-not-found=true", "--wait=true", "--timeout=60s")
+        with tracer.start_as_current_span("system_test.stack.volume.delete", attributes={"k8s.pv.name": name}):
+            k3s.kubectl("delete", "pv", name, "--ignore-not-found=true", "--wait=true", "--timeout=60s")
+    with tracer.start_as_current_span(
+        "system_test.stack.namespace.delete", attributes={"k8s.namespace.name": "monitoring"}
+    ):
+        k3s.kubectl("delete", "namespace", "monitoring", "--ignore-not-found=true", "--wait=true", "--timeout=60s")
     root_certificate = json.loads(
         k3s.kubectl("get", "certificate", "test-runner-root", "-n", "cert-manager", "-o", "json")
     )
@@ -1146,13 +1154,19 @@ def running_stack(
         if persist_infrastructure:
             # Stop the provisioner, forwards, profilers and guest log capture first. Their checks
             # must pass before we can certify the baseline, while the API and retained node stay live.
-            cleanup.close()
-            _baseline_clean(k3s, fixture)
-            # Namespace deletion releases all VM users of the loop devices. Certify clean only
-            # after their owned mappings detach and the per-action backing files are removed.
-            block_cleanup.close()
-            baseline_marker["state"] = "clean"
-            _baseline_write_marker(baseline_marker)
-            persistence_evidence["workspace_loop_devices_released"] = len(raw_block.devices)
-            persistence_evidence["cleanup"] = "complete"
-            persistence_output.write_text(json.dumps(persistence_evidence))
+            with tracer.start_as_current_span("system_test.stack.cleanup"):
+                with tracer.start_as_current_span("system_test.stack.resources.close"):
+                    cleanup.close()
+                _baseline_clean(k3s, fixture)
+                # Namespace deletion releases all VM users of the loop devices. Certify clean only
+                # after their owned mappings detach and the per-action backing files are removed.
+                with tracer.start_as_current_span("system_test.stack.volumes.release"):
+                    block_cleanup.close()
+                with tracer.start_as_current_span("system_test.stack.baseline.certify"):
+                    baseline_marker["state"] = "clean"
+                    _baseline_write_marker(baseline_marker)
+                    persistence_evidence["workspace_loop_devices_released"] = len(raw_block.devices)
+                    persistence_evidence["cleanup"] = "complete"
+                    persistence_output.write_text(json.dumps(persistence_evidence))
+                with tracer.start_as_current_span("system_test.stack.traces.close"):
+                    trace_cleanup.close()
