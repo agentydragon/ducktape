@@ -50,7 +50,7 @@ from finance.augur.model.conditioning import ExogenousObservedPoint, Observation
 from finance.augur.model.evidence import EvidenceMetadata
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
 from finance.augur.model.float64 import LEVEL_DTYPE
-from finance.augur.model.path_models.scenarios import HistoricalSeries
+from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries, calendar_month_index
 from finance.augur.model.provenance import stable_identity_digest
 from finance.augur.model.schemas import FrozenModel
 from finance.augur.model.series import IssuerId, LevelSeriesKey, parse_level_series_key
@@ -94,20 +94,20 @@ _LOG_DIAG_PRIOR_STD = 2.0
 _OFFDIAG_PRIOR_STD = 0.1
 
 
-def _vecm_generative(log_levels: jnp.ndarray) -> None:
+def _vecm_generative(previous_log_levels: jnp.ndarray, observed_log_returns: jnp.ndarray) -> None:
     """VECM(k=1, r=1) joint distribution on Δr given x_{t-1}.
 
-    Inputs are the observed log-levels `(n_obs, n_factors)`. The function
-    declares sample sites for the model parameters with weak priors and an
-    obs site for Δr conditioned on the inferred parameters. Used for
-    fitting, scoring, and sampling — see module docstring.
+    Inputs are `(previous_log_levels, observed_log_returns)`, each with shape
+    `(n_transitions, n_factors)`. Callers select only real one-month transitions;
+    a row after a calendar gap is never paired with the prior row. The function
+    declares sample sites for model parameters and an obs site for Δr.
 
     The residual covariance Σ = chol · cholᵀ is parameterised by `log_diag`
     (length n_factors) and a flat vector of strictly-lower-triangular
     off-diagonals; the log-scale diagonal sidesteps the softplus-saturation
     pathology that broke the earlier parameterisation.
     """
-    _n_obs, n_factors = log_levels.shape
+    _n_transitions, n_factors = previous_log_levels.shape
     # β identification: β[0] = 1 fixed, β[1:] free (Johansen normalisation).
     beta_tail = numpyro.sample("beta_tail", dist.Normal(jnp.zeros(n_factors - 1), _BETA_TAIL_PRIOR_SCALE).to_event(1))
     beta = jnp.concatenate([jnp.ones(1), beta_tail])
@@ -120,11 +120,9 @@ def _vecm_generative(log_levels: jnp.ndarray) -> None:
     offdiag_flat = numpyro.sample("offdiag_flat", dist.Normal(jnp.zeros(n_offdiag), _OFFDIAG_PRIOR_STD).to_event(1))
     chol = _build_cholesky(jnp.asarray(log_diag), jnp.asarray(offdiag_flat), n_factors)
     # Recurrence: Δr_t = α (β' x_{t-1} + μ) + ε_t
-    x_prev = log_levels[:-1]
-    diff = jnp.diff(log_levels, axis=0)
-    coint_arr = jnp.matmul(jnp.asarray(x_prev), beta) + const_coint
+    coint_arr = jnp.matmul(jnp.asarray(previous_log_levels), beta) + const_coint
     mu_step = jnp.einsum("t,f->tf", coint_arr, alpha)
-    numpyro.sample("obs", dist.MultivariateNormal(mu_step, scale_tril=chol), obs=diff)
+    numpyro.sample("obs", dist.MultivariateNormal(mu_step, scale_tril=chol), obs=observed_log_returns)
 
 
 def _build_cholesky(log_diag: jnp.ndarray, offdiag_flat: jnp.ndarray, n_factors: int) -> jnp.ndarray:
@@ -221,6 +219,12 @@ class VecmModel:
     n_factors: int = 0
     params: dict[str, np.ndarray] = field(default_factory=dict)
     train_log_levels: np.ndarray = field(default_factory=lambda: np.zeros((0, 0)))
+    train_months: tuple[str, ...] = ()
+    log_level_origin: np.ndarray = field(default_factory=lambda: np.zeros((0,)))
+    level_origin_month: str | None = None
+    as_of_month: str | None = None
+    training_segments: tuple[VecmTrainingSegment, ...] = ()
+    calendar_gaps: tuple[VecmCalendarGap, ...] = ()
 
     # Deployment-layer config.
     latest_observations: dict[str, ExogenousObservedPoint] = field(default_factory=dict)
@@ -243,18 +247,62 @@ class VecmModel:
         log-density these defaults produce vs the statsmodels baseline.
         """
         historical.require_consecutive_months()
-        log_levels = np.log(historical.levels)
-        if log_levels.shape[0] < 3:
-            raise ValueError("VECM needs at least 3 observations to fit")
+        self.fit_dated(
+            DatedHistoricalSeries(
+                series_names=historical.series_names, levels=historical.levels, months=historical.months
+            )
+        )
+
+    def fit_dated(self, historical: DatedHistoricalSeries) -> None:
+        """Fit on real one-month transitions, retaining calendar boundaries.
+
+        Every observed factor is normalized once to its first observed level.
+        This is the same coordinate system used by the old continuous-history
+        path and is shared by all segments; segments are never independently
+        rebased. The likelihood contains only adjacent calendar-month pairs.
+        """
+        if len(historical.transition_pairs) < 2:
+            raise ValueError("VECM needs at least 2 consecutive monthly transitions to fit")
+
+        log_level_origin = np.log(np.asarray(historical.levels[0], dtype=np.float64))
+        log_levels = np.log(np.asarray(historical.levels, dtype=np.float64)) - log_level_origin[None, :]
+        transition_pairs = historical.transition_pairs
+        previous_log_levels = np.asarray([log_levels[start] for start, _ in transition_pairs])
+        observed_log_returns = np.asarray([log_levels[end] - log_levels[start] for start, end in transition_pairs])
 
         rng = jax.random.PRNGKey(self.config.seed)
         guide = AutoDelta(_vecm_generative)
         svi = SVI(_vecm_generative, guide, Adam(self.config.learning_rate), Trace_ELBO())
-        result = svi.run(rng, self.config.n_iters, jnp.asarray(log_levels), progress_bar=False)
+        result = svi.run(
+            rng,
+            self.config.n_iters,
+            jnp.asarray(previous_log_levels),
+            jnp.asarray(observed_log_returns),
+            progress_bar=False,
+        )
         self.params = {k: np.asarray(v) for k, v in result.params.items()}
         self.factor_names = tuple(historical.series_names)
         self.n_factors = int(log_levels.shape[1])
         self.train_log_levels = log_levels.copy()
+        self.train_months = tuple(historical.months)
+        self.log_level_origin = log_level_origin
+        self.level_origin_month = historical.months[0]
+        self.as_of_month = historical.months[-1]
+        self.training_segments = tuple(
+            VecmTrainingSegment(
+                first_month=segment.months[0],
+                last_month=segment.months[-1],
+                observed_level_count=len(segment.months),
+                used_transition_count=segment.transition_count,
+            )
+            for segment in historical.segments
+        )
+        self.calendar_gaps = tuple(
+            VecmCalendarGap(
+                before_month=gap.before_month, after_month=gap.after_month, missing_months=gap.missing_months
+            )
+            for gap in historical.gaps
+        )
 
     # ──────────────────────── Scorable ────────────────────────
 
@@ -272,7 +320,7 @@ class VecmModel:
             raise RuntimeError("VecmModel has no fitted parameters; call fit() or from_trained_state() first")
         if horizon < 1:
             raise ValueError(f"horizon must be >= 1; got {horizon}")
-        log_levels = np.log(historical.levels)
+        log_levels = np.log(historical.levels) - self._log_level_origin_for(historical.series_names)[None, :]
         n_steps = log_levels.shape[0] - 1
         if t + horizon > n_steps:
             return None
@@ -335,12 +383,20 @@ class VecmModel:
         """Snapshot post-fit state into the embeddable form written directly into the
         provider config YAML: the SVI/MAP params, factor names, and the training
         log-level history needed to roll forward at sample time."""
+        if self.level_origin_month is None or self.as_of_month is None:
+            raise RuntimeError("VecmModel has no dated fit; call fit() or fit_dated() first")
         return VecmTrainedState(
             # Wire-id factor identity, decoded back to typed LevelSeriesKeys by
             # `from_trained_state` at the single `parse_level_series_key` boundary.
             factor_names=tuple(factor.wire_id for factor in self.factor_names),
             train_log_levels=tuple(tuple(float(value) for value in row) for row in self.train_log_levels.tolist()),
             params={name: _yaml_value(array) for name, array in self.params.items()},
+            train_months=self.train_months,
+            log_level_origin=tuple(float(value) for value in self.log_level_origin.tolist()),
+            level_origin_month=self.level_origin_month,
+            as_of_month=self.as_of_month,
+            training_segments=self.training_segments,
+            calendar_gaps=self.calendar_gaps,
         )
 
     @classmethod
@@ -362,6 +418,12 @@ class VecmModel:
             n_factors=len(factor_names),
             params={name: np.asarray(value, dtype=np.float32) for name, value in trained_state.params.items()},
             train_log_levels=np.asarray(trained_state.train_log_levels, dtype=LEVEL_DTYPE),
+            train_months=trained_state.train_months,
+            log_level_origin=np.asarray(trained_state.log_level_origin, dtype=LEVEL_DTYPE),
+            level_origin_month=trained_state.level_origin_month,
+            as_of_month=trained_state.as_of_month,
+            training_segments=trained_state.training_segments,
+            calendar_gaps=trained_state.calendar_gaps,
             latest_observations=dict(latest_observations),
             evidence_metadata=evidence_metadata,
         )
@@ -385,6 +447,13 @@ class VecmModel:
         )
         beta = jnp.concatenate([jnp.ones(1), beta_tail])
         return beta, alpha, const_coint, chol
+
+    def _log_level_origin_for(self, series_names: tuple[LevelSeriesKey, ...]) -> np.ndarray:
+        if self.factor_names != series_names:
+            raise ValueError("VECM predictive history factors do not match the fitted factor order")
+        if self.log_level_origin.shape != (self.n_factors,):
+            raise ValueError("VECM fitted log-level origin does not match its factors")
+        return self.log_level_origin
 
     def _simulate_multipliers(self, *, rollout_seeds: tuple[int, ...], horizon_months: int) -> np.ndarray:
         """Stochastically roll the VECM recurrence `horizon_months` steps for
@@ -477,6 +546,23 @@ def _yaml_value(array: np.ndarray) -> float | tuple[float, ...]:
     return float(array) if array.ndim == 0 else tuple(float(value) for value in array.tolist())
 
 
+class VecmTrainingSegment(FrozenModel):
+    """Observed consecutive run contributing its real within-run transitions."""
+
+    first_month: str
+    last_month: str
+    observed_level_count: int
+    used_transition_count: int
+
+
+class VecmCalendarGap(FrozenModel):
+    """Calendar span omitted between observed VECM level segments."""
+
+    before_month: str
+    after_month: str
+    missing_months: tuple[str, ...]
+
+
 class VecmTrainedState(FrozenModel):
     """The fitted VECM state, embedded directly in the provider config YAML rather than a
     separate blob: SVI/MAP `params` (keyed by NumPyro's `<site>_auto_loc` param names — a
@@ -487,6 +573,69 @@ class VecmTrainedState(FrozenModel):
     factor_names: tuple[str, ...]
     train_log_levels: tuple[tuple[float, ...], ...]
     params: dict[str, float | tuple[float, ...]]
+    train_months: tuple[str, ...]
+    log_level_origin: tuple[float, ...]
+    level_origin_month: str
+    as_of_month: str
+    training_segments: tuple[VecmTrainingSegment, ...]
+    calendar_gaps: tuple[VecmCalendarGap, ...]
+
+    @model_validator(mode="after")
+    def _validate_dated_training_history(self) -> VecmTrainedState:
+        n_factors = len(self.factor_names)
+        if n_factors == 0 or len(set(self.factor_names)) != n_factors:
+            raise ValueError("VECM trained state requires unique factor names")
+        if len(self.train_months) != len(self.train_log_levels):
+            raise ValueError("VECM training month labels must match the retained observed level rows")
+        if not self.train_months or self.train_months[0] != self.level_origin_month:
+            raise ValueError("VECM global level origin month must be the first observed training month")
+        if self.train_months[-1] != self.as_of_month:
+            raise ValueError("VECM training terminal month must match its recorded as-of month")
+        for earlier, later in zip(self.train_months[:-1], self.train_months[1:], strict=True):
+            if calendar_month_index(later) <= calendar_month_index(earlier):
+                raise ValueError("VECM training month labels must be unique and increasing")
+
+        log_levels = np.asarray(self.train_log_levels, dtype=np.float64)
+        origins = np.asarray(self.log_level_origin, dtype=np.float64)
+        if log_levels.shape != (len(self.train_months), n_factors):
+            raise ValueError("VECM retained log-level rows must match the training months and factors")
+        if origins.shape != (n_factors,):
+            raise ValueError("VECM global log-level origins must match the fitted factors")
+        if not np.all(np.isfinite(log_levels)) or not np.all(np.isfinite(origins)):
+            raise ValueError("VECM retained log levels and global origins must be finite")
+        if not np.allclose(log_levels[0], 0.0, rtol=0.0, atol=1e-12):
+            raise ValueError("VECM retained log levels must use one global first-observation normalization")
+
+        with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+            absolute_levels = np.exp(log_levels + origins[None, :])
+        if not np.all(np.isfinite(absolute_levels)) or not np.all(absolute_levels > 0):
+            raise ValueError("VECM retained levels must reconstruct as finite positive observations")
+
+        dated = DatedHistoricalSeries(
+            series_names=tuple(parse_level_series_key(factor) for factor in self.factor_names),
+            levels=absolute_levels,
+            months=self.train_months,
+        )
+        expected_segments = tuple(
+            VecmTrainingSegment(
+                first_month=segment.months[0],
+                last_month=segment.months[-1],
+                observed_level_count=len(segment.months),
+                used_transition_count=segment.transition_count,
+            )
+            for segment in dated.segments
+        )
+        expected_gaps = tuple(
+            VecmCalendarGap(
+                before_month=gap.before_month, after_month=gap.after_month, missing_months=gap.missing_months
+            )
+            for gap in dated.gaps
+        )
+        if self.training_segments != expected_segments or self.calendar_gaps != expected_gaps:
+            raise ValueError("VECM recorded segments and gaps must match its dated observed level rows")
+        if len(dated.transition_pairs) < 2:
+            raise ValueError("VECM trained state must contain at least two real consecutive monthly transitions")
+        return self
 
 
 class VecmProviderConfig(FrozenModel):
@@ -509,6 +658,19 @@ class VecmProviderConfig(FrozenModel):
         for factor, point in self.latest_observations.items():
             if point.value <= 0 or point.treatment != ObservationTreatment.HARD_START:
                 raise ValueError(f"VECM factor {factor!r} requires a positive hard-start observation")
+        state = self.trained_state
+        if any(point.observed_at.strftime("%Y-%m") != state.as_of_month for point in self.latest_observations.values()):
+            raise ValueError("VECM absolute factor anchors must share the fitted terminal as-of month")
+        if any(point.observed_at.day != 1 for point in self.latest_observations.values()):
+            raise ValueError("VECM monthly factor anchors must use first-of-month period labels")
+        terminal = np.asarray(state.train_log_levels[-1], dtype=np.float64)
+        origins = np.asarray(state.log_level_origin, dtype=np.float64)
+        for index, factor in enumerate(state.factor_names):
+            expected = float(np.exp(terminal[index] + origins[index]))
+            if not np.isclose(self.latest_observations[factor].value, expected, rtol=1e-10, atol=1e-10):
+                raise ValueError(
+                    f"VECM terminal state for {factor!r} does not match its absolute anchor at {state.as_of_month}"
+                )
         return self
 
     def realize_model(self) -> VecmModel:

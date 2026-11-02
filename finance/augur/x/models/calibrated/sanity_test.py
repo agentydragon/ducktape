@@ -16,7 +16,7 @@ import pytest
 import pytest_bazel
 import yaml
 from numpyro import distributions as dist
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 from finance.augur.fit.model import Scorable
 from finance.augur.model.equity import EquitySpec
@@ -36,8 +36,8 @@ from finance.augur.x.models.structural_macro import (
 from finance.augur.x.models.vecm import VecmProviderConfig
 
 # Artifacts that fail the checks below, with what they measured. A quarantined artifact stays only
-# for the typed boundaries it still exercises and is never to be used as a model. The test requires
-# it to keep failing, so a refit that passes has to delete its entry.
+# as an explicit legacy/refit regression and is never to be used as a model. If its schema becomes
+# valid again, the old plausibility failure must continue until a new fit is deliberately reviewed.
 QUARANTINED = {
     "trained_vecm_provider.yaml": (
         "12-month median CPI x1.69 and SPY x0.71; in-sample CPI residual RMS 5.1 modelled sds"
@@ -148,21 +148,32 @@ def _check_structural_macro(artifact: StructuralMacroFittedDefaults) -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        pytest.param(name, marks=pytest.mark.xfail(raises=AssertionError, reason=QUARANTINED[name], strict=True))
-        if name in QUARANTINED
-        else name
-        for name in ARTIFACTS
-    ],
-)
-def test_artifact_describes_a_plausible_economy(name: str) -> None:
-    artifact = _load(name)
+def _check_artifact(artifact: VecmProviderConfig | StructuralMacroFittedDefaults) -> None:
     if isinstance(artifact, VecmProviderConfig):
         _check_vecm(artifact)
     else:
         _check_structural_macro(artifact)
+
+
+@pytest.mark.parametrize("name", ARTIFACTS)
+def test_artifact_describes_a_plausible_economy(name: str) -> None:
+    try:
+        artifact = _load(name)
+    except ValidationError as error:
+        if name != "trained_vecm_provider.yaml":
+            raise
+        # This quarantined fit predates the required dated levels, common anchor as-of, and
+        # segment/gap provenance. It must be refit before it can be loaded as a VECM provider.
+        missing_fields = {item["loc"][-1] for item in error.errors() if item["type"] == "missing"}
+        assert {"train_months", "as_of_month", "training_segments", "calendar_gaps"} <= missing_fields
+        return
+
+    if name in QUARANTINED:
+        with pytest.raises(AssertionError, match=r"median 12-month multipliers|in-sample residual RMS"):
+            _check_artifact(artifact)
+        return
+
+    _check_artifact(artifact)
 
 
 def test_quarantine_names_checked_in_artifacts() -> None:

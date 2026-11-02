@@ -16,10 +16,11 @@ import pytest_bazel
 from numpyro import distributions as dist
 
 from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment, ObservationUnits
+from finance.augur.model.evidence import EvidenceMetadata
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
-from finance.augur.model.path_models.scenarios import HistoricalSeries
+from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries
 from finance.augur.model.series import SP500_SYMBOL, HomeValueKey, InflationKey, LocationId, RentKey, SecurityKey
-from finance.augur.x.models.vecm import VecmConfig, VecmModel
+from finance.augur.x.models.vecm import VecmConfig, VecmModel, VecmProviderConfig
 
 
 def _observation(value: float, units: ObservationUnits) -> ExogenousObservedPoint:
@@ -88,6 +89,76 @@ class TestVecmModel:
 
         with pytest.raises(ValueError, match="requires consecutive calendar months"):
             VecmModel(config=VecmConfig(n_iters=1)).fit(historical)
+
+    def test_continuous_fit_matches_the_dated_fit_path(self) -> None:
+        historical = _cointegrated_two_factor(seed=42, n_steps=30)
+        dated = DatedHistoricalSeries(
+            series_names=historical.series_names, levels=historical.levels, months=historical.months
+        )
+        regular_fit = VecmModel(config=VecmConfig(n_iters=5, seed=19))
+        dated_fit = VecmModel(config=VecmConfig(n_iters=5, seed=19))
+
+        regular_fit.fit(historical)
+        dated_fit.fit_dated(dated)
+
+        for name in regular_fit.params:
+            np.testing.assert_array_equal(regular_fit.params[name], dated_fit.params[name])
+        np.testing.assert_array_equal(regular_fit.train_log_levels, dated_fit.train_log_levels)
+        assert regular_fit.train_months == dated_fit.train_months
+        assert regular_fit.calendar_gaps == ()
+
+    def test_dated_fit_uses_one_global_origin_and_omits_cross_gap_transition(self) -> None:
+        continuous = _cointegrated_two_factor(seed=42, n_steps=50)
+        scaled_levels = continuous.levels * np.array([5_500.0, 320.0])[None, :]
+        keep = np.arange(len(continuous.months)) != 20
+        dated = DatedHistoricalSeries(
+            series_names=continuous.series_names,
+            levels=scaled_levels[keep],
+            months=tuple(month for index, month in enumerate(continuous.months) if keep[index]),
+        )
+
+        model = VecmModel(config=VecmConfig(n_iters=5, seed=19))
+        model.fit_dated(dated)
+        state = model.to_trained_state()
+
+        assert len(dated.transition_pairs) == len(dated.months) - 2
+        assert sum(segment.used_transition_count for segment in state.training_segments) == len(dated.transition_pairs)
+        assert state.calendar_gaps[0].missing_months == (continuous.months[20],)
+        assert model.as_of_month == dated.months[-1]
+        np.testing.assert_allclose(model.log_level_origin, np.log(scaled_levels[0]))
+        np.testing.assert_allclose(model.train_log_levels, np.log(dated.levels) - np.log(scaled_levels[0]))
+        assert model.train_months == dated.months
+
+    def test_dated_provider_requires_anchors_at_its_terminal_state(self) -> None:
+        continuous = _cointegrated_two_factor(seed=7, n_steps=20)
+        levels = continuous.levels * np.array([5_500.0, 320.0])[None, :]
+        dated = DatedHistoricalSeries(series_names=continuous.series_names, levels=levels, months=continuous.months)
+        model = VecmModel(config=VecmConfig(n_iters=2))
+        model.fit_dated(dated)
+        units = (ObservationUnits.USD_PER_UNIT, ObservationUnits.INDEX_POINTS)
+        anchors = {
+            factor.wire_id: ExogenousObservedPoint(
+                value=float(dated.levels[-1, index]),
+                units=units[index],
+                observed_at=date.fromisoformat(f"{dated.months[-1]}-01"),
+                source_id="test:aligned",
+                treatment=ObservationTreatment.HARD_START,
+            )
+            for index, factor in enumerate(dated.series_names)
+        }
+        config = VecmProviderConfig(
+            trained_state=model.to_trained_state(),
+            latest_observations=anchors,
+            evidence_metadata=EvidenceMetadata(),
+            current_mortgage30_rate_pct=6.0,
+        )
+        restored = config.realize_model()
+        assert restored.as_of_month == dated.months[-1]
+
+        stale = config.model_dump(mode="python")
+        stale["latest_observations"][dated.series_names[0].wire_id]["observed_at"] = date(2025, 1, 1)
+        with pytest.raises(ValueError, match="share the fitted terminal as-of month"):
+            VecmProviderConfig.model_validate(stale)
 
     def test_fit_then_predictive_returns_a_multivariate_gaussian(self) -> None:
         historical = _cointegrated_two_factor(seed=42, n_steps=200)

@@ -21,19 +21,14 @@ from finance.augur.fit.evidence_data import (
     ExogenousEvidence,
     _align_inner,
     _monthly_latest,
+    _one_month_returns_from_aligned_levels,
     load_exogenous_evidence,
 )
 from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment, ObservationUnits
 from finance.augur.model.evidence import EvidenceMetadata, EvidenceMode
-from finance.augur.model.path_models.scenarios import HistoricalSeries
+from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries
 from finance.augur.model.series import SP500_KEY, HomeValueKey, InflationKey, LevelSeriesKey, LocationId, RentKey
-from finance.evidence.loading import (
-    evidence_dir_from_env,
-    monthly_last,
-    read_fred_series,
-    require_contiguous_months,
-    require_positive_levels,
-)
+from finance.evidence.loading import evidence_dir_from_env, monthly_last, read_fred_series, require_positive_levels
 from finance.evidence.sources import FRED_CPI, FRED_MORTGAGE30, FRED_SF_RENT_CPI, FRED_SFXRSA, FRED_SP500
 
 
@@ -45,10 +40,18 @@ def load_evidence(*, fred_only: bool = False) -> tuple[HistoricalSeries, Exogeno
     lower-fidelity fixture/degraded mode; its evidence metadata is labelled as
     synthesized.
     """
-    if fred_only:
-        return _evidence_fred_only()
-    evidence = load_exogenous_evidence()
+    evidence = _evidence_fred_only() if fred_only else load_exogenous_evidence()
     return _historical_from_evidence(evidence), evidence
+
+
+def load_evidence_segments(*, fred_only: bool = False) -> tuple[DatedHistoricalSeries, ExogenousEvidence]:
+    """Load actual aligned level observations without implying continuity across gaps.
+
+    This is the fit boundary for models that explicitly handle separate calendar segments.
+    Callers that require one uninterrupted `HistoricalSeries` should keep using `load_evidence`.
+    """
+    evidence = _evidence_fred_only() if fred_only else load_exogenous_evidence()
+    return _dated_history_from_evidence(evidence), evidence
 
 
 def load_historical(*, fred_only: bool = False) -> HistoricalSeries:
@@ -61,12 +64,17 @@ def load_historical(*, fred_only: bool = False) -> HistoricalSeries:
 
 
 def _historical_from_evidence(evidence: ExogenousEvidence) -> HistoricalSeries:
-    return _historical_from_log_returns(
-        evidence.series_names, evidence.monthly_log_returns, evidence.monthly_return_months
-    )
+    history = _dated_history_from_evidence(evidence)
+    if len(history.segments) != 1:
+        gaps = ", ".join(f"{gap.before_month}→{gap.after_month}" for gap in history.gaps)
+        raise ValueError(f"aligned exogenous level history has calendar gaps ({gaps}); use load_evidence_segments")
+    segment = history.segments[0]
+    if len(segment.months) < 2:
+        raise ValueError("aligned exogenous history needs at least two monthly level observations")
+    return HistoricalSeries(series_names=history.series_names, levels=segment.levels, months=segment.months)
 
 
-def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
+def _evidence_fred_only() -> ExogenousEvidence:
     """Read only FRED CSVs (no Yahoo, no Zillow) and synthesise a
     `ExogenousEvidence` matching the production loader's shape with what we
     can construct: SP500 from FRED price-level (no dividends), Case-Shiller
@@ -95,17 +103,14 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
         },
         value_column="value",
     )
-    if aligned.height < 36:
-        raise ValueError(f"only {aligned.height} aligned months across the FRED-only synthesized series")
-    require_contiguous_months(aligned["month"].to_list(), series_name="FRED-only aligned levels")
     for key in series_names:
         require_positive_levels(aligned.select(key.wire_id).rename({key.wire_id: "value"}), series_name=key.wire_id)
 
-    monthly_log_returns = np.diff(
-        np.log(aligned.select([key.wire_id for key in series_names]).to_numpy().astype("float64")), axis=0
-    )
-    return_months = tuple(aligned["month"].dt.strftime("%Y-%m").to_list()[1:])
-    historical = _historical_from_log_returns(series_names, monthly_log_returns, return_months)
+    level_months = tuple(aligned["month"].dt.strftime("%Y-%m").to_list())
+    level_values = aligned.select([key.wire_id for key in series_names]).to_numpy().astype("float64")
+    return_months, monthly_log_returns = _one_month_returns_from_aligned_levels(level_months, level_values)
+    if len(level_months) < 36:
+        raise ValueError(f"only {len(level_months)} aligned months across the FRED-only synthesized series")
 
     latest_observations: dict[LevelSeriesKey, ExogenousObservedPoint] = {
         SP500_KEY: _monthly_latest(sp500, FRED_SP500, units=ObservationUnits.INDEX_POINTS),
@@ -131,33 +136,42 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
             description="FRED-only synthesized evidence explicitly selected; Yahoo SPY and Zillow ZHVI were not loaded.",
         ),
     )
-    evidence = ExogenousEvidence(
+    return ExogenousEvidence(
         series_names=series_names,
+        monthly_level_values=level_values,
+        monthly_level_months=level_months,
         monthly_log_returns=monthly_log_returns,
         monthly_return_months=return_months,
         current_mortgage30_rate_pct=float(mortgage["value"].to_list()[-1]),
         latest_observations=latest_observations,
         metadata=metadata,
     )
-    return historical, evidence
 
 
-def _historical_from_log_returns(
-    series_names: tuple[LevelSeriesKey, ...], monthly_log_returns: np.ndarray, return_months: tuple[str, ...]
-) -> HistoricalSeries:
-    if monthly_log_returns.ndim != 2 or monthly_log_returns.shape[0] != len(return_months):
-        raise ValueError("aligned monthly returns and their calendar labels have different shapes")
-    if not return_months:
-        raise ValueError("historical evidence has no aligned monthly returns")
-    require_contiguous_months(
-        [date.fromisoformat(f"{month}-01") for month in return_months], series_name="aligned exogenous returns"
+def _dated_history_from_evidence(evidence: ExogenousEvidence) -> DatedHistoricalSeries:
+    return DatedHistoricalSeries(
+        series_names=evidence.series_names,
+        levels=np.asarray(evidence.monthly_level_values, dtype=np.float64),
+        months=evidence.monthly_level_months,
     )
-    n_factors = monthly_log_returns.shape[1]
-    cum = np.concatenate([np.zeros((1, n_factors)), np.cumsum(monthly_log_returns, axis=0)], axis=0)
-    levels = np.exp(cum)
-    # The history's month-0 label is the month before the first return month (return_months are
-    # "YYYY-MM", oldest first).
-    year, month = map(int, return_months[0].split("-"))
-    prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
-    months = (f"{prev_year:04d}-{prev_month:02d}", *return_months)
-    return HistoricalSeries(series_names=series_names, levels=levels, months=months)
+
+
+def aligned_as_of_observations(evidence: ExogenousEvidence) -> dict[LevelSeriesKey, ExogenousObservedPoint]:
+    """Absolute factor anchors from the final common observed level month.
+
+    Per-source latest observations can be newer than the common fitted history and can have
+    different months. A fitted VECM must use one shared state date, so its runtime anchors are
+    selected from the exact aligned level row that supplies the model terminal state.
+    """
+    if not evidence.monthly_level_months:
+        raise ValueError("aligned exogenous level history is empty")
+    as_of = date.fromisoformat(f"{evidence.monthly_level_months[-1]}-01")
+    levels = np.asarray(evidence.monthly_level_values, dtype=np.float64)
+    if levels.shape != (len(evidence.monthly_level_months), len(evidence.series_names)):
+        raise ValueError("aligned exogenous levels do not match their calendar or factor dimensions")
+    return {
+        factor: evidence.latest_observations[factor].model_copy(
+            update={"observed_at": as_of, "value": float(levels[-1, index])}
+        )
+        for index, factor in enumerate(evidence.series_names)
+    }

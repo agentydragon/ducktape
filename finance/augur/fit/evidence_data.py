@@ -84,6 +84,8 @@ class ExogenousEvidence:
     """
 
     series_names: tuple[LevelSeriesKey, ...]
+    monthly_level_values: np.ndarray
+    monthly_level_months: tuple[str, ...]
     monthly_log_returns: np.ndarray
     monthly_return_months: tuple[str, ...]
     current_mortgage30_rate_pct: float
@@ -155,11 +157,6 @@ def _period_return_frame(series: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def _monthly_unit_returns(series: pl.DataFrame) -> pl.DataFrame:
-    """`(month, log_return)` for the consecutive-month (duration == 1) steps of a monthly series."""
-    return _period_return_frame(series).filter(pl.col("duration_months") == 1).select("month", "log_return")
-
-
 def _returns(frame: pl.DataFrame) -> PeriodReturns:
     frame = frame.filter(pl.col("log_return").is_finite() & pl.col("duration_months").is_finite())
     if frame.is_empty():
@@ -203,6 +200,22 @@ def _align_inner(frames: dict[LevelSeriesKey, pl.DataFrame], value_column: str) 
     return loading.align_monthly_frames(
         {key.wire_id: frame for key, frame in frames.items()}, value_column=value_column
     )
+
+
+def _one_month_returns_from_aligned_levels(
+    months: tuple[str, ...], level_values: np.ndarray
+) -> tuple[tuple[str, ...], np.ndarray]:
+    """Derive returns only where adjacent observed level rows are adjacent calendar months."""
+    if level_values.ndim != 2 or level_values.shape[0] != len(months):
+        raise ValueError("aligned level values and their calendar labels have different shapes")
+    if not np.all(np.isfinite(level_values)) or not np.all(level_values > 0):
+        raise ValueError("aligned level values must contain only finite positive levels")
+    month_indices = tuple(int(month[:4]) * 12 + int(month[5:7]) for month in months)
+    adjacent = np.diff(np.asarray(month_indices, dtype=np.int64)) == 1
+    if not np.any(adjacent):
+        raise ValueError("aligned level evidence has no consecutive monthly transitions")
+    returns = np.diff(np.log(level_values), axis=0)[adjacent]
+    return tuple(month for month, keep in zip(months[1:], adjacent, strict=True) if keep), returns
 
 
 def _monthly_latest(
@@ -264,19 +277,24 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         *rent_series_key.values(),
         InflationKey(),
     )
-    aligned = _align_inner(
+    aligned_levels = _align_inner(
         {
-            SP500_KEY: _monthly_unit_returns(sp500_total_return),
-            BTC_KEY: _monthly_unit_returns(btc_price),
-            ETH_KEY: _monthly_unit_returns(eth_price),
-            **{home_series_key[loc]: _monthly_unit_returns(series) for loc, series in home_values.items()},
-            **{rent_series_key[loc]: _monthly_unit_returns(series) for loc, series in rents.items()},
-            InflationKey(): _monthly_unit_returns(cpi),
+            SP500_KEY: sp500_total_return,
+            BTC_KEY: btc_price,
+            ETH_KEY: eth_price,
+            **{home_series_key[loc]: series for loc, series in home_values.items()},
+            **{rent_series_key[loc]: series for loc, series in rents.items()},
+            InflationKey(): cpi,
         },
-        value_column="log_return",
+        value_column="value",
     )
-    if aligned.height < MINIMUM_ALIGNED_MONTHS:
-        raise ValueError(f"only {aligned.height} aligned exogenous months were available")
+    monthly_level_months = tuple(aligned_levels["month"].dt.strftime("%Y-%m").to_list())
+    monthly_level_values = aligned_levels.select([key.wire_id for key in series_names]).to_numpy().astype("float64")
+    monthly_return_months, monthly_log_returns = _one_month_returns_from_aligned_levels(
+        monthly_level_months, monthly_level_values
+    )
+    if len(monthly_return_months) < MINIMUM_ALIGNED_MONTHS:
+        raise ValueError(f"only {len(monthly_return_months)} aligned exogenous months were available")
 
     sp500_returns = _period_return_frame(sp500_total_return)
     btc_returns = _period_return_frame(btc_price)
@@ -370,8 +388,10 @@ def load_exogenous_evidence() -> ExogenousEvidence:
 
     return ExogenousEvidence(
         series_names=series_names,
-        monthly_log_returns=aligned.select([key.wire_id for key in series_names]).to_numpy().astype("float64"),
-        monthly_return_months=tuple(aligned["month"].dt.strftime("%Y-%m").to_list()),
+        monthly_level_values=monthly_level_values,
+        monthly_level_months=monthly_level_months,
+        monthly_log_returns=monthly_log_returns,
+        monthly_return_months=monthly_return_months,
         current_mortgage30_rate_pct=float(mortgage30["value"].to_list()[-1]),
         latest_observations=latest_observations,
         metadata=metadata,

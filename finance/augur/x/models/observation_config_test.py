@@ -1,4 +1,4 @@
-"""Actual fitted artifact and source observations cross one strict typed boundary."""
+"""A fitted dated VECM state and its source anchors cross one strict typed boundary."""
 
 from datetime import date
 
@@ -8,36 +8,73 @@ import pytest_bazel
 import yaml
 from pydantic import ValidationError
 
-from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationUnits
+from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment, ObservationUnits
+from finance.augur.model.evidence import EvidenceMetadata
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
-from finance.augur.x.models.vecm import VecmProviderConfig
+from finance.augur.model.path_models.scenarios import DatedHistoricalSeries
+from finance.augur.model.series import SP500_KEY, InflationKey
+from finance.augur.x.models.vecm import VecmConfig, VecmModel, VecmProviderConfig
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def configured() -> VecmProviderConfig:
-    path = get_required_path(own_repo_rlocation("finance/augur/x/models/calibrated/trained_vecm_provider.yaml"))
-    return VecmProviderConfig.model_validate(yaml.safe_load(path.read_text()))
+    months = ("2024-01", "2024-02", "2024-03", "2024-05", "2024-06", "2024-07")
+    levels = np.asarray(
+        [[470.0, 310.0], [472.0, 310.6], [469.0, 311.0], [475.0, 312.2], [478.0, 312.4], [481.0, 313.1]],
+        dtype=np.float64,
+    )
+    historical = DatedHistoricalSeries(series_names=(SP500_KEY, InflationKey()), levels=levels, months=months)
+    model = VecmModel(config=VecmConfig(n_iters=5, seed=29))
+    model.fit_dated(historical)
+
+    latest_observations = {
+        SP500_KEY.wire_id: ExogenousObservedPoint(
+            value=float(levels[-1, 0]),
+            units=ObservationUnits.USD_PER_UNIT,
+            observed_at=date.fromisoformat(f"{months[-1]}-01"),
+            source_id="test:spy-adjusted-close",
+            treatment=ObservationTreatment.HARD_START,
+        ),
+        InflationKey().wire_id: ExogenousObservedPoint(
+            value=float(levels[-1, 1]),
+            units=ObservationUnits.INDEX_POINTS,
+            observed_at=date.fromisoformat(f"{months[-1]}-01"),
+            source_id="test:cpi-index",
+            treatment=ObservationTreatment.HARD_START,
+        ),
+    }
+    metadata = EvidenceMetadata(
+        auxiliary_observations={
+            "sp500_price": ExogenousObservedPoint(
+                value=5_400.0,
+                units=ObservationUnits.INDEX_POINTS,
+                observed_at=date.fromisoformat(f"{months[-1]}-01"),
+                source_id="test:fred-sp500-price",
+                treatment=ObservationTreatment.INFORMATIVE,
+            )
+        }
+    )
+    return VecmProviderConfig(
+        trained_state=model.to_trained_state(),
+        latest_observations=latest_observations,
+        evidence_metadata=metadata,
+        current_mortgage30_rate_pct=6.23,
+    )
 
 
-def test_checked_in_artifact_retains_actual_anchors_and_units(configured: VecmProviderConfig) -> None:
+def test_fitted_artifact_retains_dated_levels_anchors_and_units(configured: VecmProviderConfig) -> None:
     expected = {
-        "security:SPY": (711.5800170898438, ObservationUnits.USD_PER_UNIT),
-        "security:btc": (76803.421875, ObservationUnits.USD_PER_UNIT),
-        "security:eth": (2094.830078125, ObservationUnits.USD_PER_UNIT),
-        "home_value:san_francisco_ca": (1356661.6050197445, ObservationUnits.USD),
-        "home_value:vallejo_ca": (520969.8257389618, ObservationUnits.USD),
-        # This historical artifact used rent CPI, not the current loader's dollar ZORI.
-        "rent:san_francisco_ca": (528.147, ObservationUnits.INDEX_POINTS),
-        "inflation": (330.293, ObservationUnits.INDEX_POINTS),
+        "security:SPY": (481.0, ObservationUnits.USD_PER_UNIT),
+        "inflation": (313.1, ObservationUnits.INDEX_POINTS),
     }
     assert {factor: (point.value, point.units) for factor, point in configured.latest_observations.items()} == expected
-    rent = configured.latest_observations["rent:san_francisco_ca"]
-    assert rent.observed_at == date(2026, 3, 1)
-    assert rent.source_id == "public:../../data/fred_sf_rent_cpi.csv"
-    assert configured.evidence_metadata.adjusted_close_return_count == 399
-    assert len(configured.evidence_metadata.return_sources) == 4
-    assert configured.evidence_metadata.auxiliary_observations["mortgage30"].value == 6.23
+    assert configured.trained_state.as_of_month == "2024-07"
+    assert configured.trained_state.train_months == ("2024-01", "2024-02", "2024-03", "2024-05", "2024-06", "2024-07")
+    assert configured.trained_state.calendar_gaps[0].missing_months == ("2024-04",)
+    assert configured.trained_state.training_segments[0].used_transition_count == 2
+    assert configured.trained_state.training_segments[1].used_transition_count == 2
+    assert configured.evidence_metadata.auxiliary_observations["sp500_price"].units == ObservationUnits.INDEX_POINTS
 
     model = configured.realize_model()
     request = ExogenousSamplingRequest(
@@ -79,9 +116,18 @@ def test_auxiliary_evidence_never_supplies_a_missing_anchor(configured: VecmProv
 
 def test_source_named_and_bare_numeric_anchors_are_not_an_alternate_format(configured: VecmProviderConfig) -> None:
     document = configured.model_dump(mode="json")
-    document["latest_observations"] = {"spy_adjusted_close_latest": 711.5800170898438}
+    document["latest_observations"] = {"spy_adjusted_close_latest": 481.0}
     with pytest.raises(ValidationError):
         VecmProviderConfig.model_validate(document)
+
+
+def test_legacy_checked_in_vecm_artifact_requires_refitting() -> None:
+    path = get_required_path(own_repo_rlocation("finance/augur/x/models/calibrated/trained_vecm_provider.yaml"))
+    document = yaml.safe_load(path.read_text())
+    with pytest.raises(ValidationError) as error:
+        VecmProviderConfig.model_validate(document)
+    missing_fields = {item["loc"][-1] for item in error.value.errors() if item["type"] == "missing"}
+    assert {"train_months", "as_of_month", "training_segments", "calendar_gaps"} <= missing_fields
 
 
 if __name__ == "__main__":
