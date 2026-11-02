@@ -1,6 +1,7 @@
 """Failure reporting with Docker execution substituted at the external boundary."""
 
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -10,6 +11,11 @@ from docker.models.containers import Container, ExecResult
 from util.testing import gnome
 from util.testing.gnome import GnomeSession
 from util.testing.gnome_fake_daemon import fake_daemon
+
+
+def _exec_result(exit_code: int, stdout: bytes = b"", stderr: bytes = b"") -> ExecResult:
+    # Docker's stubs omit the stdout/stderr tuple returned with demux=True.
+    return ExecResult(exit_code, cast(bytes, (stdout, stderr)))
 
 
 @pytest.mark.parametrize("body_fails", [False, True])
@@ -27,15 +33,15 @@ def test_daemon_attempts_log_capture_after_cleanup_errors(
 
     def execute(command: str, *, detach: bool = False) -> ExecResult:
         if command.startswith("gjs"):
-            return ExecResult(0, (b"123", b""))
+            return _exec_result(0, stdout=b"123")
         if command.startswith("gdbus introspect"):
-            return ExecResult(0, (b"", b""))
+            return _exec_result(0)
         if command.startswith("gdbus call"):
-            return ExecResult(1, (b"", b"Stop failed"))
+            return _exec_result(1, stderr=b"Stop failed")
         if command.startswith("if kill"):
             raise RuntimeError("termination failed")
         if command == "cat /tmp/fake-daemon.log":
-            return ExecResult(0, (b"daemon diagnostics", b""))
+            return _exec_result(0, stdout=b"daemon diagnostics")
         raise AssertionError(command)
 
     monkeypatch.setattr(session, "exec", execute)
