@@ -109,6 +109,13 @@ pkg_tar(
     package_dir = "/etc/tmpfiles.d",
 )
 
+pkg_tar(
+    name = "root_journald",
+    srcs = ["journald.conf"],
+    mode = "0644",
+    package_dir = "/etc/systemd/journald.conf.d",
+)
+
 pkg_files(
     name = "root_acpi_file",
     srcs = ["acpi_poweroff"],
@@ -165,9 +172,13 @@ pkg_files(
         "agentplane-startup-profile.service",
         "agentplane-workspace.service",
         "environment-runtime-guest.conf",
+        "journal-state.conf",
     ],
     attributes = pkg_attributes(mode = "0644"),
-    renames = {"environment-runtime-guest.conf": "agentplane-environment-runtime.service.d/guest.conf"},
+    renames = {
+        "environment-runtime-guest.conf": "agentplane-environment-runtime.service.d/guest.conf",
+        "journal-state.conf": "systemd-journal-flush.service.d/state.conf",
+    },
 )
 
 pkg_tar(
@@ -221,12 +232,14 @@ pkg_tar(
     package_dir = "/usr/libexec/agentplane",
 )
 
-# The flattened Debian package tar can contain `./var/run/` after this fixture's path
-# compatibility links. Keep this override as the last root-tar dependency so EROFS sees
-# the intended symlink after normalizing that alias.
+# Apply the fixture's /var links after the flattened Debian package directories.
+# Journald writes through the state virtiofs; /var/run uses the same /run as systemd.
 pkg_tar(
-    name = "root_var_run_layout",
-    symlinks = {"var/run": "/run"},
+    name = "root_var_links",
+    symlinks = {
+        "var/log/journal": "/state/.systemd-journal",
+        "var/run": "/run",
+    },
 )
 
 # Debian's packages are /usr-merged; ELF interpreters and the init path name the top-level links. The
@@ -256,6 +269,7 @@ pkg_tar(
         ":root_etc",
         ":root_hwdb",
         ":root_init",
+        ":root_journald",
         ":root_resource_limits",
         ":root_shared_systemd",
         ":root_supervision_fixture",
@@ -271,7 +285,7 @@ pkg_tar(
     name = "root_tar",
     deps = [
         ":root_tar_base",
-        ":root_var_run_layout",
+        ":root_var_links",
     ],
 )
 
@@ -295,7 +309,7 @@ pkg_tar(
     name = "root_profile_tar",
     deps = [
         ":root_profile_tar_base",
-        ":root_var_run_layout",
+        ":root_var_links",
     ],
 )
 

@@ -1132,6 +1132,7 @@ def running_stack(
                 cleanup.enter_context(
                     guest_logs.capture(
                         log_root=Path("/var/log/pods"),
+                        storage_root=k3s.data_dir / "storage",
                         namespace=fixture.namespace,
                         kubevirt_namespace=vm_sandboxes.KUBEVIRT_NAMESPACE,
                         destination=undeclared_outputs_dir() / "vm-artifacts",
