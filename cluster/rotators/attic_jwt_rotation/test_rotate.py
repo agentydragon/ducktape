@@ -371,7 +371,7 @@ def test_mint_attic_token_builds_kubectl_exec_atticadm_argv(monkeypatch):
         "-n",
         "nix-cache",
         "exec",
-        "deploy/attic",
+        "deploy/attic-next",
         "--",
         "atticadm",
         "-f",
@@ -767,14 +767,14 @@ def test_configure_ca_trust_loads_a_real_bundle():
 def test_mint_admin_jwt_builds_kubectl_exec_atticadm_argv(monkeypatch):
     fake = _FakeRun(jwt="admin.jwt")
     monkeypatch.setattr(rotate.subprocess, "run", fake)
-    assert mint_admin_jwt("nix-cache", "deploy/attic", "/config/server.toml") == "admin.jwt"
+    assert mint_admin_jwt("nix-cache", "deploy/attic-next", "/config/server.toml") == "admin.jwt"
     (call,) = fake.calls
     assert call == [
         "kubectl",
         "-n",
         "nix-cache",
         "exec",
-        "deploy/attic",
+        "deploy/attic-next",
         "--",
         "atticadm",
         "-f",

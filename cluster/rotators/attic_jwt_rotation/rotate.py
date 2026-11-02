@@ -1,6 +1,6 @@
 """Attic ops folded into one CLI: token rotation and cache bootstrap.
 
-Two subcommands share the `kubectl exec deploy/attic -- atticadm make-token …`
+Two subcommands share the `kubectl exec deploy/attic-next -- atticadm make-token …`
 pattern so the HS256 signing secret never leaves the attic pod:
 
   * `rotate`           — mints per-token JWTs, publishes configured Kubernetes
@@ -288,7 +288,7 @@ def scope_drift(token: Token, stamps: dict[str, Any]) -> str | None:
 
 
 def mint_attic_token(token: Token, config: Config) -> str:
-    """Mint a JWT via `kubectl exec deploy/attic -- atticadm make-token …`.
+    """Mint a JWT via `kubectl exec deploy/attic-next -- atticadm make-token …`.
 
     The HS256 signing secret stays in the attic pod; the rotator only needs
     `pods/exec` on the attic deployment.
@@ -529,7 +529,7 @@ def _create_body(is_public: bool, keypair: str | None = None) -> dict[str, Any]:
 
 
 def mint_admin_jwt(namespace: str, deployment: str, server_config: str) -> str:
-    """Mint a short-lived admin JWT via `kubectl exec deploy/attic -- atticadm make-token`.
+    """Mint a short-lived admin JWT via `kubectl exec deploy/attic-next -- atticadm make-token`.
 
     The HS256 signing secret never leaves the attic pod; this process only needs
     `pods/exec` on the attic deployment.
@@ -622,7 +622,7 @@ def bootstrap_caches_cmd(
         str, typer.Option(help="Attic server URL reachable in-cluster")
     ] = "http://attic.nix-cache.svc.cluster.local:8080",
     attic_namespace: Annotated[str, typer.Option(help="Namespace of the attic deployment")] = "nix-cache",
-    attic_deployment: Annotated[str, typer.Option(help="Attic Deployment exec'd for atticadm")] = "deploy/attic",
+    attic_deployment: Annotated[str, typer.Option(help="Attic Deployment exec'd for atticadm")] = "deploy/attic-next",
     server_config: Annotated[
         str, typer.Option(help="Attic server config path inside the attic pod")
     ] = "/config/server.toml",
