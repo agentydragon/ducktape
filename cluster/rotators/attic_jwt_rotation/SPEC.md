@@ -21,7 +21,5 @@ bookkeeping. Kubernetes-only tokens publish and notify, then return without a
 SOPS write or git commit.
 
 Generated configurations contain nested destinations with their default storage
-tags included. The parser still accepts the previous flat shape during rollout.
-Remove that adapter after every deployed rotator ConfigMap uses nested
-destinations. The Ducktape CI writer uses Kubernetes-only storage; per-host
+tags included. The Ducktape CI writer uses Kubernetes-only storage; per-host
 readers and the gaffer-private writer remain SOPS-backed.
