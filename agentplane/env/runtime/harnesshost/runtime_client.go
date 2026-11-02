@@ -174,6 +174,10 @@ func (r *Host) ApplyIntent(ctx context.Context, intent *runtimepb.LifecycleInten
 		}
 	}
 	r.mu.Lock()
+	if r.closing {
+		r.mu.Unlock()
+		return errors.New("Harness Host is closing")
+	}
 	if changedGeneration {
 		r.nativeStopped = false
 	}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -11,12 +13,15 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -54,6 +59,121 @@ func bindingContext(ctx context.Context, binding *runtimepb.Binding) context.Con
 func publishHostIntentStatus(ctx context.Context, r *Host, intent *runtimepb.LifecycleIntent, applied bool) error {
 	value := harnesshostlifecycle.HostIntentStatus{Intent: harnesshostlifecycle.HostIntentFromProto(intent), Applied: applied}
 	return cosi.Publish(ctx, r.lifecycle.state, harnesshostlifecycle.HostIntentStatusResource(value), value, "harness-host-intent")
+}
+
+type pausedSessionInputState struct {
+	state.State
+	armed            atomic.Bool
+	entered          chan struct{}
+	release          chan struct{}
+	closeReadArmed   atomic.Bool
+	closeReadEntered chan struct{}
+	closeReadRelease chan struct{}
+}
+
+func (s *pausedSessionInputState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
+	if err := s.State.Modify(ctx, value, update, opts...); err != nil {
+		return err
+	}
+	if value.Metadata().Type() == session.InputType && s.armed.CompareAndSwap(true, false) {
+		close(s.entered)
+		select {
+		case <-s.release:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
+func (s *pausedSessionInputState) Get(ctx context.Context, pointer resource.Pointer, opts ...state.GetOption) (resource.Resource, error) {
+	value, err := s.State.Get(ctx, pointer, opts...)
+	if err != nil {
+		return nil, err
+	}
+	if pointer.Type() == harnesshostlifecycle.AggregateStatusType && ctx == context.Background() && s.closeReadArmed.CompareAndSwap(true, false) {
+		close(s.closeReadEntered)
+		select {
+		case <-s.closeReadRelease:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return value, nil
+}
+
+func TestHostIntentCannotReopenDesiredStateAfterClose(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	store := &pausedSessionInputState{
+		State: state.WrapCore(namespaced.NewState(inmem.Build)), entered: make(chan struct{}), release: make(chan struct{}),
+		closeReadEntered: make(chan struct{}), closeReadRelease: make(chan struct{}),
+	}
+	r, err := newTestHost(Config{StateDir: t.TempDir(), Launch: configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{UID: "sandbox"}}}, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var release sync.Once
+	var releaseCloseRead sync.Once
+	t.Cleanup(func() {
+		release.Do(func() { close(store.release) })
+		releaseCloseRead.Do(func() { close(store.closeReadRelease) })
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cleanupCancel()
+		if err := r.Close(cleanupCtx); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := r.ApplyIntent(ctx, intentFor(r, 1, runtimepb.LifecycleIntent_RUNNING)); err != nil {
+		t.Fatal(err)
+	}
+	record, err := retained.NewRecord(&sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: r.config.StateDir, Model: "test"}, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.store.Write("session", record); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.sessions.Load(ctx, "session"); err != nil {
+		t.Fatal(err)
+	}
+	store.armed.Store(true)
+	applied := make(chan error, 1)
+	go func() { applied <- r.ApplyIntent(ctx, intentFor(r, 2, runtimepb.LifecycleIntent_RUNNING)) }()
+	select {
+	case <-store.entered:
+	case <-ctx.Done():
+		t.Fatal("Host intent did not reach Session demand reset")
+	}
+	store.closeReadArmed.Store(true)
+	closed := make(chan error, 1)
+	go func() { closed <- r.Close(ctx) }()
+	select {
+	case <-store.closeReadEntered:
+	case <-ctx.Done():
+		t.Fatal("Host Close did not publish Closing")
+	}
+	release.Do(func() { close(store.release) })
+	select {
+	case err := <-applied:
+		if err == nil {
+			t.Fatal("an intent admitted before Close republished Running after Closing")
+		}
+	case <-ctx.Done():
+		t.Fatal("Host intent did not settle")
+	}
+	if got := r.lifecycle.desiredState().Mode; got != harnesshostlifecycle.Closing {
+		t.Fatalf("desired state after Close = %v, want Closing", got)
+	}
+	releaseCloseRead.Do(func() { close(store.closeReadRelease) })
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatalf("Host Close after interrupted intent = %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("Host Close did not finish")
+	}
 }
 
 func TestHostRejectsStaleGenerationBeforeDurableAdmission(t *testing.T) {
