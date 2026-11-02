@@ -99,6 +99,7 @@ async function render(newSandboxDefaults: NewSandboxDefaults = UNSET_DEFAULTS) {
     return { data, response: new Response() } as Awaited<ReturnType<typeof api.GET>>;
   });
   vi.spyOn(appClient, "fetchWithLogin").mockImplementation(async (path, init) => {
+    if (new Headers(init?.headers).get("Accept") === "application/x-ndjson") return fetch(path, init);
     if (String(path) === "/upstream/environments/v1/environment-templates")
       return new Response(JSON.stringify({ names: ["test-template", "other-template"] }));
     if (String(path) === "/upstream/environments/v1/environments" && init?.method === "POST") {
