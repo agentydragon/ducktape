@@ -26,8 +26,10 @@ inventory. It does not prove that PID 1 delivers a request after the original se
 nor that a marker can undo external effects from a command which already began. COSI readiness and
 inventory fence manager-visible units; they are not a distributed fence around arbitrary effects.
 
-The guest currently uses systemd 260.5, resolved from the locked `nixos-26.05` package set. The
-version-pinned upstream docs rule out the simple alternatives considered here:
+The system-test guest's console reports systemd `257.9-1~deb13u1`; this is the manager used by the
+probe. Separately, the Nix-built `agentplane-environment-vm` package resolves systemd 260.5 from
+the locked `nixos-26.05` set. The version-pinned upstream docs rule out the simple alternatives
+considered here:
 
 - `ConditionEnvironment=INVOCATION_ID=...` reads the service manager's environment block; the
   per-unit `$INVOCATION_ID` is passed to the service process environment. It does not compare a
@@ -46,7 +48,9 @@ simpler drop-in for this marker. Revisit only if a proposed native fence passes 
 probe with the no-condition control still demonstrating why stable-name dependencies are not
 enough.
 
-The references match the VM's systemd package:
+The first pair matches the system-test guest; the second pair is for the Nix-built environment VM:
 
+- [systemd.unit.xml, v257.9](https://github.com/systemd/systemd/blob/v257.9/man/systemd.unit.xml)
+- [systemd.exec.xml, v257.9](https://github.com/systemd/systemd/blob/v257.9/man/systemd.exec.xml)
 - [systemd.unit.xml, v260.5](https://github.com/systemd/systemd/blob/v260.5/man/systemd.unit.xml)
 - [systemd.exec.xml, v260.5](https://github.com/systemd/systemd/blob/v260.5/man/systemd.exec.xml)
