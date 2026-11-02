@@ -17,6 +17,11 @@ required COSI subresource or a reason to combine resources with different owners
   `CodexAppServerRuntimes` → `CodexAppServerStatuses`, and `EmbeddedExecutionRuntimes` →
   `ExecutionStatuses`. `EnvironmentRuntimeTransitions` and `EnvironmentRuntimeCloses` also hold
   status and should say so. Align type names, constants, readers, diagrams and documentation.
+  For Sessions, the retained record supplies configuration and `SessionInputs` supplies harness
+  kind and demand; `SessionRuntimes` records controller progress, not a desired runtime spec. The
+  controller realizes demand by launching a Session-owned Claude process or attaching to the
+  shared Codex app-server and establishing a thread. A Codex Session's process ID identifies the
+  shared app-server, and its attachment/router state also lives in memory.
 - Rename `environment-runtime-close` and its controller type to reflect that the same controller
   also coordinates adoption and quiesce transitions. Drop `embedded` from the Execution controller
   and resource names where it merely describes how the service is packaged.
