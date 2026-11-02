@@ -4,7 +4,7 @@ import asyncio
 from types import TracebackType
 from typing import cast
 from unittest.mock import create_autospec
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 import pytest_bazel
@@ -32,7 +32,7 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
                 target=envpb.TargetHandle(namespace="test", name=spec.name, uid=str(uuid4())),
                 execution_account=envpb.AccountHandle(namespace="test", name="runner"),
             )
-            client.opened_sandbox_uids.add(UUID(view.target.uid))
+            client.opened_sandbox_uids.add(view.target.uid)
             return view.target
 
         async def close(
@@ -41,7 +41,7 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
             events.extend(
                 ("client-close", view.target.name)
                 for view in views.values()
-                if UUID(view.target.uid) in opened.opened_sandbox_uids
+                if view.target.uid in opened.opened_sandbox_uids
             )
 
         client.create_sandbox.side_effect = create
@@ -52,11 +52,11 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
         assert target == views[target.name].target
         return views[target.name]
 
-    async def capture(client: Client, *, sandbox_uid: UUID) -> None:
-        (view,) = [view for view in views.values() if UUID(view.target.uid) == sandbox_uid]
+    async def capture(client: Client, *, sandbox_uid: str) -> None:
+        (view,) = [view for view in views.values() if view.target.uid == sandbox_uid]
         events.append(("diagnostics", view.target.name))
 
-    async def delete(cluster: Cluster, client: Client, name: str, uid: UUID) -> None:
+    async def delete(cluster: Cluster, client: Client, name: str, uid: str) -> None:
         events.append(("delete", name))
 
     monkeypatch.setattr(scenario, "Client", new_client)
@@ -120,14 +120,14 @@ async def test_failure_still_releases_every_created_guest_and_closes_client(
         monkeypatch.setattr(sandbox, "wait_until_running", ready)
     elif failure == "diagnostics":
 
-        async def capture(client: Client, *, sandbox_uid: UUID) -> None:
+        async def capture(client: Client, *, sandbox_uid: str) -> None:
             raise RuntimeError("diagnostics")
 
         monkeypatch.setattr(native_artifacts, "capture", capture)
     elif failure == "deletion":
         original_delete = sandbox.suspend_and_delete
 
-        async def delete(cluster: Cluster, client: Client, name: str, uid: UUID) -> None:
+        async def delete(cluster: Cluster, client: Client, name: str, uid: str) -> None:
             await original_delete(cluster, client, name, uid)
             if name == "second":
                 raise RuntimeError("deletion")
@@ -156,7 +156,7 @@ async def test_cancellation_during_teardown_waits_for_deletion_before_closing_cl
     release = asyncio.Event()
     original_delete = sandbox.suspend_and_delete
 
-    async def delete(cluster: Cluster, client: Client, name: str, uid: UUID) -> None:
+    async def delete(cluster: Cluster, client: Client, name: str, uid: str) -> None:
         deleting.set()
         await release.wait()
         await original_delete(cluster, client, name, uid)

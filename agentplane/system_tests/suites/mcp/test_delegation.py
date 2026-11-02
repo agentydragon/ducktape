@@ -6,7 +6,7 @@ import asyncio
 import json
 import re
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -100,7 +100,7 @@ async def _wait_basic_policy(
         await policy_objects.wait_actions_ready(binding["metadata"]["name"])
 
 
-async def _cleanup_sandbox(cluster: Cluster, token: str, name: str, uid: UUID) -> None:
+async def _cleanup_sandbox(cluster: Cluster, token: str, name: str, uid: str) -> None:
     service = json.loads(await cluster.kubectl("get", "service", "app", "-o", "json"))
     remote_port = service["spec"]["ports"][0]["port"]
     forward = PortForward(
@@ -513,7 +513,7 @@ async def test_external_connection_delegates_without_the_integration_app(
             await cluster.kubectl("scale", "deployment/app", "--replicas=1")
             await cluster.kubectl("wait", "--for=condition=Available", "deployment/app", "--timeout=180s")
             await _wait_app(cluster, replicas=1)
-        await _cleanup_sandbox(cluster, deployment.token, created.name, UUID(created.uid))
+        await _cleanup_sandbox(cluster, deployment.token, created.name, created.uid)
 
 
 if __name__ == "__main__":

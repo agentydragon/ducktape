@@ -256,6 +256,11 @@ func (s *Service) collection(ctx context.Context, identity auth.ServiceAccountPr
 			continue
 		}
 		value, err := s.describe(ctx, resource, execution, identity)
+		if status.Code(err) == codes.NotFound {
+			// The Sandbox was deleted or replaced while its eligibility was read. The
+			// already-open Kubernetes watch will deliver the corresponding update.
+			continue
+		}
 		if err != nil {
 			return nil, watchFailure(ctx, err)
 		}
@@ -297,6 +302,11 @@ func (s *Service) collectionItem(ctx context.Context, identity auth.ServiceAccou
 		return nil, podName, nil
 	}
 	item, err := s.describe(ctx, resource, execution, identity)
+	if status.Code(err) == codes.NotFound {
+		// A concurrent deletion or replacement is an inventory change, not a
+		// failure of the whole collection watch. Its event will refresh this name.
+		return nil, podName, nil
+	}
 	if err != nil {
 		return nil, "", watchFailure(ctx, err)
 	}

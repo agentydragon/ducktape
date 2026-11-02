@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import shlex
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from agentplane.app.testing.client import Client
 from agentplane.env.runtime.harness import Harness
@@ -32,7 +32,7 @@ async def fresh_vm_session_workspace_is_created_for_harness_identity(client: Cli
     absent, _ = await run_setup(
         client,
         sandbox_name=view.target.name,
-        sandbox_uid=UUID(view.target.uid),
+        sandbox_uid=view.target.uid,
         session_id=preflight_session_id,
         harness=harness,
         model=model,
@@ -74,7 +74,7 @@ async def fresh_vm_session_workspace_is_created_for_harness_identity(client: Cli
     output, stderr = await run_setup(
         client,
         sandbox_name=view.target.name,
-        sandbox_uid=UUID(view.target.uid),
+        sandbox_uid=view.target.uid,
         session_id=session_id,
         harness=harness,
         model=model,

@@ -52,7 +52,7 @@ RECALL_PROMPT = (
 )
 
 
-def _storage_volumes(cluster: Cluster, sandbox_uid: UUID) -> dict[str, tuple[str, str]]:
+def _storage_volumes(cluster: Cluster, sandbox_uid: str) -> dict[str, tuple[str, str]]:
     result = subprocess.run(
         cluster.command("get", "pvc", "-o", "json"), capture_output=True, text=True, check=True, timeout=20
     )
@@ -60,7 +60,7 @@ def _storage_volumes(cluster: Cluster, sandbox_uid: UUID) -> dict[str, tuple[str
         claim
         for claim in json.loads(result.stdout)["items"]
         if any(
-            owner.get("controller") and owner["uid"] == str(sandbox_uid)
+            owner.get("controller") and owner["uid"] == sandbox_uid
             for owner in claim["metadata"].get("ownerReferences", [])
         )
     ]
@@ -360,7 +360,7 @@ class _ResumeRun:
             view=view,
             template=template,
             original_incarnation=view.pod.uid,
-            storage_volumes=_storage_volumes(cluster, UUID(view.target.uid)),
+            storage_volumes=_storage_volumes(cluster, view.target.uid),
         )
         run.save()
         return run
@@ -418,7 +418,7 @@ class _ResumeRun:
             assert len({agent.thread_id for agent in self.agents.values()}) == len(self.agents)
             await self.client.suspend_sandbox(self.view.target.name, uid=self.view.target.uid)
             await _wait_until_suspended_without_pod(self.client, self.view.target)
-            assert _storage_volumes(self.cluster, UUID(self.view.target.uid)) == self.storage_volumes
+            assert _storage_volumes(self.cluster, self.view.target.uid) == self.storage_volumes
             for harness, agent in self.agents.items():
                 self.suspended_history[harness] = await _history(self.client, agent.thread_id, completed_turns=None)
                 _assert_prefix(self.seeded_history[harness], self.suspended_history[harness])
@@ -443,7 +443,7 @@ class _ResumeRun:
             assert resumed.target.uid == self.view.target.uid
             assert resumed.HasField("pod")
             assert resumed.pod.uid != self.original_incarnation
-            assert _storage_volumes(self.cluster, UUID(self.view.target.uid)) == self.storage_volumes
+            assert _storage_volumes(self.cluster, self.view.target.uid) == self.storage_volumes
             self.view = resumed
             self.resumed_incarnation = resumed.pod.uid
             self.checks.append("same_sandbox_new_incarnation_same_volumes")

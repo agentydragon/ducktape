@@ -13,7 +13,6 @@ import json
 import logging
 import time
 from collections.abc import AsyncGenerator
-from contextlib import aclosing
 from http import HTTPStatus
 from types import TracebackType
 from typing import Any, Self
@@ -52,6 +51,7 @@ REQUEST_SECONDS = 30.0
 # initContainer, then startup) when its pod was deleted on 2026-10-13.
 RECONNECT_SECONDS = 600.0
 RECONNECT_PAUSE_SECONDS = 2.0
+GRPC_UNAVAILABLE = 14
 _ROLLING_STATUSES = frozenset({HTTPStatus.BAD_GATEWAY, HTTPStatus.SERVICE_UNAVAILABLE, HTTPStatus.GATEWAY_TIMEOUT})
 
 
@@ -77,7 +77,7 @@ class Client:
     """Async context manager over one deployment of the app."""
 
     def __init__(self, *, base_url: str, token: str) -> None:
-        self.opened_sandbox_uids: set[UUID] = set()
+        self.opened_sandbox_uids: set[str] = set()
         self._http = httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
             headers={"Authorization": f"Bearer {token}"},
@@ -138,10 +138,7 @@ class Client:
         uid = response.get("uid")
         if not isinstance(uid, str) or not uid:
             raise RuntimeError("Sandbox creation acknowledgement did not include a UID")
-        try:
-            self.opened_sandbox_uids.add(UUID(uid))
-        except ValueError as error:
-            raise RuntimeError(f"Sandbox creation acknowledged invalid UID {uid!r}") from error
+        self.opened_sandbox_uids.add(uid)
         return environment_service_pb2.TargetHandle(namespace=namespace, name=response["name"], uid=uid)
 
     async def get_environment(
@@ -156,49 +153,12 @@ class Client:
         response = await self._json("GET", path, params={"target.uid": target.uid})
         return ParseDict(response, environment_service_pb2.EnvironmentDescriptor())
 
-    async def get_environment_by_name(
-        self, name: str, *, expected_uid: UUID | str
-    ) -> environment_service_pb2.EnvironmentDescriptor:
-        """Resolve a known target only through authorized inventory, then perform its UID-fenced Get."""
-        target = await self.environment_target(name, expected_uid=expected_uid)
-        return await self.get_environment(target)
-
-    async def environment_target(
-        self, name: str, *, expected_uid: UUID | str | None = None
-    ) -> environment_service_pb2.TargetHandle:
-        """Resolve a name only through caller-authorized inventory, retaining a known UID fence."""
-        async with asyncio.timeout(REQUEST_SECONDS), aclosing(self.sandbox_snapshots()) as snapshots:
-            async for snapshot in snapshots:
-                named = [environment.target for environment in snapshot if environment.target.name == name]
-                if expected_uid is not None:
-                    matches = [target for target in named if target.uid == str(expected_uid)]
-                    if not matches:
-                        if named:
-                            observed_uids = ", ".join(target.uid for target in named)
-                            raise LookupError(
-                                f"EnvironmentService target {name!r} was replaced: "
-                                f"expected {expected_uid}, observed {observed_uids}"
-                            )
-                        continue
-                else:
-                    matches = named
-                if len(matches) > 1:
-                    raise LookupError(f"EnvironmentService inventory has multiple targets named {name!r}")
-                if not matches:
-                    continue
-                target = environment_service_pb2.TargetHandle()
-                target.CopyFrom(matches[0])
-                return target
-        raise LookupError(f"EnvironmentService inventory ended before target {name!r} was observed")
-
     async def runner_status(self, name: str) -> session_pb2.EnvironmentRuntimeStatus:
         response = await self._json("GET", f"/sandboxes/{name}/runner-status")
         return ParseDict(response, session_pb2.EnvironmentRuntimeStatus())
 
     async def sandbox_snapshots(self) -> AsyncGenerator[list[environment_service_pb2.EnvironmentDescriptor]]:
         """Yield complete inventories reconstructed from the EnvironmentService watch."""
-        pending: dict[tuple[str, str], environment_service_pb2.EnvironmentDescriptor] | None = {}
-        current: dict[tuple[str, str], environment_service_pb2.EnvironmentDescriptor] = {}
 
         def key(environment: environment_service_pb2.EnvironmentDescriptor) -> tuple[str, str]:
             if (
@@ -210,58 +170,67 @@ class Client:
                 raise RuntimeError("EnvironmentService returned a descriptor without its target")
             return environment.target.namespace, environment.target.name
 
-        async with self._http.stream(
-            "GET",
-            "/upstream/environments/v1/environments:watch",
-            headers={"Accept": "application/x-ndjson"},
-            timeout=httpx.Timeout(REQUEST_SECONDS, read=None),
-        ) as response:
-            response.raise_for_status()
-            async for line in response.aiter_lines():
-                if not line:
-                    continue
-                envelope = json.loads(line)
-                if "error" in envelope:
-                    raise RuntimeError(f"Environment watch failed: {envelope['error']}")
-                frame = ParseDict(envelope["result"], environment_service_pb2.WatchEnvironmentsResponse())
-                match frame.WhichOneof("frame"):
-                    case "snapshot":
-                        if pending is None:
-                            raise RuntimeError("unexpected inventory snapshot chunk")
-                        for environment in frame.snapshot.environments:
-                            pending[key(environment)] = environment
-                    case "snapshot_complete":
-                        if pending is None:
-                            raise RuntimeError("unexpected inventory snapshot completion")
-                        current, pending = pending, None
-                        yield [current[key] for key in sorted(current)]
-                    case "upsert":
-                        if pending is not None:
-                            raise RuntimeError("inventory update before snapshot completion")
-                        environment = frame.upsert
-                        current[key(environment)] = environment
-                        yield [current[key] for key in sorted(current)]
-                    case "removed":
-                        if pending is not None:
-                            raise RuntimeError("inventory removal before snapshot completion")
-                        removed = frame.removed
-                        removed_key = (removed.namespace, removed.name)
-                        previous = current.get(removed_key)
-                        if previous is not None and previous.target.uid == removed.uid:
-                            del current[removed_key]
+        while True:
+            pending: dict[tuple[str, str], environment_service_pb2.EnvironmentDescriptor] | None = {}
+            current: dict[tuple[str, str], environment_service_pb2.EnvironmentDescriptor] = {}
+            reconnect = False
+            async with self._http.stream(
+                "GET",
+                "/upstream/environments/v1/environments:watch",
+                headers={"Accept": "application/x-ndjson"},
+                timeout=httpx.Timeout(REQUEST_SECONDS, read=None),
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line:
+                        continue
+                    envelope = json.loads(line)
+                    if "error" in envelope:
+                        if envelope["error"].get("code") == GRPC_UNAVAILABLE:
+                            reconnect = True
+                            break
+                        raise RuntimeError(f"Environment watch failed: {envelope['error']}")
+                    frame = ParseDict(envelope["result"], environment_service_pb2.WatchEnvironmentsResponse())
+                    match frame.WhichOneof("frame"):
+                        case "snapshot":
+                            if pending is None:
+                                raise RuntimeError("unexpected inventory snapshot chunk")
+                            for environment in frame.snapshot.environments:
+                                pending[key(environment)] = environment
+                        case "snapshot_complete":
+                            if pending is None:
+                                raise RuntimeError("unexpected inventory snapshot completion")
+                            current, pending = pending, None
                             yield [current[key] for key in sorted(current)]
-                    case _:
-                        raise RuntimeError("Environment watch returned an empty frame")
-        raise RuntimeError("the Sandbox inventory stream ended")
+                        case "upsert":
+                            if pending is not None:
+                                raise RuntimeError("inventory update before snapshot completion")
+                            environment = frame.upsert
+                            current[key(environment)] = environment
+                            yield [current[key] for key in sorted(current)]
+                        case "removed":
+                            if pending is not None:
+                                raise RuntimeError("inventory removal before snapshot completion")
+                            removed = frame.removed
+                            removed_key = (removed.namespace, removed.name)
+                            previous = current.get(removed_key)
+                            if previous is not None and previous.target.uid == removed.uid:
+                                del current[removed_key]
+                                yield [current[key] for key in sorted(current)]
+                        case _:
+                            raise RuntimeError("Environment watch returned an empty frame")
+            if not reconnect:
+                raise RuntimeError("the Sandbox inventory stream ended")
+            await asyncio.sleep(RECONNECT_PAUSE_SECONDS)
 
-    async def suspend_sandbox(self, name: str, *, uid: UUID | str) -> None:
-        await self._json("POST", f"/sandboxes/{name}/suspend", json={"uid": str(uid)})
+    async def suspend_sandbox(self, name: str, *, uid: str) -> None:
+        await self._json("POST", f"/sandboxes/{name}/suspend", json={"uid": uid})
 
-    async def resume_sandbox(self, name: str, *, uid: UUID | str) -> None:
-        await self._json("POST", f"/sandboxes/{name}/resume", json={"uid": str(uid)})
+    async def resume_sandbox(self, name: str, *, uid: str) -> None:
+        await self._json("POST", f"/sandboxes/{name}/resume", json={"uid": uid})
 
-    async def delete_sandbox(self, name: str, *, uid: UUID) -> None:
-        await self._json("DELETE", f"/sandboxes/{name}", json={"uid": str(uid)})
+    async def delete_sandbox(self, name: str, *, uid: str) -> None:
+        await self._json("DELETE", f"/sandboxes/{name}", json={"uid": uid})
 
     async def bindings(self, name: str) -> list[BindingView]:
         return [BindingView.model_validate(row) for row in await self._json("GET", f"/sandboxes/{name}/egress")]
@@ -288,7 +257,7 @@ class Client:
         name: str,
         session_id: UUID,
         *,
-        sandbox_uid: UUID | str,
+        sandbox_uid: str,
         overrides: dict[str, object] | None = None,
         setup_script: str | None = None,
     ) -> None:
@@ -306,13 +275,13 @@ class Client:
         name: str,
         session_id: UUID,
         *,
-        sandbox_uid: UUID | str,
+        sandbox_uid: str,
         overrides: dict[str, object] | None = None,
         setup_script: str | None = None,
     ) -> session_dispatcher_pb2.SessionOpening:
         """Submit an opening and return its first durable state without waiting for admission."""
         body = app_service_pb2.OpenSessionRequest(
-            session_id=str(session_id), sandbox_uid=str(sandbox_uid), spec=overrides or {}
+            session_id=str(session_id), sandbox_uid=sandbox_uid, spec=overrides or {}
         )
         if setup_script is not None:
             body.setup_script.string_value = setup_script
@@ -320,7 +289,9 @@ class Client:
             "POST", f"/sandboxes/{name}/sessions", json=MessageToDict(body, preserving_proto_field_name=True)
         )
         opening = ParseDict(answered, session_dispatcher_pb2.SessionOpening())
-        self.opened_sandbox_uids.add(UUID(opening.sandbox_uid))
+        if not sandbox_uid or opening.sandbox_uid != sandbox_uid:
+            raise RuntimeError("Session opening acknowledged a different Sandbox UID")
+        self.opened_sandbox_uids.add(opening.sandbox_uid)
         return opening
 
     async def session_opening(self, name: str, session_id: UUID) -> session_dispatcher_pb2.SessionOpening:
@@ -382,7 +353,7 @@ class Client:
                     raise TimeoutError(f"Thread {thread_id} was not projected within {timeout_s:g}s") from error
                 await asyncio.sleep(0.2)
 
-    async def threads(self, *, sandbox_uid: UUID) -> AsyncGenerator[ThreadView]:
+    async def threads(self, *, sandbox_uid: str) -> AsyncGenerator[ThreadView]:
         """Every retained Thread of this Sandbox incarnation, including archived Threads."""
         params = {"include_archived": "true", "limit": "200"}
         while True:
@@ -396,7 +367,7 @@ class Client:
                         continue
                     raise
                 history_sandbox = summary.get("sandbox") or {}
-                if history_sandbox.get("uid") == str(sandbox_uid):
+                if history_sandbox.get("uid") == sandbox_uid:
                     yield thread_view_from_proto_json(row, summary)
             page_token = page.get("nextPageToken")
             if not page_token:

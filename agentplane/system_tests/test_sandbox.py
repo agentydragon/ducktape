@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from typing import cast
 from unittest.mock import AsyncMock, call, create_autospec
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -21,10 +21,10 @@ from agentplane.system_tests.sandbox import SandboxNotReadyError, suspend_and_de
 
 
 def _environment(
-    name: str, uid: UUID, *, ready: bool, operating_mode: str = "OPERATING_MODE_RUNNING"
+    name: str, uid: str, *, ready: bool, operating_mode: str = "OPERATING_MODE_RUNNING"
 ) -> envpb.EnvironmentDescriptor:
     return envpb.EnvironmentDescriptor(
-        target=envpb.TargetHandle(namespace="test", name=name, uid=str(uid)),
+        target=envpb.TargetHandle(namespace="test", name=name, uid=uid),
         execution_account=envpb.AccountHandle(namespace="test", name="runner"),
         operating_mode=operating_mode,
         readiness=envpb.Readiness(state=envpb.READINESS_STATE_READY if ready else envpb.READINESS_STATE_NOT_READY),
@@ -35,16 +35,13 @@ def _snapshot(*environments: envpb.EnvironmentDescriptor) -> list[envpb.Environm
     return list(environments)
 
 
-def _target(name: str, uid: UUID) -> envpb.TargetHandle:
-    return envpb.TargetHandle(namespace="test", name=name, uid=str(uid))
+def _target(name: str, uid: str) -> envpb.TargetHandle:
+    return envpb.TargetHandle(namespace="test", name=name, uid=uid)
 
 
 def _create_targets(client: Client, names: tuple[str, ...]) -> dict[str, envpb.TargetHandle]:
-    created = {name: _target(name, uuid4()) for name in names}
+    created = {name: _target(name, str(uuid4())) for name in names}
     cast(AsyncMock, client.create_sandbox).side_effect = list(created.values())
-    cast(AsyncMock, client.environment_target).side_effect = lambda name, *, expected_uid: _target(
-        name, UUID(str(expected_uid))
-    )
     return created
 
 
@@ -57,7 +54,7 @@ def cluster() -> Cluster:
 
 async def test_readiness_accepts_an_already_ready_sandbox_from_initial_inventory() -> None:
     client = create_autospec(Client, instance=True)
-    view = _environment("readiness-test", uuid4(), ready=True)
+    view = _environment("readiness-test", str(uuid4()), ready=True)
     closed = False
 
     async def snapshots() -> AsyncIterator[list[envpb.EnvironmentDescriptor]]:
@@ -79,7 +76,7 @@ async def test_readiness_accepts_an_already_ready_sandbox_from_initial_inventory
 
 async def test_readiness_waits_for_a_later_ready_snapshot() -> None:
     client = create_autospec(Client, instance=True)
-    uid = uuid4()
+    uid = str(uuid4())
     ready = _environment("readiness-test", uid, ready=True)
     not_ready = _environment("readiness-test", uid, ready=False)
     suspended_ready_condition = _environment(
@@ -107,14 +104,14 @@ async def test_readiness_propagates_a_lost_inventory_source() -> None:
 
     client.sandbox_snapshots.return_value = snapshots()
     with pytest.raises(RuntimeError, match="source failed"):
-        await sandbox.wait_until_running(client, "readiness-test", expected_uid=uuid4())
+        await sandbox.wait_until_running(client, _target("readiness-test", str(uuid4())))
 
 
 async def test_readiness_rejects_a_replaced_sandbox_incarnation() -> None:
     client = create_autospec(Client, instance=True)
-    expected_uid = uuid4()
-    replacement = _environment("readiness-test", uuid4(), ready=True)
-    expected = envpb.TargetHandle(namespace="test", name="readiness-test", uid=str(expected_uid))
+    expected_uid = str(uuid4())
+    replacement = _environment("readiness-test", str(uuid4()), ready=True)
+    expected = envpb.TargetHandle(namespace="test", name="readiness-test", uid=expected_uid)
 
     async def snapshots() -> AsyncIterator[list[envpb.EnvironmentDescriptor]]:
         yield _snapshot(replacement)
@@ -129,7 +126,7 @@ async def test_readiness_rejects_a_replaced_sandbox_incarnation() -> None:
 async def test_readiness_timeout_closes_the_watch(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sandbox, "SANDBOX_READY_SECONDS", 0.01)
     client = create_autospec(Client, instance=True)
-    view = _environment("readiness-test", uuid4(), ready=False)
+    view = _environment("readiness-test", str(uuid4()), ready=False)
     closed = False
 
     async def snapshots() -> AsyncIterator[list[envpb.EnvironmentDescriptor]]:
@@ -152,7 +149,7 @@ async def test_readiness_timeout_closes_the_watch(monkeypatch: pytest.MonkeyPatc
 
 async def test_readiness_propagates_inventory_stream_end() -> None:
     client = create_autospec(Client, instance=True)
-    uid = uuid4()
+    uid = str(uuid4())
 
     async def snapshots() -> AsyncIterator[list[envpb.EnvironmentDescriptor]]:
         yield _snapshot()
@@ -162,12 +159,12 @@ async def test_readiness_propagates_inventory_stream_end() -> None:
     client.sandbox_snapshots.return_value = snapshots()
 
     with pytest.raises(RuntimeError, match="inventory stream ended"):
-        await sandbox.wait_until_running(client, "readiness-test", expected_uid=uid)
+        await sandbox.wait_until_running(client, _target("readiness-test", uid))
 
 
 async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluster: Cluster) -> None:
     client = create_autospec(Client, instance=True)
-    uid = uuid4()
+    uid = str(uuid4())
     closed = False
     deletion_observed = False
 
@@ -204,11 +201,11 @@ async def test_cleanup_does_not_delete_a_replacement_sandbox(cluster: Cluster) -
     client = create_autospec(Client, instance=True)
 
     async def snapshots() -> AsyncIterator[list[envpb.EnvironmentDescriptor]]:
-        yield [_environment("owned-test-sandbox", uuid4(), ready=False, operating_mode="OPERATING_MODE_SUSPENDED")]
+        yield [_environment("owned-test-sandbox", str(uuid4()), ready=False, operating_mode="OPERATING_MODE_SUSPENDED")]
 
     client.sandbox_snapshots.return_value = snapshots()
     with pytest.raises(SandboxNotReadyError, match="has been replaced"):
-        await suspend_and_delete(cluster, client, "owned-test-sandbox", uuid4())
+        await suspend_and_delete(cluster, client, "owned-test-sandbox", str(uuid4()))
     client.delete_sandbox.assert_not_awaited()
 
 
@@ -229,7 +226,7 @@ async def test_cleanup_bounds_a_watch_that_stops_making_progress(
 
     client.sandbox_snapshots.return_value = snapshots()
     with pytest.raises(TimeoutError):
-        await suspend_and_delete(cluster, client, "owned-test-sandbox", uuid4())
+        await suspend_and_delete(cluster, client, "owned-test-sandbox", str(uuid4()))
     client.delete_sandbox.assert_not_awaited()
     assert closed
 
@@ -246,7 +243,7 @@ async def test_cleanup_does_not_retry_an_authorization_refusal_or_delete(cluster
     client.sandbox_snapshots.return_value = snapshots()
 
     with pytest.raises(httpx.HTTPStatusError):
-        await suspend_and_delete(cluster, client, "owned-test-sandbox", uuid4())
+        await suspend_and_delete(cluster, client, "owned-test-sandbox", str(uuid4()))
 
     client.sandbox_snapshots.assert_called_once()
     client.delete_sandbox.assert_not_awaited()
@@ -258,7 +255,7 @@ async def test_scope_releases_owned_sandboxes_concurrently(cluster: Cluster, mon
 
     async def ready(_client: Client, target: envpb.TargetHandle) -> envpb.EnvironmentDescriptor:
         assert target == views[target.name]
-        return _environment(target.name, UUID(target.uid), ready=True)
+        return _environment(target.name, target.uid, ready=True)
 
     monkeypatch.setattr(sandbox, "wait_until_running", ready)
     started: set[str] = set()
@@ -301,7 +298,7 @@ async def test_scope_drains_other_owners_when_one_cleanup_fails(
 
     async def ready(_client: Client, target: envpb.TargetHandle) -> envpb.EnvironmentDescriptor:
         assert target == views[target.name]
-        return _environment(target.name, UUID(target.uid), ready=True)
+        return _environment(target.name, target.uid, ready=True)
 
     monkeypatch.setattr(sandbox, "wait_until_running", ready)
     started: set[str] = set()
@@ -348,7 +345,7 @@ async def test_scope_preserves_multiple_cleanup_failures(cluster: Cluster, monke
 
     async def ready(_client: Client, target: envpb.TargetHandle) -> envpb.EnvironmentDescriptor:
         assert target == views[target.name]
-        return _environment(target.name, UUID(target.uid), ready=True)
+        return _environment(target.name, target.uid, ready=True)
 
     monkeypatch.setattr(sandbox, "wait_until_running", ready)
     started: set[str] = set()
@@ -414,7 +411,7 @@ async def test_scope_cleans_failed_boot_and_preserves_its_error(
 
     with pytest.raises(RuntimeError, match="boot did not become ready"):
         await use_scope()
-    assert cleanup == [(created.name, UUID(created.uid))]
+    assert cleanup == [(created.name, created.uid)]
 
 
 async def test_scope_body_cancellation_waits_for_cleanup_and_keeps_failures(
@@ -425,7 +422,7 @@ async def test_scope_body_cancellation_waits_for_cleanup_and_keeps_failures(
 
     async def ready(_client: Client, target: envpb.TargetHandle) -> envpb.EnvironmentDescriptor:
         assert target == views[target.name]
-        return _environment(target.name, UUID(target.uid), ready=True)
+        return _environment(target.name, target.uid, ready=True)
 
     monkeypatch.setattr(sandbox, "wait_until_running", ready)
     body_started = asyncio.Event()
@@ -485,7 +482,7 @@ async def test_scope_cancellation_during_cleanup_waits_for_every_owner(
 
     async def ready(_client: Client, target: envpb.TargetHandle) -> envpb.EnvironmentDescriptor:
         assert target == views[target.name]
-        return _environment(target.name, UUID(target.uid), ready=True)
+        return _environment(target.name, target.uid, ready=True)
 
     monkeypatch.setattr(sandbox, "wait_until_running", ready)
     cleanup_started = asyncio.Event()

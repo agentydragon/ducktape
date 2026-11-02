@@ -10,7 +10,6 @@ from datetime import datetime
 from http import HTTPStatus
 from types import TracebackType
 from typing import Any
-from uuid import UUID
 
 import httpx
 from google.protobuf.json_format import MessageToDict
@@ -40,7 +39,7 @@ Sandboxes = Callable[..., Coroutine[Any, Any, environment_service_pb2.Environmen
 async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tracer) -> AsyncIterator[Sandboxes]:
     """Own every Sandbox created in this scope, including one that never becomes ready."""
     async with AsyncExitStack() as cleanup:
-        owned: list[tuple[str, UUID]] = []
+        owned: list[tuple[str, str]] = []
 
         async def release_owned(
             _exc_type: type[BaseException] | None, exc: BaseException | None, _traceback: TracebackType | None
@@ -117,8 +116,7 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
                     request.idle_suspend_after_seconds = idle_suspend_after_seconds
                 created = await client.create_sandbox(request)
             # Register the exact acknowledged incarnation before any follow-on watch or Get can fail.
-            created_uid = UUID(created.uid)
-            owned.append((created.name, created_uid))
+            owned.append((created.name, created.uid))
             return await wait_until_running(client, created)
 
         yield create
@@ -156,27 +154,16 @@ class SandboxNotReadyError(Exception):
 
 
 async def wait_until_running(
-    client: Client, target: environment_service_pb2.TargetHandle | str, *, expected_uid: UUID | None = None
+    client: Client, target: environment_service_pb2.TargetHandle
 ) -> environment_service_pb2.EnvironmentDescriptor:
     """Wait for the named Sandbox incarnation to report its own Ready condition."""
-    if isinstance(target, str):
-        name = target
-        if expected_uid is None:
-            raise ValueError("expected_uid is required when waiting by name")
-        requested_target = None
-    else:
-        if not target.namespace or not target.name or not target.uid:
-            raise ValueError("complete EnvironmentService target handle is required")
-        name = target.name
-        target_uid = UUID(target.uid)
-        if expected_uid is not None and expected_uid != target_uid:
-            raise ValueError(f"target UID {target.uid} does not match expected UID {expected_uid}")
-        expected_uid = target_uid
-        requested_target = environment_service_pb2.TargetHandle()
-        requested_target.CopyFrom(target)
-    assert expected_uid is not None
+    if not target.namespace or not target.name or not target.uid:
+        raise ValueError("complete EnvironmentService target handle is required")
+    requested_target = environment_service_pb2.TargetHandle()
+    requested_target.CopyFrom(target)
+    name, expected_uid = requested_target.name, requested_target.uid
     with tracer.start_as_current_span(
-        "system_test.sandbox.ready", attributes={"sandbox.name": name, "sandbox.uid": str(expected_uid)}
+        "system_test.sandbox.ready", attributes={"sandbox.name": name, "sandbox.uid": expected_uid}
     ) as ready_span:
         deadline = asyncio.timeout(SANDBOX_READY_SECONDS)
         last_status: dict[str, object] | None = None
@@ -186,10 +173,9 @@ async def wait_until_running(
                     candidates = [
                         row
                         for row in snapshot
-                        if row.target.name == name
-                        and (requested_target is None or row.target.namespace == requested_target.namespace)
+                        if row.target.name == name and row.target.namespace == requested_target.namespace
                     ]
-                    observed = next((row for row in candidates if row.target.uid == str(expected_uid)), None)
+                    observed = next((row for row in candidates if row.target.uid == expected_uid), None)
                     if observed is None:
                         if candidates:
                             raise SandboxNotReadyError(
@@ -198,12 +184,12 @@ async def wait_until_running(
                             )
                         continue
                     try:
-                        view = await client.get_environment(requested_target or observed.target)
+                        view = await client.get_environment(requested_target)
                     except httpx.HTTPStatusError as error:
                         if error.response.status_code == HTTPStatus.NOT_FOUND:
                             continue
                         raise
-                    if view.target.uid != str(expected_uid):
+                    if view.target.uid != expected_uid:
                         raise SandboxNotReadyError(
                             f"{name} has been replaced: expected {expected_uid}, observed {view.target.uid}"
                         )
@@ -224,9 +210,9 @@ async def wait_until_running(
             ) from error
 
 
-async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: UUID) -> None:
+async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: str) -> None:
     with tracer.start_as_current_span(
-        "system_test.sandbox.cleanup", attributes={"sandbox.name": name, "sandbox.uid": str(uid)}
+        "system_test.sandbox.cleanup", attributes={"sandbox.name": name, "sandbox.uid": uid}
     ) as cleanup:
         await client.suspend_sandbox(name, uid=uid)
         cleanup.add_event("suspend.accepted")
@@ -243,7 +229,7 @@ async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: U
                             cleanup.add_event("deleted")
                             return
                         continue
-                    if view.target.uid != str(uid):
+                    if view.target.uid != uid:
                         raise SandboxNotReadyError(
                             f"{name} has been replaced: expected {uid}, observed {view.target.uid}"
                         )
@@ -264,7 +250,7 @@ async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: U
             raise
 
 
-async def _write_cleanup_diagnostics(cluster: Cluster, client: Client, name: str, uid: UUID, last_snapshot: Any) -> str:
+async def _write_cleanup_diagnostics(cluster: Cluster, client: Client, name: str, uid: str, last_snapshot: Any) -> str:
     """Capture the state and control logs when the effective suspend watch stops progressing."""
 
     diagnostic: dict[str, Any] = {
@@ -284,9 +270,7 @@ async def _write_cleanup_diagnostics(cluster: Cluster, client: Client, name: str
         except Exception as error:
             diagnostic[f"{key}_error"] = repr(error)
 
-    observed = next(
-        (row for row in last_snapshot or [] if row.target.name == name and row.target.uid == str(uid)), None
-    )
+    observed = next((row for row in last_snapshot or [] if row.target.name == name and row.target.uid == uid), None)
     state_operations = [app_state("runner_status", lambda: client.runner_status(name))]
     if observed is not None:
         state_operations.append(app_state("app_sandbox", lambda: client.get_environment(observed.target)))

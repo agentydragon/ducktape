@@ -611,8 +611,9 @@ async def launcher_drives_only_the_sandbox_it_launched(
     assert target["name"] == name
     deleted = False
     try:
-        view = await wait_until_running(client, name, expected_uid=UUID(target["uid"]))
-        assert str(view.target.uid) == target["uid"]
+        environment_target = json_format.ParseDict(target, environment_service_pb2.TargetHandle())
+        view = await wait_until_running(client, environment_target)
+        assert view.target.uid == target["uid"]
         assert view.HasField("pod")
         # The Action Service holds the grant once it acknowledges the binding.
         await policy_objects.wait_actions_ready(f"{name}.launcher")
@@ -732,7 +733,7 @@ async def launcher_drives_only_the_sandbox_it_launched(
         assert refused.decision.provider == "action_policy_set"
         assert refused.decision.policy_evidence.matched.policy_set == f"{name}.launcher"
 
-        await suspend_and_delete(cluster, client, name, UUID(view.target.uid))
+        await suspend_and_delete(cluster, client, name, view.target.uid)
         deleted = True
         await _wait_unbound(operator_bff, launcher_view, f"{name}.launcher")
         revoked = await launcher.submit(
@@ -741,7 +742,7 @@ async def launcher_drives_only_the_sandbox_it_launched(
         await _decide_pending(operator_bff, revoked.id, action_service_pb2.VERDICT_DENY)
     finally:
         if not deleted:
-            await suspend_and_delete(cluster, client, name, UUID(target["uid"]))
+            await suspend_and_delete(cluster, client, name, target["uid"])
 
 
 # `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.

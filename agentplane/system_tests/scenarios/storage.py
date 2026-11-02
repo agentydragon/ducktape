@@ -8,7 +8,7 @@ import json
 import shlex
 from contextlib import AsyncExitStack
 from enum import StrEnum
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import yaml
 from kubernetes_asyncio import client as k8s
@@ -201,7 +201,7 @@ async def _volumes(cluster: Cluster, name: str, uid: str) -> dict:
     }
 
 
-async def _probe(client: Client, name: str, sandbox_uid: UUID, cwd: str, workspace_dir: str, marker: str) -> dict:
+async def _probe(client: Client, name: str, sandbox_uid: str, cwd: str, workspace_dir: str, marker: str) -> dict:
     state = "/state/storage-systest-state"
     workspace = f"{workspace_dir}/storage-systest-workspace"
     source = f'set -eu\ntest "$(cat {state})" = {shlex.quote(marker)}\nsha256sum {state}\n'
@@ -334,7 +334,7 @@ async def fresh_workspace_storage_survives_replacement(
                 )
             )
         uid = created["metadata"]["uid"]
-        sandbox_uid = UUID(uid)
+        sandbox_uid = uid
         evidence["sandbox_uid"] = uid
 
         async def cleanup_sandbox() -> None:

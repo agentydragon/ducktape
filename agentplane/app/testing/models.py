@@ -113,7 +113,7 @@ class ThreadView(BaseModel):
 
     id: UUID
     sandbox: str
-    sandbox_uid: UUID | None = None
+    sandbox_uid: str | None = None
     harness: Harness | None
     model: str | None
     cwd: str | None

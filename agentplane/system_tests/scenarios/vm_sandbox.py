@@ -9,7 +9,6 @@ import shutil
 import sys
 from pathlib import Path
 from typing import Any
-from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel
@@ -188,7 +187,7 @@ async def vm_sandbox_turn(
         attributes={"harness": session_pb2.Harness.Name(harness), "sandbox.name": view.target.name},
     ):
         agent = await session_setup_is_supervised(
-            client, dispatcher, view.target.name, UUID(view.target.uid), harness, offered_model
+            client, dispatcher, view.target.name, view.target.uid, harness, offered_model
         )
     with tracer.start_as_current_span("system_test.turn"):
         turn, _, _ = await scripted_turn_with_admission_and_history(

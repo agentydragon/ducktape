@@ -3,7 +3,6 @@ import { readySandbox, suspendedSandbox } from "../testing/sandbox";
 import { AutosuspendBlockerSchema, SandboxPhase } from "../../../proto/sandboxes_pb";
 import {
   EnvironmentDescriptorSchema,
-  OperatingMode,
   type EnvironmentDescriptor,
 } from "../../../sandboxes/environments/environment_service_pb";
 // @vitest-environment happy-dom

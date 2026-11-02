@@ -26,6 +26,7 @@ import { SandboxRoute } from "../app";
 import { SandboxPage } from "./sandbox_page";
 import { TopbarContext } from "../topbar";
 import type { SandboxSnapshot } from "./live";
+import type * as SandboxLiveModule from "./live";
 import {
   EnvironmentRuntimeLifecycleMode,
   EnvironmentRuntimeLifecycleStage,
@@ -76,7 +77,7 @@ const inventory = {
   stream: { standing: "current" },
 };
 vi.mock("./live", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./live")>()),
+  ...(await importOriginal<typeof SandboxLiveModule>()),
   useRequiredSandboxesLive: () => inventory,
 }));
 const mutableSnapshot = live.snapshot as SandboxSnapshot;

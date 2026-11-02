@@ -1,8 +1,13 @@
 import { Accordion, Badge, Button, Group, Paper, Stack, Table, Text, Title } from "@mantine/core";
+import { toJson } from "@bufbuild/protobuf";
 import { type JSX, type ReactNode, useEffect, useState } from "react";
 
 import type { ThreadView } from "../schema";
-import { OperatingMode, type EnvironmentDescriptor } from "../../../sandboxes/environments/environment_service_pb";
+import {
+  EnvironmentDescriptorSchema,
+  OperatingMode,
+  type EnvironmentDescriptor,
+} from "../../../sandboxes/environments/environment_service_pb";
 import { SandboxPhase } from "../../../proto/sandboxes_pb";
 import { displayableError } from "../client";
 import { getEnvironmentRuntimeStatus } from "./client";
@@ -517,6 +522,8 @@ function EnvironmentRuntimeDiagnostics({
 }): JSX.Element {
   const [state, setState] = useState<EnvironmentRuntimeDiagnosticsState>({ kind: "loading" });
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const sandboxName = sandbox.target!.name;
+  const sandboxUID = sandbox.target!.uid;
   useEffect(() => {
     if (!active) return;
     if (sandbox.phase === SandboxPhase.SUSPENDED || sandbox.operatingMode === OperatingMode.SUSPENDED) {
@@ -525,7 +532,7 @@ function EnvironmentRuntimeDiagnostics({
     }
     let current = true;
     setState({ kind: "loading" });
-    void getEnvironmentRuntimeStatus(sandbox.target!.name).then(
+    void getEnvironmentRuntimeStatus(sandboxName).then(
       (value) => {
         if (current) setState({ kind: "available", value, observedAt: new Date().toISOString() });
       },
@@ -536,7 +543,7 @@ function EnvironmentRuntimeDiagnostics({
     return () => {
       current = false;
     };
-  }, [active, refreshVersion, sandbox.target?.name, sandbox.operatingMode, sandbox.phase]);
+  }, [active, refreshVersion, sandboxName, sandboxUID, sandbox.operatingMode, sandbox.phase]);
   const threadsById = new Map(threads.map((thread) => [thread.id, thread]));
 
   return (
@@ -679,7 +686,7 @@ export function StatusView({
         <RawSwitch raw={raw} onChange={setRaw} />
       </Group>
       {raw ? (
-        <JsonView value={sandbox} />
+        <JsonView value={toJson(EnvironmentDescriptorSchema, sandbox)} />
       ) : (
         <>
           <SandboxDetails sandbox={sandbox} onError={onError} />

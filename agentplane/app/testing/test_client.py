@@ -119,7 +119,7 @@ async def test_open_session_preserves_override_presence(
     overrides: dict[str, object] | None, setup_script: str | None
 ) -> None:
     observed: list[str] = []
-    session_id, sandbox_uid = uuid4(), uuid4()
+    session_id, sandbox_uid = uuid4(), str(uuid4())
 
     async def opened(_after: int, writer: asyncio.StreamWriter) -> None:
         await _respond(
@@ -377,6 +377,44 @@ async def test_sandbox_subscription_applies_upserts_and_uid_fenced_removals() ->
         await stream.aclose()
 
 
+async def test_sandbox_subscription_reconnects_with_a_fresh_complete_snapshot() -> None:
+    async def interrupted(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "200 OK",
+            b'{"result":{"snapshot":{"environments":[{"target":{"namespace":"ns","name":"box","uid":"old"}}]}}}\n'
+            b'{"result":{"snapshotComplete":{}}}\n'
+            b'{"error":{"code":14,"message":"reconnect for a current snapshot"}}\n',
+            "application/x-ndjson",
+        )
+
+    async def restarted(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "200 OK",
+            b'{"result":{"snapshot":{"environments":[{"target":{"namespace":"ns","name":"box","uid":"new"}}]}}}\n'
+            b'{"result":{"snapshotComplete":{}}}\n',
+            "application/x-ndjson",
+        )
+
+    async with _app(interrupted, restarted) as (client, _):
+        stream = client.sandbox_snapshots()
+        assert [(row.target.name, row.target.uid) for row in await anext(stream)] == [("box", "old")]
+        assert [(row.target.name, row.target.uid) for row in await anext(stream)] == [("box", "new")]
+        await stream.aclose()
+
+
+async def test_sandbox_subscription_does_not_reconnect_after_grpc_denial() -> None:
+    async def refused(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer, "200 OK", b'{"error":{"code":7,"message":"permission denied"}}\n', "application/x-ndjson"
+        )
+
+    async with _app(refused) as (client, _):
+        with pytest.raises(RuntimeError, match="permission denied"):
+            await anext(client.sandbox_snapshots())
+
+
 async def test_sandbox_subscription_rejects_an_update_before_initial_snapshot() -> None:
     async def early(_after: int, writer: asyncio.StreamWriter) -> None:
         await _respond(
@@ -432,7 +470,7 @@ async def test_get_environment_uses_the_exact_generated_route_and_uid_query() ->
 
 async def test_create_sandbox_captures_the_exact_complete_ack_without_retrying() -> None:
     observed: list[str] = []
-    uid = uuid4()
+    uid = "opaque-sandbox-uid"
 
     async def created(_after: int, writer: asyncio.StreamWriter) -> None:
         await _respond(
@@ -451,9 +489,19 @@ async def test_create_sandbox_captures_the_exact_complete_ack_without_retrying()
     assert "POST /sandboxes HTTP/1.1" in observed[0]
 
 
+async def test_open_session_rejects_a_different_sandbox_uid() -> None:
+    async def opened(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(writer, "201 Created", b'{"sandboxUid":"different-uid"}', "application/json")
+
+    async with _app(opened) as (client, _):
+        with pytest.raises(RuntimeError, match="different Sandbox UID"):
+            await client.open_session("box", uuid4(), sandbox_uid="expected-uid")
+        assert not client.opened_sandbox_uids
+
+
 async def test_sandbox_mutations_carry_the_expected_uid() -> None:
     observed: list[str] = []
-    uid = uuid4()
+    uid = str(uuid4())
 
     async def accepted(_after: int, writer: asyncio.StreamWriter) -> None:
         await _respond(writer, "204 No Content")
@@ -470,22 +518,6 @@ async def test_sandbox_mutations_carry_the_expected_uid() -> None:
         "DELETE /sandboxes/box HTTP/1.1",
     ]
     assert [json.loads(request.split("\r\n\r\n", 1)[1]) for request in observed] == [{"uid": str(uid)}] * 3
-
-
-async def test_environment_target_keeps_the_expected_uid_fence() -> None:
-    async def replacement(_after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(
-            writer,
-            "200 OK",
-            b'{"result":{"snapshot":{"environments":[{"target":{"namespace":"test-ns",'
-            b'"name":"box","uid":"replacement-uid"}}]}}}\n'
-            b'{"result":{"snapshotComplete":{}}}\n',
-            "application/x-ndjson",
-        )
-
-    async with _app(replacement) as (client, _):
-        with pytest.raises(LookupError, match="was replaced"):
-            await client.environment_target("box", expected_uid="expected-uid")
 
 
 if __name__ == "__main__":

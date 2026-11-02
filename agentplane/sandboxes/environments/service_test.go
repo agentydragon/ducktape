@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -742,6 +743,39 @@ type replaceSandboxOnAuthorizationRead struct {
 	client.WithWatch
 	replacement *sandboxapi.Sandbox
 	sandboxGets int
+}
+
+// Simulate a deletion between the collection's initial read and the lifecycle manager's
+// independent eligibility read. The watch must deliver a complete snapshot instead of failing.
+type missingDuringEligibility struct {
+	client.WithWatch
+	sandboxGets int
+}
+
+func (r *missingDuringEligibility) Get(ctx context.Context, key types.NamespacedName, object client.Object, options ...client.GetOption) error {
+	if _, ok := object.(*sandboxapi.Sandbox); ok {
+		r.sandboxGets++
+		if r.sandboxGets == 4 {
+			return apierrors.NewNotFound(sandboxapi.GroupVersion.WithResource("sandboxes").GroupResource(), key.Name)
+		}
+	}
+	return r.WithWatch.Get(ctx, key, object, options...)
+}
+
+func TestCollectionSnapshotSurvivesDeletionDuringEligibilityRead(t *testing.T) {
+	reader := &missingDuringEligibility{WithWatch: baseReader(t)}
+	rpc := serveDiscovery(t, reader, runtimeconfig.Catalog{})
+	stream, err := rpc.WatchEnvironments(bearing(t, matchingToken), &emptypb.Empty{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame, err := stream.Recv()
+	if err != nil || frame.GetSnapshotComplete() == nil {
+		t.Fatalf("snapshot completion during deletion = %v, %v", frame, err)
+	}
+	if reader.sandboxGets != 4 {
+		t.Fatalf("Sandbox reads = %d, want the eligibility race to be exercised", reader.sandboxGets)
+	}
 }
 
 func (r *replaceSandboxOnAuthorizationRead) Get(ctx context.Context, key types.NamespacedName, object client.Object, options ...client.GetOption) error {

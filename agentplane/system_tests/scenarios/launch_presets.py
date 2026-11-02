@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from agentplane.app.testing.client import Client
 from agentplane.env.runtime.harness import Harness
@@ -119,7 +119,7 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
             await asyncio.sleep(0.2)
 
         suspended_id = uuid4()
-        suspended_opening = await client.open_session(view.target.name, suspended_id, sandbox_uid=UUID(view.target.uid))
+        suspended_opening = await client.open_session(view.target.name, suspended_id, sandbox_uid=view.target.uid)
         assert suspended_opening.state == session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
         assert not suspended_opening.HasField("delivery_blocker")
         assert suspended_opening.wake_assessment.state == environment_lifecycle_pb2.WAKE_STATE_NOT_EVALUATED
