@@ -290,7 +290,7 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			if err != nil {
 				return err
 			}
-			if !found || status.EnvironmentGeneration != desiredState.Generation || !status.Sealed || status.SealUID != desiredState.SealUID {
+			if !sessionSealComplete(status, found, desiredState) {
 				current.Blocker = lifecycle.Blocker{
 					Kind: lifecycle.JournalSealPending, ResourceType: session.LifecycleStatusType,
 					ResourceID: id, ResourcePresent: found, JournalSealPresent: status.Sealed,
@@ -365,7 +365,13 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 	return write()
 }
 
+// A seal status is complete only once the Session's final admission cutoff
+// was enforced and settled for this generation.
+func sessionSealComplete(status session.LifecycleStatus, found bool, desired lifecycle.EnvironmentDesired) bool {
+	return found && status.EnvironmentGeneration == desired.Generation && status.AdmissionClosed && status.Sealed &&
+		status.SealUID == desired.SealUID && desired.SealUID != ""
+}
+
 func sessionDeliveryComplete(status session.LifecycleStatus, found bool, desired lifecycle.EnvironmentDesired) bool {
-	return found && status.EnvironmentGeneration == desired.Generation && status.Sealed &&
-		status.SealUID == desired.SealUID && desired.SealUID != "" && status.Delivered
+	return sessionSealComplete(status, found, desired) && status.Delivered
 }

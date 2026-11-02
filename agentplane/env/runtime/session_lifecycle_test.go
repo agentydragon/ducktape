@@ -450,9 +450,14 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 
 func TestSessionDeliveryCompleteRequiresCurrentGenerationAndSealUID(t *testing.T) {
 	desired := lifecycle.EnvironmentDesired{Generation: 7, SealUID: "current"}
-	status := session.LifecycleStatus{EnvironmentGeneration: 7, Sealed: true, SealUID: "current", SealCursor: 0, Delivered: true}
-	if !sessionDeliveryComplete(status, true, desired) {
-		t.Fatal("exact current-generation zero-cursor delivery was rejected")
+	status := session.LifecycleStatus{EnvironmentGeneration: 7, AdmissionClosed: true, Sealed: true, SealUID: "current", SealCursor: 0, Delivered: true}
+	if !sessionSealComplete(status, true, desired) || !sessionDeliveryComplete(status, true, desired) {
+		t.Fatal("exact current-generation zero-cursor seal and delivery were rejected")
+	}
+	admissionOpen := status
+	admissionOpen.AdmissionClosed = false
+	if sessionSealComplete(admissionOpen, true, desired) {
+		t.Fatal("sealed status with admission still open completed the sealing barrier")
 	}
 	for name, check := range map[string]func() bool{
 		"missing": func() bool { return sessionDeliveryComplete(status, false, desired) },
@@ -465,6 +470,11 @@ func TestSessionDeliveryCompleteRequiresCurrentGenerationAndSealUID(t *testing.T
 			stale := status
 			stale.SealUID = "previous"
 			return sessionDeliveryComplete(stale, true, desired)
+		},
+		"admission open": func() bool {
+			open := status
+			open.AdmissionClosed = false
+			return sessionDeliveryComplete(open, true, desired)
 		},
 		"unsealed": func() bool {
 			unsealed := status

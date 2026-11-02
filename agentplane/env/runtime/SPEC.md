@@ -115,7 +115,8 @@ Its fence completion names both the Execution attempt and lifecycle generation. 
 after those exact native and Execution barriers. Each Session lifecycle controller projects a
 committed journal seal into its volatile status only after its halt, process stop and inspection
 have settled and the matching generation's global barriers permit sealing. The projection names
-the seal UID and cursor; a missing or stale projection cannot complete the environment barrier.
+the seal UID and cursor; a missing or stale projection or an unsettled admission cutoff cannot
+complete the environment barrier.
 The journal remains the durable seal authority, so recovery rechecks it and the fresh cleanup
 proofs before publishing status. History sends final entries and seals, persists the
 acknowledgements, and satisfies delivery only at each exact sealed cursor. The Session lifecycle
