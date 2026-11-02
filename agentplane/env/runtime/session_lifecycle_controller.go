@@ -107,7 +107,7 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		// A failure from a prior Host generation is cleared by the Session
 		// controller as it observes the shutdown generation. Only surface errors
 		// that belong to this teardown; otherwise Close could race that reset.
-		if status.HostGeneration == desiredState.Generation && status.Error != "" {
+		if status.EnvironmentGeneration == desiredState.Generation && status.Error != "" {
 			current.Error = status.Error
 			kind := harnesshostlifecycle.SessionHaltPending
 			if status.Phase == session.Halted {
@@ -120,9 +120,9 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			}
 			return write()
 		}
-		if !found || status.HostGeneration != desiredState.Generation || status.Phase != session.Halted {
+		if !found || status.EnvironmentGeneration != desiredState.Generation || status.Phase != session.Halted {
 			resourceError := ""
-			if status.HostGeneration == desiredState.Generation {
+			if status.EnvironmentGeneration == desiredState.Generation {
 				resourceError = status.Error
 			}
 			current.Blocker = harnesshostlifecycle.Blocker{
@@ -145,7 +145,7 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		if err != nil {
 			return err
 		}
-		if !found || status.HostGeneration != desiredState.Generation || !status.ProcessStopped {
+		if !found || status.EnvironmentGeneration != desiredState.Generation || !status.ProcessStopped {
 			current.Blocker = harnesshostlifecycle.Blocker{
 				Kind: harnesshostlifecycle.SessionProcessPending, ResourceType: session.LifecycleStatusType,
 				ResourceID: s.ID(), ProcessID: status.ProcessID, ResourcePresent: found,

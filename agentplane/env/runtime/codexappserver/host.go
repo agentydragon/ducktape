@@ -98,10 +98,10 @@ type Host struct {
 	mu                              sync.Mutex
 	current                         *Process
 	initializingOwner               *Attachment
-	initializingOwnerHostGeneration uint64
+	initializingOwnerEnvironmentGeneration uint64
 	initializing                    *oneoff.Operation
 	draining                        *oneoff.Operation
-	initializationHostGeneration    uint64
+	initializationEnvironmentGeneration    uint64
 	drainEffect                     func(context.Context) error
 	changeMu                        sync.Mutex
 	changed                         chan struct{}
@@ -288,9 +288,9 @@ func (c *Host) RequestLocked(ctx context.Context, s *Attachment) (uint64, error)
 	defer c.inputMu.Unlock()
 	c.mu.Lock()
 	if c.current == nil || !c.current.Running() {
-		if c.initializingOwner == nil || c.initializingOwnerHostGeneration != desired.Generation {
+		if c.initializingOwner == nil || c.initializingOwnerEnvironmentGeneration != desired.Generation {
 			c.initializingOwner = s
-			c.initializingOwnerHostGeneration = desired.Generation
+			c.initializingOwnerEnvironmentGeneration = desired.Generation
 		}
 	}
 	c.mu.Unlock()
@@ -316,7 +316,7 @@ func (c *Host) clearInitializingOwner(owner *Attachment) {
 	c.mu.Lock()
 	if c.initializingOwner == owner {
 		c.initializingOwner = nil
-		c.initializingOwnerHostGeneration = 0
+		c.initializingOwnerEnvironmentGeneration = 0
 	}
 	c.mu.Unlock()
 }

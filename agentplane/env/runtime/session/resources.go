@@ -56,7 +56,7 @@ type LifecycleStatus struct {
 	ObservedDemand   uint64
 	Resuming         bool
 	ProcessID        string
-	HostGeneration   uint64
+	EnvironmentGeneration   uint64
 	SetupOperationID string
 	ProcessStopped   bool
 	Error            string

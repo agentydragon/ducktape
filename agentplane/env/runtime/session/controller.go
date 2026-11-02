@@ -86,15 +86,15 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 		return err
 	}
-	if desiredState.Mode == harnesshostlifecycle.Running && current.HostGeneration != desiredState.Generation {
+	if desiredState.Mode == harnesshostlifecycle.Running && current.EnvironmentGeneration != desiredState.Generation {
 		for _, slot := range []**oneoff.Operation{&s.halting, &s.sealing} {
 			if op, done := s.takeOperation(slot); done {
 				c.manager.forgetOperation(op)
 			}
 		}
-		current = LifecycleStatus{HostGeneration: desiredState.Generation, SetupOperationID: current.SetupOperationID}
-	} else if current.HostGeneration != desiredState.Generation {
-		current.HostGeneration = desiredState.Generation
+		current = LifecycleStatus{EnvironmentGeneration: desiredState.Generation, SetupOperationID: current.SetupOperationID}
+	} else if current.EnvironmentGeneration != desiredState.Generation {
+		current.EnvironmentGeneration = desiredState.Generation
 		current.Error = ""
 	}
 	if op, done := s.takeOperation(&s.setupJob); done {

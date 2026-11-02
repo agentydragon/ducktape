@@ -94,12 +94,12 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		} else {
 			server.mu.Lock()
 			p := server.current
-			hostGeneration := server.initializationHostGeneration
+			environmentGeneration := server.initializationEnvironmentGeneration
 			server.initializingOwner = nil
-			server.initializingOwnerHostGeneration = 0
+			server.initializingOwnerEnvironmentGeneration = 0
 			live := p != nil && p.Running()
 			server.mu.Unlock()
-			if live && desiredState.Mode == lifecycle.Running && hostGeneration == desiredState.Generation {
+			if live && desiredState.Mode == lifecycle.Running && environmentGeneration == desiredState.Generation {
 				ready, dependencyErr, err := server.executorDependency(ctx, r, &current, time.Now())
 				if err != nil {
 					return err
@@ -164,18 +164,18 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			}
 		}
 	}
-	if desiredState.Mode == lifecycle.Running && current.HostGeneration != desiredState.Generation {
+	if desiredState.Mode == lifecycle.Running && current.EnvironmentGeneration != desiredState.Generation {
 		server.mu.Lock()
 		inactive := server.initializing == nil && server.draining == nil && server.current == nil
-		if inactive && server.initializingOwnerHostGeneration != desiredState.Generation {
+		if inactive && server.initializingOwnerEnvironmentGeneration != desiredState.Generation {
 			server.initializingOwner = nil
-			server.initializingOwnerHostGeneration = 0
+			server.initializingOwnerEnvironmentGeneration = 0
 		}
 		server.mu.Unlock()
 		if inactive {
 			// Demand sequences are scoped to a Harness Host generation. A resumed Host must wait for
 			// fresh demand rather than replaying the previous incarnation's Codex startup request.
-			current.HostGeneration = desiredState.Generation
+			current.EnvironmentGeneration = desiredState.Generation
 			current.ObservedDemand = 0
 			current.ExitSequence = input.ExitSequence
 			current.Error = ""
@@ -217,7 +217,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			server.mu.Lock()
 			if server.current == nil && server.initializing == nil && server.draining == nil {
 				server.initializingOwner = nil
-				server.initializingOwnerHostGeneration = 0
+				server.initializingOwnerEnvironmentGeneration = 0
 			}
 			server.mu.Unlock()
 			current.Phase = Stopped
@@ -277,7 +277,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				}
 				return write()
 			}
-			if current.Phase == Initializing && current.HostGeneration == desiredState.Generation {
+			if current.Phase == Initializing && current.EnvironmentGeneration == desiredState.Generation {
 				ready, dependencyErr, err := server.executorDependency(ctx, r, &current, time.Now())
 				if err != nil {
 					return err
@@ -350,7 +350,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	// The Harness Host admission barrier fences initialization against Close and Quiesce.
 	if err := server.deps.Admission(ctx, desiredState, func(ctx context.Context) error {
 		current.Phase = Initializing
-		current.HostGeneration = desiredState.Generation
+		current.EnvironmentGeneration = desiredState.Generation
 		current.ObservedDemand = input.Demand
 		current.ProcessID = ""
 		current.Error = ""
@@ -364,17 +364,17 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			return nil
 		}
 		owner := server.initializingOwner
-		if server.initializingOwnerHostGeneration != desiredState.Generation {
+		if server.initializingOwnerEnvironmentGeneration != desiredState.Generation {
 			owner = nil
 		}
-		server.initializationHostGeneration = desiredState.Generation
+		server.initializationEnvironmentGeneration = desiredState.Generation
 		server.mu.Unlock()
 		if err := server.startOperation(&server.initializing, func(ctx context.Context) error {
 			return server.initialize(ctx, owner, desiredState.Generation)
 		}); err != nil {
 			server.mu.Lock()
 			server.initializingOwner = nil
-			server.initializingOwnerHostGeneration = 0
+			server.initializingOwnerEnvironmentGeneration = 0
 			server.mu.Unlock()
 			current.Phase = Stopped
 			current.ObservedDemand = input.Demand
@@ -385,7 +385,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		}
 		server.mu.Lock()
 		server.initializingOwner = nil
-		server.initializingOwnerHostGeneration = 0
+		server.initializingOwnerEnvironmentGeneration = 0
 		server.mu.Unlock()
 		return nil
 	}); err != nil {
