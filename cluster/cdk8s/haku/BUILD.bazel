@@ -142,18 +142,6 @@ py_library(
 )
 
 py_library(
-    name = "anki_egress",
-    srcs = ["anki_egress.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        "//cluster/cdk8s/agentplane:egress_policies",
-        "//cluster/cdk8s/providers/agentplane:policy_set",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
     name = "ui_egress",
     srcs = ["ui_egress.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],

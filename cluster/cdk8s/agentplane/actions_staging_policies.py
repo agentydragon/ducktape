@@ -43,7 +43,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     home_assistant_read_egress_rules,
 )
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.haku import anki_egress as haku_anki_egress, ui_egress as haku_ui_egress
+from cluster.cdk8s.haku import ui_egress as haku_ui_egress
 from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.providers.agentplane import policy_set
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
@@ -66,6 +66,8 @@ KUBERNETES_INSPECTION_READS_SET = "kubernetes-inspection-reads"
 _COINBASE_SECRET = "coinbase-api-credentials"
 _GITHUB_DOWNLOADS_POLICY = "github-downloads"
 MIMIR_READS_POLICY = "mimir-reads"
+# AnkiWeb sync for haku-anki, which runs as the haku-ui account (see the binding below).
+ANKIWEB_SYNC_POLICY = "ankiweb-sync"
 
 # Staging-only PolicySets. The `coinbase` PolicySet combines GET egress with the view-only Coinbase
 # key's Secret grant. The two Action PolicySet reads every preset binds by default live here too.
@@ -722,8 +724,22 @@ def add_staging_action_policies(scope: Construct) -> None:
     # route it submits requests on. A subset of claude-ai's grants by construction, and not
     # claude-ai itself, which auto-approves sandbox create and exec.
     haku_ui_egress.add_gateway_resources(scope, namespace=_NAMESPACE)
-    # haku-anki shares this account (haku/anki_egress.py): AnkiWeb sync, the one external host it needs.
-    haku_anki_egress.add_policy_set(scope, namespace=_NAMESPACE)
+    # haku-anki runs as this account too, for AnkiWeb sync: the one external host it needs (`sync.ankiweb.net`
+    # and the `syncNN` shard hosts it redirects accounts to; `*.` never matches the apex, and these are
+    # subdomains). It reaches it through an egress sidecar rather than the namespace-wide haku-egress-proxy, so
+    # the Kyverno proxy injection and the `*.ankiweb.net` fence entry can be retired. No credential is
+    # presented: AnkiWeb login sends the account's own username and password in a compressed body that a
+    # placeholder substitution cannot reach, so the real credentials stay in the Pod. haku-sandbox is one trust
+    # domain, so the two workloads share a grant set: the haku-ui Pod can reach AnkiWeb and the haku-anki Pod
+    # can read Home Assistant and Grocy and submit Action requests. This is the one grant claude-ai lacks;
+    # Haku already reaches *.ankiweb.net through haku-egress-proxy's fence. Split the account if either
+    # workload ever holds something the other must not.
+    add_egress_policy(
+        scope,
+        "egresspolicy-ankiweb-sync",
+        metadata=ApiObjectMetadata(name=ANKIWEB_SYNC_POLICY, namespace=_NAMESPACE),
+        rules=[Rule.egress(hosts=["*.ankiweb.net"])],
+    )
     _binding(
         scope,
         "policybinding-haku-ui",
@@ -733,7 +749,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             annotations={"description": "What haku-ui (haku-sandbox) may reach and have auto-approved."},
         ),
         subject=PolicyBindingSpecSubject(namespace=haku_ui_egress.NAMESPACE, name=haku_ui_egress.SERVICE_ACCOUNT),
-        policy_sets=[haku_ui_egress.POLICY, HOME_ASSISTANT_READS_SET, GROCY_SF_READS_SET, haku_anki_egress.POLICY],
+        policy_sets=[haku_ui_egress.POLICY, HOME_ASSISTANT_READS_SET, GROCY_SF_READS_SET, ANKIWEB_SYNC_POLICY],
     )
 
     # Haku-like sandboxes get Coinbase only through this explicit combined PolicySet selection.

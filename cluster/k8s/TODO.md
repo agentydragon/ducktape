@@ -352,7 +352,7 @@ unverified around it as of 2026-11-02 (operator-facing summary: `haku/docs/secur
 - [ ] Finish retiring the `haku-sandbox` half of the Haku proxy. `haku-egress-proxy` (mitmproxy) now
       really serves `haku-ci` (CI builds: the real traffic). In `haku-sandbox` only `haku-anki` needs
       it (AnkiWeb sync), and it is moving behind an Agentplane egress sidecar, running as the shared `haku-ui` account
-      (`haku/anki_egress.py`);
+      (`ankiweb-sync` in `actions_staging_policies.py`);
       the Kyverno injection (`kyverno/proxy_injection.py`) now leaves a container that sets its own
       proxy alone. Once Anki is verified syncing through the sidecar: delete the injection policy, drop
       `*.ankiweb.net` from the fence, and leave `haku-sandbox` on its default-deny CCNP. Several other

@@ -259,7 +259,7 @@ def inject_haku_egress_proxy_chart(app: App) -> Chart:
     different proxy) just declares it. Before 2026-11-02 the env was appended to every container and the last
     duplicate won, which silently overrode such pods (haku-ui's calls skipped its sidecar and Home Assistant
     answered 401). Today the only workload here that needs this proxy is haku-anki, for AnkiWeb sync; it is
-    moving behind an Agentplane sidecar (haku/anki_egress.py), after which nothing in haku-sandbox does.
+    moving behind an Agentplane sidecar (the `ankiweb-sync` policy in actions_staging_policies.py), after which nothing in haku-sandbox does.
     """
     chart = Chart(app, "inject-haku-egress-proxy", disable_resource_name_hashes=True)
     _injection_policy(

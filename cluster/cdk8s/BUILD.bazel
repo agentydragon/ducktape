@@ -2034,8 +2034,8 @@ py_test(
     deps = [
         ":conftest",
         "//agentplane/action_service/policies:resources",
+        "//cluster/cdk8s/agentplane:actions_staging_policies",
         "//cluster/cdk8s/agentplane:staging",
-        "//cluster/cdk8s/haku:anki_egress",
         "//cluster/cdk8s/haku:rbac",
         "//cluster/cdk8s/haku:ui_egress",
         "@pypi//cdk8s",
@@ -2054,8 +2054,8 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":conftest",
+        "//cluster/cdk8s/agentplane:actions_staging_policies",
         "//cluster/cdk8s/agentplane:staging",
-        "//cluster/cdk8s/haku:anki_egress",
         "//cluster/cdk8s/haku:ui_egress",
         "@pypi//cdk8s",
         "@pypi//more_itertools",

@@ -58,7 +58,7 @@ def chart(app: App) -> Chart:
                 "description": (
                     "The principal haku-ui reaches agentplane-staging as: Home Assistant and Grocy reads through "
                     "the egress proxy, and <tool-call> Action requests that wait for the operator. haku-anki runs as "
-                    "this account too, for AnkiWeb sync (haku/anki_egress.py). Its grants stay within claude-ai's "
+                    "this account too, for AnkiWeb sync (agentplane/actions_staging_policies.py). Its grants stay within claude-ai's "
                     "(haku/ui_egress.py) except AnkiWeb."
                 )
             },
