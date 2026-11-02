@@ -239,15 +239,11 @@ class Client:
         setup_script: str | None = None,
     ) -> session_dispatcher_pb2.SessionOpening:
         """Submit an opening and return its first durable state without waiting for admission."""
-        body = ParseDict(
-            {
-                "session_id": str(session_id),
-                "sandbox_uid": str(sandbox_uid),
-                "spec": overrides or {},
-                **({"setup_script": setup_script} if setup_script is not None else {}),
-            },
-            session_opening_pb2.OpenSessionRequest(),
+        body = session_opening_pb2.OpenSessionRequest(
+            session_id=str(session_id), sandbox_uid=str(sandbox_uid), spec=overrides or {}
         )
+        if setup_script is not None:
+            body.setup_script.string_value = setup_script
         answered = await self._json(
             "POST", f"/sandboxes/{name}/sessions", json=MessageToDict(body, preserving_proto_field_name=True)
         )
