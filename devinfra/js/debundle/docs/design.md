@@ -1193,6 +1193,22 @@ fails, the executor publishes reachable frame capabilities, widens native
 effects and uses the existing synchronous fallback closure for the remaining
 body. Earlier operations are not replayed. This local execution proof does not
 provide an owner-completion or foreign-provider certificate.
+Direct calls through simple binding references also enter this ordered path.
+The kernel reads the callee before evaluating each argument in order, retaining
+that callee if an argument reassigns its binding. Application execution invokes
+a singleton untainted local function or closure and consumes that invocation's
+one outcome, including its effects and return values. It does not perform a
+second value-only call evaluation. Abrupt operands stop the call; a possible
+abrupt invocation result is retained before following its completing values.
+Records reachable through the callee or its arguments become borrowed in the
+caller, so a completed callee cannot leave the original fresh descriptor proof
+in force after modifying that receiver. Returned values stay in the frame's
+fallback capability roots. Unknown targets and incomplete invocations truncate
+the remainder through the existing callback fallback without replay. Their
+already executed effects remain in the outcome. All invocation results remain
+opaque to allocation-only proof, and the strict provider adapter refuses the
+operation. This does not change closure snapshots into live captured cells or
+give exported property aliases provider identity.
 Static dot-field reads from a simple binding now enter the same ordered
 executor. The fresh own-data guard is shared with field writes and is not
 weakened for borrowed records, arrays, missing fields or older allocation

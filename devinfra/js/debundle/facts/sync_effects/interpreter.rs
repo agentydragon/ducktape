@@ -872,6 +872,54 @@ struct LocalExecutionContext<'a, 'source, 'rule> {
     callable: u32,
 }
 
+impl LocalExecutionContext<'_, '_, '_> {
+    fn fallback(
+        &mut self,
+        frame: &LocalFrame,
+        reached: Values,
+        reason: ExecutionPrecisionLossReason,
+        span: Span,
+    ) {
+        self.executor.local_operation_fallback(
+            frame,
+            reached,
+            self.owner,
+            reason,
+            span,
+            self.outcome,
+        );
+        // The opaque operation can complete and reach later calls. Retain
+        // their unknown direct-callee alternatives at their lexical sites,
+        // rather than reporting every loss only at the truncation point.
+        // This inspects indexed operands; it executes no later operation.
+        if let Some(callable) = self.executor.inputs.index.callables.get(&self.callable) {
+            for call in &callable.calls {
+                if call.kind != CallKind::Call || call.span.lo < span.hi {
+                    continue;
+                }
+                let ValueExpr::Binding(binding) = &call.callee else {
+                    continue;
+                };
+                let values = if self.executor.inputs.top_bindings.contains(binding) {
+                    self.executor.state.prefix_values.get(binding)
+                } else {
+                    frame.environment.get(binding)
+                };
+                if values.is_some_and(|values| {
+                    values.iter().any(|value| {
+                        matches!(
+                            value,
+                            AbstractValue::Value(Value::Top) | AbstractValue::SymbolicInput(_)
+                        )
+                    })
+                }) {
+                    self.outcome.lose_call_target(call.owner, call.span);
+                }
+            }
+        }
+    }
+}
+
 impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     fn read_binding(
         &mut self,
@@ -896,6 +944,85 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         Some(super::super::allocation_transfer::AllocationValue::opaque(
             values,
         ))
+    }
+    fn call(
+        &mut self,
+        frame: &mut LocalFrame,
+        callee: &Values,
+        arguments: &[Values],
+        span: Span,
+    ) -> Option<super::super::allocation_transfer::AllocationValue> {
+        let target = if callee.len() == 1 {
+            match callee.first() {
+                Some(AbstractValue::Value(Value::Alloc(Kind::Function, key))) => Some((*key, None)),
+                Some(AbstractValue::Closure(key, captures)) => Some((*key, Some(captures.clone()))),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if callee.iter().any(|value| {
+            matches!(
+                value,
+                AbstractValue::Value(Value::Top) | AbstractValue::SymbolicInput(_)
+            )
+        }) {
+            // A retained known callback does not remove an unknown callee
+            // alternative. Keep its original lexical call-site diagnostic.
+            self.outcome.lose_call_target(self.owner, span);
+        }
+        let mut reached = callee.clone();
+        reached.extend(arguments.iter().flatten().cloned());
+        // Another activation receives these capabilities. Its descriptor or
+        // prototype operations must not leave the caller's original fresh
+        // own-data proof in force, even when that invocation completes.
+        frame
+            .borrowed_records
+            .extend(self.executor.reachable_objects(&reached));
+        if let Some((key, captures)) = target
+            && self.executor.inputs.index.callables.contains_key(&key)
+            && !self.executor.state.tainted_functions.contains(&key)
+        {
+            // The ordinary invocation owns both effects and return values.
+            // A second value-only evaluation could repeat a stateful call.
+            let mut nested = self
+                .executor
+                .invoke(key, arguments.to_vec(), captures, false);
+            self.executor.apply_rebind_effects(&nested.effects.rebinds);
+            self.outcome.absorb_binding_effects(
+                &mut nested.effects,
+                self.executor.state.assumption.as_ref(),
+            );
+            self.outcome.executed_owners.extend(nested.executed_owners);
+            self.outcome.unknown_call |= nested.unknown_call;
+            self.outcome
+                .inherit_completeness(nested.complete, nested.effects.precision_losses);
+            if nested.complete && !nested.unknown_call {
+                frame.inputs.extend(nested.returns.iter().cloned());
+                frame
+                    .borrowed_records
+                    .extend(self.executor.reachable_objects(&nested.returns));
+                // A complete invocation is not an allocation-only proof or
+                // a provider-export identity certificate.
+                return Some(super::super::allocation_transfer::AllocationValue::opaque(
+                    nested.returns,
+                ));
+            }
+            reached.extend(nested.returns);
+        }
+        // Unknown targets and incomplete invocations truncate the body at
+        // this point. Preserve capabilities in operands evaluated earlier,
+        // without replaying the call or any preceding local operation.
+        self.fallback(
+            frame,
+            reached,
+            ExecutionPrecisionLossReason::UnsupportedOperation {
+                operation: ExecutionOperation::OpaqueExecution,
+                ordered_field_read_refusal: None,
+            },
+            span,
+        );
+        None
     }
     fn literal_layout(&self, allocation: u32) -> super::super::allocation_transfer::LiteralLayout {
         self.executor.inputs.index.allocation_layout(allocation)
@@ -947,16 +1074,14 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 values,
             ));
         }
-        self.executor.local_field_fallback(
+        self.fallback(
             frame,
             receivers.clone(),
-            self.owner,
             ExecutionPrecisionLossReason::UnsupportedOperation {
                 operation: ExecutionOperation::MemberRead,
                 ordered_field_read_refusal: Some(refusal),
             },
             span,
-            self.outcome,
         );
         None
     }
@@ -969,16 +1094,14 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     ) {
         let mut reached = receivers.clone();
         reached.extend(values.iter().cloned());
-        self.executor.local_field_fallback(
+        self.fallback(
             frame,
             reached,
-            self.owner,
             ExecutionPrecisionLossReason::UnsupportedOperation {
                 operation: ExecutionOperation::PropertyWrite,
                 ordered_field_read_refusal: None,
             },
             span,
-            self.outcome,
         );
     }
     fn publish_throw(&mut self, values: &Values) {
@@ -7677,9 +7800,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     /// Stop the frame without replaying its earlier operations. An unproved
-    /// read or store may call an accessor and publish capabilities the remainder can
-    /// reach, including objects whose local binding has since been replaced.
-    fn local_field_fallback(
+    /// read, store or call may publish capabilities the remainder can reach,
+    /// including objects whose local binding has since been replaced.
+    fn local_operation_fallback(
         &mut self,
         frame: &LocalFrame,
         mut reached: Values,

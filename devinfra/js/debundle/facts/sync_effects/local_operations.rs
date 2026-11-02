@@ -19,6 +19,11 @@ pub(super) enum LocalExpression {
     Value(ValueExpr),
     Sequence(Arc<[Self]>),
     Assign(Id, Arc<Self>),
+    Call {
+        callee: Id,
+        arguments: Arc<[Self]>,
+        span: Span,
+    },
     ReadField {
         receiver: Id,
         property: String,
@@ -47,6 +52,7 @@ pub(super) struct LocalBody {
     /// Sorted source reads outside this body's parameters and declarations.
     /// Shared across body clones and reused by every invocation/provider query.
     free_reads: Option<Arc<[Id]>>,
+    contains_calls: bool,
 }
 
 fn simple_binding(pattern: &Pat) -> Option<Id> {
@@ -91,6 +97,28 @@ impl LocalExpression {
                     .map(|expression| Self::lower(expression))
                     .collect::<Option<Arc<[_]>>>()?,
             )),
+            Expr::Call(call) if !call.args.iter().any(|argument| argument.spread.is_some()) => {
+                let Callee::Expr(callee) = &call.callee else {
+                    return None;
+                };
+                let Expr::Ident(callee) = callee.unwrap_parens() else {
+                    return None;
+                };
+                // A reference to eval can enter dynamic scope. Its binding
+                // resolution remains on the existing conservative path.
+                if callee.sym == "eval" {
+                    return None;
+                }
+                Some(Self::Call {
+                    callee: callee.to_id(),
+                    arguments: call
+                        .args
+                        .iter()
+                        .map(|argument| Self::lower(&argument.expr))
+                        .collect::<Option<Arc<[_]>>>()?,
+                    span: call.span,
+                })
+            }
             Expr::Member(member) => {
                 let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
                     return None;
@@ -143,6 +171,9 @@ impl LocalExpression {
             Self::Assign(binding, expression) => {
                 bindings.contains_key(binding) && expression.local_targets(bindings)
             }
+            Self::Call { arguments, .. } => arguments
+                .iter()
+                .all(|argument| argument.local_targets(bindings)),
             Self::AssignField {
                 receiver, value, ..
             } => bindings.contains_key(receiver) && value.local_targets(bindings),
@@ -158,6 +189,14 @@ impl LocalExpression {
                 }
             }
             Self::Assign(_, expression) => expression.reads(reads),
+            Self::Call {
+                callee, arguments, ..
+            } => {
+                reads.insert(callee.clone());
+                for argument in arguments.iter() {
+                    argument.reads(reads);
+                }
+            }
             Self::ReadField { receiver, .. } => {
                 reads.insert(receiver.clone());
             }
@@ -167,6 +206,18 @@ impl LocalExpression {
                 reads.insert(receiver.clone());
                 value.reads(reads);
             }
+        }
+    }
+
+    fn contains_calls(&self) -> bool {
+        match self {
+            Self::Call { .. } => true,
+            Self::Sequence(expressions) => expressions.iter().any(Self::contains_calls),
+            Self::Assign(_, expression)
+            | Self::AssignField {
+                value: expression, ..
+            } => expression.contains_calls(),
+            Self::Value(_) | Self::ReadField { .. } => false,
         }
     }
 }
@@ -247,15 +298,24 @@ impl LocalBody {
             expression.reads(&mut reads);
         }
         reads.retain(|binding| !bindings.contains_key(binding));
+        let contains_calls = Self::expressions(&operations).any(LocalExpression::contains_calls);
         Some(Self {
             bindings,
             operations: operations.into(),
             free_reads: (!reads.is_empty()).then(|| reads.into_iter().collect()),
+            contains_calls,
         })
     }
 
     pub(super) fn free_reads(&self) -> &[Id] {
         self.free_reads.as_deref().unwrap_or_default()
+    }
+
+    /// Calls are covered by application execution but have not migrated to
+    /// the allocation-only provider proof. Classify before selecting that
+    /// proof; a failed migrated query still never retries another evaluator.
+    pub(super) fn contains_calls(&self) -> bool {
+        self.contains_calls
     }
 
     fn expressions(operations: &[LocalOperation]) -> impl Iterator<Item = &LocalExpression> {

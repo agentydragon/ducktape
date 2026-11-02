@@ -58,6 +58,17 @@ impl LocalContext for ProviderContext<'_> {
             judgment: AllocationJudgment::CoveredAllocationOnly(Default::default()),
         })
     }
+    fn call(
+        &mut self,
+        _frame: &mut LocalFrame,
+        _callee: &Values,
+        _arguments: &[Values],
+        _span: Span,
+    ) -> Option<AllocationValue> {
+        // An allocation-only query has no invocation certificate. Forwarding
+        // a symbolic callable does not prove its execution or result shape.
+        None
+    }
     fn literal_layout(&self, allocation: u32) -> LiteralLayout {
         self.index.allocation_layout(allocation)
     }

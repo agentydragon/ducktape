@@ -2204,9 +2204,27 @@ existing callback fallback. Earlier operations are not replayed. Read results
 from this application fallback remain opaque to the allocation-only judgment;
 synchronous completeness alone grants no provider certificate.
 
+Application execution also retains direct calls through simple binding
+references in the ordered body. It reads the callee before evaluating arguments
+from left to right, stops each abrupt path, and invokes a singleton untainted
+local function or closure once. The invocation's return values and effects
+travel together; no separate value evaluation repeats the call. Objects
+reachable by that callee or its arguments lose the caller's fresh own-data
+admission, and returned capabilities remain reachable by a truncated remainder.
+An unknown target or incomplete invocation uses the existing conservative
+callback fallback at that call site without replaying prior operations.
+Invocation results remain opaque to the allocation-only judgment; a strict
+provider query declines calls. This supplies neither live captured cells nor a
+property-origin export identity proof.
+Call-containing bodies remain outside the migrated allocation-only provider
+query and keep their established foreign-call derivation where supported.
+This classification happens before selecting a query; a failed migrated
+query still never retries the legacy evaluator.
+
 Source coverage excludes async/generator functions, defaults/rest/destructuring,
 template syntax, other operators,
-nested/computed/optional member reads, computed/spread/accessor/prototype fields, calls and
+nested/computed/optional member reads, computed/spread/accessor/prototype fields,
+member/optional/spread calls, direct `eval` and
 unsupported control-flow statements. A source-covered throw still prevents the
 allocation-only certificate. Every operand, test and arm must retain source coverage
 and covered access evidence; an outer supported operation cannot hide an
