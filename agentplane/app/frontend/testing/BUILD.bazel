@@ -10,7 +10,7 @@ py_library(
     name = "visual_assertions",
     srcs = ["visual_assertions.py"],
     deps = [
-        "//util/testing:undeclared_outputs",
+        "//util/testing:output_writer",
         "//util/testing/frontend_visual:capture",
         "//util/testing/frontend_visual:page_capture",
         "@pypi//playwright",

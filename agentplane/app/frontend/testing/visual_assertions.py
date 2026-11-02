@@ -8,7 +8,7 @@ from playwright.async_api import FloatRect, Locator, Page, expect
 
 from util.testing.frontend_visual.capture import VisualPage
 from util.testing.frontend_visual.page_capture import wait_for_stable
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from util.testing.output_writer import publish_output
 
 _SCROLL = "[data-disclosure-demo-scroll]"
 
@@ -105,7 +105,6 @@ async def _rollout_run(view: VisualPage, position: str) -> None:
 
 async def _rollout_geometry(view: VisualPage, state: str) -> None:
     page = view.page
-    assert view.capture_name is not None, "rollout diagnostics need a test case identity"
     geometry = await page.evaluate(
         dedent("""() => {
       const box = element => {
@@ -123,7 +122,14 @@ async def _rollout_geometry(view: VisualPage, state: str) -> None:
       };
     }""")
     )
-    (undeclared_outputs_dir() / f"{view.capture_name}-{state}-geometry.json").write_text(json.dumps(geometry, indent=2))
+    publish_output(
+        view.output_dir,
+        case_id=view.case_id,
+        checkpoint=f"geometry-{state}",
+        role="diagnostics",
+        data=(json.dumps(geometry, indent=2) + "\n").encode(),
+        suffix="json",
+    )
 
 
 async def _box(page: Page, selector: str) -> FloatRect:

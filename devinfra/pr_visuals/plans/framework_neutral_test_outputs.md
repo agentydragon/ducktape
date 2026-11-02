@@ -1,5 +1,13 @@
 # Framework-neutral test outputs and visual reviews
 
+Implementation is in progress. The chosen comparison profile is
+`bazel-configuration-exact-v1`: only equal, known configuration IDs are
+comparable. The cutover intentionally starts fresh baseline pointers in a new
+namespace; preserving the old filename-based comparisons is not required.
+Keep this plan until the pinned publisher has shipped and end-to-end publication
+has been verified. References to the previous protocol below describe the
+starting point.
+
 ## Goal
 
 Give tests a shared way to identify and publish their outputs, and collect those
@@ -272,10 +280,10 @@ is known; unknown or partial coverage remains incomplete.
    rollout so old jobs and retained published metadata remain readable, and
    prove the cutover before changing production publication. Do not assume a
    source merge immediately deploys the wheel.
-3. Map existing target/path baselines to new logical identities only where a
-   one-to-one correspondence is verified. Otherwise classify the new and old
-   images separately rather than guess. Report the scope of lost continuity
-   before rollout and preserve retained content-addressed blobs and commit pages.
+3. Start fresh baselines in the new namespace; old filename-based baselines are
+   not mapped to structured identities. Existing content-addressed blobs and
+   historical commit pages can remain in place. Devel runs must repopulate the
+   new per-target pointers before comparisons become available.
 4. Verify the pytest adapter and a producer that writes the protocol directly
    without pytest or its identity scheme; exercise parallel writers,
    multiple checkpoints and roles, stable pytest roots and parameter IDs, and
@@ -290,7 +298,6 @@ is known; unknown or partial coverage remains incomplete.
    changed and unchanged results. Update owning specifications and operational
    docs, and delete this plan when the migration is complete.
 
-Before implementation, settle how the canonical comparison profile is declared
-and how the pinned publisher cutover avoids mixed-protocol gaps. Those are
-release and identity decisions, not reasons to couple the core protocol to a
-test framework.
+The released wheel and its Nix pin must still advance after merge. Until then,
+the old publisher and migrated producers cannot exchange records; monitor the
+pin rollout and allow devel runs to populate the new baseline namespace.

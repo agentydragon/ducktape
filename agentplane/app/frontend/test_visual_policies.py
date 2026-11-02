@@ -491,7 +491,7 @@ async def test_sandbox_action_results(
 async def test_compact_action_summaries(
     view: VisualPage,
     app: AgentplaneFixture,
-    capture_name: str,
+    case_id: str,
     group: str,
     name: str,
     arguments: dict[str, object],
@@ -513,11 +513,11 @@ async def test_compact_action_summaries(
         await expect(
             collapsed_summary.get_by_text("Replying to thread existing-thread-123", exact=True)
         ).to_be_visible()
-        await view.capture(f"{capture_name}-collapsed", target=section)
+        await view.capture("collapsed", target=section)
     if group == "github" and name == "create_pull_request":
         for chip in ("draft", "maintainers cannot edit", "review from reviewer1, reviewer2"):
             await expect(collapsed_summary.get_by_text(chip, exact=True)).to_be_visible()
-        await view.capture(f"{capture_name}-collapsed", target=section)
+        await view.capture("collapsed", target=section)
     if (group, name) in CLOSED_CARD_SHOWS_EVERYTHING:
         await expect(disclosure).to_have_count(0)
     else:
@@ -600,7 +600,7 @@ async def test_compact_action_summaries(
 async def test_compact_exec_long_command(
     view: VisualPage,
     app: AgentplaneFixture,
-    capture_name: str,
+    case_id: str,
     group: str,
     name: str,
     arguments: dict[str, object],
@@ -662,7 +662,7 @@ async def test_action_argument_fallbacks_use_json_view(
 
 @DESKTOP_AND_MOBILE
 async def test_compact_pr_with_description_offers_card_decisions(
-    view: VisualPage, app: AgentplaneFixture, capture_name: str
+    view: VisualPage, app: AgentplaneFixture, case_id: str
 ) -> None:
     await app.show_action_preview(
         "github",
@@ -687,7 +687,7 @@ async def test_compact_pr_with_description_offers_card_decisions(
     ).to_be_visible()
     await expect(section.get_by_role("button", name="Approve review create pull request")).to_be_visible()
     await expect(section.get_by_role("button", name="Deny review create pull request")).to_be_visible()
-    await view.capture(f"{capture_name}-collapsed", target=section)
+    await view.capture("collapsed", target=section)
     await section.get_by_role("button", name="Expand review create pull request").click()
     await expect(
         section.get_by_text("Important PR description visible on the compact card.", exact=False)
@@ -700,7 +700,7 @@ async def test_compact_pr_with_description_offers_card_decisions(
 
 @DESKTOP_AND_MOBILE
 async def test_compact_pull_request_search_offers_card_decisions(
-    view: VisualPage, app: AgentplaneFixture, capture_name: str
+    view: VisualPage, app: AgentplaneFixture, case_id: str
 ) -> None:
     await app.show_action_preview(
         "github",
@@ -731,7 +731,7 @@ async def test_compact_pull_request_search_offers_card_decisions(
     await expect(section.get_by_role("button", name="Approve review search pull requests")).to_be_visible()
     await expect(section.get_by_role("button", name="Deny review search pull requests")).to_be_visible()
     await expect(section.get_by_role("button", name="Expand review search pull requests")).to_have_count(0)
-    await view.capture(f"{capture_name}-collapsed", target=section)
+    await view.capture("collapsed", target=section)
 
 
 @DESKTOP_AND_MOBILE
@@ -990,7 +990,7 @@ async def test_action_history_receipt(view: VisualPage, app: AgentplaneFixture) 
 
 @DESKTOP_AND_MOBILE
 async def test_gmail_draft_history_keeps_request_and_result_together(
-    view: VisualPage, app: AgentplaneFixture, capture_name: str
+    view: VisualPage, app: AgentplaneFixture, case_id: str
 ) -> None:
     await app.set_flag(Flag.GMAIL_DRAFT_HISTORY)
     await app.mount_app("/actions")
@@ -1004,7 +1004,7 @@ async def test_gmail_draft_history_keeps_request_and_result_together(
     )
     await _in_viewport(card)
     await view.check(context="Gmail draft compact history card")
-    await view.capture(f"{capture_name}-compact", target=card)
+    await view.capture("compact", target=card)
 
     await _open_history_receipts(page)
     await expect(page.get_by_text("prepare the release email", exact=True)).to_be_visible()
@@ -1189,7 +1189,7 @@ async def test_sandbox_policy_grant_pick_updates_options(view: VisualPage, app: 
 
 
 @DESKTOP_AND_MOBILE
-async def test_action_history_filter(view: VisualPage, app: AgentplaneFixture, capture_name: str) -> None:
+async def test_action_history_filter(view: VisualPage, app: AgentplaneFixture, case_id: str) -> None:
     await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
     page = view.page
@@ -1205,14 +1205,14 @@ async def test_action_history_filter(view: VisualPage, app: AgentplaneFixture, c
     await expect(all_actions).to_be_checked()
     await expect(auto_allowed).to_be_visible()
     await _focus(page, page.get_by_text("All actions", exact=True))
-    await view.capture(f"{capture_name}-all-actions")
+    await view.capture("all-actions")
     await page.get_by_text("Not auto-allowed", exact=True).click()
     await expect(auto_allowed).to_have_count(0)
 
 
 @DESKTOP_AND_MOBILE
 @pytest.mark.parametrize("kind", ["text", "json", "email", "manifest"])
-async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, capture_name: str, kind: str) -> None:
+async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, case_id: str, kind: str) -> None:
     text = "\n".join(f"Long action content line {index + 1}" for index in range(48))
     group, name = "example_docs", "long_text"
     arguments: dict[str, object] = {"lines": text.splitlines()}
@@ -1260,14 +1260,14 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, captur
     await block.get_by_role("button", name=expand_label, exact=isinstance(expand_label, str)).click()
     await expect(block).to_have_attribute("data-expanded", "true")
     await expect(block.locator('[data-clamped="true"]')).to_have_count(0)
-    await view.capture(f"{capture_name}-expanded")
+    await view.capture("expanded")
     await block.get_by_role("button", name=collapse_label, exact=isinstance(collapse_label, str)).click()
     await expect(block).to_have_attribute("data-expanded", "false")
     if kind == "email":
         await _open_raw_switches(page)
         await expect(page.get_by_text("Exact arguments", exact=True)).to_be_visible()
         await expect(page.locator('[data-clamped="true"]').first).to_be_visible()
-        await view.capture(f"{capture_name}-raw")
+        await view.capture("raw")
 
 
 @DESKTOP_AND_MOBILE

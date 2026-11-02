@@ -24,9 +24,11 @@ from util.testing.frontend_visual.capture import VisualPage
 from util.testing.frontend_visual.context import FROZEN_NOW_MS, deterministic_browser_context
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
+pytest_plugins = ("util.testing.pytest_outputs",)
+
 
 @pytest.mark.asyncio
-async def test_dashboard_visual(tmp_path: Path) -> None:
+async def test_dashboard_visual(tmp_path: Path, case_id: str) -> None:
     dashboard_path = get_required_path(os.environ["GRAFANA_DASHBOARD_RLOCATION"])
     dashboard = json.loads(dashboard_path.read_text())
     fixture_path = os.environ["GRAFANA_FIXTURE_RLOCATION"]
@@ -46,7 +48,7 @@ async def test_dashboard_visual(tmp_path: Path) -> None:
                     "**/api/ds/query*", lambda route: replay_query(route, seen, fixture, dashboard, missing)
                 )
                 captures = tmp_path / "captures"
-                view = VisualPage(page, output_dir=captures, title=f"{dashboard['title']} (recorded)")
+                view = VisualPage(page, output_dir=captures, title=f"{dashboard['title']} (recorded)", case_id=case_id)
                 start = FROZEN_NOW_MS - 24 * 60 * 60 * 1000
                 record_stage("loading dashboard with recorded query results")
                 await page.goto(
@@ -65,11 +67,7 @@ async def test_dashboard_visual(tmp_path: Path) -> None:
                     await errors.first.click()
                     (undeclared_outputs_dir() / "panel-error.txt").write_text(await page.locator("body").inner_text())
                     raise AssertionError("Grafana reported a panel error")
-                output = undeclared_outputs_dir()
-                for capture in captures.iterdir():
-                    if capture.name != "visual-review.json":
-                        shutil.copy2(capture, output / capture.name)
-                shutil.copy2(captures / "visual-review.json", output / "visual-review.json")
+                shutil.copytree(captures / "test-outputs", undeclared_outputs_dir() / "test-outputs")
                 record_stage("captures complete")
 
 

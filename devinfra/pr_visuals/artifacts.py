@@ -28,8 +28,16 @@ class BESFile(BaseModel):
     uri: str
 
 
+class BESConfiguration(BaseModel):
+    id: str
+
+
 class BESLabelId(BaseModel):
     label: str
+    configuration: BESConfiguration | None = None
+    run: int | None = None
+    shard: int | None = None
+    attempt: int | None = None
 
 
 class BESArtifactId(BaseModel):
@@ -37,9 +45,19 @@ class BESArtifactId(BaseModel):
     target_completed: BESLabelId | None = Field(default=None, alias="targetCompleted")
 
 
+class BESTestSummary(BaseModel):
+    overall_status: str | None = Field(default=None, alias="overallStatus")
+    total_run_count: int | None = Field(default=None, alias="totalRunCount")
+    run_count: int | None = Field(default=None, alias="runCount")
+    shard_count: int | None = Field(default=None, alias="shardCount")
+    attempt_count: int | None = Field(default=None, alias="attemptCount")
+
+
 class BuildBuddyArtifact(BaseModel):
     id: BESArtifactId
     file: BESFile
+    status: str | None = None
+    test_summary: BESTestSummary | None = Field(default=None, alias="testSummary")
 
     @property
     def label(self) -> str:
@@ -56,7 +74,7 @@ class ListedArtifact:
 
 
 def list_ci_artifacts(
-    invocations: list[str], *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run
+    invocations: list[str], *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run, require_all: bool = False
 ) -> list[ListedArtifact]:
     listed: list[ListedArtifact] = []
     failures: list[str] = []
@@ -77,6 +95,6 @@ def list_ci_artifacts(
         )
         artifacts: list[BuildBuddyArtifact] = parsed_artifacts or []
         listed.extend(ListedArtifact(invocation, artifact) for artifact in artifacts)
-    if failures and len(failures) == len(invocations):
-        raise RuntimeError("all BuildBuddy artifact queries failed: " + "; ".join(failures))
+    if failures and (require_all or len(failures) == len(invocations)):
+        raise RuntimeError("BuildBuddy artifact queries failed: " + "; ".join(failures))
     return listed

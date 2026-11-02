@@ -25,7 +25,7 @@ def test_build_symlinks_do_not_prevent_listing_visual_test_outputs() -> None:
                 "id": {"testResult": {"label": "//ui:visual"}},
                 "file": {"name": f"test.outputs/{name}", "uri": f"bytestream://{name}"},
             }
-            for name in ["visual-review.json", "screen.png"]
+            for name in ["test-outputs/records/scene.json", "test-outputs/files/screen.png"]
         ),
     ]
 
@@ -40,12 +40,12 @@ def test_build_symlinks_do_not_prevent_listing_visual_test_outputs() -> None:
     listed = list_ci_artifacts(["invocation"], run=run)
 
     assert [(item.artifact.label, item.artifact.file.name, item.artifact.file.uri) for item in listed] == [
-        ("//ui:visual", "test.outputs/visual-review.json", "bytestream://visual-review.json"),
-        ("//ui:visual", "test.outputs/screen.png", "bytestream://screen.png"),
+        ("//ui:visual", "test.outputs/test-outputs/records/scene.json", "bytestream://test-outputs/records/scene.json"),
+        ("//ui:visual", "test.outputs/test-outputs/files/screen.png", "bytestream://test-outputs/files/screen.png"),
     ]
 
 
-@pytest.mark.parametrize("name", ["visual-review.json", "screen.png"])
+@pytest.mark.parametrize("name", ["test-outputs/records/scene.json", "test-outputs/files/screen.png"])
 def test_visual_test_outputs_still_require_download_uris(name: str) -> None:
     artifacts = [{"id": {"testResult": {"label": "//ui:visual"}}, "file": {"name": f"test.outputs/{name}"}}]
 
@@ -54,6 +54,23 @@ def test_visual_test_outputs_still_require_download_uris(name: str) -> None:
 
     with pytest.raises(ValidationError, match="uri"):
         list_ci_artifacts(["invocation"], run=run)
+
+
+def test_required_listing_does_not_hide_one_failed_invocation() -> None:
+    artifact = {
+        "id": {"testResult": {"label": "//ui:visual"}},
+        "file": {"name": "test.outputs/test-outputs/records/a.json", "uri": "bytestream://record"},
+    }
+
+    def run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if "failed" in command:
+            return subprocess.CompletedProcess(command, 1, "", "listing unavailable")
+        return subprocess.CompletedProcess(command, 0, json.dumps([artifact]), "")
+
+    with pytest.raises(RuntimeError, match="failed: listing unavailable"):
+        list_ci_artifacts(["successful", "failed"], run=run, require_all=True)
+
+    assert len(list_ci_artifacts(["successful", "failed"], run=run)) == 1
 
 
 if __name__ == "__main__":

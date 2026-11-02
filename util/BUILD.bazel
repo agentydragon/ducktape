@@ -42,13 +42,6 @@ py_library(
 )
 
 py_library(
-    name = "visual_review",
-    srcs = ["visual_review.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_library(
     name = "visual_diff",
     srcs = ["visual_diff.py"],
     visibility = ["//visibility:public"],
@@ -317,17 +310,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//itsdangerous",
         "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_visual_review",
-    srcs = ["test_visual_review.py"],
-    deps = [
-        ":visual_review",
-        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

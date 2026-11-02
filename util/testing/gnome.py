@@ -11,8 +11,8 @@ from typing import cast
 from docker.models.containers import Container, ExecResult
 from PIL import Image
 
+from util.testing.output_writer import publish_output
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_review import publish_review_png
 
 
 def exec_output(result: ExecResult) -> tuple[bytes, bytes]:
@@ -151,7 +151,14 @@ def crop_panel_menu(full: Image.Image, geometry: tuple[int, int, int, int]) -> I
 
 
 def capture_panel_menu(
-    session: GnomeSession, output_dir: Path, *, geometry: tuple[int, int, int, int], name: str, title: str, label: str
+    session: GnomeSession,
+    output_dir: Path,
+    *,
+    geometry: tuple[int, int, int, int],
+    name: str,
+    title: str,
+    label: str,
+    case_id: str,
 ) -> Path:
     """Capture and publish the panel/menu crop; output_dir is mounted at /out."""
     session.screenshot(f"/out/{name}")
@@ -161,4 +168,13 @@ def capture_panel_menu(
         cropped = crop_panel_menu(full, geometry)
         png = BytesIO()
         cropped.save(png, format="PNG")
-    return publish_review_png(png.getvalue(), output_dir=undeclared_outputs_dir(), title=title, name=name, label=label)
+    return publish_output(
+        undeclared_outputs_dir(),
+        case_id=case_id,
+        checkpoint=None,
+        role="screenshot",
+        data=png.getvalue(),
+        suffix="png",
+        label=label,
+        title=title,
+    )

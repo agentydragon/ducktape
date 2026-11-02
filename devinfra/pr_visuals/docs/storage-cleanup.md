@@ -13,10 +13,11 @@ Retain current baselines and active review dependencies regardless of age.
    `ducktape-flux/seaweedfs-pr-visuals-bucket`. Recheck them before each operation;
    never print credential values or change ownership as part of data cleanup.
 2. Save a complete S3 listing with key, size, modification time, and ETag. Group
-   `commits/<sha>/` and `reviews/<sha>/` objects by their full commit SHA. A bundle
+   `commits/<sha>/`, `reviews/<sha>/`, and `reviews-test-outputs/<sha>/` objects by their full commit SHA. A bundle
    is old only when its newest object predates the cutoff. Keep unknown prefixes.
 3. Protect every commit reached by legacy and new baseline pointers
-   (`baselines/<slug>.json`, `baselines/reviews/<slug>.json`), open PR heads and
+   (`baselines/<slug>.json`, `baselines/reviews/<slug>.json`,
+   `baselines/reviews-test-outputs/<slug>.json`), open PR heads and
    current merge bases, and recorded `base_sha`/`merge_base_sha` dependencies.
    Follow dependencies of retained metadata until no new protected commits appear.
    Also protect active CI/publisher work and recently closed PR heads that may

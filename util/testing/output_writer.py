@@ -65,7 +65,7 @@ def publish_output(
     output_dir: Path,
     *,
     case_id: str,
-    checkpoint: str | None,
+    checkpoint: str | None = None,
     role: str,
     data: bytes,
     suffix: str,
@@ -128,3 +128,29 @@ def publish_output(
         os.close(lock_fd)
 
     return payload_path
+
+
+def publish_file(
+    output_dir: Path,
+    *,
+    case_id: str,
+    checkpoint: str | None = None,
+    role: str,
+    source: Path,
+    label: str | None = None,
+    title: str | None = None,
+) -> Path:
+    """Publish a source file while preserving its filename extension(s)."""
+    suffixes = source.suffixes
+    if not suffixes:
+        raise ValueError(f"source file must have a filename suffix: {source}")
+    return publish_output(
+        output_dir,
+        case_id=case_id,
+        checkpoint=checkpoint,
+        role=role,
+        data=source.read_bytes(),
+        suffix=".".join(suffix.lstrip(".") for suffix in suffixes),
+        label=label,
+        title=title,
+    )

@@ -46,7 +46,9 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 _PARSER_VERSION = "jsonl-v1"
 
 
-async def test_authenticated_browser_reads_archived_transcript(playwright_driver: Playwright, tmp_path: Path) -> None:
+async def test_authenticated_browser_reads_archived_transcript(
+    playwright_driver: Playwright, tmp_path: Path, case_id: str
+) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'archive.sqlite'}")
     Base.metadata.create_all(engine)
     session_id, child_id, older_id, latest_id = _seed_archive(engine)
@@ -97,7 +99,7 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
                 page,
                 output_dir=undeclared_outputs_dir(),
                 title="Authenticated workstation session archive",
-                capture_name="authenticated_archived_transcript",
+                case_id=case_id,
             )
             await page.goto(origin, wait_until="domcontentloaded")
             try:

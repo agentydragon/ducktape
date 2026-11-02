@@ -2,7 +2,7 @@
 
 Each case boots the real dev server (hermetic prices), drives the page through
 its DOM/geometry assertions (the real regression net), and fails on
-any uncaught page error. The rendered PNGs plus a `visual-review.json` manifest
+any uncaught page error. The rendered PNGs and their structured output records
 go to undeclared outputs, where trusted CI (`devinfra/pr_visuals/publisher.py`)
 publishes them for review.
 
@@ -426,12 +426,12 @@ async def page(playwright: Playwright) -> AsyncIterator[Page]:
 
 
 @pytest.fixture
-async def view(page: Page, capture_name: str) -> AsyncIterator[VisualPage]:
-    view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Augur pages", capture_name=capture_name)
+async def view(page: Page, case_id: str) -> AsyncIterator[VisualPage]:
+    view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Augur pages", case_id=case_id)
     try:
         yield view
     finally:
-        view.errors.assert_none(context=capture_name)
+        view.errors.assert_none(context=case_id)
 
 
 @pytest.fixture

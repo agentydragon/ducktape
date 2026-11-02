@@ -96,32 +96,30 @@ _TRANSACTION_VIEWPORTS = [(1280, 960), (390, 844), (320, 720)]
 
 
 @pytest.fixture
-async def page(playwright: Playwright, request: pytest.FixtureRequest) -> AsyncIterator[Page]:
-    capture_name = request.node.name.removeprefix("test_")
+async def page(playwright: Playwright, case_id: str) -> AsyncIterator[Page]:
     async with (
         deterministic_browser_context(
             playwright, viewport={"width": 1280, "height": 960}, frozen_now_ms=_FROZEN_NOW_MS
         ) as context,
-        playwright_trace(context, undeclared_outputs_dir(), capture_name),
+        playwright_trace(context, undeclared_outputs_dir(), case_id),
     ):
         yield await context.new_page()
 
 
 @pytest.fixture
-async def touch_page(playwright: Playwright, request: pytest.FixtureRequest) -> AsyncIterator[Page]:
-    capture_name = request.node.name.removeprefix("test_")
+async def touch_page(playwright: Playwright, case_id: str) -> AsyncIterator[Page]:
     async with (
         deterministic_browser_context(
             playwright, viewport={"width": 390, "height": 844}, frozen_now_ms=_FROZEN_NOW_MS, has_touch=True
         ) as context,
-        playwright_trace(context, undeclared_outputs_dir(), capture_name),
+        playwright_trace(context, undeclared_outputs_dir(), case_id),
     ):
         yield await context.new_page()
 
 
 @pytest.fixture
-def view(page: Page) -> VisualPage:
-    return VisualPage(page, output_dir=undeclared_outputs_dir(), title="Spend")
+def view(page: Page, case_id: str) -> VisualPage:
+    return VisualPage(page, output_dir=undeclared_outputs_dir(), title="Spend", case_id=case_id)
 
 
 async def _expand_accordion(control: Locator) -> None:
@@ -2012,7 +2010,9 @@ async def test_sustainability_history_survives_current_coverage_gap(
     )
 
 
-async def test_sustainability_scenario_marker_supports_touch(touch_page: Page, dashboard_url: str) -> None:
+async def test_sustainability_scenario_marker_supports_touch(
+    touch_page: Page, dashboard_url: str, case_id: str
+) -> None:
     async def serve_ready(route: Route) -> None:
         await route.fulfill(json=_sustainability_dashboard(_example_sustainability()).model_dump(mode="json"))
 
@@ -2027,7 +2027,7 @@ async def test_sustainability_scenario_marker_supports_touch(touch_page: Page, d
     await expect(tooltip).to_contain_text("Scenario 1: 3% draw rate")
     await expect(tooltip).to_contain_text("Supported monthly spending (USD/month):")
     await expect(tooltip).to_contain_text("After 12% modeled withdrawal tax.")
-    await VisualPage(touch_page, output_dir=undeclared_outputs_dir(), title="Spend").capture(
+    await VisualPage(touch_page, output_dir=undeclared_outputs_dir(), title="Spend", case_id=case_id).capture(
         "sustainability-scenario-touch-tooltip",
         label="Scenario details opened by tapping the 3% marker",
         full_page=True,

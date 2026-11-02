@@ -242,3 +242,6 @@ body.gallery-test details summary {
     color: #aaa;
   }
 }
+.variant-provenance {
+  overflow-wrap: anywhere;
+}

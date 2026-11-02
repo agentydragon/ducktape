@@ -344,7 +344,7 @@ EXAMPLES = (
 @DESKTOP_AND_MOBILE
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda example: example.key)
 async def test_action_presentations(
-    view: VisualPage, app: AgentplaneFixture, example: ActionExample, capture_name: str
+    view: VisualPage, app: AgentplaneFixture, example: ActionExample, case_id: str
 ) -> None:
     page = view.page
     registered = await page.evaluate("window.agentplaneVisual.actionRendererKeys()")
@@ -359,7 +359,7 @@ async def test_action_presentations(
     await expect(sidebar.locator(".agentplane-actions-sidebar-name")).to_be_visible()
     await expect(sidebar.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
     await wait_for_stable(page)
-    await view.capture(f"{capture_name}-sidebar-collapsed", target=sidebar)
+    await view.capture("sidebar-collapsed", target=sidebar)
     disclosure = sidebar.get_by_role("button", name="Expand ", exact=False)
     if example.compact_card_expands:
         await disclosure.click()
@@ -367,7 +367,7 @@ async def test_action_presentations(
         await wait_for_stable(page)
         await expect(sidebar.locator(".ui-code-block-placeholder")).to_have_count(0)
         await wait_for_stable(page)
-        await view.capture(f"{capture_name}-sidebar-expanded", target=sidebar)
+        await view.capture("sidebar-expanded", target=sidebar)
         review_link = sidebar.get_by_role("link", name="Details", exact=True)
     else:
         await expect(disclosure).to_have_count(0)
@@ -384,7 +384,7 @@ async def test_action_presentations(
     await pending.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(pending.locator(".ui-code-block-placeholder")).to_have_count(0)
     await wait_for_stable(page)
-    await view.capture(f"{capture_name}-pending-detail", target=pending)
+    await view.capture("pending-detail", target=pending)
 
     # Native sandbox results are stored directly. MCP results use the actual wire envelope.
     result = (
@@ -411,7 +411,7 @@ async def test_action_presentations(
     await expect(receipt.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
     await receipt.evaluate("element => element.scrollIntoView({block: 'end'})")
     await wait_for_stable(page)
-    await view.capture(f"{capture_name}-detail-result", target=receipt)
+    await view.capture("detail-result", target=receipt)
 
     await page.evaluate("window.location.hash = '/actions'")
     await expect(page.get_by_role("radio", name="Not auto-allowed", exact=True)).to_be_checked()
@@ -421,7 +421,7 @@ async def test_action_presentations(
     await expect(details).to_have_attribute("aria-expanded", "false")
     await history.evaluate("element => element.scrollIntoView({block: 'end'})")
     await wait_for_stable(page)
-    await view.capture(f"{capture_name}-history", target=history)
+    await view.capture("history", target=history)
 
     await details.click()
     await expect(details).to_have_attribute("aria-expanded", "true")
@@ -429,7 +429,7 @@ async def test_action_presentations(
     await expect(history).to_contain_text(example.result_text)
     await expect(history.locator(".ui-code-block-placeholder")).to_have_count(0)
     await wait_for_stable(page)
-    await view.capture(f"{capture_name}-history-expanded", target=history)
+    await view.capture("history-expanded", target=history)
 
 
 if __name__ == "__main__":

@@ -30,8 +30,10 @@ async def _wait_for_settled_layout(history: Locator) -> None:
     )
 
 
-async def test_upward_wheel_stays_detached_after_expanding_nested_toolsteps(visual: VisualHarness) -> None:
-    async with visual.open(viewport=Viewport(width=1000, height=900), color_scheme="light") as view:
+async def test_upward_wheel_stays_detached_after_expanding_nested_toolsteps(
+    visual: VisualHarness, case_id: str
+) -> None:
+    async with visual.open(viewport=Viewport(width=1000, height=900), color_scheme="light", case_id=case_id) as view:
         page = view.page
         history = page.get_by_role("region", name="Conversation history", exact=True)
         await expect(history).to_have_attribute("data-layout-settled", "true")

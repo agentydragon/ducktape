@@ -7,7 +7,7 @@ bucket layout. Overview: <../README.md>.
 
 The publisher asks BuildBuddy which CI test invocation the **commit** has, preferring
 the `//...` devel sweep — a commit can have both a sweep and an affected-set run, and
-only the sweep carries visual manifests, so the run that triggered the publish is
+the sweep can cover more visual tests, so the run that triggered the publish is
 often not the one that ran the tests. Fallback: IDs derived from the run's identity
 (<../../buildbuddy/ci/invocation_ids.py>), the only handle on a PR run (which records the merge
 SHA, not the head SHA).
@@ -16,8 +16,8 @@ SHA, not the head SHA).
 refetches the invocation's whole build event stream (33 MB on a sweep) per file,
 ~4.4 s per artifact (~16 min for a commit's ~294 files). The artifact listing already
 carries each blob's `bytestream://` URI; the publisher passes exact destinations to
-`bbapi blob download` in two manifest calls, one for review manifests and one for their
-assets. Each call downloads up to eight blobs concurrently (<20 s for a commit's files).
+`bbapi blob download` in two manifest calls, one for output records and one for their
+selected screenshot payloads. Each call downloads up to eight blobs concurrently (<20 s for a commit's files).
 
 ## Which PR a run is for
 
@@ -61,50 +61,52 @@ are selected.
 
 ## Baseline resolution
 
-Per target, first hit wins:
+Per target, first check `reviews-test-outputs/<base_sha>/tests/<slug>/metadata.json`,
+then the mutable `baselines/reviews-test-outputs/<slug>.json` pointer. Only complete,
+stable targets are eligible. If neither exists, screenshots are new. The new namespace
+intentionally does not read filename-based baselines; devel must publish fresh ones
+after the cutover. Existing historical pages and shared blobs are not deleted.
 
-1. `reviews/<base_sha>/tests/<slug>/` — the base commit's devel publication;
-2. retained `commits/<base_sha>/tests/<slug>/` bundle;
-3. `baselines/reviews/<slug>.json` — newest devel commit whose review bundle has the
-   target;
-4. retained pointer `baselines/<slug>.json`;
-5. none → every asset is `new`.
+The `bazel-configuration-exact-v1` comparison profile allows comparisons only for
+one known, equal configuration ID on both sides. A missing, changed, or ambiguous
+configuration is shown as non-comparable. The opaque ID is execution provenance,
+not part of a screenshot's identity; this conservative profile can reject two
+semantically equivalent configurations.
 
-- Metadata records SHA-256 of candidate, Before, and diff PNGs. When candidate bytes
-  match the baseline's recorded candidate digest, classification skips the baseline
-  PNG read and pixel decode; digest-less or differently encoded images retain the
-  baseline-download and pixel-comparison path. Digest-less baselines resolve their
-  candidate PNG from the retained commit bundle. The `reviews/` and
-  `baselines/reviews/` prefixes isolate overlapping publisher jobs on different
-  released wheels: old jobs keep the old layout, and old URLs stay valid.
-- Devel pushes publish every re-executed target's artifacts even when an unrelated
-  target fails (a flake elsewhere must not drop a valid result); a failed visual
-  target with no manifest can't advance its pointer. Pointers advance after the
-  commit bundle upload completes.
-- Cache hits re-expose nothing, so a fully cached devel run (the norm after the PR's
-  own CI tested the same tree) publishes nothing and advances no pointers; a pointer
-  heals at the next devel run that re-executes its target (e.g. after an RBE image pin
-  bump).
-- Pointer-resolved targets are `baseline_fallback`: the comment warns differences may
-  predate the PR, and each modified/removed screenshot is labelled `stale baseline`
-  with the baseline commit and merge base (whether it differs at the merge base is
-  unknowable — that bundle has no image for the target).
+Metadata retains structured case ID, optional checkpoint, role, and the result
+provenance of every image variant. The collector selects confirmed successful final
+attempts, records retries, and reports missing results, failed results, and collisions.
+Different images from repeated runs are shown as unstable, with each variant and its
+provenance. An incomplete or unstable target never advances its devel pointer and
+cannot establish that a screenshot was removed. Pointer-resolved comparisons are
+labelled stale because their changes can include devel drift.
+
+Discovery starts with targets that expose at least one output record. A target
+that publishes no records at all cannot be identified as a visual producer from
+the artifact listing alone. The determinism sweep supplies an explicit expected
+target list; consumers that require that stronger coverage should do the same.
+
+Candidate, baseline, and diff PNGs use shared SHA-256-addressed blobs. A matching
+candidate digest skips the baseline image read; otherwise the publisher reads and
+verifies the referenced image before comparing pixels. A missing or corrupted
+baseline image is an error, not evidence of a new screenshot. Pointers advance only
+after the review bundle and shared images upload successfully.
 
 ## Check-runs
 
 - **PR visual review**: `in_progress` with the Bazel CI run (linking it); then
   `success` once bundle and comment are done, `failure` on invalid producer output or
-  publisher errors, `neutral` when no test exposed a manifest. Failed CI runs still
+  publisher errors, `neutral` when no test exposed screenshot records. Failed CI runs still
   publish what arrived; summary and comment list failed targets when BuildBuddy
   exposes them. Reviewers can request a manual rerun from the CI run page.
 - **PR visual diffs**: only when a baseline comparison ran; `success` if nothing was
-  modified or removed, else `neutral` — deliberately not a merge gate.
+  modified, removed, unstable or incomplete, else `neutral` — deliberately not a merge gate.
 
 ## Storage
 
 - Each distinct PNG is stored once at `assets/<sha256>.png`, shared across targets,
   commits, and candidate/Before/diff roles; review pages, styles, scripts, and
-  metadata at `reviews/<sha>/`.
+  metadata at `reviews-test-outputs/<sha>/`.
 - Missing images are uploaded with `PutObject` + `If-None-Match: *`, so concurrent
   publishers can't replace a shared image. Shared-image existence checks and uploads
   run with a fixed worker limit; all finish before review metadata or pages upload.

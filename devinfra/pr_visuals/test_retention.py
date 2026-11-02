@@ -115,6 +115,28 @@ def test_preserves_both_baseline_pointer_generations_and_reports_exact_old_bundl
     ]
 
 
+def test_preserves_structured_output_baseline_and_its_shared_image() -> None:
+    objects: list[StoredObject] = []
+    bodies: dict[str, bytes] = {}
+    old = OBSERVED - timedelta(days=10)
+    _add_bundle(objects, bodies, "reviews-test-outputs", SHA_A, old, digests=(DIGEST_CANDIDATE, None, None))
+    metadata_key = f"reviews-test-outputs/{SHA_A}/metadata.json"
+    metadata = json.loads(bodies[metadata_key])
+    metadata["tests"][0]["assets"][0]["variants"] = [{"sha256": DIGEST_DIFF, "results": []}]
+    bodies[metadata_key] = json.dumps(metadata).encode()
+    pointer = "baselines/reviews-test-outputs/example.json"
+    objects.append(StoredObject(pointer, 5, old))
+    bodies[pointer] = json.dumps({"commit_sha": SHA_A}).encode()
+    objects.append(StoredObject(f"assets/{DIGEST_CANDIDATE}.png", 20, old))
+    objects.append(StoredObject(f"assets/{DIGEST_DIFF}.png", 20, old))
+
+    report = _report(ObjectStore(objects, bodies))
+
+    assert report["plan_status"] == "candidate_plan"
+    assert {row["prefix"] for row in report["bundles"]["retained"]} == {f"reviews-test-outputs/{SHA_A}/"}
+    assert not report["shared_assets"]["candidates"]
+
+
 def test_cutoff_boundary_uses_newest_object_and_retains_exact_boundary() -> None:
     objects: list[StoredObject] = []
     bodies: dict[str, bytes] = {}

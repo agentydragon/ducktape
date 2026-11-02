@@ -30,6 +30,7 @@ def grafana_dashboard_visual_test(name, dashboard, src = "//grafana/visual_tests
             "//util/bazel:runfiles",
             "//util/testing/frontend_visual:context",
             "//util/testing:undeclared_outputs",
+            "//util/testing:pytest_outputs",
             "//util/testing/frontend_visual:capture",
             "@pypi//playwright",
             "@pypi//pytest",

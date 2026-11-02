@@ -16,9 +16,9 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 @pytest.mark.parametrize("width", [1440, 390], ids=["desktop", "mobile"])
-async def test_transcript_recording(visual: VisualHarness, capture_name: str, width: int) -> None:
+async def test_transcript_recording(visual: VisualHarness, case_id: str, width: int) -> None:
     async with visual.open(
-        "archive-recorder", viewport=Viewport(width=width, height=1000), color_scheme="light", capture_name=capture_name
+        "archive-recorder", viewport=Viewport(width=width, height=1000), color_scheme="light", case_id=case_id
     ) as view:
         page = view.page
         history = page.get_by_role("region", name="Conversation records", exact=True)
@@ -33,12 +33,12 @@ async def test_transcript_recording(visual: VisualHarness, capture_name: str, wi
         await page.get_by_role("button", name="Transcript recorder", exact=True).click()
         await expect(page.get_by_role("menuitem", name="Start recording", exact=True)).to_be_visible()
         await expect(page.get_by_role("menu")).to_have_css("opacity", "1")
-        await view.capture(name=f"{capture_name}_idle_menu")
+        await view.capture(name="idle_menu")
         await page.get_by_role("menuitem", name="Start recording", exact=True).click()
         await page.get_by_role("button", name="Transcript recorder (recording)", exact=True).click()
         await expect(page.get_by_role("menuitem", name="Mark a jump", exact=True)).to_be_visible()
         await expect(page.get_by_role("menu")).to_have_css("opacity", "1")
-        await view.capture(name=f"{capture_name}_recording_menu")
+        await view.capture(name="recording_menu")
         await page.get_by_role("menuitem", name="Mark a jump", exact=True).click()
 
         await page.get_by_role("button", name="Conversation options", exact=True).click()
@@ -57,7 +57,7 @@ async def test_transcript_recording(visual: VisualHarness, capture_name: str, wi
             await page.get_by_role("menuitem", name="Stop and download recording", exact=True).click()
         download = await downloaded.value
         assert download.suggested_filename.startswith("ai-session-archive-history-recording-")
-        output = undeclared_outputs_dir() / f"{capture_name}.json"
+        output = undeclared_outputs_dir() / f"transcript-recording-{width}.json"
         await download.save_as(output)
         recording = json.loads(output.read_text())
         assert recording["version"] == 4
@@ -83,7 +83,7 @@ async def test_transcript_recording(visual: VisualHarness, capture_name: str, wi
             )
             == 0
         )
-        await view.capture(name=f"{capture_name}_stopped")
+        await view.capture(name="stopped")
 
 
 if __name__ == "__main__":

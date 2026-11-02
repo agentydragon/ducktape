@@ -20,8 +20,8 @@ from github import Auth, Github
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 ASSET_KEY = re.compile(r"^assets/([0-9a-f]{64})\.png$")
-BUNDLE_KEY = re.compile(r"^(commits|reviews)/([0-9a-f]{40})/(.+)$")
-POINTER_KEY = re.compile(r"^baselines/(?:reviews/)?([^/]+)\.json$")
+BUNDLE_KEY = re.compile(r"^(commits|reviews|reviews-test-outputs)/([0-9a-f]{40})/(.+)$")
+POINTER_KEY = re.compile(r"^baselines/(?:reviews/|reviews-test-outputs/)?([^/]+)\.json$")
 CLOSED_PR_GRACE = timedelta(hours=8)
 DEFAULT_RETENTION = timedelta(days=3)
 ACTIVE_RUN_STATUSES = ("queued", "in_progress", "requested", "waiting", "pending")
@@ -107,6 +107,15 @@ def _metadata_refs(value: dict[str, Any], context: str) -> tuple[set[str], set[s
                     if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
                         raise ValueError(f"{test_context}.assets[{index}].{field} is invalid")
                     digests.add(digest)
+            variants = asset.get("variants", [])
+            if not isinstance(variants, list):
+                raise ValueError(f"{test_context}.assets[{index}].variants must be a list")
+            for variant in variants:
+                entry = _object(variant, f"{test_context}.assets[{index}].variants[]")
+                digest = entry.get("sha256")
+                if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+                    raise ValueError(f"{test_context}.assets[{index}].variants[].sha256 is invalid")
+                digests.add(digest)
 
     if "tests" in value:
         commit_sha = value.get("commit_sha")
@@ -212,7 +221,7 @@ def build_retention_report(
                 target_dirs_by_prefix[prefix].add(target_dir_match.group(1))
             if re.fullmatch(r"tests/[^/]+/metadata\.json", match.group(3)):
                 target_metadata_by_prefix[prefix].append(stored.key)
-        elif stored.key.startswith(("commits/", "reviews/")):
+        elif stored.key.startswith(("commits/", "reviews/", "reviews-test-outputs/")):
             unknown_keys.append(stored.key)
             blockers.append(f"unrecognized bundle key: {stored.key}")
         elif stored.key.startswith("assets/"):

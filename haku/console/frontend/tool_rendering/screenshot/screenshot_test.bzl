@@ -2,14 +2,14 @@
 
 Each `tool_rendering/<server>/BUILD.bazel` calls `preview_screenshots(name = "previews", ...)`
 to produce one `py_visual_test` that renders that server's tool-call preview cards to PNGs (one per
-fixture × variant × color scheme) plus a `visual-review.json`. The shared harness — the card
+fixture × variant × color scheme) plus a structured screenshot record. The shared harness — the card
 renderer, the mount, the mock — lives in `//haku/console/frontend/tool_rendering/screenshot`; this
 macro only bundles the server's entry (an IIFE that imports the shared mount + that server's
 fixtures), exports fixture identities, and runs the Python tests in preview_visual.py.
 
 Co-locating fixtures + target per server means a widget change re-runs only that server's
 screenshots (per-target Bazel caching), and `pr_visuals.py` already aggregates every test
-target's manifest — so N targets drop straight into the review page.
+target's output records — so N targets drop straight into the review page.
 
 The native `esbuild()` rule is used (not a hand-rolled driver) because it ships the bazel-sandbox
 module resolver that understands rules_js's symlinked `node_modules` layout. IIFE format so the

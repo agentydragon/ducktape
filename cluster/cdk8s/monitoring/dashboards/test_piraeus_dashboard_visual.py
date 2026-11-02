@@ -19,9 +19,11 @@ from util.testing.frontend_visual.capture import VisualPage
 from util.testing.frontend_visual.context import FROZEN_NOW_MS, deterministic_browser_context
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
+pytest_plugins = ("util.testing.pytest_outputs",)
+
 
 @pytest.mark.asyncio
-async def test_piraeus_dashboard_visual(tmp_path: Path) -> None:
+async def test_piraeus_dashboard_visual(tmp_path: Path, case_id: str) -> None:
     with grafana_dashboard(
         tmp_path, get_required_path(os.environ["GRAFANA_DASHBOARD_RLOCATION"]), piraeus_metrics.samples()
     ) as base_url:
@@ -31,7 +33,7 @@ async def test_piraeus_dashboard_visual(tmp_path: Path) -> None:
             ) as context:
                 page = await context.new_page()
                 captures = tmp_path / "captures"
-                view = VisualPage(page, output_dir=captures, title="Piraeus Grafana dashboard")
+                view = VisualPage(page, output_dir=captures, title="Piraeus Grafana dashboard", case_id=case_id)
                 query_errors: list[str] = []
                 checks: list[asyncio.Task[None]] = []
 
@@ -59,11 +61,7 @@ async def test_piraeus_dashboard_visual(tmp_path: Path) -> None:
                 assert await page.get_by_text("No data", exact=True).count() == 0
                 await asyncio.gather(*checks)
                 assert not query_errors, query_errors
-                output = undeclared_outputs_dir()
-                for capture in captures.iterdir():
-                    if capture.name != "visual-review.json":
-                        shutil.copy2(capture, output / capture.name)
-                shutil.copy2(captures / "visual-review.json", output / "visual-review.json")
+                shutil.copytree(captures / "test-outputs", undeclared_outputs_dir() / "test-outputs")
                 record_stage("captures complete")
 
 

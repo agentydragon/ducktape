@@ -15,12 +15,17 @@ from botocore.exceptions import ClientError
 from PIL import Image
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
+from devinfra.pr_visuals.artifacts import list_ci_artifacts
+from devinfra.pr_visuals.collection import CollectedOutputs, OutputKey, OutputObservation, ResultCoverage, ResultKey
 from devinfra.pr_visuals.publisher import (
     COMMENT_BUDGET,
     COMMENT_MARKER,
     S3_IMAGE_UPLOAD_WORKERS,
+    BaselineMetadata,
     BaselinePointer,
     ClassificationCounts,
+    DownloadedAsset,
+    DownloadedVariant,
     DownloadedVisualTest,
     ReviewAsset,
     ReviewBundleMetadata,
@@ -30,7 +35,6 @@ from devinfra.pr_visuals.publisher import (
     download_visual_tests,
     error_comment_body,
     find_test_invocations,
-    list_ci_artifacts,
     list_ci_failures,
     main,
     no_visual_comment_body,
@@ -42,7 +46,6 @@ from devinfra.pr_visuals.publisher import (
     write_baseline_pointers,
 )
 from devinfra.pr_visuals.pull_request import PullRequestRef
-from util.visual_review import VisualReviewManifest
 
 
 def _png(path: Path, color: tuple[int, int, int, int] = (10, 20, 30, 255), size: tuple[int, int] = (8, 8)) -> Path:
@@ -56,51 +59,6 @@ class FakeBaselineSource:
 
     def fetch(self, key: str) -> bytes | None:
         return self.objects.get(key)
-
-
-def _manifest(title: str, *assets: str) -> bytes:
-    return json.dumps(
-        {
-            "schema": "ducktape.visual-review.v1",
-            "title": title,
-            "assets": [{"path": asset, "label": asset.removesuffix(".png")} for asset in assets],
-        }
-    ).encode()
-
-
-def _listing(
-    artifacts: list[dict[str, object]], blobs: dict[str, bytes] | None = None
-) -> Callable[..., subprocess.CompletedProcess[str]]:
-    blobs = blobs or {}
-
-    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        words = [str(part) for part in command]
-        if "blob" in words and words[words.index("blob") + 1] == "download":
-            manifest = json.loads(Path(words[words.index("--manifest") + 1]).read_text())
-            for item in manifest:
-                Path(item["destination"]).write_bytes(blobs[item["uri"]])
-            return subprocess.CompletedProcess(command, 0, "", "")
-        return subprocess.CompletedProcess(command, 0, json.dumps(artifacts), "")
-
-    return fake_run
-
-
-def _listing_per_invocation(
-    by_invocation: dict[str, list[dict[str, object]]], blobs: dict[str, bytes] | None = None
-) -> Callable[..., subprocess.CompletedProcess[str]]:
-    """`bbapi artifact list <invocation> --kind test --json`, answered differently per invocation."""
-    blobs = blobs or {}
-
-    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        words = [str(part) for part in command]
-        if "blob" in words and words[words.index("blob") + 1] == "download":
-            manifest = json.loads(Path(words[words.index("--manifest") + 1]).read_text())
-            for item in manifest:
-                Path(item["destination"]).write_bytes(blobs[item["uri"]])
-            return subprocess.CompletedProcess(command, 0, "", "")
-        return subprocess.CompletedProcess(command, 0, json.dumps(by_invocation[words[3]]), "")
-
-    return fake_run
 
 
 def test_the_full_sweep_wins_over_an_affected_set_run_at_the_same_commit() -> None:
@@ -176,7 +134,7 @@ def test_a_genuine_query_failure_still_raises() -> None:
 def test_late_invocation_artifacts_are_read_only_after_completion(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, publisher_run: PublisherRun
 ) -> None:
-    candidate = _single_asset_test(tmp_path / "candidate")
+    candidate = _single_asset_test(tmp_path / "candidate", repository="agentydragon/ducktape")
     states = iter(["PARTIAL_INVOCATION_STATUS", "COMPLETE_INVOCATION_STATUS"])
     complete = False
     listed_after_completion: list[bool] = []
@@ -320,345 +278,139 @@ def test_successful_build_only_run_has_no_visuals_without_waiting(
     assert [check["conclusion"] for check in publisher_run.checks] == ["neutral"]
 
 
-def test_download_visual_tests_groups_manifests_by_executed_target(tmp_path: Path) -> None:
-    artifacts = [
-        {
-            "id": {"testResult": {"label": "//haku/console/frontend:screenshots"}},
-            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://manifest-haku"},
-        },
-        {
-            "id": {"testResult": {"label": "//haku/console/frontend:screenshots"}},
-            "file": {"name": "test.outputs/preview.png", "uri": "bytestream://preview-haku"},
-        },
-        {
-            "id": {"testResult": {"label": "//aiquota/gnome:test_render"}},
-            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://manifest-aiquota"},
-        },
-        {
-            "id": {"testResult": {"label": "//aiquota/gnome:test_render"}},
-            "file": {"name": "test.outputs/hot.png", "uri": "bytestream://hot-aiquota"},
-        },
-    ]
-    commands: list[list[str | Path]] = []
-    blob_values = {
-        "bytestream://manifest-haku": _manifest("Haku Console", "preview.png"),
-        "bytestream://preview-haku": b"png",
-        "bytestream://manifest-aiquota": _manifest("AI quota", "hot.png"),
-        "bytestream://hot-aiquota": b"png",
-    }
-    download_blobs = _listing(artifacts, blob_values)
+def _observation(
+    *,
+    case_id: str,
+    checkpoint: str | None,
+    digest: str,
+    uri: str,
+    configuration: str = "cfg",
+    run_number: int = 1,
+    status: str = "PASSED",
+) -> OutputObservation:
+    result = ResultKey("invocation", "//ui:visual", configuration, run_number, 0, 1)
+    return OutputObservation(
+        OutputKey("owner/repo", "//ui:visual", case_id, checkpoint, "screenshot"),
+        result,
+        status,
+        uri,
+        digest,
+        3,
+        "bytestream://record",
+        "files/screen.png",
+        case_id,
+        "UI",
+    )
 
-    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        commands.append(command)
+
+def _download_runner(blobs: dict[str, bytes]) -> Callable[..., subprocess.CompletedProcess[str]]:
+    def run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         words = [str(part) for part in command]
-        if "blob" in words and words[words.index("blob") + 1] == "download":
-            return download_blobs(command, **_kwargs)
-        if words[3] == "missing":
-            return subprocess.CompletedProcess(command, 1, "", "invocation not found")
-        return subprocess.CompletedProcess(command, 0, json.dumps(artifacts), "")
+        manifest = json.loads(Path(words[words.index("--manifest") + 1]).read_text())
+        for item in manifest:
+            Path(item["destination"]).write_bytes(blobs[item["uri"]])
+        return subprocess.CompletedProcess(command, 0, "", "")
 
-    tests = download_visual_tests(["missing", "real"], tmp_path / "tests", run=fake_run)
-
-    assert [test.target_label for test in tests] == [
-        "//aiquota/gnome:test_render",
-        "//haku/console/frontend:screenshots",
-    ]
-    assert (tests[0].directory / "hot.png").read_bytes() == b"png"
-    assert commands[1] == [Path("bbapi"), "artifact", "list", "real", "--kind", "test", "--json"]
-    assert sum("blob" in [str(part) for part in command] for command in commands) == 2
+    return run
 
 
-def test_bbapi_lists_once_and_downloads_each_blob_wave_from_one_manifest(tmp_path: Path) -> None:
-    """The listing resolves each URI once; manifests and images then download in two
-    bulk calls, without refetching the invocation's event stream per file."""
-    artifacts = [
-        {
-            "id": {"testResult": {"label": "//ui:screenshots"}},
-            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://manifest"},
-        },
-        *(
-            {
-                "id": {"testResult": {"label": "//ui:screenshots"}},
-                "file": {"name": f"test.outputs/shot-{index}.png", "uri": f"bytestream://shot-{index}"},
-            }
-            for index in range(12)
-        ),
-    ]
-    shots = [f"shot-{index}.png" for index in range(12)]
-    calls: list[list[str | Path]] = []
-    manifests: list[list[dict[str, str]]] = []
-    blobs = {"bytestream://manifest": _manifest("UI", *shots)} | {
-        f"bytestream://shot-{index}": b"png" for index in range(12)
-    }
-
-    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        calls.append(command)
-        words = [str(part) for part in command]
-        if "blob" in words and words[words.index("blob") + 1] == "download":
-            manifest = json.loads(Path(words[words.index("--manifest") + 1]).read_text())
-            manifests.append(manifest)
-            for item in manifest:
-                Path(item["destination"]).write_bytes(blobs[item["uri"]])
-            return subprocess.CompletedProcess(command, 0, "", "")
-        return subprocess.CompletedProcess(command, 0, json.dumps(artifacts), "")
-
-    tests = download_visual_tests(["invocation"], tmp_path / "tests", run=fake_run)
-
-    assert len(tests[0].manifest.assets) == 12
-    assert [call for call in calls if [str(part) for part in call][1:3] == ["artifact", "list"]] == [
-        [Path("bbapi"), "artifact", "list", "invocation", "--kind", "test", "--json"]
-    ]
-    assert len(manifests) == 2
-    assert len(manifests[0]) == 1
-    assert len(manifests[1]) == 12
-    assert all(item["invocation_id"] == "invocation" for manifest in manifests for item in manifest)
-    slug = target_slug("//ui:screenshots")
-    assert manifests[0][0]["destination"] == str(tmp_path / "tests" / ".manifests" / slug / "0.json")
-    assert [item["destination"] for item in manifests[1]] == [
-        str(tmp_path / "tests" / slug / f"shot-{index}.png") for index in range(12)
-    ]
-
-
-def test_download_visual_tests_rejects_missing_declared_asset(tmp_path: Path) -> None:
-    artifacts = [
-        {
-            "id": {"testResult": {"label": "//ui:screenshots"}},
-            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://manifest"},
-        }
-    ]
-
-    with pytest.raises(ValueError, match=r"references missing artifact missing\.png"):
-        download_visual_tests(
-            ["invocation"],
-            tmp_path / "tests",
-            run=_listing(artifacts, {"bytestream://manifest": _manifest("UI", "missing.png")}),
-        )
-
-
-def test_download_visual_tests_deduplicates_equivalent_manifests(tmp_path: Path) -> None:
-    artifacts = [
-        {
-            "id": {"testResult": {"label": "//ui:screenshots"}},
-            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://manifest-first"},
-        },
-        {
-            "id": {"testResult": {"label": "//ui:screenshots"}},
-            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://manifest-retry"},
-        },
-        {
-            "id": {"testResult": {"label": "//ui:screenshots"}},
-            "file": {"name": "test.outputs/screen.png", "uri": "bytestream://screen"},
-        },
-    ]
-    manifest = _manifest("UI", "screen.png")
-
+def test_download_preserves_case_and_checkpoint_identity(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    body = b"png"
+    digest = hashlib.sha256(body).hexdigest()
+    observations = (
+        _observation(case_id="a/test_visual.py::test_same", checkpoint=None, digest=digest, uri="bytestream://a"),
+        _observation(case_id="b/test_visual.py::test_same", checkpoint=None, digest=digest, uri="bytestream://b"),
+    )
+    coverage = ResultCoverage(observations[0].result, "PASSED", "PASSED", 2, True, ())
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.collect_outputs",
+        lambda *_a, **_k: CollectedOutputs(observations, observations, (coverage,), (), True),
+    )
     tests = download_visual_tests(
         ["invocation"],
         tmp_path / "tests",
-        run=_listing(
-            artifacts,
-            {
-                "bytestream://manifest-first": manifest,
-                "bytestream://manifest-retry": manifest,
-                "bytestream://screen": b"png",
-            },
+        repository="owner/repo",
+        run=_download_runner({"bytestream://a": body, "bytestream://b": body}),
+    )
+    assert len(tests) == 1
+    assert {asset.case_id for asset in tests[0].assets} == {
+        "a/test_visual.py::test_same",
+        "b/test_visual.py::test_same",
+    }
+    assert {asset.checkpoint for asset in tests[0].assets} == {None}
+    assert len({asset.path for asset in tests[0].assets}) == 2
+    assert all(asset.variants[0].path.read_bytes() == body for asset in tests[0].assets)
+
+
+def test_download_marks_variant_and_target_status_issues(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    first, second = b"one", b"two"
+    observations = (
+        _observation(
+            case_id="a/test_visual.py::test_same",
+            checkpoint="expanded",
+            digest=hashlib.sha256(first).hexdigest(),
+            uri="bytestream://one",
+        ),
+        _observation(
+            case_id="a/test_visual.py::test_same",
+            checkpoint="expanded",
+            digest=hashlib.sha256(second).hexdigest(),
+            uri="bytestream://two",
+            run_number=2,
         ),
     )
-
-    assert len(tests) == 1
-    assert (tests[0].directory / "screen.png").read_bytes() == b"png"
-
-
-def test_download_visual_tests_unions_a_sharded_targets_manifests(tmp_path: Path) -> None:
-    """One `shard_count` target, one manifest per shard, each naming only its own scenes.
-
-    The target's review is their union — the shards are one test, not competing answers.
-    """
-    artifacts = [
-        {
-            "id": {"testResult": {"label": "//ui:visual"}},
-            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://shard-0"},
-        },
-        {
-            "id": {"testResult": {"label": "//ui:visual"}},
-            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://shard-1"},
-        },
-        {
-            "id": {"testResult": {"label": "//ui:visual"}},
-            "file": {"name": "test.outputs/list.png", "uri": "bytestream://list"},
-        },
-        {
-            "id": {"testResult": {"label": "//ui:visual"}},
-            "file": {"name": "test.outputs/detail.png", "uri": "bytestream://detail"},
-        },
-    ]
-
+    coverage = (
+        ResultCoverage(observations[0].result, "PASSED", "FAILED", 1, True, ("target overall status FAILED",)),
+        ResultCoverage(observations[1].result, "PASSED", "FAILED", 1, True, ("target overall status FAILED",)),
+    )
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.collect_outputs",
+        lambda *_a, **_k: CollectedOutputs(
+            observations, observations, coverage, ("target overall status FAILED",), False
+        ),
+    )
     tests = download_visual_tests(
         ["invocation"],
         tmp_path / "tests",
-        run=_listing(
-            artifacts,
-            {
-                "bytestream://shard-0": _manifest("UI", "list.png"),
-                "bytestream://shard-1": _manifest("UI", "detail.png"),
-                "bytestream://list": b"list-png",
-                "bytestream://detail": b"detail-png",
-            },
+        repository="owner/repo",
+        run=_download_runner({"bytestream://one": first, "bytestream://two": second}),
+    )
+    assert len(tests[0].assets) == 1
+    assert len(tests[0].assets[0].variants) == 2
+    assert tests[0].assets[0].checkpoint == "expanded"
+    assert any("FAILED" in issue for issue in tests[0].issues)
+
+
+def test_download_rejects_ambiguous_configurations(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    observations = (
+        _observation(
+            case_id="a/test_visual.py::test_same",
+            checkpoint=None,
+            digest=hashlib.sha256(b"one").hexdigest(),
+            uri="bytestream://one",
+        ),
+        _observation(
+            case_id="a/test_visual.py::test_same",
+            checkpoint=None,
+            digest=hashlib.sha256(b"two").hexdigest(),
+            uri="bytestream://two",
+            configuration="other",
+            run_number=2,
         ),
     )
-
-    assert len(tests) == 1
-    assert {asset.path for asset in tests[0].manifest.assets} == {"list.png", "detail.png"}
-    assert (tests[0].directory / "list.png").read_bytes() == b"list-png"
-    assert (tests[0].directory / "detail.png").read_bytes() == b"detail-png"
-
-
-def test_download_visual_tests_rejects_a_sweep_and_an_affected_set_run_disagreeing(tmp_path: Path) -> None:
-    """Shards union; whole rosters from separate invocations must agree.
-
-    A full `//...` sweep and an affected-set run at one commit publish different rosters for the
-    same target. Unioning them yields a review that looks complete while taking each shot from
-    whichever run was listed first, so it stays an error -- which is what find_test_invocations'
-    "the two are not combined" relies on.
-    """
-    by_invocation = {
-        "sweep": [
-            {
-                "id": {"testResult": {"label": "//ui:visual"}},
-                "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://sweep-manifest"},
-            },
-            {
-                "id": {"testResult": {"label": "//ui:visual"}},
-                "file": {"name": "test.outputs/list.png", "uri": "bytestream://list"},
-            },
-            {
-                "id": {"testResult": {"label": "//ui:visual"}},
-                "file": {"name": "test.outputs/detail.png", "uri": "bytestream://detail"},
-            },
-        ],
-        "affected": [
-            {
-                "id": {"testResult": {"label": "//ui:visual"}},
-                "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://affected-manifest"},
-            },
-            {
-                "id": {"testResult": {"label": "//ui:visual"}},
-                "file": {"name": "test.outputs/list.png", "uri": "bytestream://list"},
-            },
-        ],
-    }
-
-    with pytest.raises(ValueError, match="different visual-review rosters"):
-        download_visual_tests(
-            ["sweep", "affected"],
-            tmp_path / "tests",
-            run=_listing_per_invocation(
-                by_invocation,
-                {
-                    "bytestream://sweep-manifest": _manifest("UI", "list.png", "detail.png"),
-                    "bytestream://affected-manifest": _manifest("UI", "list.png"),
-                    "bytestream://list": b"list-png",
-                    "bytestream://detail": b"detail-png",
-                },
-            ),
-        )
-
-
-def test_download_visual_tests_unions_shards_across_a_retried_invocation(tmp_path: Path) -> None:
-    """A sharded target listed through two invocations: each unions to the same roster, so it publishes."""
-    shards = [
-        {
-            "id": {"testResult": {"label": "//ui:visual"}},
-            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://shard-0"},
-        },
-        {
-            "id": {"testResult": {"label": "//ui:visual"}},
-            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://shard-1"},
-        },
-        {
-            "id": {"testResult": {"label": "//ui:visual"}},
-            "file": {"name": "test.outputs/list.png", "uri": "bytestream://list"},
-        },
-        {
-            "id": {"testResult": {"label": "//ui:visual"}},
-            "file": {"name": "test.outputs/detail.png", "uri": "bytestream://detail"},
-        },
-    ]
-
+    coverage = tuple(ResultCoverage(item.result, "PASSED", "PASSED", 1, True, ()) for item in observations)
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.collect_outputs",
+        lambda *_a, **_k: CollectedOutputs(observations, observations, coverage, (), True),
+    )
     tests = download_visual_tests(
-        ["primary", "child"],
+        ["invocation"],
         tmp_path / "tests",
-        run=_listing_per_invocation(
-            {"primary": shards, "child": shards},
-            {
-                "bytestream://shard-0": _manifest("UI", "list.png"),
-                "bytestream://shard-1": _manifest("UI", "detail.png"),
-                "bytestream://list": b"list-png",
-                "bytestream://detail": b"detail-png",
-            },
-        ),
+        repository="owner/repo",
+        run=_download_runner({"bytestream://one": b"one", "bytestream://two": b"two"}),
     )
-
-    assert len(tests) == 1
-    assert {asset.path for asset in tests[0].manifest.assets} == {"list.png", "detail.png"}
-
-
-def test_download_visual_tests_rejects_conflicting_titles(tmp_path: Path) -> None:
-    artifacts = [
-        {
-            "id": {"testResult": {"label": "//ui:screenshots"}},
-            "file": {"name": "test.outputs/visual-review.json", "uri": "manifest-one"},
-        },
-        {
-            "id": {"testResult": {"label": "//ui:screenshots"}},
-            "file": {"name": "test.outputs/visual-review.json", "uri": "manifest-two"},
-        },
-    ]
-
-    with pytest.raises(ValueError, match="conflicting visual-review titles"):
-        download_visual_tests(
-            ["invocation"],
-            tmp_path / "tests",
-            run=_listing(
-                artifacts,
-                {"manifest-one": _manifest("UI 1", "screen-1.png"), "manifest-two": _manifest("UI 2", "screen-2.png")},
-            ),
-        )
-
-
-def test_download_visual_tests_rejects_one_asset_described_two_ways(tmp_path: Path) -> None:
-    """Union resolves disjoint and identical manifests; it cannot resolve disagreement."""
-    artifacts = [
-        {
-            "id": {"testResult": {"label": "//ui:screenshots"}},
-            "file": {"name": "test.outputs/visual-review.json", "uri": "manifest-one"},
-        },
-        {
-            "id": {"testResult": {"label": "//ui:screenshots"}},
-            "file": {"name": "test.outputs/visual-review.json", "uri": "manifest-two"},
-        },
-    ]
-    relabelled = json.dumps(
-        {
-            "schema": "ducktape.visual-review.v1",
-            "title": "UI",
-            "assets": [{"path": "screen.png", "label": "a different label"}],
-        }
-    ).encode()
-
-    with pytest.raises(ValueError, match=r"conflicting visual-review entries for screen\.png"):
-        download_visual_tests(
-            ["invocation"],
-            tmp_path / "tests",
-            run=_listing(artifacts, {"manifest-one": _manifest("UI", "screen.png"), "manifest-two": relabelled}),
-        )
-
-
-def test_download_visual_tests_treats_null_artifact_list_as_empty(tmp_path: Path) -> None:
-    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(command, 0, "null", "")
-
-    assert download_visual_tests(["invocation"], tmp_path / "tests", run=fake_run) == []
+    assert tests[0].configuration is None
+    assert any("configurations" in issue for issue in tests[0].issues)
 
 
 def test_list_ci_failures_is_best_effort_and_deduplicates_labels() -> None:
@@ -690,25 +442,18 @@ def test_list_ci_failures_is_best_effort_and_deduplicates_labels() -> None:
 def test_build_bundle_groups_tests_and_writes_target_pages(tmp_path: Path) -> None:
     source = tmp_path / "source"
     source.mkdir()
-    (source / "screen.png").write_bytes(b"png")
-    manifest = VisualReviewManifest.model_validate(
-        {
-            "schema": "ducktape.visual-review.v1",
-            "title": "Example UI",
-            "assets": [{"path": "screen.png", "label": "Screen"}],
-        }
-    )
-    test = DownloadedVisualTest("//example:visuals", target_slug("//example:visuals"), manifest, source)
+    image = _png(source / "screen.png")
+    test = _test_from_files("//example:visuals", "Example UI", [image], repository="agentydragon/ducktape")
     sha = "0123456789abcdef0123456789abcdef01234567"
 
     bundle = build_bundle([test], tmp_path / "site", commit_sha=sha, repository="agentydragon/ducktape")
 
-    assert bundle == tmp_path / "site" / "reviews" / sha
+    assert bundle == tmp_path / "site" / "reviews-test-outputs" / sha
     assert "//example:visuals" in (bundle / "index.html").read_text()
-    target_page = bundle / "tests" / target_slug("//example:visuals") / "index.html"
-    assert 'id="screen.png"' in target_page.read_text()
-    digest = hashlib.sha256(b"png").hexdigest()
-    assert (tmp_path / "site" / "assets" / f"{digest}.png").read_bytes() == b"png"
+    target_page = bundle / "tests" / test.slug / "index.html"
+    assert f'id="{test.assets[0].path}"' in target_page.read_text()
+    digest = hashlib.sha256(image.read_bytes()).hexdigest()
+    assert (tmp_path / "site" / "assets" / f"{digest}.png").read_bytes() == image.read_bytes()
     assert f"../../../../assets/{digest}.png" in target_page.read_text()
     assert not list(bundle.rglob("*.png"))
 
@@ -718,14 +463,22 @@ def test_build_bundle_rejects_abbreviated_sha(tmp_path: Path) -> None:
         build_bundle([], tmp_path, commit_sha="0123456", repository="repo")
 
 
+def test_target_slug_is_isolated_by_repository() -> None:
+    label = "//example:visuals"
+    first = target_slug(label, repository="owner/one")
+    second = target_slug(label, repository="owner/two")
+    assert first != second
+    assert first.startswith("example-visuals-")
+
+
 def test_comment_bodies_link_commit_targets_and_report_errors() -> None:
     sha = "0123456789abcdef0123456789abcdef01234567"
     review_tests = [
         ReviewTest(
             target_label="//example:visuals",
-            slug=target_slug("//example:visuals"),
+            slug=target_slug("//example:visuals", repository="agentydragon/ducktape"),
             title="Example UI",
-            assets=[ReviewAsset(path="screen.png", label="Screen")],
+            assets=[ReviewAsset(path="screen.png", label="Screen", case_id="ui/test_visual.py::test_screen")],
         )
     ]
 
@@ -982,7 +735,7 @@ def _publish_one_visual_target(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> tuple[DownloadedVisualTest, EmptyBucket]:
     """The run's Bazel invocation holds one visual target, and the bucket holds nothing yet."""
-    candidate = _single_asset_test(tmp_path / "candidate")
+    candidate = _single_asset_test(tmp_path / "candidate", repository="agentydragon/ducktape")
     bucket = EmptyBucket()
     monkeypatch.setattr("devinfra.pr_visuals.publisher.download_visual_tests", lambda *_args, **_kwargs: [candidate])
     monkeypatch.setattr("devinfra.pr_visuals.publisher.boto3.client", lambda *_args, **_kwargs: bucket)
@@ -1011,8 +764,8 @@ def test_a_pr_run_publishes_to_the_pr_its_head_ref_finds(
     assert [(lookup["head"], lookup["head_sha"]) for lookup in lookups] == [(PR_HEAD_REF, HEAD_SHA)] * 2
     assert [comment["pull_request"] for comment in publisher_run.comments] == [8733]
     assert bucket.requested[:2] == [
-        f"reviews/{base_sha}/tests/{candidate.slug}/metadata.json",
-        f"commits/{base_sha}/tests/{candidate.slug}/metadata.json",
+        f"reviews-test-outputs/{base_sha}/tests/{candidate.slug}/metadata.json",
+        f"baselines/reviews-test-outputs/{candidate.slug}.json",
     ]
     assert [check["conclusion"] for check in publisher_run.checks] == ["success", "success"]
 
@@ -1112,14 +865,16 @@ def test_upload_reuses_shared_images_and_publishes_indexes_last(tmp_path: Path) 
     for sha in ("a" * 40, "b" * 40):
         bundle = build_bundle([source], tmp_path / "site", commit_sha=sha, repository="r")
         client.events.clear()
-        upload_bundle(bundle, endpoint="https://s3.test", bucket="visuals", key=f"reviews/{sha}", client=client)
+        upload_bundle(
+            bundle, endpoint="https://s3.test", bucket="visuals", key=f"reviews-test-outputs/{sha}", client=client
+        )
         if sha == "a" * 40:
             assert client.events[0].startswith("assets/")
         first_index = next(index for index, key in enumerate(client.events) if key.endswith("index.html"))
         assert all(not key.endswith("index.html") for key in client.events[:first_index])
-        assert client.events[-1] == f"reviews/{sha}/index.html"
+        assert client.events[-1] == f"reviews-test-outputs/{sha}/index.html"
     assert len(client.puts) == 1
-    assert client.objects[client.puts[0]] == (source.directory / "screen.png").read_bytes()
+    assert client.objects[client.puts[0]] == source.assets[0].variants[0].path.read_bytes()
     assert not any(key.startswith("commits/") for key in client.objects)
 
 
@@ -1143,229 +898,192 @@ def test_shared_image_upload_errors_do_not_publish_broken_reviews(tmp_path: Path
 
     client = RacingOrFailingS3()
     if code == "PreconditionFailed":
-        upload_bundle(bundle, endpoint="https://s3.test", bucket="visuals", key="reviews/sha", client=client)
-        assert client.events[-1] == "reviews/sha/index.html"
+        upload_bundle(
+            bundle, endpoint="https://s3.test", bucket="visuals", key="reviews-test-outputs/sha", client=client
+        )
+        assert client.events[-1] == "reviews-test-outputs/sha/index.html"
     else:
         with pytest.raises(ClientError):
-            upload_bundle(bundle, endpoint="https://s3.test", bucket="visuals", key="reviews/sha", client=client)
+            upload_bundle(
+                bundle, endpoint="https://s3.test", bucket="visuals", key="reviews-test-outputs/sha", client=client
+            )
         assert not client.events
 
 
-def test_build_bundle_classifies_against_baseline(tmp_path: Path) -> None:
-    slug = target_slug("//ex:visuals")
-    base_sha = "fedcba9876543210fedcba9876543210fedcba98"
-    head_sha = "0123456789abcdef0123456789abcdef01234567"
-
+def test_build_bundle_classifies_structured_assets_against_eligible_baseline(tmp_path: Path) -> None:
+    base_sha = "f" * 40
     candidate_dir = tmp_path / "candidate"
     candidate_dir.mkdir()
-    _png(candidate_dir / "same.png", (10, 20, 30, 255))
-    _png(candidate_dir / "changed.png", (40, 50, 60, 255))
-    _png(candidate_dir / "added.png", (1, 2, 3, 255))
-    manifest = VisualReviewManifest.model_validate(
-        {
-            "schema": "ducktape.visual-review.v1",
-            "title": "Ex",
-            "assets": [
-                {"path": "same.png", "label": "same"},
-                {"path": "changed.png", "label": "changed"},
-                {"path": "added.png", "label": "added"},
-            ],
-        }
+    candidate = _test_from_files(
+        "//ex:visuals",
+        "Ex",
+        [
+            _png(candidate_dir / "same.png"),
+            _png(candidate_dir / "changed.png", (40, 50, 60, 255)),
+            _png(candidate_dir / "added.png", (1, 2, 3, 255)),
+        ],
     )
-    test = DownloadedVisualTest("//ex:visuals", slug, manifest, candidate_dir)
-
-    objects: dict[str, bytes] = {
-        f"commits/{base_sha}/tests/{slug}/metadata.json": json.dumps(
-            {
-                "target_label": "//ex:visuals",
-                "slug": slug,
-                "title": "Ex",
-                "assets": [
-                    {"path": "same.png", "label": "same"},
-                    {"path": "changed.png", "label": "changed"},
-                    {"path": "gone.png", "label": "gone"},
-                ],
-            }
-        ).encode(),
-        f"commits/{base_sha}/tests/{slug}/same.png": (candidate_dir / "same.png").read_bytes(),
-        f"commits/{base_sha}/tests/{slug}/changed.png": _png(
-            tmp_path / "changed_base.png", (70, 80, 90, 255)
-        ).read_bytes(),
-        f"commits/{base_sha}/tests/{slug}/gone.png": _png(tmp_path / "gone_base.png", (5, 6, 7, 255)).read_bytes(),
+    baseline_dir = tmp_path / "baseline"
+    baseline_dir.mkdir()
+    baseline_assets = [
+        _asset_from_file(_png(baseline_dir / "same.png")),
+        _asset_from_file(_png(baseline_dir / "changed.png", (70, 80, 90, 255))),
+        _asset_from_file(_png(baseline_dir / "gone.png", (5, 6, 7, 255))),
+    ]
+    baseline_records = [
+        ReviewAsset(
+            path=asset.path,
+            label=asset.label,
+            case_id=asset.case_id,
+            checkpoint=asset.checkpoint,
+            role=asset.role,
+            candidate_sha256=asset.variants[0].sha256,
+        )
+        for asset in baseline_assets
+    ]
+    objects = {
+        f"reviews-test-outputs/{base_sha}/tests/{candidate.slug}/metadata.json": BaselineMetadata(
+            assets=baseline_records,
+            baseline_eligible=True,
+            comparison_profile="bazel-configuration-exact-v1",
+            configuration="cfg",
+        )
+        .model_dump_json()
+        .encode(),
+        **{f"assets/{asset.variants[0].sha256}.png": asset.variants[0].path.read_bytes() for asset in baseline_assets},
     }
-
     bundle = build_bundle(
-        [test],
+        [candidate],
         tmp_path / "site",
-        commit_sha=head_sha,
+        commit_sha="a" * 40,
         repository="r",
         base_sha=base_sha,
         baseline_source=FakeBaselineSource(objects),
     )
-
-    test_dir = bundle / "tests" / slug
-    metadata = json.loads((test_dir / "metadata.json").read_text())
-    by_path = {asset["path"]: asset for asset in metadata["assets"]}
-    assert by_path["same.png"]["classification"] == "unchanged"
-    assert by_path["changed.png"]["classification"] == "modified"
-    assert by_path["added.png"]["classification"] == "new"
-    assert by_path["gone.png"]["classification"] == "removed"
-    assert metadata["summary"] == {"modified": 1, "new": 1, "removed": 1, "unchanged": 1}
-
-    site = tmp_path / "site"
-    assert by_path["same.png"].get("baseline_sha256") is None
-    assert (site / "assets" / f"{by_path['same.png']['candidate_sha256']}.png").read_bytes() == (
-        candidate_dir / "same.png"
-    ).read_bytes()
-    for path in ("changed.png", "gone.png"):
-        key = f"commits/{base_sha}/tests/{slug}/{path}"
-        assert (site / "assets" / f"{by_path[path]['baseline_sha256']}.png").read_bytes() == objects[key]
-    assert (site / "assets" / f"{by_path['changed.png']['diff_sha256']}.png").is_file()
-    assert by_path["gone.png"].get("candidate_sha256") is None
-    assert by_path["same.png"].get("diff_sha256") is None
+    metadata = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text())
+    by_label = {asset.label: asset for asset in metadata.tests[0].assets}
+    assert {label: asset.classification for label, asset in by_label.items()} == {
+        "same": "unchanged",
+        "changed": "modified",
+        "added": "new",
+        "gone": "removed",
+    }
+    assert metadata.tests[0].summary == ClassificationCounts(modified=1, new=1, removed=1, unchanged=1)
+    assert metadata.tests[0].baseline_eligible
+    assert by_label["changed"].diff_sha256 is not None
+    assert by_label["gone"].candidate_sha256 is None
     assert not list(bundle.rglob("*.png"))
-    review_tests = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests
-    comment = success_comment_body(
-        repository="r",
-        commit_sha=head_sha,
-        url=f"https://s3.test/visuals/reviews/{head_sha}/",
-        review_tests=review_tests,
-        base_sha=base_sha,
+
+
+def test_exact_candidate_digest_skips_baseline_payload_read(tmp_path: Path) -> None:
+    candidate = _single_asset_test(tmp_path / "candidate")
+    asset = candidate.assets[0]
+    digest = asset.variants[0].sha256
+    base_sha = "f" * 40
+    metadata = BaselineMetadata(
+        assets=[ReviewAsset(path=asset.path, label=asset.label, case_id=asset.case_id, candidate_sha256=digest)],
+        baseline_eligible=True,
+        comparison_profile="bazel-configuration-exact-v1",
+        configuration="cfg",
     )
-    for path, variant in (
-        ("changed.png", "candidate"),
-        ("changed.png", "baseline"),
-        ("changed.png", "diff"),
-        ("gone.png", "baseline"),
-    ):
-        assert f"https://s3.test/visuals/assets/{by_path[path][f'{variant}_sha256']}.png" in comment
-    assert f"tests/{slug}/index.html#changed.png" in comment
 
-
-def test_exact_candidate_digest_skips_baseline_read_and_upload_heals_missing_image(tmp_path: Path) -> None:
-    slug = target_slug("//ex:visuals")
-    base_sha = "fedcba9876543210fedcba9876543210fedcba98"
-    head_sha = "0123456789abcdef0123456789abcdef01234567"
-    source_test = _single_asset_test(tmp_path / "candidate")
-    candidate_bytes = (source_test.directory / "screen.png").read_bytes()
-    digest = hashlib.sha256(candidate_bytes).hexdigest()
-
-    class RecordingBaselineSource:
+    class Source:
         def __init__(self) -> None:
             self.fetches: list[str] = []
 
         def fetch(self, key: str) -> bytes | None:
             self.fetches.append(key)
-            if key == f"reviews/{base_sha}/tests/{slug}/metadata.json":
-                return json.dumps(
-                    {"assets": [{"path": "screen.png", "label": "screen", "candidate_sha256": digest}]}
-                ).encode()
+            if key == f"reviews-test-outputs/{base_sha}/tests/{candidate.slug}/metadata.json":
+                return metadata.model_dump_json().encode()
             return None
 
-    baseline_source = RecordingBaselineSource()
-    output_root = tmp_path / "site"
+    source = Source()
     bundle = build_bundle(
-        [source_test],
-        output_root,
-        commit_sha=head_sha,
-        repository="r",
-        base_sha=base_sha,
-        baseline_source=baseline_source,
+        [candidate], tmp_path / "site", commit_sha="a" * 40, repository="r", base_sha=base_sha, baseline_source=source
     )
-
-    metadata = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text())
-    asset = metadata.tests[0].assets[0]
-    assert asset.classification == "unchanged"
-    assert asset.candidate_sha256 == digest
-    assert f"assets/{digest}.png" not in baseline_source.fetches
-    assert (output_root / "assets" / f"{digest}.png").read_bytes() == candidate_bytes
-
-    client = PublishedObjects()
-    upload_bundle(bundle, endpoint="https://s3.test", bucket="visuals", key=f"reviews/{head_sha}", client=client)
-    assert client.objects[f"assets/{digest}.png"] == candidate_bytes
+    review = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text())
+    assert review.tests[0].assets[0].classification == "unchanged"
+    assert f"assets/{digest}.png" not in source.fetches
 
 
-def test_digest_fast_path_preserves_legacy_missing_and_pixel_equivalent_baselines(tmp_path: Path) -> None:
-    slug = target_slug("//ex:visuals")
-    base_sha = "fedcba9876543210fedcba9876543210fedcba98"
-    head_sha = "0123456789abcdef0123456789abcdef01234567"
-    candidate_dir = tmp_path / "candidate"
-    candidate_dir.mkdir()
-    exact_bytes = _png(candidate_dir / "exact.png").read_bytes()
-    _png(candidate_dir / "legacy.png", (30, 40, 50, 255))
-    encoded_baseline = tmp_path / "encoded-baseline.png"
-    encoded_candidate = candidate_dir / "encoded.png"
-    Image.new("RGBA", (8, 8), (10, 20, 30, 255)).save(encoded_baseline, compress_level=0)
-    Image.new("RGBA", (8, 8), (10, 20, 30, 255)).save(encoded_candidate, compress_level=9)
-    baseline_bytes = encoded_baseline.read_bytes()
-    candidate_encoded_bytes = encoded_candidate.read_bytes()
-    assert baseline_bytes != candidate_encoded_bytes
-    exact_digest = hashlib.sha256(exact_bytes).hexdigest()
-    baseline_encoded_digest = hashlib.sha256(baseline_bytes).hexdigest()
-    manifest = VisualReviewManifest.model_validate(
-        {
-            "schema": "ducktape.visual-review.v1",
-            "title": "Ex",
-            "assets": [
-                {"path": "exact.png", "label": "exact"},
-                {"path": "legacy.png", "label": "legacy"},
-                {"path": "encoded.png", "label": "encoded"},
-            ],
-        }
+def test_configuration_mismatch_and_incomplete_result_cannot_advance_baseline(tmp_path: Path) -> None:
+    candidate = _single_asset_test(tmp_path / "candidate")
+    base_sha = "f" * 40
+    asset = candidate.assets[0]
+    metadata = BaselineMetadata(
+        assets=[
+            ReviewAsset(
+                path=asset.path, label=asset.label, case_id=asset.case_id, candidate_sha256=asset.variants[0].sha256
+            )
+        ],
+        baseline_eligible=True,
+        comparison_profile="bazel-configuration-exact-v1",
+        configuration="other",
     )
-    test = DownloadedVisualTest("//ex:visuals", slug, manifest, candidate_dir)
-
-    class RecordingBaselineSource:
-        def __init__(self) -> None:
-            self.fetches: list[str] = []
-
-        def fetch(self, key: str) -> bytes | None:
-            self.fetches.append(key)
-            if key == f"reviews/{base_sha}/tests/{slug}/metadata.json":
-                return json.dumps(
-                    {
-                        "assets": [
-                            {"path": "exact.png", "label": "exact", "candidate_sha256": exact_digest},
-                            {"path": "legacy.png", "label": "legacy"},
-                            {"path": "encoded.png", "label": "encoded", "candidate_sha256": baseline_encoded_digest},
-                        ]
-                    }
-                ).encode()
-            if key == f"assets/{baseline_encoded_digest}.png":
-                return baseline_bytes
-            return None
-
-    baseline_source = RecordingBaselineSource()
+    objects = {
+        f"reviews-test-outputs/{base_sha}/tests/{candidate.slug}/metadata.json": metadata.model_dump_json().encode()
+    }
     bundle = build_bundle(
-        [test],
+        [candidate],
         tmp_path / "site",
-        commit_sha=head_sha,
+        commit_sha="a" * 40,
         repository="r",
         base_sha=base_sha,
-        baseline_source=baseline_source,
+        baseline_source=FakeBaselineSource(objects),
     )
+    review = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests[0]
+    assert not review.baseline_eligible
+    assert review.assets[0].classification is None
+    assert any("configurations cannot be compared" in issue for issue in review.issues)
+    incomplete = DownloadedVisualTest(
+        candidate.target_label,
+        candidate.slug,
+        candidate.title,
+        candidate.assets,
+        candidate.configuration,
+        ["incomplete result coverage"],
+    )
+    bundle = build_bundle([incomplete], tmp_path / "site", commit_sha="b" * 40, repository="r")
+    review = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests[0]
+    assert not review.baseline_eligible
+    assert "incomplete result coverage" in review.issues
 
-    metadata = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text())
-    assets = {asset.path: asset for asset in metadata.tests[0].assets}
-    assert assets["exact.png"].classification == "unchanged"
-    assert assets["legacy.png"].classification == "new"
-    assert assets["encoded.png"].classification == "unchanged"
-    assert f"assets/{exact_digest}.png" not in baseline_source.fetches
-    assert f"assets/{baseline_encoded_digest}.png" in baseline_source.fetches
+
+def test_unstable_variants_keep_all_images_and_disqualify_baseline(tmp_path: Path) -> None:
+    source = tmp_path / "variants"
+    source.mkdir()
+    first = _asset_from_file(_png(source / "first.png"), case_id="ui/test_visual.py::test_screen")
+    second = _asset_from_file(_png(source / "second.png", (90, 80, 70, 255)), case_id=first.case_id)
+    unstable = DownloadedAsset(first.case_id, None, "screenshot", "screen", [first.variants[0], second.variants[0]])
+    candidate = DownloadedVisualTest(
+        "//ex:visuals", target_slug("//ex:visuals", repository="r"), "Ex", [unstable], "cfg", []
+    )
+    bundle = build_bundle(
+        [candidate],
+        tmp_path / "site",
+        commit_sha="a" * 40,
+        repository="r",
+        base_sha="f" * 40,
+        baseline_source=FakeBaselineSource({}),
+    )
+    review = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests[0]
+    assert review.assets[0].classification == "unstable"
+    assert len(review.assets[0].variants) == 2
+    assert review.assets[0].candidate_sha256 is None
+    assert not review.baseline_eligible
+    assert review.summary is not None
+    assert review.summary.unstable == 1
+    for variant in review.assets[0].variants:
+        assert (tmp_path / "site" / "assets" / f"{variant.sha256}.png").is_file()
 
 
 def test_upload_image_checks_are_bounded_and_drained_before_review_uploads(tmp_path: Path) -> None:
     source_dir = tmp_path / "candidate"
     source_dir.mkdir()
-    assets: list[dict[str, str]] = []
-    for index in range(S3_IMAGE_UPLOAD_WORKERS + 4):
-        path = f"screen-{index}.png"
-        _png(source_dir / path, (index, 20, 30, 255))
-        assets.append({"path": path, "label": path})
-    manifest = VisualReviewManifest.model_validate(
-        {"schema": "ducktape.visual-review.v1", "title": "Ex", "assets": assets}
-    )
-    test = DownloadedVisualTest("//ex:visuals", target_slug("//ex:visuals"), manifest, source_dir)
+    paths = [
+        _png(source_dir / f"screen-{index}.png", (index, 20, 30, 255)) for index in range(S3_IMAGE_UPLOAD_WORKERS + 4)
+    ]
+    test = _test_from_files("//ex:visuals", "Ex", paths)
     bundle = build_bundle([test], tmp_path / "site", commit_sha="a" * 40, repository="r")
 
     class BlockingS3(PublishedObjects):
@@ -1440,15 +1158,8 @@ def test_upload_image_checks_are_bounded_and_drained_before_review_uploads(tmp_p
 def test_upload_bundle_waits_for_all_image_checks_before_propagating_failure(tmp_path: Path) -> None:
     source_dir = tmp_path / "candidate"
     source_dir.mkdir()
-    assets: list[dict[str, str]] = []
-    for index in range(4):
-        path = f"screen-{index}.png"
-        _png(source_dir / path, (index, 20, 30, 255))
-        assets.append({"path": path, "label": path})
-    manifest = VisualReviewManifest.model_validate(
-        {"schema": "ducktape.visual-review.v1", "title": "Ex", "assets": assets}
-    )
-    test = DownloadedVisualTest("//ex:visuals", target_slug("//ex:visuals"), manifest, source_dir)
+    paths = [_png(source_dir / f"screen-{index}.png", (index, 20, 30, 255)) for index in range(4)]
+    test = _test_from_files("//ex:visuals", "Ex", paths)
     bundle = build_bundle([test], tmp_path / "site", commit_sha="a" * 40, repository="r")
     metadata = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text())
     image_keys = {
@@ -1479,13 +1190,42 @@ def test_upload_bundle_waits_for_all_image_checks_before_propagating_failure(tmp
     assert client.events == []
 
 
-def _single_asset_test(directory: Path, label: str = "//ex:visuals") -> DownloadedVisualTest:
-    directory.mkdir(parents=True, exist_ok=True)
-    _png(directory / "screen.png", (10, 20, 30, 255))
-    manifest = VisualReviewManifest.model_validate(
-        {"schema": "ducktape.visual-review.v1", "title": "Ex", "assets": [{"path": "screen.png", "label": "screen"}]}
+def _asset_from_file(
+    path: Path, *, case_id: str | None = None, checkpoint: str | None = None, label: str | None = None
+) -> DownloadedAsset:
+    body = path.read_bytes()
+    return DownloadedAsset(
+        case_id or f"publisher/test_publisher.py::{path.name}",
+        checkpoint,
+        "screenshot",
+        label or path.stem,
+        [DownloadedVariant(path, hashlib.sha256(body).hexdigest(), [{"run": 1, "status": "PASSED"}])],
     )
-    return DownloadedVisualTest(label, target_slug(label), manifest, directory)
+
+
+def _test_from_files(
+    label: str,
+    title: str,
+    paths: list[Path],
+    *,
+    repository: str = "r",
+    configuration: str | None = "cfg",
+    issues: list[str] | None = None,
+) -> DownloadedVisualTest:
+    return DownloadedVisualTest(
+        label,
+        target_slug(label, repository=repository),
+        title,
+        [_asset_from_file(path) for path in paths],
+        configuration,
+        issues or [],
+    )
+
+
+def _single_asset_test(directory: Path, label: str = "//ex:visuals", *, repository: str = "r") -> DownloadedVisualTest:
+    directory.mkdir(parents=True, exist_ok=True)
+    image = _png(directory / "screen.png", (10, 20, 30, 255))
+    return _test_from_files(label, "Ex", [image], repository=repository)
 
 
 @pytest.mark.parametrize("pointer_fallback", [False, True])
@@ -1501,26 +1241,16 @@ def test_shared_images_are_reused_across_targets_and_new_baselines(tmp_path: Pat
     assert len(list((site / "assets").glob("*.png"))) == 1
     objects = {path.relative_to(site).as_posix(): path.read_bytes() for path in site.rglob("*") if path.is_file()}
     if pointer_fallback:
-        objects[f"baselines/reviews/{first.slug}.json"] = (
-            BaselinePointer(commit_sha=base_sha).model_dump_json().encode()
-        )
-        # An old publisher can keep writing this pointer during the wheel rollout.
-        objects[f"baselines/{first.slug}.json"] = BaselinePointer(commit_sha="e" * 40).model_dump_json().encode()
-        objects[f"commits/{'e' * 40}/tests/{first.slug}/metadata.json"] = json.dumps(
-            {"assets": [{"path": "screen.png", "label": "old"}]}
-        ).encode()
-        objects[f"commits/{'e' * 40}/tests/{first.slug}/screen.png"] = _png(
-            tmp_path / "old.png", (1, 1, 1, 255)
-        ).read_bytes()
-    # Keep the first target unchanged and change the second so its Before image
-    # must come from the shared pool rather than a per-commit PNG.
-    _png(second.directory / "screen.png", (20, 30, 40, 255))
-    if pointer_fallback:
-        objects[f"baselines/reviews/{second.slug}.json"] = (
-            BaselinePointer(commit_sha=base_sha).model_dump_json().encode()
-        )
+        for test in (first, second):
+            objects[f"baselines/reviews-test-outputs/{test.slug}.json"] = (
+                BaselinePointer(commit_sha=base_sha).model_dump_json().encode()
+            )
+    new_second = _single_asset_test(tmp_path / "second-new", label="//b:visual")
+    changed_path = new_second.assets[0].variants[0].path
+    _png(changed_path, (20, 30, 40, 255))
+    new_second = _test_from_files("//b:visual", "Ex", [changed_path])
     head = build_bundle(
-        [first, second],
+        [first, new_second],
         site,
         commit_sha="b" * 40,
         repository="r",
@@ -1529,44 +1259,48 @@ def test_shared_images_are_reused_across_targets_and_new_baselines(tmp_path: Pat
     )
     review = ReviewBundleMetadata.model_validate_json((head / "metadata.json").read_text())
     assert review.tests[0].assets[0].classification == "unchanged"
-    assert review.tests[0].assets[0].candidate_sha256 == digest
     assert review.tests[0].baseline_fallback == pointer_fallback
     assert review.tests[1].assets[0].classification == "modified"
     assert review.tests[1].assets[0].baseline_sha256 == digest
     assert len(list((site / "assets").glob("*.png"))) == 3
 
 
-def test_build_bundle_falls_back_to_devel_pointer(tmp_path: Path) -> None:
-    test = _single_asset_test(tmp_path / "candidate")
-    base_sha = "fedcba9876543210fedcba9876543210fedcba98"
-    pointer_sha = "aaaabbbbccccddddeeeeffff0000111122223333"
-
-    # The base commit's bundle lacks this target; only the pointer's commit has it.
-    objects: dict[str, bytes] = {
-        f"baselines/{test.slug}.json": BaselinePointer(commit_sha=pointer_sha).model_dump_json().encode(),
-        f"commits/{pointer_sha}/tests/{test.slug}/metadata.json": json.dumps(
-            {"assets": [{"path": "screen.png", "label": "screen"}]}
-        ).encode(),
-        f"commits/{pointer_sha}/tests/{test.slug}/screen.png": _png(
-            tmp_path / "baseline.png", (99, 99, 99, 255)
-        ).read_bytes(),
+def test_build_bundle_falls_back_to_eligible_devel_pointer(tmp_path: Path) -> None:
+    candidate = _single_asset_test(tmp_path / "candidate")
+    base_sha = "f" * 40
+    pointer_sha = "a" * 40
+    baseline_path = _png(tmp_path / "baseline.png", (99, 99, 99, 255))
+    baseline_digest = hashlib.sha256(baseline_path.read_bytes()).hexdigest()
+    asset = candidate.assets[0]
+    baseline = BaselineMetadata(
+        assets=[
+            ReviewAsset(path=asset.path, label=asset.label, case_id=asset.case_id, candidate_sha256=baseline_digest)
+        ],
+        baseline_eligible=True,
+        comparison_profile="bazel-configuration-exact-v1",
+        configuration="cfg",
+    )
+    objects = {
+        f"baselines/reviews-test-outputs/{candidate.slug}.json": BaselinePointer(commit_sha=pointer_sha)
+        .model_dump_json()
+        .encode(),
+        f"reviews-test-outputs/{pointer_sha}/tests/{candidate.slug}/metadata.json": baseline.model_dump_json().encode(),
+        f"assets/{baseline_digest}.png": baseline_path.read_bytes(),
     }
-
     bundle = build_bundle(
-        [test],
+        [candidate],
         tmp_path / "site",
-        commit_sha="0123456789abcdef0123456789abcdef01234567",
+        commit_sha="b" * 40,
         repository="r",
         base_sha=base_sha,
         baseline_source=FakeBaselineSource(objects),
     )
-
-    metadata = json.loads((bundle / "tests" / test.slug / "metadata.json").read_text())
-    assert metadata["base_sha"] == pointer_sha
-    assert metadata["baseline_fallback"] is True
-    assert metadata["assets"][0]["classification"] == "modified"
-    assert metadata["assets"][0]["baseline_stale"] is True
-    assert metadata["merge_base_sha"] == base_sha
+    review = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests[0]
+    assert review.base_sha == pointer_sha
+    assert review.baseline_fallback
+    assert review.assets[0].classification == "modified"
+    assert review.assets[0].baseline_stale
+    assert review.merge_base_sha == base_sha
 
 
 def test_build_bundle_all_new_when_no_baseline_anywhere(tmp_path: Path) -> None:
@@ -1586,7 +1320,7 @@ def test_build_bundle_all_new_when_no_baseline_anywhere(tmp_path: Path) -> None:
     assert metadata["base_sha"] == base_sha
     assert "baseline_fallback" not in metadata
     assert metadata["assets"][0]["classification"] == "new"
-    assert metadata["summary"] == {"modified": 0, "new": 1, "removed": 0, "unchanged": 0}
+    assert metadata["summary"] == {"modified": 0, "new": 1, "removed": 0, "unchanged": 0, "unstable": 0}
     # No modified asset to prefer — the aggregate index page still gets a thumbnail.
     assert metadata["preview"]["classification"] == "new"
 
@@ -1603,7 +1337,10 @@ def test_write_baseline_pointers_puts_mutable_json() -> None:
     sha = "0123456789abcdef0123456789abcdef01234567"
     write_baseline_pointers(["slug-a", "slug-b"], commit_sha=sha, bucket="visuals", client=client)
 
-    assert [put["Key"] for put in client.puts] == ["baselines/reviews/slug-a.json", "baselines/reviews/slug-b.json"]
+    assert [put["Key"] for put in client.puts] == [
+        "baselines/reviews-test-outputs/slug-a.json",
+        "baselines/reviews-test-outputs/slug-b.json",
+    ]
     for put in client.puts:
         assert put["Bucket"] == "visuals"
         assert put["CacheControl"] == "no-cache"
@@ -1632,6 +1369,10 @@ def test_diff_check_conclusions() -> None:
     assert removed_only[0] == "neutral"
 
 
+def _comment_asset(*, path: str, label: str, **kwargs: Any) -> ReviewAsset:
+    return ReviewAsset(path=path, label=label, case_id=f"ui/test_visual.py::{path}", **kwargs)
+
+
 def test_success_comment_body_reports_counts_and_previews() -> None:
     sha = "0123456789abcdef0123456789abcdef01234567"
     review_tests = [
@@ -1641,12 +1382,14 @@ def test_success_comment_body_reports_counts_and_previews() -> None:
             title="Ex",
             summary=ClassificationCounts(modified=2, new=1, removed=0, unchanged=1),
             assets=[
-                ReviewAsset(
+                _comment_asset(
                     path="a.png", label="a", classification="modified", changed_fraction=0.5, changed_pixels=10
                 ),
-                ReviewAsset(path="b.png", label="b", classification="modified", changed_fraction=0.2, changed_pixels=4),
-                ReviewAsset(path="c.png", label="c", classification="new"),
-                ReviewAsset(path="d.png", label="d", classification="unchanged"),
+                _comment_asset(
+                    path="b.png", label="b", classification="modified", changed_fraction=0.2, changed_pixels=4
+                ),
+                _comment_asset(path="c.png", label="c", classification="new"),
+                _comment_asset(path="d.png", label="d", classification="unchanged"),
             ],
         )
     ]
@@ -1687,7 +1430,9 @@ def test_success_comment_body_warns_when_comparison_uses_fallback_baseline() -> 
 
 def test_success_comment_body_labels_each_stale_screenshot() -> None:
     def asset(path: str, *, stale: bool | None) -> ReviewAsset:
-        return ReviewAsset(path=path, label=path, classification="modified", changed_fraction=0.5, baseline_stale=stale)
+        return _comment_asset(
+            path=path, label=path, classification="modified", changed_fraction=0.5, baseline_stale=stale
+        )
 
     body = success_comment_body(
         repository="r",
@@ -1788,9 +1533,9 @@ def test_success_comment_body_shows_new_previews_when_nothing_modified() -> None
             title="Ex",
             summary=ClassificationCounts(modified=0, new=2, removed=0, unchanged=1),
             assets=[
-                ReviewAsset(path="a.png", label="a", classification="new"),
-                ReviewAsset(path="b.png", label="b", classification="new"),
-                ReviewAsset(path="c.png", label="c", classification="unchanged"),
+                _comment_asset(path="a.png", label="a", classification="new"),
+                _comment_asset(path="b.png", label="b", classification="new"),
+                _comment_asset(path="c.png", label="c", classification="unchanged"),
             ],
         )
     ]
@@ -1814,7 +1559,7 @@ def test_success_comment_body_groups_changed_tests_and_folds_unchanged_targets()
             slug=f"untouched-{index}",
             title=f"Untouched {index}",
             summary=ClassificationCounts(unchanged=4),
-            assets=[ReviewAsset(path="a.png", label="a", classification="unchanged")],
+            assets=[_comment_asset(path="a.png", label="a", classification="unchanged")],
         )
         for index in range(22)
     ] + [
@@ -1823,7 +1568,7 @@ def test_success_comment_body_groups_changed_tests_and_folds_unchanged_targets()
             slug="ex-visuals-abcdef",
             title="Ex",
             summary=ClassificationCounts(new=1),
-            assets=[ReviewAsset(path="fresh.png", label="fresh", classification="new")],
+            assets=[_comment_asset(path="fresh.png", label="fresh", classification="new")],
         )
     ]
     body = success_comment_body(
@@ -1855,14 +1600,14 @@ def test_success_comment_body_shows_both_modified_and_new_previews() -> None:
             title="Ex",
             summary=ClassificationCounts(modified=1, new=1),
             assets=[
-                ReviewAsset(
+                _comment_asset(
                     path="changed.png",
                     label="changed",
                     classification="modified",
                     changed_fraction=0.3,
                     changed_pixels=1,
                 ),
-                ReviewAsset(path="added.png", label="added", classification="new"),
+                _comment_asset(path="added.png", label="added", classification="new"),
             ],
         )
     ]
@@ -1886,7 +1631,7 @@ def test_success_comment_body_dimension_change_degrades_diff_cell() -> None:
             title="T",
             summary=ClassificationCounts(modified=1),
             assets=[
-                ReviewAsset(
+                _comment_asset(
                     path="a.png",
                     label="a",
                     classification="modified",
@@ -1919,8 +1664,12 @@ def test_success_comment_body_uses_more_of_the_comment_budget_for_previews() -> 
             title="T",
             summary=ClassificationCounts(modified=2),
             assets=[
-                ReviewAsset(path="a.png", label=big, classification="modified", changed_fraction=0.9, changed_pixels=1),
-                ReviewAsset(path="b.png", label=big, classification="modified", changed_fraction=0.1, changed_pixels=1),
+                _comment_asset(
+                    path="a.png", label=big, classification="modified", changed_fraction=0.9, changed_pixels=1
+                ),
+                _comment_asset(
+                    path="b.png", label=big, classification="modified", changed_fraction=0.1, changed_pixels=1
+                ),
             ],
         )
     ]

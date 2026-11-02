@@ -35,14 +35,14 @@ async def _open_json_disclosures(request: Locator) -> None:
         "SnapshotDetail",
     ],
 )
-async def test_fixture(visual: VisualHarness, scene: str, capture_name: str) -> None:
-    async with visual.open(scene, viewport=Viewport(), capture_name=capture_name) as view:
+async def test_fixture(visual: VisualHarness, scene: str, case_id: str) -> None:
+    async with visual.open(scene, viewport=Viewport(), case_id=case_id) as view:
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.capture(scene, target=view.page.locator("#shot"))
 
 
-async def test_llm_request_json_disclosures(visual: VisualHarness, capture_name: str) -> None:
-    async with visual.open("LLMRequestsToolCall", viewport=Viewport(), capture_name=capture_name) as view:
+async def test_llm_request_json_disclosures(visual: VisualHarness, case_id: str) -> None:
+    async with visual.open("LLMRequestsToolCall", viewport=Viewport(), case_id=case_id) as view:
         request = view.page.locator("#shot > div > details[open]")
         await expect(request).to_have_count(1)
         await _open_json_disclosures(request)
@@ -52,10 +52,8 @@ async def test_llm_request_json_disclosures(visual: VisualHarness, capture_name:
         await view.capture("LLMRequestsToolCallJsonDisclosures", target=view.page.locator("#shot"))
 
 
-async def test_llm_request_json_dark(visual: VisualHarness, capture_name: str) -> None:
-    async with visual.open(
-        "LLMRequestsToolCall", viewport=Viewport(), color_scheme="dark", capture_name=capture_name
-    ) as view:
+async def test_llm_request_json_dark(visual: VisualHarness, case_id: str) -> None:
+    async with visual.open("LLMRequestsToolCall", viewport=Viewport(), color_scheme="dark", case_id=case_id) as view:
         request = view.page.locator("#shot > div > details[open]")
         await expect(request).to_have_count(1)
         await _open_json_disclosures(request)
@@ -65,8 +63,8 @@ async def test_llm_request_json_dark(visual: VisualHarness, capture_name: str) -
         await view.capture("LLMRequestsToolCallDark", target=view.page.locator("#shot"))
 
 
-async def test_llm_request_chat_completions(visual: VisualHarness, capture_name: str) -> None:
-    async with visual.open("LLMRequestsChatCompletions", viewport=Viewport(), capture_name=capture_name) as view:
+async def test_llm_request_chat_completions(visual: VisualHarness, case_id: str) -> None:
+    async with visual.open("LLMRequestsChatCompletions", viewport=Viewport(), case_id=case_id) as view:
         shot = view.page.locator("#shot")
         await expect(shot.locator("details[open]")).to_have_count(2)
         await expect(shot.get_by_text("Chat Request JSON")).to_have_count(2)
@@ -76,8 +74,8 @@ async def test_llm_request_chat_completions(visual: VisualHarness, capture_name:
         await view.capture("LLMRequestsChatCompletions", target=shot)
 
 
-async def test_llm_request_anthropic(visual: VisualHarness, capture_name: str) -> None:
-    async with visual.open("LLMRequestsAnthropic", viewport=Viewport(), capture_name=capture_name) as view:
+async def test_llm_request_anthropic(visual: VisualHarness, case_id: str) -> None:
+    async with visual.open("LLMRequestsAnthropic", viewport=Viewport(), case_id=case_id) as view:
         shot = view.page.locator("#shot")
         await expect(shot.locator("details[open]")).to_have_count(1)
         await expect(shot.get_by_text("Anthropic Request JSON")).to_be_visible()

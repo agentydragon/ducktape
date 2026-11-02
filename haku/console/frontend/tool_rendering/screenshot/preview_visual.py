@@ -38,7 +38,7 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
 @pytest.mark.parametrize("color_scheme", ["light", "dark"])
 @pytest.mark.parametrize("variant", ["compact", "detailed"])
 async def test_preview(
-    visual: VisualHarness, fixture: Fixture, variant: str, color_scheme: Literal["light", "dark"]
+    visual: VisualHarness, fixture: Fixture, variant: str, color_scheme: Literal["light", "dark"], case_id: str
 ) -> None:
     name = f"preview-{fixture.slug}-{variant}-{color_scheme}"
     async with visual.open(
@@ -46,6 +46,7 @@ async def test_preview(
         viewport=Viewport(width=1200, height=900, device_scale_factor=2),
         color_scheme=color_scheme,
         window_globals={"__FIXTURE__": fixture.index, "__VARIANT__": variant},
+        case_id=case_id,
     ) as view:
         card = view.page.locator(".haku-preview-card")
         await expect(card).to_be_attached()

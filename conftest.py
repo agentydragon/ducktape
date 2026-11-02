@@ -19,6 +19,10 @@ import pytest_asyncio
 # Imported so the pytest-timeout plugin rides //:conftest into every test's runfiles, as pytest_asyncio does.
 import pytest_timeout
 
+# Dynamic pytest plugin import needs a Bazel dependency in every test's runfiles.
+# gazelle:include_dep //util/testing:pytest_outputs
+pytest_plugins = ("util.testing.pytest_outputs",)
+
 _STARTED = time.monotonic()
 
 

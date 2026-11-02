@@ -18,7 +18,7 @@ labels and the menu's headers / bars / forecast strings in one image.
 The fixtures themselves document the scenario each render covers.
 
 There is no checked-in pixel golden — the renders publish to the PR's
-visual-review page via the `visual-review.json` manifest (see
+visual-review page via structured output records (see
 devinfra/pr_visuals/plans/goldens_to_pr_visuals.md); the hard gate is
 that gnome-shell boots, the extension reaches ENABLED, and every
 fixture opens its menu and screenshots successfully.
@@ -145,7 +145,9 @@ def undeclared_dir() -> Path:
 
 
 @pytest.mark.parametrize("fixture_name", FIXTURE_NAMES)
-def test_render(render_session: tuple[GnomeSession, Path], undeclared_dir: Path, fixture_name: str) -> None:
+def test_render(
+    render_session: tuple[GnomeSession, Path], undeclared_dir: Path, fixture_name: str, case_id: str
+) -> None:
     session, output_dir = render_session
     try:
         session.close_menu()
@@ -172,6 +174,7 @@ def test_render(render_session: tuple[GnomeSession, Path], undeclared_dir: Path,
                 name=f"{fixture_name}.png",
                 title="AI quota GNOME extension",
                 label=fixture_name.replace("_", " "),
+                case_id=case_id,
             )
         finally:
             session.close_menu()
@@ -180,7 +183,9 @@ def test_render(render_session: tuple[GnomeSession, Path], undeclared_dir: Path,
         pytest.fail(f"{fixture_name}: {e}")
 
 
-def test_render_disconnected_stream(render_session: tuple[GnomeSession, Path], undeclared_dir: Path) -> None:
+def test_render_disconnected_stream(
+    render_session: tuple[GnomeSession, Path], undeclared_dir: Path, case_id: str
+) -> None:
     session, output_dir = render_session
     try:
         session.close_menu()
@@ -206,6 +211,7 @@ def test_render_disconnected_stream(render_session: tuple[GnomeSession, Path], u
                 name="stream_disconnected.png",
                 title="AI quota GNOME extension",
                 label="stream disconnected",
+                case_id=case_id,
             )
         finally:
             session.close_menu()
@@ -214,7 +220,9 @@ def test_render_disconnected_stream(render_session: tuple[GnomeSession, Path], u
         pytest.fail(f"stream disconnected: {e}")
 
 
-def test_render_disconnected_without_snapshot(render_session: tuple[GnomeSession, Path], undeclared_dir: Path) -> None:
+def test_render_disconnected_without_snapshot(
+    render_session: tuple[GnomeSession, Path], undeclared_dir: Path, case_id: str
+) -> None:
     session, output_dir = render_session
     try:
         session.close_menu()
@@ -232,6 +240,7 @@ def test_render_disconnected_without_snapshot(render_session: tuple[GnomeSession
                 name="stream_disconnected_without_snapshot.png",
                 title="AI quota GNOME extension",
                 label="stream disconnected without snapshot",
+                case_id=case_id,
             )
         finally:
             session.close_menu()

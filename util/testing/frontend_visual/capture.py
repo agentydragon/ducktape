@@ -6,6 +6,7 @@ never clicks, scrolls, or parks the pointer. The session owns health checks and 
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -32,7 +33,7 @@ from util.testing.frontend_visual.page_capture import (
     wait_for_stable,
 )
 from util.testing.frontend_visual.viewports import Viewport
-from util.testing.visual_review import publish_review_png
+from util.testing.output_writer import publish_output
 
 # `document.fonts.check` is true for a family no `@font-face` declares, so on its own it passes when the
 # stylesheet declaring the font never arrived (or the name is misspelled) and the page renders in a fallback.
@@ -46,41 +47,48 @@ _FONT_STATUS_JS = """async family => {
 }"""
 
 
-def _trace_path_for_capture(output_dir: Path, capture_name: str | None) -> Path | None:
+def _trace_path_for_capture(output_dir: Path, case_id: str, checkpoint: str | None) -> Path | None:
     trace_setting = os.environ.get("VISUAL_TRACE", "1")
     if trace_setting not in {"0", "1"}:
         raise ValueError("VISUAL_TRACE must be 0 or 1")
     trace_capture_name = os.environ.get("VISUAL_TRACE_CAPTURE_NAME")
-    trace_enabled = trace_setting == "1" and capture_name is not None
+    trace_enabled = trace_setting == "1"
     if trace_capture_name is not None:
-        trace_enabled = trace_enabled and trace_capture_name == capture_name
+        trace_enabled = trace_enabled and trace_capture_name == case_id
     if not trace_enabled:
         return None
-    assert capture_name is not None
-    if Path(capture_name).name != capture_name or capture_name in {".", ".."}:
-        raise ValueError("trace capture name must be a single path component")
     output_dir.mkdir(parents=True, exist_ok=True)
-    trace_path = output_dir / f"{capture_name}.trace.zip"
+    trace_key = json.dumps([case_id, checkpoint], separators=(",", ":"))
+    trace_path = output_dir / f"{hashlib.sha256(trace_key.encode()).hexdigest()}.trace.zip"
     if trace_path.exists():
         raise FileExistsError(trace_path)
     return trace_path
 
 
 @asynccontextmanager
-async def playwright_trace(context: BrowserContext, output_dir: Path, capture_name: str | None) -> AsyncIterator[None]:
+async def playwright_trace(
+    context: BrowserContext, output_dir: Path, case_id: str, checkpoint: str | None = None
+) -> AsyncIterator[None]:
     """Trace a named visual case under the shared environment and output policy."""
-    trace_path = _trace_path_for_capture(output_dir, capture_name)
+    trace_path = _trace_path_for_capture(output_dir, case_id, checkpoint)
     if trace_path is None:
         yield
         return
-    assert capture_name is not None
-    await context.tracing.start(name=f"visual capture: {capture_name}", screenshots=True, snapshots=True, sources=False)
+    await context.tracing.start(name=f"visual capture: {case_id}", screenshots=True, snapshots=True, sources=False)
     try:
         yield
     finally:
         active_error = sys.exception()
         try:
             await context.tracing.stop(path=trace_path)
+            publish_output(
+                output_dir,
+                case_id=case_id,
+                checkpoint=checkpoint,
+                role="trace",
+                data=trace_path.read_bytes(),
+                suffix="zip",
+            )
         except Exception as trace_error:
             if active_error is None:
                 raise
@@ -194,7 +202,7 @@ class VisualPage:
         fence: RequestFence | None = None,
         devtools_viewport: DevtoolsViewport | None = None,
         expected_font_family: str | None = None,
-        capture_name: str | None = None,
+        case_id: str,
     ) -> None:
         self.page = page
         self.errors = PageErrors(page)
@@ -203,7 +211,7 @@ class VisualPage:
         self.fence = fence
         self.devtools_viewport = devtools_viewport
         self.expected_font_family = expected_font_family
-        self.capture_name = capture_name
+        self.case_id = case_id
 
     async def check(self, *, context: str) -> None:
         self.errors.assert_none(context=context)
@@ -223,16 +231,15 @@ class VisualPage:
         scale: Literal["css", "device"] = "device",
         animations: Literal["allow", "disabled"] = "allow",
     ) -> Path:
-        name = name if name is not None else self.capture_name
-        if name is None:
-            raise ValueError("capture needs a name or a pytest case identity")
+        checkpoint = name
+        context = f"{self.case_id}::{checkpoint}" if checkpoint is not None else self.case_id
         if target is not None and full_page:
             raise ValueError("choose an element or a full page, not both")
-        await self.check(context=name)
+        await self.check(context=context)
         if self.expected_font_family:
             status = await self.page.evaluate(_FONT_STATUS_JS, self.expected_font_family)
             if status != "loaded":
-                raise AssertionError(f"{name}: {self.expected_font_family} font did not load ({status})")
+                raise AssertionError(f"{context}: {self.expected_font_family} font did not load ({status})")
         if (
             target is None
             and self.devtools_viewport is not None
@@ -242,36 +249,46 @@ class VisualPage:
         ):
             raise ValueError("DevTools captures require animations to be pinned before mount")
         if target is not None and (count := await target.count()) != 1:
-            raise ValueError(f"{name}: screenshot target must match exactly one element, got {count}")
+            raise ValueError(f"{context}: screenshot target must match exactly one element, got {count}")
         page_diagnostics = (
             await target.evaluate(_CAPTURE_DIAGNOSTICS_JS)
             if target is not None
             else await self.page.evaluate(_CAPTURE_DIAGNOSTICS_JS)
         )
         if target is not None:
-            screenshot = await screenshot_locator(self.page, target, context=name, scale=scale, animations=animations)
+            screenshot = await screenshot_locator(
+                self.page, target, context=context, scale=scale, animations=animations
+            )
         elif self.devtools_viewport is not None and not full_page and scale == "device":
             screenshot = await self.devtools_viewport.screenshot()
         else:
             screenshot = await self.page.screenshot(full_page=full_page, scale=scale, animations=animations)
-        await self.check(context=name)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        diagnostics_path = self.output_dir / f"{name}.capture.json"
-        with diagnostics_path.open("x", encoding="utf-8") as stream:
-            json.dump(
-                {
-                    "capture_name": name,
-                    "sample": "before_screenshot",
-                    "scale": scale,
-                    "full_page": full_page,
-                    **page_diagnostics,
-                },
-                stream,
-                indent=2,
-            )
-            stream.write("\n")
-        return publish_review_png(
-            screenshot, output_dir=self.output_dir, title=self.title, name=f"{name}.png", label=label or name
+        await self.check(context=context)
+        diagnostics = {
+            "case_id": self.case_id,
+            "checkpoint": checkpoint,
+            "sample": "before_screenshot",
+            "scale": scale,
+            "full_page": full_page,
+            **page_diagnostics,
+        }
+        publish_output(
+            self.output_dir,
+            case_id=self.case_id,
+            checkpoint=checkpoint,
+            role="diagnostics",
+            data=(json.dumps(diagnostics, indent=2, ensure_ascii=False) + "\n").encode(),
+            suffix="json",
+        )
+        return publish_output(
+            self.output_dir,
+            case_id=self.case_id,
+            checkpoint=checkpoint,
+            role="screenshot",
+            data=screenshot,
+            suffix="png",
+            label=label or checkpoint or self.case_id,
+            title=self.title,
         )
 
 
@@ -291,7 +308,8 @@ class VisualHarness:
         query: Mapping[str, str] | None = None,
         window_globals: Mapping[str, JsonValue] | None = None,
         frozen_now_ms: int = FROZEN_NOW_MS,
-        capture_name: str | None = None,
+        case_id: str,
+        trace_checkpoint: str | None = None,
     ) -> AsyncIterator[VisualPage]:
         config = self.config
         viewport = viewport or Viewport()
@@ -309,7 +327,7 @@ class VisualHarness:
                 has_touch=viewport.has_touch,
                 extra_args=["--allow-file-access-from-files"] if config.inline_page is None else [],
             ) as context,
-            playwright_trace(context, self.output_dir, capture_name),
+            playwright_trace(context, self.output_dir, case_id, trace_checkpoint),
         ):
             page = await context.new_page()
             page.set_default_timeout(WAIT_TIMEOUT_MS)
@@ -335,7 +353,7 @@ class VisualHarness:
                 fence=fence,
                 devtools_viewport=devtools,
                 expected_font_family=config.expected_font_family,
-                capture_name=capture_name,
+                case_id=case_id,
             )
             await fence.install(page)
             if config.inline_page is None:

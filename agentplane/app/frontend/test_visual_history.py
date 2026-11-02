@@ -181,7 +181,7 @@ async def test_single_tool_expansion_reserves_height(view: VisualPage, app: Agen
     ).first
     await expect(control).to_contain_text("git branch -d stale")
     await control.scroll_into_view_if_needed()
-    await view.capture(name=f"{view.capture_name}_single-tool-collapsed")
+    await view.capture(name="single-tool-collapsed")
     before = await row.bounding_box()
     assert before is not None
     await control.click()
@@ -194,7 +194,7 @@ async def test_single_tool_expansion_reserves_height(view: VisualPage, app: Agen
     assert next_box is not None
     assert after["height"] > before["height"]
     assert next_box["y"] >= after["y"] + after["height"] - 1
-    await view.capture(name=f"{view.capture_name}_single-tool-expanded")
+    await view.capture(name="single-tool-expanded")
 
 
 @pytest.mark.parametrize(
@@ -259,7 +259,7 @@ async def test_composer_autosuspend_busy(view: VisualPage, app: AgentplaneFixtur
     await expect(details.get_by_role("link", name="Session running a turn", exact=True)).to_be_visible()
     await expect(details.get_by_role("link", name="Session running setup", exact=True)).to_be_visible()
     await expect(details).to_contain_text("Sandbox bootstrap running")
-    await view.capture(name=f"{view.capture_name}_blockers")
+    await view.capture(name="blockers")
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
@@ -408,7 +408,7 @@ async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_ou
         await expect(output).to_have_attribute("data-expanded", "false")
         await expect(output.get_by_role("button", name=re.compile("^Show all"))).to_be_visible()
         await page.mouse.move(0, 0)
-        await completed_rollout.capture(name=f"{completed_rollout.capture_name}_output_preview")
+        await completed_rollout.capture(name="output_preview")
         shell_control = call_heading.get_by_role("button").first
         await expect(shell_control).to_be_in_viewport(ratio=1)
         await shell_control.click()
@@ -544,7 +544,7 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
         "node => node.closest('[data-thread-anchor]').dataset.threadAnchor"
     ) < await effected.evaluate("node => node.closest('[data-thread-anchor]').dataset.threadAnchor")
     await model_row.scroll_into_view_if_needed()
-    await view.capture(name=f"{view.capture_name}_controls", target=history)
+    await view.capture(name="controls", target=history)
     input_indicator = input_row.locator(".agentplane-command-progress-hit")
     if viewport.has_touch:
         await input_indicator.tap()
@@ -553,7 +553,7 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
         await input_indicator.hover()
     await expect(detail).to_be_visible()
     await expect(detail).to_be_in_viewport(ratio=1)
-    await view.capture(name=f"{view.capture_name}_detail")
+    await view.capture(name="detail")
     effort_row = page.locator('[data-command-id="progress-effort"]')
     effort_indicator = effort_row.locator(".agentplane-command-progress-hit")
     if viewport.has_touch:
@@ -563,7 +563,7 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
         await effort_indicator.hover()
     await expect(effort_row.get_by_role("tooltip")).to_be_visible()
     await expect(effort_row.get_by_role("tooltip")).to_be_in_viewport(ratio=1)
-    await view.capture(name=f"{view.capture_name}_effort_detail")
+    await view.capture(name="effort_detail")
     applied_input = page.locator('[data-command-id="progress-applied-input"]')
     input_hit = applied_input.locator(".agentplane-command-progress-hit")
     await expect(applied_input.locator(".agentplane-command-light")).to_have_count(0)
@@ -573,7 +573,7 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
     else:
         await applied_input.locator(".transcript-user-bubble").hover()
     await expect(input_hit).to_have_css("opacity", "1")
-    await view.capture(name=f"{view.capture_name}_applied_input", target=applied_input)
+    await view.capture(name="applied_input", target=applied_input)
 
 
 @DESKTOP_AND_MOBILE
@@ -599,7 +599,7 @@ async def test_dispatcher_queued_while_sandbox_wakes(
     await expect(row.locator(".agentplane-command-light")).to_have_count(4)
     await expect(row.get_by_role("button", name="Retry")).to_have_count(0)
     await expect(row.get_by_role("button", name="Cancel")).to_have_count(0)
-    await view.capture(name=f"{view.capture_name}_wake_composer_placeholder")
+    await view.capture(name="wake_composer_placeholder")
     await page.get_by_role("textbox", name="Message").fill("Please wake the Sandbox and continue.")
     await expect(page.get_by_role("button", name="Send")).to_be_enabled()
     await view.capture()
@@ -774,7 +774,7 @@ async def test_consecutive_reasoning_group_inside_tool_run(view: VisualPage, app
     await expect(reasoning_group.locator(".ui-disclosure-panel .transcript-step-title")).to_have_text(
         ["Reasoning", "Reasoning", "Reasoning"]
     )
-    await view.capture(name=f"{view.capture_name}_reasoning_items", target=page.locator("#app"))
+    await view.capture(name="reasoning_items", target=page.locator("#app"))
 
 
 @DESKTOP_AND_MOBILE
@@ -800,7 +800,7 @@ async def test_reasoning_heading_sticks_at_history_bottom(view: VisualPage, app:
     await control.click()
     await expect(control).to_have_attribute("aria-expanded", "false")
     await page.mouse.move(0, 0)
-    await view.capture(name=f"{view.capture_name}_collapsed", target=page.locator("#app"))
+    await view.capture(name="collapsed", target=page.locator("#app"))
 
 
 async def test_standalone_reasoning_opens_session_standalone_reasoning_open(
@@ -836,7 +836,7 @@ async def test_standalone_reasoning_compact_markdown_and_code_fence(view: Visual
     await expect(reasoning.locator(".ui-disclosure-panel .ui-markdown")).to_be_visible()
     await expect(reasoning.locator(".ui-code-block .cm-content")).to_be_attached()
     await wait_for_stable(page)
-    await view.capture(name=f"{view.capture_name}_expanded", target=page.locator("#app"))
+    await view.capture(name="expanded", target=page.locator("#app"))
 
 
 @DESKTOP_AND_MOBILE
@@ -882,7 +882,7 @@ async def test_thread_evidence_panel(view: VisualPage, app: AgentplaneFixture, a
     await frames.get_by_role("button", name=re.compile("Observation .* raw frames")).click()
     await expect(frames.locator(".ui-code-block")).to_be_visible()
     await page.mouse.move(0, 0)
-    await view.capture(name=f"{view.capture_name}_raw_frames")
+    await view.capture(name="raw_frames")
 
 
 @DESKTOP_AND_MOBILE
@@ -928,7 +928,7 @@ async def test_bash_evidence_panel(shell_calls: VisualPage) -> None:
     await frames.get_by_role("button", name=re.compile("Observation .* raw frames")).click()
     await expect(frames.locator(".ui-code-block")).to_be_visible()
     await page.mouse.move(0, 0)
-    await view.capture(name=f"{view.capture_name}_raw_frames")
+    await view.capture(name="raw_frames")
 
 
 @pytest.mark.parametrize("viewport", [MOBILE_TOUCH], ids=["mobile-touch"])

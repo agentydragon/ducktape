@@ -1,8 +1,7 @@
 """Render-health checks + PR-visuals publication for each casino view.
 
 Every (view, viewport) case boots the real server, waits for load-bearing DOM,
-captures once, and fails on any browser page error. The rendered PNGs plus a
-`visual-review.json` manifest go to undeclared outputs,
+captures once, and fails on any browser page error. The rendered PNGs and structured output records go to undeclared outputs,
 where trusted CI (`devinfra/pr_visuals/publisher.py` via the "Publish PR
 visuals" workflow) publishes them as a browsable bundle, diffs them against the
 merge-base baseline, and comments on the PR.
@@ -55,15 +54,13 @@ FROZEN_NOW_MS = 1_779_768_000_000  # 2026-05-15T12:00:00Z.
 
 @pytest.fixture
 async def view(
-    playwright: Playwright, casino_server: str, viewport: ViewportSize, query: str, capture_name: str
+    playwright: Playwright, casino_server: str, viewport: ViewportSize, query: str, case_id: str
 ) -> AsyncIterator[VisualPage]:
     async with deterministic_browser_context(
         playwright, viewport=viewport, frozen_now_ms=FROZEN_NOW_MS, color_scheme="dark"
     ) as context:
         page = await context.new_page()
-        view = VisualPage(
-            page, output_dir=undeclared_outputs_dir(), title="Study Casino views", capture_name=capture_name
-        )
+        view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Study Casino views", case_id=case_id)
         await page.goto(f"{casino_server}/{query}", wait_until="domcontentloaded", timeout=30_000)
         try:
             yield view
