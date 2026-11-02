@@ -259,13 +259,14 @@ async def test_runner_status_client_reads_generated_defaults_and_old_replica_nam
 
     assert status.environment_runtime_boot_id == "generated-boot"
     assert status.processes[0].process_id == "process-a"
-    assert status.sessions[0].busy is False
+    assert status.sessions[0].execution_state == session_pb2.SESSION_EXECUTION_STATE_READY
+    assert not status.sessions[0].HasField("process_id")
     assert status.lifecycle is not None
     assert status.lifecycle.blocker is not None
-    assert status.lifecycle.blocker.journal_seal_cursor == "9223372036854775811"
+    assert status.lifecycle.blocker.journal_seal_cursor == 9223372036854775811
     assert old_status.environment_runtime_boot_id == "older-boot"
-    assert old_status.processes == []
-    assert old_status.sessions == []
+    assert len(old_status.processes) == 0
+    assert len(old_status.sessions) == 0
 
 
 async def test_resumes_after_the_last_entry_when_the_stream_closes_without_an_end_frame() -> None:

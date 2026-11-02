@@ -289,6 +289,7 @@ async def codex_tool_oom(
         assert app_server.state == session_pb2.PROCESS_STATE_RUNNING
         assert list(app_server.assigned_session_ids) == [str(agent.thread_id)]
         (session,) = original.sessions
+        assert session.HasField("process_id")
         assert session.process_id == app_server.process_id
         assert session.HasField("native_session_id")
 
