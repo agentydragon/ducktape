@@ -38,7 +38,6 @@ type hostRegistry struct {
 	namespace resource.Namespace
 	mu        sync.Mutex
 	entries   map[string]*processHostEntry
-	retired   map[string]struct{}
 }
 
 // Each slot's result is written once before its done channel closes. The live
@@ -101,7 +100,7 @@ func NewHost(ctx context.Context, store state.State, namespace resource.Namespac
 	return &Host{
 		hostRegistry: &hostRegistry{
 			state: store, namespace: namespace,
-			entries: make(map[string]*processHostEntry), retired: make(map[string]struct{}),
+			entries: make(map[string]*processHostEntry),
 		},
 		ctx: ctx, domain: domain, workers: workers, onError: onError,
 	}
@@ -137,9 +136,6 @@ func (h *Host) requestNative(ctx context.Context, id string, spec DesiredState, 
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if _, retired := h.retired[id]; retired {
-		return fmt.Errorf("process ID %q has already been retired", id)
-	}
 	entry := h.entries[id]
 	newEntry := entry == nil
 	if newEntry {
@@ -306,8 +302,8 @@ func (h *Host) runStart(entry *processHostEntry, start *processStartSlot) {
 	}
 }
 
-// observeSystemd records only newer observations for an immutable attempt ID.
-// Retired IDs cannot be registered again within this Host's lifetime.
+// observeSystemd records only newer observations for a fresh launch UUID.
+// A callback arriving after retirement finds no entry and cannot recreate it.
 func (h *Host) observeSystemd(id string, observation SystemdObservation) {
 	h.mu.Lock()
 	entry := h.entries[id]
@@ -451,8 +447,7 @@ func (h *Host) runStop(entry *processHostEntry, start *processStartSlot, stop *p
 }
 
 // retire removes callbacks and handles only after every operation and exit
-// observation is settled. A small ID marker prevents a stale owner retry from
-// replaying a destroyed identity.
+// observation is settled. Launch allocates a fresh UUID for each attempt.
 func (h *Host) retire(ctx context.Context, r controller.QRuntime, id string) (bool, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -468,7 +463,6 @@ func (h *Host) retire(ctx context.Context, r controller.QRuntime, id string) (bo
 	if entry != nil {
 		delete(h.entries, id)
 	}
-	h.retired[id] = struct{}{}
 	return true, nil
 }
 
