@@ -51,7 +51,6 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tempfile::TempDir;
 
-const DEBUNDLER_RLOCATION: &str = "_main/devinfra/js/debundle/debundle_e2e";
 const NODE_RLOCATION: &str = "nodejs_linux_amd64/bin/node";
 
 static MODULE_EXPORT_PROBE_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -1199,9 +1198,11 @@ fn read_gzip_json_with_stderr<T: DeserializeOwned>(path: &Path, stderr: Option<&
 }
 
 pub fn debundler_path() -> PathBuf {
+    let relative =
+        std::env::var("DEBUNDLE_TEST_DEBUNDLER").expect("DEBUNDLE_TEST_DEBUNDLER runfile label");
     let r = Runfiles::create().expect("create runfiles");
-    rlocation!(r, DEBUNDLER_RLOCATION)
-        .unwrap_or_else(|| panic!("could not resolve debundler runfile: {DEBUNDLER_RLOCATION}"))
+    rlocation!(r, relative.as_str())
+        .unwrap_or_else(|| panic!("could not resolve debundler runfile: {relative}"))
 }
 
 /// `debundle` as a release download runs it: a copy of the binary alone in an
