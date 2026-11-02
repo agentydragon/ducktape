@@ -9,8 +9,10 @@ import (
 	"slices"
 	"time"
 
+	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -30,30 +32,26 @@ const maxLimit = 100
 type Service struct {
 	discoverypb.UnimplementedEnvironmentDiscoveryServer
 
-	namespace   string
-	sandboxes   *sandboxreader.Reader
-	runtime     runtimeconfig.Catalog
-	wakeCallers map[auth.Account]struct{}
+	namespace string
+	sandboxes *sandboxreader.Reader
+	runtime   runtimeconfig.Catalog
+	lifecycle *lifecycle.Service
 }
 
 func New(
 	namespace string,
 	objects client.Reader,
 	runtime runtimeconfig.Catalog,
-	wakeCallers map[auth.Account]struct{},
+	lifecycleService *lifecycle.Service,
 ) (*Service, error) {
-	if namespace == "" || objects == nil {
-		return nil, errors.New("Sandbox namespace and uncached Kubernetes reader are required")
+	if namespace == "" || objects == nil || lifecycleService == nil {
+		return nil, errors.New("Sandbox namespace, uncached Kubernetes reader, and lifecycle service are required")
 	}
 	sandboxes, err := sandboxreader.New(namespace, objects)
 	if err != nil {
 		return nil, err
 	}
-	wake := make(map[auth.Account]struct{}, len(wakeCallers))
-	for account := range wakeCallers {
-		wake[account] = struct{}{}
-	}
-	return &Service{namespace: namespace, sandboxes: sandboxes, runtime: runtime, wakeCallers: wake}, nil
+	return &Service{namespace: namespace, sandboxes: sandboxes, runtime: runtime, lifecycle: lifecycleService}, nil
 }
 
 // Methods admits direct TokenReview-verified ServiceAccounts in the configured Resolver namespaces.
@@ -119,12 +117,19 @@ func (s *Service) ListEnvironments(ctx context.Context, request *discoverypb.Lis
 		return nil, status.Error(codes.Unavailable, "Sandbox execution account is unavailable")
 	}
 	if found && callerMatches(identity, execution) {
-		response.Items = append(response.Items, s.describe(view.Resource, execution, identity))
+		descriptor, err := s.describe(ctx, view.Resource, execution, identity)
+		if err != nil {
+			return nil, err
+		}
+		response.Items = append(response.Items, descriptor)
 	}
 	return response, nil
 }
 
 func (s *Service) GetEnvironment(ctx context.Context, request *discoverypb.GetEnvironmentRequest) (*discoverypb.EnvironmentDescriptor, error) {
+	if request == nil || request.GetWaitForReadySeconds() > 30 {
+		return nil, status.Error(codes.InvalidArgument, "wait_for_ready_seconds must be between 0 and 30")
+	}
 	identity, err := caller(ctx)
 	if err != nil {
 		return nil, err
@@ -136,7 +141,37 @@ func (s *Service) GetEnvironment(ctx context.Context, request *discoverypb.GetEn
 	if target.GetNamespace() != s.namespace {
 		return nil, status.Error(codes.NotFound, "environment not found")
 	}
-	view, err := s.sandboxes.Get(ctx, target.GetName())
+	descriptor, err := s.getEnvironment(ctx, target.GetName(), target.GetUid(), identity)
+	if err != nil || request.GetWaitForReadySeconds() == 0 || descriptor.GetReadiness().GetState() == discoverypb.ReadinessState_READINESS_STATE_READY {
+		return descriptor, err
+	}
+	timer := time.NewTimer(time.Duration(request.GetWaitForReadySeconds()) * time.Second)
+	defer timer.Stop()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, status.FromContextError(ctx.Err()).Err()
+		case <-ticker.C:
+			descriptor, err = s.getEnvironment(ctx, target.GetName(), target.GetUid(), identity)
+			if err != nil || descriptor.GetReadiness().GetState() == discoverypb.ReadinessState_READINESS_STATE_READY {
+				return descriptor, err
+			}
+		case <-timer.C:
+			// Return facts read at the wait boundary, not the earlier descriptor that started the wait.
+			return s.getEnvironment(ctx, target.GetName(), target.GetUid(), identity)
+		}
+	}
+}
+
+func (s *Service) getEnvironment(
+	ctx context.Context,
+	name string,
+	uid string,
+	identity auth.ServiceAccountPrincipal,
+) (*discoverypb.EnvironmentDescriptor, error) {
+	view, err := s.sandboxes.Get(ctx, name)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return nil, status.Error(codes.NotFound, "environment not found")
@@ -144,7 +179,7 @@ func (s *Service) GetEnvironment(ctx context.Context, request *discoverypb.GetEn
 		slog.ErrorContext(ctx, "Environment discovery Sandbox read failed", "error", err)
 		return nil, status.Error(codes.Unavailable, "Sandbox inventory is unavailable")
 	}
-	if view.Identity.UID != target.GetUid() || deleting(view.Resource) {
+	if view.Identity.UID != uid || deleting(view.Resource) {
 		return nil, status.Error(codes.NotFound, "environment not found")
 	}
 	execution, found, err := s.sandboxes.ExecutionAccount(ctx, view.Identity)
@@ -155,7 +190,7 @@ func (s *Service) GetEnvironment(ctx context.Context, request *discoverypb.GetEn
 	if !found || !callerMatches(identity, execution) {
 		return nil, status.Error(codes.NotFound, "environment not found")
 	}
-	return s.describe(view.Resource, execution, identity), nil
+	return s.describe(ctx, view.Resource, execution, identity)
 }
 
 func deleting(object *api.Sandbox) bool {
@@ -163,10 +198,11 @@ func deleting(object *api.Sandbox) bool {
 }
 
 func (s *Service) describe(
+	ctx context.Context,
 	object *api.Sandbox,
 	execution sandboxreader.ServiceAccountIdentity,
 	caller auth.ServiceAccountPrincipal,
-) *discoverypb.EnvironmentDescriptor {
+) (*discoverypb.EnvironmentDescriptor, error) {
 	condition := meta.FindStatusCondition(object.Status.Conditions, api.ConditionReady)
 	readiness := &discoverypb.Readiness{State: discoverypb.ReadinessState_READINESS_STATE_NOT_READY}
 	if condition == nil {
@@ -186,12 +222,24 @@ func (s *Service) describe(
 		resume = discoverypb.ResumeState_RESUME_STATE_NOT_REQUIRED
 	case api.OperatingModeSuspended:
 		mode = discoverypb.OperatingMode_OPERATING_MODE_SUSPENDED
-		_, callerCanWake := s.wakeCallers[auth.Account{Namespace: caller.Account.Namespace, Name: caller.Account.Name}]
-		if object.Status.StopStage != api.StopStageQuiescing && object.Status.StopStage != api.StopStageDeleting &&
-			object.Spec.WakeOnSend && callerCanWake {
+		resume = discoverypb.ResumeState_RESUME_STATE_NOT_AVAILABLE
+	}
+	target := lifecycle.Target{Namespace: object.Namespace, Name: object.Name, UID: string(object.UID)}
+	eligibility, generation, err := s.lifecycle.Eligibility(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	if object.Status.OperatingMode == api.OperatingModeSuspended {
+		wake, err := s.lifecycle.AssessAutomaticWake(ctx, target, lifecycle.ServiceAccount{
+			Namespace: caller.Account.Namespace,
+			Name:      caller.Account.Name,
+			UID:       caller.ServiceAccountUID,
+		})
+		if err != nil {
+			return nil, status.Error(codes.Unavailable, "automatic wake eligibility is unavailable")
+		}
+		if wake.GetState() == environmentlifecyclepb.WakeState_WAKE_STATE_ELIGIBLE {
 			resume = discoverypb.ResumeState_RESUME_STATE_AVAILABLE
-		} else {
-			resume = discoverypb.ResumeState_RESUME_STATE_NOT_AVAILABLE
 		}
 	}
 	descriptor := &discoverypb.EnvironmentDescriptor{
@@ -209,13 +257,18 @@ func (s *Service) describe(
 		StopStage:                  string(object.Status.StopStage),
 		WakeOnSend:                 object.Spec.WakeOnSend,
 		Resume:                     resume,
+		ResumeEligibility:          eligibility,
+		WakeGeneration:             generation,
+	}
+	if eligibility.GetState() == environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_AVAILABLE {
+		descriptor.ResumeToken = lifecycle.NewResumeToken(target, generation)
 	}
 	if object.Status.Incarnation != nil {
 		descriptor.RuntimeIncarnationUid = object.Status.Incarnation.UID
 	}
 	template, known := s.runtime.Templates[object.Spec.Template]
 	if !known {
-		return descriptor
+		return descriptor, nil
 	}
 	if template.WorkspaceRoot == "" {
 		descriptor.Workspace.Availability = discoverypb.Availability_AVAILABILITY_ABSENT
@@ -232,7 +285,7 @@ func (s *Service) describe(
 	} else {
 		descriptor.ConfigurationsAvailability = discoverypb.Availability_AVAILABILITY_CONFIGURED
 	}
-	return descriptor
+	return descriptor, nil
 }
 
 func configuredChoices(catalog runtimeconfig.ModelCatalog) []*discoverypb.RuntimeConfiguration {

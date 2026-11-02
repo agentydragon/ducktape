@@ -6,6 +6,7 @@ option go_package = "github.com/agentydragon/ducktape/agentplane/sandboxes/disco
 
 import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
+import "agentplane/proto/environment_lifecycle.proto";
 
 // EnvironmentDiscovery is a same-ServiceAccount, exact-incarnation view of existing managed Sandboxes.
 service EnvironmentDiscovery {
@@ -45,6 +46,9 @@ message ListEnvironmentsResponse {
 message GetEnvironmentRequest {
   // All three fields are required. A same-name replacement is not the requested target.
   TargetHandle target = 1;
+  // Waits up to 30 seconds for Ready, then returns the latest observed descriptor either way.
+  // Zero returns immediately. This read never requests resume or starts execution.
+  uint32 wait_for_ready_seconds = 2;
 }
 
 enum Availability {
@@ -123,4 +127,9 @@ message EnvironmentDescriptor {
   ResumeState resume = 13;
   // The current Sandbox workload incarnation is not the Sandbox UID in target.
   string runtime_incarnation_uid = 14;
+  // Caller-specific permission for an explicit resume request.
+  agentplane.proto.ResumeEligibility resume_eligibility = 15;
+  // The observed generation and opaque precondition used by ResumeEnvironment.
+  int64 wake_generation = 16;
+  string resume_token = 17;
 }
