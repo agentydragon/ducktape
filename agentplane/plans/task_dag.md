@@ -601,13 +601,17 @@ require a new service and does not block current reliability or delegation work.
 
 ### `APP_ENVIRONMENT_DISCOVERY` — use backend Discovery for the integration app
 
-**Later candidate; operator question, 2026-11-01 UTC.** Replace the app's duplicated environment
-inventory/configuration composition with the same backend Discovery owner used by CLI/MCP.
-The current API is same-SA scoped; the app also needs operator inventory and Pod diagnostics.
-Define explicit backend authority and a complete operator inventory contract before migrating the
-app. Keep diagnostics separate if their ownership differs. Do not broaden ordinary agent list/get
-access or make a backend depend on the app. Review the capability/authority mapping before an API
-change; this is independent of the current delegation release.
+**In progress, 2026-11-02 13:19 UTC: collection watch in #13864 and app/frontend cutover in #13878.**
+Replace the app's duplicated environment inventory/configuration composition with backend
+Discovery used by CLI/MCP. The proposed collection watch grants an explicit broad reader access
+without broadening ordinary callers; it does not by itself replace app list/get, detail streams,
+or their other consumers. Reconcile the collection's Sandbox protobuf with the existing
+`EnvironmentDescriptor` list/get contract, including operator diagnostics and exact-UID reads,
+before migrating each caller. Preserve caller authorization and test the backend without the app.
+
+The [eventual app/backend boundary](environment_app_backend_boundary.md) describes the remaining
+responsibilities in `app/go/sandboxes` and their separate ownership decisions. Those decisions do
+not gate completion of the Discovery cutover.
 
 ### `SESSION_TOOL_SURFACE_CONVERGENCE_DESIGN` — review a common Agentplane tool surface
 
