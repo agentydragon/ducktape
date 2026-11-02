@@ -335,6 +335,7 @@ async def test_central_sampler_launch(view: VisualPage, app: AgentplaneFixture) 
         ("suspended-sandbox", "0f9c1d2e-0000-4000-8000-00000000e5f6"),
         ("pending-sandbox", "0f9c1d2e-0000-4000-8000-00000000c3d4"),
     ],
+    ids=["suspended-sandbox", "pending-sandbox"],
 )
 async def test_central_sampler_unavailable_executor(
     view: VisualPage, app: AgentplaneFixture, sandbox: str, sandbox_uid: str
