@@ -85,6 +85,8 @@ func TestWaitForSessionQuiescedWakesForStatusPublishedDuringRead(t *testing.T) {
 	if _, err := lifecycle.WriteStatus(ctx, writer, lifecycle.Status{Generation: 1, Stage: lifecycle.Quiesced}); err != nil {
 		t.Fatal(err)
 	}
+	// Complete notification while the waiter still holds its old read result.
+	// Subscribing after that read would miss this wakeup.
 	r.changed()
 	paused.release()
 	select {
