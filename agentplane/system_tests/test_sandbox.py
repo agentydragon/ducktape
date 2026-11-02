@@ -27,7 +27,9 @@ def _environment(
 ) -> environment_service_pb2.EnvironmentDescriptor:
     return environment_service_pb2.EnvironmentDescriptor(
         target=identity_pb2.EnvironmentTarget(namespace=namespace, name=name, uid=uid),
-        execution_account=identity_pb2.ServiceAccountIdentity(account=identity_pb2.ServiceAccount(namespace="test", name="runner")),
+        execution_account=identity_pb2.ServiceAccountIdentity(
+            account=identity_pb2.ServiceAccount(namespace="test", name="runner")
+        ),
         observed_state=environment_service_pb2.EnvironmentObservedState(
             operating_mode=operating_mode,
             readiness=environment_service_pb2.Readiness(
