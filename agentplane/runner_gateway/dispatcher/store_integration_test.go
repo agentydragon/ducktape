@@ -258,7 +258,7 @@ func TestConcurrentSessionCapAndWakeBudget(t *testing.T) {
 	if accepted != 2 || full != 1 {
 		t.Fatalf("cap race: accepted=%d full=%d", accepted, full)
 	}
-	caller := Account{"agentplane", "app"}
+	caller := ServiceAccountIdentity{Account: Account{"agentplane", "app"}, UID: "wake-budget-app-uid"}
 	var wakeWG sync.WaitGroup
 	wakeErrs := make(chan error, WakeLimit+1)
 	wakeDurations := make(chan bool, WakeLimit+1)
@@ -300,6 +300,11 @@ func TestConcurrentSessionCapAndWakeBudget(t *testing.T) {
 	}
 	if wait, err := store.ReserveWakeAttempt(ctx, caller, sandboxUID, acceptedGeneration); err != nil || wait != 0 {
 		t.Fatalf("same-generation retry: %v %v", wait, err)
+	}
+	replacement := caller
+	replacement.UID = "replacement-wake-budget-app-uid"
+	if wait, err := store.ReserveWakeAttempt(ctx, replacement, sandboxUID, acceptedGeneration); err != nil || wait != 0 {
+		t.Fatalf("replacement ServiceAccount inherited the old UID budget: %v %v", wait, err)
 	}
 }
 
@@ -914,24 +919,27 @@ func TestWorkerDeliversWakeLimitedWorkAfterSandboxBecomesReady(t *testing.T) {
 	store := testStore(t, 3)
 	const uid = "00000000-0000-4000-8000-000000000072"
 	const sandboxName = "sandbox-manually-resumed"
-	caller := Account{Namespace: "agentplane", Name: "wake-budget-ready-test"}
+	caller := ServiceAccountIdentity{Account: Account{Namespace: "agentplane", Name: "wake-budget-ready-test"}, UID: "wake-budget-ready-uid"}
 	for generation := int64(1); generation <= WakeLimit; generation++ {
 		if delay, err := store.ReserveWakeAttempt(ctx, caller, uid, generation); err != nil || delay != 0 {
 			t.Fatalf("reserve wake generation %d: delay %s, error %v", generation, delay, err)
 		}
 	}
-	if _, err := store.Enqueue(ctx, "wake-ready-command-session", sandboxName, uid,
-		input("wake-ready-command", "hello"), &caller); err != nil {
+	attribution := &AdmissionAttribution{Actor: caller, EffectiveCaller: caller}
+	privilegedCaller := CallerIdentity{ServiceAccountIdentity: caller, Privileged: true, Attribution: attribution}
+	if _, err := store.EnqueueForCaller(ctx, "wake-ready-command-session", sandboxName, uid,
+		input("wake-ready-command", "hello"), &caller.Account, privilegedCaller); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.OpenSession(ctx, "wake-ready-opening-session", sandboxName, uid,
-		&sessionpb.SessionSpec{}, nil, &caller); err != nil {
+	execution := ServiceAccountIdentity{Account: Account{Namespace: "agentplane", Name: sandboxName}, UID: "wake-ready-execution-uid"}
+	if _, err := store.OpenSessionWithIdentity(ctx, "wake-ready-opening-session", sandboxName, uid,
+		&sessionpb.SessionSpec{}, nil, &caller.Account, &execution, &caller, attribution); err != nil {
 		t.Fatal(err)
 	}
-	catalog := &growingCatalog{sandboxes: []SandboxSnapshot{{
+	catalog := &executionAccountCatalog{growingCatalog: &growingCatalog{sandboxes: []SandboxSnapshot{{
 		Name: sandboxName, Namespace: "agentplane", UID: uid, Incarnation: "old-pod",
 		Blocker: "sandbox_suspended", WakeOnSend: true,
-	}}}
+	}}}, accountUID: execution.UID}
 	runner := &acceptingRunner{calls: make(chan string, 2)}
 	leases := testLease{store: store}
 	wake := &exhaustedWakeBudget{}
@@ -1011,9 +1019,11 @@ func TestWorkerQueuesWithTheKubernetesFailureThatBlockedAWake(t *testing.T) {
 	store := testStore(t, 3)
 	const uid = "00000000-0000-4000-8000-000000000074"
 	const sandboxName = "sandbox-wake-forbidden"
-	caller := Account{Namespace: "agentplane", Name: "wake-forbidden-test"}
-	if _, err := store.Enqueue(ctx, "wake-forbidden-session", sandboxName, uid,
-		input("wake-forbidden-command", "hello"), &caller); err != nil {
+	caller := ServiceAccountIdentity{Account: Account{Namespace: "agentplane", Name: "wake-forbidden-test"}, UID: "wake-forbidden-uid"}
+	attribution := &AdmissionAttribution{Actor: caller, EffectiveCaller: caller}
+	privilegedCaller := CallerIdentity{ServiceAccountIdentity: caller, Privileged: true, Attribution: attribution}
+	if _, err := store.EnqueueForCaller(ctx, "wake-forbidden-session", sandboxName, uid,
+		input("wake-forbidden-command", "hello"), &caller.Account, privilegedCaller); err != nil {
 		t.Fatal(err)
 	}
 	forbidden := apierrors.NewForbidden(
