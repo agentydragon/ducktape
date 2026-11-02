@@ -1,29 +1,26 @@
 //! Streaming JSON report files, either plain or gzip encoded.
 
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufReader, BufWriter, Write};
 use std::path::Path;
 
 use anyhow::{Context, Result};
 use flate2::{Compression, GzBuilder, read::MultiGzDecoder};
 use serde::{Serialize, de::DeserializeOwned};
 
-/// Parse the actual file format, including historical explicit plain JSON.
-/// The decoder consumes the complete stream, checking gzip trailers and
-/// rejecting trailing garbage rather than accepting a partial first member.
+/// Parse a plain JSON report.
 pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
     let file = File::open(path).with_context(|| format!("reading {}", path.display()))?;
-    let mut input = BufReader::new(file);
-    let gzip = input
-        .fill_buf()
-        .with_context(|| format!("reading {}", path.display()))?
-        .starts_with(&[0x1f, 0x8b]);
-    if gzip {
-        serde_json::from_reader(MultiGzDecoder::new(input))
-    } else {
-        serde_json::from_reader(input)
-    }
-    .with_context(|| format!("parsing JSON report {}", path.display()))
+    serde_json::from_reader(BufReader::new(file))
+        .with_context(|| format!("parsing JSON report {}", path.display()))
+}
+
+/// Parse a gzip-encoded JSON report. The decoder consumes the complete stream,
+/// checking gzip trailers and rejecting trailing garbage.
+pub fn read_json_gzip<T: DeserializeOwned>(path: &Path) -> Result<T> {
+    let file = File::open(path).with_context(|| format!("reading {}", path.display()))?;
+    serde_json::from_reader(MultiGzDecoder::new(BufReader::new(file)))
+        .with_context(|| format!("parsing gzip JSON report {}", path.display()))
 }
 
 /// Write compact JSON directly through a bounded gzip stream. Completion
@@ -68,14 +65,14 @@ mod tests {
     }
 
     #[test]
-    fn reads_plain_and_gzip_by_content_and_validates_the_entire_stream() {
+    fn reads_plain_reports_and_validates_gzip_streams() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("report");
         let value = serde_json::json!({"nodes": [1, 2]});
         std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
         assert_eq!(read_json::<serde_json::Value>(&path).unwrap(), value);
         write_json_gzip(&path, &value).unwrap();
-        assert_eq!(read_json::<serde_json::Value>(&path).unwrap(), value);
+        assert_eq!(read_json_gzip::<serde_json::Value>(&path).unwrap(), value);
         let encoded = std::fs::read(&path).unwrap();
         let mut damaged = encoded.clone();
         let checksum = damaged.len() - 8;
@@ -92,7 +89,7 @@ mod tests {
             b"not JSON".to_vec(),
         ] {
             std::fs::write(&path, invalid).unwrap();
-            assert!(read_json::<serde_json::Value>(&path).is_err());
+            assert!(read_json_gzip::<serde_json::Value>(&path).is_err());
         }
     }
 

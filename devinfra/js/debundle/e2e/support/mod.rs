@@ -127,7 +127,7 @@ impl Fixture {
 
 impl RejectedFixture {
     pub fn dependency_graph(&self) -> DependencyGraphReport {
-        self.read_report("dependency_graph.json.gz")
+        read_dependency_graph(&self.report_root, &self.chunk_id)
     }
 
     pub fn program_graph(&self) -> ProgramGraphReport {
@@ -188,7 +188,7 @@ impl RejectedFixture {
 
 fn read_dependency_graph(report_root: &Path, chunk_id: &str) -> DependencyGraphReport {
     let report: DependencyGraphReport =
-        read_json(&report_root.join(chunk_id).join("dependency_graph.json.gz"));
+        read_gzip_json(&report_root.join(chunk_id).join("dependency_graph.json.gz"));
     assert_no_purity_disagreements(&report);
     report
 }
@@ -215,12 +215,12 @@ fn assert_no_purity_disagreements(report: &DependencyGraphReport) {
 
 /// The `program_graph.json.gz` that the graph at `graph_path` references.
 pub fn program_graph_path(graph_path: &Path) -> PathBuf {
-    let graph: DependencyGraphReport = read_json(graph_path);
+    let graph: DependencyGraphReport = read_gzip_json(graph_path);
     graph_provenance::program_graph_path(graph_path, &graph.program_graph)
 }
 
 fn read_program_graph(graph_path: &Path) -> ProgramGraphReport {
-    read_json(&program_graph_path(graph_path))
+    read_gzip_json(&program_graph_path(graph_path))
 }
 
 pub struct DryRunFixture {
@@ -1178,12 +1178,24 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> T {
     read_json_with_stderr(path, None)
 }
 
+pub fn read_gzip_json<T: DeserializeOwned>(path: &Path) -> T {
+    read_gzip_json_with_stderr(path, None)
+}
+
 fn read_json_with_stderr<T: DeserializeOwned>(path: &Path, stderr: Option<&str>) -> T {
     let context = stderr
         .map(|stderr| format!("\ndebundler stderr:\n{stderr}"))
         .unwrap_or_default();
     report_io::read_json(path)
         .unwrap_or_else(|err| panic!("parse JSON report {}: {err}{context}", path.display()))
+}
+
+fn read_gzip_json_with_stderr<T: DeserializeOwned>(path: &Path, stderr: Option<&str>) -> T {
+    let context = stderr
+        .map(|stderr| format!("\ndebundler stderr:\n{stderr}"))
+        .unwrap_or_default();
+    report_io::read_json_gzip(path)
+        .unwrap_or_else(|err| panic!("parse gzip JSON report {}: {err}{context}", path.display()))
 }
 
 pub fn debundler_path() -> PathBuf {

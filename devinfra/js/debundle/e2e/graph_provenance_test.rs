@@ -433,7 +433,7 @@ fn config_assumption_and_engine_change_reject() {
 
     let fixture = GraphFixture::acyclic_pair();
     let path = program_graph_path(&fixture.graph);
-    let mut program_graph: serde_json::Value = report_io::read_json(&path).unwrap();
+    let mut program_graph: serde_json::Value = report_io::read_json_gzip(&path).unwrap();
     program_graph["provenance"]["engine_sha256"] = "wrong-engine".into();
     report_io::write_json_gzip(&path, &program_graph).unwrap();
     assert_mismatch(&fixture, "engine");
@@ -477,7 +477,7 @@ fn provider_chunk_analysis_option_invalidates_consumer_graph() {
 fn missing_metadata_cannot_authorize_edit_but_graph_only_read_works() {
     let fixture = GraphFixture::acyclic_pair();
     let path = program_graph_path(&fixture.graph);
-    let mut program_graph: serde_json::Value = report_io::read_json(&path).unwrap();
+    let mut program_graph: serde_json::Value = report_io::read_json_gzip(&path).unwrap();
     program_graph.as_object_mut().unwrap().remove("provenance");
     report_io::write_json_gzip(&path, &program_graph).unwrap();
     fixture.assert_success(&["atoms", "--format", "json"]);
@@ -729,7 +729,7 @@ fn env_only_run_records_replayable_absolute_argv_across_cwd() {
     assert!(result.status.success(), "{}", stderr(&result));
     let graph = out.join("reports/tree/main/dependency_graph.json.gz");
     let program_graph: serde_json::Value =
-        report_io::read_json(&program_graph_path(&graph)).unwrap();
+        report_io::read_json_gzip(&program_graph_path(&graph)).unwrap();
     let provenance = &program_graph["provenance"];
     assert_eq!(
         provenance["generation_cwd"],

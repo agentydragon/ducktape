@@ -165,7 +165,7 @@ fn tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
             }
             let bytes = fs::read(&entry).unwrap();
             let json = if entry.extension().is_some_and(|extension| extension == "gz") {
-                Ok(read_json::<Value>(&entry))
+                Ok(read_gzip_json::<Value>(&entry))
             } else {
                 serde_json::from_slice::<Value>(&bytes)
             };
@@ -535,7 +535,8 @@ fn default_reports_are_graph_free_and_full_export_reuses_the_analysis() {
         &fs::read(export.join("reports/tree/static/app/graph_summary.json")).unwrap(),
     )
     .unwrap();
-    let graph: Value = read_json(&export.join("reports/tree/static/app/dependency_graph.json.gz"));
+    let graph: Value =
+        read_gzip_json(&export.join("reports/tree/static/app/dependency_graph.json.gz"));
     assert_eq!(
         summary["source_units"],
         graph["nodes"].as_array().unwrap().len()

@@ -241,9 +241,8 @@ property reads.
 
 Full dependency and program graphs are written directly as deterministic
 gzip level-1 compact JSON, without a plaintext staging file. Saved-graph
-commands accept both gzip and historical explicit plain JSON by content;
-corrupt or incomplete compressed streams fail. Small reports and report
-selection retain their existing behavior.
+commands require gzip input; corrupt, incomplete or plain JSON graph files fail.
+Small reports and report selection retain their existing behavior.
 
 Each `dependency_graph.json.gz` written by `debundle run` references the run's
 `program_graph.json.gz`, which carries input provenance:

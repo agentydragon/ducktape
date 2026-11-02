@@ -112,14 +112,14 @@ pub fn program_graph_path(graph_path: &Path, program_graph: &Path) -> PathBuf {
         .join(program_graph)
 }
 
-fn read_json_header<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
-    report_io::read_json(path).with_context(|| format!("parsing header of {}", path.display()))
+fn read_gzip_json_header<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
+    report_io::read_json_gzip(path).with_context(|| format!("parsing header of {}", path.display()))
 }
 
 pub fn read_graph_header(path: &Path) -> Result<GraphHeader> {
-    let graph: ChunkGraphHeader = read_json_header(path)?;
+    let graph: ChunkGraphHeader = read_gzip_json_header(path)?;
     let program: ProgramGraphHeader =
-        read_json_header(&program_graph_path(path, &graph.program_graph))?;
+        read_gzip_json_header(&program_graph_path(path, &graph.program_graph))?;
     Ok(GraphHeader {
         chunk_id: graph.chunk_id,
         program_graph: graph.program_graph,

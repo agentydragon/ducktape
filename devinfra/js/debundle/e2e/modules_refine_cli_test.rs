@@ -1,7 +1,7 @@
 //! Reviewed source_unit-to-module batches preserve existing selector metadata.
 
 use debundle_e2e_support::{
-    GraphFixture, TreeFixture, debundler_path, read_json, run_tree_graph_fixture,
+    GraphFixture, TreeFixture, debundler_path, read_gzip_json, run_tree_graph_fixture,
 };
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -54,7 +54,7 @@ fn moves_member_source_match_group_and_anonymous_claim_with_metadata() {
     let alpha = source_unit_for_binding(&fixture, "alpha");
     let beta = source_unit_for_binding(&fixture, "beta");
     let gamma = source_unit_for_binding(&fixture, "gamma");
-    let graph: serde_json::Value = read_json(&fixture.graph);
+    let graph: serde_json::Value = read_gzip_json(&fixture.graph);
     let log = graph["nodes"]
         .as_array()
         .unwrap()
@@ -288,7 +288,7 @@ fn refines_only_the_selected_chunk_under_tree_config() {
     let destination_before = fs::read(&existing_destination).unwrap();
     let graph = run.report_root.join("main/dependency_graph.json.gz");
     let batch = run.root().join("refine.json");
-    let graph_report: serde_json::Value = read_json(&graph);
+    let graph_report: serde_json::Value = read_gzip_json(&graph);
     let source_unit = graph_report["nodes"]
         .as_array()
         .unwrap()
@@ -366,7 +366,7 @@ fn rejects_unclaimed_scaffolding_and_duplicate_source_unit_rows() {
     );
 
     let exported = GraphFixture::new("const alpha = 1;\nexport { alpha };\n", &[]);
-    let graph: serde_json::Value = read_json(&exported.graph);
+    let graph: serde_json::Value = read_gzip_json(&exported.graph);
     let export_source_unit = graph["nodes"]
         .as_array()
         .unwrap()
