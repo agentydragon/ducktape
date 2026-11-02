@@ -20,7 +20,6 @@ import (
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
-	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc/codes"
@@ -202,19 +201,16 @@ func TestRuntimeCloseJoinsInFlightAutomaticExecutionFence(t *testing.T) {
 		t.Fatal("automatic Execution fence did not start")
 	}
 	r.mu.Lock()
-	binding := proto.Clone(r.intent.Binding).(*runtimepb.Binding)
+	generation := r.desired.Generation
 	r.mu.Unlock()
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
-	waitRuntime(t, r, func() bool {
-		status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
-		return err == nil && found && status.Stage == lifecycle.RuntimeCloseExecutionFencing
-	}, "Close to join in-flight Execution fence")
+	waitRuntime(t, r, r.isClosing, "Close to join in-flight Execution fence")
 	r.mu.Lock()
-	sameBinding := r.intent != nil && proto.Equal(r.intent.Binding, binding)
+	sameGeneration := r.desired.Generation == generation
 	r.mu.Unlock()
-	if !sameBinding {
-		t.Fatal("Close replaced the draining Host generation")
+	if !sameGeneration {
+		t.Fatal("Close replaced the draining generation before the Execution fence settled")
 	}
 	select {
 	case err := <-closeDone:
@@ -235,7 +231,7 @@ func TestRuntimeCloseJoinsInFlightAutomaticExecutionFence(t *testing.T) {
 	}
 }
 
-func TestRuntimeCloseFailureRetainsOwnerAndDoesNotRetryHostStop(t *testing.T) {
+func TestRuntimeCloseFailureRetainsOwnerAndDoesNotRetrySessionStop(t *testing.T) {
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
 	config.expectCloseError = true
@@ -243,27 +239,27 @@ func TestRuntimeCloseFailureRetainsOwnerAndDoesNotRetryHostStop(t *testing.T) {
 	var stops atomic.Int32
 	r.deps.stopSessions = func(context.Context) error {
 		stops.Add(1)
-		return errors.New("injected Host join failure")
+		return errors.New("injected Session join failure")
 	}
 
 	for range 2 {
 		ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 		err := r.Close(ctx)
 		cancel()
-		if err == nil || !strings.Contains(err.Error(), "injected Host join failure") {
-			t.Fatalf("Close = %v, want exact Host join failure", err)
+		if err == nil || !strings.Contains(err.Error(), "injected Session join failure") {
+			t.Fatalf("Close = %v, want exact Session join failure", err)
 		}
 	}
 	if got := stops.Load(); got != 1 {
-		t.Fatalf("Host stop calls = %d, want one", got)
+		t.Fatalf("Session stop calls = %d, want one", got)
 	}
 	status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
-	if err != nil || !found || status.Stage != lifecycle.RuntimeCloseFailed || !strings.Contains(status.Error, "injected Host join failure") {
+	if err != nil || !found || status.Stage != lifecycle.RuntimeCloseFailed || !strings.Contains(status.Error, "injected Session join failure") {
 		t.Fatalf("Close aggregate = %+v, found=%t, err=%v", status, found, err)
 	}
 	if owner, err := openEnvironmentOwner(config.StateDir); err == nil {
 		_ = owner.Close()
-		t.Fatal("failed Host join released environment owner")
+		t.Fatal("failed Session join released environment owner")
 	}
 }
 
@@ -329,19 +325,19 @@ func TestRuntimeCloseBeforeRunStartsAndJoinsLifecycleEngine(t *testing.T) {
 	_ = owner.Close()
 }
 
-func TestEmbeddedHostAndRuntimeKeepDistinctDesiredResources(t *testing.T) {
+func TestRuntimeUsesOneEnvironmentDesiredResource(t *testing.T) {
 	proxy := modelConfigServer(t)
 	r := newLifecycleRuntime(t, lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false"))
 	runtimeDesired, runtimeFound, err := lifecycle.ReadEnvironmentDesired(context.Background(), r.lifecycleState)
 	if err != nil || !runtimeFound {
 		t.Fatalf("Runtime desired resource: found=%t err=%v", runtimeFound, err)
 	}
-	hostDesired, hostFound, err := lifecycle.ReadDesired(context.Background(), r.lifecycleState)
-	if err != nil || !hostFound {
-		t.Fatalf("Host desired resource: found=%t err=%v", hostFound, err)
+	if runtimeDesired.Mode != lifecycle.Running {
+		t.Fatalf("Runtime desired=%+v, want Running", runtimeDesired)
 	}
-	if runtimeDesired.Mode != lifecycle.Running || hostDesired.Mode != lifecycle.Running || runtimeDesired.Generation != hostDesired.Generation {
-		t.Fatalf("Runtime desired=%+v Host desired=%+v", runtimeDesired, hostDesired)
+	hostDesired, err := r.lifecycleState.List(context.Background(), resource.NewMetadata(lifecycle.Namespace, "HarnessHostDesiredStates.agentplane", "", resource.VersionUndefined))
+	if err != nil || len(hostDesired.Items) != 0 {
+		t.Fatalf("obsolete Host desired resources: %+v, %v", hostDesired, err)
 	}
 }
 
@@ -364,7 +360,7 @@ func TestCanceledRuntimeCloseWaiterDoesNotStopNativeCleanup(t *testing.T) {
 			close(entered)
 			<-release
 		})
-		return r.sessions.BeginClose(ctx)
+		return r.waitSessionStage(ctx, lifecycle.Closed)
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
 	defer cancel()
@@ -407,32 +403,32 @@ func TestCanceledRuntimeCloseWaiterDoesNotStopNativeCleanup(t *testing.T) {
 	}
 }
 
-func TestRuntimeRetainsOwnerWhenJoinedHostCleanupFails(t *testing.T) {
+func TestRuntimeRetainsOwnerWhenSessionCleanupFails(t *testing.T) {
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
 	config.expectCloseError = true
 	r := newLifecycleRuntime(t, config)
 	cleanupFailure := errors.New("injected Host owner release failure")
 	r.deps.closeSessions = func(ctx context.Context) error {
-		return errors.Join(r.sessions.CloseJournals(ctx), cleanupFailure)
+		r.sessionWorkers.Wait()
+		return errors.Join(r.sessions.Close(), cleanupFailure)
 	}
 	t.Cleanup(func() { _ = r.owner.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
 	if err := r.Close(ctx); !errors.Is(err, cleanupFailure) {
-		t.Fatalf("Runtime Close = %v, want Host cleanup failure", err)
+		t.Fatalf("Runtime Close = %v, want Session cleanup failure", err)
 	}
 	owner, err := openEnvironmentOwner(config.StateDir)
 	if err == nil {
 		_ = owner.Close()
-		t.Fatal("Runtime released environment owner without Host cleanup proof")
+		t.Fatal("Runtime released environment owner without Session cleanup proof")
 	}
 }
 
-func TestCloseCannotStartEngineDuringFailedHostConstruction(t *testing.T) {
+func TestCloseCannotStartEngineDuringFailedSessionConstruction(t *testing.T) {
 	config := lifecycleConfig(t, "", t.TempDir(), nil, "/bin/false")
-	config.Config.HostConfig = config.host
-	config.Config.HostConfig.HarnessEnvironment = map[string]string{"CODEX_EXEC_SERVER_URL": "invalid-host-config"}
+	config.Config.HarnessEnvironment = map[string]string{"CODEX_EXEC_SERVER_URL": "invalid-host-config"}
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	config.deps.beforeHostConstruction = func() {
@@ -451,7 +447,7 @@ func TestCloseCannotStartEngineDuringFailedHostConstruction(t *testing.T) {
 	select {
 	case <-entered:
 	case <-ctx.Done():
-		t.Fatal("Host construction did not start")
+		t.Fatal("Session construction did not start")
 	}
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(ctx) }()
@@ -465,29 +461,29 @@ func TestCloseCannotStartEngineDuringFailedHostConstruction(t *testing.T) {
 			t.Fatalf("canceled Close waiter = %v", err)
 		}
 	case <-ctx.Done():
-		t.Fatal("canceled Close waiter blocked on Host construction")
+		t.Fatal("canceled Close waiter blocked on Session construction")
 	}
 	select {
 	case err := <-closeDone:
-		t.Fatalf("Close crossed Host construction barrier: %v", err)
+		t.Fatalf("Close crossed Session construction barrier: %v", err)
 	default:
 	}
 	close(release)
 	select {
 	case err := <-runDone:
 		if err == nil {
-			t.Fatal("Run accepted invalid Host configuration")
+			t.Fatal("Run accepted invalid Session configuration")
 		}
 	case <-ctx.Done():
-		t.Fatal("Run did not return failed Host construction")
+		t.Fatal("Run did not return failed Session construction")
 	}
 	select {
 	case err := <-closeDone:
 		if err == nil {
-			t.Fatal("Close accepted partial Host construction")
+			t.Fatal("Close accepted partial Session construction")
 		}
 	case <-ctx.Done():
-		t.Fatal("Close did not return failed Host construction")
+		t.Fatal("Close did not return failed Session construction")
 	}
 	select {
 	case <-r.lifecycleDone:
@@ -497,15 +493,14 @@ func TestCloseCannotStartEngineDuringFailedHostConstruction(t *testing.T) {
 	owner, err := openEnvironmentOwner(config.StateDir)
 	if err == nil {
 		_ = owner.Close()
-		t.Fatal("Runtime released owner after unsafe Host construction")
+		t.Fatal("Runtime released owner after unsafe Session construction")
 	}
 }
 
-func TestCloseDuringSuccessfulHostConstructionJoinsSharedEngine(t *testing.T) {
+func TestCloseDuringSuccessfulSessionConstructionJoinsSharedEngine(t *testing.T) {
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
-	config.Config.HostConfig = config.host
-	config.Config.HostIngress.Target = startAcknowledgingHistory(t)
+	config.Config.HistoryIngress.Target = startAcknowledgingHistory(t)
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	config.deps.beforeHostConstruction = func() {
@@ -523,7 +518,7 @@ func TestCloseDuringSuccessfulHostConstructionJoinsSharedEngine(t *testing.T) {
 	select {
 	case <-entered:
 	case <-ctx.Done():
-		t.Fatal("Host construction did not start")
+		t.Fatal("Session construction did not start")
 	}
 	expired, cancelExpired := context.WithCancel(ctx)
 	cancelExpired()
@@ -532,7 +527,7 @@ func TestCloseDuringSuccessfulHostConstructionJoinsSharedEngine(t *testing.T) {
 	}
 	close(release)
 	if err := r.Close(ctx); err != nil && !errors.Is(err, errSessionComponentLost) {
-		t.Fatalf("Close after Host construction = %v", err)
+		t.Fatalf("Close after Session construction = %v", err)
 	}
 	select {
 	case <-r.lifecycleDone:
@@ -680,7 +675,7 @@ func TestFreshSessionAdmissionInvalidatesIdleToken(t *testing.T) {
 	}
 }
 
-func TestEmbeddedHostLifecycleLossStillFencesExecution(t *testing.T) {
+func TestSessionComponentFailureStillFencesExecution(t *testing.T) {
 	url, _, _ := startNativeExecutionTestServer(t, false)
 	config := executionRuntimeConfig(t, url, nil)
 	config.expectCloseError = true
@@ -700,18 +695,18 @@ func TestEmbeddedHostLifecycleLossStillFencesExecution(t *testing.T) {
 	case <-time.After(lifecycleTestTimeout):
 		t.Fatal("Execution service did not start")
 	}
-	r.HostFailed(errors.New("simulated Host failure"))
+	r.fail(errors.New("simulated Session component failure"))
 	closeCtx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
 	if err := r.Close(closeCtx); err == nil {
-		t.Fatal("Runtime silently accepted lost Host lifecycle")
+		t.Fatal("Runtime silently accepted lost Session lifecycle")
 	}
 	if !execution.stopRequested() {
-		t.Fatal("Runtime skipped Execution fence after Host lifecycle loss")
+		t.Fatal("Runtime skipped Execution fence after Session lifecycle loss")
 	}
 }
 
-func TestRuntimeCloseAfterHostDisconnectRetainsOwnerWhenNativeCleanupUnproved(t *testing.T) {
+func TestRuntimeCloseRetainsOwnerWhenSessionCleanupUnproved(t *testing.T) {
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
 	config.expectCloseError = true
@@ -722,23 +717,18 @@ func TestRuntimeCloseAfterHostDisconnectRetainsOwnerWhenNativeCleanupUnproved(t 
 		return nil
 	}
 	r.deps.waitSessionsClosed = func(context.Context) error {
-		return errors.New("injected unproved Host native cleanup")
+		return errors.New("injected unproved Session native cleanup")
 	}
-	r.mu.Lock()
-	link := r.host
-	r.mu.Unlock()
-	r.retireHost(link, nil)
-
 	for range 2 {
 		ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 		err := r.Close(ctx)
 		cancel()
-		if err == nil || !strings.Contains(err.Error(), "injected unproved Host native cleanup") {
+		if err == nil || !strings.Contains(err.Error(), "injected unproved Session native cleanup") {
 			t.Fatalf("Close = %v, want native cleanup failure", err)
 		}
 	}
 	if got := stops.Load(); got != 1 {
-		t.Fatalf("Host stop calls = %d, want one", got)
+		t.Fatalf("Session stop calls = %d, want one", got)
 	}
 	if owner, err := openEnvironmentOwner(config.StateDir); err == nil {
 		_ = owner.Close()
@@ -766,12 +756,11 @@ func TestRepeatedQuiesceKeepsCurrentLifecycleGeneration(t *testing.T) {
 	waitRuntime(t, r, func() bool {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		report := r.hostReportLocked()
-		return r.host != nil && r.intent != nil && report != nil && report.Ready
-	}, "current quiesce lifecycle report")
+		progress, found, err := lifecycle.ReadStatus(context.Background(), r.lifecycleState)
+		return err == nil && found && progress.Generation == r.desired.Generation
+	}, "current quiesce lifecycle status")
 	r.mu.Lock()
 	desired := r.desired
-	binding := proto.Clone(r.intent.Binding).(*runtimepb.Binding)
 	r.mu.Unlock()
 	if _, err := r.Quiesce(client.ctx, request); err != nil {
 		t.Fatal(err)
@@ -782,8 +771,8 @@ func TestRepeatedQuiesceKeepsCurrentLifecycleGeneration(t *testing.T) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.desired != desired || !proto.Equal(r.intent.Binding, binding) {
-		t.Fatalf("repeated Quiesce changed lifecycle generation: desired=%+v want=%+v, binding=%v want=%v", r.desired, desired, r.intent.Binding, binding)
+	if r.desired != desired {
+		t.Fatalf("repeated Quiesce changed lifecycle generation: desired=%+v want=%+v", r.desired, desired)
 	}
 }
 
@@ -829,7 +818,7 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 	}
 	if owner, err := openEnvironmentOwner(root); err == nil {
 		_ = owner.Close()
-		t.Fatal("Close released environment ownership while accepted Host setup remained")
+		t.Fatal("Close released environment ownership while accepted Session setup remained")
 	}
 	if err := os.WriteFile(setupRelease, nil, 0600); err != nil {
 		t.Fatal(err)
