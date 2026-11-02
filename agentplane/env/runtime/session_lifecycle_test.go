@@ -457,7 +457,7 @@ func TestCloseWaitsForAdmission(t *testing.T) {
 	}
 	after, found, err := lifecycleRead[environmentAdmissionCountSpec](ctx, r.lifecycleState, lifecycle.EnvironmentResourceID)
 	if err != nil || !found || after.Admissions != 0 {
-		t.Fatalf("Harness Host Inputs after admission completion = %+v, found=%v err=%v; want no admissions", after, found, err)
+		t.Fatalf("Runtime Inputs after admission completion = %+v, found=%v err=%v; want no admissions", after, found, err)
 	}
 }
 
@@ -581,10 +581,10 @@ func TestAdmissionCompletionStateFailureIsReported(t *testing.T) {
 	select {
 	case err := <-r.fatal:
 		if !state.IsNotFoundError(err) {
-			t.Fatalf("Harness Host failure = %v, want missing admission state", err)
+			t.Fatalf("Runtime failure = %v, want missing admission state", err)
 		}
 	default:
-		t.Fatal("accounting completion failure did not reach Harness Host supervision")
+		t.Fatal("accounting completion failure did not reach Runtime supervision")
 	}
 	if facts, err := r.facts(); err == nil {
 		t.Fatalf("failed completion returned facts: %v", facts)
@@ -596,11 +596,11 @@ func TestCloseProgressesForEmptyRunner(t *testing.T) {
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
 	if err := waitClose(t, closeDone); err != nil {
-		t.Fatalf("Close empty Harness Host: %v", err)
+		t.Fatalf("Close empty Runtime: %v", err)
 	}
 	current, found, err := lifecycle.ReadStatus(context.Background(), r.lifecycleState)
 	if err != nil || !found || current.Stage != lifecycle.Closed {
-		t.Fatalf("empty Harness Host status after Close = %+v, found=%v err=%v; want CLOSED", current, found, err)
+		t.Fatalf("empty Runtime status after Close = %+v, found=%v err=%v; want CLOSED", current, found, err)
 	}
 }
 
@@ -618,7 +618,7 @@ func TestJournalAndAcknowledgementChangesWakeObservers(t *testing.T) {
 	select {
 	case <-changes:
 	default:
-		t.Fatal("journal/acknowledgement changes did not wake Harness Host observers")
+		t.Fatal("journal/acknowledgement changes did not wake Runtime observers")
 	}
 }
 

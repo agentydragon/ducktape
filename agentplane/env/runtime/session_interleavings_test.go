@@ -86,7 +86,7 @@ func runLifecycleBarrierTrace(t *testing.T, operation string, trace []string) {
 	}, "quiesce admission barrier")
 	blocker := sessionLifecycleSnapshot(t, r).Blocker
 	if blocker == nil || blocker.ResourceType != lifecycle.AdmissionCountType || blocker.ResourceId != lifecycle.EnvironmentResourceID {
-		t.Fatalf("externally reported admission blocker = %+v; want Harness Host resource identity", blocker)
+		t.Fatalf("externally reported admission blocker = %+v; want Runtime resource identity", blocker)
 	}
 
 	released := map[string]bool{}

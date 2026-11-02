@@ -1,4 +1,4 @@
-// Durable COSI resource specs owned by the Environment Runtime and Harness Host.
+// Durable COSI resource specs owned by the Environment Runtime and Runtime.
 syntax = "proto3";
 
 package agentplane.env.runtime.cosistate;

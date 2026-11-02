@@ -42,7 +42,7 @@ The connection uses `journal_mode=DELETE` and `synchronous=EXTRA`; publication r
 [durable rollback-journal commits](https://sqlite.org/pragma.html#pragma_synchronous) and storage honoring sync.
 A journal mutex owns each complete transaction, including batch publication.
 Explicit `BEGIN IMMEDIATE` reserves the writer before reading ids/cursors; no transaction spans
-harness or network I/O. One retained connection serves the single Runtime-session writer.
+harness or network I/O. One retained connection serves the single Session writer.
 Runtime acquires the environment lifetime lock before starting embedded Host and retains it through
 Host cleanup and journal close. Native Pod and subprocess harnesses inherit that descriptor.
 The outer container runtime fences escaped descendants before an abnormal replacement. In VMs

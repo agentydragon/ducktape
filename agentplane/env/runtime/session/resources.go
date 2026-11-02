@@ -1,4 +1,4 @@
-// Package session owns the Harness Host's durable Session inventory and its COSI lifecycle.
+// Package session owns the Runtime's durable Session inventory and its COSI lifecycle.
 package session
 
 import (
@@ -47,7 +47,7 @@ type ReconcileSnapshot struct {
 	DispatchBlocked   bool
 }
 
-// InspectionStatus changes only when inspection work starts or settles. The Harness Host
+// InspectionStatus changes only when inspection work starts or settles. The Runtime
 // lifecycle controller needs this barrier, not every Session dispatch dependency.
 type InspectionStatus struct{ Inspecting bool }
 

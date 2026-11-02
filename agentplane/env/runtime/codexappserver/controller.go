@@ -173,7 +173,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		}
 		server.mu.Unlock()
 		if inactive {
-			// Demand sequences are scoped to a Harness Host generation. A resumed Host must wait for
+			// Demand sequences are scoped to a Runtime generation. A resumed Host must wait for
 			// fresh demand rather than replaying the previous incarnation's Codex startup request.
 			current.EnvironmentGeneration = desiredState.Generation
 			current.ObservedDemand = 0
@@ -194,7 +194,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		}
 		if current.StopError != "" {
 			// A failed COSI process stop leaves ownership uncertain. Preserve that evidence and block
-			// repeated drains and the Harness Host transition into executor fencing.
+			// repeated drains and the Runtime transition into executor fencing.
 			return write()
 		}
 		server.mu.Lock()
@@ -347,7 +347,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		current.ExecServerReadyDeadline = time.Time{}
 	}
 
-	// The Harness Host admission barrier fences initialization against Close and Quiesce.
+	// The Runtime admission barrier fences initialization against Close and Quiesce.
 	if err := server.deps.Admission(ctx, desiredState, func(ctx context.Context) error {
 		current.Phase = Initializing
 		current.EnvironmentGeneration = desiredState.Generation
