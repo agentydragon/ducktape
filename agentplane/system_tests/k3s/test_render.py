@@ -387,12 +387,16 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations() -> None:
 
 def test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling() -> None:
     fixture = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
-    vm_sandboxes.select_native_profile(fixture.objects, enabled=True, profile_root=True)
     selected = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)
     other = _resource(fixture.objects, "SandboxTemplate", "environment-vm")
+    original_args = selected["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    original_other_args = other["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    vm_sandboxes.select_native_profile(fixture.objects, enabled=True, profile_root=True)
     selected_args = selected["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
     other_args = other["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
-    assert selected_args == other_args + " agentplane.native-profile=1"
+    assert other_args == original_other_args
+    assert selected_args == original_args + " agentplane.native-profile=1"
+    assert "agentplane.native-profile=1" not in other_args
     selected_volumes = selected["spec"]["vm"]["template"]["spec"]["volumes"]
     other_volumes = other["spec"]["vm"]["template"]["spec"]["volumes"]
     assert next(volume for volume in selected_volumes if volume["name"] == "rootdisk")["containerDisk"][
@@ -413,12 +417,16 @@ def test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling() -> No
 
 def test_vm_boot_evidence_selects_only_oom_guest_at_runtime() -> None:
     fixture = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
-    vm_sandboxes.select_boot_evidence(fixture.objects, enabled=True)
     selected = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)
     other = _resource(fixture.objects, "SandboxTemplate", "environment-vm")
+    original_args = selected["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    original_other_args = other["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    vm_sandboxes.select_boot_evidence(fixture.objects, enabled=True)
     selected_args = selected["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
     other_args = other["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
-    assert selected_args == other_args + " agentplane.boot-evidence=1"
+    assert other_args == original_other_args
+    assert selected_args == original_args + " agentplane.boot-evidence=1"
+    assert "agentplane.boot-evidence=1" not in other_args
 
 
 def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
