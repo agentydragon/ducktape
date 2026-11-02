@@ -41,7 +41,7 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         bootstrap=preset.bootstrap,
     )
     assert view.configuration.preset == launch_preset.SANDBOX_PRESET
-    assert view.HasField("binding")
+    assert view.configuration.HasField("binding")
 
     with tracer.start_as_current_span(
         "system_test.launch_preset.admit_first_session", record_exception=False, set_status_on_exception=False
