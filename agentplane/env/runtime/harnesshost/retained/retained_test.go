@@ -10,7 +10,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
 
-func TestStorePreservesRunnerSessionJSONShape(t *testing.T) {
+func TestStorePreservesSessionJSONShape(t *testing.T) {
 	root := t.TempDir()
 	store, err := NewStore(root)
 	if err != nil {
@@ -44,9 +44,6 @@ func TestStorePreservesRunnerSessionJSONShape(t *testing.T) {
 	if string(fields["harness"]) != `"HARNESS_CLAUDE"` || fields["native_session_id"] == nil || fields["event_source_id"] == nil {
 		t.Fatalf("persisted session JSON fields = %s", data)
 	}
-	if fields["setup_script"] != nil || fields["setup_script_sha256"] != nil {
-		t.Fatalf("record without setup source contains setup fields: %s", data)
-	}
 }
 
 func TestNewRecordPersistsExactSetupSource(t *testing.T) {
@@ -72,8 +69,8 @@ func TestNewRecordPersistsExactSetupSource(t *testing.T) {
 	if err := json.Unmarshal(fields["setup_script"], &wireScript); err != nil {
 		t.Fatal(err)
 	}
-	if wireScript != script || fields["setup_script_sha256"] != nil {
-		t.Fatalf("wire setup source=%q setup digest=%s; want exact source and no digest", wireScript, fields["setup_script_sha256"])
+	if wireScript != script {
+		t.Fatalf("wire setup source=%q; want exact source %q", wireScript, script)
 	}
 	var roundTrip Record
 	if err := json.Unmarshal(data, &roundTrip); err != nil {
@@ -87,11 +84,11 @@ func TestNewRecordPersistsExactSetupSource(t *testing.T) {
 	}
 }
 
-func TestUnmarshalRejectsUnknownSetupDigestField(t *testing.T) {
-	data := []byte(`{"harness":"HARNESS_CLAUDE","cwd":"/workspace","model":"route/model","total_context_budget_tokens":null,"reasoning_effort":"","instructions":"","setup_script_sha256":"0123456789abcdef","event_source_id":"legacy-source","native_session_id":null}`)
+func TestUnmarshalRejectsUnknownRecordField(t *testing.T) {
+	data := []byte(`{"harness":"HARNESS_CLAUDE","cwd":"/workspace","model":"route/model","total_context_budget_tokens":null,"reasoning_effort":"","instructions":"","future_field":"value","event_source_id":"source","native_session_id":null}`)
 	var record Record
 	err := json.Unmarshal(data, &record)
-	if err == nil || !strings.Contains(err.Error(), `unknown field "setup_script_sha256"`) {
-		t.Fatalf("record with removed setup digest field error = %v, want unknown-field error", err)
+	if err == nil || !strings.Contains(err.Error(), `unknown field "future_field"`) {
+		t.Fatalf("record with unknown field error = %v, want unknown-field error", err)
 	}
 }
