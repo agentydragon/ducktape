@@ -171,15 +171,7 @@ func WatchStatus(ctx context.Context, reader state.State, condition func(Status)
 
 // WriteStatus is used only by the Session aggregate controller, which exclusively owns this output.
 func WriteStatus(ctx context.Context, writer controller.ReaderWriter, value Status) (bool, error) {
-	current, found, err := ReadStatus(ctx, writer)
-	if err != nil || found && current == value {
-		return false, err
-	}
-	err = safe.WriterModify(ctx, writer, statusResource(value), func(resource *typed.Resource[Status, statusExtension]) error {
-		*resource.TypedSpec() = value
-		return nil
-	})
-	return err == nil, err
+	return cosi.Write(ctx, writer, statusResource(value), value)
 }
 
 func statusResource(value Status) *typed.Resource[Status, statusExtension] {

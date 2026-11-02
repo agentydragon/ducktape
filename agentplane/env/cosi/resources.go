@@ -1,4 +1,4 @@
-// Package cosi contains mechanical helpers for typed Runner COSI resources.
+// Package cosi contains mechanical helpers for typed environment COSI resources.
 package cosi
 
 import (

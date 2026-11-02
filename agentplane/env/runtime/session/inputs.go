@@ -37,7 +37,7 @@ func (m *Manager) publishSession(s *Session, demand bool) {
 		}
 		*current.TypedSpec() = next
 		return nil
-	}, state.WithUpdateOwner(HostOwner)))
+	}, state.WithUpdateOwner(lifecycle.EnvironmentOwner)))
 	drain := InspectionStatus{Inspecting: input.Inspections != 0 || input.InspectionRunning}
 	m.fail(publish(m.ctx, m.state, s.id, drain))
 }

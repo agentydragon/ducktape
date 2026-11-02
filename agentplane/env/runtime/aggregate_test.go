@@ -408,7 +408,7 @@ func TestRuntimeRetainsOwnerWhenSessionCleanupFails(t *testing.T) {
 	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
 	config.expectCloseError = true
 	r := newLifecycleRuntime(t, config)
-	cleanupFailure := errors.New("injected Host owner release failure")
+	cleanupFailure := errors.New("injected environment owner release failure")
 	r.deps.closeSessions = func(ctx context.Context) error {
 		r.sessionWorkers.Wait()
 		return errors.Join(r.sessions.Close(), cleanupFailure)
