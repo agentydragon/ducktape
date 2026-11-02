@@ -14,6 +14,20 @@ exports_files([
 ])
 
 py_library(
+    name = "renderer_spike_fixtures",
+    srcs = ["renderer_spike_fixtures.py"],
+    deps = [
+        ":visual_harness",
+        "//third_party/containers:grafana_image_renderer_spike",
+        "//util:oci",
+        "//util/testing:container_logs",
+        "@pypi//docker",
+        "@pypi//httpx",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
     name = "recorded",
     srcs = ["recorded.py"],
     deps = ["@pypi//playwright"],

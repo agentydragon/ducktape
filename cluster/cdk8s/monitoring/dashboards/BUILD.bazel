@@ -127,14 +127,18 @@ grafana_dashboard_visual_test(
     tags = ["manual"],
     deps = [
         "//grafana/visual_tests:recorded",
+        "//grafana/visual_tests:renderer_spike_fixtures",
         "//grafana/visual_tests:visual_harness",
         "//third_party/containers:grafana_image_renderer_spike",
+        "//third_party/containers:grafana_visual",
+        "//third_party/containers:ryuk",
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:frontend_visual",
         "//util/testing:undeclared_outputs",
         "@pypi//docker",
         "@pypi//httpx",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 ) for name, dashboard, fixture in [
@@ -157,6 +161,7 @@ grafana_dashboard_visual_test(
     tags = ["manual"],
     deps = [
         ":piraeus_metrics",
+        "//grafana/visual_tests:renderer_spike_fixtures",
         "//grafana/visual_tests:visual_harness",
         "//third_party/containers:grafana_image_renderer_spike",
         "//third_party/containers:grafana_visual",
@@ -167,6 +172,7 @@ grafana_dashboard_visual_test(
         "//util/testing:undeclared_outputs",
         "@pypi//docker",
         "@pypi//httpx",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 ) for scenario in [
