@@ -1,5 +1,20 @@
 # TODO — Agentplane environment
 
+## Fix subprocess supervisor-loss fencing
+
+The subprocess backend treats an abnormally killed trusted supervisor as a completed native process:
+`Wait` returns exit 137 with no error and `Stop` returns success even though the native child can still
+be alive. In the [RBE reproduction](https://app.buildbuddy.io/invocation/717b6862-8bcf-4ea8-97d8-5cc6c0de9cff),
+the child closed its inherited owner descriptor before its supervisor was killed; a replacement then
+acquired the environment owner lock while the child was still sleeping. This exercises the subprocess
+backend, not the production Pod PID1 or VM systemd paths.
+
+Distinguish supervisor loss from a confirmed native fence, retain failed cleanup until the native
+domain is proved stopped, and add a regression for the reproduced sequence. The ordinary subprocess
+fence also sends group `SIGKILL` without waiting for group disappearance; cover that completion
+boundary while preserving process identity safety. The COSI finalizer currently relies on the backend's
+reported stop result, so it cannot correct a falsely successful fence by itself.
+
 ## Fence uncertain Session reservation writes
 
 `OpenSession` returns a retained `SessionRecords` write error without failing Runtime. COSI writes
