@@ -116,31 +116,12 @@ func (h *Host) Scope(ctx context.Context, domain Domain, workers *sync.WaitGroup
 // Controller is registered in the caller's existing COSI runtime.
 func (h *Host) Controller() controller.QController { return &Controller{host: h} }
 
-// Request records the callback before publishing desired state. The callback
-// is immutable for an ID, even if a controller retries with a fresh closure.
-func (h *Host) Request(ctx context.Context, r controller.QRuntime, id string, spec DesiredState, launch Launch) error {
-	if r == nil {
-		return errors.New("process desired-state writer is not configured")
-	}
-	spec.Domain = h.domain
-	return h.register(ctx, r, id, spec, launch, func() error {
-		return writeResource(ctx, r, h.namespace, id, spec)
-	})
-}
-
-// Native protocol/setup workers publish their intent through the host boundary.
-// They wait for the same controller as callers which publish from reconciliation.
+// requestNative records the immutable launch callback before publishing intent.
 func (h *Host) requestNative(ctx context.Context, id string, spec DesiredState, launch Launch) error {
-	spec.Domain = h.domain
-	return h.register(ctx, h.state, id, spec, launch, func() error {
-		return publishResource(ctx, h.state, h.namespace, id, spec)
-	})
-}
-
-func (h *Host) register(ctx context.Context, reader controller.Reader, id string, spec DesiredState, launch Launch, publish func() error) error {
 	if h == nil {
 		return errors.New("process host is not configured")
 	}
+	spec.Domain = h.domain
 	if id == "" {
 		return errors.New("process ID is required")
 	}
@@ -168,7 +149,7 @@ func (h *Host) register(ctx context.Context, reader controller.Reader, id string
 		return fmt.Errorf("process %q desired state is immutable", id)
 	}
 
-	current, found, err := readResource[DesiredState](ctx, reader, h.namespace, id)
+	current, found, err := readResource[DesiredState](ctx, h.state, h.namespace, id)
 	if err != nil {
 		if newEntry {
 			delete(h.entries, id)
@@ -190,7 +171,7 @@ func (h *Host) register(ctx context.Context, reader controller.Reader, id string
 		return fmt.Errorf("process %q desired state was already destroyed", id)
 	}
 
-	if err := publish(); err != nil {
+	if err := publishResource(ctx, h.state, h.namespace, id, spec); err != nil {
 		delete(h.entries, id)
 		return err
 	}
