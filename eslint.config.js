@@ -104,7 +104,8 @@ export default [
       "util/testing/frontend_visual/frozen-clock.js",
     ],
     languageOptions: {
-      parserOptions: { ecmaVersion: "latest", sourceType: "script" },
+      sourceType: "script",
+      parserOptions: { ecmaVersion: "latest" },
       globals: browserGlobals,
     },
   },
