@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
 from finance.plaid.spend.portfolio_models import PortfolioView, SourceValuation
@@ -164,8 +164,8 @@ def window(days: int, *, history: list[SustainabilityHistoryPoint] | None = None
         return result if history is None else with_history(result, history)
     mandatory, flexible, provisional = (200_000, 100_000, 10_000) if days == 30 else (3_000_000, 2_000_000, 300_000)
     total = mandatory + flexible + provisional
-    annual = int((Decimal(total) * Decimal("365.2425") / days).quantize(Decimal(1)))
-    funding = int((Decimal(annual) / Decimal("0.88")).quantize(Decimal(1)))
+    annual = int((Decimal(total) * Decimal("365.2425") / days).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+    funding = int((Decimal(annual) / Decimal("0.88")).quantize(Decimal(1), rounding=ROUND_HALF_UP))
     dates = (
         ("2026-10-10", "2026-10-11", "2026-10-12", "2026-10-13", "2026-10-14")
         if days == 30
