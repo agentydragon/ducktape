@@ -158,9 +158,10 @@ that checkpoint, including after restart. An uncommitted outcome cannot publish 
 a committed outcome needs no second-store repair. Dispatch markers remain durable on rollback, so
 an uncertain native effect is not retried to reconcile configuration.
 
-- Runtime holds `<state_dir>/.agentplane-environment-runtime-owner` throughout the environment
-  lifetime, including Host native cleanup, worker joins and journal close. Native Pod and subprocess
-  harnesses inherit this lock. Runtime alone owns the `EnvironmentSeals` COSI resource; Host never
+- Runtime holds the exclusive lock on `<state_dir>/runtime-resources.db` throughout the environment
+  lifetime, including Host native cleanup, worker joins and journal close. Pod and subprocess native
+  harnesses also inherit `<state_dir>/.agentplane-environment-runtime-owner`. Runtime alone owns the
+  `EnvironmentSeals` COSI resource; Host never
   clears or adopts that resource. It is a hard cutover from `<state_dir>/sessions/sealed`: stop
   pre-cutover workloads before new binaries reuse their state volumes. Runtime releases the
   environment lock only after its child domains are fenced. Durable Session IDs and paths do not move.

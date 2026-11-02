@@ -35,7 +35,8 @@ fences. See [supervision](../supervision/docs/supervision.md).
 
 | State                                        | Owner and storage                                                                    |
 | -------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Environment owner lock                       | Runtime; `<state_dir>/.agentplane-environment-runtime-owner`                         |
+| Environment ownership                        | Runtime; exclusive lock on `<state_dir>/runtime-resources.db`                        |
+| Pod/subprocess child fence                   | Runtime; `<state_dir>/.agentplane-environment-runtime-owner`                         |
 | Incarnation seal                             | Runtime; `EnvironmentSeals` in `runtime-resources.db`                                |
 | Bootstrap selection and events               | Runtime; `BootstrapSelections` and `BootstrapEvents` in `runtime-resources.db`       |
 | Session records and History acknowledgements | Runtime retained store; `SessionRecords` and `IngressAcks` in `runtime-resources.db` |

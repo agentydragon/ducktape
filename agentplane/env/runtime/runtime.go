@@ -191,34 +191,51 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	if config.CodexExecServer != nil && (config.CodexBinary == "" || config.HarnessEnvironment == nil) {
 		return nil, errors.New("execution service requires Codex binary and resolved harness environment")
 	}
-	owner, err := openEnvironmentOwner(config.StateDir)
-	if err != nil {
+	if err := ensureDirectory(config.StateDir); err != nil {
 		return nil, err
+	}
+	// Acquire the backing store before preparing any native supervision. The
+	// BoltDB lock excludes another Runtime for the lifetime of this state.
+	lifecycleState := injectedState
+	var lifecycleStore io.Closer
+	var err error
+	if lifecycleState == nil {
+		lifecycleState, lifecycleStore, err = cosistate.Open(config.StateDir, lifecycle.Namespace, bootstrap.SelectionRegistration(), bootstrap.EventRegistration(), retained.SessionRecordRegistration(), retained.IngressAckRegistration(), cosistate.EnvironmentSealRegistration())
+		if err != nil {
+			return nil, fmt.Errorf("open Runtime COSI state: %w", err)
+		}
+	}
+	// The Pod and subprocess backends also pass a fence to native children.
+	// Systemd has its own process-domain fence and needs no extra owner file.
+	var owner *environmentOwner
+	var ownerFile *os.File
+	if config.Supervision != "systemd" {
+		owner, err = openEnvironmentOwner(config.StateDir)
+		if err != nil {
+			if lifecycleStore != nil {
+				err = errors.Join(err, lifecycleStore.Close())
+			}
+			return nil, err
+		}
+		ownerFile = owner.file
 	}
 	supervisor := (*supervision.Supervisor)(nil)
 	if deps.prepareSupervisor != nil {
-		supervisor, err = deps.prepareSupervisor(config, owner.file)
+		supervisor, err = deps.prepareSupervisor(config, ownerFile)
 	} else if config.Supervision == "pid1" {
-		supervisor, err = supervision.NewPID1Supervisor(owner.file)
+		supervisor, err = supervision.NewPID1Supervisor(ownerFile)
 	} else if config.Supervision == "subprocess" {
-		supervisor = supervision.NewSubprocessSupervisor(owner.file)
+		supervisor = supervision.NewSubprocessSupervisor(ownerFile)
 	} else {
 		supervisor, err = config.VMProcessLauncher.PrepareForOwner(config.StateDir, config.Launch.Sandbox.UID, supervision.SystemdOwner{
 			Unit: RuntimeUnitName, LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: RuntimeScopeID,
 		})
 	}
 	if err != nil {
-		_ = owner.Close()
-		return nil, err
-	}
-	lifecycleState := injectedState
-	var lifecycleStore io.Closer
-	if lifecycleState == nil {
-		lifecycleState, lifecycleStore, err = cosistate.Open(config.StateDir, lifecycle.Namespace, bootstrap.SelectionRegistration(), bootstrap.EventRegistration(), retained.SessionRecordRegistration(), retained.IngressAckRegistration(), cosistate.EnvironmentSealRegistration())
-		if err != nil {
-			_ = owner.Close()
-			return nil, err
+		if lifecycleStore != nil {
+			err = errors.Join(err, lifecycleStore.Close())
 		}
+		return nil, errors.Join(err, owner.Close())
 	}
 	environmentState, err := NewEnvironmentState(lifecycleState)
 	if err != nil {

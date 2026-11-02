@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -74,7 +75,9 @@ func Open(stateDir string, namespace resource.Namespace, registered ...Registrat
 		selectedTypes[registration.Type] = registration
 	}
 	backing, err := bolt.NewBackingStore(func() (*bbolt.DB, error) {
-		return bbolt.Open(filepath.Join(stateDir, "runtime-resources.db"), 0o600, nil)
+		// Fail promptly if another Runtime owns this store rather than blocking
+		// startup indefinitely. bbolt takes an exclusive lock for its lifetime.
+		return bbolt.Open(filepath.Join(stateDir, "runtime-resources.db"), 0o600, &bbolt.Options{Timeout: time.Millisecond})
 	}, store.ProtobufMarshaler{})
 	if err != nil {
 		return nil, nil, err
