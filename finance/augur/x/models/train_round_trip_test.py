@@ -86,7 +86,9 @@ def test_train_state_space_then_load_and_sample(model_label: str, tmp_path: Path
     assert out_manifest.exists()
     assert out_blob.exists()
     artifact = json.loads(out_blob.read_text(encoding="utf-8"))
-    assert artifact["schema_version"] == 3
+    assert artifact["schema_version"] == 4
+    assert "source_manifest" not in artifact
+    assert "prior_manifest" not in artifact
     assert "filtered_log_state_mean" not in artifact
     assert "filtered_log_state_cov" not in artifact
 
@@ -109,7 +111,6 @@ def test_train_state_space_then_load_and_sample(model_label: str, tmp_path: Path
     )
 
     assert str(sampled.provenance["model_version_id"]).startswith("model_version:")
-    assert sampled.provenance["source_manifest"]
     assert sampled.levels.series_keys() >= set(required_level_series)
 
 
@@ -128,8 +129,6 @@ def test_state_space_training_uses_dated_one_month_returns_across_a_cpi_gap(
     train_main(["--model", "state_space", "--out-provider-config", str(out_manifest), "--out-blob", str(out_blob)])
 
     artifact = json.loads(out_blob.read_text(encoding="utf-8"))
-    observed_months = artifact["source_manifest"]["monthly_return_months"]["observed"]
-    assert observed_months == list(evidence.monthly_return_months)
     inflation_index = evidence.series_names.index(InflationKey())
     expected_mu = evidence.monthly_log_returns[:, inflation_index].mean()
     assert artifact["monthly_log_return_mu"][InflationKey().wire_id] == pytest.approx(expected_mu)
@@ -141,7 +140,7 @@ def test_gapped_evidence_trains_and_scores_vecm_from_real_dated_levels(
     cpi_path = synthetic_evidence_dir / sources.FRED_CPI.output_filename
     lines = cpi_path.read_text().splitlines()
     cpi_path.write_text("\n".join(line for line in lines if not line.startswith("2025-10-")) + "\n")
-    historical, evidence = load_evidence_segments()
+    historical, _ = load_evidence_segments()
     assert historical.gaps[0].missing_months == ("2025-10",)
 
     transitions = historical.transition_pairs
@@ -171,10 +170,6 @@ def test_gapped_evidence_trains_and_scores_vecm_from_real_dated_levels(
     }
     assert parsed.latest_observations["security:SPY"].units == ObservationUnits.USD_PER_UNIT
     assert parsed.latest_observations["security:SPY"].source_id == f"public:{sources.YAHOO_SPY.provenance_label}"
-    # FRED's SP500 price index remains auxiliary; it is not substituted for SPY adjusted close.
-    assert evidence.metadata.auxiliary_observations["sp500_price"].source_id == (
-        f"public:{sources.FRED_SP500.provenance_label}"
-    )
 
 
 def test_state_space_fit_rejects_history_from_different_evidence(synthetic_evidence_dir: Path) -> None:
