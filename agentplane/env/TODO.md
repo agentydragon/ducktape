@@ -53,21 +53,6 @@ COSI resource snapshots.
   manager-wide mutex. If significant, narrow subscriptions or locking without losing the separate
   inspection-settlement signal needed by the drain barrier.
 
-## Persist the selected bootstrap script through COSI
-
-As a focused selective-persistence experiment, replace `initialization/request.json` with a durable
-`BootstrapSelections` resource containing the exact selected script bytes (at most 64 KiB), not
-only their digest. Compare subsequent selections byte for byte and execute the durably selected
-bytes. Keep `initialization/events.jsonl` as the authority for bootstrap output and terminal outcome;
-keep transient process and worker observations in memory.
-
-Persist the selection before launching. A restored selection with no terminal event is interrupted,
-even if the process may not have started; never replay an uncertain bootstrap. Preserve terminal
-outcome recovery and refusal of a different script. Do not persist the current `BootstrapInputs`
-admission flag and replay it as-is. Test crashes around selection, launch and terminal recording,
-including storage/publication failures. No existing Sandboxes need migration for this cutover;
-define rollback behavior for Sandboxes created after it so older code cannot rerun their bootstrap.
-
 ## Connect central Codex to environment execution in Pods and VMs
 
 Environment Runtime now manages the standalone Execution Service in Pods and VMs, with typed process

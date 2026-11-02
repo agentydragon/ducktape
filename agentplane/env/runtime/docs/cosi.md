@@ -86,13 +86,13 @@ its completion channel; the published transition or Close status is the observab
 a durable work queue. A blocking Host binding check stays in a worker so Close can preempt a
 transition. An uncertain effect retains ownership and is not automatically replayed.
 
-| Controller                         | Watched inputs                                                                                           | Controller output                                                       | Other relevant work                                                                                                      |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `environment-runtime-close`        | `EnvironmentRuntimeDesiredStates`, `EnvironmentRuntimeTransitionRequests` (weak)                         | `EnvironmentRuntimeCloses`, `EnvironmentRuntimeTransitions` (exclusive) | Close and adopt/quiesce are coordinated by this one controller; workers publish completion by waking its loop.           |
-| `environment-host-report-observer` | `HostReports`, `HostIntentStatuses` (weak)                                                               | None                                                                    | Wakes Runtime waiters and starts the Execution fence for an exact applied report.                                        |
-| `bootstrap-lifecycle`              | `BootstrapInputs` (primary); `BootstrapRuntimes`, `BootstrapOperationResults` (mapped)                   | `BootstrapRuntimes` (exclusive)                                         | Host owns admitted one-off work and publishes operation completion. Runtime admission checks the environment generation. |
-| `process-lifecycle`                | `ProcessDesiredStates` (primary), `ProcessInputs` (mapped)                                               | `ProcessStatuses` (exclusive)                                           | Runtime host owns launch callbacks, live handles, observations and workers.                                              |
-| `embedded-execution-lifecycle`     | `EmbeddedExecutionInputs` (primary), `EmbeddedExecutionRuntimes` (mapped), both in `environment-runtime` | `EmbeddedExecutionRuntimes` (exclusive)                                 | Runtime host publishes typed completion facts; the controller retains an unfenced owner on failure.                      |
+| Controller                         | Watched inputs                                                                                           | Controller output                                                       | Other relevant work                                                                                                           |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `environment-runtime-close`        | `EnvironmentRuntimeDesiredStates`, `EnvironmentRuntimeTransitionRequests` (weak)                         | `EnvironmentRuntimeCloses`, `EnvironmentRuntimeTransitions` (exclusive) | Close and adopt/quiesce are coordinated by this one controller; workers publish completion by waking its loop.                |
+| `environment-host-report-observer` | `HostReports`, `HostIntentStatuses` (weak)                                                               | None                                                                    | Wakes Runtime waiters and starts the Execution fence for an exact applied report.                                             |
+| `bootstrap-lifecycle`              | `BootstrapInputs` (primary); `BootstrapRuntimes`, `BootstrapOperationResults` (mapped)                   | `BootstrapRuntimes` (exclusive)                                         | Runtime owns admitted bootstrap work and publishes operation completion. Runtime admission checks the environment generation. |
+| `process-lifecycle`                | `ProcessDesiredStates` (primary), `ProcessInputs` (mapped)                                               | `ProcessStatuses` (exclusive)                                           | Runtime host owns launch callbacks, live handles, observations and workers.                                                   |
+| `embedded-execution-lifecycle`     | `EmbeddedExecutionInputs` (primary), `EmbeddedExecutionRuntimes` (mapped), both in `environment-runtime` | `EmbeddedExecutionRuntimes` (exclusive)                                 | Runtime host publishes typed completion facts; the controller retains an unfenced owner on failure.                           |
 
 ## Harness Host
 
@@ -195,7 +195,8 @@ full intent. Runtime accepts a report only after that exact intent is applied, s
 Execution fence cannot validate an older report.
 
 `EnvironmentRuntimeDesiredStates`, `HostIntents`, statuses, reports and operation results are
-in-memory coordination state. The incarnation seal, bootstrap request and log, Session records,
+in-memory coordination state. `BootstrapSelections` alone has a COSI backing store; `BootstrapInputs`
+is live-only. The incarnation seal, bootstrap event log, Session records,
 journals and History acknowledgements have durable owners. Owner locks have process lifetimes even
 though their lock files remain on disk; see [lifecycle ownership](lifecycle.md#durable-owners). A
 process exit observation alone does not prove that its native process domain was fenced.
