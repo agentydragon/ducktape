@@ -6208,6 +6208,14 @@ data:
       target: history-service.agentplane-staging.svc.cluster.local:8080
       token_file: /var/run/secrets/actions/history
       request_timeout_s: 15
+    session_delegation_dispatcher:
+      target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
+      token_file: /var/run/secrets/actions/dispatcher
+      request_timeout_s: 40
+    session_delegation_history:
+      target: history-service.agentplane-staging.svc.cluster.local:8080
+      token_file: /var/run/secrets/actions/history
+      request_timeout_s: 40
     action_groups:
       github:
         title: GitHub MCP
@@ -6691,6 +6699,29 @@ data:
           - read_turns
           - submit_input
           - wait_for_turn
+      environments:
+        title: Environments
+        description: Find and refresh existing environments that the authenticated caller may use for Sessions.
+        executor:
+          kind: session_delegation
+          description: Forwards the authenticated caller's ServiceAccount identity to same-principal Session APIs.
+        direct_tools:
+          - get
+          - list
+      sessions:
+        title: Sessions
+        description: Open and control Sessions in an existing same-principal environment. Opening does not start a turn; submit input separately.
+        executor:
+          kind: session_delegation
+          description: Forwards the authenticated caller's ServiceAccount identity to same-principal Session APIs.
+        direct_tools:
+          - cancel_input
+          - get
+          - interrupt_turn
+          - observe_input
+          - open
+          - read_turns
+          - submit_input
 immutable: false
 ---
 apiVersion: v1

@@ -19,7 +19,7 @@ remain useful but do not provide independently addressable Agentplane Sessions.
 | Priority  | Outcome                                                                                                               | Work to select                                                                                                                                                                                                     |
 | --------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | Authorize explicit resume after `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`; prioritize concrete reliability regressions                                                                                              |
-| P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE_DESIGN` then `SCHEDULED_AGENT_WAKE`, finish delegation usability and staging exposure, then the `DAILY_CI_AGENT` product milestone                                                           |
+| P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE_DESIGN` then `SCHEDULED_AGENT_WAKE`, enable the reviewed delegation tools, then the `DAILY_CI_AGENT` product milestone; evaluate usability through normal use                                |
 | Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                                                          |
 | Next      | Measure a production fresh VM start and provide a usable Bazel client inside a VM                                     | `VM_STARTUP_LATENCY`, `LOCAL_BAZEL`; select an image or layering change only if production measurements show it addresses startup or needed resource headroom                                                      |
 | Later     | Launching workers with different privileges, broader delegation and archive-read policy                               | `MULTIAGENT_MODEL`, `AGENT_LAUNCH_POLICY_DESIGN`, `AGENT_SANDBOX_LAUNCH`, broader create grants and held history-read work                                                                                         |
@@ -155,14 +155,17 @@ are in the [incident record](../debug/2026_11_01_native_command_output_loss.md).
 [delegation plan](session_delegation_workflows.md) records implemented tools and scripted external
 MCP/parent CLI acceptance. The [managed-guidance rollout record](../central_sampler/docs/rollout_acceptance.md#managed-platform-guidance-rollout-2026-11-02-utc)
 discharges that deployment hold. Natural-agent usability and staging tool exposure remain open.
+**Operator decision, 2026-11-02 UTC:** merge the staging configuration after automated checks;
+the operator may test delegation with an ordinary prompt later. That usability follow-up is not
+a merge or rollout gate, and no model exercise is dispatched.
 Focused regression-test additions and Bazel runs remain authorized; broad disruption exercises
 remain deferred.
 
-| Lane             | Next reviewable outcome                                                                                                      | Prerequisite / stopping point                                                                        |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| P0 policy review | `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`: [resume/wake proposal #13546](https://github.com/agentydragon/ducktape/pull/13546) | Stakeholder selection precedes `EXEC_SUSPENDED_RESUME`                                               |
-| P1 delegation    | `THREAD_CREATE_AUTHORIZATION`: natural-agent usability, then `SESSION_DELEGATION_ACTIVATION`                                 | Scripted workflows landed; align the staging catalogue and complete the remaining usability capstone |
-| P1 scheduling    | `SCHEDULED_AGENT_WAKE_DESIGN`: [durable-wake proposal #13552](https://github.com/agentydragon/ducktape/pull/13552)           | Delivery/overlap/authority review precedes runtime implementation                                    |
+| Lane             | Next reviewable outcome                                                                                                      | Prerequisite / stopping point                                                   |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| P0 policy review | `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`: [resume/wake proposal #13546](https://github.com/agentydragon/ducktape/pull/13546) | Stakeholder selection precedes `EXEC_SUSPENDED_RESUME`                          |
+| P1 delegation    | `SESSION_DELEGATION_ACTIVATION`: merge and verify staging tool exposure                                                      | Automated checks; the operator's later usability check does not gate activation |
+| P1 scheduling    | `SCHEDULED_AGENT_WAKE_DESIGN`: [durable-wake proposal #13552](https://github.com/agentydragon/ducktape/pull/13552)           | Delivery/overlap/authority review precedes runtime implementation               |
 
 After lifecycle policy is selected, explicit resume takes the next P0 implementation slot.
 Scheduled wake and usable delegation feed the daily CI capstone. Small
@@ -189,8 +192,8 @@ flowchart LR
         SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN --> EXEC_SUSPENDED_RESUME[Explicit authorized resume]
     end
     subgraph PRIORITY_ONE[P1: useful daily-agent workflow]
-        THREAD_CREATE_AUTHORIZATION[Remaining: natural-agent delegation usability]
-        THREAD_CREATE_AUTHORIZATION --> SESSION_DELEGATION_ACTIVATION[Held: staging tool exposure]
+        THREAD_CREATE_AUTHORIZATION[Operator follow-up: delegation usability]
+        SESSION_DELEGATION_ACTIVATION[Approved: staging tool exposure]
         SESSION_DELEGATION_ACTIVATION --> DAILY_CI_AGENT[Daily CI product milestone]
         SCHEDULED_AGENT_WAKE_DESIGN[Review durable scheduled wake] --> SCHEDULED_AGENT_WAKE
         SCHEDULED_AGENT_WAKE[Durable scheduled wake] --> DAILY_CI_AGENT
@@ -438,19 +441,18 @@ flowchart TD
     PLATFORM_GUIDANCE_OWNERSHIP_DESIGN[Later decision: platform-guidance ownership and composition]
     PLATFORM_GUIDANCE_SINGLE_OWNER[Later refactor: one platform-guidance owner]
     PLATFORM_GUIDANCE_OWNERSHIP_DESIGN --> PLATFORM_GUIDANCE_SINGLE_OWNER
-    SESSION_DELEGATION_ACTIVATION[Held draft: expose staging delegation tools]
+    SESSION_DELEGATION_ACTIVATION[Approved: expose staging delegation tools]
     APP_ENVIRONMENT_DISCOVERY[Later: app inventory through backend Discovery]
     SESSION_TOOL_SURFACE_CONVERGENCE_DESIGN[Later decision: compare Agentplane tool surfaces]
     ENVIRONMENT_SHARED_ACCOUNT[Deferred: shared-SA environment identity]
     ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN[Later decision: catalogue ownership and location]
     ENVIRONMENT_MANAGEMENT[Deferred: environment catalogue and creation]
-    THREAD_CREATE_AUTHORIZATION[Capstone: usable caller-privilege delegation]
+    THREAD_CREATE_AUTHORIZATION[Operator follow-up: usable caller-privilege delegation]
     AGENT_LAUNCH_POLICY_DESIGN[Decision: constrained Sandbox launch and delegation]
     AGENT_SANDBOX_LAUNCH[Blocked: enforce agent Sandbox-launch policy]
     MULTIAGENT_MODEL --> AGENT_LAUNCH_POLICY_DESIGN
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
     HISTORY_SANDBOX_RECORD --> THREAD_READ_POLICY
-    THREAD_CREATE_AUTHORIZATION -->|natural-agent usability| SESSION_DELEGATION_ACTIVATION
     ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN --> ENVIRONMENT_MANAGEMENT
     ENVIRONMENT_SHARED_ACCOUNT --> ENVIRONMENT_MANAGEMENT
     SCHEDULED_AGENT_WAKE[Selected P1: durable scheduled wake]
@@ -459,7 +461,6 @@ flowchart TD
     SESSION_DELEGATION_ACTIVATION --> DAILY_CI_AGENT
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
     ORCHESTRATION_V1_BACKEND_GRANTS[Blocked: orchestration_v1 operations on backend grants]
-    THREAD_CREATE_AUTHORIZATION --> ORCHESTRATION_V1_BACKEND_GRANTS
     THREAD_READ_POLICY --> ORCHESTRATION_V1_BACKEND_GRANTS
     AGENT_SANDBOX_LAUNCH --> ORCHESTRATION_V1_BACKEND_GRANTS
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement]
@@ -553,8 +554,8 @@ never a backend dependency; `orchestration_v1` is not a prerequisite. Keep the s
 and authority enforcement across all surfaces. No zero-environment child or different-privilege
 worker is claimed by this slice.
 
-The remaining capstone edge gates general staging exposure on natural-agent usability; an isolated
-opt-in fixture can establish it first. Catalogue alignment can proceed independently. Fresh
+The operator will evaluate natural-agent usability through normal use after activation; it is not
+a separate release gate. Configuration checks remain required. Fresh
 provisioning and broader authority keep their own decision gates. File conflicts alone do not
 serialize independent PRs.
 
@@ -594,14 +595,14 @@ require a new service and does not block current reliability or delegation work.
 
 ### `SESSION_DELEGATION_ACTIVATION` — enable the reviewed staging tool surface
 
-**Held draft, [#13514](https://github.com/agentydragon/ducktape/pull/13514).** The backend
+**Approved to merge by the operator, 2026-11-02 UTC; [#13514](https://github.com/agentydragon/ducktape/pull/13514).** The backend
 [Session tools](../action_service/session_delegation/README.md),
 [Discovery](../sandboxes/discovery/README.md) and [CLI reads](../docs/agent_cli.md) are implemented.
 Scripted external MCP and parent CLI acceptance, the optional opening-configuration repair and
-the managed guidance rollout are complete. Finish the natural-agent usability capstone, then
-enable the reviewed surface. The current draft advertises seven tools; align its explicit
-allowlist with the nine-tool contract, including retained reads, and validate the rendered
-catalogue. Preserve `basic` auto-approval plus effective-caller checks; no
+the managed guidance rollout are complete. Enable the reviewed surface after automated checks;
+the operator's later prompt-based usability check does not gate activation. The PR configures the nine-tool contract, including
+`sessions__get` and `sessions__read_turns`; validate its rendered catalogue and exact-head CI.
+Preserve `basic` auto-approval plus effective-caller checks; no
 new provisioning, authority or wake permission is implied. Activation and rollback remain separate
 from backend-code merges.
 
@@ -636,7 +637,7 @@ the current receiver or tool work.
 
 ### `THREAD_CREATE_AUTHORIZATION` — caller-privilege delegation capstone
 
-**Selected P1 capstone; remaining outcome is natural-agent usability.** Backend authorization,
+**Operator normal-use follow-up; no merge or rollout gate and no worker dispatched.** Backend authorization,
 Discovery, guidance, Action/MCP tools and retained-result reads are implemented. Scripted
 external OAuth/MCP and parent-in-environment CLI workflows landed in
 [#13536](https://github.com/agentydragon/ducktape/pull/13536) and
@@ -647,8 +648,8 @@ as unaided agent use.
 Give an agent an ordinary delegation assignment and verify it discovers the target and tool
 schemas, prepares its directory, opens a child, submits separate input, reads a correlated result
 and uses follow-up/control operations when needed. Cover existing-environment and external-MCP
-entry points; retain actionable failures and lost-reply recovery. An isolated opt-in fixture can
-establish usability before general staging exposure. Reuse this evidence for `DAILY_CI_AGENT`.
+entry points; retain actionable failures and lost-reply recovery. The operator may run a prompt
+later; reuse that feedback and evidence for `DAILY_CI_AGENT`.
 Preserve implemented foreign-principal denial, revocation and no-privileged-fallback coverage;
 broader archive and different-SA delegation are not prerequisites. Fresh provisioning remains
 deferred until its catalogue and identity/approval prerequisites; it does not hold reuse.

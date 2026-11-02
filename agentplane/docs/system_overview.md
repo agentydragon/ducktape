@@ -15,6 +15,7 @@ ingress; selected Anthropic API models use a dedicated mounted key and a host-pi
 flowchart LR
     app[Integration app]
     actions[Action Service]
+    history[History Service]
     subgraph unified[Runner Gateway]
         dispatcher[Dispatcher API and durable delivery]
         discovery[EnvironmentDiscovery API]
@@ -32,6 +33,8 @@ flowchart LR
     app -->|Dispatch watch for the browser: gRPC| dispatcher
     app -->|EnvironmentDiscovery list/get: gRPC| discovery
     actions -->|caller-delegated EnvironmentDiscovery list/get: gRPC| discovery
+    actions -->|Session commands: broker or delegated caller, gRPC| dispatcher
+    actions -->|Session reads: broker or delegated caller, gRPC| history
     app -->|per-Sandbox Runner Proxy: live inventory + diagnostics| gateway
     dispatcher -->|wrapped Codex and Claude opens + commands| gateway
     dispatcher -->|central opens + commands: Sampler gRPC| central
@@ -53,6 +56,9 @@ The Action Service uses the same Dispatcher audience and a pod-bound Actions tok
 opted-in discovery methods. The receiver applies the caller identity from the shared delegation
 envelope, then performs the same live Sandbox and execution-ServiceAccount UID checks as a direct
 caller. This read path does not grant Session writes, wake, or provisioning authority.
+The opt-in Session tools also forward the effective caller to Dispatcher commands and retained
+History reads. Those receivers enforce their own same-principal checks; the existing
+`orchestration_v1` broker path retains its separate authority.
 
 ## Central code-mode sampling (opt in)
 
