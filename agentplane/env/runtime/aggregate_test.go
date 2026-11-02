@@ -668,6 +668,49 @@ func TestEmbeddedHostLifecycleLossStillFencesExecution(t *testing.T) {
 	}
 }
 
+type unprovedHostClose struct {
+	hostLifetime
+	stops atomic.Int32
+}
+
+func (h *unprovedHostClose) Stop(ctx context.Context) error {
+	h.stops.Add(1)
+	return h.hostLifetime.Stop(ctx)
+}
+
+func (*unprovedHostClose) WaitClosed(context.Context) error {
+	return errors.New("injected unproved Host native cleanup")
+}
+
+func TestRuntimeCloseAfterHostDisconnectRetainsOwnerWhenNativeCleanupUnproved(t *testing.T) {
+	proxy := modelConfigServer(t)
+	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
+	config.expectCloseError = true
+	r := newLifecycleRuntime(t, config)
+	host := &unprovedHostClose{hostLifetime: r.hostLifetime}
+	r.mu.Lock()
+	r.hostLifetime = host
+	link := r.host
+	r.mu.Unlock()
+	r.disconnectHost(link, context.Canceled)
+
+	for range 2 {
+		ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+		err := r.Close(ctx)
+		cancel()
+		if err == nil || !strings.Contains(err.Error(), "injected unproved Host native cleanup") {
+			t.Fatalf("Close = %v, want native cleanup failure", err)
+		}
+	}
+	if got := host.stops.Load(); got != 1 {
+		t.Fatalf("Host stop calls = %d, want one", got)
+	}
+	if owner, err := openEnvironmentOwner(config.StateDir); err == nil {
+		_ = owner.Close()
+		t.Fatal("unproved native cleanup released environment owner")
+	}
+}
+
 func TestRepeatedQuiesceKeepsCurrentLifecycleGeneration(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
