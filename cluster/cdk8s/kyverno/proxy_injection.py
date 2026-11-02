@@ -237,13 +237,16 @@ def inject_haku_egress_proxy_chart(app: App) -> Chart:
     still bounded by Cilium's cluster-only egress rule. Both forms because NO_PROXY
     matching differs across curl, Go, Python, node and git.
 
-    In-cluster Forgejo (forgejo-http.forgejo) is deliberately NOT on the list: the
-    sandbox holds only the inert haku-forgejo-token-placeholder, and the fence is what
-    swaps it for the real credential at the Forgejo origins (haku/console config.yaml,
-    haku_forgejo_token). A bypass here sends git straight to Forgejo with the placeholder
-    and every clone fails "Credentials are incorrect or have expired". Gotcha: the `.svc`
-    entries still bypass forgejo-http.forgejo.svc.cluster.local, so anything that needs
-    the credential must use the short service name, as the retired Haku sandbox bootstrap did.
+    In-cluster Services, Forgejo included, are reached directly: the `.svc` and `.svc.cluster.local`
+    entries bypass the proxy for them. (This docstring used to explain keeping Forgejo off the list so the
+    fence could swap a placeholder for the real credential; this proxy has never had a credential-swapping
+    addon, so workloads that need Forgejo credentials mount them.)
+
+    The env is APPENDED to each container's own, and the last duplicate wins, so these values override any
+    HTTP_PROXY/HTTPS_PROXY/NO_PROXY/SSL_CERT_FILE a pod sets itself. A workload with its own egress path (a
+    sidecar, a different proxy) must therefore name it in code rather than in env; haku-ui does
+    (`ui/backend/agentplane.py`, `Egress`). Today the only workload here that needs this proxy is haku-anki,
+    for AnkiWeb sync; haku-jupyter and haku-ui make no use of it.
     """
     chart = Chart(app, "inject-haku-egress-proxy", disable_resource_name_hashes=True)
     _injection_policy(
