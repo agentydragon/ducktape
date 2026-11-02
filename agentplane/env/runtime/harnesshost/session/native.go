@@ -14,7 +14,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
 	harness "github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/journal"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -435,11 +434,6 @@ func (s *Session) receive(ctx context.Context, line []byte, adapter harness.Adap
 		// Native protocols may acquire fields independently of the runner. Preserve the
 		// original frame and report the translation failure; storage failures stop us.
 		var storageErr *journal.StorageError
-		var retainedErr *retained.StorageError
-		if errors.As(err, &retainedErr) {
-			// Keep the raw frame for recovery before stopping native receive.
-			return errors.Join(err, s.journal.CommitBatch(ctx))
-		}
 		if errors.Is(err, context.Canceled) || errors.As(err, &storageErr) {
 			return err
 		}

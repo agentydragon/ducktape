@@ -1,6 +1,7 @@
 package session
 
 import (
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/journal"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
@@ -49,7 +50,7 @@ func (s *Session) Observe() Observation {
 	checkpoint := s.journal.RecoveryState()
 	live := s.process != nil && s.process.Running()
 	result := Observation{
-		id: s.id, spec: retained.SessionSpec(s.record), cursor: checkpoint.ThroughCursor,
+		id: s.id, spec: s.sessionSpec(checkpoint), cursor: checkpoint.ThroughCursor,
 		activeTurn: checkpoint.ActiveTurnID, nativeActiveTurn: s.activeTurn != "", setup: s.setup, launch: s.launch,
 		nativeSession: copied(s.record.NativeSessionId), failure: copied(s.failure),
 		processID: s.processID, processState: s.processState, shared: s.codexAppServer != nil,
@@ -153,4 +154,16 @@ func (s *Session) notifyBlockers() {
 	if changed {
 		s.deps.changed()
 	}
+}
+
+// The reservation supplies initial configuration; only committed journal outcomes override it.
+func (s *Session) sessionSpec(checkpoint journal.RecoveryState) *sessionpb.SessionSpec {
+	spec := retained.ReservationSpec(s.record)
+	if checkpoint.Model != nil {
+		spec.Model = *checkpoint.Model
+	}
+	if checkpoint.ReasoningEffort != nil {
+		spec.ReasoningEffort = *checkpoint.ReasoningEffort
+	}
+	return spec
 }

@@ -1,16 +1,5 @@
 # TODO — Agentplane environment
 
-## Reconcile Session records with journal outcomes
-
-`Session.ModelChanged` and `ReasoningEffortChanged` commit the retained COSI record before their
-terminal event commits to the separate SQLite journal. A crash or rollback between those writes can
-leave the new configuration durable while the dispatched command has no terminal event. A fault
-injection after the COSI write reproduces that state; rollback can also discard the native response
-frame needed for recovery. The durable dispatch marker prevents blindly replaying the native effect.
-Define one recoverable authority for configuration and its journal
-outcome, and test both sides of the commit boundary. A shared journal transaction or an explicit
-reconciliation protocol may fit; simply reversing the writes moves the inconsistency window.
-
 ## Fence uncertain Session reservation writes
 
 `OpenSession` returns a retained `SessionRecords` write error without failing the Host. COSI writes

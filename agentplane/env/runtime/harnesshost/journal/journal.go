@@ -37,9 +37,11 @@ func (e *StorageError) Error() string { return "journal transaction failed: " + 
 func (e *StorageError) Unwrap() error { return e.Err }
 
 type RecoveryState struct {
-	ThroughCursor  uint64
-	HarnessRunning bool
-	ActiveTurnID   string
+	ThroughCursor   uint64
+	HarnessRunning  bool
+	ActiveTurnID    string
+	Model           *string
+	ReasoningEffort *string
 }
 
 type SealState struct {
@@ -142,8 +144,8 @@ func Open(ctx context.Context, path, sourceID string) (*Journal, error) {
 	)
 	err = conn.QueryRowContext(
 		ctx,
-		"SELECT source_id, through_cursor, harness_running, active_turn_id FROM checkpoint WHERE id = 1",
-	).Scan(&checkpointSource, &through, &state.HarnessRunning, &state.ActiveTurnID)
+		"SELECT source_id, through_cursor, harness_running, active_turn_id, model, reasoning_effort FROM checkpoint WHERE id = 1",
+	).Scan(&checkpointSource, &through, &state.HarnessRunning, &state.ActiveTurnID, &state.Model, &state.ReasoningEffort)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		if lastCursor.Valid {
@@ -230,7 +232,14 @@ func (j *Journal) RecoveryState() RecoveryState {
 	if state == nil {
 		return RecoveryState{}
 	}
-	return *state
+	copy := *state
+	if state.Model != nil {
+		copy.Model = proto.String(*state.Model)
+	}
+	if state.ReasoningEffort != nil {
+		copy.ReasoningEffort = proto.String(*state.ReasoningEffort)
+	}
+	return copy
 }
 
 func (j *Journal) LastCursor() uint64 {
@@ -412,6 +421,10 @@ func (j *Journal) publishAtomicsLocked() {
 func applyCheckpoint(state *RecoveryState, entry *eventlogpb.EventEntry) {
 	state.ThroughCursor = entry.GetCursor()
 	switch event := entry.GetEvent(); {
+	case event.GetModelChanged() != nil:
+		state.Model = proto.String(event.GetModelChanged().Model)
+	case event.GetReasoningEffortChanged() != nil:
+		state.ReasoningEffort = proto.String(event.GetReasoningEffortChanged().Effort)
 	case event.GetHarnessStarted() != nil:
 		state.HarnessRunning = true
 	case event.GetHarnessLost() != nil || event.GetHarnessExited() != nil:
@@ -605,10 +618,11 @@ func (j *Journal) appendEntry(ctx context.Context, batch *journalBatch, event *e
 	var checkpointSource, activeTurn string
 	var through int64
 	var harnessRunning bool
+	var model, effort *string
 	if err := j.conn.QueryRowContext(
 		ctx,
-		"SELECT source_id, through_cursor, harness_running, active_turn_id FROM checkpoint WHERE id = 1",
-	).Scan(&checkpointSource, &through, &harnessRunning, &activeTurn); err != nil {
+		"SELECT source_id, through_cursor, harness_running, active_turn_id, model, reasoning_effort FROM checkpoint WHERE id = 1",
+	).Scan(&checkpointSource, &through, &harnessRunning, &activeTurn, &model, &effort); err != nil {
 		return nil, storageError("read journal checkpoint", err)
 	}
 	if checkpointSource != j.sourceID || through != last {
@@ -622,6 +636,35 @@ func (j *Journal) appendEntry(ctx context.Context, batch *journalBatch, event *e
 	}
 	cursor := uint64(last + 1)
 	copyEvent := proto.Clone(event).(*eventpb.Event)
+	// Configuration and its terminal receipt share this writer transaction. Derive
+	// previous values here, including earlier changes in the same native batch.
+	var configurationCommand string
+	if change := copyEvent.GetModelChanged(); change != nil {
+		configurationCommand = change.CommandId
+		if model != nil {
+			change.PreviousModel = *model
+		}
+	}
+	if change := copyEvent.GetReasoningEffortChanged(); change != nil {
+		configurationCommand = change.CommandId
+		if effort != nil {
+			change.PreviousEffort = *effort
+		}
+	}
+	if copyEvent.GetModelChanged() != nil || copyEvent.GetReasoningEffortChanged() != nil {
+		command, err := j.getCommandLocked(ctx, configurationCommand)
+		if err != nil {
+			return nil, err
+		}
+		if command == nil {
+			return nil, fmt.Errorf("%w %q", ErrUnknownCommand, configurationCommand)
+		}
+		if command.TerminalCursor != nil {
+			return nil, nil
+		}
+		options.TerminalCommandIDs = []string{configurationCommand}
+	}
+
 	copyEvent.SourceSequences = append(copyEvent.SourceSequences[:0], options.Sources...)
 	copyEvent.At = timestamppb.New(time.Now().UTC())
 	entry := &eventlogpb.EventEntry{
@@ -636,12 +679,12 @@ func (j *Journal) appendEntry(ctx context.Context, batch *journalBatch, event *e
 	if _, err := j.conn.ExecContext(ctx, "INSERT INTO event_entry (cursor, payload) VALUES (?, ?)", cursor, payload); err != nil {
 		return nil, storageError("insert runner EventEntry", err)
 	}
-	nextState := RecoveryState{ThroughCursor: uint64(through), HarnessRunning: harnessRunning, ActiveTurnID: activeTurn}
+	nextState := RecoveryState{ThroughCursor: uint64(through), HarnessRunning: harnessRunning, ActiveTurnID: activeTurn, Model: model, ReasoningEffort: effort}
 	applyCheckpoint(&nextState, entry)
 	if _, err := j.conn.ExecContext(
 		ctx,
-		"UPDATE checkpoint SET through_cursor = ?, harness_running = ?, active_turn_id = ? WHERE id = 1",
-		nextState.ThroughCursor, nextState.HarnessRunning, nextState.ActiveTurnID,
+		"UPDATE checkpoint SET through_cursor = ?, harness_running = ?, active_turn_id = ?, model = ?, reasoning_effort = ? WHERE id = 1",
+		nextState.ThroughCursor, nextState.HarnessRunning, nextState.ActiveTurnID, nextState.Model, nextState.ReasoningEffort,
 	); err != nil {
 		return nil, storageError("update journal checkpoint", err)
 	}

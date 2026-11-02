@@ -97,8 +97,8 @@ func NewRecord(spec *sessionpb.SessionSpec, setupScript string, totalContextBudg
 		return nil, errors.New("total context budget must be positive")
 	}
 	record := &Record{
-		Harness: spec.GetHarness(), Cwd: spec.GetCwd(), Model: spec.GetModel(),
-		ReasoningEffort: spec.GetReasoningEffort(), Instructions: spec.GetInstructions(),
+		Harness: spec.GetHarness(), Cwd: spec.GetCwd(), InitialModel: spec.GetModel(),
+		InitialReasoningEffort: spec.GetReasoningEffort(), Instructions: spec.GetInstructions(),
 		SetupScript: []byte(setupScript), EventSourceId: uuid.NewString(),
 	}
 	if totalContextBudgetTokens != nil {
@@ -117,10 +117,10 @@ func MatchesSetupScript(record *Record, script string) bool {
 // HasSetupScript reports whether a setup source was retained.
 func HasSetupScript(record *Record) bool { return len(record.SetupScript) != 0 }
 
-func SessionSpec(record *Record) *sessionpb.SessionSpec {
+func ReservationSpec(record *Record) *sessionpb.SessionSpec {
 	return &sessionpb.SessionSpec{
-		Harness: record.Harness, Cwd: record.Cwd, Model: record.Model,
-		ReasoningEffort: record.ReasoningEffort, Instructions: record.Instructions,
+		Harness: record.Harness, Cwd: record.Cwd, Model: record.InitialModel,
+		ReasoningEffort: record.InitialReasoningEffort, Instructions: record.Instructions,
 	}
 }
 

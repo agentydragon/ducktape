@@ -55,3 +55,13 @@ the environment owner until Host native cleanup, worker joins and journal close 
 records remain in `<state_dir>/sessions`, journals keep their IDs/cursors, and native homes remain
 at their existing paths. Bootstrap waiters use Runtime's generation-bound bootstrap wait;
 cancellation ends a waiter, never the bootstrap effect.
+
+## Session configuration
+
+The COSI `SessionRecord` owns durable admission, the initial model and reasoning effort,
+setup source and native recovery identity. Confirmed configuration belongs to the Session journal:
+`ModelChanged` and `ReasoningEffortChanged`, their terminal command receipts and the effective
+configuration checkpoint commit in one SQLite transaction. Native adapters and Session observations
+read only the committed configuration; concurrent completions derive previous values in journal order.
+Restart recovers that checkpoint before Session publication. A dispatched command without a committed
+outcome remains uncertain and is never replayed merely to repair configuration.

@@ -562,7 +562,12 @@ func (a *codexAdapter) applyTurnStartResponse(ctx context.Context, frame jsonrpc
 		}
 	}
 	if !started && result.Turn.ID != a.host.Session().ActiveTurnID {
-		if err := a.emit(ctx, &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: result.Turn.ID, Model: a.host.Session().Model}}, sources); err != nil {
+		model := a.host.Session().Model
+		// Session snapshots expose committed configuration; this response may still be in its native batch.
+		if start.modelChange != nil {
+			model = start.modelChange.value
+		}
+		if err := a.emit(ctx, &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: result.Turn.ID, Model: model}}, sources); err != nil {
 			return err
 		}
 	}

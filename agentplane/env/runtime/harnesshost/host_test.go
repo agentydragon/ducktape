@@ -22,6 +22,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -81,6 +82,36 @@ func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestOpenSessionComparesConfirmedConfiguration(t *testing.T) {
+	proxy := modelConfigServer(t)
+	workspace := t.TempDir()
+	r := newLifecycleHost(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	request := openLifecycleSession("configuration", filepath.Join(workspace, "project"))
+	ctx := hostContext(r, t.Context())
+	if _, err := r.OpenSession(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	s := r.sessions.Get(request.SessionId)
+	command := &commandpb.Command{CommandId: "model", Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: "confirmed-model"}}}
+	if _, _, err := s.EventJournal().Admit(ctx, command, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ModelChanged(ctx, command.CommandId, "confirmed-model", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.OpenSession(ctx, request); status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("initial configuration accepted after confirmed change: %v", err)
+	}
+	request.Spec.Model = "confirmed-model"
+	reopened, err := r.OpenSession(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.Attached.Spec.Model != "confirmed-model" {
+		t.Fatalf("reopened configuration: %v", reopened)
+	}
+}
+
 func TestOpenSessionRetryUsesPersistedSetupAfterSealPublicationFailure(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
@@ -131,6 +162,13 @@ func TestOpenSessionRetryUsesPersistedSetupAfterSealPublicationFailure(t *testin
 	conflict.SetupScript = &wrongScript
 	if _, err := r.OpenSession(hostContext(r, context.Background()), conflict); status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("conflicting setup source error = %v, want AlreadyExists", err)
+	}
+
+	if r.sessions.Get(request.SessionId) != nil {
+		t.Fatal("rejected setup conflict loaded the retained Session")
+	}
+	if _, found, err := session.ReadReconcileSnapshot(r.ctx, r.lifecycle.state, request.SessionId); err != nil || found {
+		t.Fatalf("rejected setup conflict published a Session: found=%t, err=%v", found, err)
 	}
 
 	request.SetupScript = nil

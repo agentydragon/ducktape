@@ -151,6 +151,13 @@ harness's outcome. Tool names and argument shapes are the harness's own.
 
 ## Durability and restart
 
+The retained COSI record stores the admission-time model and reasoning effort. The journal checkpoint
+stores confirmed changes atomically with `ModelChanged` / `ReasoningEffortChanged` and their terminal
+command receipts. Session reads and reopen spec comparisons use the effective configuration from
+that checkpoint, including after restart. An uncommitted outcome cannot publish new configuration;
+a committed outcome needs no second-store repair. Dispatch markers remain durable on rollback, so
+an uncertain native effect is not retried to reconcile configuration.
+
 - Runtime holds `<state_dir>/.agentplane-environment-runtime-owner` throughout the environment
   lifetime, including Host native cleanup, worker joins and journal close. Native Pod and subprocess
   harnesses inherit this lock. Runtime alone owns the `EnvironmentSeals` COSI resource; Host never

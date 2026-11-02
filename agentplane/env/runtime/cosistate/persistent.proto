@@ -19,9 +19,10 @@ message BootstrapEventSpec {
 message SessionRecordSpec {
   .agentplane.proto.Harness harness = 1;
   string cwd = 2;
-  string model = 3;
+  // Configuration at admission. Confirmed changes belong to the Session journal.
+  string initial_model = 3;
   optional int64 total_context_budget_tokens = 4;
-  string reasoning_effort = 5;
+  string initial_reasoning_effort = 5;
   string instructions = 6;
   bytes setup_script = 7;
   string event_source_id = 8;
