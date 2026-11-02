@@ -20,9 +20,9 @@ The conventions a result depends on:
   `mean_block_months`: the first path month starts a block, and every later one continues its
   block with probability `1 - 1 / mean_block_months`. A mean of one month is the i.i.d.
   monthly bootstrap.
-- **Blocks wrap circularly**: past the record's last month a block continues at its second,
-  the first with growth into it, so where a month sits in the record does not change how
-  often it is drawn.
+- **Blocks wrap circularly on a contiguous record**: past the record's last month a block
+  continues at its second, the first with growth into it. A source gap forces a block restart
+  at the segment edge instead of continuing across the missing month.
 - **Rates are resampled as levels, the indices as growth.** A seam therefore moves every rate
   from one historical month's level to another's within a month, which the bond-fund
   construction prices as a rate move of that size; a rollout has about
@@ -43,7 +43,9 @@ the mean compares like with like.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date
 
 import numpy as np
 
@@ -55,6 +57,7 @@ from finance.augur.model.market_paths import MarketPaths
 from finance.augur.model.product_paths import construct_products, product_level_keys, validate_product_symbols
 from finance.augur.model.series import IssuerId, LevelSeriesKey
 from finance.augur.model.series_model import derive_stream_rollout_seeds
+from finance.evidence.loading import contiguous_month_segments
 
 
 @dataclass(frozen=True)
@@ -68,9 +71,9 @@ class StationaryBootstrapModel:
     label: str = "stationary_bootstrap"
 
     def __post_init__(self) -> None:
-        if len(self.history.months) < 2:
+        if not len(_transition_sources(self.history.months)):
             raise ValueError(
-                f"the record has {len(self.history.months)} months; resampling needs at least two, because a "
+                "the record has no consecutive month pair; resampling needs at least one, because a "
                 "resampled month carries the growth into it from the month before"
             )
         if not (math.isfinite(self.mean_block_months) and self.mean_block_months >= 1.0):
@@ -95,8 +98,11 @@ class StationaryBootstrapModel:
         of consecutive ones are the blocks.
         """
 
-        # Transition `t` runs from record month `t` to `t + 1`; a block steps through them in order.
-        transitions = len(self.history.months) - 1
+        # Each source index starts a real observed transition to the next calendar month. On a
+        # gapped record, reaching a segment edge forces a fresh block instead of wrapping into
+        # another segment.
+        transition_sources = _transition_sources(self.history.months)
+        transitions = len(transition_sources)
         draws = max(request.horizon_months, 1)
         starts = np.stack(
             [
@@ -111,10 +117,25 @@ class StationaryBootstrapModel:
             ]
         )
         breaks[:, 0] = True
-        step = np.arange(draws)
-        block_start = np.maximum.accumulate(np.where(breaks, step, 0), axis=1)
-        transition = (np.take_along_axis(starts, block_start, axis=1) + step - block_start) % transitions
-        return np.concatenate([transition[:, :1], transition[:, : request.horizon_months] + 1], axis=1)
+        if len(contiguous_month_segments(self.history.months)) == 1:
+            # Preserve the original seeded circular sampler exactly for an unbroken record.
+            steps = np.arange(draws)
+            block_start = np.maximum.accumulate(np.where(breaks, steps, 0), axis=1)
+            transition = (np.take_along_axis(starts, block_start, axis=1) + steps - block_start) % transitions
+            return np.concatenate([transition[:, :1], transition[:, : request.horizon_months] + 1], axis=1)
+
+        source_to_transition = {int(source): index for index, source in enumerate(transition_sources)}
+        transition = np.empty_like(starts)
+        for rollout in range(len(starts)):
+            for step in range(draws):
+                if step == 0 or breaks[rollout, step]:
+                    transition[rollout, step] = starts[rollout, step]
+                    continue
+                previous_source = transition_sources[transition[rollout, step - 1]] + 1
+                transition[rollout, step] = source_to_transition.get(previous_source, starts[rollout, step])
+        opening = transition_sources[transition[:, :1]]
+        subsequent = transition_sources[transition[:, : request.horizon_months]] + 1
+        return np.concatenate([opening, subsequent], axis=1)
 
     def sample_market(self, request: ExogenousSamplingRequest) -> MarketPaths:
         """Sample once for multiple constructions; configured bond choices do not affect these paths."""
@@ -125,8 +146,8 @@ class StationaryBootstrapModel:
             short_rate=record.short_rate[months],
             term_spread=record.term_spread[months],
             # The replay's CPI base, so a block reads exactly as its replay window.
-            cpi_level=100.0 * _compounded_growth(record.cpi_level, months),
-            equity_total_return_index=_compounded_growth(record.equity_level, months),
+            cpi_level=100.0 * _compounded_growth(record.cpi_level, months, record.months),
+            equity_total_return_index=_compounded_growth(record.equity_level, months, record.months),
             corporate_yields={
                 YieldCurve.CORPORATE_AAA: record.corporate_aaa_yield[months],
                 YieldCurve.CORPORATE_BAA: record.corporate_baa_yield[months],
@@ -140,15 +161,30 @@ class StationaryBootstrapModel:
                 "notes": (
                     "Rollouts recombine blocks of the record's own months, so the support is bounded by the "
                     "record: a rollout can string its worst episodes together but never exceed its worst month.",
-                    "Blocks wrap circularly, and at each block seam every rate moves from one historical "
-                    "month's level to another's within a month.",
+                    "Blocks wrap circularly on a contiguous record; a source gap forces a block restart. "
+                    "At each block seam every rate moves from one historical month's level to another's "
+                    "within a month.",
                 ),
             },
         )
 
 
-def _compounded_growth(levels: np.ndarray, months: np.ndarray) -> np.ndarray:
+def _compounded_growth(levels: np.ndarray, months: np.ndarray, record_months: Sequence[date]) -> np.ndarray:
     """One at the opening, then the record's growth into each later path month, compounded."""
 
-    growth = levels[months[:, 1:]] / levels[months[:, 1:] - 1]
+    current = months[:, 1:]
+    valid_sources = set(_transition_sources(record_months))
+    invalid = [int(source) for source in np.unique(current - 1) if int(source) not in valid_sources]
+    if invalid:
+        raise ValueError(f"sampled growth crosses a missing source month at row(s) {invalid}")
+    growth = levels[current] / levels[current - 1]
     return np.concatenate([np.ones((len(months), 1)), np.cumprod(growth, axis=1)], axis=1)
+
+
+def _transition_sources(record_months: Sequence[date]) -> np.ndarray:
+    """Source-row indexes whose next row is an observed consecutive calendar month."""
+
+    return np.asarray(
+        [index for start, end in contiguous_month_segments(record_months) for index in range(start, end - 1)],
+        dtype=np.intp,
+    )

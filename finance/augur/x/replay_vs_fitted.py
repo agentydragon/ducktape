@@ -98,7 +98,7 @@ def main() -> None:
         rollouts = len(window_starts)
         print(
             f"record: {len(replay.history.months)} months, {rollouts} overlapping {HORIZON_MONTHS // 12}y windows "
-            f"(~{replay.independent_window_estimate(HORIZON_MONTHS):.1f} independent)"
+            f"(~{replay.independent_window_estimate(HORIZON_MONTHS):.1f} rough independent-window estimate)"
         )
 
         request = ExogenousSamplingRequest(

@@ -16,7 +16,7 @@ from itertools import pairwise
 import numpy as np
 
 from finance.augur.x.models.structural_macro import MINIMUM_MONTHS
-from finance.evidence.loading import MonthlyLevel
+from finance.evidence.loading import MonthlyLevel, is_next_calendar_month as is_next_month
 
 
 @dataclass(frozen=True)
@@ -74,8 +74,9 @@ def fit_rate_beta(*, equity_levels: Sequence[MonthlyLevel], short_rate: Sequence
 
     Inner-joined, so this necessarily runs on the COMMON window — the one place in the model
     where the shortest series sets the sample, because a covariance off a non-overlap is not a
-    weaker estimate but an undefined one. `short_rate` must already be decimal-scale (not FRED
-    percent) — this function does no unit conversion of its own.
+    weaker estimate but an undefined one. Returns and rate changes spanning a missing calendar
+    month are omitted. `short_rate` must already be decimal-scale (not FRED percent) — this
+    function does no unit conversion of its own.
     """
 
     equity_by_month = {level.month: level.value for level in equity_levels}
@@ -84,8 +85,14 @@ def fit_rate_beta(*, equity_levels: Sequence[MonthlyLevel], short_rate: Sequence
     if len(months) < MINIMUM_MONTHS:
         raise ValueError(f"need at least {MINIMUM_MONTHS} shared months; got {len(months)}")
 
-    returns = np.array([math.log(equity_by_month[b] / equity_by_month[a]) for a, b in pairwise(months)])
-    rate_changes = np.array([rate_by_month[b] - rate_by_month[a] for a, b in pairwise(months)])
+    consecutive_pairs = [(a, b) for a, b in pairwise(months) if is_next_month(a, b)]
+    minimum_transitions = MINIMUM_MONTHS - 1
+    if len(consecutive_pairs) < minimum_transitions:
+        raise ValueError(
+            f"need at least {minimum_transitions} consecutive monthly transitions; got {len(consecutive_pairs)}"
+        )
+    returns = np.array([math.log(equity_by_month[b] / equity_by_month[a]) for a, b in consecutive_pairs])
+    rate_changes = np.array([rate_by_month[b] - rate_by_month[a] for a, b in consecutive_pairs])
     slope, intercept = np.polyfit(rate_changes, returns, 1)
     residuals = returns - (intercept + slope * rate_changes)
     total = float(np.var(returns))

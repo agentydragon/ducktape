@@ -10,7 +10,6 @@ py_library(
     name = "compare",
     srcs = ["compare.py"],
     deps = [
-        "//finance/augur/model:historical_windows",
         "//finance/augur/study/trinity:evidence_snapshot",
         "//finance/augur/x/models:macro_var",
         "//finance/augur/x/models:structural_macro",
@@ -42,7 +41,6 @@ py_library(
     srcs = ["holdout.py"],
     deps = [
         "//finance/augur/fit:scoring",
-        "//finance/augur/model:historical_windows",
         "//finance/augur/study/trinity:evidence_snapshot",
         "//finance/augur/x/models:macro_var",
         "//finance/augur/x/models:structural_macro",
@@ -66,6 +64,20 @@ py_test(
         ":holdout",
         "//:conftest",
         "//finance/augur:conftest",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "calendar_gaps_test",
+    srcs = ["calendar_gaps_test.py"],
+    deps = [
+        ":holdout",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/x/models:macro_var",
+        "//finance/augur/x/models:synthetic_rates",
         "@pypi//numpy",
         "@pypi//pytest_bazel",
     ],

@@ -26,15 +26,13 @@ and is not currently wired in.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from enum import StrEnum
 from pathlib import Path
 
-from finance.augur.model.historical_windows import (
-    DECIMAL_TO_PERCENT,
-    MACRO_HISTORY_SOURCES,
-    MacroHistory,
-    load_macro_history,
-)
+import polars as pl
+
+from finance.augur.model.historical_windows import splice_monthly_frames
 from finance.augur.x.models.equity_fit import fit_log_returns, fit_rate_beta
 from finance.augur.x.models.macro_var import fit_macro_var
 from finance.augur.x.models.structural_macro import (
@@ -43,8 +41,15 @@ from finance.augur.x.models.structural_macro import (
     MacroVarSpec,
     StructuralMacroFittedDefaults,
 )
-from finance.evidence.loading import MonthlyLevel, read_french_market_levels, read_monthly_levels
+from finance.evidence import loading, sources
+from finance.evidence.loading import MonthlyLevel
 from finance.evidence.sources import FRED_CPI, FRED_FEDFUNDS, FRED_GS10, FRENCH_FACTORS, YAHOO_VFINX
+
+LONG_RECORD_START = date(1926, 7, 1)
+"""The first month in the French factor record used by the long-record fit."""
+
+LONG_RECORD_MACRO_SOURCES = (FRENCH_FACTORS, sources.FRED_LTGOVTBD, FRED_GS10, sources.FRED_CPI_NSA)
+"""The three input series for the long-record VAR and the sources needed to construct them."""
 
 
 class MacroFitWindow(StrEnum):
@@ -60,7 +65,9 @@ class MacroFitWindow(StrEnum):
     directly, no splice."""
 
     LONG_RECORD_1926 = "long_record_1926"
-    """The record `load_macro_history` assembles, 1926-07 on. About 41% more months, and it
+    """The long-record short rate, spliced long rate, and NSA CPI, 1926-07 on. Its end is the
+    latest shared month among those three inputs; corporate-yield and equity sources no longer
+    truncate this fit. About 41% more months than the FRED window, and it
     reaches the Depression, the 1940s inflation and the WWII rate peg — the clustered bad
     decades a CPI-indexed spender is most exposed to.
 
@@ -82,30 +89,39 @@ class MacroVarLevels:
     cpi_level: list[MonthlyLevel]
 
 
-def macro_var_levels(history: MacroHistory) -> MacroVarLevels:
-    """`MacroHistory`'s aligned arrays as the percent series `fit_macro_var` reads.
-
-    `MacroHistory` carries annualized DECIMALS and a term spread; `fit_macro_var` takes percent
-    and a long rate, so the long rate is reconstituted as short + spread. Going through the
-    assembled record rather than re-reading the sources is the point: one assembly path, so the
-    fit and the replay sampler cannot come to disagree about what the century was.
-    """
-
+def _aligned_macro_var_levels(frames: dict[str, pl.DataFrame], *, start: date | None = None) -> MacroVarLevels:
+    expected = {"short_rate_percent", "long_rate_percent", "cpi_level"}
+    if set(frames) != expected:
+        raise ValueError(f"macro VAR needs exactly these selected series: {sorted(expected)}")
+    aligned = loading.align_monthly_frames(frames, value_column="value")
+    if start is not None:
+        aligned = aligned.filter(pl.col("month") >= start)
+        if aligned.is_empty() or aligned.get_column("month")[0] != start:
+            raise ValueError(f"long-record macro inputs do not cover the required start month {start}")
     return MacroVarLevels(
-        short_rate_percent=[
-            MonthlyLevel(month=month, value=rate * DECIMAL_TO_PERCENT)
-            for month, rate in zip(history.months, history.short_rate.tolist(), strict=True)
-        ],
-        long_rate_percent=[
-            MonthlyLevel(month=month, value=(short + spread) * DECIMAL_TO_PERCENT)
-            for month, short, spread in zip(
-                history.months, history.short_rate.tolist(), history.term_spread.tolist(), strict=True
-            )
-        ],
-        cpi_level=[
-            MonthlyLevel(month=month, value=level)
-            for month, level in zip(history.months, history.cpi_level.tolist(), strict=True)
-        ],
+        short_rate_percent=loading.monthly_levels(aligned.select("month", pl.col("short_rate_percent").alias("value"))),
+        long_rate_percent=loading.monthly_levels(aligned.select("month", pl.col("long_rate_percent").alias("value"))),
+        cpi_level=loading.monthly_levels(aligned.select("month", pl.col("cpi_level").alias("value"))),
+    )
+
+
+def _long_record_macro_var_frames(cache: loading.EvidenceFrameCache) -> dict[str, pl.DataFrame]:
+    factors = cache.frame(FRENCH_FACTORS)
+    short_rate = factors.select("month", (pl.col("risk_free_rate") * 12.0 * 100.0).alias("value"))
+    long_rate = splice_monthly_frames(
+        early=cache.monthly_frame(sources.FRED_LTGOVTBD), late=cache.monthly_frame(FRED_GS10)
+    )
+    return {
+        "short_rate_percent": short_rate,
+        "long_rate_percent": long_rate,
+        "cpi_level": cache.monthly_frame(sources.FRED_CPI_NSA),
+    }
+
+
+def load_long_record_macro_var_levels(evidence_dir: Path) -> MacroVarLevels:
+    """Load only the three month-aligned series used by the 1926 long-record VAR."""
+    return _aligned_macro_var_levels(
+        _long_record_macro_var_frames(loading.EvidenceFrameCache(evidence_dir)), start=LONG_RECORD_START
     )
 
 
@@ -113,30 +129,45 @@ def fit_structural_macro_defaults(evidence_dir: Path, *, macro_window: MacroFitW
     """Fit `structural_macro`'s checked-in defaults from real evidence — see the module
     docstring for why these are three separable fits rather than one joint window.
     """
-    fedfunds_percent = read_monthly_levels(evidence_dir, FRED_FEDFUNDS)
+    cache = loading.EvidenceFrameCache(evidence_dir)
     match macro_window:
         case MacroFitWindow.FRED_1955:
-            macro_fit = fit_macro_var(
-                short_rate_percent=fedfunds_percent,
-                long_rate_percent=read_monthly_levels(evidence_dir, FRED_GS10),
-                cpi_level=read_monthly_levels(evidence_dir, FRED_CPI),
+            levels = _aligned_macro_var_levels(
+                {
+                    "short_rate_percent": cache.monthly_frame(FRED_FEDFUNDS),
+                    "long_rate_percent": cache.monthly_frame(FRED_GS10),
+                    "cpi_level": cache.monthly_frame(FRED_CPI),
+                }
             )
-            macro_source = f"{FRED_FEDFUNDS.provenance_label},{FRED_GS10.provenance_label},{FRED_CPI.provenance_label}"
-        case MacroFitWindow.LONG_RECORD_1926:
-            levels = macro_var_levels(load_macro_history(evidence_dir))
             macro_fit = fit_macro_var(
                 short_rate_percent=levels.short_rate_percent,
                 long_rate_percent=levels.long_rate_percent,
                 cpi_level=levels.cpi_level,
             )
-            macro_source = ",".join(source.provenance_label for source in MACRO_HISTORY_SOURCES)
-    equity_fit = fit_log_returns(read_french_market_levels(evidence_dir, FRENCH_FACTORS))
+            macro_source = f"{FRED_FEDFUNDS.provenance_label},{FRED_GS10.provenance_label},{FRED_CPI.provenance_label}"
+        case MacroFitWindow.LONG_RECORD_1926:
+            levels = _aligned_macro_var_levels(_long_record_macro_var_frames(cache), start=LONG_RECORD_START)
+            macro_fit = fit_macro_var(
+                short_rate_percent=levels.short_rate_percent,
+                long_rate_percent=levels.long_rate_percent,
+                cpi_level=levels.cpi_level,
+            )
+            macro_source = ",".join(source.provenance_label for source in LONG_RECORD_MACRO_SOURCES)
+    factors = cache.frame(FRENCH_FACTORS)
+    equity = loading.compound_monthly_returns(factors, return_column="market_total_return")
+    equity_fit = fit_log_returns(loading.monthly_levels(equity))
+    beta = loading.align_monthly_frames(
+        {
+            "equity": cache.monthly_frame(YAHOO_VFINX),
+            "short_rate": cache.monthly_frame(FRED_FEDFUNDS).with_columns(
+                (pl.col("value") * PERCENT_TO_DECIMAL).alias("value")
+            ),
+        },
+        value_column="value",
+    )
     beta_fit = fit_rate_beta(
-        equity_levels=read_monthly_levels(evidence_dir, YAHOO_VFINX),
-        # fit_rate_beta takes a decimal-scale rate; FRED's FEDFUNDS is percent.
-        short_rate=[
-            MonthlyLevel(month=level.month, value=level.value * PERCENT_TO_DECIMAL) for level in fedfunds_percent
-        ],
+        equity_levels=loading.monthly_levels(beta.select("month", pl.col("equity").alias("value"))),
+        short_rate=loading.monthly_levels(beta.select("month", pl.col("short_rate").alias("value"))),
     )
 
     return StructuralMacroFittedDefaults(

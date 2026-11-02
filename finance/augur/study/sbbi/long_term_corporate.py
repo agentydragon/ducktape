@@ -37,30 +37,27 @@ import asyncio
 import logging
 import math
 import tempfile
+from datetime import date
 from pathlib import Path
 
 import numpy as np
+import polars as pl
 
 from finance.augur.model.bond_fund import constant_maturity_fund_paths
-from finance.augur.model.historical_windows import load_macro_history
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
-from finance.evidence import sources
+from finance.evidence import loading, sources
 
 logger = logging.getLogger(__name__)
 
 BOND_MATURITY_YEARS = 20.0
 """The monograph's own number for 1926-68, and what the 1969- fit independently recovers."""
 
-# `load_macro_history` assembles one aligned record and needs all six, equity included, even
-# though only the Aaa column is read here.
-EVIDENCE = (
-    sources.FRENCH_FACTORS,
-    sources.FRED_LTGOVTBD,
-    sources.FRED_GS10,
-    sources.FRED_CPI_NSA,
-    sources.FRED_AAA,
-    sources.FRED_BAA,
-)
+STUDY_START_MONTH = date(1926, 7, 1)
+STUDY_END_MONTH = date(1987, 12, 1)
+"""The prior replay's July 1926 start and the SBBI table's final month."""
+
+EVIDENCE = (sources.FRED_AAA,)
+"""Only Moody's Aaa yield is needed to reproduce the published corporate-bond study."""
 
 PUBLISHED_ANNUAL_RETURN = {
     1926: +0.0740,
@@ -139,15 +136,31 @@ the exhibit above, so agreement with them is what says the diagonal was read cor
 
 
 def reproduce(evidence_dir: Path, *, maturity_years: float = BOND_MATURITY_YEARS) -> dict[int, float]:
-    """The fund's December-to-December total return per calendar year, priced off Moody's Aaa."""
+    """The fund's December-to-December total return per calendar year, priced off Moody's Aaa.
 
-    history = load_macro_history(evidence_dir)
+    This deliberately returns only the published 1927-1987 annual observations. The previous
+    joint macro read also returned later years because its shared record continued past the
+    study; those years are outside the monograph being reproduced. The bounds retain its July
+    1926 opening yield and use only the Aaa evidence required here.
+    """
+
+    cache = loading.EvidenceFrameCache(evidence_dir)
+    monthly = cache.monthly_frame(sources.FRED_AAA).filter(
+        pl.col("month").is_between(STUDY_START_MONTH, STUDY_END_MONTH, closed="both")
+    )
+    months = monthly.get_column("month").to_list()
+    if not months or months[0] != STUDY_START_MONTH or months[-1] != STUDY_END_MONTH:
+        raise ValueError(
+            f"Moody's Aaa evidence does not cover the SBBI study span {STUDY_START_MONTH}..{STUDY_END_MONTH}"
+        )
+    loading.require_contiguous_months(months, series_name="SBBI Aaa evidence")
+    levels = loading.monthly_levels(monthly)
     price, distribution = constant_maturity_fund_paths(
-        history.corporate_aaa_yield[None, :], maturity_years=maturity_years, initial_price_usd=100.0
+        np.array([[level.value * 0.01 for level in levels]]), maturity_years=maturity_years, initial_price_usd=100.0
     )
     # Units compound by reinvesting the distribution, so the total-return index is units x price.
     index = np.cumprod(1.0 + distribution[0] / price[0]) * price[0]
-    decembers = {month.year: i for i, month in enumerate(history.months) if month.month == 12}
+    decembers = {level.month.year: i for i, level in enumerate(levels) if level.month.month == 12}
     return {
         year: float(index[decembers[year]] / index[decembers[year - 1]] - 1.0)
         for year in sorted(decembers)

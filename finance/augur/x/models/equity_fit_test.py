@@ -7,6 +7,7 @@ today's numbers, and would break on every evidence refresh while catching nothin
 
 from __future__ import annotations
 
+import math
 from itertools import pairwise
 
 import numpy as np
@@ -82,6 +83,34 @@ def test_rate_beta_needs_enough_shared_months() -> None:
             equity_levels=[MonthlyLevel(month=r.month, value=100.0 + i) for i, r in enumerate(rates[:100])],
             short_rate=rates,
         )
+
+
+def test_rate_beta_skips_the_transition_across_a_missing_month() -> None:
+    """The return and rate change across a source gap are multi-month observations, not one
+    monthly beta sample. Consecutive months on each side remain usable.
+    """
+
+    all_months = months(500)
+    rng = np.random.default_rng(27)
+    rate_values = np.cumsum(rng.normal(0.0, 0.002, len(all_months))) + 0.04
+    beta = -1.7
+    monthly_returns = np.zeros(len(all_months))
+    monthly_returns[1:] = 0.003 + beta * np.diff(rate_values) + rng.normal(0.0, 0.02, len(all_months) - 1)
+    equity_values = 100.0 * np.exp(np.cumsum(monthly_returns))
+    missing_index = 350
+    retained_indices = [index for index in range(len(all_months)) if index != missing_index]
+    rates = [MonthlyLevel(month=all_months[index], value=float(rate_values[index])) for index in retained_indices]
+    equity = [MonthlyLevel(month=all_months[index], value=float(equity_values[index])) for index in retained_indices]
+
+    fit = fit_rate_beta(equity_levels=equity, short_rate=rates)
+
+    consecutive = [(left, right) for left, right in pairwise(retained_indices) if right == left + 1]
+    expected_returns = np.array([math.log(equity_values[right] / equity_values[left]) for left, right in consecutive])
+    expected_rate_changes = np.array([rate_values[right] - rate_values[left] for left, right in consecutive])
+    expected_slope, _ = np.polyfit(expected_rate_changes, expected_returns, 1)
+
+    assert fit.beta == pytest.approx(expected_slope)
+    assert fit.sample_months == len(retained_indices)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,6 @@ from __future__ import annotations
 import math
 from collections.abc import Collection
 from dataclasses import dataclass
-from functools import reduce
 
 import numpy as np
 import polars as pl
@@ -202,8 +201,9 @@ def _align_inner(frames: dict[LevelSeriesKey, pl.DataFrame], value_column: str) 
 
     The polars column name is the wire id — a frame column is a string by construction; the
     KEY is what carries identity, and it stays typed on both sides of this call."""
-    renamed = [frame.rename({value_column: key.wire_id}) for key, frame in frames.items()]
-    return reduce(lambda left, right: left.join(right, on="month", how="inner"), renamed).drop_nulls().sort("month")
+    return loading.align_monthly_frames(
+        {key.wire_id: frame for key, frame in frames.items()}, value_column=value_column
+    )
 
 
 def _monthly_latest(
