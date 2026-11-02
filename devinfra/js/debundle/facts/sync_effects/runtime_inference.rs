@@ -71,6 +71,26 @@ pub(super) struct CallOperands {
     pub(super) arguments: Vec<Values>,
 }
 
+pub(super) enum CallTransfer {
+    /// Consult the accompanying outcome for effect completeness. No return
+    /// value was requested, or the selected proof supplies only effects.
+    EffectsOnly,
+    Values(Values),
+    /// The ordered operand path declined this target. Its source-based
+    /// helpers cannot safely replay already evaluated operands.
+    UnsupportedOperands,
+}
+
+impl CallTransfer {
+    pub(super) fn requested(needs_value: bool, values: impl FnOnce() -> Values) -> Self {
+        if needs_value {
+            Self::Values(values())
+        } else {
+            Self::EffectsOnly
+        }
+    }
+}
+
 pub(super) enum RuntimeOperation {
     Heap(HeapOperation),
     Evaluate {
@@ -112,9 +132,7 @@ pub(super) enum RuntimeValue {
     Outcome(Box<Outcome>),
     Call {
         outcome: Box<Outcome>,
-        /// None means this path has no result transfer. An ordered caller
-        /// must truncate, preserving effects already performed.
-        values: Option<Values>,
+        transfer: CallTransfer,
     },
     Callbacks(CallbackResult),
     Model(ModelResult),
@@ -538,14 +556,14 @@ impl RuntimeRules<'_, '_> {
                 mut outcome,
                 operands,
             } => {
-                let values = executor.execute_call_transfer(
+                let transfer = executor.execute_call_transfer(
                     &call,
                     &environment,
                     &captures,
                     &mut outcome,
                     operands.map(|operands| *operands),
                 );
-                RuntimeValue::Call { outcome, values }
+                RuntimeValue::Call { outcome, transfer }
             }
             RuntimeOperation::Model(operation) => {
                 RuntimeValue::Model(runtime_models::dispatch(&mut executor, operation))

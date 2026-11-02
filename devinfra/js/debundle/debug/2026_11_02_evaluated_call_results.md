@@ -40,10 +40,12 @@ evaluated operands could repeat a stateful child. Ordered dispatch skips those
 helpers until they accept evaluated inputs and return their result. Host
 timing assertions likewise supply no return value by themselves.
 
-Current fallback diagnostics still report a generic opaque operation when a
-timing model lacks a result transfer. Next: distinguish that missing transfer
-from an unknown callee in the report, with the call's existing source point;
-then migrate the helper's actual operand/result transport. Do not respond to
+`missing_call_result` now distinguishes a completed timing proof without a
+value transfer from an unknown callee, at the call's existing source point.
+The ordered target-refusal path remains distinct internally; its initial
+`complete` flag alone establishes no timing proof. Details and the source
+review boundary are in <2026_11_02_missing_call_result_diagnostic.md>.
+The helpers still need actual operand/result transport. Do not respond to
 this refusal by retrying source evaluation or adding a premise.
 
 ## Review

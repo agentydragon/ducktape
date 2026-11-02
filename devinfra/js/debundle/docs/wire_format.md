@@ -354,6 +354,18 @@ endpoint's binding effect, `{"kind": "observed"}` or
 required: a graph written before them does not deserialize, so the
 commuting-statements gate never reads an unclassified effect as assumed.
 
+## Ordered call-result refusal
+
+`dependency_graph.json.gz.nodes[].synchronous_execution.precision_losses[]`
+uses `reason: {"code": "missing_call_result"}` when an ordered call's effect
+proof completed but supplied no return-value transfer. The entry retains the
+call's lexical statement ordinal, source location and fallback reach. It may
+also appear as a `fallback_summary.loss` on assumed binding effects.
+The ordered body still stops and promotes its conservative remainder.
+Declining an ordered target or reporting incomplete effects does not establish
+this reason. Such paths retain their existing unsupported-operation or
+unknown-target explanations.
+
 ## Ordered local member-read refusal
 
 `dependency_graph.json.gz.nodes[].synchronous_execution.precision_losses[]`

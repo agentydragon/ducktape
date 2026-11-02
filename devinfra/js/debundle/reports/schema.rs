@@ -747,6 +747,9 @@ impl ExecutionPrecisionLoss {
 #[serde(tag = "code", rename_all = "snake_case")]
 pub enum ExecutionPrecisionLossReason {
     UnknownCallTarget,
+    /// A complete synchronous call proof supplied effects without the value
+    /// transfer needed to continue an ordered body.
+    MissingCallResult,
     UnsupportedOperation {
         operation: ExecutionOperation,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -847,6 +850,9 @@ impl std::fmt::Display for ExecutionPrecisionLossReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::UnknownCallTarget => f.write_str("`unknown_call_target`"),
+            Self::MissingCallResult => f.write_str(
+                "`missing_call_result` (call effects covered; return-value transfer unavailable)",
+            ),
             Self::UnsupportedOperation {
                 operation,
                 ordered_field_read_refusal,

@@ -1493,7 +1493,11 @@ understanding the implementation.
 In `dependency_graph.json.gz`, inspect a node's `synchronous_execution.complete`
 and `precision_losses` to see why synchronous-effect inference retained a
 conservative fallback. Reasons distinguish unknown call targets, unsupported
-operations, recursion, and exhausted invocation or callback-pool budgets. Budget
+operations, missing call results, recursion, and exhausted invocation or callback-pool budgets.
+`missing_call_result` means the call's synchronous-effect proof completed but
+supplied no return-value transfer for the ordered body. Continue implementation
+at that call's operand/result transfer; adding a timing premise or replaying its
+source operands does not supply the missing value. Budget
 records include their limit; each loss carries its lexical statement ordinal and,
 when available, its source location. Nested reasons retain their original source
 site. This evidence is separate from purity reasons and does not certify author

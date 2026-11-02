@@ -2966,6 +2966,12 @@ a callback-pool record also gives the pool size. An `unsupported_construction`
 record names the first construction check that failed as a typed `rejection`
 (for example `field_may_exist_on_object_prototype` with the field, whose census
 entries are in `native_prototype_property_checks`); later checks may fail too.
+`missing_call_result` identifies an ordered call whose synchronous-effect proof
+completed without supplying a return-value transfer. The body still truncates
+conservatively at that call. This does not report an unknown target or certify
+the rest of the body; a result transfer using the already evaluated operands is
+required to continue. A call rejected by the ordered operand path retains its
+unsupported-operation or unknown-target explanation.
 An `unsupported_operation` / `member_read` reason may also carry the optional
 `ordered_field_read_refusal` field from the shared ordered own-data guard:
 `receiver_not_singleton`, `receiver_not_object`, `borrowed_receiver`,
