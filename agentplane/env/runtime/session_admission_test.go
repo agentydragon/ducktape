@@ -1,4 +1,4 @@
-package harnesshost
+package runtime
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
-	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -35,11 +35,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func closeHostForTest(t *testing.T, r *Host) error {
+func closeRuntimeForTest(t *testing.T, r *Runtime) error {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return r.CloseJournals(ctx)
+	return r.Close(ctx)
 }
 
 func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
@@ -50,9 +50,9 @@ func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 	}))
 	defer proxy.Close()
 	workspace := t.TempDir()
-	r := newLifecycleHost(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
 	request := openLifecycleSession("session-1", filepath.Join(workspace, "project"))
-	opened, err := r.OpenSession(hostContext(r, context.Background()), request)
+	opened, err := r.OpenSession(sessionCallContext(r, context.Background()), request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,11 +62,11 @@ func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(r.config.StateDir, "sessions", "session-1", "journal.sqlite")); err != nil {
 		t.Fatalf("reservation journal was not created: %v", err)
 	}
-	statusResponse, err := r.GetStatus(context.Background(), &sessionpb.GetStatusRequest{})
+	statusResponse, err := r.GetStatus(sessionCallContext(r, context.Background()), &sessionpb.GetStatusRequest{})
 	if err != nil || len(statusResponse.Processes) != 0 {
 		t.Fatalf("open started a native process: status=%v err=%v", statusResponse, err)
 	}
-	if _, err := r.OpenSession(hostContext(r, context.Background()), request); err != nil {
+	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), request); err != nil {
 		t.Fatalf("identical open was not idempotent: %v", err)
 	}
 	if got := lookups.Load(); got != 1 {
@@ -74,7 +74,7 @@ func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 	}
 	conflict := openLifecycleSession("session-1", filepath.Join(workspace, "project"))
 	conflict.Spec.Model = "different-model"
-	if _, err := r.OpenSession(hostContext(r, context.Background()), conflict); status.Code(err) != codes.AlreadyExists {
+	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), conflict); status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("conflicting reservation error = %v, want AlreadyExists", err)
 	}
 	if got := lookups.Load(); got != 1 {
@@ -85,9 +85,9 @@ func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 func TestOpenSessionComparesConfirmedConfiguration(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	r := newLifecycleHost(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
 	request := openLifecycleSession("configuration", filepath.Join(workspace, "project"))
-	ctx := hostContext(r, t.Context())
+	ctx := sessionCallContext(r, t.Context())
 	if _, err := r.OpenSession(ctx, request); err != nil {
 		t.Fatal(err)
 	}
@@ -121,27 +121,13 @@ func TestOpenSessionRetryUsesPersistedSetupAfterSealPublicationFailure(t *testin
 		failure: failure,
 	}
 	resources.fail.Store(true)
-	r, err := newTestHost(lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), resources)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := bindHost(r, "test-incarnation"); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.sessions.Startup(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := closeHostForTest(t, r); err != nil {
-			t.Errorf("close test host: %v", err)
-		}
-	})
+	r := newSessionTestRuntimeWithState(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), resources)
 
 	marker := filepath.Join(t.TempDir(), "setup-runs")
 	script := fmt.Sprintf("printf setup >> %s", shellQuote(marker))
 	request := openLifecycleSession("session-retry", filepath.Join(workspace, "project"))
 	request.SetupScript = &script
-	if _, err := r.OpenSession(hostContext(r, context.Background()), request); status.Code(err) != codes.Unavailable {
+	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), request); status.Code(err) != codes.Unavailable {
 		t.Fatalf("first OpenSession error = %v, want injected Unavailable", err)
 	}
 	if resources.fail.Load() {
@@ -150,7 +136,7 @@ func TestOpenSessionRetryUsesPersistedSetupAfterSealPublicationFailure(t *testin
 	if r.sessions.Get(request.SessionId) != nil {
 		t.Fatal("failed OpenSession became visible in the Session registry")
 	}
-	if _, found, err := session.ReadReconcileSnapshot(r.ctx, r.lifecycle.state, request.SessionId); err != nil || found {
+	if _, found, err := session.ReadReconcileSnapshot(r.lifecycleContext, r.lifecycleState, request.SessionId); err != nil || found {
 		t.Fatalf("failed OpenSession published a Session reconcile snapshot: found=%t, err=%v", found, err)
 	}
 	record, err := r.store.Read(request.SessionId)
@@ -160,19 +146,19 @@ func TestOpenSessionRetryUsesPersistedSetupAfterSealPublicationFailure(t *testin
 	wrongScript := "exit 1"
 	conflict := openLifecycleSession(request.SessionId, filepath.Join(workspace, "project"))
 	conflict.SetupScript = &wrongScript
-	if _, err := r.OpenSession(hostContext(r, context.Background()), conflict); status.Code(err) != codes.AlreadyExists {
+	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), conflict); status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("conflicting setup source error = %v, want AlreadyExists", err)
 	}
 
 	if r.sessions.Get(request.SessionId) != nil {
 		t.Fatal("rejected setup conflict loaded the retained Session")
 	}
-	if _, found, err := session.ReadReconcileSnapshot(r.ctx, r.lifecycle.state, request.SessionId); err != nil || found {
+	if _, found, err := session.ReadReconcileSnapshot(r.lifecycleContext, r.lifecycleState, request.SessionId); err != nil || found {
 		t.Fatalf("rejected setup conflict published a Session: found=%t, err=%v", found, err)
 	}
 
 	request.SetupScript = nil
-	if _, err := r.OpenSession(hostContext(r, context.Background()), request); err != nil {
+	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), request); err != nil {
 		t.Fatalf("omitted-script OpenSession retry: %v", err)
 	}
 	s := r.sessions.Get(request.SessionId)
@@ -263,16 +249,16 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopenedBacking.Close()
-	r := newLifecycleHostWithState(t, config, resources)
+	r := newSessionTestRuntimeWithState(t, config, resources)
 	request := openLifecycleSession(sessionID, filepath.Join(workspace, "project"))
-	if _, err := r.OpenSession(hostContext(r, context.Background()), request); err != nil {
+	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), request); err != nil {
 		t.Fatalf("open recovered Session without resupplying setup source: %v", err)
 	}
-	input, found, err := session.ReadReconcileSnapshot(r.ctx, r.lifecycle.state, sessionID)
+	input, found, err := session.ReadReconcileSnapshot(r.lifecycleContext, r.lifecycleState, sessionID)
 	if err != nil || !found || input.Setup != sessionpb.SetupState_SETUP_STATE_INTERRUPTED || !input.SetupRequested {
 		t.Fatalf("recovered setup input = %+v, found=%t, err=%v; want retained but interrupted", input, found, err)
 	}
-	if err := closeHostForTest(t, r); err != nil {
+	if err := closeRuntimeForTest(t, r); err != nil {
 		t.Fatalf("close recovered Host: %v", err)
 	}
 	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
@@ -304,17 +290,17 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 func TestInvalidInputAndStaleTurnNeverAdmitCommands(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	r := newLifecycleHost(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
-	if _, err := r.OpenSession(hostContext(r, context.Background()), openLifecycleSession("bad/session", workspace)); status.Code(err) != codes.InvalidArgument {
+	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), openLifecycleSession("bad/session", workspace)); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("invalid session ID error = %v, want InvalidArgument", err)
 	}
-	if _, err := r.OpenSession(hostContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.SubmitInput(hostContext(r, context.Background()), &environmentruntimepb.SubmitInputRequest{SessionId: "session-1", Text: "hello"}); status.Code(err) != codes.InvalidArgument {
+	if _, err := r.SubmitInput(sessionCallContext(r, context.Background()), &environmentruntimepb.SubmitInputRequest{SessionId: "session-1", Text: "hello"}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("empty command ID error = %v, want InvalidArgument", err)
 	}
-	if _, err := r.InterruptTurn(hostContext(r, context.Background()), &environmentruntimepb.InterruptTurnRequest{SessionId: "session-1", CommandId: "stale", TurnId: "not-active"}); status.Code(err) != codes.FailedPrecondition {
+	if _, err := r.InterruptTurn(sessionCallContext(r, context.Background()), &environmentruntimepb.InterruptTurnRequest{SessionId: "session-1", CommandId: "stale", TurnId: "not-active"}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("stale interrupt error = %v, want FailedPrecondition", err)
 	}
 	session := r.sessions.Get("session-1")
@@ -329,11 +315,11 @@ func TestInvalidInputAndStaleTurnNeverAdmitCommands(t *testing.T) {
 func TestStartupFailureSettlesAdmissionAndReturnsToIdle(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	r := newLifecycleHost(t, lifecycleConfig(t, proxy.URL, workspace, nil, filepath.Join(t.TempDir(), "missing-harness")))
-	if _, err := r.OpenSession(hostContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, filepath.Join(t.TempDir(), "missing-harness")))
+	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.SubmitInput(hostContext(r, context.Background()), &environmentruntimepb.SubmitInputRequest{SessionId: "session-1", CommandId: "input-1", Text: "hello"}); err != nil {
+	if _, err := r.SubmitInput(sessionCallContext(r, context.Background()), &environmentruntimepb.SubmitInputRequest{SessionId: "session-1", CommandId: "input-1", Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	session := r.sessions.Get("session-1")
@@ -428,7 +414,7 @@ func (s *initialOperationFailureState) Modify(ctx context.Context, value resourc
 	return s.State.Modify(ctx, value, update, opts...)
 }
 
-func failedInitialOperationHost(t *testing.T, failTeardown bool) (*Host, *initialOperationFailureState, string) {
+func failedInitialOperationHost(t *testing.T, failTeardown bool) (*Runtime, *initialOperationFailureState, string) {
 	t.Helper()
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
@@ -449,29 +435,14 @@ func failedInitialOperationHost(t *testing.T, failTeardown bool) (*Host, *initia
 	}
 	store.failInitial.Store(true)
 	store.failTeardown.Store(failTeardown)
-	r, err := newTestHost(lifecycleConfig(t, proxy.URL, workspace, nil, binary), store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := bindHost(r, "test-incarnation"); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.sessions.Startup(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		r.cancel()
-		<-r.lifecycle.done.Done()
-		r.lifecycle.workers.Wait()
-		if r.sessions != nil {
-			_ = r.sessions.Close()
-		}
-	})
+	config := lifecycleConfig(t, proxy.URL, workspace, nil, binary)
+	config.expectCloseError = true
+	r := newSessionTestRuntimeWithState(t, config, store)
 
-	if _, err := r.OpenSession(hostContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.SubmitInput(hostContext(r, context.Background()), &environmentruntimepb.SubmitInputRequest{SessionId: "session-1", CommandId: "input-1", Text: "hello"}); err != nil {
+	if _, err := r.SubmitInput(sessionCallContext(r, context.Background()), &environmentruntimepb.SubmitInputRequest{SessionId: "session-1", CommandId: "input-1", Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
@@ -496,7 +467,7 @@ func TestCloseSettlesAfterInitialOperationPublicationFailure(t *testing.T) {
 	r, _, marker := failedInitialOperationHost(t, false)
 
 	closeDone := make(chan error, 1)
-	go func() { closeDone <- r.CloseJournals(context.Background()) }()
+	go func() { closeDone <- r.Close(context.Background()) }()
 	closeCtx, cancelClose := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancelClose()
 	select {
@@ -505,7 +476,7 @@ func TestCloseSettlesAfterInitialOperationPublicationFailure(t *testing.T) {
 			t.Fatalf("Close after initial publication failure: %v", err)
 		}
 	case <-closeCtx.Done():
-		r.cancel()
+		r.lifecycleCancel()
 		select {
 		case <-closeDone:
 		case <-time.After(time.Second):
@@ -523,7 +494,7 @@ func TestCloseReportsTeardownOperationPublicationFailure(t *testing.T) {
 	closeCtx, cancelClose := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancelClose()
 	closeDone := make(chan error, 1)
-	go func() { closeDone <- r.CloseJournals(context.Background()) }()
+	go func() { closeDone <- r.Close(context.Background()) }()
 	select {
 	case err := <-closeDone:
 		if err == nil || !strings.Contains(err.Error(), "publish operation start") {
@@ -535,7 +506,7 @@ func TestCloseReportsTeardownOperationPublicationFailure(t *testing.T) {
 			t.Fatal("Close returned before the teardown publication fault was injected")
 		}
 	case <-closeCtx.Done():
-		r.cancel()
+		r.lifecycleCancel()
 		select {
 		case <-closeDone:
 		case <-time.After(time.Second):
@@ -573,10 +544,10 @@ func TestQuiesceDoesNotWaitForModelLookupOrCreateLateSession(t *testing.T) {
 	}))
 	t.Cleanup(proxy.Close)
 	workspace := t.TempDir()
-	r := newLifecycleHost(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
 	openStarted = true
 	go func() {
-		_, err := r.OpenSession(hostContext(r, context.Background()), openLifecycleSession("late-session", filepath.Join(workspace, "project")))
+		_, err := r.OpenSession(sessionCallContext(r, context.Background()), openLifecycleSession("late-session", filepath.Join(workspace, "project")))
 		openDone <- err
 	}()
 	select {
@@ -588,7 +559,7 @@ func TestQuiesceDoesNotWaitForModelLookupOrCreateLateSession(t *testing.T) {
 	defer cancel()
 	quiesced := make(chan error, 1)
 	go func() {
-		_, err := quiesceHost(quiesceCtx, r)
+		_, err := r.Quiesce(quiesceCtx, &sessionpb.QuiesceRequest{})
 		quiesced <- err
 	}()
 	select {
@@ -602,17 +573,16 @@ func TestQuiesceDoesNotWaitForModelLookupOrCreateLateSession(t *testing.T) {
 	releaseProxy()
 	openErr := <-openDone
 	openFinished = true
-	// The fixture's ExecutionFenced update can briefly make the binding unready
-	// before the original binding is reported stale. Both reject the late admission.
-	if code := status.Code(openErr); code != codes.FailedPrecondition && code != codes.Unavailable {
-		t.Fatalf("late session creation error = %v, want FailedPrecondition or Unavailable", openErr)
+	// The accepted lifecycle revision changed while model lookup was outstanding.
+	if code := status.Code(openErr); code != codes.Aborted {
+		t.Fatalf("late session creation error = %v, want Aborted", openErr)
 	}
 	if exists, err := r.store.Exists("late-session"); err != nil || exists {
 		t.Fatalf("late session was persisted: exists=%t err=%v", exists, err)
 	}
 }
 
-func TestOpenSessionRevokedRuntimeBindingDoesNotWriteAfterModelLookup(t *testing.T) {
+func TestOpenSessionRevokedAdmissionDoesNotWriteAfterModelLookup(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var releaseOnce sync.Once
@@ -624,14 +594,11 @@ func TestOpenSessionRevokedRuntimeBindingDoesNotWriteAfterModelLookup(t *testing
 	}))
 	t.Cleanup(proxy.Close)
 	workspace := t.TempDir()
-	r := newLifecycleHost(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
-	if !r.RuntimeBindingMatches("test-runtime") {
-		t.Fatal("fixture did not establish the Runtime connection gate")
+	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	if !sessionAdmissionOpen(r) {
+		t.Fatal("fixture did not establish Runtime admission")
 	}
-	ctx, err := admittedHostContext(r, context.Background())
-	if err != nil {
-		t.Fatalf("initial OpenSession binding admission: %v", err)
-	}
+	ctx := sessionCallContext(r, context.Background())
 	openDone := make(chan error, 1)
 	openFinished := false
 	go func() {
@@ -654,17 +621,19 @@ func TestOpenSessionRevokedRuntimeBindingDoesNotWriteAfterModelLookup(t *testing
 		t.Fatal("model lookup did not start")
 	}
 
-	// Runtime uses this synchronous gate when its connection or intent publication fails.
-	r.SetRuntimeBinding("test-runtime", false)
-	if r.RuntimeBindingMatches("test-runtime") {
+	// Revoke the authoritative native gate while the remote lookup is outstanding.
+	r.mu.Lock()
+	r.admissionOpen = false
+	r.mu.Unlock()
+	if sessionAdmissionOpen(r) {
 		t.Fatal("Runtime connection gate remained open after revocation")
 	}
 	releaseProxy()
 	select {
 	case err := <-openDone:
 		openFinished = true
-		if status.Code(err) != codes.Unavailable {
-			t.Fatalf("OpenSession after connection revocation = %v, want Unavailable", err)
+		if status.Code(err) != codes.Aborted {
+			t.Fatalf("OpenSession after admission revocation = %v, want Unavailable", err)
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("OpenSession did not finish after model lookup was released")
@@ -672,22 +641,6 @@ func TestOpenSessionRevokedRuntimeBindingDoesNotWriteAfterModelLookup(t *testing
 	if exists, err := r.store.Exists("revoked-session"); err != nil || exists {
 		t.Fatalf("revoked OpenSession wrote a durable Session: exists=%t err=%v", exists, err)
 	}
-}
-
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
-}
-
-func waitForFile(t *testing.T, path string) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(path); err == nil {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", path)
 }
 
 func assertStillClosing(t *testing.T, closed <-chan error, stage string) {
@@ -699,64 +652,12 @@ func assertStillClosing(t *testing.T, closed <-chan error, stage string) {
 	}
 }
 
-func lifecycleConfig(t *testing.T, endpoint, workspace string, bootstrap *string, binary string) Config {
-	t.Helper()
-	return Config{
-		StateDir:      filepath.Join(t.TempDir(), "state"),
-		Launch:        configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}, Bootstrap: bootstrap},
-		WorkspaceRoot: workspace, InitializationCwd: workspace,
-		Claude:     &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test-token"},
-		HTTPClient: http.DefaultClient,
-	}
-}
-
-func modelConfigServer(t *testing.T) *httptest.Server {
-	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = fmt.Fprintf(w, `{"model":%q,"total_context_budget_tokens":32768}`, r.URL.Query().Get("model"))
-	}))
-	t.Cleanup(server.Close)
-	return server
-}
-
-func newLifecycleHost(t *testing.T, config Config) *Host {
-	t.Helper()
-	return newLifecycleHostWithState(t, config, nil)
-}
-
-func newLifecycleHostWithState(t *testing.T, config Config, store state.State) *Host {
-	t.Helper()
-	r, err := newTestHost(config, store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := bindHost(r, "test-incarnation"); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.sessions.Startup(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := r.CloseJournals(context.Background()); err != nil {
-			t.Errorf("close test host: %v", err)
-		}
-	})
-	return r
-}
-
-func openLifecycleSession(sessionID, cwd string) *environmentruntimepb.OpenSessionRequest {
-	return &environmentruntimepb.OpenSessionRequest{
-		SessionId: sessionID,
-		Spec:      &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: cwd, Model: "test-model"},
-	}
-}
-
 func TestScriptOutputFailureStopsProcessAndReturnsCause(t *testing.T) {
 	r := newBareRunner(t)
 	failure := fmt.Errorf("bootstrap output storage failed")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, err := r.scripts.Run(ctx, "test-script-output-failure", "printf output; exec sleep 1000", t.TempDir(), func(bool, []byte) error { return failure })
+	_, err := r.sessionScripts.Run(ctx, "test-script-output-failure", "printf output; exec sleep 1000", t.TempDir(), func(bool, []byte) error { return failure })
 	if !errors.Is(err, failure) {
 		t.Fatalf("output failure was lost: %v", err)
 	}
@@ -768,18 +669,9 @@ func TestScriptOutputFailureStopsProcessAndReturnsCause(t *testing.T) {
 func TestScriptRunPreservesEnvironmentStreamsAndExitStatus(t *testing.T) {
 	t.Setenv("SCRIPT_RUNNER_INHERITED", "before")
 	t.Setenv("SCRIPT_RUNNER_CONFIG", "ambient")
-	r, err := newTestHost(Config{
-		StateDir:           t.TempDir(),
-		HarnessEnvironment: map[string]string{"SCRIPT_RUNNER_CONFIG": "configured"},
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := r.CloseJournals(context.Background()); err != nil {
-			t.Errorf("close test host: %v", err)
-		}
-	})
+	config := lifecycleConfig(t, "http://unused", t.TempDir(), nil, "/bin/false")
+	config.HarnessEnvironment = map[string]string{"SCRIPT_RUNNER_CONFIG": "configured"}
+	r := newSessionTestRuntime(t, config)
 	t.Setenv("SCRIPT_RUNNER_INHERITED", "after")
 
 	var outputMu sync.Mutex
@@ -787,7 +679,7 @@ func TestScriptRunPreservesEnvironmentStreamsAndExitStatus(t *testing.T) {
 	script := `printf '%s|%s' "$SCRIPT_RUNNER_CONFIG" "$SCRIPT_RUNNER_INHERITED"; printf 'diagnostic' >&2; exit 23`
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	code, err := r.scripts.Run(ctx, "test-script", script, t.TempDir(), func(isStdout bool, data []byte) error {
+	code, err := r.sessionScripts.Run(ctx, "test-script", script, t.TempDir(), func(isStdout bool, data []byte) error {
 		outputMu.Lock()
 		defer outputMu.Unlock()
 		if isStdout {

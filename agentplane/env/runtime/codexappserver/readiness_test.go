@@ -1,4 +1,4 @@
-package harnesshost
+package codexappserver
 
 import (
 	"context"
@@ -10,11 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
-	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
-	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
+	"github.com/agentydragon/ducktape/agentplane/env/cosi"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -23,7 +22,7 @@ type executionHealth struct {
 	mu       sync.Mutex
 	serving  bool
 	failure  error
-	host     *Host
+	host     *fixture
 	t        *testing.T
 	revision uint64
 }
@@ -37,12 +36,7 @@ func (executionHealthEvent) resourceType() resource.Type {
 }
 func (v executionHealthEvent) DeepCopy() executionHealthEvent { return v }
 
-func (h *executionHealth) HostFailed(error) {}
-func (h *executionHealth) WaitHostBootstrap(ctx context.Context, _ *runtimepb.Binding) error {
-	return ctx.Err()
-}
-
-func (h *executionHealth) HostExecutionReady(context.Context) (bool, error) {
+func (h *executionHealth) executionReady(context.Context) (bool, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.failure != nil {
@@ -61,26 +55,25 @@ func (h *executionHealth) set(serving bool, err error) {
 	h.revision++
 	revision := h.revision
 	h.mu.Unlock()
-	if err := publishLifecycle(h.host.lifecycle, lifecycle.ExecutionResourceID, executionHealthEvent{Revision: revision}); err != nil {
+	if err := cosi.Publish(h.host.ctx, h.host.store, typed.NewResource[executionHealthEvent, componentExtension[executionHealthEvent]](resource.NewMetadata(lifecycle.Namespace, lifecycle.ExecutionStatusType, lifecycle.ExecutionResourceID, resource.VersionUndefined), executionHealthEvent{Revision: revision}), executionHealthEvent{Revision: revision}, "test-execution"); err != nil {
 		h.t.Fatalf("publish execution status: %v", err)
 	}
 }
 
-func codexHealthRunner(t *testing.T, timeout time.Duration) (*Host, *executionHealth, string) {
+const lifecycleTestTimeout = 10 * time.Second
+
+func codexHealthRunner(t *testing.T, timeout time.Duration) (*fixture, *executionHealth, string) {
 	t.Helper()
-	root := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "initialized")
 	health := &executionHealth{t: t}
-	marker := filepath.Join(root, "initialized")
-	config := lifecycleConfig(t, "", root, nil, "/bin/false")
-	config.Codex = &harness.LaunchConfig{Binary: codexAppServerTestBinary(t, marker), BaseURL: "https://codex.example.invalid/v1", Token: "test"}
-	config.ExecServerURL = "ws://127.0.0.1:4599"
-	config.CodexAppServerReadiness = codexappserver.Readiness{ExecServerDependencyTimeout: timeout}
-	runner := newLifecycleHost(t, config)
-	health.host = runner
-	runner.mu.Lock()
-	runner.runtimeBridge = health
-	runner.mu.Unlock()
-	return runner, health, marker
+	f := newFixtureWithConfiguration(t, nil, func(host *Host) {
+		host.launch.Binary = codexAppServerTestBinary(t, marker)
+		host.deps.ExecServerURL = "ws://127.0.0.1:4599"
+		host.deps.ExecutionReady = health.executionReady
+		host.deps.Readiness.ExecServerDependencyTimeout = timeout
+	})
+	health.host = f
+	return f, health, marker
 }
 
 func TestCodexJoinedStartupWaitsForSeparateExecutionHealth(t *testing.T) {
@@ -89,7 +82,7 @@ func TestCodexJoinedStartupWaitsForSeparateExecutionHealth(t *testing.T) {
 	r, health, marker := codexHealthRunner(t, 30*time.Second)
 	health.set(false, status.Error(codes.Unavailable, "starting"))
 	type result struct {
-		process *codexappserver.Process
+		process *Process
 		err     error
 	}
 	results := make(chan result, 2)
@@ -97,14 +90,14 @@ func TestCodexJoinedStartupWaitsForSeparateExecutionHealth(t *testing.T) {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 			defer cancel()
-			p, err := r.codexAppServer.Host(ctx, nil)
+			p, err := r.host.Host(ctx, nil)
 			results <- result{p, err}
 		}()
 	}
 	waitCodexDemand(t, r, 2)
 	waitForFile(t, marker)
-	waitCodexStatus(t, r, func(v codexappserver.Status) bool {
-		return v.Phase == codexappserver.Initializing && !v.ExecServerReadyDeadline.IsZero()
+	waitCodexStatus(t, r, func(v Status) bool {
+		return v.Phase == Initializing && !v.ExecServerReadyDeadline.IsZero()
 	}, "external execution readiness")
 	select {
 	case got := <-results:
@@ -112,7 +105,7 @@ func TestCodexJoinedStartupWaitsForSeparateExecutionHealth(t *testing.T) {
 	default:
 	}
 	health.set(true, nil)
-	ready := waitCodexStatus(t, r, func(v codexappserver.Status) bool { return v.Phase == codexappserver.Ready && v.ObservedDemand == 2 }, "joined demand ready")
+	ready := waitCodexStatus(t, r, func(v Status) bool { return v.Phase == Ready && v.ObservedDemand == 2 }, "joined demand ready")
 
 	if !ready.ExecServerReadyDeadline.IsZero() {
 		t.Fatal("consumed demand retained deadline")
@@ -136,7 +129,7 @@ func TestCodexExecutionRefusalDrainsOverlappedAppServer(t *testing.T) {
 	}
 	waitForFile(t, marker)
 	health.set(false, status.Error(codes.FailedPrecondition, "native executable unavailable"))
-	stopped := waitCodexStatus(t, r, func(v codexappserver.Status) bool { return v.Phase == codexappserver.Stopped && v.ObservedDemand == 1 }, "execution refusal cleanup")
+	stopped := waitCodexStatus(t, r, func(v Status) bool { return v.Phase == Stopped && v.ObservedDemand == 1 }, "execution refusal cleanup")
 	if !strings.Contains(stopped.Error, "native executable unavailable") {
 		t.Fatalf("lost readiness refusal: %+v", stopped)
 	}
@@ -150,8 +143,8 @@ func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
 	if _, err := requestCodexAppServer(r); err != nil {
 		t.Fatal(err)
 	}
-	first := waitCodexStatus(t, r, func(v codexappserver.Status) bool {
-		return v.Phase == codexappserver.Initializing && !v.ExecServerReadyDeadline.IsZero()
+	first := waitCodexStatus(t, r, func(v Status) bool {
+		return v.Phase == Initializing && !v.ExecServerReadyDeadline.IsZero()
 	}, "execution deadline")
 	if _, err := requestCodexAppServer(r); err != nil {
 		t.Fatal(err)
@@ -160,38 +153,29 @@ func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
 	if joined.ExecServerReadyDeadline != first.ExecServerReadyDeadline {
 		t.Fatal("joined demand changed deadline")
 	}
-	stopped := waitCodexStatus(t, r, func(v codexappserver.Status) bool { return v.Phase == codexappserver.Stopped && v.ObservedDemand == 2 }, "execution timeout")
+	stopped := waitCodexStatus(t, r, func(v Status) bool { return v.Phase == Stopped && v.ObservedDemand == 2 }, "execution timeout")
 	if !strings.Contains(stopped.Error, "within 2s") || !stopped.ExecServerReadyDeadline.IsZero() {
 		t.Fatalf("deadline not consumed: %+v", stopped)
 	}
 }
 
-func forceStopTestRunner(t *testing.T, r *Host) {
+func codexAppServerStatus(t *testing.T, r *fixture) Status {
 	t.Helper()
-	select {
-	case <-r.lifecycle.done.Done():
-	default:
-		r.cancel()
-		<-r.lifecycle.done.Done()
-	}
-	r.lifecycle.workers.Wait()
-}
-
-func codexAppServerStatus(t *testing.T, r *Host) codexappserver.Status {
-	t.Helper()
-	current, _, err := codexappserver.ReadStatus(r.ctx, r.lifecycle.state)
+	current, _, err := ReadStatus(r.ctx, r.store)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return current
 }
 
-func waitCodexStatus(t *testing.T, r *Host, predicate func(codexappserver.Status) bool, want string) codexappserver.Status {
+func waitCodexStatus(t *testing.T, r *fixture, predicate func(Status) bool, want string) Status {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
 	for {
-		changed := r.changesSince()
+		r.host.changeMu.Lock()
+		changed := r.host.changed
+		r.host.changeMu.Unlock()
 		current := codexAppServerStatus(t, r)
 		if predicate(current) {
 			return current
@@ -204,9 +188,9 @@ func waitCodexStatus(t *testing.T, r *Host, predicate func(codexappserver.Status
 	}
 }
 
-func codexAppServerDemand(t *testing.T, r *Host) uint64 {
+func codexAppServerDemand(t *testing.T, r *fixture) uint64 {
 	t.Helper()
-	input, found, err := codexappserver.ReadLifecycleSignal(r.ctx, r.lifecycle.state)
+	input, found, err := ReadLifecycleSignal(r.ctx, r.store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +200,7 @@ func codexAppServerDemand(t *testing.T, r *Host) uint64 {
 	return input.Demand
 }
 
-func waitCodexDemand(t *testing.T, r *Host, want uint64) uint64 {
+func waitCodexDemand(t *testing.T, r *fixture, want uint64) uint64 {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
@@ -234,20 +218,11 @@ func waitCodexDemand(t *testing.T, r *Host, want uint64) uint64 {
 	}
 }
 
-func updateLifecycleValueForTest[T lifecycleSpec[T]](t *testing.T, r *Host, id, owner string, spec T) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(r.ctx, lifecycleTestTimeout)
-	defer cancel()
-	if err := modifyLifecycleForTest(ctx, r, id, owner, func(current *T) { *current = spec }); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func requestCodexAppServer(r *Host) (uint64, error) {
+func requestCodexAppServer(r *fixture) (uint64, error) {
 	var demand uint64
-	err := r.admitCodexRequest(r.ctx, func(ctx context.Context) error {
+	err := r.host.deps.RequestAdmission(r.ctx, func(ctx context.Context) error {
 		var err error
-		demand, err = r.codexAppServer.RequestLocked(ctx, nil)
+		demand, err = r.host.RequestLocked(ctx, nil)
 		return err
 	})
 	return demand, err
@@ -262,4 +237,23 @@ func codexAppServerTestBinary(t *testing.T, initializedMarker string) string {
 		t.Fatal(err)
 	}
 	return binary
+}
+
+func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
+func waitForFile(t *testing.T, path string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
+	defer cancel()
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			t.Fatalf("missing marker %s", path)
+		}
+	}
 }

@@ -1,4 +1,4 @@
-package harnesshost
+package runtime
 
 import (
 	"context"
@@ -8,8 +8,9 @@ import (
 	"testing"
 	"time"
 
-	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 )
@@ -19,7 +20,7 @@ func TestManagedProcessWaitCleansUpAfterNaturalExit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	process, err := r.launchProcess(ctx, "managed-process-test", r.supervisor, supervision.ProcessConfig{
+	process, err := r.launchSessionProcess(ctx, "managed-process-test", r.harnessSupervisor, supervision.ProcessConfig{
 		Command:   []string{"/bin/sh", "-c", "IFS= read -r _; printf stdout; printf stderr >&2; exit 7"},
 		Dir:       t.TempDir(),
 		StopGrace: 5 * time.Second,
@@ -31,7 +32,7 @@ func TestManagedProcessWaitCleansUpAfterNaturalExit(t *testing.T) {
 	if !process.Running() || process.PID() == 0 {
 		t.Fatalf("launched process running=%t pid=%d", process.Running(), process.PID())
 	}
-	status, found, err := supervision.ReadStatus(ctx, r.lifecycle.state, lifecycle.Namespace, process.ID())
+	status, found, err := supervision.ReadStatus(ctx, r.lifecycleState, lifecycle.Namespace, process.ID())
 	if err != nil || !found || status.Phase != supervision.Running || status.Owner != "managed-process-test" || status.PID != process.PID() {
 		t.Fatalf("live process status = %+v found=%t err=%v", status, found, err)
 	}
@@ -63,7 +64,7 @@ func TestManagedProcessCanceledWaitRetainsOwnershipUntilStop(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	process, err := r.launchProcess(ctx, "managed-process-test", r.supervisor, supervision.ProcessConfig{
+	process, err := r.launchSessionProcess(ctx, "managed-process-test", r.harnessSupervisor, supervision.ProcessConfig{
 		Command:   []string{"/bin/sleep", "60"},
 		Dir:       t.TempDir(),
 		StopGrace: 5 * time.Second,
@@ -100,7 +101,7 @@ func TestManagedProcessCanceledWaitRetainsOwnershipUntilStop(t *testing.T) {
 	if !process.Running() {
 		t.Fatal("canceled Wait stopped the native process")
 	}
-	status, found, err := supervision.ReadStatus(ctx, r.lifecycle.state, lifecycle.Namespace, process.ID())
+	status, found, err := supervision.ReadStatus(ctx, r.lifecycleState, lifecycle.Namespace, process.ID())
 	if err != nil || !found || status.Phase != supervision.Running {
 		t.Fatalf("process status after canceled Wait = %+v found=%t err=%v", status, found, err)
 	}
@@ -120,7 +121,7 @@ func TestManagedProcessBlocksCloseUntilFence(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	process, err := r.launchProcess(ctx, "managed-process-test", r.supervisor, supervision.ProcessConfig{
+	process, err := r.launchSessionProcess(ctx, "managed-process-test", r.harnessSupervisor, supervision.ProcessConfig{
 		Command:   []string{"/bin/sleep", "60"},
 		Dir:       t.TempDir(),
 		StopGrace: 5 * time.Second,
@@ -132,14 +133,14 @@ func TestManagedProcessBlocksCloseUntilFence(t *testing.T) {
 	closeDone := make(chan struct{})
 	var closeErr error
 	go func() {
-		closeErr = r.CloseJournals(context.Background())
+		closeErr = r.Close(context.Background())
 		close(closeDone)
 	}()
 	t.Cleanup(func() {
 		select {
 		case <-closeDone:
 		case <-time.After(lifecycleTestTimeout):
-			r.cancel()
+			r.lifecycleCancel()
 			<-closeDone
 			t.Errorf("Host Close did not finish after process cleanup")
 		}
@@ -150,7 +151,7 @@ func TestManagedProcessBlocksCloseUntilFence(t *testing.T) {
 	stopManagedProcessOnCleanup(t, process)
 
 	waitLifecycle(t, r, func() bool {
-		return r.lifecycle.status().Blocker.Kind == lifecycle.ProcessCleanupPending && r.lifecycle.status().Blocker.FinalizersPending
+		return currentSessionLifecycleStatus(r).Blocker.Kind == lifecycle.ProcessCleanupPending && currentSessionLifecycleStatus(r).Blocker.FinalizersPending
 	}, "Host process fencing barrier")
 	select {
 	case <-closeDone:
@@ -175,28 +176,26 @@ func TestManagedProcessBlocksCloseUntilFence(t *testing.T) {
 }
 
 // Runtime processes share the controller but must not enter the Host's drain barrier.
-func TestHostCloseDoesNotWaitForRuntimeProcess(t *testing.T) {
+func TestSessionDrainDoesNotWaitForRuntimeProcess(t *testing.T) {
 	r := newManagedProcessTestHost(t)
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
 	var runtimeWorkers sync.WaitGroup
 	runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
 	t.Cleanup(cancelRuntime)
-	runtimeProcesses := r.lifecycle.processes.Scope(runtimeCtx, supervision.RuntimeDomain, &runtimeWorkers, r.fail)
-	process, err := runtimeProcesses.Launch(ctx, "runtime-process-test", 1, r.supervisor, supervision.ProcessConfig{
+	runtimeProcesses := r.harnessProcesses.Scope(runtimeCtx, supervision.RuntimeDomain, &runtimeWorkers, r.fail)
+	process, err := runtimeProcesses.Launch(ctx, "runtime-process-test", 1, r.harnessSupervisor, supervision.ProcessConfig{
 		Command: []string{"/bin/sleep", "60"}, Dir: t.TempDir(), StopGrace: 5 * time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	stopManagedProcessOnCleanup(t, process)
-	r.mu.Lock()
-	err = r.lifecycle.setDesiredState(lifecycle.Closing, "")
-	r.mu.Unlock()
+	_, err = r.Quiesce(ctx, &sessionpb.QuiesceRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.WaitClosed(ctx); err != nil {
+	if err := r.waitForNativeStopped(ctx, environmentDesired(r).Generation); err != nil {
 		t.Fatalf("Host drain waited for Runtime process: %v", err)
 	}
 	if !process.Running() {
@@ -208,46 +207,31 @@ func TestHostCloseDoesNotWaitForRuntimeProcess(t *testing.T) {
 	runtimeWorkers.Wait()
 }
 
-func newManagedProcessTestHost(t *testing.T) *Host {
+func newManagedProcessTestHost(t *testing.T) *Runtime {
 	t.Helper()
-	r, err := newTestHost(Config{StateDir: t.TempDir()}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := bindHost(r, "managed-process-test"); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.sessions.Startup(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := r.CloseJournals(context.Background()); err != nil {
-			t.Errorf("close managed process test host: %v", err)
-		}
-	})
-	return r
+	return newSessionTestRuntime(t, lifecycleConfig(t, "http://unused", t.TempDir(), nil, "/bin/false"))
 }
 
-func assertManagedProcessFinalizer(t *testing.T, ctx context.Context, r *Host, process *supervision.ManagedProcess, want bool) {
+func assertManagedProcessFinalizer(t *testing.T, ctx context.Context, r *Runtime, process *supervision.ManagedProcess, want bool) {
 	t.Helper()
-	desired, err := r.lifecycle.state.Get(ctx, process.Pointer())
+	desired, err := r.lifecycleState.Get(ctx, process.Pointer())
 	if err != nil {
 		t.Fatalf("read process desired state: %v", err)
 	}
-	got := desired.Metadata().Finalizers().Has(r.lifecycle.processes.Controller().Name())
+	got := desired.Metadata().Finalizers().Has(r.harnessProcesses.Controller().Name())
 	if got != want {
 		t.Fatalf("process finalizer present=%t, want %t", got, want)
 	}
 }
 
-func assertManagedProcessAbsent(t *testing.T, ctx context.Context, r *Host, process *supervision.ManagedProcess) {
+func assertManagedProcessAbsent(t *testing.T, ctx context.Context, r *Runtime, process *supervision.ManagedProcess) {
 	t.Helper()
-	_, err := r.lifecycle.state.Get(ctx, process.Pointer())
+	_, err := r.lifecycleState.Get(ctx, process.Pointer())
 	if !state.IsNotFoundError(err) {
 		t.Fatalf("process desired state after cleanup: err=%v, want not found", err)
 	}
 	status := resource.NewMetadata(lifecycle.Namespace, supervision.StatusType, process.ID(), resource.VersionUndefined)
-	if _, err := r.lifecycle.state.WatchFor(ctx, status, state.WithEventTypes(state.Destroyed)); err != nil {
+	if _, err := r.lifecycleState.WatchFor(ctx, status, state.WithEventTypes(state.Destroyed)); err != nil {
 		t.Fatalf("wait for managed process status cleanup: %v", err)
 	}
 }

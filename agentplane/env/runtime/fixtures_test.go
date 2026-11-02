@@ -13,7 +13,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
@@ -43,7 +42,6 @@ func TestMain(m *testing.M) {
 
 type runtimeTestConfig struct {
 	Config
-	host             harnesshost.Config
 	deps             runtimeDeps
 	expectCloseError bool
 }
@@ -52,15 +50,15 @@ func lifecycleConfig(t *testing.T, endpoint, workspace string, bootstrap *string
 	t.Helper()
 	root := t.TempDir()
 	launch := configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}, Bootstrap: bootstrap}
-	config := Config{StateDir: root, Launch: launch, Supervision: "subprocess", InitializationCwd: workspace, Control: insecureControl()}
-	return runtimeTestConfig{Config: config, host: harnesshost.Config{StateDir: root, Launch: launch, WorkspaceRoot: workspace, InitializationCwd: workspace, Claude: &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test"}, HTTPClient: http.DefaultClient}}
+	config := Config{StateDir: root, Launch: launch, Supervision: "subprocess", InitializationCwd: workspace, Control: insecureControl(), WorkspaceRoot: workspace, Claude: &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test"}, HTTPClient: http.DefaultClient}
+	return runtimeTestConfig{Config: config}
 }
 
 func insecureControl() configuration.EnvironmentRuntimeControlConfiguration {
 	return configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: environmentruntimetransport.Security{Mode: environmentruntimetransport.Insecure}}
 }
 
-// The fixture composes production Runtime and Host through their direct coordinator.
+// The fixture exercises the production Runtime and its shared component controllers.
 func newLifecycleRuntime(t *testing.T, config runtimeTestConfig) *Runtime {
 	t.Helper()
 	return newLifecycleRunnerWithState(t, config, nil)
@@ -68,15 +66,14 @@ func newLifecycleRuntime(t *testing.T, config runtimeTestConfig) *Runtime {
 
 func newLifecycleRunnerWithState(t *testing.T, config runtimeTestConfig, store state.State) *Runtime {
 	t.Helper()
-	config.Config.HostConfig = config.host
-	if config.Config.HostIngress.Target == "" {
-		config.Config.HostIngress.Target = startAcknowledgingHistory(t)
+	if config.Config.HistoryIngress.Target == "" {
+		config.Config.HistoryIngress.Target = startAcknowledgingHistory(t)
 	}
 	r, err := newRuntime(config.Config, store, config.deps)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.startHost(); err != nil {
+	if err := r.startSessions(); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -112,7 +109,7 @@ func newLifecycleRunnerWithState(t *testing.T, config runtimeTestConfig, store s
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
-	if err := r.waitForInitialHost(ctx); err != nil {
+	if err := r.waitForInitialSessions(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.adoptIncarnation(context.Background(), "test-incarnation"); err != nil {

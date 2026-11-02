@@ -43,6 +43,9 @@ go_test(
     embed = [":codexappserver"],
     race = "on",
     deps = [
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_grpc//codes",
+        "//agentplane/env/cosi",
         "//agentplane/env/oneoff",
         "//agentplane/env/runtime/harness",
         "//agentplane/env/runtime/lifecycle",

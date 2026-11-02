@@ -1,4 +1,4 @@
-package harnesshost
+package runtime
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
@@ -27,9 +27,9 @@ func TestCloseWaitersDoNotCancelSharedCleanup(t *testing.T) {
 	waitContext, stopWaiting := context.WithCancel(context.Background())
 	defer stopWaiting()
 	first := make(chan error, 1)
-	go func() { first <- r.CloseJournals(waitContext) }()
+	go func() { first <- r.Close(waitContext) }()
 	waitLifecycle(t, r, func() bool {
-		return r.lifecycle.desiredState().Mode == lifecycle.Closing
+		return environmentDesired(r).Mode == lifecycle.Closing
 	}, "local shutdown intent")
 	stopWaiting()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
@@ -44,18 +44,18 @@ func TestCloseWaitersDoNotCancelSharedCleanup(t *testing.T) {
 	}
 	expired, releaseExpired := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer releaseExpired()
-	if err := r.CloseJournals(expired); !errors.Is(err, context.DeadlineExceeded) {
+	if err := r.Close(expired); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expired concurrent Close waiter = %v, want context.DeadlineExceeded", err)
 	}
-	if err := r.ctx.Err(); err != nil {
+	if err := r.lifecycleContext.Err(); err != nil {
 		t.Fatalf("Close waiter canceled the Host lifetime: %v", err)
 	}
 	finishSetup()
-	if err := r.CloseJournals(ctx); err != nil {
+	if err := r.Close(ctx); err != nil {
 		t.Fatalf("Close after setup finished = %v", err)
 	}
 	// Completion remains observable even when a later caller's context has expired.
-	if err := r.CloseJournals(expired); err != nil {
+	if err := r.Close(expired); err != nil {
 		t.Fatalf("already completed Close with expired context = %v", err)
 	}
 }
@@ -66,36 +66,40 @@ func TestCloseReportsExitedLifecycleEngine(t *testing.T) {
 		State: state.WrapCore(namespaced.NewState(inmem.Build)), err: failure,
 	}
 	proxy := modelConfigServer(t)
-	r, err := newTestHost(lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false"), store)
+	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
+	r, err := newRuntime(config.Config, store, config.deps)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := r.startSessions(); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
-		r.cancel()
-		<-r.lifecycle.done.Done()
-		r.lifecycle.workers.Wait()
+		r.lifecycleCancel()
+		<-r.lifecycleDone
+		r.sessionWorkers.Wait()
 		_ = r.sessions.Close()
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
 	select {
-	case <-r.lifecycle.done.Done():
+	case <-r.lifecycleDone:
 	case <-ctx.Done():
 		t.Fatal("lifecycle engine did not report its watch failure")
 	}
 	closed := make(chan error, 1)
-	go func() { closed <- r.CloseJournals(ctx) }()
+	go func() { closed <- r.Close(ctx) }()
 	select {
 	case err := <-closed:
 		if !errors.Is(err, failure) {
 			t.Fatalf("Close after lifecycle exit = %v, want watch failure", err)
 		}
 	case <-ctx.Done():
-		r.cancel()
+		r.lifecycleCancel()
 		<-closed
 		t.Fatal("Close waited for an exited lifecycle engine")
 	}
-	if r.lifecycle.status().Stage == lifecycle.Closed {
+	if currentSessionLifecycleStatus(r).Stage == lifecycle.Closed {
 		t.Fatal("engine failure reported completed lifecycle cleanup")
 	}
 }

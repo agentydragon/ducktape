@@ -116,6 +116,10 @@ func newFixture(t *testing.T) *fixture {
 }
 
 func newFixtureWithOnChange(t *testing.T, onChange func()) *fixture {
+	return newFixtureWithConfiguration(t, onChange, nil)
+}
+
+func newFixtureWithConfiguration(t *testing.T, onChange func(), configure func(*Host)) *fixture {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	f := &fixture{ctx: ctx, cancel: cancel, store: state.WrapCore(namespaced.NewState(inmem.Build)), runDone: make(chan error, 1)}
@@ -153,6 +157,9 @@ func newFixtureWithOnChange(t *testing.T, onChange func()) *fixture {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if configure != nil {
+		configure(f.host)
 	}
 	if err := f.host.Initialize(ctx); err != nil {
 		t.Fatal(err)
