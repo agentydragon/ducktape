@@ -46,6 +46,7 @@ import polars as pl
 from finance.augur.model.bond_fund import constant_maturity_fund_paths
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
 from finance.evidence import loading, sources
+from finance.evidence.snapshot import EvidenceSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +145,7 @@ def reproduce(evidence_dir: Path, *, maturity_years: float = BOND_MATURITY_YEARS
     1926 opening yield and use only the Aaa evidence required here.
     """
 
-    cache = loading.EvidenceFrameCache(evidence_dir)
+    cache = loading.EvidenceFrameCache(EvidenceSnapshot.capture(evidence_dir, (sources.FRED_AAA,)))
     monthly = cache.monthly_frame(sources.FRED_AAA).filter(
         pl.col("month").is_between(STUDY_START_MONTH, STUDY_END_MONTH, closed="both")
     )

@@ -8,6 +8,7 @@ py_library(
     name = "loading",
     srcs = ["loading.py"],
     deps = [
+        ":snapshot",
         ":sources",
         "@pypi//polars",
     ],
@@ -128,6 +129,28 @@ py_test(
     deps = [
         ":polymarket",
         "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "snapshot",
+    srcs = ["snapshot.py"],
+    deps = [
+        ":sources",
+        "@pypi//pygit2",
+    ],
+)
+
+py_test(
+    name = "test_snapshot",
+    srcs = ["test_snapshot.py"],
+    deps = [
+        ":snapshot",
+        ":sources",
+        "//:conftest",
+        "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

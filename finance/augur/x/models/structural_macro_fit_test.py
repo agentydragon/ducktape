@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
+import json
 import math
 import zipfile
 from collections.abc import Callable
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -18,9 +21,12 @@ from finance.augur.x.models.macro_var import fit_macro_var
 from finance.augur.x.models.structural_macro_fit import (
     LONG_RECORD_MACRO_SOURCES,
     LONG_RECORD_START,
+    MacroFitWindow,
+    fit_structural_macro_defaults,
     load_long_record_macro_var_levels,
 )
 from finance.evidence import loading, sources
+from finance.evidence.snapshot import EvidenceSnapshot
 
 
 def _month_seq(start: date, end: date) -> list[date]:
@@ -124,13 +130,13 @@ def test_long_var_uses_its_three_inputs_when_a_corporate_series_ends_early(
     previous_replay = load_macro_history(tmp_path)
     assert previous_replay.months[-1] == corporate_end
     reads: list[sources.EvidenceSource] = []
-    real_source_bytes = loading.source_bytes
+    real_source_bytes = EvidenceSnapshot.source_bytes
 
-    def count_source_bytes(directory: Path, source: sources.EvidenceSource) -> bytes:
+    def count_source_bytes(snapshot: EvidenceSnapshot, source: sources.EvidenceSource) -> bytes:
         reads.append(source)
-        return real_source_bytes(directory, source)
+        return real_source_bytes(snapshot, source)
 
-    monkeypatch.setattr(loading, "source_bytes", count_source_bytes)
+    monkeypatch.setattr(EvidenceSnapshot, "source_bytes", count_source_bytes)
     levels = load_long_record_macro_var_levels(tmp_path)
 
     assert set(reads) == set(LONG_RECORD_MACRO_SOURCES)
@@ -154,6 +160,50 @@ def test_long_var_inner_aligns_a_gap_in_one_required_input(tmp_path: Path) -> No
     ]
     assert month_axes[0] == month_axes[1] == month_axes[2]
     assert date(1970, 6, 1) not in month_axes[0]
+
+
+def test_fitted_artifact_records_the_exact_captured_sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _write_evidence(tmp_path, end=date(1993, 12, 1), corporate_end=date(1993, 12, 1))
+    months = _month_seq(date(1990, 1, 1), date(1993, 12, 1))
+    rows = "\n".join(f"{month.isoformat()},4.0" for month in months)
+    (tmp_path / sources.FRED_FEDFUNDS.output_filename).write_text(f"observation_date,FEDFUNDS\n{rows}\n")
+    yahoo = {
+        "chart": {
+            "result": [
+                {
+                    "meta": {"dataGranularity": "1d"},
+                    "timestamp": [int(datetime(m.year, m.month, 1, tzinfo=UTC).timestamp()) for m in months],
+                    "indicators": {"adjclose": [{"adjclose": [100.0 + i for i in range(len(months))]}]},
+                }
+            ]
+        }
+    }
+    (tmp_path / sources.YAHOO_VFINX.output_filename).write_text(json.dumps(yahoo))
+    fitted = SimpleNamespace(
+        first_month=months[0],
+        last_month=months[-1],
+        sample_months=len(months),
+        latest_month=months[-1],
+        latest_state=(0.04, 0.01, 0.02),
+        intercept=(0.01, 0.01, 0.01),
+        transition=((0.5, 0.0, 0.0), (0.0, 0.5, 0.0), (0.0, 0.0, 0.5)),
+        shock_cholesky=((0.01, 0.0, 0.0), (0.0, 0.01, 0.0), (0.0, 0.0, 0.01)),
+        monthly_log_mu=0.01,
+        monthly_log_sigma=0.02,
+        beta=0.0,
+        r_squared=0.0,
+    )
+    for name in ("fit_macro_var", "fit_log_returns", "fit_rate_beta"):
+        monkeypatch.setattr(f"finance.augur.x.models.structural_macro_fit.{name}", lambda *_args, **_kwargs: fitted)
+
+    result = fit_structural_macro_defaults(tmp_path, macro_window=MacroFitWindow.LONG_RECORD_1926)
+    expected_sources = (*LONG_RECORD_MACRO_SOURCES, sources.FRED_FEDFUNDS, sources.YAHOO_VFINX)
+    assert result.evidence_revision is None
+    assert result.evidence_source_sha256 == {
+        source.provenance_label: hashlib.sha256((tmp_path / source.output_filename).read_bytes()).hexdigest()
+        for source in expected_sources
+    }
+    assert result.model_dump(mode="json")["evidence_source_sha256"] == result.evidence_source_sha256
 
 
 if __name__ == "__main__":
