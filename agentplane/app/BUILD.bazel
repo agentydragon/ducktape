@@ -324,6 +324,9 @@ py_test(
     name = "test_thread_browser",
     size = "medium",
     srcs = ["test_thread_browser.py"],
+    exec_properties = {
+        "test.runner-recycling-key": "thread-browser-images-20261101-v1",
+    },
     requires_docker = True,
     shard_count = 16,
     tags = ["visual"],
