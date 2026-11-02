@@ -176,18 +176,6 @@ func (r *Runner) ApplyIntent(ctx context.Context, intent *runtimepb.LifecycleInt
 	}
 	err := runnerlifecycle.PublishDesired(r.ctx, r.lifecycle.state, runnerlifecycle.Desired{Mode: mode, SealUID: intent.SealUid, Generation: intent.Binding.Generation})
 	if err == nil {
-		input, _, readErr := lifecycleRead[runnerInputSpec](r.ctx, r.lifecycle.state, "runner")
-		if readErr != nil {
-			err = readErr
-		} else {
-			input.ExecutionFenced = intent.ExecutionFenced
-			input.RuntimeBootID = intent.Binding.RuntimeBootId
-			input.HostBootID = intent.Binding.HostBootId
-			input.Generation = intent.Binding.Generation
-			err = publishLifecycle(r.lifecycle, "runner", input)
-		}
-	}
-	if err == nil {
 		r.ready.Store(true)
 	}
 	r.mu.Unlock()

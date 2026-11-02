@@ -328,6 +328,9 @@ func TestClosingIntentPreservesSealAndWaitsForSetup(t *testing.T) {
 	if err := r.ApplyIntent(context.Background(), closing); err != nil {
 		t.Fatal(err)
 	}
+	if err := publishHostIntentStatus(context.Background(), r, closing, true); err != nil {
+		t.Fatal(err)
+	}
 	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == runnerlifecycle.Flushing }, "closing seal flush")
 	seal := s.EventJournal().SealState()
 	if seal == nil || seal.IncarnationUID != "test-incarnation" {

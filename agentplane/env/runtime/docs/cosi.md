@@ -141,7 +141,7 @@ flowchart LR
   AM -->|publish| AI & AO
   Journal -->|publish| J & ACK
   PH -->|publish| PD & PI
-  RD & RI & SD & SR & AR & J & ACK & PD & PS -->|watch| RL
+  RD & RI & IS & SD & SR & AR & J & ACK & PD & PS -->|watch| RL
   RL -->|write / queue next stage| RR
   SI & RD & RR & AR & SO -->|QPrimary / QMapped| SC
   SC -->|write| SR
@@ -159,14 +159,14 @@ flowchart LR
   HR -->|write sampled intent + report| R
 ```
 
-| Controller                   | Watched inputs                                                                                                                                                                            | Controller output                    | Selection / side effects                                                                                                                      |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `harness-host-report`        | `RunnerDesiredStates`, `RunnerRuntimes` (weak), plus Host change wakeups                                                                                                                  | `HostReports` (exclusive)            | Publishes inventory, blocker, idle and lifecycle facts with the full sampled intent.                                                          |
-| `harness-host-intent`        | `HostIntents` (weak)                                                                                                                                                                      | `HostIntentStatuses` (exclusive)     | Checks startup and the synchronous Runtime connection gate, records Applying before the native effect, and fails closed on an unknown result. |
-| `runner-lifecycle`           | `RunnerDesiredStates`, `RunnerInputs`, `SessionDrainInputs`, `SessionRuntimes`, `JournalSeals`, `IngressAcks`, `CodexAppServerRuntimes`, `ProcessDesiredStates`, `ProcessStatuses` (weak) | `RunnerRuntimes` (exclusive)         | Aggregates the Host drain barrier; explicitly queues its next step after changing status.                                                     |
-| `session-lifecycle`          | `SessionInputs` (primary); `RunnerDesiredStates`, `RunnerRuntimes`, `CodexAppServerRuntimes`, `NativeOperationResults` (mapped)                                                           | `SessionRuntimes` (exclusive)        | Per Session. App-server updates map only to Codex Sessions; operation results map to their Session.                                           |
-| `codex-app-server-lifecycle` | `CodexAppServerInputs` (primary); `RunnerDesiredStates`, `RunnerRuntimes`, `CodexAppServerOperationResults`, `EmbeddedExecutionRuntimes` (mapped)                                         | `CodexAppServerRuntimes` (exclusive) | Per shared app-server; native effects run in host-owned one-off workers. Execution changes wake a separate live-owner readiness check.        |
-| `process-lifecycle`          | `ProcessDesiredStates` (primary), `ProcessInputs` (mapped)                                                                                                                                | `ProcessStatuses` (exclusive)        | The same single controller and registry shown above; per-domain contexts and worker barriers remain separate.                                 |
+| Controller                   | Watched inputs                                                                                                                                                                                                  | Controller output                    | Selection / side effects                                                                                                                      |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `harness-host-report`        | `RunnerDesiredStates`, `RunnerRuntimes` (weak), plus Host change wakeups                                                                                                                                        | `HostReports` (exclusive)            | Publishes inventory, blocker, idle and lifecycle facts with the full sampled intent.                                                          |
+| `harness-host-intent`        | `HostIntents` (weak)                                                                                                                                                                                            | `HostIntentStatuses` (exclusive)     | Checks startup and the synchronous Runtime connection gate, records Applying before the native effect, and fails closed on an unknown result. |
+| `runner-lifecycle`           | `RunnerDesiredStates`, `RunnerInputs`, `HostIntentStatuses`, `SessionDrainInputs`, `SessionRuntimes`, `JournalSeals`, `IngressAcks`, `CodexAppServerRuntimes`, `ProcessDesiredStates`, `ProcessStatuses` (weak) | `RunnerRuntimes` (exclusive)         | Aggregates the Host drain barrier; explicitly queues its next step after changing status.                                                     |
+| `session-lifecycle`          | `SessionInputs` (primary); `RunnerDesiredStates`, `RunnerRuntimes`, `CodexAppServerRuntimes`, `NativeOperationResults` (mapped)                                                                                 | `SessionRuntimes` (exclusive)        | Per Session. App-server updates map only to Codex Sessions; operation results map to their Session.                                           |
+| `codex-app-server-lifecycle` | `CodexAppServerInputs` (primary); `RunnerDesiredStates`, `RunnerRuntimes`, `CodexAppServerOperationResults`, `EmbeddedExecutionRuntimes` (mapped)                                                               | `CodexAppServerRuntimes` (exclusive) | Per shared app-server; native effects run in host-owned one-off workers. Execution changes wake a separate live-owner readiness check.        |
+| `process-lifecycle`          | `ProcessDesiredStates` (primary), `ProcessInputs` (mapped)                                                                                                                                                      | `ProcessStatuses` (exclusive)        | The same single controller and registry shown above; per-domain contexts and worker barriers remain separate.                                 |
 
 The process controller and its three resource types appear in both diagrams to show their callers;
 they are one controller and one set of resources. Each desired attempt records its process domain.
@@ -277,7 +277,7 @@ Session halt and process fencing are separate facts. The aggregate also waits fo
 inspections and the app-server. A Session can remain halted while its process or journal barrier is
 still incomplete.
 
-### Runner drain and Runtime Close
+### Harness Host drain and Runtime Close
 
 ```mermaid
 flowchart LR
@@ -288,11 +288,12 @@ flowchart LR
   Sealing -->|Close| Closed
 ```
 
-Runner stages are aggregate status, with a blocker describing the first unmet predicate. Fencing
-is needed only when a seal is requested and the matching fence is not yet present; an already
-fenced generation can proceed directly to sealing. Closing with a seal waits for sealing, while
-quiescing additionally waits for exact History ACK cursors. A new running generation can leave a
-terminal drain state.
+Host stages are aggregate status, with a blocker describing the first unmet predicate. Admission
+must settle before Sessions halt; Host then waits for Session processes, the shared app-server,
+Host-owned process finalizers and pending inspections. After that native stop, a seal-bearing intent
+must have an exact, successfully applied Host intent with the Execution fence before sealing begins.
+Closing with a seal waits for sealing, while quiescing additionally waits for exact History ACK
+cursors. A new running generation can leave a terminal drain state.
 
 ```mermaid
 flowchart LR

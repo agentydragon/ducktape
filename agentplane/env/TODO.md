@@ -27,10 +27,8 @@ required COSI subresource or a reason to combine resources with different owners
   and resource names where it merely describes how the service is packaged.
 - Review resources named `*Inputs` by their actual contents rather than applying one replacement:
   bootstrap carries a request, Session combines demand and observations, Process carries a revision
-  wakeup, and Execution carries demand and completion facts. `RunnerInputs` combines admission
-  accounting with a copy of Runtime's Execution fence and binding. Consider consuming the applied
-  Host intent directly and separating admission facts; first preserve exact boot IDs and generation,
-  intent-application ordering, the admission lock and all teardown/fencing barriers.
+  wakeup, Execution carries demand and completion facts, and the Host input carries admission
+  accounting. Preserve the admission lock and all teardown and fencing barriers.
 - Rename `BootstrapOperationResults`, `CodexAppServerOperationResults` and
   `NativeOperationResults`: their resources track operation completion and routing, while the
   in-process operation owns its result. Name the Session resource for Session operations. Preserve
@@ -54,9 +52,6 @@ COSI resource snapshots.
   publishing a revision only to wake the controller to read the process registry. Prototype one
   observation first. Live handles and one-shot slots remain process-owned; preserve completion
   ordering, teardown finalizers, fencing and no replay.
-- Map the Harness Host drain stages and their dependencies on Session and app-server state. Those
-  controllers also wait for the aggregate stage before advancing. Simplify one path at a time with
-  race coverage, retaining admission, native cleanup, Execution fencing, sealing and ACK barriers.
 - Measure Session reconcile fan-out and contention before optimizing: Host lifecycle updates map to
   every Session, app-server updates map to every Codex Session, and snapshot publication uses a
   manager-wide mutex. If significant, narrow subscriptions or locking without losing the separate

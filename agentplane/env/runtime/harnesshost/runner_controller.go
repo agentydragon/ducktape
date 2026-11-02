@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
@@ -16,16 +17,16 @@ import (
 
 type runnerLifecycleController struct{ l *lifecycle }
 
-func runnerFenceMatches(input runnerInputSpec, intent *runtimepb.LifecycleIntent, generation uint64) bool {
-	return intent != nil && intent.Binding != nil && input.ExecutionFenced &&
-		input.RuntimeBootID == intent.Binding.RuntimeBootId && input.HostBootID == intent.Binding.HostBootId &&
-		input.Generation == intent.Binding.Generation && input.Generation == generation
+func hostFenceMatches(applied runnerlifecycle.HostIntentStatus, intent *runtimepb.LifecycleIntent, generation uint64) bool {
+	return intent != nil && intent.Binding != nil && applied.Applied && applied.Error == "" &&
+		applied.Intent.ExecutionFenced && applied.Intent.Generation == generation &&
+		applied.Intent == runnerlifecycle.HostIntentFromProto(intent)
 }
 
 func (*runnerLifecycleController) Name() string { return runnerControllerName }
 func (*runnerLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{runnerlifecycle.DesiredStateType, runnerInputType, session.DrainInputType, session.RuntimeType, journalSealType, ingressAckType, codexappserver.RuntimeType, supervision.DesiredStateType, supervision.StatusType} {
+	for _, kind := range []string{runnerlifecycle.DesiredStateType, runnerlifecycle.HostIntentStatusType, runnerInputType, session.DrainInputType, session.RuntimeType, journalSealType, ingressAckType, codexappserver.RuntimeType, supervision.DesiredStateType, supervision.StatusType} {
 		inputs = append(inputs, controller.Input{Namespace: runnerlifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -249,18 +250,14 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		c.l.runner.mu.Unlock()
 		return nil
 	}
-	input, found, err := lifecycleRead[runnerInputSpec](ctx, c.l.state, runnerlifecycle.ResourceID)
+	applied, found, err := cosi.Read(ctx, r, runnerlifecycle.HostIntentStatusResource(runnerlifecycle.HostIntentStatus{}))
 	if err != nil {
 		c.l.runner.mu.Unlock()
 		return err
 	}
-	if !found {
-		c.l.runner.mu.Unlock()
-		return nil
-	}
 	nativeChanged := !c.l.runner.nativeStopped
 	c.l.runner.nativeStopped = true
-	fenced := runnerFenceMatches(input, c.l.runner.intent, desiredState.Generation)
+	fenced := found && hostFenceMatches(applied, c.l.runner.intent, desiredState.Generation)
 	c.l.runner.mu.Unlock()
 	if nativeChanged {
 		c.l.runner.changed()
