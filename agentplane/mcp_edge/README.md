@@ -62,32 +62,13 @@ The published image is `agentplane-mcp-edge`, built from `//agentplane/mcp_edge:
 The same binary embeds Goose migrations and applies them before serving. `mcp-edge --migrate-only`
 uses the same lifecycle for explicit initialization; both modes read `AGENTPLANE_MCP_EDGE_DATABASE_URL`.
 
-## Schema and data handoff
+## Connection and OAuth storage
 
-The Action Service's legacy Connection/OAuth rows and tables are retained until a separately
-verified data handoff and retention decision. The
-[staging investigation](debug/staging_handoff_20261023.md) found a populated edge with distinct
-Connection/grant/enrollment IDs; the empty-destination command below is not applicable to that
-observed state. Preserve both datasets until historical ownership and recovery are verified.
-
-The operator command
-`//agentplane/mcp_edge/schema_transfer/cmd:mcp-edge-transfer` copies only:
-
-- `external_connection`, `external_connection_grant`, `connection_enrollment`
-- `oauth_registered_client`, `oauth_authorization`, `oauth_token`
-
-Set `AGENTPLANE_ACTIONS_DATABASE_URL` and `AGENTPLANE_MCP_EDGE_DATABASE_URL` in the operator's
-environment and pass `--confirm-single-writer-cutover`. Stop legacy Actions and keep destination edge writers stopped throughout the copy. The command requires an empty destination
-and recognized schema histories, holds source table `SHARE` locks, copies and compares every
-supported field inside one destination transaction, and prints only row counts. Lock waits fail
-after five seconds; SIGINT/SIGTERM cancels the operation. Failures before commit roll back the
-destination. Action requests, Decisions, Executions, policies and Web Push state do not move.
-
-Locks fence writes only while copying; they cannot prevent a legacy process from restarting. Keep
-the legacy owner stopped after transfer. Retain source tables until a separately reviewed cleanup
-migration; do not use rollback as a reason to restart a writer after the edge accepts writes. An
-empty-source transfer needs no copy, but recheck state at handoff rather than relying on an earlier
-inventory.
+The MCP edge owns Connection and external OAuth state in its `mcp_edge` database. Its serving
+tables are independent of the Action Service database. Actions migration 9 retires the old copies
+after the operator approved deleting their eight historical records. See the
+[staging investigation](debug/staging_handoff_20261023.md) for the pre-retirement inventory.
+Actions still owns upstream MCP server linkage and OAuth token state for configured Actions.
 
 The operator accepts database-stored secrets without application-level encryption; issued opaque
 tokens are stored only as hashes.

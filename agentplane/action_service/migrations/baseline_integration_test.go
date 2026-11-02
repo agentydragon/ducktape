@@ -1,4 +1,4 @@
-package migrations_test
+package migrations
 
 import (
 	"context"
@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	_ "github.com/lib/pq"
 )
@@ -19,7 +18,14 @@ import (
 var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTests(migrations.Up, func(database *postgres.Database) int {
+	os.Exit(postgres.RunIntegrationTests(func(ctx context.Context, db *sql.DB) error {
+		provider, err := newProvider(db)
+		if err != nil {
+			return err
+		}
+		_, err = provider.UpTo(ctx, 8)
+		return err
+	}, func(database *postgres.Database) int {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 		if err := database.PrepareCloneTemplate(ctx); err != nil {
@@ -57,8 +63,98 @@ func count(t *testing.T, db *sql.DB, query string) int {
 	return n
 }
 
+var retiredTables = []string{
+	"external_connection", "external_connection_grant", "connection_enrollment",
+	"oauth_registered_client", "oauth_authorization", "oauth_token",
+}
+
+func assertLegacyTablesAbsent(t *testing.T, db *sql.DB) {
+	t.Helper()
+	for _, table := range retiredTables {
+		if got := count(t, db, `SELECT count(*) FROM information_schema.tables
+            WHERE table_schema = current_schema() AND table_name = '`+table+`'`); got != 0 {
+			t.Errorf("retired Actions table %s still exists", table)
+		}
+	}
+	if got := count(t, db, `SELECT count(*) FROM information_schema.tables
+        WHERE table_schema = current_schema() AND table_name IN
+        ('mcp_oauth_token_state', 'mcp_server_linkage', 'mcp_linkage_flow',
+         'action_request', 'action_event', 'action_decision', 'action_push_subscription')`); got != 7 {
+		t.Errorf("live Actions tables found = %d, want 7", got)
+	}
+	if got := count(t, db, `SELECT count(*) FROM action_service_goose_version WHERE version_id=9 AND is_applied`); got != 1 {
+		t.Errorf("version 9 history rows = %d, want 1", got)
+	}
+}
+
+func TestRetiresPopulatedLegacyTablesWithoutChangingActionHistory(t *testing.T) {
+	db := cloneDatabase(t) // The template has the genuine version-8 schema.
+	exec(t, db, `INSERT INTO external_connection
+        (id, display_name, version, created_at, updated_at)
+        VALUES ('00000000-0000-0000-0000-000000000010', 'old', 6, now(), now())`)
+	for revision := 1; revision <= 3; revision++ {
+		status := "revoked"
+		if revision == 3 {
+			status = "active"
+		}
+		exec(t, db, `INSERT INTO external_connection_grant
+            (id, connection_id, revision, issuer, client_id, status, created_at, original_caller)
+            VALUES ($1, '00000000-0000-0000-0000-000000000010', $2,
+                    'https://old.example/', 'client', $3, now(), '{"namespace":"test","name":"caller"}')`,
+			fmt.Sprintf("00000000-0000-0000-0000-%012d", 20+revision), revision, status)
+	}
+	for enrollment := 1; enrollment <= 4; enrollment++ {
+		exec(t, db, `INSERT INTO connection_enrollment
+            (id, handle_hash, issuer, client_id, redirect_uri, code_challenge,
+             upstream_url, expires_at, version, connection_id)
+            VALUES ($1, $2, 'https://old.example/', 'client', 'https://callback.example/',
+                    $2, 'https://upstream.example/', now() - interval '1 day', 1,
+                    '00000000-0000-0000-0000-000000000010')`,
+			fmt.Sprintf("00000000-0000-0000-0000-%012d", 30+enrollment), fmt.Sprintf("old-%d", enrollment))
+	}
+	exec(t, db, `INSERT INTO action_request
+        (id, idempotency_key, arguments, state, version, created_at, updated_at,
+         title, caller_namespace, caller_name, action_group, action_name)
+        VALUES ('00000000-0000-0000-0000-000000000040', 'keep', '{}', 'denied', 1,
+                now(), now(), 'retain history', 'test', 'caller', 'group', 'action')`)
+	exec(t, db, `INSERT INTO mcp_oauth_token_state
+	    (id, server_id, access_token, token_type, scope, expires_at, token_revision,
+	     updated_at, refresh_failure_count)
+	    VALUES ('00000000-0000-0000-0000-000000000041',
+	            'upstream-server', 'secret', 'Bearer', '[]', now(), 1, now(), 0)`)
+	if err := Up(t.Context(), db); err != nil {
+		t.Fatal("upgrade populated version-8 schema:", err)
+	}
+	assertLegacyTablesAbsent(t, db)
+	if got := count(t, db, `SELECT count(*) FROM action_request WHERE title = 'retain history'`); got != 1 {
+		t.Errorf("retained Action history rows = %d, want 1", got)
+	}
+	if got := count(t, db, `SELECT count(*) FROM mcp_oauth_token_state WHERE access_token = 'secret'`); got != 1 {
+		t.Errorf("retained upstream token-state rows = %d, want 1", got)
+	}
+}
+
+func TestRetirementRejectsUnexpectedDependencyAtomically(t *testing.T) {
+	db := cloneDatabase(t)
+	exec(t, db, `CREATE VIEW unexpected_connection_reader AS SELECT id FROM external_connection`)
+	if err := Up(t.Context(), db); err == nil {
+		t.Fatal("migration unexpectedly dropped a table with an external dependent view")
+	}
+	if got := count(t, db, `SELECT count(*) FROM information_schema.tables WHERE table_schema = current_schema()
+        AND table_name IN ('external_connection', 'external_connection_grant', 'connection_enrollment',
+                           'oauth_registered_client', 'oauth_authorization', 'oauth_token')`); got != 6 {
+		t.Fatalf("legacy tables after failed migration = %d, want 6", got)
+	}
+	if got := count(t, db, `SELECT count(*) FROM action_service_goose_version WHERE version_id=9 AND is_applied`); got != 0 {
+		t.Fatalf("failed version 9 recorded %d applied rows", got)
+	}
+}
+
 func TestFreshBaselineAcceptsTypedRows(t *testing.T) {
 	db := cloneDatabase(t)
+	if err := Up(t.Context(), db); err != nil {
+		t.Fatal("fresh migration through version 9:", err)
+	}
 	exec(t, db, `INSERT INTO action_request
         (id, idempotency_key, arguments, state, version, created_at, updated_at,
          title, description, caller_namespace, caller_name, action_group, action_name)
@@ -82,6 +178,7 @@ func TestFreshBaselineAcceptsTypedRows(t *testing.T) {
 	if got := count(t, db, `SELECT count(*) FROM action_service_goose_version WHERE version_id=8 AND is_applied`); got != 1 {
 		t.Fatalf("fresh caller UID migration rows = %d, want 1", got)
 	}
+	assertLegacyTablesAbsent(t, db)
 }
 
 func seedCompletedSix(t *testing.T, db *sql.DB) {
@@ -132,10 +229,10 @@ func TestAdoptSixPreservesHistoryRowsAndRelations(t *testing.T) {
         VALUES ('00000000-0000-0000-0000-000000000002', 1, 'denied', now(), '\x0a020801'::bytea)`)
 	beforeNodes := relfilenodes(t, db)
 	beforeHistory := count(t, db, `SELECT count(*) FROM action_service_goose_version WHERE version_id BETWEEN 1 AND 6 AND is_applied`)
-	if err := migrations.Up(t.Context(), db); err != nil {
+	if err := Up(t.Context(), db); err != nil {
 		t.Fatal("adopt version 6:", err)
 	}
-	if err := migrations.Up(t.Context(), db); err != nil {
+	if err := Up(t.Context(), db); err != nil {
 		t.Fatal("repeat adoption:", err)
 	}
 	if after := relfilenodes(t, db); !reflect.DeepEqual(after, beforeNodes) {
@@ -170,7 +267,7 @@ func TestRejectsOlderAndPartialSchemasWithoutChanges(t *testing.T) {
 			seedCompletedSix(t, db)
 			exec(t, db, tc.alter)
 			beforeNodes := relfilenodes(t, db)
-			err := migrations.Up(t.Context(), db)
+			err := Up(t.Context(), db)
 			if err == nil || !strings.Contains(err.Error(), "Action") {
 				t.Fatalf("Up error = %v, want Action schema rejection", err)
 			}
@@ -188,7 +285,7 @@ func TestRejectsUnmarkedExistingSchema(t *testing.T) {
 	db := cloneDatabase(t)
 	exec(t, db, `DELETE FROM action_service_goose_version WHERE version_id IN (7, 8)`)
 	exec(t, db, `ALTER TABLE action_request DROP COLUMN caller_uid`)
-	if err := migrations.Up(t.Context(), db); err == nil || !strings.Contains(err.Error(), "without completed version 6 history") {
+	if err := Up(t.Context(), db); err == nil || !strings.Contains(err.Error(), "without completed version 6 history") {
 		t.Fatalf("Up error = %v, want unmarked schema rejection", err)
 	}
 }
@@ -203,7 +300,7 @@ func TestConcurrentAdoption(t *testing.T) {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			errors <- migrations.Up(t.Context(), db)
+			errors <- Up(t.Context(), db)
 		}()
 	}
 	workers.Wait()
