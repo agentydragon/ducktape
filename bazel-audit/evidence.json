@@ -39,14 +39,6 @@
       "refresh_status": "present_at_refresh"
     },
     {
-      "id": "N",
-      "priority": "Low",
-      "category": "Browser script wiring",
-      "title": "Make browser-script runfiles and lint ownership consistent",
-      "status": "investigate",
-      "note": "Duplicate declarations and clock lint coverage need configured-action and runfiles verification."
-    },
-    {
       "id": "O",
       "priority": "Low",
       "category": "Direct dependencies",
@@ -79,8 +71,17 @@
     "External consumers and dynamically constructed labels not exhaustively known",
     "The original audit did not implement its recommendations; status fields record subsequent work"
   ],
-  "burndown_updated_utc": "2026-11-02T12:09:29Z",
-  "dispatched_in_progress": [],
+  "burndown_updated_utc": "2026-11-02T12:27:45Z",
+  "dispatched_in_progress": [
+    {
+      "id": "N",
+      "pull_requests": [
+        13871
+      ],
+      "status_at_update": "open",
+      "remaining_investigation": "Determine whether capture-script direct data entries are needed for runfile lookup."
+    }
+  ],
   "status_refresh": {
     "source_commit": "2cbcf945b203c1260e10c8e32a6b6e26025f254d",
     "checked_utc": "2026-11-02T11:05:00Z",
