@@ -46,10 +46,6 @@ COSI resource snapshots.
 
 ## Simplify Environment Runtime reconciliation and coordination
 
-- Make the Codex app-server controller react to the shared Execution lifecycle status instead of
-  polling the in-process readiness callback once a second. Retain the dependency deadline and
-  verify the live Execution owner as needed; status alone must not admit a Session to a stale or
-  unfenced executor.
 - Review the in-process Runtime–Harness Host connection, intent, report and wakeup paths. The two
   components now share one process and engine; identify which connection and notification state can
   be removed while preserving synchronous admission revocation, exact binding and applied-intent

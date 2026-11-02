@@ -20,7 +20,6 @@ import (
 
 const (
 	executionInputType  = "EmbeddedExecutionInputs.agentplane"
-	executionStateType  = "EmbeddedExecutionRuntimes.agentplane"
 	executionResourceID = "embedded-execution"
 )
 
@@ -92,7 +91,7 @@ func (executionExtension[T]) ResourceDefinition() spec.ResourceDefinitionSpec {
 	case executionInput:
 		typ = executionInputType
 	case executionState:
-		typ = executionStateType
+		typ = lifecycle.EmbeddedExecutionRuntimeType
 	}
 	return spec.ResourceDefinitionSpec{Type: typ, DefaultNamespace: lifecycle.Namespace}
 }
@@ -105,7 +104,7 @@ func executionInputResource(value executionInput) *typed.Resource[executionInput
 
 func executionStateResource(value executionState) *typed.Resource[executionState, executionExtension[executionState]] {
 	return typed.NewResource[executionState, executionExtension[executionState]](
-		resource.NewMetadata(lifecycle.Namespace, executionStateType, executionResourceID, resource.VersionUndefined), value,
+		resource.NewMetadata(lifecycle.Namespace, lifecycle.EmbeddedExecutionRuntimeType, executionResourceID, resource.VersionUndefined), value,
 	)
 }
 
@@ -519,9 +518,9 @@ func (*executionController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
 			{Namespace: lifecycle.Namespace, Type: executionInputType, Kind: controller.InputQPrimary},
-			{Namespace: lifecycle.Namespace, Type: executionStateType, Kind: controller.InputQMapped},
+			{Namespace: lifecycle.Namespace, Type: lifecycle.EmbeddedExecutionRuntimeType, Kind: controller.InputQMapped},
 		},
-		Outputs:     []controller.Output{{Type: executionStateType, Kind: controller.OutputExclusive}},
+		Outputs:     []controller.Output{{Type: lifecycle.EmbeddedExecutionRuntimeType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(1)),
 	}
 }

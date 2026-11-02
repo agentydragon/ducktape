@@ -162,10 +162,11 @@ in-flight effect.
 
 Session reconciliation concurrency (default 16) limits workers, not Session inventory or admission.
 Shared-service controllers reconcile one service. Stream readers and ingress workers remain
-independent so replies and ACKs progress while a controller waits. The app-server controller checks
-embedded Execution readiness through an in-process Host-to-Runtime callback and schedules requeues
-until ready or its dependency deadline expires. Execution separately probes the native exec-server's
-WebSocket protocol for backend readiness and liveness.
+independent so replies and ACKs progress while a controller waits. The app-server controller watches
+embedded Execution status changes, checks the live Execution owner through an in-process
+Host-to-Runtime callback, and requeues at its dependency deadline if readiness has not arrived.
+Execution separately probes the native exec-server's WebSocket protocol for backend readiness and
+liveness.
 
 Session startup reconstructs journals and records interrupted setup before publishing schedulable
 input. `Session.Observe` derives attachment, busy state and autosuspend blockers from one detached
