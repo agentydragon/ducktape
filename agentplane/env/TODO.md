@@ -1,18 +1,5 @@
 # TODO — Agentplane environment
 
-## Preserve retained state across COSI format changes
-
-`runtime-resources.db` was changed from JSON-encoded COSI resources to protobuf without a
-conversion. An old `BootstrapSelection` or `SessionRecord` in that same database makes the new
-Runtime fail during construction; the old journal and Session files are still on disk, but their
-Session metadata is inaccessible to the new binary. The old per-Session acknowledgement file is
-also ignored. History supplies its durable cursor and seal on reconnect, so recovering that ACK
-depends on reaching History. Preserve the old volume and implement a crash-safe, versioned upgrade
-and a rollback plan; do not discard the database or infer that retained Sessions are disposable.
-Exercise both old resource types, acknowledged and sealed journals, interruption during conversion,
-and the reverse-version boundary. The rejection is currently intentional in
-`bootstrap/host_test.go::TestOldJSONCOSIEncodingIsRejected`.
-
 ## Reconcile Session records with journal outcomes
 
 `Session.ModelChanged` and `ReasoningEffortChanged` commit the retained COSI record before their
