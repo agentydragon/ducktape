@@ -3,11 +3,12 @@ package runtime
 import (
 	"context"
 	"errors"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"

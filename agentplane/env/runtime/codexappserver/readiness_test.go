@@ -240,6 +240,7 @@ func codexAppServerTestBinary(t *testing.T, initializedMarker string) string {
 }
 
 func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
+
 func waitForFile(t *testing.T, path string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)

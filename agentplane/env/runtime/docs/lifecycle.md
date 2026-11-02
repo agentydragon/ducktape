@@ -33,14 +33,14 @@ fences. See [supervision](../supervision/docs/supervision.md).
 
 ## State and identity
 
-| State | Owner and storage |
-| --- | --- |
-| Environment owner lock | Runtime; `<state_dir>/.agentplane-environment-runtime-owner` |
-| Incarnation seal | Runtime; `EnvironmentSeals` in `runtime-resources.db` |
-| Bootstrap selection and events | Runtime; `BootstrapSelections` and `BootstrapEvents` in `runtime-resources.db` |
+| State                                        | Owner and storage                                                                    |
+| -------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Environment owner lock                       | Runtime; `<state_dir>/.agentplane-environment-runtime-owner`                         |
+| Incarnation seal                             | Runtime; `EnvironmentSeals` in `runtime-resources.db`                                |
+| Bootstrap selection and events               | Runtime; `BootstrapSelections` and `BootstrapEvents` in `runtime-resources.db`       |
 | Session records and History acknowledgements | Runtime retained store; `SessionRecords` and `IngressAcks` in `runtime-resources.db` |
-| Session journals and native continuations | Runtime Session components; `<state_dir>/sessions/` |
-| Shared Codex native home | Shared app-server component; `<state_dir>/codex/` |
+| Session journals and native continuations    | Runtime Session components; `<state_dir>/sessions/`                                  |
+| Shared Codex native home                     | Shared app-server component; `<state_dir>/codex/`                                    |
 
 `EnvironmentRuntimeDesiredStates` is the sole environment lifecycle desire. Its mode, incarnation,
 seal UID and generation are distinct from observations. Runtime boot ID fences an external process

@@ -52,14 +52,14 @@ type ReconcileSnapshot struct {
 type InspectionStatus struct{ Inspecting bool }
 
 type LifecycleStatus struct {
-	Phase            Phase
-	ObservedDemand   uint64
-	Resuming         bool
-	ProcessID        string
-	EnvironmentGeneration   uint64
-	SetupOperationID string
-	ProcessStopped   bool
-	Error            string
+	Phase                 Phase
+	ObservedDemand        uint64
+	Resuming              bool
+	ProcessID             string
+	EnvironmentGeneration uint64
+	SetupOperationID      string
+	ProcessStopped        bool
+	Error                 string
 }
 
 type operationState struct {

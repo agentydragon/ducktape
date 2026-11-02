@@ -111,11 +111,11 @@ resource writers. The [public control contract](docs/control.md) describes calle
 
 ## Native supervision
 
-| Mode | Runtime and native harnesses | Execution and replacement fence |
-| --- | --- | --- |
-| Production Pod (`pid1`) | Runtime is PID 1 and owns one reaper; native harnesses inherit its environment owner descriptor | Embedded adapter claims the companion in a separate PID-1 container; replacement requires native cleanup, adapter shutdown and a fresh idle companion generation |
-| VM (`systemd`) | Harness transient services use the `harness` scope in `agentplane-workloads.slice` | Execution transient services use `execution-service` in `agentplane-executors.slice`; prior units and native domains must be fenced before replacement |
-| Explicit local/RBE (`subprocess`) | Subprocess helpers retain inherited ownership and parent-liveness barriers | The embedded adapter joins its configured companion fence; this mode does not claim Pod cgroup containment |
+| Mode                              | Runtime and native harnesses                                                                    | Execution and replacement fence                                                                                                                                  |
+| --------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Production Pod (`pid1`)           | Runtime is PID 1 and owns one reaper; native harnesses inherit its environment owner descriptor | Embedded adapter claims the companion in a separate PID-1 container; replacement requires native cleanup, adapter shutdown and a fresh idle companion generation |
+| VM (`systemd`)                    | Harness transient services use the `harness` scope in `agentplane-workloads.slice`              | Execution transient services use `execution-service` in `agentplane-executors.slice`; prior units and native domains must be fenced before replacement           |
+| Explicit local/RBE (`subprocess`) | Subprocess helpers retain inherited ownership and parent-liveness barriers                      | The embedded adapter joins its configured companion fence; this mode does not claim Pod cgroup containment                                                       |
 
 Abnormal Pod Runtime exit requires the outer container fence. VM native units bind to
 `agentplane-environment-runtime.service` and `/run/agentplane-environment-runtime-lifetime` with its

@@ -334,7 +334,6 @@ func TestClosingIntentPreservesSealAndWaitsForSetup(t *testing.T) {
 	if err := waitClose(t, closed); err != nil {
 		t.Fatal(err)
 	}
-
 }
 
 func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
@@ -662,7 +661,6 @@ func TestNewIncarnationWaitsForTeardown(t *testing.T) {
 	if !sessionAdmissionOpen(r) {
 		t.Fatal("new incarnation did not reopen admission")
 	}
-
 }
 
 func TestAcceptedSetupCanWaitForBootstrapDuringDrain(t *testing.T) {

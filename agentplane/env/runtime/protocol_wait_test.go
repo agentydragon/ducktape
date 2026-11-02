@@ -20,6 +20,7 @@ type uncertainFenceHandle struct{ calls atomic.Int32 }
 func (*uncertainFenceHandle) Executor() executorpb.ExecutorServer {
 	return &executorpb.UnimplementedExecutorServer{}
 }
+
 func (h *uncertainFenceHandle) StopAndFence(context.Context) error {
 	h.calls.Add(1)
 	return errors.New("uncertain fence")

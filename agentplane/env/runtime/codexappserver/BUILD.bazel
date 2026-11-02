@@ -39,12 +39,14 @@ go_library(
 
 go_test(
     name = "codexappserver_test",
-    srcs = ["host_test.go", "readiness_test.go", "admission_test.go"],
+    srcs = [
+        "admission_test.go",
+        "host_test.go",
+        "readiness_test.go",
+    ],
     embed = [":codexappserver"],
     race = "on",
     deps = [
-        "@org_golang_google_grpc//status",
-        "@org_golang_google_grpc//codes",
         "//agentplane/env/cosi",
         "//agentplane/env/oneoff",
         "//agentplane/env/runtime/harness",
@@ -57,6 +59,8 @@ go_test(
         "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
         "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
         "@com_github_siderolabs_gen//optional",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
         "@org_uber_go_zap//:zap",
     ],
 )
