@@ -13,7 +13,8 @@
       "id": "B",
       "priority": "High",
       "category": "Ownership",
-      "title": "Decouple Haku\u2019s schema build from an experimental service implementation"
+      "title": "Decouple Haku\u2019s schema build from an experimental service implementation",
+      "status": "deferred"
     },
     {
       "id": "D",
@@ -43,7 +44,9 @@
       "id": "L",
       "priority": "Low",
       "category": "Boundary",
-      "title": "Resolve the visual-helper module/package collision"
+      "title": "Resolve the visual-helper module/package collision",
+      "status": "merged_visual_differences_under_review",
+      "pull_request": 13652
     },
     {
       "id": "M",
@@ -75,32 +78,8 @@
   "limitations": [
     "No automatic conclusion of dead code from no in-repo consumers",
     "External consumers and dynamically constructed labels not exhaustively known",
-    "Remaining recommendations have not been implemented or validated by this audit"
+    "The original audit did not implement its recommendations; status fields record subsequent work"
   ],
-  "burndown_updated_utc": "2026-11-02T02:02:37Z",
-  "dispatched_in_progress": [
-    {
-      "id": "E",
-      "pull_requests": [
-        13648
-      ],
-      "status_at_update": "open"
-    },
-    {
-      "id": "H",
-      "pull_requests": [
-        13643,
-        13644
-      ],
-      "status_at_update": "open"
-    },
-    {
-      "id": "I",
-      "pull_requests": [
-        13645,
-        13646
-      ],
-      "status_at_update": "open"
-    }
-  ]
+  "burndown_updated_utc": "2026-11-02T03:46:56Z",
+  "dispatched_in_progress": []
 }
