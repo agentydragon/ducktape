@@ -15,11 +15,11 @@ import {
   type ServerSentEvent,
   UNANSWERED,
 } from "./network";
-import type { ThreadView } from "../schema";
+import type { SandboxView, ThreadView } from "../schema";
 import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
 import type { BindingView, Decision, PolicySetView } from "../sandboxes/client";
 import { decisionFixture, type DecisionFixture } from "../sandboxes/decision_fixture";
-import { sandboxView, type DecisionsSnapshot, type SandboxSnapshot } from "../sandboxes/live";
+import type { DecisionsSnapshot, SandboxSnapshot } from "../sandboxes/live";
 import type { WatchHealth } from "../live";
 import { DurationSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
 import {
@@ -98,6 +98,80 @@ const NULL_THREAD_FIELDS = {
 
 function ago(ms: number): string {
   return new Date(NOW - ms).toISOString();
+}
+
+// Mock the legacy detail endpoint until it consumes the shared Sandbox proto.
+function sandboxDetailFixture(value: Sandbox): SandboxView {
+  const encoded = toJson(SandboxSchema, value, { useProtoFieldName: true, alwaysEmitImplicit: true });
+  if (typeof encoded !== "object" || encoded === null || Array.isArray(encoded)) throw new Error("Invalid Sandbox");
+  const phaseNames: Record<string, string> = {
+    SANDBOX_PHASE_UNSPECIFIED: "Unspecified",
+    SANDBOX_PHASE_CREATING: "Creating",
+    SANDBOX_PHASE_RUNNING: "Running",
+    SANDBOX_PHASE_SUSPENDING: "Suspending",
+    SANDBOX_PHASE_SUSPENDED: "Suspended",
+    SANDBOX_PHASE_QUIESCING: "Quiescing",
+    SANDBOX_PHASE_TEARING_DOWN: "Tearing down",
+  };
+  const phase = phaseNames[String(encoded.phase)];
+  if (!phase) throw new Error(`Unknown Sandbox phase ${encoded.phase}`);
+  const duration = encoded.idle_suspend_after;
+  const idle = typeof duration === "string" ? Number(duration.replace(/s$/, "")) : null;
+  function object(value: unknown): Record<string, unknown> | null {
+    return value !== null && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value))
+      : null;
+  }
+  const pod = value.pod;
+  const podJson = object(encoded.pod);
+  return {
+    name: value.name,
+    uid: value.uid,
+    namespace: value.namespace,
+    created_at: typeof encoded.created_at === "string" ? encoded.created_at : "0001-01-01T00:00:00Z",
+    operating_mode: value.operatingMode ?? null,
+    status: object(encoded.status) ?? {},
+    service_account: { name: value.serviceAccount?.name ?? "", namespace: value.serviceAccount?.namespace ?? "" },
+    binding: value.binding ? { bootstrap: value.binding.bootstrap } : null,
+    preset: value.preset ?? null,
+    wake_on_send: value.wakeOnSend,
+    idle_suspend_after_seconds: idle,
+    idle_suspend_at: typeof encoded.idle_suspend_at === "string" ? encoded.idle_suspend_at : null,
+    suspended_by: value.suspendedBy ?? null,
+    autosuspend_blockers: value.autosuspendBlockers.map((blocker) => {
+      const reason = blocker.reason;
+      if (
+        reason !== "ActiveTurn" &&
+        reason !== "PendingCommand" &&
+        reason !== "Setup" &&
+        reason !== "Activation" &&
+        reason !== "Bootstrap" &&
+        reason !== "Admission" &&
+        reason !== "ExecutorRelay"
+      ) {
+        throw new Error(`Unknown autosuspend blocker ${reason}`);
+      }
+      return { reason, session_id: blocker.sessionId ?? null };
+    }),
+    phase,
+    pod: pod
+      ? {
+          name: pod.name,
+          namespace: pod.namespace,
+          uid: pod.uid,
+          deleting: pod.deleting,
+          node_name: pod.nodeName ?? null,
+          owner_references: pod.ownerReferences.map((owner) => ({
+            api_version: owner.apiVersion,
+            kind: owner.kind,
+            name: owner.name,
+            uid: owner.uid,
+            controller: owner.controller,
+          })),
+          status: object(podJson?.status) ?? {},
+        }
+      : null,
+  };
 }
 
 const SANDBOXES: Sandbox[] = [
@@ -3445,7 +3519,7 @@ function liveEvents(url: URL): ServerSentEvent[] {
     const snapshot: SandboxSnapshot = {
       sandbox: (() => {
         const row = SANDBOXES.find((row) => row.name === decodeURIComponent(sandbox));
-        return row ? sandboxView(row) : null;
+        return row ? sandboxDetailFixture(row) : null;
       })(),
       bindings: BINDINGS,
       action_policy: ACTION_POLICY,

@@ -1,28 +1,15 @@
 import { expect, it } from "vitest";
 
-import type { SandboxView, ThreadView } from "../schema";
+import type { ThreadView } from "../schema";
+import { SandboxPhase, type Sandbox } from "../../../proto/sandboxes_pb";
+import { testSandbox } from "../testing/sandbox";
 import { groupThreads } from "./thread_groups";
 
-function sandboxView(name: string, overrides: Partial<SandboxView> = {}): SandboxView {
-  return {
-    name,
-    uid: `00000000-0000-4000-8000-${name.padStart(12, "0")}`,
-    namespace: "agentplane-test",
-    created_at: "2026-01-01T00:00:00Z",
-    binding: null,
-    preset: null,
-    operating_mode: "Running",
-    service_account: { namespace: "agentplane-test", name },
-    status: {},
-    idle_suspend_after_seconds: null,
-    idle_suspend_at: null,
-    autosuspend_blockers: [],
-    suspended_by: null,
-    phase: "Creating",
-    pod: null,
-    ...overrides,
-    wake_on_send: overrides.wake_on_send ?? false,
-  };
+function sandbox(name: string, overrides: Partial<Sandbox> = {}): Sandbox {
+  const value = testSandbox(name, `00000000-0000-4000-8000-${name.padStart(12, "0")}`);
+  value.operatingMode = "Running";
+  value.phase = SandboxPhase.CREATING;
+  return Object.assign(value, overrides);
 }
 
 function threadView(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sandbox">): ThreadView {
@@ -54,21 +41,21 @@ it("groups threads by sandbox, newest thread first fixing each group's order", (
   const middle = threadView({ id: "t-middle", sandbox: "sb-a" });
   const oldest = threadView({ id: "t-oldest", sandbox: "sb-a" });
   const sandboxes = {
-    "sb-a": sandboxView("sb-a"),
-    "sb-b": sandboxView("sb-b", { operating_mode: "Suspended", phase: "Suspended" }),
+    "sb-a": sandbox("sb-a"),
+    "sb-b": sandbox("sb-b", { operatingMode: "Suspended", phase: SandboxPhase.SUSPENDED }),
   };
 
   const groups = groupThreads([newest, middle, oldest], sandboxes, false, null);
 
   expect(groups.map((group) => group.sandboxName)).toEqual(["sb-b", "sb-a"]);
   expect(groups[1].threads).toEqual([middle, oldest]);
-  expect(groups[0].sandbox?.operating_mode).toBe("Suspended");
+  expect(groups[0].sandbox?.operatingMode).toBe("Suspended");
 });
 
 it("hides archived Threads without hiding their existing Sandbox", () => {
   const archived = threadView({ id: "t-1", sandbox: "sb-a", archived: true });
   const kept = threadView({ id: "t-2", sandbox: "sb-b" });
-  const sandboxes = { "sb-a": sandboxView("sb-a"), "sb-b": sandboxView("sb-b") };
+  const sandboxes = { "sb-a": sandbox("sb-a"), "sb-b": sandbox("sb-b") };
 
   const hidden = groupThreads([archived, kept], sandboxes, false, null);
   expect(hidden.map((group) => group.sandboxName)).toEqual(["sb-b", "sb-a"]);
@@ -83,7 +70,7 @@ it("keeps the open Thread in its group even when it is archived and archived Thr
   const other = threadView({ id: "t-2", sandbox: "sb-a", archived: true });
   const kept = threadView({ id: "t-3", sandbox: "sb-a" });
 
-  const groups = groupThreads([open, other, kept], { "sb-a": sandboxView("sb-a") }, false, "t-1");
+  const groups = groupThreads([open, other, kept], { "sb-a": sandbox("sb-a") }, false, "t-1");
 
   expect(groups.map((group) => group.threads)).toEqual([[open, kept]]);
 });

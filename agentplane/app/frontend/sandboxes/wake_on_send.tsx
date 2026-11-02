@@ -1,7 +1,7 @@
 import { Checkbox } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import type { SandboxView } from "../schema";
+import { sandboxWakeOnSend, type SandboxStatusSource } from "../sandbox_status";
 import { api, displayableError } from "../client";
 
 /**
@@ -14,13 +14,13 @@ export function WakeOnSendCheckbox({
   label,
   onError,
 }: {
-  sandbox: SandboxView;
+  sandbox: SandboxStatusSource;
   disabled: boolean;
   /** Shown beside the box; the box is named for assistive technology either way. */
   label?: string;
   onError: (message: string | null) => void;
 }): JSX.Element {
-  const stored = sandbox.wake_on_send ?? false;
+  const stored = sandboxWakeOnSend(sandbox);
   const [requested, setRequested] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
   useEffect(() => {

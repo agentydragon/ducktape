@@ -1,7 +1,23 @@
+import { create } from "@bufbuild/protobuf";
+import { DurationSchema } from "@bufbuild/protobuf/wkt";
 import { describe, expect, it } from "vitest";
 
+import { SandboxPhase, SandboxPodSchema, type Sandbox } from "../../proto/sandboxes_pb";
+import { testSandbox } from "./testing/sandbox";
 import type { SandboxView } from "./schema";
-import { hasVmConsole, sandboxReady, sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
+import {
+  hasVmConsole,
+  podIp,
+  podPhase,
+  sandboxIdleSuspendAfterSeconds,
+  sandboxOperatingMode,
+  sandboxPhase,
+  sandboxReady,
+  sandboxStatusDetail,
+  sandboxSummary,
+  sandboxSuspended,
+  sandboxWakeOnSend,
+} from "./sandbox_status";
 
 const UID = "00000000-0000-4000-8000-000000000001";
 
@@ -32,6 +48,10 @@ function sandbox(conditions: { type: string; status: string }[]): SandboxView {
       status: { phase: "Running", podIP: "10.0.0.1", conditions: [{ type: "Ready", status: "True" }] },
     },
   };
+}
+
+function protoSandbox(overrides: Partial<Sandbox> = {}): Sandbox {
+  return Object.assign(testSandbox("test-sandbox", UID), overrides);
 }
 
 describe("a Sandbox exposes the VM console only for a VMI-backed incarnation", () => {
@@ -75,6 +95,61 @@ describe("a Sandbox is ready when the Sandbox Controller says so", () => {
     ["it has no Ready condition", [{ type: "Running", status: "True" }]],
   ])("is not ready when %s, even with a Ready Pod", (_, conditions) => {
     expect(sandboxReady(sandbox(conditions))).toBe(false);
+  });
+});
+
+describe("the shared status helpers accept the live Sandbox proto", () => {
+  it("normalizes generated phases and keeps them separate from operating mode", () => {
+    const unreconciled = protoSandbox({ phase: SandboxPhase.UNSPECIFIED, operatingMode: "Running" });
+    expect(sandboxPhase(unreconciled)).toBe("Unspecified");
+    expect(sandboxOperatingMode(unreconciled)).toBe("Running");
+    expect(sandboxSummary(unreconciled)).toEqual({ label: "Status unknown", kind: "pending" });
+
+    const suspended = protoSandbox({ phase: SandboxPhase.SUSPENDED, operatingMode: "Suspended" });
+    expect(sandboxPhase(suspended)).toBe("Suspended");
+    expect(sandboxSuspended(suspended)).toBe(true);
+  });
+
+  it("reads controller and Pod status, owner references, and common policy fields", () => {
+    const running = protoSandbox({
+      phase: SandboxPhase.RUNNING,
+      operatingMode: "Running",
+      status: { conditions: [{ type: "Ready", status: "True" }] },
+      wakeOnSend: true,
+      pod: create(SandboxPodSchema, {
+        name: "test-sandbox-launcher",
+        namespace: "agentplane-test",
+        uid: `${UID}-pod`,
+        ownerReferences: [
+          {
+            apiVersion: "kubevirt.io/v1",
+            kind: "VirtualMachineInstance",
+            uid: "vmi-uid",
+            controller: true,
+          },
+        ],
+        status: { phase: "Running", podIP: "10.0.0.1" },
+      }),
+    });
+    expect(sandboxReady(running)).toBe(true);
+    expect(sandboxSummary(running)).toEqual({ label: "Ready", kind: "ready" });
+    expect(hasVmConsole(running)).toBe(true);
+    expect(podPhase(running)).toBe("Running");
+    expect(podIp(running)).toBe("10.0.0.1");
+    expect(sandboxWakeOnSend(running)).toBe(true);
+    expect(sandboxWakeOnSend(protoSandbox())).toBe(false);
+  });
+
+  it("preserves duration presence, zero, and fractional seconds", () => {
+    expect(sandboxIdleSuspendAfterSeconds(protoSandbox())).toBeNull();
+    expect(
+      sandboxIdleSuspendAfterSeconds(protoSandbox({ idleSuspendAfter: create(DurationSchema, { seconds: 0n }) }))
+    ).toBe(0);
+    expect(
+      sandboxIdleSuspendAfterSeconds(
+        protoSandbox({ idleSuspendAfter: create(DurationSchema, { seconds: 90n, nanos: 500_000_000 }) })
+      )
+    ).toBe(90.5);
   });
 });
 

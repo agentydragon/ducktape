@@ -498,6 +498,18 @@ it("reports the autosuspend policy while no idle deadline is active", async () =
   expect(container.querySelector(".agentplane-composer-autosuspend")?.textContent).toBe("Autosuspend after 15m idle");
 });
 
+it("shows an unfamiliar autosuspend blocker without breaking the inventory", async () => {
+  sandboxes = [
+    updatedSandbox(autosuspendSandbox(null), {
+      autosuspendBlockers: [create(AutosuspendBlockerSchema, { reason: "FutureReason" })],
+    }),
+  ];
+  const container = await render();
+  expect(container.querySelector(".agentplane-composer-autosuspend")?.textContent).toBe(
+    "Autosuspend waiting: FutureReason"
+  );
+});
+
 it("explains every runner blocker and links sessions outside the loaded thread listing", async () => {
   const unlistedSession = "00000000-0000-4000-8000-000000000099";
   sandboxes = [
