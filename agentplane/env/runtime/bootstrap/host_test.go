@@ -547,8 +547,8 @@ func TestOnlyDurableResourcesAreRestored(t *testing.T) {
 	}{
 		{*SelectionResourceValue("").Metadata(), HostOwner},
 		{*EventResourceValue(&sessionpb.InitializationEvent{Sequence: 1, Attempt: 1, Observation: &sessionpb.InitializationEvent_Output{Output: &sessionpb.InitializationOutput{Stream: sessionpb.InitializationStream_INITIALIZATION_STREAM_STDOUT, Data: []byte("retained")}}}).Metadata(), HostOwner},
-		{*retained.SessionResource("session-1", &retained.Record{}).Metadata(), lifecycle.HostOwner},
-		{*retained.AcknowledgementResource("session-1", retained.Acknowledgement{}).Metadata(), lifecycle.HostOwner},
+		{*retained.SessionResource("session-1", &retained.Record{}).Metadata(), lifecycle.EnvironmentOwner},
+		{*retained.AcknowledgementResource("session-1", retained.Acknowledgement{}).Metadata(), lifecycle.EnvironmentOwner},
 	}
 	versions := make([]resource.Version, len(metadata))
 	for i, item := range metadata {

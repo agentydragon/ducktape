@@ -292,7 +292,7 @@ func (f *processControllerTestRuntime) publishRequest(t *testing.T, id string, r
 	err := safe.StateModify(ctx, f.state, resourceFor(processTestNamespace, id, request), func(r *typed.Resource[processTestRequestSpec, resourceExtension[processTestRequestSpec]]) error {
 		*r.TypedSpec() = request
 		return nil
-	}, state.WithUpdateOwner(harnesshostlifecycle.HostOwner))
+	}, state.WithUpdateOwner(harnesshostlifecycle.EnvironmentOwner))
 	if err != nil {
 		t.Fatal(err)
 	}

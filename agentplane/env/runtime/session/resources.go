@@ -20,7 +20,7 @@ const (
 	LifecycleStatusType   = "SessionLifecycleStatuses.agentplane"
 	OperationStateType    = "SessionOperationStates.agentplane"
 	ControllerName        = "session-lifecycle"
-	HostOwner             = lifecycle.HostOwner
+	HostOwner             = lifecycle.EnvironmentOwner
 )
 
 type Phase uint8

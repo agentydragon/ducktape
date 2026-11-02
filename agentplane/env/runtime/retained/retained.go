@@ -187,5 +187,5 @@ func (s *Store) WriteAcknowledgement(sessionID string, acknowledgement Acknowled
 		current.TypedSpec().Value.Cursor = acknowledgement.Cursor
 		current.TypedSpec().Value.Sealed = acknowledgement.Sealed
 		return nil
-	}, state.WithUpdateOwner(lifecycle.HostOwner))
+	}, state.WithUpdateOwner(lifecycle.EnvironmentOwner))
 }

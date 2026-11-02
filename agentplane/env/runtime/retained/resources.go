@@ -78,7 +78,7 @@ func AcknowledgementResource(id string, acknowledgement Acknowledgement) *Ingres
 
 func validateAcknowledgementResource(value resource.Resource) error {
 	entry, ok := value.(*IngressAckResource)
-	if !ok || entry.Metadata().Namespace() != lifecycle.Namespace || entry.Metadata().Type() != IngressAckType || entry.Metadata().Owner() != lifecycle.HostOwner || entry.TypedSpec().Value == nil {
+	if !ok || entry.Metadata().Namespace() != lifecycle.Namespace || entry.Metadata().Type() != IngressAckType || entry.Metadata().Owner() != lifecycle.EnvironmentOwner || entry.TypedSpec().Value == nil {
 		return fmt.Errorf("unexpected ingress acknowledgement resource %T", value)
 	}
 	_, err := ValidateSessionID(entry.Metadata().ID())
@@ -109,7 +109,7 @@ func SessionResource(id string, record *Record) *SessionRecord {
 
 func validateSessionResource(value resource.Resource) error {
 	entry, ok := value.(*SessionRecord)
-	if !ok || entry.Metadata().Namespace() != lifecycle.Namespace || entry.Metadata().Type() != SessionRecordType || entry.Metadata().Owner() != lifecycle.HostOwner {
+	if !ok || entry.Metadata().Namespace() != lifecycle.Namespace || entry.Metadata().Type() != SessionRecordType || entry.Metadata().Owner() != lifecycle.EnvironmentOwner {
 		return fmt.Errorf("unexpected Session resource %T", value)
 	}
 	if _, err := ValidateSessionID(entry.Metadata().ID()); err != nil {
@@ -202,7 +202,7 @@ func (s *Store) Write(id string, record *Record) error {
 	return safe.StateModify(context.Background(), s.state, SessionResource(id, record), func(value *SessionRecord) error {
 		value.TypedSpec().Value = proto.Clone(record).(*Record)
 		return nil
-	}, state.WithUpdateOwner(lifecycle.HostOwner))
+	}, state.WithUpdateOwner(lifecycle.EnvironmentOwner))
 }
 
 func (s *Store) update(id string, change func(*Record)) error {
@@ -223,7 +223,7 @@ func (s *Store) update(id string, change func(*Record)) error {
 		}
 		value.TypedSpec().Value = record
 		return nil
-	}, state.WithUpdateOwner(lifecycle.HostOwner))
+	}, state.WithUpdateOwner(lifecycle.EnvironmentOwner))
 	if err != nil {
 		return &StorageError{Err: err}
 	}
