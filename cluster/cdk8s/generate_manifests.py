@@ -632,10 +632,7 @@ def generate_manifests(root: Path) -> None:
     clickhouse_kustomization = clickhouse_installation.clickhouse(
         flux_chart,
         write_directory(
-            root,
-            clickhouse_artifact,
-            *clickhouse_installation.CHARTS,
-            siblings=(*clickhouse_installation.SOPS_FILES, "retired-volume-reclaim.yaml"),
+            root, clickhouse_artifact, *clickhouse_installation.CHARTS, siblings=clickhouse_installation.SOPS_FILES
         ),
         clickhouse_operator_kustomization,
         external_secrets_operator_kustomization,

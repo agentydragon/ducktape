@@ -140,19 +140,3 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
-
-py_test(
-    name = "test_retired_volume_admission",
-    size = "medium",
-    srcs = ["test_retired_volume_admission.py"],
-    data = ["//cluster/k8s:clickhouse/cluster/retired-volume-reclaim.yaml"],
-    deps = [
-        "//:conftest",
-        "//agentplane/testing:kubernetes_apiserver",
-        "//util/bazel:runfiles",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-        "@pypi//tenacity",
-    ],
-)
