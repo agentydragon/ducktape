@@ -50,6 +50,5 @@ export function acknowledgedQuiescingLifecycleFixture(
 export function runnerStatusFixture(status: MessageInitShape<typeof EnvironmentRuntimeStatusSchema>): JsonObject {
   return toJson(EnvironmentRuntimeStatusSchema, create(EnvironmentRuntimeStatusSchema, status), {
     alwaysEmitImplicit: true,
-    useProtoFieldName: true,
   }) as JsonObject;
 }
