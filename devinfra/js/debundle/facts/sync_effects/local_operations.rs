@@ -1,6 +1,6 @@
 //! Source-covered local operations collected before value lowering erases writes.
 
-use super::value_model::ValueExpr;
+use super::value_model::{ValueExpr, object_data_property_name};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use swc_common::Span;
@@ -18,6 +18,10 @@ pub(super) enum LocalBinding {
 pub(super) enum LocalExpression {
     Value(ValueExpr),
     Sequence(Arc<[Self]>),
+    Record {
+        allocation: u32,
+        properties: Arc<[(String, Self)]>,
+    },
     Assign {
         binding: Id,
         value: Arc<Self>,
@@ -96,6 +100,39 @@ impl LocalExpression {
 
     fn lower(expression: &Expr) -> Option<Self> {
         match expression.unwrap_parens() {
+            Expr::Object(object) => {
+                let properties = object
+                    .props
+                    .iter()
+                    .map(|property| {
+                        let PropOrSpread::Prop(property) = property else {
+                            return None;
+                        };
+                        match property.as_ref() {
+                            Prop::Shorthand(binding) => Some((
+                                binding.sym.to_string(),
+                                Self::Value(ValueExpr::Binding(binding.to_id())),
+                            )),
+                            Prop::KeyValue(pair)
+                                if matches!(
+                                    pair.key,
+                                    PropName::Ident(_) | PropName::Str(_) | PropName::Num(_)
+                                ) =>
+                            {
+                                Some((
+                                    object_data_property_name(&pair.key)?,
+                                    Self::lower(&pair.value)?,
+                                ))
+                            }
+                            _ => None,
+                        }
+                    })
+                    .collect::<Option<Arc<[_]>>>()?;
+                Some(Self::Record {
+                    allocation: object.span.lo.0,
+                    properties,
+                })
+            }
             Expr::Fn(function)
                 if function.ident.is_none()
                     && function.function.decorators.is_empty()
@@ -187,6 +224,9 @@ impl LocalExpression {
     fn local_targets(&self, bindings: &BTreeMap<Id, LocalBinding>) -> bool {
         match self {
             Self::Value(_) | Self::ReadField { .. } | Self::Closure(_) => true,
+            Self::Record { properties, .. } => properties
+                .iter()
+                .all(|(_, value)| value.local_targets(bindings)),
             Self::Sequence(expressions) => expressions
                 .iter()
                 .all(|expression| expression.local_targets(bindings)),
@@ -203,6 +243,11 @@ impl LocalExpression {
     fn reads(&self, reads: &mut BTreeSet<Id>) {
         match self {
             Self::Value(value) => value.bindings(reads),
+            Self::Record { properties, .. } => {
+                for (_, value) in properties.iter() {
+                    value.reads(reads);
+                }
+            }
             Self::Sequence(expressions) => {
                 for expression in expressions.iter() {
                     expression.reads(reads);
@@ -236,6 +281,9 @@ impl LocalExpression {
     fn allocation_only_syntax(&self, bindings: &BTreeMap<Id, LocalBinding>) -> bool {
         match self {
             Self::Call { .. } | Self::Closure(_) => false,
+            Self::Record { properties, .. } => properties
+                .iter()
+                .all(|(_, value)| value.allocation_only_syntax(bindings)),
             Self::Sequence(expressions) => expressions
                 .iter()
                 .all(|expression| expression.allocation_only_syntax(bindings)),
@@ -249,6 +297,11 @@ impl LocalExpression {
 
     fn writes(&self, writes: &mut BTreeSet<Id>) {
         match self {
+            Self::Record { properties, .. } => {
+                for (_, value) in properties.iter() {
+                    value.writes(writes);
+                }
+            }
             Self::Assign { binding, value, .. } => {
                 writes.insert(binding.clone());
                 value.writes(writes);

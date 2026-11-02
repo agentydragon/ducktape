@@ -215,7 +215,15 @@ pub(super) fn transfer(
             let mut may_throw = false;
             let mut can_complete = true;
             match layout {
-                LiteralLayout::Record => return record(context, *allocation, properties, judgment),
+                LiteralLayout::Record => {
+                    return record(
+                        context,
+                        *allocation,
+                        properties.iter().map(|(name, value)| (name.clone(), value)),
+                        judgment,
+                        |context, expression| context.child(expression),
+                    );
+                }
                 LiteralLayout::DenseArray(elements) => {
                     let mut slots = Vec::new();
                     let mut containment = Values::new();
@@ -301,11 +309,12 @@ fn primitive_operation<'a>(
 }
 
 /// Shared record evaluation, including the application's opaque-key fallback.
-pub(super) fn record(
-    context: &mut impl AllocationContext,
+pub(super) fn record<'a, C: AllocationContext, E: 'a>(
+    context: &mut C,
     allocation: u32,
-    properties: &[(Option<String>, ValueExpr)],
+    properties: impl IntoIterator<Item = (Option<String>, &'a E)>,
     mut judgment: AllocationJudgment,
+    mut child: impl FnMut(&mut C, &'a E) -> Option<AllocationValue>,
 ) -> Option<AllocationValue> {
     let mut evaluated = BTreeMap::<Option<String>, Values>::new();
     let mut may_throw = false;
@@ -314,15 +323,12 @@ pub(super) fn record(
         if !can_complete {
             break;
         }
-        let child = context.child(expression)?;
+        let child = child(context, expression)?;
         judgment.compose(&child.judgment);
         let mut values = child.values;
         may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
         can_complete &= !values.is_empty();
-        evaluated
-            .entry(property.clone())
-            .or_default()
-            .extend(values);
+        evaluated.entry(property).or_default().extend(values);
     }
     if can_complete {
         context.heap().record(allocation, evaluated);

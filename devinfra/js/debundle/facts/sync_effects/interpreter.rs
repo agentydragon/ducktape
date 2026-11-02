@@ -1,5 +1,6 @@
 //! Call-site execution effects distinguish function values from function bodies: returning a closure never executes it.
 
+use super::super::allocation_transfer::AllocationContext;
 use super::super::local_operations::{LocalBinding, LocalBody};
 use super::super::local_transfer::{self, LocalContext, LocalFrame};
 use super::super::value_model::{
@@ -1087,9 +1088,7 @@ struct ApplicationAllocationContext<'a, 'source, 'rule> {
     captures: &'a Context,
 }
 
-impl super::super::allocation_transfer::AllocationContext
-    for ApplicationAllocationContext<'_, '_, '_>
-{
+impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
     fn source_covered(&self) -> bool {
         false
     }
@@ -7707,8 +7706,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         captures,
                     },
                     *key,
-                    properties,
+                    properties.iter().map(|(name, value)| (name.clone(), value)),
                     super::super::allocation_transfer::AllocationJudgment::Opaque,
+                    |context, expression| context.child(expression),
                 )
                 .expect("application child transfers always produce values")
                 .values
