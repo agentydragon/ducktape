@@ -147,7 +147,6 @@ rust_library(
     crate_name = "debundle_e2e_support",
     crate_root = "support/mod.rs",
     data = [
-        "//devinfra/js/debundle:debundle_e2e",
         "@nodejs_linux_amd64//:bin/node",
     ],
     edition = "2024",
@@ -625,7 +624,10 @@ rust_test(
         "@nodejs_linux_amd64//:bin/node",
     ],
     edition = "2024",
-    env = {"DEBUNDLE_TV_ORACLE": "1"},
+    env = {
+        "DEBUNDLE_TEST_DEBUNDLER": "$(rlocationpath //devinfra/js/debundle:debundle_e2e)",
+        "DEBUNDLE_TV_ORACLE": "1",
+    },
     deps = [":support"],
 )
 
