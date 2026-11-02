@@ -15,12 +15,12 @@ import (
 )
 
 const (
-	InputType      = "SessionInputs.agentplane"
-	DrainInputType = "SessionDrainInputs.agentplane"
-	RuntimeType    = "SessionRuntimes.agentplane"
-	OperationType  = "NativeOperationResults.agentplane"
-	ControllerName = "session-lifecycle"
-	HostOwner      = "runner-host"
+	InputType           = "SessionInputs.agentplane"
+	DrainInputType      = "SessionDrainInputs.agentplane"
+	LifecycleStatusType = "SessionLifecycleStatuses.agentplane"
+	OperationType       = "NativeOperationResults.agentplane"
+	ControllerName      = "session-lifecycle"
+	HostOwner           = "runner-host"
 )
 
 type Phase uint8
@@ -47,11 +47,11 @@ type Input struct {
 	DispatchBlocked   bool
 }
 
-// DrainInput changes only when inspection work starts or settles. The aggregate
-// Runner controller needs this barrier, not every Session dispatch dependency.
+// DrainInput changes only when inspection work starts or settles. Harness Host
+// lifecycle aggregation needs this barrier, not every Session dispatch dependency.
 type DrainInput struct{ Inspecting bool }
 
-type Runtime struct {
+type LifecycleStatus struct {
 	Phase          Phase
 	Attempt        uint64
 	Resuming       bool
@@ -104,14 +104,14 @@ func ReadInput(ctx context.Context, reader controller.Reader, id string) (Input,
 	return componentRead[Input](ctx, reader, id)
 }
 
-func ReadRuntime(ctx context.Context, reader controller.Reader, id string) (Runtime, bool, error) {
-	return componentRead[Runtime](ctx, reader, id)
+func ReadLifecycleStatus(ctx context.Context, reader controller.Reader, id string) (LifecycleStatus, bool, error) {
+	return componentRead[LifecycleStatus](ctx, reader, id)
 }
 
 func (Input) resourceType() resource.Type               { return InputType }
 func (value Input) DeepCopy() Input                     { return value }
-func (Runtime) resourceType() resource.Type             { return RuntimeType }
-func (value Runtime) DeepCopy() Runtime                 { return value }
+func (LifecycleStatus) resourceType() resource.Type     { return LifecycleStatusType }
+func (value LifecycleStatus) DeepCopy() LifecycleStatus { return value }
 func (operationResult) resourceType() resource.Type     { return OperationType }
 func (value operationResult) DeepCopy() operationResult { return value }
 

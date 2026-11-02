@@ -47,13 +47,13 @@ func TestStaleNativeCodexCompletionRetainsFrameAndSuccessor(t *testing.T) {
 	ctx := context.Background()
 	var adapter harness.Adapter
 	withSessionControllerGate(t, s, &gate, func() {
-		setRuntimeReady(t, m, s)
+		setLifecycleStatusReady(t, m, s)
 		threadID := "thread-1"
 		s.mu.Lock()
 		s.record.NativeSessionID = &threadID
 		s.mu.Unlock()
-		ptr := componentResource(s.id, Runtime{}).Metadata()
-		if _, err := safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[Runtime, componentExtension[Runtime]]) error {
+		ptr := componentResource(s.id, LifecycleStatus{}).Metadata()
+		if _, err := safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[LifecycleStatus, componentExtension[LifecycleStatus]]) error {
 			value.TypedSpec().Resuming = true
 			return nil
 		}, state.WithUpdateOwner(ControllerName)); err != nil {
@@ -487,7 +487,7 @@ func TestDispatchKeepsUncertainNativeWritePendingAndDoesNotResend(t *testing.T) 
 	s.adapter = adapter
 	s.mu.Unlock()
 	// This primitive test drives dispatch directly; seed its readiness observation.
-	setRuntimeReady(t, nil, s)
+	setLifecycleStatusReady(t, nil, s)
 	if err := s.dispatch(ctx, command); err != nil {
 		t.Fatal(err)
 	}
@@ -760,7 +760,7 @@ func TestInterruptedReconciliationLeavesStdoutFreeForHistoryRPC(t *testing.T) {
 	s, p, m := frameTestSessionWithControllerGate(t, []string{"/bin/sh", "-c", `while IFS= read -r line; do printf '%s\n' "$line"; done`}, true, &gate)
 	adapter := &rpcReconciliationAdapter{session: s}
 	withSessionControllerGate(t, s, &gate, func() {
-		setRuntimeReady(t, m, s)
+		setLifecycleStatusReady(t, m, s)
 		s.mu.Lock()
 		s.adapter = adapter
 		s.mu.Unlock()
@@ -814,15 +814,15 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// setRuntimeReady directly seeds controller-owned Runtime state; callers with a
+// setLifecycleStatusReady directly seeds controller-owned lifecycle status; callers with a
 // live Session controller must pause it for the fixture mutation.
-func setRuntimeReady(t *testing.T, m *Manager, s *Session) {
+func setLifecycleStatusReady(t *testing.T, m *Manager, s *Session) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	ptr := componentResource(s.id, Runtime{}).Metadata()
+	ptr := componentResource(s.id, LifecycleStatus{}).Metadata()
 	if m == nil {
-		if err := s.deps.state.Create(ctx, componentResource(s.id, Runtime{Phase: Ready, ProcessID: s.processID}), state.WithCreateOwner(ControllerName)); err != nil {
+		if err := s.deps.state.Create(ctx, componentResource(s.id, LifecycleStatus{Phase: Ready, ProcessID: s.processID}), state.WithCreateOwner(ControllerName)); err != nil {
 			t.Fatal(err)
 		}
 		s.mu.Lock()
@@ -830,11 +830,11 @@ func setRuntimeReady(t *testing.T, m *Manager, s *Session) {
 		s.mu.Unlock()
 		return
 	}
-	_, err := safe.StateWatchFor[*typed.Resource[Runtime, componentExtension[Runtime]]](ctx, s.deps.state, ptr, state.WithEventTypes(state.Created, state.Updated))
+	_, err := safe.StateWatchFor[*typed.Resource[LifecycleStatus, componentExtension[LifecycleStatus]]](ctx, s.deps.state, ptr, state.WithEventTypes(state.Created, state.Updated))
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[Runtime, componentExtension[Runtime]]) error {
+	_, err = safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[LifecycleStatus, componentExtension[LifecycleStatus]]) error {
 		value.TypedSpec().Phase = Ready
 		value.TypedSpec().ProcessID = s.processID
 		return nil

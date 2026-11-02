@@ -40,14 +40,14 @@ func (a preparationDuringQuiesceAdapter) Recover(ctx context.Context) error {
 	return a.session.Emit(ctx, observation(&eventpb.HarnessStderr{Text: "replayed response"}), nil)
 }
 
-func waitSession(t *testing.T, s *Session, predicate func(Runtime) bool, label string) {
+func waitSession(t *testing.T, s *Session, predicate func(LifecycleStatus) bool, label string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
-	_, err := safe.StateWatchFor[*typed.Resource[Runtime, componentExtension[Runtime]]](ctx, s.deps.state, componentResource(s.id, Runtime{}).Metadata(), state.WithEventTypes(state.Created, state.Updated), state.WithCondition(func(value resource.Resource) (bool, error) {
-		current, ok := value.(*typed.Resource[Runtime, componentExtension[Runtime]])
+	_, err := safe.StateWatchFor[*typed.Resource[LifecycleStatus, componentExtension[LifecycleStatus]]](ctx, s.deps.state, componentResource(s.id, LifecycleStatus{}).Metadata(), state.WithEventTypes(state.Created, state.Updated), state.WithCondition(func(value resource.Resource) (bool, error) {
+		current, ok := value.(*typed.Resource[LifecycleStatus, componentExtension[LifecycleStatus]])
 		if !ok {
-			return false, fmt.Errorf("unexpected Session runtime %T", value)
+			return false, fmt.Errorf("unexpected Session lifecycle status %T", value)
 		}
 		return predicate(*current.TypedSpec()), nil
 	}))
@@ -58,24 +58,24 @@ func waitSession(t *testing.T, s *Session, predicate func(Runtime) bool, label s
 
 func withSessionControllerGate(t *testing.T, s *Session, gate *sync.Mutex, setup func()) {
 	t.Helper()
-	waitSession(t, s, func(Runtime) bool { return true }, "initial Session runtime")
+	waitSession(t, s, func(LifecycleStatus) bool { return true }, "initial Session lifecycle status")
 	gate.Lock()
 	defer gate.Unlock()
 	setup()
 }
 
-// setSessionPhase directly changes controller-owned Runtime state; callers must
+// setSessionPhase directly changes controller-owned lifecycle status; callers must
 // pause the Session controller for the fixture mutation.
 func setSessionPhase(t *testing.T, s *Session, phase Phase) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
-	ptr := componentResource(s.id, Runtime{}).Metadata()
-	_, err := safe.StateWatchFor[*typed.Resource[Runtime, componentExtension[Runtime]]](ctx, s.deps.state, ptr, state.WithEventTypes(state.Created, state.Updated))
+	ptr := componentResource(s.id, LifecycleStatus{}).Metadata()
+	_, err := safe.StateWatchFor[*typed.Resource[LifecycleStatus, componentExtension[LifecycleStatus]]](ctx, s.deps.state, ptr, state.WithEventTypes(state.Created, state.Updated))
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[Runtime, componentExtension[Runtime]]) error {
+	_, err = safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[LifecycleStatus, componentExtension[LifecycleStatus]]) error {
 		value.TypedSpec().Phase = phase
 		value.TypedSpec().ProcessID = s.processID
 		return nil
@@ -144,7 +144,7 @@ func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
 			if _, err := s.journal.GetCommand(ctx, "test-input"); err != nil {
 				t.Fatalf("quiesce poisoned admitted journal: %v", err)
 			}
-			waitSession(t, s, func(current Runtime) bool { return current.Phase == Halted }, "halted Session")
+			waitSession(t, s, func(current LifecycleStatus) bool { return current.Phase == Halted }, "halted Session")
 
 			if err := s.stopProcess(ctx); err != nil {
 				t.Fatal(err)
@@ -187,14 +187,14 @@ func TestPreparationCompletingAfterShutdownCannotMakeSessionReady(t *testing.T) 
 			t.Fatal(err)
 		}
 	})
-	waitSession(t, s, func(current Runtime) bool { return current.Phase == Stopping }, "shutdown to stop Session")
+	waitSession(t, s, func(current LifecycleStatus) bool { return current.Phase == Stopping }, "shutdown to stop Session")
 	select {
 	case <-finished:
 		t.Fatal("preparation finished before test released it")
 	default:
 	}
 	close(release)
-	waitSession(t, s, func(current Runtime) bool { return current.Phase == Halted }, "late preparation to settle")
+	waitSession(t, s, func(current LifecycleStatus) bool { return current.Phase == Halted }, "late preparation to settle")
 	select {
 	case <-finished:
 	default:
@@ -230,14 +230,14 @@ func TestPreparationJoinsExitedProcessReadersBeforeReplacingAttachment(t *testin
 func TestIdleProcessExitConsumesCompletedCommandDemand(t *testing.T) {
 	var gate sync.Mutex
 	s, p, manager := frameTestSessionWithControllerGate(t, []string{"/bin/sh", "-c", "cat >/dev/null"}, true, &gate)
-	withSessionControllerGate(t, s, &gate, func() { setRuntimeReady(t, manager, s) })
+	withSessionControllerGate(t, s, &gate, func() { setLifecycleStatusReady(t, manager, s) })
 	s.requestExecution()
 	s.requestExecution()
 	if err := p.Stop(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	s.wake()
-	waitSession(t, s, func(current Runtime) bool { return current.Phase == Dormant && current.Attempt == 2 }, "completed demand after idle exit")
+	waitSession(t, s, func(current LifecycleStatus) bool { return current.Phase == Dormant && current.Attempt == 2 }, "completed demand after idle exit")
 	s.mu.Lock()
 	op := s.preparation
 	s.mu.Unlock()
@@ -284,5 +284,5 @@ func TestPreparationCompletionRefreshesStaleSchedulingInput(t *testing.T) {
 			t.Fatal("preparation operation did not finish")
 		}
 	})
-	waitSession(t, s, func(current Runtime) bool { return current.Phase == Ready && current.ProcessID == p.ID() }, "preparation ready after stale input")
+	waitSession(t, s, func(current LifecycleStatus) bool { return current.Phase == Ready && current.ProcessID == p.ID() }, "preparation ready after stale input")
 }

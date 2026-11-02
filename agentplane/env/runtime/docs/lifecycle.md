@@ -154,7 +154,7 @@ Resources contain lifecycle values and detached snapshots, not process handles, 
 cancellations or journal connections. The host registry owns native handles and publishes observations.
 
 Session input includes demand, setup, process liveness, pending commands and inspection dependencies.
-Session runtime records phase, attempt and native generation. The shared app-server has its own
+Session lifecycle status records phase, attempt and native generation. The shared app-server has its own
 input/runtime and readiness deadline. Process desired/status/input resources are provided by
 `env/runtime/supervision`; finalizers remain until native cleanup is proven. `env/oneoff.Operation` owns
 one-shot slots through result publication and consumption, preventing retries from duplicating an

@@ -30,7 +30,7 @@ func (c *sessionLifecycleController) Settings() controller.QSettings {
 			{Namespace: runnerlifecycle.Namespace, Type: codexappserver.RuntimeType, Kind: controller.InputQMapped},
 			{Namespace: runnerlifecycle.Namespace, Type: OperationType, Kind: controller.InputQMapped},
 		},
-		Outputs:     []controller.Output{{Type: RuntimeType, Kind: controller.OutputExclusive}},
+		Outputs:     []controller.Output{{Type: LifecycleStatusType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(c.manager.workers)),
 	}
 }
@@ -66,7 +66,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	if err != nil || !found {
 		return err
 	}
-	current, _, err := componentRead[Runtime](ctx, r, s.id)
+	current, _, err := componentRead[LifecycleStatus](ctx, r, s.id)
 	if err != nil {
 		return err
 	}
@@ -91,7 +91,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 				c.manager.forgetOperation(op)
 			}
 		}
-		current = Runtime{Generation: desiredState.Generation, SetupAttempt: current.SetupAttempt}
+		current = LifecycleStatus{Generation: desiredState.Generation, SetupAttempt: current.SetupAttempt}
 	} else if current.Generation != desiredState.Generation {
 		current.Generation = desiredState.Generation
 		current.Error = ""

@@ -59,8 +59,8 @@ func (s *Session) wake() {
 	}
 }
 func (s *Session) requestExecution() { s.deps.publish(s, true) }
-func (s *Session) runtimeState() Runtime {
-	value, _, err := componentRead[Runtime](s.deps.ctx, s.deps.state, s.id)
+func (s *Session) lifecycleStatus() LifecycleStatus {
+	value, _, err := componentRead[LifecycleStatus](s.deps.ctx, s.deps.state, s.id)
 	if err != nil {
 		s.deps.fail(err)
 	}
@@ -68,7 +68,7 @@ func (s *Session) runtimeState() Runtime {
 }
 
 func (s *Session) readyLocked() bool {
-	current := s.runtimeState()
+	current := s.lifecycleStatus()
 	return !s.halting.Finished() && (current.Phase == Ready || current.Phase == Stopping) && current.ProcessID == s.processID && s.process != nil && s.process.Running()
 }
 
