@@ -136,8 +136,8 @@ pub enum ForeignReturn {
     Argument {
         index: usize,
     },
-    /// An object or closure allocated by this call. It may hold the
-    /// `retained_arguments`; nothing else in the importer can reach it.
+    /// An object or closure allocated by this call. It may hold retained
+    /// arguments and provider captures; the carrier proves no heap locality.
     FreshAllocation,
     Primitive,
 }
@@ -156,6 +156,10 @@ pub struct ForeignCallSummary {
     pub invocation: ForeignInvocation,
     pub returns: BTreeSet<ForeignReturn>,
     pub retained_arguments: BTreeSet<usize>,
+    /// Source-private provider var values retained by the result. Their kinds
+    /// remain unknown; later use must retain opaque foreign capabilities.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub retained_provider_captures: BTreeSet<String>,
     /// Census families the body constructs from (`new WeakMap()`); their
     /// integrity premise is in `dependencies`.
     pub native_constructions: BTreeSet<NativeIntrinsic>,

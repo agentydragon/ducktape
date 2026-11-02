@@ -756,8 +756,6 @@ func (r *Runtime) failureLocked() error {
 	return nil
 }
 
-func (r *Runtime) closeOwner() error { return r.owner.Close() }
-
 var (
 	_ environmentruntimepb.EnvironmentRuntimeServer = (*Runtime)(nil)
 	_ harnesshost.RuntimeBridge                     = (*Runtime)(nil)

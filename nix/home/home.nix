@@ -60,6 +60,8 @@ let
       }
     ]
   );
+  gatewayWrappers = config.ducktape.claudeGatewayWrappers;
+  gatewayEnabled = name: lib.elem name gatewayWrappers;
 in
 {
   _module.args.ducktapePackages = ducktapePackages;
@@ -85,6 +87,7 @@ in
     # ./gemini_cli.nix
     ./shell/oh-my-posh.nix
     ./modules/gnome-custom-keybindings.nix
+    ./modules/claude-gateway-wrappers.nix
     ./modules/attic.nix
     ./modules/atuin.nix
     ./modules/buildbuddy.nix
@@ -119,10 +122,8 @@ in
     };
   };
 
-  # Claude gateway wrappers are paused: do not install codex-claude, tana-claude,
-  # gemini-claude, antigravity-claude, or litellm-claude in home.packages. Their
-  # renderers in ./claude_code/ and key declarations below remain for re-enabling.
-  # Direct Claude Code and Codex installations are unaffected.
+  # Gateway wrappers are paused by default. Enable each wrapper through
+  # ducktape.claudeGatewayWrappers so its package and key are installed together.
   #
   # LiteLLM virtual keys for the Claude Code gateway wrappers. Declared as plain secrets
   # rather than through ducktape.sopsEnv because each wrapper cats its own file at exec
@@ -130,28 +131,37 @@ in
   # shell and everything a shell spawns. The upstream credentials each key stands in for
   # -- the cli-proxy client key, GEMINI_API_KEY, the Claude OAuth session -- stay
   # in-cluster and never reach the laptop.
-  sops.secrets = {
-    litellm_tana_key = {
-      sopsFile = ../../tf/gitops/litellm-keys/litellm-tana-clients-key.yaml;
-      key = "litellm_tana_key";
+  sops.secrets =
+    lib.optionalAttrs (gatewayEnabled "tana-claude") {
+      litellm_tana_key = {
+        sopsFile = ../../tf/gitops/litellm-keys/litellm-tana-clients-key.yaml;
+        key = "litellm_tana_key";
+      };
+    }
+    // lib.optionalAttrs (gatewayEnabled "codex-claude") {
+      litellm_codex_key = {
+        sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-codex-clients-key.sops.yaml;
+        key = "stringData/api-key";
+      };
+    }
+    // lib.optionalAttrs (gatewayEnabled "gemini-claude") {
+      litellm_gemini_key = {
+        sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-gemini-clients-key.sops.yaml;
+        key = "stringData/api-key";
+      };
+    }
+    // lib.optionalAttrs (gatewayEnabled "antigravity-claude") {
+      litellm_antigravity_key = {
+        sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-antigravity-clients-key.sops.yaml;
+        key = "stringData/api-key";
+      };
+    }
+    // lib.optionalAttrs (gatewayEnabled "litellm-claude") {
+      litellm_claude_subscription_key = {
+        sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-claude-subscription-clients-key.sops.yaml;
+        key = "stringData/api-key";
+      };
     };
-    litellm_codex_key = {
-      sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-codex-clients-key.sops.yaml;
-      key = "stringData/api-key";
-    };
-    litellm_gemini_key = {
-      sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-gemini-clients-key.sops.yaml;
-      key = "stringData/api-key";
-    };
-    litellm_antigravity_key = {
-      sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-antigravity-clients-key.sops.yaml;
-      key = "stringData/api-key";
-    };
-    litellm_claude_subscription_key = {
-      sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-claude-subscription-clients-key.sops.yaml;
-      key = "stringData/api-key";
-    };
-  };
 
   home.username = "agentydragon";
   home.homeDirectory = "/home/agentydragon";
@@ -457,7 +467,8 @@ in
 
       gnome-tweaks
       dconf-editor
-    ];
+    ]
+    ++ map (name: import (./claude_code + "/${name}.nix") { inherit config pkgs; }) gatewayWrappers;
 
   targets.genericLinux.enable = !isNixOS;
 

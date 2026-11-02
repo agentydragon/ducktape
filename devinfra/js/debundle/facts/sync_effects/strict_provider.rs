@@ -5,8 +5,8 @@ use super::super::allocation_transfer::{
 };
 use super::super::local_transfer::{self, LocalContext, LocalFrame};
 use super::super::value_model::{
-    AbstractValue, Context, DenseArray, OwnPropertyShape, ProviderScopeId, SymbolicInputId,
-    ValueExpr, Values,
+    AbstractValue, Context, DenseArray, OwnPropertyShape, ProviderInput, ProviderScopeId,
+    SymbolicInputId, ValueExpr, Values,
 };
 use super::ExecutionIndex;
 use crate::analysis_inputs::{ForeignInvocation, ForeignReturn};
@@ -20,7 +20,7 @@ use swc_ecma_ast::Id;
 struct ProviderContext<'a> {
     index: &'a ExecutionIndex,
     scope: ProviderScopeId,
-    parameters: Context,
+    bindings: Context,
     properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
     arrays: OrdMap<u32, DenseArray>,
     revision: u64,
@@ -31,7 +31,7 @@ impl AllocationContext for ProviderContext<'_> {
         true
     }
     fn binding(&mut self, binding: &Id) -> Option<AllocationValue> {
-        allocation_transfer::closed_binding(&self.parameters, binding, self.scope)
+        allocation_transfer::closed_binding(&self.bindings, binding, self.scope)
     }
     fn child(&mut self, expression: &ValueExpr) -> Option<AllocationValue> {
         allocation_transfer::transfer(self, expression)
@@ -50,8 +50,8 @@ impl AllocationContext for ProviderContext<'_> {
 
 impl LocalContext for ProviderContext<'_> {
     fn read_binding(&mut self, binding: &Id, frame: &mut LocalFrame) -> Option<AllocationValue> {
-        // The frame starts with scoped symbolic parameters only. Other entries
-        // are instantiated/assigned by the same covered local operations.
+        // The frame starts with scoped arguments and checked private var
+        // captures. Other entries come from the covered local operations.
         Some(AllocationValue {
             values: frame.environment.get(binding)?.clone(),
             judgment: AllocationJudgment::CoveredAllocationOnly(Default::default()),
@@ -92,7 +92,7 @@ impl LocalContext for ProviderContext<'_> {
 pub(super) fn derive(index: &ExecutionIndex, callable: u32) -> Option<DerivedForeignCall> {
     let body = index.callables.get(&callable)?;
     let scope = ProviderScopeId::fresh()?;
-    let parameters = body
+    let mut bindings = body
         .params
         .iter()
         .enumerate()
@@ -101,15 +101,45 @@ pub(super) fn derive(index: &ExecutionIndex, callable: u32) -> Option<DerivedFor
                 param.binding.clone()?,
                 Values::from([AbstractValue::SymbolicInput(SymbolicInputId {
                     scope,
-                    parameter,
+                    input: ProviderInput::Argument(parameter),
                 })]),
             ))
         })
         .collect::<Option<Context>>()?;
+    let mut reads = BTreeSet::new();
+    if let Some(expression) = &body.allocation_return {
+        expression.bindings(&mut reads);
+    } else {
+        reads = body.local_body.as_ref()?.reads();
+        for binding in body.local_body.as_ref()?.bindings.keys() {
+            reads.remove(binding);
+        }
+    }
+    for binding in bindings.keys() {
+        reads.remove(binding);
+    }
+    // Property-origin export inference is the next consumer for nested
+    // callable keys. The current declaration-only export collector is not
+    // widened by this body/capture query.
+    let captures: Vec<_> = reads.into_iter().collect();
+    for (capture, binding) in captures.iter().enumerate() {
+        // This establishes lexical cell initialization, not value kind, heap
+        // locality, immutability or privacy of anything the cell can contain.
+        if !index.private_var_binding(binding) {
+            return None;
+        }
+        bindings.insert(
+            binding.clone(),
+            Values::from([AbstractValue::SymbolicInput(SymbolicInputId {
+                scope,
+                input: ProviderInput::Capture(capture),
+            })]),
+        );
+    }
     let mut context = ProviderContext {
         index,
         scope,
-        parameters,
+        bindings,
         properties: OrdMap::new(),
         arrays: OrdMap::new(),
         revision: 0,
@@ -117,7 +147,7 @@ pub(super) fn derive(index: &ExecutionIndex, callable: u32) -> Option<DerivedFor
     let result = if let Some(expression) = &body.allocation_return {
         allocation_transfer::transfer(&mut context, expression)?
     } else {
-        let mut frame = LocalFrame::new(std::mem::take(&mut context.parameters));
+        let mut frame = LocalFrame::new(std::mem::take(&mut context.bindings));
         let judgment =
             local_transfer::execute(&mut context, body.local_body.as_ref()?, &mut frame)?;
         AllocationValue {
@@ -136,12 +166,16 @@ pub(super) fn derive(index: &ExecutionIndex, callable: u32) -> Option<DerivedFor
     }
     let mut returns = BTreeSet::new();
     let mut retained_arguments = BTreeSet::new();
+    let mut retained_provider_captures = BTreeSet::new();
     for value in result.values {
         match value {
             AbstractValue::SymbolicInput(input) if input.scope == scope => {
-                returns.insert(ForeignReturn::Argument {
-                    index: input.parameter,
-                });
+                let ProviderInput::Argument(index) = input.input else {
+                    // A capture itself is not a fresh return allocation. Its
+                    // exact borrowed result contract has not been modeled.
+                    return None;
+                };
+                returns.insert(ForeignReturn::Argument { index });
             }
             AbstractValue::Value(Value::Prim(_)) => {
                 returns.insert(ForeignReturn::Primitive);
@@ -157,7 +191,15 @@ pub(super) fn derive(index: &ExecutionIndex, callable: u32) -> Option<DerivedFor
                     for value in context.properties.get(&allocation)?.values().flatten() {
                         match value {
                             AbstractValue::SymbolicInput(input) if input.scope == scope => {
-                                retained_arguments.insert(input.parameter);
+                                match input.input {
+                                    ProviderInput::Argument(index) => {
+                                        retained_arguments.insert(index);
+                                    }
+                                    ProviderInput::Capture(index) => {
+                                        retained_provider_captures
+                                            .insert(captures.get(index)?.0.to_string());
+                                    }
+                                }
                             }
                             AbstractValue::Value(Value::Alloc(Kind::Object, nested)) => {
                                 pending.push(*nested)
@@ -175,6 +217,7 @@ pub(super) fn derive(index: &ExecutionIndex, callable: u32) -> Option<DerivedFor
         invocation: ForeignInvocation::Call,
         returns,
         retained_arguments,
+        retained_provider_captures,
         native_constructions: BTreeSet::new(),
         record: None,
         closure: None,

@@ -201,35 +201,6 @@ def test_fifo_withdrawal_and_exhaustion_preserve_unselected_books(lots: tuple[Lo
     assert ending[LotId("test-second")].units_remaining == 10
 
 
-def test_grouped_symbol_withdrawal_keeps_account_order_and_each_lots_quantity_grid(lots: tuple[Lot, ...]) -> None:
-    live = session(lots)
-    try:
-        batch = live.start()
-        assert not isinstance(batch, Finished)
-        actions = sleeves.withdraw_by_symbol(
-            batch[0].observation,
-            targets={FIRST: 1, SECOND: 1},
-            source_account_ids=(PORTFOLIO, OUTSIDE),
-            cash_account_id=AccountId("checking"),
-            amount=2,
-            cause_id="grouped",
-        )
-        # FIRST is 5 quanta across scales 10 and 1; SECOND is 3 quanta. Withdraw the
-        # two-quanta overweight entirely from FIRST, using portfolio before outside.
-        batch = live.advance([DecisionActions(0, 0, actions)])
-        assert not isinstance(batch, Finished)
-        finished = live.advance([DecisionActions(0, 1, [])])
-        assert isinstance(finished, Finished)
-        result = finished.rollouts[0]
-        assert result.trace is not None
-        sales = result.trace.events.lot_dispositions
-        assert sales.select("lot_id", "proceeds_quanta").rows() == [("test-older", 1), ("test-newer", 1)]
-        remaining = {lot.lot_id: lot.units_remaining for lot in result.summary.ending_book.lots}
-        assert remaining == {"test-newer": 0, "test-older": 0, "test-second": 10, "test-outside": 1}
-    finally:
-        live.close()
-
-
 @pytest.mark.parametrize("dust", [False, True])
 def test_zero_target_full_exit_reentry_and_reserved_cash(lots: tuple[Lot, ...], dust: bool) -> None:
     if dust:

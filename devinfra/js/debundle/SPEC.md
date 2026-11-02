@@ -2149,12 +2149,26 @@ Covered straight-line bodies use the same ordered local-operation executor as
 application execution. This includes local declarations and assignments,
 sequences, returns, and checked writes to existing own data fields of fresh
 ordinary records, including aliases and self-links. A provider query starts
-with scoped opaque parameters and an empty private heap. Only its parameters
-and instantiated locals can supply binding values. Every reached value
-judgment composes, including discarded expressions; input mutation, external
-captures, unproved field writes and possible abrupt completion decline the
-summary. Argument retention is derived by traversing the returned graph,
+with scoped opaque parameters and an empty private heap. Parameters,
+instantiated locals and checked private `var` captures can supply binding
+values. Every reached value judgment composes, including discarded expressions;
+input mutation, bindings outside that capture rule, unproved field writes and
+possible abrupt completion decline the summary. Argument retention is derived by traversing the returned graph,
 including cycles. The query uses no additional source parse or AST evaluator.
+
+A private capture must resolve to simple `var` declarations in one enclosing
+callable scope with simple parameters, and must not redeclare a parameter.
+Imports, module-scope bindings, lexical declarations, parameter/default scopes
+and dynamic scope do not acquire this proof. Function-scope `var` initialization
+proves that reading the cell has no TDZ or getter behavior; it proves no value
+kind, immutability or heap locality. Captures have scoped symbolic identities
+distinct from arguments. A capture forwarded directly as the return value
+still declines the summary. A capture stored in a returned fresh graph is
+reported under `retained_provider_captures` and retains opaque foreign
+capabilities. All actual arguments remain reachable in that case because the
+capture can alias one of them. Later opaque use promotes possible importer
+reads and rebinds and invalidates reached prefix heap properties; it does not
+grant getter-free access or a result-identity proof.
 
 Source coverage excludes async/generator functions, defaults/rest/destructuring,
 template syntax, other operators,
@@ -2179,7 +2193,8 @@ literal keys other than `__proto__`. It may construct an argument-free
 chunk's census. A class may also define instance fields and write its declared
 private fields. Straight-line statements only. A class qualifies only without
 `extends`, decorators, parameter properties or an explicit `return`. Any other
-operation, including a read of any provider binding, leaves the callee unknown.
+operation, including a provider binding read outside the private `var` rule,
+leaves the callee unknown.
 A vendor-swapped provider is summarized from its bundled body (§ Vendor swap
 equivalence).
 
@@ -2193,7 +2208,8 @@ privacy or exact result identity; equal interned capture sets do not mean equal
 runtime results. This carrier cannot certify an audited factory's ordinary
 input graph. The analysis taints the objects among those arguments, and a construction may still throw
 before the provider evaluates. Arguments it neither returns nor retains are not
-exposed. The call stays impure, so purity and side-effect order are unchanged.
+exposed when no retained provider capture can alias them. The call gains no
+purity or effect-completion certificate from this summary.
 Methods of a returned object stay unknown. The summary appears in `modules.json`
 under `imported_callables.*.foreign_call`; a use appears in
 `synchronous_execution.inference_uses` as `foreign_call_summary`.

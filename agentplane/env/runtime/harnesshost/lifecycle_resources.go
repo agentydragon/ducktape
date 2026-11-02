@@ -46,10 +46,6 @@ func lifecycleRead[T lifecycleSpec[T]](ctx context.Context, reader controller.Re
 	return cosi.Read(ctx, reader, lifecycleResourceFor(id, zero))
 }
 
-func lifecycleWrite[T lifecycleSpec[T]](ctx context.Context, writer controller.ReaderWriter, id string, value T) (bool, error) {
-	return cosi.Write(ctx, writer, lifecycleResourceFor(id, value), value)
-}
-
 type runnerInputSpec struct {
 	Admissions      int
 	ExecutionFenced bool

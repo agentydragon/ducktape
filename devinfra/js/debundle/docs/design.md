@@ -1195,13 +1195,23 @@ body. Earlier operations are not replayed. This local execution proof does not
 provide an owner-completion or foreign-provider certificate.
 The strict provider consumer uses that same ordered-operation executor with
 scoped symbolic parameters and an isolated literal heap. Its binding adapter
-admits only parameters and locals instantiated by the shared executor; external
-captures remain unproved. Every reached child judgment composes, including
+admits parameters, locals instantiated by the shared executor, and checked
+function-private `var` cells. The canonical declaration visitor records their
+enclosing callable scope; simple parameter initialization and non-parameter
+binding identity establish the absence of TDZ. The captured value remains
+opaque, including its callback and alias capabilities. Module and import cells
+remain unproved. Every reached child judgment composes, including
 discarded sequence values. The consumer projects retention through the returned
 graph only after the complete operation sequence has an allocation-only
 judgment. Throws, TDZ/const errors and unproved writes refuse certification
 without retrying the legacy source evaluator. Application execution continues
 to supply its ordinary effect/provenance, publication and fallback adapters.
+Retained private captures produce an opaque foreign capability in the returned
+carrier. They may alias actual arguments, so those identities stay retained
+too. Later opaque use conservatively promotes importer reads and rebinds and
+unsettles available prefix objects. This preserves the getter/mutation boundary
+without assuming the captured values are primitive or heap-private. It does not
+establish an exported alias's callable identity or initializer completion.
 The adjacent fresh-value proof also identifies a top-level write to an
 initialized own data field of a constructorless local class instance. That
 write cannot invoke an inherited setter, even after an earlier unknown call.

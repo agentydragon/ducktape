@@ -62,7 +62,6 @@ def chart(app: App) -> Chart:
         chart,
         "sshpiper-source",
         url="https://github.com/tg123/sshpiper.git",
-        # The Pipe CRD binding in MODULE.bazel is pinned to this upstream release.
         tag="v1.6.1",
         # Keep only the CRD. In particular, plugin/kubernetes/sample.yaml is an example
         # Pipe, not a production route to apply. Flux generates a kustomization.yaml for
