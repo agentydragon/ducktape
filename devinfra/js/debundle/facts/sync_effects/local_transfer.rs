@@ -124,16 +124,29 @@ fn value(
     };
     let result =
         allocation_transfer::transfer(&mut LocalValueContext { context, frame }, expression)?;
-    if let ValueExpr::ObjectLiteral(object, _) = expression
-        && new_record
-        && context.ordinary_record_shape(*object).is_some()
-        && result
-            .values
-            .contains(&AbstractValue::Value(Value::Alloc(Kind::Object, *object)))
-    {
-        frame.fresh_records.insert(*object);
+    if let ValueExpr::ObjectLiteral(object, _) = expression {
+        mark_fresh_record(context, frame, *object, new_record, &result.values);
     }
     Some(result)
+}
+
+fn mark_fresh_record(
+    context: &impl LocalContext,
+    frame: &mut LocalFrame,
+    allocation: u32,
+    new_record: bool,
+    values: &Values,
+) {
+    if new_record
+        && !frame.borrowed_records.contains(&allocation)
+        && context.ordinary_record_shape(allocation).is_some()
+        && values.contains(&AbstractValue::Value(Value::Alloc(
+            Kind::Object,
+            allocation,
+        )))
+    {
+        frame.fresh_records.insert(allocation);
+    }
 }
 
 fn completing(mut values: Values, frame: &mut LocalFrame) -> Values {
@@ -198,6 +211,38 @@ fn expression(
         LocalExpression::Value(node) => {
             let result = value(context, node, frame)?;
             judgment.compose(&result.judgment);
+            Some(completing(result.values, frame))
+        }
+        LocalExpression::Record {
+            allocation,
+            properties,
+        } => {
+            if !matches!(context.literal_layout(*allocation), LiteralLayout::Record) {
+                return None;
+            }
+            let mut new_record = !context.heap().properties.contains_key(allocation);
+            let result = allocation_transfer::record(
+                &mut LocalValueContext { context, frame },
+                *allocation,
+                properties
+                    .iter()
+                    .map(|(name, value)| (Some(name.clone()), value)),
+                AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
+                |context, node| {
+                    let mut judgment =
+                        AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default());
+                    let values =
+                        expression(context.context, node, body, context.frame, &mut judgment)?;
+                    // A later child can truncate the unfinished literal.
+                    context.frame.inputs.extend(values.iter().cloned());
+                    // A child can reenter this allocation site. Its resulting
+                    // heap entry then also represents an older record.
+                    new_record &= !context.context.heap().properties.contains_key(allocation);
+                    Some(AllocationValue { values, judgment })
+                },
+            )?;
+            judgment.compose(&result.judgment);
+            mark_fresh_record(context, frame, *allocation, new_record, &result.values);
             Some(completing(result.values, frame))
         }
         LocalExpression::Sequence(expressions) => {

@@ -15,8 +15,8 @@ function build(select, input) {
 }
 ```
 
-The nested call inside that object literal still needs recursive ordered
-literal construction; the first supported form makes the call explicit:
+Both this form and a call made explicit before the literal now use ordered
+execution:
 
 ```js
 function build(select, input) {
@@ -59,9 +59,11 @@ its callee or arguments. The adapter inspects current binding values and does
 not replay the body to produce diagnostics. A known abrupt result still stops
 before that remainder.
 
+Record fields now retain their child operations recursively, using the same
+record allocation transfer; see <2026_11_01_ordered_record_operands.md>.
 Member, optional, spread and direct eval calls remain outside this grammar.
-Native and foreign call certification, live captured cells, branch execution,
-facade getters and property-origin export identity remain required work. This
+Native and foreign call certification, ordered caller control for captured
+writes, branch execution, facade getters and property-origin export identity remain required work. This
 change alone does not prove the canonical provider or clear any gate.
 
 ## Review and friction

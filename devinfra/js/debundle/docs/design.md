@@ -1219,6 +1219,17 @@ already executed effects remain in the outcome. All invocation results remain
 opaque to allocation-only proof, and the strict provider adapter refuses the
 operation. This gives no provider identity to exported property aliases.
 
+Record literals retain ordered local expressions for each static data field in
+the canonical body IR. Their children run through the same local kernel and
+feed the shared record allocation transfer used by general application and
+strict provider evaluation. There is no second literal evaluator. The transfer
+composes reached child judgments, stops after an abrupt child and preserves
+the existing per-site property joins. The local frame retains completed child
+values for fallback while the outer record is unfinished. If a child creates
+another record at the same source site, the outer result cannot receive a
+fresh-record proof. Recursive read/write and allocation-syntax censuses follow
+all children; calls and closures keep their existing provider refusal.
+
 Anonymous function and arrow creation retain live lexical cells from ordered
 activations. Concise arrow bodies lower directly to an ordered return operation
 during canonical collection, using the same parameter validation and operation

@@ -2219,6 +2219,17 @@ Invocation results remain opaque to the allocation-only judgment; a strict
 provider query declines calls. This supplies no property-origin export identity
 proof.
 
+Ordered record literals evaluate static data-field values through the same
+local-operation kernel, from left to right. Supported child calls, closures,
+reads, assignments and nested records retain their effects and results without
+another evaluation. Abrupt children stop the remaining fields. Operands already
+evaluated remain capability roots if a later field truncates execution, and a
+child that reenters the allocation site prevents fresh-record admission for
+that joined site. Duplicate fields retain all operand effects and the existing
+conservative heap joins. Computed keys, spreads, accessors and prototype-setting
+fields remain outside this ordered grammar. A child invocation or closure still
+does not grant an allocation-only provider certificate.
+
 Ordered application bodies also create anonymous function and arrow closures.
 An expression-bodied arrow lowers directly to the same retained return
 operation as a block body; it uses the same parameter checks, source coverage,
