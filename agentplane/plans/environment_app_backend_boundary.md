@@ -33,8 +33,9 @@ the generated `Sandbox` protobuf into the app's OpenAPI `SandboxView` for UI con
 test fixtures now use generated `Sandbox` messages and shared fixture builders (#13899, #13905). This
 TODO now concerns the remaining production consumers of the app `SandboxView`.
 
-Move remaining detail and mutation consumers to the owning generated contracts, then remove the
-redundant app `SandboxView` and production projection. Keep actual presentation derivations such as
-status labels local to the UI. The detail contract and the relationship between `Sandbox` and
-`EnvironmentDescriptor` still need to be resolved; this TODO does not select their API shape or
-change caller authorization.
+The inventory UI migration remains open: move its consumers from `SandboxView` to generated
+`Sandbox` messages. Move remaining detail and mutation consumers to the owning generated contracts,
+then remove the redundant app `SandboxView` and production projection. Keep actual presentation
+derivations such as status labels local to the UI. The detail contract and the relationship between
+`Sandbox` and `EnvironmentDescriptor` still need to be resolved; this TODO does not select their
+API shape or change caller authorization.
