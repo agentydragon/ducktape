@@ -94,5 +94,17 @@ def test_credential_schema_preserves_source_and_target_constraints() -> None:
         assert target["x-kubernetes-validations"]
 
 
+def test_sandbox_resume_policy_is_optional_and_defaults_to_deny() -> None:
+    crd = yaml.safe_load(_committed(CRDS_DIR / "crd-sandboxes.yaml"))
+    spec = crd["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]
+    assert "resumePolicy" not in spec.get("required", [])
+    policy = spec["properties"]["resumePolicy"]
+    assert policy["type"] == "object"
+    allow = policy["properties"]["allowOwnServiceAccount"]
+    assert allow["type"] == "boolean"
+    assert allow["default"] is False
+    assert "allowOwnServiceAccount" not in policy.get("required", [])
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
