@@ -1,6 +1,6 @@
-# Harness Host retained state and test evidence
+# Runtime retained state and test evidence
 
-Harness Host owns Session journals, recovery checkpoints, native continuation evidence, and History
+Runtime owns Session journals, recovery checkpoints, native continuation evidence, and History
 ingress delivery. The Sandbox state volume is durable user data and remains at its existing paths.
 
 ## Native continuation evidence
@@ -26,8 +26,8 @@ the app only folds that neutral report.
   fully observed completed command output are compared by native item ID. Legacy/unsupported
   history, incomplete page sequences, compaction barriers and uncertain tool context stay unknown.
   There is no private Codex file/database reader or synthetic tool-output reconstruction. The
-  [protocol characterization](../../../../debug/codex_app_server_history_apis.md) records what the pinned
-  0.157.0 API exposes and the real Harness Host/model tests that support the comparison.
+  [protocol characterization](../../../debug/codex_app_server_history_apis.md) records what the pinned
+  0.157.0 API exposes and the real Runtime/model tests that support the comparison.
 
 Unreadable, malformed, or unsupported native evidence produces an explicit unknown report.
 These adapters depend on the pinned native protocols and must be checked with the app-level recovery
@@ -42,13 +42,13 @@ The connection uses `journal_mode=DELETE` and `synchronous=EXTRA`; publication r
 [durable rollback-journal commits](https://sqlite.org/pragma.html#pragma_synchronous) and storage honoring sync.
 A journal mutex owns each complete transaction, including batch publication.
 Explicit `BEGIN IMMEDIATE` reserves the writer before reading ids/cursors; no transaction spans
-harness or network I/O. One retained connection serves the single Harness Host-session writer.
+harness or network I/O. One retained connection serves the single Runtime-session writer.
 Runtime acquires the environment lifetime lock before starting embedded Host and retains it through
 Host cleanup and journal close. Native Pod and subprocess harnesses inherit that descriptor.
 The outer container runtime fences escaped descendants before an abnormal replacement. In VMs
 systemd owns each component's distinct scope; startup fences prior owned services before opening
 Session stores or journals.
-See <../SPEC.md#durability-and-restart> for storage, startup barriers and containment boundaries.
+See <../SPEC.md#durable-state-and-recovery> for storage, startup barriers and containment boundaries.
 
 The stdout reader commits in groups (`Journal.WithBatch`): the lines one pipe read delivered and the
 Events derived from them share a transaction, so a burst of output costs one commit rather than one
@@ -79,7 +79,7 @@ follow retains one page.
 Completed command IDs and debug checkpoint identities are looked up by their indexed
 keys rather than retained in process-lifetime sets. Outstanding commands remain in memory.
 
-The native harness's own history and memory usage are separate from the Harness Host journal's bounds.
+The native harness's own history and memory usage are separate from the Runtime journal's bounds.
 
 Historical adapter item identities and Claude per-message block counts use connection-local
 SQLite temporary tables with `temp_store=FILE` and a 2 MiB temporary page cache. Each adapter

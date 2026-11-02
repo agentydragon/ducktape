@@ -71,7 +71,7 @@ type runtimeDeps struct {
 	prepareSupervisor        func(Config, *os.File) (*supervision.Supervisor, error)
 	waitBootstrap            func(context.Context) error
 	startExecution           func(context.Context, Config, string) (executionHandle, error)
-	beforeHostConstruction   func()
+	beforeSessionConstruction   func()
 	afterInitialWaitSnapshot func()
 	stopSessions             func(context.Context) error
 	waitSessionsClosed       func(context.Context) error

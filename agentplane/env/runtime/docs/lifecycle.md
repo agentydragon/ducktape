@@ -1,208 +1,133 @@
 # Environment lifecycle ownership
 
-Environment Runtime is the single lifecycle owner in the management process. It owns identity,
-bootstrap, public control, coordinated drain, Session recovery and History delivery. The Session
-component owns native Sessions, setup, app-server and journals. Execution Service owns typed
-execution and the native exec-server. Each component has distinct typed lifecycle resources in one
-Runtime-owned COSI engine. Runtime owns the engine
-and joins it after Host controllers reach Closed and before releasing its environment state owner.
-The Host still owns its Session, journal and native process resources; Runtime owns bootstrap and
-environment process resources. One process controller and registry own attempt finalizers in the shared namespace;
-process domains retain separate lifecycle and worker barriers.
-The [COSI map](cosi.md) shows controller subscriptions, resource writers and lifecycle states.
+`Runtime` owns one environment lifetime: admission, bootstrap, Session management, harness
+controllers, retained records, journals, History delivery, Execution and final owner release. These
+are ordinary components in one COSI engine and the `environment-runtime` namespace. The
+[controller map](cosi.md) shows their independent observations and writers.
 
 ```mermaid
 flowchart LR
-  G["Gateway"] -->|"authenticated gRPC: WatchState, Session, Executor"| R
+  G["Gateway"] -->|"authenticated gRPC"| R
   subgraph RuntimeProcess["Environment Runtime process"]
-    R["Runtime control and lifecycle"]
-    H["Harness Host"]
-    E["Embedded Execution adapter / lifecycle"]
+    R["Runtime admission and lifecycle"]
+    S["Session manager, retained store and journals"]
+    C["Session and harness controllers"]
     B["Bootstrap"]
-    IWorker["History delivery worker"]
-    R <-->|"direct bound Session calls"| H
-    R -->|"HostIntents: shared COSI"| H
-    H -->|"HostIntentStatuses / HostReports: shared COSI"| R
-    R -->|"direct Executor calls; start / drain / fence"| E
-    R -->|"request / wait"| B
-    R -->|"start after Session recovery; stop / join"| IWorker
-    H -.->|"direct bootstrap wait / Execution readiness"| R
+    E["Execution lifecycle and adapter"]
+    H["History delivery worker"]
+    R -->|"construct and own"| S & C & B & E & H
+    C -->|"direct bootstrap wait"| B
+    C -->|"live owner readiness"| E
+    S -->|"inventory and journal sources"| H
   end
-  H -->|"supervise"| S["Session setup / Claude processes"]
-  H -->|"supervise"| C["Shared Codex app-server"]
-  C -->|"native WebSocket protocol"| X["Codex exec-server"]
-  E -->|"native WebSocket protocol"| X
-  E -.->|"VM: supervised launch and fence"| X
-  E -.->|"Pod: Unix ownership lease / fence"| P["Pod executor companion"]
-  P -.->|"launch / fence"| X
-  H -->|"journal sources / durable ACK store"| IWorker
-  IWorker -->|"gRPC journal push"| I["History ingress"]
-  I -->|"ACK"| IWorker
+  C -->|"supervise"| Native["Claude, shared Codex app-server, setup and workspace helpers"]
+  E -.->|"VM supervised launch / Pod companion ownership"| X["Codex exec-server"]
+  H -->|"gRPC journal push"| History["History ingress"]
+  History -->|"exact cursor ACK"| H
 ```
 
-The VM exec-server is a supervised systemd workload. In a Pod it runs in the companion's private
-PID namespace; the app-server and Execution adapter reach its native WebSocket through the Pod's
-network namespace. The companion's Unix socket is an ownership and fence protocol, not the
-Executor API. Runtime calls the embedded adapter directly.
+The Pod execution companion retains its external Unix ownership/fence protocol and separate PID
+namespace. Native protocol probing establishes Execution readiness; a published status cannot
+substitute for the live owner check. VM transient units retain their systemd invocation and cgroup
+fences. See [supervision](../supervision/docs/supervision.md).
 
-## Durable owners
+## State and identity
 
-| State                                     | Owner   | Storage                                                    |
-| ----------------------------------------- | ------- | ---------------------------------------------------------- |
-| Environment lifetime lock                 | Runtime | `<state_dir>/.agentplane-environment-runtime-owner`        |
-| Incarnation seal                          | Runtime | `EnvironmentSeals` COSI resource in `runtime-resources.db` |
-| Bootstrap selection                       | Runtime | `<state_dir>/runtime-resources.db`                         |
-| Bootstrap events                          | Runtime | `BootstrapEvents` COSI resources in `runtime-resources.db` |
-| Session records and History ACKs          | Host    | `<state_dir>/runtime-resources.db`                         |
-| Session journals and native continuations | Host    | `<state_dir>/sessions/`                                    |
-| Shared Codex native home                  | Host    | `<state_dir>/codex/`                                       |
+| State | Owner and storage |
+| --- | --- |
+| Environment owner lock | Runtime; `<state_dir>/.agentplane-environment-runtime-owner` |
+| Incarnation seal | Runtime; `EnvironmentSeals` in `runtime-resources.db` |
+| Bootstrap selection and events | Runtime; `BootstrapSelections` and `BootstrapEvents` in `runtime-resources.db` |
+| Session records and History acknowledgements | Runtime retained store; `SessionRecords` and `IngressAcks` in `runtime-resources.db` |
+| Session journals and native continuations | Runtime Session components; `<state_dir>/sessions/` |
+| Shared Codex native home | Shared app-server component; `<state_dir>/codex/` |
 
-Runtime's environment lock covers the embedded Host's retained state as well. Pod and subprocess
-native processes inherit the Runtime owner descriptor; VM native processes are fenced by their
-systemd scopes. Lock acquisition alone does not establish a prior container/node fence.
+`EnvironmentRuntimeDesiredStates` is the sole environment lifecycle desire. Its mode, incarnation,
+seal UID and generation are distinct from observations. Runtime boot ID fences an external process
+lifetime; Sandbox/incarnation identity and Gateway connection epoch authorize external calls.
+Session/app-server `EnvironmentGeneration` records the desired revision their controller observed.
+Session demand, app-server demand, Execution attempt generation, one-off operation ID and native
+process attempt ID retain their separate meanings.
 
-## Lifecycle coordination and admission
+Only explicitly registered COSI resources are durable. Desired state, component progress,
+admission accounting and operation slots are live coordination state. A watch wakes observation;
+it does not replace the SQLite journal or authorize replay of uncertain native effects.
 
-`env/runtime/lifecycle.proto` defines typed in-process lifecycle values. The Host-owned `HostReports`
-resource includes the complete sampled intent: Runtime boot, generation and Execution
-fence. Runtime accepts a report only when `HostIntentStatuses` confirms that exact intent was applied.
-Mode and incarnation changes need a new generation; Execution fencing advances monotonically within
-that generation.
+## Admission and startup
 
-Runtime owns external transport authentication, connection epochs and conditional Quiesce. Its
-direct Session calls carry a copied exact binding. Host checks it at direct-call ingress
-and under its synchronous native admission lock. Model lookup does not hold that lock; a delayed
-reservation rechecks the binding before writing retained state. Command admission remains durable
-and idempotent. Unknown remote effects are never replayed after Session or History delivery failure.
-Runtime installs the embedded Host and publishes its initial intent before Session recovery finishes.
-The Host-owned intent controller wakes when recovery completes and applies `HostIntents` only after
-startup. It checks the exact Runtime boot ID through a native admission gate that Runtime
-revokes synchronously on Host or Runtime failure, even if COSI publication fails. It records Applying before the native effect;
-an interrupted application fails the Host and cannot be replayed on controller restart.
+Before accepting a new lifecycle revision, Runtime closes its admission gate under `Runtime.mu`.
+Failed or uncertain desired-state writes leave that gate closed. A controller must compare the
+exact expected revision through Runtime admission before registering native work. Accepted work
+is counted until its component operation slot is visible, and the mutex is released while that
+registration executes. Publication failure fails Runtime; controller restart cannot repeat an
+uncertain registration.
 
-### Identity scopes
+On entry to Running, transition-owned preparation resets old demand, reopens eligible journals and
+resumes recoverable work before reopening admission. `EnvironmentAdmissionCounts` publishes both
+the accepted generation and the outstanding count, waking Session/app-server controllers when the
+Running revision becomes eligible. The count is not another lifecycle desire.
 
-The similarly named `Host` types and lifecycle counters belong to separate owners. Their values are
-not interchangeable just because two counters currently have the same number.
+Runtime locks its environment owner before Session construction. Startup reconstructs Session
+records and journals and joins the initial native cleanup barrier before public control listens.
+History starts after successful Session recovery. A recovery failure closes admission and prevents
+History startup. Failure or Close wakes startup waiters even while recovery is unfinished.
 
-| Identity                                 | Scope                                                                                                                                                                                                                                                             |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `runtime.Runtime`                        | Environment Runtime coordinator; owns the shared COSI engine and environment lifetime.                                                                                                                                                                            |
-| `harnesshost.Host`                       | Runtime-owned Session component; owns retained Sessions and native harness lifecycle. Runtime starts its recovery and observes failures directly.                                                                                                                 |
-| `bootstrap.Host`                         | Runtime-owned bootstrap controller and one-shot operation; it is not a separately served host process.                                                                                                                                                            |
-| `codexappserver.Host`                    | One shared Codex app-server process and its protocol readers, used by Codex Sessions.                                                                                                                                                                             |
-| `supervision.Host`                       | A view over the shared process registry, bound to a domain lifetime and worker barrier; in Runtime's shared registry, process attempt IDs are global across the Runtime and Harness views.                                                                        |
-| Runtime boot ID                          | One Environment Runtime and its Session component. The binding carries this ID to reject observations from another Runtime lifetime.                                                                                                                              |
-| Host binding generation                  | The generation of a Runtime-published Host intent. It seeds Host desired state; Host can advance that state during local close. `ExecutionFenced` can change within the same binding.                                                                             |
-| `EnvironmentDesired.Generation`          | Runtime-owned admission generation for bootstrap and Runtime process effects. It is a different counter from the Host binding generation.                                                                                                                         |
-| Session demand / Codex app-server demand | An admitted demand sequence for one Session / one sequence shared by the app-server. Both reset when the Host enters a new Running binding generation. Their status checkpoints mean the latest demand claimed by reconciliation, not that native work succeeded. |
-| Embedded Execution demand / generation   | Runtime-owned Execution demand is separate from Session demand. Execution status generation advances for each native Execution start and scopes its start, loss and fence completion facts.                                                                       |
-| Setup operation ID / process attempt ID  | A Session `SetupAttempt` identifies one `oneoff.Operation`; the process registry assigns a distinct ID to each native process attempt. Neither is a demand sequence.                                                                                              |
-| Gateway connection epoch                 | The Gateway Lease epoch for a `WatchState` connection. A newer watch invalidates the old authorization metadata; executor streams bound to its context are canceled. Work admitted before supersession keeps its component-owned completion path.                 |
-| Local worker epochs                      | `activeStartEpoch` protects the current start-cancel handle from an older worker's cleanup; a Session's `codexExitEpoch` rejects a stale app-server exit callback. Neither is a Gateway connection epoch.                                                         |
-| Incarnation UID                          | The current Pod or virt-launcher Pod UID supplied by Gateway. Runtime uses it for environment adoption and journal sealing; it is distinct from Sandbox UID, Runtime boot ID and native process IDs.                                                              |
+`OpenSession` acknowledges a durable reservation. Model lookup runs outside admission; the retained
+write rechecks the accepted revision and caller epoch. Native startup and setup complete separately.
+Accepted setup may settle after the gate closes, and its operation/process barriers remain visible
+until it does. Canceling a bootstrap waiter does not cancel the accepted bootstrap operation.
 
-The `Phase` fields in typed status specs describe each controller's domain lifecycle. They are
-independent of COSI's resource metadata phase. Runtime, Harness Host, Session, app-server, Execution
-and process status phases therefore do not form one shared state machine.
-
-Host's admission counter is a COSI input, incremented under that barrier before durable mutation and
-decremented when the handler settles. Missing accounting is an error, never an idle count. A drain
-intent closes admission before asynchronous teardown begins. New native effects also compare their
-expected desired generation under the same lock.
-
-## Drain, fence, seal and flush
+## Drain, fence, seal and acknowledgement
 
 ```mermaid
 sequenceDiagram
-  participant R as Environment Runtime
-  participant H as Harness Host
-  participant E as Execution Service
-  participant I as History
-  R->>H: HostIntents: QUIESCING(binding, incarnation seal)
-  H->>H: close admission; settle setup and accepted writes
-  H->>H: halt native processes; join readers and inspections
-  H->>R: HostReports(intent, native_stopped)
-  R->>E: drain and stop; prove execution domain fenced
-  R->>H: HostIntents: same binding, execution_fenced=true
-  H->>H: seal final journal cursors
-  R->>I: final entries and seal via Runtime-owned delivery
-  I->>R: ACK of exact sealed cursor
-  R->>H: persist ACK in Host durable store
-  H->>R: HostReports(intent, QUIESCED)
+  participant R as Runtime
+  participant C as Component controllers
+  participant E as Execution
+  participant H as History worker
+  participant I as History ingress
+  R->>R: close admission; publish desired revision
+  C->>C: settle admissions, setup, native processes and inspections
+  C->>R: EnvironmentSessionStatuses.NativeStopped (exact generation)
+  R->>E: drain calls and fence native owner
+  E->>R: exact lifecycle and Execution-attempt fence completion
+  C->>C: seal journals at their final cursors when requested
+  H->>I: final entries and seals
+  I->>H: exact sealed cursor acknowledgement
+  H->>H: persist IngressAcks
+  C->>R: exact aggregate completion
 ```
 
-Bootstrap belongs to Runtime. Session setup waits through the generation-bound Runtime call; canceling a waiter does not
-cancel accepted bootstrap work. Runtime shutdown must keep that wait boundary available while
-accepted Host setup settles.
+Native cleanup includes Session halt, shared app-server cleanup, harness-domain process finalizers
+and inspection writes. Runtime-domain attempts keep their own bootstrap/Execution barriers. An old
+component status cannot satisfy a successor revision. Execution fencing associates its own attempt
+generation with the lifecycle generation; a successor cannot start before its predecessor is fenced.
 
-Host reports native cleanup only after admissions, setup, shared app-server, process finalizers and
-inspection writes settle. Runtime cannot turn an old report into a new generation's fence proof.
-Host waits for the matching Execution fence before sealing. Under-cursor or unsealed ACKs leave Host
-FLUSHING. CLOSING preserves an existing seal and waits for its journal seals; Runtime Close waits for
-Host quiescence and exact History ACKs before stopping History delivery and requesting Host close when a seal is present. CLOSING
-without a seal performs native cleanup without ending the incarnation's history.
+A seal request waits for native cleanup and the exact Execution fence before journals seal.
+Under-cursor, unsealed or non-durable acknowledgements cannot satisfy the sealed delivery barrier.
+Quiesce acceptance and Close completion are separate boundaries. Repeated Quiesce preserves a
+healthy desired generation; only an error for that current generation may request a retry.
 
-Session recovery or History delivery failure closes admission synchronously and Runtime starts
-cleanup without inventing a seal. Canceling a Close caller ends only that caller's wait. Engine exit
-and teardown errors remain failures, and incomplete cleanup retains ownership. Runtime joins History
-delivery before Session journals close; controllers stop before Session component workers join. Runtime retains the environment owner
-until its Host and Execution domains are fenced.
+Ordinary unsealed Close drains work without creating a seal. Close preserving a seal waits for exact
+durable History acknowledgements. Runtime cancels and joins History before closing journals, stops
+and joins the engine before joining component workers, and releases its environment owner last.
+Canceling a Close caller ends only that caller's wait. Close first settles an accepted transition and
+its existing fence; failures retain ownership rather than manufacturing completion.
 
-Runtime's own COSI engine also runs its Close aggregate alongside bootstrap and process controllers.
-The same Runtime lifecycle coordinator owns sequence-bound adoption and Quiesce transition statuses. The Gateway holds
-transition serialization while it waits for an exact sequence; canceled WatchState epochs stop
-future adoption stages, and an interrupted Execution start must settle through the Execution fence
-barrier before a successor can enter. A published Running intent remains current after watch loss.
-If a prior transition already requested drain, its exact Host generation is reconciled before
-another incarnation can be adopted. Conditional Quiesce seals durably before publishing a new
-Quiescing intent and preserves a healthy generation on repeated calls. Close cancels an active
-transition, then waits for its status and any uncertain-fence proof before continuing.
-The aggregate observes a Closing desired generation and advances through bound Host native-stop,
-Execution fence, optional Host flush, Host join and bootstrap settlement. Blocking waits and stops run
-in coordinator-owned one-shot workers, leaving the COSI event loop free. Its ready-to-join status
-allows Runtime to stop and join that engine, join its workers, fence the Pod PID namespace and release
-the environment owner. Failed or uncertain stages retain that owner and are not replayed.
+Session recovery or History delivery failure closes admission and starts local cleanup without
+inventing a seal. Failed native cleanup, engine failure or failed sealed delivery remains a failure.
+For abnormal Pod Runtime loss, replacement still requires the outer container fence; lock acquisition
+or leader exit alone does not establish that all descendants are gone.
 
-## Process domains
+## Native containment
 
-Production Pod Runtime is PID1; the embedded Host shares its PID1 reaper. Native helpers can occupy
-separate process groups. A normal `native_stopped` report proves Host cleanup. An abnormal Runtime
-exit alone cannot prove those groups are empty; replacement requires the outer container fence.
-Explicit subprocess mode remains
-available for local fixtures, with its parent-liveness and inherited owner-descriptor barrier.
+Production Pod Runtime is PID 1 and owns the shared child reaper. Subprocess fixtures retain the
+inherited owner-descriptor and parent-liveness barriers. In a VM, harness attempts use the `harness`
+scope in the workload slice, while Execution uses `execution-service` in the executor slice. Both
+are bound to `agentplane-environment-runtime.service` and its invocation marker. Sharing one COSI
+process controller does not merge those native containment domains or their worker joins.
 
-VM Runtime, Host and Execution use distinct native scope IDs bound to the Runtime service invocation
-and lifetime marker. Runtime preserves its legacy scope hash, while Native harnesses use `harness` and
-Execution uses `execution-service`. Completion requires service state
-and an empty execution domain, including descendants. Manager disconnect and uncertain fence results
-block successors. See [supervision](../supervision/docs/supervision.md).
-
-## Host COSI state
-
-Host wiring and aggregate reconciliation live in `env/runtime/harnesshost/lifecycle_*.go` and
-`lifecycle_controller.go`. Component controllers exclusively write their own runtime/status resources.
-Resources contain lifecycle values and detached snapshots, not process handles, streams,
-cancellations or journal connections. The host registry owns native handles and publishes observations.
-
-`SessionReconcileSnapshots` includes demand, setup, process liveness, pending commands and inspection
-dependencies. Session lifecycle status records phase, observed demand and the Harness Host desired
-generation. `CodexAppServerLifecycleSignals` carries app-server demand and process-exit facts; its
-status records lifecycle progress and readiness deadline. Process desired/status/input resources are provided by
-`env/runtime/supervision`; finalizers remain until native cleanup is proven. `env/oneoff.Operation` owns
-one-shot slots through state publication and consumption, preventing retries from duplicating an
-in-flight effect.
-
-Session reconciliation concurrency (default 16) limits workers, not Session inventory or admission.
-Shared-service controllers reconcile one service. Stream readers and ingress workers remain
-independent so replies and ACKs progress while a controller waits. The app-server controller watches
-embedded Execution status changes, checks the live Execution owner through an in-process
-Host-to-Runtime callback, and requeues at its dependency deadline if readiness has not arrived.
-Execution separately probes the native exec-server's WebSocket protocol for backend readiness and
-liveness.
-
-Session startup reconstructs journals and records interrupted setup before publishing schedulable
-input. `Session.Observe` derives attachment, busy state and autosuspend blockers from one detached
-projection. Native active turns and committed active turns conservatively block idle until both
-settle. Journal cursor changes wake ingress; lifecycle blocker changes wake Runtime reports. Durable
-records remain authoritative when in-memory state is rebuilt.
+Each attempt receives its stop grace at launch. A process exit observation is separate from an empty
+native process-domain fence. Systemd start uncertainty, changed invocation, manager disconnect or a
+failed recursive cgroup-empty proof blocks a successor. Runtime holds state/workspace mounts until
+accepted bootstrap and native cleanup settle.

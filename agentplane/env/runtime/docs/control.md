@@ -1,9 +1,8 @@
 # Environment Runtime control contract
 
-Environment Runtime owns Sandbox identity, bootstrap, external control, and lifecycle coordination
-with Harness Host and Execution Service. The current public API still carries both environment and
-Session operations; the Task DAG tracks a later split into separate environment and Harness/Session
-services. The in-process Runtime-to-Host lifecycle coordinator remains separate from the public API.
+Environment Runtime owns Sandbox identity, bootstrap, external control, Session management,
+journals, History delivery and lifecycle coordination with Execution. The public API retains both
+environment and Session operations; an independent Session domain/storage model is deferred.
 
 The public wire definitions are [`environment_runtime.proto`](../control/environment_runtime.proto),
 [`session.proto`](../../../proto/session.proto), and
@@ -72,7 +71,7 @@ budget remains authoritative across all of its native services.
 - The Sandbox's launch file (`--launch-file`, written by the Sandbox controller) carries the
   Sandbox's identity and the bootstrap shell source. Environment Runtime starts the bootstrap with
   `/bin/sh -eu` from the configured `initialization_cwd` when Runtime starts; a Sandbox without a bootstrap runs
-  nothing. `OpenSession` durably reserves a Session without waiting for the bootstrap. Host waits on Runtime's bound `WaitBootstrap` RPC and does not run session setup or start a native harness until the bootstrap succeeds. If it fails
+  nothing. `OpenSession` durably reserves a Session without waiting for the bootstrap. Session setup waits on the Runtime-owned bootstrap component and does not run session setup or start a native harness until the bootstrap succeeds. If it fails
   or is interrupted, admitted commands receive durable failure outcomes.
 - The first request durably selects the exact script bytes in the `BootstrapSelections` COSI
   resource at `<state_dir>/runtime-resources.db`, before the script starts. Environment Runtime thereafter refuses
@@ -125,7 +124,7 @@ budget remains authoritative across all of its native services.
 - `OpenSession` answers with the session's `Attached` snapshot: the spec, setup and harness states,
   `last_cursor`, and the active turn id as of that position. `GetStatus` returns one snapshot with a
   Environment Runtime boot UUID, each harness process (its per-spawn UUID and the Sessions it hosts), session
-  execution and busy state, and the Environment Runtime lifecycle intent and aggregate progress. Lifecycle
+  execution and busy state, and the Environment Runtime desired lifecycle and aggregate progress. Lifecycle
   progress includes the desired and published generations, stage, and—when progress matches the
   desired generation—the first unmet barrier captured by the aggregate controller at the predicate
   it is waiting on. The blocker names its COSI resource and process when available; journal blockers
@@ -178,21 +177,20 @@ budget remains authoritative across all of its native services.
   admission when Quiesce is accepted finishes durably or is rejected before teardown proceeds; new
   ordinary command IDs and new sessions are refused, while an identical command retry retains its
   original admission.
-  Runtime closes admission with a new private generation. Host reports native drain completion for
-  that binding, Runtime proves Execution fenced, and Host then seals and flushes. A CLOSING intent
-  preserves a previously selected seal and waits for its exact History acknowledgement before Runtime
-  stops Host. A CLOSING intent without a seal only drains native work.
-- Host `Close(ctx)` is local process cleanup. Concurrent callers share cleanup; caller cancellation
-  ends only that wait. It never invents an Execution fence or a seal after losing Runtime control.
-  Existing durable journal seals remain intact. Lifecycle-engine failure retains the Host lock until
-  native cleanup is proven. Runtime keeps the environment lock until Host and Execution are fenced.
-- Runtime's in-memory COSI engine schedules Host native Session/setup, app-server and supervised process
-  controllers alongside Runtime bootstrap and environment process controllers. Execution
-  Service owns its backend lifecycle. Session records, journals and acknowledgements remain durable
-  Host authority; the `EnvironmentSeals` COSI resource remains Runtime authority. There is no duplicated
-  environment controller in Host. See [lifecycle ownership](lifecycle.md).
-- Orderly Runtime shutdown also waits for Host setup and Runtime bootstrap. An unexpected process loss
-  can still interrupt a script; recovery records that outcome and never silently reruns it.
+  Runtime closes admission before publishing the next environment desired generation. Component
+  controllers publish exact-generation native cleanup; Runtime proves Execution fenced before
+  journals seal. Close preserving a seal waits for its exact durable History acknowledgement;
+  unsealed Close only drains native work.
+- Runtime `Close(ctx)` shares one accepted cleanup worker among callers; caller cancellation ends
+  only that wait. Failed native cleanup, engine failure or missing durable sealed acknowledgement
+  retains the environment owner. History joins before journals close; the engine and component
+  workers join before final owner release.
+- Runtime's single COSI engine schedules Session/setup, app-server, bootstrap, Execution and process
+  controllers. Their separate observations describe independent progress; the sole lifecycle desire
+  is `EnvironmentRuntimeDesiredStates`. Records, journals, acknowledgements and environment seals
+  retain their durable authorities. See [lifecycle ownership](lifecycle.md).
+- Orderly shutdown waits for accepted setup and bootstrap. Unexpected process loss can interrupt a
+  script; recovery records that outcome and never silently reruns it.
 - A sealed journal takes no further Events, so its commands are refused. Its ingress push sends
   every entry through the seal's cursor, then `Sealed`.
 - Every persisted seal names the nonempty incarnation UID from the authenticated `Welcome`; a seal

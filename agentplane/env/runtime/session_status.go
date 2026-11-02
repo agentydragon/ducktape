@@ -4,7 +4,7 @@ import (
 	"context"
 	"sort"
 
-	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
@@ -24,10 +24,10 @@ func (r *Runtime) ListSessions(ctx context.Context, _ *sessionpb.ListSessionsReq
 	if err := r.authorizeSessionRead(ctx); err != nil {
 		return nil, err
 	}
-	if desiredState := r.desiredSnapshot(); desiredState.Mode != harnesshostlifecycle.Running {
-		minimum := harnesshostlifecycle.Flushing
-		if desiredState.Mode == harnesshostlifecycle.Closing {
-			minimum = harnesshostlifecycle.Closed
+	if desiredState := r.desiredSnapshot(); desiredState.Mode != lifecycle.Running {
+		minimum := lifecycle.Flushing
+		if desiredState.Mode == lifecycle.Closing {
+			minimum = lifecycle.Closed
 		}
 		if err := r.waitSessionStage(ctx, minimum); err != nil {
 			return nil, rpcError(err)
@@ -58,11 +58,11 @@ func (r *Runtime) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) 
 			result.Processes = append(result.Processes, process)
 		}
 	}
-	desired, desiredFound, err := harnesshostlifecycle.ReadEnvironmentDesired(ctx, r.lifecycleState)
+	desired, desiredFound, err := lifecycle.ReadEnvironmentDesired(ctx, r.lifecycleState)
 	if err != nil {
 		return nil, rpcError(err)
 	}
-	progress, progressFound, err := harnesshostlifecycle.ReadStatus(ctx, r.lifecycleState)
+	progress, progressFound, err := lifecycle.ReadStatus(ctx, r.lifecycleState)
 	if err != nil {
 		return nil, rpcError(err)
 	}
@@ -70,7 +70,7 @@ func (r *Runtime) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) 
 	return result, nil
 }
 
-func sessionLifecycleStatus(desired harnesshostlifecycle.EnvironmentDesired, desiredFound bool, progress harnesshostlifecycle.Status, progressFound bool) *sessionpb.EnvironmentRuntimeLifecycleStatus {
+func sessionLifecycleStatus(desired lifecycle.EnvironmentDesired, desiredFound bool, progress lifecycle.Status, progressFound bool) *sessionpb.EnvironmentRuntimeLifecycleStatus {
 	current := desiredFound && progressFound && desired.Generation == progress.Generation
 	status := &sessionpb.EnvironmentRuntimeLifecycleStatus{
 		DesiredMode:        sessionLifecycleMode(desired.Mode, desiredFound),
@@ -82,79 +82,79 @@ func sessionLifecycleStatus(desired harnesshostlifecycle.EnvironmentDesired, des
 	}
 	if current {
 		status.Error = progress.Error
-		if progress.Blocker.Kind != harnesshostlifecycle.NoBlocker {
+		if progress.Blocker.Kind != lifecycle.NoBlocker {
 			status.Blocker = sessionLifecycleBlocker(progress.Blocker)
 		}
 	}
 	return status
 }
 
-func sessionLifecycleMode(mode harnesshostlifecycle.Mode, found bool) sessionpb.EnvironmentRuntimeLifecycleMode {
+func sessionLifecycleMode(mode lifecycle.Mode, found bool) sessionpb.EnvironmentRuntimeLifecycleMode {
 	if !found {
 		return sessionpb.EnvironmentRuntimeLifecycleMode_ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_UNSPECIFIED
 	}
 	switch mode {
-	case harnesshostlifecycle.Running:
+	case lifecycle.Running:
 		return sessionpb.EnvironmentRuntimeLifecycleMode_ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_RUNNING
-	case harnesshostlifecycle.Quiescing:
+	case lifecycle.Quiescing:
 		return sessionpb.EnvironmentRuntimeLifecycleMode_ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING
-	case harnesshostlifecycle.Closing:
+	case lifecycle.Closing:
 		return sessionpb.EnvironmentRuntimeLifecycleMode_ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_CLOSING
 	default:
 		return sessionpb.EnvironmentRuntimeLifecycleMode_ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_UNSPECIFIED
 	}
 }
 
-func sessionLifecycleStage(stage harnesshostlifecycle.Stage, found bool) sessionpb.EnvironmentRuntimeLifecycleStage {
+func sessionLifecycleStage(stage lifecycle.Stage, found bool) sessionpb.EnvironmentRuntimeLifecycleStage {
 	if !found {
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_UNSPECIFIED
 	}
 	switch stage {
-	case harnesshostlifecycle.StageRunning:
+	case lifecycle.StageRunning:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_RUNNING
-	case harnesshostlifecycle.Draining:
+	case lifecycle.Draining:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_DRAINING
-	case harnesshostlifecycle.Halting:
+	case lifecycle.Halting:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_HALTING
-	case harnesshostlifecycle.Stopping:
+	case lifecycle.Stopping:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_STOPPING
-	case harnesshostlifecycle.Fencing:
+	case lifecycle.Fencing:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FENCING
-	case harnesshostlifecycle.Sealing:
+	case lifecycle.Sealing:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_SEALING
-	case harnesshostlifecycle.Flushing:
+	case lifecycle.Flushing:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING
-	case harnesshostlifecycle.Quiesced:
+	case lifecycle.Quiesced:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_QUIESCED
-	case harnesshostlifecycle.Closed:
+	case lifecycle.Closed:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_CLOSED
 	default:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_UNSPECIFIED
 	}
 }
 
-func sessionLifecycleBlocker(blocker harnesshostlifecycle.Blocker) *sessionpb.EnvironmentRuntimeLifecycleBlocker {
+func sessionLifecycleBlocker(blocker lifecycle.Blocker) *sessionpb.EnvironmentRuntimeLifecycleBlocker {
 	kind := sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_UNSPECIFIED
 	switch blocker.Kind {
-	case harnesshostlifecycle.AdmissionsPending:
+	case lifecycle.AdmissionsPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_ADMISSIONS
-	case harnesshostlifecycle.SessionHaltPending:
+	case lifecycle.SessionHaltPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_HALT
-	case harnesshostlifecycle.SessionProcessPending:
+	case lifecycle.SessionProcessPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_PROCESS
-	case harnesshostlifecycle.CodexAppServerPending:
+	case lifecycle.CodexAppServerPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_CODEX_APP_SERVER
-	case harnesshostlifecycle.CodexExecServerPending:
+	case lifecycle.CodexExecServerPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_CODEX_EXEC_SERVER
-	case harnesshostlifecycle.BootstrapPending:
+	case lifecycle.BootstrapPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_BOOTSTRAP
-	case harnesshostlifecycle.ProcessCleanupPending:
+	case lifecycle.ProcessCleanupPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_PROCESS_CLEANUP
-	case harnesshostlifecycle.SessionInspectionPending:
+	case lifecycle.SessionInspectionPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_INSPECTION
-	case harnesshostlifecycle.JournalSealPending:
+	case lifecycle.JournalSealPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_JOURNAL_SEAL
-	case harnesshostlifecycle.IngressAcknowledgementPending:
+	case lifecycle.IngressAcknowledgementPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT
 	}
 	return &sessionpb.EnvironmentRuntimeLifecycleBlocker{
@@ -220,17 +220,17 @@ func (r *Runtime) sessionFacts(ctx context.Context) (*environmentruntimestatepb.
 	facts.AutosuspendBlockers = blockers
 	if r.environment().Quiesced {
 		facts.QuiesceStage = environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_DRAINING
-		current, _, err := harnesshostlifecycle.ReadStatus(ctx, r.lifecycleState)
+		current, _, err := lifecycle.ReadStatus(ctx, r.lifecycleState)
 		if err != nil {
 			return nil, err
 		}
-		desiredState, _, err := harnesshostlifecycle.ReadEnvironmentDesired(ctx, r.lifecycleState)
+		desiredState, _, err := lifecycle.ReadEnvironmentDesired(ctx, r.lifecycleState)
 		if err != nil {
 			return nil, err
 		}
-		if current.Generation == desiredState.Generation && current.Stage >= harnesshostlifecycle.Flushing {
+		if current.Generation == desiredState.Generation && current.Stage >= lifecycle.Flushing {
 			facts.QuiesceStage = environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_FLUSHING
-			if current.Stage == harnesshostlifecycle.Quiesced {
+			if current.Stage == lifecycle.Quiesced {
 				facts.QuiesceStage = environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED
 			}
 		}
@@ -238,7 +238,7 @@ func (r *Runtime) sessionFacts(ctx context.Context) (*environmentruntimestatepb.
 	return facts, nil
 }
 
-func (r *Runtime) desiredSnapshot() harnesshostlifecycle.EnvironmentDesired {
+func (r *Runtime) desiredSnapshot() lifecycle.EnvironmentDesired {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.desired

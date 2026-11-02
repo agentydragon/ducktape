@@ -11,7 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
-	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
@@ -56,8 +56,8 @@ func bindingContext(ctx context.Context, binding *runtimepb.Binding) context.Con
 }
 
 func publishHostIntentStatus(ctx context.Context, r *Host, intent *runtimepb.LifecycleIntent, applied bool) error {
-	value := harnesshostlifecycle.HostIntentStatus{Intent: harnesshostlifecycle.HostIntentFromProto(intent), Applied: applied}
-	return cosi.Publish(ctx, r.lifecycle.state, harnesshostlifecycle.HostIntentStatusResource(value), value, "harness-host-intent")
+	value := lifecycle.HostIntentStatus{Intent: lifecycle.HostIntentFromProto(intent), Applied: applied}
+	return cosi.Publish(ctx, r.lifecycle.state, lifecycle.HostIntentStatusResource(value), value, "harness-host-intent")
 }
 
 type pausedSessionInputState struct {
@@ -90,7 +90,7 @@ func (s *pausedSessionInputState) Get(ctx context.Context, pointer resource.Poin
 	if err != nil {
 		return nil, err
 	}
-	if pointer.Type() == harnesshostlifecycle.AggregateStatusType && ctx == context.Background() && s.closeReadArmed.CompareAndSwap(true, false) {
+	if pointer.Type() == lifecycle.AggregateStatusType && ctx == context.Background() && s.closeReadArmed.CompareAndSwap(true, false) {
 		close(s.closeReadEntered)
 		select {
 		case <-s.closeReadRelease:
@@ -161,7 +161,7 @@ func TestHostIntentCannotReopenDesiredStateAfterClose(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("Host intent did not settle")
 	}
-	if got := r.lifecycle.desiredState().Mode; got != harnesshostlifecycle.Closing {
+	if got := r.lifecycle.desiredState().Mode; got != lifecycle.Closing {
 		t.Fatalf("desired state after Close = %v, want Closing", got)
 	}
 	releaseCloseRead.Do(func() { close(store.closeReadRelease) })
@@ -208,8 +208,8 @@ func TestHostLifecycleEffectIsFencedWhileIntentIsApplying(t *testing.T) {
 	if _, err := r.sessions.Load(ctx, "session"); err != nil {
 		t.Fatal(err)
 	}
-	previous, found, err := harnesshostlifecycle.ReadDesired(ctx, r.lifecycle.state)
-	if err != nil || !found || previous.Mode != harnesshostlifecycle.Running {
+	previous, found, err := lifecycle.ReadDesired(ctx, r.lifecycle.state)
+	if err != nil || !found || previous.Mode != lifecycle.Running {
 		t.Fatalf("previous running desired = %+v, found=%t, err=%v", previous, found, err)
 	}
 	store.armed.Store(true)
@@ -242,7 +242,7 @@ func TestHostLifecycleEffectIsFencedWhileIntentIsApplying(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("Host intent did not finish after release")
 	}
-	next, found, err := harnesshostlifecycle.ReadDesired(ctx, r.lifecycle.state)
+	next, found, err := lifecycle.ReadDesired(ctx, r.lifecycle.state)
 	if err != nil || !found || next.Generation != 2 {
 		t.Fatalf("next desired = %+v, found=%t, err=%v", next, found, err)
 	}
@@ -330,7 +330,7 @@ func TestHostSealsOnlyAfterMatchingExecutionFence(t *testing.T) {
 	if err := r.ApplyIntent(ctx, intentFor(r, 2, runtimepb.LifecycleIntent_QUIESCING)); err == nil {
 		t.Fatal("same-generation Execution fence regressed")
 	}
-	if err := r.lifecycle.wait(ctx, harnesshostlifecycle.Flushing); err != nil {
+	if err := r.lifecycle.wait(ctx, lifecycle.Flushing); err != nil {
 		t.Fatal(err)
 	}
 	seal := s.EventJournal().SealState()
@@ -341,7 +341,7 @@ func TestHostSealsOnlyAfterMatchingExecutionFence(t *testing.T) {
 	if err := r.store.WriteAcknowledgement("session", ack); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.lifecycle.wait(ctx, harnesshostlifecycle.Quiesced); err != nil {
+	if err := r.lifecycle.wait(ctx, lifecycle.Quiesced); err != nil {
 		t.Fatal(err)
 	}
 	if seal, found, err := cosistate.ReadEnvironmentSeal(ctx, r.lifecycle.state); err != nil || !found || seal.IncarnationUID != "runtime-owned" {
@@ -353,17 +353,17 @@ func TestHostFenceRequiresAppliedExactIntent(t *testing.T) {
 	r, _ := boundaryHost(t)
 	intent := intentFor(r, 2, runtimepb.LifecycleIntent_QUIESCING)
 	intent.ExecutionFenced = true
-	applied := harnesshostlifecycle.HostIntentStatus{Intent: harnesshostlifecycle.HostIntentFromProto(intent), Applied: true}
+	applied := lifecycle.HostIntentStatus{Intent: lifecycle.HostIntentFromProto(intent), Applied: true}
 	if !harnessHostFenceMatches(applied, intent, 2) {
 		t.Fatal("matching applied Host intent was rejected")
 	}
-	for name, mutate := range map[string]func(*harnesshostlifecycle.HostIntentStatus){
-		"stale generation":  func(value *harnesshostlifecycle.HostIntentStatus) { value.Intent.Generation-- },
-		"runtime boot":      func(value *harnesshostlifecycle.HostIntentStatus) { value.Intent.RuntimeBootID = "old-runtime" },
-		"unfenced":          func(value *harnesshostlifecycle.HostIntentStatus) { value.Intent.ExecutionFenced = false },
-		"applying":          func(value *harnesshostlifecycle.HostIntentStatus) { value.Applied = false },
-		"failed":            func(value *harnesshostlifecycle.HostIntentStatus) { value.Error = "failed" },
-		"wrong incarnation": func(value *harnesshostlifecycle.HostIntentStatus) { value.Intent.IncarnationUID = "old" },
+	for name, mutate := range map[string]func(*lifecycle.HostIntentStatus){
+		"stale generation":  func(value *lifecycle.HostIntentStatus) { value.Intent.Generation-- },
+		"runtime boot":      func(value *lifecycle.HostIntentStatus) { value.Intent.RuntimeBootID = "old-runtime" },
+		"unfenced":          func(value *lifecycle.HostIntentStatus) { value.Intent.ExecutionFenced = false },
+		"applying":          func(value *lifecycle.HostIntentStatus) { value.Applied = false },
+		"failed":            func(value *lifecycle.HostIntentStatus) { value.Error = "failed" },
+		"wrong incarnation": func(value *lifecycle.HostIntentStatus) { value.Intent.IncarnationUID = "old" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			stale := applied
@@ -387,7 +387,7 @@ func TestHostUsesCosiExecutionFenceFact(t *testing.T) {
 	if err := r.ApplyIntent(ctx, drain); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.lifecycle.wait(ctx, harnesshostlifecycle.Fencing); err != nil {
+	if err := r.lifecycle.wait(ctx, lifecycle.Fencing); err != nil {
 		t.Fatal(err)
 	}
 	drain.ExecutionFenced = true
@@ -400,7 +400,7 @@ func TestHostUsesCosiExecutionFenceFact(t *testing.T) {
 	if err := publishHostIntentStatus(ctx, r, drain, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.lifecycle.wait(ctx, harnesshostlifecycle.Flushing); err != nil {
+	if err := r.lifecycle.wait(ctx, lifecycle.Flushing); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -447,13 +447,13 @@ func TestHostPublishesExactIntentAndIdleFacts(t *testing.T) {
 	if err := r.ApplyIntent(ctx, running); err != nil {
 		t.Fatal(err)
 	}
-	read := func(expectedFence bool) harnesshostlifecycle.HostReport {
+	read := func(expectedFence bool) lifecycle.HostReport {
 		t.Helper()
-		result, err := r.lifecycle.state.WatchFor(ctx, harnesshostlifecycle.HostReportResource(harnesshostlifecycle.HostReport{}).Metadata(),
+		result, err := r.lifecycle.state.WatchFor(ctx, lifecycle.HostReportResource(lifecycle.HostReport{}).Metadata(),
 			state.WithEventTypes(state.Created, state.Updated),
 			state.WithCondition(func(value resource.Resource) (bool, error) {
 				report := value.(interface {
-					TypedSpec() *harnesshostlifecycle.HostReport
+					TypedSpec() *lifecycle.HostReport
 				}).TypedSpec()
 				return report.Intent != nil && report.Intent.ExecutionFenced == expectedFence &&
 					proto.Equal(report.Intent.Binding, running.Binding) && report.Report != nil && report.Report.Ready, nil
@@ -462,7 +462,7 @@ func TestHostPublishesExactIntentAndIdleFacts(t *testing.T) {
 			t.Fatal(err)
 		}
 		return *result.(interface {
-			TypedSpec() *harnesshostlifecycle.HostReport
+			TypedSpec() *lifecycle.HostReport
 		}).TypedSpec()
 	}
 	first := read(false)
@@ -486,7 +486,7 @@ func TestAggregateStatusWakesHostReportAndStatusWait(t *testing.T) {
 		t.Fatal(err)
 	}
 	statusDone := make(chan error, 1)
-	go func() { statusDone <- r.lifecycle.wait(ctx, harnesshostlifecycle.Quiesced) }()
+	go func() { statusDone <- r.lifecycle.wait(ctx, lifecycle.Quiesced) }()
 	draining := intentFor(r, 2, runtimepb.LifecycleIntent_QUIESCING)
 	if err := r.ApplyIntent(ctx, draining); err != nil {
 		t.Fatal(err)
@@ -505,11 +505,11 @@ func TestAggregateStatusWakesHostReportAndStatusWait(t *testing.T) {
 	if err := publishHostIntentStatus(ctx, r, draining, true); err != nil {
 		t.Fatal(err)
 	}
-	result, err := r.lifecycle.state.WatchFor(ctx, harnesshostlifecycle.HostReportResource(harnesshostlifecycle.HostReport{}).Metadata(),
+	result, err := r.lifecycle.state.WatchFor(ctx, lifecycle.HostReportResource(lifecycle.HostReport{}).Metadata(),
 		state.WithEventTypes(state.Created, state.Updated),
 		state.WithCondition(func(value resource.Resource) (bool, error) {
 			report := value.(interface {
-				TypedSpec() *harnesshostlifecycle.HostReport
+				TypedSpec() *lifecycle.HostReport
 			}).TypedSpec()
 			return report.Intent != nil && report.Intent.Mode == runtimepb.LifecycleIntent_QUIESCING &&
 				report.Intent.ExecutionFenced && report.Report != nil && report.Report.Ready &&

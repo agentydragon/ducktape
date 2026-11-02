@@ -11,7 +11,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -292,7 +292,7 @@ func (f *processControllerTestRuntime) publishRequest(t *testing.T, id string, r
 	err := safe.StateModify(ctx, f.state, resourceFor(processTestNamespace, id, request), func(r *typed.Resource[processTestRequestSpec, resourceExtension[processTestRequestSpec]]) error {
 		*r.TypedSpec() = request
 		return nil
-	}, state.WithUpdateOwner(harnesshostlifecycle.EnvironmentOwner))
+	}, state.WithUpdateOwner(lifecycle.EnvironmentOwner))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,7 +7,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
-	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
@@ -21,14 +21,14 @@ type sessionLifecycleController struct{ runtime *Runtime }
 func (*sessionLifecycleController) Name() string { return sessionLifecycleControllerName }
 func (*sessionLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{harnesshostlifecycle.EnvironmentDesiredStateType, harnesshostlifecycle.ExecutionStatusType, executionSignalType, harnesshostlifecycle.AdmissionCountType, session.InspectionStatusType, session.LifecycleStatusType, journalSealType, retained.IngressAckType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
-		inputs = append(inputs, controller.Input{Namespace: harnesshostlifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
+	for _, kind := range []string{lifecycle.EnvironmentDesiredStateType, lifecycle.ExecutionStatusType, executionSignalType, lifecycle.AdmissionCountType, session.InspectionStatusType, session.LifecycleStatusType, journalSealType, retained.IngressAckType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
+		inputs = append(inputs, controller.Input{Namespace: lifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
 }
 
 func (*sessionLifecycleController) Outputs() []controller.Output {
-	return []controller.Output{{Type: harnesshostlifecycle.AggregateStatusType, Kind: controller.OutputExclusive}}
+	return []controller.Output{{Type: lifecycle.AggregateStatusType, Kind: controller.OutputExclusive}}
 }
 
 func (c *sessionLifecycleController) Run(ctx context.Context, r controller.Runtime, _ *zap.Logger) error {
@@ -46,28 +46,28 @@ func (c *sessionLifecycleController) Run(ctx context.Context, r controller.Runti
 }
 
 func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller.Runtime) error {
-	desiredState, _, err := harnesshostlifecycle.ReadEnvironmentDesired(ctx, r)
+	desiredState, _, err := lifecycle.ReadEnvironmentDesired(ctx, r)
 	if err != nil {
 		return err
 	}
-	current, _, err := harnesshostlifecycle.ReadStatus(ctx, r)
+	current, _, err := lifecycle.ReadStatus(ctx, r)
 	if err != nil {
 		return err
 	}
 	if current.Generation != desiredState.Generation {
-		current = harnesshostlifecycle.Status{Generation: desiredState.Generation, Stage: harnesshostlifecycle.Draining}
+		current = lifecycle.Status{Generation: desiredState.Generation, Stage: lifecycle.Draining}
 	}
 	write := func() error {
-		changed, err := harnesshostlifecycle.WriteStatus(ctx, r, current)
+		changed, err := lifecycle.WriteStatus(ctx, r, current)
 		if changed {
 			c.runtime.changed()
 			r.QueueReconcile()
 		}
 		return err
 	}
-	if desiredState.Mode == harnesshostlifecycle.Running {
-		current.Stage = harnesshostlifecycle.StageRunning
-		current.Blocker = harnesshostlifecycle.Blocker{}
+	if desiredState.Mode == lifecycle.Running {
+		current.Stage = lifecycle.StageRunning
+		current.Blocker = lifecycle.Blocker{}
 		return write()
 	}
 	c.runtime.mu.Lock()
@@ -77,10 +77,10 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		return err
 	}
 	if admissions != 0 {
-		current.Stage = harnesshostlifecycle.Draining
-		current.Blocker = harnesshostlifecycle.Blocker{
-			Kind: harnesshostlifecycle.AdmissionsPending, ResourceType: harnesshostlifecycle.AdmissionCountType,
-			ResourceID: harnesshostlifecycle.ResourceID, ResourcePresent: true, Admissions: uint64(admissions),
+		current.Stage = lifecycle.Draining
+		current.Blocker = lifecycle.Blocker{
+			Kind: lifecycle.AdmissionsPending, ResourceType: lifecycle.AdmissionCountType,
+			ResourceID: lifecycle.ResourceID, ResourcePresent: true, Admissions: uint64(admissions),
 		}
 		return write()
 	}
@@ -93,9 +93,9 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			return err
 		}
 	}
-	if current.Stage < harnesshostlifecycle.Halting {
-		current.Stage = harnesshostlifecycle.Halting
-		current.Blocker = harnesshostlifecycle.Blocker{}
+	if current.Stage < lifecycle.Halting {
+		current.Stage = lifecycle.Halting
+		current.Blocker = lifecycle.Blocker{}
 		return write()
 	}
 	sessions := c.runtime.sessions.Inventory()
@@ -109,11 +109,11 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		// that belong to this teardown; otherwise Close could race that reset.
 		if status.EnvironmentGeneration == desiredState.Generation && status.Error != "" {
 			current.Error = status.Error
-			kind := harnesshostlifecycle.SessionHaltPending
+			kind := lifecycle.SessionHaltPending
 			if status.Phase == session.Halted {
-				kind = harnesshostlifecycle.SessionProcessPending
+				kind = lifecycle.SessionProcessPending
 			}
-			current.Blocker = harnesshostlifecycle.Blocker{
+			current.Blocker = lifecycle.Blocker{
 				Kind: kind, ResourceType: session.LifecycleStatusType,
 				Error: status.Error, ResourceID: s.ID(), ProcessID: status.ProcessID,
 				ResourcePresent: found,
@@ -125,17 +125,17 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			if status.EnvironmentGeneration == desiredState.Generation {
 				resourceError = status.Error
 			}
-			current.Blocker = harnesshostlifecycle.Blocker{
-				Kind: harnesshostlifecycle.SessionHaltPending, ResourceType: session.LifecycleStatusType,
+			current.Blocker = lifecycle.Blocker{
+				Kind: lifecycle.SessionHaltPending, ResourceType: session.LifecycleStatusType,
 				Error: resourceError, ResourceID: s.ID(), ProcessID: status.ProcessID,
 				ResourcePresent: found,
 			}
 			return write()
 		}
 	}
-	if current.Stage < harnesshostlifecycle.Stopping {
-		current.Stage = harnesshostlifecycle.Stopping
-		current.Blocker = harnesshostlifecycle.Blocker{}
+	if current.Stage < lifecycle.Stopping {
+		current.Stage = lifecycle.Stopping
+		current.Blocker = lifecycle.Blocker{}
 		if err := write(); err != nil {
 			return err
 		}
@@ -146,8 +146,8 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			return err
 		}
 		if !found || status.EnvironmentGeneration != desiredState.Generation || !status.ProcessStopped {
-			current.Blocker = harnesshostlifecycle.Blocker{
-				Kind: harnesshostlifecycle.SessionProcessPending, ResourceType: session.LifecycleStatusType,
+			current.Blocker = lifecycle.Blocker{
+				Kind: lifecycle.SessionProcessPending, ResourceType: session.LifecycleStatusType,
 				ResourceID: s.ID(), ProcessID: status.ProcessID, ResourcePresent: found,
 			}
 			return write()
@@ -160,16 +160,16 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		}
 		if runtime.StopError != "" {
 			current.Error = runtime.StopError
-			current.Blocker = harnesshostlifecycle.Blocker{
-				Kind: harnesshostlifecycle.CodexAppServerPending, ResourceType: codexappserver.StatusType,
+			current.Blocker = lifecycle.Blocker{
+				Kind: lifecycle.CodexAppServerPending, ResourceType: codexappserver.StatusType,
 				Error: runtime.StopError, ResourceID: codexappserver.ResourceID,
 				ProcessID: runtime.ProcessID, ResourcePresent: found,
 			}
 			return write()
 		}
 		if !found || runtime.Phase != codexappserver.Stopped {
-			current.Blocker = harnesshostlifecycle.Blocker{
-				Kind: harnesshostlifecycle.CodexAppServerPending, ResourceType: codexappserver.StatusType,
+			current.Blocker = lifecycle.Blocker{
+				Kind: lifecycle.CodexAppServerPending, ResourceType: codexappserver.StatusType,
 				ResourceID: codexappserver.ResourceID, ProcessID: runtime.ProcessID, ResourcePresent: found,
 			}
 			return write()
@@ -178,12 +178,12 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 	// Owner-level completion cannot substitute for the native cleanup barrier.
 	// Include scripts and workspace helpers, and preserve a failed fence even if
 	// a protocol reader already reported the leader's exit.
-	processes, err := r.List(ctx, resource.NewMetadata(harnesshostlifecycle.Namespace, supervision.DesiredStateType, "", resource.VersionUndefined))
+	processes, err := r.List(ctx, resource.NewMetadata(lifecycle.Namespace, supervision.DesiredStateType, "", resource.VersionUndefined))
 	if err != nil {
 		return err
 	}
 	for _, process := range processes.Items {
-		desiredProcess, found, err := supervision.ReadDesiredState(ctx, r, harnesshostlifecycle.Namespace, process.Metadata().ID())
+		desiredProcess, found, err := supervision.ReadDesiredState(ctx, r, lifecycle.Namespace, process.Metadata().ID())
 		if err != nil {
 			return err
 		}
@@ -197,22 +197,22 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		default:
 			return fmt.Errorf("process %q has unknown domain %q", process.Metadata().ID(), desiredProcess.Domain)
 		}
-		status, found, err := supervision.ReadStatus(ctx, r, harnesshostlifecycle.Namespace, process.Metadata().ID())
+		status, found, err := supervision.ReadStatus(ctx, r, lifecycle.Namespace, process.Metadata().ID())
 		if err != nil {
 			return err
 		}
 		if status.StopError != "" {
 			current.Error = status.StopError
-			current.Blocker = harnesshostlifecycle.Blocker{
-				Kind: harnesshostlifecycle.ProcessCleanupPending, ResourceType: supervision.StatusType,
+			current.Blocker = lifecycle.Blocker{
+				Kind: lifecycle.ProcessCleanupPending, ResourceType: supervision.StatusType,
 				ResourceID: process.Metadata().ID(), ProcessID: process.Metadata().ID(), ResourcePresent: found,
 				Error: status.StopError, FinalizersPending: !process.Metadata().Finalizers().Empty(),
 			}
 			return write()
 		}
 		if !found || status.Phase != supervision.Exited || !process.Metadata().Finalizers().Empty() {
-			current.Blocker = harnesshostlifecycle.Blocker{
-				Kind: harnesshostlifecycle.ProcessCleanupPending, ResourceType: supervision.StatusType,
+			current.Blocker = lifecycle.Blocker{
+				Kind: lifecycle.ProcessCleanupPending, ResourceType: supervision.StatusType,
 				ResourceID: process.Metadata().ID(), ProcessID: process.Metadata().ID(), ResourcePresent: found,
 				FinalizersPending: !process.Metadata().Finalizers().Empty(),
 			}
@@ -227,15 +227,15 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			return err
 		}
 		if input.Inspecting {
-			current.Blocker = harnesshostlifecycle.Blocker{
-				Kind: harnesshostlifecycle.SessionInspectionPending, ResourceType: session.InspectionStatusType,
+			current.Blocker = lifecycle.Blocker{
+				Kind: lifecycle.SessionInspectionPending, ResourceType: session.InspectionStatusType,
 				ResourceID: s.ID(), ResourcePresent: found,
 			}
 			return write()
 		}
 	}
 	c.runtime.mu.Lock()
-	latest, found, err := harnesshostlifecycle.ReadEnvironmentDesired(ctx, c.runtime.lifecycleState)
+	latest, found, err := lifecycle.ReadEnvironmentDesired(ctx, c.runtime.lifecycleState)
 	if err != nil {
 		c.runtime.mu.Unlock()
 		return err
@@ -259,17 +259,17 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		c.runtime.requestExecutionFence(desiredState.Generation)
 	}
 	if desiredState.SealUID != "" && !fenced {
-		current.Stage = harnesshostlifecycle.Fencing
+		current.Stage = lifecycle.Fencing
 		return write()
 	}
-	if desiredState.SealUID == "" && desiredState.Mode != harnesshostlifecycle.Closing {
-		current.Blocker = harnesshostlifecycle.Blocker{}
+	if desiredState.SealUID == "" && desiredState.Mode != lifecycle.Closing {
+		current.Blocker = lifecycle.Blocker{}
 		return write()
 	}
 	if desiredState.SealUID != "" {
-		if current.Stage < harnesshostlifecycle.Sealing {
-			current.Stage = harnesshostlifecycle.Sealing
-			current.Blocker = harnesshostlifecycle.Blocker{}
+		if current.Stage < lifecycle.Sealing {
+			current.Stage = lifecycle.Sealing
+			current.Blocker = lifecycle.Blocker{}
 			return write()
 		}
 		for _, s := range sessions {
@@ -278,8 +278,8 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 				return err
 			}
 			if !found || !seal.Present || seal.IncarnationUID != desiredState.SealUID {
-				current.Blocker = harnesshostlifecycle.Blocker{
-					Kind: harnesshostlifecycle.JournalSealPending, ResourceType: journalSealType,
+				current.Blocker = lifecycle.Blocker{
+					Kind: lifecycle.JournalSealPending, ResourceType: journalSealType,
 					ResourceID: s.ID(), ResourcePresent: found, JournalSealPresent: seal.Present,
 					JournalSealUID: seal.IncarnationUID, ExpectedJournalSealUID: desiredState.SealUID,
 				}
@@ -287,7 +287,7 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			}
 		}
 	}
-	if desiredState.Mode == harnesshostlifecycle.Closing && desiredState.SealUID == "" {
+	if desiredState.Mode == lifecycle.Closing && desiredState.SealUID == "" {
 		// Closing the final admission window and publishing completion share
 		// the RPC barrier, including late exact-turn controls.
 		c.runtime.mu.Lock()
@@ -298,9 +298,9 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		}
 		if admissions != 0 {
 			c.runtime.mu.Unlock()
-			current.Blocker = harnesshostlifecycle.Blocker{
-				Kind: harnesshostlifecycle.AdmissionsPending, ResourceType: harnesshostlifecycle.AdmissionCountType,
-				ResourceID: harnesshostlifecycle.ResourceID, ResourcePresent: true, Admissions: uint64(admissions),
+			current.Blocker = lifecycle.Blocker{
+				Kind: lifecycle.AdmissionsPending, ResourceType: lifecycle.AdmissionCountType,
+				ResourceID: lifecycle.ResourceID, ResourcePresent: true, Admissions: uint64(admissions),
 			}
 			return write()
 		}
@@ -309,9 +309,9 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			c.runtime.mu.Unlock()
 			return nil
 		}
-		current.Stage = harnesshostlifecycle.Closed
-		current.Blocker = harnesshostlifecycle.Blocker{}
-		changed, err := harnesshostlifecycle.WriteStatus(ctx, r, current)
+		current.Stage = lifecycle.Closed
+		current.Blocker = lifecycle.Blocker{}
+		changed, err := lifecycle.WriteStatus(ctx, r, current)
 		c.runtime.mu.Unlock()
 		if changed {
 			c.runtime.changed()
@@ -319,7 +319,7 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		}
 		return err
 	}
-	current.Stage = harnesshostlifecycle.Flushing
+	current.Stage = lifecycle.Flushing
 	for _, s := range sessions {
 		seal, sealFound, err := lifecycleRead[journalSealSpec](ctx, r, s.ID())
 		if err != nil {
@@ -330,8 +330,8 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			return err
 		}
 		if !ackFound || !ack.Sealed || ack.Cursor != seal.Cursor {
-			current.Blocker = harnesshostlifecycle.Blocker{
-				Kind: harnesshostlifecycle.IngressAcknowledgementPending, ResourceType: retained.IngressAckType,
+			current.Blocker = lifecycle.Blocker{
+				Kind: lifecycle.IngressAcknowledgementPending, ResourceType: retained.IngressAckType,
 				ResourceID: s.ID(), ResourcePresent: ackFound, JournalSealPresent: sealFound && seal.Present,
 				JournalSealUID: seal.IncarnationUID, ExpectedJournalSealUID: desiredState.SealUID,
 				JournalSealCursor: seal.Cursor, AcknowledgementPresent: ackFound,
@@ -340,10 +340,10 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			return write()
 		}
 	}
-	current.Stage = harnesshostlifecycle.Quiesced
-	if desiredState.Mode == harnesshostlifecycle.Closing {
-		current.Stage = harnesshostlifecycle.Closed
+	current.Stage = lifecycle.Quiesced
+	if desiredState.Mode == lifecycle.Closing {
+		current.Stage = lifecycle.Closed
 	}
-	current.Blocker = harnesshostlifecycle.Blocker{}
+	current.Blocker = lifecycle.Blocker{}
 	return write()
 }

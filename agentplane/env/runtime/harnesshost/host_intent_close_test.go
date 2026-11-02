@@ -9,7 +9,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
-	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -62,13 +62,13 @@ func TestHostStartupFailureFencesAdmission(t *testing.T) {
 	store.armed.Store(false)
 }
 
-func waitIntentStatus(t *testing.T, ctx context.Context, store state.State, intent harnesshostlifecycle.HostIntent, done bool) harnesshostlifecycle.HostIntentStatus {
+func waitIntentStatus(t *testing.T, ctx context.Context, store state.State, intent lifecycle.HostIntent, done bool) lifecycle.HostIntentStatus {
 	t.Helper()
-	value, err := store.WatchFor(ctx, harnesshostlifecycle.HostIntentStatusResource(harnesshostlifecycle.HostIntentStatus{}).Metadata(),
+	value, err := store.WatchFor(ctx, lifecycle.HostIntentStatusResource(lifecycle.HostIntentStatus{}).Metadata(),
 		state.WithEventTypes(state.Created, state.Updated),
 		state.WithCondition(func(value resource.Resource) (bool, error) {
 			status := value.(interface {
-				TypedSpec() *harnesshostlifecycle.HostIntentStatus
+				TypedSpec() *lifecycle.HostIntentStatus
 			}).TypedSpec()
 			return status.Intent == intent && (status.Applied || status.Error != "") == done, nil
 		}))
@@ -76,7 +76,7 @@ func waitIntentStatus(t *testing.T, ctx context.Context, store state.State, inte
 		t.Fatal(err)
 	}
 	return *value.(interface {
-		TypedSpec() *harnesshostlifecycle.HostIntentStatus
+		TypedSpec() *lifecycle.HostIntentStatus
 	}).TypedSpec()
 }
 
@@ -107,8 +107,8 @@ func TestHostBeginCloseInterruptedIntentKeepsClosingState(t *testing.T) {
 			close(store.closeReadRelease)
 		}
 	})
-	first := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1, SandboxUID: "sandbox", Mode: runtimepb.LifecycleIntent_INACTIVE}
-	if err := cosi.Publish(ctx, store, harnesshostlifecycle.HostIntentResource(first), first, harnesshostlifecycle.EnvironmentOwner); err != nil {
+	first := lifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1, SandboxUID: "sandbox", Mode: runtimepb.LifecycleIntent_INACTIVE}
+	if err := cosi.Publish(ctx, store, lifecycle.HostIntentResource(first), first, lifecycle.EnvironmentOwner); err != nil {
 		t.Fatal(err)
 	}
 	if status := waitIntentStatus(t, ctx, store, first, true); !status.Applied {
@@ -129,7 +129,7 @@ func TestHostBeginCloseInterruptedIntentKeepsClosingState(t *testing.T) {
 	next.Generation++
 	next.IncarnationUID = "incarnation"
 	next.Mode = runtimepb.LifecycleIntent_RUNNING
-	if err := cosi.Publish(ctx, store, harnesshostlifecycle.HostIntentResource(next), next, harnesshostlifecycle.EnvironmentOwner); err != nil {
+	if err := cosi.Publish(ctx, store, lifecycle.HostIntentResource(next), next, lifecycle.EnvironmentOwner); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -153,7 +153,7 @@ func TestHostBeginCloseInterruptedIntentKeepsClosingState(t *testing.T) {
 	if status := waitIntentStatus(t, ctx, store, next, true); status.Applied || status.Error == "" {
 		t.Fatalf("interrupted Host intent status = %+v", status)
 	}
-	if got := r.lifecycle.desiredState().Mode; got != harnesshostlifecycle.Closing {
+	if got := r.lifecycle.desiredState().Mode; got != lifecycle.Closing {
 		t.Fatalf("Host desired state after interrupted intent = %v, want Closing", got)
 	}
 	close(store.closeReadRelease)

@@ -68,8 +68,8 @@ func (r *Runtime) startSessions() error {
 	if closing {
 		return errors.New("environment Runtime is closing")
 	}
-	if r.deps.beforeHostConstruction != nil {
-		r.deps.beforeHostConstruction()
+	if r.deps.beforeSessionConstruction != nil {
+		r.deps.beforeSessionConstruction()
 	}
 	if err := r.initializeSessions(); err != nil {
 		r.lifecycleInitErr = err

@@ -19,7 +19,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
-	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -223,7 +223,7 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 	if err := retained.EnsureDirectory(config.StateDir); err != nil {
 		t.Fatal(err)
 	}
-	resources, backing, err := cosistate.Open(config.StateDir, harnesshostlifecycle.Namespace, retained.SessionRecordRegistration(), retained.IngressAckRegistration())
+	resources, backing, err := cosistate.Open(config.StateDir, lifecycle.Namespace, retained.SessionRecordRegistration(), retained.IngressAckRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resources, reopenedBacking, err := cosistate.Open(config.StateDir, harnesshostlifecycle.Namespace, retained.SessionRecordRegistration(), retained.IngressAckRegistration())
+	resources, reopenedBacking, err := cosistate.Open(config.StateDir, lifecycle.Namespace, retained.SessionRecordRegistration(), retained.IngressAckRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -404,15 +404,15 @@ func (s *failJournalSealPublicationOnce) Modify(ctx context.Context, value resou
 
 func (s *initialOperationFailureState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
 	if value.Metadata().Type() == session.OperationStateType {
-		desired, found, err := harnesshostlifecycle.ReadDesired(ctx, s.State)
+		desired, found, err := lifecycle.ReadDesired(ctx, s.State)
 		if err == nil && found {
 			var armed *atomic.Bool
 			var failure error
 			var failed chan struct{}
 			switch desired.Mode {
-			case harnesshostlifecycle.Running:
+			case lifecycle.Running:
 				armed, failure, failed = &s.failInitial, s.initialFailure, s.failed
-			case harnesshostlifecycle.Closing:
+			case lifecycle.Closing:
 				armed, failure, failed = &s.failTeardown, s.teardownFailure, s.teardownFailed
 			}
 			if armed != nil {

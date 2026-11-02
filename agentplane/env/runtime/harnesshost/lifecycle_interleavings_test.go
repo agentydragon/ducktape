@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
-	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -27,7 +27,7 @@ type incarnationWaitState struct {
 }
 
 func (s *incarnationWaitState) WatchFor(ctx context.Context, pointer resource.Pointer, conditions ...state.WatchForConditionFunc) (resource.Resource, error) {
-	if ctx.Value(incarnationWaitContextKey{}) != nil && pointer.Type() == harnesshostlifecycle.AggregateStatusType {
+	if ctx.Value(incarnationWaitContextKey{}) != nil && pointer.Type() == lifecycle.AggregateStatusType {
 		// Only the marked adoption call can rendezvous here, after deciding teardown is incomplete.
 		s.once.Do(func() { close(s.waiting) })
 	}
@@ -70,7 +70,7 @@ func runLifecycleBarrierTrace(t *testing.T, operation string, trace []string) {
 		})
 		admitted <- err
 	}()
-	if err := watchLifecycle(ctx, r.lifecycle, harnesshostlifecycle.ResourceID, func(input harnessHostAdmissionCountSpec) (bool, error) {
+	if err := watchLifecycle(ctx, r.lifecycle, lifecycle.ResourceID, func(input harnessHostAdmissionCountSpec) (bool, error) {
 		return input.Admissions == 1, nil
 	}); err != nil {
 		t.Fatalf("wait for admission: %v", err)
@@ -81,7 +81,7 @@ func runLifecycleBarrierTrace(t *testing.T, operation string, trace []string) {
 	}
 	waitLifecycle(t, r, func() bool {
 		current := r.lifecycle.status()
-		return current.Stage == harnesshostlifecycle.Draining && current.Blocker.Kind == harnesshostlifecycle.AdmissionsPending
+		return current.Stage == lifecycle.Draining && current.Blocker.Kind == lifecycle.AdmissionsPending
 	}, "quiesce admission barrier")
 	blocker := harnessHostLifecycleSnapshot(t, r).Blocker
 	if blocker == nil || blocker.ResourceType != "HarnessHostAdmissionCounts.agentplane" || blocker.ResourceId != "harness-host" {
@@ -109,7 +109,7 @@ func runLifecycleBarrierTrace(t *testing.T, operation string, trace []string) {
 			go func() { completed <- r.CloseJournals(context.Background()) }()
 			if !released["admission"] || !released["setup"] {
 				waitLifecycle(t, r, func() bool {
-					return r.lifecycle.desiredState().Mode == harnesshostlifecycle.Closing
+					return r.lifecycle.desiredState().Mode == lifecycle.Closing
 				}, "Close intent while work remains")
 			}
 		case "replace":
@@ -144,7 +144,7 @@ func runLifecycleBarrierTrace(t *testing.T, operation string, trace []string) {
 	if operation == "acknowledge" {
 		waitLifecycle(t, r, func() bool {
 			current := r.lifecycle.status()
-			return current.Stage == harnesshostlifecycle.Flushing && current.Blocker.AcknowledgementPresent &&
+			return current.Stage == lifecycle.Flushing && current.Blocker.AcknowledgementPresent &&
 				current.Blocker.AcknowledgementCursor == staleCursor
 		}, "stale acknowledgement to retain the flushing barrier")
 		seal := s.EventJournal().SealState()
@@ -155,11 +155,11 @@ func runLifecycleBarrierTrace(t *testing.T, operation string, trace []string) {
 		if err := r.store.WriteAcknowledgement(s.ID(), ack); err != nil {
 			t.Fatal(err)
 		}
-		waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == harnesshostlifecycle.Quiesced }, "exact acknowledgement")
+		waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == lifecycle.Quiesced }, "exact acknowledgement")
 		return
 	}
 	if operation == "replace" {
-		if err := r.lifecycle.wait(ctx, harnesshostlifecycle.Flushing); err != nil {
+		if err := r.lifecycle.wait(ctx, lifecycle.Flushing); err != nil {
 			t.Fatal(err)
 		}
 		if err := bindHost(r, "replacement-incarnation"); err != nil {

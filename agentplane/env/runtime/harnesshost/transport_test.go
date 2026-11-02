@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
-	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -108,7 +108,7 @@ func TestIngressSupervisorPublishesSealedAcknowledgementToQuiesce(t *testing.T) 
 	if _, err := quiesceHost(ctx, runner); err != nil {
 		t.Fatalf("accept quiesce: %v", err)
 	}
-	waitLifecycle(t, runner, func() bool { return runner.lifecycle.status().Stage == harnesshostlifecycle.Flushing }, "quiesce to seal the journal")
+	waitLifecycle(t, runner, func() bool { return runner.lifecycle.status().Stage == lifecycle.Flushing }, "quiesce to seal the journal")
 	seal := session.EventJournal().SealState()
 	if seal == nil || seal.Cursor == 0 {
 		t.Fatalf("journal seal = %+v, want a nonzero cursor", seal)
@@ -149,11 +149,11 @@ func TestIngressSupervisorPublishesSealedAcknowledgementToQuiesce(t *testing.T) 
 	if ack, err := runner.store.ReadAcknowledgement(session.ID()); err != nil || ack == nil || ack.Cursor != seal.Cursor-1 || ack.Sealed {
 		t.Fatalf("persisted under-cursor acknowledgement = %+v, err %v", ack, err)
 	}
-	if stage := runner.lifecycle.status().Stage; stage != harnesshostlifecycle.Flushing {
+	if stage := runner.lifecycle.status().Stage; stage != lifecycle.Flushing {
 		t.Fatalf("quiesce accepted under-cursor acknowledgement at stage %v", stage)
 	}
 	close(service.releaseSeal)
-	waitLifecycle(t, runner, func() bool { return runner.lifecycle.status().Stage == harnesshostlifecycle.Quiesced }, "exact sealed ingress acknowledgement")
+	waitLifecycle(t, runner, func() bool { return runner.lifecycle.status().Stage == lifecycle.Quiesced }, "exact sealed ingress acknowledgement")
 	if ack, err := runner.store.ReadAcknowledgement(session.ID()); err != nil || ack == nil || ack.Cursor != seal.Cursor || !ack.Sealed {
 		t.Fatalf("persisted sealed acknowledgement = %+v, err %v", ack, err)
 	}

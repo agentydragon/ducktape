@@ -12,7 +12,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
-	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"google.golang.org/grpc/codes"
@@ -33,7 +33,7 @@ type executionHealth struct {
 type executionHealthEvent struct{ Revision uint64 }
 
 func (executionHealthEvent) resourceType() resource.Type {
-	return harnesshostlifecycle.ExecutionStatusType
+	return lifecycle.ExecutionStatusType
 }
 func (v executionHealthEvent) DeepCopy() executionHealthEvent { return v }
 
@@ -61,7 +61,7 @@ func (h *executionHealth) set(serving bool, err error) {
 	h.revision++
 	revision := h.revision
 	h.mu.Unlock()
-	if err := publishLifecycle(h.host.lifecycle, harnesshostlifecycle.ExecutionResourceID, executionHealthEvent{Revision: revision}); err != nil {
+	if err := publishLifecycle(h.host.lifecycle, lifecycle.ExecutionResourceID, executionHealthEvent{Revision: revision}); err != nil {
 		h.t.Fatalf("publish execution status: %v", err)
 	}
 }

@@ -6,7 +6,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
-	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 )
 
 func (r *Runtime) publishSeal(id string, seal *journal.SealState) error {
@@ -19,13 +19,12 @@ func (r *Runtime) publishSeal(id string, seal *journal.SealState) error {
 	return publishLifecycle(r, id, value)
 }
 
-// Host publishers serialize compound snapshots; COSI handles conflicts and no-op updates.
 func publishLifecycle[T lifecycleSpec[T]](r *Runtime, id string, value T) error {
-	return cosi.Publish(r.lifecycleContext, r.lifecycleState, lifecycleResourceFor(id, value), value, harnesshostlifecycle.EnvironmentOwner)
+	return cosi.Publish(r.lifecycleContext, r.lifecycleState, lifecycleResourceFor(id, value), value, lifecycle.EnvironmentOwner)
 }
 
 func (r *Runtime) admissionCount(ctx context.Context) (int, error) {
-	input, found, err := lifecycleRead[environmentAdmissionCountSpec](ctx, r.lifecycleState, harnesshostlifecycle.ResourceID)
+	input, found, err := lifecycleRead[environmentAdmissionCountSpec](ctx, r.lifecycleState, lifecycle.ResourceID)
 	if err != nil {
 		return 0, err
 	}
@@ -52,7 +51,7 @@ func (r *Runtime) changeAdmissionsLocked(delta int) error {
 	}
 	// Count publication is part of the synchronous admission gate. An uncertain
 	// write must close admission even if the backing store committed it.
-	if err := cosi.Publish(r.lifecycleContext, r.lifecycleState, lifecycleResourceFor(harnesshostlifecycle.ResourceID, value), value, harnesshostlifecycle.EnvironmentOwner); err != nil {
+	if err := cosi.Publish(r.lifecycleContext, r.lifecycleState, lifecycleResourceFor(lifecycle.ResourceID, value), value, lifecycle.EnvironmentOwner); err != nil {
 		r.admissionOpen = false
 		r.failed = true
 		if r.failureErr == nil {
@@ -70,7 +69,7 @@ func (r *Runtime) changeAdmissionsLocked(delta int) error {
 
 func (r *Runtime) initializeSessionLifecycle() error {
 	value := environmentAdmissionCountSpec{}
-	if err := cosi.Publish(r.lifecycleContext, r.lifecycleState, lifecycleResourceFor(harnesshostlifecycle.ResourceID, value), value, harnesshostlifecycle.EnvironmentOwner); err != nil {
+	if err := cosi.Publish(r.lifecycleContext, r.lifecycleState, lifecycleResourceFor(lifecycle.ResourceID, value), value, lifecycle.EnvironmentOwner); err != nil {
 		return err
 	}
 	return r.lifecycleEngine.RegisterController(&sessionLifecycleController{runtime: r})

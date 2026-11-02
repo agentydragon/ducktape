@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
@@ -29,7 +29,7 @@ func TestCloseWaitersDoNotCancelSharedCleanup(t *testing.T) {
 	first := make(chan error, 1)
 	go func() { first <- r.CloseJournals(waitContext) }()
 	waitLifecycle(t, r, func() bool {
-		return r.lifecycle.desiredState().Mode == harnesshostlifecycle.Closing
+		return r.lifecycle.desiredState().Mode == lifecycle.Closing
 	}, "local shutdown intent")
 	stopWaiting()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
@@ -95,7 +95,7 @@ func TestCloseReportsExitedLifecycleEngine(t *testing.T) {
 		<-closed
 		t.Fatal("Close waited for an exited lifecycle engine")
 	}
-	if r.lifecycle.status().Stage == harnesshostlifecycle.Closed {
+	if r.lifecycle.status().Stage == lifecycle.Closed {
 		t.Fatal("engine failure reported completed lifecycle cleanup")
 	}
 }

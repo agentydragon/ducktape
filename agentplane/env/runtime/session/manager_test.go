@@ -10,7 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
-	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
@@ -28,7 +28,7 @@ func withTestSessionFacilities(t *testing.T, config Config) Config {
 		config.Environment = func() Environment { return Environment{IncarnationUID: "test-incarnation"} }
 	}
 	var workers sync.WaitGroup
-	host := supervision.NewHost(config.Context, config.State, harnesshostlifecycle.Namespace, supervision.HarnessDomain, &workers, func(err error) {
+	host := supervision.NewHost(config.Context, config.State, lifecycle.Namespace, supervision.HarnessDomain, &workers, func(err error) {
 		if err != nil {
 			t.Error(err)
 		}
@@ -43,7 +43,7 @@ func withTestSessionFacilities(t *testing.T, config Config) Config {
 	}
 	bootstrapHost, err := bootstrap.NewHost(bootstrap.Config{}, bootstrap.Dependencies{
 		Context: config.Context, State: config.State, Workers: &workers,
-		Admission: func(ctx context.Context, _ harnesshostlifecycle.EnvironmentDesired, work func(context.Context) error) error {
+		Admission: func(ctx context.Context, _ lifecycle.EnvironmentDesired, work func(context.Context) error) error {
 			return work(ctx)
 		},
 		OnError: func(err error) {
@@ -400,13 +400,13 @@ func TestCodexExitBeforeProcessInstall(t *testing.T) {
 	}
 }
 
-func testSessionAdmission(resources state.State) harnesshostlifecycle.EnvironmentAdmissionGuard {
-	return func(ctx context.Context, expected harnesshostlifecycle.EnvironmentDesired, work func(context.Context) error) error {
-		current, found, err := harnesshostlifecycle.ReadEnvironmentDesired(ctx, resources)
+func testSessionAdmission(resources state.State) lifecycle.EnvironmentAdmissionGuard {
+	return func(ctx context.Context, expected lifecycle.EnvironmentDesired, work func(context.Context) error) error {
+		current, found, err := lifecycle.ReadEnvironmentDesired(ctx, resources)
 		if err != nil {
 			return err
 		}
-		if !found || current != expected || current.Mode != harnesshostlifecycle.Running {
+		if !found || current != expected || current.Mode != lifecycle.Running {
 			return nil
 		}
 		return work(ctx)

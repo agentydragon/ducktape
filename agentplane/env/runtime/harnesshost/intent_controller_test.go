@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
-	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -20,25 +20,25 @@ import (
 )
 
 func TestHostIntentDecisionFailsClosedOnUnknownEffect(t *testing.T) {
-	old := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1}
+	old := lifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1}
 	next := old
 	next.Generation++
-	if shouldApplyHostIntent(true, next, true, harnesshostlifecycle.HostIntentStatus{Intent: old}) {
+	if shouldApplyHostIntent(true, next, true, lifecycle.HostIntentStatus{Intent: old}) {
 		t.Fatal("a newer intent replayed past an uncertain prior ApplyIntent")
 	}
-	if shouldApplyHostIntent(true, next, true, harnesshostlifecycle.HostIntentStatus{Intent: old, Error: "failed"}) {
+	if shouldApplyHostIntent(true, next, true, lifecycle.HostIntentStatus{Intent: old, Error: "failed"}) {
 		t.Fatal("a newer intent passed a failed prior ApplyIntent")
 	}
-	if !shouldApplyHostIntent(true, next, true, harnesshostlifecycle.HostIntentStatus{Intent: old, Applied: true}) {
+	if !shouldApplyHostIntent(true, next, true, lifecycle.HostIntentStatus{Intent: old, Applied: true}) {
 		t.Fatal("a completed prior intent blocked the next generation")
 	}
-	if shouldApplyHostIntent(true, old, true, harnesshostlifecycle.HostIntentStatus{Intent: old, Applied: true}) {
+	if shouldApplyHostIntent(true, old, true, lifecycle.HostIntentStatus{Intent: old, Applied: true}) {
 		t.Fatal("an already applied intent was repeated")
 	}
 }
 
 func TestHostIntentAdmissionRequiresStartupAndExactConnection(t *testing.T) {
-	desired := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1}
+	desired := lifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1}
 	controller := &hostIntentController{host: &Host{}}
 	if controller.eligible(desired) {
 		t.Fatal("intent applied before Session startup")
@@ -79,7 +79,7 @@ func TestHostIntentApplyingMarkerClosesPriorGenerationAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	previous := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1, SandboxUID: "sandbox", IncarnationUID: "incarnation", Mode: runtimepb.LifecycleIntent_RUNNING}
+	previous := lifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1, SandboxUID: "sandbox", IncarnationUID: "incarnation", Mode: runtimepb.LifecycleIntent_RUNNING}
 	next := previous
 	next.Generation++
 	runner := &Host{ctx: ctx, startupComplete: true, fatal: make(chan error, 1), lifecycle: &lifecycle{state: store}, intent: previous.Proto()}
@@ -100,15 +100,15 @@ func TestHostIntentApplyingMarkerClosesPriorGenerationAdmission(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	oldDesired := harnesshostlifecycle.Desired{Mode: harnesshostlifecycle.Running, Generation: previous.Generation}
-	if err := harnesshostlifecycle.PublishDesired(ctx, store, oldDesired); err != nil {
+	oldDesired := lifecycle.Desired{Mode: lifecycle.Running, Generation: previous.Generation}
+	if err := lifecycle.PublishDesired(ctx, store, oldDesired); err != nil {
 		t.Fatal(err)
 	}
-	oldStatus := harnesshostlifecycle.HostIntentStatus{Intent: previous, Applied: true}
-	if err := cosi.Publish(ctx, store, harnesshostlifecycle.HostIntentStatusResource(oldStatus), oldStatus, "harness-host-intent"); err != nil {
+	oldStatus := lifecycle.HostIntentStatus{Intent: previous, Applied: true}
+	if err := cosi.Publish(ctx, store, lifecycle.HostIntentStatusResource(oldStatus), oldStatus, "harness-host-intent"); err != nil {
 		t.Fatal(err)
 	}
-	if err := cosi.Publish(ctx, store, harnesshostlifecycle.HostIntentResource(next), next, harnesshostlifecycle.EnvironmentOwner); err != nil {
+	if err := cosi.Publish(ctx, store, lifecycle.HostIntentResource(next), next, lifecycle.EnvironmentOwner); err != nil {
 		t.Fatal(err)
 	}
 	runCtx, stop := context.WithCancel(ctx)
@@ -120,7 +120,7 @@ func TestHostIntentApplyingMarkerClosesPriorGenerationAdmission(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("Host intent did not reach native application")
 	}
-	current, found, err := cosi.Read(ctx, store, harnesshostlifecycle.HostIntentStatusResource(harnesshostlifecycle.HostIntentStatus{}))
+	current, found, err := cosi.Read(ctx, store, lifecycle.HostIntentStatusResource(lifecycle.HostIntentStatus{}))
 	if err != nil || !found || current.Intent != next || current.Applied || current.Error != "" {
 		t.Fatalf("Applying marker = %+v, found=%t, err=%v", current, found, err)
 	}
@@ -158,7 +158,7 @@ type observedIntentReadState struct {
 
 func (s *observedIntentReadState) Get(ctx context.Context, ptr resource.Pointer, opts ...state.GetOption) (resource.Resource, error) {
 	value, err := s.State.Get(ctx, ptr, opts...)
-	if ptr.Type() == harnesshostlifecycle.HostIntentStatusType {
+	if ptr.Type() == lifecycle.HostIntentStatusType {
 		s.once.Do(func() { close(s.read) })
 	}
 	return value, err
@@ -181,8 +181,8 @@ func TestHostIntentPublishedBeforeStartupIsAppliedAfterRecovery(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	desired := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1}
-	if err := cosi.Publish(ctx, store, harnesshostlifecycle.HostIntentResource(desired), desired, harnesshostlifecycle.EnvironmentOwner); err != nil {
+	desired := lifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1}
+	if err := cosi.Publish(ctx, store, lifecycle.HostIntentResource(desired), desired, lifecycle.EnvironmentOwner); err != nil {
 		t.Fatal(err)
 	}
 	runCtx, stop := context.WithCancel(ctx)
@@ -218,7 +218,7 @@ func (s *heldApplyingState) Create(ctx context.Context, value resource.Resource,
 	if err := s.State.Create(ctx, value, opts...); err != nil {
 		return err
 	}
-	if value.Metadata().Type() == harnesshostlifecycle.HostIntentStatusType {
+	if value.Metadata().Type() == lifecycle.HostIntentStatusType {
 		if s.createErr != nil {
 			return s.createErr
 		}
@@ -251,8 +251,8 @@ func TestHostIntentUnknownApplyingPublicationFailsClosed(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	desired := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1, SandboxUID: "sandbox", IncarnationUID: "incarnation", Mode: runtimepb.LifecycleIntent_RUNNING}
-	if err := cosi.Publish(ctx, store, harnesshostlifecycle.HostIntentResource(desired), desired, harnesshostlifecycle.EnvironmentOwner); err != nil {
+	desired := lifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1, SandboxUID: "sandbox", IncarnationUID: "incarnation", Mode: runtimepb.LifecycleIntent_RUNNING}
+	if err := cosi.Publish(ctx, store, lifecycle.HostIntentResource(desired), desired, lifecycle.EnvironmentOwner); err != nil {
 		t.Fatal(err)
 	}
 	runCtx, stop := context.WithCancel(ctx)
@@ -267,7 +267,7 @@ func TestHostIntentUnknownApplyingPublicationFailsClosed(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("Host did not report the uncertain Applying publication")
 	}
-	current, found, err := cosi.Read(ctx, store, harnesshostlifecycle.HostIntentStatusResource(harnesshostlifecycle.HostIntentStatus{}))
+	current, found, err := cosi.Read(ctx, store, lifecycle.HostIntentStatusResource(lifecycle.HostIntentStatus{}))
 	if err != nil || !found || current.Intent != desired || current.Applied || current.Error != "" {
 		t.Fatalf("uncertain Applying marker = %+v, found=%t, err=%v", current, found, err)
 	}
@@ -291,8 +291,8 @@ func TestHostDisconnectAfterApplyingMarkerSkipsNativeEffect(t *testing.T) {
 	if err := engine.RegisterController(controller); err != nil {
 		t.Fatal(err)
 	}
-	desired := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1, SandboxUID: "sandbox"}
-	if err := cosi.Publish(ctx, store, harnesshostlifecycle.HostIntentResource(desired), desired, harnesshostlifecycle.EnvironmentOwner); err != nil {
+	desired := lifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1, SandboxUID: "sandbox"}
+	if err := cosi.Publish(ctx, store, lifecycle.HostIntentResource(desired), desired, lifecycle.EnvironmentOwner); err != nil {
 		t.Fatal(err)
 	}
 	runCtx, stop := context.WithCancel(ctx)
@@ -306,11 +306,11 @@ func TestHostDisconnectAfterApplyingMarkerSkipsNativeEffect(t *testing.T) {
 	}
 	runner.SetRuntimeBinding("runtime", false)
 	close(store.release)
-	_, err = store.WatchFor(ctx, harnesshostlifecycle.HostIntentStatusResource(harnesshostlifecycle.HostIntentStatus{}).Metadata(),
+	_, err = store.WatchFor(ctx, lifecycle.HostIntentStatusResource(lifecycle.HostIntentStatus{}).Metadata(),
 		state.WithEventTypes(state.Created, state.Updated),
 		state.WithCondition(func(value resource.Resource) (bool, error) {
 			status := value.(interface {
-				TypedSpec() *harnesshostlifecycle.HostIntentStatus
+				TypedSpec() *lifecycle.HostIntentStatus
 			}).TypedSpec()
 			return status.Error != "", nil
 		}))
@@ -339,14 +339,14 @@ func TestHostIntentControllerFailsOnInterruptedApplication(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	old := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1}
-	current := harnesshostlifecycle.HostIntentStatus{Intent: old}
-	if err := cosi.Publish(ctx, store, harnesshostlifecycle.HostIntentStatusResource(current), current, "harness-host-intent"); err != nil {
+	old := lifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1}
+	current := lifecycle.HostIntentStatus{Intent: old}
+	if err := cosi.Publish(ctx, store, lifecycle.HostIntentStatusResource(current), current, "harness-host-intent"); err != nil {
 		t.Fatal(err)
 	}
 	next := old
 	next.Generation++
-	if err := cosi.Publish(ctx, store, harnesshostlifecycle.HostIntentResource(next), next, harnesshostlifecycle.EnvironmentOwner); err != nil {
+	if err := cosi.Publish(ctx, store, lifecycle.HostIntentResource(next), next, lifecycle.EnvironmentOwner); err != nil {
 		t.Fatal(err)
 	}
 	runCtx, stop := context.WithCancel(ctx)

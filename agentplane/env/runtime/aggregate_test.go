@@ -431,7 +431,7 @@ func TestCloseCannotStartEngineDuringFailedSessionConstruction(t *testing.T) {
 	config.Config.HarnessEnvironment = map[string]string{"CODEX_EXEC_SERVER_URL": "invalid-host-config"}
 	entered := make(chan struct{})
 	release := make(chan struct{})
-	config.deps.beforeHostConstruction = func() {
+	config.deps.beforeSessionConstruction = func() {
 		close(entered)
 		<-release
 	}
@@ -503,7 +503,7 @@ func TestCloseDuringSuccessfulSessionConstructionJoinsSharedEngine(t *testing.T)
 	config.Config.HistoryIngress.Target = startAcknowledgingHistory(t)
 	entered := make(chan struct{})
 	release := make(chan struct{})
-	config.deps.beforeHostConstruction = func() {
+	config.deps.beforeSessionConstruction = func() {
 		close(entered)
 		<-release
 	}
