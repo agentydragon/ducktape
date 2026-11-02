@@ -863,12 +863,22 @@ func reconcileKernelSystemdScope(t *testing.T, launcher *SystemdLauncher, stateD
 	go func() { done <- engine.Run(ctx) }()
 	_, err = store.WatchFor(ctx, resourceFor(host.namespace, string(owner.ScopeID), SystemdScopeStatus{}).Metadata(), state.WithCondition(func(res resource.Resource) (bool, error) {
 		status, _, err := ReadSystemdScopeStatus(ctx, store, host.namespace, owner.ScopeID)
-		return status.Ready, err
+		return status.Ready || status.Error != "", err
 	}))
+	if err == nil {
+		status, found, statusErr := ReadSystemdScopeStatus(ctx, store, host.namespace, owner.ScopeID)
+		if statusErr != nil {
+			err = fmt.Errorf("read COSI systemd scope status: %w", statusErr)
+		} else if !found {
+			err = errors.New("COSI systemd scope status was not published")
+		} else if !status.Ready {
+			err = fmt.Errorf("COSI systemd scope reconciliation failed: %s", status.Error)
+		}
+	}
 	cancel()
 	runErr := <-done
 	if err != nil || runErr != nil {
-		t.Fatalf("scope reconciliation: wait=%v engine=%v", err, runErr)
+		t.Fatalf("scope reconciliation: status=%v engine=%v", err, runErr)
 	}
 	return supervisor
 }
