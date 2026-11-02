@@ -12,7 +12,6 @@ py_library(
     deps = [
         "//finance/augur/study/trinity:evidence_snapshot",
         "//finance/augur/x/models:macro_var",
-        "//finance/augur/x/models:structural_macro",
         "//finance/augur/x/models:structural_macro_fit",
         "//finance/evidence:sources",
         "@pypi//numpy",

@@ -34,13 +34,8 @@ import polars as pl
 
 from finance.augur.model.historical_windows import splice_monthly_frames
 from finance.augur.x.models.equity_fit import fit_log_returns, fit_rate_beta
-from finance.augur.x.models.macro_var import fit_macro_var
-from finance.augur.x.models.structural_macro import (
-    PERCENT_TO_DECIMAL,
-    FitWindowProvenance,
-    MacroVarSpec,
-    StructuralMacroFittedDefaults,
-)
+from finance.augur.x.models.macro_var import MacroVarFit, fit_macro_var
+from finance.augur.x.models.structural_macro import PERCENT_TO_DECIMAL, MacroVarSpec, StructuralMacroFittedDefaults
 from finance.evidence import loading, sources
 from finance.evidence.loading import MonthlyLevel
 from finance.evidence.sources import FRED_CPI, FRED_FEDFUNDS, FRED_GS10, FRENCH_FACTORS, YAHOO_VFINX
@@ -133,11 +128,18 @@ def load_long_record_macro_var_levels(evidence_dir: Path) -> MacroVarLevels:
     )
 
 
-def fit_structural_macro_defaults(evidence_dir: Path, *, macro_window: MacroFitWindow) -> StructuralMacroFittedDefaults:
-    """Fit `structural_macro`'s checked-in defaults from real evidence — see the module
-    docstring for why these are three separable fits rather than one joint window.
-    """
-    cache = loading.EvidenceFrameCache(evidence_dir)
+def macro_fit_sources(macro_window: MacroFitWindow) -> tuple[sources.EvidenceSource, ...]:
+    """The source series selected for the requested macro fit."""
+    match macro_window:
+        case MacroFitWindow.FRED_1955:
+            return FRED_FEDFUNDS, FRED_GS10, FRED_CPI
+        case MacroFitWindow.LONG_RECORD_1926:
+            return LONG_RECORD_MACRO_SOURCES
+        case _:
+            raise ValueError(f"unsupported macro fit window: {macro_window}")
+
+
+def _fit_macro_var(cache: loading.EvidenceFrameCache, macro_window: MacroFitWindow) -> MacroVarFit:
     match macro_window:
         case MacroFitWindow.FRED_1955:
             levels = _macro_var_levels(
@@ -147,20 +149,36 @@ def fit_structural_macro_defaults(evidence_dir: Path, *, macro_window: MacroFitW
                     "cpi_level": cache.monthly_frame(FRED_CPI),
                 }
             )
-            macro_fit = fit_macro_var(
-                short_rate_percent=levels.short_rate_percent,
-                long_rate_percent=levels.long_rate_percent,
-                cpi_level=levels.cpi_level,
-            )
-            macro_source = f"{FRED_FEDFUNDS.provenance_label},{FRED_GS10.provenance_label},{FRED_CPI.provenance_label}"
         case MacroFitWindow.LONG_RECORD_1926:
             levels = _macro_var_levels(_long_record_macro_var_frames(cache), start=LONG_RECORD_START)
-            macro_fit = fit_macro_var(
-                short_rate_percent=levels.short_rate_percent,
-                long_rate_percent=levels.long_rate_percent,
-                cpi_level=levels.cpi_level,
-            )
-            macro_source = ",".join(source.provenance_label for source in LONG_RECORD_MACRO_SOURCES)
+        case _:
+            raise ValueError(f"unsupported macro fit window: {macro_window}")
+    return fit_macro_var(
+        short_rate_percent=levels.short_rate_percent,
+        long_rate_percent=levels.long_rate_percent,
+        cpi_level=levels.cpi_level,
+    )
+
+
+def fit_macro_var_for_window(evidence_dir: Path, *, macro_window: MacroFitWindow) -> MacroVarFit:
+    """Fit a macro window and return its in-memory result for observational reports."""
+    fit = _fit_macro_var(loading.EvidenceFrameCache(evidence_dir), macro_window)
+    # Match the validation performed when the same fit is assembled into model defaults.
+    _ = MacroVarSpec(
+        initial_state=fit.latest_state,
+        intercept=fit.intercept,
+        transition=fit.transition,
+        shock_cholesky=fit.shock_cholesky,
+    )
+    return fit
+
+
+def fit_structural_macro_defaults(evidence_dir: Path, *, macro_window: MacroFitWindow) -> StructuralMacroFittedDefaults:
+    """Fit `structural_macro`'s checked-in defaults from real evidence — see the module
+    docstring for why these are three separable fits rather than one joint window.
+    """
+    cache = loading.EvidenceFrameCache(evidence_dir)
+    macro_fit = _fit_macro_var(cache, macro_window)
     factors = cache.frame(FRENCH_FACTORS)
     equity = loading.compound_monthly_returns(
         loading.french_market_returns(factors), return_column="market_total_return"
@@ -188,26 +206,8 @@ def fit_structural_macro_defaults(evidence_dir: Path, *, macro_window: MacroFitW
             transition=macro_fit.transition,
             shock_cholesky=macro_fit.shock_cholesky,
         ),
-        macro_state_fit=FitWindowProvenance(
-            source=macro_source,
-            first_month=macro_fit.first_month,
-            last_month=macro_fit.latest_month,
-            sample_months=macro_fit.sample_months,
-        ),
         equity_monthly_log_return_mu=equity_fit.monthly_log_mu,
         equity_monthly_log_return_sigma=equity_fit.monthly_log_sigma,
-        equity_fit=FitWindowProvenance(
-            source=FRENCH_FACTORS.provenance_label,
-            first_month=equity_fit.first_month,
-            last_month=equity_fit.last_month,
-            sample_months=equity_fit.sample_months,
-        ),
-        rate_beta_fit=FitWindowProvenance(
-            source=f"{YAHOO_VFINX.provenance_label},{FRED_FEDFUNDS.provenance_label}",
-            first_month=beta_fit.first_month,
-            last_month=beta_fit.last_month,
-            sample_months=beta_fit.sample_months,
-        ),
         rate_beta_fitted_value=beta_fit.beta,
         rate_beta_r_squared=beta_fit.r_squared,
     )

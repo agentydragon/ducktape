@@ -386,7 +386,7 @@ how much they move an allocation answer.
 
 The provider implements `Sampler` only — not `Fittable`, not `Scorable`. Its config defaults
 are produced offline by `bb run //finance/augur/x/models:train_bin -- --model structural_macro` into
-the checked-in `calibrated/trained_structural_macro.yaml` (fitted values plus the window/
-sample-count provenance in the table above, as data rather than a comment), deliberately: the
-fit does not go through the joint fit's single aligned window, and that separation is what
-buys the long histories in the table above.
+the checked-in `calibrated/trained_structural_macro.yaml` (fitted parameters only). The source
+windows and sample counts in the table describe the current choices; the manual comparison
+reports the dates and sources for each run. The fit does not go through the joint fit's single
+aligned window, and that separation is what buys the long histories in the table above.
