@@ -223,7 +223,7 @@ func TestExecutionConnectionOnlySignalsVerifiedIncarnationChanges(t *testing.T) 
 	}
 	setConnection := func(podUID string) {
 		g.connections.accept(&runnerConnection{
-			identity: sandboxreader.Identity{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)},
+			identity: &sandboxreader.Identity{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)},
 			podUID:   podUID, ended: make(chan struct{}),
 		})
 	}

@@ -32,7 +32,7 @@ const (
 )
 
 type sandboxView struct {
-	identity    sandboxreader.Identity
+	identity    *sandboxreader.Identity
 	phase       string
 	incarnation *sandboxapi.Incarnation
 }

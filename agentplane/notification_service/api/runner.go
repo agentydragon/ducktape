@@ -21,7 +21,7 @@ type ProxyRunner struct {
 	TargetTemplate string
 }
 
-func (r *ProxyRunner) ListSessions(ctx context.Context, sandbox sandboxreader.Identity) ([]string, error) {
+func (r *ProxyRunner) ListSessions(ctx context.Context, sandbox *sandboxreader.Identity) ([]string, error) {
 	template := r.TargetTemplate
 	if template == "" {
 		template = sandboxapi.ControlServiceTargetTemplate()

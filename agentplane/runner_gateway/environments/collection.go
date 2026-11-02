@@ -255,7 +255,7 @@ func (s *Service) collection(ctx context.Context, identity auth.ServiceAccountPr
 	result := make([]*environmentpb.EnvironmentDescriptor, 0, len(resources))
 	for i := range resources {
 		resource := &resources[i]
-		execution, found, err := s.sandboxes.ExecutionAccount(ctx, sandboxreader.Identity{Namespace: resource.Namespace, Name: resource.Name, Uid: string(resource.UID)})
+		execution, found, err := s.sandboxes.ExecutionAccount(ctx, &sandboxreader.Identity{Namespace: resource.Namespace, Name: resource.Name, Uid: string(resource.UID)})
 		if err != nil {
 			return nil, watchFailure(ctx, err)
 		}

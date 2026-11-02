@@ -80,10 +80,10 @@ type fakeRunner struct {
 	sessions map[string][]string
 	err      error
 	hangs    bool
-	asked    []sandboxreader.Identity
+	asked    []*sandboxreader.Identity
 }
 
-func (r *fakeRunner) ListSessions(ctx context.Context, sandbox sandboxreader.Identity) ([]string, error) {
+func (r *fakeRunner) ListSessions(ctx context.Context, sandbox *sandboxreader.Identity) ([]string, error) {
 	r.mu.Lock()
 	r.asked = append(r.asked, sandbox)
 	sessions, err, hangs := r.sessions[sandbox.Name], r.err, r.hangs
@@ -107,10 +107,10 @@ func (r *fakeRunner) hang() {
 	r.hangs = true
 }
 
-func (r *fakeRunner) questions() []sandboxreader.Identity {
+func (r *fakeRunner) questions() []*sandboxreader.Identity {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return append([]sandboxreader.Identity(nil), r.asked...)
+	return append([]*sandboxreader.Identity(nil), r.asked...)
 }
 
 type actionsCall struct {

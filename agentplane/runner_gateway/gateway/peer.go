@@ -20,7 +20,7 @@ import (
 )
 
 type runnerDestination struct {
-	identity sandboxreader.Identity
+	identity *sandboxreader.Identity
 	podUID   string
 	peerURI  string
 	target   string
@@ -36,7 +36,7 @@ func (g *Gateway) runnerDestination(ctx context.Context, sandbox *sandboxapi.San
 	if err := g.readWorkload(ctx, sandbox.Namespace, ref.Name, &pod); err != nil {
 		return runnerDestination{}, err
 	}
-	view := routingView(sandboxreader.View{Identity: sandboxreader.Identity{
+	view := routingView(sandboxreader.View{Identity: &sandboxreader.Identity{
 		Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: string(sandbox.UID),
 	}, Resource: sandbox})
 	if !podIsReadyForSandbox(&pod, view) || pod.Status.PodIP == "" {

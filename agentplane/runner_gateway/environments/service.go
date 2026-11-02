@@ -127,8 +127,8 @@ func (s *Service) broadReader(ctx context.Context, identity auth.ServiceAccountP
 	return ok
 }
 
-func callerMatches(caller auth.ServiceAccountPrincipal, execution sandboxreader.ServiceAccountIdentity) bool {
-	return execution.GetAccount() != nil && caller.Account.Namespace == execution.GetAccount().GetNamespace() &&
+func callerMatches(caller auth.ServiceAccountPrincipal, execution *sandboxreader.ServiceAccountIdentity) bool {
+	return execution != nil && execution.GetAccount() != nil && caller.Account.Namespace == execution.GetAccount().GetNamespace() &&
 		caller.Account.Name == execution.GetAccount().GetName() && caller.ServiceAccountUID == execution.GetUid()
 }
 
@@ -202,7 +202,7 @@ func (s *Service) listAll(ctx context.Context, request *environmentpb.ListEnviro
 	response := &environmentpb.ListEnvironmentsResponse{NextPageToken: list.Continue}
 	for i := range list.Items {
 		object := &list.Items[i]
-		execution, _, err := s.sandboxes.ExecutionAccount(ctx, sandboxreader.Identity{Namespace: object.Namespace, Name: object.Name, Uid: string(object.UID)})
+		execution, _, err := s.sandboxes.ExecutionAccount(ctx, &sandboxreader.Identity{Namespace: object.Namespace, Name: object.Name, Uid: string(object.UID)})
 		if err != nil {
 			return nil, status.Error(codes.Unavailable, "Sandbox execution account is unavailable")
 		}
@@ -300,32 +300,30 @@ func (s *Service) revalidateDescriptor(
 	descriptor *environmentpb.EnvironmentDescriptor,
 	caller auth.ServiceAccountPrincipal,
 	broad bool,
-) (sandboxreader.ServiceAccountIdentity, bool, bool, error) {
+) (*sandboxreader.ServiceAccountIdentity, bool, bool, error) {
 	target := descriptor.GetTarget()
 	if target == nil || target.GetNamespace() != s.namespace || target.GetName() == "" || target.GetUid() == "" {
-		return sandboxreader.ServiceAccountIdentity{}, false, false, nil
+		return nil, false, false, nil
 	}
 	current, err := s.sandboxes.Get(ctx, target.GetName())
 	if status.Code(err) == codes.NotFound || (err == nil && current.Identity.Uid != target.GetUid()) {
-		return sandboxreader.ServiceAccountIdentity{}, false, false, nil
+		return nil, false, false, nil
 	}
 	if err != nil {
-		return sandboxreader.ServiceAccountIdentity{}, false, false, err
+		return nil, false, false, err
 	}
 	if deleting(current.Resource) && !broad {
-		return sandboxreader.ServiceAccountIdentity{}, false, false, nil
+		return nil, false, false, nil
 	}
 	execution, found, err := s.sandboxes.ExecutionAccount(ctx, current.Identity)
 	if err != nil {
-		return sandboxreader.ServiceAccountIdentity{}, false, false, err
+		return nil, false, false, err
 	}
 	if !broad && (!found || !callerMatches(caller, execution)) {
-		return sandboxreader.ServiceAccountIdentity{}, false, false, nil
+		return nil, false, false, nil
 	}
 	if found {
-		descriptor.ExecutionAccount = &identitypb.ServiceAccountIdentity{
-			Account: execution.Account, Uid: execution.Uid,
-		}
+		descriptor.ExecutionAccount = execution
 	} else {
 		descriptor.ExecutionAccount = nil
 	}
@@ -335,7 +333,7 @@ func (s *Service) revalidateDescriptor(
 func (s *Service) describe(
 	ctx context.Context,
 	object *api.Sandbox,
-	execution sandboxreader.ServiceAccountIdentity,
+	execution *sandboxreader.ServiceAccountIdentity,
 	caller auth.ServiceAccountPrincipal,
 ) (*environmentpb.EnvironmentDescriptor, error) {
 	var pod *corev1.Pod
@@ -362,7 +360,7 @@ func (s *Service) describe(
 	case api.OperatingModeSuspended:
 		automaticWake = environmentpb.AutomaticWakeState_AUTOMATIC_WAKE_STATE_NOT_AVAILABLE
 	}
-	target := lifecycle.Target{Namespace: object.Namespace, Name: object.Name, Uid: string(object.UID)}
+	target := &lifecycle.Target{Namespace: object.Namespace, Name: object.Name, Uid: string(object.UID)}
 	var eligibility *environmentlifecyclepb.ResumeEligibility
 	generation := object.Spec.WakeGeneration
 	if !deleting(object) {
@@ -372,7 +370,7 @@ func (s *Service) describe(
 			return nil, err
 		}
 		if object.Status.OperatingMode == api.OperatingModeSuspended {
-			wake, err := s.lifecycle.AssessAutomaticWake(ctx, target, lifecycle.ServiceAccountIdentity{
+			wake, err := s.lifecycle.AssessAutomaticWake(ctx, target, &lifecycle.ServiceAccountIdentity{
 				Account: &identitypb.ServiceAccount{Namespace: caller.Account.Namespace, Name: caller.Account.Name},
 				Uid:     caller.ServiceAccountUID,
 			})

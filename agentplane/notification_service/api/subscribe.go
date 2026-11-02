@@ -48,14 +48,14 @@ func (s *Notifications) subscribe(ctx context.Context, owner model.ServiceAccoun
 
 // destination resolves the Sandbox the reference names to the exact incarnation, which must run as the owner. A
 // Sandbox outside the service's namespace, a missing or replaced one, and another account's are all not found.
-func (s *Notifications) destination(ctx context.Context, owner model.ServiceAccount, ref model.DestinationRef) (sandboxreader.Identity, error) {
+func (s *Notifications) destination(ctx context.Context, owner model.ServiceAccount, ref model.DestinationRef) (*sandboxreader.Identity, error) {
 	view, err := s.sandbox(ctx, ref)
 	if err != nil {
-		return sandboxreader.Identity{}, err
+		return nil, err
 	}
 	// A Sandbox runs as the ServiceAccount of its own name.
 	if (model.ServiceAccount{Namespace: view.Identity.Namespace, Name: view.Identity.Name}) != owner {
-		return sandboxreader.Identity{}, errSandboxMissing
+		return nil, errSandboxMissing
 	}
 	return view.Identity, nil
 }

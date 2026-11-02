@@ -103,7 +103,7 @@ type lifecycleWakeBudget struct {
 
 func (b lifecycleWakeBudget) ReserveWakeAttempt(
 	ctx context.Context,
-	caller lifecycle.ServiceAccountIdentity,
+	caller *lifecycle.ServiceAccountIdentity,
 	sandboxUID string,
 	generation int64,
 ) (time.Duration, error) {

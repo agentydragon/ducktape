@@ -182,9 +182,9 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 		return false, err
 	}
 	effectiveCaller := work.attribution.EffectiveCaller
-	assessment, err := w.Wake.RequestWake(ctx, lifecycle.Target{
+	assessment, err := w.Wake.RequestWake(ctx, &lifecycle.Target{
 		Namespace: sandbox.Namespace, Name: sandbox.Name, UID: sandbox.UID,
-	}, lifecycle.ServiceAccountIdentity{
+	}, &lifecycle.ServiceAccountIdentity{
 		Account: &identitypb.ServiceAccount{Namespace: effectiveCaller.Namespace, Name: effectiveCaller.Name}, Uid: effectiveCaller.UID,
 	})
 	if err != nil {

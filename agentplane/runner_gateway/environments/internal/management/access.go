@@ -16,7 +16,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/policy"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/view"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"

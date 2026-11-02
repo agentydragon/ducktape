@@ -59,7 +59,7 @@ func serveRunner(t *testing.T, runner *listingRunner) *ProxyRunner {
 	return &ProxyRunner{TokenFile: tokenFile, Timeout: 10 * time.Second, TargetTemplate: listener.Addr().String()}
 }
 
-var proxiedSandbox = sandboxreader.Identity{Namespace: "test-namespace", Name: "test-sandbox", Uid: "test-sandbox-uid"}
+var proxiedSandbox = &sandboxreader.Identity{Namespace: "test-namespace", Name: "test-sandbox", Uid: "test-sandbox-uid"}
 
 func TestProxyRunnerListsTheSessionsOfTheSandboxItNames(t *testing.T) {
 	runner := &listingRunner{sessions: []string{"first-session", "second-session"}}

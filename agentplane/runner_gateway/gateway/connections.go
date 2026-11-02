@@ -14,7 +14,7 @@ const connectionHeldByAnotherReplica = "another replica holds this Sandbox's run
 var errSupersededConnection = status.Error(codes.Aborted, "superseded by a newer connection")
 
 type runnerConnection struct {
-	identity    sandboxreader.Identity
+	identity    *sandboxreader.Identity
 	podUID      string
 	epoch       uint64
 	bootID      string

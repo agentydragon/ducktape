@@ -1092,7 +1092,7 @@ func (*growingCatalog) WaitSynced(context.Context) bool { return true }
 
 type testWake struct{}
 
-func (testWake) RequestWake(_ context.Context, _ lifecycle.Target, _ lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
+func (testWake) RequestWake(_ context.Context, _ *lifecycle.Target, _ *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
 	return &environmentpb.WakeAssessment{
 		State:      environmentpb.WakeState_WAKE_STATE_NOT_NEEDED,
 		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(0),
@@ -1103,7 +1103,7 @@ type rateLimitedWake struct {
 	calls int
 }
 
-func (w *rateLimitedWake) RequestWake(_ context.Context, _ lifecycle.Target, _ lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
+func (w *rateLimitedWake) RequestWake(_ context.Context, _ *lifecycle.Target, _ *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
 	w.calls++
 	return &environmentpb.WakeAssessment{
 		State:      environmentpb.WakeState_WAKE_STATE_RATE_LIMITED,
@@ -1115,11 +1115,11 @@ func (w *rateLimitedWake) RequestWake(_ context.Context, _ lifecycle.Target, _ l
 
 type scriptedWake struct {
 	assessments []*environmentpb.WakeAssessment
-	callers     []lifecycle.ServiceAccountIdentity
-	targets     []lifecycle.Target
+	callers     []*lifecycle.ServiceAccountIdentity
+	targets     []*lifecycle.Target
 }
 
-func (w *scriptedWake) RequestWake(_ context.Context, target lifecycle.Target, caller lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
+func (w *scriptedWake) RequestWake(_ context.Context, target *lifecycle.Target, caller *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
 	w.callers = append(w.callers, caller)
 	w.targets = append(w.targets, target)
 	if len(w.assessments) == 0 {
@@ -1136,7 +1136,7 @@ type wakeWorkerFixture struct {
 	dispatch *Dispatch
 	owner    Owner
 	sandbox  SandboxSnapshot
-	caller   lifecycle.ServiceAccountIdentity
+	caller   *lifecycle.ServiceAccountIdentity
 	worker   *DeliveryWorker
 }
 
@@ -1146,8 +1146,8 @@ func newWakeWorkerFixture(t *testing.T, spec *sessionpb.SessionSpec, wake WakeRe
 	store := testStore(t, 3)
 	sandboxName, sandboxUID := "sandbox-"+uuid.NewString()[:8], uuid.NewString()
 	sessionID, commandID := uuid.NewString(), uuid.NewString()
-	caller := lifecycle.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "agentplane", Name: sandboxName}, Uid: uuid.NewString()}
-	actor := lifecycle.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "agentplane", Name: "action-broker"}, Uid: uuid.NewString()}
+	caller := &lifecycle.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "agentplane", Name: sandboxName}, Uid: uuid.NewString()}
+	actor := &lifecycle.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "agentplane", Name: "action-broker"}, Uid: uuid.NewString()}
 	callerIdentity := ServiceAccountIdentity{Account: Account{Namespace: caller.GetAccount().GetNamespace(), Name: caller.GetAccount().GetName()}, UID: caller.GetUid()}
 	actorIdentity := ServiceAccountIdentity{Account: Account{Namespace: actor.GetAccount().GetNamespace(), Name: actor.GetAccount().GetName()}, UID: actor.GetUid()}
 	attribution := &AdmissionAttribution{Actor: actorIdentity, EffectiveCaller: callerIdentity}

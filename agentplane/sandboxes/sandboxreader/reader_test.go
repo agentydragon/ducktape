@@ -62,7 +62,7 @@ func TestExecutionAccountRequiresTheExactLiveControllerOwnedAccount(t *testing.T
 		sandbox(testNamespace, "sandbox-a", "uid-a"),
 		executionAccount("account-uid", valid),
 	)
-	identity, found, err := reader.ExecutionAccount(context.Background(), Identity{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-a"})
+	identity, found, err := reader.ExecutionAccount(context.Background(), &Identity{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-a"})
 	if err != nil || !found || !proto.Equal(identity, &ServiceAccountIdentity{
 		Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "sandbox-a"}, Uid: "account-uid",
 	}) {
@@ -83,8 +83,8 @@ func TestExecutionAccountRequiresTheExactLiveControllerOwnedAccount(t *testing.T
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			reader := newReader(t, sandbox(testNamespace, "sandbox-a", "uid-a"), executionAccount("account-uid", tc.owner))
-			got, found, err := reader.ExecutionAccount(context.Background(), Identity{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-a"})
-			if err != nil || found || !proto.Equal(got, &ServiceAccountIdentity{}) {
+			got, found, err := reader.ExecutionAccount(context.Background(), &Identity{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-a"})
+			if err != nil || found || got != nil {
 				t.Fatalf("ExecutionAccount() = %#v, %v, %v; want no usable identity", got, found, err)
 			}
 		})
@@ -97,19 +97,19 @@ func TestExecutionAccountFailsClosedForMissingOrReplacedResources(t *testing.T) 
 	cases := []struct {
 		name    string
 		objects []client.Object
-		sandbox Identity
+		sandbox *Identity
 	}{
 		{
 			name: "replaced Sandbox UID",
 			objects: []client.Object{
 				sandbox(testNamespace, "sandbox-a", "uid-current"), executionAccount("account-uid", owner),
 			},
-			sandbox: Identity{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-old"},
+			sandbox: &Identity{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-old"},
 		},
 		{
 			name:    "missing ServiceAccount",
 			objects: []client.Object{sandbox(testNamespace, "sandbox-a", "uid-current")},
-			sandbox: Identity{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-current"},
+			sandbox: &Identity{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-current"},
 		},
 		{
 			name: "deleting ServiceAccount",
@@ -117,14 +117,14 @@ func TestExecutionAccountFailsClosedForMissingOrReplacedResources(t *testing.T) 
 				sandbox(testNamespace, "sandbox-a", "uid-current"),
 				deletingAccount("account-uid", owner),
 			},
-			sandbox: Identity{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-current"},
+			sandbox: &Identity{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-current"},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			reader := newReader(t, tc.objects...)
 			got, found, err := reader.ExecutionAccount(context.Background(), tc.sandbox)
-			if err != nil || found || !proto.Equal(got, &ServiceAccountIdentity{}) {
+			if err != nil || found || got != nil {
 				t.Fatalf("ExecutionAccount() = %#v, %v, %v; want no usable identity", got, found, err)
 			}
 		})
@@ -177,8 +177,8 @@ func TestExecutionAccountPropagatesKubernetesReadErrorsWithoutIdentity(t *testin
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, found, err := reader.ExecutionAccount(context.Background(), Identity{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-a"})
-			if err == nil || found || !proto.Equal(got, &ServiceAccountIdentity{}) {
+			got, found, err := reader.ExecutionAccount(context.Background(), &Identity{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-a"})
+			if err == nil || found || got != nil {
 				t.Fatalf("ExecutionAccount() = %#v, %v, %v; want error and no usable identity", got, found, err)
 			}
 		})
@@ -213,7 +213,7 @@ func TestGetReadsTheSandboxAndItsIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !proto.Equal(&view.Identity, &identitypb.EnvironmentTarget{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-a"}) || view.Resource.Name != "sandbox-a" {
+	if !proto.Equal(view.Identity, &identitypb.EnvironmentTarget{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-a"}) || view.Resource.Name != "sandbox-a" {
 		t.Fatalf("view = %#v", view)
 	}
 }

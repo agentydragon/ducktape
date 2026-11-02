@@ -348,7 +348,7 @@ func quiesceStageName(stage sandboxlease.QuiesceStage) (string, bool) {
 	}
 }
 
-func recordRunnerQuiesceStage(ctx context.Context, spanName string, identity sandboxreader.Identity, stage string) {
+func recordRunnerQuiesceStage(ctx context.Context, spanName string, identity *sandboxreader.Identity, stage string) {
 	_, span := observability.Start(ctx, spanName)
 	span.SetAttributes(
 		attribute.String("sandbox.name", identity.Name),

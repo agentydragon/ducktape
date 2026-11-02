@@ -57,7 +57,7 @@ type tokenReviewStub map[string]authenticationv1.UserInfo
 
 type unusedWakeBudget struct{}
 
-func (unusedWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.ServiceAccountIdentity, string, int64) (time.Duration, error) {
+func (unusedWakeBudget) ReserveWakeAttempt(context.Context, *lifecycle.ServiceAccountIdentity, string, int64) (time.Duration, error) {
 	return 0, nil
 }
 
@@ -331,7 +331,7 @@ func TestListAndGetReturnTheExactExecutionAccountIdentity(t *testing.T) {
 		got.GetActions().GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_ALLOWED_OWN_SERVICE_ACCOUNT {
 		t.Fatalf("explicit resume eligibility = %+v", got.GetActions().GetResumeEligibility())
 	}
-	if got.GetActions().GetWakeGeneration() != 0 || got.GetActions().GetResumeToken() != lifecycle.NewResumeToken(lifecycle.Target{
+	if got.GetActions().GetWakeGeneration() != 0 || got.GetActions().GetResumeToken() != lifecycle.NewResumeToken(&lifecycle.Target{
 		Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID,
 	}, 0) {
 		t.Fatalf("generation-bound resume precondition = generation %d, token %q", got.GetActions().GetWakeGeneration(), got.GetActions().GetResumeToken())

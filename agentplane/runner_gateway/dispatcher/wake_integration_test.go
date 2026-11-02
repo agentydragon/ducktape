@@ -18,13 +18,13 @@ import (
 type callbackWake struct {
 	store   *Store
 	calls   int
-	callers []lifecycle.ServiceAccountIdentity
+	callers []*lifecycle.ServiceAccountIdentity
 }
 
 func (w *callbackWake) RequestWake(
 	ctx context.Context,
-	target lifecycle.Target,
-	caller lifecycle.ServiceAccountIdentity,
+	target *lifecycle.Target,
+	caller *lifecycle.ServiceAccountIdentity,
 ) (*environmentpb.WakeAssessment, error) {
 	w.calls++
 	w.callers = append(w.callers, caller)

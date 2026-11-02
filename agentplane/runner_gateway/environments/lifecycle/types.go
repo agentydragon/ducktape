@@ -21,14 +21,14 @@ type ServiceAccountIdentity = identitypb.ServiceAccountIdentity
 // WakeBudget reserves a bounded wake attempt without depending on Dispatcher storage.
 // Implementations share reservations across replicas and explicit and automatic wake paths.
 type WakeBudget interface {
-	ReserveWakeAttempt(context.Context, ServiceAccountIdentity, string, int64) (time.Duration, error)
+	ReserveWakeAttempt(context.Context, *ServiceAccountIdentity, string, int64) (time.Duration, error)
 }
 
 // NewResumeToken creates the opaque precondition returned by Discovery for a particular target
 // UID and wake generation. It is deterministic and is not a capability; the lifecycle manager
 // still checks current identity, policy and suspension state before it mutates the target.
-func NewResumeToken(target Target, generation int64) string {
-	if target.Namespace == "" || target.Name == "" || target.Uid == "" || generation < 0 {
+func NewResumeToken(target *Target, generation int64) string {
+	if target == nil || target.Namespace == "" || target.Name == "" || target.Uid == "" || generation < 0 {
 		return ""
 	}
 	value := target.Namespace + "\x00" + target.Name + "\x00" + target.Uid + "\x00" + strconv.FormatInt(generation, 10)
