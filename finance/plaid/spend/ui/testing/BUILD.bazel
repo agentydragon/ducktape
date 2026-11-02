@@ -3,16 +3,6 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_testonly = True)
 
 py_library(
-    name = "dashboard",
-    srcs = ["dashboard.py"],
-    visibility = ["//finance/plaid/spend/ui:__pkg__"],
-    deps = [
-        "//finance/plaid/spend:allowance",
-        "//finance/plaid/spend:models",
-    ],
-)
-
-py_library(
     name = "sustainability",
     srcs = ["sustainability.py"],
     visibility = ["//finance/plaid/spend/ui:__pkg__"],
@@ -28,9 +18,9 @@ py_library(
     srcs = ["transactions.py"],
     visibility = ["//finance/plaid/spend/ui:__pkg__"],
     deps = [
-        ":dashboard",
         "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:models",
+        "//finance/plaid/spend/testing:dashboard",
     ],
 )
 

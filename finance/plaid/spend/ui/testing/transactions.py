@@ -33,7 +33,7 @@ from finance.plaid.spend.models import (
     StatementReason,
     TransactionPeriodSummary,
 )
-from finance.plaid.spend.ui.testing import dashboard
+from finance.plaid.spend.testing import dashboard
 
 _OWN_TRANSFERS = AnalysisCategoryView(id="own_transfers", label="Own-account transfers", color="#64748B")
 _TAXES = AnalysisCategoryView(id="taxes", label="Taxes", color="#B45309")

@@ -24,7 +24,8 @@ from finance.plaid.spend.allowance import EstimatePeriodId
 from finance.plaid.spend.models import SpendConfigurationView, SpendTransactionsView, SpendView
 from finance.plaid.spend.reconciliation import ReportStatus
 from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityHistoryPoint
-from finance.plaid.spend.ui.testing import dashboard, sustainability, transactions
+from finance.plaid.spend.testing import dashboard
+from finance.plaid.spend.ui.testing import sustainability, transactions
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual.capture import VisualPage, open_visual_page

@@ -54,7 +54,10 @@ py_test(
     tags = ["visual"],
     deps = [
         "//:conftest",
+        "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:conftest",
+        "//finance/plaid/spend:models",
+        "//finance/plaid/spend/testing:dashboard",
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:output_writer",
