@@ -1,5 +1,5 @@
 """The Attic Nix binary cache (`cache.allegedly.works`): the server and its Postgres,
-the previous SeaweedFS identity pending cleanup, the cache bootstrap Job, and hourly JWT rotation.
+the previous SeaweedFS IAM resources pending cleanup, the cache bootstrap Job, and hourly JWT rotation.
 
 cdk8s writes the directory Kustomization and the typed rotator roster. The native
 `server.toml`, SOPS Secrets, and `image-pins/kustomization.yaml` remain hand-written beside
@@ -173,7 +173,7 @@ def _database(scope: Construct) -> None:
     cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
 
 
-def _old_cache_identity(scope: Construct) -> None:
+def _old_cache_iam(scope: Construct) -> None:
     identity = s3.identity(
         scope,
         "old-cache-identity",
@@ -181,8 +181,17 @@ def _old_cache_identity(scope: Construct) -> None:
         namespace=NAMESPACE,
         description="attic's NAR chunks; replicated per volume by the SeaweedFS cluster's defaultReplication.",
     )
-    # Remove only after the old bucket and credential have finalized.
-    identity.add_json_patch(JsonPatch.replace("/spec/reclaimPolicy", "Delete"))
+    credential = s3.credentials(
+        scope,
+        "old-cache-credential",
+        identity=NAME,
+        namespace=NAMESPACE,
+        secret="attic-s3-credentials",
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
+    )
+    # Retire the credential only after the bucket, then the identity last.
+    for resource in (identity, credential):
+        resource.add_json_patch(JsonPatch.replace("/spec/reclaimPolicy", "Delete"))
 
 
 def _service(scope: Construct) -> None:
@@ -596,7 +605,7 @@ def chart(app: App) -> Chart:
     namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO)
     pull_credentials.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     _database(chart)
-    _old_cache_identity(chart)
+    _old_cache_iam(chart)
     _service(chart)
     _rotation(chart)
     _local_server(chart)

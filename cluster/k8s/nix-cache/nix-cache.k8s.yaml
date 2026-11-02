@@ -168,6 +168,23 @@ spec:
     name: seaweedfs
     namespace: seaweedfs
 ---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: attic
+  namespace: nix-cache
+spec:
+  identityRef:
+    name: attic
+  reclaimPolicy: Delete
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: attic-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
 apiVersion: v1
 kind: Service
 metadata:
