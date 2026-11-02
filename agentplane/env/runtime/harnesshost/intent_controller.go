@@ -59,7 +59,7 @@ func (c *hostIntentController) Run(ctx context.Context, engine controller.Runtim
 		if !shouldApplyHostIntent(found, desired, currentFound, current) {
 			continue
 		}
-		if !c.eligible(desired) {
+		if !c.fenceAdmission(desired) {
 			continue
 		}
 		result := harnesshostlifecycle.HostIntentStatus{Intent: desired}
@@ -67,6 +67,7 @@ func (c *hostIntentController) Run(ctx context.Context, engine controller.Runtim
 			if ctx.Err() != nil {
 				return nil
 			}
+			c.host.fail(fmt.Errorf("publish applying Host lifecycle intent: %w", err))
 			return err
 		}
 		if !c.eligible(desired) {
@@ -102,4 +103,16 @@ func (c *hostIntentController) eligible(desired harnesshostlifecycle.HostIntent)
 	startup := c.host.startupComplete && !c.host.closing
 	c.host.mu.Unlock()
 	return startup && c.host.RuntimeBindingMatches(desired.RuntimeBootID)
+}
+
+// Close native admission under the same lock as effects before publishing
+// Applying. A prior-generation controller may still hold the old Desired.
+func (c *hostIntentController) fenceAdmission(desired harnesshostlifecycle.HostIntent) bool {
+	c.host.mu.Lock()
+	defer c.host.mu.Unlock()
+	if !c.host.startupComplete || c.host.closing || !c.host.RuntimeBindingMatches(desired.RuntimeBootID) {
+		return false
+	}
+	c.host.ready.Store(false)
+	return true
 }

@@ -2,6 +2,7 @@ package harnesshost
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -67,6 +68,75 @@ func TestHostIntentAdmissionRequiresStartupAndExactConnection(t *testing.T) {
 	controller.host.runtimeBinding.Store(nil)
 	if controller.eligible(desired) {
 		t.Fatal("missing connection admitted intent")
+	}
+}
+
+func TestHostIntentApplyingMarkerClosesPriorGenerationAdmission(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	store := state.WrapCore(namespaced.NewState(inmem.Build))
+	engine, err := cosiruntime.NewRuntime(store, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1, SandboxUID: "sandbox", IncarnationUID: "incarnation", Mode: runtimepb.LifecycleIntent_RUNNING}
+	next := previous
+	next.Generation++
+	runner := &Host{ctx: ctx, startupComplete: true, fatal: make(chan error, 1), lifecycle: &lifecycle{state: store}, intent: previous.Proto()}
+	runner.ready.Store(true)
+	runner.SetRuntimeBinding("runtime", true)
+	entered, release := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	var calls atomic.Int32
+	if err := engine.RegisterController(&hostIntentController{host: runner, apply: func(ctx context.Context, _ *runtimepb.LifecycleIntent) error {
+		calls.Add(1)
+		close(entered)
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	oldDesired := harnesshostlifecycle.Desired{Mode: harnesshostlifecycle.Running, Generation: previous.Generation}
+	if err := harnesshostlifecycle.PublishDesired(ctx, store, oldDesired); err != nil {
+		t.Fatal(err)
+	}
+	oldStatus := harnesshostlifecycle.HostIntentStatus{Intent: previous, Applied: true}
+	if err := cosi.Publish(ctx, store, harnesshostlifecycle.HostIntentStatusResource(oldStatus), oldStatus, "harness-host-intent"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cosi.Publish(ctx, store, harnesshostlifecycle.HostIntentResource(next), next, harnesshostlifecycle.EnvironmentOwner); err != nil {
+		t.Fatal(err)
+	}
+	runCtx, stop := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() { done <- engine.Run(runCtx) }()
+	defer func() { releaseOnce.Do(func() { close(release) }); stop(); <-done }()
+	select {
+	case <-entered:
+	case <-ctx.Done():
+		t.Fatal("Host intent did not reach native application")
+	}
+	current, found, err := cosi.Read(ctx, store, harnesshostlifecycle.HostIntentStatusResource(harnesshostlifecycle.HostIntentStatus{}))
+	if err != nil || !found || current.Intent != next || current.Applied || current.Error != "" {
+		t.Fatalf("Applying marker = %+v, found=%t, err=%v", current, found, err)
+	}
+	var effectRan bool
+	if err := runner.admitLifecycleEffect(ctx, oldDesired, func(context.Context) error {
+		effectRan = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if effectRan {
+		t.Fatal("prior-generation effect was admitted after Applying became visible")
+	}
+	releaseOnce.Do(func() { close(release) })
+	if applied := waitIntentStatus(t, ctx, store, next, true); !applied.Applied || calls.Load() != 1 {
+		t.Fatalf("next intent = %+v, application count %d", applied, calls.Load())
 	}
 }
 
@@ -138,9 +208,10 @@ func TestHostIntentPublishedBeforeStartupIsAppliedAfterRecovery(t *testing.T) {
 
 type heldApplyingState struct {
 	state.State
-	marked  chan struct{}
-	release chan struct{}
-	once    sync.Once
+	marked    chan struct{}
+	release   chan struct{}
+	once      sync.Once
+	createErr error
 }
 
 func (s *heldApplyingState) Create(ctx context.Context, value resource.Resource, opts ...state.CreateOption) error {
@@ -148,6 +219,9 @@ func (s *heldApplyingState) Create(ctx context.Context, value resource.Resource,
 		return err
 	}
 	if value.Metadata().Type() == harnesshostlifecycle.HostIntentStatusType {
+		if s.createErr != nil {
+			return s.createErr
+		}
 		s.once.Do(func() { close(s.marked) })
 		select {
 		case <-s.release:
@@ -156,6 +230,50 @@ func (s *heldApplyingState) Create(ctx context.Context, value resource.Resource,
 		}
 	}
 	return nil
+}
+
+func TestHostIntentUnknownApplyingPublicationFailsClosed(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	publicationErr := errors.New("applying publication outcome unknown")
+	store := &heldApplyingState{State: state.WrapCore(namespaced.NewState(inmem.Build)), createErr: publicationErr}
+	engine, err := cosiruntime.NewRuntime(store, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := &Host{ctx: ctx, startupComplete: true, fatal: make(chan error, 1), lifecycle: &lifecycle{state: store}}
+	runner.ready.Store(true)
+	runner.SetRuntimeBinding("runtime", true)
+	var calls atomic.Int32
+	if err := engine.RegisterController(&hostIntentController{host: runner, apply: func(context.Context, *runtimepb.LifecycleIntent) error {
+		calls.Add(1)
+		return nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	desired := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", Generation: 1, SandboxUID: "sandbox", IncarnationUID: "incarnation", Mode: runtimepb.LifecycleIntent_RUNNING}
+	if err := cosi.Publish(ctx, store, harnesshostlifecycle.HostIntentResource(desired), desired, harnesshostlifecycle.EnvironmentOwner); err != nil {
+		t.Fatal(err)
+	}
+	runCtx, stop := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() { done <- engine.Run(runCtx) }()
+	defer func() { stop(); <-done }()
+	select {
+	case failure := <-runner.fatal:
+		if !errors.Is(failure, publicationErr) {
+			t.Fatalf("Host failure = %v, want publication cause", failure)
+		}
+	case <-ctx.Done():
+		t.Fatal("Host did not report the uncertain Applying publication")
+	}
+	current, found, err := cosi.Read(ctx, store, harnesshostlifecycle.HostIntentStatusResource(harnesshostlifecycle.HostIntentStatus{}))
+	if err != nil || !found || current.Intent != desired || current.Applied || current.Error != "" {
+		t.Fatalf("uncertain Applying marker = %+v, found=%t, err=%v", current, found, err)
+	}
+	if runner.ready.Load() || runner.RuntimeBindingMatches("runtime") || calls.Load() != 0 {
+		t.Fatalf("uncertain intent reopened admission or replayed: ready=%t, bound=%t, applications=%d", runner.ready.Load(), runner.RuntimeBindingMatches("runtime"), calls.Load())
+	}
 }
 
 func TestHostDisconnectAfterApplyingMarkerSkipsNativeEffect(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/cosi-project/runtime/pkg/controller"
 
@@ -137,6 +138,11 @@ func (l *lifecycle) setDesiredState(mode harnesshostlifecycle.Mode, sealUID stri
 func (r *Host) admitLifecycleEffect(ctx context.Context, expected harnesshostlifecycle.Desired, effect func(context.Context) error) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closing || !r.ready.Load() || r.intent == nil || r.intent.Binding == nil ||
+		r.intent.Mode != runtimepb.LifecycleIntent_RUNNING || r.intent.Binding.Generation != expected.Generation ||
+		!r.RuntimeBindingMatches(r.intent.Binding.RuntimeBootId) {
+		return nil
+	}
 	current, found, err := harnesshostlifecycle.ReadDesired(ctx, r.lifecycle.state)
 	if err != nil {
 		return err
