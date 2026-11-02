@@ -4,45 +4,64 @@ import json
 import sqlite3
 import sys
 import tarfile
+from contextlib import closing
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 
-def _backup(source: Path, destination: Path) -> dict[str, Any]:
+def _backup(source: Path, destination: Path, *, journal: bool) -> dict[str, Any]:
     if not source.is_file():
         raise FileNotFoundError(source)
     destination.parent.mkdir(parents=True, exist_ok=True)
     partial = destination.with_suffix(destination.suffix + ".partial")
-    source_db = sqlite3.connect(f"{source.as_uri()}?mode=ro", uri=True, timeout=5)
-    target_db = sqlite3.connect(partial, timeout=5)
-    try:
+    with (
+        closing(sqlite3.connect(f"{source.as_uri()}?mode=ro", uri=True, timeout=5)) as source_db,
+        closing(sqlite3.connect(partial, timeout=5)) as target_db,
+    ):
         source_db.backup(target_db, pages=256, sleep=0.01)
         integrity = target_db.execute("PRAGMA integrity_check").fetchone()[0]
         if integrity != "ok":
             raise sqlite3.DatabaseError(f"backup integrity check: {integrity}")
-        event_count = target_db.execute("SELECT count(*) FROM event_entry").fetchone()[0]
-        first_cursor = target_db.execute("SELECT min(cursor) FROM event_entry").fetchone()[0]
-        last_cursor = target_db.execute("SELECT max(cursor) FROM event_entry").fetchone()[0]
+        result: dict[str, Any] = {"path": str(destination), "integrity_check": integrity}
+        if journal:
+            result.update(
+                event_count=target_db.execute("SELECT count(*) FROM event_entry").fetchone()[0],
+                first_cursor=target_db.execute("SELECT min(cursor) FROM event_entry").fetchone()[0],
+                last_cursor=target_db.execute("SELECT max(cursor) FROM event_entry").fetchone()[0],
+            )
         target_db.commit()
-    finally:
-        target_db.close()
-        source_db.close()
     partial.replace(destination)
-    return {
-        "path": str(destination),
-        "integrity_check": integrity,
-        "event_count": event_count,
-        "first_cursor": first_cursor,
-        "last_cursor": last_cursor,
-    }
+    return result
 
 
 def _add_tree(output: tarfile.TarFile, source: Path, arcname: str, excluded: set[Path]) -> None:
     if source in excluded:
         return
-    is_directory = source.is_dir() and not source.is_symlink()
-    output.add(source, arcname=arcname, recursive=False)
-    if is_directory:
+    member = output.gettarinfo(source, arcname=arcname)
+    if member.isfile():
+        identity = source.stat(follow_symlinks=False)
+        with source.open("rb") as contents:
+            sqlite = contents.read(16) == b"SQLite format 3\0"
+        if sqlite:
+            # Harness databases are not all session journals. Snapshot their committed
+            # contents before excluding sidecars that can vanish during a live walk.
+            with TemporaryDirectory(dir=Path(output.name).parent) as directory:
+                snapshot = Path(directory) / "snapshot.sqlite"
+                _backup(source, snapshot, journal=False)
+                current = source.stat(follow_symlinks=False)
+                if (identity.st_dev, identity.st_ino) != (current.st_dev, current.st_ino):
+                    raise RuntimeError(f"SQLite database changed identity during backup: {source}")
+                member.size = snapshot.stat().st_size
+                with snapshot.open("rb") as contents:
+                    output.addfile(member, contents)
+            excluded.update(Path(f"{source}{suffix}") for suffix in ("-journal", "-wal", "-shm"))
+        else:
+            with source.open("rb") as contents:
+                output.addfile(member, contents)
+    else:
+        output.addfile(member)
+    if member.isdir():
         for child in sorted(source.iterdir()):
             _add_tree(output, child, f"{arcname}/{child.name}", excluded)
 
@@ -59,7 +78,7 @@ def capture(plan_path: Path) -> int:
     for item in plan["backups"]:
         name = item["name"]
         try:
-            manifest["backups"][name] = _backup(Path(item["source"]), Path(item["destination"]))
+            manifest["backups"][name] = _backup(Path(item["source"]), Path(item["destination"]), journal=True)
         except Exception as error:
             manifest["backups"][name] = {"error": f"{type(error).__name__}: {error}"}
         persist()

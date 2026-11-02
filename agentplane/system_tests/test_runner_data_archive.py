@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from agentplane.system_tests.runner_data_archive import capture
+from agentplane.system_tests import runner_data_archive
 
 
 def _plan(tmp_path: Path, backups: list[dict[str, str]]) -> Path:
@@ -75,7 +75,7 @@ def test_archive_skips_only_successfully_backed_sqlite_sidecars(
         return iter(children)
 
     monkeypatch.setattr(Path, "iterdir", vanish_during_listing)
-    assert capture(plan) == 0
+    assert runner_data_archive.capture(plan) == 0
     manifest = _manifest(tmp_path)
     assert manifest["archive"] == "complete"
     assert manifest["backups"]["backed"]["integrity_check"] == "ok"
@@ -88,7 +88,7 @@ def test_archive_skips_only_successfully_backed_sqlite_sidecars(
     assert "state/durable.txt" in names
 
 
-@pytest.mark.parametrize("filename", ["durable.txt", "unbacked.sqlite-journal"])
+@pytest.mark.parametrize("filename", ["durable.txt", "notes.sqlite", "unbacked.sqlite-journal"])
 def test_archive_still_fails_for_unbacked_disappearing_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, filename: str
 ) -> None:
@@ -106,10 +106,86 @@ def test_archive_still_fails_for_unbacked_disappearing_files(
         return iter(children)
 
     monkeypatch.setattr(Path, "iterdir", vanish_during_listing)
-    assert capture(plan) == 1
+    assert runner_data_archive.capture(plan) == 1
     manifest = _manifest(tmp_path)
     assert manifest["archive"] == "partial_or_failed"
     assert "FileNotFoundError" in manifest["archive_error"]
+    assert not (tmp_path / "data.tar").exists()
+
+
+@pytest.mark.parametrize("journal_mode", ["DELETE", "WAL"])
+def test_archive_snapshots_discovered_harness_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, journal_mode: str
+) -> None:
+    plan = _plan(tmp_path, [])
+    mount = tmp_path / "mount"
+    database = mount / "thread_history_1.sqlite"
+    with sqlite3.connect(database) as writer:
+        writer.execute(f"PRAGMA journal_mode={journal_mode}")
+        writer.execute("CREATE TABLE history (message TEXT)")
+        writer.execute("INSERT INTO history VALUES ('committed')")
+        writer.commit()
+        writer.execute("INSERT INTO history VALUES ('uncommitted')")
+        database.chmod(0o640)
+        metadata = database.stat()
+        (mount / "latest.sqlite").symlink_to(database.name)
+        original_iterdir = Path.iterdir
+
+        def rollback_after_listing(path: Path):
+            children = list(original_iterdir(path))
+            if path == mount and journal_mode == "DELETE":
+                assert Path(f"{database}-journal") in children
+                # Real SQLite removes its rollback journal between listing and tar stat.
+                writer.rollback()
+            return iter(children)
+
+        monkeypatch.setattr(Path, "iterdir", rollback_after_listing)
+        assert runner_data_archive.capture(plan) == 0
+        writer.rollback()
+        writer.execute("INSERT INTO history VALUES ('after capture')")
+        writer.commit()
+    with tarfile.open(tmp_path / "data.tar") as archive:
+        member = archive.getmember("state/thread_history_1.sqlite")
+        assert member.mode == 0o640
+        assert member.mtime == metadata.st_mtime
+        link = archive.getmember("state/latest.sqlite")
+        assert link.issym()
+        assert link.linkname == database.name
+        assert set(archive.getnames()) == {"state", member.name, link.name}
+        contents = archive.extractfile(member)
+        assert contents is not None
+        snapshot = tmp_path / "restored.sqlite"
+        snapshot.write_bytes(contents.read())
+    with sqlite3.connect(snapshot) as restored:
+        assert restored.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+        assert restored.execute("SELECT message FROM history").fetchall() == [("committed",)]
+
+
+def test_archive_fails_when_discovered_sqlite_backup_fails(tmp_path: Path) -> None:
+    plan = _plan(tmp_path, [])
+    (tmp_path / "mount" / "broken.sqlite").write_bytes(b"SQLite format 3\0" + bytes(100))
+    assert runner_data_archive.capture(plan) == 1
+    manifest = _manifest(tmp_path)
+    assert manifest["archive"] == "partial_or_failed"
+    assert "DatabaseError" in manifest["archive_error"]
+    assert not (tmp_path / "data.tar").exists()
+
+
+def test_archive_fails_when_sqlite_identity_changes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    plan = _plan(tmp_path, [])
+    database = tmp_path / "mount" / "history.sqlite"
+    _database(database)
+    original_backup = runner_data_archive._backup
+
+    def replace_after_backup(source: Path, destination: Path, *, journal: bool) -> dict[str, Any]:
+        result = original_backup(source, destination, journal=journal)
+        source.rename(tmp_path / "original.sqlite")
+        _database(source)
+        return result
+
+    monkeypatch.setattr(runner_data_archive, "_backup", replace_after_backup)
+    assert runner_data_archive.capture(plan) == 1
+    assert _manifest(tmp_path)["archive"] == "partial_or_failed"
     assert not (tmp_path / "data.tar").exists()
 
 
