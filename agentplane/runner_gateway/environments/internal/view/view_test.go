@@ -28,7 +28,7 @@ func TestSandboxPodViewIncludesEmptyStatus(t *testing.T) {
 	resource := testSandbox("empty", "sandbox-uid", sandboxapi.OperatingModeRunning)
 	resource.Status.Incarnation = &sandboxapi.Incarnation{Name: "empty", UID: "pod-uid"}
 	snapshot, err := View(resource, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "empty", Namespace: namespace, UID: "pod-uid"}})
-	view := snapshot.GetPod()
+	view := snapshot.GetKubernetesDiagnostics().GetPod()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,11 +45,11 @@ func TestViewUsesOnlyTheReportedPodIncarnation(t *testing.T) {
 	stale.UID = "stale-pod"
 
 	view, err := View(resource, current)
-	if err != nil || view.GetPod() == nil || view.GetPod().GetUid() != "current-pod" {
+	if err != nil || view.GetKubernetesDiagnostics().GetPod() == nil || view.GetKubernetesDiagnostics().GetPod().GetUid() != "current-pod" {
 		t.Fatalf("View(current Pod) = %#v, %v", view, err)
 	}
 	view, err = View(resource, stale)
-	if err != nil || view.GetPod() != nil {
+	if err != nil || view.GetKubernetesDiagnostics().GetPod() != nil {
 		t.Fatalf("View(stale Pod) = %#v, %v; stale incarnation must not be joined", view, err)
 	}
 }
@@ -88,8 +88,8 @@ func TestPhaseFollowsControllerModeIncarnationAndDeletionProgress(t *testing.T) 
 				resource.Status.Conditions = []metav1.Condition{{Type: sandboxapi.ConditionQuiesced, Status: metav1.ConditionTrue}}
 			}
 			descriptor, err := View(resource, nil)
-			if err != nil || descriptor.GetPhase() != test.want {
-				t.Fatalf("phase = %v, %v; want %v", descriptor.GetPhase(), err, test.want)
+			if err != nil || descriptor.GetObservedState().GetPhase() != test.want {
+				t.Fatalf("phase = %v, %v; want %v", descriptor.GetObservedState().GetPhase(), err, test.want)
 			}
 		})
 	}

@@ -310,7 +310,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <Table.Tbody>
           {rows.map((row) => {
             const ip = podIp(row);
-            const node = `${row.pod?.nodeName ?? "—"} ${ip ? `(${ip})` : ""}`;
+            const node = `${row.kubernetesDiagnostics?.pod?.nodeName ?? "—"} ${ip ? `(${ip})` : ""}`;
             return (
               <Table.Tr key={row.target!.name}>
                 <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>

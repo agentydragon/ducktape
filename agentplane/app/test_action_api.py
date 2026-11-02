@@ -323,11 +323,11 @@ async def test_live_action_policy_retries_failure_and_reuses_same_generation(
                         break
 
             assert environment.target.uid == review.sandbox.uid
-            assert environment.wake_on_send is wake_on_send
+            assert environment.configuration.wake_on_send is wake_on_send
             environment = await _get_environment(
                 browser, review.sandbox.namespace, review.sandbox.name, review.sandbox.uid
             )
-            assert environment.wake_on_send is wake_on_send
+            assert environment.configuration.wake_on_send is wake_on_send
             assert retried["action_policy"]["synced"] is True
             assert len(_get_action_policy_calls(review)) == 2
 

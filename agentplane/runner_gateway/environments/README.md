@@ -76,8 +76,8 @@ workflow organization, not isolation.
 
 `WatchEnvironments` sends an initial caller-visible inventory in bounded chunks and a completion
 marker, followed by per-environment upserts and UID-fenced removals. List, get, and both watches
-use `EnvironmentDescriptor`, including lifecycle, idle suspension, bootstrap, and current Pod
-diagnostics. Reconnection starts a new snapshot;
+use `EnvironmentDescriptor`, with configuration, observed state, caller-specific actions, and
+Kubernetes diagnostics grouped into separate submessages. Reconnection starts a new snapshot;
 intermediate changes may be coalesced. Direct ServiceAccounts named by the Gateway's
 `environment_readers` setting can read all Sandboxes; the grant does not authorize writes and is
 not inherited by delegated callers. Ordinary callers remain restricted to their exact owned Sandbox.

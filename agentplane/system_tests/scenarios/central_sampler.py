@@ -550,8 +550,8 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
             while True:
                 suspended = await client.get_environment(target)
                 if (
-                    suspended.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
-                    and not suspended.HasField("pod")
+                    suspended.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
+                    and not suspended.kubernetes_diagnostics.HasField("pod")
                 ):
                     break
                 await asyncio.sleep(0.2)
@@ -559,8 +559,8 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         await client.resume_sandbox(target)
         resumed = await wait_until_running(client, target)
         assert resumed.target.uid == deployed.sandbox_uid
-        assert resumed.HasField("pod")
-        assert resumed.pod.uid != previous_incarnation
+        assert resumed.kubernetes_diagnostics.HasField("pod")
+        assert resumed.kubernetes_diagnostics.pod.uid != previous_incarnation
 
         submitted = await deployed.dispatcher.SubmitInput(
             session_dispatcher_pb2.SubmitInputRequest(
@@ -606,7 +606,7 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         assert len(resumed_tool_outputs) == 2, (
             "expected the exec result followed by the Sandbox incarnation notice; "
             f"expected_incarnation={snapshot.expected_incarnation_uid!r}, "
-            f"resumed_incarnation={resumed.pod.uid!r}, blocked={snapshot.blocked}, "
+            f"resumed_incarnation={resumed.kubernetes_diagnostics.pod.uid!r}, blocked={snapshot.blocked}, "
             f"tool_outputs={resumed_tool_outputs!r}"
         )
         exec_output, notice_output = resumed_tool_outputs
@@ -621,7 +621,7 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         assert result["output"].splitlines() == ["before-resume", "after-resume"]
 
         assert snapshot.executor.sandbox_uid == deployed.sandbox_uid
-        assert snapshot.expected_incarnation_uid == resumed.pod.uid
+        assert snapshot.expected_incarnation_uid == resumed.kubernetes_diagnostics.pod.uid
         assert not snapshot.blocked
         (undeclared_outputs_dir() / "central-sampler-pod-resume.json").write_text(
             json.dumps(
@@ -630,7 +630,7 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
                     "sandbox": deployed.sandbox,
                     "sandbox_uid": deployed.sandbox_uid,
                     "previous_incarnation_uid": previous_incarnation,
-                    "resumed_incarnation_uid": resumed.pod.uid,
+                    "resumed_incarnation_uid": resumed.kubernetes_diagnostics.pod.uid,
                     "first_command_id": first_command_id,
                     "resumed_command_id": resumed_command_id,
                     "model_visible_notice": "The execution Sandbox changed incarnation",

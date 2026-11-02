@@ -8,6 +8,18 @@ request. All read and watch methods return the same `EnvironmentDescriptor` cont
 delegates guarded mutation to the lifecycle manager. Creation and policy mutations use private
 Kubernetes access; no method attaches a Session or grants authorization.
 
+## Descriptor shape
+
+Every list, get, and watch descriptor groups its facts by purpose. `configuration` contains the
+selected template and Session setup values, including workspace guidance, instructions, runtime
+choices, bootstrap, preset, and wake/idle-suspend policy. `observed_state` contains canonical
+controller-reported readiness, operating mode, phase, incarnation, and idle-suspend facts.
+`actions` contains caller-specific resume availability and the eligibility, generation, and token
+used to request an explicit resume. `kubernetes_diagnostics` retains the raw Sandbox status and
+current-incarnation Pod projection, including the raw Pod status consumed by the frontend's
+conditions and container diagnostics. Raw Kubernetes status supplements `observed_state`; it does
+not replace its canonical fields.
+
 ## Caller and object authorization
 
 - Methods admit a direct TokenReview-verified ServiceAccount or an explicitly configured

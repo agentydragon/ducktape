@@ -44,9 +44,11 @@ class _Slot:
         for previous in (self.pair.claude, self.pair.codex):
             current = await self.client.get_environment(previous.target)
             assert current.target.uid == previous.target.uid
-            assert current.HasField("pod")
-            assert previous.HasField("pod")
-            assert current.pod.uid == previous.pod.uid, f"shared runner was replaced: {previous.target.name}"
+            assert current.kubernetes_diagnostics.HasField("pod")
+            assert previous.kubernetes_diagnostics.HasField("pod")
+            assert current.kubernetes_diagnostics.pod.uid == previous.kubernetes_diagnostics.pod.uid, (
+                f"shared runner was replaced: {previous.target.name}"
+            )
 
 
 @asynccontextmanager

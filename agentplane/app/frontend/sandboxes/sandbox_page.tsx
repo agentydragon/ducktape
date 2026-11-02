@@ -161,7 +161,7 @@ export function SandboxPage({
   const threadsUnavailable = threadLive.stream.stalled;
   const threads = currentThreads?.threads ?? [];
   const ready = sandboxReady(sandbox);
-  const canWakeForThread = sandboxSuspended(sandbox) && sandbox?.wakeOnSend === true;
+  const canWakeForThread = sandboxSuspended(sandbox) && sandbox?.configuration?.wakeOnSend === true;
   const threadUnavailableReason = pendingOpen
     ? "An earlier thread open attempt is unconfirmed. Check opening status before creating another thread."
     : !sandbox
@@ -543,7 +543,7 @@ export function SandboxPage({
             {/* Hidden, not unmounted: what was entered, and the model catalog, outlive closing the form. */}
             <div hidden={!launching}>
               <NewThreadForm
-                presetName={sandbox?.preset ?? null}
+                presetName={sandbox?.configuration?.preset ?? null}
                 unavailableReason={threadUnavailableReason}
                 creating={creatingThread}
                 onCreate={(spec, setupScript) => void createThread(spec, setupScript)}

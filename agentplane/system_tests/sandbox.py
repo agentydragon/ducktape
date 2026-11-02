@@ -123,8 +123,16 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
 
 def record_launch_transitions(span: trace.Span, view: environment_service_pb2.EnvironmentDescriptor) -> None:
     """Mark controller and kubelet launch steps before the watch consumer observes Ready."""
-    pod_status = MessageToDict(view.pod.status) if view.HasField("pod") and view.pod.HasField("status") else None
-    sandbox_status = MessageToDict(view.status) if view.HasField("status") else None
+    pod_status = (
+        MessageToDict(view.kubernetes_diagnostics.pod.status)
+        if view.kubernetes_diagnostics.HasField("pod") and view.kubernetes_diagnostics.pod.HasField("status")
+        else None
+    )
+    sandbox_status = (
+        MessageToDict(view.kubernetes_diagnostics.sandbox_status)
+        if view.kubernetes_diagnostics.HasField("sandbox_status")
+        else None
+    )
     for source, status in (("sandbox", sandbox_status), ("pod", pod_status)):
         for condition in _dicts((status or {}).get("conditions")):
             at = condition.get("lastTransitionTime")
@@ -183,11 +191,15 @@ async def wait_until_running(
                             )
                         continue
                     view = observed
-                    last_status = MessageToDict(view.status) if view.HasField("status") else {}
+                    last_status = (
+                        MessageToDict(view.kubernetes_diagnostics.sandbox_status)
+                        if view.kubernetes_diagnostics.HasField("sandbox_status")
+                        else {}
+                    )
                     if (
-                        view.operating_mode == environment_service_pb2.OPERATING_MODE_RUNNING
-                        and view.HasField("readiness")
-                        and view.readiness.state == environment_service_pb2.READINESS_STATE_READY
+                        view.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_RUNNING
+                        and view.observed_state.HasField("readiness")
+                        and view.observed_state.readiness.state == environment_service_pb2.READINESS_STATE_READY
                     ):
                         record_launch_transitions(ready_span, view)
                         return view
@@ -234,7 +246,10 @@ async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: s
                         raise SandboxNotReadyError(
                             f"{name} has been replaced: expected {uid}, observed {view.target.uid}"
                         )
-                    if not delete_requested and view.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED:
+                    if (
+                        not delete_requested
+                        and view.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
+                    ):
                         cleanup.add_event("suspended")
                         await client.delete_sandbox(target)
                         cleanup.add_event("delete.accepted")

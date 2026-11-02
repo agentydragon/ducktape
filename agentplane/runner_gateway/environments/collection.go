@@ -187,8 +187,12 @@ func environmentDescriptorsEqual(left, right *environmentpb.EnvironmentDescripto
 	}
 	leftWithoutObservedAt := proto.Clone(left).(*environmentpb.EnvironmentDescriptor)
 	rightWithoutObservedAt := proto.Clone(right).(*environmentpb.EnvironmentDescriptor)
-	leftWithoutObservedAt.ObservedAt = nil
-	rightWithoutObservedAt.ObservedAt = nil
+	if state := leftWithoutObservedAt.GetObservedState(); state != nil {
+		state.ObservedAt = nil
+	}
+	if state := rightWithoutObservedAt.GetObservedState(); state != nil {
+		state.ObservedAt = nil
+	}
 	return proto.Equal(leftWithoutObservedAt, rightWithoutObservedAt)
 }
 

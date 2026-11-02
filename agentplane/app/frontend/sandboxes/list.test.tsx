@@ -46,8 +46,8 @@ const CREATED = {
   uid: "00000000-0000-4000-8000-000000000001",
 };
 const CREATED_INVENTORY = testSandbox(CREATED.name, CREATED.uid);
-CREATED_INVENTORY.operatingMode = OperatingMode.RUNNING;
-CREATED_INVENTORY.phase = SandboxPhase.CREATING;
+CREATED_INVENTORY.observedState!.operatingMode = OperatingMode.RUNNING;
+CREATED_INVENTORY.observedState!.phase = SandboxPhase.CREATING;
 
 // What the app serves when its configuration leaves the new-Sandbox defaults unset.
 const UNSET_DEFAULTS: NewSandboxDefaults = { wake_on_send: false, idle_suspend_after_seconds: null };
@@ -223,8 +223,7 @@ it("keeps the creation form and reports rejection without navigating", async () 
 
 it("lets a suspended sandbox be deleted", () => {
   const suspended = Object.assign(clone(EnvironmentDescriptorSchema, CREATED_INVENTORY), {
-    operatingMode: OperatingMode.SUSPENDED,
-    phase: SandboxPhase.SUSPENDED,
+    observedState: { operatingMode: OperatingMode.SUSPENDED, phase: SandboxPhase.SUSPENDED },
   });
   expect(sandboxSummary(suspended)).toEqual({ label: "Suspended", kind: "suspended" });
   expect(deletable(suspended)).toBe(true);
@@ -232,8 +231,7 @@ it("lets a suspended sandbox be deleted", () => {
 
 it("keeps lifecycle actions unavailable until the controller reports a mode", async () => {
   const unknown = Object.assign(clone(EnvironmentDescriptorSchema, CREATED_INVENTORY), {
-    operatingMode: OperatingMode.UNSPECIFIED,
-    phase: SandboxPhase.UNSPECIFIED,
+    observedState: { operatingMode: OperatingMode.UNSPECIFIED, phase: SandboxPhase.UNSPECIFIED },
   });
   const onAct = vi.fn();
   const container = document.createElement("div");
@@ -298,9 +296,9 @@ it("starts a new Sandbox with the app's wake and idle suspension defaults whatev
 });
 
 it("shows existing wake policy and updates the displayed Sandbox incarnation", async () => {
-  liveSandboxData.snapshot = {
-    environments: [Object.assign(clone(EnvironmentDescriptorSchema, CREATED_INVENTORY), { wakeOnSend: true })],
-  };
+  const sandbox = clone(EnvironmentDescriptorSchema, CREATED_INVENTORY);
+  sandbox.configuration!.wakeOnSend = true;
+  liveSandboxData.snapshot = { environments: [sandbox] };
   const { container } = await render();
   const checkbox = container.querySelector<HTMLInputElement>(
     'input[aria-label="Wake on message for test-created-sandbox"]'
@@ -316,9 +314,9 @@ it("shows existing wake policy and updates the displayed Sandbox incarnation", a
 });
 
 it("clears the pending wake policy when the request fails at the transport", async () => {
-  liveSandboxData.snapshot = {
-    environments: [Object.assign(clone(EnvironmentDescriptorSchema, CREATED_INVENTORY), { wakeOnSend: false })],
-  };
+  const sandbox = clone(EnvironmentDescriptorSchema, CREATED_INVENTORY);
+  sandbox.configuration!.wakeOnSend = false;
+  liveSandboxData.snapshot = { environments: [sandbox] };
   const { container } = await render();
   const checkbox = container.querySelector<HTMLInputElement>(
     'input[aria-label="Wake on message for test-created-sandbox"]'
@@ -370,13 +368,9 @@ async function press(element: HTMLElement, key: string): Promise<void> {
 }
 
 it("shows a Sandbox's idle suspension time and saves an edit to the incarnation shown", async () => {
-  liveSandboxData.snapshot = {
-    environments: [
-      Object.assign(clone(EnvironmentDescriptorSchema, CREATED_INVENTORY), {
-        idleSuspendAfter: create(DurationSchema, { seconds: 1800n }),
-      }),
-    ],
-  };
+  const sandbox = clone(EnvironmentDescriptorSchema, CREATED_INVENTORY);
+  sandbox.configuration!.idleSuspendAfter = create(DurationSchema, { seconds: 1800n });
+  liveSandboxData.snapshot = { environments: [sandbox] };
   const { container } = await render();
   expect(idleInput(container).value).toBe("30");
 
@@ -388,13 +382,9 @@ it("shows a Sandbox's idle suspension time and saves an edit to the incarnation 
 });
 
 it("turns idle suspension off when the time is cleared", async () => {
-  liveSandboxData.snapshot = {
-    environments: [
-      Object.assign(clone(EnvironmentDescriptorSchema, CREATED_INVENTORY), {
-        idleSuspendAfter: create(DurationSchema, { seconds: 1800n }),
-      }),
-    ],
-  };
+  const sandbox = clone(EnvironmentDescriptorSchema, CREATED_INVENTORY);
+  sandbox.configuration!.idleSuspendAfter = create(DurationSchema, { seconds: 1800n });
+  liveSandboxData.snapshot = { environments: [sandbox] };
   const { container } = await render();
   const patch = vi.spyOn(sandboxClient, "setEnvironmentIdleSuspend").mockResolvedValue(undefined);
 
@@ -405,13 +395,9 @@ it("turns idle suspension off when the time is cleared", async () => {
 });
 
 it("puts back the stored idle suspension time and reports a refused edit", async () => {
-  liveSandboxData.snapshot = {
-    environments: [
-      Object.assign(clone(EnvironmentDescriptorSchema, CREATED_INVENTORY), {
-        idleSuspendAfter: create(DurationSchema, { seconds: 1800n }),
-      }),
-    ],
-  };
+  const sandbox = clone(EnvironmentDescriptorSchema, CREATED_INVENTORY);
+  sandbox.configuration!.idleSuspendAfter = create(DurationSchema, { seconds: 1800n });
+  liveSandboxData.snapshot = { environments: [sandbox] };
   const { container } = await render();
   vi.spyOn(sandboxClient, "setEnvironmentIdleSuspend").mockRejectedValue(new Error("Test edit refused"));
 

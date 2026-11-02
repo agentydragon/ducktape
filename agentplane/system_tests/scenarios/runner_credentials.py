@@ -70,8 +70,8 @@ async def _wait_suspended(client: Client, target: environment_service_pb2.Target
         ):
             with attempt:
                 view = await client.get_environment(target)
-                assert view.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
-                assert not view.HasField("pod")
+                assert view.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
+                assert not view.kubernetes_diagnostics.HasField("pod")
 
 
 async def _open_agent(
@@ -147,8 +147,8 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
     scripted: ScriptedUpstream,
 ) -> None:
     view = await sandbox(f"systest-runner-pod-{uuid4().hex[:8]}", template=POD_TEMPLATE)
-    assert view.HasField("pod")
-    old_pod_uid, old_credential_id = await _identity(cluster, view.pod.name)
+    assert view.kubernetes_diagnostics.HasField("pod")
+    old_pod_uid, old_credential_id = await _identity(cluster, view.kubernetes_diagnostics.pod.name)
     await _ready_certificate(
         cluster,
         f"runner-{old_credential_id}",
@@ -159,7 +159,7 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
     )
 
     agent = await _open_agent(client, dispatcher, view, harness, offered_model)
-    model = scripted.model(view.pod.name, harness)
+    model = scripted.model(view.kubernetes_diagnostics.pod.name, harness)
     marker = f"POD_CONTEXT_{uuid4().hex}"
     turn, history_before, _ = await scripted_turn_with_admission_and_history(
         client,
@@ -177,8 +177,8 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
     await client.resume_sandbox(view.target)
     resumed = await wait_until_running(client, view.target)
     assert resumed.target.uid == view.target.uid
-    assert resumed.HasField("pod")
-    new_pod_uid, new_credential_id = await _identity(cluster, resumed.pod.name)
+    assert resumed.kubernetes_diagnostics.HasField("pod")
+    new_pod_uid, new_credential_id = await _identity(cluster, resumed.kubernetes_diagnostics.pod.name)
     assert new_pod_uid != old_pod_uid
     assert new_credential_id != old_credential_id
     await _ready_certificate(
@@ -190,7 +190,7 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
         resumed.target.namespace,
     )
 
-    resumed_model = scripted.model(resumed.pod.name, harness)
+    resumed_model = scripted.model(resumed.kubernetes_diagnostics.pod.name, harness)
     turn, history_after, recall = await scripted_turn_with_admission_and_history(
         client,
         agent,
@@ -211,8 +211,8 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
 async def check_vm_runner_certificate(
     cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor
 ) -> tuple[str, str]:
-    assert view.HasField("pod")
-    identity = await _identity(cluster, view.pod.name)
+    assert view.kubernetes_diagnostics.HasField("pod")
+    identity = await _identity(cluster, view.kubernetes_diagnostics.pod.name)
     _, credential_id = identity
     await _ready_certificate(
         cluster, f"runner-{credential_id}", view.target.name, str(view.target.uid), credential_id, view.target.namespace

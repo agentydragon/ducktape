@@ -257,25 +257,28 @@ func (a *app) writeProtoJSON(message proto.Message) error {
 func environmentText(environment *environmentpb.EnvironmentDescriptor) string {
 	var output strings.Builder
 	target := environment.GetTarget()
-	fmt.Fprintf(&output, "%s/%s uid=%s readiness=%s", target.GetNamespace(), target.GetName(), target.GetUid(), environment.GetReadiness().GetState())
+	configuration := environment.GetConfiguration()
+	state := environment.GetObservedState()
+	actions := environment.GetActions()
+	fmt.Fprintf(&output, "%s/%s uid=%s readiness=%s", target.GetNamespace(), target.GetName(), target.GetUid(), state.GetReadiness().GetState())
 	account := environment.GetExecutionAccount()
 	fmt.Fprintf(&output, " account=%s/%s uid=%s", account.GetNamespace(), account.GetName(), account.GetUid())
-	fmt.Fprintf(&output, " mode=%s automatic_wake=%s wake_on_send=%t", environment.GetOperatingMode(), environment.GetAutomaticWake(), environment.GetWakeOnSend())
-	eligibility := environment.GetResumeEligibility()
-	fmt.Fprintf(&output, " explicit_resume=%s reason=%s wake_generation=%d", eligibility.GetState(), eligibility.GetReason(), environment.GetWakeGeneration())
-	if environment.GetResumeToken() != "" {
-		fmt.Fprintf(&output, "\n  resume_token=%s", environment.GetResumeToken())
+	fmt.Fprintf(&output, " mode=%s automatic_wake=%s wake_on_send=%t", state.GetOperatingMode(), actions.GetAutomaticWake(), configuration.GetWakeOnSend())
+	eligibility := actions.GetResumeEligibility()
+	fmt.Fprintf(&output, " explicit_resume=%s reason=%s wake_generation=%d", eligibility.GetState(), eligibility.GetReason(), actions.GetWakeGeneration())
+	if actions.GetResumeToken() != "" {
+		fmt.Fprintf(&output, "\n  resume_token=%s", actions.GetResumeToken())
 	}
-	workspace := environment.GetWorkspace()
+	workspace := configuration.GetWorkspace()
 	fmt.Fprintf(&output, " workspace=%s", workspace.GetAvailability())
 	if workspace.GetAvailability() == environmentpb.Availability_AVAILABILITY_CONFIGURED {
 		fmt.Fprintf(&output, " root=%s provenance=%s root_enforced=%t creates_missing_cwd=%t", workspace.GetRoot(), workspace.GetProvenance(), workspace.GetRootEnforced(), workspace.GetCreatesMissingCwd())
 	}
-	fmt.Fprintf(&output, " configurations=%s", environment.GetConfigurationsAvailability())
-	for _, configuration := range environment.GetConfigurations() {
-		fmt.Fprintf(&output, "\n  %s %s (%s) efforts=%s", configuration.GetHarness(), configuration.GetModel(), configuration.GetDisplayName(), strings.Join(configuration.GetReasoningEfforts(), ","))
+	fmt.Fprintf(&output, " configurations=%s", configuration.GetConfigurationsAvailability())
+	for _, runtime := range configuration.GetConfigurations() {
+		fmt.Fprintf(&output, "\n  %s %s (%s) efforts=%s", runtime.GetHarness(), runtime.GetModel(), runtime.GetDisplayName(), strings.Join(runtime.GetReasoningEfforts(), ","))
 	}
-	if readiness := environment.GetReadiness(); readiness.GetReason() != "" || readiness.GetDetail() != "" {
+	if readiness := state.GetReadiness(); readiness.GetReason() != "" || readiness.GetDetail() != "" {
 		fmt.Fprintf(&output, "\n  readiness_reason=%s detail=%q", readiness.GetReason(), readiness.GetDetail())
 	}
 	return output.String()

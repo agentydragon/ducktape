@@ -40,8 +40,8 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         policies=list(preset.policy_sets),
         bootstrap=preset.bootstrap,
     )
-    assert view.preset == launch_preset.SANDBOX_PRESET
-    assert view.HasField("binding")
+    assert view.configuration.preset == launch_preset.SANDBOX_PRESET
+    assert view.configuration.HasField("binding")
 
     with tracer.start_as_current_span(
         "system_test.launch_preset.admit_first_session", record_exception=False, set_status_on_exception=False
@@ -72,8 +72,8 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         expected_reasoning_effort,
     )
 
-    assert view.HasField("pod")
-    model = scripted.model(view.pod.name, session_pb2.HARNESS_CODEX)
+    assert view.kubernetes_diagnostics.HasField("pod")
+    model = scripted.model(view.kubernetes_diagnostics.pod.name, session_pb2.HARNESS_CODEX)
     agent = Agent(
         client,
         dispatcher,
@@ -102,7 +102,7 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
             await model.reply(request, Text("The workspace is initialized."))
         assert launch_preset.READY_TEXT in turn.result().transcript
 
-    previous_incarnation = view.pod.uid
+    previous_incarnation = view.kubernetes_diagnostics.pod.uid
     with tracer.start_as_current_span(
         "system_test.launch_preset.suspend_queue", record_exception=False, set_status_on_exception=False
     ):
@@ -110,8 +110,9 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         suspend_deadline = time.monotonic() + SANDBOX_READY_SECONDS
         while True:
             suspended = await client.get_environment(view.target)
-            if suspended.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED and not suspended.HasField(
-                "pod"
+            if (
+                suspended.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
+                and not suspended.kubernetes_diagnostics.HasField("pod")
             ):
                 break
             if time.monotonic() >= suspend_deadline:
@@ -140,8 +141,8 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
                 raise TimeoutError(f"Suspended Session opening {suspended_id} had no typed operator-stop assessment")
             await asyncio.sleep(0.2)
         still_suspended = await client.get_environment(view.target)
-        assert still_suspended.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
-        assert not still_suspended.HasField("pod")
+        assert still_suspended.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
+        assert not still_suspended.kubernetes_diagnostics.HasField("pod")
 
     with tracer.start_as_current_span(
         "system_test.launch_preset.resume_and_admit", record_exception=False, set_status_on_exception=False
@@ -149,8 +150,8 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         await client.resume_sandbox(view.target)
         resumed = await wait_until_running(client, view.target)
         assert resumed.target.uid == view.target.uid
-        assert resumed.HasField("pod")
-        assert resumed.pod.uid != previous_incarnation
+        assert resumed.kubernetes_diagnostics.HasField("pod")
+        assert resumed.kubernetes_diagnostics.pod.uid != previous_incarnation
         await client.wait_for_session_admission(
             view.target.name, suspended_id, opening=suspended_opening, timeout_s=RUNNER_ANSWERS_SECONDS
         )

@@ -172,7 +172,7 @@ async def test_parent_session_delegates_through_the_action_cli(
 ) -> None:
     offered = await models_offered_for(client, [session_pb2.HARNESS_CODEX])
     parent_view = await sandbox("systest-parent-delegation")
-    assert parent_view.HasField("pod")
+    assert parent_view.kubernetes_diagnostics.HasField("pod")
     await _wait_basic_policy(cluster, parent_view, policy_objects)
     service_account = json.loads(
         await cluster.kubectl("get", "serviceaccount", parent_view.execution_account.name, "-o", "json")
@@ -189,7 +189,7 @@ async def test_parent_session_delegates_through_the_action_cli(
         harness=session_pb2.HARNESS_CODEX,
         model=offered[session_pb2.HARNESS_CODEX],
     )
-    model = scripted.model(parent_view.pod.name, session_pb2.HARNESS_CODEX)
+    model = scripted.model(parent_view.kubernetes_diagnostics.pod.name, session_pb2.HARNESS_CODEX)
     guidance_marker = f"PARENT-CHILD-GUIDANCE-{uuid4()}"
     child_answers: dict[str, str] = {}
 
@@ -250,10 +250,13 @@ async def test_parent_session_delegates_through_the_action_cli(
     assert execution_account["namespace"] == caller_namespace
     assert execution_account["name"] == caller_name
     assert execution_account["uid"] == caller_uid
-    assert current["readiness"]["state"] == "READINESS_STATE_READY"
-    workspace = current["workspace"]
+    assert current["observed_state"]["readiness"]["state"] == "READINESS_STATE_READY"
+    configuration_group = current["configuration"]
+    workspace = configuration_group["workspace"]
     assert workspace["availability"] == "AVAILABILITY_CONFIGURED"
-    configuration = one(choice for choice in current["configurations"] if choice["harness"] == "HARNESS_CODEX")
+    configuration = one(
+        choice for choice in configuration_group["configurations"] if choice["harness"] == "HARNESS_CODEX"
+    )
     reasoning_effort = next(effort for effort in configuration["reasoning_efforts"] if effort)
 
     session_id = str(uuid4())

@@ -386,34 +386,34 @@ func (s *Service) describe(
 	descriptor.ExecutionAccount = &environmentpb.AccountHandle{
 		Namespace: execution.Namespace, Name: execution.Name, Uid: execution.UID,
 	}
-	descriptor.AutomaticWake = automaticWake
-	descriptor.ResumeEligibility = eligibility
-	descriptor.WakeGeneration = generation
-	if eligibility.GetState() == environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_AVAILABLE {
-		descriptor.ResumeToken = lifecycle.NewResumeToken(target, generation)
+	descriptor.Actions = &environmentpb.EnvironmentActions{
+		AutomaticWake: automaticWake, ResumeEligibility: eligibility, WakeGeneration: generation,
 	}
-	descriptor.ObservedAt = timestamppb.New(time.Now().UTC())
-	descriptor.Workspace = &environmentpb.WorkspaceGuidance{Availability: environmentpb.Availability_AVAILABILITY_UNAVAILABLE}
-	descriptor.Instructions = &environmentpb.TextFact{Availability: environmentpb.Availability_AVAILABILITY_ABSENT}
-	descriptor.ConfigurationsAvailability = environmentpb.Availability_AVAILABILITY_UNAVAILABLE
+	if eligibility.GetState() == environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_AVAILABLE {
+		descriptor.Actions.ResumeToken = lifecycle.NewResumeToken(target, generation)
+	}
+	descriptor.ObservedState.ObservedAt = timestamppb.New(time.Now().UTC())
+	descriptor.Configuration.Workspace = &environmentpb.WorkspaceGuidance{Availability: environmentpb.Availability_AVAILABILITY_UNAVAILABLE}
+	descriptor.Configuration.Instructions = &environmentpb.TextFact{Availability: environmentpb.Availability_AVAILABILITY_ABSENT}
+	descriptor.Configuration.ConfigurationsAvailability = environmentpb.Availability_AVAILABILITY_UNAVAILABLE
 	template, known := s.runtime.Templates[object.Spec.Template]
 	if !known {
 		return descriptor, nil
 	}
 	if template.WorkspaceRoot == "" {
-		descriptor.Workspace.Availability = environmentpb.Availability_AVAILABILITY_ABSENT
+		descriptor.Configuration.Workspace.Availability = environmentpb.Availability_AVAILABILITY_ABSENT
 	} else if template.WorkspaceProvenance == runtimeconfig.ProvenanceDeploymentConfig {
-		descriptor.Workspace.Availability = environmentpb.Availability_AVAILABILITY_CONFIGURED
-		descriptor.Workspace.Root = template.WorkspaceRoot
-		descriptor.Workspace.Provenance = environmentpb.Provenance_PROVENANCE_DEPLOYMENT_CONFIG
-		descriptor.Workspace.RootEnforced = template.WorkspaceRootEnforced
-		descriptor.Workspace.CreatesMissingCwd = template.CreatesMissingCWD
+		descriptor.Configuration.Workspace.Availability = environmentpb.Availability_AVAILABILITY_CONFIGURED
+		descriptor.Configuration.Workspace.Root = template.WorkspaceRoot
+		descriptor.Configuration.Workspace.Provenance = environmentpb.Provenance_PROVENANCE_DEPLOYMENT_CONFIG
+		descriptor.Configuration.Workspace.RootEnforced = template.WorkspaceRootEnforced
+		descriptor.Configuration.Workspace.CreatesMissingCwd = template.CreatesMissingCWD
 	}
-	descriptor.Configurations = configuredChoices(s.runtime.Models)
-	if len(descriptor.Configurations) == 0 {
-		descriptor.ConfigurationsAvailability = environmentpb.Availability_AVAILABILITY_ABSENT
+	descriptor.Configuration.Configurations = configuredChoices(s.runtime.Models)
+	if len(descriptor.Configuration.Configurations) == 0 {
+		descriptor.Configuration.ConfigurationsAvailability = environmentpb.Availability_AVAILABILITY_ABSENT
 	} else {
-		descriptor.ConfigurationsAvailability = environmentpb.Availability_AVAILABILITY_CONFIGURED
+		descriptor.Configuration.ConfigurationsAvailability = environmentpb.Availability_AVAILABILITY_CONFIGURED
 	}
 	return descriptor, nil
 }

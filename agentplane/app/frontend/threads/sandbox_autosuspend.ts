@@ -46,25 +46,32 @@ export function autosuspendHint(
   if (!sandbox) return null;
   if (!fresh) return { text: "Autosuspend timing unavailable", deadline: null };
 
-  if (sandbox.phase === SandboxPhase.SUSPENDING) {
-    return { text: `Sandbox ${sandbox.suspendedBy === "Idle" ? "suspending (idle)" : "suspending"}`, deadline: null };
+  if (sandbox.observedState?.phase === SandboxPhase.SUSPENDING) {
+    return {
+      text: `Sandbox ${sandbox.observedState?.suspendedBy === "Idle" ? "suspending (idle)" : "suspending"}`,
+      deadline: null,
+    };
   }
   if (sandboxSuspended(sandbox)) {
     const reason =
-      sandbox.suspendedBy === "Idle" ? " (idle)" : sandbox.suspendedBy === "Requested" ? " (on request)" : "";
+      sandbox.observedState?.suspendedBy === "Idle"
+        ? " (idle)"
+        : sandbox.observedState?.suspendedBy === "Requested"
+          ? " (on request)"
+          : "";
     return { text: `Sandbox suspended${reason}`, deadline: null };
   }
 
-  const duration = sandbox.idleSuspendAfter;
+  const duration = sandbox.configuration?.idleSuspendAfter;
   if (duration === undefined) return { text: "Autosuspend off", deadline: null };
   const suspendAfter = Number(duration.seconds) + duration.nanos / 1e9;
   if (!Number.isFinite(suspendAfter) || suspendAfter < 60) {
     return { text: "Autosuspend timing unavailable", deadline: null };
   }
 
-  const timestamp = sandbox.idleSuspendAt;
-  if (sandbox.phase === SandboxPhase.RUNNING) {
-    const blockers = sandbox.autosuspendBlockers;
+  const timestamp = sandbox.observedState?.idleSuspendAt;
+  if (sandbox.observedState?.phase === SandboxPhase.RUNNING) {
+    const blockers = sandbox.observedState?.autosuspendBlockers ?? [];
     const first = blockers[0];
     if (first) {
       const more = blockers.length > 1 ? ` · +${blockers.length - 1}` : "";
@@ -77,7 +84,7 @@ export function autosuspendHint(
   }
 
   if (sandboxStarting(sandbox)) return { text: "Autosuspend waiting: Sandbox starting", deadline: null };
-  if (sandbox.phase !== SandboxPhase.RUNNING || !sandboxReady(sandbox)) {
+  if (sandbox.observedState?.phase !== SandboxPhase.RUNNING || !sandboxReady(sandbox)) {
     return { text: "Autosuspend timing unavailable", deadline: null };
   }
   if (timestamp === undefined) {

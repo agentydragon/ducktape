@@ -210,8 +210,8 @@ async def every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event
     offered_model: str,
     scripted: ScriptedUpstream,
 ) -> None:
-    assert view.HasField("pod")
-    model = scripted.model(view.pod.name, harness)
+    assert view.kubernetes_diagnostics.HasField("pod")
+    model = scripted.model(view.kubernetes_diagnostics.pod.name, harness)
     thread_id = await _open(client, dispatcher, view, harness, offered_model)
 
     async with tab(http, thread_id) as first:
@@ -276,8 +276,8 @@ async def turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_inp
     scripted: ScriptedUpstream,
 ) -> None:
     """No tab is open while either turn runs: the runner's feed, not a watcher, is what archives them."""
-    assert view.HasField("pod")
-    model = scripted.model(view.pod.name, harness)
+    assert view.kubernetes_diagnostics.HasField("pod")
+    model = scripted.model(view.kubernetes_diagnostics.pod.name, harness)
     thread_id = await _open(client, dispatcher, view, harness, offered_model)
 
     failing = _input("test-failing-input", "Reply with exactly: MODEL_HTTP_ERROR")

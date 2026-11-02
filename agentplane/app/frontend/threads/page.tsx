@@ -36,7 +36,7 @@ function suspendedSandboxLabel(sandbox: EnvironmentDescriptor): string {
 
 function sandboxComposerPlaceholder(sandbox: EnvironmentDescriptor | undefined, inventoryFresh: boolean): string {
   if (!sandbox || !inventoryFresh || !sandboxSuspended(sandbox)) return DEFAULT_COMPOSER_PLACEHOLDER;
-  return sandbox.wakeOnSend
+  return sandbox.configuration?.wakeOnSend
     ? `${suspendedSandboxLabel(sandbox)} Wake on message is on; submitted commands will queue while it wakes. ${DEFAULT_COMPOSER_PLACEHOLDER}`
     : `${suspendedSandboxLabel(sandbox)} Wake on message is off; submitted commands stay queued until you resume it manually.`;
 }
@@ -96,8 +96,9 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
     commandsRequireReadySandbox &&
     inventoryFresh &&
     sandbox !== undefined &&
-    ((suspended && sandbox.wakeOnSend) || sandboxStarting(sandbox));
-  const canResumeSandbox = commandsRequireReadySandbox && inventoryFresh && suspended && sandbox?.wakeOnSend === false;
+    ((suspended && sandbox.configuration?.wakeOnSend) || sandboxStarting(sandbox));
+  const canResumeSandbox =
+    commandsRequireReadySandbox && inventoryFresh && suspended && sandbox?.configuration?.wakeOnSend === false;
   useEffect(() => {
     let current = true;
     setError(null);

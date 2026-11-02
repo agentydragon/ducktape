@@ -453,8 +453,8 @@ async def test_get_environment_uses_the_exact_generated_route_and_uid_query() ->
             writer,
             "200 OK",
             b'{"target":{"namespace":"test-ns","name":"box","uid":"target-uid"},'
-            b'"operatingMode":"OPERATING_MODE_RUNNING",'
-            b'"readiness":{"state":"READINESS_STATE_READY"}}',
+            b'"observedState":{"operatingMode":"OPERATING_MODE_RUNNING",'
+            b'"readiness":{"state":"READINESS_STATE_READY"}}}',
             "application/json",
         )
 
@@ -463,8 +463,8 @@ async def test_get_environment_uses_the_exact_generated_route_and_uid_query() ->
         environment = await client.get_environment(target)
 
     assert environment.target == target
-    assert environment.operating_mode == environment_service_pb2.OPERATING_MODE_RUNNING
-    assert environment.readiness.state == environment_service_pb2.READINESS_STATE_READY
+    assert environment.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_RUNNING
+    assert environment.observed_state.readiness.state == environment_service_pb2.READINESS_STATE_READY
     assert "GET /upstream/environments/v1/environments/test-ns/box?target.uid=target-uid HTTP/1.1" in observed[0]
 
 

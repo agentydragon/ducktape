@@ -184,41 +184,62 @@ message RuntimeConfiguration {
   Provenance provenance = 5;
 }
 
+message EnvironmentConfiguration {
+  string template = 1;
+  WorkspaceGuidance workspace = 2;
+  TextFact instructions = 3;
+  repeated RuntimeConfiguration configurations = 4;
+  Availability configurations_availability = 5;
+  SandboxBinding binding = 6;
+  optional string preset = 7;
+  bool wake_on_send = 8;
+  google.protobuf.Duration idle_suspend_after = 9;
+}
+
+message EnvironmentObservedState {
+  Readiness readiness = 1;
+  google.protobuf.Timestamp observed_at = 2;
+  OperatingMode operating_mode = 3;
+  SandboxPhase phase = 4;
+  string stop_stage = 5;
+  // The current Sandbox workload incarnation is not the Sandbox UID in target.
+  string runtime_incarnation_uid = 6;
+  google.protobuf.Timestamp created_at = 7;
+  optional string suspended_by = 8;
+  google.protobuf.Timestamp idle_suspend_at = 9;
+  repeated agentplane.proto.AutosuspendBlocker autosuspend_blockers = 10;
+}
+
+// Caller-specific capabilities and preconditions for actions on this environment.
+message EnvironmentActions {
+  // Availability of wake-on-send, distinct from permission to request an explicit resume.
+  AutomaticWakeState automatic_wake = 1;
+  // Absent for deleting environments retained in the broad inventory view; they cannot be resumed.
+  agentplane.proto.ResumeEligibility resume_eligibility = 2;
+  // The observed generation and opaque precondition used by ResumeEnvironment.
+  int64 wake_generation = 3;
+  string resume_token = 4;
+}
+
+// Raw Kubernetes projections retained for diagnosis and exact live-incarnation inspection.
+message KubernetesDiagnostics {
+  google.protobuf.Struct sandbox_status = 1;
+  SandboxPod pod = 2;
+}
+
 message EnvironmentDescriptor {
   TargetHandle target = 1;
   AccountHandle execution_account = 2;
-  Readiness readiness = 3;
-  WorkspaceGuidance workspace = 4;
-  TextFact instructions = 5;
-  repeated RuntimeConfiguration configurations = 6;
-  Availability configurations_availability = 7;
-  google.protobuf.Timestamp observed_at = 8;
-  string template = 9;
-  OperatingMode operating_mode = 10;
-  string stop_stage = 11;
-  bool wake_on_send = 12;
-  // Availability of wake-on-send, distinct from permission to request an explicit resume.
-  AutomaticWakeState automatic_wake = 13;
-  // The current Sandbox workload incarnation is not the Sandbox UID in target.
-  string runtime_incarnation_uid = 14;
-  // Caller-specific permission for an explicit resume request. Absent for deleting environments
-  // retained in the broad inventory view; they cannot be resumed.
-  agentplane.proto.ResumeEligibility resume_eligibility = 15;
-  // The observed generation and opaque precondition used by ResumeEnvironment.
-  int64 wake_generation = 16;
-  string resume_token = 17;
-  // Full Sandbox projection used for operator diagnostics and exact live-incarnation inspection.
-  // The environment-facing identity and state facts above are not repeated here.
-  google.protobuf.Timestamp created_at = 18;
-  SandboxBinding binding = 19;
-  SandboxPod pod = 20;
-  google.protobuf.Struct status = 21;
-  SandboxPhase phase = 22;
-  optional string preset = 23;
-  google.protobuf.Duration idle_suspend_after = 24;
-  optional string suspended_by = 25;
-  google.protobuf.Timestamp idle_suspend_at = 26;
-  repeated agentplane.proto.AutosuspendBlocker autosuspend_blockers = 27;
+  reserved 3 to 27;
+  reserved
+      "readiness", "workspace", "instructions", "configurations", "configurations_availability", "observed_at",
+      "template", "operating_mode", "stop_stage", "wake_on_send", "resume", "automatic_wake", "runtime_incarnation_uid",
+      "resume_eligibility", "wake_generation", "resume_token", "created_at", "binding", "pod", "status", "phase",
+      "preset", "idle_suspend_after", "suspended_by", "idle_suspend_at", "autosuspend_blockers";
+  EnvironmentConfiguration configuration = 28;
+  EnvironmentObservedState observed_state = 29;
+  EnvironmentActions actions = 30;
+  KubernetesDiagnostics kubernetes_diagnostics = 31;
 }
 
 message ResumeEnvironmentRequest {

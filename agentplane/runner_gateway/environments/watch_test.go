@@ -224,7 +224,7 @@ func TestWatchEnvironmentSendsCurrentStateUpdatesAndFreshReconnectSnapshot(t *te
 		t.Fatal(err)
 	}
 	got, err := f.rpc.GetEnvironment(f.ctx, &environmentpb.GetEnvironmentRequest{Target: f.target})
-	if err != nil || got.GetOperatingMode() != environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED {
+	if err != nil || got.GetObservedState().GetOperatingMode() != environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED {
 		t.Fatalf("GetEnvironment on a suspended target = %v, %v", got, err)
 	}
 	ctx, cancel := context.WithCancel(f.ctx)
@@ -236,7 +236,7 @@ func TestWatchEnvironmentSendsCurrentStateUpdatesAndFreshReconnectSnapshot(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	got.ObservedAt, initial.Environment.ObservedAt = nil, nil
+	got.ObservedState.ObservedAt, initial.Environment.ObservedState.ObservedAt = nil, nil
 	if !proto.Equal(got, initial.Environment) {
 		t.Fatalf("initial watch snapshot = %v, want current Get snapshot %v", initial, got)
 	}
@@ -261,7 +261,7 @@ func TestWatchEnvironmentSendsCurrentStateUpdatesAndFreshReconnectSnapshot(t *te
 		t.Fatal(err)
 	}
 	ready, err := stream.Recv()
-	if err != nil || ready.GetEnvironment().GetReadiness().GetState() != environmentpb.ReadinessState_READINESS_STATE_READY {
+	if err != nil || ready.GetEnvironment().GetObservedState().GetReadiness().GetState() != environmentpb.ReadinessState_READINESS_STATE_READY {
 		t.Fatalf("next snapshot = %v, %v, want Ready without an unchanged intermediate snapshot", ready, err)
 	}
 	cancel()
@@ -274,7 +274,7 @@ func TestWatchEnvironmentSendsCurrentStateUpdatesAndFreshReconnectSnapshot(t *te
 		t.Fatal(err)
 	}
 	fresh, err := reconnected.Recv()
-	if err != nil || fresh.GetEnvironment().GetReadiness().GetState() != environmentpb.ReadinessState_READINESS_STATE_READY {
+	if err != nil || fresh.GetEnvironment().GetObservedState().GetReadiness().GetState() != environmentpb.ReadinessState_READINESS_STATE_READY {
 		t.Fatalf("reconnected initial snapshot = %v, %v, want current Ready state", fresh, err)
 	}
 }
@@ -298,7 +298,7 @@ func TestWatchEnvironmentCoalescesCurrentPodStatusAndFencesReplacement(t *testin
 		t.Fatal(err)
 	}
 	initial, err := stream.Recv()
-	if err != nil || initial.GetEnvironment().GetPod().GetUid() != string(pod.UID) {
+	if err != nil || initial.GetEnvironment().GetKubernetesDiagnostics().GetPod().GetUid() != string(pod.UID) {
 		t.Fatalf("initial Pod snapshot = %v, %v", initial, err)
 	}
 	pod.Status.Phase = corev1.PodRunning
@@ -306,14 +306,14 @@ func TestWatchEnvironmentCoalescesCurrentPodStatusAndFencesReplacement(t *testin
 		t.Fatal(err)
 	}
 	updated, err := stream.Recv()
-	if err != nil || updated.GetEnvironment().GetPod().GetStatus().AsMap()["phase"] != "Running" {
+	if err != nil || updated.GetEnvironment().GetKubernetesDiagnostics().GetPod().GetStatus().AsMap()["phase"] != "Running" {
 		t.Fatalf("Pod status snapshot = %v, %v", updated, err)
 	}
 	if err := f.objects.Delete(f.ctx, pod); err != nil {
 		t.Fatal(err)
 	}
 	removedPod, err := stream.Recv()
-	if err != nil || removedPod.GetEnvironment().GetPod() != nil || removedPod.GetEnvironment().GetRuntimeIncarnationUid() != string(pod.UID) {
+	if err != nil || removedPod.GetEnvironment().GetKubernetesDiagnostics().GetPod() != nil || removedPod.GetEnvironment().GetObservedState().GetRuntimeIncarnationUid() != string(pod.UID) {
 		t.Fatalf("deleted current Pod snapshot = %v, %v", removedPod, err)
 	}
 	replacement := &corev1.Pod{
@@ -327,7 +327,7 @@ func TestWatchEnvironmentCoalescesCurrentPodStatusAndFencesReplacement(t *testin
 		t.Fatal("replacement Pod reused the previous UID")
 	}
 	got, err := f.rpc.GetEnvironment(f.ctx, &environmentpb.GetEnvironmentRequest{Target: f.target})
-	if err != nil || got.GetPod() != nil {
+	if err != nil || got.GetKubernetesDiagnostics().GetPod() != nil {
 		t.Fatalf("same-name replacement GetEnvironment = %v, %v, want no current Pod", got, err)
 	}
 }
@@ -570,7 +570,7 @@ func TestCollectionWatchUpsertsAndRemovesOnAccountLoss(t *testing.T) {
 		t.Fatal(err)
 	}
 	changed, err := stream.Recv()
-	if err != nil || !changed.GetUpsert().GetWakeOnSend() {
+	if err != nil || !changed.GetUpsert().GetConfiguration().GetWakeOnSend() {
 		t.Fatalf("upsert = %v, %v", changed, err)
 	}
 	var account corev1.ServiceAccount
@@ -676,7 +676,7 @@ func TestCollectionWatchTracksIncarnationPodChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	frame, err := stream.Recv()
-	if err != nil || frame.GetUpsert().GetPod().GetUid() != string(pod.UID) {
+	if err != nil || frame.GetUpsert().GetKubernetesDiagnostics().GetPod().GetUid() != string(pod.UID) {
 		t.Fatalf("incarnation upsert = %v, %v", frame, err)
 	}
 	pod.Status.Phase = corev1.PodRunning
@@ -684,7 +684,7 @@ func TestCollectionWatchTracksIncarnationPodChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	frame, err = stream.Recv()
-	if err != nil || frame.GetUpsert().GetPod().GetStatus().AsMap()["phase"] != "Running" {
+	if err != nil || frame.GetUpsert().GetKubernetesDiagnostics().GetPod().GetStatus().AsMap()["phase"] != "Running" {
 		t.Fatalf("Pod status upsert = %v, %v", frame, err)
 	}
 }

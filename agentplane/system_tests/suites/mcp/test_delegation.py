@@ -293,7 +293,7 @@ async def test_external_connection_delegates_without_the_integration_app(
     boundary_evidence: dict[str, Any] | None = None
     try:
         view = await wait_until_running(client, created)
-        assert view.HasField("pod")
+        assert view.kubernetes_diagnostics.HasField("pod")
         await _wait_basic_policy(cluster, view, policy_objects)
 
         response = await operator_bff.get("/upstream/connections/v1/operator/caller-service-accounts")
@@ -341,11 +341,12 @@ async def test_external_connection_delegates_without_the_integration_app(
                 assert execution_account["namespace"] == account.namespace
                 assert execution_account["name"] == account.name
                 assert execution_account["uid"]
-                assert current["readiness"]["state"] == "READINESS_STATE_READY"
-                workspace = current["workspace"]
+                assert current["observed_state"]["readiness"]["state"] == "READINESS_STATE_READY"
+                configuration_group = current["configuration"]
+                workspace = configuration_group["workspace"]
                 assert isinstance(workspace, dict)
                 assert workspace["availability"] == "AVAILABILITY_CONFIGURED"
-                configurations = current.get("configurations")
+                configurations = configuration_group.get("configurations")
                 assert isinstance(configurations, list)
                 configuration = one(
                     choice
@@ -378,7 +379,7 @@ async def test_external_connection_delegates_without_the_integration_app(
                 )
                 assert isinstance(opening.get("opening"), dict)
 
-                model = scripted.model(view.pod.name, session_pb2.HARNESS_CODEX)
+                model = scripted.model(view.kubernetes_diagnostics.pod.name, session_pb2.HARNESS_CODEX)
                 first_command = str(uuid4())
                 first_input = f"Report the exact marker {uuid4()} and wait for follow-up."
                 submitted = await _tool(
@@ -397,7 +398,7 @@ async def test_external_connection_delegates_without_the_integration_app(
                 if preflight_observation.get("kind") in {"command_failed", "command_no_op"}:
                     boundary_evidence = await _capture_submit_boundary(
                         cluster,
-                        pod_name=view.pod.name,
+                        pod_name=view.kubernetes_diagnostics.pod.name,
                         session_id=session_id,
                         command_id=first_command,
                         target=target,
@@ -418,7 +419,7 @@ async def test_external_connection_delegates_without_the_integration_app(
                 except TimeoutError as error:
                     boundary_evidence = await _capture_submit_boundary(
                         cluster,
-                        pod_name=view.pod.name,
+                        pod_name=view.kubernetes_diagnostics.pod.name,
                         session_id=session_id,
                         command_id=first_command,
                         target=target,

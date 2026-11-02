@@ -24,7 +24,7 @@ deriving actual state from `spec.running`. Deletion requires an explicitly repor
 send-triggered wake work stays queued without a wake deadline until a mode is reported.
 
 `status.idleSuspendBlockers` carries the live runner reasons that prevent autosuspension. Inventory
-readers project it as `EnvironmentDescriptor.autosuspend_blockers`, preserving reasons and
+readers project it as `EnvironmentDescriptor.observed_state.autosuspend_blockers`, preserving reasons and
 nullable Session IDs.
 
 `spec.inboxTags` are plain strings with no backing object; a `session_inbox_access` rule targeting
