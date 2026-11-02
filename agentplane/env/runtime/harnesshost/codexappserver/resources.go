@@ -15,11 +15,11 @@ import (
 
 const (
 	LifecycleSignalType = "CodexAppServerLifecycleSignals.agentplane"
-	StatusType         = "CodexAppServerStatuses.agentplane"
-	OperationStateType = "CodexAppServerOperationStates.agentplane"
-	ControllerName     = "codex-app-server-lifecycle"
-	ResourceID         = "codex-app-server"
-	HostOwner          = "codex-app-server-host"
+	StatusType          = "CodexAppServerStatuses.agentplane"
+	OperationStateType  = "CodexAppServerOperationStates.agentplane"
+	ControllerName      = "codex-app-server-lifecycle"
+	ResourceID          = "codex-app-server"
+	HostOwner           = "codex-app-server-host"
 )
 
 type LifecycleSignal struct {
@@ -93,7 +93,7 @@ func ReadStatus(ctx context.Context, reader controller.Reader) (Status, bool, er
 
 func (LifecycleSignal) resourceType() resource.Type     { return LifecycleSignalType }
 func (value LifecycleSignal) DeepCopy() LifecycleSignal { return value }
-func (Status) resourceType() resource.Type            { return StatusType }
-func (value Status) DeepCopy() Status                 { return value }
-func (operationState) resourceType() resource.Type    { return OperationStateType }
-func (value operationState) DeepCopy() operationState { return value }
+func (Status) resourceType() resource.Type              { return StatusType }
+func (value Status) DeepCopy() Status                   { return value }
+func (operationState) resourceType() resource.Type      { return OperationStateType }
+func (value operationState) DeepCopy() operationState   { return value }

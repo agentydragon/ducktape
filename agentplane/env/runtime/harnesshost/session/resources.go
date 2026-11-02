@@ -16,11 +16,11 @@ import (
 
 const (
 	ReconcileSnapshotType = "SessionReconcileSnapshots.agentplane"
-	InspectionStatusType = "SessionInspectionStatuses.agentplane"
-	LifecycleStatusType  = "SessionLifecycleStatuses.agentplane"
-	OperationStateType   = "SessionOperationStates.agentplane"
-	ControllerName       = "session-lifecycle"
-	HostOwner            = lifecycle.HostOwner
+	InspectionStatusType  = "SessionInspectionStatuses.agentplane"
+	LifecycleStatusType   = "SessionLifecycleStatuses.agentplane"
+	OperationStateType    = "SessionOperationStates.agentplane"
+	ControllerName        = "session-lifecycle"
+	HostOwner             = lifecycle.HostOwner
 )
 
 type Phase uint8
