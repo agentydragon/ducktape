@@ -6,8 +6,9 @@ The DAG owns `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN` and the blocked `EXEC_SUSP
 ## Recommendation to review
 
 1. Allow the exact execution ServiceAccount to request resume under an explicit target policy.
-   An absent policy remains operator-only. Use a proposed `resumePolicy: ExecutionAccount` opt-in;
-   `OperatorOnly` is the other initial value. This grants a lifecycle operation, not Kubernetes access.
+   Use the object-shaped opt-in `resumePolicy: { allowOwnServiceAccount: true }`. The boolean
+   defaults to false when the policy object or field is omitted. This grants a lifecycle operation,
+   not Kubernetes access; existing operator/broker authority remains separately checked.
 2. Allow an otherwise authorized same-account input to wake an idle-suspended environment when
    `wakeOnSend=true`. Retain separately configured broker wake authority; remove no send check.
 3. Treat an operator-requested stop as sticky for agents and automatic wake. Only an explicitly
@@ -16,6 +17,21 @@ The DAG owns `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN` and the blocked `EXEC_SUSP
 These are review decisions. Alternatives are existing broker-only resume, same-account resume
 without a target opt-in, and allowing agents to override requested stops. The recommended defaults
 keep resource consumption under target-owner control while making idle suspension recoverable.
+
+### Target policy shape
+
+The operator requested an object-shaped policy so additional options can be named independently:
+
+```yaml
+resumePolicy:
+  allowOwnServiceAccount: true
+```
+
+"Own ServiceAccount" means the environment's exact live execution account, including namespace,
+name and UID. An absent policy, an empty object, or `allowOwnServiceAccount: false` leaves this
+ordinary-account resume permission disabled. The field does not control message wake or authorize
+editing the policy itself. Selecting the caller, message-wake and manual-stop rules remains a
+separate review outcome.
 
 ## Current implementation and ownership
 
@@ -40,14 +56,14 @@ does not choose a new Deployment or the later Session/Environment dispatch group
 All target references include namespace, name and Sandbox UID. Normal account comparison includes
 namespace, name and live SA UID; a same-name replacement is a different account.
 
-| Caller / trigger                                   | Explicit resume                                                 | Wake caused by input                                                                   |
-| -------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Exact execution SA, direct workload                | Target opts into execution-account resume; idle suspension only | Existing send admission plus `wakeOnSend`; idle suspension only                        |
-| External MCP caller with the same verified account | Same rule through delegated authorization                       | Same effective-caller rule; Actions' identity adds no permission                       |
-| Different ordinary SA                              | Denied; broader lifecycle grants are later work                 | Existing send grants still apply; no new wake grant follows from sending               |
-| Configured privileged broker                       | Its explicitly reviewed broker policy                           | Preserve explicit broker wake eligibility, with the selected target/manual-stop policy |
-| Operator through its authenticated operator API    | May resume a requested stop                                     | Its existing send/broker contract remains explicit                                     |
-| Scheduler or other automation                      | Uses its verified account and this same matrix                  | No wake authority is inferred from being a scheduler                                   |
+| Caller / trigger                                   | Explicit resume                                                  | Wake caused by input                                                                   |
+| -------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Exact execution SA, direct workload                | `resumePolicy.allowOwnServiceAccount=true`; idle suspension only | Existing send admission plus `wakeOnSend`; idle suspension only                        |
+| External MCP caller with the same verified account | Same rule through delegated authorization                        | Same effective-caller rule; Actions' identity adds no permission                       |
+| Different ordinary SA                              | Denied; broader lifecycle grants are later work                  | Existing send grants still apply; no new wake grant follows from sending               |
+| Configured privileged broker                       | Its explicitly reviewed broker policy                            | Preserve explicit broker wake eligibility, with the selected target/manual-stop policy |
+| Operator through its authenticated operator API    | May resume a requested stop                                      | Its existing send/broker contract remains explicit                                     |
+| Scheduler or other automation                      | Uses its verified account and this same matrix                   | No wake authority is inferred from being a scheduler                                   |
 
 Use the existing [delegated authorization](../docs/delegated_authorization.md) machinery for
 Action-backed calls. Actor trust, effective caller, target eligibility and trigger policy remain

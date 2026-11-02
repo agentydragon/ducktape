@@ -1720,6 +1720,10 @@ agents, external MCP callers, users and backend automation against existing Sand
 This consolidates the earlier same-SA wake-allowlist question without equating the triggers:
 explicit resume is a lifecycle request; wake-on-message is a delivery policy.
 
+**Operator direction, 2026-11-02 UTC:** represent the proposed target opt-in as an object,
+`resumePolicy: { allowOwnServiceAccount: true }`, with a false default. The remaining authority
+choices below still need review; see the [policy shape](environment_lifecycle_authorization.md#target-policy-shape).
+
 The environment lifecycle API validates the effective caller and target identity, enforces the
 selected opt-in/budgets, and requests desired state; the Sandbox Controller reconciles the Pod/VM.
 The Session Dispatcher and any future automatic wake-on-exec path use that same policy/operation.
