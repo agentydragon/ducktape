@@ -761,7 +761,7 @@ def _spike_clean(
     remaining_pvs = json.loads(k3s.kubectl("get", "pv", "-o", "json"))["items"]
     if any(item.get("spec", {}).get("claimRef", {}).get("namespace") in namespaces for item in remaining_pvs):
         raise RuntimeError("fixture-owned PersistentVolume survived cleanup")
-    postgres_cleanup = postgres_persistence.clean(k3s.kubectl, postgres, marker)
+    postgres_cleanup: dict[str, Any] = postgres_persistence.clean(k3s.kubectl, postgres, marker)
     marker["state"] = "clean"
     _spike_write_marker(marker)
     return postgres_cleanup
