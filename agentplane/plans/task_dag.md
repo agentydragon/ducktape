@@ -1429,14 +1429,12 @@ flowchart TD
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
     ENVIRONMENT_LIFECYCLE_BACKEND[Selected P0: shared resume policy and guarded mutation]
     ENVIRONMENT_RESUME_API[Selected P0: explicit resume RPC and Discovery]
-    DISPATCH_WAKE_OBSERVATION[Selected P0: typed queued-wake receipts]
     DISPATCH_AUTHORIZED_WAKE[Selected P0: automatic wake through shared authority]
     ENVIRONMENT_RESUME_AGENT_TOOLS[Selected P0: CLI and Action resume adapters]
     EXEC_SUSPENDED_RESUME[Selected P0 capstone: recover exec on a suspended Sandbox]
     ENVIRONMENT_RESUME_ACTIVATION[Operational hold: app and deployment activation]
     ENVIRONMENT_LIFECYCLE_BACKEND --> ENVIRONMENT_RESUME_API
     ENVIRONMENT_LIFECYCLE_BACKEND --> DISPATCH_AUTHORIZED_WAKE
-    DISPATCH_WAKE_OBSERVATION --> DISPATCH_AUTHORIZED_WAKE
     ENVIRONMENT_RESUME_API --> ENVIRONMENT_RESUME_AGENT_TOOLS
     ENVIRONMENT_RESUME_API --> EXEC_SUSPENDED_RESUME
     DISPATCH_AUTHORIZED_WAKE --> EXEC_SUSPENDED_RESUME
@@ -1783,21 +1781,9 @@ operator authority.
 operator requested-stop override confined to the configured direct operator path. RPC/source
 support precedes new production settings and caller activation. Public suspend remains unselected.
 
-### `DISPATCH_WAKE_OBSERVATION` — retain typed queued-wake assessments
-
-**Selected P0; receipt implementation under review in [#13914](https://github.com/agentydragon/ducktape/pull/13914), 2026-11-02 UTC; independent of the complete lifecycle backend.** Use migration 8's existing storage
-for protobuf-defined delivery-blocker/wake assessments. Carry
-them through Get/List/Watch and `sessions__observe_input` with independently authorized History
-evidence. Further stored-schema changes require a new migration; do not edit migration 8.
-
-**Exit:** not-evaluated, disabled, denied, rate-limited, requested, failed and unknown outcomes
-remain structured and timestamped. Transactional notification and watch comparison publish wake
-changes even when delivery state/reason is unchanged. Retained retry identities survive. Direct
-Runtime proxy calls do not create Dispatcher receipts. This slice does not change send admission.
-
 ### `DISPATCH_AUTHORIZED_WAKE` — use shared authority for automatic wake
 
-**Selected P0; automatic integration extracted into [#13546](https://github.com/agentydragon/ducktape/pull/13546), 2026-11-02 UTC; requires `ENVIRONMENT_LIFECYCLE_BACKEND` and `DISPATCH_WAKE_OBSERVATION`.**
+**Selected P0; automatic integration extracted into [#13546](https://github.com/agentydragon/ducktape/pull/13546), 2026-11-02 UTC; requires `ENVIRONMENT_LIFECYCLE_BACKEND`.**
 Dispatcher first determines whether delivery needs the environment, then applies `wakeOnSend` and
 the original retained effective caller's current lifecycle authority. An enqueue-time eligibility
 boolean is not a permanent grant. Authorized input stays queued when wake is denied, disabled or

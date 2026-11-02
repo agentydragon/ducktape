@@ -1,7 +1,7 @@
 # Explicit environment resume and message-wake authority
 
 Approved for implementation by the operator, 2026-11-02. The implementation is split into receipt,
-backend/API, CLI, Action/MCP and automatic-wake review slices. The DAG owns their current PRs and
+backend/API, CLI, Action/MCP and automatic-wake slices; the receipt foundation has landed. The DAG owns their current PRs and
 acceptance status; the CLI and Action adapters independently depend on the backend despite their
 linear native-stack review order. Caller activation remains separately deployment-held. The policy
 decision is complete; this document does not dispatch additional implementation.
@@ -47,8 +47,9 @@ requests it automatically. Neither field authorizes editing policy.
 
 The optional `resumePolicy` Go/CRD schema, migration 8 and UID-scoped automatic-wake accounting
 have landed. Delivery consumes the persisted effective caller; the store rejects inconsistent
-attribution. The migration provides wake-assessment storage. The approved resume authorization,
-typed receipt delivery and client surfaces remain unfinished.
+attribution. Typed blocker/wake facts now round-trip through receipt storage, Get/List/Watch and
+`sessions__observe_input`; absent assessments read as not evaluated. Shared resume authorization,
+automatic-wake assessment production and the client resume surfaces remain unfinished.
 
 - [Discovery](../sandboxes/environments/service.go) describes the exact target, execution account,
   operating state and readiness. Its current `ResumeState` reflects send-wake eligibility; it is
