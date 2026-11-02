@@ -355,8 +355,9 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 	history := &acknowledgingHistory{
 		acks: map[string]*ingresspb.Acknowledgement{}, sealSeen: sealSeen, releaseSeal: releaseSeal,
 	}
-	// Run after the lifecycle fixture's cleanup, which stops delivery and Host workers.
+	// Run after the lifecycle fixture's cleanup, which stops delivery and Session workers.
 	var r *Runtime
+	runtimeReady := make(chan struct{})
 	t.Cleanup(func() {
 		if r != nil {
 			_ = r.owner.Close()
@@ -368,6 +369,11 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 	config.Config.HistoryIngress.Target = startHistoryService(t, history)
 	config.expectCloseError = true
 	config.deps.runIngress = func(ctx context.Context, endpoint configuration.Endpoint) error {
+		select {
+		case <-runtimeReady:
+		case <-ctx.Done():
+			return nil
+		}
 		deliveryCtx, cancel := context.WithCancel(ctx)
 		deliveryDone := make(chan error, 1)
 		go func() { deliveryDone <- r.ingressSupervisor(endpoint, r.fail).Run(deliveryCtx) }()
@@ -386,6 +392,7 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 		}
 	}
 	r = newLifecycleRuntime(t, config)
+	close(runtimeReady)
 	t.Cleanup(func() {
 		failOnce.Do(func() { close(failDelivery) })
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
