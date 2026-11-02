@@ -10,6 +10,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/service"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestRuntimeExecutionServiceConfigCarriesResolvedReadiness(t *testing.T) {
@@ -98,6 +100,44 @@ func TestEmbeddedExecutionBackendLossRequiresFencedResult(t *testing.T) {
 				t.Fatal("unproven exit returned no error")
 			}
 		})
+	}
+}
+
+func TestFencedExecutionBackendLossLogsCauseAndRemainsRecoverable(t *testing.T) {
+	core, observed := observer.New(zap.WarnLevel)
+	undo := zap.ReplaceGlobals(zap.New(core))
+	t.Cleanup(undo)
+
+	const lossReason = "execution backend lost\nCodex exec-server exited: code=137"
+	backendLoss := errors.Join(service.ErrFencedBackendLoss, errors.New(lossReason))
+	config := service.Config{
+		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
+		IncarnationUID: "test-incarnation", Backend: "systemd",
+	}
+	handle := newExecutionServiceHandle(config, func(context.Context, service.Config, func(executorpb.ExecutorServer, context.Context)) error {
+		return backendLoss
+	})
+	exit := <-handle.ProcessExit()
+	if exit.code != 0 || exit.err != nil {
+		t.Fatalf("fenced backend loss = %+v, want clean recoverable exit", exit)
+	}
+
+	entries := observed.FilterMessage("embedded Execution backend loss fenced").All()
+	if len(entries) != 1 {
+		t.Fatalf("backend loss log entries = %d, want 1", len(entries))
+	}
+	fields := entries[0].ContextMap()
+	for key, want := range map[string]string{
+		"sandbox_namespace": "test-namespace",
+		"sandbox_name":      "test-sandbox",
+		"sandbox_uid":       "test-sandbox-uid",
+		"incarnation_uid":   "test-incarnation",
+		"backend":           "systemd",
+		"loss_reason":       backendLoss.Error(),
+	} {
+		if got := fields[key]; got != want {
+			t.Errorf("backend loss log %s = %v, want %q", key, got, want)
+		}
 	}
 }
 
