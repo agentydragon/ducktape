@@ -9,6 +9,7 @@ sample without re-fitting from source CSVs."""
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -16,11 +17,13 @@ import pytest_bazel
 import yaml
 from pydantic import TypeAdapter
 
+from finance.augur.fit.data import load_evidence
 from finance.augur.fit.evidence_data import load_exogenous_evidence
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.series import HomeValueKey, InflationKey, LevelSeriesKey, RentKey
 from finance.augur.x.models.provider_config import ProviderConfig
 from finance.augur.x.models.state_space import StateSpaceProviderConfig
+from finance.augur.x.models.state_space_fit import fit_state_space_artifact
 from finance.augur.x.models.train import main as train_main
 from finance.augur.x.models.vecm import VecmProviderConfig
 from finance.evidence import sources
@@ -128,6 +131,16 @@ def test_state_space_training_uses_dated_one_month_returns_across_a_cpi_gap(
     inflation_index = evidence.series_names.index(InflationKey())
     expected_mu = evidence.monthly_log_returns[:, inflation_index].mean()
     assert artifact["monthly_log_return_mu"][InflationKey().wire_id] == pytest.approx(expected_mu)
+
+
+def test_state_space_fit_rejects_history_from_different_evidence(synthetic_evidence_dir: Path) -> None:
+    historical, evidence = load_evidence()
+    different_returns = evidence.monthly_log_returns.copy()
+    different_returns[0, 0] += 0.01
+    inconsistent_evidence = replace(evidence, monthly_log_returns=different_returns)
+
+    with pytest.raises(ValueError, match="HistoricalSeries returns do not match"):
+        fit_state_space_artifact(inconsistent_evidence, historical=historical)
 
 
 if __name__ == "__main__":
