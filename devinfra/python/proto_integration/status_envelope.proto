@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package devinfra.python.proto_integration;
+
+import "google/rpc/status.proto";
+
+message StatusEnvelope {
+  google.rpc.Status status = 1;
+}
