@@ -226,7 +226,7 @@ function emptyProviderState() {
     error: null,
     extraSpend: null,
     paidCredits: null,
-    platformCredits: null,
+    openaiPlatformCredits: null,
     anthropicPlatformCredits: null,
     prepaidBalance: null,
     prepaidStaleSince: null,
@@ -801,7 +801,7 @@ const QuotaIndicator = GObject.registerClass(
           error: lastResult?.kind === "error" ? lastResult.error : null,
           extraSpend: this._mapExtraSpend(result?.extra_spend),
           paidCredits: result?.paid_credits ?? null,
-          platformCredits: pq.display_platform_credits ?? null,
+          openaiPlatformCredits: pq.display_openai_platform_credits ?? null,
           anthropicPlatformCredits: pq.display_anthropic_platform_credits ?? null,
           prepaidBalance: selected.prepaid_balance ?? null,
           prepaidStaleSince: selected.prepaid_stale_since ? new Date(selected.prepaid_stale_since).getTime() : null,
@@ -910,12 +910,12 @@ const QuotaIndicator = GObject.registerClass(
           this._renderExtraActiveRow(p.windowRows[0], windows);
           p.windowRows.slice(1).forEach((row) => (row.visible = false));
         } else {
-          const { windows, staleAge, platformCredits, anthropicPlatformCredits } = effectiveState(p.state);
-          if (windows.length === 0 && platformCredits == null && anthropicPlatformCredits == null)
+          const { windows, staleAge, openaiPlatformCredits, anthropicPlatformCredits } = effectiveState(p.state);
+          if (windows.length === 0 && openaiPlatformCredits == null && anthropicPlatformCredits == null)
             this._renderPopupRow(p.windowRows[0], null, staleAge);
           windows.forEach((window, index) => this._renderPopupRow(p.windowRows[index], window, staleAge));
           const rowCount =
-            windows.length === 0 && (platformCredits != null || anthropicPlatformCredits != null)
+            windows.length === 0 && (openaiPlatformCredits != null || anthropicPlatformCredits != null)
               ? 0
               : Math.max(1, windows.length);
           p.windowRows.forEach((row, index) => (row.visible = index < rowCount));
@@ -969,13 +969,13 @@ const QuotaIndicator = GObject.registerClass(
 
     _renderPrepaidRow(item, state) {
       const effective = effectiveState(state);
-      const credits = effective.platformCredits;
+      const openaiPlatformCredits = effective.openaiPlatformCredits;
       const money = (value) =>
         new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(Number(value));
-      const lines = credits
+      const lines = openaiPlatformCredits
         ? [
-            `OpenAI API balance · ${money(credits.total_available_usd)}`,
-            ...credits.grants.map(
+            `OpenAI API balance · ${money(openaiPlatformCredits.total_available_usd)}`,
+            ...openaiPlatformCredits.grants.map(
               (grant) =>
                 `Grant ${money(Number(grant.granted_usd) - Number(grant.used_usd))} / ${money(grant.granted_usd)} · expires ${grant.expires_at ? new Date(grant.expires_at).toLocaleString() : "unknown"}${grant.is_scheduled ? " · scheduled" : grant.is_held_for_prepaid_transition ? " · held" : ""}`
             ),
@@ -988,7 +988,7 @@ const QuotaIndicator = GObject.registerClass(
       item.visible = text != null;
       if (text != null) {
         const age =
-          !credits && effective.prepaidStaleSince != null
+          !openaiPlatformCredits && effective.prepaidStaleSince != null
             ? ` (stale ${formatAge(Math.max(0, (nowMs() - effective.prepaidStaleSince) / 1000))})`
             : "";
         item._summaryLabel.set_text(text + age);

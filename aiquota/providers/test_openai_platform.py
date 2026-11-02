@@ -53,10 +53,10 @@ async def test_fetch_reports_balance_and_grant_expiry(tmp_path):
     )
     result = (await provider.fetch()).result
     assert isinstance(result, FetchSuccess)
-    assert result.platform_credits is not None
-    assert result.platform_credits.total_available_usd == Decimal("25.75")
-    assert result.platform_credits.grants[0].expires_at == datetime.fromtimestamp(1800000000, UTC)
-    assert result.platform_credits.grants[1].expires_at is None
+    assert result.openai_platform_credits is not None
+    assert result.openai_platform_credits.total_available_usd == Decimal("25.75")
+    assert result.openai_platform_credits.grants[0].expires_at == datetime.fromtimestamp(1800000000, UTC)
+    assert result.openai_platform_credits.grants[1].expires_at is None
 
 
 async def test_failed_fetch_does_not_report_zero(tmp_path):

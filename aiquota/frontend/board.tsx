@@ -85,10 +85,10 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
       {quota.prepaidBalance && (
         <PrepaidBalanceStrip balance={quota.prepaidBalance} staleSince={quota.prepaidStaleSince} now={now} />
       )}
-      {quota.platformCredits && (
+      {quota.openaiPlatformCredits && (
         <div className="aiquota-aside">
-          <p>OpenAI API balance · {formatUsd(Number(quota.platformCredits.total_available_usd))}</p>
-          {quota.platformCredits.grants.map((grant, index) => (
+          <p>OpenAI API balance · {formatUsd(Number(quota.openaiPlatformCredits.total_available_usd))}</p>
+          {quota.openaiPlatformCredits.grants.map((grant, index) => (
             <p key={index}>
               Grant {formatUsd(Number(grant.granted_usd) - Number(grant.used_usd))} /{" "}
               {formatUsd(Number(grant.granted_usd))} · expires{" "}
@@ -113,7 +113,7 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
         : quota.windows.length === 0
           ? quota.error === null &&
             quota.prepaidBalance === null &&
-            quota.platformCredits == null &&
+            quota.openaiPlatformCredits == null &&
             quota.anthropicPlatformCredits == null && <p className="aiquota-empty">No quota data.</p>
           : quota.windows.map((window) => (
               <WindowRow

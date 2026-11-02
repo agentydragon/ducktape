@@ -11,7 +11,7 @@ from aiquota.models import (
     AnthropicPlatformCredits,
     AnthropicPlatformTranche,
     FetchSuccess,
-    PlatformCredits,
+    OpenAIPlatformCredits,
     PrepaidBalance,
     ProviderFetch,
     ProviderQuota,
@@ -64,7 +64,7 @@ class ProviderView(BaseModel):
     paid_credits_active: bool
     burn: BurnStatus | None
     display_windows: list[WindowView]
-    display_platform_credits: PlatformCredits | None = None
+    display_openai_platform_credits: OpenAIPlatformCredits | None = None
     display_anthropic_platform_credits: AnthropicPlatformCredits | None = None
     summary_tint: Tint
     summary_index: int | None
@@ -114,17 +114,17 @@ def _provider_view(pq: ProviderQuota, now: datetime) -> ProviderView:
             if display_windows[preferred].tint == tint
             else next((i for i, window in enumerate(display_windows) if window.tint == tint), None)
         )
-    credits = source.platform_credits if source is not None else None
+    openai_platform_credits = source.openai_platform_credits if source is not None else None
     # OpenAI's billing backend returns fully used grants with expires_at=null;
     # its billing page calls them inactive. Hide depleted and expired grants,
     # but keep scheduled and held grants unless their reported expiry has passed.
     # Filter a copy so the underlying provider response remains available.
-    display_credits = (
-        credits.model_copy(
+    display_openai_platform_credits = (
+        openai_platform_credits.model_copy(
             update={
                 "grants": [
                     grant
-                    for grant in credits.grants
+                    for grant in openai_platform_credits.grants
                     if (grant.expires_at is None or grant.expires_at > now)
                     and (
                         grant.used_usd < grant.granted_usd or grant.is_scheduled or grant.is_held_for_prepaid_transition
@@ -132,7 +132,7 @@ def _provider_view(pq: ProviderQuota, now: datetime) -> ProviderView:
                 ]
             }
         )
-        if credits is not None
+        if openai_platform_credits is not None
         else None
     )
     anthropic_credits = source.anthropic_platform_credits if source is not None else None
@@ -163,7 +163,7 @@ def _provider_view(pq: ProviderQuota, now: datetime) -> ProviderView:
         paid_credits_active=_paid_credits_active(pq.last_output),
         burn=status_for(pq.provider, now),
         display_windows=display_windows,
-        display_platform_credits=display_credits,
+        display_openai_platform_credits=display_openai_platform_credits,
         display_anthropic_platform_credits=display_anthropic_credits,
         summary_tint=tint,
         summary_index=index,

@@ -75,15 +75,17 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
     credit_line = _format_paid_credits(paid_credits, pv.paid_credits_active)
     prepaid_balance, prepaid_stale_age = _effective_prepaid_balance(pv, now)
     prepaid_balance_line = _format_prepaid_balance(prepaid_balance, prepaid_stale_age)
-    platform_credits = pv.display_platform_credits
-    platform_lines = []
-    if platform_credits:
-        platform_lines.append(f"OpenAI API balance · ${platform_credits.total_available_usd:,.2f}")
-        for grant in platform_credits.grants:
+    openai_platform_credits = pv.display_openai_platform_credits
+    openai_platform_lines = []
+    if openai_platform_credits:
+        openai_platform_lines.append(f"OpenAI API balance · ${openai_platform_credits.total_available_usd:,.2f}")
+        for grant in openai_platform_credits.grants:
             expiry = grant.expires_at.astimezone(tz).strftime("%Y-%m-%d %H:%M %Z") if grant.expires_at else "unknown"
             status = " · scheduled" if grant.is_scheduled else " · held" if grant.is_held_for_prepaid_transition else ""
             remaining = grant.granted_usd - grant.used_usd
-            platform_lines.append(f"Grant ${remaining:,.2f} / ${grant.granted_usd:,.2f} · expires {expiry}{status}")
+            openai_platform_lines.append(
+                f"Grant ${remaining:,.2f} / ${grant.granted_usd:,.2f} · expires {expiry}{status}"
+            )
     anthropic_lines = _format_anthropic_platform_credits(pv.display_anthropic_platform_credits, tz)
 
     if error and not windows:
@@ -101,7 +103,7 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
             )
             + (f"  {credit_line}" if credit_line else "")
             + (f"\n  {prepaid_balance_line}" if prepaid_balance_line else "")
-            + ("".join(f"\n  {line} (stale)" for line in platform_lines))
+            + ("".join(f"\n  {line} (stale)" for line in openai_platform_lines))
             + ("".join(f"\n  {line} (stale)" for line in anthropic_lines))
         )
 
@@ -135,7 +137,7 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
         lines.append(f"  {credit_line}")
     if prepaid_balance_line:
         lines.append(f"  {prepaid_balance_line}")
-    lines.extend(f"  {line}" for line in platform_lines)
+    lines.extend(f"  {line}" for line in openai_platform_lines)
     lines.extend(f"  {line}" for line in anthropic_lines)
     lines.extend(_burn_lines(pv, now, tz))
     parts = [Text(line) for line in lines]
@@ -156,7 +158,7 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
         not windows
         and extra_line is None
         and prepaid_balance_line is None
-        and not platform_lines
+        and not openai_platform_lines
         and not anthropic_lines
     ):
         # Gate on "nothing substantive was reported", not on line count — the
