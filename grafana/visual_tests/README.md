@@ -61,12 +61,6 @@ queries against a fixed synthetic Prometheus TSDB and captures the full
 dashboard. Its target, scenario, and metrics fixture live beside the JSON.
 Neither mode contacts production or reads cluster credentials.
 
-TODO: Standardize on one approach after evaluating the cost and complexity of
-running Prometheus and maintaining queryable fixtures. Testing
-the dashboard queries is appealing, but compare that coverage with the fidelity
-and maintenance of recorded responses, including dashboards using other
-datasources.
-
 Run a target on the remote Docker-capable executor, for example:
 
 ```sh
@@ -78,12 +72,10 @@ so interrupted runs cannot publish a partial screenshot set. An initial run has
 no before image until the target has a published devel baseline. The publisher
 labels a fallback baseline when it cannot find one for the exact base commit.
 
-TODO: Measure Grafana and browser startup costs and consider sharing their setup
-or rendering all dashboards in one test. Compare the savings with the effects on
-test isolation, parallelism, caching, and per-dashboard visual baselines.
-
 An explicitly invoked live-data preview could use a supplied metrics endpoint,
 but needs a separate design for authentication, network access and screenshot
 publication. Live data must not be sent automatically to the public PR visuals
 gallery. The production Grafana verifier and its credential-consent requirement
 remain separate.
+
+Open design and maintenance work is tracked in [grafana/TODO.md](../TODO.md).
