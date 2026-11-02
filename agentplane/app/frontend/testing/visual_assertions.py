@@ -122,10 +122,7 @@ async def _rollout_geometry(view: VisualPage, state: str) -> None:
     }""")
     )
     view.outputs.publish(
-        checkpoint=f"geometry-{state}",
-        role="diagnostics",
-        data=json.dumps(geometry, ensure_ascii=False, separators=(",", ":")),
-        suffix="json",
+        checkpoint=f"geometry-{state}", role="diagnostics", data=json.dumps(geometry, ensure_ascii=False), suffix="json"
     )
 
 

@@ -222,12 +222,11 @@ def thread_browser_session(
 ) -> Callable[[Page], AbstractAsyncContextManager[ThreadBrowser]]:
     @asynccontextmanager
     async def open_browser(page: Page) -> AsyncIterator[ThreadBrowser]:
-        source = thread_source
         thread_id = await event_logs.seed(SANDBOX, SESSION)
         await store.rename(thread_id, "Browser thread")
         async with (
-            scripted_runner(source, sandbox, gateway_service, sandbox_control, tmp_path),
-            source.ingesting(history),
+            scripted_runner(thread_source, sandbox, gateway_service, sandbox_control, tmp_path),
+            thread_source.ingesting(history),
             app_process(
                 db_url,
                 history_client,
@@ -243,9 +242,9 @@ def thread_browser_session(
             # The operator session the app's relay of the Dispatcher's watch requires.
             await app.login(page)
             async with asyncio.timeout(30):
-                opened = await source.opened.get()
+                opened = await thread_source.opened.get()
                 await page.goto(f"{ingress.url}/#/threads/{thread_id}")
-            yield ThreadBrowser(page, source, store, event_logs, content, history, opened, app, ingress)
+            yield ThreadBrowser(page, thread_source, store, event_logs, content, history, opened, app, ingress)
 
     return open_browser
 
