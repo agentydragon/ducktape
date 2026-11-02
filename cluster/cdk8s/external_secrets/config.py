@@ -149,6 +149,7 @@ def chart(app: App) -> Chart:
             "plaid-mcp",
             "props",
             "public-coder-agent",
+            "quest-diagnostics",  # gaffer-private; ESO lives in that repo's k8s/
             "sdr",
             "session-backup",
             "ssh-mcp",
