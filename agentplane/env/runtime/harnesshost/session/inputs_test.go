@@ -2,12 +2,17 @@ package session
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/harness"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/resource/typed"
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 )
 
 func TestSessionInputsIgnoreJournalOnlyChanges(t *testing.T) {
@@ -94,6 +99,78 @@ func TestSessionInputTracksNativeDispatchReadinessWithoutJournalEvent(t *testing
 	if s.journal.LastCursor() != before {
 		t.Fatal("readiness test unexpectedly emitted an Event")
 	}
+}
+
+func TestSessionDemandPublicationRetriesFromCurrentDemand(t *testing.T) {
+	ctx, root, resources, store, manager := runnerTestManager(t, nil, func(string) string { return "destination" })
+	s := runnerTestReserve(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
+
+	conflictingState := &sessionDemandConflictCoreState{CoreState: resources}
+	manager.state = state.WrapCore(conflictingState)
+	manager.publishSession(s, true)
+
+	input, found, err := componentRead[Input](ctx, manager.state, s.id)
+	if err != nil || !found {
+		t.Fatalf("read Session input after conflict retry: found=%t error=%v", found, err)
+	}
+	if input.Demand != 2 {
+		t.Fatalf("Session demand after a competing increment and one request = %d, want 2", input.Demand)
+	}
+	if !conflictingState.conflicted || conflictingState.inputUpdateAttempts != 2 {
+		t.Fatalf("conflict retry state = conflicted %t, update attempts %d, want true and 2", conflictingState.conflicted, conflictingState.inputUpdateAttempts)
+	}
+}
+
+func TestSessionDemandPublicationStartsFromZeroWhenInputIsMissing(t *testing.T) {
+	ctx, root, resources, store, manager := runnerTestManager(t, nil, func(string) string { return "destination" })
+	s := runnerTestReserve(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
+	if err := resources.Destroy(ctx, componentResource(s.id, Input{}).Metadata(), state.WithDestroyOwner(HostOwner)); err != nil {
+		t.Fatal(err)
+	}
+
+	s.requestExecution()
+
+	input, found, err := ReadInput(ctx, resources, s.id)
+	if err != nil || !found {
+		t.Fatalf("read recreated Session input: found=%t error=%v", found, err)
+	}
+	if input.Demand != 1 {
+		t.Fatalf("Session demand after recreating a missing input = %d, want 1", input.Demand)
+	}
+}
+
+type sessionDemandConflictCoreState struct {
+	state.CoreState
+	conflicted          bool
+	inputUpdateAttempts int
+}
+
+func (s *sessionDemandConflictCoreState) Update(ctx context.Context, value resource.Resource, opts ...state.UpdateOption) error {
+	if value.Metadata().Type() == InputType {
+		s.inputUpdateAttempts++
+		if !s.conflicted {
+			s.conflicted = true
+			current, err := s.CoreState.Get(ctx, value.Metadata())
+			if err != nil {
+				return fmt.Errorf("read competing Session input: %w", err)
+			}
+			input, ok := current.(*typed.Resource[Input, componentExtension[Input]])
+			if !ok {
+				return fmt.Errorf("unexpected Session input type %T", current)
+			}
+			input.TypedSpec().Demand++
+			if err := s.CoreState.Update(ctx, input, opts...); err != nil {
+				return fmt.Errorf("write competing Session demand: %w", err)
+			}
+			latest, err := s.CoreState.Get(ctx, value.Metadata())
+			if err != nil {
+				return fmt.Errorf("read Session input after competing demand: %w", err)
+			}
+			return inmem.ErrVersionConflict(value.Metadata(), value.Metadata().Version(), latest.Metadata().Version())
+		}
+	}
+
+	return s.CoreState.Update(ctx, value, opts...)
 }
 
 func TestJournalNotificationsOnlySignalBlockerTransitions(t *testing.T) {
