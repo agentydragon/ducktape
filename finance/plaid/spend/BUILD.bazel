@@ -54,6 +54,7 @@ py_library(
         ":reconciliation_views",
         ":statement_queries",
         ":sustainability",
+        ":transaction_views",
         "//finance/plaid/db:models",
         "@pypi//anyio",
         "@pypi//asyncpg",
@@ -168,6 +169,7 @@ py_test(
         ":portfolio_models",
         ":service",
         ":sustainability",
+        ":transaction_views",
         "//:conftest",
         "@pypi//asyncpg",
         "@pypi//pytest",
@@ -427,5 +429,17 @@ py_library(
     deps = [
         "//finance/plaid/db:models",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "transaction_views",
+    srcs = ["transaction_views.py"],
+    visibility = ["//finance/plaid/spend/ui/testing:__pkg__"],
+    deps = [
+        ":allowance",
+        ":configuration",
+        ":models",
+        "@pypi//babel",
     ],
 )
