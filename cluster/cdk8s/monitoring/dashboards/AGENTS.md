@@ -1,7 +1,7 @@
 # Grafana dashboards
 
 - Before creating or changing a dashboard, read and follow
-  [`cluster/skills/grafana/SKILL.md`](../../../skills/grafana/SKILL.md) — mandatory. Valid
+  [`grafana/skill/SKILL.md`](../../../../grafana/skill/SKILL.md) — mandatory. Valid
   JSON, a passing Kustomize build, or a hand-substituted PromQL probe is not verification:
   run its candidate verifier before the PR when possible and inspect the Chrome
   screenshots; run its live verifier after Flux applies when candidate rendering was

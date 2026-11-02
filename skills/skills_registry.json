@@ -27,7 +27,7 @@
     {
       "name": "grafana",
       "pkg": "skill-grafana",
-      "target": "//cluster/skills/grafana:grafana_skill",
+      "target": "//grafana/skill:grafana_skill",
       "filename": "grafana.skill"
     },
     {

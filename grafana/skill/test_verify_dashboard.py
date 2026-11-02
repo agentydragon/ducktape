@@ -12,7 +12,11 @@ import yaml
 
 from util.bazel.runfiles import get_required_path
 
-VERIFY_DASHBOARD = runpy.run_path(str(get_required_path("_main/cluster/skills/grafana/verify_dashboard.py")))
+VERIFY_DASHBOARD = runpy.run_path(str(get_required_path("_main/grafana/skill/verify_dashboard.py")))
+
+
+def test_packaged_grafana_dashboard_manifest_is_available() -> None:
+    assert VERIFY_DASHBOARD["grafana_dashboard_manifest_path"](None).is_file()
 
 
 def test_operator_mapping_uses_dashboard_resource_and_datasource_name(tmp_path: Path) -> None:

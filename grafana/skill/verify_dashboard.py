@@ -1,7 +1,7 @@
 """End-to-end Grafana dashboard verifier.
 
 This is intentionally a local-execution tool: it talks to the live Grafana API
-and launches a real browser. Use ``bb run //cluster/skills/grafana:verify_dashboard``
+and launches a real browser. Use ``bb run //grafana/skill:verify_dashboard``
 instead of running it as a remote Bazel action.
 """
 

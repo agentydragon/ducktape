@@ -9,7 +9,7 @@ py_binary(
     name = "verify_dashboard",
     srcs = ["verify_dashboard.py"],
     data = [
-        "//cluster:generated/monitoring/grafana-instance/grafana-instance.k8s.yaml",
+        "//cluster:grafana_dashboard_manifest",
         "//cluster/cdk8s/monitoring/dashboards",
         "@chrome_headless_shell//:executable",
     ],
@@ -28,7 +28,10 @@ py_binary(
 py_test(
     name = "test_verify_dashboard",
     srcs = ["test_verify_dashboard.py"],
-    data = ["verify_dashboard.py"],
+    data = [
+        "verify_dashboard.py",
+        "//cluster:grafana_dashboard_manifest",
+    ],
     deps = [
         "//util/bazel:runfiles",
         "@pypi//httpx",

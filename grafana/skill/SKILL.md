@@ -43,7 +43,7 @@ the verifier supports it and the user provides permission for that credential.
 Run the packaged verifier from the repository root:
 
 ```bash
-bb run //cluster/skills/grafana:verify_dashboard -- \
+bb run //grafana/skill:verify_dashboard -- \
   --dashboard cluster/cdk8s/monitoring/dashboards/<dashboard>.json \
   --screenshot-dir /tmp/grafana-<dashboard>-verify
 ```
@@ -61,7 +61,7 @@ After the PR is merged and Flux has applied the dashboard, run the same verifier
 against the real UID instead of the candidate file:
 
 ```bash
-bb run //cluster/skills/grafana:verify_dashboard -- \
+bb run //grafana/skill:verify_dashboard -- \
   --live-uid <dashboard-uid> \
   --screenshot-dir /tmp/grafana-<dashboard>-live
 ```
