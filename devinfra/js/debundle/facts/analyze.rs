@@ -554,17 +554,10 @@ where
     let native_own_data_reads = per_statement
         .iter()
         .map(|statement| {
-            let reads = prepared_sync_index
-                .native_own_data_read_candidates(statement.ordinal)
-                .iter()
-                .map(|&span| {
-                    let dependencies = prepared_sync_index
-                        .native_own_data_read(span)
-                        .map(|(_, _, dependencies)| dependencies);
-                    (span, dependencies)
-                })
-                .collect();
-            (statement.ordinal, reads)
+            (
+                statement.ordinal,
+                prepared_sync_index.native_own_data_read_diagnostics(statement.ordinal),
+            )
         })
         .collect();
     let mut facts: Vec<StatementFacts> = body

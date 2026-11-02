@@ -1547,6 +1547,16 @@ kinds; an exact-site `native_operation_inputs` axiom instead covers one
 consuming call. `--limit`/`--all` bound witness rows; `reach_counts` stay
 complete.
 
+When a purity reason is `unknown_member` for a recognized native own-data read,
+its `detail` names the required slots, any slots without proof, and an
+`explain-integrity --slot` query for each missing slot. Run
+`debundle explain-integrity --graph <dependency_graph.json.gz> --slot '<slot>'`
+once per missing slot. If the detail reports a complete-slot-set or
+dynamic-scope failure, query each required slot. The command reads the shared
+`program_graph.json.gz` census and shows its blocking witnesses. A computed
+member, a shadowed intrinsic binding, or an unrecognized property is labeled
+without inventing a native slot query.
+
 The command does not attribute an individual precision loss to a guard: it
 shows the guards that failed during the same source unit's execution. Callable
 and own-property certificates that need intact slots fail without a check row.

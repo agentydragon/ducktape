@@ -16,11 +16,16 @@ pub(crate) struct StatementPurityContext<'a> {
     pub(crate) proofs: ItemPurityProofs<'a>,
     /// `var` bindings declared by more than one statement.
     pub(crate) shared_vars: &'a BTreeSet<Id>,
-    /// Exact native own-data read candidates per statement, with the
-    /// certificate's dependencies when the census or an author input proves
-    /// the read.
+    /// Native-root member reads with their exact integrity proof or the
+    /// diagnostic explaining why this read did not have one.
     pub(crate) native_own_data_reads:
-        &'a BTreeMap<SourceUnitOrdinal, Vec<(Span, Option<ProofDependencies>)>>,
+        &'a BTreeMap<SourceUnitOrdinal, Vec<NativeOwnDataReadDiagnostic>>,
+}
+
+pub(crate) enum NativeOwnDataReadDiagnostic {
+    Proven { dependencies: ProofDependencies },
+    MissingProof { span: Span, detail: String },
+    Unrecognized { span: Span, detail: String },
 }
 
 impl StatementPurityContext<'_> {
@@ -46,15 +51,26 @@ impl StatementPurityContext<'_> {
         // certificate for purity as for heap and synchronous timing. A known
         // replacement or unsupported read must not inherit the older
         // name-based static-reference purity verdict.
-        for (span, dependencies) in self
+        for diagnostic in self
             .native_own_data_reads
             .get(&fact.ordinal)
             .into_iter()
             .flatten()
         {
-            effects = match dependencies {
-                Some(dependencies) => effects.with_dependencies(dependencies),
-                None => effects.then(Effects::of(Effect::Invoke(InvokeSite::MemberRead), *span)),
+            effects = match diagnostic {
+                NativeOwnDataReadDiagnostic::Proven { dependencies, .. } => {
+                    effects.with_dependencies(dependencies)
+                }
+                NativeOwnDataReadDiagnostic::MissingProof { span, detail } => {
+                    effects.then(Effects::of_detail(
+                        Effect::Invoke(InvokeSite::MemberRead),
+                        *span,
+                        detail.clone(),
+                    ))
+                }
+                NativeOwnDataReadDiagnostic::Unrecognized { span, detail } => {
+                    effects.with_member_read_detail(*span, detail.clone())
+                }
             };
         }
         effects

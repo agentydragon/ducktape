@@ -44,7 +44,8 @@ use crate::facts::sync_effects::property_inference::{
 use crate::facts::value_flow::{ChunkValueFlow, Values as FlowValues};
 use crate::facts::{
     DataflowOpacityCause, LocalClassConstructionProof, LocalClassConstructionShapes,
-    SetIterableShapes, StatementPurityContext, set_iterables::SetIterableProof,
+    NativeOwnDataReadDiagnostic, SetIterableShapes, StatementPurityContext,
+    set_iterables::SetIterableProof,
 };
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::{ChunkCodeGraph, Effects};
@@ -9112,7 +9113,18 @@ pub(crate) struct SynchronousCallProofs<'a> {
 pub(crate) struct PreparedSynchronousCallIndex {
     index: ExecutionIndex,
     set_iterable_proof: SetIterableProof,
-    native_own_data_read_candidates: BTreeMap<SourceUnitOrdinal, Vec<Span>>,
+    native_own_data_read_candidates: BTreeMap<SourceUnitOrdinal, Vec<NativeOwnDataReadCandidate>>,
+}
+
+enum NativeOwnDataReadCandidate {
+    Exact {
+        span: Span,
+        slots: [IntrinsicSlot; 2],
+    },
+    Unrecognized {
+        span: Span,
+        detail: String,
+    },
 }
 
 /// Exact native calls whose own heap action cannot observe an existing array
@@ -9128,11 +9140,78 @@ impl FreshRecordFreezeHeapProof {
 }
 
 impl PreparedSynchronousCallIndex {
-    pub(crate) fn native_own_data_read_candidates(&self, owner: SourceUnitOrdinal) -> &[Span] {
+    pub(crate) fn native_own_data_read_diagnostics(
+        &self,
+        owner: SourceUnitOrdinal,
+    ) -> Vec<NativeOwnDataReadDiagnostic> {
         self.native_own_data_read_candidates
             .get(&owner)
-            .map(Vec::as_slice)
-            .unwrap_or_default()
+            .into_iter()
+            .flatten()
+            .map(|candidate| match candidate {
+                NativeOwnDataReadCandidate::Exact { span, slots } => self
+                    .native_own_data_read(*span)
+                    .map(|(_, _, dependencies)| NativeOwnDataReadDiagnostic::Proven {
+                        dependencies,
+                    })
+                    .unwrap_or_else(|| NativeOwnDataReadDiagnostic::MissingProof {
+                        span: *span,
+                        detail: self.native_own_data_read_failure_detail(*span, slots),
+                    }),
+                NativeOwnDataReadCandidate::Unrecognized { span, detail } => {
+                    NativeOwnDataReadDiagnostic::Unrecognized {
+                        span: *span,
+                        detail: detail.clone(),
+                    }
+                }
+            })
+            .collect()
+    }
+
+    fn native_own_data_read_failure_detail(
+        &self,
+        span: Span,
+        slots: &[IntrinsicSlot; 2],
+    ) -> String {
+        let required = slots
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        let dynamic_scope = !self.index.dynamic_scope_owners.is_empty();
+        let missing = if dynamic_scope {
+            slots.to_vec()
+        } else {
+            slots
+                .iter()
+                .copied()
+                .filter(|slot| {
+                    self.index
+                        .integrity
+                        .require(std::slice::from_ref(slot), Some(span.lo.0))
+                        .dependencies()
+                        .is_none()
+                })
+                .collect()
+        };
+        if dynamic_scope {
+            format!(
+                "Native own-data read requires intact slots {required}; dynamic scope leaves native binding identity unresolved. Use `debundle explain-integrity` with `--slot` for each listed slot to inspect the program census witnesses."
+            )
+        } else if !missing.is_empty() {
+            let missing = missing
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "Native own-data read requires intact slots {required}; this run has no proof for {missing}. Use `debundle explain-integrity` with `--slot` for each missing slot to inspect the program native-integrity census witnesses."
+            )
+        } else {
+            format!(
+                "Native own-data read requires one proof for slots {required}; no proof was accepted for this complete slot set. Use `debundle explain-integrity` with `--slot` for each listed slot to inspect the program census side."
+            )
+        }
     }
 
     pub(crate) fn resolved_native_operation_inputs(
@@ -9299,21 +9378,25 @@ pub(crate) fn prepare_synchronous_call_index_with_source_facts(
         !constructor.checked_default_fields
             || index.local_class_construction_proof.contains_class(*key)
     });
-    let mut native_own_data_read_candidates: BTreeMap<SourceUnitOrdinal, Vec<Span>> =
-        BTreeMap::new();
+    let mut native_own_data_read_candidates: BTreeMap<
+        SourceUnitOrdinal,
+        Vec<NativeOwnDataReadCandidate>,
+    > = BTreeMap::new();
     let mut native_own_data_reads = BTreeMap::new();
     for call in index.top_calls.iter().flatten() {
-        if call.kind == CallKind::LocalMemberRead
-            && let Some(slots) = native_own_data_read_slots(&call.callee, |binding| {
-                flow.is_declared(binding) || shadowed.contains(binding.0.as_ref())
-            })
-        {
-            native_own_data_read_candidates
-                .entry(call.owner)
-                .or_default()
-                .push(call.span);
-            native_own_data_reads.insert(call.span.lo.0, slots);
+        if call.kind != CallKind::LocalMemberRead {
+            continue;
         }
+        let Some(candidate) = native_own_data_read_candidate(call, flow, shadowed) else {
+            continue;
+        };
+        if let NativeOwnDataReadCandidate::Exact { span, slots } = &candidate {
+            native_own_data_reads.insert(span.lo.0, *slots);
+        }
+        native_own_data_read_candidates
+            .entry(call.owner)
+            .or_default()
+            .push(candidate);
     }
     index.native_own_data_reads = native_own_data_reads;
     PreparedSynchronousCallIndex {
@@ -9321,6 +9404,51 @@ pub(crate) fn prepare_synchronous_call_index_with_source_facts(
         set_iterable_proof,
         native_own_data_read_candidates,
     }
+}
+
+fn native_own_data_read_candidate(
+    call: &Call,
+    flow: &ChunkValueFlow,
+    shadowed: &BTreeSet<&'static str>,
+) -> Option<NativeOwnDataReadCandidate> {
+    let ValueExpr::Member(receiver, property, member_key, _) = &call.callee else {
+        return None;
+    };
+    let ValueExpr::Binding(binding) = receiver.as_ref() else {
+        return None;
+    };
+    let family = NativeIntrinsic::for_global_binding(binding.0.as_ref())?;
+    let name = binding.0.as_ref();
+    if flow.is_declared(binding) || shadowed.contains(name) {
+        return Some(NativeOwnDataReadCandidate::Unrecognized {
+            span: call.span,
+            detail: format!(
+                "`{name}` resolves to a chunk binding here, so this read does not resolve to its native binding; no native slot proof applies."
+            ),
+        });
+    }
+    if !matches!(member_key, MemberKey::Static) {
+        return Some(NativeOwnDataReadCandidate::Unrecognized {
+            span: call.span,
+            detail: format!(
+                "`{name}[...]` uses computed member access, so this read does not identify an exact native own-data slot to query."
+            ),
+        });
+    }
+    let Some(slots) = native_own_data_read_slots(&call.callee, |_| false) else {
+        let property = property.as_deref().unwrap_or("<unknown>");
+        let global = family.global_binding().unwrap_or(name);
+        return Some(NativeOwnDataReadCandidate::Unrecognized {
+            span: call.span,
+            detail: format!(
+                "`{global}.{property}` is not a recognized native own-data slot; there is no exact slot proof to query."
+            ),
+        });
+    };
+    Some(NativeOwnDataReadCandidate::Exact {
+        span: call.span,
+        slots,
+    })
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
