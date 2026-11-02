@@ -92,12 +92,68 @@ def test_pod_carrying_its_own_wiring_is_left_alone(scratch_app: App, tmp_path: P
     Every rule preconditions on the thing it appends being absent — the volume rule on the CA
     volume, the env-and-mount rules on the CA volumeMount — so a pod template that ships the
     complete wiring itself gets no injection at all. That is what lets a self-wired pod keep its
-    own `HTTP_PROXY`: env is last-entry-wins, so an appended fleet value would otherwise override
-    the pod's.
+    own `HTTP_PROXY`. (A container that sets its own proxy without the CA mount is skipped too; see
+    `test_container_with_its_own_proxy_keeps_it`.)
     """
     assert_not_mutated(
         policy(scratch_app, "inject-haku-egress-proxy", tmp_path), manifest("pod_self_wired_egress_proxy.yaml")
     )
+
+
+def _mixed_pod() -> str:
+    """One pod, both container kinds, each with a container that says nothing about egress and one that
+    names its own proxy (as a pod with an Agentplane sidecar does)."""
+    return textwrap.dedent("""
+        apiVersion: v1
+        kind: Pod
+        metadata:
+          name: proxy-injection-mixed
+          namespace: haku-sandbox
+        spec:
+          initContainers:
+            - name: setup-plain
+              image: curlimages/curl:latest
+            - name: setup-own
+              image: curlimages/curl:latest
+              env:
+                - {name: HTTP_PROXY, value: "http://127.0.0.1:3128"}
+          containers:
+            - name: app-plain
+              image: curlimages/curl:latest
+            - name: app-own
+              image: curlimages/curl:latest
+              env:
+                - {name: HTTPS_PROXY, value: "http://127.0.0.1:3128"}
+                - {name: SSL_CERT_FILE, value: /etc/agentplane-egress-ca/ca-certificates.crt}
+        """)
+
+
+def test_container_with_its_own_proxy_keeps_it(scratch_app: App, tmp_path: Path) -> None:
+    """The injection is a default, not an override: a container that sets HTTP_PROXY or HTTPS_PROXY is skipped
+    whole (no env appended, no CA mount), while a sibling that says nothing still gets the wiring.
+
+    Appending env wins by position, so injecting into a self-configured container silently replaced its
+    proxy: haku-ui's calls skipped its Agentplane sidecar and Home Assistant answered 401 (2026-11-01)."""
+    resource = tmp_path / "pod.yaml"
+    resource.write_text(_mixed_pod())
+    _, second = apply_twice(policy(scratch_app, "inject-haku-egress-proxy", tmp_path), resource, tmp_path)
+    spec = next(d for d in second.mutated_resources if d["kind"] == "Pod")["spec"]
+    containers = {c["name"]: c for c in [*spec["initContainers"], *spec["containers"]]}
+
+    for plain in ("setup-plain", "app-plain"):
+        env = {e["name"]: e["value"] for e in containers[plain]["env"]}
+        assert env["HTTPS_PROXY"].startswith("http://haku-egress-proxy."), plain
+        assert any(m["mountPath"] == "/egress-proxy-ca" for m in containers[plain]["volumeMounts"]), plain
+
+    assert containers["setup-own"]["env"] == [{"name": "HTTP_PROXY", "value": "http://127.0.0.1:3128"}]
+    assert containers["app-own"]["env"] == [
+        {"name": "HTTPS_PROXY", "value": "http://127.0.0.1:3128"},
+        {"name": "SSL_CERT_FILE", "value": "/etc/agentplane-egress-ca/ca-certificates.crt"},
+    ]
+    for own in ("setup-own", "app-own"):
+        assert "volumeMounts" not in containers[own] or not any(
+            m["mountPath"] == "/egress-proxy-ca" for m in containers[own]["volumeMounts"]
+        ), own
 
 
 if __name__ == "__main__":

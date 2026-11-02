@@ -43,7 +43,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     home_assistant_read_egress_rules,
 )
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.haku import ui_egress as haku_ui_egress
+from cluster.cdk8s.haku import anki_egress as haku_anki_egress, ui_egress as haku_ui_egress
 from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.providers.agentplane import policy_set
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
@@ -732,6 +732,21 @@ def add_staging_action_policies(scope: Construct) -> None:
         ),
         subject=PolicyBindingSpecSubject(namespace=haku_ui_egress.NAMESPACE, name=haku_ui_egress.SERVICE_ACCOUNT),
         policy_sets=[haku_ui_egress.POLICY, HOME_ASSISTANT_READS_SET, GROCY_SF_READS_SET],
+    )
+
+    # haku-anki, as its own egress identity in haku-sandbox (haku/anki_egress.py): AnkiWeb sync and nothing
+    # else. Not an Action caller, so the binding grants egress only.
+    haku_anki_egress.add_gateway_resources(scope, namespace=_NAMESPACE)
+    _binding(
+        scope,
+        "policybinding-haku-anki",
+        metadata=ApiObjectMetadata(
+            name=haku_anki_egress.SERVICE_ACCOUNT,
+            namespace=_NAMESPACE,
+            annotations={"description": "What haku-anki (haku-sandbox) may reach: AnkiWeb."},
+        ),
+        subject=PolicyBindingSpecSubject(namespace=haku_anki_egress.NAMESPACE, name=haku_anki_egress.SERVICE_ACCOUNT),
+        policy_sets=[haku_anki_egress.POLICY],
     )
 
     # Haku-like sandboxes get Coinbase only through this explicit combined PolicySet selection.

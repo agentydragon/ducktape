@@ -607,6 +607,7 @@ py_library(
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:external_creds",
+        "//cluster/cdk8s/haku:anki_egress",
         "//cluster/cdk8s/haku:ui_egress",
         "//cluster/cdk8s/monitoring:mimir",
         "//cluster/cdk8s/providers/agentplane:policy_binding",

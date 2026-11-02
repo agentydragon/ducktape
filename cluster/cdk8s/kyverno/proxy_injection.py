@@ -77,6 +77,8 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
 from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy, match_resources
 
 _CLUSTER_NO_PROXY = ".svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8"
+# A container that sets either of these has chosen its own egress path; the injection skips it.
+_OWN_PROXY_VARS = ("HTTP_PROXY", "HTTPS_PROXY")
 
 
 def _pods_created_in(namespace: str) -> ClusterPolicySpecRulesMatch:
@@ -135,7 +137,17 @@ def _env_and_mount_rule(
                                 key=f"{{{{ (element.volumeMounts || `[]`)[?name=='{volume}'] | length(@) }}}}",
                                 operator=ClusterPolicySpecRulesMutateForeachPreconditionsAllOperator.EQUALS,
                                 value=0,
-                            )
+                            ),
+                            # A container that names its own proxy is left alone: the env here is a default for
+                            # pods that say nothing, not an override of ones with an egress path of their own.
+                            *(
+                                ClusterPolicySpecRulesMutateForeachPreconditionsAll(
+                                    key=f"{{{{ (element.env || `[]`)[?name=='{name}'] | length(@) }}}}",
+                                    operator=ClusterPolicySpecRulesMutateForeachPreconditionsAllOperator.EQUALS,
+                                    value=0,
+                                )
+                                for name in _OWN_PROXY_VARS
+                            ),
                         ]
                     ),
                     patches_json6902="\n".join(patches),
@@ -242,11 +254,12 @@ def inject_haku_egress_proxy_chart(app: App) -> Chart:
     fence could swap a placeholder for the real credential; this proxy has never had a credential-swapping
     addon, so workloads that need Forgejo credentials mount them.)
 
-    The env is APPENDED to each container's own, and the last duplicate wins, so these values override any
-    HTTP_PROXY/HTTPS_PROXY/NO_PROXY/SSL_CERT_FILE a pod sets itself. A workload with its own egress path (a
-    sidecar, a different proxy) must therefore name it in code rather than in env; haku-ui does
-    (`ui/backend/agentplane.py`, `Egress`). Today the only workload here that needs this proxy is haku-anki,
-    for AnkiWeb sync; haku-jupyter and haku-ui make no use of it.
+    The env is a default, not an override: a container that already sets `HTTP_PROXY` or `HTTPS_PROXY` is
+    skipped entirely (no env, no CA mount), so a workload with its own egress path (an Agentplane sidecar, a
+    different proxy) just declares it. Before 2026-11-02 the env was appended to every container and the last
+    duplicate won, which silently overrode such pods (haku-ui's calls skipped its sidecar and Home Assistant
+    answered 401). Today the only workload here that needs this proxy is haku-anki, for AnkiWeb sync; it is
+    moving to its own sidecar, after which nothing in haku-sandbox does.
     """
     chart = Chart(app, "inject-haku-egress-proxy", disable_resource_name_hashes=True)
     _injection_policy(

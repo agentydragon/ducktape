@@ -129,6 +129,7 @@ py_library(
     name = "rbac",
     srcs = ["rbac.py"],
     deps = [
+        ":anki_egress",
         ":namespace",
         ":ui_egress",
         "//agentplane/action_service/policies:resources",
@@ -138,6 +139,19 @@ py_library(
         "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "anki_egress",
+    srcs = ["anki_egress.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":ui_egress",
+        "//cluster/cdk8s/agentplane:egress_policies",
+        "//cluster/cdk8s/providers/agentplane:policy_set",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
     ],
 )
 

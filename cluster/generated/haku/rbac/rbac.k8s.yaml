@@ -17,6 +17,15 @@ metadata:
   namespace: haku-sandbox
 automountServiceAccountToken: false
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: The principal haku-anki reaches AnkiWeb as, through the Agentplane egress proxy (haku/anki_egress.py). It calls no Action and holds no Kubernetes permission.
+  name: haku-anki
+  namespace: haku-sandbox
+automountServiceAccountToken: false
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
