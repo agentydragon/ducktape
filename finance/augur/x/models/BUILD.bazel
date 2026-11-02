@@ -528,6 +528,25 @@ py_library(
         "//finance/augur/model:historical_windows",
         "//finance/evidence:loading",
         "//finance/evidence:sources",
+        "@pypi//polars",
+    ],
+)
+
+py_test(
+    name = "structural_macro_fit_test",
+    srcs = ["structural_macro_fit_test.py"],
+    deps = [
+        ":conftest",
+        ":macro_var",
+        ":structural_macro_fit",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:historical_windows",
+        "//finance/evidence:loading",
+        "//finance/evidence:sources",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -788,6 +807,7 @@ py_library(
         "//finance/augur/model:product_paths",
         "//finance/augur/model:series",
         "//finance/augur/model:series_model",
+        "//finance/evidence:loading",
         "@pypi//numpy",
     ],
 )
@@ -806,6 +826,7 @@ py_test(
         "//finance/augur/model:historical_windows",
         "//finance/augur/model:market_paths",
         "//finance/augur/model:series",
+        "//finance/evidence:loading",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

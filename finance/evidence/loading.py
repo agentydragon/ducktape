@@ -15,14 +15,17 @@ import json
 import math
 import os
 import zipfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from functools import reduce
 from itertools import pairwise
 from pathlib import Path
 from typing import assert_never
 
 import polars as pl
 
+from finance.evidence import sources
 from finance.evidence.sources import EvidenceKind, EvidenceSource
 
 
@@ -40,6 +43,126 @@ def source_bytes(evidence_dir: Path, source: EvidenceSource) -> bytes:
     if not path.exists():
         raise RuntimeError(f"evidence not found in checkout: {path}")
     return path.read_bytes()
+
+
+def offset_calendar_month(month: date, offset: int) -> date:
+    """Move a first-of-month date by a calendar-month offset."""
+
+    absolute_month = month.year * 12 + month.month - 1 + offset
+    year, zero_based_month = divmod(absolute_month, 12)
+    return date(year, zero_based_month + 1, 1)
+
+
+def is_next_calendar_month(earlier: date, later: date) -> bool:
+    """Whether two monthly observations are exactly one calendar month apart."""
+
+    return offset_calendar_month(earlier, 1) == later
+
+
+class EvidenceFrameCache:
+    """Read and parse each requested source once, retaining its source-shaped Polars frame."""
+
+    def __init__(self, evidence_dir: Path) -> None:
+        self.evidence_dir = evidence_dir
+        self._frames: dict[EvidenceSource, pl.DataFrame] = {}
+        self._monthly_frames: dict[EvidenceSource, pl.DataFrame] = {}
+
+    def frame(self, source: EvidenceSource) -> pl.DataFrame:
+        if source not in self._frames:
+            self._frames[source] = evidence_series_frame(source_bytes(self.evidence_dir, source), source)
+        return self._frames[source]
+
+    def monthly_frame(self, source: EvidenceSource) -> pl.DataFrame:
+        if source not in self._monthly_frames:
+            self._monthly_frames[source] = monthly_last(self.frame(source))
+        return self._monthly_frames[source]
+
+
+def align_monthly_frames(frames: dict[str, pl.DataFrame], *, value_column: str) -> pl.DataFrame:
+    """Inner-join `{name: (month, <value_column>)}` frames on month.
+
+    Series are joined only after each consumer has selected and transformed the columns it
+    needs from the source-shaped frames. Missing observations stay missing: the join keeps only
+    months present in every selected series.
+    """
+    if not frames:
+        raise ValueError("at least one monthly series is required")
+    renamed = []
+    for name, frame in frames.items():
+        if name == "month":
+            raise ValueError("monthly series names cannot be 'month'")
+        if "month" not in frame.columns or value_column not in frame.columns:
+            raise ValueError(f"{name} must contain 'month' and {value_column!r} columns")
+        selected = frame.select("month", pl.col(value_column).cast(pl.Float64, strict=False).alias(name))
+        if any(count > 0 for count in selected.null_count().row(0)):
+            raise ValueError(f"{name} contains null month or value entries")
+        if not bool(selected.select(pl.col(name).is_finite().all()).item()):
+            raise ValueError(f"{name} contains a nonfinite value")
+        if selected.get_column("month").n_unique() != selected.height:
+            raise ValueError(f"{name} contains duplicate month keys")
+        renamed.append(selected)
+    aligned = reduce(lambda left, right: left.join(right, on="month", how="inner", validate="1:1"), renamed).sort(
+        "month"
+    )
+    if aligned.is_empty():
+        raise ValueError("monthly series have no shared months")
+    return aligned
+
+
+def require_contiguous_months(months: Sequence[date], *, series_name: str) -> None:
+    """Reject an aligned monthly axis with missing or repeated months.
+
+    Consumers that treat adjacent rows as adjacent months (for example, replay windows and
+    trailing-year inflation) must not bridge a dropped month as if no time had passed.
+    """
+    if not months:
+        raise ValueError(f"{series_name} has no shared months")
+    segments = contiguous_month_segments(months)
+    if len(segments) > 1:
+        boundary = segments[1][0]
+        raise ValueError(f"{series_name} has a gap or duplicate between {months[boundary - 1]} and {months[boundary]}")
+
+
+def contiguous_month_segments(months: Sequence[date]) -> tuple[tuple[int, int], ...]:
+    """Return half-open index ranges for each run of consecutive calendar months."""
+
+    if not months:
+        return ()
+    segments = []
+    start = 0
+    for index, (earlier, later) in enumerate(pairwise(months), start=1):
+        if not is_next_calendar_month(earlier, later):
+            segments.append((start, index))
+            start = index
+    segments.append((start, len(months)))
+    return tuple(segments)
+
+
+def compound_monthly_returns(frame: pl.DataFrame, *, return_column: str) -> pl.DataFrame:
+    """Compound one monthly simple-return column into a `(month, value)` level frame."""
+    if "month" not in frame.columns or return_column not in frame.columns:
+        raise ValueError(f"monthly return frame must contain 'month' and {return_column!r} columns")
+    selected = frame.select("month", pl.col(return_column).cast(pl.Float64, strict=False).alias("value"))
+    if any(count > 0 for count in selected.null_count().row(0)):
+        raise ValueError(f"{return_column} contains null month or return entries")
+    if not bool(selected.select(pl.col("value").is_finite().all()).item()):
+        raise ValueError(f"{return_column} contains a nonfinite return")
+    if selected.get_column("month").n_unique() != selected.height:
+        raise ValueError(f"{return_column} contains duplicate month keys")
+    require_contiguous_months(selected.get_column("month").to_list(), series_name=return_column)
+    if selected.filter(pl.col("value") <= -1.0).height:
+        raise ValueError(f"{return_column} contains a return at or below -100%")
+    return selected.sort("month").with_columns((1.0 + pl.col("value")).cum_prod().alias("value"))
+
+
+def monthly_levels(monthly: pl.DataFrame) -> list[MonthlyLevel]:
+    """Convert an aligned monthly `(month, value)` frame at the model boundary."""
+    if "month" not in monthly.columns or "value" not in monthly.columns:
+        raise ValueError("monthly levels must contain 'month' and 'value' columns")
+    return [
+        MonthlyLevel(month=month, value=value)
+        for month, value in zip(monthly["month"].to_list(), monthly["value"].to_list(), strict=True)
+    ]
 
 
 def fred_series_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
@@ -60,6 +183,25 @@ def fred_series_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
     if out.is_empty():
         raise ValueError(f"{source.provenance_label} contains no positive observations for {column}")
     return out
+
+
+def evidence_series_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
+    """Parse an ordinary one-series FRED/Yahoo source or one supported French return file."""
+    match source.kind:
+        case EvidenceKind.FRED:
+            return fred_series_frame(data, source)
+        case EvidenceKind.YAHOO:
+            return yahoo_adjusted_close_frame(data, source)
+        case EvidenceKind.FRENCH:
+            if source == sources.FRENCH_FACTORS:
+                return french_factors_frame(data, source)
+            if source == sources.FRENCH_INTERNATIONAL_INDICES:
+                return french_international_market_frame(data, source)
+            raise ValueError(f"no evidence frame parser for French source {source.provenance_label}")
+        case EvidenceKind.ZILLOW:
+            raise ValueError(f"{source.provenance_label}: Zillow needs city and state selection")
+        case _ as unreachable:
+            assert_never(unreachable)
 
 
 def zillow_city_series_frame(data: bytes, source: EvidenceSource, *, region_name: str, state: str) -> pl.DataFrame:

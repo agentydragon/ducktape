@@ -30,6 +30,7 @@ py_test(
         ":loading",
         ":sources",
         "//:conftest",
+        "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

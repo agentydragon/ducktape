@@ -20,7 +20,11 @@ from finance.augur.x.models.structural_macro import (
     MacroStateMatrix,
     MacroStateVector,
 )
-from finance.evidence.loading import MonthlyLevel
+from finance.evidence.loading import (
+    MonthlyLevel,
+    is_next_calendar_month as is_next_month,
+    offset_calendar_month as offset_month,
+)
 
 MACRO_STATE_NAMES = ("short_rate", "term_spread", "inflation_rate")
 MACRO_STATE_DIM = len(MACRO_STATE_NAMES)
@@ -106,11 +110,12 @@ def as_state_matrix(rows: Sequence[Sequence[float]]) -> MacroStateMatrix:
 
 @dataclass(frozen=True)
 class MacroStatePath:
-    """The macro state month by month, before any window is chosen.
+    """The macro state at each observed month, before any window is chosen.
 
     Separate from the fit because a window is then a SLICE of one path rather than a re-run of
     the transform. Two fits on different spans differ only in span — which is the whole
-    premise of comparing them (`study/macro_window/holdout.py`).
+    premise of comparing them (`study/macro_window/holdout.py`). Missing source months remain
+    visible as gaps; transitions and holdout horizons must respect calendar time.
     """
 
     months: tuple[date, ...]
@@ -124,6 +129,19 @@ class MacroStatePath:
         """The state at `index` as a fixed-arity vector, ready for `MacroVarFit.forecast`."""
 
         return as_state_vector(self.states[index].tolist())
+
+    def transition_pairs(self) -> tuple[np.ndarray, np.ndarray]:
+        """Return only state pairs one calendar month apart.
+
+        A missing source month remains a gap in this path. It must not be interpreted as an
+        eleven- or thirteen-month VAR transition just because the remaining rows are adjacent.
+        """
+
+        current_indices = [
+            index for index in range(1, len(self.months)) if is_next_month(self.months[index - 1], self.months[index])
+        ]
+        current = np.asarray(current_indices, dtype=np.intp)
+        return self.states[current - 1], self.states[current]
 
     def between(self, start: date, end: date) -> MacroStatePath:
         """The sub-path from `start` through `end`, both inclusive.
@@ -146,7 +164,8 @@ def macro_state_path(
     inflation_lookback_months: int = 12,
 ) -> MacroStatePath:
     """Build the `(short rate, term spread, trailing-year log inflation)` state from rate and
-    CPI series, on the months all three share.
+    CPI series, on the months all three share. A trailing-year CPI change uses the observation
+    exactly `inflation_lookback_months` calendar months earlier. Missing months are not bridged.
 
     The inflation state is TRAILING-YEAR log inflation, not the month-over-month rate. The
     month-over-month rate is mostly measurement noise (its own lag is ~0.48, against ~0.98
@@ -163,9 +182,10 @@ def macro_state_path(
         raise ValueError(f"need at least {MINIMUM_MONTHS + inflation_lookback_months} shared months")
 
     usable = [
-        (month, months[index - inflation_lookback_months])
-        for index, month in enumerate(months)
-        if index >= inflation_lookback_months and cpi[months[index - inflation_lookback_months]] > 0.0
+        (month, offset_month(month, -inflation_lookback_months))
+        for month in months
+        if offset_month(month, -inflation_lookback_months) in cpi
+        and cpi[offset_month(month, -inflation_lookback_months)] > 0.0
     ]
     states = np.array(
         [
@@ -178,12 +198,15 @@ def macro_state_path(
 
 
 def fit_macro_var_path(path: MacroStatePath) -> MacroVarFit:
-    """OLS the VAR(1) on an already-built state path."""
+    """OLS the VAR(1) on consecutive monthly transitions of an already-built state path."""
 
     if len(path.months) < MINIMUM_MONTHS:
         raise ValueError(f"need at least {MINIMUM_MONTHS} states to fit; got {len(path.months)}")
 
-    previous, current = path.states[:-1], path.states[1:]
+    previous, current = path.transition_pairs()
+    minimum_transitions = MINIMUM_MONTHS - 1
+    if len(previous) < minimum_transitions:
+        raise ValueError(f"need at least {minimum_transitions} consecutive monthly transitions; got {len(previous)}")
     design = np.column_stack([np.ones(len(previous)), previous])
     # One OLS per equation. For a VAR whose equations share the same regressors this is exactly
     # the joint estimate, so nothing is lost by fitting them separately.

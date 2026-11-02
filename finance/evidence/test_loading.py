@@ -7,15 +7,19 @@ import textwrap
 import zipfile
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import cast
 
+import polars as pl
 import pytest
 import pytest_bazel
 
 from finance.evidence.loading import (
+    align_monthly_frames,
     fred_series_frame,
     french_factors_frame,
     french_international_market_frame,
     read_monthly_levels,
+    require_contiguous_months,
     source_bytes,
     yahoo_adjusted_close_frame,
 )
@@ -129,6 +133,47 @@ def test_source_bytes_missing_file_raises(tmp_path: Path) -> None:
         source_bytes(tmp_path, FRED_CPI)
 
 
+def test_month_alignment_projects_selected_columns_and_keeps_only_the_intersection() -> None:
+    months = [date(2024, month, 1) for month in (1, 2, 3, 4)]
+    aligned = align_monthly_frames(
+        {
+            "factor_a": pl.DataFrame({"month": months, "value": [1.0, 2.0, 3.0, 4.0], "unused": [None] * 4}),
+            "factor_b": pl.DataFrame({"month": months[1:], "value": [20.0, 30.0, 40.0], "unused": [float("nan")] * 3}),
+        },
+        value_column="value",
+    )
+
+    assert aligned.columns == ["month", "factor_a", "factor_b"]
+    assert aligned["month"].to_list() == months[1:]
+    assert aligned["factor_a"].to_list() == [2.0, 3.0, 4.0]
+    assert aligned["factor_b"].to_list() == [20.0, 30.0, 40.0]
+    require_contiguous_months(aligned["month"].to_list(), series_name="aligned fixture")
+
+
+def test_month_alignment_rejects_disjoint_series() -> None:
+    with pytest.raises(ValueError, match="no shared months"):
+        align_monthly_frames(
+            {
+                "left": pl.DataFrame({"month": [date(2024, 1, 1)], "value": [1.0]}),
+                "right": pl.DataFrame({"month": [date(2024, 2, 1)], "value": [2.0]}),
+            },
+            value_column="value",
+        )
+
+
+@pytest.mark.parametrize(
+    ("bad_frame", "message"),
+    [
+        (pl.DataFrame({"month": [date(2024, 1, 1), date(2024, 1, 1)], "value": [1.0, 2.0]}), "duplicate"),
+        (pl.DataFrame({"month": [date(2024, 1, 1), date(2024, 2, 1)], "value": [1.0, float("nan")]}), "nonfinite"),
+        (pl.DataFrame({"month": [date(2024, 1, 1), None], "value": [1.0, 2.0]}), "null"),
+    ],
+)
+def test_month_alignment_rejects_invalid_required_series(bad_frame: pl.DataFrame, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        align_monthly_frames({"required": bad_frame}, value_column="value")
+
+
 def _french_zip(body: str, *, member: str = "F-F_Research_Data_Factors.csv") -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
@@ -163,7 +208,7 @@ def test_the_annual_section_is_not_mistaken_for_monthly_rows() -> None:
     frame = french_factors_frame(_french_zip(_FRENCH_BODY), FRENCH_FACTORS)
 
     assert frame.height == 3
-    assert frame.get_column("market_total_return").max() < 0.05
+    assert cast(float, frame.get_column("market_total_return").max()) < 0.05
     assert date(1927, 1, 1) not in frame.get_column("month").to_list()
 
 
@@ -254,7 +299,7 @@ def test_international_sections_sharing_the_columns_are_not_read() -> None:
     frame = french_international_market_frame(_international_zip(_INTERNATIONAL_TARGET), FRENCH_INTERNATIONAL_INDICES)
 
     assert frame.height == len(_INTERNATIONAL_TARGET)
-    assert frame.get_column("market_total_return").abs().max() < 0.05
+    assert cast(float, frame.get_column("market_total_return").abs().max()) < 0.05
 
 
 @pytest.mark.parametrize(

@@ -121,6 +121,7 @@ py_library(
         "//finance/evidence:loading",
         "//finance/evidence:sources",
         "@pypi//numpy",
+        "@pypi//polars",
         "@pypi//pydantic",
     ],
 )
@@ -139,6 +140,7 @@ py_test(
         "//finance/evidence:loading",
         "//finance/evidence:sources",
         "@pypi//numpy",
+        "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

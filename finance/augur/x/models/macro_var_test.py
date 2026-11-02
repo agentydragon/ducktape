@@ -14,7 +14,13 @@ import numpy as np
 import pytest
 import pytest_bazel
 
-from finance.augur.x.models.macro_var import MacroVarFit, fit_macro_var, macro_state_path
+from finance.augur.x.models.macro_var import (
+    MacroVarFit,
+    fit_macro_var,
+    fit_macro_var_path,
+    is_next_month,
+    macro_state_path,
+)
 from finance.augur.x.models.structural_macro import PERCENT_TO_DECIMAL
 from finance.augur.x.models.synthetic_rates import months
 from finance.evidence.loading import MonthlyLevel
@@ -31,6 +37,7 @@ def _macro_var_path(
     transition: tuple[tuple[float, float, float], ...] = TRUE_MACRO_TRANSITION,
     shock_cholesky: tuple[tuple[float, float, float], ...] = TRUE_MACRO_SHOCK_CHOLESKY,
     seed: int = 0,
+    start_year: int = 1900,
 ) -> tuple[list[MonthlyLevel], list[MonthlyLevel], list[MonthlyLevel]]:
     """Simulate a synthetic `(short_rate, term_spread, inflation_rate)` VAR(1) path and invert
     it into the `(short_rate_percent, long_rate_percent, cpi_level)` inputs `fit_macro_var`
@@ -39,7 +46,7 @@ def _macro_var_path(
     reads inflation as trailing-year log CPI growth, not a rate observed directly."""
 
     rng = np.random.default_rng(seed)
-    all_months = months(n_months)
+    all_months = months(n_months, start_year=start_year)
     transition_matrix = np.array(transition)
     chol = np.array(shock_cholesky)
 
@@ -158,6 +165,48 @@ def test_slicing_a_state_path_keeps_the_year_re_deriving_would_drop() -> None:
     # Where they do overlap the states agree: the transform is the same, only the reachable
     # span differs. That is what makes slicing a pure gain rather than a different estimate.
     assert sliced.states[INFLATION_LOOKBACK_MONTHS:] == pytest.approx(rebuilt.states)
+
+
+def test_gapped_cpi_uses_exact_year_lag_and_skips_nonmonthly_var_transitions() -> None:
+    """A missing October CPI print must not shift later trailing-year lags or create a
+    September-to-November one-step transition. The estimator still uses all consecutive pairs
+    on either side of the gap.
+    """
+
+    short, long_rate, cpi = _macro_var_path(12 * 31, start_year=2000)
+    cpi_by_month = {level.month: level.value for level in cpi}
+    missing_month = date(2025, 10, 1)
+    cpi = [level for level in cpi if level.month != missing_month]
+
+    path = macro_state_path(short_rate_percent=short, long_rate_percent=long_rate, cpi_level=cpi)
+    november_2025 = date(2025, 11, 1)
+    november_index = path.months.index(november_2025)
+    assert path.states[november_index, 2] == pytest.approx(
+        math.log(cpi_by_month[november_2025] / cpi_by_month[date(2024, 11, 1)])
+    )
+    assert date(2025, 10, 1) not in path.months
+    assert date(2026, 10, 1) not in path.months  # its exact year-ago CPI observation is unavailable
+
+    previous, current = path.transition_pairs()
+    expected_pairs = [
+        (index - 1, index)
+        for index in range(1, len(path.months))
+        if is_next_month(path.months[index - 1], path.months[index])
+    ]
+    assert len(previous) == len(expected_pairs)
+    transition_dates = {(path.months[first], path.months[later]) for first, later in expected_pairs}
+    assert (date(2025, 9, 1), date(2025, 11, 1)) not in transition_dates
+    assert (date(2025, 8, 1), date(2025, 9, 1)) in transition_dates
+    assert (date(2025, 11, 1), date(2025, 12, 1)) in transition_dates
+
+    design = np.column_stack([np.ones(len(previous)), previous])
+    coefficients, *_ = np.linalg.lstsq(design, current, rcond=None)
+    residuals = current - design @ coefficients
+    expected_covariance = residuals.T @ residuals / (len(residuals) - design.shape[1])
+    fit = fit_macro_var_path(path)
+    np.testing.assert_allclose(fit.intercept, coefficients[0])
+    np.testing.assert_allclose(fit.transition, coefficients[1:].T)
+    np.testing.assert_allclose(np.asarray(fit.shock_cholesky) @ np.asarray(fit.shock_cholesky).T, expected_covariance)
 
 
 if __name__ == "__main__":

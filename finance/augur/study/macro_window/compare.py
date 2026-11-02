@@ -30,11 +30,14 @@ from pathlib import Path
 
 import numpy as np
 
-from finance.augur.model.historical_windows import MACRO_HISTORY_SOURCES
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
 from finance.augur.x.models.macro_var import MacroVarFit
 from finance.augur.x.models.structural_macro import StructuralMacroFittedDefaults
-from finance.augur.x.models.structural_macro_fit import MacroFitWindow, fit_structural_macro_defaults
+from finance.augur.x.models.structural_macro_fit import (
+    LONG_RECORD_MACRO_SOURCES,
+    MacroFitWindow,
+    fit_structural_macro_defaults,
+)
 from finance.evidence import sources
 
 logger = logging.getLogger(__name__)
@@ -47,7 +50,7 @@ STATE_NAMES = ("short_rate", "term_spread", "inflation")
 EVIDENCE = tuple(
     dict.fromkeys(
         (
-            *MACRO_HISTORY_SOURCES,
+            *LONG_RECORD_MACRO_SOURCES,
             sources.FRED_FEDFUNDS,
             sources.FRED_GS10,
             sources.FRED_CPI,

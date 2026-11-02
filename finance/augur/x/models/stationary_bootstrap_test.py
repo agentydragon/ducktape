@@ -20,7 +20,8 @@ from finance.augur.model.exogenous import ExogenousSamplingRequest, Sampler
 from finance.augur.model.historical_windows import HistoricalWindowsModel, MacroHistory
 from finance.augur.model.market_paths import MarketPaths
 from finance.augur.model.series import SecuritySymbol
-from finance.augur.x.models.stationary_bootstrap import StationaryBootstrapModel
+from finance.augur.x.models.stationary_bootstrap import StationaryBootstrapModel, _compounded_growth
+from finance.evidence.loading import is_next_calendar_month
 
 RATE_STEP = 1e-4
 EQUITY_GROWTH = 0.004
@@ -217,8 +218,29 @@ def test_a_mean_block_length_under_one_month_or_not_finite_is_rejected(mean_bloc
 
 @pytest.mark.parametrize("record_months", [0, 1])
 def test_a_record_without_a_month_to_month_growth_is_rejected(record_months: int) -> None:
-    with pytest.raises(ValueError, match="at least two"):
+    with pytest.raises(ValueError, match="consecutive month pair"):
         StationaryBootstrapModel(history=_record(record_months), mean_block_months=12.0)
+
+
+def test_gapped_record_bootstrap_only_uses_real_monthly_growth_pairs() -> None:
+    record = _record(48)
+    keep = np.asarray([index for index in range(len(record.months)) if index != 20])
+    history = record._rows(keep)
+    model = StationaryBootstrapModel(history=history, mean_block_months=1e9)
+    source_months = model.source_months(_request(horizon_months=80, rollouts=20))
+    sampled = model.sample_market(_request(horizon_months=80, rollouts=20))
+
+    assert source_months.shape == (20, 81)
+    source_identity = np.rint((history.short_rate - 0.01) / RATE_STEP).astype(np.int64)
+    np.testing.assert_array_equal(_read_back(sampled), source_identity[source_months])
+    for source_month in source_months[:, 1:].flat:
+        assert source_month > 0
+        assert is_next_calendar_month(history.months[source_month - 1], history.months[source_month])
+
+    # A caller cannot hand `_compounded_growth` a row whose previous array element belongs to
+    # the other side of the missing month and silently calculate a multi-month return.
+    with pytest.raises(ValueError, match="crosses a missing source month"):
+        _compounded_growth(history.cpi_level, np.asarray([[19, 20]], dtype=np.intp), history.months)
 
 
 def test_the_provenance_names_the_record_the_mean_and_the_seeds() -> None:

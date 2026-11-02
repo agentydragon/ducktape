@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import io
 import zipfile
-from datetime import date, timedelta
+from datetime import date
 from itertools import pairwise
 from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
+import polars as pl
 import pytest
 import pytest_bazel
 
@@ -24,10 +25,10 @@ from finance.augur.model.historical_windows import (
     HistoricalWindowsModel,
     HistoricalWindowsProviderConfig,
     MacroHistory,
+    load_ex_us_equity_levels,
     load_macro_history,
-    load_macro_history_with_ex_us,
-    macro_history_from_levels,
-    splice_at_seam,
+    macro_history_from_frames,
+    splice_monthly_frames,
 )
 from finance.augur.model.series import (
     InflationKey,
@@ -36,8 +37,7 @@ from finance.augur.model.series import (
     SecurityKey,
     SecuritySymbol,
 )
-from finance.evidence import sources
-from finance.evidence.loading import MonthlyLevel
+from finance.evidence import loading, sources
 
 BOND = SecuritySymbol("BOND")
 CASH = SecuritySymbol("CASH")
@@ -169,6 +169,16 @@ def test_the_independent_window_estimate_is_reported_and_is_tiny() -> None:
     assert model.independent_window_estimate(360) == pytest.approx(1.55, abs=0.01)
 
 
+def test_gap_safe_window_estimate_is_documented_as_a_run_length_approximation() -> None:
+    history = _history(months=559)
+    gapped = history._rows(np.asarray([i for i in range(len(history.months)) if i != 250]))
+    model = _model(gapped)
+
+    assert model.independent_window_estimate(360) == 0.0
+    assert model.window_count(360) == 0
+    assert _model(_history(months=360)).independent_window_estimate(360) == 0.0
+
+
 @pytest.mark.parametrize("rollouts", [1, 3, 480])
 def test_explicit_selection_preserves_the_previous_evenly_spaced_windows(rollouts: int) -> None:
     """Preserve the old numerical convention when the author selects that same window set."""
@@ -188,18 +198,50 @@ def test_explicit_selection_preserves_the_previous_evenly_spaced_windows(rollout
         )
 
 
-def test_the_aligned_record_is_the_intersection_of_all_four_series() -> None:
+def test_gap_splits_replay_windows_and_never_bridges_monthly_growth() -> None:
+    record = _history(36)
+    gap_index = 20
+    keep = np.asarray([index for index in range(len(record.months)) if index != gap_index])
+    history = record._rows(keep)
+    model = HistoricalWindowsModel(history=history)
+    horizon = 12
+
+    starts = model.window_starts(horizon)
+    # The record has 20 months before the gap and 15 after it: each segment contributes only
+    # windows fully contained in that segment.
+    assert model.window_count(horizon) == 8 + 3
+    assert starts == tuple(history.months[index] for index in (*range(8), *range(20, 23)))
+
+    selected = (starts[7], starts[8])
+    paths = model.market_paths(window_starts=selected, horizon_months=horizon)
+    assert paths.equity_total_return_index is not None
+    for rollout, start in enumerate(selected):
+        start_index = history.months.index(start)
+        months = history.months[start_index : start_index + horizon + 1]
+        assert len(months) == horizon + 1
+        assert all(
+            later == date(earlier.year + int(earlier.month == 12), earlier.month % 12 + 1, 1)
+            for earlier, later in pairwise(months)
+        )
+        expected = history.equity_level[start_index : start_index + horizon + 1]
+        np.testing.assert_array_equal(paths.equity_total_return_index[rollout], expected / expected[0])
+
+
+def test_the_aligned_record_is_the_intersection_of_all_selected_series() -> None:
     """A total-return equity series is the short one, so it sets where usable history starts.
     Aligning on anything less than all four would put a rate from one month beside an equity
     level from another — invisible in the levels, wrong in every correlation."""
 
-    history = macro_history_from_levels(
-        short_rate_percent=[(date(2000, 1, 1) + timedelta(days=31 * m), 4.0) for m in range(100)],
-        long_rate_percent=[(date(2000, 1, 1) + timedelta(days=31 * m), 5.0) for m in range(100)],
-        corporate_aaa_percent=[(date(2000, 1, 1) + timedelta(days=31 * m), 6.0) for m in range(100)],
-        corporate_baa_percent=[(date(2000, 1, 1) + timedelta(days=31 * m), 7.0) for m in range(100)],
-        equity_level=[(date(2000, 1, 1) + timedelta(days=31 * m), 100.0 + m) for m in range(40, 100)],
-        cpi_level=[(date(2000, 1, 1) + timedelta(days=31 * m), 100.0 + m) for m in range(20, 90)],
+    months = _month_seq(100, 2000)
+    history = macro_history_from_frames(
+        {
+            "short_rate_percent": pl.DataFrame({"month": months, "value": [4.0] * 100}),
+            "long_rate_percent": pl.DataFrame({"month": months, "value": [5.0] * 100}),
+            "corporate_aaa_percent": pl.DataFrame({"month": months, "value": [6.0] * 100}),
+            "corporate_baa_percent": pl.DataFrame({"month": months, "value": [7.0] * 100}),
+            "equity_level": pl.DataFrame({"month": months[40:], "value": [100.0 + m for m in range(40, 100)]}),
+            "cpi_level": pl.DataFrame({"month": months[20:90], "value": [100.0 + m for m in range(20, 90)]}),
+        }
     )
 
     assert len(history.months) == 50  # months 40..89
@@ -208,14 +250,17 @@ def test_the_aligned_record_is_the_intersection_of_all_four_series() -> None:
 
 
 def test_disjoint_series_are_rejected() -> None:
-    with pytest.raises(ValueError, match="share no months"):
-        macro_history_from_levels(
-            short_rate_percent=[(date(2000, 1, 1) + timedelta(days=31 * m), 4.0) for m in range(10)],
-            long_rate_percent=[(date(2000, 1, 1) + timedelta(days=31 * m), 5.0) for m in range(10)],
-            corporate_aaa_percent=[(date(2000, 1, 1) + timedelta(days=31 * m), 6.0) for m in range(10)],
-            corporate_baa_percent=[(date(2000, 1, 1) + timedelta(days=31 * m), 7.0) for m in range(10)],
-            equity_level=[(date(2000, 1, 1) + timedelta(days=31 * m), 100.0) for m in range(50, 60)],
-            cpi_level=[(date(2000, 1, 1) + timedelta(days=31 * m), 100.0) for m in range(10)],
+    months = _month_seq(10, 2000)
+    with pytest.raises(ValueError, match="no shared months"):
+        macro_history_from_frames(
+            {
+                "short_rate_percent": pl.DataFrame({"month": months, "value": [4.0] * 10}),
+                "long_rate_percent": pl.DataFrame({"month": months, "value": [5.0] * 10}),
+                "corporate_aaa_percent": pl.DataFrame({"month": months, "value": [6.0] * 10}),
+                "corporate_baa_percent": pl.DataFrame({"month": months, "value": [7.0] * 10}),
+                "equity_level": pl.DataFrame({"month": _month_seq(10, 2005), "value": [100.0] * 10}),
+                "cpi_level": pl.DataFrame({"month": months, "value": [100.0] * 10}),
+            }
         )
 
 
@@ -244,25 +289,25 @@ def test_the_provenance_says_the_rollouts_are_not_independent() -> None:
     assert bundle.provenance["notes"]
 
 
-def _levels(start_year: int, values: list[float]) -> list[MonthlyLevel]:
-    return [MonthlyLevel(month=m, value=v) for m, v in zip(_month_seq(len(values), start_year), values, strict=True)]
+def _level_frame(start_year: int, values: list[float]) -> pl.DataFrame:
+    return pl.DataFrame({"month": _month_seq(len(values), start_year), "value": values})
 
 
 def test_the_splice_shifts_the_early_series_to_meet_the_late_one() -> None:
     """The seam is where continuity matters: a 30-year window starting in 1926 crosses 1953, so
     a step there would read as a real rate move rather than a change of measurement."""
 
-    late = _levels(1910, [4.0 + 0.01 * i for i in range(300)])
+    late = _level_frame(1910, [4.0 + 0.01 * i for i in range(300)])
     # Same shape, offset by a constant, starting 120 months earlier.
-    early = _levels(1900, [4.0 + 0.01 * (i - 120) + 0.5 for i in range(420)])
+    early = _level_frame(1900, [4.0 + 0.01 * (i - 120) + 0.5 for i in range(420)])
 
-    spliced = splice_at_seam(early=early, late=late)
+    spliced = splice_monthly_frames(early=early, late=late)
 
-    assert len(spliced) == 420
-    assert spliced[0].month == early[0].month
-    assert spliced[-1].month == late[-1].month
+    assert spliced.height == 420
+    assert spliced["month"][0] == early["month"][0]
+    assert spliced["month"][-1] == late["month"][-1]
     # Continuous across the seam: consecutive steps are the series' own 0.01, not 0.01 - 0.5.
-    steps = [b.value - a.value for a, b in pairwise(spliced)]
+    steps = np.diff(spliced["value"].to_numpy())
     assert max(steps) == pytest.approx(0.01, abs=1e-9)
     assert min(steps) == pytest.approx(0.01, abs=1e-9)
 
@@ -271,33 +316,33 @@ def test_the_late_series_is_never_altered_by_the_splice() -> None:
     """It is the better measurement and the one every other fit uses; the early series is what
     bends to meet it. Shifting the modern half would silently change the fitted rate block."""
 
-    late = _levels(1910, [4.0 + 0.02 * i for i in range(300)])
-    early = _levels(1900, [9.0] * 420)
+    late = _level_frame(1910, [4.0 + 0.02 * i for i in range(300)])
+    early = _level_frame(1900, [9.0] * 420)
 
-    spliced = {level.month: level.value for level in splice_at_seam(early=early, late=late)}
+    spliced = splice_monthly_frames(early=early, late=late)
 
-    assert all(spliced[level.month] == pytest.approx(level.value) for level in late)
+    assert spliced.filter(pl.col("month") >= late["month"][0])["value"].to_list() == late["value"].to_list()
 
 
 def test_the_shift_comes_from_the_seam_not_the_whole_overlap() -> None:
     """The two series disagree by a time-VARYING amount, so a whole-overlap mean would import a
     late-period discrepancy into an early-period observation."""
 
-    late = _levels(1910, [4.0] * 300)
+    late = _level_frame(1910, [4.0] * 300)
     # Agrees at the seam, then drifts far apart later in the overlap.
-    early = _levels(1900, [4.0] * 130 + [4.0 + 0.05 * i for i in range(290)])
+    early = _level_frame(1900, [4.0] * 130 + [4.0 + 0.05 * i for i in range(290)])
 
-    spliced = splice_at_seam(early=early, late=late)
+    spliced = splice_monthly_frames(early=early, late=late)
 
     # Seam-anchored: the offset is ~0 there, so pre-seam values pass through essentially intact.
-    assert spliced[0].value == pytest.approx(4.0, abs=0.02)
+    assert spliced["value"][0] == pytest.approx(4.0, abs=0.02)
 
 
 def test_too_little_overlap_to_anchor_is_rejected() -> None:
-    late = _levels(1910, [4.0] * 300)
-    early = _levels(1900, [4.5] * 125)  # only 5 months of overlap
+    late = _level_frame(1910, [4.0] * 300)
+    early = _level_frame(1900, [4.5] * 125)  # only 5 months of overlap
     with pytest.raises(ValueError, match="fewer than the"):
-        splice_at_seam(early=early, late=late)
+        splice_monthly_frames(early=early, late=late)
 
 
 def _write_evidence(directory: Path) -> None:
@@ -326,8 +371,8 @@ def _write_evidence(directory: Path) -> None:
     csv(sources.FRED_BAA, "BAA", lambda m: 7.0)
 
 
-def test_the_century_record_assembles_from_the_four_evidence_series(tmp_path: Path) -> None:
-    """The seam between "sources are in the spec" and "the replay can use them"."""
+def test_the_macro_record_assembles_the_selected_series_from_evidence(tmp_path: Path) -> None:
+    """The seam between selected source values and the frame the replay can use."""
 
     _write_evidence(tmp_path)
     history = load_macro_history(tmp_path)
@@ -339,6 +384,55 @@ def test_the_century_record_assembles_from_the_four_evidence_series(tmp_path: Pa
     assert history.equity_level[1] / history.equity_level[0] == pytest.approx(1.013)
     # GS10 5.0 against a short rate of 3.6%.
     assert history.term_spread[0] == pytest.approx(0.05 - 0.036)
+
+
+def test_each_source_is_loaded_once_and_the_shared_french_frame_supplies_both_series(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_evidence(tmp_path)
+    real_source_bytes = loading.source_bytes
+    reads: list[sources.EvidenceSource] = []
+
+    def count_source_bytes(directory: Path, source: sources.EvidenceSource) -> bytes:
+        reads.append(source)
+        return real_source_bytes(directory, source)
+
+    monkeypatch.setattr(loading, "source_bytes", count_source_bytes)
+    history = load_macro_history(tmp_path)
+
+    assert set(reads) == {
+        sources.FRENCH_FACTORS,
+        sources.FRED_LTGOVTBD,
+        sources.FRED_GS10,
+        sources.FRED_CPI_NSA,
+        sources.FRED_AAA,
+        sources.FRED_BAA,
+    }
+    assert len(reads) == len(set(reads))
+    assert history.short_rate[0] == pytest.approx(0.30 * 12 / 100.0)
+    assert history.equity_level[1] / history.equity_level[0] == pytest.approx(1.013)
+
+
+def test_joint_macro_history_keeps_a_gap_in_a_required_series() -> None:
+    months = _month_seq(4, 1970)
+
+    history = macro_history_from_frames(
+        {
+            name: pl.DataFrame(
+                {"month": months if name != "corporate_baa_percent" else months[:2] + months[3:], "value": values}
+            )
+            for name, values in (
+                ("short_rate_percent", [1.0] * 4),
+                ("long_rate_percent", [1.0] * 4),
+                ("corporate_aaa_percent", [1.0] * 4),
+                ("corporate_baa_percent", [1.0] * 3),
+                ("equity_level", [1.0] * 4),
+                ("cpi_level", [1.0] * 4),
+            )
+        }
+    )
+
+    assert history.months == (months[0], months[1], months[3])
 
 
 def test_the_annual_factor_rows_do_not_reach_the_record(tmp_path: Path) -> None:
@@ -493,11 +587,11 @@ def test_a_spread_still_adjusts_the_named_curve() -> None:
     assert float(payout[0, 1]) * 12.0 / 100.0 == pytest.approx(0.02 - 0.004)
 
 
-def _ex_us_levels(start: date, end: date) -> list[tuple[date, float]]:
+def _ex_us_levels(start: date, end: date) -> pl.DataFrame:
     """A strictly increasing ex-US index, so each value names its month, as `_history` does."""
 
     months = [month for month in _month_seq(2400, 1900) if start <= month <= end]
-    return [(month, 50.0 + index) for index, month in enumerate(months)]
+    return pl.DataFrame({"month": months, "value": [50.0 + index for index in range(len(months))]})
 
 
 def test_the_ex_us_record_keeps_every_series_month_for_month() -> None:
@@ -513,24 +607,35 @@ def test_the_ex_us_record_keeps_every_series_month_for_month() -> None:
     np.testing.assert_array_equal(joint.short_rate, history.short_rate[120:])
     np.testing.assert_array_equal(joint.equity_level, history.equity_level[120:])
     assert joint.ex_us_equity_level is not None
-    np.testing.assert_array_equal(joint.ex_us_equity_level, [value for _, value in ex_us[: len(joint.months)]])
+    np.testing.assert_array_equal(joint.ex_us_equity_level, ex_us["value"].to_numpy()[: len(joint.months)])
 
     cut = joint.restricted_to(start=date(1990, 1, 1), end=None)
     assert cut.ex_us_equity_level is not None
-    assert cut.ex_us_equity_level[0] == dict(ex_us)[date(1990, 1, 1)]
+    assert cut.ex_us_equity_level[0] == ex_us.filter(pl.col("month") == date(1990, 1, 1))["value"][0]
 
 
-def test_a_hole_in_the_ex_us_series_is_rejected() -> None:
-    """Cutting the record around a missing month would join two distant months as neighbours,
-    and every growth ratio across the join would be fiction."""
+def test_a_hole_in_the_ex_us_series_splits_replayable_windows() -> None:
+    """A missing ex-US month stays a boundary instead of making distant months neighbours."""
 
-    ex_us = [level for level in _ex_us_levels(date(1980, 1, 1), date(1990, 12, 1)) if level[0] != date(1985, 6, 1)]
-    with pytest.raises(ValueError, match="not all of them"):
-        _history(600).with_ex_us_equity(ex_us)
+    ex_us = _ex_us_levels(date(1980, 1, 1), date(1990, 12, 1)).filter(pl.col("month") != date(1985, 6, 1))
+    joint = _history(600).with_ex_us_equity(ex_us)
+    replay = HistoricalWindowsModel(history=joint)
+
+    assert date(1985, 6, 1) not in joint.months
+    starts = replay.window_starts(12)
+    assert date(1985, 5, 1) not in starts
+    assert date(1985, 7, 1) in starts
+    for start in starts:
+        path = replay.market_paths(window_starts=(start,), horizon_months=12)
+        index = joint.months.index(start)
+        dates = joint.months[index : index + 13]
+        assert len(dates) == 13
+        assert all(loading.is_next_calendar_month(left, right) for left, right in pairwise(dates))
+        assert path.equity_total_return_index is not None
 
 
 def test_an_ex_us_series_outside_the_record_is_rejected() -> None:
-    with pytest.raises(ValueError, match="shares no month"):
+    with pytest.raises(ValueError, match="no shared months"):
         _history(600).with_ex_us_equity(_ex_us_levels(date(2050, 1, 1), date(2051, 1, 1)))
 
 
@@ -543,15 +648,15 @@ def _write_ex_us_evidence(directory: Path, *, start_year: int, months: int, perc
     (directory / sources.FRENCH_INTERNATIONAL_INDICES.output_filename).write_bytes(buffer.getvalue())
 
 
-def test_the_ex_us_record_is_opt_in_and_compounds_the_ex_us_returns(tmp_path: Path) -> None:
-    """The US-only record keeps its length when the ex-US file is present; the joint one starts
-    where the ex-US series does and compounds its returns the way the US leg does."""
+def test_ex_us_load_is_independent_and_can_be_composed_with_the_us_record(tmp_path: Path) -> None:
+    """Loading ex-US returns separately leaves the US record intact until a caller composes them."""
 
     _write_evidence(tmp_path)
     _write_ex_us_evidence(tmp_path, start_year=1975, months=120, percent=2.0)
 
     us_only = load_macro_history(tmp_path)
-    joint = load_macro_history_with_ex_us(tmp_path)
+    ex_us = load_ex_us_equity_levels(tmp_path)
+    joint = us_only.with_ex_us_equity(ex_us)
 
     assert len(us_only.months) == 400
     assert us_only.ex_us_equity_level is None

@@ -44,7 +44,6 @@ from more_itertools import map_reduce
 from numpyro import distributions as dist
 
 from finance.augur.fit.scoring import gaussian_crps, joint_log_density
-from finance.augur.model.historical_windows import MACRO_HISTORY_SOURCES, load_macro_history
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
 from finance.augur.x.models.macro_var import (
     MACRO_STATE_NAMES,
@@ -52,9 +51,10 @@ from finance.augur.x.models.macro_var import (
     MacroVarFit,
     fit_macro_var_path,
     macro_state_path,
+    offset_month,
 )
 from finance.augur.x.models.structural_macro import MINIMUM_MONTHS
-from finance.augur.x.models.structural_macro_fit import macro_var_levels
+from finance.augur.x.models.structural_macro_fit import LONG_RECORD_MACRO_SOURCES, load_long_record_macro_var_levels
 
 logger = logging.getLogger(__name__)
 
@@ -136,8 +136,9 @@ def score_arms(
             )
         first_origin = requested
     last_origin = len(path.months) - 1
-    if first_origin > last_origin - min(horizons):
+    if first_origin > last_origin:
         raise ValueError(f"no scorable origins: {first_origin=} against {len(path.months)} states")
+    month_indices = {month: index for index, month in enumerate(path.months)}
 
     densities: dict[tuple[str, int], list[float]] = {(a.label, h): [] for a in arms for h in horizons}
     crps: dict[tuple[str, int], list[dict[str, float]]] = {(a.label, h): [] for a in arms for h in horizons}
@@ -147,17 +148,22 @@ def score_arms(
             arm = arm_rule.label
             fit = arm_rule.fit(path.between(path.months[0], path.months[origin]))
             for horizon in horizons:
-                if origin + horizon > last_origin:
+                target_index = month_indices.get(offset_month(path.months[origin], horizon))
+                if target_index is None:
                     continue
                 mean, covariance = fit.forecast(path.state_at(origin), horizon=horizon)
                 predictive = dist.MultivariateNormal(loc=jnp.asarray(mean), covariance_matrix=jnp.asarray(covariance))
-                observed = path.states[origin + horizon]
+                observed = path.states[target_index]
                 densities[arm, horizon].append(joint_log_density(predictive, observed))
                 crps[arm, horizon].append(gaussian_crps(predictive, observed, MACRO_STATE_NAMES))
         if (origin - first_origin) % 120 == 0:
             logger.info(
                 "scored origin %s (%s of %s)", path.months[origin], origin - first_origin, last_origin - first_origin
             )
+
+    empty = [key for key, observations in densities.items() if not observations]
+    if empty:
+        raise ValueError(f"no held-out observations on requested calendar-month horizons: {empty}")
 
     return [
         ArmScore(
@@ -186,10 +192,16 @@ def _first_origin(path: MacroStatePath, *, latest_start: date) -> int:
     over different economies.
     """
 
-    origin = bisect_left(path.months, latest_start) + MINIMUM_MONTHS - 1
-    if origin >= len(path.months):
-        raise ValueError(f"arm starting {latest_start} never reaches {MINIMUM_MONTHS} states in {len(path.months)}")
-    return origin
+    start_index = bisect_left(path.months, latest_start)
+    for origin in range(start_index, len(path.months)):
+        sample = path.between(path.months[start_index], path.months[origin])
+        transitions, _ = sample.transition_pairs()
+        if len(sample.months) >= MINIMUM_MONTHS and len(transitions) >= MINIMUM_MONTHS - 1:
+            return origin
+    raise ValueError(
+        f"arm starting {latest_start} never reaches {MINIMUM_MONTHS} states and "
+        f"{MINIMUM_MONTHS - 1} consecutive transitions in {len(path.months)} states"
+    )
 
 
 def describe(scores: Sequence[ArmScore]) -> str:
@@ -210,8 +222,8 @@ async def long_record_state_path() -> MacroStatePath:
 
     with tempfile.TemporaryDirectory() as directory:
         evidence_dir = Path(directory)
-        await snapshot_evidence(evidence_dir, MACRO_HISTORY_SOURCES)
-        levels = macro_var_levels(load_macro_history(evidence_dir))
+        await snapshot_evidence(evidence_dir, LONG_RECORD_MACRO_SOURCES)
+        levels = load_long_record_macro_var_levels(evidence_dir)
     return macro_state_path(
         short_rate_percent=levels.short_rate_percent,
         long_rate_percent=levels.long_rate_percent,

@@ -83,8 +83,16 @@ indistinguishable from zero (gap 2).
 ### The 1955 window is a choice, and the alternative is measured
 
 `fit_structural_macro_defaults` takes a required `MacroFitWindow`. The shipped defaults use
-`FRED_1955`; `LONG_RECORD_1926` fits the same VAR on the century-long record
-`load_macro_history` assembles. Run the comparisons with
+`FRED_1955`; `LONG_RECORD_1926` fits the VAR on three selected inputs: French's one-month
+T-bill, `LTGOVTBD` spliced under `GS10`, and `CPIAUCNS`. It is anchored at 1926-07; those inputs
+set the end, so the unrelated equity and corporate-yield sources no longer truncate the fit.
+The NSA CPI series has a missing October 2025 observation. The VAR leaves that month absent,
+uses CPI observations exactly 12 calendar months apart for trailing inflation, and omits
+transitions that cross a missing month. That changes recent states and fitted values compared
+with the prior positional treatment; the snapshot figures below are historical and should be
+recomputed with the manual comparison before current use. BLS documents the missing data in
+its [shutdown impact FAQ](https://www.bls.gov/cpi/additional-resources/2025-federal-government-shutdown-impact-cpi-faq.htm).
+Run the comparisons with
 `bbr test //finance/augur/study/macro_window:{compare,holdout}_test` (manual — they fetch the
 upstreams).
 
@@ -281,13 +289,16 @@ how much they move an allocation answer.
    not history. Use `FRENCH_FACTORS`; MITTX stays in the evidence set only as a cross-check.
 
 4. **The replay's record now reaches 1926, but the sample is still tiny.** `load_macro_history`
-   assembles it from four series: Ken French's factors (CRSP total market AND the one-month
-   T-bill, so equity and the short rate are aligned by construction), `LTGOVTBD` spliced under
-   `GS10` for the long rate, and `CPIAUCNS` for prices. That is **1200 months — 840 overlapping
-   30-year windows and ~3.3 independent ones**, against 199 and ~1.5 before.
+   assembles six selected series from six source files: Ken French's factors provide CRSP total
+   market and the one-month T-bill together, so equity and short rate are aligned by construction;
+   `LTGOVTBD` is spliced under `GS10` for the long rate; `CPIAUCNS` supplies prices; and Moody's
+   Aaa and Baa yields supply the corporate curves. Its sample windows follow only months shared
+   by all six series. A missing required month divides the replay into contiguous runs, and no
+   replay or bootstrap growth crosses that boundary; current window counts therefore omit starts
+   whose horizon would cross the October 2025 CPI hole.
 
    Two costs come with it. The spliced long rate carries an unquantified duration-mismatch
-   offset before 1953 (`splice_at_seam`), and the record now spans regimes — a gold standard,
+   offset before 1953 (`splice_monthly_frames`), and the record now spans regimes — a gold standard,
    no Fed, WWII rate pegs — whose relevance to 2026 is a judgement, not a data question. And
    even at 1871 the ceiling is ~5 independent windows: history cannot supply more, which is why
    a fitted model belongs beside the replay rather than instead of it.
