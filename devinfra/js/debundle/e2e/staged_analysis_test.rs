@@ -165,7 +165,7 @@ fn tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
             }
             let bytes = fs::read(&entry).unwrap();
             let json = if entry.extension().is_some_and(|extension| extension == "gz") {
-                Ok(read_json::<Value>(&entry))
+                Ok(read_gzip_json::<Value>(&entry))
             } else {
                 serde_json::from_slice::<Value>(&bytes)
             };
