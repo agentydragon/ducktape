@@ -1,6 +1,6 @@
 """Executable suites: explicit scenario modules sharing one configured k3s stack."""
 
-load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "K3S_PERSISTENCE_PROPERTIES", "K3S_SERVICE_LAYOUTS", "K3S_TAGS", "K3S_VM_DATA", "K3S_VM_ENV")
+load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "K3S_PERSISTENCE_PROPERTIES", "K3S_SERVICE_LAYOUTS", "K3S_TAGS", "K3S_VM_DATA", "K3S_VM_ENV", "k3s_recycling_key")
 load("//devinfra/python:defs.bzl", "py_test")
 
 _HARNESSES_LAYOUT = "//agentplane/system_tests/k3s:harnesses/environment_tools_layout"
@@ -68,7 +68,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
 
     # VM layers stay on disk; Pod/MCP/real-model suites use a separate tmpfs baseline.
     properties |= K3S_PERSISTENCE_PROPERTIES | {
-        "test.runner-recycling-key": "k3s-persistence-v7-" + ("vm" if config.vm else "pod"),
+        "test.runner-recycling-key": k3s_recycling_key(vm = config.vm),
     }
     py_test(
         name = name,

@@ -1,8 +1,8 @@
 """What every test that starts its own k3s stack runs with: one RBE action with room for k3s."""
 
-# No extra pod runner-recycling-key: resource properties already distinguish k3s snapshots.
-# 2026-10-23 A/B (2 warm runs/arm): both retained the same 121-blob tmpfs cache;
-# median imports were 7.50s without a key vs 7.75s with one. No demonstrated benefit.
+load("@artifact_pins//:pins.bzl", "CERT_MANAGER_V1_21_2_RELEASE_SHA256", "HELM_3_20_2_LINUX_AMD64_SHA256", "K3S_LINUX_AMD64_SHA256", "KUBEVIRT_OPERATOR_BUNDLE_SHA256", "KYVERNO_INSTALL_SHA256", "TRUST_MANAGER_CHART_V0_25_0_SHA256")
+load("@image_pins//:pins.bzl", "CERT_MANAGER_CAINJECTOR_DIGEST", "CERT_MANAGER_CONTROLLER_DIGEST", "CERT_MANAGER_WEBHOOK_DIGEST", "KUBEVIRT_VIRT_API_DIGEST", "KUBEVIRT_VIRT_CONTROLLER_DIGEST", "KUBEVIRT_VIRT_HANDLER_DIGEST", "KUBEVIRT_VIRT_LAUNCHER_DIGEST", "KUBEVIRT_VIRT_OPERATOR_DIGEST", "KYVERNO_KYVERNOPRE_DIGEST", "KYVERNO_KYVERNO_DIGEST", "TRUST_MANAGER_DIGEST")
+
 K3S_EXEC_PROPERTIES = {
     "dockerNetwork": "bridge",
     "EstimatedComputeUnits": "4",
@@ -17,6 +17,38 @@ K3S_PERSISTENCE_PROPERTIES = {
     "test.remote-snapshot-save-policy": "always",
     "test.snapshot-read-policy": "newest",
 }
+
+# Application, runner and guest images stay per-action inputs. Only pinned retained
+# infrastructure selects the snapshot family; the runtime fingerprint still verifies helpers,
+# CRDs, rendered releases, configuration and actual image layouts before attaching.
+_COMMON_BASELINE_DIGESTS = [
+    K3S_LINUX_AMD64_SHA256,
+    CERT_MANAGER_V1_21_2_RELEASE_SHA256,
+    TRUST_MANAGER_CHART_V0_25_0_SHA256,
+    HELM_3_20_2_LINUX_AMD64_SHA256,
+    CERT_MANAGER_CONTROLLER_DIGEST,
+    CERT_MANAGER_WEBHOOK_DIGEST,
+    CERT_MANAGER_CAINJECTOR_DIGEST,
+    TRUST_MANAGER_DIGEST,
+]
+
+_VM_BASELINE_DIGESTS = [
+    KUBEVIRT_OPERATOR_BUNDLE_SHA256,
+    KYVERNO_INSTALL_SHA256,
+    KUBEVIRT_VIRT_OPERATOR_DIGEST,
+    KUBEVIRT_VIRT_API_DIGEST,
+    KUBEVIRT_VIRT_CONTROLLER_DIGEST,
+    KUBEVIRT_VIRT_HANDLER_DIGEST,
+    KUBEVIRT_VIRT_LAUNCHER_DIGEST,
+    KYVERNO_KYVERNO_DIGEST,
+    KYVERNO_KYVERNOPRE_DIGEST,
+]
+
+def k3s_recycling_key(vm):
+    """Select the tmpfs or disk baseline from its authoritative infrastructure pin digests."""
+    return "k3s-persistence-v7-" + ("vm-" if vm else "pod-") + "-".join(
+        _COMMON_BASELINE_DIGESTS + (_VM_BASELINE_DIGESTS if vm else []),
+    )
 
 # A test that runs a k3s stack in its action. Such a test is an ordinary target otherwise: PR CI
 # runs it when its inputs change, and a pass caches.

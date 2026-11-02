@@ -30,6 +30,15 @@ installation/cleanup helpers, k3s, CRDs, PKI releases/images, and VM releases/im
 applicable. A missing, unhealthy, dirty or incompatible baseline rebuilds cold. Remote snapshots save
 the refreshed baseline for later actions.
 
+Snapshot family keys derive from the k3s binary, PKI release/chart/Helm checksums and
+PKI image digests. The VM key also includes KubeVirt/Kyverno release checksums and image
+digests. OCI pins are owned by `devinfra/image_pins.json`; HTTP artifact pins remain in
+`MODULE.bazel` and export their checksums through `devinfra/artifact_pins.bzl`. Repinning
+retained infrastructure automatically selects a new family. Application, runner and guest
+images remain per-action inputs. The runtime fingerprint additionally checks actual
+baseline contents, helper code and CRDs before reuse; refreshed snapshots roll forward
+after an incompatible baseline rebuilds.
+
 Applications, PostgreSQL, model endpoints, MCP fixtures, certificates/trust and collectors are recreated.
 VM workspace claims, PVs, StorageClass and loop devices are removed before marking the baseline clean;
 guest shutdown checks and the selected boot/profile settings are preserved. k3s and the retained

@@ -2,6 +2,7 @@
 # gazelle:resolve py cert_manager_clusterissuer_crds //cluster/cdk8s/providers/cert_manager:clusterissuer
 # gazelle:resolve py trust_manager_crds //cluster/cdk8s/providers/cert_manager:bundle
 
+load("@artifact_pins//:pins.bzl", "K3S_LINUX_AMD64_SHA256")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_EXEC_PROPERTIES", "K3S_PERSISTENCE_PROPERTIES", "K3S_SERVICE_IMAGES", "K3S_TAGS", "K3S_VM_IMAGES")
@@ -28,7 +29,7 @@ py_test(
     data = [K3S_BINARY],
     env = {"K3S_BINARY_RLOCATION": "$(rlocationpath " + K3S_BINARY + ")"},
     exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
-        "test.runner-recycling-key": "k3s-persistence-probe-v4",
+        "test.runner-recycling-key": "k3s-persistence-probe-v4-" + K3S_LINUX_AMD64_SHA256,
     },
     tags = K3S_TAGS + ["manual"],
     deps = [
@@ -49,7 +50,7 @@ py_test(
     env = {"K3S_BINARY_RLOCATION": "$(rlocationpath " + K3S_BINARY + ")"},
     exec_properties = K3S_EXEC_PROPERTIES | {
         "test.env-overrides": "AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1",
-        "test.runner-recycling-key": "k3s-persistence-lifecycle-v1",
+        "test.runner-recycling-key": "k3s-persistence-lifecycle-v1-" + K3S_LINUX_AMD64_SHA256,
     },
     tags = K3S_TAGS + ["manual"],
     deps = [
