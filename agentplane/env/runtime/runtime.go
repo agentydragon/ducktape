@@ -323,7 +323,7 @@ func (r *Runtime) startLifecycleEngine() {
 	r.startLifecycleEngineLocked()
 }
 
-// Caller holds lifecycleStartMu, which excludes Host registration from Close.
+// Caller holds lifecycleStartMu, which excludes Session controller registration from Close.
 func (r *Runtime) startLifecycleEngineLocked() {
 	r.lifecycleStartOnce.Do(func() {
 		go func() {
@@ -364,7 +364,7 @@ func (r *Runtime) Close(ctx context.Context) error {
 		go func() {
 			r.lifecycleStartMu.Lock()
 			if r.lifecycleInitErr != nil {
-				r.closeErr = fmt.Errorf("Harness Host construction left lifecycle engine unsafe to run: %w", r.lifecycleInitErr)
+				r.closeErr = fmt.Errorf("Session construction left lifecycle engine unsafe to run: %w", r.lifecycleInitErr)
 				r.lifecycleStartMu.Unlock()
 			} else {
 				r.startLifecycleEngineLocked()
@@ -590,7 +590,7 @@ func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, e
 		bootstrapActive = bootstrapIsActive(request, requestFound, bootstrapStatus, statusFound)
 		if bootstrapActive {
 			// An accepted request is busy even before the lifecycle controller has
-			// published Running. Do not expose its idle Host facts in that gap.
+			// published Running. Do not expose its idle Session facts in that gap.
 			facts.Bootstrap = environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_RUNNING
 			if !hasAutosuspendReason(facts.AutosuspendBlockers, "Bootstrap") {
 				facts.AutosuspendBlockers = append(facts.AutosuspendBlockers, &sandboxpb.AutosuspendBlocker{Reason: "Bootstrap"})

@@ -81,7 +81,7 @@ func (c *runtimeTransitionSequence) recordAdoptionOutcome(step runtimeTransition
 		c.steps = append(
 			c.steps,
 			runtimeTransitionStep{stage: lifecycle.RuntimeTransitionExecutionStarting, adoption: adoptionBarrier{kind: adoptionExecutionStart, uid: uid}},
-			runtimeTransitionStep{stage: lifecycle.RuntimeTransitionIntentPublishing, adoption: adoptionBarrier{kind: adoptionPublishDesired, uid: uid, mode: lifecycle.Running}},
+			runtimeTransitionStep{stage: lifecycle.RuntimeTransitionDesiredPublishing, adoption: adoptionBarrier{kind: adoptionPublishDesired, uid: uid, mode: lifecycle.Running}},
 			runtimeTransitionStep{stage: lifecycle.RuntimeTransitionBootstrapRequesting, adoption: adoptionBarrier{kind: adoptionBootstrap}},
 		)
 	}
@@ -131,12 +131,12 @@ func (c *runtimeTransitionSequence) planAdoption(ctx context.Context, uid string
 			if sealed {
 				add(lifecycle.RuntimeTransitionExecutionStarting, adoptionBarrier{kind: adoptionExecutionStart, uid: oldUID})
 			}
-			add(lifecycle.RuntimeTransitionIntentPublishing, adoptionBarrier{kind: adoptionPublishDesired, uid: oldUID, sealUID: seal, mode: lifecycle.Quiescing})
+			add(lifecycle.RuntimeTransitionDesiredPublishing, adoptionBarrier{kind: adoptionPublishDesired, uid: oldUID, sealUID: seal, mode: lifecycle.Quiescing})
 		}
 		add(lifecycle.RuntimeTransitionNativeStopping, adoptionBarrier{kind: adoptionNativeStop})
 		add(lifecycle.RuntimeTransitionExecutionFencing, adoptionBarrier{kind: adoptionExecutionFence})
 		if sealed {
-			add(lifecycle.RuntimeTransitionHostAcknowledging, adoptionBarrier{kind: adoptionAcknowledgement})
+			add(lifecycle.RuntimeTransitionHistoryAcknowledging, adoptionBarrier{kind: adoptionAcknowledgement})
 		}
 	}
 	add(lifecycle.RuntimeTransitionIncarnationAdopting, adoptionBarrier{kind: adoptionIncarnation})

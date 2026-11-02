@@ -33,7 +33,7 @@ func (s *Session) startHarness(ctx context.Context) (resultErr error) {
 	s.nativeStop = stopNone
 	harnessKind := s.record.Harness
 	s.mu.Unlock()
-	ctx, span := observability.Start(ctx, "agentplane.env.runtime.harnesshost.harness.start", trace.WithAttributes(
+	ctx, span := observability.Start(ctx, "agentplane.env.runtime.harness.start", trace.WithAttributes(
 		attribute.String("session.id", s.id), attribute.String("harness", harnessKind.String()),
 	))
 	defer func() { observability.End(span, resultErr) }()
@@ -186,7 +186,7 @@ func (s *Session) appServerAttachment() *codexappserver.Attachment {
 // prepare starts or resumes the native conversation on a started harness and reconciles the turns a
 // lost harness left.
 func (s *Session) prepare(ctx context.Context, adapter harness.Adapter, pid int) (resultErr error) {
-	ctx, span := observability.Start(ctx, "agentplane.env.runtime.harnesshost.harness.handshake", trace.WithAttributes(attribute.String("session.id", s.id)))
+	ctx, span := observability.Start(ctx, "agentplane.env.runtime.harness.handshake", trace.WithAttributes(attribute.String("session.id", s.id)))
 	defer func() { observability.End(span, resultErr) }()
 	native, err := adapter.Handshake(ctx)
 	if err != nil {

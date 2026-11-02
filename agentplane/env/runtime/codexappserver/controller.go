@@ -125,7 +125,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 					current.ProcessID = p.ID()
 				}
 			} else if live {
-				// Initialization admitted under an older HarnessHostDesiredState may finish physically, but cannot
+				// Initialization admitted under an older EnvironmentRuntimeDesiredState may finish physically, but cannot
 				// publish readiness. Shutdown will drain it after every Session has halted.
 				current.Phase = Initializing
 				current.ProcessID = p.ID()

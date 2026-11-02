@@ -322,7 +322,7 @@ func TestRuntimeKeepsHistoryAliveUntilExactSealedAcknowledgement(t *testing.T) {
 	go func() { closed <- r.Close(ctx) }()
 	waitRuntime(t, r, func() bool {
 		status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
-		return err == nil && found && status.Stage == lifecycle.RuntimeCloseHostFlushing
+		return err == nil && found && status.Stage == lifecycle.RuntimeCloseHistoryFlushing
 	}, "Runtime Close to wait at the sealed History acknowledgement barrier")
 	select {
 	case <-r.ingress.done:
@@ -414,7 +414,7 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 	go func() { closed <- r.Close(ctx) }()
 	waitRuntime(t, r, func() bool {
 		status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
-		return err == nil && found && status.Stage == lifecycle.RuntimeCloseHostFlushing
+		return err == nil && found && status.Stage == lifecycle.RuntimeCloseHistoryFlushing
 	}, "Runtime Close to wait at the sealed History acknowledgement barrier")
 	ack, found, err := retained.ReadAcknowledgement(ctx, r.lifecycleState, "session-1")
 	if err != nil || found && ack.Sealed {
@@ -490,7 +490,7 @@ func TestRuntimeRetainsOwnerWhenSessionDeliveryCannotPersistSealedAcknowledgemen
 	go func() { closed <- r.Close(ctx) }()
 	waitRuntime(t, r, func() bool {
 		status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
-		return err == nil && found && status.Stage == lifecycle.RuntimeCloseHostFlushing
+		return err == nil && found && status.Stage == lifecycle.RuntimeCloseHistoryFlushing
 	}, "Runtime Close to wait for the sealed History acknowledgement")
 	releaseOnce.Do(func() { close(releaseSeal) })
 	select {

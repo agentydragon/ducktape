@@ -185,10 +185,10 @@ func nextRuntimeCloseStage(stage lifecycle.RuntimeCloseStage) (lifecycle.Runtime
 	case lifecycle.RuntimeCloseNativeStopping:
 		return lifecycle.RuntimeCloseExecutionFencing, nil
 	case lifecycle.RuntimeCloseExecutionFencing:
-		return lifecycle.RuntimeCloseHostFlushing, nil
-	case lifecycle.RuntimeCloseHostFlushing:
-		return lifecycle.RuntimeCloseHostJoining, nil
-	case lifecycle.RuntimeCloseHostJoining:
+		return lifecycle.RuntimeCloseHistoryFlushing, nil
+	case lifecycle.RuntimeCloseHistoryFlushing:
+		return lifecycle.RuntimeCloseSessionsJoining, nil
+	case lifecycle.RuntimeCloseSessionsJoining:
 		return lifecycle.RuntimeCloseBootstrapSettling, nil
 	case lifecycle.RuntimeCloseBootstrapSettling:
 		return lifecycle.RuntimeCloseReadyToJoin, nil
@@ -227,7 +227,7 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecyc
 		return nil
 	case lifecycle.RuntimeCloseExecutionFencing:
 		return c.r.waitForExecutionFenced(p.fenceCtx, p.generation)
-	case lifecycle.RuntimeCloseHostFlushing:
+	case lifecycle.RuntimeCloseHistoryFlushing:
 		if p.nativeCleanupErr != nil {
 			return errors.Join(p.nativeCleanupErr, p.sessionLossErr)
 		}
@@ -235,7 +235,7 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecyc
 			return c.r.waitSessionStage(p.fenceCtx, lifecycle.Quiesced)
 		}
 		return nil
-	case lifecycle.RuntimeCloseHostJoining:
+	case lifecycle.RuntimeCloseSessionsJoining:
 		if err := c.r.stopIngress(p.fenceCtx); err != nil {
 			return fmt.Errorf("join History delivery: %w", err)
 		}

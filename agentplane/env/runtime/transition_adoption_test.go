@@ -37,11 +37,11 @@ func TestAdoptionBarrierObservesSealWrittenAfterPlanning(t *testing.T) {
 	steps := c.successorBarriers(outcome.adoption)
 	want := []lifecycle.RuntimeTransitionStage{
 		lifecycle.RuntimeTransitionExecutionStarting,
-		lifecycle.RuntimeTransitionIntentPublishing,
+		lifecycle.RuntimeTransitionDesiredPublishing,
 		lifecycle.RuntimeTransitionHostReady,
 		lifecycle.RuntimeTransitionNativeStopping,
 		lifecycle.RuntimeTransitionExecutionFencing,
-		lifecycle.RuntimeTransitionHostAcknowledging,
+		lifecycle.RuntimeTransitionHistoryAcknowledging,
 	}
 	if len(steps) != len(want) {
 		t.Fatalf("sealed successor has %d barriers, want %d", len(steps), len(want))

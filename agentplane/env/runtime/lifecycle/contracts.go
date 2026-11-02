@@ -148,8 +148,8 @@ const (
 	RuntimeClosePreparing RuntimeCloseStage = iota
 	RuntimeCloseNativeStopping
 	RuntimeCloseExecutionFencing
-	RuntimeCloseHostFlushing
-	RuntimeCloseHostJoining
+	RuntimeCloseHistoryFlushing
+	RuntimeCloseSessionsJoining
 	RuntimeCloseBootstrapSettling
 	RuntimeCloseReadyToJoin
 	RuntimeCloseFailed
@@ -184,14 +184,12 @@ const (
 	RuntimeTransitionPlanning RuntimeTransitionStage = iota
 	RuntimeTransitionNativeStopping
 	RuntimeTransitionExecutionStarting
-	RuntimeTransitionIntentPublishing
+	RuntimeTransitionDesiredPublishing
 	RuntimeTransitionExecutionFencing
-	RuntimeTransitionHostAcknowledging
+	RuntimeTransitionHistoryAcknowledging
 	RuntimeTransitionIncarnationAdopting
-	RuntimeTransitionHostReady
 	RuntimeTransitionBootstrapRequesting
 	RuntimeTransitionQuiesceSealing
-	RuntimeTransitionHostStatusChecking
 	RuntimeTransitionDone
 	RuntimeTransitionFailed
 )
