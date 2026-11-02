@@ -7,7 +7,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 import pytest_bazel
 
-from grafana.visual_tests.recorded import recorded_result, replay_query, validate_fixture
+from grafana.visual_tests.recorded import (
+    query_fingerprint,
+    recorded_result,
+    replay_query,
+    validate_fixture,
+    variable_fingerprint,
+)
 from grafana.visual_tests.visual_harness import _prepare_render_fixture
 
 
@@ -58,18 +64,86 @@ def test_query_variables_require_fixture_choices() -> None:
 
 
 def test_fixture_covers_lazy_and_repeated_queries() -> None:
-    dashboard = {
+    dashboard: dict[str, Any] = {
         "templating": {"list": [{"name": "host", "type": "query"}]},
         "panels": [{"id": 7, "targets": [{"refId": "A"}, {"refId": "B"}]}],
     }
-    fixture: dict[str, Any] = {"variables": {"host": ["a", "b"]}, "panels": {"7": {"A": {"frames": []}}}}
+    panel = dashboard["panels"][0]
+    fixture: dict[str, Any] = {
+        "variables": {"host": ["a", "b"]},
+        "panels": {"7": {"A": {"frames": []}}},
+        "query_fingerprints": {f"7/{target['refId']}": query_fingerprint(panel, target) for target in panel["targets"]},
+        "variable_fingerprints": {"host": variable_fingerprint(dashboard["templating"]["list"][0])},
+        "empty_reasons": {"7/A": "No samples in the captured window."},
+    }
     with pytest.raises(ValueError, match="panel 7, query B"):
         validate_fixture(dashboard, fixture)
     fixture["panels"]["7"]["B"] = {"variant_variable": "host", "variants": {"a": {"frames": []}}}
     with pytest.raises(ValueError, match="missing recorded variants"):
         validate_fixture(dashboard, fixture)
     fixture["panels"]["7"]["B"]["variants"]["b"] = {"frames": []}
+    fixture["empty_reasons"].update({"7/B/a": "No samples for a.", "7/B/b": "No samples for b."})
     validate_fixture(dashboard, fixture)
+
+
+def test_changed_query_variable_requires_fixture_review() -> None:
+    variable = {"name": "node", "type": "query", "query": "label_values(up, instance)"}
+    dashboard = {"templating": {"list": [variable]}, "panels": []}
+    fixture = {
+        "variables": {"node": ["node-a"]},
+        "panels": {},
+        "variable_fingerprints": {"node": variable_fingerprint(variable)},
+    }
+    validate_fixture(dashboard, fixture)
+    variable["query"] = "label_values(other_metric, instance)"
+    with pytest.raises(ValueError, match="stale or missing query-variable fingerprint"):
+        validate_fixture(dashboard, fixture)
+
+
+def test_changed_query_requires_fixture_review_even_with_same_panel_and_ref() -> None:
+    panel: dict[str, Any] = {"id": 1, "datasource": "Mimir", "targets": [{"refId": "A", "expr": "rate(original[5m])"}]}
+    dashboard = {"panels": [panel]}
+    fixture = {
+        "panels": {"1": {"A": {"frames": [{"data": {"values": [[1]]}}]}}},
+        "query_fingerprints": {"1/A": query_fingerprint(panel, panel["targets"][0])},
+    }
+    validate_fixture(dashboard, fixture)
+    panel["targets"][0]["expr"] = "rate(changed[5m])"
+    with pytest.raises(ValueError, match="stale or missing query fingerprint"):
+        validate_fixture(dashboard, fixture)
+    panel["targets"][0]["expr"] = "rate(original[5m])"
+    panel["datasource"] = "Other Mimir"
+    with pytest.raises(ValueError, match="stale or missing query fingerprint"):
+        validate_fixture(dashboard, fixture)
+
+
+def test_empty_response_requires_reason() -> None:
+    target = {"refId": "A", "rawSql": "SELECT value FROM readings"}
+    panel = {"id": 2, "targets": [target]}
+    fixture = {"panels": {"2": {"A": {"frames": []}}}, "query_fingerprints": {"2/A": query_fingerprint(panel, target)}}
+    with pytest.raises(ValueError, match="missing empty-result reason"):
+        validate_fixture({"panels": [panel]}, fixture)
+    fixture["empty_reasons"] = {"2/A": "No readings in the captured window."}
+    validate_fixture({"panels": [panel]}, fixture)
+
+
+def test_corrected_capture_keeps_source_query_fingerprint() -> None:
+    target = {"refId": "A", "rawSql": "SELECT value FROM readings ORDER BY time DESC"}
+    panel = {"id": 3, "targets": [target]}
+    fixture = {
+        "panels": {"3": {"A": {"frames": [{"data": {"values": [[1]]}}]}}},
+        "query_fingerprints": {"3/A": query_fingerprint(panel, target)},
+        "capture_corrections": {
+            "3/A": {
+                "query": "SELECT value FROM readings ORDER BY time ASC",
+                "reason": "The captured table needed chronological rows.",
+            }
+        },
+    }
+    validate_fixture({"panels": [panel]}, fixture)
+    target["rawSql"] = "SELECT value FROM other_readings ORDER BY time DESC"
+    with pytest.raises(ValueError, match="stale or missing query fingerprint"):
+        validate_fixture({"panels": [panel]}, fixture)
 
 
 if __name__ == "__main__":

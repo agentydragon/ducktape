@@ -29208,5 +29208,26 @@
   },
   "capture_notes": {
     "time_range": "Captured from one historical 24-hour window with All selected; identifying labels anonymized."
+  },
+  "query_fingerprints": {
+    "3/A": "d596812edebd21145e44a9b49b872068f32049a1c8e0d7a6c660d416ba97a117",
+    "5/A": "7c5283f64e72b6273d196cdc9b567673ace0e234b980fdf4f0a9935285d70d08",
+    "6/A": "255c0a782bf6aa0aac07926087ff9052536696f71daa983a7f83c0d71c0d6f27",
+    "6/B": "1596e264c303250de2e7f4659aa088e9e82f424a091c32ee59a66e2adc23733f",
+    "8/A": "7330c07c38cca3bd23dba108b18e980a9e50de33b067640e690fac9cf1d79b85",
+    "8/B": "03b5f6b72bb04eab75db014e08af95062ad7287084cc07261f7039d196088a94",
+    "8/C": "55550aa3e0480dcfda2057b6ff190d46532e9fad447f721d340e969cb197f212",
+    "8/D": "9544aa67aa460b39ebe24226dfab99317ffc415ae5011ce4e7386f8b07924947",
+    "10/A": "12eb8bc7362bad3c007cd85337fdc70208e65047d330ab538c0338da62dd3000",
+    "11/A": "b28b63d82f466914f6246dffd1801b43cf9c768b4d669c2e2bdd518aaf24f849",
+    "12/A": "9b7866f22a2d7f87ace269de1265ac48dcc733491d29749709a4fac1b8cb67fb",
+    "13/A": "e56a83c5f24e96b4abb80cdaae6077b2b246785455869b9b19c98c46e51fd8e7",
+    "14/A": "fc437f034f92a2156655e6db30acce1cb0c70b9bdb4babf7280d69c7a8a33a59",
+    "15/A": "e4fcc38f256e3e417bec002510f753a02cbffbb37f3a4c899c3fc45d25562fb2",
+    "16/A": "823eed9c8cf1dfce90e5002c2d1bd4ea11748ad0bda0100e32eec7db01d891ec",
+    "18/A": "5bcbf0b01bf563820c37aff05a1353e5cb8c287f7f4dd6b0e5f0994cf15dfef4"
+  },
+  "variable_fingerprints": {
+    "node": "2ed517e5f6b9ce9759eec00d5a59462ef6bc90be9647d0ea80045274322e49a2"
   }
 }

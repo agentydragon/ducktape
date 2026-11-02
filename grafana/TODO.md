@@ -3,14 +3,6 @@
 Followups to the [dashboard visual-test spike](https://github.com/agentydragon/ducktape/pull/13568).
 Remove an item when its decision and any resulting work are complete.
 
-## B. Detect fixture drift
-
-Recorded responses are selected by panel ID and query reference, so a changed query can
-still display an old response. Record query provenance or a fingerprint and require an
-intentional fixture review when the query changes. Preserve an explicit way to document
-corrected capture queries. Require a reason for intentionally empty results; never supply
-invented fallback data.
-
 ## C. Capture and refresh representative fixtures
 
 After assessing Grafana's exporter and image renderer, choose how to capture query results

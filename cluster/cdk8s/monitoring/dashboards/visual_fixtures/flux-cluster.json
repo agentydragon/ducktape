@@ -4042,5 +4042,20 @@
   "capture_notes": {
     "1/A": "Captured from a historical Mimir query with All selected; labels anonymized.",
     "2/A": "Captured from a historical Mimir query with All selected; labels anonymized."
+  },
+  "query_fingerprints": {
+    "1/A": "01e05035c5985a7fbdbbf6d30c9a92c2df6fcd9fd3ade4f7d90ca2cd606e3fed",
+    "2/A": "429cba031b4b308a49aa1fa37b70b64e59c6c993f0a6ee6625576aa98e0aedcf",
+    "3/A": "2c6b62232fcfb1f3e1df83e77b785b4d489d63591d4e2de3aaf687f103673b2e",
+    "4/A": "8604f6494e0ea9e4f01b0b55a6a2aa14c9dc9f0c9d8eaad3dc82daa93a52ea76",
+    "5/A": "e760bf67b23071b88013ae666cb71139d93d54cda8c46d971be1d02dcb845644",
+    "6/A": "683fcd91b19303ca03658cfe7be6656b58119be50f45bfcab29000435be13605",
+    "7/A": "dc81ef13145811cd9f85e8c3dbc068e4f108d4a1b9cc4e3ee3224528e2029cdc",
+    "7/B": "0e3449b86e42ca7dc4af26f9ca3993357551a829b60163cc3c5ff3bb3800b5ba",
+    "7/C": "19573747e19da4f7c704714a27fa81a0f081491692bc6b88e8a3cc4aad54047f",
+    "8/A": "3f62cdbb9bb5a7ee6f11172c1271206cb1789845b2e5a3e03defb5d8b4c36b70"
+  },
+  "variable_fingerprints": {
+    "namespace": "737f94b9cc7e78f54009c5c380192a27cf7cfea0011e986b9ae90f1ff16e62f2"
   }
 }
