@@ -1,5 +1,15 @@
 # TODO — Agentplane environment
 
+## Reconcile Session records with journal outcomes
+
+`Session.ModelChanged` and `ReasoningEffortChanged` commit the retained COSI record before their
+terminal event commits to the separate SQLite journal. A crash or rollback between those writes can
+leave the new configuration durable while the dispatched command has no terminal event. A fault
+injection after the COSI write reproduces that state; the durable dispatch marker prevents blindly
+replaying the native effect. Define one recoverable authority for configuration and its journal
+outcome, and test both sides of the commit boundary. A shared journal transaction or an explicit
+reconciliation protocol may fit; simply reversing the writes moves the inconsistency window.
+
 ## Prove VM guest boot and console autologin
 
 The current regression checks evaluate the NixOS mount table and rendered VM resources, but do not
@@ -103,6 +113,11 @@ teardown contracts rather than treating every controller as a simple resource tr
   must handle creation and conflict retries and preserve those notifications without a wakeup loop.
   A pre-read that returns early also bypasses COSI output tracking; no environment controller
   currently enables `StartTrackingOutputs`.
+- The aggregate `lifecycle.WriteStatus` duplicates `cosi.Write`'s pre-read, equality check and
+  `WriterModify`; it can delegate to that helper while retaining its changed result and reconcile
+  queueing. `cosi.Write` uses Go `==`, so its comparable constraint does not give protobuf values
+  structural equality: pointer-backed COSI protobuf specs need their own equality-aware path.
+  No current `cosi.Write` caller uses those persisted protobuf specs.
 - Keep the retryable _mutations_ and their outer barriers: Session input publication increments
   demand inside `StateModify` while `publishMu` serializes snapshots; Host admission accounting
   updates a delta under the admission lock; retained Session field updates patch an existing record
@@ -125,13 +140,22 @@ teardown contracts rather than treating every controller as a simple resource tr
   barrier. Revisit only if a proposed design preserves those contracts; do not move one-shot effects
   into a retryable transform.
 
-## Connect central Codex to environment execution in Pods and VMs
+## Define Session admission after publication failure
 
-Environment Runtime now manages the standalone Execution Service in Pods and VMs, with typed process
-and filesystem operations and explicit ownership/fencing. Connect the central Codex spike
-([#12225](https://github.com/agentydragon/ducktape/pull/12225)) to that service so model sampling can
-remain outside the Sandbox while execution stays inside it. Exercise both deployment modes with the
-central Codex contract, including ownership loss, executor replacement and descendant cleanup.
+`Manager.loadLocked` adds a Session and returns it after `publishSession`, whose COSI write failures
+call `Host.fail` but are not returned to `OpenSession`. The durable reservation may therefore be
+reported successful while Host has revoked further admission and the Session input was not published.
+Define whether success means durable reservation or a schedulable Session, and fault-inject both
+input and inspection publication failures to verify the response and restart behavior. Do not
+replay already admitted native effects to repair publication.
+
+## Prove central execution across Pod and VM lifetimes
+
+The central sampler already reaches Runtime's embedded Executor through the Gateway. The Gateway
+integration test exercises that route with subprocess supervision, and the Pod system-test scenario
+covers suspend and resume. Extend central execution coverage to the production PID1 Pod and VM
+systemd paths, including ownership loss, executor replacement and descendant cleanup; keep the
+Sandbox incarnation and uncertain-effect boundaries in those checks.
 
 ## Decide whether Agentplane should own a base prompt
 
