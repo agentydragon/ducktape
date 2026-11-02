@@ -125,7 +125,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   key: token
-                  name: openai-platform-read-token
+                  name: platform-sessions-read-token
                   optional: true
             - name: AIQUOTA_CLICKHOUSE_URL
               value: http://clickhouse.clickhouse.svc:8123
