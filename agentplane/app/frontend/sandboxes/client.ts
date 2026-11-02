@@ -62,16 +62,15 @@ export type Decision = {
 };
 /** Submit once; an uncertain response is reconciled by the caller-minted Session ID. */
 export async function openSession(
-  sandbox: string,
-  sandboxUID: string,
+  target: TargetHandle,
   sessionId: string,
   spec: SessionSpec,
   setupScript?: string | null
 ): Promise<SessionOpening> {
   const request = create(OpenSessionRequestSchema, {
-    name: sandbox,
+    name: target.name,
     sessionId,
-    sandboxUid: sandboxUID,
+    sandboxUid: target.uid,
     spec: toJson(SessionSpecSchema, spec) as JsonObject,
     setupScript: setupScript === undefined ? undefined : fromJson(ValueSchema, setupScript),
   });
@@ -118,11 +117,8 @@ export function sessionOpeningNotVisible(error: unknown): boolean {
   );
 }
 
-export async function getEnvironmentRuntimeStatus(
-  sandbox: string,
-  sandboxUID: string
-): Promise<EnvironmentRuntimeStatus> {
-  const request = create(GetEnvironmentRuntimeStatusRequestSchema, { name: sandbox, sandboxUid: sandboxUID });
+export async function getEnvironmentRuntimeStatus(target: TargetHandle): Promise<EnvironmentRuntimeStatus> {
+  const request = create(GetEnvironmentRuntimeStatusRequestSchema, { name: target.name, sandboxUid: target.uid });
   const response = await fetchWithLogin(
     `/sandboxes/${encodeURIComponent(request.name)}/runner-status?sandbox_uid=${encodeURIComponent(request.sandboxUid)}`,
     {

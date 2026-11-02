@@ -1,5 +1,6 @@
 import { Button, Group, MultiSelect, Select, Stack, Text, Title } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
+import type { TargetHandle } from "../../../sandboxes/environments/environment_service_pb";
 
 import type { BindingView } from "./client";
 import { BINDING_GRANT_HELP, BindingsTable } from "../bindings/table";
@@ -59,12 +60,10 @@ function GrantPolicySets({
 
 /** The bindings that name the sandbox's ServiceAccount, where an operator adds one or revokes one. */
 export function PolicyBindingsSection({
-  sandbox,
-  sandboxUID,
+  target,
   bindings,
 }: {
-  sandbox: string;
-  sandboxUID: string;
+  target: TargetHandle;
   bindings: BindingView[] | null;
 }): JSX.Element {
   const [error, setError] = useState<string | null>(null);
@@ -93,9 +92,9 @@ export function PolicyBindingsSection({
 
   async function grant(): Promise<void> {
     const { error: failure } = await api.POST("/sandboxes/{name}/policy-bindings", {
-      params: { path: { name: sandbox } },
+      params: { path: { name: target.name } },
       body: {
-        uid: sandboxUID,
+        uid: target.uid,
         policy_sets: picked,
         ...(duration === "forever"
           ? {}

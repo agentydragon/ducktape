@@ -3,6 +3,7 @@ import { createContext, type JSX, type ReactNode, useContext, useEffect, useStat
 import {
   WatchEnvironmentsResponseSchema,
   type EnvironmentDescriptor,
+  type TargetHandle,
 } from "../../../sandboxes/environments/environment_service_pb";
 import { followWatch } from "../watch_stream";
 import { type StreamConnection } from "../stream_reader";
@@ -26,12 +27,12 @@ export function liveSandboxesUrl(): string {
   return "/upstream/environments/v1/environments:watch";
 }
 
-export function liveSandboxUrl(name: string, uid: string): string {
-  return `/live/sandboxes/${encodeURIComponent(name)}?sandbox_uid=${encodeURIComponent(uid)}`;
+export function liveSandboxUrl(target: TargetHandle): string {
+  return `/live/sandboxes/${encodeURIComponent(target.name)}?sandbox_uid=${encodeURIComponent(target.uid)}`;
 }
 
-export function liveEgressDecisionsUrl(name: string, uid: string): string {
-  return `/live/sandboxes/${encodeURIComponent(name)}/egress/decisions?sandbox_uid=${encodeURIComponent(uid)}`;
+export function liveEgressDecisionsUrl(target: TargetHandle): string {
+  return `/live/sandboxes/${encodeURIComponent(target.name)}/egress/decisions?sandbox_uid=${encodeURIComponent(target.uid)}`;
 }
 
 const SandboxesLiveContext = createContext<Live<SandboxesSnapshot> | null>(null);

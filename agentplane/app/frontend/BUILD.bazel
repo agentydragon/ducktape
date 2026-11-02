@@ -736,6 +736,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/sandboxes/environments:environment_service_pb",
     ],
 )
 

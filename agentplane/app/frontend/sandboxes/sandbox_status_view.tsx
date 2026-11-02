@@ -522,8 +522,8 @@ function EnvironmentRuntimeDiagnostics({
 }): JSX.Element {
   const [state, setState] = useState<EnvironmentRuntimeDiagnosticsState>({ kind: "loading" });
   const [refreshVersion, setRefreshVersion] = useState(0);
-  const sandboxName = sandbox.target!.name;
-  const sandboxUID = sandbox.target!.uid;
+  const target = sandbox.target!;
+  const { namespace: sandboxNamespace, name: sandboxName, uid: sandboxUID } = target;
   useEffect(() => {
     if (!active) return;
     if (sandbox.phase === SandboxPhase.SUSPENDED || sandbox.operatingMode === OperatingMode.SUSPENDED) {
@@ -532,7 +532,7 @@ function EnvironmentRuntimeDiagnostics({
     }
     let current = true;
     setState({ kind: "loading" });
-    void getEnvironmentRuntimeStatus(sandboxName, sandboxUID).then(
+    void getEnvironmentRuntimeStatus(target).then(
       (value) => {
         if (current) setState({ kind: "available", value, observedAt: new Date().toISOString() });
       },
@@ -543,7 +543,7 @@ function EnvironmentRuntimeDiagnostics({
     return () => {
       current = false;
     };
-  }, [active, refreshVersion, sandboxName, sandboxUID, sandbox.operatingMode, sandbox.phase]);
+  }, [active, refreshVersion, sandboxNamespace, sandboxName, sandboxUID, sandbox.operatingMode, sandbox.phase]);
   const threadsById = new Map(threads.map((thread) => [thread.id, thread]));
 
   return (

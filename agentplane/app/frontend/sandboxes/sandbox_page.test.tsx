@@ -17,7 +17,6 @@ import { createRoot } from "react-dom/client";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 
-import { api } from "../client";
 import * as sandboxClient from "./client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
@@ -383,6 +382,19 @@ it("does not join an old detail frame to a same-name replacement", async () => {
   await render(async () => Response.json([]));
   expect(container.textContent).not.toContain("Old incarnation thread");
   expect(container.textContent).not.toContain("There is no sandbox startup-test any more.");
+});
+
+it("does not use an incomplete target as an environment identity", async () => {
+  const namespace = readySandbox.target!.namespace;
+  readySandbox.target!.namespace = "";
+  live.snapshot.threads = [thread({ id: "old-thread", name: "Old incarnation thread" })];
+  try {
+    await render(async () => Response.json([]));
+    expect(container.textContent).not.toContain("Old incarnation thread");
+    expect(container.textContent).not.toContain("New thread");
+  } finally {
+    readySandbox.target!.namespace = namespace;
+  }
 });
 
 it("resets the creation form when navigating directly between sandbox routes", async () => {

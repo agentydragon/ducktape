@@ -1,11 +1,13 @@
 /** The serial console of a VM Sandbox, read-only: the output from the moment this view attaches. */
 import { Code, ScrollArea, Stack, Text } from "@mantine/core";
 import { type JSX, useEffect, useRef, useState } from "react";
+import type { TargetHandle } from "../../../sandboxes/environments/environment_service_pb";
 
 import { consoleText } from "./console_text";
 import { followStream } from "../live_stream";
 
-export function SandboxConsole({ sandbox, sandboxUID }: { sandbox: string; sandboxUID: string }): JSX.Element {
+export function SandboxConsole({ target }: { target: TargetHandle }): JSX.Element {
+  const { namespace, name, uid } = target;
   const [text, setText] = useState("");
   const [unavailable, setUnavailable] = useState<string | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
@@ -15,7 +17,7 @@ export function SandboxConsole({ sandbox, sandboxUID }: { sandbox: string; sandb
     // One decoder per attach: a multi-byte character can straddle two events.
     const decoder = new TextDecoder();
     const stop = followStream(
-      `/sandboxes/${encodeURIComponent(sandbox)}/console/stream?sandbox_uid=${encodeURIComponent(sandboxUID)}`,
+      `/sandboxes/${encodeURIComponent(name)}/console/stream?sandbox_uid=${encodeURIComponent(uid)}`,
       {
         events: {
           output: (message) => {
@@ -31,7 +33,7 @@ export function SandboxConsole({ sandbox, sandboxUID }: { sandbox: string; sandb
       }
     );
     return stop;
-  }, [sandbox, sandboxUID]);
+  }, [namespace, name, uid]);
   useEffect(() => {
     bottom.current?.scrollIntoView?.({ block: "end" });
   }, [text]);

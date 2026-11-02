@@ -181,6 +181,7 @@ ts_library(
         "//agentplane/app/frontend:stream_reader",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:time_ago",
+        "//agentplane/sandboxes/environments:environment_service_pb",
     ],
 )
 
@@ -195,6 +196,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend/bindings:table",
+        "//agentplane/sandboxes/environments:environment_service_pb",
         "//util/frontend:help_tooltip",
     ],
 )
@@ -209,6 +211,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:live_stream",
+        "//agentplane/sandboxes/environments:environment_service_pb",
     ],
 )
 

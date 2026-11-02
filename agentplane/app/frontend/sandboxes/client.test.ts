@@ -23,6 +23,7 @@ import {
 } from "./client";
 
 const id = "b351b316-fdc4-4f50-a642-758992ae3323";
+const target = create(TargetHandleSchema, { namespace: "team", name: "test", uid: "uid" });
 afterEach(() => vi.unstubAllGlobals());
 
 it("sends the generated exact target through the EnvironmentService facade", async () => {
@@ -71,8 +72,7 @@ it.each([undefined, null, "", "setup"])(
       );
     vi.stubGlobal("fetch", fetchMock);
     const opening = await openSession(
-      "test",
-      "uid",
+      target,
       id,
       create(SessionSpecSchema, { harness: Harness.CODEX, model: "test-model" }),
       setup
@@ -97,7 +97,7 @@ it("looks up the same Session identity without repeating an uncertain Open", asy
     .mockResolvedValueOnce(Response.json({ code: 4, message: "uncertain", detail: "uncertain" }, { status: 504 }))
     .mockResolvedValueOnce(Response.json({ sessionId: id, sandbox: "test", state: "DELIVERY_STATE_RUNNER_ADMITTED" }));
   vi.stubGlobal("fetch", fetchMock);
-  await expect(openSession("test", "uid", id, create(SessionSpecSchema))).rejects.toMatchObject({ code: 4 });
+  await expect(openSession(target, id, create(SessionSpecSchema))).rejects.toMatchObject({ code: 4 });
   const opening = await getSessionOpening("test", id);
   expect(opening.state).toBe(DeliveryState.RUNNER_ADMITTED);
   expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
@@ -127,7 +127,8 @@ it("reads the AppService runner status as the existing generated EnvironmentRunt
   );
   vi.stubGlobal("fetch", fetchMock);
 
-  const status = await getEnvironmentRuntimeStatus("test", "sandbox-uid");
+  const statusTarget = create(TargetHandleSchema, { namespace: "team", name: "test", uid: "sandbox-uid" });
+  const status = await getEnvironmentRuntimeStatus(statusTarget);
 
   expect(fetchMock).toHaveBeenCalledTimes(1);
   const [url, init] = fetchMock.mock.calls[0]!;
@@ -148,8 +149,9 @@ it("keeps runner status errors readable across old and generated AppService resp
     .mockResolvedValueOnce(Response.json({ code: 14, message: "Runner is unavailable" }, { status: 503 }));
   vi.stubGlobal("fetch", fetchMock);
 
-  await expect(getEnvironmentRuntimeStatus("test", "sandbox-uid")).rejects.toMatchObject({ status: 503 });
-  await expect(getEnvironmentRuntimeStatus("test", "sandbox-uid")).rejects.toMatchObject({ status: 503, code: 14 });
+  const statusTarget = create(TargetHandleSchema, { namespace: "team", name: "test", uid: "sandbox-uid" });
+  await expect(getEnvironmentRuntimeStatus(statusTarget)).rejects.toMatchObject({ status: 503 });
+  await expect(getEnvironmentRuntimeStatus(statusTarget)).rejects.toMatchObject({ status: 503, code: 14 });
 });
 
 it.each([1, 2, 4, 8, 13, 14, 15])("keeps gRPC outcome %s uncertain", (code) => {

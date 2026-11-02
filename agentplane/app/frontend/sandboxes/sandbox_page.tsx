@@ -1,5 +1,5 @@
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
-import { clone } from "@bufbuild/protobuf";
+import { clone, create } from "@bufbuild/protobuf";
 import { TargetHandleSchema, type TargetHandle } from "../../../sandboxes/environments/environment_service_pb";
 import type { ThreadView } from "../schema";
 import { NotificationStatus } from "../notification_status";
@@ -125,29 +125,32 @@ export function SandboxPage({
 
   const inventory = useRequiredSandboxesLive();
   const candidate = inventory.snapshot?.sandboxes.find((item) => item.target?.name === name);
-  const sandboxUID = sandboxInventoryFresh(inventory) ? candidate?.target?.uid : undefined;
-  const [lastTarget, setLastTarget] = useState<{ name: string; uid: string } | null>(null);
+  const selected = sandboxInventoryFresh(inventory) ? candidate?.target : undefined;
+  const target = selected?.namespace && selected.name && selected.uid ? selected : undefined;
+  const sandboxNamespace = target?.namespace;
+  const sandboxUID = target?.uid;
+  const [lastTarget, setLastTarget] = useState<TargetHandle | null>(null);
   useEffect(() => {
-    if (sandboxUID) setLastTarget({ name, uid: sandboxUID });
-  }, [name, sandboxUID]);
+    if (sandboxNamespace && sandboxUID)
+      setLastTarget(create(TargetHandleSchema, { namespace: sandboxNamespace, name, uid: sandboxUID }));
+  }, [name, sandboxNamespace, sandboxUID]);
   // History remains available after the resource disappears; do not use a prior route's UID.
   const threadUID = sandboxUID ?? (lastTarget?.name === name ? lastTarget.uid : undefined);
-  const live = useLive<SandboxSnapshot>(sandboxUID ? liveSandboxUrl(name, sandboxUID) : null, `Sandbox ${name}`);
+  const live = useLive<SandboxSnapshot>(target ? liveSandboxUrl(target) : null, `Sandbox ${name}`);
   const threadRequest = useMemo(
     () => (threadUID ? { sandboxUID: threadUID, limit: threadLimit, search: null, includeArchived } : null),
     [threadUID, threadLimit, includeArchived]
   );
   const threadLive = useThreadsLive(threadRequest, null);
   // Never combine policy or thread data from an old incarnation with its same-name replacement.
-  const matches =
-    sandboxInventoryFresh(inventory) && !!candidate && candidate.target?.uid === live.snapshot?.sandbox_uid;
-  const sandbox = matches ? candidate : null;
+  const matches = !!target && target.uid === live.snapshot?.sandbox_uid;
+  const sandbox = matches ? (candidate ?? null) : null;
   const deleted = sandboxInventoryFresh(inventory) && !candidate;
   const detail = matches ? live.snapshot : null;
   const vmConsoleAvailable = hasVmConsole(sandbox);
   const tab: Tab =
     isTab(requestedTab) && (requestedTab !== "console" || vmConsoleAvailable) ? requestedTab : DEFAULT_TAB;
-  const currentThreads = threadLive.snapshot?.sandbox_uid === threadUID ? threadLive.snapshot : null;
+  const currentThreads = threadUID && threadLive.snapshot?.sandbox_uid === threadUID ? threadLive.snapshot : null;
   const threadsUnavailable = threadLive.stream.stalled;
   const threads = currentThreads?.threads ?? [];
   const ready = sandboxReady(sandbox);
@@ -233,7 +236,7 @@ export function SandboxPage({
     let openingAccepted = false;
     try {
       const opening = await withinSessionCreate(threadId, () =>
-        openSession(name, sandbox.target!.uid, threadId, spec, setupScript)
+        openSession(sandbox.target!, threadId, spec, setupScript)
       );
       if (!opening.sessionId) throw new Error("Open returned without a Session ID");
       openingAccepted = true;
@@ -360,7 +363,7 @@ export function SandboxPage({
           </Button>
           <NotificationStatus
             sandbox={name}
-            sandboxUID={sandboxUID ?? null}
+            target={target ?? null}
             opened={notificationsOpen}
             onClose={() => setNotificationsOpen(false)}
           />
@@ -486,12 +489,16 @@ export function SandboxPage({
           {vmConsoleAvailable && <Tabs.Tab value="console">Console</Tabs.Tab>}
         </Tabs.List>
         <Tabs.Panel value="egress_log" pt="sm">
-          {sandboxUID && <EgressLog key={sandboxUID} name={name} uid={sandboxUID} />}
+          {target && <EgressLog key={`${target.namespace}/${target.name}/${target.uid}`} target={target} />}
         </Tabs.Panel>
         <Tabs.Panel value="policy" pt="sm">
           <Stack gap="md">
-            {sandboxUID && (
-              <PolicyBindingsSection sandbox={name} sandboxUID={sandboxUID} bindings={detail?.bindings ?? null} />
+            {target && (
+              <PolicyBindingsSection
+                key={`${target.namespace}/${target.name}/${target.uid}`}
+                target={target}
+                bindings={detail?.bindings ?? null}
+              />
             )}
             <ActionPolicySection policy={detail?.action_policy ?? null} />
           </Stack>
@@ -501,7 +508,7 @@ export function SandboxPage({
         </Tabs.Panel>
         {vmConsoleAvailable && (
           <Tabs.Panel value="console" pt="sm">
-            {tab === "console" && sandboxUID && <SandboxConsole sandbox={name} sandboxUID={sandboxUID} />}
+            {tab === "console" && target && <SandboxConsole target={target} />}
           </Tabs.Panel>
         )}
         <Tabs.Panel value="threads" pt="sm">
