@@ -8,7 +8,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/journal"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -103,7 +103,7 @@ func runnerTestManager(t *testing.T, environment map[string]string, destination 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := runnerlifecycle.PublishDesired(ctx, resources, runnerlifecycle.Desired{}); err != nil {
+	if err := harnesshostlifecycle.PublishDesired(ctx, resources, harnesshostlifecycle.Desired{}); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {

@@ -153,7 +153,7 @@ func New(config Config) (*Runtime, error) {
 }
 
 // newRuntime is the deterministic test seam used by lifecycle/forwarding tests. A nil COSI state
-// selects an in-memory Runner lifecycle store; a nonnil one lets focused tests inject controller
+// selects an in-memory Harness Host lifecycle store; a nonnil one lets focused tests inject controller
 // state without changing the production process topology.
 func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Runtime, error) {
 	if !filepath.IsAbs(config.StateDir) {

@@ -12,7 +12,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/harness"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"google.golang.org/grpc/codes"
@@ -33,7 +33,7 @@ type executionHealth struct {
 type executionHealthEvent struct{ Revision uint64 }
 
 func (executionHealthEvent) resourceType() resource.Type {
-	return runnerlifecycle.EmbeddedExecutionRuntimeType
+	return harnesshostlifecycle.EmbeddedExecutionRuntimeType
 }
 func (v executionHealthEvent) DeepCopy() executionHealthEvent { return v }
 

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -31,7 +31,7 @@ func TestManagedProcessWaitCleansUpAfterNaturalExit(t *testing.T) {
 	if !process.Running() || process.PID() == 0 {
 		t.Fatalf("launched process running=%t pid=%d", process.Running(), process.PID())
 	}
-	status, found, err := supervision.ReadStatus(ctx, r.lifecycle.state, runnerlifecycle.Namespace, process.ID())
+	status, found, err := supervision.ReadStatus(ctx, r.lifecycle.state, harnesshostlifecycle.Namespace, process.ID())
 	if err != nil || !found || status.Phase != supervision.Running || status.Owner != "managed-process-test" || status.PID != process.PID() {
 		t.Fatalf("live process status = %+v found=%t err=%v", status, found, err)
 	}
@@ -100,7 +100,7 @@ func TestManagedProcessCanceledWaitRetainsOwnershipUntilStop(t *testing.T) {
 	if !process.Running() {
 		t.Fatal("canceled Wait stopped the native process")
 	}
-	status, found, err := supervision.ReadStatus(ctx, r.lifecycle.state, runnerlifecycle.Namespace, process.ID())
+	status, found, err := supervision.ReadStatus(ctx, r.lifecycle.state, harnesshostlifecycle.Namespace, process.ID())
 	if err != nil || !found || status.Phase != supervision.Running {
 		t.Fatalf("process status after canceled Wait = %+v found=%t err=%v", status, found, err)
 	}
@@ -150,7 +150,7 @@ func TestManagedProcessBlocksCloseUntilFence(t *testing.T) {
 	stopManagedProcessOnCleanup(t, process)
 
 	waitLifecycle(t, r, func() bool {
-		return r.lifecycle.status().Blocker.Kind == runnerlifecycle.ProcessCleanupPending && r.lifecycle.status().Blocker.FinalizersPending
+		return r.lifecycle.status().Blocker.Kind == harnesshostlifecycle.ProcessCleanupPending && r.lifecycle.status().Blocker.FinalizersPending
 	}, "Runner process fencing barrier")
 	select {
 	case <-closeDone:
@@ -191,7 +191,7 @@ func TestHostCloseDoesNotWaitForRuntimeProcess(t *testing.T) {
 	}
 	stopManagedProcessOnCleanup(t, process)
 	r.mu.Lock()
-	err = r.lifecycle.setDesiredState(runnerlifecycle.Closing, "")
+	err = r.lifecycle.setDesiredState(harnesshostlifecycle.Closing, "")
 	r.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
@@ -248,7 +248,7 @@ func assertManagedProcessAbsent(t *testing.T, ctx context.Context, r *Runner, pr
 	if !state.IsNotFoundError(err) {
 		t.Fatalf("process desired state after cleanup: err=%v, want not found", err)
 	}
-	status := resource.NewMetadata(runnerlifecycle.Namespace, supervision.StatusType, process.ID(), resource.VersionUndefined)
+	status := resource.NewMetadata(harnesshostlifecycle.Namespace, supervision.StatusType, process.ID(), resource.VersionUndefined)
 	if _, err := r.lifecycle.state.WatchFor(ctx, status, state.WithEventTypes(state.Destroyed)); err != nil {
 		t.Fatalf("wait for managed process status cleanup: %v", err)
 	}

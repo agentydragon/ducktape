@@ -17,7 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/journal"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/workspace"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -323,12 +323,12 @@ func frameTestSessionWithControllerGate(t *testing.T, command []string, withCont
 		t.Fatal(err)
 	}
 	var workers sync.WaitGroup
-	host := supervision.NewHost(ctx, resources, runnerlifecycle.Namespace, supervision.HarnessDomain, &workers, func(err error) {
+	host := supervision.NewHost(ctx, resources, harnesshostlifecycle.Namespace, supervision.HarnessDomain, &workers, func(err error) {
 		if err != nil && !errors.Is(err, context.Canceled) {
 			t.Error(err)
 		}
 	})
-	bootstrapHost, err := bootstrap.NewHost(bootstrap.Config{}, bootstrap.Dependencies{Context: ctx, State: resources, Workers: &workers, Admission: func(ctx context.Context, _ runnerlifecycle.EnvironmentDesired, work func(context.Context) error) error {
+	bootstrapHost, err := bootstrap.NewHost(bootstrap.Config{}, bootstrap.Dependencies{Context: ctx, State: resources, Workers: &workers, Admission: func(ctx context.Context, _ harnesshostlifecycle.EnvironmentDesired, work func(context.Context) error) error {
 		return work(ctx)
 	}, OnError: func(err error) {
 		if err != nil {
@@ -368,7 +368,7 @@ func frameTestSessionWithControllerGate(t *testing.T, command []string, withCont
 			t.Fatal(err)
 		}
 	}
-	if err := runnerlifecycle.PublishDesired(ctx, resources, runnerlifecycle.Desired{}); err != nil {
+	if err := harnesshostlifecycle.PublishDesired(ctx, resources, harnesshostlifecycle.Desired{}); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan struct{})
@@ -852,11 +852,11 @@ type testAggregateController struct{}
 
 func (*testAggregateController) Name() string { return "test-aggregate" }
 func (*testAggregateController) Inputs() []controller.Input {
-	return []controller.Input{{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.DesiredStateType, Kind: controller.InputWeak}}
+	return []controller.Input{{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.DesiredStateType, Kind: controller.InputWeak}}
 }
 
 func (*testAggregateController) Outputs() []controller.Output {
-	return []controller.Output{{Type: runnerlifecycle.AggregateStatusType, Kind: controller.OutputExclusive}}
+	return []controller.Output{{Type: harnesshostlifecycle.AggregateStatusType, Kind: controller.OutputExclusive}}
 }
 
 func (*testAggregateController) Run(ctx context.Context, r controller.Runtime, _ *zap.Logger) error {
@@ -866,18 +866,18 @@ func (*testAggregateController) Run(ctx context.Context, r controller.Runtime, _
 			return nil
 		case <-r.EventCh():
 		}
-		desired, found, err := runnerlifecycle.ReadDesired(ctx, r)
+		desired, found, err := harnesshostlifecycle.ReadDesired(ctx, r)
 		if err != nil {
 			return err
 		}
 		if !found {
 			continue
 		}
-		stage := runnerlifecycle.StageRunning
-		if desired.Mode != runnerlifecycle.Running {
-			stage = runnerlifecycle.Halting
+		stage := harnesshostlifecycle.StageRunning
+		if desired.Mode != harnesshostlifecycle.Running {
+			stage = harnesshostlifecycle.Halting
 		}
-		if _, err := runnerlifecycle.WriteStatus(ctx, r, runnerlifecycle.Status{Generation: desired.Generation, Stage: stage}); err != nil {
+		if _, err := harnesshostlifecycle.WriteStatus(ctx, r, harnesshostlifecycle.Status{Generation: desired.Generation, Stage: stage}); err != nil {
 			return err
 		}
 		r.ResetRestartBackoff()

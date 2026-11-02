@@ -1,4 +1,4 @@
-# TODO — Agentplane runner
+# TODO — Agentplane environment
 
 ## Make Environment Runtime COSI names describe their owners and state
 
@@ -7,12 +7,8 @@ COSI resources have metadata and an opaque spec; `Status` is a useful project co
 required COSI subresource or a reason to combine resources with different owners. The current
 [COSI map](runtime/docs/cosi.md) shows the resource and controller boundaries.
 
-- Replace the legacy controller/resource/owner identifiers (`runner-lifecycle`,
-  `RunnerDesiredStates`, `RunnerRuntimes`, `runner`, `runner-host`, and `Runner`) with names that
-  identify **Harness Host**. In particular, `RunnerRuntimes` is the singleton Harness Host lifecycle
-  status and coordination state; a name such as `HarnessHostLifecycleStatuses` describes it.
-  Preserve the Host drain barrier and its distinction from the Environment Runtime close and
-  transition coordinator.
+- Rename the embedded Harness Host Go type `Runner` to a component-specific name. Preserve the Host
+  drain barrier and its distinction from the Environment Runtime close and transition coordinator.
 - Rename the other controller-owned `*Runtimes` status resources and Go types consistently:
   `BootstrapRuntimes` → `BootstrapStatuses`, `CodexAppServerRuntimes` → `CodexAppServerStatuses`,
   and `EmbeddedExecutionRuntimes` →

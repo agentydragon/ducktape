@@ -19,7 +19,7 @@ import (
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -40,7 +40,7 @@ type admissionStatusReadFailure struct {
 	err     error
 }
 
-type runnerAdmissionProbeState struct {
+type harnessHostAdmissionProbeState struct {
 	state.State
 	statusReadMu           sync.Mutex
 	statusReadFailures     []admissionStatusReadFailure
@@ -48,14 +48,14 @@ type runnerAdmissionProbeState struct {
 	desiredPublicationErr  error
 }
 
-func (s *runnerAdmissionProbeState) failNextStatusRead(ctx context.Context, err error) {
+func (s *harnessHostAdmissionProbeState) failNextStatusRead(ctx context.Context, err error) {
 	s.statusReadMu.Lock()
 	defer s.statusReadMu.Unlock()
 	s.statusReadFailures = append(s.statusReadFailures, admissionStatusReadFailure{context: ctx, err: err})
 }
 
-func (s *runnerAdmissionProbeState) Get(ctx context.Context, pointer resource.Pointer, options ...state.GetOption) (resource.Resource, error) {
-	if pointer.Type() == runnerlifecycle.AggregateStatusType {
+func (s *harnessHostAdmissionProbeState) Get(ctx context.Context, pointer resource.Pointer, options ...state.GetOption) (resource.Resource, error) {
+	if pointer.Type() == harnesshostlifecycle.AggregateStatusType {
 		s.statusReadMu.Lock()
 		for index, failure := range s.statusReadFailures {
 			if ctx == failure.context {
@@ -69,8 +69,8 @@ func (s *runnerAdmissionProbeState) Get(ctx context.Context, pointer resource.Po
 	return s.State.Get(ctx, pointer, options...)
 }
 
-func (s *runnerAdmissionProbeState) Modify(ctx context.Context, target resource.Resource, update func(resource.Resource) error, options ...state.UpdateOption) error {
-	if target.Metadata().Type() == runnerlifecycle.DesiredStateType && s.failDesiredPublication.Swap(false) {
+func (s *harnessHostAdmissionProbeState) Modify(ctx context.Context, target resource.Resource, update func(resource.Resource) error, options ...state.UpdateOption) error {
+	if target.Metadata().Type() == harnesshostlifecycle.DesiredStateType && s.failDesiredPublication.Swap(false) {
 		return s.desiredPublicationErr
 	}
 	return s.State.Modify(ctx, target, update, options...)
@@ -174,12 +174,12 @@ func waitClose(t *testing.T, done <-chan error) error {
 	case err := <-done:
 		return err
 	case <-ctx.Done():
-		t.Fatal("runner Close did not finish")
+		t.Fatal("Harness Host Close did not finish")
 		return ctx.Err()
 	}
 }
 
-func runnerLifecycleSnapshot(t *testing.T, r *Runner) *sessionpb.EnvironmentRuntimeLifecycleStatus {
+func harnessHostLifecycleSnapshot(t *testing.T, r *Runner) *sessionpb.EnvironmentRuntimeLifecycleStatus {
 	t.Helper()
 	response, err := r.GetStatus(context.Background(), &sessionpb.GetStatusRequest{})
 	if err != nil {
@@ -193,13 +193,13 @@ func runnerLifecycleSnapshot(t *testing.T, r *Runner) *sessionpb.EnvironmentRunt
 
 func TestEnvironmentRuntimeLifecycleStatusOmitsStaleBlockerAndError(t *testing.T) {
 	resourceError := "resource failure"
-	current := runnerLifecycleStatus(
-		runnerlifecycle.Desired{Mode: runnerlifecycle.Quiescing, Generation: 8}, true,
-		runnerlifecycle.Status{
+	current := harnessHostLifecycleStatus(
+		harnesshostlifecycle.Desired{Mode: harnesshostlifecycle.Quiescing, Generation: 8}, true,
+		harnesshostlifecycle.Status{
 			Generation: 8,
-			Stage:      runnerlifecycle.Halting,
-			Blocker: runnerlifecycle.Blocker{
-				Kind:  runnerlifecycle.SessionHaltPending,
+			Stage:      harnesshostlifecycle.Halting,
+			Blocker: harnesshostlifecycle.Blocker{
+				Kind:  harnesshostlifecycle.SessionHaltPending,
 				Error: resourceError,
 			},
 		}, true,
@@ -208,14 +208,14 @@ func TestEnvironmentRuntimeLifecycleStatusOmitsStaleBlockerAndError(t *testing.T
 		t.Fatalf("current blocker error was not projected: %+v", current)
 	}
 
-	status := runnerLifecycleStatus(
-		runnerlifecycle.Desired{Mode: runnerlifecycle.Quiescing, Generation: 9}, true,
-		runnerlifecycle.Status{
+	status := harnessHostLifecycleStatus(
+		harnesshostlifecycle.Desired{Mode: harnesshostlifecycle.Quiescing, Generation: 9}, true,
+		harnesshostlifecycle.Status{
 			Generation: 8,
-			Stage:      runnerlifecycle.Flushing,
+			Stage:      harnesshostlifecycle.Flushing,
 			Error:      "old lifecycle error",
-			Blocker: runnerlifecycle.Blocker{
-				Kind:  runnerlifecycle.IngressAcknowledgementPending,
+			Blocker: harnesshostlifecycle.Blocker{
+				Kind:  harnesshostlifecycle.IngressAcknowledgementPending,
 				Error: "old resource error",
 			},
 		}, true,
@@ -262,16 +262,16 @@ func holdJournalBatch(t *testing.T, ctx context.Context, s *session.Session) fun
 // recreate missing authoritative accounting as an idle (zero) count.
 func removeAdmissionState(t *testing.T, r *Runner) func() {
 	t.Helper()
-	ptr := lifecycleResourceFor("runner", runnerInputSpec{}).Metadata()
+	ptr := lifecycleResourceFor(harnesshostlifecycle.ResourceID, harnessHostInputSpec{}).Metadata()
 	r.mu.Lock()
-	err := r.lifecycle.state.Destroy(r.ctx, ptr, state.WithDestroyOwner("runner-host"))
+	err := r.lifecycle.state.Destroy(r.ctx, ptr, state.WithDestroyOwner(harnesshostlifecycle.HostOwner))
 	r.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
 	return func() {
 		r.mu.Lock()
-		err := r.lifecycle.state.Create(r.ctx, lifecycleResourceFor("runner", runnerInputSpec{}), state.WithCreateOwner("runner-host"))
+		err := r.lifecycle.state.Create(r.ctx, lifecycleResourceFor(harnesshostlifecycle.ResourceID, harnessHostInputSpec{}), state.WithCreateOwner(harnesshostlifecycle.HostOwner))
 		r.mu.Unlock()
 		if err != nil {
 			t.Errorf("restore admission accounting for teardown: %v", err)
@@ -302,9 +302,9 @@ func TestClosingIntentPreservesSealAndWaitsForSetup(t *testing.T) {
 	}
 	waitLifecycle(t, r, func() bool {
 		current := r.lifecycle.status()
-		return current.Stage == runnerlifecycle.Halting && current.Blocker.Kind == runnerlifecycle.SessionHaltPending && sessionStopping(r, s)
+		return current.Stage == harnesshostlifecycle.Halting && current.Blocker.Kind == harnesshostlifecycle.SessionHaltPending && sessionStopping(r, s)
 	}, "quiesce halt to wait at setup barrier")
-	blocked := runnerLifecycleSnapshot(t, r)
+	blocked := harnessHostLifecycleSnapshot(t, r)
 	if !blocked.ProgressCurrent || blocked.Stage != sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_HALTING ||
 		blocked.Blocker == nil || blocked.Blocker.Kind != sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_HALT ||
 		blocked.Blocker.ResourceId != s.ID() || blocked.Blocker.ResourceType != session.LifecycleStatusType || !blocked.Blocker.ResourcePresent {
@@ -331,7 +331,7 @@ func TestClosingIntentPreservesSealAndWaitsForSetup(t *testing.T) {
 	if err := publishHostIntentStatus(context.Background(), r, closing, true); err != nil {
 		t.Fatal(err)
 	}
-	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == runnerlifecycle.Flushing }, "closing seal flush")
+	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == harnesshostlifecycle.Flushing }, "closing seal flush")
 	seal := s.EventJournal().SealState()
 	if seal == nil || seal.IncarnationUID != "test-incarnation" {
 		t.Fatalf("closing intent lost seal: %+v", seal)
@@ -350,7 +350,7 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	if _, err := quiesceHost(context.Background(), r); err != nil {
 		t.Fatalf("accept quiesce: %v", err)
 	}
-	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == runnerlifecycle.Flushing }, "quiesce to flush sealed journal")
+	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == harnesshostlifecycle.Flushing }, "quiesce to flush sealed journal")
 	seal := s.EventJournal().SealState()
 	if seal == nil || seal.Cursor == 0 {
 		t.Fatalf("journal seal = %+v, want a nonzero cursor", seal)
@@ -360,10 +360,10 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	}
 	waitLifecycle(t, r, func() bool {
 		current := r.lifecycle.status()
-		return current.Stage == runnerlifecycle.Flushing && current.Blocker.Kind == runnerlifecycle.IngressAcknowledgementPending &&
+		return current.Stage == harnesshostlifecycle.Flushing && current.Blocker.Kind == harnesshostlifecycle.IngressAcknowledgementPending &&
 			current.Blocker.AcknowledgementPresent && current.Blocker.AcknowledgementCursor == seal.Cursor-1
 	}, "publish the under-cursor acknowledgement blocker")
-	blocked := runnerLifecycleSnapshot(t, r)
+	blocked := harnessHostLifecycleSnapshot(t, r)
 	if !blocked.ProgressCurrent || blocked.Stage != sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING ||
 		blocked.Blocker == nil || blocked.Blocker.Kind != sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT ||
 		blocked.Blocker.ResourceId != s.ID() || blocked.Blocker.ResourceType != ingressAckType ||
@@ -379,15 +379,15 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	if facts.QuiesceStage != environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_FLUSHING {
 		t.Fatalf("facts after under-cursor acknowledgement = %s, want FLUSHING", facts.QuiesceStage)
 	}
-	if current := r.lifecycle.status(); current.Stage != runnerlifecycle.Flushing {
+	if current := r.lifecycle.status(); current.Stage != harnesshostlifecycle.Flushing {
 		t.Fatalf("runtime after under-cursor acknowledgement = %v, want FLUSHING", current.Stage)
 	}
 
 	if err := r.lifecycle.publishAck(s.ID(), retained.Acknowledgement{Cursor: seal.Cursor, Sealed: true}); err != nil {
 		t.Fatal(err)
 	}
-	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == runnerlifecycle.Quiesced }, "exact sealed cursor acknowledgement")
-	quiesced := runnerLifecycleSnapshot(t, r)
+	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == harnesshostlifecycle.Quiesced }, "exact sealed cursor acknowledgement")
+	quiesced := harnessHostLifecycleSnapshot(t, r)
 	if quiesced.Stage != sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_QUIESCED || quiesced.Blocker != nil {
 		t.Fatalf("GetStatus after exact acknowledgement = %+v, want QUIESCED without a blocker", quiesced)
 	}
@@ -411,7 +411,7 @@ func TestCloseWaitsForAdmission(t *testing.T) {
 		_, err := r.SubmitInput(hostContext(r, ctx), &environmentruntimepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "close-race", Text: "input"})
 		inputDone <- err
 	}()
-	if err := watchLifecycle(ctx, r.lifecycle, "runner", func(input runnerInputSpec) (bool, error) {
+	if err := watchLifecycle(ctx, r.lifecycle, harnesshostlifecycle.ResourceID, func(input harnessHostInputSpec) (bool, error) {
 		return input.Admissions == 1, nil
 	}); err != nil {
 		releaseBatch()
@@ -430,8 +430,8 @@ func TestCloseWaitsForAdmission(t *testing.T) {
 	}
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
-	if err := runnerlifecycle.WatchStatus(ctx, r.lifecycle.state, func(runtime runnerlifecycle.Status) (bool, error) {
-		return runtime.Stage == runnerlifecycle.Draining, nil
+	if err := harnesshostlifecycle.WatchStatus(ctx, r.lifecycle.state, func(runtime harnesshostlifecycle.Status) (bool, error) {
+		return runtime.Stage == harnesshostlifecycle.Draining, nil
 	}); err != nil {
 		releaseBatch()
 		t.Fatalf("wait for Close to drain admission: %v", err)
@@ -460,14 +460,14 @@ func TestCloseWaitsForAdmission(t *testing.T) {
 	if err := waitClose(t, closeDone); err != nil {
 		t.Fatalf("Close after admission completion: %v", err)
 	}
-	after, found, err := lifecycleRead[runnerInputSpec](ctx, r.lifecycle.state, "runner")
+	after, found, err := lifecycleRead[harnessHostInputSpec](ctx, r.lifecycle.state, harnesshostlifecycle.ResourceID)
 	if err != nil || !found || after.Admissions != 0 {
-		t.Fatalf("RunnerInputs after admission completion = %+v, found=%v err=%v; want no admissions", after, found, err)
+		t.Fatalf("Harness Host Inputs after admission completion = %+v, found=%v err=%v; want no admissions", after, found, err)
 	}
 }
 
 func TestAdmissionDoesNotObserveAggregateStatusFailure(t *testing.T) {
-	store := &runnerAdmissionProbeState{State: state.WrapCore(namespaced.NewState(inmem.Build))}
+	store := &harnessHostAdmissionProbeState{State: state.WrapCore(namespaced.NewState(inmem.Build))}
 	r, s, _ := lifecycleTestBlockedSetupWithState(t, store)
 	statusReadErr := errors.New("injected aggregate-status read failure")
 	store.failNextStatusRead(r.ctx, statusReadErr)
@@ -493,7 +493,7 @@ func TestAdmissionDoesNotObserveAggregateStatusFailure(t *testing.T) {
 }
 
 func TestClosePublicationFailureKeepsAdmissionClosed(t *testing.T) {
-	store := &runnerAdmissionProbeState{
+	store := &harnessHostAdmissionProbeState{
 		State:                 state.WrapCore(namespaced.NewState(inmem.Build)),
 		desiredPublicationErr: errors.New("injected desired-state publication failure"),
 	}
@@ -507,14 +507,14 @@ func TestClosePublicationFailureKeepsAdmissionClosed(t *testing.T) {
 		store.failDesiredPublication.Store(false)
 		if r.closeDone == nil {
 			if err := r.Close(context.Background()); err != nil {
-				t.Errorf("close test Runner: %v", err)
+				t.Errorf("close test Harness Host: %v", err)
 			}
 			return
 		}
 		<-r.closeDone
 		if r.closeErr != nil {
 			if err := r.finishClose(); err != nil {
-				t.Errorf("finish test Runner after injected failure: %v", err)
+				t.Errorf("finish test Harness Host after injected failure: %v", err)
 			}
 		}
 	})
@@ -584,7 +584,7 @@ func TestAdmissionCompletionStateFailureIsReported(t *testing.T) {
 		_, err := r.SubmitInput(hostContext(r, ctx), &environmentruntimepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "completion-accounting", Text: "input"})
 		inputDone <- err
 	}()
-	if err := watchLifecycle(ctx, r.lifecycle, "runner", func(input runnerInputSpec) (bool, error) {
+	if err := watchLifecycle(ctx, r.lifecycle, harnesshostlifecycle.ResourceID, func(input harnessHostInputSpec) (bool, error) {
 		return input.Admissions == 1, nil
 	}); err != nil {
 		t.Fatal(err)
@@ -603,10 +603,10 @@ func TestAdmissionCompletionStateFailureIsReported(t *testing.T) {
 	select {
 	case err := <-r.fatal:
 		if !state.IsNotFoundError(err) {
-			t.Fatalf("Runner failure = %v, want missing admission state", err)
+			t.Fatalf("Harness Host failure = %v, want missing admission state", err)
 		}
 	default:
-		t.Fatal("accounting completion failure did not reach Runner supervision")
+		t.Fatal("accounting completion failure did not reach Harness Host supervision")
 	}
 	if facts, err := r.facts(); err == nil {
 		t.Fatalf("failed completion returned facts: %v", facts)
@@ -618,11 +618,11 @@ func TestCloseProgressesForEmptyRunner(t *testing.T) {
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
 	if err := waitClose(t, closeDone); err != nil {
-		t.Fatalf("Close empty Runner: %v", err)
+		t.Fatalf("Close empty Harness Host: %v", err)
 	}
-	current, found, err := runnerlifecycle.ReadStatus(context.Background(), r.lifecycle.state)
-	if err != nil || !found || current.Stage != runnerlifecycle.Closed {
-		t.Fatalf("empty Runner runtime after Close = %+v, found=%v err=%v; want CLOSED", current, found, err)
+	current, found, err := harnesshostlifecycle.ReadStatus(context.Background(), r.lifecycle.state)
+	if err != nil || !found || current.Stage != harnesshostlifecycle.Closed {
+		t.Fatalf("empty Harness Host status after Close = %+v, found=%v err=%v; want CLOSED", current, found, err)
 	}
 }
 
@@ -643,7 +643,7 @@ func TestJournalAndAcknowledgementChangesWakeObservers(t *testing.T) {
 	select {
 	case <-changes:
 	default:
-		t.Fatal("journal/acknowledgement changes did not wake Runner observers")
+		t.Fatal("journal/acknowledgement changes did not wake Harness Host observers")
 	}
 }
 
@@ -653,18 +653,18 @@ func TestNewIncarnationWaitsForTeardown(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitLifecycle(t, r, func() bool {
-		return r.lifecycle.status().Stage == runnerlifecycle.Halting && sessionStopping(r, s)
+		return r.lifecycle.status().Stage == harnesshostlifecycle.Halting && sessionStopping(r, s)
 	}, "halt waiting for setup")
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
 	if err := bindHost(r, "replacement-incarnation"); err == nil {
 		t.Fatal("new binding overtook accepted setup")
 	}
-	if r.lifecycle.desiredState().Mode != runnerlifecycle.Quiescing {
+	if r.lifecycle.desiredState().Mode != harnesshostlifecycle.Quiescing {
 		t.Fatal("rejected binding reopened admission")
 	}
 	finishSetup()
-	if err := r.lifecycle.wait(ctx, runnerlifecycle.Flushing); err != nil {
+	if err := r.lifecycle.wait(ctx, harnesshostlifecycle.Flushing); err != nil {
 		t.Fatal(err)
 	}
 	if err := bindHost(r, "replacement-incarnation"); err != nil {
@@ -678,16 +678,16 @@ func TestNewIncarnationWaitsForTeardown(t *testing.T) {
 	}
 }
 
-func TestLifecycleWatchStopsWithRunner(t *testing.T) {
-	runnerCtx, cancelRunner := context.WithCancel(context.Background())
-	defer cancelRunner()
-	l := newLifecycleWatchFixture(runnerCtx)
-	cancelRunner()
+func TestLifecycleWatchStopsWithHarnessHost(t *testing.T) {
+	hostCtx, cancelHost := context.WithCancel(context.Background())
+	defer cancelHost()
+	l := newLifecycleWatchFixture(hostCtx)
+	cancelHost()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
-	err := watchLifecycle(ctx, l, "never-created", func(runnerInputSpec) (bool, error) { return false, nil })
+	err := watchLifecycle(ctx, l, "never-created", func(harnessHostInputSpec) (bool, error) { return false, nil })
 	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("watch after runner cancellation = %v, want context.Canceled", err)
+		t.Fatalf("watch after Harness Host cancellation = %v, want context.Canceled", err)
 	}
 }
 
@@ -698,7 +698,7 @@ func TestLifecycleWatchWaitsForResourceCreation(t *testing.T) {
 		l := newLifecycleWatchFixture(ctx)
 		done := make(chan error, 1)
 		go func() {
-			done <- watchLifecycle(ctx, l, "created-later", func(current runnerInputSpec) (bool, error) {
+			done <- watchLifecycle(ctx, l, "created-later", func(current harnessHostInputSpec) (bool, error) {
 				return current.Admissions == 1, nil
 			})
 		}()
@@ -708,7 +708,7 @@ func TestLifecycleWatchWaitsForResourceCreation(t *testing.T) {
 			t.Fatalf("watch returned before resource creation: %v", err)
 		default:
 		}
-		if err := l.state.Create(ctx, lifecycleResourceFor("created-later", runnerInputSpec{Admissions: 1}), state.WithCreateOwner("runner-host")); err != nil {
+		if err := l.state.Create(ctx, lifecycleResourceFor("created-later", harnessHostInputSpec{Admissions: 1}), state.WithCreateOwner(harnesshostlifecycle.HostOwner)); err != nil {
 			t.Fatal(err)
 		}
 		synctest.Wait()

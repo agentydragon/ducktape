@@ -10,7 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/harness"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -125,7 +125,7 @@ func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
 				if _, err := s.Admit(ctx, &commandpb.Command{CommandId: "test-input", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "test input"}}}, false); err != nil {
 					t.Fatal(err)
 				}
-				if err := runnerlifecycle.PublishDesired(ctx, m.state, runnerlifecycle.Desired{Mode: runnerlifecycle.Quiescing, Generation: 1}); err != nil {
+				if err := harnesshostlifecycle.PublishDesired(ctx, m.state, harnesshostlifecycle.Desired{Mode: harnesshostlifecycle.Quiescing, Generation: 1}); err != nil {
 					t.Fatal(err)
 				}
 			})
@@ -183,7 +183,7 @@ func TestPreparationCompletingAfterShutdownCannotMakeSessionReady(t *testing.T) 
 			return nil
 		})
 		<-started
-		if err := runnerlifecycle.PublishDesired(context.Background(), m.state, runnerlifecycle.Desired{Mode: runnerlifecycle.Closing, Generation: 1}); err != nil {
+		if err := harnesshostlifecycle.PublishDesired(context.Background(), m.state, harnesshostlifecycle.Desired{Mode: harnesshostlifecycle.Closing, Generation: 1}); err != nil {
 			t.Fatal(err)
 		}
 	})

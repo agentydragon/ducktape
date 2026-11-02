@@ -86,7 +86,7 @@ are acceptable for cooperating agents with shared access; that does not imply is
 different principals. Starting less-privileged workers can wait: the selected first spawning
 scope uses the caller's ServiceAccount and may reuse its environment.
 
-**Ownership report, 2026-10-27 PDT:** runner lifecycle implementation was assigned to other
+**Ownership report, 2026-10-27 PDT:** Harness Host lifecycle implementation was assigned to other
 agents. Confirm current ownership before assigning overlapping lifecycle work; do not duplicate an
 active owner's task. This report does not hold independent sampler-roll, JS/exec recovery,
 scheduling or Session-creation work.
@@ -741,7 +741,7 @@ History's readers, and no launcher grant matches argument shapes.
 
 **Placement decision remains open; lifecycle ownership approved (operator, 2026-10-17).** The runner
 owns harness processes. Provisional process and Session diagnostics, including a frontend Sandbox-page
-view, are selected in the [lifecycle contract](../docs/runner_delivery_and_harness_design.md#runner-owned-harness-lifecycle); their exact shape may change. No public process
+view, are selected in the [lifecycle contract](../docs/runner_delivery_and_harness_design.md#harness-host-lifecycle); their exact shape may change. No public process
 kill/restart API is introduced. Decide placement/store policy separately; expose a store API only if
 its public need is selected.
 Use the merged Codex multi-thread test and Claude's separate-store single-root characterization
@@ -1680,7 +1680,7 @@ and is an additive target rather than a second release pipeline.
 
 **Partially accepted by the operator (2026-10-17 PDT); remaining VM drive belongs to the operator.**
 The operator test-drove the five-minute idle suspension and message-to-wake successfully with Codex;
-see [UI acceptance](../docs/runner_delivery_and_harness_design.md#runner-owned-harness-lifecycle).
+see [UI acceptance](../docs/runner_delivery_and_harness_design.md#harness-host-lifecycle).
 Do not repeat that accepted path as a rollout gate. The report does not identify a VM test.
 
 The remaining check is the same experience through the staging web app with a VM Sandbox: idle
@@ -2026,7 +2026,7 @@ service caller contract. The separate destination-authority decision
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
-**Candidate; the [lifecycle contract](../docs/runner_delivery_and_harness_design.md#runner-owned-harness-lifecycle) is implemented and `ResumeSession` is gone from the proxy.** The runner proxy
+**Candidate; the [lifecycle contract](../docs/runner_delivery_and_harness_design.md#harness-host-lifecycle) is implemented and `ResumeSession` is gone from the proxy.** The runner proxy
 (`runner_gateway/gateway/proxy.go`) currently lets configured caller accounts invoke allowed Runner
 methods, except `Quiesce` (controller only). Review per-method policy for `OpenSession`,
 `SubmitInput`, model/effort changes and `InterruptTurn` against the Dispatcher-only command boundary.

@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"go.uber.org/zap"
@@ -16,13 +16,13 @@ type hostReportController struct{ runner *Runner }
 func (*hostReportController) Name() string { return "harness-host-report" }
 func (*hostReportController) Inputs() []controller.Input {
 	return []controller.Input{
-		{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.DesiredStateType, Kind: controller.InputWeak},
-		{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.AggregateStatusType, Kind: controller.InputWeak},
+		{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.DesiredStateType, Kind: controller.InputWeak},
+		{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.AggregateStatusType, Kind: controller.InputWeak},
 	}
 }
 
 func (*hostReportController) Outputs() []controller.Output {
-	return []controller.Output{{Type: runnerlifecycle.HostReportType, Kind: controller.OutputExclusive}}
+	return []controller.Output{{Type: harnesshostlifecycle.HostReportType, Kind: controller.OutputExclusive}}
 }
 
 func (c *hostReportController) Run(ctx context.Context, engine controller.Runtime, _ *zap.Logger) error {
@@ -37,13 +37,13 @@ func (c *hostReportController) Run(ctx context.Context, engine controller.Runtim
 			return nil
 		}
 		if intent != nil && report != nil {
-			value := runnerlifecycle.HostReport{Intent: intent, Report: report}
-			previous, found, err := cosi.Read(ctx, engine, runnerlifecycle.HostReportResource(runnerlifecycle.HostReport{}))
+			value := harnesshostlifecycle.HostReport{Intent: intent, Report: report}
+			previous, found, err := cosi.Read(ctx, engine, harnesshostlifecycle.HostReportResource(harnesshostlifecycle.HostReport{}))
 			if err != nil {
 				return err
 			}
 			if !found || !proto.Equal(previous.Intent, intent) || !proto.Equal(previous.Report, report) {
-				if _, err := cosi.Write(ctx, engine, runnerlifecycle.HostReportResource(value), value); err != nil {
+				if _, err := cosi.Write(ctx, engine, harnesshostlifecycle.HostReportResource(value), value); err != nil {
 					return err
 				}
 			}
@@ -80,7 +80,7 @@ func (r *Runner) reportSnapshot(ctx context.Context) (*runtimepb.LifecycleIntent
 		return nil, nil, nil
 	}
 	report := &runtimepb.HostReport{Binding: proto.Clone(sampled.Binding).(*runtimepb.Binding), Ready: r.ready.Load(), NativeStopped: r.nativeStopped, Facts: facts}
-	current, _, err := runnerlifecycle.ReadStatus(ctx, r.lifecycle.state)
+	current, _, err := harnesshostlifecycle.ReadStatus(ctx, r.lifecycle.state)
 	if err != nil {
 		return nil, nil, err
 	}
