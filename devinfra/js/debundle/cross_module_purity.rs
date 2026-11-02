@@ -1414,6 +1414,7 @@ pub fn resolve_imported_callable_summaries(
                     invocation: call.derived.invocation,
                     returns: call.derived.returns.clone(),
                     retained_arguments: call.derived.retained_arguments.clone(),
+                    retained_provider_captures: call.derived.retained_provider_captures.clone(),
                     native_constructions: call.derived.native_constructions.clone(),
                     replacement_package: facts.replacement_packages.get(export).cloned(),
                     dependencies: call.dependencies.clone(),

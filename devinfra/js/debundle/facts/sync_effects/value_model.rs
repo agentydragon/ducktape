@@ -208,9 +208,15 @@ impl ProviderScopeId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum ProviderInput {
+    Argument(usize),
+    Capture(usize),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct SymbolicInputId {
     pub(super) scope: ProviderScopeId,
-    pub(super) parameter: usize,
+    pub(super) input: ProviderInput,
 }
 
 /// The interpreter's values: the shared lattice plus carriers for the
