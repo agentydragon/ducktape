@@ -1,12 +1,11 @@
 """The Grafana instance (run by grafana-operator), its Postgres, route, datasources and
 dashboards. A dashboard authored here is `dashboards/<name>.json` beside this module plus its
-line in `_FILE_DASHBOARDS`.
+entry in `grafana_dashboard_inputs.FILE_DASHBOARDS`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
@@ -37,6 +36,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.grafana_dashboards import DashboardFile
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import mimir
+from cluster.cdk8s.monitoring.grafana_dashboard_inputs import FILE_DASHBOARDS
 from cluster.cdk8s.providers.grafana_operator.grafana import Grafana
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
@@ -73,39 +73,13 @@ _OIDC = SecretRef(namespace=_NAMESPACE, name="grafana-oidc-config")
 _INSTANCE_LABELS = {"dashboards": _NAME}
 
 
-@dataclass(frozen=True)
-class _FileDashboard:
-    # Maps each dashboard input to a datasource name.
-    datasources: Mapping[str, str]
-    folder: str | None = None
-
-
-# `dashboards/<name>.json` beside this module, deployed as the `<name>-dashboard` ConfigMap.
-_FILE_DASHBOARDS = {
-    "flux-cluster": _FileDashboard(datasources={}, folder="Cluster & Platform"),
-    "interface-flap-frequency": _FileDashboard(
-        datasources={"DS_LOKI": "Loki", "DS_PROMETHEUS": "Mimir"}, folder="Network"
-    ),
-    "rugged-power": _FileDashboard(datasources={"DS_PROMETHEUS": "Mimir"}, folder="Nodes & Hardware"),
-    "node-memory": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Nodes & Hardware"),
-    "cluster-storage-io": _FileDashboard(datasources={"DS_MIMIR": "Mimir", "DS_LOKI": "Loki"}, folder="Storage"),
-    "s3-operations": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Storage"),
-    "cluster-disk-usage": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Storage"),
-    "piraeus-storage": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Storage"),
-    "storage-service-details": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Storage"),
-    "io-pressure": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Storage"),
-    # Beside the AT&T gateway exporter's own "Home gateway" dashboard.
-    "home-network-overview": _FileDashboard(datasources={"DS_LOKI": "Loki"}, folder="Network"),
-}
-
-
 def _dashboard_file(name: str) -> DashboardFile:
     return DashboardFile(
         source=f"cluster/cdk8s/monitoring/dashboards/{name}.json", config_map=f"{name}-dashboard", namespace=_NAMESPACE
     )
 
 
-DASHBOARDS = [_dashboard_file(name) for name in _FILE_DASHBOARDS]
+DASHBOARDS = [_dashboard_file(name) for name in FILE_DASHBOARDS]
 
 
 def _database(chart: Chart) -> None:
@@ -346,7 +320,7 @@ def _dashboard(
 
 
 def _dashboards(chart: Chart) -> None:
-    for name, dashboard in _FILE_DASHBOARDS.items():
+    for name, dashboard in FILE_DASHBOARDS.items():
         _dashboard(
             chart, name, datasources=dashboard.datasources, folder=dashboard.folder, config_map=_dashboard_file(name)
         )

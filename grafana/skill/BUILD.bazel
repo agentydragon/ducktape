@@ -9,7 +9,6 @@ py_binary(
     name = "verify_dashboard",
     srcs = ["verify_dashboard.py"],
     data = [
-        "//cluster:grafana_dashboard_manifest",
         "//cluster/cdk8s/monitoring/dashboards",
         "@chrome_headless_shell//:executable",
     ],
@@ -18,7 +17,7 @@ py_binary(
     },
     main = "verify_dashboard.py",
     deps = [
-        "//util/bazel:runfiles",
+        "//cluster/cdk8s/monitoring:grafana_dashboard_inputs",
         "@pypi//httpx",
         "@pypi//playwright",
         "@pypi//pyyaml",
@@ -28,11 +27,9 @@ py_binary(
 py_test(
     name = "test_verify_dashboard",
     srcs = ["test_verify_dashboard.py"],
-    data = [
-        "verify_dashboard.py",
-        "//cluster:grafana_dashboard_manifest",
-    ],
+    data = ["verify_dashboard.py"],
     deps = [
+        "//cluster/cdk8s/monitoring:grafana_dashboard_inputs",
         "//util/bazel:runfiles",
         "@pypi//httpx",
         "@pypi//playwright",

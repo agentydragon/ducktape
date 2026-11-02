@@ -15,8 +15,13 @@ from util.bazel.runfiles import get_required_path
 VERIFY_DASHBOARD = runpy.run_path(str(get_required_path("_main/grafana/skill/verify_dashboard.py")))
 
 
-def test_packaged_grafana_dashboard_manifest_is_available() -> None:
-    assert VERIFY_DASHBOARD["grafana_dashboard_manifest_path"](None).is_file()
+def test_monitoring_dashboard_datasources_come_from_generator_source() -> None:
+    assert VERIFY_DASHBOARD["operator_datasources"](None, "home-network-overview.json") == {"DS_LOKI": "Loki"}
+    assert VERIFY_DASHBOARD["operator_datasources"](None, "cluster-storage-io.json") == {
+        "DS_MIMIR": "Mimir",
+        "DS_LOKI": "Loki",
+    }
+    assert VERIFY_DASHBOARD["operator_datasources"](None, "unknown.json") == {}
 
 
 def test_operator_mapping_uses_dashboard_resource_and_datasource_name(tmp_path: Path) -> None:
@@ -61,7 +66,7 @@ def test_operator_mapping_substitutes_arbitrary_input_names_and_preserves_dashbo
     )
     assert dashboard == {"datasource": "Loki", "templating": {"query": "${dashboard_var}"}}
 
-    with pytest.raises(VERIFY_DASHBOARD["VerificationError"], match="no generated GrafanaDashboard mapping"):
+    with pytest.raises(VERIFY_DASHBOARD["VerificationError"], match="no GrafanaDashboard mapping"):
         VERIFY_DASHBOARD["apply_operator_datasources"]({"datasource": "${DS_UNKNOWN}"}, {"datasource": "Loki"})
 
 
