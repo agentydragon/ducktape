@@ -24,7 +24,6 @@ from agentplane.env.e2e.testing.driver import RunnerDriver, SessionFollow, Sessi
 from agentplane.env.e2e.testing.fixtures import ModelEndpoint
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.env.e2e.testing.process_fixtures import wait_for_exit
-from agentplane.env.runtime.control import environment_runtime_pb2, environment_runtime_pb2_grpc
 from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
 from agentplane.env.runtime.execution.testing.codex_exec_server_container import (
     CodexExecServerContainer,
@@ -368,20 +367,12 @@ async def test_process_output_resume_files_and_incarnation_fence(runner: Running
     async with grpc.aio.insecure_channel(target, options=[("grpc.enable_retries", 0)]) as channel:
         async with asyncio.timeout(30):
             await channel.channel_ready()
-        watch = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel).WatchState(
-            environment_runtime_pb2.WatchStateRequest(
-                sandbox_uid=scope.destination.sandbox_uid,
-                incarnation_uid=scope.expected_incarnation_uid,
-                connection_epoch=2,
-            )
-        )
-        first_watch = await watch.read()
-        assert isinstance(first_watch, environment_runtime_pb2.WatchStateResponse)
+        control_status = await (await runner.control()).GetStatus(session_pb2.GetStatusRequest())
         metadata = (
             ("agentplane-sandbox-uid", scope.destination.sandbox_uid),
             ("agentplane-incarnation-uid", scope.expected_incarnation_uid),
-            ("agentplane-environment-runtime-boot-id", first_watch.environment_runtime_boot_id),
-            ("agentplane-connection-epoch", "2"),
+            ("agentplane-environment-runtime-boot-id", control_status.environment_runtime_boot_id),
+            ("agentplane-connection-epoch", str(runner.gateway.control.connection_epoch)),
         )
         client = executor_pb2_grpc.ExecutorStub(channel)
         stale = executor_pb2.ExecutionScope()
