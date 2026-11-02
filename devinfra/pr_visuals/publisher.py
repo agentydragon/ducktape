@@ -452,13 +452,13 @@ def _merge_manifests(
                     dimension = (
                         "configurations" if previous_configuration != result_identity.configuration_id else "shards"
                     )
-                    previous = previous_configuration if dimension == "configurations" else previous_shard
-                    current = (
+                    previous_owner = previous_configuration if dimension == "configurations" else previous_shard
+                    current_owner = (
                         result_identity.configuration_id if dimension == "configurations" else result_identity.shard
                     )
                     raise ValueError(
                         f"{target_label} declared visual asset {asset.path} from multiple {dimension} in "
-                        f"invocation {invocation_id} ({previous} and {current})"
+                        f"invocation {invocation_id} ({previous_owner} and {current_owner})"
                     )
                 result_owner_by_path.setdefault(owner_key, result_owner)
 
