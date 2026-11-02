@@ -193,10 +193,6 @@ func defaultConfig() Config {
 	}
 }
 
-func loadConfig() (Config, error) {
-	return loadConfigWithArgs(nil)
-}
-
 func loadConfigWithArgs(args []string) (Config, error) {
 	c := defaultConfig()
 	var sandboxPresetOrder []string

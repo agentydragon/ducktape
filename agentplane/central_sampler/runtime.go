@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"slices"
 	"sync"
 	"time"
 
@@ -1113,15 +1112,6 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 		return r.rejectKnownCompactionFailure(ctx, owner, intentID, err)
 	}
 	return r.store.FinishCompaction(ctx, owner, intentID, result.Audit, original, replacement)
-}
-
-func sortedKeys(values map[string]struct{}) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-	return keys
 }
 
 func (e *Executor) stopDispatch() {

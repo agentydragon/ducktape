@@ -8,6 +8,14 @@ import (
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
 
+func storedStateNames() []string {
+	states := make([]string, len(storedStates))
+	for i, known := range storedStates {
+		states[i] = known.text
+	}
+	return states
+}
+
 func TeststoredStateNamesRoundTrip(t *testing.T) {
 	pairs := []struct {
 		state action_servicepb.ActionState
