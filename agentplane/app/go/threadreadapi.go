@@ -16,12 +16,12 @@ import (
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/httperror"
-	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -659,7 +659,7 @@ func ensureThreadArchivable(ctx context.Context, thread threads.Thread, summary 
 	}
 	sandbox, err := inventory.Get(ctx, summary.Sandbox)
 	if err != nil {
-		var missing *sandboxes.SandboxNotFoundError
+		var missing *sandboxinventory.SandboxNotFoundError
 		if errors.As(err, &missing) {
 			return nil // A deleted Sandbox has no running harness to keep visible.
 		}

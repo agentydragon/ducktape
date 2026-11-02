@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
-	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -113,7 +113,7 @@ func TestRunnerStatusRoutePreservesSandboxErrorsAndCallerAuthentication(t *testi
 		t.Fatal(err)
 	}
 	server := NewHTTPServer(authentication)
-	if err := RegisterRunnerRoutes(server, &appService{runnerStatus: runnerStatusFake{err: &sandboxes.SandboxNotFoundError{Name: "fixture"}}}); err != nil {
+	if err := RegisterRunnerRoutes(server, &appService{runnerStatus: runnerStatusFake{err: &sandboxinventory.SandboxNotFoundError{Name: "fixture"}}}); err != nil {
 		t.Fatal(err)
 	}
 

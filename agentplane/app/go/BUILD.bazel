@@ -63,6 +63,7 @@ go_library(
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/environments:environment_service_go_proto",
+        "//agentplane/sandboxes/inventory",
         "//agentplane/sandboxes/runtimeconfig",
         "//agentplane/sandboxes/view",
         "//agentplane/watchhealth",
@@ -163,6 +164,7 @@ go_test(
     deps = [
         "//agentplane/app/go/auth",
         "//agentplane/proto:session_go_proto",
+        "//agentplane/sandboxes/inventory",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
     ],
@@ -208,7 +210,6 @@ go_test(
     embed = [":main_lib"],
     deps = [
         "//agentplane/app/go/policyaccess",
-        "//agentplane/app/go/sandboxes",
         "//agentplane/policy/api/v1alpha1",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
@@ -230,6 +231,7 @@ go_test(
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
+        "//agentplane/sandboxes/inventory",
         "@com_github_danielgtaylor_huma_v2//:huma",
         "@com_github_google_uuid//:uuid",
         "@io_k8s_api//authentication/v1:authentication",

@@ -26,6 +26,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
 	sandboxview "github.com/agentydragon/ducktape/agentplane/sandboxes/view"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/google/uuid"
@@ -1170,9 +1171,9 @@ func writeGRPCOpenError(w http.ResponseWriter, err error) {
 }
 
 func sandboxHTTPErrorToRaw(w http.ResponseWriter, err error) error {
-	var notFound *sandboxes.SandboxNotFoundError
-	var invalid *sandboxes.InvalidSandboxError
-	var conflict *sandboxes.SandboxConflictError
+	var notFound *sandboxinventory.SandboxNotFoundError
+	var invalid *sandboxinventory.InvalidSandboxError
+	var conflict *sandboxinventory.SandboxConflictError
 	switch {
 	case errors.As(err, &notFound):
 		writeDetailError(w, http.StatusNotFound, err.Error())

@@ -7,11 +7,11 @@ updates; operator authority and ordinary execution-account policy are checked at
 Dispatcher DeliveryWorker requests automatic wake through the shared manager, preserving the effective
 caller and applying `wakeOnSend` and the configured `wake_callers` grant. The Sandbox Controller
 reconciles desired state and owns Sandbox status. The Go `SandboxReader`
-reads a Sandbox and its Pod; `SandboxInventory` also creates (idempotently, by a recorded create intent),
-guards `spec.running` patches by UID and resourceVersion, refuses resume with a retryable error while the
-controller is quiescing an incarnation, and starts deletion of a suspended Sandbox. On a resourceVersion
-conflict, resume and send-wake requests reread and re-evaluate current state; concurrent wake requests
-advance one `wakeGeneration`.
+reads a Sandbox and its Pod; the Go `inventory` package also creates (idempotently, by a recorded
+create intent), guards `spec.running` patches by UID and resourceVersion, refuses resume with a
+retryable error while the controller is quiescing an incarnation, and starts deletion of a suspended
+Sandbox. On a resourceVersion conflict, resume and send-wake requests reread and re-evaluate current
+state; concurrent wake requests advance one `wakeGeneration`.
 
 `spec.resumePolicy.allowOwnServiceAccount` opts the exact live execution ServiceAccount UID into explicit
 resume of idle suspension. `spec.wakeOnSend` and the existing `wake_callers` setting continue to

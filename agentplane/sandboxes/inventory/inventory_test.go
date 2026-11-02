@@ -1,4 +1,4 @@
-package sandboxes
+package inventory
 
 import (
 	"context"
