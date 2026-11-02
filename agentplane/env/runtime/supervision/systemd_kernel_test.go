@@ -8,8 +8,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -29,6 +31,12 @@ func TestMain(m *testing.M) {
 		os.Exit(SupervisorMain(os.Args[2:]))
 	}
 	os.Exit(m.Run())
+}
+
+type heldSystemdLaunch struct {
+	name       string
+	properties []systemd.Property
+	release    chan bool
 }
 
 // This target runs before Runner in one ordinary VM guest. Session setup tests cover
@@ -105,6 +113,230 @@ func TestSystemdKernelFixture(t *testing.T) {
 			t.Fatal("stale invocation proof did not reach the manager")
 		}
 		assertSystemdProofEmpty(t, ctx, conn, name)
+	})
+	t.Run("held_old_invocation_is_fenced_after_successor_inventory", func(t *testing.T) {
+		ownerSuffix := strings.ReplaceAll(uuid.NewString(), "-", "")
+		ownerUnit := "agentplane-proof-owner-" + ownerSuffix + ".service"
+		// The Runtime unit uses ProtectSystem=strict and allows writes only under
+		// /run/agentplane/execution-service; keep this synthetic owner's lifetime
+		// directory inside that dedicated writable subtree.
+		directoryName := filepath.Join("agentplane", "execution-service", "proof-"+ownerSuffix)
+		lifetimeDirectory := filepath.Join("/run", directoryName)
+		owner := SystemdOwner{
+			Unit: ownerUnit, LifetimeDirectory: lifetimeDirectory,
+			ScopeID: SystemdScopeID("invocation-fence-" + ownerSuffix),
+		}
+		ownerProperties := []systemd.Property{
+			property("Type", "exec"),
+			property("ExecStartEx", []systemdExec{{"/bin/busybox", []string{"sleep", "600"}, []string{"no-env-expand"}}}),
+			property("Restart", "on-failure"), property("RestartUSec", uint64(100_000)),
+			property("RuntimeDirectory", []string{directoryName}), property("RuntimeDirectoryMode", uint32(0755)),
+			property("RuntimeDirectoryPreserve", "no"), property("CollectMode", "inactive"),
+		}
+		t.Cleanup(func() {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cleanupCancel()
+			if err := FenceSystemdUnit(cleanupCtx, conn, ownerUnit, SystemdFence{Ordered: true}); err != nil {
+				t.Errorf("fence synthetic owner: %v", err)
+			}
+		})
+		if _, err := conn.StartTransientUnitContext(ctx, ownerUnit, "fail", ownerProperties, nil); err != nil {
+			t.Fatal(err)
+		}
+
+		ownerA := waitSystemdInvocation(t, ctx, conn, ownerUnit, "", lifetimeDirectory)
+		markerA := filepath.Join(lifetimeDirectory, ownerA.InvocationID)
+		if len(ownerA.InvocationID) != 32 {
+			t.Fatalf("synthetic owner has invalid invocation ID %q", ownerA.InvocationID)
+		}
+		// COSI's real scope reconciler reads the unit invocation identity from the
+		// process environment. Supply the synthetic owner's manager-observed A ID.
+		t.Setenv("INVOCATION_ID", ownerA.InvocationID)
+
+		held := make(chan heldSystemdLaunch, 2)
+		submittedProperties := make(chan []systemd.Property, 2)
+		fixtureDone := make(chan struct{})
+		var startDone []<-chan struct{}
+		var heldProcesses []*Process
+		t.Cleanup(func() {
+			close(fixtureDone)
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cleanupCancel()
+			startsSettled := true
+			for _, done := range startDone {
+				select {
+				case <-done:
+				case <-cleanupCtx.Done():
+					t.Errorf("held systemd launch did not settle during cleanup: %v", cleanupCtx.Err())
+					startsSettled = false
+				}
+			}
+			if !startsSettled {
+				return
+			}
+			for _, process := range heldProcesses {
+				if process.Running() {
+					if err := process.Stop(cleanupCtx); err != nil {
+						t.Errorf("stop held synthetic process: %v", err)
+					}
+				}
+			}
+		})
+		syntheticLauncher := &SystemdLauncher{
+			Slice: launcher.Slice, AgentUID: launcher.AgentUID, AgentGID: launcher.AgentGID,
+			BlockDevices:    append([]string(nil), launcher.BlockDevices...),
+			AggregateLimits: launcher.AggregateLimits, ProcessLimits: launcher.ProcessLimits,
+			startTransient: func(launchCtx context.Context, bus *systemd.Conn, name string, props []systemd.Property, completion chan<- string) (int, error) {
+				launch := heldSystemdLaunch{
+					name: name, properties: append([]systemd.Property(nil), props...), release: make(chan bool, 1),
+				}
+				held <- launch
+				var omitConditions bool
+				select {
+				case omitConditions = <-launch.release:
+				case <-launchCtx.Done():
+					return 0, launchCtx.Err()
+				case <-fixtureDone:
+					return 0, context.Canceled
+				}
+				submitted := props
+				if omitConditions {
+					submitted = withoutSystemdProperty(props, "Conditions")
+					if len(submitted) != len(props)-1 {
+						return 0, errors.New("control launch did not remove exactly one Conditions property")
+					}
+				}
+				submittedProperties <- append([]systemd.Property(nil), submitted...)
+				return bus.StartTransientUnitContext(launchCtx, name, "fail", submitted, completion)
+			},
+		}
+		stateDir := filepath.Join("/state/.supervision-invocation-fence", ownerSuffix)
+		supervisorA := reconcileKernelSystemdScope(t, syntheticLauncher, stateDir, sandboxUID, owner)
+		if _, err := os.Stat(markerA); err != nil {
+			t.Fatalf("COSI scope reconciliation did not create owner A marker %s: %v", markerA, err)
+		}
+
+		startHeld := func(effect string) (*Process, <-chan error) {
+			t.Helper()
+			p, err := supervisorA.NewProcess(ProcessConfig{
+				Command: []string{"/bin/sh", "-eu", "-c", `touch "$1"; exec /bin/busybox sleep 600`, "sh", effect},
+				Dir:     dir, Env: map[string]string{"PATH": "/bin:/usr/bin"}, StopGrace: stopGrace,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			heldProcesses = append(heldProcesses, p)
+			result := make(chan error, 1)
+			done := make(chan struct{})
+			startDone = append(startDone, done)
+			go func() {
+				defer close(done)
+				result <- p.Start(ctx)
+			}()
+			return p, result
+		}
+		receiveHeld := func() heldSystemdLaunch {
+			t.Helper()
+			select {
+			case launch := <-held:
+				return launch
+			case <-ctx.Done():
+				t.Fatalf("systemd launch was not held before deadline: %v", ctx.Err())
+				return heldSystemdLaunch{}
+			}
+		}
+		effectConditioned := filepath.Join(dir, "late-conditioned-effect")
+		conditionedProcess, conditionedResult := startHeld(effectConditioned)
+		conditioned := receiveHeld()
+		effectControl := filepath.Join(dir, "late-no-condition-effect")
+		controlProcess, controlResult := startHeld(effectControl)
+		control := receiveHeld()
+
+		assertHeldInvocationProperties(t, conditioned.properties, owner, markerA)
+		assertHeldInvocationProperties(t, control.properties, owner, markerA)
+		for _, launch := range []heldSystemdLaunch{conditioned, control} {
+			unit, err := ReadSystemdUnit(ctx, conn, launch.name)
+			if err != nil || unit.LoadState != "not-found" {
+				t.Fatalf("held A unit %s exists before owner restart: unit=%+v err=%v", launch.name, unit, err)
+			}
+		}
+
+		if err := conn.KillUnitWithTarget(ctx, ownerUnit, systemd.Main, int32(syscall.SIGKILL)); err != nil {
+			t.Fatalf("kill synthetic owner A: %v", err)
+		}
+		ownerB := waitSystemdInvocation(t, ctx, conn, ownerUnit, ownerA.InvocationID, lifetimeDirectory)
+		if ownerB.InvocationID == ownerA.InvocationID {
+			t.Fatalf("synthetic owner restart reused invocation ID %q", ownerB.InvocationID)
+		}
+		waitForSystemdPathAbsent(t, ctx, markerA)
+		markerB := filepath.Join(lifetimeDirectory, ownerB.InvocationID)
+		if _, err := os.Stat(lifetimeDirectory); err != nil {
+			t.Fatalf("synthetic owner B RuntimeDirectory is absent: %v", err)
+		}
+		t.Setenv("INVOCATION_ID", ownerB.InvocationID)
+		reconcileKernelSystemdScope(t, syntheticLauncher, stateDir, sandboxUID, owner)
+		if _, err := os.Stat(markerB); err != nil {
+			t.Fatalf("successor COSI reconciliation did not create owner B marker %s: %v", markerB, err)
+		}
+		for _, launch := range []heldSystemdLaunch{conditioned, control} {
+			unit, err := ReadSystemdUnit(ctx, conn, launch.name)
+			if err != nil || unit.LoadState != "not-found" {
+				t.Fatalf("successor COSI inventory did not observe held unit %s absent: unit=%+v err=%v", launch.name, unit, err)
+			}
+		}
+
+		conditioned.release <- false
+		if submitted := receiveSubmittedProperties(t, ctx, submittedProperties); !reflect.DeepEqual(conditioned.properties, submitted) {
+			t.Fatal("conditioned launch properties changed before submission")
+		}
+		if err := receiveSystemdStartResult(t, ctx, conditionedResult); err == nil {
+			t.Fatal("A invocation launch with its stale ConditionPathExists unexpectedly started after B inventory")
+		}
+		if _, err := conditionedProcess.Wait(ctx); err == nil {
+			t.Fatal("skipped stale A process lost its start error")
+		}
+		if conditionedProcess.PID() != 0 {
+			t.Fatalf("skipped stale A launch published PID %d", conditionedProcess.PID())
+		}
+		if _, err := os.Stat(effectConditioned); !os.IsNotExist(err) {
+			t.Fatalf("stale A ConditionPathExists launch performed native effect: %v", err)
+		}
+		assertSystemdProofEmpty(t, ctx, conn, conditioned.name)
+
+		control.release <- true
+		if submitted := receiveSubmittedProperties(t, ctx, submittedProperties); !reflect.DeepEqual(withoutSystemdProperty(control.properties, "Conditions"), submitted) {
+			t.Fatal("positive control changed properties other than Conditions")
+		}
+		if err := receiveSystemdStartResult(t, ctx, controlResult); err != nil {
+			t.Fatalf("A control launch with only Conditions removed did not start under B: %v", err)
+		}
+		for {
+			if _, err := os.Stat(effectControl); err == nil {
+				break
+			} else if !os.IsNotExist(err) {
+				t.Fatalf("stat no-condition control effect: %v", err)
+			}
+			select {
+			case <-ctx.Done():
+				t.Fatalf("stale no-condition launch had no native effect: %v", ctx.Err())
+			case <-time.After(20 * time.Millisecond):
+			}
+		}
+		unitB, err := ReadSystemdUnit(ctx, conn, control.name)
+		if err != nil || unitB.ActiveState != "active" || unitB.ExecMainPID == 0 {
+			t.Fatalf("stale no-condition unit is not active under owner B: unit=%+v err=%v", unitB, err)
+		}
+		currentOwner, err := ReadSystemdUnit(ctx, conn, ownerUnit)
+		if err != nil || currentOwner.ActiveState != "active" || currentOwner.InvocationID != ownerB.InvocationID {
+			t.Fatalf("native control effect did not run while owner B was active: owner=%+v err=%v", currentOwner, err)
+		}
+		if err := controlProcess.Stop(ctx); err != nil {
+			t.Fatalf("stop no-condition control process: %v", err)
+		}
+		if _, err := controlProcess.Wait(ctx); err != nil {
+			t.Fatalf("wait for no-condition control stop: %v", err)
+		}
+		assertSystemdProofEmpty(t, ctx, conn, control.name)
 	})
 
 	t.Run("streams_and_environment", func(t *testing.T) {
@@ -418,6 +650,118 @@ func readProofStreams(p *Process) (<-chan string, <-chan string) {
 	return stdout, stderr
 }
 
+func assertHeldInvocationProperties(t *testing.T, properties []systemd.Property, owner SystemdOwner, marker string) {
+	t.Helper()
+	conditions, ok := systemdPropertyValue(t, properties, "Conditions").([]systemdCondition)
+	if !ok || len(conditions) != 1 || conditions[0].Type != "ConditionPathExists" || conditions[0].Parameter != marker {
+		t.Fatalf("held launch Conditions=%#v, want ConditionPathExists=%s", conditions, marker)
+	}
+	for _, name := range []string{"BindsTo", "After"} {
+		value, ok := systemdPropertyValue(t, properties, name).([]string)
+		if !ok || !reflect.DeepEqual(value, []string{owner.Unit}) {
+			t.Fatalf("held launch %s=%#v, want stable owner name %q", name, value, owner.Unit)
+		}
+	}
+}
+
+func systemdPropertyValue(t *testing.T, properties []systemd.Property, name string) any {
+	t.Helper()
+	var value any
+	count := 0
+	for _, property := range properties {
+		if property.Name == name {
+			value = property.Value.Value()
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("launch properties contain %d %s entries, want exactly one", count, name)
+	}
+	return value
+}
+
+func withoutSystemdProperty(properties []systemd.Property, name string) []systemd.Property {
+	filtered := make([]systemd.Property, 0, len(properties))
+	for _, property := range properties {
+		if property.Name != name {
+			filtered = append(filtered, property)
+		}
+	}
+	return filtered
+}
+
+func receiveSystemdStartResult(t *testing.T, ctx context.Context, result <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-result:
+		return err
+	case <-ctx.Done():
+		t.Fatalf("wait for held systemd start result: %v", ctx.Err())
+		return ctx.Err()
+	}
+}
+
+func receiveSubmittedProperties(t *testing.T, ctx context.Context, submitted <-chan []systemd.Property) []systemd.Property {
+	t.Helper()
+	select {
+	case properties := <-submitted:
+		return properties
+	case <-ctx.Done():
+		t.Fatalf("wait for properties submitted to systemd: %v", ctx.Err())
+		return nil
+	}
+}
+
+func waitSystemdInvocation(t *testing.T, ctx context.Context, conn *systemd.Conn, name, previousInvocation, runtimeDirectory string) SystemdUnitSnapshot {
+	t.Helper()
+	timer := time.NewTimer(15 * time.Second)
+	defer timer.Stop()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		unit, err := ReadSystemdUnit(ctx, conn, name)
+		if err != nil {
+			t.Fatalf("read synthetic owner %s: %v", name, err)
+		}
+		if unit.ActiveState == "active" && unit.MainPID != 0 && len(unit.InvocationID) == 32 && unit.InvocationID != previousInvocation {
+			if _, err := os.Stat(runtimeDirectory); err == nil {
+				return unit
+			}
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("wait for synthetic owner %s invocation (previous=%s): %v", name, previousInvocation, ctx.Err())
+		case <-timer.C:
+			t.Fatalf("timed out waiting for synthetic owner %s invocation (previous=%s); latest=%+v", name, previousInvocation, unit)
+		case <-ticker.C:
+		}
+	}
+}
+
+func waitForSystemdPathAbsent(t *testing.T, ctx context.Context, path string) {
+	t.Helper()
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		_, err := os.Stat(path)
+		if os.IsNotExist(err) {
+			return
+		}
+		if err != nil {
+			t.Fatalf("inspect old invocation marker %s: %v", path, err)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("wait for old invocation marker %s removal: %v", path, ctx.Err())
+		case <-timer.C:
+			t.Fatalf("old invocation marker %s survived owner restart", path)
+		case <-ticker.C:
+		}
+	}
+}
+
 func assertSystemdProofEmpty(t *testing.T, ctx context.Context, conn *systemd.Conn, name string) {
 	t.Helper()
 	unit, err := ReadSystemdUnit(ctx, conn, name)
@@ -522,12 +866,22 @@ func reconcileKernelSystemdScope(t *testing.T, launcher *SystemdLauncher, stateD
 	go func() { done <- engine.Run(ctx) }()
 	_, err = store.WatchFor(ctx, resourceFor(host.namespace, string(owner.ScopeID), SystemdScopeStatus{}).Metadata(), state.WithCondition(func(res resource.Resource) (bool, error) {
 		status, _, err := ReadSystemdScopeStatus(ctx, store, host.namespace, owner.ScopeID)
-		return status.Ready, err
+		return status.Ready || status.Error != "", err
 	}))
+	if err == nil {
+		status, found, statusErr := ReadSystemdScopeStatus(ctx, store, host.namespace, owner.ScopeID)
+		if statusErr != nil {
+			err = fmt.Errorf("read COSI systemd scope status: %w", statusErr)
+		} else if !found {
+			err = errors.New("COSI systemd scope status was not published")
+		} else if !status.Ready {
+			err = fmt.Errorf("COSI systemd scope reconciliation failed: %s", status.Error)
+		}
+	}
 	cancel()
 	runErr := <-done
 	if err != nil || runErr != nil {
-		t.Fatalf("scope reconciliation: wait=%v engine=%v", err, runErr)
+		t.Fatalf("scope reconciliation: status=%v engine=%v", err, runErr)
 	}
 	return supervisor
 }

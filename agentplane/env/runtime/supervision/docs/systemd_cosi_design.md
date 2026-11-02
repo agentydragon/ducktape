@@ -119,7 +119,10 @@ processes; it does not invent systemd state for them.
    slice before admitting new native work. Failure to establish that boundary blocks startup or
    admission. Reconstruct only facts supported by systemd/kernel and durable journals; do not
    recreate lost exit status, stream handles or uncertain command effects. A lock alone is not a
-   process-domain fence.
+   process-domain fence. The marker gates a start when systemd processes it; it does not prove
+   delivery of a disconnected sender's queued D-Bus request or fence effects from a command that
+   already executed. The real-manager regression probe and its limits are recorded in the
+   [invocation-fence investigation](../debug/2026_11_02_systemd_invocation_fence.md).
 
 ## Review and evidence
 
