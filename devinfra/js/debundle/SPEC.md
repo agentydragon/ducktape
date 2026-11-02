@@ -2004,6 +2004,12 @@ the statement; the `reason`'s `path` names the first such path:
 - `opaque_callback_invocation`: a callback opaque code may invoke (escaped
   earlier, exported, or reachable from the opaque operation's inputs),
   executed as if it ran.
+  A member read whose abstract receiver is the global object records its
+  global-property read but does not identify which escaped callback, if any,
+  occupies that slot. The result stays opaque; if called, ordinary unknown-call
+  handling still accounts for the escaped callback pool under this assumed
+  path. A separately known function alternative in a mixed known/opaque callee
+  keeps its own observed effect provenance.
 - `escaped_callback_closure`: the synchronous closure of a callback, class or
   foreign record exposed to opaque code, including values a member read of
   an escaped record or of a native slot the census does not prove intact may
