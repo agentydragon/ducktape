@@ -43,8 +43,8 @@ The connection uses `journal_mode=DELETE` and `synchronous=EXTRA`; publication r
 A journal mutex owns each complete transaction, including batch publication.
 Explicit `BEGIN IMMEDIATE` reserves the writer before reading ids/cursors; no transaction spans
 harness or network I/O. One retained connection serves the single Session writer.
-Runtime acquires the environment lifetime lock before starting embedded Host and retains it through
-Host cleanup and journal close. Native Pod and subprocess harnesses inherit that descriptor.
+Runtime opens the COSI backing database and retains its exclusive lock through Host cleanup and
+journal close. Native Pod and subprocess harnesses also inherit a separate owner-fence descriptor.
 The outer container runtime fences escaped descendants before an abnormal replacement. In VMs
 systemd owns each component's distinct scope. Runtime opens its lifecycle store before publishing
 COSI scope intent; process starts wait for the scope controller to fence prior owned services.
