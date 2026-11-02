@@ -43,7 +43,8 @@ class Stream extends EventTarget {
               extra_status: "hidden",
               burn: null,
               display_windows: [],
-              display_platform_credits: null,
+              display_openai_platform_credits: null,
+              display_anthropic_platform_credits: null,
               summary_tint: "unknown",
               summary_index: null,
             },
@@ -83,9 +84,9 @@ describe("quota subscription", () => {
     expect(container.querySelector('[role="status"]')?.textContent).toContain("Connecting");
     act(() => stream.view("2026-01-15T12:00:00Z"));
     expect(container.querySelector('[role="status"]')?.textContent).toBe("Quota stream live");
-    expect(container.textContent).toContain("1 banked reset");
+    expect(container.textContent).toContain("1 reset");
     act(() => stream.view("2026-01-16T12:00:00Z", 2));
-    expect(container.textContent).toContain("2 banked resets");
+    expect(container.textContent).toContain("2 resets");
     expect(container.textContent).not.toContain("checked");
     expect(container.textContent).not.toContain("Snapshot");
     act(() => {
@@ -125,7 +126,8 @@ describe("quota subscription", () => {
                 extra_status: "none",
                 burn: null,
                 display_windows: [],
-                display_platform_credits: null,
+                display_openai_platform_credits: null,
+                display_anthropic_platform_credits: null,
                 summary_tint: "unknown",
                 summary_index: null,
               },
@@ -135,7 +137,7 @@ describe("quota subscription", () => {
       );
     });
 
-    expect(container.textContent).toContain("Claude prepaid balance · $123.45");
+    expect(container.querySelector("h2.aiquota-card-title")?.textContent).toContain("Claude · $123.45 prepaid balance");
     expect(container.textContent).not.toContain("No quota data.");
     expect(container.textContent).not.toContain("Paid credits");
 
@@ -163,7 +165,8 @@ describe("quota subscription", () => {
                 extra_status: "none",
                 burn: null,
                 display_windows: [],
-                display_platform_credits: null,
+                display_openai_platform_credits: null,
+                display_anthropic_platform_credits: null,
                 summary_tint: "unknown",
                 summary_index: null,
               },
@@ -172,7 +175,10 @@ describe("quota subscription", () => {
         })
       );
     });
-    expect(container.textContent).toContain("Claude prepaid balance unavailable");
+    expect(container.querySelector("h2.aiquota-card-title")?.textContent).toContain(
+      "Claude · prepaid balance unavailable"
+    );
+    expect(container.querySelector(".aiquota-aside")?.textContent ?? "").not.toContain("Claude prepaid balance");
   });
 
   it("renders server presentation without recomputing pace or tint", () => {
@@ -197,7 +203,8 @@ describe("quota subscription", () => {
                 paid_credits_active: false,
                 extra_status: "none",
                 burn: null,
-                display_platform_credits: null,
+                display_openai_platform_credits: null,
+                display_anthropic_platform_credits: null,
                 display_windows: [
                   {
                     ...raw,

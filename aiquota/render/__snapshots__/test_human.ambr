@@ -1,4 +1,13 @@
 # serializer version: 1
+# name: test_renders_shared_fixture[anthropic_platform_credits]
+  '''
+  Anthropic API
+    Main org · Anthropic API credit balance · $123.45 available
+    API credit grant $85.00 / $100.00 · expires 2026-07-01 00:00 UTC
+    API promo credit grant $25.00 / $30.00 · expires 2026-05-01 00:00 UTC · scope: claude_api (sonnet), claude_code
+    Secondary org · Anthropic API credit balance · $50.00 available
+  '''
+# ---
 # name: test_renders_shared_fixture[binding_summary]
   '''
   claude
@@ -16,16 +25,21 @@
 # ---
 # name: test_renders_shared_fixture[claude_prepaid_balance]
   '''
-  claude
-    Claude prepaid balance · $123.45
+  Claude · $123.45 prepaid balance
+    5h:  45%  ↻ 2h00m  Δ-15%  leaves ~25% unused at reset
+    7d:  32%  ↻ 4d0h   Δ-11%  leaves ~25% unused at reset
+  '''
+# ---
+# name: test_renders_shared_fixture[claude_prepaid_balance_stale]
+  '''
+  Claude · $123.45 prepaid balance (prepaid stale 1h00m)
     5h:  45%  ↻ 2h00m  Δ-15%  leaves ~25% unused at reset
     7d:  32%  ↻ 4d0h   Δ-11%  leaves ~25% unused at reset
   '''
 # ---
 # name: test_renders_shared_fixture[claude_prepaid_balance_unavailable]
   '''
-  claude
-    Claude prepaid balance unavailable
+  Claude · prepaid balance unavailable
     5h:  45%  ↻ 2h00m  Δ-15%  leaves ~25% unused at reset
     7d:  32%  ↻ 4d0h   Δ-11%  leaves ~25% unused at reset
   '''
@@ -76,7 +90,7 @@
   '''
   claude  ⚡ OVER PLAN — extra $3141.59/$5000 (63%) this month
     5h:  50% ↻ 3h30m  7d: 100% ↻ 4d21h
-  codex · 2 banked resets · known expiries: Sep 20 09:00
+  codex · 2 resets (expiry: Sep 20, 1 unknown)
     5h:  30%  ↻ 3h30m  Δ+0%   on pace
     7d:  30%  ↻ 4d21h  Δ+0%   on pace
   zai
@@ -87,28 +101,42 @@
 # ---
 # name: test_renders_shared_fixture[openai_platform_credits]
   '''
-  OpenAI API
-    OpenAI API balance · $125.75
-    Grant $100.00 / $100.00 · expires 2026-02-01 00:00 UTC
-    Grant $25.75 / $30.00 · expires 2026-12-01 00:00 UTC
+  OpenAI API · $125.75 API credit
+    API credit grants: $100.00 expires 2026-02-01 00:00 UTC; $25.75 expires 2026-12-01 00:00 UTC
   '''
 # ---
 # name: test_renders_shared_fixture[paid_credits]
   '''
-  codex · 0 banked resets  ⚡ using paid credits · 2,746 credits left
+  codex · 0 resets  ⚡ using paid credits · 2,746 credits left
     5h: 100% ↻ 1h30m  7d:  38% ↻ 3d14h
+  '''
+# ---
+# name: test_renders_shared_fixture[platform_credits_with_subscription_resets]
+  '''
+  Claude · $25.75 prepaid balance
+    5h:  45%  ↻ 2h00m  Δ-15%  leaves ~25% unused at reset
+    7d:  32%  ↻ 4d0h   Δ-11%  leaves ~25% unused at reset
+  codex · 3 resets (expiry: Jan 29, 12:00, Feb 1, 1 unknown)
+    5h:  36%  ↻ 2h00m  Δ-24%  leaves ~40% unused at reset
+    7d:  42%  ↻ 4d0h   Δ-1%   on pace
+  OpenAI API · $60.00 API credit
+    API credit grants: $60.00 expires 2026-06-01 00:00 UTC
+  Anthropic API
+    Shared org · Anthropic API credit balance · $75.00 available
+    API credit grant $50.00 / $100.00 · expires 2026-07-01 00:00 UTC
+    API promo credit grant $25.00 / $50.00 · expires 2026-05-01 00:00 UTC · scope: claude_api (sonnet)
   '''
 # ---
 # name: test_renders_shared_fixture[reset_credit_expiry_unavailable]
   '''
-  codex · 2 banked resets · expiry dates unavailable
+  codex · 2 resets (expiry lookup failed)
     5h:  30%  ↻ 3h30m  Δ+0%  on pace
     7d:  30%  ↻ 4d21h  Δ+0%  on pace
   '''
 # ---
 # name: test_renders_shared_fixture[stale_fallback]
   '''
-  claude  last refresh failed 2m ago: HTTP 503 Service Unavailable  (stale 1d0h)
+  Claude · $123.45 prepaid balance  last refresh failed 2m ago: HTTP 503 Service Unavailable  (stale 1d0h)
     5h:  35%  ↻ 2h12m  Δ-21%  leaves ~38% unused at reset
     7d:  72%  ↻ 5d3h   Δ+45%  exhausts ~4d9h before reset
   codex

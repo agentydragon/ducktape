@@ -4,7 +4,7 @@ providers:
       fetched_at: "2026-01-15T12:00:00Z"
       result:
         kind: success
-        platform_credits:
+        openai_platform_credits:
           total_available_usd: "125.75"
           total_paid_available_usd: "25.75"
           grants:

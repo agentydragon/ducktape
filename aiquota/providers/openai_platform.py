@@ -8,7 +8,7 @@ from pathlib import Path
 import httpx
 from pydantic import BaseModel
 
-from aiquota.models import FetchError, FetchSuccess, PlatformCreditGrant, PlatformCredits, ProviderFetch
+from aiquota.models import FetchError, FetchSuccess, OpenAIPlatformCreditGrant, OpenAIPlatformCredits, ProviderFetch
 from aiquota.providers.base import Provider
 from aiquota.providers.client import ProviderClientFactory
 
@@ -38,12 +38,12 @@ class _CreditGrantsResponse(BaseModel):
     total_paid_available: Decimal
     grants: _GrantList
 
-    def to_credits(self) -> PlatformCredits:
-        return PlatformCredits(
+    def to_credits(self) -> OpenAIPlatformCredits:
+        return OpenAIPlatformCredits(
             total_available_usd=self.total_available,
             total_paid_available_usd=self.total_paid_available,
             grants=[
-                PlatformCreditGrant(
+                OpenAIPlatformCreditGrant(
                     granted_usd=grant.grant_amount,
                     used_usd=grant.used_amount,
                     effective_at=grant.effective_at,
@@ -85,4 +85,4 @@ class OpenAIPlatformProvider(Provider):
             credits = _CreditGrantsResponse.model_validate_json(response.content).to_credits()
         except (httpx.HTTPError, OSError, ValueError) as exc:
             return ProviderFetch(fetched_at=now, result=FetchError.from_exception(exc, "OpenAI Platform credits"))
-        return ProviderFetch(fetched_at=now, result=FetchSuccess(platform_credits=credits))
+        return ProviderFetch(fetched_at=now, result=FetchSuccess(openai_platform_credits=credits))

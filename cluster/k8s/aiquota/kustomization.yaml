@@ -23,5 +23,9 @@ configMapGenerator:
         enabled = true
         url = "http://platform-sessions.platform-sessions.svc:8080/openai"
 
+        [anthropic_platform]
+        enabled = true
+        url = "http://platform-sessions.platform-sessions.svc:8080/anthropic"
+
         [zai]
         enabled = false

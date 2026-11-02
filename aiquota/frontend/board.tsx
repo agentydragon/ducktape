@@ -18,7 +18,7 @@
 import { type JSX } from "react";
 
 import type { AllQuotasView, BurnStatus, ExtraSpend, PaidCredits, ProviderView, WindowView } from "./schema";
-import { formatKnownExpiries, formatUsd, formatUsdWhole } from "./format";
+import { formatUsd, formatUsdWhole } from "./format";
 import {
   formatAge,
   formatClock,
@@ -26,6 +26,7 @@ import {
   formatPeakInterval,
   formatPrepaidBalance,
   formatMultiplier,
+  formatResetCreditSummary,
   roundHalfToEven,
   type Tint,
 } from "../shared/presentation.js";
@@ -37,6 +38,7 @@ const PROVIDER_NAMES: Record<string, string> = {
   claude: "Claude",
   codex: "Codex",
   openai_platform: "OpenAI API",
+  anthropic_platform: "Anthropic API",
   zai: "z.ai",
 };
 
@@ -65,6 +67,12 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
         <h2 className="aiquota-card-title">
           <span className={`aiquota-dot aiquota-tint-${tint}`} aria-hidden="true" />
           {PROVIDER_NAMES[provider.provider] ?? provider.provider}
+          {provider.provider === "openai_platform" && quota.openaiPlatformCredits
+            ? ` · ${formatUsd(Number(quota.openaiPlatformCredits.total_available_usd))} API credit`
+            : null}
+          {provider.provider === "claude" && quota.prepaidBalance
+            ? ` · ${formatClaudePrepaidHeading(quota.prepaidBalance, quota.prepaidStaleSince, quota.staleSince, now)}`
+            : null}
         </h2>
         <div className="aiquota-card-status">
           {quota.staleSince !== null && (
@@ -81,27 +89,18 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
       {quota.paidCredits && (
         <PaidCreditsStrip credits={quota.paidCredits} active={paidCreditsActive} windows={quota.windows} />
       )}
-      {quota.prepaidBalance && (
-        <PrepaidBalanceStrip balance={quota.prepaidBalance} staleSince={quota.prepaidStaleSince} now={now} />
-      )}
-      {quota.platformCredits && (
-        <div className="aiquota-aside">
-          <p>OpenAI API balance · {formatUsd(Number(quota.platformCredits.total_available_usd))}</p>
-          {quota.platformCredits.grants.map((grant, index) => (
-            <p key={index}>
-              Grant {formatUsd(Number(grant.granted_usd) - Number(grant.used_usd))} /{" "}
-              {formatUsd(Number(grant.granted_usd))} · expires{" "}
-              {grant.expires_at ? new Date(grant.expires_at).toLocaleString() : "unknown"}
-              {grant.is_scheduled ? " · scheduled" : grant.is_held_for_prepaid_transition ? " · held" : ""}
-            </p>
-          ))}
-        </div>
-      )}
+      {quota.openaiPlatformCredits?.grants.length ? (
+        <p className="aiquota-aside">
+          API credit grants: {formatOpenaiPlatformGrantSummary(quota.openaiPlatformCredits.grants)}
+        </p>
+      ) : null}
+      {quota.anthropicPlatformCredits && <AnthropicPlatformCreditsStrip credits={quota.anthropicPlatformCredits} />}
       {quota.resetCredits !== null && (
         <ResetCreditsStrip
           count={quota.resetCredits}
           expiries={quota.resetCreditExpiries}
           expiryLookupFailed={quota.resetCreditExpiryLookupFailed}
+          now={new Date(now)}
         />
       )}
       {provider.burn && <BurnStrip burn={provider.burn} now={now} />}
@@ -111,7 +110,8 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
         : quota.windows.length === 0
           ? quota.error === null &&
             quota.prepaidBalance === null &&
-            quota.platformCredits == null && <p className="aiquota-empty">No quota data.</p>
+            quota.openaiPlatformCredits == null &&
+            quota.anthropicPlatformCredits == null && <p className="aiquota-empty">No quota data.</p>
           : quota.windows.map((window) => (
               <WindowRow
                 key={`${window.name ?? ""}-${window.window_seconds}`}
@@ -211,28 +211,23 @@ function OverPlanStrip({ extra, windows }: { extra: ExtraSpend | null; windows: 
 
 /**
  * Earned rate-limit resets: headroom the account already has in hand, so it belongs with the
- * other facts about the future rather than in the status badges. The expiries come from a
- * best-effort detail endpoint that can name fewer credits than the count — hence "known".
+ * other facts about the future rather than in the status badges. Expiry details may be partial
+ * or fail independently from the authoritative reset count.
  */
 function ResetCreditsStrip({
   count,
   expiries,
   expiryLookupFailed,
+  now,
 }: {
   count: number;
   expiries: string[];
   expiryLookupFailed: boolean;
+  now: Date;
 }): JSX.Element {
   return (
     <div className={`aiquota-strip${count > 0 ? " aiquota-strip-resets" : ""}`}>
-      <p className="aiquota-strip-line">
-        ↻ {count} banked reset{count === 1 ? "" : "s"}
-      </p>
-      {expiryLookupFailed ? (
-        <p className="aiquota-strip-note">expiry dates unavailable</p>
-      ) : (
-        expiries.length > 0 && <p className="aiquota-strip-note">Known expiries: {formatKnownExpiries(expiries)}</p>
-      )}
+      <p className="aiquota-strip-line">{formatResetCreditSummary(count, expiries, expiryLookupFailed, now)}</p>
     </div>
   );
 }
@@ -261,25 +256,90 @@ function PaidCreditsStrip({
   );
 }
 
-function PrepaidBalanceStrip({
-  balance,
-  staleSince,
-  now,
-}: {
-  balance: PrepaidBalance;
-  staleSince: string | null;
-  now: number;
-}): JSX.Element {
-  const line =
+function formatClaudePrepaidHeading(
+  balance: PrepaidBalance,
+  staleSince: string | null,
+  providerStaleSince: string | null,
+  now: number
+): string {
+  const label =
     balance.kind === "available"
-      ? `Claude prepaid balance · ${formatPrepaidBalance(balance.amount_minor, balance.exponent, balance.currency)}`
-      : "Claude prepaid balance unavailable";
+      ? `${formatPrepaidBalance(balance.amount_minor, balance.exponent, balance.currency)} prepaid balance`
+      : "prepaid balance unavailable";
+  if (staleSince && Date.parse(staleSince) !== (providerStaleSince ? Date.parse(providerStaleSince) : null)) {
+    return `${label} (stale ${formatAge((now - Date.parse(staleSince)) / 1000)})`;
+  }
+  return label;
+}
+
+function AnthropicPlatformCreditsStrip({
+  credits,
+}: {
+  credits: NonNullable<EffectiveQuota["anthropicPlatformCredits"]>;
+}): JSX.Element {
+  if (credits.organizations.length === 0) return <p className="aiquota-aside">No Anthropic API organizations.</p>;
   return (
-    <p className="aiquota-aside">
-      {line}
-      {staleSince && ` (stale ${formatAge((now - Date.parse(staleSince)) / 1000)})`}
-    </p>
+    <div className="aiquota-aside">
+      {credits.organizations.map((organization) => {
+        const balance = organization.balance?.credits;
+        return (
+          <section key={organization.uuid}>
+            <p>
+              {organization.name} · Anthropic API credit balance ·{" "}
+              {balance
+                ? `${formatPrepaidBalance(balance.amount_minor, balance.exponent, organization.currency ?? "USD")} available`
+                : organization.error
+                  ? `lookup failed: ${organization.error}`
+                  : "unavailable"}
+            </p>
+            {anthropicTrancheLines(organization.tranches, "API credit grant")}
+            {anthropicTrancheLines(organization.promo_tranches, "API promo credit grant")}
+          </section>
+        );
+      })}
+    </div>
   );
+}
+
+function formatOpenaiPlatformGrantSummary(
+  grants: NonNullable<EffectiveQuota["openaiPlatformCredits"]>["grants"]
+): string {
+  return grants
+    .map((grant) => {
+      const expiry = grant.expires_at ? new Date(grant.expires_at).toLocaleString() : "unknown";
+      const status = grant.is_scheduled ? " · scheduled" : grant.is_held_for_prepaid_transition ? " · held" : "";
+      return `${formatUsd(Number(grant.granted_usd) - Number(grant.used_usd))} expires ${expiry}${status}`;
+    })
+    .join("; ");
+}
+
+function anthropicTrancheLines(
+  tranches: NonNullable<EffectiveQuota["anthropicPlatformCredits"]>["organizations"][number]["tranches"],
+  label: string
+): JSX.Element[] {
+  return (tranches ?? []).flatMap((tranche) => {
+    const granted = tranche.granted.credits;
+    const remaining = tranche.remaining.credits;
+    if (!granted || !remaining) return [];
+    const expiry = tranche.expires_at ? new Date(tranche.expires_at).toLocaleString() : "unknown";
+    const products = [
+      ...new Set(
+        (tranche.scope.applies_to ?? []).map((item) => {
+          const qualifiers = [item.model_family, item.model_version].filter(Boolean).join(", ");
+          return qualifiers ? `${item.product} (${qualifiers})` : item.product;
+        })
+      ),
+    ].sort();
+    const isUnrestricted = ["unrestricted", "unscoped"].includes(tranche.scope.kind) && products.length === 0;
+    const scope = isUnrestricted ? "" : ` · scope: ${products.join(", ") || tranche.scope.kind}`;
+    return [
+      <p key={tranche.id}>
+        {label} {formatPrepaidBalance(remaining.amount_minor, remaining.exponent, tranche.currency)} /{" "}
+        {formatPrepaidBalance(granted.amount_minor, granted.exponent, tranche.currency)} · expires {expiry}
+        {scope}
+      </p>,
+    ];
+  });
 }
 
 function formatCreditBalance(raw: string | null | undefined): string {

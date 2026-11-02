@@ -19,9 +19,12 @@ FIXTURE_NAMES = (
     "stale_fallback",
     "paid_credits",
     "openai_platform_credits",
+    "anthropic_platform_credits",
     "claude_prepaid_balance",
     "claude_prepaid_balance_unavailable",
+    "claude_prepaid_balance_stale",
     "reset_credit_expiry_unavailable",
+    "platform_credits_with_subscription_resets",
     "wire_fields",
 )
 DEFAULT_NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)

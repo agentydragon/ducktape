@@ -41,7 +41,7 @@ class PaidCredits(BaseModel):
     unlimited: bool = False
 
 
-class PlatformCreditGrant(BaseModel):
+class OpenAIPlatformCreditGrant(BaseModel):
     granted_usd: Decimal
     used_usd: Decimal
     effective_at: datetime
@@ -50,10 +50,56 @@ class PlatformCreditGrant(BaseModel):
     is_held_for_prepaid_transition: bool
 
 
-class PlatformCredits(BaseModel):
+class OpenAIPlatformCredits(BaseModel):
     total_available_usd: Decimal
     total_paid_available_usd: Decimal
-    grants: list[PlatformCreditGrant]
+    grants: list[OpenAIPlatformCreditGrant]
+
+
+class AnthropicPlatformCreditAmount(BaseModel):
+    amount_minor: int
+    exponent: int = Field(ge=0, le=9)
+
+
+class AnthropicPlatformCreditValue(BaseModel):
+    credits: AnthropicPlatformCreditAmount | None = None
+    money: object | None = None
+
+
+class AnthropicPlatformProduct(BaseModel):
+    product: str
+    model_family: str | None = None
+    model_version: str | None = None
+
+
+class AnthropicPlatformScope(BaseModel):
+    kind: str
+    applies_to: list[AnthropicPlatformProduct] = Field(default_factory=list)
+
+
+class AnthropicPlatformTranche(BaseModel):
+    id: str
+    name: str | None = None
+    currency: str
+    granted_at: datetime
+    expires_at: datetime | None = None
+    granted: AnthropicPlatformCreditValue
+    remaining: AnthropicPlatformCreditValue
+    scope: AnthropicPlatformScope
+
+
+class AnthropicPlatformOrganization(BaseModel):
+    uuid: str
+    name: str
+    currency: str | None = None
+    balance: AnthropicPlatformCreditValue | None = None
+    tranches: list[AnthropicPlatformTranche] = Field(default_factory=list)
+    promo_tranches: list[AnthropicPlatformTranche] = Field(default_factory=list)
+    error: str | None = None
+
+
+class AnthropicPlatformCredits(BaseModel):
+    organizations: list[AnthropicPlatformOrganization]
 
 
 class PrepaidBalanceAvailable(BaseModel):
@@ -86,7 +132,8 @@ class FetchSuccess(BaseModel):
     windows: list[QuotaWindow] = Field(default_factory=list)
     extra_spend: ExtraSpend | None = None
     paid_credits: PaidCredits | None = None
-    platform_credits: PlatformCredits | None = None
+    openai_platform_credits: OpenAIPlatformCredits | None = None
+    anthropic_platform_credits: AnthropicPlatformCredits | None = None
     # Claude's prepaid monetary balance is a separate endpoint and denomination
     # from Codex paid credits. None means this provider does not report it.
     prepaid_balance: PrepaidBalance | None = None
@@ -115,7 +162,13 @@ def is_substantive(result: FetchSuccess) -> bool:
         result.windows
         or result.available_reset_credits is not None
         or result.paid_credits is not None
-        or result.platform_credits is not None
+        or result.openai_platform_credits is not None
+        or (
+            result.anthropic_platform_credits is not None
+            and any(
+                organization.balance is not None for organization in result.anthropic_platform_credits.organizations
+            )
+        )
         or result.prepaid_balance is not None
     )
 

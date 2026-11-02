@@ -38,6 +38,7 @@ py_library(
         ":config",
         ":models",
         ":remote",
+        "//aiquota/providers:anthropic_platform_lib",
         "//aiquota/providers:base",
         "//aiquota/providers:claude_lib",
         "//aiquota/providers:cli_proxy_lib",
@@ -67,6 +68,7 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
+        "//aiquota/providers:anthropic_platform_lib",
         "//aiquota/providers:claude_lib",
         "//aiquota/providers:codex_lib",
         "//aiquota/providers:openai_platform_lib",

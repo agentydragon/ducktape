@@ -56,6 +56,38 @@ export function formatKnownExpiry(expiry: string | Date): string | null {
   });
 }
 
+const RESET_CREDIT_DATE_ONLY_AFTER_MS = 14 * 24 * 60 * 60 * 1000;
+
+export function formatResetCreditExpiry(expiry: string | Date, now: Date): string | null {
+  const date = expiry instanceof Date ? expiry : new Date(expiry);
+  if (Number.isNaN(date.getTime())) return null;
+  if (date.getTime() - now.getTime() > RESET_CREDIT_DATE_ONLY_AFTER_MS) {
+    return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+  return formatKnownExpiry(date);
+}
+
+export function formatResetCreditSummary(
+  count: number,
+  expiries: (string | Date)[],
+  expiryLookupFailed: boolean,
+  now: Date
+): string {
+  const label = `${count} reset${count === 1 ? "" : "s"}`;
+  const knownExpiries = expiries
+    .map((expiry) => formatResetCreditExpiry(expiry, now))
+    .filter((expiry): expiry is string => expiry !== null);
+  if (expiryLookupFailed) {
+    return knownExpiries.length
+      ? `${label} (expiry: ${knownExpiries.join(", ")}; lookup failed)`
+      : `${label} (expiry lookup failed)`;
+  }
+  const unknownCount = Math.max(0, count - knownExpiries.length);
+  if (knownExpiries.length === 0 && unknownCount === 0) return label;
+  const details = [...knownExpiries, ...(unknownCount > 0 ? [`${unknownCount} unknown`] : [])];
+  return `${label} (expiry: ${details.join(", ")})`;
+}
+
 export function formatMultiplier(value: number): string {
   return `${value}x`;
 }

@@ -74,6 +74,7 @@ py_test(
     deps = [
         ":format_lib",
         ":human_lib",
+        ":view_model_lib",
         "//:conftest",
         "//aiquota:models",
         "//aiquota/testing:quota_fixtures",

@@ -1,6 +1,6 @@
 """Shared format helpers for human and tmux renderers."""
 
-from datetime import datetime, tzinfo
+from datetime import UTC, datetime, timedelta, tzinfo
 from decimal import Decimal
 
 from aiquota.models import PaceResult, PrepaidBalanceAvailable, QuotaWindow
@@ -55,23 +55,59 @@ def format_age(seconds: float) -> str:
 
 def format_prepaid_balance(balance: PrepaidBalanceAvailable) -> str:
     """Format minor units without converting the provider balance to float."""
-    sign = "-" if balance.amount_minor < 0 else ""
-    amount = Decimal(abs(balance.amount_minor)).scaleb(-balance.exponent)
-    value = f"{amount:,.{balance.exponent}f}"
-    return f"{sign}${value}" if balance.currency == "USD" else f"{sign}{value} {balance.currency}"
+    return format_minor_currency(balance.amount_minor, balance.exponent, balance.currency)
 
 
-def format_known_reset_credit_expiries(expiries: list[datetime], tz: tzinfo | None = None) -> str | None:
-    """Render the detail endpoint's known expiries in the viewer's local time.
+def format_minor_currency(amount_minor: int, exponent: int, currency: str) -> str:
+    """Format provider-reported minor units without converting to float."""
+    sign = "-" if amount_minor < 0 else ""
+    amount = Decimal(abs(amount_minor)).scaleb(-exponent)
+    value = f"{amount:,.{exponent}f}"
+    return f"{sign}${value}" if currency == "USD" else f"{sign}{value} {currency}"
+
+
+_RESET_CREDIT_DATE_ONLY_AFTER = timedelta(days=14)
+
+
+def format_known_reset_credit_expiries(expiries: list[datetime], now: datetime, tz: tzinfo | None = None) -> str | None:
+    """Render expiry timestamps in the viewer's local time.
 
     The endpoint can return fewer credit rows than the authoritative count, so
-    callers must retain the "known" qualifier rather than imply this is a
-    complete list.
+    callers should compare the count with the rendered rows before claiming
+    that the list is complete. Expiries more than 14 days away omit the time;
+    the comparison uses absolute instants even when the viewer is across DST.
     """
 
     if not expiries:
         return None
-    return ", ".join(expiry.astimezone(tz).strftime("%b %-d %H:%M") for expiry in expiries)
+
+    now_utc = now.astimezone(UTC)
+    formatted: list[str] = []
+    for expiry in expiries:
+        local_expiry = expiry.astimezone(tz)
+        date_format = "%b %-d" if expiry.astimezone(UTC) - now_utc > _RESET_CREDIT_DATE_ONLY_AFTER else "%b %-d, %H:%M"
+        formatted.append(local_expiry.strftime(date_format))
+    return ", ".join(formatted)
+
+
+def format_reset_credit_summary(
+    count: int, expiries: list[datetime], expiry_lookup_failed: bool, now: datetime, tz: tzinfo | None = None
+) -> str:
+    """Summarize banked resets without treating a failed lookup as an empty result."""
+    noun = "reset" if count == 1 else "resets"
+    label = f"{count} {noun}"
+    known_expiries = format_known_reset_credit_expiries(expiries, now, tz)
+    if expiry_lookup_failed:
+        if known_expiries is None:
+            return f"{label} (expiry lookup failed)"
+        return f"{label} (expiry: {known_expiries}; lookup failed)"
+    unknown_count = max(0, count - len(expiries))
+    if known_expiries is None and unknown_count == 0:
+        return label
+    details = known_expiries or ""
+    if unknown_count:
+        details += f", {unknown_count} unknown" if details else f"{unknown_count} unknown"
+    return f"{label} (expiry: {details})"
 
 
 def format_pace(pace: PaceResult | None) -> str | None:

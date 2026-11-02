@@ -41,6 +41,7 @@ from external_secrets_crds.io.external_secrets import (
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from aiquota.config import CLIProxyAPISettings, Config
+from aiquota.providers.anthropic_platform import AnthropicPlatformSettings
 from aiquota.providers.claude import ClaudeSettings
 from aiquota.providers.codex import CodexSettings
 from aiquota.providers.openai_platform import OpenAIPlatformSettings
@@ -76,6 +77,8 @@ NAMESPACE = cli_proxy_api_app.NAMESPACE  # created by CLIProxyAPI's Kustomizatio
 BEARER_SECRET_NAME = "aiquota-api-bearer"  # the SOPS-managed Secret; every mirror below copies its one key
 # The API reads its config at the Settings default; nothing sets AIQUOTA_CONFIG.
 _CONFIG_PATH: Path = Settings.model_fields["config_path"].default
+_PLATFORM_SESSIONS_URL = "http://platform-sessions.platform-sessions.svc:8080"
+_PLATFORM_SESSIONS_READ_TOKEN = "platform-sessions-read-token"
 # The CLIProxyAPI integration keeps the Claude and Codex OAuth credentials and performs
 # authenticated usage requests. Haku's existing egress proxy still owns the legacy Claude
 # setup token.
@@ -83,9 +86,8 @@ _CONFIG = Config(
     cli_proxy_api=CLIProxyAPISettings(url=f"{cli_proxy_api_app.SERVICE.url}/v0/management"),
     claude=ClaudeSettings(enabled=True),
     codex=CodexSettings(enabled=True),
-    openai_platform=OpenAIPlatformSettings(
-        enabled=True, url="http://platform-sessions.platform-sessions.svc:8080/openai"
-    ),
+    openai_platform=OpenAIPlatformSettings(enabled=True, url=f"{_PLATFORM_SESSIONS_URL}/openai"),
+    anthropic_platform=AnthropicPlatformSettings(enabled=True, url=f"{_PLATFORM_SESSIONS_URL}/anthropic"),
     zai=ZaiSettings(enabled=False),
 )
 CONFIG_CONFIG_MAP = ConfigMapArgs(
@@ -195,7 +197,7 @@ class Aiquota(Construct):
                 labels=SERVICE.pods.selector,
                 annotations={
                     "description": "AI subscription quotas and OpenAI Platform credits.",
-                    "secret.reloader.stakater.com/reload": "platform-sessions-read-token",
+                    "secret.reloader.stakater.com/reload": _PLATFORM_SESSIONS_READ_TOKEN,
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=SERVICE.pods.selector),
@@ -221,10 +223,15 @@ class Aiquota(Construct):
                     self, "cli-proxy-api-management-ref"
                 ),
                 env_name(Settings, "openai_platform_token"): SecretRef(
-                    namespace=NAMESPACE, name="platform-sessions-read-token"
+                    namespace=NAMESPACE, name=_PLATFORM_SESSIONS_READ_TOKEN
                 )
                 .key("token")
                 .env_value(self, "openai-platform-token-ref", optional=True),
+                env_name(Settings, "anthropic_platform_token"): SecretRef(
+                    namespace=NAMESPACE, name=_PLATFORM_SESSIONS_READ_TOKEN
+                )
+                .key("token")
+                .env_value(self, "anthropic-platform-token-ref", optional=True),
                 env_name(Settings, "clickhouse_url"): EnvValue.from_value(client.HTTP.url),
                 env_name(Settings, "clickhouse_database"): EnvValue.from_value("aiquota"),
                 env_name(Settings, "clickhouse_username"): _CLICKHOUSE.key("username").env_value(

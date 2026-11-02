@@ -12,10 +12,10 @@ import {
   formatAge as sharedFormatAge,
   formatClock,
   formatDuration as sharedFormatDuration,
-  formatKnownExpiry,
   formatMultiplier,
   formatPeakInterval,
   formatPrepaidBalance as sharedFormatPrepaidBalance,
+  formatResetCreditSummary,
   roundHalfToEven,
 } from "./presentation.js";
 
@@ -110,6 +110,19 @@ function formatCompactDollars(usd) {
   return `$${roundHalfToEven(usd)}`;
 }
 
+function formatUsdCurrency(usd) {
+  return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(Number(usd));
+}
+
+function formatGrantUsd(usd) {
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(Number(usd));
+}
+
 // The "currently burning extra" decision lives in the Python view model
 // (see aiquota/render/view_model.py) and is delivered to us by the desktop
 // daemon as state.currentlyOverPlan. Don't
@@ -122,12 +135,9 @@ function formatExtraSpend(extra) {
   return `extra $${roundHalfToEven(used)}/$${roundHalfToEven(limit)} (${pct}%) this month`;
 }
 
-function formatBankedResets(count, expiries, expiryLookupFailed) {
+function formatBankedResets(count, expiries, expiryLookupFailed, now) {
   if (count == null) return null;
-  const knownExpiries = (expiries ?? []).map(formatKnownExpiry).filter((expiry) => expiry != null);
-  const label = `${count} banked reset${count === 1 ? "" : "s"}`;
-  if (expiryLookupFailed) return `${label} · expiry dates unavailable`;
-  return knownExpiries.length ? `${label} · known expiries: ${knownExpiries.join(", ")}` : label;
+  return formatResetCreditSummary(count, expiries ?? [], expiryLookupFailed, now);
 }
 
 function formatPaidCredits(credits, active) {
@@ -142,10 +152,74 @@ function formatPaidCredits(credits, active) {
   return `${active ? "⚡ using paid credits" : "paid credits"} · ${amount}`;
 }
 
-function formatPrepaidBalance(balance) {
+function formatClaudePrepaidHeading(balance) {
   if (balance == null) return null;
-  if (balance.kind !== "available") return "Claude prepaid balance unavailable";
-  return `Claude prepaid balance · ${sharedFormatPrepaidBalance(balance.amount_minor, balance.exponent, balance.currency)}`;
+  if (balance.kind !== "available") return "Claude · prepaid balance unavailable";
+  return `Claude · ${sharedFormatPrepaidBalance(balance.amount_minor, balance.exponent, balance.currency)} prepaid balance`;
+}
+
+function formatOpenaiPlatformHeading(credits) {
+  if (!credits) return null;
+  const grants = credits.grants
+    .map((grant) => {
+      const remaining = formatGrantUsd(Number(grant.granted_usd) - Number(grant.used_usd));
+      const expiryDate = grant.expires_at ? new Date(grant.expires_at) : null;
+      const expiry =
+        expiryDate && !Number.isNaN(expiryDate.getTime())
+          ? expiryDate.toLocaleString([], {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false,
+            })
+          : "unknown";
+      const status = grant.is_scheduled ? " · scheduled" : grant.is_held_for_prepaid_transition ? " · held" : "";
+      return `${remaining} expires ${expiry}${status}`;
+    })
+    .join(", ");
+  const grantSummary = grants ? ` (${grants})` : "";
+  return `OpenAI · ${formatUsdCurrency(credits.total_available_usd)} API credit${grantSummary}`;
+}
+
+function formatAnthropicPlatformCredits(credits) {
+  if (!credits) return [];
+  if (credits.organizations.length === 0) return ["No Anthropic API organizations"];
+  return credits.organizations.flatMap((organization) => {
+    const balance = organization.balance?.credits;
+    const lines = [
+      balance
+        ? `${organization.name} · Anthropic API credit balance · ${sharedFormatPrepaidBalance(balance.amount_minor, balance.exponent, organization.currency ?? "USD")} available`
+        : `${organization.name} · Anthropic API credit balance ${organization.error ? `lookup failed: ${organization.error}` : "unavailable"}`,
+    ];
+    const appendTranches = (tranches, label) => {
+      for (const tranche of tranches) {
+        const granted = tranche.granted.credits;
+        const remaining = tranche.remaining.credits;
+        if (!granted || !remaining) continue;
+        const expiry = tranche.expires_at ? new Date(tranche.expires_at).toLocaleString() : "unknown";
+        const products = [
+          ...new Set(
+            tranche.scope.applies_to.map((item) => {
+              const qualifiers = [item.model_family, item.model_version].filter(Boolean).join(", ");
+              return qualifiers ? `${item.product} (${qualifiers})` : item.product;
+            })
+          ),
+        ].sort();
+        const scope =
+          ["unrestricted", "unscoped"].includes(tranche.scope.kind) && products.length === 0
+            ? ""
+            : ` · scope: ${products.join(", ") || tranche.scope.kind}`;
+        lines.push(
+          `${label} ${sharedFormatPrepaidBalance(remaining.amount_minor, remaining.exponent, tranche.currency)} / ${sharedFormatPrepaidBalance(granted.amount_minor, granted.exponent, tranche.currency)} · expires ${expiry}${scope}`
+        );
+      }
+    };
+    appendTranches(organization.tranches, "API credit grant");
+    appendTranches(organization.promo_tranches, "API promo credit grant");
+    return lines;
+  });
 }
 
 // Peak-burn formatting. The policy (is it peak, which windows are next) is
@@ -187,7 +261,8 @@ function emptyProviderState() {
     error: null,
     extraSpend: null,
     paidCredits: null,
-    platformCredits: null,
+    openaiPlatformCredits: null,
+    anthropicPlatformCredits: null,
     prepaidBalance: null,
     prepaidStaleSince: null,
     availableResetCredits: null,
@@ -208,6 +283,7 @@ const PROVIDER_DEFS = [
   { id: "claude", label: "Claude", iconFile: "claude-symbolic.svg" },
   { id: "codex", label: "Codex", iconFile: "openai-symbolic.svg" },
   { id: "openai_platform", label: "OpenAI API", iconFile: "openai-symbolic.svg" },
+  { id: "anthropic_platform", label: "Anthropic API", iconFile: "claude-symbolic.svg" },
   { id: "zai", label: "z.ai", iconFile: "zai-symbolic.svg" },
 ];
 
@@ -303,6 +379,7 @@ const QuotaIndicator = GObject.registerClass(
           '<method name="SetSyncState"><arg type="d" direction="in" name="lastAttemptAt"/><arg type="d" direction="in" name="nextRetryAt"/><arg type="d" direction="in" name="now"/></method>' +
           '<method name="GetStreamStatus"><arg type="s" direction="out" name="status"/></method>' +
           '<method name="GetPrepaidText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="GetHeaderText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetWindowRows"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="rows"/></method>' +
           '<method name="SetViewForTest"><arg type="s" direction="in" name="view"/></method>' +
           '<method name="ConnectDaemon"/>' +
@@ -324,6 +401,10 @@ const QuotaIndicator = GObject.registerClass(
           GetPrepaidText: (provider) => {
             const item = this._providers.find(({ id }) => id === provider)?.prepaidRow;
             return item?._summaryLabel.get_text() ?? "";
+          },
+          GetHeaderText: (provider) => {
+            const item = this._providers.find(({ id }) => id === provider)?.header;
+            return item?.label.get_text() ?? "";
           },
           GetWindowRows: (provider) => {
             const rows = this._providers
@@ -507,7 +588,7 @@ const QuotaIndicator = GObject.registerClass(
       const retry = this._nextRetryAt > 0 ? `Retry in ${formatAge(this._nextRetryAt - now)}` : "No retry scheduled";
       const error = this._streamError ? this._streamError.slice(0, 120) : "";
       const status = error ? `${label} · ${error}` : label;
-      this._statusRow._summaryLabel.set_text(`${status}\n${lastAttempt} · ${retry}`);
+      this._statusRow._summaryLabel.set_text(`${status} · ${lastAttempt} · ${retry}`);
     }
 
     _acceptView(rawView) {
@@ -574,6 +655,7 @@ const QuotaIndicator = GObject.registerClass(
       this.menu.removeAll();
       this._statusRow = this._makeTextRow();
       this._statusRow._summaryLabel.add_style_class_name("quota-stream-status");
+      this._statusRow._summaryLabel.clutter_text.line_wrap = true;
       this.menu.addMenuItem(this._statusRow);
       for (const p of this._providers) {
         p.header = new PopupMenu.PopupSeparatorMenuItem(p.label);
@@ -591,6 +673,7 @@ const QuotaIndicator = GObject.registerClass(
         this.menu.addMenuItem(p.burnRow);
         for (const row of p.windowRows) this.menu.addMenuItem(row);
         p.header.label.add_style_class_name("quota-popup-header");
+        p.header.label.clutter_text.line_wrap = true;
       }
     }
 
@@ -760,7 +843,8 @@ const QuotaIndicator = GObject.registerClass(
           error: lastResult?.kind === "error" ? lastResult.error : null,
           extraSpend: this._mapExtraSpend(result?.extra_spend),
           paidCredits: result?.paid_credits ?? null,
-          platformCredits: pq.display_platform_credits ?? null,
+          openaiPlatformCredits: pq.display_openai_platform_credits ?? null,
+          anthropicPlatformCredits: pq.display_anthropic_platform_credits ?? null,
           prepaidBalance: selected.prepaid_balance ?? null,
           prepaidStaleSince: selected.prepaid_stale_since ? new Date(selected.prepaid_stale_since).getTime() : null,
           availableResetCredits: result?.available_reset_credits ?? null,
@@ -868,10 +952,14 @@ const QuotaIndicator = GObject.registerClass(
           this._renderExtraActiveRow(p.windowRows[0], windows);
           p.windowRows.slice(1).forEach((row) => (row.visible = false));
         } else {
-          const { windows, staleAge, platformCredits } = effectiveState(p.state);
-          if (windows.length === 0 && platformCredits == null) this._renderPopupRow(p.windowRows[0], null, staleAge);
+          const { windows, staleAge, openaiPlatformCredits, anthropicPlatformCredits } = effectiveState(p.state);
+          if (windows.length === 0 && openaiPlatformCredits == null && anthropicPlatformCredits == null)
+            this._renderPopupRow(p.windowRows[0], null, staleAge);
           windows.forEach((window, index) => this._renderPopupRow(p.windowRows[index], window, staleAge));
-          const rowCount = windows.length === 0 && platformCredits != null ? 0 : Math.max(1, windows.length);
+          const rowCount =
+            windows.length === 0 && (openaiPlatformCredits != null || anthropicPlatformCredits != null)
+              ? 0
+              : Math.max(1, windows.length);
           p.windowRows.forEach((row, index) => (row.visible = index < rowCount));
         }
       }
@@ -888,20 +976,30 @@ const QuotaIndicator = GObject.registerClass(
         availableResetCreditExpiries,
         resetCreditExpiryLookupFailed,
         staleAge,
+        openaiPlatformCredits,
+        prepaidBalance,
+        prepaidStaleSince,
       } = effectiveState(state);
       const haveWindows = windows.length > 0;
-      const parts = [title];
+      const claudeHeading = title === "Claude" ? formatClaudePrepaidHeading(prepaidBalance) : null;
+      const openaiHeading = title === "OpenAI API" ? formatOpenaiPlatformHeading(openaiPlatformCredits) : null;
+      const titleWithBalance = openaiHeading ? openaiHeading : (claudeHeading ?? title);
+      const parts = [titleWithBalance];
       if (state.error) {
         parts.push(formatCheckFailure(state.error, state.lastCheck, haveWindows));
         item.label.add_style_class_name("quota-popup-header-error");
       } else if (isStaleFetch(state.lastFetch)) {
         item.label.add_style_class_name("quota-popup-header-stale");
       }
+      if (title === "Claude" && prepaidStaleSince != null && prepaidStaleSince !== state.staleSince) {
+        parts[0] += ` (prepaid stale ${formatAge(Math.max(0, (nowMs() - prepaidStaleSince) / 1000))})`;
+      }
       if (staleAge != null) parts.push(`(stale ${formatAge(staleAge)})`);
       const resets = formatBankedResets(
         availableResetCredits,
         availableResetCreditExpiries,
-        resetCreditExpiryLookupFailed
+        resetCreditExpiryLookupFailed,
+        new Date(nowMs())
       );
       if (resets) parts.push(resets);
       const extraStr = formatExtraSpend(extraSpend);
@@ -923,25 +1021,11 @@ const QuotaIndicator = GObject.registerClass(
 
     _renderPrepaidRow(item, state) {
       const effective = effectiveState(state);
-      const credits = effective.platformCredits;
-      const money = (value) =>
-        new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(Number(value));
-      const text = credits
-        ? [
-            `OpenAI API balance · ${money(credits.total_available_usd)}`,
-            ...credits.grants.map(
-              (grant) =>
-                `Grant ${money(Number(grant.granted_usd) - Number(grant.used_usd))} / ${money(grant.granted_usd)} · expires ${grant.expires_at ? new Date(grant.expires_at).toLocaleString() : "unknown"}${grant.is_scheduled ? " · scheduled" : grant.is_held_for_prepaid_transition ? " · held" : ""}`
-            ),
-          ].join("\n")
-        : formatPrepaidBalance(effective.prepaidBalance);
+      const lines = formatAnthropicPlatformCredits(effective.anthropicPlatformCredits);
+      const text = lines.length > 0 ? lines.join("\n") : null;
       item.visible = text != null;
       if (text != null) {
-        const age =
-          !credits && effective.prepaidStaleSince != null
-            ? ` (stale ${formatAge(Math.max(0, (nowMs() - effective.prepaidStaleSince) / 1000))})`
-            : "";
-        item._summaryLabel.set_text(text + age);
+        item._summaryLabel.set_text(text);
       }
     }
 

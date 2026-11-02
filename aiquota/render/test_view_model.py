@@ -5,12 +5,18 @@ import pytest_bazel
 
 from aiquota.models import (
     AllQuotas,
+    AnthropicPlatformCreditAmount,
+    AnthropicPlatformCredits,
+    AnthropicPlatformCreditValue,
+    AnthropicPlatformOrganization,
+    AnthropicPlatformScope,
+    AnthropicPlatformTranche,
     ExtraSpend,
     FetchError,
     FetchSuccess,
+    OpenAIPlatformCreditGrant,
+    OpenAIPlatformCredits,
     PaidCredits,
-    PlatformCreditGrant,
-    PlatformCredits,
     PrepaidBalanceAvailable,
     ProviderFetch,
     ProviderQuota,
@@ -129,9 +135,9 @@ def test_window_presentation_updates_from_one_snapshot() -> None:
     assert (first.display_windows[0].elapsed, later.display_windows[0].elapsed) == (0.5, 0.7)
 
 
-def test_platform_grants_filter_tracks_time_and_preserves_snapshot() -> None:
-    def grant(used: int, expires: datetime | None, *, scheduled: bool = False) -> PlatformCreditGrant:
-        return PlatformCreditGrant(
+def test_openai_platform_grants_filter_tracks_time_and_preserves_snapshot() -> None:
+    def grant(used: int, expires: datetime | None, *, scheduled: bool = False) -> OpenAIPlatformCreditGrant:
+        return OpenAIPlatformCreditGrant(
             granted_usd=Decimal(10),
             used_usd=Decimal(used),
             effective_at=_NOW - timedelta(days=1),
@@ -140,7 +146,7 @@ def test_platform_grants_filter_tracks_time_and_preserves_snapshot() -> None:
             is_held_for_prepaid_transition=False,
         )
 
-    credits = PlatformCredits(
+    credits = OpenAIPlatformCredits(
         total_available_usd=Decimal(20),
         total_paid_available_usd=Decimal(20),
         grants=[
@@ -151,7 +157,7 @@ def test_platform_grants_filter_tracks_time_and_preserves_snapshot() -> None:
             grant(10, None, scheduled=True),
         ],
     )
-    success = FetchSuccess(platform_credits=credits)
+    success = FetchSuccess(openai_platform_credits=credits)
     quota = AllQuotas(
         fetched_at=_NOW,
         providers=[
@@ -159,18 +165,18 @@ def test_platform_grants_filter_tracks_time_and_preserves_snapshot() -> None:
         ],
     )
     first = to_view(quota, _NOW).providers[0]
-    assert first.display_platform_credits is not None
-    assert first.display_platform_credits.grants == [credits.grants[i] for i in (0, 3, 4)]
+    assert first.display_openai_platform_credits is not None
+    assert first.display_openai_platform_credits.grants == [credits.grants[i] for i in (0, 3, 4)]
     assert isinstance(first.last_output.result, FetchSuccess)
-    assert first.last_output.result.platform_credits == credits
+    assert first.last_output.result.openai_platform_credits == credits
 
     quota.providers[0].last_success = SuccessfulProviderFetch(fetched_at=_NOW, result=success)
     quota.providers[0].last_output = ProviderFetch(fetched_at=_NOW, result=FetchError(error="offline"))
     stale = to_view(quota, _NOW + timedelta(hours=1)).providers[0]
-    assert stale.display_platform_credits is not None
-    assert stale.display_platform_credits.grants == [credits.grants[i] for i in (3, 4)]
+    assert stale.display_openai_platform_credits is not None
+    assert stale.display_openai_platform_credits.grants == [credits.grants[i] for i in (3, 4)]
     assert stale.last_success is not None
-    assert stale.last_success.result.platform_credits == credits
+    assert stale.last_success.result.openai_platform_credits == credits
 
 
 def test_display_selection_preserves_latest_check_and_snapshot_provenance() -> None:
@@ -219,3 +225,56 @@ def test_display_selection_retains_prepaid_balance_with_its_own_timestamp() -> N
     assert view.display.source == "current"
     assert view.display.prepaid_balance == balance
     assert view.display.prepaid_stale_since == older
+
+
+def test_anthropic_platform_expiries_filter_without_losing_provider_response() -> None:
+    def tranche(identifier: str, expires_at: datetime | None, amount_minor: int) -> AnthropicPlatformTranche:
+        amount = AnthropicPlatformCreditValue(
+            credits=AnthropicPlatformCreditAmount(amount_minor=amount_minor, exponent=2)
+        )
+        return AnthropicPlatformTranche(
+            id=identifier,
+            currency="USD",
+            granted_at=_NOW - timedelta(days=1),
+            expires_at=expires_at,
+            granted=amount,
+            remaining=amount,
+            scope=AnthropicPlatformScope(kind="unscoped"),
+        )
+
+    credits = AnthropicPlatformCredits(
+        organizations=[
+            AnthropicPlatformOrganization(
+                uuid="org-1",
+                name="Main org",
+                currency="USD",
+                balance=AnthropicPlatformCreditValue(
+                    credits=AnthropicPlatformCreditAmount(amount_minor=12345, exponent=2)
+                ),
+                tranches=[
+                    tranche("current", _NOW + timedelta(hours=1), 5000),
+                    tranche("at-boundary", _NOW, 2000),
+                    tranche("expired", _NOW - timedelta(seconds=1), 1000),
+                    tranche("empty", None, 0),
+                ],
+            )
+        ]
+    )
+    success = FetchSuccess(anthropic_platform_credits=credits)
+    quota = AllQuotas(
+        fetched_at=_NOW,
+        providers=[
+            ProviderQuota(provider="anthropic_platform", last_output=ProviderFetch(fetched_at=_NOW, result=success))
+        ],
+    )
+
+    first = to_view(quota, _NOW).providers[0]
+
+    assert first.display_anthropic_platform_credits is not None
+    assert [item.id for item in first.display_anthropic_platform_credits.organizations[0].tranches] == ["current"]
+    assert isinstance(first.last_output.result, FetchSuccess)
+    assert first.last_output.result.anthropic_platform_credits == credits
+
+    later = to_view(quota, _NOW + timedelta(hours=1)).providers[0]
+    assert later.display_anthropic_platform_credits is not None
+    assert later.display_anthropic_platform_credits.organizations[0].tranches == []
