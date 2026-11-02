@@ -153,6 +153,7 @@ go_library(
         "//agentplane/grpc/facade",
         "//agentplane/grpc/graceful",
         "//agentplane/observability",
+        "//agentplane/policy/api/v1alpha1",
         "//agentplane/postgres",
         "//agentplane/postgres/migrate",
         "//agentplane/runner_gateway/dispatcher",

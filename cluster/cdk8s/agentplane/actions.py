@@ -171,7 +171,6 @@ def _orchestration_group(env: Environment, props: OrchestrationProps) -> ActionG
             kind="orchestration_v1",
             description="Run by this service, on each request's Decision, with its own authority.",
             namespace=env.namespace,
-            default_policy_sets=frozenset(app.default_policy_sets),
             presets=presets,
         ),
         direct_tools=props.direct_tools,
@@ -179,12 +178,11 @@ def _orchestration_group(env: Environment, props: OrchestrationProps) -> ActionG
 
 
 def add_launcher_admission(scope: Construct, namespace: str) -> None:
-    """Admits the `namespace` Action Service's Sandbox, PolicySet and PolicyBinding creations only in
-    the shape the orchestration_v1 executor writes (agentplane/action_service/orchestration_v1/README.md): a
-    grant owned by one Sandbox, named for it, naming only it and only this group's Actions, and a
-    Sandbox bound to no launcher grant. A bug in the executor then cannot grant past the Sandbox
-    it launched. Admission cannot see who called the Action, so it limits what a grant reaches,
-    not who holds it."""
+    """Restrict Action Service launcher grants to their owning Sandbox and approved Actions.
+
+    EnvironmentService owns Sandbox creation and refuses launcher PolicySets in create requests.
+    Admission limits what an Action-owned grant reaches; it cannot see the Action caller.
+    """
     name = f"{namespace}-actions-launcher-grants"
     # The objects reach CEL as plain maps: a missing key is an error, so every access is guarded, and
     # `const`, a CEL reserved word, is indexed.
@@ -206,7 +204,7 @@ def add_launcher_admission(scope: Construct, namespace: str) -> None:
                         api_groups=[GROUP],
                         api_versions=["*"],
                         operations=["CREATE"],
-                        resources=["sandboxes", "policysets", "policybindings"],
+                        resources=["policysets", "policybindings"],
                     )
                 ]
             ),
@@ -216,21 +214,11 @@ def add_launcher_admission(scope: Construct, namespace: str) -> None:
                     expression=f"request.userInfo.username == 'system:serviceaccount:{namespace}:{NAME}'",
                 )
             ],
-            variables=[
-                k8s.Variable(name="owners", expression="object.metadata.?ownerReferences.orValue([])"),
-                k8s.Variable(name="grant", expression="request.resource.resource != 'sandboxes'"),
-            ],
+            variables=[k8s.Variable(name="owners", expression="object.metadata.?ownerReferences.orValue([])")],
             validations=[
                 k8s.Validation(
                     expression=(
-                        "variables.grant || !object.spec.?policySets.orValue([])"
-                        f".exists(set, set.endsWith('{_LAUNCHER_SUFFIX}'))"
-                    ),
-                    message="A Sandbox this service launches is bound to no launcher grant.",
-                ),
-                k8s.Validation(
-                    expression=(
-                        "!variables.grant || (size(variables.owners) == 1"
+                        "(size(variables.owners) == 1"
                         f" && {owner}.apiVersion.startsWith('{GROUP}/') && {owner}.kind == 'Sandbox'"
                         f" && object.metadata.name == {owner}.name + '{_LAUNCHER_SUFFIX}')"
                     ),
@@ -451,14 +439,14 @@ class Actions(Construct):
             ]
         )
         if self.env.actions.orchestration_v1 is not None:
-            # The orchestration_v1 group launches Sandboxes and writes their launcher grants, which
-            # `_add_launcher_admission` limits to that shape. `get` reads back an object a retried
-            # launch already wrote.
+            # The EnvironmentService creates Sandboxes; Actions reads the exact created UID and
+            # writes launcher grants, which `_add_launcher_admission` limits to that shape.
+            rules_by_namespace[namespace].append(
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get"])
+            )
             rules_by_namespace[namespace].append(
                 RolePolicyRule(
-                    resources=[
-                        custom_resource(GROUP, resource) for resource in ("sandboxes", "policysets", "policybindings")
-                    ],
+                    resources=[custom_resource(GROUP, resource) for resource in ("policysets", "policybindings")],
                     verbs=["get", "create"],
                 )
             )

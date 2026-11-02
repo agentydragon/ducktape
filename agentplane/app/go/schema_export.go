@@ -19,7 +19,7 @@ func exportOpenAPI(writer io.Writer) error {
 	if err := RegisterCoreRoutes(server, config); err != nil {
 		return fmt.Errorf("register core routes: %w", err)
 	}
-	RegisterSandboxRoutes(server, config, (*sandboxinventory.Access)(nil), nil)
+	RegisterSandboxRoutes(server, (*sandboxinventory.Access)(nil))
 	RegisterPolicyRoutes(server, config, (*sandboxinventory.Access)(nil), (*policyaccess.Access)(nil))
 	if err := RegisterThreadReadRoutes(server, nil, nil, nil, nil); err != nil {
 		return fmt.Errorf("register Thread routes: %w", err)

@@ -65,7 +65,7 @@ def set_app_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None
     for name, value in APP_ENVIRONMENT.items():
         monkeypatch.setenv(name, value)
     config = tmp_path / "config.yaml"
-    config.write_text("default_policy_sets: [test-basic]\n")
+    config.write_text("{}\n")
     monkeypatch.setenv("AGENTPLANE_CONFIG_FILE", str(config))
 
 
@@ -106,7 +106,6 @@ def test_frontend_config_loads_from_the_deployment_config(monkeypatch: pytest.Mo
     set_app_environment(monkeypatch, tmp_path)
     config = tmp_path / "config.yaml"
     config.write_text(
-        "default_policy_sets: [test-basic]\n"
         "frontend_config:\n"
         "  trace_search:\n"
         "    grafana_base_url: https://grafana.test.invalid\n"
@@ -133,28 +132,6 @@ def test_frontend_config_loads_from_the_deployment_config(monkeypatch: pytest.Mo
             sandbox_service_account_metadata_key="attributes.agentplane.service_account",
         ),
     )
-
-
-@pytest.mark.parametrize("default_policy_sets", [None, [], ["test-basic"]])
-def test_default_policy_sets_are_required_for_direct_lifecycle(
-    default_policy_sets: list[str] | None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    for name, value in APP_ENVIRONMENT.items():
-        monkeypatch.setenv(name, value)
-    monkeypatch.delenv("AGENTPLANE_DEFAULT_POLICY_SETS", raising=False)
-    # This value is deployed through the YAML ConfigMap, not an environment string.
-    config = tmp_path / "config.yaml"
-    config.write_text(
-        "" if default_policy_sets is None else f"default_policy_sets: {json.dumps(default_policy_sets)}\n"
-    )
-    monkeypatch.setenv("AGENTPLANE_CONFIG_FILE", str(config))
-
-    if default_policy_sets is None:
-        with pytest.raises(ValidationError, match="default_policy_sets"):
-            Settings(_cli_parse_args=[])
-    else:
-        settings = Settings(_cli_parse_args=[])
-        assert settings.default_policy_sets == set(default_policy_sets)
 
 
 @pytest.mark.parametrize(

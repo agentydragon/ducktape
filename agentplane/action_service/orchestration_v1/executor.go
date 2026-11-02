@@ -12,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -21,20 +22,21 @@ import (
 // authenticated admission path sets and no argument can reach.
 type Executor struct {
 	// group is the catalog key the group is configured under, which the launcher grants' rules name.
-	group      string
-	binding    catalog.OrchestrationBinding
-	presets    map[string]Preset
-	kube       client.Client
-	dispatcher dispatcherpb.SessionDispatcherClient
-	history    historypb.HistoryServiceClient
-	inputs     contract.Inputs
-	readBudget time.Duration
+	group       string
+	binding     catalog.OrchestrationBinding
+	presets     map[string]Preset
+	kube        client.Client
+	environment environmentpb.EnvironmentServiceClient
+	dispatcher  dispatcherpb.SessionDispatcherClient
+	history     historypb.HistoryServiceClient
+	inputs      contract.Inputs
+	readBudget  time.Duration
 }
 
 // NewExecutor is the Executor of the group under key. kube reaches binding.Namespace with a scheme that holds Sandboxes,
 // PolicySets and PolicyBindings.
 func NewExecutor(
-	group string, binding catalog.OrchestrationBinding, kube client.Client, dispatcher dispatcherpb.SessionDispatcherClient,
+	group string, binding catalog.OrchestrationBinding, kube client.Client, environment environmentpb.EnvironmentServiceClient, dispatcher dispatcherpb.SessionDispatcherClient,
 	history historypb.HistoryServiceClient, directWait time.Duration,
 ) (*Executor, error) {
 	presets, err := parsePresets(binding.Presets)
@@ -46,7 +48,7 @@ func NewExecutor(
 		return nil, err
 	}
 	return &Executor{
-		group: group, binding: binding, presets: presets, kube: kube, dispatcher: dispatcher, history: history,
+		group: group, binding: binding, presets: presets, kube: kube, environment: environment, dispatcher: dispatcher, history: history,
 		inputs: inputs, readBudget: directWait - time.Second,
 	}, nil
 }

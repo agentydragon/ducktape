@@ -14,10 +14,8 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -381,73 +379,5 @@ func TestDispatcherClientUsesRotatingBearerAndMapsDeadline(t *testing.T) {
 	var timeout *RequestTimeoutError
 	if !errors.As(err, &timeout) {
 		t.Fatalf("deadline error = %T %v, want RequestTimeoutError", err, err)
-	}
-}
-
-type lifecycleTestServer struct {
-	environmentpb.UnimplementedEnvironmentServiceServer
-	t          *testing.T
-	seenBearer []string
-	requests   []*environmentpb.ResumeEnvironmentRequest
-	err        error
-}
-
-func (s *lifecycleTestServer) ResumeEnvironment(
-	ctx context.Context,
-	request *environmentpb.ResumeEnvironmentRequest,
-) (*environmentpb.ResumeEnvironmentResponse, error) {
-	s.t.Helper()
-	values, ok := metadata.FromIncomingContext(ctx)
-	if !ok || len(values.Get("authorization")) != 1 {
-		s.t.Fatalf("lifecycle authorization metadata = %v", values)
-	}
-	s.seenBearer = append(s.seenBearer, values.Get("authorization")[0])
-	s.requests = append(s.requests, proto.Clone(request).(*environmentpb.ResumeEnvironmentRequest))
-	if s.err != nil {
-		return nil, s.err
-	}
-	return &environmentpb.ResumeEnvironmentResponse{
-		Target:  request.GetTarget(),
-		Outcome: environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED,
-	}, nil
-}
-
-func TestEnvironmentClientUsesRotatingBearerAndNeverRetriesResume(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer()
-	service := &lifecycleTestServer{t: t}
-	environmentpb.RegisterEnvironmentServiceServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-
-	tokenFile := t.TempDir() + "/token"
-	if err := os.WriteFile(tokenFile, []byte("operator-token-one\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	client, err := NewEnvironmentClient(EnvironmentConfig{Target: listener.Addr().String(), TokenFile: tokenFile, Timeout: time.Second})
-	if err != nil {
-		t.Fatal(err)
-	}
-	request := &environmentpb.ResumeEnvironmentRequest{Target: &environmentpb.TargetHandle{
-		Namespace: "test-ns", Name: "sandbox", Uid: "sandbox-uid",
-	}}
-	if _, err := client.ResumeEnvironment(context.Background(), request); err != nil {
-		t.Fatal(err)
-	}
-	service.err = status.Error(codes.Unavailable, "unavailable")
-	if err := os.WriteFile(tokenFile, []byte("operator-token-two\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	_, err = client.ResumeEnvironment(context.Background(), request)
-	var serviceError *ServiceError
-	if !errors.As(err, &serviceError) || serviceError.Code != codes.Unavailable {
-		t.Fatalf("resume error = %T %v, want unavailable ServiceError", err, err)
-	}
-	if len(service.requests) != 2 || service.seenBearer[0] != "Bearer operator-token-one" ||
-		service.seenBearer[1] != "Bearer operator-token-two" {
-		t.Fatalf("lifecycle calls = %d, bearer metadata = %v", len(service.requests), service.seenBearer)
 	}
 }

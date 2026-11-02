@@ -187,7 +187,6 @@ def fixture_config() -> dict[str, object]:
                 for harness in ("HARNESS_CLAUDE", "HARNESS_CODEX")
             },
         },
-        "default_policy_sets": [],
         "runner_gateway_target": "127.0.0.1:1",
         "runner_gateway_control_target": "127.0.0.1:1",
         "session_dispatcher_target": "127.0.0.1:1",

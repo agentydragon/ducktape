@@ -125,9 +125,19 @@ class Client:
         return ParseDict(response, app_service_pb2.ListSandboxPresetsResponse())
 
     async def create_sandbox(self, spec: NewSandbox) -> SandboxView:
-        return SandboxView.model_validate(
-            await self._json("POST", "/sandboxes", json=spec.model_dump(exclude_unset=True))
+        body = spec.model_dump(exclude_unset=True)
+        if (seconds := body.pop("idle_suspend_after_seconds", None)) is not None:
+            body["idle_suspend_after"] = f"{seconds}s"
+        target = ParseDict(
+            await self._json("POST", "/upstream/environments/v1/environments", json=body),
+            environment_service_pb2.TargetHandle(),
         )
+        if not target.namespace or target.name != spec.name or not target.uid:
+            raise RuntimeError("EnvironmentService returned an invalid created target")
+        created = await self.sandbox(spec.name)
+        if (created.namespace, created.name, str(created.uid)) != (target.namespace, target.name, target.uid):
+            raise RuntimeError("EnvironmentService created target changed before read-back")
+        return created
 
     async def sandbox(self, name: str) -> SandboxView:
         return SandboxView.model_validate(await self._json("GET", f"/sandboxes/{name}"))
@@ -185,13 +195,48 @@ class Client:
         raise RuntimeError("the Sandbox inventory stream ended")
 
     async def suspend_sandbox(self, name: str) -> None:
-        await self._json("POST", f"/sandboxes/{name}/suspend")
+        target = await self._management_target(name)
+        await self._json(
+            "POST",
+            f"/upstream/environments/v1/environments/{target['namespace']}/{name}:suspend",
+            json={"target": target},
+        )
 
     async def resume_sandbox(self, name: str) -> None:
-        await self._json("POST", f"/sandboxes/{name}/resume")
+        target = await self._management_target(name)
+        response = ParseDict(
+            await self._json(
+                "POST",
+                f"/upstream/environments/v1/environments/{target['namespace']}/{name}:resume",
+                json={"target": target},
+            ),
+            environment_service_pb2.ResumeEnvironmentResponse(),
+        )
+        if not response.HasField("target") or (
+            response.target.namespace,
+            response.target.name,
+            response.target.uid,
+        ) != (target["namespace"], target["name"], target["uid"]):
+            raise RuntimeError("EnvironmentService returned a different target")
+        if response.outcome == environment_service_pb2.RESUME_OUTCOME_STATE_CHANGED:
+            raise RuntimeError("Environment state changed; refresh and try again")
+        if response.outcome not in (
+            environment_service_pb2.RESUME_OUTCOME_REQUESTED,
+            environment_service_pb2.RESUME_OUTCOME_ALREADY_RUNNING,
+        ):
+            raise RuntimeError("EnvironmentService returned no resume outcome")
 
     async def delete_sandbox(self, name: str) -> None:
-        await self._json("DELETE", f"/sandboxes/{name}")
+        target = await self._management_target(name)
+        await self._json(
+            "DELETE",
+            f"/upstream/environments/v1/environments/{target['namespace']}/{name}",
+            params={"target.uid": target["uid"]},
+        )
+
+    async def _management_target(self, name: str) -> dict[str, str]:
+        sandbox = await self.sandbox(name)
+        return {"namespace": sandbox.namespace, "name": sandbox.name, "uid": str(sandbox.uid)}
 
     async def bindings(self, name: str) -> list[BindingView]:
         return [BindingView.model_validate(row) for row in await self._json("GET", f"/sandboxes/{name}/egress")]

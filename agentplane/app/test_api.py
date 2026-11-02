@@ -9,9 +9,11 @@ import httpx
 import pytest
 import pytest_bazel
 
+from agentplane import sandbox_resource
 from agentplane.app.sandbox_models import NewSandboxDefaults
 from agentplane.app.testing.models import SandboxView, ThreadView
 from agentplane.app.testing.replication_process import AppProcess, spawn_go_app
+from agentplane.crd_group import GROUP, VERSION
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from util.net import listen_tcp
 from util.testing.postgres import DatabaseNames, create_temporary_database
@@ -48,9 +50,9 @@ async def test_go_app_serves_sandbox_and_thread_views_using_the_shared_models(ht
     assert sandboxes[0].operating_mode == "Running"
     assert sandboxes[0].pod is not None
 
-    templates = await http.get("/sandboxes/templates")
+    templates = await http.get("/upstream/environments/v1/environment-templates")
     assert templates.status_code == 200, templates.text
-    assert templates.json() == []
+    assert templates.json() == {"names": []}
 
     threads_response = await http.get("/upstream/app/v1/threads")
     assert threads_response.status_code == 200, threads_response.text
@@ -58,10 +60,16 @@ async def test_go_app_serves_sandbox_and_thread_views_using_the_shared_models(ht
     assert not threads_response.json().get("nextPageToken")
 
 
-async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(http: httpx.AsyncClient) -> None:
-    response = await http.post("/sandboxes", json={"name": "created", "template": "test-template"})
-    assert response.status_code == 201, response.text
-    created = SandboxView.model_validate(response.json())
+async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(
+    http: httpx.AsyncClient, sandbox: SandboxCluster
+) -> None:
+    response = await http.post(
+        "/upstream/environments/v1/environments", json={"name": "created", "template": "test-template"}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["name"] == "created"
+    assert response.json()["uid"]
+    created = SandboxView.model_validate((await http.get("/sandboxes/created")).json())
     assert created.name == "created"
     assert created.operating_mode is None
     assert created.pod is None
@@ -69,8 +77,35 @@ async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(http
     assert (await http.get("/sandboxes/created")).status_code == 200
     assert (await http.get("/sandboxes/missing")).status_code == 404
 
-    invalid = await http.post("/sandboxes", json={"name": "missing-template"})
-    assert invalid.status_code == 422
+    target = response.json()
+    route = f"/upstream/environments/v1/environments/{target['namespace']}/{target['name']}"
+    wake = await http.patch(f"{route}:wake-policy", json={"target": target, "wakeOnSend": True})
+    assert wake.status_code == 200, wake.text
+    assert SandboxView.model_validate((await http.get("/sandboxes/created")).json()).wake_on_send is True
+    stale = await http.delete(route, params={"target.uid": "stale-uid"})
+    assert stale.status_code == 404, stale.text
+    assert (await http.get("/sandboxes/created")).status_code == 200
+    pending = await http.delete(route, params={"target.uid": target["uid"]})
+    assert pending.status_code == 400, pending.text
+    assert pending.json()["code"] == 9  # FailedPrecondition: controller has not reported a mode yet.
+    assert (await http.get("/sandboxes/created")).status_code == 200
+    suspended = await http.post(f"{route}:suspend", json={"target": target})
+    assert suspended.status_code == 200, suspended.text
+    await sandbox.custom_objects.patch_namespaced_custom_object_status(
+        GROUP,
+        VERSION,
+        target["namespace"],
+        sandbox_resource.SANDBOXES_PLURAL,
+        target["name"],
+        {"status": {"operatingMode": sandbox_resource.OperatingMode.SUSPENDED.value}},
+        _content_type="application/merge-patch+json",
+    )
+    deleted = await http.delete(route, params={"target.uid": target["uid"]})
+    assert deleted.status_code == 200, deleted.text
+    assert (await http.get("/sandboxes/created")).status_code == 404
+
+    invalid = await http.post("/upstream/environments/v1/environments", json={"name": "missing-template"})
+    assert invalid.status_code == 400
 
 
 async def test_go_openapi_tracks_selected_python_http_contract_fields(http: httpx.AsyncClient) -> None:

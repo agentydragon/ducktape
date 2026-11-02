@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Set
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
@@ -85,10 +84,6 @@ class AppSettingsConfig(YamlFileSettings):
     sandbox_presets: dict[str, SandboxPreset] = Field(
         default_factory=dict, description="App-owned Sandbox launch-form presets keyed by displayable name."
     )
-    default_policy_sets: Set[str] = Field(
-        description="PolicySets every new Sandbox is bound to. The app creates, suspends and deletes Sandboxes "
-        "through Kubernetes; the Runner Gateway owns authorized resume requests."
-    )
     new_sandbox_defaults: NewSandboxDefaults = Field(
         default_factory=NewSandboxDefaults,
         description="Initial wake and idle suspension values of the new-Sandbox form, whatever the preset.",
@@ -103,11 +98,6 @@ class AppSettingsConfig(YamlFileSettings):
     frontend_config: FrontendConfig = Field(
         default_factory=FrontendConfig, description="Browser-safe settings exposed by `GET /frontend-config`."
     )
-
-    @field_serializer("default_policy_sets")
-    def serialize_default_policy_sets(self, value: Set[str]) -> list[str]:
-        """Keep the generated ConfigMap's list stable while Settings still parses it as a set."""
-        return sorted(value)
 
 
 class Settings(AppSettingsConfig):

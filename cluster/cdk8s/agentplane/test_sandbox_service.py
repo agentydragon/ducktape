@@ -1,4 +1,4 @@
-"""The app owns operator writes; the Sandbox Service has no deployed resources."""
+"""Environment management is hosted in Runner Gateway without a separate Sandbox Service."""
 
 from typing import Any
 
@@ -32,7 +32,7 @@ def test_sandbox_service_resources_are_absent(staging_manifests: list[dict[str, 
     )
 
 
-def test_app_uses_direct_sandbox_access(staging_manifests: list[dict[str, Any]]) -> None:
+def test_gateway_owns_sandbox_mutations(staging_manifests: list[dict[str, Any]]) -> None:
     application = _resource(staging_manifests, "Deployment", app.NAME)["spec"]["template"]["spec"]
     container = one(item for item in application["containers"] if item["name"] == "app")
     assert not any(arg.startswith("--sandbox-service-target=") for arg in container["args"])
@@ -40,14 +40,19 @@ def test_app_uses_direct_sandbox_access(staging_manifests: list[dict[str, Any]])
 
     app_rules = _resource(staging_manifests, "Role", app.NAME.removeprefix("agentplane-"))["rules"]
     for rule in app_rules:
-        if rule["resources"] not in (["policybindings"], ["sandboxes"]):
-            assert set(rule["verbs"]) <= {"get", "list", "watch"}
+        if rule["resources"] == ["sandboxes"]:
+            assert set(rule["verbs"]) == {"get", "list", "watch"}
     permissions = {(tuple(rule["apiGroups"]), tuple(rule["resources"]), tuple(rule["verbs"])) for rule in app_rules}
     assert (("agentplane.allegedly.works",), ("sandboxtemplates",), ("list",)) in permissions
     assert (("subresources.kubevirt.io",), ("virtualmachineinstances/console",), ("get",)) in permissions
 
     gateway = _resource(staging_manifests, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
     assert gateway["serviceAccountName"] == runner_gateway.NAME
+    gateway_rules = _resource(staging_manifests, "Role", runner_gateway.NAME.removeprefix("agentplane-"))["rules"]
+    assert any(
+        rule["resources"] == ["sandboxes"] and {"create", "patch", "delete"} <= set(rule["verbs"])
+        for rule in gateway_rules
+    )
 
 
 def test_notifications_have_no_app_or_sandbox_service_dependency(staging_manifests: list[dict[str, Any]]) -> None:

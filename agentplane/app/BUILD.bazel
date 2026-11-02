@@ -175,6 +175,8 @@ py_test(
         ":conftest",
         ":sandbox_models",
         "//:conftest",
+        "//agentplane:crd_group",
+        "//agentplane:sandbox_resource",
         "//agentplane/app/testing:models",
         "//agentplane/app/testing:replication_process",
         "//agentplane/sandboxes/testing:kubernetes",

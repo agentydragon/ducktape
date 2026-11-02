@@ -446,7 +446,7 @@ Go informer and provider. Staging's network policy admits `api.github.com:443` f
 public-repository lookup.
 
 The end-to-end proof is `//agentplane/system_tests/suites/mcp:test_services`, which creates the set and binding
-for the Sandbox it launches through the Kubernetes API (see [the system tests README](../system_tests/README.md))
+for the Sandbox it launches through the Runner Gateway's `EnvironmentService` (see [the system tests README](../system_tests/README.md))
 against the upstream `mcp-everything` image described in
 [the fixture guide](testing/README.md). The Go service's startup, MCP execution recovery and OAuth
 edge composition are covered by `//agentplane/action_service:integration_test`.

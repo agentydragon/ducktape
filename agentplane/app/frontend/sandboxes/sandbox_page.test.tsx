@@ -14,7 +14,6 @@ import { createRoot } from "react-dom/client";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 
-import { api } from "../client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
 import type * as LiveModule from "../live";
@@ -309,6 +308,11 @@ async function render(
       return Promise.resolve(found ? Response.json(found) : Response.json({ detail: "not found" }, { status: 404 }));
     }
     if (/^\/sandboxes\/(startup-test|other-test)\/sessions/.test(path)) return sessions(request);
+    if (
+      path === "/upstream/environments/v1/environments/agentplane-test/startup-test:wake-policy" &&
+      request.method === "PATCH"
+    )
+      return Promise.resolve(Response.json({}));
     if (/^\/threads\/[^/]+\/(un)?archive$/.test(path)) return threadActions(request);
     throw new Error(`Unexpected request: ${request.method} ${path}`);
   });
@@ -443,21 +447,22 @@ it("shows runner process and Session diagnostics, including a dormant Session", 
 it("saves the wake policy from the Status tab", async () => {
   await render(async () => Response.json([]));
   await act(async () => tab("Status").click());
-  const patch = vi
-    .spyOn(api, "PATCH")
-    .mockResolvedValue({ data: undefined, response: new Response(null, { status: 204 }) } as never);
-  try {
-    const wake = container.querySelector<HTMLInputElement>('input[aria-label="Wake on message for startup-test"]');
-    if (!wake) throw new Error("Missing Wake on message checkbox");
-    await act(async () => wake.click());
-
-    expect(patch).toHaveBeenCalledWith("/sandboxes/{name}/wake-policy", {
-      params: { path: { name: "startup-test" } },
-      body: { uid: readySandbox.uid, wake_on_send: true },
-    });
-  } finally {
-    patch.mockRestore();
-  }
+  const wake = container.querySelector<HTMLInputElement>('input[aria-label="Wake on message for startup-test"]');
+  if (!wake) throw new Error("Missing Wake on message checkbox");
+  await act(async () => wake.click());
+  const request = fetchMock.mock.calls
+    .map(([input, init]) => requestFromFetchInput(input, init))
+    .find(
+      (candidate) =>
+        candidate.method === "PATCH" &&
+        new URL(candidate.url).pathname ===
+          "/upstream/environments/v1/environments/agentplane-test/startup-test:wake-policy"
+    );
+  expect(request).toBeDefined();
+  expect(await request?.json()).toMatchObject({
+    target: { namespace: "agentplane-test", name: "startup-test", uid: readySandbox.uid },
+    wakeOnSend: true,
+  });
 });
 
 /** The Status tab's Kubernetes item with this title, which is open when its button says so. */

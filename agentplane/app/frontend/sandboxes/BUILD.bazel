@@ -114,6 +114,7 @@ ts_library(
         ":live",
         ":sandbox_name",
         ":wake_on_send",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -129,6 +130,7 @@ ts_library(
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:policy",
         "//agentplane/proto:sandboxes_pb",
+        "//agentplane/sandboxes/environments:environment_service_pb",
     ],
 )
 
@@ -259,6 +261,7 @@ ts_library(
         "//agentplane/app/frontend/threads:thread_status",
         "//agentplane/proto:session_pb",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
+        "//agentplane/sandboxes/environments:environment_service_pb",
     ],
 )
 
@@ -346,8 +349,10 @@ ts_library(
         "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:schema",
+        "//agentplane/proto:sandboxes_pb",
         "//agentplane/proto:session_pb",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
+        "//agentplane/sandboxes/environments:environment_service_pb",
     ],
 )
 

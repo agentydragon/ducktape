@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -19,6 +20,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -179,12 +181,11 @@ func (a *Access) Create(ctx context.Context, request *sandboxespb.CreateSandboxR
 }
 
 // Suspend requests that the exact current Sandbox stop. It does not wait for controller status.
-func (a *Access) Suspend(ctx context.Context, name string) error {
-	view, err := a.Get(ctx, name)
-	if err != nil {
-		return err
+func (a *Access) Suspend(ctx context.Context, name, uid string) error {
+	if uid == "" {
+		return &InvalidSandboxError{Reason: "Sandbox UID is required"}
 	}
-	return a.setStopped(ctx, name, view.GetUid())
+	return a.setStopped(ctx, name, uid)
 }
 
 // SetWakeOnSend changes the durable wake policy on the UID selected by the caller.
@@ -209,8 +210,8 @@ func (a *Access) SetWakeOnSend(ctx context.Context, name, uid string, wakeOnSend
 func (a *Access) SetIdleSuspendAfter(ctx context.Context, name, uid string, value *durationpb.Duration) error {
 	var duration *metav1.Duration
 	if value != nil {
-		if err := value.CheckValid(); err != nil {
-			return &InvalidSandboxError{Reason: "idle suspend duration is invalid"}
+		if err := validateIdleSuspendAfter(value); err != nil {
+			return err
 		}
 		duration = &metav1.Duration{Duration: value.AsDuration()}
 	}
@@ -234,12 +235,10 @@ func (a *Access) SetIdleSuspendAfter(ctx context.Context, name, uid string, valu
 
 // Delete begins teardown of the exact current Sandbox. Running Sandboxes are refused; repeated
 // requests against a Sandbox already deleting are idempotent.
-func (a *Access) Delete(ctx context.Context, name string) error {
-	view, err := a.Get(ctx, name)
-	if err != nil {
-		return err
+func (a *Access) Delete(ctx context.Context, name, uid string) error {
+	if uid == "" {
+		return &InvalidSandboxError{Reason: "Sandbox UID is required"}
 	}
-	uid := view.GetUid()
 	return a.retryConflict(func() error {
 		resource, err := a.incarnation(ctx, name, uid)
 		if err != nil {
@@ -305,18 +304,29 @@ func (a *Access) requirePolicySets(ctx context.Context, names []string) error {
 	if err := a.objects.List(ctx, &sets, client.InNamespace(a.namespace)); err != nil {
 		return fmt.Errorf("list PolicySets: %w", err)
 	}
-	known := make(map[string]struct{}, len(sets.Items))
+	known := make(map[string]bool, len(sets.Items))
 	for _, set := range sets.Items {
-		known[set.Name] = struct{}{}
+		ownedBySandbox := false
+		for _, owner := range set.OwnerReferences {
+			if owner.APIVersion == sandboxapi.GroupVersion.String() && owner.Kind == sandboxapi.SandboxKind {
+				ownedBySandbox = true
+			}
+		}
+		known[set.Name] = ownedBySandbox
 	}
-	missing := make([]string, 0)
+	missing, reserved := make([]string, 0), make([]string, 0)
 	for _, name := range names {
-		if _, ok := known[name]; !ok {
+		if owned, ok := known[name]; !ok {
 			missing = append(missing, name)
+		} else if owned || strings.HasSuffix(name, ".launcher") {
+			reserved = append(reserved, name)
 		}
 	}
 	if len(missing) > 0 {
 		return &UnknownPolicySetError{Names: missing, Kind: "PolicySet"}
+	}
+	if len(reserved) > 0 {
+		return &LauncherPolicySetError{Names: reserved}
 	}
 	return nil
 }
@@ -415,9 +425,17 @@ func validateCreate(request *sandboxespb.CreateSandboxRequest) error {
 		return &InvalidSandboxError{Reason: "script exceeds 65536 characters"}
 	}
 	if request.IdleSuspendAfter != nil {
-		if err := request.IdleSuspendAfter.CheckValid(); err != nil || request.IdleSuspendAfter.AsDuration() < 0 {
-			return &InvalidSandboxError{Reason: "idle suspend duration is invalid"}
+		if err := validateIdleSuspendAfter(request.IdleSuspendAfter); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+// Reject protobuf durations that saturate when converted to Go's narrower duration range.
+func validateIdleSuspendAfter(value *durationpb.Duration) error {
+	if err := value.CheckValid(); err != nil || value.AsDuration() < time.Minute || !proto.Equal(value, durationpb.New(value.AsDuration())) {
+		return &InvalidSandboxError{Reason: "idle suspend duration must be at least one minute and representable"}
 	}
 	return nil
 }

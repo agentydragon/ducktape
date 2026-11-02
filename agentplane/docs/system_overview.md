@@ -172,8 +172,9 @@ for resident Session work and History export wakeups.
 
 ### Sandbox lifecycle and runner control
 
-The app writes requested Sandbox state and operator
-grants to Kubernetes; the Sandbox Controller reconciles them, owns `Sandbox.status`, and holds
+The app forwards authenticated Sandbox management requests to the Runner Gateway's
+`EnvironmentService`, which writes Sandbox desired state to Kubernetes; the Sandbox Controller
+reconciles it, owns `Sandbox.status`, and holds
 deletion until the runner has sealed its Sessions through the Gateway. Notifications and the
 Runner Gateway read Sandbox inventory directly. The Runner Gateway implements Dispatcher Session
 openings and durable command admission/delivery alongside the control stream; the app reads live

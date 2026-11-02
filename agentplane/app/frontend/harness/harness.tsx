@@ -2694,7 +2694,7 @@ routes.push(
       ],
     }),
   ],
-  ["GET", /^\/sandboxes\/templates$/, () => ["runner"]],
+  ["GET", /^\/upstream\/environments\/v1\/environment-templates$/, () => ({ names: ["runner"] })],
   ["GET", /^\/sandboxes\/form$/, () => ({ policy_sets: [...TEST_CODER_POLICY_SETS, "pypi", "github-public"] })],
   [
     "GET",

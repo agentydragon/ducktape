@@ -21,7 +21,17 @@ import { useSearchParams } from "react-router";
 
 import { api, displayableError } from "../client";
 import { findThread, getThread } from "../threads/client";
-import { getSessionOpening, openSession, sessionOpeningRejected, sessionOpeningNotVisible } from "./client";
+import {
+  deleteEnvironment,
+  getSessionOpening,
+  openSession,
+  resumeSandbox,
+  sandboxTarget,
+  sessionOpeningRejected,
+  sessionOpeningNotVisible,
+  suspendEnvironment,
+} from "./client";
+import type { TargetHandle } from "../../../sandboxes/environments/environment_service_pb";
 import { ActionPolicySection } from "../actions/policy";
 import { EgressLog } from "./egress";
 import { liveSandboxUrl, sandboxInventoryFresh, useRequiredSandboxesLive, type SandboxSnapshot } from "./live";
@@ -109,7 +119,7 @@ export function SandboxPage({
     setPendingOpen(attempt);
   }
   const [launching, setLaunching] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState<TargetHandle | null>(null);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [threadLimit, setThreadLimit] = useState(200);
 
@@ -173,7 +183,12 @@ export function SandboxPage({
   // No re-read after an action: the change reaches the API server, and the watch behind the
   // stream brings the sandbox's new state back on its own.
   async function act(action: "suspend" | "resume"): Promise<void> {
-    const { error: failure } = await api.POST(`/sandboxes/{name}/${action}`, { params: { path: { name } } });
+    if (!sandbox) return;
+    const target = sandboxTarget(sandbox);
+    const failure = await (action === "resume" ? resumeSandbox(target) : suspendEnvironment(target)).then(
+      () => null,
+      (reason: unknown) => reason
+    );
     setError(failure ? displayableError(failure) : null);
   }
 
@@ -186,8 +201,11 @@ export function SandboxPage({
   }
 
   /** Deleting leaves nothing to look at, so a deleted sandbox takes the view back to the list. */
-  async function remove(): Promise<void> {
-    const { error: failure } = await api.DELETE("/sandboxes/{name}", { params: { path: { name } } });
+  async function remove(target: TargetHandle): Promise<void> {
+    const failure = await deleteEnvironment(target).then(
+      () => null,
+      (reason: unknown) => reason
+    );
     if (!failure) {
       onBack();
       return;
@@ -372,7 +390,7 @@ export function SandboxPage({
                 color="red"
                 leftSection={<IconTrash size={15} />}
                 disabled={!deletable(sandbox)}
-                onClick={() => setConfirmingDelete(true)}
+                onClick={() => sandbox && setConfirmingDelete(sandboxTarget(sandbox))}
               >
                 Delete
                 {!deletable(sandbox) && (
@@ -385,13 +403,14 @@ export function SandboxPage({
           </Menu>
         </TopbarActions>
       )}
-      {confirmingDelete && (
+      {confirmingDelete !== null && (
         <ConfirmDelete
           name={name}
-          onCancel={() => setConfirmingDelete(false)}
+          onCancel={() => setConfirmingDelete(null)}
           onConfirm={() => {
-            setConfirmingDelete(false);
-            void remove();
+            const target = confirmingDelete;
+            setConfirmingDelete(null);
+            void remove(target);
           }}
         />
       )}

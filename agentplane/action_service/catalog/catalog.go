@@ -82,8 +82,6 @@ type OrchestrationBinding struct {
 	Description string
 	// Namespace is where Sandboxes are launched and their launcher grants written.
 	Namespace string
-	// DefaultPolicySets are bound to every Sandbox it launches, beside the ones a launch names.
-	DefaultPolicySets []string
 	// Presets are the reviewed launch presets, a JSON object the executor reads.
 	Presets json.RawMessage
 }
@@ -240,11 +238,10 @@ type podExecutorSettings struct {
 }
 
 type orchestrationExecutorSettings struct {
-	Description       string               `yaml:"description"`
-	Namespace         string               `yaml:"namespace"`
-	DefaultPolicySets []string             `yaml:"default_policy_sets"`
-	Presets           map[string]any       `yaml:"presets"`
-	Unknown           map[string]yaml.Node `yaml:",inline"`
+	Description string               `yaml:"description"`
+	Namespace   string               `yaml:"namespace"`
+	Presets     map[string]any       `yaml:"presets"`
+	Unknown     map[string]yaml.Node `yaml:",inline"`
 }
 
 type sessionDelegationExecutorSettings struct {
@@ -440,15 +437,12 @@ func (s *orchestrationExecutorSettings) binding() (Binding, error) {
 	if s.Namespace == "" {
 		return nil, errors.New("namespace is required")
 	}
-	if slices.Contains(s.DefaultPolicySets, "") {
-		return nil, errors.New("default_policy_sets must name PolicySets")
-	}
 	presets, err := jsonObject(s.Presets)
 	if err != nil {
 		return nil, fmt.Errorf("presets %w", err)
 	}
 	return OrchestrationBinding{
-		Description: s.Description, Namespace: s.Namespace, DefaultPolicySets: s.DefaultPolicySets, Presets: presets,
+		Description: s.Description, Namespace: s.Namespace, Presets: presets,
 	}, nil
 }
 

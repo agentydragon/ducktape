@@ -46,6 +46,13 @@ type UnknownPolicySetError struct {
 	Kind  string
 }
 
+// LauncherPolicySetError identifies policy sets owned by another Sandbox's launcher.
+type LauncherPolicySetError struct{ Names []string }
+
+func (e *LauncherPolicySetError) Error() string {
+	return fmt.Sprintf("PolicySets %s are other Sandboxes' launcher grants", joinNames(e.Names))
+}
+
 func (e *UnknownPolicySetError) Error() string {
 	return fmt.Sprintf("no %s in the namespace is named %s", e.Kind, joinNames(e.Names))
 }

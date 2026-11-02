@@ -1083,19 +1083,19 @@ func TestLiveSandboxStreamFencesSandboxUIDAndDoesNotReadThreads(t *testing.T) {
 	}
 }
 
-func TestEnvironmentWatchRequiresAppCallerAndForwardsOnlyInventory(t *testing.T) {
+func TestEnvironmentFacadeRequiresAppCallerAndForwardsManagementAndWatch(t *testing.T) {
 	authentication := newStreamTestAuth(t)
 	server := NewHTTPServer(authentication)
-	var gotPath string
-	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, _ *http.Request, _ context.Context, path, bearer string) error {
-		gotPath = path
+	var gotPath, gotMethod, gotQuery string
+	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, request *http.Request, _ context.Context, path, bearer string) error {
+		gotPath, gotMethod, gotQuery = path, request.Method, request.URL.RawQuery
 		if bearer != "" {
 			t.Fatalf("unexpected forwarded bearer: %q", bearer)
 		}
 		w.WriteHeader(http.StatusOK)
 		return nil
 	}}
-	RegisterStreamingRoutes(server, StreamingDependencies{DispatcherHTTP: upstream})
+	RegisterStreamingRoutes(server, StreamingDependencies{EnvironmentHTTP: upstream})
 	path := "/upstream/environments/v1/environments:watch"
 	unauthenticated := httptest.NewRecorder()
 	server.Handler(authentication).ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, path, nil))
@@ -1108,5 +1108,19 @@ func TestEnvironmentWatchRequiresAppCallerAndForwardsOnlyInventory(t *testing.T)
 	server.Handler(authentication).ServeHTTP(response, request)
 	if response.Code != http.StatusOK || gotPath != "v1/environments:watch" {
 		t.Fatalf("watch = %d, path = %q", response.Code, gotPath)
+	}
+	for _, methodPath := range []struct{ method, path, wantPath, wantQuery string }{
+		{http.MethodGet, "/upstream/environments/v1/environment-templates", "v1/environment-templates", ""},
+		{http.MethodPost, "/upstream/environments/v1/environments", "v1/environments", ""},
+		{http.MethodDelete, "/upstream/environments/v1/environments/test-envs/workspace?target.uid=selected-uid", "v1/environments/test-envs/workspace", "target.uid=selected-uid"},
+		{http.MethodPatch, "/upstream/environments/v1/environments/test-envs/workspace:idle-suspend", "v1/environments/test-envs/workspace:idle-suspend", ""},
+	} {
+		request := httptest.NewRequest(methodPath.method, methodPath.path, nil)
+		request.Header.Set("Authorization", "Bearer accepted")
+		response := httptest.NewRecorder()
+		server.Handler(authentication).ServeHTTP(response, request)
+		if response.Code != http.StatusOK || gotPath != methodPath.wantPath || gotMethod != methodPath.method || gotQuery != methodPath.wantQuery {
+			t.Fatalf("%s %s = %d, forwarded %s %s?%s", methodPath.method, methodPath.path, response.Code, gotMethod, gotPath, gotQuery)
+		}
 	}
 }

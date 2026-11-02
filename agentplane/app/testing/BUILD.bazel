@@ -212,6 +212,7 @@ py_test(
     srcs = ["test_client.py"],
     deps = [
         ":client",
+        ":models",
         "//:conftest",
         "//agentplane/app:conftest",
         "//agentplane/proto:event_log_pb2",

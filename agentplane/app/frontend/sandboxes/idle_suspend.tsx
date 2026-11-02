@@ -2,7 +2,8 @@ import { NumberInput } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
 import { sandboxIdleSuspendAfterSeconds, type SandboxStatusSource } from "../sandbox_status";
-import { api, displayableError } from "../client";
+import { displayableError } from "../client";
+import { sandboxTarget, setEnvironmentIdleSuspend } from "./client";
 
 const SECONDS_PER_MINUTE = 60;
 
@@ -56,13 +57,10 @@ export function IdleSuspendInput({
     if (draft === idleMinutes(stored)) return;
     setSaving(true);
     const idleSuspendAfterSeconds = idleSeconds(draft);
-    const { error: failure } = await api.PATCH("/sandboxes/{name}/idle-suspend", {
-      params: { path: { name: sandbox.name } },
-      body: {
-        uid: sandbox.uid,
-        ...(idleSuspendAfterSeconds === null ? {} : { idle_suspend_after_seconds: idleSuspendAfterSeconds }),
-      },
-    });
+    const failure = await setEnvironmentIdleSuspend(sandboxTarget(sandbox), idleSuspendAfterSeconds).then(
+      () => null,
+      (reason: unknown) => reason
+    );
     setSaving(false);
     if (failure) setDraft(idleMinutes(stored));
     onError(failure ? displayableError(failure) : null);
