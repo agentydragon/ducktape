@@ -18,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/cosi-project/runtime/pkg/state"
 )
 
 const lifecycleTestTimeout = 10 * time.Second
@@ -56,7 +57,12 @@ func insecureControl() configuration.EnvironmentRuntimeControlConfiguration {
 // The fixture composes production Runtime and Host through their direct coordinator.
 func newLifecycleRunner(t *testing.T, config runtimeTestConfig) *Runtime {
 	t.Helper()
-	r, err := newRuntime(config.Config, nil, config.deps)
+	return newLifecycleRunnerWithState(t, config, nil)
+}
+
+func newLifecycleRunnerWithState(t *testing.T, config runtimeTestConfig, store state.State) *Runtime {
+	t.Helper()
+	r, err := newRuntime(config.Config, store, config.deps)
 	if err != nil {
 		t.Fatal(err)
 	}

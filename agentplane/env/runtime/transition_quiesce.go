@@ -95,12 +95,22 @@ func (c *runtimeTransitionSequence) runQuiesceBarrier(ctx context.Context, kind 
 		if !plan.currentReport {
 			return runtimeTransitionOutcome{quiesce: &plan}, nil
 		}
-		if _, err := plan.host.client.BoundContext(ctx, plan.binding); err != nil {
-			return runtimeTransitionOutcome{}, status.Errorf(codes.Unavailable, "authorize Harness Host quiesce status: %v", err)
+		// This reads the shared COSI store, not Host admission. Keep the exact
+		// connection and binding gates across both reads. Host admission readiness
+		// may briefly clear while it applies the same intent.
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if failure := r.failureLocked(); failure != nil {
+			return runtimeTransitionOutcome{}, failure
 		}
-		// Host GetStatus derives its lifecycle error from these same shared COSI
-		// resources. Read only the generation bound by the seal barrier instead
-		// of assembling an unrelated Host session/process status response.
+		if r.host == nil || r.host != plan.host || !r.host.connected || r.host.client == nil || r.intent == nil ||
+			plan.binding == nil || !proto.Equal(r.intent.Binding, plan.binding) ||
+			plan.binding.RuntimeBootId != r.bootID || plan.binding.HostBootId != r.host.bootID ||
+			!r.host.client.RuntimeConnectionMatches(r.bootID, r.host.bootID) {
+			return runtimeTransitionOutcome{}, status.Error(codes.Unavailable, "Harness Host quiesce status binding is no longer current")
+		}
+		// These resources carry the Host lifecycle error. Read only the
+		// generation bound by the seal barrier.
 		desired, desiredFound, err := lifecycle.ReadDesired(ctx, r.lifecycleState)
 		if err != nil {
 			return runtimeTransitionOutcome{}, status.Errorf(codes.Unavailable, "read Harness Host desired state: %v", err)
