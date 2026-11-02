@@ -142,6 +142,156 @@ fn atom_split_reports_both_destinations_and_writes_the_same_artifact() {
 }
 
 #[test]
+fn atom_split_also_writes_current_cycles_for_gate_queries() {
+    let fixture = GraphFixture::new(
+        "const alpha = beta;\nconst beta = alpha;\n",
+        &[(
+            "home/atom.yaml",
+            "members: [{selector: {binding: {name: alpha}}}, {selector: {binding: {name: beta}}}]\n",
+        )],
+    );
+    let out = fixture.command(&[
+        "bindings",
+        "assign",
+        "alpha:dogfood/split",
+        "--format",
+        "json",
+    ]);
+    assert!(!out.status.success());
+    let report = parse_stdout_json(&out);
+    assert_eq!(report["rejection"]["kind"], "atom_split");
+
+    let atomic_path = fixture.graph.with_file_name("atomic_group_conflicts.json");
+    let cycles_path = fixture.graph.with_file_name("cycles.json");
+    let atomic: Value = read_json(&atomic_path);
+    let cycles: Value = read_json(&cycles_path);
+    assert_eq!(atomic.as_array().unwrap().len(), 1, "{atomic}");
+    assert_eq!(cycles.as_array().unwrap().len(), 1, "{cycles}");
+
+    let listed = run_debundle(&[
+        "gate",
+        "list",
+        "--graph",
+        fixture.graph.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    assert!(
+        listed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&listed.stderr)
+    );
+    let listed = parse_stdout_json(&listed);
+    assert_eq!(
+        listed["blocking_sccs"].as_array().unwrap().len(),
+        1,
+        "{listed}"
+    );
+
+    let described = run_debundle(&[
+        "gate",
+        "describe",
+        "0",
+        "--graph",
+        fixture.graph.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    assert!(
+        described.status.success(),
+        "{}",
+        String::from_utf8_lossy(&described.stderr)
+    );
+    let described = parse_stdout_json(&described);
+    assert_eq!(
+        described["modules"].as_array().unwrap().len(),
+        2,
+        "{described}"
+    );
+    assert!(
+        described["evidence"].as_array().unwrap().is_empty(),
+        "the stored graph still has the original co-located assignment; the candidate cut is stored in cycles.json: {described}"
+    );
+    assert_eq!(described["modules"], cycles[0]["modules"], "{described}");
+    assert_eq!(described["cut"], cycles[0]["cut"], "{described}");
+    assert!(
+        !described["cut"].as_array().unwrap().is_empty(),
+        "{described}"
+    );
+    assert!(
+        described["modules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|module| module == "dogfood/split"),
+        "describe must expose the rejected candidate's destination: {described}"
+    );
+}
+
+#[test]
+fn completed_edit_results_replace_both_rejection_artifacts() {
+    let fixture = GraphFixture::new(
+        "const beta = 1;\nconst gamma = beta + 1;\nconst alpha = gamma + 1;\nconst left = right;\nconst right = left;\n",
+        &[
+            (
+                "a.yaml",
+                "members: [{selector: {binding: {name: alpha}}}]\n",
+            ),
+            ("b.yaml", "members: [{selector: {binding: {name: beta}}}]\n"),
+            (
+                "c.yaml",
+                "members: [{selector: {binding: {name: gamma}}}]\n",
+            ),
+            (
+                "home/atom.yaml",
+                "members: [{selector: {binding: {name: left}}}, {selector: {binding: {name: right}}}]\n",
+            ),
+        ],
+    );
+    let cycles_path = fixture.graph.with_file_name("cycles.json");
+    let atomic_path = fixture.graph.with_file_name("atomic_group_conflicts.json");
+
+    let atom_split = fixture.command(&[
+        "bindings",
+        "assign",
+        "left:dogfood/split",
+        "--format",
+        "json",
+    ]);
+    assert!(!atom_split.status.success());
+    assert_eq!(
+        parse_stdout_json(&atom_split)["rejection"]["kind"],
+        "atom_split"
+    );
+    assert!(cycles_path.exists());
+    assert!(atomic_path.exists());
+    let atom_cycle: Value = read_json(&cycles_path);
+
+    let cycle_only = fixture.command(&[
+        "modules", "merge", "--target", "a.yaml", "b.yaml", "--format", "json",
+    ]);
+    assert!(!cycle_only.status.success());
+    assert_eq!(
+        parse_stdout_json(&cycle_only)["rejection"]["kind"],
+        "unrealizable_cycles"
+    );
+    assert!(cycles_path.exists());
+    assert!(
+        !atomic_path.exists(),
+        "the completed cycle-only result must replace the earlier atom-split report"
+    );
+    let cycle_only_report: Value = read_json(&cycles_path);
+    assert_ne!(
+        atom_cycle[0]["modules"], cycle_only_report[0]["modules"],
+        "the second report must describe its new assignment"
+    );
+
+    fixture.assert_success(&["modules", "merge", "--target", "a.yaml", "c.yaml"]);
+    assert!(!cycles_path.exists());
+    assert!(!atomic_path.exists());
+}
+
+#[test]
 fn merge_cycle_report_drives_gate_list_then_a_passing_edit_clears_it() {
     let fixture = GraphFixture::dependency_chain();
     let out = fixture.command(&[

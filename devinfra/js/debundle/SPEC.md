@@ -105,6 +105,16 @@ selects full graphs independently of diagnostic detail and effect-conflict
 streams. Both selections retain all analysis facts, generated edges, premises,
 gate/TV checks and final reconstructed-program validation.
 
+For a rejected assignment, `atomic_group_conflicts.json` and `cycles.json` are
+each emitted when their corresponding evidence is nonempty, and may coexist.
+An atomic-group conflict remains the primary gate verdict when both are present;
+the cycle report is secondary evidence. `graph_summary.json` records both
+counts. A missing `cycles.json` means zero blocking SCCs only when the current
+report set completed successfully. Edit-gate writers apply the same report
+selection to the post-edit assignment and replace prior rejection artifacts
+after graph, assignment and shared validation complete. A preflight error leaves
+the last completed gate result intact.
+
 `--reports-only <OUT_ROOT>` requires `--analysis` and writes reports without
 program/browser/vendor output. It follows the same canonical materializer and
 final validator; it cannot turn a rejected program into success. It conflicts
@@ -121,10 +131,12 @@ rejection. It writes no JavaScript. Other failures still fail the action.
 
 `debundle run --emit-on-rejection` changes only what a realizability-gate
 rejection writes; it is mutually exclusive with `--dry-run`. The selector pass,
-the gate and its evidence reports (`cycles.json` / `atomic_group_conflicts.json`
-under `reports/tree/<chunk>/`, plus explicitly selected full graphs) are unchanged,
-and the run still exits nonzero with the gate's diagnostic. An accepted spec
-produces exactly the output it produces without the flag.
+the gate and its evidence reports under `reports/tree/<chunk>/`, plus explicitly
+selected full graphs, are unchanged, and the run still exits nonzero with the
+gate's primary diagnostic. When an atomic conflict and blocking SCC coexist,
+both existing evidence files are written while the atomic conflict remains
+primary. An accepted spec produces exactly the output it produces without the
+flag.
 
 The run exits 3 exactly when the gate's rejection is its only failure and the
 marked tree below is complete; every other failure exits 1. A gate rejection

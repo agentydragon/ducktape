@@ -54,11 +54,8 @@ pub struct GateArgs {
 enum GateCommand {
     /// List every blocking SCC. One row per entry in `cycles.json`.
     ///
-    /// A missing `cycles.json` is the clean state — the pipeline and
-    /// the edit gate write it only on rejection, and a passing edit
-    /// gate clears a stale one — so it reports zero blocking SCCs
-    /// (`[]`) and exits 0, distinct from a present-but-malformed file
-    /// (which errors).
+    /// A missing `cycles.json` loads as zero entries. It means the current
+    /// assignment is clean only when the corresponding report set completed.
     List(GateListArgs),
     /// Full picture for one blocking SCC: modules, cut, recomputed evidence.
     ///
@@ -909,15 +906,12 @@ fn load_cycles(common: &GateCommonArgs) -> Result<Vec<BlockingSccEntry>> {
     load_blocking_sccs(&common.resolved_cycles_path()?)
 }
 
-/// The blocking SCCs of a `cycles.json`; an absent file is the clean state.
+/// The blocking SCCs in a `cycles.json`; an absent file loads as empty.
 pub(crate) fn load_blocking_sccs(path: &Path) -> Result<Vec<BlockingSccEntry>> {
-    // The pipeline writes `cycles.json` only when the gate rejects, so
-    // its absence is the clean state: zero blocking SCCs. Returning an
-    // empty list (rather than a read error) makes `gate list` on a
-    // realizable spec print `[]` / "0 blocking SCC(s)" and exit 0,
-    // distinguishable from a present-but-malformed file (which still
-    // errors below). `gate describe` / `gate cut` then report
-    // "no blocking SCC with id N (found 0 entries)" for any id.
+    // The pipeline and edit gate write `cycles.json` whenever the current
+    // assignment has blocking SCCs. An absent file still loads as empty, but
+    // callers can treat that as a clean result only for a complete current
+    // report set. A present-but-malformed file remains an error below.
     if !path.exists() {
         return Ok(Vec::new());
     }

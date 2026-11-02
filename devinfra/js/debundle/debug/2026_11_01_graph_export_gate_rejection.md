@@ -30,15 +30,23 @@ The route is in `pipeline.bzl` (`DebundleExportGraphs` and
 marker emission and typed exit 3. `lowering/mod.rs` aggregates the per-chunk
 results; detailed report selection is in `lowering/materialize/mod.rs`.
 
-## Remaining evidence limit
+## Public cycle-report reproduction
 
-A canonical summary reported both one atomic-group conflict and two cycles,
-while only `atomic_group_conflicts.json` was present. The gate report writer
-selects the atomic-conflict report ahead of the cycle report; an absent
-`cycles.json` therefore does not mean a zero cycle count. This change preserves
-the exact summary and existing detailed-report behavior. Exporting both detailed
-reports is a separate follow-up if spec authors need the secondary witness set.
+A neutral fixture with `const alpha = beta; const beta = alpha;` assigned to two
+modules produces one atomic-group conflict and one blocking SCC. Both the run
+pipeline and a rejected edit now write the existing `atomic_group_conflicts.json`
+and `cycles.json` shapes. The atomic conflict remains the verdict and primary
+diagnostic. `gate list` and `gate describe` can read the cycle report beside the
+atomic report; a missing cycle file means zero blocking SCCs only for a complete
+current report set. The edit gate replaces earlier rejection artifacts after
+graph, assignment and shared validation complete, while a preflight error keeps
+the last completed gate result. For an edit-gate report, `gate describe` returns
+the stored candidate modules and cut, while graph-derived `evidence` is
+recomputed from the saved dependency graph's original module destinations. In
+the neutral edit fixture those destinations still contain both bindings, so
+the candidate cut is present and recomputed evidence is empty. The run-pipeline
+fixture has a graph and report for the same assignment and retains nonempty
+recomputed evidence.
 
-The change was not run against the private canonical corpus. The delegated
-scope prohibited tests, builds and corpus jobs; hosted PR CI remains the next
-runtime validation.
+The neutral CLI regressions run on RBE. A downstream private corpus is not part
+of this public fixture and remains the separate integration proof.
