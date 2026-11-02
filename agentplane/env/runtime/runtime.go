@@ -83,7 +83,6 @@ type executionHandle interface {
 type hostLink struct {
 	bootID    string
 	client    *harnesshost.Runner
-	peer      hostLifecyclePeer
 	connected bool
 }
 
@@ -291,9 +290,6 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 		return err
 	}
 	if err := engine.RegisterController(&hostReportObserver{runtime: r}); err != nil {
-		return err
-	}
-	if err := engine.RegisterController(&hostIntentController{runtime: r}); err != nil {
 		return err
 	}
 	if r.executionLifecycle != nil {
@@ -718,6 +714,7 @@ func (r *Runtime) changedLocked() {
 func (r *Runtime) intentChangedLocked() {
 	if err := r.publishHostIntentLocked(); err != nil {
 		r.failed = true
+		r.revokeHostConnectionLocked()
 		if r.failureErr == nil {
 			r.failureErr = err
 		}
@@ -738,6 +735,7 @@ func (r *Runtime) fail(err error) {
 		r.failureErr = err
 	}
 	r.failed = true
+	r.revokeHostConnectionLocked()
 	r.changedLocked()
 	r.mu.Unlock()
 	select {

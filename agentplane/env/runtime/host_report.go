@@ -20,7 +20,7 @@ func (*hostReportObserver) Name() string { return "environment-host-report-obser
 func (*hostReportObserver) Inputs() []controller.Input {
 	return []controller.Input{
 		{Namespace: lifecycle.Namespace, Type: lifecycle.HostReportType, Kind: controller.InputWeak},
-		{Namespace: lifecycle.Namespace, Type: hostIntentStatusType, Kind: controller.InputWeak},
+		{Namespace: lifecycle.Namespace, Type: lifecycle.HostIntentStatusType, Kind: controller.InputWeak},
 	}
 }
 func (*hostReportObserver) Outputs() []controller.Output { return nil }
@@ -34,9 +34,7 @@ func (c *hostReportObserver) Run(ctx context.Context, engine controller.Runtime,
 		r := c.runtime
 		r.mu.Lock()
 		report := r.hostReportLocked()
-		if report != nil {
-			r.changedLocked()
-		}
+		r.changedLocked()
 		var fenceBinding *runtimepb.Binding
 		if report != nil && report.Ready && report.NativeStopped && r.intent != nil && !r.intent.ExecutionFenced &&
 			(r.intent.Mode == runtimepb.LifecycleIntent_QUIESCING || r.intent.Mode == runtimepb.LifecycleIntent_CLOSING) {
@@ -67,6 +65,7 @@ func (r *Runtime) hostReportLocked() *runtimepb.HostReport {
 	current, found, err := cosi.Read(context.Background(), r.lifecycleState, lifecycle.HostReportResource(lifecycle.HostReport{}))
 	if err != nil {
 		r.failed = true
+		r.revokeHostConnectionLocked()
 		if r.failureErr == nil {
 			r.failureErr = fmt.Errorf("read Host report: %w", err)
 		}
@@ -81,9 +80,10 @@ func (r *Runtime) hostReportLocked() *runtimepb.HostReport {
 		!proto.Equal(current.Report.Binding, r.intent.Binding) {
 		return nil
 	}
-	applied, _, err := cosi.Read(context.Background(), r.lifecycleState, hostIntentStatusResource(hostIntentStatus{}))
+	applied, _, err := cosi.Read(context.Background(), r.lifecycleState, lifecycle.HostIntentStatusResource(lifecycle.HostIntentStatus{}))
 	if err != nil {
 		r.failed = true
+		r.revokeHostConnectionLocked()
 		if r.failureErr == nil {
 			r.failureErr = fmt.Errorf("read Host intent status: %w", err)
 		}
@@ -94,7 +94,7 @@ func (r *Runtime) hostReportLocked() *runtimepb.HostReport {
 		}
 		return nil
 	}
-	if !applied.Applied || applied.Intent != intentValue(r.intent) {
+	if !applied.Applied || applied.Intent != lifecycle.HostIntentFromProto(r.intent) {
 		return nil
 	}
 	return current.Report
