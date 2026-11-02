@@ -29,10 +29,10 @@ from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.artifacts import Runner
 from devinfra.pr_visuals.check_run import upsert_check_run
 from devinfra.pr_visuals.collection import OutputObservation, ResultKey, collect_outputs
-from devinfra.pr_visuals.gallery import _review_test_page_data, _templates
+from devinfra.pr_visuals.gallery import review_test_page_data, templates
 from devinfra.pr_visuals.github_comment import (
     COMMENT_MARKER,
-    _ci_failure_summary,
+    ci_failure_summary,
     error_comment_body,
     no_visual_comment_body,
     success_comment_body,
@@ -50,7 +50,7 @@ from devinfra.pr_visuals.metadata import (
     ReviewVariant,
 )
 from devinfra.pr_visuals.pull_request import find_reviewable_pull_request
-from devinfra.pr_visuals.render_common import _image_key, _ordered_assets, _test_impact_key, _totals
+from devinfra.pr_visuals.render_common import classification_totals, ordered_assets, shared_image_key, test_impact_key
 from util.visual_diff import compare_pngs
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
@@ -504,7 +504,7 @@ def _pick_preview(assets: list[ReviewAsset]) -> ReviewAsset | None:
     (a target whose assets are all new — e.g. its first publish, or a PR that only adds fixtures
     to an existing target — otherwise gets no thumbnail at all).
     """
-    ordered = _ordered_assets(assets)
+    ordered = ordered_assets(assets)
     return next(
         (asset for asset in ordered if asset.classification == "unstable"),
         next(
@@ -547,7 +547,7 @@ def _classify_test_assets(
     def materialize_baseline(asset: ReviewAsset, path: str) -> Path:
         if asset.candidate_sha256 is None:
             raise ValueError(f"{test.target_label}: baseline has no image digest for {asset.case_id!r}")
-        body = baseline_source.fetch(_image_key(asset.candidate_sha256))
+        body = baseline_source.fetch(shared_image_key(asset.candidate_sha256))
         if body is None:
             raise ValueError(f"{test.target_label}: missing baseline image {asset.candidate_sha256}")
         if hashlib.sha256(body).hexdigest() != asset.candidate_sha256:
@@ -606,7 +606,7 @@ def _share_png(image: Path, output_root: Path, *, known_digest: str | None = Non
     if not image.is_file():
         return None
     digest = known_digest or hashlib.sha256(image.read_bytes()).hexdigest()
-    destination = output_root / _image_key(digest)
+    destination = output_root / shared_image_key(digest)
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
         if hashlib.sha256(destination.read_bytes()).hexdigest() != digest:
@@ -632,7 +632,7 @@ def build_bundle(
         raise ValueError("cannot build a visual-review bundle without tests")
 
     bundle = output_root / REVIEW_PREFIX / commit_sha
-    environment = _templates()
+    environment = templates()
     bundle.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(__file__).with_name("gallery.css"), bundle / "gallery.css")
     shutil.copyfile(Path(__file__).with_name("gallery_sort.js"), bundle / "gallery_sort.js")
@@ -712,7 +712,7 @@ def build_bundle(
             preview=_pick_preview(assets) if base_sha else None,
         )
         (target_dir / "metadata.json").write_text(review_test.model_dump_json(indent=2, exclude_none=True) + "\n")
-        page = _review_test_page_data(review_test, asset_base="", page_url="", shared_asset_base="../../../../")
+        page = review_test_page_data(review_test, asset_base="", page_url="", shared_asset_base="../../../../")
         (target_dir / "index.html").write_text(
             environment.get_template("pr_visual_test.html.j2").render(
                 repository=repository,
@@ -728,10 +728,10 @@ def build_bundle(
     metadata = ReviewBundleMetadata(repository=repository, commit_sha=commit_sha, tests=review_tests)
     (bundle / "metadata.json").write_text(metadata.model_dump_json(indent=2, exclude_none=True) + "\n")
     page_tests = [
-        _review_test_page_data(
+        review_test_page_data(
             test, asset_base=f"tests/{test.slug}/", page_url=f"tests/{test.slug}/index.html", shared_asset_base="../../"
         )
-        for test in sorted(review_tests, key=_test_impact_key)
+        for test in sorted(review_tests, key=test_impact_key)
     ]
     (bundle / "index.html").write_text(
         environment.get_template("pr_visuals.html.j2").render(
@@ -742,7 +742,7 @@ def build_bundle(
 
 
 def _upload_shared_image(s3: Any, *, bundle: Path, bucket: str, digest: str, cache_control: str) -> None:
-    image_key = _image_key(digest)
+    image_key = shared_image_key(digest)
     try:
         s3.head_object(Bucket=bucket, Key=image_key)
         return
@@ -884,7 +884,7 @@ def diff_check(review_tests: list[ReviewTest]) -> tuple[Literal["success", "neut
     compared = [test for test in review_tests if test.summary is not None]
     if not compared:
         return None
-    totals = _totals(review_tests)
+    totals = classification_totals(review_tests)
     summary = (
         f"{totals.modified} modified, {totals.new} new, {totals.removed} removed, "
         f"{totals.unchanged} unchanged, {totals.unstable} unstable."
@@ -1004,7 +1004,7 @@ def main() -> None:
             with Path(github_output).open("a") as output:
                 output.write(f"found={'true' if tests else 'false'}\n")
         if not tests:
-            summary += _ci_failure_summary(args.ci_conclusion, ci_failures)
+            summary += ci_failure_summary(args.ci_conclusion, ci_failures)
             no_visual_body = no_visual_comment_body(
                 repository=args.repository,
                 commit_sha=args.sha,
@@ -1045,7 +1045,7 @@ def main() -> None:
             )
         public_url = f"{args.public_base_url.rstrip('/')}/{REVIEW_PREFIX}/{args.sha}/"
         if base_sha:
-            totals = _totals(review_tests)
+            totals = classification_totals(review_tests)
             summary = (
                 f"{len(tests)} target{'s' if len(tests) != 1 else ''} · {totals.modified} modified, "
                 f"{totals.new} new, {totals.removed} removed, {totals.unchanged} unchanged, "
@@ -1063,7 +1063,7 @@ def main() -> None:
             ci_failures=ci_failures,
             ci_details_url=args.ci_details_url or workflow_url,
         )
-        summary += _ci_failure_summary(args.ci_conclusion, ci_failures)
+        summary += ci_failure_summary(args.ci_conclusion, ci_failures)
         if incomplete := sum(1 for test in review_tests if test.issues):
             summary += f" {incomplete} target(s) have incomplete or non-comparable results."
         conclusion = "neutral" if any(test.issues for test in review_tests) else "success"
@@ -1089,7 +1089,7 @@ def main() -> None:
             ci_failures=ci_failures,
             ci_details_url=args.ci_details_url or workflow_url,
         )
-        summary = str(error) + _ci_failure_summary(args.ci_conclusion, ci_failures)
+        summary = str(error) + ci_failure_summary(args.ci_conclusion, ci_failures)
         conclusion = "failure"
         raise
     finally:

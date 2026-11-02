@@ -5,12 +5,12 @@ import urllib.parse
 
 from devinfra.pr_visuals.metadata import ClassificationCounts, ReviewAsset, ReviewIssue, ReviewTest
 from devinfra.pr_visuals.render_common import (
-    _asset_page_data,
-    _buildbuddy_url,
-    _ordered_assets,
-    _shard_ranges,
-    _test_impact_key,
-    _totals,
+    asset_page_data,
+    buildbuddy_url,
+    classification_totals,
+    ordered_assets,
+    shard_ranges,
+    test_impact_key,
 )
 
 COMMENT_MARKER = "<!-- pr-visuals -->"
@@ -25,10 +25,10 @@ def _issue_comment_html(issue: ReviewIssue) -> str:
     if source is None:
         return message
     shard_label = "shard" if len(source.shards) == 1 else "shards"
-    details = f"{shard_label} {_shard_ranges(source.shards)} · run {source.run or 'unknown'} · attempt {source.attempt or 'unknown'}"
+    details = f"{shard_label} {shard_ranges(source.shards)} · run {source.run or 'unknown'} · attempt {source.attempt or 'unknown'}"
     if source.configuration:
         details += f" · config {source.configuration[:8]}"
-    url = _buildbuddy_url(source.invocation)
+    url = buildbuddy_url(source.invocation)
     return f'{message} ({html.escape(details)}) · <a href="{html.escape(url, quote=True)}">BuildBuddy</a>'
 
 
@@ -48,7 +48,7 @@ def stale_baseline_note(test: ReviewTest) -> str:
 def _asset_comment_lines(
     asset: ReviewAsset, *, asset_base: str, gallery_url: str, test: ReviewTest, include_heading: bool = True
 ) -> list[str]:
-    urls = _asset_page_data(
+    urls = asset_page_data(
         asset,
         asset_base=asset_base,
         page_url=gallery_url,
@@ -56,8 +56,9 @@ def _asset_comment_lines(
     )
     anchor = html.escape(f"{gallery_url}#{urllib.parse.quote(asset.path, safe='/')}", quote=True)
     label = f'<a href="{anchor}">{html.escape(asset.label)}</a>'
-    stale = f" · ⚠️ stale baseline ({stale_baseline_note(test)})" if asset.baseline_stale else ""
-    stale_heading = [f"<p>⚠️ stale baseline ({stale_baseline_note(test)})</p>", ""] if asset.baseline_stale else []
+    warning = f"⚠️ stale baseline ({stale_baseline_note(test)})" if asset.baseline_stale else ""
+    stale = f" · {warning}" if warning else ""
+    stale_heading = [f"<p>{warning}</p>", ""] if warning else []
     if asset.classification == "unstable":
         heading = [f"<p><strong>{label}</strong> · unstable across runs</p>", ""] if include_heading else []
         return [*heading, *(f"- {_preview_img(v['url'], asset.label)}" for v in urls["variants"])]
@@ -102,7 +103,7 @@ def _target_section(test: ReviewTest, *, url: str, open_section: bool, ci_detail
     counts = test.summary or ClassificationCounts()
     assets = [
         asset
-        for asset in _ordered_assets(test.assets)
+        for asset in ordered_assets(test.assets)
         if asset.classification in {"modified", "new", "removed", "unstable"}
     ]
     largest_change = max(
@@ -175,7 +176,7 @@ def _with_target_sections(
     head: list[str], review_tests: list[ReviewTest], url: str, *, ci_details_url: str | None
 ) -> str:
     changed = [test for test in review_tests if test.summary and not _is_unchanged(test)]
-    changed.sort(key=_test_impact_key)
+    changed.sort(key=test_impact_key)
     unchanged = _unchanged_section(review_tests, url=url)
     lines = [*head, "### Changed tests", ""]
     omitted = 0
@@ -239,7 +240,7 @@ def _ci_failure_notice(ci_conclusion: str, ci_failures: list[str]) -> list[str]:
     return lines
 
 
-def _ci_failure_summary(ci_conclusion: str, ci_failures: list[str]) -> str:
+def ci_failure_summary(ci_conclusion: str, ci_failures: list[str]) -> str:
     if ci_conclusion == "success":
         return ""
     if ci_failures:
@@ -309,7 +310,7 @@ def success_comment_body(
         )
         return "\n".join(lines)
 
-    totals = _totals(review_tests)
+    totals = classification_totals(review_tests)
     if totals.modified == totals.new == totals.removed == totals.unstable == 0 and not any(
         t.issues for t in review_tests
     ):

@@ -7,7 +7,7 @@ from typing import Any, Literal
 from devinfra.pr_visuals.metadata import ClassificationCounts, ReviewAsset, ReviewTest
 
 
-def _shard_ranges(shards: list[int | None]) -> str:
+def shard_ranges(shards: list[int | None]) -> str:
     numbers = sorted({shard for shard in shards if shard is not None})
     ranges: list[str] = []
     start = end = 0
@@ -23,7 +23,7 @@ def _shard_ranges(shards: list[int | None]) -> str:
     return ", ".join(ranges)
 
 
-def _ordered_assets(assets: list[ReviewAsset]) -> list[ReviewAsset]:
+def ordered_assets(assets: list[ReviewAsset]) -> list[ReviewAsset]:
     """Put changed screenshots first and sort each class by review impact."""
     classification_order = {"unstable": 0, "modified": 1, "new": 2, "removed": 3, "unchanged": 4, None: 5}
     return sorted(
@@ -37,7 +37,7 @@ def _ordered_assets(assets: list[ReviewAsset]) -> list[ReviewAsset]:
     )
 
 
-def _image_key(digest: str) -> str:
+def shared_image_key(digest: str) -> str:
     return f"assets/{digest}.png"
 
 
@@ -48,17 +48,17 @@ def _asset_url(
         variant
     ]
     if digest is not None:
-        return f"{shared_asset_base}{_image_key(digest)}"
+        return f"{shared_asset_base}{shared_image_key(digest)}"
     prefix = {"candidate": "", "baseline": "baseline/", "diff": "diff/"}[variant]
     return f"{asset_base}{prefix}{urllib.parse.quote(asset.path, safe='/')}"
 
 
-def _asset_page_data(asset: ReviewAsset, *, asset_base: str, page_url: str, shared_asset_base: str) -> dict[str, Any]:
+def asset_page_data(asset: ReviewAsset, *, asset_base: str, page_url: str, shared_asset_base: str) -> dict[str, Any]:
     path = urllib.parse.quote(asset.path, safe="/")
     return {
         **asset.model_dump(exclude_none=True),
         "candidate_url": (
-            f"{shared_asset_base}{_image_key(asset.variants[0].sha256)}"
+            f"{shared_asset_base}{shared_image_key(asset.variants[0].sha256)}"
             if asset.candidate_sha256 is None and asset.variants
             else _asset_url(asset_base, asset, "candidate", shared_asset_base=shared_asset_base)
         ),
@@ -66,13 +66,13 @@ def _asset_page_data(asset: ReviewAsset, *, asset_base: str, page_url: str, shar
         "diff_url": _asset_url(asset_base, asset, "diff", shared_asset_base=shared_asset_base),
         "anchor_url": f"{page_url}#{path}",
         "variants": [
-            {**variant.model_dump(), "url": f"{shared_asset_base}{_image_key(variant.sha256)}"}
+            {**variant.model_dump(), "url": f"{shared_asset_base}{shared_image_key(variant.sha256)}"}
             for variant in asset.variants
         ],
     }
 
 
-def _test_impact_key(test: ReviewTest) -> tuple[float, int, str]:
+def test_impact_key(test: ReviewTest) -> tuple[float, int, str]:
     changed = [asset for asset in test.assets if asset.classification in {"modified", "new", "removed", "unstable"}]
     largest_change = max(
         (asset.changed_fraction or 0.0 for asset in changed if asset.classification == "modified"), default=0.0
@@ -80,7 +80,7 @@ def _test_impact_key(test: ReviewTest) -> tuple[float, int, str]:
     return (-largest_change, -len(changed), test.target_label)
 
 
-def _totals(review_tests: list[ReviewTest]) -> ClassificationCounts:
+def classification_totals(review_tests: list[ReviewTest]) -> ClassificationCounts:
     totals: Counter[str] = Counter()
     for test in review_tests:
         if test.summary is not None:
@@ -88,5 +88,5 @@ def _totals(review_tests: list[ReviewTest]) -> ClassificationCounts:
     return ClassificationCounts(**totals)
 
 
-def _buildbuddy_url(invocation: str) -> str:
+def buildbuddy_url(invocation: str) -> str:
     return f"https://app.buildbuddy.io/invocation/{urllib.parse.quote(invocation, safe='')}"
