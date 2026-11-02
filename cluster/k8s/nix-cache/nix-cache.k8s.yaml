@@ -155,19 +155,6 @@ spec:
     name: barman-cloud.cloudnative-pg.io
   schedule: 0 54 1 * * *
 ---
-apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Identity
-metadata:
-  annotations:
-    description: attic's NAR chunks; replicated per volume by the SeaweedFS cluster's defaultReplication.
-  name: attic
-  namespace: nix-cache
-spec:
-  reclaimPolicy: Delete
-  seaweedRef:
-    name: seaweedfs
-    namespace: seaweedfs
----
 apiVersion: v1
 kind: Service
 metadata:
