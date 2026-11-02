@@ -50,6 +50,7 @@ js_library(
     name = "fake_daemon",
     testonly = True,
     srcs = ["fake-daemon.js"],
+    deps = ["//util/testing:gnome_fake_daemon_js"],
 )
 
 eslint_test(
@@ -75,11 +76,11 @@ py_test(
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:gnome",
+        "//util/testing:gnome_fake_daemon",
         "//util/testing:output_writer",
         "//util/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//testcontainers",
     ],
 )
 

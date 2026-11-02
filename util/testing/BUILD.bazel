@@ -1,6 +1,8 @@
 # gazelle:resolve py _pytest.fixtures @pypi//pytest
 """Testing utility libraries."""
 
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/lint:linters.bzl", "eslint_test")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_testonly = True)
@@ -202,11 +204,15 @@ py_test(
 py_library(
     name = "gnome",
     srcs = ["gnome.py"],
+    data = [":gnome_fake_daemon_js"],
     visibility = ["//visibility:public"],
     deps = [
         ":output_writer",
+        ":undeclared_outputs",
+        "//util/bazel:runfiles",
         "@pypi//docker",
         "@pypi//pillow",
+        "@pypi//testcontainers",
     ],
 )
 
@@ -261,5 +267,26 @@ py_library(
         ":output_writer",
         ":undeclared_outputs",
         "@pypi//pytest",
+    ],
+)
+
+js_library(
+    name = "gnome_fake_daemon_js",
+    srcs = ["gnome-fake-daemon.js"],
+    visibility = ["//visibility:public"],
+)
+
+eslint_test(
+    name = "gnome_fake_daemon_lint",
+    srcs = [":gnome_fake_daemon_js"],
+)
+
+py_library(
+    name = "gnome_fake_daemon",
+    srcs = ["gnome_fake_daemon.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":gnome",
+        ":undeclared_outputs",
     ],
 )

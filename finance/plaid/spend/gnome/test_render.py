@@ -8,26 +8,21 @@ popup. No Plaid credentials, accounts, or live service are used.
 
 from __future__ import annotations
 
-import ast
 import json
-import re
-import shlex
-import time
 import zipfile
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 import pytest_bazel
-from testcontainers.core.container import DockerContainer
 
 from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
-from util.testing.gnome import GnomeMenuCapture, GnomeSession, exec_output
+from util.testing.gnome import GnomeMenuCapture, GnomeSession, gnome_session, string_reply, wait_until
+from util.testing.gnome_fake_daemon import fake_daemon
 from util.testing.output_writer import BoundTestOutputs
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 _GNOME_SHELL_TEST = OciImage("_main/gnome/test_image/gnome_shell_test.rloc", "gnome-shell-test:pinned")
 _EXTENSION_ZIP = "_main/finance/plaid/spend/gnome/plaid-spend-desktop.zip"
@@ -83,79 +78,19 @@ def fixture_json_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def session(
     gnome_shell_test_image: str, extension_dir: Path, fixture_json_dir: Path, tmp_path_factory: pytest.TempPathFactory
 ) -> Iterator[GnomeSession]:
-    """Share one Xvfb, D-Bus bus, and GNOME Shell process across all fixtures."""
-    output_dir = tmp_path_factory.mktemp("plaid-spend-renders")
-    output_dir.chmod(0o777)
-
-    container = DockerContainer(gnome_shell_test_image)
-    container.with_volume_mapping(str(extension_dir), f"/usr/share/gnome-shell/extensions/{_EXTENSION_UUID}", "ro")
-    container.with_volume_mapping(str(fixture_json_dir), "/fixtures", "ro")
-    container.with_volume_mapping(str(get_required_path(_FAKE_DBUS_SERVICE)), "/fake-daemon.js", "ro")
-    container.with_volume_mapping(str(output_dir), "/out", "rw")
-
-    with container:
-        session = GnomeSession(
-            container.get_wrapped_container(),
-            screenshot_dir=output_dir,
-            extension=_EXTENSION_UUID,
-            destination=_TEST_DBUS_DEST,
-            object_path=_TEST_DBUS_PATH,
-        )
-        try:
-            session.boot()
-            session.start(environment={"PLAID_SPEND_TEST": "1", "PLAID_SPEND_TEST_NOW": "2026-10-15T12:00:00.000Z"})
-            session.wait_for_paint()
-            _assert_no_plaid_extension_error(session)
-        except AssertionError, TimeoutError, RuntimeError:
-            session.save_log(undeclared_outputs_dir() / "startup.shell.log")
-            raise
-        try:
-            yield session
-        finally:
-            try:
-                session.save_log(undeclared_outputs_dir() / "session.shell.log")
-            except Exception as error:
-                (undeclared_outputs_dir() / "session-shell-log-capture-error.txt").write_text(
-                    f"{type(error).__name__}: {error}\n"
-                )
-
-
-def _string_reply(reply: bytes) -> str:
-    output = reply.decode().strip()
-    parsed = ast.literal_eval(output)
-    if not isinstance(parsed, tuple) or len(parsed) != 1 or not isinstance(parsed[0], str):
-        raise RuntimeError(f"Unexpected D-Bus string reply: {output!r}")
-    return parsed[0]
-
-
-def _fake_daemon_call(session: GnomeSession, method: str, *args: str) -> bytes:
-    result = session.exec(
-        f"gdbus call --session --timeout 10 --dest {shlex.quote(_FAKE_DBUS_DEST)} "
-        f"--object-path {shlex.quote(_FAKE_DBUS_PATH)} "
-        f"--method {shlex.quote(_FAKE_DBUS_DEST + '.' + method)} " + " ".join(shlex.quote(arg) for arg in args)
-    )
-    stdout, stderr = exec_output(result)
-    if result.exit_code != 0:
-        raise RuntimeError(f"fake daemon {method} failed: {(stdout + stderr).decode(errors='replace')}")
-    return stdout
-
-
-def _fake_daemon_counters(session: GnomeSession) -> tuple[int, int, int]:
-    output = _fake_daemon_call(session, "GetCounters")
-    match = re.search(rb"\(uint32 (\d+), uint32 (\d+), uint32 (\d+)\)", output)
-    if match is None:
-        raise RuntimeError(f"fake daemon returned invalid counters: {output!r}")
-    return int(match.group(1)), int(match.group(2)), int(match.group(3))
-
-
-def _wait_until(check: Callable[[], bool], description: str) -> None:
-    deadline = time.monotonic() + 15
-    while True:
-        if check():
-            return
-        if time.monotonic() >= deadline:
-            raise TimeoutError(description)
-        time.sleep(0.2)
+    with gnome_session(
+        gnome_shell_test_image,
+        extension_dir=extension_dir,
+        extension=_EXTENSION_UUID,
+        fixture_dir=fixture_json_dir,
+        fake_daemon_script=get_required_path(_FAKE_DBUS_SERVICE),
+        screenshot_dir=tmp_path_factory.mktemp("gnome-renders"),
+        destination=_TEST_DBUS_DEST,
+        object_path=_TEST_DBUS_PATH,
+        environment={"PLAID_SPEND_TEST": "1", "PLAID_SPEND_TEST_NOW": "2026-10-15T12:00:00.000Z"},
+    ) as session:
+        _assert_no_plaid_extension_error(session)
+        yield session
 
 
 def _card_view(amount_minor_units: int) -> str:
@@ -168,63 +103,44 @@ def _card_view(amount_minor_units: int) -> str:
 
 
 def test_view_signal_wins_initial_get_and_owner_restart_rehydrates(session: GnomeSession) -> None:
-    session.exec("gjs -m /fake-daemon.js >/tmp/plaid-spend-fake-daemon.log 2>&1 &")
-    try:
-        _wait_until(
-            lambda: (
-                session.exec(
-                    f"gdbus introspect --session --dest {shlex.quote(_FAKE_DBUS_DEST)} "
-                    f"--object-path {shlex.quote(_FAKE_DBUS_PATH)}"
-                ).exit_code
-                == 0
-            ),
-            "fake Plaid Spend D-Bus service did not start",
-        )
-        _wait_until(lambda: _fake_daemon_counters(session)[0] == 1, "extension did not request the initial view")
+    with fake_daemon(session, destination=_FAKE_DBUS_DEST, object_path=_FAKE_DBUS_PATH) as daemon:
+        wait_until(lambda: daemon.counters()[0] == 1, "extension did not request the initial view")
 
-        _fake_daemon_call(session, "SetView", _card_view(2000))
-        _wait_until(
-            lambda: _string_reply(session.call("GetPanelLabel")) == "$20",
+        daemon.call("SetView", _card_view(2000))
+        wait_until(
+            lambda: string_reply(session.call("GetPanelLabel")) == "$20",
             "extension did not project the ViewChanged signal",
         )
-        _fake_daemon_call(session, "ReleaseGetView")
+        daemon.call("ReleaseGetView")
         session.wait_for_paint()
-        assert _fake_daemon_counters(session) == (1, 1, 0)
-        assert _string_reply(session.call("GetPanelLabel")) == "$20"
+        assert daemon.counters() == (1, 1, 0)
+        assert string_reply(session.call("GetPanelLabel")) == "$20"
 
         test_clock = datetime.fromisoformat("2026-10-15T12:00:00+00:00").timestamp()
-        _fake_daemon_call(session, "SetTiming", str(test_clock - 75), str(test_clock + 20))
-        _wait_until(
+        daemon.call("SetTiming", str(test_clock - 75), str(test_clock + 20))
+        wait_until(
             lambda: all(
-                text in _string_reply(session.call("GetMenuText"))
+                text in string_reply(session.call("GetMenuText"))
                 for text in ("Last attempt 1m 15s ago", "Retry in 20s")
             ),
             "extension did not project desktop retry properties",
         )
 
-        _fake_daemon_call(session, "SetViewSilently", _card_view(3000))
-        _fake_daemon_call(session, "ReleaseName")
-        _wait_until(
-            lambda: _string_reply(session.call("GetDaemonOwner")) == "",
+        daemon.call("SetViewSilently", _card_view(3000))
+        daemon.call("ReleaseName")
+        wait_until(
+            lambda: string_reply(session.call("GetDaemonOwner")) == "",
             "extension did not observe the daemon going away",
         )
-        assert "Last attempt" not in _string_reply(session.call("GetMenuText"))
-        _fake_daemon_call(session, "AcquireName")
-        _wait_until(lambda: _fake_daemon_counters(session)[0] == 2, "extension did not rehydrate after daemon restart")
-        _fake_daemon_call(session, "ReleaseGetView")
-        _wait_until(
-            lambda: _string_reply(session.call("GetPanelLabel")) == "$30",
+        assert "Last attempt" not in string_reply(session.call("GetMenuText"))
+        daemon.call("AcquireName")
+        wait_until(lambda: daemon.counters()[0] == 2, "extension did not rehydrate after daemon restart")
+        daemon.call("ReleaseGetView")
+        wait_until(
+            lambda: string_reply(session.call("GetPanelLabel")) == "$30",
             "extension did not adopt the restarted daemon's view",
         )
-        assert _fake_daemon_counters(session) == (2, 2, 0)
-    finally:
-        session.exec(
-            f"if gdbus introspect --session --dest {shlex.quote(_FAKE_DBUS_DEST)} "
-            f"--object-path {shlex.quote(_FAKE_DBUS_PATH)} >/dev/null 2>&1; then "
-            f"gdbus call --session --dest {shlex.quote(_FAKE_DBUS_DEST)} "
-            f"--object-path {shlex.quote(_FAKE_DBUS_PATH)} "
-            f"--method {shlex.quote(_FAKE_DBUS_DEST + '.Stop')} >/dev/null; fi"
-        )
+        assert daemon.counters() == (2, 2, 0)
 
 
 def _assert_no_plaid_extension_error(container: GnomeSession) -> None:
@@ -238,7 +154,7 @@ def _assert_no_plaid_extension_error(container: GnomeSession) -> None:
 def _menu(session: GnomeSession, fixture_name: str, expected_label: str) -> Iterator[tuple[int, int, int, int]]:
     session.close_menu()
     session.reload(f"/fixtures/{fixture_name}.json")
-    assert _string_reply(session.call("GetPanelLabel")) == expected_label
+    assert string_reply(session.call("GetPanelLabel")) == expected_label
     geometry = session.open_menu()
     try:
         yield geometry
@@ -247,7 +163,7 @@ def _menu(session: GnomeSession, fixture_name: str, expected_label: str) -> Iter
 
 
 def _allowance_menu_text(session: GnomeSession) -> str:
-    menu_text = _string_reply(session.call("GetMenuText"))
+    menu_text = string_reply(session.call("GetMenuText"))
     assert "Synthetic card" not in menu_text
     assert "Check a purchase / dashboard" in menu_text
     return menu_text
@@ -302,12 +218,12 @@ def test_desktop_retry_timing_ticks_and_stays_separate_from_server_sync(
     session: GnomeSession, capture_menu: GnomeMenuCapture
 ) -> None:
     with _menu(session, "retrying", "Flex unavailable") as geometry:
-        menu_text = _string_reply(session.call("GetMenuText"))
+        menu_text = string_reply(session.call("GetMenuText"))
         assert "Last attempt 1m 15s ago" in menu_text
         assert "Retry in 20s" in menu_text
         assert "Sync 1h ago" in menu_text
         session.call("AdvanceClock", "5")
-        menu_text = _string_reply(session.call("GetMenuText"))
+        menu_text = string_reply(session.call("GetMenuText"))
         assert "Last attempt 1m 20s ago" in menu_text
         assert "Retry in 15s" in menu_text
         assert "Sync 1h ago" in menu_text
@@ -316,7 +232,7 @@ def test_desktop_retry_timing_ticks_and_stays_separate_from_server_sync(
 
 def test_authentication_required_has_no_retry_countdown(session: GnomeSession) -> None:
     with _menu(session, "authentication_required", "Sign in"):
-        menu_text = _string_reply(session.call("GetMenuText"))
+        menu_text = string_reply(session.call("GetMenuText"))
         assert "Last attempt 1m 15s ago" in menu_text
         assert "Sign-in required" in menu_text
         assert "Retry in" not in menu_text
