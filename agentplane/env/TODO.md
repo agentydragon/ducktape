@@ -23,6 +23,12 @@ disabled and a root shell when it is enabled.
   components now share one process and engine; identify which connection and notification state can
   be removed while preserving synchronous admission revocation, exact binding and applied-intent
   checks, and fail-closed handling of uncertain effects.
+- Separate Host responsibilities: initialize the Session manager and controllers as Runtime
+  components, and give History journal delivery an explicit supervised lifetime. Evaluate whether
+  Host startup recovery and cleanup can be driven by the existing desired and status resources
+  without a separate Host run loop or connection protocol. Preserve synchronous admission
+  revocation and the order between native quiescence, Execution fencing, journal sealing and
+  acknowledgement, engine shutdown, and final worker and journal joins.
 - Systemd observations are typed; process start, exit and stop still use a revision wakeup and
   process-owned result slots. A start-fact prototype retained the live worker slot and required
   additional reads to reconcile COSI observations with completion and teardown. Revisit when a
@@ -87,6 +93,15 @@ Any replacement must retain atomic command admission, dispatch and event/checkpo
 commit-before-publication, ordered replay and reconciliation of uncertain native effects. A COSI
 watch is a change notification, not by itself a durable journal. Avoid duplicating journal authority
 in COSI merely to expose observations controllers already need.
+
+## Reconsider the Session state model
+
+Session management, retained Session records and History journal delivery currently share the Host.
+Evaluate modeling Sessions and their lifecycle directly as COSI resources with a disk-backed state
+implementation such as SQLite or bbolt. Define ownership and transaction boundaries with Session
+journals and command outcomes before changing storage, including recovery of uncertain native effects.
+Measure resident memory and indexed access at realistic Session counts; controller caches and list
+operations may load additional resources even with an on-disk backend.
 
 ## Use COSI primitives where they fit the lifecycle
 
