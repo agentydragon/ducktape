@@ -11465,7 +11465,7 @@ metadata:
   name: quest-read
   namespace: agentplane-staging
 spec:
-  description: Quest availability API. Use https://quest-api.allegedly.works/openapi.json to discover the read-only routes. The bearer is substituted only for the listed lookup paths.
+  description: Quest availability API. Use https://quest.allegedly.works/openapi.json to discover the read-only routes. The bearer is substituted only for the listed lookup paths.
   source:
     secretRef:
       key: token
@@ -11485,7 +11485,7 @@ spec:
     - credentialRef:
         name: quest-read
       hosts:
-        - quest-api.allegedly.works
+        - quest.allegedly.works
       methods:
         - GET
       paths:
@@ -11496,7 +11496,7 @@ spec:
     - credentialRef:
         name: quest-read
       hosts:
-        - quest-api.allegedly.works
+        - quest.allegedly.works
       methods:
         - POST
       paths:

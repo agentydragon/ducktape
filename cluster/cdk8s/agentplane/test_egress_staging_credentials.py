@@ -108,14 +108,14 @@ def test_quest_bearer_is_only_substituted_for_read_only_operations(scratch_chart
     assert policy["spec"]["rules"] == [
         {
             "type": "egress",
-            "hosts": ["quest-api.allegedly.works"],
+            "hosts": ["quest.allegedly.works"],
             "methods": ["GET"],
             "paths": ["/openapi.json", "/guest/getReasons/*", "/guest/getPscDetails/*"],
             "credentialRef": {"name": "quest-read"},
         },
         {
             "type": "egress",
-            "hosts": ["quest-api.allegedly.works"],
+            "hosts": ["quest.allegedly.works"],
             "methods": ["POST"],
             "paths": ["/guest/getPscsWithAvailability"],
             "credentialRef": {"name": "quest-read"},
