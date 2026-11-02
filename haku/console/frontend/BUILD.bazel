@@ -448,7 +448,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//haku/console/frontend/tool_rendering",
-        "//haku/console/frontend/tool_rendering:variant",
+        "//haku/console/frontend/tool_rendering:vocabulary",
     ],
 )
 
@@ -461,7 +461,7 @@ ts_library(
         ":code_block",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//haku/console/frontend/tool_rendering:variant",
+        "//haku/console/frontend/tool_rendering:vocabulary",
     ],
 )
 
@@ -477,7 +477,7 @@ ts_library(
         "//:node_modules/react",
         "//haku/console/frontend/tool_rendering",
         "//haku/console/frontend/tool_rendering:result_entry",
-        "//haku/console/frontend/tool_rendering:variant",
+        "//haku/console/frontend/tool_rendering:vocabulary",
     ],
 )
 
@@ -511,7 +511,7 @@ ts_library(
         "//:node_modules/react",
         "//haku/console/frontend/tool_rendering",
         "//haku/console/frontend/tool_rendering:actions",
-        "//haku/console/frontend/tool_rendering:variant",
+        "//haku/console/frontend/tool_rendering:vocabulary",
     ],
 )
 
@@ -525,7 +525,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//haku/console/frontend/tool_rendering:variant",
+        "//haku/console/frontend/tool_rendering:vocabulary",
     ],
 )
 
