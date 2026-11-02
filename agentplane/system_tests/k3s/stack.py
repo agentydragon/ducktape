@@ -769,6 +769,41 @@ def _baseline_open(source: Path, fingerprint: str, *, layers_in_memory: bool) ->
     return k3s, marker, False
 
 
+def _ready_fixture_postgres_pod(
+    pods: list[dict[str, Any]], replica_sets: list[dict[str, Any]], deployment_uid: str
+) -> dict[str, Any]:
+    replica_set_uids = {
+        replica_set["metadata"]["uid"]
+        for replica_set in replica_sets
+        if any(
+            owner.get("controller") is True and owner.get("kind") == "Deployment" and owner.get("uid") == deployment_uid
+            for owner in replica_set["metadata"].get("ownerReferences", [])
+        )
+    }
+    ready_pods = [
+        pod
+        for pod in pods
+        if pod["status"].get("phase") == "Running"
+        and not pod["metadata"].get("deletionTimestamp")
+        and any(
+            condition.get("type") == "Ready" and condition.get("status") == "True"
+            for condition in pod["status"].get("conditions", [])
+        )
+        and any(
+            owner.get("controller") is True
+            and owner.get("kind") == "ReplicaSet"
+            and owner.get("uid") in replica_set_uids
+            for owner in pod["metadata"].get("ownerReferences", [])
+        )
+    ]
+    if len(ready_pods) != 1:
+        raise RuntimeError(
+            "expected one Ready, non-terminating fixture PostgreSQL Pod owned by Deployment/postgres, "
+            f"found {len(ready_pods)}"
+        )
+    return ready_pods[0]
+
+
 def _baseline_evidence(
     k3s: K3s,
     fixture: rendered_fixture.RenderedFixture,
@@ -778,9 +813,9 @@ def _baseline_evidence(
     warm: bool,
 ) -> dict[str, Any]:
     pods = json.loads(k3s.kubectl("get", "pods", "-n", fixture.namespace, "-o", "json"))["items"]
-    postgres = [pod for pod in pods if pod["metadata"]["name"].startswith("postgres-")]
-    if len(postgres) != 1:
-        raise RuntimeError(f"expected one fixture PostgreSQL Pod, found {len(postgres)}")
+    deployment = json.loads(k3s.kubectl("get", "deployment", "postgres", "-n", fixture.namespace, "-o", "json"))
+    replica_sets = json.loads(k3s.kubectl("get", "replicasets", "-n", fixture.namespace, "-o", "json"))["items"]
+    postgres = _ready_fixture_postgres_pod(pods, replica_sets, deployment["metadata"]["uid"])
     controllers = {
         doc["metadata"]["name"]: k3s.kubectl(
             "get", "deployment", doc["metadata"]["name"], "-n", "cert-manager", "-o", "jsonpath={.metadata.uid}"
@@ -800,7 +835,7 @@ def _baseline_evidence(
         "fingerprint": marker["fingerprint"],
         "k3s": marker["identity"],
         "namespace_uid": k3s.kubectl("get", "namespace", fixture.namespace, "-o", "jsonpath={.metadata.uid}"),
-        "postgres_pod_uid": postgres[0]["metadata"]["uid"],
+        "postgres_pod_uid": postgres["metadata"]["uid"],
         "root_certificate_uid": k3s.kubectl(
             "get", "certificate", "test-runner-root", "-n", "cert-manager", "-o", "jsonpath={.metadata.uid}"
         ),
