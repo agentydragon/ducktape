@@ -88,6 +88,7 @@ go_test(
         "//agentplane/env/runtime/supervision",
         "//agentplane/env/scripts",
         "//agentplane/history_service:session_ingress_go_proto",
+        "//agentplane/proto:command_go_proto",
         "//agentplane/proto:environment_runtime_state_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:sandboxes_go_proto",

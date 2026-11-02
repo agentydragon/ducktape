@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
@@ -28,7 +27,7 @@ func TestSessionRecordsUseCOSIState(t *testing.T) {
 	budget := int64(32768)
 	native := "native-session"
 	wantScript := []byte("printf 'exact \\t'\n")
-	record := &Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", Model: "route/model", TotalContextBudgetTokens: &budget, SetupScript: bytes.Clone(wantScript), EventSourceId: "source", NativeSessionId: &native, ExecutionPrincipal: &delegationpb.ServiceAccountIdentity{Account: &sandboxes.ServiceAccount{Namespace: "ns", Name: "account"}, Uid: "uid"}}
+	record := &Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", InitialModel: "route/model", TotalContextBudgetTokens: &budget, SetupScript: bytes.Clone(wantScript), EventSourceId: "source", NativeSessionId: &native, ExecutionPrincipal: &delegationpb.ServiceAccountIdentity{Account: &sandboxes.ServiceAccount{Namespace: "ns", Name: "account"}, Uid: "uid"}}
 	if err := store.Write("session-1", record); err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +72,7 @@ func TestSessionRecordsUseCOSIState(t *testing.T) {
 	}
 }
 
-func TestConcurrentSessionFieldsSurviveRestart(t *testing.T) {
+func TestNativeIdentityUpdatePreservesReservationThroughRestart(t *testing.T) {
 	root := t.TempDir()
 	resources, backing, err := cosistate.Open(root, lifecycle.Namespace, SessionRecordRegistration())
 	if err != nil {
@@ -83,34 +82,14 @@ func TestConcurrentSessionFieldsSurviveRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	record := &Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", Model: "old-model", ReasoningEffort: "old-effort", EventSourceId: "source"}
+	record := &Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", InitialModel: "old-model", InitialReasoningEffort: "old-effort", EventSourceId: "source"}
 	unknown := []byte{0xa0, 0x06, 0x07} // Field 100, varint 7.
 	record.ProtoReflect().SetUnknown(unknown)
 	if err := store.Write("session", record); err != nil {
 		t.Fatal(err)
 	}
-	start := make(chan struct{})
-	var workers sync.WaitGroup
-	errors := make(chan error, 3)
-	for _, update := range []func() error{
-		func() error { return store.UpdateModel("session", "new-model") },
-		func() error { return store.UpdateReasoningEffort("session", "new-effort") },
-		func() error { return store.UpdateNativeSessionID("session", "native-session") },
-	} {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
-			<-start
-			errors <- update()
-		}()
-	}
-	close(start)
-	workers.Wait()
-	close(errors)
-	for err := range errors {
-		if err != nil {
-			t.Fatal(err)
-		}
+	if err := store.UpdateNativeSessionID("session", "native-session"); err != nil {
+		t.Fatal(err)
 	}
 	if err := backing.Close(); err != nil {
 		t.Fatal(err)
@@ -128,7 +107,7 @@ func TestConcurrentSessionFieldsSurviveRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if restoredRecord.Model != "new-model" || restoredRecord.ReasoningEffort != "new-effort" || restoredRecord.NativeSessionId == nil || *restoredRecord.NativeSessionId != "native-session" || restoredRecord.EventSourceId != "source" || !bytes.Equal(restoredRecord.ProtoReflect().GetUnknown(), unknown) {
+	if restoredRecord.InitialModel != "old-model" || restoredRecord.InitialReasoningEffort != "old-effort" || restoredRecord.NativeSessionId == nil || *restoredRecord.NativeSessionId != "native-session" || restoredRecord.EventSourceId != "source" || !bytes.Equal(restoredRecord.ProtoReflect().GetUnknown(), unknown) {
 		t.Fatalf("restored concurrent updates = %+v", restoredRecord)
 	}
 }
@@ -140,7 +119,7 @@ func TestSessionFieldUpdateDoesNotCreateRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	var storageErr *StorageError
-	if err := store.UpdateModel("missing", "model"); !errors.As(err, &storageErr) || !state.IsNotFoundError(err) {
+	if err := store.UpdateNativeSessionID("missing", "native"); !errors.As(err, &storageErr) || !state.IsNotFoundError(err) {
 		t.Fatalf("missing update = %v, want storage not-found error", err)
 	}
 	if exists, err := store.Exists("missing"); err != nil || exists {

@@ -116,7 +116,8 @@ func (s *Session) Session() harness.SessionSnapshot {
 		value := int(*s.record.TotalContextBudgetTokens)
 		budget = &value
 	}
-	snapshot := harness.SessionSnapshot{Directory: s.directory(), Cwd: s.record.Cwd, Model: s.record.Model, ReasoningEffort: s.record.ReasoningEffort, Instructions: s.record.Instructions, NativeSessionID: native, TotalContextBudgetTokens: budget, ActiveTurnID: s.activeTurn, Environment: s.environment()}
+	spec := s.sessionSpec(s.journal.RecoveryState())
+	snapshot := harness.SessionSnapshot{Directory: s.directory(), Cwd: s.record.Cwd, Model: spec.Model, ReasoningEffort: spec.ReasoningEffort, Instructions: s.record.Instructions, NativeSessionID: native, TotalContextBudgetTokens: budget, ActiveTurnID: s.activeTurn, Environment: s.environment()}
 	s.mu.Unlock()
 	snapshot.Resuming = s.lifecycleStatus().Resuming
 	return snapshot

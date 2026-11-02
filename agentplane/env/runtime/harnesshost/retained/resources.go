@@ -230,14 +230,6 @@ func (s *Store) update(id string, change func(*Record)) error {
 	return nil
 }
 
-func (s *Store) UpdateModel(id, model string) error {
-	return s.update(id, func(record *Record) { record.Model = model })
-}
-
-func (s *Store) UpdateReasoningEffort(id, effort string) error {
-	return s.update(id, func(record *Record) { record.ReasoningEffort = effort })
-}
-
 func (s *Store) UpdateNativeSessionID(id, native string) error {
 	return s.update(id, func(record *Record) { record.NativeSessionId = &native })
 }

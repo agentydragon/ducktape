@@ -86,9 +86,6 @@ func (r *Host) OpenSession(ctx context.Context, request *environmentruntimepb.Op
 		if err != nil {
 			return nil, rpcError(err)
 		}
-		if !proto.Equal(retained.SessionSpec(record), spec) {
-			return nil, status.Errorf(codes.AlreadyExists, "session %s exists with a different spec", request.GetSessionId())
-		}
 		if request.SetupScript != nil && !retained.MatchesSetupScript(record, request.GetSetupScript()) {
 			return nil, status.Error(codes.AlreadyExists, "session exists with a different setup script")
 		}
@@ -98,6 +95,9 @@ func (r *Host) OpenSession(ctx context.Context, request *environmentruntimepb.Op
 		s, err := r.sessions.Load(r.ctx, request.SessionId)
 		if err != nil {
 			return nil, rpcError(err)
+		}
+		if !proto.Equal(s.Attached().Spec, spec) {
+			return nil, status.Errorf(codes.AlreadyExists, "session %s exists with a different spec", request.GetSessionId())
 		}
 		return &environmentruntimepb.OpenSessionResponse{Attached: s.Attached()}, nil
 	}

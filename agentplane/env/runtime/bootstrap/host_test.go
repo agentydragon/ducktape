@@ -533,7 +533,7 @@ func TestOnlyDurableResourcesAreRestored(t *testing.T) {
 	if err := sessions.Write("session-1", record); err != nil {
 		t.Fatal(err)
 	}
-	record.Model = "new-model"
+	record.InitialModel = "new-model"
 	if err := sessions.Write("session-1", record); err != nil {
 		t.Fatal(err)
 	}
@@ -599,14 +599,14 @@ func TestOnlyDurableResourcesAreRestored(t *testing.T) {
 		t.Fatalf("restored Session IDs = %v, %v", ids, err)
 	}
 	restoredRecord, err := restoredSessions.Read("session-1")
-	if err != nil || restoredRecord.Model != "new-model" || !bytes.Equal(restoredRecord.SetupScript, record.SetupScript) || restoredRecord.EventSourceId != record.EventSourceId || restoredRecord.NativeSessionId == nil || *restoredRecord.NativeSessionId != native || restoredRecord.TotalContextBudgetTokens == nil || *restoredRecord.TotalContextBudgetTokens != int64(budget) || restoredRecord.ExecutionPrincipal.GetAccount().GetName() != "account" || restoredRecord.ExecutionPrincipal.GetUid() != "uid" {
+	if err != nil || restoredRecord.InitialModel != "new-model" || !bytes.Equal(restoredRecord.SetupScript, record.SetupScript) || restoredRecord.EventSourceId != record.EventSourceId || restoredRecord.NativeSessionId == nil || *restoredRecord.NativeSessionId != native || restoredRecord.TotalContextBudgetTokens == nil || *restoredRecord.TotalContextBudgetTokens != int64(budget) || restoredRecord.ExecutionPrincipal.GetAccount().GetName() != "account" || restoredRecord.ExecutionPrincipal.GetUid() != "uid" {
 		t.Fatalf("restored Session record = %+v, %v", restoredRecord, err)
 	}
-	restoredRecord.Model = "after-restart"
+	restoredRecord.InitialModel = "after-restart"
 	if err := restoredSessions.Write("session-1", restoredRecord); err != nil {
 		t.Fatal(err)
 	}
-	if updated, err := restoredSessions.Read("session-1"); err != nil || updated.Model != "after-restart" {
+	if updated, err := restoredSessions.Read("session-1"); err != nil || updated.InitialModel != "after-restart" {
 		t.Fatalf("updated restored Session = %+v, %v", updated, err)
 	}
 	selection, found, err := ReadSelection(t.Context(), restored)
@@ -631,7 +631,7 @@ func TestOnlyDurableResourcesAreRestored(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated, err := againSessions.Read("session-1"); err != nil || updated.Model != "after-restart" {
+	if updated, err := againSessions.Read("session-1"); err != nil || updated.InitialModel != "after-restart" {
 		t.Fatalf("reloaded Session after update = %+v, %v", updated, err)
 	}
 }

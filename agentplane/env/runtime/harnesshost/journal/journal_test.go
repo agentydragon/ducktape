@@ -117,8 +117,8 @@ func TestOpenJournalReopensPythonSchemaAndKeepsStoredBytes(t *testing.T) {
 	if err := journal.conn.QueryRowContext(ctx, "SELECT MAX(version_id) FROM "+journalMigrationTableName).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 2 {
-		t.Fatalf("Goose migration version = %d, want 2", version)
+	if version != 3 {
+		t.Fatalf("Goose migration version = %d, want 3", version)
 	}
 }
 

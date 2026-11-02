@@ -27,6 +27,7 @@ go_library(
 go_test(
     name = "journal_test",
     srcs = [
+        "configuration_test.go",
         "journal_test.go",
         "native_requests_test.go",
         "recovery_test.go",
