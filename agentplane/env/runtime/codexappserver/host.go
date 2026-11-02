@@ -90,21 +90,21 @@ type Dependencies struct {
 
 // Host owns the one shared Codex process and its protocol readers.
 type Host struct {
-	deps                            Dependencies
-	launch                          harness.LaunchConfig
-	store                           string
-	handshakeMu                     sync.Mutex
-	inputMu                         sync.Mutex
-	mu                              sync.Mutex
-	current                         *Process
-	initializingOwner               *Attachment
+	deps                                   Dependencies
+	launch                                 harness.LaunchConfig
+	store                                  string
+	handshakeMu                            sync.Mutex
+	inputMu                                sync.Mutex
+	mu                                     sync.Mutex
+	current                                *Process
+	initializingOwner                      *Attachment
 	initializingOwnerEnvironmentGeneration uint64
-	initializing                    *oneoff.Operation
-	draining                        *oneoff.Operation
+	initializing                           *oneoff.Operation
+	draining                               *oneoff.Operation
 	initializationEnvironmentGeneration    uint64
-	drainEffect                     func(context.Context) error
-	changeMu                        sync.Mutex
-	changed                         chan struct{}
+	drainEffect                            func(context.Context) error
+	changeMu                               sync.Mutex
+	changed                                chan struct{}
 }
 
 // Process is a process-incarnation handle. It never exposes routing or mutable host state.

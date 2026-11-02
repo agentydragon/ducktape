@@ -68,15 +68,15 @@ type childExit struct {
 }
 
 type runtimeDeps struct {
-	prepareSupervisor        func(Config, *os.File) (*supervision.Supervisor, error)
-	waitBootstrap            func(context.Context) error
-	startExecution           func(context.Context, Config, string) (executionHandle, error)
-	beforeSessionConstruction   func()
-	afterInitialWaitSnapshot func()
-	stopSessions             func(context.Context) error
-	waitSessionsClosed       func(context.Context) error
-	closeSessions            func(context.Context) error
-	runIngress               func(context.Context, configuration.Endpoint) error
+	prepareSupervisor         func(Config, *os.File) (*supervision.Supervisor, error)
+	waitBootstrap             func(context.Context) error
+	startExecution            func(context.Context, Config, string) (executionHandle, error)
+	beforeSessionConstruction func()
+	afterInitialWaitSnapshot  func()
+	stopSessions              func(context.Context) error
+	waitSessionsClosed        func(context.Context) error
+	closeSessions             func(context.Context) error
+	runIngress                func(context.Context, configuration.Endpoint) error
 }
 
 type executionHandle interface {

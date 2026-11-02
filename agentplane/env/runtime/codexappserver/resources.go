@@ -40,7 +40,7 @@ const (
 
 type Status struct {
 	Phase                   Phase
-	EnvironmentGeneration          uint64
+	EnvironmentGeneration   uint64
 	ObservedDemand          uint64
 	ExitSequence            uint64
 	ExecServerReadyDeadline time.Time

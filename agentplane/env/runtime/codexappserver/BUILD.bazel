@@ -39,7 +39,7 @@ go_library(
 
 go_test(
     name = "codexappserver_test",
-    srcs = ["host_test.go"],
+    srcs = ["host_test.go", "readiness_test.go"],
     embed = [":codexappserver"],
     race = "on",
     deps = [
