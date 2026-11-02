@@ -11,6 +11,10 @@
       ]
     );
     default = [ ];
-    description = "Claude gateway wrappers to install with their SOPS client keys.";
+    description = ''
+      Claude gateway wrappers to install with their SOPS client keys.
+      tana-claude remains parked: its renderer deliberately fails until its
+      routes and client key are restored.
+    '';
   };
 }
