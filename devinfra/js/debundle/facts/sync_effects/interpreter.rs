@@ -1,10 +1,11 @@
 //! Call-site execution effects distinguish function values from function bodies: returning a closure never executes it.
 
-use super::super::local_operations::LocalBody;
+use super::super::local_operations::{LocalBinding, LocalBody};
 use super::super::local_transfer::{self, LocalContext, LocalFrame};
 use super::super::value_model::{
     AbstractValue, ArrayIteration, CallSite, Captured, CapturedContext, Context, DenseArray,
-    FrozenNamespaceProof, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr, Values,
+    FrozenNamespaceProof, LexicalCaptures, LexicalCellId, MemberKey, OwnPropertyShape,
+    RetainedResultKind, ValueExpr, Values,
 };
 use super::runtime_callbacks::{CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
@@ -57,7 +58,7 @@ use crate::reports::schema::{
     RecordFactoryRejectionReason,
 };
 use imbl::OrdMap;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use source_identity::SourceUnitOrdinal;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -452,6 +453,40 @@ const MAX_SYNCHRONOUS_INVOCATIONS: usize = 256;
 // manufacturing capture snapshots that retain that cross product.
 const MAX_SYNCHRONOUS_CALLBACK_POOL: usize = 64;
 
+/// Reuse the canonical nested identifier census, including deferred reads.
+/// Borrow declaration keys for this temporary join; retain only the cells
+/// that a nested callable can actually capture from an ordered activation.
+fn captured_local_bindings(index: &ExecutionIndex) -> FxHashSet<Id> {
+    let owners: FxHashMap<_, _> = index
+        .callables
+        .iter()
+        .filter_map(|(key, callable)| Some((*key, callable.local_body.as_ref()?)))
+        .flat_map(|(key, body)| body.bindings.keys().map(move |binding| (binding, key)))
+        .collect();
+    let mut captured = FxHashSet::default();
+    for (key, reads) in &index.prototype_callable_reads {
+        let Some(span) = index.callable_spans.get(key) else {
+            continue;
+        };
+        for binding in reads {
+            let Some(owner) = owners.get(binding) else {
+                continue;
+            };
+            if owner == key {
+                continue;
+            }
+            if index
+                .callable_spans
+                .get(owner)
+                .is_some_and(|outer| outer.lo <= span.lo && span.hi <= outer.hi)
+            {
+                captured.insert(binding.clone());
+            }
+        }
+    }
+    captured
+}
+
 #[derive(Debug, Clone)]
 struct OwnDescriptorMapState {
     source_object: u32,
@@ -522,6 +557,7 @@ pub(super) struct ExecutionInputs<'source> {
     reentry_default: bool,
     call_site_owners: BTreeMap<CallSite, (SourceUnitOrdinal, Span)>,
     mutable_captures: BTreeSet<Id>,
+    captured_local_bindings: FxHashSet<Id>,
     var_bindings: BTreeSet<Id>,
     changed_member_roots: BTreeSet<Id>,
     export_reentry_enabled: bool,
@@ -762,11 +798,26 @@ pub(super) struct ExecutionState {
     /// initialization prefix. Incomplete reachability requires a fresh raw
     /// closure even when the precise prefix was already summarized.
     returned_callback_owners: BTreeSet<(bool, SourceUnitOrdinal)>,
-    capture_contexts: OrdMap<Arc<Context>, usize>,
+    capture_contexts: OrdMap<Arc<LexicalCaptures>, usize>,
+    lexical_cells: Vec<LexicalCell>,
+    active_cells: OrdMap<Id, LexicalCellId>,
     callback_sets: OrdMap<Arc<Values>, usize>,
     active: BTreeSet<ActiveInvocation>,
     /// Context lookup only; completed outcomes live in the shared fact store.
     invocation_memos: OrdMap<InvocationSignature, ProgramPoint>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CellInitialization {
+    Uninitialized,
+    Initialized,
+    MaybeInitialized,
+}
+
+struct LexicalCell {
+    values: Values,
+    kind: LocalBinding,
+    initialization: CellInitialization,
 }
 
 impl ExecutionState {
@@ -870,6 +921,7 @@ struct LocalExecutionContext<'a, 'source, 'rule> {
     outcome: &'a mut Outcome,
     owner: SourceUnitOrdinal,
     callable: u32,
+    body: &'a LocalBody,
 }
 
 impl LocalExecutionContext<'_, '_, '_> {
@@ -902,6 +954,8 @@ impl LocalExecutionContext<'_, '_, '_> {
                 };
                 let values = if self.executor.inputs.top_bindings.contains(binding) {
                     self.executor.state.prefix_values.get(binding)
+                } else if let Some(cell) = self.executor.state.active_cells.get(binding) {
+                    Some(&self.executor.state.lexical_cells[cell.0].values)
                 } else {
                     frame.environment.get(binding)
                 };
@@ -921,6 +975,109 @@ impl LocalExecutionContext<'_, '_, '_> {
 }
 
 impl LocalContext for LocalExecutionContext<'_, '_, '_> {
+    fn instantiate_bindings(&mut self, frame: &mut LocalFrame) {
+        let mut allocated = false;
+        for (binding, kind) in &self.body.bindings {
+            if !self
+                .executor
+                .inputs
+                .captured_local_bindings
+                .contains(binding)
+            {
+                continue;
+            }
+            let cell = LexicalCellId(self.executor.state.lexical_cells.len());
+            self.executor.state.lexical_cells.push(LexicalCell {
+                values: frame.environment[binding].clone(),
+                kind: *kind,
+                initialization: match kind {
+                    LocalBinding::Parameter | LocalBinding::Var => CellInitialization::Initialized,
+                    LocalBinding::Let | LocalBinding::Const => CellInitialization::Uninitialized,
+                },
+            });
+            self.executor
+                .state
+                .active_cells
+                .insert(binding.clone(), cell);
+            allocated = true;
+        }
+        if allocated {
+            // A cached factory result cannot stand in for another activation:
+            // its captured cells have distinct identities, even at one site.
+            self.executor.state.prefix_revision =
+                self.executor.state.prefix_revision.wrapping_add(1);
+        }
+    }
+    fn local_binding_stored(&mut self, binding: &Id, frame: &LocalFrame) {
+        if let Some(id) = self.executor.state.active_cells.get(binding).copied() {
+            let cell = &mut self.executor.state.lexical_cells[id.0];
+            let values = &frame.environment[binding];
+            let changed =
+                cell.values != *values || cell.initialization != CellInitialization::Initialized;
+            cell.values = values.clone();
+            cell.initialization = CellInitialization::Initialized;
+            if changed {
+                self.executor.state.prefix_revision =
+                    self.executor.state.prefix_revision.wrapping_add(1);
+            }
+        }
+    }
+    fn closure(
+        &mut self,
+        frame: &mut LocalFrame,
+        callable: u32,
+    ) -> Option<super::super::allocation_transfer::AllocationValue> {
+        let captures = self.executor.closure_captures(callable, &frame.environment);
+        let values = Values::from([AbstractValue::Closure(callable, captures)]);
+        frame.inputs.extend(values.iter().cloned());
+        Some(super::super::allocation_transfer::AllocationValue::opaque(
+            values,
+        ))
+    }
+    fn assign_capture(
+        &mut self,
+        frame: &mut LocalFrame,
+        binding: &Id,
+        values: &Values,
+        span: Span,
+    ) -> Option<super::super::allocation_transfer::AllocationValue> {
+        if let Some(id) = self.executor.state.active_cells.get(binding).copied() {
+            let cell = &mut self.executor.state.lexical_cells[id.0];
+            if cell.kind == LocalBinding::Const
+                || cell.initialization == CellInitialization::Uninitialized
+            {
+                return Some(super::super::allocation_transfer::AllocationValue::opaque(
+                    Values::from([AbstractValue::Value(Value::Unavailable)]),
+                ));
+            }
+            let mut result = values.clone();
+            if cell.initialization == CellInitialization::MaybeInitialized {
+                result.insert(AbstractValue::Value(Value::Unavailable));
+            }
+            // General invocation queries also cover calls that may be skipped.
+            // Join captured writes until their caller supplies ordered control
+            // evidence; the no-call path must retain its old cell contents.
+            let before = cell.values.len();
+            cell.values.extend(values.iter().cloned());
+            if cell.values.len() != before {
+                self.executor.state.prefix_revision =
+                    self.executor.state.prefix_revision.wrapping_add(1);
+            }
+            return Some(super::super::allocation_transfer::AllocationValue::opaque(
+                result,
+            ));
+        }
+        self.fallback(
+            frame,
+            values.clone(),
+            ExecutionPrecisionLossReason::UnsupportedOperation {
+                operation: ExecutionOperation::OpaqueExecution,
+                ordered_field_read_refusal: None,
+            },
+            span,
+        );
+        None
+    }
     fn read_binding(
         &mut self,
         binding: &Id,
@@ -931,7 +1088,10 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 .promote_top_effects(vec![binding], Vec::new(), self.owner, self.outcome);
         }
         let values = self.executor.evaluate_binding(binding, &frame.environment);
-        if self.executor.inputs.top_bindings.contains(binding) {
+        if self.executor.inputs.top_bindings.contains(binding)
+            || (self.executor.state.active_cells.contains_key(binding)
+                && !self.body.bindings.contains_key(binding))
+        {
             frame
                 .borrowed_records
                 .extend(self.executor.reachable_objects(&values));
@@ -4519,8 +4679,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
             AbstractValue::Closure(_, captured) => {
-                for value in captured.values.values().flatten() {
+                for value in captured.values.snapshots.values().flatten() {
                     visit(value);
+                }
+                for cell in captured.values.cells.values() {
+                    for value in &self.state.lexical_cells[cell.0].values {
+                        visit(value);
+                    }
                 }
             }
             AbstractValue::Instance(_, captured) => {
@@ -5341,7 +5506,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    fn intern_captures(&mut self, captures: Context) -> CapturedContext {
+    fn intern_captures(&mut self, captures: LexicalCaptures) -> CapturedContext {
         if let Some((values, &identity)) = self.state.capture_contexts.get_key_value(&captures) {
             return CapturedContext::with_identity(identity, Arc::clone(values));
         }
@@ -5351,6 +5516,42 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .capture_contexts
             .insert(Arc::clone(&values), identity);
         CapturedContext::with_identity(identity, values)
+    }
+
+    fn materialize_captures(&self, captures: Option<&LexicalCaptures>) -> Context {
+        let Some(captures) = captures else {
+            return Context::new();
+        };
+        let mut values = captures.snapshots.clone();
+        for (binding, cell) in &captures.cells {
+            values.insert(
+                binding.clone(),
+                self.state.lexical_cells[cell.0].values.clone(),
+            );
+        }
+        values
+    }
+
+    fn havoc_cells(&mut self, cells: impl IntoIterator<Item = LexicalCellId>) {
+        let mut changed = false;
+        for id in cells {
+            let cell = &mut self.state.lexical_cells[id.0];
+            if cell.kind == LocalBinding::Const
+                && cell.initialization == CellInitialization::Initialized
+            {
+                continue;
+            }
+            if cell.initialization == CellInitialization::Uninitialized {
+                // Skipped enclosing code can have initialized a lexical cell.
+                // Keeping only TDZ would wrongly prune its later readers.
+                cell.initialization = CellInitialization::MaybeInitialized;
+                changed = true;
+            }
+            changed |= cell.values.insert(AbstractValue::Value(Value::Top));
+        }
+        if changed {
+            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+        }
     }
 
     fn intern_callback_set(&mut self, values: Values) -> Captured<Values> {
@@ -5457,6 +5658,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if !visited.insert(value.clone()) {
                 continue;
             }
+            if let AbstractValue::Closure(_, captured) = &value {
+                let cells: Vec<_> = captured.values.cells.values().copied().collect();
+                self.havoc_cells(cells);
+            }
             match &value {
                 AbstractValue::DeferredCallbacks(captured)
                 | AbstractValue::AuditedRetainedResult(_, captured) => {
@@ -5524,7 +5729,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::Value(Value::Alloc(Kind::Function, key)) => {
                     self.state.tainted_functions.insert(*key);
                 }
-                AbstractValue::Closure(key, _) => {
+                AbstractValue::Closure(key, captured) => {
+                    let cells: Vec<_> = captured.values.cells.values().copied().collect();
+                    self.havoc_cells(cells);
                     self.state.tainted_functions.insert(*key);
                 }
                 _ => {}
@@ -6377,19 +6584,47 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     fn closure_captures(&mut self, key: u32, captures: &Context) -> CapturedContext {
         let Some(callable) = self.inputs.index.callables.get(&key) else {
-            return self.intern_captures(Context::new());
+            return self.intern_captures(LexicalCaptures::default());
         };
-        let free_bindings = callable.reads.iter().chain(callable.rebinds.iter());
-        let mut captured = Context::new();
+        // This canonical census also contains nested closures' references.
+        // An intermediate closure must retain cells needed by its children.
+        let reads = self
+            .inputs
+            .index
+            .prototype_callable_reads
+            .get(&key)
+            .unwrap_or(&callable.reads);
+        let free_bindings = reads.iter().chain(callable.rebinds.iter());
+        let mut captured = LexicalCaptures::default();
         for id in free_bindings {
-            if self.inputs.top_bindings.contains(id) {
+            if self.inputs.top_bindings.contains(id)
+                || callable.declared_locals.contains(id)
+                || callable.local_functions.contains(id)
+                || callable
+                    .params
+                    .iter()
+                    .any(|parameter| parameter.binding.as_ref() == Some(id))
+            {
+                continue;
+            }
+            if let Some(cell) = self.state.active_cells.get(id) {
+                captured.cells.insert(id.clone(), *cell);
                 continue;
             }
             if let Some(values) = captures.get(id) {
-                captured.insert(
+                captured.snapshots.insert(
                     id.clone(),
-                    if self.inputs.mutable_captures.contains(id) || captured.len() >= 64 {
+                    if self.inputs.mutable_captures.contains(id)
+                        || captured.snapshots.len() + captured.cells.len() >= 64
+                    {
                         unknown()
+                    } else if !callable.reads.contains(id) && !callable.rebinds.contains(id) {
+                        // A source-summary activation supplied a descendant-only
+                        // value snapshot, not a live binding proof. Retain
+                        // its capabilities while forfeiting its exact value.
+                        let mut possible = values.clone();
+                        possible.insert(AbstractValue::Value(Value::Top));
+                        possible
                     } else {
                         values.clone()
                     },
@@ -7184,6 +7419,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 // missing prefix value for a local binding is TDZ.
                 Values::from([AbstractValue::Value(Value::Unavailable)])
             }
+        } else if let Some(cell) = self.state.active_cells.get(id) {
+            self.state.lexical_cells[cell.0].values.clone()
         } else if let Some(values) = env.get(id) {
             values.clone()
         } else if self
@@ -7814,11 +8051,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         reached.extend(frame.inputs.iter().cloned());
         reached.extend(frame.environment.values().flatten().cloned());
         reached.extend(
+            self.state
+                .active_cells
+                .values()
+                .flat_map(|cell| self.state.lexical_cells[cell.0].values.iter().cloned()),
+        );
+        reached.extend(
             frame
                 .fresh_records
                 .iter()
                 .map(|object| AbstractValue::Value(Value::Alloc(Kind::Object, *object))),
         );
+        let cells: Vec<_> = self.state.active_cells.values().copied().collect();
+        self.havoc_cells(cells);
         self.publish_values(&reached);
         let mut fallback = self.bounded_invocation_fallback(
             owner,
@@ -7862,6 +8107,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 outcome: &mut outcome,
                 owner,
                 callable,
+                body,
             },
             body,
             &mut frame,
@@ -7914,6 +8160,29 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         captured: Option<CapturedContext>,
         fresh_checked_constructor: bool,
     ) -> Outcome {
+        let outer_cells = std::mem::replace(
+            &mut self.state.active_cells,
+            captured
+                .as_ref()
+                .map(|context| context.values.cells.clone())
+                .unwrap_or_default(),
+        );
+        let outcome = self.invoke_with_cells(key, args, captured, fresh_checked_constructor);
+        if !outcome.complete || outcome.unknown_call {
+            let cells: Vec<_> = self.state.active_cells.values().copied().collect();
+            self.havoc_cells(cells);
+        }
+        self.state.active_cells = outer_cells;
+        outcome
+    }
+
+    fn invoke_with_cells(
+        &mut self,
+        key: u32,
+        args: Vec<Values>,
+        captured: Option<CapturedContext>,
+        fresh_checked_constructor: bool,
+    ) -> Outcome {
         let Some((callable_owner, uses_arguments)) =
             self.inputs.index.callables.get(&key).map(|callable| {
                 (
@@ -7940,10 +8209,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.state.array_iteration_unsupported = true;
             }
         }
-        let empty_context = Context::new();
-        let captured_context = captured
-            .as_ref()
-            .map_or(&empty_context, |captured| captured.values.as_ref());
+        let captured_context =
+            self.materialize_captures(captured.as_ref().map(|context| context.values.as_ref()));
         self.record_executed_owner(callable_owner);
         self.state.statement_invoked_callables.insert(key);
         // Memoized outcomes still represent an invocation at this point.
@@ -7984,11 +8251,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     limit: MAX_SYNCHRONOUS_INVOCATIONS,
                 }
             };
-            let reach = self.invocation_reach(key, callable_owner, &args, captured_context);
+            let reach = self.invocation_reach(key, callable_owner, &args, &captured_context);
             return self.bounded_invocation_fallback(
                 callable_owner,
                 &args,
-                captured_context,
+                &captured_context,
                 reason,
                 reach,
                 DUMMY_SP,
@@ -8050,6 +8317,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if !unsupported_inputs
             && self.inputs.index.dynamic_scope_owners.is_empty()
             && let Some(body) = &callable.local_body
+            && body
+                .captured_writes()
+                .iter()
+                .all(|binding| self.state.active_cells.contains_key(binding))
             && body.free_reads().iter().all(|binding| {
                 env.contains_key(binding) || self.inputs.top_bindings.contains(binding)
             })
@@ -8077,6 +8348,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.remember_invocation(signature, &outcome);
                 return outcome;
             }
+        }
+        // Source-summary lanes pre-evaluate assignments and flatten control flow.
+        // They cannot preserve a live mutable capture's ordered value proof.
+        let cells: Vec<_> = self.state.active_cells.values().copied().collect();
+        self.havoc_cells(cells);
+        for (binding, cell) in &self.state.active_cells {
+            env.insert(
+                binding.clone(),
+                self.state.lexical_cells[cell.0].values.clone(),
+            );
         }
         for (id, value) in &callable.local_assignments {
             let values = self.evaluate(value, &env, &env);
@@ -10088,6 +10369,7 @@ pub(crate) fn annotate_synchronous_calls(
             .values()
             .flat_map(|callable| callable.rebinds.iter().cloned())
             .collect(),
+        captured_local_bindings: captured_local_bindings(&index),
         var_bindings,
         changed_member_roots,
         export_reentry_enabled: *export_reentry_policy
@@ -10168,6 +10450,8 @@ pub(crate) fn annotate_synchronous_calls(
         fallback_local_owners: BTreeSet::new(),
         returned_callback_owners: BTreeSet::new(),
         capture_contexts: OrdMap::new(),
+        lexical_cells: Vec::new(),
+        active_cells: OrdMap::new(),
         callback_sets: OrdMap::new(),
         active: BTreeSet::new(),
         invocation_memos: OrdMap::new(),

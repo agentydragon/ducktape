@@ -37,7 +37,17 @@ impl LocalFrame {
 }
 
 pub(super) trait LocalContext {
+    fn instantiate_bindings(&mut self, _frame: &mut LocalFrame) {}
+    fn local_binding_stored(&mut self, _binding: &Id, _frame: &LocalFrame) {}
     fn read_binding(&mut self, binding: &Id, frame: &mut LocalFrame) -> Option<AllocationValue>;
+    fn closure(&mut self, frame: &mut LocalFrame, callable: u32) -> Option<AllocationValue>;
+    fn assign_capture(
+        &mut self,
+        frame: &mut LocalFrame,
+        binding: &Id,
+        values: &Values,
+        span: Span,
+    ) -> Option<AllocationValue>;
     /// Operands have already been evaluated in source order. Return the value
     /// from that invocation's effect transfer; do not evaluate the call again.
     fn call(
@@ -200,13 +210,27 @@ fn expression(
             }
             Some(values)
         }
-        LocalExpression::Assign(binding, node) => {
+        LocalExpression::Closure(callable) => {
+            let result = context.closure(frame, *callable)?;
+            judgment.compose(&result.judgment);
+            Some(completing(result.values, frame))
+        }
+        LocalExpression::Assign {
+            binding,
+            value: node,
+            span,
+        } => {
             let values = expression(context, node, body, frame, judgment)?;
             if values.is_empty() {
                 return Some(values);
             }
-            if body.bindings[binding] == LocalBinding::Const
-                || (body.bindings[binding] == LocalBinding::Let
+            let Some(kind) = body.bindings.get(binding) else {
+                let result = context.assign_capture(frame, binding, &values, *span)?;
+                judgment.compose(&result.judgment);
+                return Some(completing(result.values, frame));
+            };
+            if *kind == LocalBinding::Const
+                || (*kind == LocalBinding::Let
                     && frame
                         .environment
                         .get(binding)
@@ -219,6 +243,7 @@ fn expression(
                 return Some(Values::new());
             }
             frame.environment.insert(binding.clone(), values.clone());
+            context.local_binding_stored(binding, frame);
             Some(values)
         }
         LocalExpression::Call {
@@ -329,6 +354,7 @@ pub(super) fn execute(
             }
         }
     }
+    context.instantiate_bindings(frame);
     for operation in body.operations.iter() {
         match operation {
             LocalOperation::Initialize(binding, node) => {
@@ -347,6 +373,7 @@ pub(super) fn execute(
                     return Some(finish(frame, judgment));
                 }
                 frame.environment.insert(binding.clone(), values);
+                context.local_binding_stored(binding, frame);
             }
             LocalOperation::Evaluate(node) => {
                 if expression(context, node, body, frame, &mut judgment)?.is_empty() {

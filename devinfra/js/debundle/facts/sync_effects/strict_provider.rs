@@ -50,6 +50,18 @@ impl AllocationContext for ProviderContext<'_> {
 }
 
 impl LocalContext for ProviderContext<'_> {
+    fn closure(&mut self, _frame: &mut LocalFrame, _callable: u32) -> Option<AllocationValue> {
+        None
+    }
+    fn assign_capture(
+        &mut self,
+        _frame: &mut LocalFrame,
+        _binding: &Id,
+        _values: &Values,
+        _span: Span,
+    ) -> Option<AllocationValue> {
+        None
+    }
     fn read_binding(&mut self, binding: &Id, frame: &mut LocalFrame) -> Option<AllocationValue> {
         // The frame starts with scoped arguments and checked private var
         // captures. Other entries come from the covered local operations.

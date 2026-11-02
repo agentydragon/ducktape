@@ -18,7 +18,12 @@ pub(super) enum LocalBinding {
 pub(super) enum LocalExpression {
     Value(ValueExpr),
     Sequence(Arc<[Self]>),
-    Assign(Id, Arc<Self>),
+    Assign {
+        binding: Id,
+        value: Arc<Self>,
+        span: Span,
+    },
+    Closure(u32),
     Call {
         callee: Id,
         arguments: Arc<[Self]>,
@@ -52,7 +57,8 @@ pub(super) struct LocalBody {
     /// Sorted source reads outside this body's parameters and declarations.
     /// Shared across body clones and reused by every invocation/provider query.
     free_reads: Option<Arc<[Id]>>,
-    contains_calls: bool,
+    captured_writes: Option<Arc<[Id]>>,
+    allocation_only_syntax: bool,
 }
 
 fn simple_binding(pattern: &Pat) -> Option<Id> {
@@ -90,6 +96,18 @@ impl LocalExpression {
 
     fn lower(expression: &Expr) -> Option<Self> {
         match expression.unwrap_parens() {
+            Expr::Fn(function)
+                if function.ident.is_none()
+                    && function.function.decorators.is_empty()
+                    && function
+                        .function
+                        .params
+                        .iter()
+                        .all(|parameter| parameter.decorators.is_empty()) =>
+            {
+                Some(Self::Closure(function.function.span.lo.0))
+            }
+            Expr::Arrow(arrow) => Some(Self::Closure(arrow.span.lo.0)),
             Expr::Seq(sequence) => Some(Self::Sequence(
                 sequence
                     .exprs
@@ -136,7 +154,11 @@ impl LocalExpression {
                 let value = Arc::new(Self::lower(&assignment.right)?);
                 match &assignment.left {
                     AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
-                        Some(Self::Assign(binding.id.to_id(), value))
+                        Some(Self::Assign {
+                            binding: binding.id.to_id(),
+                            value,
+                            span: assignment.span,
+                        })
                     }
                     AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
                         let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
@@ -164,13 +186,11 @@ impl LocalExpression {
 
     fn local_targets(&self, bindings: &BTreeMap<Id, LocalBinding>) -> bool {
         match self {
-            Self::Value(_) | Self::ReadField { .. } => true,
+            Self::Value(_) | Self::ReadField { .. } | Self::Closure(_) => true,
             Self::Sequence(expressions) => expressions
                 .iter()
                 .all(|expression| expression.local_targets(bindings)),
-            Self::Assign(binding, expression) => {
-                bindings.contains_key(binding) && expression.local_targets(bindings)
-            }
+            Self::Assign { value, .. } => value.local_targets(bindings),
             Self::Call { arguments, .. } => arguments
                 .iter()
                 .all(|argument| argument.local_targets(bindings)),
@@ -188,7 +208,11 @@ impl LocalExpression {
                     expression.reads(reads);
                 }
             }
-            Self::Assign(_, expression) => expression.reads(reads),
+            Self::Assign { binding, value, .. } => {
+                reads.insert(binding.clone());
+                value.reads(reads);
+            }
+            Self::Closure(_) => {}
             Self::Call {
                 callee, arguments, ..
             } => {
@@ -209,15 +233,38 @@ impl LocalExpression {
         }
     }
 
-    fn contains_calls(&self) -> bool {
+    fn allocation_only_syntax(&self, bindings: &BTreeMap<Id, LocalBinding>) -> bool {
         match self {
-            Self::Call { .. } => true,
-            Self::Sequence(expressions) => expressions.iter().any(Self::contains_calls),
-            Self::Assign(_, expression)
-            | Self::AssignField {
-                value: expression, ..
-            } => expression.contains_calls(),
-            Self::Value(_) | Self::ReadField { .. } => false,
+            Self::Call { .. } | Self::Closure(_) => false,
+            Self::Sequence(expressions) => expressions
+                .iter()
+                .all(|expression| expression.allocation_only_syntax(bindings)),
+            Self::Assign { binding, value, .. } => {
+                bindings.contains_key(binding) && value.allocation_only_syntax(bindings)
+            }
+            Self::AssignField { value, .. } => value.allocation_only_syntax(bindings),
+            Self::Value(_) | Self::ReadField { .. } => true,
+        }
+    }
+
+    fn writes(&self, writes: &mut BTreeSet<Id>) {
+        match self {
+            Self::Assign { binding, value, .. } => {
+                writes.insert(binding.clone());
+                value.writes(writes);
+            }
+            Self::Sequence(expressions) => {
+                for expression in expressions.iter() {
+                    expression.writes(writes);
+                }
+            }
+            Self::Call { arguments, .. } => {
+                for argument in arguments.iter() {
+                    argument.writes(writes);
+                }
+            }
+            Self::AssignField { value, .. } => value.writes(writes),
+            Self::Value(_) | Self::ReadField { .. } | Self::Closure(_) => {}
         }
     }
 }
@@ -298,12 +345,19 @@ impl LocalBody {
             expression.reads(&mut reads);
         }
         reads.retain(|binding| !bindings.contains_key(binding));
-        let contains_calls = Self::expressions(&operations).any(LocalExpression::contains_calls);
+        let mut writes = BTreeSet::new();
+        for expression in Self::expressions(&operations) {
+            expression.writes(&mut writes);
+        }
+        writes.retain(|binding| !bindings.contains_key(binding));
+        let allocation_only_syntax = Self::expressions(&operations)
+            .all(|expression| expression.allocation_only_syntax(&bindings));
         Some(Self {
             bindings,
             operations: operations.into(),
             free_reads: (!reads.is_empty()).then(|| reads.into_iter().collect()),
-            contains_calls,
+            captured_writes: (!writes.is_empty()).then(|| writes.into_iter().collect()),
+            allocation_only_syntax,
         })
     }
 
@@ -311,11 +365,15 @@ impl LocalBody {
         self.free_reads.as_deref().unwrap_or_default()
     }
 
-    /// Calls are covered by application execution but have not migrated to
-    /// the allocation-only provider proof. Classify before selecting that
+    pub(super) fn captured_writes(&self) -> &[Id] {
+        self.captured_writes.as_deref().unwrap_or_default()
+    }
+
+    /// Calls, closures and captured writes have not migrated to the
+    /// allocation-only provider proof. Classify before selecting that
     /// proof; a failed migrated query still never retries another evaluator.
-    pub(super) fn contains_calls(&self) -> bool {
-        self.contains_calls
+    pub(super) fn allocation_only_syntax(&self) -> bool {
+        self.allocation_only_syntax
     }
 
     fn expressions(operations: &[LocalOperation]) -> impl Iterator<Item = &LocalExpression> {
