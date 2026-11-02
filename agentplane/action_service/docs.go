@@ -1,6 +1,6 @@
 package main
 
-import "embed"
+import _ "embed"
 
 // openAPI is the OpenAPI document of the `ActionService` routes, generated from its proto and served at
 // /openapi.json.
