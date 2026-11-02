@@ -246,8 +246,9 @@ async def agent_executes_mcp_action(
     offered_model: str,
     scripted: ScriptedUpstream,
     policy_objects: PolicyObjects,
+    sandbox_prefix: str,
 ) -> None:
-    view = await sandbox(f"systest-mcp-{harness}")
+    view = await sandbox(f"{sandbox_prefix}-mcp-{harness}")
     await policy_objects.bind(
         view, "exact-echo", [{"type": "exact_actions", "actions": {mcp_servers.EVERYTHING_GROUP: [mcp_servers.ECHO]}}]
     )
@@ -340,8 +341,9 @@ async def agent_mcp_bff_decision(
     harness: session_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
+    sandbox_prefix: str,
 ) -> None:
-    view = await sandbox(f"systest-mcp-{harness}")
+    view = await sandbox(f"{sandbox_prefix}-mcp-{harness}")
     agent = await ScriptedAgent.open(client, dispatcher, view, harness=harness, model=offered_model, upstream=scripted)
     # Denial runs first on a fresh session; the next request must still wait for its own decision.
     for verdict in (action_service_pb2.VERDICT_DENY, action_service_pb2.VERDICT_ALLOW):
@@ -583,16 +585,17 @@ async def launcher_drives_only_the_sandbox_it_launched(
     offered_model: str,
     scripted: ScriptedUpstream,
     policy_objects: PolicyObjects,
+    sandbox_prefix: str,
 ) -> None:
     """An agent launches a Sandbox through orchestration_v1, which waits for the operator; the launch's
     grants then let that agent open a Session in it, send input, wait for its turn and read the outcome
     without asking again. The launched Sandbox's own account, another incarnation of the name and the
     deleted Sandbox still wait for the operator; a Session in a different Sandbox is refused."""
-    launcher_view = await sandbox(f"systest-launcher-{harness}")
+    launcher_view = await sandbox(f"{sandbox_prefix}-launcher-{harness}")
     launcher = await ScriptedAgent.open(
         client, dispatcher, launcher_view, harness=harness, model=offered_model, upstream=scripted
     )
-    name = f"systest-launched-{harness}"
+    name = f"{sandbox_prefix}-launched-{harness}"
     launch = await launcher.submit(
         ORCHESTRATION_GROUP,
         "launch_sandbox",

@@ -6,6 +6,8 @@ import binascii
 import json
 import re
 import subprocess
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from http import HTTPStatus
 from urllib.parse import parse_qs
@@ -316,6 +318,25 @@ async def login_operator(http: httpx.AsyncClient, credentials: OperatorCredentia
         "system_test.operator_login.oidc", record_exception=False, set_status_on_exception=False
     ):
         await _login_operator(http, credentials)
+
+
+@asynccontextmanager
+async def operator_bff_client(base_url: str, credentials: OperatorCredentials) -> AsyncIterator[httpx.AsyncClient]:
+    """Own one logged-in BFF client with sanitized setup failures.
+
+    The caller must suppress HTTP logging and local-variable dumps for the client's full lifetime.
+    """
+    origin = str(app_origin(base_url)).rstrip("/")
+    async with httpx.AsyncClient(base_url=origin, timeout=30, follow_redirects=False) as http:
+        try:
+            await login_operator(http, credentials)
+            http.headers["Origin"] = origin
+            await verify_action_federation(http)
+        except LoginBlockedError:
+            raise
+        except httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError:
+            raise LoginBlockedError("BLOCKED: OIDC transport or response invalid; auth details withheld") from None
+        yield http
 
 
 async def _login_operator(http: httpx.AsyncClient, credentials: OperatorCredentials) -> None:
