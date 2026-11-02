@@ -1689,11 +1689,7 @@ def generate_manifests(root: Path) -> None:
         nix_cache_attic.chart,
         siblings=["jwt-token.sops.yaml", "cache-keys.sops.yaml"],
         components=["./image-pins"],
-        config_map_generator=[
-            nix_cache_attic.SERVER_CONFIG_MAP,
-            nix_cache_attic.NEXT_CONFIG_MAP,
-            nix_cache_attic.ROTATORS_CONFIG_MAP,
-        ],
+        config_map_generator=[nix_cache_attic.NEXT_CONFIG_MAP, nix_cache_attic.ROTATORS_CONFIG_MAP],
     )
     nix_cache_kustomization = nix_cache_flux_kustomizations.nix_cache(
         flux_chart,

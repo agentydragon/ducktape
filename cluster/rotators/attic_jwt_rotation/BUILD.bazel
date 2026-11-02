@@ -88,7 +88,7 @@ pkg_tar(
 
 # kubectl binary layer — placed at /usr/local/bin/kubectl.
 # The rotator exec's the running attic pod to mint JWTs:
-# `kubectl exec deploy/attic -- atticadm make-token …` (so atticadm runs in its
+# `kubectl exec deploy/attic-next -- atticadm make-token …` (so atticadm runs in its
 # native nix environment and the HS256 signing secret never leaves the attic pod).
 pkg_tar(
     name = "kubectl_layer",

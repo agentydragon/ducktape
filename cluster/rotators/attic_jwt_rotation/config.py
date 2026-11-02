@@ -62,7 +62,7 @@ class Config(BaseModel):
     attic_namespace: str = Field(
         default="nix-cache", description="Namespace of the attic deployment exec'd for minting"
     )
-    attic_deployment: str = Field(default="deploy/attic", description="Deployment exec'd for minting")
+    attic_deployment: str = Field(default="deploy/attic-next", description="Deployment exec'd for minting")
     server_config: str = Field(
         default="/config/server.toml",
         description="Attic server config path (inside the attic pod) passed to atticadm -f",
