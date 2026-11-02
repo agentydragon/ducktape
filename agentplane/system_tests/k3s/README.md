@@ -144,8 +144,8 @@ group: PKI during KubeVirt installation, service images during PKI readiness, an
 fixture application. Each workload waits for its own images before being applied, preventing registry
 pulls. Imports remain serial, and the importer joins before k3s teardown even when startup fails.
 
-The Pod runner uses the production `//agentplane/env/images:disk_image` volume at `/run/agentplane/environment`, with a
-tools image for the rest. Pod suites import `:runner_harnesses_image`, which adds pinned Claude Code and Codex.
+The Pod runner uses the production `//agentplane/env/images:disk_image` volume at `/run/agentplane/environment`, with the
+`environment_tools_harnesses_image` for the rest. It contains the pinned Claude Code and full Codex distributions.
 VM-only targets omit the Pod runner image:
 their Sandboxes use the runner disk and test guest images. Image volumes need containerd 2.1 or later and the
 `ImageVolume` feature gate, which `stack.py` turns on in the API server and kubelet.
