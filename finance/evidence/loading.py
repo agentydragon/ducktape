@@ -302,12 +302,7 @@ _FRENCH_COLUMN_COUNT = 5
 
 
 def french_factors_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
-    """Ken French's factors ZIP to a monthly `(month, market_total_return, risk_free_rate)` frame.
-
-    Both returned columns are DECIMAL monthly simple returns; the file publishes percent.
-    `market_total_return` is `Mkt-RF + RF` — the CRSP value-weighted return on all listed US
-    equity, dividends included — and `risk_free_rate` is the one-month T-bill, which is why one
-    fetch supplies both the equity leg and the short rate back to 1926-07.
+    """Parse the French factors monthly table, preserving its four columns in percent.
 
     **The annual section is the trap.** It repeats the same four column names further down the
     same file, and its rows look like plausible monthly returns (`29.44` for 1927). Appending
@@ -325,24 +320,31 @@ def french_factors_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
         text = archive.read(names[0]).decode("latin-1")
 
     months: list[date] = []
-    market: list[float] = []
-    risk_free: list[float] = []
+    values: list[list[float]] = []
+    header_seen = False
     for line in text.splitlines():
         fields = [field.strip() for field in line.split(",")]
+        if fields == ["", "Mkt-RF", "SMB", "HML", "RF"]:
+            header_seen = True
+            continue
         if len(fields) != _FRENCH_COLUMN_COUNT:
             continue
         stamp = fields[0]
         if len(stamp) != FRENCH_MONTHLY_DATE_WIDTH or not stamp.isdigit():
             continue
+        if not header_seen:
+            raise ValueError(f"{source.provenance_label} monthly rows have no recognized factors header")
         months.append(date(int(stamp[:4]), int(stamp[4:]), 1))
-        market.append((float(fields[1]) + float(fields[4])) / 100.0)
-        risk_free.append(float(fields[4]) / 100.0)
+        values.append([float(field) for field in fields[1:]])
 
     if not months:
         raise ValueError(f"{source.provenance_label} contains no monthly rows")
     frame = pl.DataFrame(
-        {"month": months, "market_total_return": market, "risk_free_rate": risk_free},
-        schema={"month": pl.Date, "market_total_return": pl.Float64, "risk_free_rate": pl.Float64},
+        {
+            "month": months,
+            **{name: [row[i] for row in values] for i, name in enumerate(("Mkt-RF", "SMB", "HML", "RF"))},
+        },
+        schema={"month": pl.Date, "Mkt-RF": pl.Float64, "SMB": pl.Float64, "HML": pl.Float64, "RF": pl.Float64},
     ).sort("month")
 
     span = (months[-1].year - months[0].year) * 12 + months[-1].month - months[0].month + 1
@@ -352,6 +354,16 @@ def french_factors_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
             f"({months[0]}..{months[-1]}); the series must be gapless"
         )
     return frame
+
+
+def french_market_returns(factors: pl.DataFrame) -> pl.DataFrame:
+    """Select CRSP total-market monthly simple returns as decimals, including dividends."""
+    return factors.select("month", ((pl.col("Mkt-RF") + pl.col("RF")) / 100.0).alias("market_total_return"))
+
+
+def french_risk_free_returns(factors: pl.DataFrame) -> pl.DataFrame:
+    """Select the one-month Treasury bill return as a decimal."""
+    return factors.select("month", (pl.col("RF") / 100.0).alias("risk_free_rate"))
 
 
 FRENCH_INTERNATIONAL_MEMBER = "Ind_all.Dat"
@@ -480,7 +492,7 @@ def read_french_market_levels(evidence_dir: Path, source: EvidenceSource) -> lis
     callers at ("compound the column you want"), fixed to `market_total_return` since there is
     no `risk_free_rate`-as-a-level need yet.
     """
-    factors = french_factors_frame(source_bytes(evidence_dir, source), source)
+    factors = french_market_returns(french_factors_frame(source_bytes(evidence_dir, source), source))
     multiplier = 1.0
     levels: list[MonthlyLevel] = []
     for month, monthly_return in zip(factors["month"].to_list(), factors["market_total_return"].to_list(), strict=True):

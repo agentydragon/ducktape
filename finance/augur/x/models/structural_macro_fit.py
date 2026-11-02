@@ -114,7 +114,9 @@ def _macro_var_levels(frames: dict[str, pl.DataFrame], *, start: date | None = N
 
 def _long_record_macro_var_frames(cache: loading.EvidenceFrameCache) -> dict[str, pl.DataFrame]:
     factors = cache.frame(FRENCH_FACTORS)
-    short_rate = factors.select("month", (pl.col("risk_free_rate") * 12.0 * 100.0).alias("value"))
+    short_rate = loading.french_risk_free_returns(factors).select(
+        "month", (pl.col("risk_free_rate") * 12.0 * 100.0).alias("value")
+    )
     long_rate = splice_monthly_frames(
         early=cache.monthly_frame(sources.FRED_LTGOVTBD), late=cache.monthly_frame(FRED_GS10)
     )
@@ -169,7 +171,9 @@ def fit_structural_macro_defaults(evidence_dir: Path, *, macro_window: MacroFitW
             )
             macro_source = ",".join(source.provenance_label for source in LONG_RECORD_MACRO_SOURCES)
     factors = cache.frame(FRENCH_FACTORS)
-    equity = loading.compound_monthly_returns(factors, return_column="market_total_return")
+    equity = loading.compound_monthly_returns(
+        loading.french_market_returns(factors), return_column="market_total_return"
+    )
     equity_fit = fit_log_returns(loading.monthly_levels(equity))
     beta = loading.align_monthly_frames(
         {

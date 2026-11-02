@@ -436,10 +436,12 @@ def load_macro_history(evidence_dir: Path) -> MacroHistory:
 
     cache = loading.EvidenceFrameCache(EvidenceSnapshot.capture(evidence_dir, MACRO_HISTORY_SOURCES))
     factors = cache.frame(sources.FRENCH_FACTORS)
-    short_rate = factors.select(
+    short_rate = loading.french_risk_free_returns(factors).select(
         "month", (pl.col("risk_free_rate") * MONTHS_PER_YEAR * DECIMAL_TO_PERCENT).alias("value")
     )
-    equity = loading.compound_monthly_returns(factors, return_column="market_total_return")
+    equity = loading.compound_monthly_returns(
+        loading.french_market_returns(factors), return_column="market_total_return"
+    )
     long_rate = splice_monthly_frames(
         early=cache.monthly_frame(sources.FRED_LTGOVTBD), late=cache.monthly_frame(sources.FRED_GS10)
     )
