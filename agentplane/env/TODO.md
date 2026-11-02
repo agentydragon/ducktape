@@ -19,22 +19,12 @@ disabled and a root shell when it is enabled.
 
 ## Simplify Environment Runtime reconciliation and coordination
 
-- Complete Runtime's Session lifecycle ownership by removing the remaining separate Harness Host
-  object. Runtime now owns Session startup, History delivery, asynchronous Close, the shared COSI
-  engine and the environment owner. Host still constructs the Session manager and controllers,
-  maintains the native binding/admission gate and RuntimeBridge callbacks for bootstrap and live
-  Execution readiness, and publishes Host desired, applied-intent and report resources. Move those
-  responsibilities into Runtime components and consolidate COSI resources where one owner can
-  preserve exact generations, synchronous admission revocation when COSI fails, and fail-closed
-  handling of uncertain effects without replay. Preserve native quiescence, Execution fencing,
-  journal seal and exact History acknowledgement ordering; join the engine and workers before owner
-  release. Evaluate Session COSI persistence separately under the Session state model below.
 - Systemd observations are typed; process start, exit and stop still use a revision wakeup and
   process-owned result slots. A start-fact prototype retained the live worker slot and required
   additional reads to reconcile COSI observations with completion and teardown. Revisit when a
   typed fact can replace coordination or serve another consumer. Preserve completion ordering,
   teardown finalizers, fencing and no replay.
-- Measure Session reconcile fan-out and contention before optimizing: Host lifecycle updates map to
+- Measure Session reconcile fan-out and contention before optimizing: Environment lifecycle updates map to
   every Session, app-server updates map to every Codex Session, and snapshot publication uses a
   manager-wide mutex. If significant, narrow subscriptions or locking without losing the separate
   inspection-settlement signal needed by the drain barrier.
@@ -48,8 +38,7 @@ disabled and a root shell when it is enabled.
 
 ## Simplify ownership and process fencing with COSI lifecycle primitives
 
-Runtime and embedded Harness Host share the environment owner fence and inherited native
-descriptor. Execution uses Runtime ownership and the COSI Execution controller's serial, joined native
+Runtime owns the environment fence and native harnesses inherit its descriptor. Execution uses Runtime ownership and the COSI Execution controller's serial, joined native
 fence; its independently supervised Pod companion retains the generation lease and namespace fence.
 Revisit the remaining Runtime owner flock across Pod PID 1, subprocess and VM systemd supervision,
 including inherited owner descriptors. Determine
@@ -112,7 +101,7 @@ COSI runtime is pinned in `third_party/go.mod`; evaluate its APIs against the ac
 teardown contracts rather than treating every controller as a simple resource transform.
 
 - `env/cosi.Write` also serves Bootstrap, Session, Codex app-server and Execution status writes,
-  where `changed` wakes Runtime, Host or app-server waiters. The Harness Host aggregate has a
+  where `changed` wakes Runtime or app-server waiters. The Session aggregate has a
   separate `WriteStatus` with the same pre-read; it queues another reconcile on change because it
   does not watch its own output. A pre-read is not an atomic change detector: a competing writer
   could change the resource between that read and Modify. These controllers declare exclusive
@@ -189,7 +178,7 @@ the supported harnesses and model routes before replacing their defaults.
 ## Verify Claude interrupted-turn reconciliation across transcript flush timing
 
 The [native interrupted-turn test](../native/claude/test_turns.py) waits for the interrupt marker to
-persist; it does not establish the no-flush case or the Harness Host's reconciliation result. Compare
+persist; it does not establish the no-flush case or the Runtime's reconciliation result. Compare
 those boundaries against `runtime/claude/history.go` and `adapter.go` with real-binary tests;
 retain unknown results when the transcript does not prove what survived.
 

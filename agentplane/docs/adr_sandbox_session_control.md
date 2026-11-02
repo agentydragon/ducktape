@@ -261,7 +261,7 @@ followed by a delete, waits on this.
 
 - The runner journal's `Seal` row (`env/runtime/journal/journal.go`): `open` refuses entries after it, append rejects
   writes after sealing, and Session sealing prevents further work (`env/runtime/session/session.go`).
-- The Harness Host's per-Session `IngressAcks` COSI resource records `sealed`; the ingress supervisor skips a
+- The Runtime's per-Session `IngressAcks` COSI resource records `sealed`; the ingress supervisor skips a
   sealed Session, and the pusher stops on a sealed first acknowledgement (`env/runtime/ingress/supervisor.go`).
 - The History Service stores the seal in the Session's feed state. `RecordFeedState` keeps it sticky ("conflicting
   seals"), and `Push` returns right after a sealed first acknowledgement, so it takes no entry from a sealed Session
