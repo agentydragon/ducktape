@@ -593,9 +593,12 @@ async def test_old_peak_timer_cannot_replace_a_newer_snapshot() -> None:
     await feed.close_subscription(subscription.token)
 
 
-async def test_event_stream_heartbeats_and_disconnect_cleans_up(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(api, "_SSE_HEARTBEAT_SECONDS", 0.01)
+async def test_event_stream_updates_without_polling_and_disconnect_cleans_up(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(api, "_VIEW_UPDATE_SECONDS", 0.01)
     fetcher = FakeFetcher()
+    result = fetcher.snapshot.quotas.providers[0].last_output.result
+    assert isinstance(result, FetchSuccess)
+    result.windows[0].reset_at = datetime.now(UTC) + timedelta(hours=2)
     app = create_app(bearer_token="test-bearer", fetcher=fetcher)
     feed: SnapshotFeed = app.state.snapshot_feed
     async with (
@@ -604,9 +607,9 @@ async def test_event_stream_heartbeats_and_disconnect_cleans_up(monkeypatch: pyt
         client.stream("GET", "/v1/events", headers={"Authorization": "Bearer test-bearer"}) as response,
     ):
         lines = response.aiter_lines().__aiter__()
-        assert (await _read_view(lines)).providers
-        assert await anext(lines) == ": heartbeat"
-        assert await anext(lines) == ""
-        assert fetcher.calls == 1  # Heartbeats do not poll providers per client.
+        first = (await _read_view(lines)).providers[0].display_windows[0]
+        second = (await _read_view(lines)).providers[0].display_windows[0]
+        assert second.elapsed > first.elapsed
+        assert fetcher.calls == 1  # Presentation updates do not poll providers per client.
     async with asyncio.timeout(1):
         await feed.wait_for_subscribers(0)

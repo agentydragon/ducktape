@@ -83,6 +83,7 @@ py_library(
         "//aiquota/render:human_lib",
         "//aiquota/render:tmux_lib",
         "//aiquota/render:view_model_lib",
+        "@pypi//rich",
         "@pypi//typer",
     ],
 )
@@ -112,6 +113,7 @@ py_test(
         ":cache",
         ":config",
         ":desktop_lib",
+        ":models",
         "//:conftest",
         "@pypi//dbus_next",
         "@pypi//httpx",

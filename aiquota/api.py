@@ -48,7 +48,7 @@ _bearer = HTTPBearer(auto_error=False)
 logger = logging.getLogger(__name__)
 
 _FRONTEND_INDEX = "_main/aiquota/frontend/dist/index.html"
-_SSE_HEARTBEAT_SECONDS = 10
+_VIEW_UPDATE_SECONDS = 1
 
 
 class SnapshotFetcher(Protocol):
@@ -586,19 +586,20 @@ def create_app(
         async def event_stream() -> AsyncIterator[bytes]:
             subscription = await feed.subscribe_current()
             revision = subscription.revision
+            snapshot = subscription.snapshot
             try:
-                yield _view_event(subscription.snapshot)
+                yield _view_event(snapshot)
                 while True:
                     if await request.is_disconnected():
                         return
                     try:
                         revision, snapshot = await asyncio.wait_for(
-                            feed.wait_after(revision), timeout=_SSE_HEARTBEAT_SECONDS
+                            feed.wait_after(revision), timeout=_VIEW_UPDATE_SECONDS
                         )
                     except TimeoutError:
                         if await request.is_disconnected():
                             return
-                        yield b": heartbeat\n\n"
+                        yield _view_event(snapshot)
                     else:
                         yield _view_event(snapshot)
             finally:

@@ -7,8 +7,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { ProviderView, QuotaWindow } from "./schema";
-import { effectiveQuota, resetSeconds } from "./quotas";
+import type { ProviderView, QuotaWindow, WindowView } from "./schema";
+import { effectiveQuota } from "./quotas";
 
 const FETCHED_AT = "2026-01-15T12:00:00Z";
 const EARLIER = "2026-01-14T12:00:00Z";
@@ -18,6 +18,32 @@ function window(overrides: Partial<QuotaWindow> = {}): QuotaWindow {
 }
 
 function provider(overrides: Partial<ProviderView>): ProviderView {
+  const result = overrides.last_output?.result;
+  const current =
+    result?.kind === "success" &&
+    (result.windows?.length ||
+      result.available_reset_credits != null ||
+      result.paid_credits != null ||
+      result.prepaid_balance != null);
+  const windows =
+    result === undefined
+      ? [window()]
+      : current && result.kind === "success"
+        ? result.windows
+        : (overrides.last_success?.result.windows ?? []);
+  const display: WindowView[] = (windows ?? [])
+    .filter((w) => w.display)
+    .map((w) => ({
+      ...w,
+      label: "5h",
+      used: w.used_percent,
+      reset: "1h00m",
+      pace: null,
+      forecast: null,
+      tint: "ok",
+      elapsed: 0.5,
+      exhausted: false,
+    }));
   return {
     provider: "claude",
     last_output: {
@@ -29,6 +55,9 @@ function provider(overrides: Partial<ProviderView>): ProviderView {
     paid_credits_active: false,
     extra_status: "none",
     burn: null,
+    display_windows: display,
+    summary_tint: "unknown",
+    summary_index: null,
     ...overrides,
   };
 }
@@ -126,16 +155,5 @@ describe("effectiveQuota", () => {
       })
     );
     expect(quota.windows.map((shown) => shown.window_seconds)).toEqual([18000]);
-  });
-});
-
-describe("resetSeconds", () => {
-  it("counts down from an absolute reset instant, so a held snapshot stays truthful", () => {
-    const held = window({ reset_seconds: 3600, reset_at: "2026-01-15T13:00:00Z" });
-    expect(resetSeconds(held, Date.parse("2026-01-15T12:30:00Z"))).toBe(1800);
-  });
-
-  it("keeps the reported countdown when the provider gave no instant", () => {
-    expect(resetSeconds(window({ reset_seconds: 900 }), Date.parse("2026-01-15T18:00:00Z"))).toBe(900);
   });
 });

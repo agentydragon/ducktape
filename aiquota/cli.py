@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 import typer
+from rich.console import Console
 
 from aiquota.cache import QuotaService
 from aiquota.config import DEFAULT_CONFIG_PATH, load as load_config
@@ -36,7 +37,7 @@ def fetch(ctx: typer.Context) -> None:
     when older than `CACHE_TTL` (see aiquota/cache.py).
     """
     quotas = asyncio.run(_service(ctx).fetch_all())
-    print(render_human.render(quotas))
+    Console().print(render_human.render_text(quotas), highlight=False)
 
 
 @app.command()

@@ -221,3 +221,12 @@ def test_renders_shared_fixture(fixture_name: str, snapshot: SnapshotAssertion) 
     fixture_path = get_required_path(f"_main/aiquota/testing/fixtures/{fixture_name}.yaml")
     quotas = load_quota_fixture(fixture_path)
     assert human.render(quotas, now=_FETCHED_AT, tz=UTC) == snapshot
+
+
+def test_terminal_window_uses_shared_tint() -> None:
+    quotas = _quotas(
+        _pq("claude", _success(short_window=QuotaWindow(used_percent=60, reset_seconds=9000, window_seconds=18000)))
+    )
+    rendered = human.render_text(quotas, now=_FETCHED_AT, tz=UTC)
+    assert "Δ+10%" in rendered.plain
+    assert any(span.style == "yellow" for span in rendered.spans)

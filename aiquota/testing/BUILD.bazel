@@ -26,10 +26,6 @@ py_library(
     srcs = ["export_web_fixtures.py"],
     deps = [
         ":quota_fixtures",
-        "//aiquota:models",
-        "//aiquota:pace",
-        "//aiquota/render:format_lib",
-        "//aiquota/render:view_model_lib",
         "//util/bazel:runfiles",
     ],
 )

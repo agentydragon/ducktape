@@ -9,23 +9,14 @@ import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
 import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
 import {
-  bindingSummary,
-  computePace as sharedComputePace,
-  displayUsedPercent as sharedDisplayUsedPercent,
-  elapsedFraction as sharedElapsedFraction,
   formatAge as sharedFormatAge,
   formatClock,
   formatDuration as sharedFormatDuration,
   formatKnownExpiry,
   formatMultiplier,
-  formatPace,
-  formatPaceForecast,
   formatPeakInterval,
   formatPrepaidBalance as sharedFormatPrepaidBalance,
-  isExhausted as sharedIsExhausted,
   roundHalfToEven,
-  tintFor,
-  formatWindowLabel,
 } from "./presentation.js";
 
 const STALE_AFTER_SECONDS = 5 * 60;
@@ -159,23 +150,6 @@ function formatCheckFailure(error, lastCheck, haveWindows) {
   return `${prefix} ${formatAge(ageSeconds)} ago: ${error}`;
 }
 
-// Pure pace computation. See DESIGN.md ("Pace math") for derivation.
-function computePace({ usedPercent, resetSeconds, windowSeconds }) {
-  if (usedPercent == null || resetSeconds == null || windowSeconds == null || windowSeconds <= 0) {
-    return null;
-  }
-  return sharedComputePace({ usedPercent, resetSeconds, windowSeconds });
-}
-
-function isExhausted(state) {
-  return state?.usedPercent != null && sharedIsExhausted(state);
-}
-
-function formatUsedPercent(state) {
-  if (state?.usedPercent == null) return "?";
-  return `${sharedDisplayUsedPercent(state.usedPercent)}%`;
-}
-
 function formatCompactDollars(usd) {
   if (usd >= 1000) {
     const k = usd / 1000;
@@ -251,11 +225,6 @@ function formatPeakSchedule(burn) {
 function clamp01(value) {
   if (value == null || !Number.isFinite(value)) return null;
   return Math.max(0, Math.min(1, value));
-}
-
-function elapsedFraction(state) {
-  if (state?.resetSeconds == null || state?.windowSeconds == null || state.windowSeconds <= 0) return null;
-  return sharedElapsedFraction(state);
 }
 
 function emptyProviderState() {
@@ -788,6 +757,14 @@ const QuotaIndicator = GObject.registerClass(
         resetAtMs,
         resetSeconds: w.reset_seconds ?? null,
         windowSeconds: w.window_seconds ?? null,
+        label: w.label,
+        used: w.used,
+        reset: w.reset,
+        pace: w.pace,
+        forecast: w.forecast,
+        tint: w.tint,
+        elapsed: w.elapsed,
+        exhausted: w.exhausted,
       };
     }
 
@@ -837,11 +814,17 @@ const QuotaIndicator = GObject.registerClass(
         const result = pq.last_output?.result ?? {};
         const isSuccess = result.kind === "success";
         const lastSuccess = this._mapLastSuccess(pq.last_success);
+        const displayWindows = (pq.display_windows ?? []).map((window) => this._mapWindow(window));
+        const currentUsable =
+          isSuccess &&
+          (result.windows?.length ||
+            result.available_reset_credits != null ||
+            result.paid_credits != null ||
+            result.prepaid_balance != null);
+        if (lastSuccess && !currentUsable) lastSuccess.windows = displayWindows;
         const lastCheck = pq.last_output?.fetched_at ? new Date(pq.last_output.fetched_at).getTime() : fetchedAt;
         p.state = {
-          windows: isSuccess
-            ? (result.windows ?? []).map((window) => this._mapWindow(window)).filter((window) => window.display)
-            : [],
+          windows: currentUsable ? displayWindows : [],
           lastFetch: isSuccess ? lastCheck : (lastSuccess?.fetchedAt ?? null),
           lastCheck,
           error: isSuccess ? null : (result.error ?? null),
@@ -856,10 +839,19 @@ const QuotaIndicator = GObject.registerClass(
           extraStatus: pq.extra_status ?? "none",
           paidCreditsActive: pq.paid_credits_active === true,
           burn: pq.burn ?? null,
+          summaryTint: pq.summary_tint ?? "unknown",
+          summaryIndex: pq.summary_index ?? null,
           lastSuccess,
         };
       }
-      this._buildPopup();
+      const needsRebuild = this._providers.some((p) => {
+        const count =
+          p.state.currentlyOverPlan || p.state.paidCreditsActive
+            ? 1
+            : Math.max(1, effectiveState(p.state).windows.length);
+        return p.windowRows.length !== count;
+      });
+      if (needsRebuild) this._buildPopup();
     }
 
     _setProviderVisibility(providerIds) {
@@ -912,18 +904,12 @@ const QuotaIndicator = GObject.registerClass(
         return;
       }
       const liveWindows = windows.map((window) => withLiveReset(window));
-      const paces = liveWindows.map((window) => (isExhausted(window) ? null : computePace(window)));
-      const exhaustedWindows = liveWindows.filter((window) => isExhausted(window));
-      const longestDuration = Math.max(...liveWindows.map((window) => window.windowSeconds));
-      const tints = liveWindows.map((window, index) =>
-        tintFor(paces[index] ?? null, window.usedPercent, window.windowSeconds < longestDuration)
-      );
+      const exhaustedWindows = liveWindows.filter((window) => window.exhausted);
       const overPlan = state.currentlyOverPlan === true || state.paidCreditsActive === true;
       const stale = staleAge != null || isStaleFetch(state.lastFetch);
-      const binding = bindingSummary(liveWindows.map((window, index) => ({ name: window.name, tint: tints[index] })));
-      const tint = overPlan ? "hot" : stale ? "stale" : exhaustedWindows.length > 0 ? "hot" : binding.tint;
+      const tint = overPlan ? "hot" : stale ? "stale" : state.summaryTint;
       this._setTint(icon, paceLabel, tint);
-      const paceText = binding.index == null ? "" : (formatPace(paces[binding.index]) ?? "");
+      const paceText = state.summaryIndex == null ? "" : (liveWindows[state.summaryIndex]?.pace ?? "");
       // A peak window costs a multiple per token, so it belongs in the panel
       // where it is visible without opening the popup.
       const burning = state.burn?.in_peak === true ? "🔥" : "";
@@ -953,11 +939,8 @@ const QuotaIndicator = GObject.registerClass(
           p.windowRows.slice(1).forEach((row) => (row.visible = false));
         } else {
           const { windows, staleAge } = effectiveState(p.state);
-          const longestDuration = Math.max(...windows.map((window) => window.windowSeconds));
-          if (windows.length === 0) this._renderPopupRow(p.windowRows[0], null, staleAge, false);
-          windows.forEach((window, index) =>
-            this._renderPopupRow(p.windowRows[index], window, staleAge, window.windowSeconds < longestDuration)
-          );
+          if (windows.length === 0) this._renderPopupRow(p.windowRows[0], null, staleAge);
+          windows.forEach((window, index) => this._renderPopupRow(p.windowRows[index], window, staleAge));
           p.windowRows.forEach((row, index) => (row.visible = index < Math.max(1, windows.length)));
         }
       }
@@ -1029,13 +1012,10 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _formatExtraActiveWindow(state) {
-      const liveState = withLiveReset(state);
-      const label = formatWindowLabel(liveState);
-      const used = formatUsedPercent(liveState);
-      return `${label}: ${used} ↻${formatDuration(liveState.resetSeconds)}`;
+      return `${state.label}: ${state.used}% ↻${state.reset}`;
     }
 
-    _renderPopupRow(item, state, staleAgeSeconds, isShort) {
+    _renderPopupRow(item, state, staleAgeSeconds) {
       if (state == null) {
         item._bars.visible = false;
         item._summaryLabel.set_text("no data");
@@ -1043,29 +1023,19 @@ const QuotaIndicator = GObject.registerClass(
         return;
       }
       item._bars.visible = true;
-      const liveState = withLiveReset(state);
-      const label = formatWindowLabel(liveState);
-      const exhausted = isExhausted(liveState);
-      const pace = exhausted ? null : computePace(liveState);
-      const used = formatUsedPercent(liveState);
-      const reset = `↻${formatDuration(liveState.resetSeconds)}`;
-      const paceStr = formatPace(pace);
-      const forecast = formatPaceForecast(pace, liveState.resetSeconds);
-      const parts = [used, reset];
-      if (exhausted) {
+      const parts = [`${state.used}%`, `↻${state.reset}`];
+      if (state.exhausted) {
         parts.push("exhausted");
       } else {
-        if (paceStr) parts.push(`Δ${paceStr}`);
-        if (forecast) parts.push(forecast);
+        if (state.pace) parts.push(`Δ${state.pace}`);
+        if (state.forecast) parts.push(state.forecast);
       }
-      item._summaryLabel.set_text(`${label}: ${parts.join("  ")}`);
-
-      const usageTint = staleAgeSeconds != null ? "stale" : tintFor(pace, liveState.usedPercent, isShort);
+      item._summaryLabel.set_text(`${state.label}: ${parts.join("  ")}`);
       this._setQuotaBar(
         item._quotaBar,
-        liveState.usedPercent == null ? null : liveState.usedPercent / 100,
-        elapsedFraction(liveState),
-        usageTint
+        state.usedPercent == null ? null : state.usedPercent / 100,
+        state.elapsed,
+        staleAgeSeconds != null ? "stale" : state.tint
       );
     }
 

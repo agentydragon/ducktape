@@ -26,7 +26,7 @@ Authorization: Bearer <AIQUOTA_API_BEARER_TOKEN>
 
 `/v1/quotas` returns the shared view model (`aiquota/render/view_model.py`): each
 provider's normalized windows plus the derived policy bits every surface renders —
-`currently_over_plan`, `extra_status`, and the peak-burn schedule. Serving those rather
+`currently_over_plan`, `extra_status`, the peak-burn schedule, and per-window presentation (pace, forecast, tint and meter position). Serving those rather
 than letting each client re-derive them is what keeps the CLI, GNOME popup, browser
 dashboard, and Haku Console from drifting (see AGENTS.md). `/raw` returns the response body
 from the provider's usage endpoint, with fetch status and content type. It also
@@ -41,9 +41,10 @@ not replace the normal Claude usage response.
 Server-Sent Events. It first emits `event: view` with the complete `/v1/quotas`
 view JSON, then emits the latest view after each newly published quota snapshot.
 Updates coalesce to the newest snapshot for slow clients; reconnecting starts with
-the current view instead of replaying history. The stream sends a heartbeat comment
-every 10 seconds, disables proxy buffering, and also emits when a time-derived
-peak-burn status changes between provider polls.
+the current view instead of replaying history. While connected, each stream also sends
+a refreshed presentation every second, without polling providers. This keeps pace and
+tint current as time passes. The stream disables proxy buffering and also emits when a
+time-derived peak-burn status changes between provider polls.
 
 ## Browser dashboard and OAuth API
 

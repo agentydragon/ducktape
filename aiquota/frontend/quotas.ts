@@ -1,4 +1,4 @@
-import type { ExtraSpend, FetchSuccess, PaidCredits, ProviderView, QuotaWindow } from "./schema";
+import type { ExtraSpend, FetchSuccess, PaidCredits, ProviderView, WindowView } from "./schema";
 
 /**
  * The `/v1/quotas` payload and the one reading of it every surface performs.
@@ -13,7 +13,7 @@ import type { ExtraSpend, FetchSuccess, PaidCredits, ProviderView, QuotaWindow }
 
 export type PrepaidBalance = NonNullable<FetchSuccess["prepaid_balance"]>;
 export type EffectiveQuota = {
-  windows: QuotaWindow[];
+  windows: WindowView[];
   extraSpend: ExtraSpend | null;
   paidCredits: PaidCredits | null;
   prepaidBalance: PrepaidBalance | null;
@@ -35,10 +35,11 @@ export function effectiveQuota(provider: ProviderView): EffectiveQuota {
       result.paid_credits != null ||
       result.prepaid_balance != null)
   ) {
-    return { ...shown(result), staleSince: null, error };
+    return { ...shown(result), windows: provider.display_windows, staleSince: null, error };
   }
   const fallback = provider.last_success;
-  if (fallback) return { ...shown(fallback.result), staleSince: fallback.fetched_at, error };
+  if (fallback)
+    return { ...shown(fallback.result), windows: provider.display_windows, staleSince: fallback.fetched_at, error };
   return {
     windows: [],
     extraSpend: null,
@@ -52,20 +53,8 @@ export function effectiveQuota(provider: ProviderView): EffectiveQuota {
   };
 }
 
-/** Seconds until reset, counted from `now` where the provider gave an absolute instant. */
-export function resetSeconds(window: QuotaWindow, now: number): number {
-  if (!window.reset_at) return window.reset_seconds;
-  return Math.max(0, (Date.parse(window.reset_at) - now) / 1000);
-}
-
-/** A window shorter than the provider's longest is the burst window: hitting it blocks now. */
-export function isShortWindow(window: QuotaWindow, windows: QuotaWindow[]): boolean {
-  return window.window_seconds < Math.max(...windows.map((candidate) => candidate.window_seconds));
-}
-
-function shown(result: FetchSuccess): Omit<EffectiveQuota, "staleSince" | "error"> {
+function shown(result: FetchSuccess): Omit<EffectiveQuota, "staleSince" | "error" | "windows"> {
   return {
-    windows: (result.windows ?? []).filter((window) => window.display),
     extraSpend: result.extra_spend ?? null,
     paidCredits: result.paid_credits ?? null,
     prepaidBalance: result.prepaid_balance ?? null,

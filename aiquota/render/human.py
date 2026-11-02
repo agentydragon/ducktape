@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, tzinfo
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
+from rich.text import Text
+
 from aiquota.models import (
     AllQuotas,
     ExtraSpend,
@@ -11,31 +13,29 @@ from aiquota.models import (
     PaidCredits,
     PrepaidBalance,
     PrepaidBalanceAvailable,
-    QuotaWindow,
     SuccessfulProviderFetch,
 )
-from aiquota.pace import compute_pace, is_exhausted
 from aiquota.render.format import (
-    display_used_percent,
     format_age,
     format_burn,
-    format_duration,
     format_known_reset_credit_expiries,
-    format_pace,
-    format_pace_forecast,
     format_peak_schedule,
     format_prepaid_balance,
-    format_window_label,
 )
-from aiquota.render.view_model import ProviderView, to_view
+from aiquota.render.view_model import ProviderView, WindowView, to_view
 
 
 def render(quotas: AllQuotas, now: datetime | None = None, tz: tzinfo | None = None) -> str:
-    """`tz` defaults to system local; tests pin it so snapshots hold on any machine."""
+    """Plain text for snapshots and non-interactive callers."""
+    return render_text(quotas, now, tz).plain
+
+
+def render_text(quotas: AllQuotas, now: datetime | None = None, tz: tzinfo | None = None) -> Text:
+    """Apply the server-owned tint to terminal rows; Rich disables color when redirected."""
     render_time = now or datetime.now(UTC)
     view = to_view(quotas, render_time)
     widths = _column_widths(view.providers, render_time)
-    return "\n".join(_render_provider(pv, render_time, widths, tz) for pv in view.providers)
+    return Text("\n").join(_render_provider(provider, render_time, widths, tz) for provider in view.providers)
 
 
 @dataclass(frozen=True)
@@ -53,7 +53,7 @@ class _WindowRow:
     forecast: str | None
 
 
-def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz: tzinfo | None) -> str:
+def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz: tzinfo | None) -> Text:
     out_result = pv.last_output.result
     error = out_result.error if not isinstance(out_result, FetchSuccess) else None
 
@@ -71,7 +71,7 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
     prepaid_balance_line = _format_prepaid_balance(prepaid_balance, prepaid_stale_age)
 
     if error and not windows:
-        return (
+        return Text(
             _header(
                 pv.provider,
                 error,
@@ -98,7 +98,7 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
             lines.append(f"  {prepaid_balance_line}")
         lines.append(_active_windows_line(windows))
         lines.extend(_burn_lines(pv, now, tz))
-        return "\n".join(lines)
+        return Text("\n".join(lines))
 
     lines = [
         _header(
@@ -118,7 +118,12 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
     if prepaid_balance_line:
         lines.append(f"  {prepaid_balance_line}")
     lines.extend(_burn_lines(pv, now, tz))
-    lines.extend(_format_window_line(_window_row(window), widths) for window in windows)
+    parts = [Text(line) for line in lines]
+    colors = {"cool": "blue", "ok": "white", "warn": "yellow", "hot": "red", "unknown": "white", "stale": "yellow"}
+    parts.extend(
+        Text(_format_window_line(_window_row(window), widths), style=colors["stale" if stale_age else window.tint])
+        for window in windows
+    )
     # Prepaid still has room, but the user incurred billable spend earlier in the
     # billing month. Surface it so the monthly bill doesn't sneak up. Built as a
     # value rather than a flag so `extra`'s narrowing survives into the call.
@@ -126,12 +131,12 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
         f"  {_format_extra_informational(extra)}" if pv.extra_status == "informational" and extra is not None else None
     )
     if extra_line is not None:
-        lines.append(extra_line)
+        parts.append(Text(extra_line))
     if not windows and extra_line is None and prepaid_balance_line is None:
         # Gate on "nothing substantive was reported", not on line count — the
         # burn schedule adds lines without saying anything about quota.
-        lines.append("  no data")
-    return "\n".join(lines)
+        parts.append(Text("  no data"))
+    return Text("\n").join(parts)
 
 
 def _effective_prepaid_balance(pv: ProviderView, now: datetime) -> tuple[PrepaidBalance | None, str | None]:
@@ -156,7 +161,7 @@ def _burn_lines(pv: ProviderView, now: datetime, tz: tzinfo | None) -> list[str]
 
 def _effective_windows(
     pv: ProviderView, now: datetime
-) -> tuple[list[QuotaWindow], ExtraSpend | None, PaidCredits | None, int | None, list[datetime], bool, str | None]:
+) -> tuple[list[WindowView], ExtraSpend | None, PaidCredits | None, int | None, list[datetime], bool, str | None]:
     out_result = pv.last_output.result
     # If the latest call gave us nothing usable, fall back to the prior
     # successful snapshot — stale-but-real numbers beat "no data".
@@ -167,7 +172,7 @@ def _effective_windows(
         or out_result.prepaid_balance is not None
     ):
         return (
-            [_refreshed_window(window, now) for window in out_result.windows if window.display],
+            pv.display_windows,
             out_result.extra_spend,
             out_result.paid_credits,
             out_result.available_reset_credits,
@@ -176,7 +181,7 @@ def _effective_windows(
             None,
         )
     if pv.last_success is not None:
-        return _stale_windows(pv.last_success, now)
+        return _stale_windows(pv.last_success, now, pv.display_windows)
     return [], None, None, None, [], False, None
 
 
@@ -194,10 +199,10 @@ def _column_widths(providers: list[ProviderView], now: datetime) -> _ColumnWidth
 
 
 def _stale_windows(
-    snap: SuccessfulProviderFetch, now: datetime
-) -> tuple[list[QuotaWindow], ExtraSpend | None, PaidCredits | None, int | None, list[datetime], bool, str]:
+    snap: SuccessfulProviderFetch, now: datetime, windows: list[WindowView]
+) -> tuple[list[WindowView], ExtraSpend | None, PaidCredits | None, int | None, list[datetime], bool, str]:
     return (
-        [_refreshed_window(window, now) for window in snap.result.windows if window.display],
+        windows,
         snap.result.extra_spend,
         snap.result.paid_credits,
         snap.result.available_reset_credits,
@@ -205,14 +210,6 @@ def _stale_windows(
         snap.result.reset_credit_expiry_lookup_failed,
         format_age((now - snap.fetched_at).total_seconds()),
     )
-
-
-def _refreshed_window(w: QuotaWindow, now: datetime) -> QuotaWindow:
-    # Snapshot's reset_seconds was correct at snapshot time; recompute from
-    # reset_at so the countdown shown to the user reflects "now".
-    if w.reset_at is None:
-        return w
-    return w.model_copy(update={"reset_seconds": max(0.0, (w.reset_at - now).total_seconds())})
 
 
 def _header(
@@ -300,33 +297,17 @@ def _format_prepaid_balance(balance: PrepaidBalance | None, stale_age: str | Non
     return line
 
 
-def _active_windows_line(windows: list[QuotaWindow]) -> str:
+def _active_windows_line(windows: list[WindowView]) -> str:
     return "  " + "  ".join(_active_window_part(window) for window in windows)
 
 
-def _active_window_part(window: QuotaWindow) -> str:
-    label = format_window_label(window)
-    return f"{label}: {display_used_percent(window):>3d}% ↻ {format_duration(window.reset_seconds)}"
+def _active_window_part(window: WindowView) -> str:
+    return f"{window.label}: {window.used:>3d}% ↻ {window.reset}"
 
 
-def _window_row(w: QuotaWindow) -> _WindowRow:
-    used = f"{display_used_percent(w):>3d}%"
-    if is_exhausted(w):
-        return _WindowRow(
-            label=format_window_label(w),
-            used=used,
-            reset=format_duration(w.reset_seconds),
-            pace=None,
-            forecast="exhausted",
-        )
-    pace = compute_pace(w)
-    pace_str = format_pace(pace)
+def _window_row(w: WindowView) -> _WindowRow:
     return _WindowRow(
-        label=format_window_label(w),
-        used=used,
-        reset=format_duration(w.reset_seconds),
-        pace=f"Δ{pace_str}" if pace_str else None,
-        forecast=format_pace_forecast(pace, w.reset_seconds),
+        label=w.label, used=f"{w.used:>3d}%", reset=w.reset, pace=f"Δ{w.pace}" if w.pace else None, forecast=w.forecast
     )
 
 

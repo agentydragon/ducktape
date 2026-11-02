@@ -8,116 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { displayUsedPercent, formatWindowLabel } from "./format";
-import cases from "./fixtures/format_cases.json";
-import {
-  bindingSummary,
-  computePace,
-  formatDuration,
-  formatPace,
-  formatPaceForecast,
-  formatPrepaidBalance,
-  isExhausted,
-  roundHalfToEven,
-  tintFor,
-  type Tint,
-} from "../shared/presentation.js";
-
-type FormatCase = {
-  name: string | null;
-  used_percent: number;
-  reset_seconds: number;
-  window_seconds: number;
-  is_short: boolean;
-  expected: {
-    label: string;
-    used_percent: number;
-    reset: string;
-    pace: string | null;
-    forecast: string | null;
-    tint: string;
-  };
-};
-
-const CASES = cases as FormatCase[];
-
-describe("the Python renderers' output", () => {
-  // Without this the loop below silently becomes zero tests if the generator emits nothing.
-  it("is generated for the scenarios at all", () => {
-    expect(CASES.length).toBeGreaterThan(0);
-  });
-
-  for (const { name, used_percent, reset_seconds, window_seconds, is_short, expected } of CASES) {
-    const span = `${window_seconds}s window, ${used_percent}% used, ${reset_seconds}s to reset`;
-    it(`is reproduced for ${is_short ? "short" : "long"} ${span}`, () => {
-      const window = { usedPercent: used_percent, resetSeconds: reset_seconds, windowSeconds: window_seconds };
-      const pace = isExhausted(window) ? null : computePace(window);
-      expect({
-        label: formatWindowLabel({ name, window_seconds }),
-        used_percent: displayUsedPercent({ used_percent }),
-        reset: formatDuration(reset_seconds),
-        pace: formatPace(pace),
-        forecast: formatPaceForecast(pace, reset_seconds),
-        tint: tintFor(pace, used_percent, is_short),
-      }).toEqual(expected);
-    });
-  }
-});
-
-describe("compact binding summary", () => {
-  type BindingWindow = { name: string | null; tint: Tint };
-  type BindingSummaryCase = {
-    windows: BindingWindow[];
-    expected: { tint: Tint; index: number | null };
-  };
-
-  const bindingSummaryCases: BindingSummaryCase[] = [
-    {
-      windows: [
-        { name: "burst", tint: "warn" },
-        { name: "weekly", tint: "cool" },
-      ],
-      expected: { tint: "warn", index: 0 },
-    },
-    {
-      windows: [
-        { name: "primary", tint: "ok" },
-        { name: "secondary", tint: "hot" },
-      ],
-      expected: { tint: "hot", index: 1 },
-    },
-    {
-      windows: [
-        { name: "burst", tint: "cool" },
-        { name: "weekly", tint: "ok" },
-      ],
-      expected: { tint: "cool", index: 0 },
-    },
-    {
-      windows: [
-        { name: "primary", tint: "ok" },
-        { name: "secondary", tint: "ok" },
-      ],
-      expected: { tint: "ok", index: 1 },
-    },
-    {
-      windows: [
-        { name: "primary", tint: "ok" },
-        { name: null, tint: "ok" },
-        { name: "secondary", tint: "ok" },
-      ],
-      expected: { tint: "ok", index: 1 },
-    },
-    {
-      windows: [{ name: "stale", tint: "stale" }],
-      expected: { tint: "unknown", index: null },
-    },
-  ];
-
-  it.each(bindingSummaryCases)("keeps pace on a window with the summary tint", ({ windows, expected }) => {
-    expect(bindingSummary(windows)).toEqual(expected);
-  });
-});
+import { formatDuration, formatPrepaidBalance, roundHalfToEven } from "../shared/presentation.js";
 
 describe("formatPrepaidBalance", () => {
   it.each([
@@ -142,8 +33,6 @@ describe("Python's ties-to-even rounding", () => {
   });
 
   it("uses ties-to-even in the shared visible quota formats", () => {
-    expect(displayUsedPercent({ used_percent: 12.5 })).toBe(12);
-    expect(formatPace({ deviation: 12.5, projectedAtReset: 75, secondsToExhaust: null, stable: true })).toBe("+12%");
     expect(formatDuration(3598.5)).toBe("59m");
   });
 });

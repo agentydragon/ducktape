@@ -37,6 +37,9 @@ class Stream extends EventTarget {
               paid_credits_active: false,
               extra_status: "hidden",
               burn: null,
+              display_windows: [],
+              summary_tint: "unknown",
+              summary_index: null,
             },
           ],
         }),
@@ -109,6 +112,9 @@ describe("quota subscription", () => {
                 paid_credits_active: false,
                 extra_status: "none",
                 burn: null,
+                display_windows: [],
+                summary_tint: "unknown",
+                summary_index: null,
               },
             ],
           }),
@@ -137,6 +143,9 @@ describe("quota subscription", () => {
                 paid_credits_active: false,
                 extra_status: "none",
                 burn: null,
+                display_windows: [],
+                summary_tint: "unknown",
+                summary_index: null,
               },
             ],
           }),
@@ -144,6 +153,52 @@ describe("quota subscription", () => {
       );
     });
     expect(container.textContent).toContain("Claude prepaid balance unavailable");
+  });
+
+  it("renders server presentation without recomputing pace or tint", () => {
+    const stream = Stream.instances[0];
+    const raw = { name: null, display: true, used_percent: 60, reset_seconds: 9000, window_seconds: 18000 };
+    function send(pace: string, tint: string) {
+      stream.dispatchEvent(
+        new MessageEvent("view", {
+          data: JSON.stringify({
+            fetched_at: "2026-01-15T12:00:00Z",
+            providers: [
+              {
+                provider: "codex",
+                last_output: { fetched_at: "2026-01-15T12:00:00Z", result: { kind: "success", windows: [raw] } },
+                last_success: null,
+                currently_over_plan: false,
+                paid_credits_active: false,
+                extra_status: "none",
+                burn: null,
+                display_windows: [
+                  {
+                    ...raw,
+                    label: "5h",
+                    used: 60,
+                    reset: "2h30m",
+                    pace,
+                    forecast: "on pace",
+                    tint,
+                    elapsed: 0.5,
+                    exhausted: false,
+                  },
+                ],
+                summary_tint: tint,
+                summary_index: 0,
+              },
+            ],
+          }),
+        })
+      );
+    }
+    act(() => send("+10%", "warn"));
+    expect(container.textContent).toContain("Δ+10%");
+    expect(container.querySelector(".aiquota-card")?.className).toContain("aiquota-tint-warn");
+    act(() => send("-10%", "cool"));
+    expect(container.textContent).toContain("Δ-10%");
+    expect(container.querySelector(".aiquota-card")?.className).toContain("aiquota-tint-cool");
   });
 
   it("retains the snapshot through a disconnect and clears the error on recovery", () => {
