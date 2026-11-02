@@ -79,12 +79,12 @@ func TestQuiesceStatusBarrierRequiresConnectedCurrentHostBinding(t *testing.T) {
 		t.Fatalf("stale Host status binding = %v, want unavailable", err)
 	}
 	binding.Generation++
-	host.client.SetRuntimeBinding(r.bootID, false)
-	defer host.client.SetRuntimeBinding(r.bootID, true)
+	r.sessions.SetRuntimeBinding(r.bootID, false)
+	defer r.sessions.SetRuntimeBinding(r.bootID, true)
 	if _, err := c.runQuiesceBarrier(context.Background(), quiesceCheckHostStatus); status.Code(err) != codes.Unavailable {
 		t.Fatalf("revoked Host connection gate = %v, want unavailable", err)
 	}
-	host.client.SetRuntimeBinding(r.bootID, true)
+	r.sessions.SetRuntimeBinding(r.bootID, true)
 	r.mu.Lock()
 	host.active = false
 	r.mu.Unlock()
@@ -116,7 +116,7 @@ func TestQuiesceStatusBarrierDoesNotWaitForHostIntentApplication(t *testing.T) {
 	t.Cleanup(func() { release.Do(func() { close(store.release) }) })
 	store.armed.Store(true)
 	applied := make(chan error, 1)
-	go func() { applied <- host.client.ApplyIntent(t.Context(), intent) }()
+	go func() { applied <- r.sessions.ApplyIntent(t.Context(), intent) }()
 	select {
 	case <-store.entered:
 	case <-time.After(lifecycleTestTimeout):

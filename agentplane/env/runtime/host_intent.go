@@ -18,7 +18,7 @@ func (r *Runtime) publishHostIntentLocked() error {
 
 // Caller holds Runtime.mu. Revocation cannot depend on COSI store availability.
 func (r *Runtime) revokeHostBindingLocked() {
-	if r.host != nil && r.host.client != nil {
-		r.host.client.SetRuntimeBinding(r.bootID, false)
+	if r.host != nil && r.sessions != nil {
+		r.sessions.SetRuntimeBinding(r.bootID, false)
 	}
 }

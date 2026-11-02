@@ -1,8 +1,9 @@
 # Environment lifecycle ownership
 
-The environment has three component owners in one management process. Environment Runtime owns identity, bootstrap, public
-control and coordinated drain. Harness Host owns native Sessions, setup, app-server, journals and
-History ingress. Execution Service owns typed execution and the native exec-server. Each component
+Environment Runtime is the single lifecycle owner in the management process. It owns identity,
+bootstrap, public control, coordinated drain and the Session worker. The Session component owns
+native Sessions, setup, app-server, journals and History ingress. Execution Service owns typed
+execution and the native exec-server. Each component
 has distinct typed lifecycle resources in one Runtime-owned COSI engine. Runtime owns the engine
 and joins it after Host controllers reach Closed and before releasing its environment state owner.
 The Host still owns its Session, journal and native process resources; Runtime owns bootstrap and
@@ -69,7 +70,7 @@ Runtime owns external transport authentication, connection epochs and conditiona
 direct Session calls carry a copied exact binding. Host checks it at direct-call ingress
 and under its synchronous native admission lock. Model lookup does not hold that lock; a delayed
 reservation rechecks the binding before writing retained state. Command admission remains durable
-and idempotent. Unknown remote effects are never replayed after a Host lifetime failure.
+and idempotent. Unknown remote effects are never replayed after Session worker failure.
 Runtime installs the embedded Host and publishes its initial intent before Session recovery finishes.
 The Host-owned intent controller wakes when recovery completes and applies `HostIntents` only after
 startup. It checks the exact Runtime boot ID through a native admission gate that Runtime
@@ -84,11 +85,11 @@ not interchangeable just because two counters currently have the same number.
 | Identity                                 | Scope                                                                                                                                                                                                                                                             |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `runtime.Runtime`                        | Environment Runtime coordinator; owns the shared COSI engine and environment lifetime.                                                                                                                                                                            |
-| `harnesshost.Host`                       | Embedded Harness Host lifetime; owns retained Sessions and native harness lifecycle. A production Runtime starts it once; an unexpected Host failure fails that Runtime.                                                                                          |
+| `harnesshost.Host`                       | Runtime-owned Session component; owns retained Sessions and native harness lifecycle. Runtime starts its worker once and observes completion directly.                                                                                                            |
 | `bootstrap.Host`                         | Runtime-owned bootstrap controller and one-shot operation; it is not a separately served host process.                                                                                                                                                            |
 | `codexappserver.Host`                    | One shared Codex app-server process and its protocol readers, used by Codex Sessions.                                                                                                                                                                             |
 | `supervision.Host`                       | A view over the shared process registry, bound to a domain lifetime and worker barrier; in Runtime's shared registry, process attempt IDs are global across the Runtime and Harness views.                                                                        |
-| Runtime boot ID                          | One Environment Runtime and its embedded Harness Host lifetime. The binding carries this ID to reject observations from another lifetime.                                                                                                                         |
+| Runtime boot ID                          | One Environment Runtime and its Session component. The binding carries this ID to reject observations from another Runtime lifetime.                                                                                                                              |
 | Host binding generation                  | The generation of a Runtime-published Host intent. It seeds Host desired state; Host can advance that state during local close. `ExecutionFenced` can change within the same binding.                                                                             |
 | `EnvironmentDesired.Generation`          | Runtime-owned admission generation for bootstrap and Runtime process effects. It is a different counter from the Host binding generation.                                                                                                                         |
 | Session demand / Codex app-server demand | An admitted demand sequence for one Session / one sequence shared by the app-server. Both reset when the Host enters a new Running binding generation. Their status checkpoints mean the latest demand claimed by reconciliation, not that native work succeeded. |
@@ -138,7 +139,7 @@ FLUSHING. CLOSING preserves an existing seal and waits for its journal seals; Ru
 Host quiescence and exact History ACKs before requesting Host close when a seal is present. CLOSING
 without a seal performs native cleanup without ending the incarnation's history.
 
-Host lifetime loss closes admission and starts local cleanup without inventing a seal. Local
+Unexpected Session worker completion closes admission and starts local cleanup without inventing a seal. Local
 Close callers share one cleanup; cancellation ends only the caller's wait. Engine exit and teardown
 errors remain failures, and incomplete cleanup retains ownership. Controllers stop before worker joins;
 journals close after workers. Runtime retains the environment owner

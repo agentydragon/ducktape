@@ -57,24 +57,20 @@ type Config struct {
 	HostIngress        configuration.Endpoint
 }
 
-type hostLifetime interface {
-	Done() <-chan struct{}
-	Stop(context.Context) error
-	WaitClosed(context.Context) error
-	Wait(context.Context) (int, error)
-	Cleanup(context.Context) error
-}
-
 type childExit struct {
 	code int
 	err  error
 }
 
 type runtimeDeps struct {
-	prepareSupervisor      func(Config, *os.File) (*supervision.Supervisor, error)
-	waitBootstrap          func(context.Context) error
-	startExecution         func(context.Context, Config, string) (executionHandle, error)
-	beforeHostConstruction func()
+	prepareSupervisor        func(Config, *os.File) (*supervision.Supervisor, error)
+	waitBootstrap            func(context.Context) error
+	startExecution           func(context.Context, Config, string) (executionHandle, error)
+	beforeHostConstruction   func()
+	afterInitialWaitSnapshot func()
+	stopSessions             func(context.Context) error
+	waitSessionsClosed       func(context.Context) error
+	closeSessions            func(context.Context) error
 }
 
 type executionHandle interface {
@@ -83,7 +79,6 @@ type executionHandle interface {
 }
 
 type hostBinding struct {
-	client *harnesshost.Host
 	active bool
 }
 
@@ -142,7 +137,10 @@ type Runtime struct {
 	failureErr               error
 	control                  *control.Server
 	waitBootstrap            func(context.Context) error
-	hostLifetime             hostLifetime
+	sessions                 *harnesshost.Host
+	sessionWorkerCancel      context.CancelFunc
+	sessionWorkerDone        chan struct{}
+	sessionWorkerErr         error
 	closeOnce                sync.Once
 	closeDone                chan struct{}
 	closeErr                 error
@@ -447,21 +445,15 @@ func (r *Runtime) joinClose() error {
 	if lifecycleRunErr != nil {
 		return lifecycleRunErr
 	}
-	hostRunErr := r.lifecycleCoordinator.plan.hostRunErr
-	r.mu.Lock()
-	host := r.hostLifetime
-	r.mu.Unlock()
-	if host != nil {
-		code, runErr := host.Wait(context.Background())
-		if code != 0 && runErr == nil {
-			runErr = fmt.Errorf("Harness Host exited with status %d", code)
+	sessionLossErr := r.lifecycleCoordinator.plan.sessionLossErr
+	if r.sessions != nil {
+		<-r.sessionWorkerDone
+		// Worker completion does not prove native cleanup. Retain Runtime's
+		// owner if the Session component cannot finish its joined work.
+		if cleanupErr := r.closeSessions(context.Background()); cleanupErr != nil {
+			return errors.Join(sessionLossErr, r.sessionWorkerErr, fmt.Errorf("Session cleanup unproved: %w", cleanupErr))
 		}
-		// Host.Run also reports bridge loss. Native cleanup is a separate proof:
-		// retain Runtime's owner if Host.Close could not finish its joined work.
-		if cleanupErr := host.Cleanup(context.Background()); cleanupErr != nil {
-			return errors.Join(hostRunErr, runErr, fmt.Errorf("Harness Host cleanup unproved: %w", cleanupErr))
-		}
-		hostRunErr = errors.Join(hostRunErr, runErr)
+		sessionLossErr = errors.Join(sessionLossErr, r.sessionWorkerErr)
 	}
 	r.lifecycleWorkers.Wait()
 	if r.config.Supervision == "pid1" {
@@ -470,9 +462,9 @@ func (r *Runtime) joinClose() error {
 		}
 	}
 	if r.lifecycleStore != nil {
-		hostRunErr = errors.Join(hostRunErr, r.lifecycleStore.Close())
+		sessionLossErr = errors.Join(sessionLossErr, r.lifecycleStore.Close())
 	}
-	return errors.Join(hostRunErr, r.owner.Close())
+	return errors.Join(sessionLossErr, r.owner.Close())
 }
 
 func (r *Runtime) waitBootstrapSettled(ctx context.Context) error {
@@ -511,7 +503,7 @@ func (r *Runtime) changed() {
 func (r *Runtime) waitForHostNativeStopped(ctx context.Context, binding *runtimepb.Binding) error {
 	_, err := r.waitForAppliedHostReport(ctx, binding, func(report *runtimepb.HostReport) bool {
 		return report.NativeStopped
-	}, errors.New("Harness Host lifecycle connection was lost before native-stop acknowledgement"))
+	}, errors.New("Session component became unavailable before native-stop acknowledgement"))
 	return err
 }
 

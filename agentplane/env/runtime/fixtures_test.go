@@ -80,13 +80,17 @@ func newLifecycleRunnerWithState(t *testing.T, config runtimeTestConfig, store s
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	child := &localHostLifetime{host: host, cancel: cancel, done: make(chan struct{})}
-	r.hostLifetime = child
-	if err := r.bindHost(host); err != nil {
+	r.sessions = host
+	r.sessionWorkerCancel = cancel
+	r.sessionWorkerDone = make(chan struct{})
+	if err := r.bindHost(); err != nil {
 		t.Fatal(err)
 	}
 	r.startLifecycleEngine()
-	go func() { child.err = host.Run(ctx, configuration.Endpoint{Target: historyTarget}, r); close(child.done) }()
+	go func() {
+		r.sessionWorkerErr = host.Run(ctx, configuration.Endpoint{Target: historyTarget}, r)
+		close(r.sessionWorkerDone)
+	}()
 	t.Cleanup(func() {
 		closeCtx, closeCancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 		defer closeCancel()
@@ -103,9 +107,9 @@ func newLifecycleRunnerWithState(t *testing.T, config runtimeTestConfig, store s
 		}
 		cancel()
 		select {
-		case <-child.done:
-			if child.err != nil && !config.expectCloseError {
-				t.Errorf("Host close: %v", child.err)
+		case <-r.sessionWorkerDone:
+			if r.sessionWorkerErr != nil && !config.expectCloseError {
+				t.Errorf("Host close: %v", r.sessionWorkerErr)
 			}
 		case <-closeCtx.Done():
 			t.Error("Host failed to join")
@@ -182,30 +186,3 @@ func waitClose(t *testing.T, done <-chan error) error {
 		return nil
 	}
 }
-
-type localHostLifetime struct {
-	host   *harnesshost.Host
-	cancel context.CancelFunc
-	done   chan struct{}
-	err    error
-}
-
-func (p *localHostLifetime) Done() <-chan struct{} { return p.done }
-
-func (p *localHostLifetime) Wait(ctx context.Context) (int, error) {
-	select {
-	case <-p.done:
-		return 0, p.err
-	case <-ctx.Done():
-		return 0, ctx.Err()
-	}
-}
-
-func (p *localHostLifetime) Stop(ctx context.Context) error {
-	p.cancel()
-	return ctx.Err()
-}
-
-func (p *localHostLifetime) WaitClosed(ctx context.Context) error { return p.host.WaitClosed(ctx) }
-
-func (p *localHostLifetime) Cleanup(ctx context.Context) error { return p.host.Close(ctx) }

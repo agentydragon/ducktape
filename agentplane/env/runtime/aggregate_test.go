@@ -28,11 +28,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type failingCloseHostLifetime struct {
-	hostLifetime
-	stops atomic.Int32
-}
-
 type uncertainCloseExecution struct{ fences atomic.Int32 }
 
 func (*uncertainCloseExecution) Executor() executorpb.ExecutorServer {
@@ -240,20 +235,16 @@ func TestRuntimeCloseJoinsInFlightAutomaticExecutionFence(t *testing.T) {
 	}
 }
 
-func (h *failingCloseHostLifetime) Stop(ctx context.Context) error {
-	h.stops.Add(1)
-	return errors.Join(h.hostLifetime.Stop(ctx), errors.New("injected Host join failure"))
-}
-
 func TestRuntimeCloseFailureRetainsOwnerAndDoesNotRetryHostStop(t *testing.T) {
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
 	config.expectCloseError = true
 	r := newLifecycleRuntime(t, config)
-	host := &failingCloseHostLifetime{hostLifetime: r.hostLifetime}
-	r.mu.Lock()
-	r.hostLifetime = host
-	r.mu.Unlock()
+	var stops atomic.Int32
+	r.deps.stopSessions = func(context.Context) error {
+		stops.Add(1)
+		return errors.New("injected Host join failure")
+	}
 
 	for range 2 {
 		ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
@@ -263,7 +254,7 @@ func TestRuntimeCloseFailureRetainsOwnerAndDoesNotRetryHostStop(t *testing.T) {
 			t.Fatalf("Close = %v, want exact Host join failure", err)
 		}
 	}
-	if got := host.stops.Load(); got != 1 {
+	if got := stops.Load(); got != 1 {
 		t.Fatalf("Host stop calls = %d, want one", got)
 	}
 	status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
@@ -354,22 +345,15 @@ func TestEmbeddedHostAndRuntimeKeepDistinctDesiredResources(t *testing.T) {
 	}
 }
 
-type failingHostCleanup struct {
-	hostLifetime
-	err error
-}
-
-func (f failingHostCleanup) Cleanup(ctx context.Context) error {
-	return errors.Join(f.hostLifetime.Cleanup(ctx), f.err)
-}
-
 func TestRuntimeRetainsOwnerWhenJoinedHostCleanupFails(t *testing.T) {
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
 	config.expectCloseError = true
 	r := newLifecycleRuntime(t, config)
 	cleanupFailure := errors.New("injected Host owner release failure")
-	r.hostLifetime = failingHostCleanup{hostLifetime: r.hostLifetime, err: cleanupFailure}
+	r.deps.closeSessions = func(ctx context.Context) error {
+		return errors.Join(r.sessions.Close(ctx), cleanupFailure)
+	}
 	t.Cleanup(func() { _ = r.owner.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
@@ -485,7 +469,7 @@ func TestCloseDuringSuccessfulHostConstructionJoinsSharedEngine(t *testing.T) {
 		t.Fatalf("Close waiter during construction = %v", err)
 	}
 	close(release)
-	if err := r.Close(ctx); err != nil && !strings.Contains(err.Error(), "Harness Host lifecycle connection was lost") {
+	if err := r.Close(ctx); err != nil && !errors.Is(err, errSessionComponentLost) {
 		t.Fatalf("Close after Host construction = %v", err)
 	}
 	select {
@@ -665,28 +649,20 @@ func TestEmbeddedHostLifecycleLossStillFencesExecution(t *testing.T) {
 	}
 }
 
-type unprovedHostClose struct {
-	hostLifetime
-	stops atomic.Int32
-}
-
-func (h *unprovedHostClose) Stop(ctx context.Context) error {
-	h.stops.Add(1)
-	return h.hostLifetime.Stop(ctx)
-}
-
-func (*unprovedHostClose) WaitClosed(context.Context) error {
-	return errors.New("injected unproved Host native cleanup")
-}
-
 func TestRuntimeCloseAfterHostDisconnectRetainsOwnerWhenNativeCleanupUnproved(t *testing.T) {
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
 	config.expectCloseError = true
 	r := newLifecycleRuntime(t, config)
-	host := &unprovedHostClose{hostLifetime: r.hostLifetime}
+	var stops atomic.Int32
+	r.deps.stopSessions = func(context.Context) error {
+		stops.Add(1)
+		return nil
+	}
+	r.deps.waitSessionsClosed = func(context.Context) error {
+		return errors.New("injected unproved Host native cleanup")
+	}
 	r.mu.Lock()
-	r.hostLifetime = host
 	link := r.host
 	r.mu.Unlock()
 	r.retireHost(link, nil)
@@ -699,7 +675,7 @@ func TestRuntimeCloseAfterHostDisconnectRetainsOwnerWhenNativeCleanupUnproved(t 
 			t.Fatalf("Close = %v, want native cleanup failure", err)
 		}
 	}
-	if got := host.stops.Load(); got != 1 {
+	if got := stops.Load(); got != 1 {
 		t.Fatalf("Host stop calls = %d, want one", got)
 	}
 	if owner, err := openEnvironmentOwner(config.StateDir); err == nil {

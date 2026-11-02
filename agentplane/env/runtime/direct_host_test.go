@@ -64,7 +64,7 @@ func TestHostIntentPublicationFailureRevokesNativeConnection(t *testing.T) {
 	client.SetRuntimeBinding("runtime", true)
 	intent := &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "runtime", Generation: 1}}
 	r := &Runtime{
-		bootID: "runtime", host: &hostBinding{client: client, active: true}, intent: intent,
+		bootID: "runtime", sessions: client, host: &hostBinding{active: true}, intent: intent,
 		lifecycleState: &failedHostIntentPublishState{State: state.WrapCore(namespaced.NewState(inmem.Build))},
 		changes:        make(chan struct{}), fatal: make(chan error, 1),
 	}
@@ -241,8 +241,8 @@ func TestHostReportWaitsPreserveFailureAndDisconnectPrecedence(t *testing.T) {
 		failed        bool
 		want          string
 	}{
-		{name: "ready disconnect", want: "Harness Host lifecycle connection is unavailable"},
-		{name: "native stop disconnect", nativeStopped: true, want: "Harness Host lifecycle connection was lost before native-stop acknowledgement"},
+		{name: "ready disconnect", want: "Session component is unavailable"},
+		{name: "native stop disconnect", nativeStopped: true, want: "Session component became unavailable before native-stop acknowledgement"},
 		{name: "ready failure", failed: true, want: "Runtime failed"},
 		{name: "native stop failure", nativeStopped: true, failed: true, want: "Runtime failed"},
 	} {

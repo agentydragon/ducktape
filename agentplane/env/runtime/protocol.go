@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
@@ -14,10 +13,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// bindHost installs the one embedded Host and publishes its initial intent.
+// bindHost publishes the one Session component's initial intent.
 // Caller holds lifecycleStartMu so Close cannot race Host initialization.
-func (r *Runtime) bindHost(client *harnesshost.Host) error {
-	host := &hostBinding{client: client, active: true}
+func (r *Runtime) bindHost() error {
+	client := r.sessions
+	host := &hostBinding{active: true}
 	r.mu.Lock()
 	if r.closing || r.failed {
 		r.mu.Unlock()
@@ -254,7 +254,7 @@ func (r *Runtime) waitForExecutionFenced(ctx context.Context, binding *runtimepb
 
 func (r *Runtime) waitForHostReady(ctx context.Context, binding *runtimepb.Binding) (*runtimepb.HostReport, error) {
 	return r.waitForAppliedHostReport(ctx, binding, nil,
-		status.Error(codes.Unavailable, "Harness Host lifecycle connection is unavailable"))
+		status.Error(codes.Unavailable, "Session component is unavailable"))
 }
 
 // Keep the report read and change subscription under Runtime.mu so a report
@@ -320,7 +320,7 @@ func (r *Runtime) hostQuiescenceWaitSnapshot(binding *runtimepb.Binding) (bool, 
 		return false, nil, failure
 	}
 	if r.host == nil || !r.host.active {
-		return false, nil, status.Error(codes.Unavailable, "Harness Host lifecycle connection is unavailable")
+		return false, nil, status.Error(codes.Unavailable, "Session component is unavailable")
 	}
 	return false, r.changes, nil
 }
