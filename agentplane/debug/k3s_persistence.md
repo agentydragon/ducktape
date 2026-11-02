@@ -1,8 +1,8 @@
-# Hosted RBE k3s persistence spike (2026-11-01)
+# Hosted RBE k3s persistence (2026-11-01)
 
 ## Expansion to every k3s application suite
 
-The v7 spike generates a manual `_persistence_spike` variant for every `k3s_suite` declaration,
+The v7 persistence baseline generates a manual `_persistent` variant for every `k3s_suite` declaration,
 covering Pod, Dispatcher, MCP Actions, MCP Services, normal VM, manual VM, profile VM and real-model.
 The original targets and their CI selection are unchanged. Variant generation shares each declaration's
 sources, dependencies, fixture and profile/boot flags, so scenarios cannot drift between comparisons.
@@ -19,6 +19,11 @@ removes fixture namespaces and cluster resources, confirms no VM/VMI or owned PV
 provisioner's StorageClass, and detaches every owned loop device before certifying the baseline clean.
 Failures leave the marker dirty for a cold rebuild. The existing lifecycle and bare-cluster probes
 retain their diagnostic semantics.
+
+Current target names use `_persistent`, and the runtime opt-in is `K3S_PERSISTENCE=1`.
+The naming change also starts fresh `k3s-persistence-v7-{pod,vm}` snapshot families; their first
+runs rebuild the baseline. Historical commands and commit-pinned links below retain their original
+names so the evidence remains reproducible.
 
 ### Non-VM cold and warm results
 
@@ -130,7 +135,7 @@ The successful final run does not erase these earlier failures:
   this physical work. No snapshot-save failure or causal link to persistence is established.
 
 Ordinary required CI checks passed at the tested runtime source. These findings keep the feature a
-manual spike: setup savings are demonstrated, but reliable fleet warm availability and an end-to-end
+manual opt-in: setup savings are demonstrated, but reliable fleet warm availability and an end-to-end
 2x CI improvement are not established.
 
 ### Reproduction and limits
@@ -139,14 +144,14 @@ Each command uses `bbr test --config=ci --test_tag_filters= --nocache_test_resul
 variant labels. The final all-suite command additionally passes `--test_arg=--log-cli-level=WARNING`
 so successful cleanup's API warnings remain visible. The eight labels are:
 
-- `//agentplane/system_tests/suites:test_pod_persistence_spike`
-- `//agentplane/system_tests/suites:test_dispatcher_persistence_spike`
-- `//agentplane/system_tests/suites:test_vm_persistence_spike`
-- `//agentplane/system_tests/suites:test_vm_manual_persistence_spike`
-- `//agentplane/system_tests/suites:test_vm_profile_persistence_spike`
-- `//agentplane/system_tests/suites:test_real_model_persistence_spike`
-- `//agentplane/system_tests/suites/mcp:test_actions_persistence_spike`
-- `//agentplane/system_tests/suites/mcp:test_services_persistence_spike`
+- `//agentplane/system_tests/suites:test_pod_persistent`
+- `//agentplane/system_tests/suites:test_dispatcher_persistent`
+- `//agentplane/system_tests/suites:test_vm_persistent`
+- `//agentplane/system_tests/suites:test_vm_manual_persistent`
+- `//agentplane/system_tests/suites:test_vm_profile_persistent`
+- `//agentplane/system_tests/suites:test_real_model_persistent`
+- `//agentplane/system_tests/suites/mcp:test_actions_persistent`
+- `//agentplane/system_tests/suites/mcp:test_services_persistent`
 
 The real-model target still requests the existing `OPENAI_API_KEY` secret. Changed Python libraries
 were also named directly for lint/type aspects; repository hooks passed. Raw invocation, native action,
@@ -171,7 +176,7 @@ record the experiment at implementation source `59a66d10cad8e9f672a5471ced8de756
 
 The manual full-Pod target now uses a v6 snapshot family. It retains the runtime input fingerprint
 and clean/dirty ownership marker, and adds `allow-remote-snapshots=true`,
-`remote-snapshot-save-policy=always`, and `snapshot-read-policy=newest` only to manual spike actions.
+`remote-snapshot-save-policy=always`, and `snapshot-read-policy=newest` only to manual persistence actions.
 This lets a changed baseline rebuild cold and replace the prepared snapshot without a manual key
 bump. Concurrent revisions can replace each other's latest snapshot and cause cold rebuilds; the
 fingerprint prevents reuse of incompatible state. No ordinary target or workflow opts in.
@@ -308,7 +313,7 @@ This is one pair under concurrent CI load, not an estimate of production CI savi
 
 The initial manual `test_pod_persistence_spike` target used a dedicated v5 recycling key. Its local-only
 prepared seed was immutable, so changed inputs rebuilt cold on every action until a new key was
-chosen. The v6 refresh experiment above addresses that limitation. The spike copies the k3s executable, kubeconfig,
+chosen. The v6 refresh experiment above addresses that limitation. The persistence implementation copies the k3s executable, kubeconfig,
 and logs outside action runfiles, launches k3s in its own process session, and verifies a fingerprint
 of the k3s binary, stack code, CRDs, PKI release YAML, and the PKI OCI index manifests. It checks
 the live API, process start time, node address, and cluster UIDs before attaching. A dirty marker

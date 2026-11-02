@@ -538,11 +538,11 @@ def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
     }
 
 
-_SPIKE_ROOT = Path("/var/lib/k3s-persistence-spike-v7")
-_SPIKE_MARKER = _SPIKE_ROOT / "server.json"
+_BASELINE_ROOT = Path("/var/lib/k3s-persistence-v7")
+_BASELINE_MARKER = _BASELINE_ROOT / "server.json"
 
 
-def _spike_process_start(pid: int) -> str | None:
+def _baseline_process_start(pid: int) -> str | None:
     try:
         stat = Path(f"/proc/{pid}/stat").read_text().rsplit(") ", 1)[1].split()
     except FileNotFoundError:
@@ -550,8 +550,8 @@ def _spike_process_start(pid: int) -> str | None:
     return None if stat[0] == "Z" else stat[19]
 
 
-def _spike_identity(k3s: K3s, pid: int) -> dict[str, str | int]:
-    ticks = _spike_process_start(pid)
+def _baseline_identity(k3s: K3s, pid: int) -> dict[str, str | int]:
+    ticks = _baseline_process_start(pid)
     if ticks is None:
         raise RuntimeError(f"k3s process {pid} exited")
     # A retained process can be alive with a wedged API. Bound the subprocess as well as kubectl's
@@ -574,10 +574,10 @@ def _spike_identity(k3s: K3s, pid: int) -> dict[str, str | int]:
     }
 
 
-def _spike_fingerprint(
+def _baseline_fingerprint(
     binary: Path, crds: list[Path], baseline: list[dict[str, Any]], images: dict[str, Path], *, layers_in_memory: bool
 ) -> str:
-    digest = hashlib.sha256(b"k3s-persistence-spike-v7\0")
+    digest = hashlib.sha256(b"k3s-persistence-v7\0")
     digest.update(b"tmpfs\0" if layers_in_memory else b"disk\0")
     for name, path in [
         ("k3s", binary),
@@ -603,21 +603,21 @@ def _spike_fingerprint(
     return digest.hexdigest()
 
 
-def _spike_write_marker(marker: dict[str, Any]) -> None:
-    temporary = _SPIKE_MARKER.with_suffix(".tmp")
+def _baseline_write_marker(marker: dict[str, Any]) -> None:
+    temporary = _BASELINE_MARKER.with_suffix(".tmp")
     temporary.write_text(json.dumps(marker))
-    temporary.replace(_SPIKE_MARKER)
+    temporary.replace(_BASELINE_MARKER)
 
 
-def _spike_stop_owned(k3s: K3s, previous: dict[str, Any]) -> None:
+def _baseline_stop_owned(k3s: K3s, previous: dict[str, Any]) -> None:
     identity = previous["identity"]
     current_boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
     if current_boot != identity["boot_id"]:
         return
     pid = int(identity["pid"])
-    ticks = _spike_process_start(pid)
+    ticks = _baseline_process_start(pid)
     if ticks is not None and ticks != identity["process_start_ticks"]:
-        raise RuntimeError("spike marker PID was reused; refusing to reset an unowned process")
+        raise RuntimeError("persistence marker PID was reused; refusing to reset an unowned process")
     if ticks is not None:
         os.kill(pid, signal.SIGTERM)
         for attempt in Retrying(
@@ -627,29 +627,29 @@ def _spike_stop_owned(k3s: K3s, previous: dict[str, Any]) -> None:
             reraise=True,
         ):
             with attempt:
-                if _spike_process_start(pid) is not None:
+                if _baseline_process_start(pid) is not None:
                     raise RuntimeError(f"owned k3s process {pid} is still alive")
-    k3s.log_path = _SPIKE_ROOT / "k3s.log"
+    k3s.log_path = _BASELINE_ROOT / "k3s.log"
     k3s.cleanup_stopped()
 
 
-def _spike_open(source: Path, fingerprint: str, *, layers_in_memory: bool) -> tuple[K3s, dict[str, Any], bool]:
-    _SPIKE_ROOT.mkdir(exist_ok=True)
-    binary = _SPIKE_ROOT / "k3s"
-    k3s = K3s(_SPIKE_ROOT, binary)
-    previous = json.loads(_SPIKE_MARKER.read_text()) if _SPIKE_MARKER.exists() else None
+def _baseline_open(source: Path, fingerprint: str, *, layers_in_memory: bool) -> tuple[K3s, dict[str, Any], bool]:
+    _BASELINE_ROOT.mkdir(exist_ok=True)
+    binary = _BASELINE_ROOT / "k3s"
+    k3s = K3s(_BASELINE_ROOT, binary)
+    previous = json.loads(_BASELINE_MARKER.read_text()) if _BASELINE_MARKER.exists() else None
     if previous is not None:
         if previous.get("state") not in {"clean", "dirty"}:
-            raise RuntimeError("invalid persistence spike state marker")
+            raise RuntimeError("invalid persistence state marker")
         if previous["fingerprint"] == fingerprint and previous["state"] == "clean":
             try:
-                current = _spike_identity(k3s, int(previous["identity"]["pid"]))
+                current = _baseline_identity(k3s, int(previous["identity"]["pid"]))
             except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
                 logger.warning("retained k3s is unhealthy; rebuilding the owned baseline: %s", exc)
             else:
                 if current == previous["identity"]:
                     previous["state"] = "dirty"
-                    _spike_write_marker(previous)
+                    _baseline_write_marker(previous)
                     return k3s, previous, True
                 logger.warning("retained k3s identity changed; rebuilding the owned baseline")
         else:
@@ -658,11 +658,11 @@ def _spike_open(source: Path, fingerprint: str, *, layers_in_memory: bool) -> tu
                 previous["state"],
                 previous["fingerprint"] == fingerprint,
             )
-        _spike_stop_owned(k3s, previous)
-        _SPIKE_MARKER.unlink()
+        _baseline_stop_owned(k3s, previous)
+        _BASELINE_MARKER.unlink()
     shutil.copy2(source, binary)
     previous_outputs = os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR")
-    os.environ["TEST_UNDECLARED_OUTPUTS_DIR"] = str(_SPIKE_ROOT)
+    os.environ["TEST_UNDECLARED_OUTPUTS_DIR"] = str(_BASELINE_ROOT)
     try:
         process = k3s.start(layers_in_memory=layers_in_memory, detached=True)
     finally:
@@ -674,13 +674,13 @@ def _spike_open(source: Path, fingerprint: str, *, layers_in_memory: bool) -> tu
     # probe or marker write must not leave an unmarked detached server for the next action to reset.
     with contextlib.ExitStack() as starting:
         starting.callback(k3s.stop, process)
-        marker = {"state": "dirty", "fingerprint": fingerprint, "identity": _spike_identity(k3s, process.pid)}
-        _spike_write_marker(marker)
+        marker = {"state": "dirty", "fingerprint": fingerprint, "identity": _baseline_identity(k3s, process.pid)}
+        _baseline_write_marker(marker)
         starting.pop_all()
     return k3s, marker, False
 
 
-def _spike_evidence(
+def _baseline_evidence(
     k3s: K3s,
     fixture: rendered_fixture.RenderedFixture,
     models: rendered_fixture.Models,
@@ -731,7 +731,7 @@ def _spike_evidence(
     }
 
 
-def _spike_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None:
+def _baseline_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None:
     """Wait for fixture-owned resources to vanish, leaving only the infrastructure baseline."""
     namespaces = [doc["metadata"]["name"] for doc in fixture.objects if doc["kind"] == "Namespace"]
     if set(namespaces) != {fixture.namespace, "systest-egress-credentials"}:
@@ -810,7 +810,7 @@ def running_stack(
     """The stack with every Deployment Available and LLM ingress forwarding to `models`."""
     crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
     fixture = inputs.fixture
-    persistence_spike = os.environ.get("K3S_PERSISTENCE_SPIKE") == "1"
+    persistent = os.environ.get("K3S_PERSISTENCE") == "1"
     cert_manager, trust_manager = certificates.releases()
     pki_images = certificates.images(cert_manager + trust_manager)
     releases = vm_sandboxes.releases() if fixture.vm_sandboxes else []
@@ -832,10 +832,10 @@ def running_stack(
                 process_traces.ProcessTraces(k3s.node_ip, undeclared_outputs_dir() / "process-spans.jsonl")
             )
             # A VM stack's layers would leave too little memory for its guests (README § Image layers in memory).
-            if persistence_spike:
-                k3s, spike_marker, spike_warm = _spike_open(
+            if persistent:
+                k3s, baseline_marker, baseline_warm = _baseline_open(
                     inputs.binary,
-                    _spike_fingerprint(
+                    _baseline_fingerprint(
                         inputs.binary,
                         crds,
                         cert_manager
@@ -899,7 +899,7 @@ def running_stack(
                 raise ValueError(f"Guest images are used by Deployments: {sorted(used)}")
             if missing := deployment_images - fixture_images.keys():
                 raise ValueError(f"Fixture workloads lack OCI layouts for: {sorted(missing)}")
-            install_baseline = not (persistence_spike and spike_warm)
+            install_baseline = not (persistent and baseline_warm)
             if fixture.vm_sandboxes and install_baseline:
                 k3s.import_images(infrastructure_images)
             cleanup.callback(certificates.report, k3s.kubectl, cert_manager + trust_manager)
@@ -1028,12 +1028,12 @@ def running_stack(
                         require_boot_evidence=os.environ.get("AGENTPLANE_VM_BOOT_EVIDENCE") == "1",
                     )
                 )
-        spike_output = undeclared_outputs_dir() / "persistence-suite.json"
-        if persistence_spike:
-            spike_evidence = _spike_evidence(
-                k3s, fixture, models, cert_manager + trust_manager, spike_marker, spike_warm
+        persistence_output = undeclared_outputs_dir() / "persistence-suite.json"
+        if persistent:
+            persistence_evidence = _baseline_evidence(
+                k3s, fixture, models, cert_manager + trust_manager, baseline_marker, baseline_warm
             )
-            spike_output.write_text(json.dumps(spike_evidence))
+            persistence_output.write_text(json.dumps(persistence_evidence))
         yield Stack(k3s=k3s, cluster=cluster, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
         with tracer.start_as_current_span("system_test.stack.diagnostics"):
             print(k3s.report(fixture.namespace))
@@ -1041,16 +1041,16 @@ def running_stack(
                 (undeclared_outputs_dir() / "vm-sandboxes.txt").write_text(
                     vm_sandboxes.report(k3s.kubectl, fixture.namespace)
                 )
-        if persistence_spike:
+        if persistent:
             # Stop the provisioner, forwards, profilers and guest log capture first. Their checks
             # must pass before we can certify the baseline, while the API and retained node stay live.
             cleanup.close()
-            _spike_clean(k3s, fixture)
+            _baseline_clean(k3s, fixture)
             # Namespace deletion releases all VM users of the loop devices. Certify clean only
             # after their owned mappings detach and the per-action backing files are removed.
             block_cleanup.close()
-            spike_marker["state"] = "clean"
-            _spike_write_marker(spike_marker)
-            spike_evidence["workspace_loop_devices_released"] = len(raw_block.devices)
-            spike_evidence["cleanup"] = "complete"
-            spike_output.write_text(json.dumps(spike_evidence))
+            baseline_marker["state"] = "clean"
+            _baseline_write_marker(baseline_marker)
+            persistence_evidence["workspace_loop_devices_released"] = len(raw_block.devices)
+            persistence_evidence["cleanup"] = "complete"
+            persistence_output.write_text(json.dumps(persistence_evidence))

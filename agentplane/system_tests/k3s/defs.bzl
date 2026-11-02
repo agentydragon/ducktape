@@ -10,7 +10,7 @@ K3S_EXEC_PROPERTIES = {
 }
 
 # Manual experiment only: refreshing a restored baseline currently requires remote snapshots.
-K3S_PERSISTENCE_SPIKE_PROPERTIES = {
+K3S_PERSISTENCE_PROPERTIES = {
     "test.allow-remote-snapshots": "true",
     "test.remote-snapshot-save-policy": "always",
     "test.snapshot-read-policy": "newest",

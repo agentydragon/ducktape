@@ -15,7 +15,7 @@ node, and streams only the blobs containerd lacks ([measurements](debug/stack_ti
 VM system tests use a separate `test.runner-recycling-key` so their disk-backed layers and pod tests'
 tmpfs layers keep separate image stores.
 
-Every `k3s_suite` also declares a manual `<name>_persistence_spike` target from the same sources,
+Every `k3s_suite` also declares a manual `<name>_persistent` target from the same sources,
 fixture, dependencies and scenario flags. These retain live k3s and PKI controllers; VM variants also
 retain KubeVirt and Kyverno. The eight variants cover Pod, Dispatcher, both MCP suites, normal/manual/profile
 VM suites and real-model tests. The real-model variant still requires `OPENAI_API_KEY` and keeps its
@@ -29,7 +29,7 @@ Applications, PostgreSQL, model endpoints, MCP fixtures, certificates/trust and 
 VM workspace claims, PVs, StorageClass and loop devices are removed before marking the baseline clean;
 guest shutdown checks and the selected boot/profile settings are preserved. Ordinary targets still stop k3s.
 The bare persistence and lifecycle probes remain separate diagnostics, rather than application variants.
-See the [spike evidence](../../debug/k3s_persistence_spike.md).
+See the [persistence evidence](../../debug/k3s_persistence.md).
 
 Setup, each image import and teardown use the same OpenTelemetry tracer as the scenarios,
 writing completed spans immediately to `test-spans.jsonl` in undeclared outputs. The test log prints

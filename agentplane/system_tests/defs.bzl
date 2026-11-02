@@ -1,6 +1,6 @@
 """Executable suites: explicit scenario modules sharing one configured k3s stack."""
 
-load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "K3S_PERSISTENCE_SPIKE_PROPERTIES", "K3S_SERVICE_LAYOUTS", "K3S_TAGS", "K3S_VM_DATA", "K3S_VM_ENV")
+load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "K3S_PERSISTENCE_PROPERTIES", "K3S_SERVICE_LAYOUTS", "K3S_TAGS", "K3S_VM_DATA", "K3S_VM_ENV")
 load("//devinfra/python:defs.bzl", "py_test")
 
 _HARNESSES_LAYOUT = "//agentplane/system_tests/k3s:harnesses/environment_tools_layout"
@@ -26,7 +26,7 @@ _STACKS = {
     "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, real_model = True, images = [_HARNESSES_LAYOUT]),
 }
 
-def _k3s_suite(name, srcs, deps, stack, tags, profile_guest, boot_evidence, persistence_spike):
+def _k3s_suite(name, srcs, deps, stack, tags, profile_guest, boot_evidence, persistent):
     """Run a Python suite entrypoint against one session-scoped k3s stack."""
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
@@ -67,10 +67,10 @@ def _k3s_suite(name, srcs, deps, stack, tags, profile_guest, boot_evidence, pers
     if config.real_model:
         properties["test.env-secrets"] = "OPENAI_API_KEY"
         suite_tags.append("live_openai_api")
-    if persistence_spike:
-        env["K3S_PERSISTENCE_SPIKE"] = "1"
-        properties |= K3S_PERSISTENCE_SPIKE_PROPERTIES | {
-            "test.runner-recycling-key": "k3s-persistence-spike-v7-" + ("vm" if config.vm else "pod"),
+    if persistent:
+        env["K3S_PERSISTENCE"] = "1"
+        properties |= K3S_PERSISTENCE_PROPERTIES | {
+            "test.runner-recycling-key": "k3s-persistence-v7-" + ("vm" if config.vm else "pod"),
         }
     py_test(
         name = name,
@@ -88,14 +88,14 @@ def _k3s_suite(name, srcs, deps, stack, tags, profile_guest, boot_evidence, pers
 
 def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False):
     """Declare the ordinary suite and a manual retained-infrastructure comparison."""
-    for persistence_spike in [False, True]:
+    for persistent in [False, True]:
         _k3s_suite(
-            name = name + "_persistence_spike" if persistence_spike else name,
+            name = name + "_persistent" if persistent else name,
             srcs = srcs,
             deps = deps,
             stack = stack,
-            tags = tags + (["manual"] if persistence_spike and "manual" not in tags else []),
+            tags = tags + (["manual"] if persistent and "manual" not in tags else []),
             profile_guest = profile_guest,
             boot_evidence = boot_evidence,
-            persistence_spike = persistence_spike,
+            persistent = persistent,
         )
