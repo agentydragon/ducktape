@@ -15,7 +15,7 @@ import (
 const (
 	DesiredStateType = "ProcessDesiredStates.agentplane"
 	StatusType       = "ProcessStatuses.agentplane"
-	inputType        = "ProcessInputs.agentplane"
+	observationType  = "ProcessObservations.agentplane"
 	ControllerName   = "process-lifecycle"
 )
 
@@ -35,7 +35,7 @@ type DesiredState struct {
 	StopTimeout   time.Duration
 }
 
-type inputSpec struct {
+type observationSpec struct {
 	// Revision wakes reconciliation for host-owned start, exit, and stop slots.
 	Revision uint64
 	// Systemd is an observed fact, not evidence that the process domain is fenced.
@@ -150,8 +150,8 @@ func (value DesiredState) DeepCopy() DesiredState {
 	return value
 }
 
-func (inputSpec) resourceType() resource.Type { return inputType }
-func (value inputSpec) DeepCopy() inputSpec   { return value }
+func (observationSpec) resourceType() resource.Type     { return observationType }
+func (value observationSpec) DeepCopy() observationSpec { return value }
 
 func (Status) resourceType() resource.Type { return StatusType }
 func (value Status) DeepCopy() Status      { return value }

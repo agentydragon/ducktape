@@ -428,9 +428,9 @@ func TestProcessControllerRetainsSystemdObservationsAcrossFence(t *testing.T) {
 		observe := <-observers
 		observe(SystemdObservation{Revision: 3, Unit: "old.service", Snapshot: SystemdUnitSnapshot{InvocationID: "old", ActiveState: "failed"}, Error: "manager disconnected"})
 		observe(SystemdObservation{Revision: 2, Unit: "old.service", Snapshot: SystemdUnitSnapshot{InvocationID: "old", ActiveState: "active"}})
-		input, found, err := readResource[inputSpec](f.ctx, f.state, processTestNamespace, id)
-		if err != nil || !found || input.Systemd.Revision != 3 || input.Systemd.Snapshot.ActiveState != "failed" {
-			t.Fatalf("process input lost newest systemd observation: input=%+v found=%t err=%v", input, found, err)
+		facts, found, err := readResource[observationSpec](f.ctx, f.state, processTestNamespace, id)
+		if err != nil || !found || facts.Systemd.Revision != 3 || facts.Systemd.Snapshot.ActiveState != "failed" {
+			t.Fatalf("process observations lost newest systemd observation: facts=%+v found=%t err=%v", facts, found, err)
 		}
 		current := waitProcessStatus(t, f, id, "newest systemd observation", func(status Status) bool {
 			return status.Systemd.Revision == 3
@@ -465,8 +465,8 @@ func TestProcessControllerRetainsSystemdObservationsAcrossFence(t *testing.T) {
 		if _, found := f.status(t, id); found {
 			t.Fatal("stale observation recreated retired process status")
 		}
-		if _, found, err := readResource[inputSpec](f.ctx, f.state, processTestNamespace, id); err != nil || found {
-			t.Fatalf("stale observation recreated process input: found=%t err=%v", found, err)
+		if _, found, err := readResource[observationSpec](f.ctx, f.state, processTestNamespace, id); err != nil || found {
+			t.Fatalf("stale observation recreated process observations: found=%t err=%v", found, err)
 		}
 	})
 }
@@ -636,12 +636,12 @@ func TestProcessFailedFenceRetainsFinalizerAndStopError(t *testing.T) {
 		// Another owner input change forces reconciliation while teardown is still pending.
 		f.publishRequest(t, id, processTestRequestSpec{Active: false, Generation: 1, Revision: 3})
 		waitProcessRequestReconciles(t, f, 4)
-		input, found, err := readResource[inputSpec](f.ctx, f.state, processTestNamespace, id)
+		observations, found, err := readResource[observationSpec](f.ctx, f.state, processTestNamespace, id)
 		if err != nil || !found {
-			t.Fatalf("read supervision input to force another reconcile: found=%t err=%v", found, err)
+			t.Fatalf("read supervision observations to force another reconcile: found=%t err=%v", found, err)
 		}
-		input.Revision++
-		if err := publishResource(f.ctx, f.state, processTestNamespace, id, input); err != nil {
+		observations.Revision++
+		if err := publishResource(f.ctx, f.state, processTestNamespace, id, observations); err != nil {
 			t.Fatal(err)
 		}
 		synctest.Wait()

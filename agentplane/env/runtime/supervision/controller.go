@@ -24,7 +24,7 @@ func (c *Controller) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
 			{Namespace: c.host.namespace, Type: DesiredStateType, Kind: controller.InputQPrimary},
-			{Namespace: c.host.namespace, Type: inputType, Kind: controller.InputQMapped},
+			{Namespace: c.host.namespace, Type: observationType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: StatusType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(1)),
@@ -32,7 +32,7 @@ func (c *Controller) Settings() controller.QSettings {
 }
 
 func (c *Controller) MapInput(_ context.Context, _ *zap.Logger, _ controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
-	if ptr.Type() != inputType {
+	if ptr.Type() != observationType {
 		return nil, nil
 	}
 	return []resource.Pointer{
@@ -67,12 +67,12 @@ func (c *Controller) Reconcile(ctx context.Context, _ *zap.Logger, r controller.
 	} else if current.Owner != desired.Owner {
 		return fmt.Errorf("process %q owner changed from %q to %q", id, current.Owner, desired.Owner)
 	}
-	input, _, err := readResource[inputSpec](ctx, r, c.host.namespace, id)
+	facts, _, err := readResource[observationSpec](ctx, r, c.host.namespace, id)
 	if err != nil {
 		return err
 	}
-	if input.Systemd.Revision > current.Systemd.Revision {
-		current.Systemd = input.Systemd
+	if facts.Systemd.Revision > current.Systemd.Revision {
+		current.Systemd = facts.Systemd
 	}
 	write := func() error {
 		_, err := writeResource(ctx, r, c.host.namespace, id, current)
@@ -278,8 +278,8 @@ func (c *Controller) cleanupDestroyed(ctx context.Context, r controller.QRuntime
 	if err := r.Destroy(ctx, statusPointer); err != nil && !state.IsNotFoundError(err) {
 		return err
 	}
-	inputPointer := resource.NewMetadata(c.host.namespace, inputType, id, resource.VersionUndefined)
-	if err := c.host.state.Destroy(ctx, inputPointer, state.WithDestroyOwner(hostOwner)); err != nil && !state.IsNotFoundError(err) {
+	observationPointer := resource.NewMetadata(c.host.namespace, observationType, id, resource.VersionUndefined)
+	if err := c.host.state.Destroy(ctx, observationPointer, state.WithDestroyOwner(hostOwner)); err != nil && !state.IsNotFoundError(err) {
 		return err
 	}
 	return nil
