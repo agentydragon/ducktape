@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 import pytest_bazel
@@ -288,7 +288,7 @@ def test_renders_banked_reset_count_from_live_usage() -> None:
             2,
             [datetime(2026, 1, 20, 9, 0, tzinfo=UTC), datetime(2026, 2, 2, 12, 34, tzinfo=UTC)],
             False,
-            "2 resets (expiry: Jan 20, 09:00, Feb 2, 12:34)",
+            "2 resets (expiry: Jan 20, 09:00, Feb 2)",
         ),
         (2, [], False, "2 resets (expiry: 2 unknown)"),
         (2, [], True, "2 resets (expiry lookup failed)"),
@@ -296,7 +296,29 @@ def test_renders_banked_reset_count_from_live_usage() -> None:
     ],
 )
 def test_formats_reset_credit_count_and_expiry_outcomes(count, expiries, lookup_failed, expected) -> None:
-    assert format_reset_credit_summary(count, expiries, lookup_failed, UTC) == expected
+    assert format_reset_credit_summary(count, expiries, lookup_failed, _FETCHED_AT, UTC) == expected
+
+
+@pytest.mark.parametrize(
+    ("expiry", "expected"),
+    [
+        (datetime(2026, 1, 29, 11, 59, 59, tzinfo=UTC), "Jan 29, 11:59"),
+        (datetime(2026, 1, 29, 12, 0, tzinfo=UTC), "Jan 29, 12:00"),
+        (datetime(2026, 1, 29, 12, 0, 1, tzinfo=UTC), "Jan 29"),
+        (datetime(2026, 1, 14, 9, 0, tzinfo=UTC), "Jan 14, 09:00"),
+    ],
+)
+def test_reset_expiry_time_is_omitted_only_when_more_than_two_weeks_away(expiry, expected) -> None:
+    assert format_reset_credit_summary(1, [expiry], False, _FETCHED_AT, UTC) == f"1 reset (expiry: {expected})"
+
+
+def test_reset_expiry_cutoff_uses_viewer_timezone_for_rendering() -> None:
+    pacific = timezone(timedelta(hours=-8))
+    expiries = [datetime(2026, 1, 30, 5, 0, tzinfo=UTC), datetime(2026, 1, 29, 11, 59, 59, tzinfo=UTC)]
+
+    assert format_reset_credit_summary(2, expiries, False, _FETCHED_AT, pacific) == (
+        "2 resets (expiry: Jan 29, Jan 29, 03:59)"
+    )
 
 
 def test_combines_subscription_resets_and_separate_platform_credit_pools() -> None:
@@ -309,7 +331,7 @@ def test_combines_subscription_resets_and_separate_platform_credit_pools() -> No
     assert "Claude · $25.75 prepaid balance" in rendered
     assert "5h:  45%" in rendered
     assert "7d:  32%" in rendered
-    assert "codex · 2 resets (expiry: Feb 1, 08:30, 1 unknown)" in rendered
+    assert "codex · 3 resets (expiry: Jan 29, 12:00, Feb 1, 1 unknown)" in rendered
     assert "OpenAI API · $60.00 API credit" in rendered
     assert "API credit grants: $60.00 expires 2026-06-01 00:00 UTC" in rendered
     assert "Shared org · Anthropic API credit balance · $75.00 available" in rendered

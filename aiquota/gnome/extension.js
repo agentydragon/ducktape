@@ -135,9 +135,9 @@ function formatExtraSpend(extra) {
   return `extra $${roundHalfToEven(used)}/$${roundHalfToEven(limit)} (${pct}%) this month`;
 }
 
-function formatBankedResets(count, expiries, expiryLookupFailed) {
+function formatBankedResets(count, expiries, expiryLookupFailed, now) {
   if (count == null) return null;
-  return formatResetCreditSummary(count, expiries ?? [], expiryLookupFailed);
+  return formatResetCreditSummary(count, expiries ?? [], expiryLookupFailed, now);
 }
 
 function formatPaidCredits(credits, active) {
@@ -998,7 +998,8 @@ const QuotaIndicator = GObject.registerClass(
       const resets = formatBankedResets(
         availableResetCredits,
         availableResetCreditExpiries,
-        resetCreditExpiryLookupFailed
+        resetCreditExpiryLookupFailed,
+        new Date(nowMs())
       );
       if (resets) parts.push(resets);
       const extraStr = formatExtraSpend(extraSpend);

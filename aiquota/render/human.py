@@ -104,7 +104,7 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
         # Mirror the GNOME popup's text-only active-extra view: while burning,
         # bars are noise, but both reset countdowns still matter.
         lines = [
-            f"{_provider_label(pv.provider, reset_credits, reset_credit_expiries, tz, reset_credit_expiry_lookup_failed, openai_platform_credits, prepaid_balance, prepaid_stale_age)}  "
+            f"{_provider_label(pv.provider, reset_credits, reset_credit_expiries, tz, reset_credit_expiry_lookup_failed, now, openai_platform_credits, prepaid_balance, prepaid_stale_age)}  "
             f"{credit_line if pv.paid_credits_active else _format_extra_active(extra)}"
         ]
         if openai_platform_grants_line:
@@ -177,8 +177,10 @@ def _format_openai_platform_grants(credits: OpenAIPlatformCredits | None, tz: tz
 def _effective_prepaid_balance(pv: ProviderView, now: datetime) -> tuple[PrepaidBalance | None, str | None]:
     stale_since = pv.display.prepaid_stale_since
     provider_stale_since = pv.display.observed_at if pv.display.source == "last_success" else None
-    has_independent_staleness = stale_since is not None and stale_since != provider_stale_since
-    age = format_age((now - stale_since).total_seconds()) if has_independent_staleness else None
+    if stale_since is not None and stale_since != provider_stale_since:
+        age = format_age((now - stale_since).total_seconds())
+    else:
+        age = None
     return pv.display.prepaid_balance, age
 
 
@@ -245,6 +247,7 @@ def _header(
             reset_credit_expiries,
             tz,
             reset_credit_expiry_lookup_failed,
+            now,
             openai_platform_credits,
             prepaid_balance,
             prepaid_stale_age,
@@ -268,6 +271,7 @@ def _provider_label(
     reset_credit_expiries: list[datetime],
     tz: tzinfo | None,
     reset_credit_expiry_lookup_failed: bool,
+    now: datetime,
     openai_platform_credits: OpenAIPlatformCredits | None = None,
     prepaid_balance: PrepaidBalance | None = None,
     prepaid_stale_age: str | None = None,
@@ -287,7 +291,7 @@ def _provider_label(
             provider += f" (prepaid stale {prepaid_stale_age})"
     if reset_credits is None:
         return provider
-    return f"{provider} · {format_reset_credit_summary(reset_credits, reset_credit_expiries, reset_credit_expiry_lookup_failed, tz)}"
+    return f"{provider} · {format_reset_credit_summary(reset_credits, reset_credit_expiries, reset_credit_expiry_lookup_failed, now, tz)}"
 
 
 def _format_anthropic_platform_credits(credits: AnthropicPlatformCredits | None, tz: tzinfo | None) -> list[str]:

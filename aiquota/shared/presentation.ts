@@ -56,13 +56,27 @@ export function formatKnownExpiry(expiry: string | Date): string | null {
   });
 }
 
+const RESET_CREDIT_DATE_ONLY_AFTER_MS = 14 * 24 * 60 * 60 * 1000;
+
+export function formatResetCreditExpiry(expiry: string | Date, now: Date): string | null {
+  const date = expiry instanceof Date ? expiry : new Date(expiry);
+  if (Number.isNaN(date.getTime())) return null;
+  if (date.getTime() - now.getTime() > RESET_CREDIT_DATE_ONLY_AFTER_MS) {
+    return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+  return formatKnownExpiry(date);
+}
+
 export function formatResetCreditSummary(
   count: number,
   expiries: (string | Date)[],
-  expiryLookupFailed: boolean
+  expiryLookupFailed: boolean,
+  now: Date
 ): string {
   const label = `${count} reset${count === 1 ? "" : "s"}`;
-  const knownExpiries = expiries.map(formatKnownExpiry).filter((expiry): expiry is string => expiry !== null);
+  const knownExpiries = expiries
+    .map((expiry) => formatResetCreditExpiry(expiry, now))
+    .filter((expiry): expiry is string => expiry !== null);
   if (expiryLookupFailed) {
     return knownExpiries.length
       ? `${label} (expiry: ${knownExpiries.join(", ")}; lookup failed)`

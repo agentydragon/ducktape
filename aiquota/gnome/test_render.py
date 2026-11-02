@@ -169,7 +169,7 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
             assert len(json.loads(string_reply(session.call("GetWindowRows", "claude")))) == 2
 
             codex_header = string_reply(session.call("GetHeaderText", "codex"))
-            assert "2 resets (expiry:" in codex_header
+            assert "3 resets (expiry: Jan 29, 12:00, Feb 1" in codex_header
             assert "1 unknown" in codex_header
             assert len(json.loads(string_reply(session.call("GetWindowRows", "codex")))) == 2
 

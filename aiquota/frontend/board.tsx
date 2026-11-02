@@ -100,6 +100,7 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
           count={quota.resetCredits}
           expiries={quota.resetCreditExpiries}
           expiryLookupFailed={quota.resetCreditExpiryLookupFailed}
+          now={new Date(now)}
         />
       )}
       {provider.burn && <BurnStrip burn={provider.burn} now={now} />}
@@ -217,14 +218,16 @@ function ResetCreditsStrip({
   count,
   expiries,
   expiryLookupFailed,
+  now,
 }: {
   count: number;
   expiries: string[];
   expiryLookupFailed: boolean;
+  now: Date;
 }): JSX.Element {
   return (
     <div className={`aiquota-strip${count > 0 ? " aiquota-strip-resets" : ""}`}>
-      <p className="aiquota-strip-line">{formatResetCreditSummary(count, expiries, expiryLookupFailed)}</p>
+      <p className="aiquota-strip-line">{formatResetCreditSummary(count, expiries, expiryLookupFailed, now)}</p>
     </div>
   );
 }

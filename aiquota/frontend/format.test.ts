@@ -12,6 +12,7 @@ import {
   formatDuration,
   formatKnownExpiry,
   formatPrepaidBalance,
+  formatResetCreditExpiry,
   formatResetCreditSummary,
   roundHalfToEven,
 } from "../shared/presentation.js";
@@ -46,31 +47,45 @@ describe("Python's ties-to-even rounding", () => {
 describe("formatResetCreditSummary", () => {
   const firstExpiry = "2026-01-01T15:20:00Z";
   const secondExpiry = "2026-02-02T12:34:00Z";
+  const now = new Date("2026-01-15T12:00:00Z");
 
   it("lists all known expiries", () => {
-    expect(formatResetCreditSummary(2, [firstExpiry, secondExpiry], false)).toBe(
-      `2 resets (expiry: ${formatKnownExpiry(firstExpiry)}, ${formatKnownExpiry(secondExpiry)})`
+    expect(formatResetCreditSummary(2, [firstExpiry, secondExpiry], false, now)).toBe(
+      `2 resets (expiry: ${formatKnownExpiry(firstExpiry)}, ${formatResetCreditExpiry(secondExpiry, now)})`
     );
   });
 
   it("shows the difference between the count and a successful partial expiry lookup", () => {
-    expect(formatResetCreditSummary(2, [firstExpiry], false)).toBe(
+    expect(formatResetCreditSummary(2, [firstExpiry], false, now)).toBe(
       `2 resets (expiry: ${formatKnownExpiry(firstExpiry)}, 1 unknown)`
     );
-    expect(formatResetCreditSummary(1, [firstExpiry], false)).toBe(
+    expect(formatResetCreditSummary(1, [firstExpiry], false, now)).toBe(
       `1 reset (expiry: ${formatKnownExpiry(firstExpiry)})`
     );
-    expect(formatResetCreditSummary(2, [], false)).toBe("2 resets (expiry: 2 unknown)");
+    expect(formatResetCreditSummary(2, [], false, now)).toBe("2 resets (expiry: 2 unknown)");
   });
 
   it("does not infer an unknown count when the expiry lookup fails", () => {
-    expect(formatResetCreditSummary(2, [], true)).toBe("2 resets (expiry lookup failed)");
-    expect(formatResetCreditSummary(2, [firstExpiry], true)).toBe(
+    expect(formatResetCreditSummary(2, [], true, now)).toBe("2 resets (expiry lookup failed)");
+    expect(formatResetCreditSummary(2, [firstExpiry], true, now)).toBe(
       `2 resets (expiry: ${formatKnownExpiry(firstExpiry)}; lookup failed)`
     );
   });
 
   it("keeps a zero reset count concise when the lookup succeeds", () => {
-    expect(formatResetCreditSummary(0, [], false)).toBe("0 resets");
+    expect(formatResetCreditSummary(0, [], false, now)).toBe("0 resets");
+  });
+
+  it.each([
+    ["2026-01-29T11:59:59Z", false],
+    ["2026-01-29T12:00:00Z", false],
+    ["2026-01-29T12:00:01Z", true],
+    ["2026-01-14T09:00:00Z", false],
+  ])("formats %s with a date-only value only when it is over two weeks away", (iso, isDateOnly) => {
+    const expiry = new Date(iso);
+    const rendered = formatResetCreditExpiry(expiry, now);
+    expect(rendered).toBe(
+      isDateOnly ? expiry.toLocaleDateString([], { month: "short", day: "numeric" }) : formatKnownExpiry(expiry)
+    );
   });
 });

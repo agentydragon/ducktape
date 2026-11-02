@@ -85,8 +85,9 @@ async def test_dashboard(view: VisualPage, scene: str) -> None:
         await expect(claude.locator(".aiquota-window")).to_have_count(2)
         codex = view.page.locator('.aiquota-card[aria-label="codex quota"]')
         await expect(codex.get_by_role("heading")).to_contain_text("Codex")
-        await expect(codex.locator(".aiquota-strip-resets .aiquota-strip-line")).to_contain_text("2 resets (expiry:")
-        await expect(codex.locator(".aiquota-strip-resets .aiquota-strip-line")).to_contain_text("1 unknown")
+        await expect(codex.locator(".aiquota-strip-resets .aiquota-strip-line")).to_contain_text(
+            "3 resets (expiry: Jan 29, 12:00, Feb 1, 1 unknown)"
+        )
         await expect(codex.locator(".aiquota-window")).to_have_count(2)
         openai = view.page.locator('.aiquota-card[aria-label="openai_platform quota"]')
         await expect(openai.get_by_role("heading", name="OpenAI API · $60.00 API credit")).to_be_visible()
