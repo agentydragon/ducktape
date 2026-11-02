@@ -1406,7 +1406,7 @@ flowchart TD
     SANDBOX_AUTODISKFUL[Decision, unscheduled: auto-diskful storage for Sandboxes]
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
-    SYSTEMD_UNIT_COSI_DESIGN[Later decision: systemd Unit resources and controller]
+    SYSTEMD_UNIT_COSI_DESIGN[Review: systemd Unit resources and controller]
     SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN[Selected P0 decision: caller-authorized resume and message wake]
     EXEC_SUSPENDED_RESUME[Selected P0: recover exec on a suspended Sandbox]
     SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN --> EXEC_SUSPENDED_RESUME
@@ -1719,15 +1719,13 @@ Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-co
 
 ### `SYSTEMD_UNIT_COSI_DESIGN` — review systemd Unit resources and controller ownership
 
-**Later design decision; operator, 2026-11-01 UTC.** Consider representing managed systemd units as
-COSI resources with a controller owning their lifecycle. Compare a dedicated `SystemdUnit` resource
-and controller with extending the existing generic process resources/controller. Recommend one
-owner for D-Bus connections and unit references, start/stop jobs, observations and cleanup, replacing
-the corresponding imperative Runtime helpers and native-supervision wiring. Higher-level components
-express their intent and consume typed status; systemd retains its signal, escalation and cgroup
-management responsibilities.
+**Design proposal for operator review, 2026-11-01 UTC.** The [proposal](../env/runtime/supervision/docs/systemd_cosi_design.md)
+compares a dedicated `SystemdUnit` resource/controller with extending the existing generic process
+controller. It recommends one process-lifecycle owner with typed systemd observations, subject to
+review of the actual code it can remove and the recovery and fencing contracts.
 
-Cover both packaged Host/Execution service units and native transient units. Distinguish a unit's
+Cover the packaged Runtime unit as the outer lifetime owner and the native transient units it
+manages; Host and Execution no longer have separate packaged units. Distinguish a unit's
 identity, a requested launch attempt and its observed `InvocationID`; define launch-time
 configuration, retained exit outcomes, connection loss/reconnection and uncertain start semantics.
 Reconciliation must preserve terminal one-shot attempts; explicitly assign any restart policy so
