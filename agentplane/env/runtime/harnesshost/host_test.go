@@ -164,6 +164,13 @@ func TestOpenSessionRetryUsesPersistedSetupAfterSealPublicationFailure(t *testin
 		t.Fatalf("conflicting setup source error = %v, want AlreadyExists", err)
 	}
 
+	if r.sessions.Get(request.SessionId) != nil {
+		t.Fatal("rejected setup conflict loaded the retained Session")
+	}
+	if _, found, err := session.ReadReconcileSnapshot(r.ctx, r.lifecycle.state, request.SessionId); err != nil || found {
+		t.Fatalf("rejected setup conflict published a Session: found=%t, err=%v", found, err)
+	}
+
 	request.SetupScript = nil
 	if _, err := r.OpenSession(hostContext(r, context.Background()), request); err != nil {
 		t.Fatalf("omitted-script OpenSession retry: %v", err)
