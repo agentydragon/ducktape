@@ -110,11 +110,11 @@ func TestOpenSessionComparesConfirmedConfiguration(t *testing.T) {
 	}
 }
 
-func TestOpenSessionRetryUsesPersistedSetupAfterSealPublicationFailure(t *testing.T) {
+func TestOpenSessionRetryUsesPersistedSetupAfterAcknowledgementReadFailure(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	failure := errors.New("injected journal seal publication failure")
-	resources := &failJournalSealPublicationOnce{
+	failure := errors.New("injected acknowledgement read failure")
+	resources := &failAcknowledgementReadOnce{
 		State:   state.WrapCore(namespaced.NewState(inmem.Build)),
 		failure: failure,
 	}
@@ -129,7 +129,7 @@ func TestOpenSessionRetryUsesPersistedSetupAfterSealPublicationFailure(t *testin
 		t.Fatalf("first OpenSession error = %v, want injected Unavailable", err)
 	}
 	if resources.fail.Load() {
-		t.Fatal("journal seal publication failure was not injected")
+		t.Fatal("acknowledgement read failure was not injected")
 	}
 	if r.sessions.Get(request.SessionId) != nil {
 		t.Fatal("failed OpenSession became visible in the Session registry")
@@ -373,7 +373,7 @@ type initialOperationFailureState struct {
 	teardownFailed  chan struct{}
 }
 
-type failJournalSealPublicationOnce struct {
+type failAcknowledgementReadOnce struct {
 	state.State
 	failure error
 	fail    atomic.Bool
@@ -420,11 +420,11 @@ func TestOpenSessionFailsWhenOwnerPublicationFails(t *testing.T) {
 	}
 }
 
-func (s *failJournalSealPublicationOnce) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
-	if value.Metadata().Type() == journalSealType && s.fail.CompareAndSwap(true, false) {
-		return s.failure
+func (s *failAcknowledgementReadOnce) Get(ctx context.Context, ptr resource.Pointer, opts ...state.GetOption) (resource.Resource, error) {
+	if ptr.Type() == retained.IngressAckType && s.fail.CompareAndSwap(true, false) {
+		return nil, s.failure
 	}
-	return s.State.Modify(ctx, value, update, opts...)
+	return s.State.Get(ctx, ptr, opts...)
 }
 
 func (s *initialOperationFailureState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {

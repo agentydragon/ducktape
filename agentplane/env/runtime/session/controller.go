@@ -299,10 +299,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			s.closeAdmission(desiredState.Generation)
 			if s.journal.SealState() == nil {
 				if _, err := s.startOperation(&s.sealing, func(ctx context.Context) error {
-					if err := s.sealJournal(ctx); err != nil {
-						return err
-					}
-					return c.manager.publishSeal(s.id, s.journal.SealState())
+					return s.sealJournal(ctx)
 				}); err != nil {
 					current.Error = err.Error()
 					return write()

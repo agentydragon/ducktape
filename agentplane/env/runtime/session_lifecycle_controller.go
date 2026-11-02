@@ -108,9 +108,10 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		current.Blocker = lifecycle.Blocker{}
 		return write()
 	}
-	sessions := c.runtime.sessions.Inventory()
-	for _, s := range sessions {
-		status, found, err := session.ReadLifecycleStatus(ctx, r, s.ID())
+	// Retained COSI records define the drain membership, including any Session
+	// whose live owner or status has not yet become available.
+	for _, id := range ids {
+		status, found, err := session.ReadLifecycleStatus(ctx, r, id)
 		if err != nil {
 			return err
 		}
@@ -125,7 +126,7 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			}
 			current.Blocker = lifecycle.Blocker{
 				Kind: kind, ResourceType: session.LifecycleStatusType,
-				Error: status.Error, ResourceID: s.ID(), ProcessID: status.ProcessID,
+				Error: status.Error, ResourceID: id, ProcessID: status.ProcessID,
 				ResourcePresent: found,
 			}
 			return write()
@@ -137,7 +138,7 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			}
 			current.Blocker = lifecycle.Blocker{
 				Kind: lifecycle.SessionHaltPending, ResourceType: session.LifecycleStatusType,
-				Error: resourceError, ResourceID: s.ID(), ProcessID: status.ProcessID,
+				Error: resourceError, ResourceID: id, ProcessID: status.ProcessID,
 				ResourcePresent: found,
 			}
 			return write()
@@ -150,15 +151,15 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			return err
 		}
 	}
-	for _, s := range sessions {
-		status, found, err := session.ReadLifecycleStatus(ctx, r, s.ID())
+	for _, id := range ids {
+		status, found, err := session.ReadLifecycleStatus(ctx, r, id)
 		if err != nil {
 			return err
 		}
 		if !found || status.EnvironmentGeneration != desiredState.Generation || !status.ProcessStopped {
 			current.Blocker = lifecycle.Blocker{
 				Kind: lifecycle.SessionProcessPending, ResourceType: session.LifecycleStatusType,
-				ResourceID: s.ID(), ProcessID: status.ProcessID, ResourcePresent: found,
+				ResourceID: id, ProcessID: status.ProcessID, ResourcePresent: found,
 			}
 			return write()
 		}
@@ -233,15 +234,15 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 	// controller alive until the resulting observations have been committed.
 	// This pre-fence guard must not wait for Sealed: sealing itself requires the
 	// global native and Execution barriers below.
-	for _, s := range sessions {
-		input, found, err := session.ReadInspectionStatus(ctx, r, s.ID())
+	for _, id := range ids {
+		input, found, err := session.ReadInspectionStatus(ctx, r, id)
 		if err != nil {
 			return err
 		}
 		if input.Inspecting {
 			current.Blocker = lifecycle.Blocker{
 				Kind: lifecycle.SessionInspectionPending, ResourceType: session.InspectionStatusType,
-				ResourceID: s.ID(), ResourcePresent: found,
+				ResourceID: id, ResourcePresent: found,
 			}
 			return write()
 		}
@@ -284,15 +285,15 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			current.Blocker = lifecycle.Blocker{}
 			return write()
 		}
-		for _, s := range sessions {
-			status, found, err := session.ReadLifecycleStatus(ctx, r, s.ID())
+		for _, id := range ids {
+			status, found, err := session.ReadLifecycleStatus(ctx, r, id)
 			if err != nil {
 				return err
 			}
 			if !found || status.EnvironmentGeneration != desiredState.Generation || !status.Sealed || status.SealUID != desiredState.SealUID {
 				current.Blocker = lifecycle.Blocker{
 					Kind: lifecycle.JournalSealPending, ResourceType: session.LifecycleStatusType,
-					ResourceID: s.ID(), ResourcePresent: found, JournalSealPresent: status.Sealed,
+					ResourceID: id, ResourcePresent: found, JournalSealPresent: status.Sealed,
 					JournalSealUID: status.SealUID, ExpectedJournalSealUID: desiredState.SealUID,
 					JournalSealCursor: status.SealCursor,
 				}
@@ -333,8 +334,8 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		return err
 	}
 	current.Stage = lifecycle.Flushing
-	for _, s := range sessions {
-		status, found, err := session.ReadLifecycleStatus(ctx, r, s.ID())
+	for _, id := range ids {
+		status, found, err := session.ReadLifecycleStatus(ctx, r, id)
 		if err != nil {
 			return err
 		}
@@ -345,7 +346,7 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			}
 			current.Blocker = lifecycle.Blocker{
 				Kind: lifecycle.IngressAcknowledgementPending, ResourceType: retained.IngressAckType,
-				ResourceID: s.ID(), ResourcePresent: currentGeneration && status.AcknowledgementPresent,
+				ResourceID: id, ResourcePresent: currentGeneration && status.AcknowledgementPresent,
 				JournalSealPresent: currentGeneration && status.Sealed,
 				JournalSealUID:     status.SealUID, ExpectedJournalSealUID: desiredState.SealUID,
 				JournalSealCursor:      status.SealCursor,

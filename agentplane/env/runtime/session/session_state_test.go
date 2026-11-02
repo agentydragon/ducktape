@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
 	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -90,8 +89,7 @@ func newSessionTestManager(t *testing.T, environment map[string]string, destinat
 	manager, err := NewManager(withTestSessionFacilities(t, Config{
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: root,
 		Destination: destination, HarnessEnvironment: environment,
-		PublishSeal: func(string, *journal.SealState) error { return nil },
-		OnChange:    func() {},
+		OnChange: func() {},
 		OnError: func(err error) {
 			if err != nil {
 				t.Errorf("session manager: %v", err)

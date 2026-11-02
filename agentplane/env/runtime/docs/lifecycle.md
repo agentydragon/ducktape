@@ -92,10 +92,11 @@ sequenceDiagram
   C->>R: EnvironmentSessionStatuses.NativeStopped (exact generation)
   R->>E: drain calls and fence native owner
   E->>R: exact lifecycle and Execution-attempt fence completion
-  C->>C: seal journals at their final cursors when requested
+  C->>C: close final Session admission and seal journals at their final cursors
   H->>I: final entries and seals
   I->>H: exact sealed cursor acknowledgement
   H->>H: persist IngressAcks
+  C->>C: publish per-Session sealed and delivered status
   C->>R: exact aggregate completion
 ```
 
@@ -104,7 +105,11 @@ and inspection writes. Runtime-domain attempts keep their own bootstrap/Executio
 component status cannot satisfy a successor revision. Execution fencing associates its own attempt
 generation with the lifecycle generation; a successor cannot start before its predecessor is fenced.
 
-A seal request waits for native cleanup and the exact Execution fence before journals seal.
+A seal request waits for native cleanup and the exact Execution fence before journals seal. The
+Session lifecycle controller closes the final admission gate, settles accepted commands, commits
+the seal and observes the exact durable acknowledgement. Its generation-qualified status reports
+those Session boundaries to the environment aggregate. Retained COSI Session records define the
+drain membership; a missing owner or lifecycle status blocks completion.
 Under-cursor, unsealed or non-durable acknowledgements cannot satisfy the sealed delivery barrier.
 Quiesce acceptance and Close completion are separate boundaries. Repeated Quiesce preserves a
 healthy desired generation; only an error for that current generation may request a retry.
