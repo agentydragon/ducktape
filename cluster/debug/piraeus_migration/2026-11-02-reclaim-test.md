@@ -54,6 +54,11 @@ production Seaweed cluster compacts or trims, whether it does so automatically,
 or what happens with snapshots, retained object versions, replication, or other
 object stores.
 
+Read-only follow-up: all three production Seaweed HDD volume-server mounts were
+ext4 without the `discard` mount option. No Kubernetes CronJob matched trim or
+Seaweed vacuum by name or container command. This does not rule out node-level
+trim scheduling or establish when production Seaweed vacuums its volumes.
+
 ## Teardown
 
 The namespace `reclaim-probe-20261102` contained only the two test pods and PVCs.
