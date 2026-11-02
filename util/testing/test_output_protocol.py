@@ -13,7 +13,7 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from util.testing.output_records import FILES_DIR, RECORDS_DIR, OutputRecord, output_key
-from util.testing.output_writer import publish_output
+from util.testing.output_writer import open_output, publish_file, publish_output
 
 
 def _publish_from_process(output_dir: str) -> str:
@@ -104,6 +104,92 @@ def test_publish_output_writes_payload_before_record_with_stable_paths(tmp_path:
         "label": "Expanded dialog on mobile",
         "title": "Dialog review",
     }
+
+
+def test_publish_file_copies_source_and_preserves_compound_suffixes(tmp_path: Path) -> None:
+    source = tmp_path / "trace.tar.gz"
+    source.write_bytes(b"compressed trace")
+
+    payload_path = publish_file(
+        tmp_path / "outputs",
+        case_id="dialog/mobile",
+        checkpoint=None,
+        role="diagnostics",
+        source=source,
+        label="Browser trace",
+        title="Diagnostic capture",
+    )
+
+    key = output_key("dialog/mobile", None, "diagnostics")
+    record_path = tmp_path / "outputs" / "test-outputs" / RECORDS_DIR / f"{key}.json"
+    assert payload_path.name == f"{key}.tar.gz"
+    assert payload_path.read_bytes() == b"compressed trace"
+    assert json.loads(record_path.read_text()) == {
+        "schema": "ducktape.test-output.v1",
+        "case_id": "dialog/mobile",
+        "checkpoint": None,
+        "role": "diagnostics",
+        "path": f"files/{key}.tar.gz",
+        "label": "Browser trace",
+        "title": "Diagnostic capture",
+    }
+
+
+def test_publish_output_accepts_utf8_text(tmp_path: Path) -> None:
+    payload = publish_output(tmp_path, case_id="example", role="diagnostics", data='{"message":"猫"}', suffix="json")
+    assert payload.read_bytes() == b'{"message":"\xe7\x8c\xab"}'
+
+
+def test_open_output_publishes_text_and_binary_after_successful_close(tmp_path: Path) -> None:
+    with open_output(tmp_path, case_id="example", role="diagnostics", suffix="json") as output:
+        output.write('{"message":"猫"}')
+        assert output.seekable()
+        assert list((tmp_path / "test-outputs" / RECORDS_DIR).glob("*.json")) == []
+    text_path = tmp_path / "test-outputs" / FILES_DIR / f"{output_key('example', None, 'diagnostics')}.json"
+    assert text_path.read_text() == '{"message":"猫"}'
+
+    with open_output(tmp_path, case_id="example", role="screenshot", suffix="png", mode="wb") as output:
+        output.write(b"image bytes")
+    image_path = tmp_path / "test-outputs" / FILES_DIR / f"{output_key('example', None, 'screenshot')}.png"
+    assert image_path.read_bytes() == b"image bytes"
+
+
+def test_open_output_exception_discards_data_and_duplicate_claim_preserves_original(tmp_path: Path) -> None:
+    def fail_during_write() -> None:
+        with open_output(tmp_path, case_id="example", role="diagnostics", suffix="json") as output:
+            output.write("incomplete")
+            raise RuntimeError("capture failed")
+
+    with pytest.raises(RuntimeError, match="capture failed"):
+        fail_during_write()
+    assert list((tmp_path / "test-outputs" / RECORDS_DIR).glob("*.json")) == []
+    assert list((tmp_path / "test-outputs" / FILES_DIR).iterdir()) == []
+
+    with open_output(tmp_path, case_id="example", role="diagnostics", suffix="json") as output:
+        output.write("complete")
+    with (
+        pytest.raises(FileExistsError, match="already claimed"),
+        open_output(tmp_path, case_id="example", role="diagnostics", suffix="json") as output,
+    ):
+        output.write("replacement")
+    key = output_key("example", None, "diagnostics")
+    assert (tmp_path / "test-outputs" / FILES_DIR / f"{key}.json").read_text() == "complete"
+    assert len(list((tmp_path / "test-outputs" / RECORDS_DIR).glob("*.json"))) == 1
+    assert len(list((tmp_path / "test-outputs" / FILES_DIR).iterdir())) == 1
+
+
+def test_publish_file_duplicate_claim_fails(tmp_path: Path) -> None:
+    source = tmp_path / "capture.png"
+    source.write_bytes(b"image bytes")
+
+    first = publish_file(
+        tmp_path / "outputs", case_id="example", checkpoint="default", role="screenshot", source=source
+    )
+    with pytest.raises(FileExistsError):
+        publish_file(tmp_path / "outputs", case_id="example", checkpoint="default", role="screenshot", source=source)
+
+    assert first.read_bytes() == b"image bytes"
+    assert len(list((tmp_path / "outputs" / "test-outputs" / RECORDS_DIR).glob("*.json"))) == 1
 
 
 def test_duplicate_claim_fails_even_when_payload_is_equal(tmp_path: Path) -> None:

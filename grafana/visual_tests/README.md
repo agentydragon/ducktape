@@ -20,7 +20,7 @@ grafana_dashboard_visual_test(
 The shared scenario starts isolated Grafana and replays dashboard-owned query
 responses. It renders the dashboard in kiosk mode, activates lazy panels, waits
 for queries to finish, then publishes one full-page screenshot via
-`visual-review.json`. For this appearance-only fixture it converts query
+structured test-output records. For this appearance-only fixture it converts query
 variables to fixed choices, maps Loki and ClickHouse datasource references to
 the built-in Prometheus frontend, and intercepts datasource queries. Each fixture
 explicitly provides choices for query variables and a Grafana response for every
@@ -67,8 +67,8 @@ Run a target on the remote Docker-capable executor, for example:
 bbr test //cluster/cdk8s/monitoring/dashboards:piraeus_dashboard_visual_test
 ```
 
-The manifest is copied into undeclared outputs only after all captures succeed,
-so interrupted runs cannot publish a partial screenshot set. An initial run has
+The collector selects outputs from successful terminal test attempts, so a failed or interrupted
+run cannot advance the review baseline. An initial run has
 no before image until the target has a published devel baseline. The publisher
 labels a fallback baseline when it cannot find one for the exact base commit.
 

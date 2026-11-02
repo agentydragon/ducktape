@@ -279,7 +279,7 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     async with holding_still(page, card):
         await call.locator(".ui-disclosure-summary").first.click()
         await expect(show_all).to_be_visible()
-    await view.capture(f"{view.capture_name}-call-open")
+    await view.capture("call-open")
 
     await read_at(page, show_all, 0.3)
     await show_all.click()
@@ -362,7 +362,7 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
         call.locator(".agentplane-output-disclosure .ui-disclosure-heading"),
     ):
         await expect(heading).to_be_in_viewport()
-    await view.capture(f"{view.capture_name}-output-collapsed")
+    await view.capture("output-collapsed")
 
 
 if __name__ == "__main__":

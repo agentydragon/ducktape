@@ -97,10 +97,9 @@ async def test_thread_trace_menu(view: VisualPage, app: AgentplaneFixture) -> No
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     await view.capture()
-    assert view.capture_name is not None
     await view.page.get_by_role("button", name="More", exact=True).click()
     await expect(view.page.get_by_role("menuitem", name="Find Thread traces in Grafana")).to_be_visible()
-    await view.capture(name=f"{view.capture_name}_thread_trace_menu")
+    await view.capture(name="thread_trace_menu")
 
 
 async def test_threads(view: VisualPage, app: AgentplaneFixture) -> None:
@@ -307,20 +306,19 @@ async def test_sandbox(view: VisualPage, app: AgentplaneFixture) -> None:
     await expect(page.get_by_role("table")).to_be_visible()
     await view.check(context="fixture ready")
     await view.capture(target=page.locator("#app"))
-    assert view.capture_name is not None
     await page.get_by_role("button", name="More Sandbox actions").click()
     await expect(page.get_by_role("menuitem", name="Find Sandbox traces in Grafana")).to_be_visible()
     await expect(page.get_by_role("menuitem", name="Find Sandbox LLM traces in Langfuse")).to_be_visible()
-    await view.capture(name=f"{view.capture_name}_sandbox_trace_menu")
+    await view.capture(name="sandbox_trace_menu")
     await page.get_by_role("button", name="More Sandbox actions").click()
     await page.get_by_role("button", name=f"More actions for {IDLE_THREAD}").click()
     await expect(page.get_by_role("menuitem", name="Find Thread traces in Grafana")).to_be_visible()
-    await view.capture(name=f"{view.capture_name}_thread_trace_menu")
+    await view.capture(name="thread_trace_menu")
 
     await page.get_by_role("button", name="New thread", exact=True).click()
     await expect(page.get_by_role("combobox", name="Model")).not_to_have_value("")
     await expect(page.get_by_role("button", name="Create thread")).to_be_enabled()
-    await view.capture(target=page.locator("#app"), name=f"{view.capture_name}_new_thread")
+    await view.capture(target=page.locator("#app"), name="new_thread")
     for label, checkpoint in (
         ("Standing instructions", "standing_instructions"),
         ("Thread setup script", "thread_setup_script"),
@@ -334,7 +332,7 @@ async def test_sandbox(view: VisualPage, app: AgentplaneFixture) -> None:
         # content rather than only the sticky disclosure heading.
         await _focus(page, textarea)
         await page.mouse.move(0, 0)
-        await view.capture(target=page.locator("#app"), name=f"{view.capture_name}_{checkpoint}_expanded")
+        await view.capture(target=page.locator("#app"), name=f"{checkpoint}_expanded")
 
 
 @DESKTOP_AND_MOBILE
@@ -384,7 +382,7 @@ async def test_central_sampler_unavailable_executor(view: VisualPage, app: Agent
     assert parse_qs(urlsplit(href).query)["filter"] == [
         f"metadata;stringObject;attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id;=;{IDLE_THREAD}"
     ]
-    await view.capture(name=f"{view.capture_name}_session_trace_menu")
+    await view.capture(name="session_trace_menu")
 
 
 @DESKTOP_AND_MOBILE

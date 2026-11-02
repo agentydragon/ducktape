@@ -133,16 +133,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "visual_review",
-    testonly = True,
-    srcs = ["visual_review.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//util:visual_review",
-    ],
-)
-
 py_test(
     name = "test_container_logs",
     srcs = ["test_container_logs.py"],
@@ -184,19 +174,6 @@ py_library(
 )
 
 py_test(
-    name = "test_visual_review",
-    srcs = ["test_visual_review.py"],
-    deps = [
-        ":visual_review",
-        "//:conftest",
-        "//util:visual_review",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_sharding",
     srcs = ["test_sharding.py"],
     deps = [
@@ -227,8 +204,7 @@ py_library(
     srcs = ["gnome.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":undeclared_outputs",
-        ":visual_review",
+        ":output_writer",
         "@pypi//docker",
         "@pypi//pillow",
     ],
@@ -263,4 +239,27 @@ py_library(
     srcs = ["output_writer.py"],
     visibility = ["//visibility:public"],
     deps = [":output_records"],
+)
+
+py_test(
+    name = "test_test_output_pytest",
+    srcs = ["test_test_output_pytest.py"],
+    deps = [
+        ":output_writer",
+        ":pytest_outputs",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "pytest_outputs",
+    srcs = ["pytest_outputs.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":output_writer",
+        ":undeclared_outputs",
+        "@pypi//pytest",
+    ],
 )

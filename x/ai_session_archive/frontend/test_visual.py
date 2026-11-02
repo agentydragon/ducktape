@@ -13,12 +13,9 @@ pytest_plugins = ("util.testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
-async def test_session_list_and_compact_import_progress(visual: VisualHarness, capture_name: str) -> None:
+async def test_session_list_and_compact_import_progress(visual: VisualHarness) -> None:
     async with visual.open(
-        "session-list-and-compact-import-progress",
-        viewport=Viewport(width=1440, height=1000),
-        color_scheme="light",
-        capture_name=capture_name,
+        "session-list-and-compact-import-progress", viewport=Viewport(width=1440, height=1000), color_scheme="light"
     ) as view:
         page = view.page
         await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
@@ -62,16 +59,13 @@ async def test_session_list_and_compact_import_progress(visual: VisualHarness, c
             "aria-checked", "true"
         )
         await expect(page.get_by_role("menuitemradio", name=re.compile("Latest captured"))).to_be_visible()
-        await view.capture(name=f"{capture_name}_conversation_options")
+        await view.capture(name="conversation_options")
         await page.keyboard.press("Escape")
 
 
-async def test_import_progress_details(visual: VisualHarness, capture_name: str) -> None:
+async def test_import_progress_details(visual: VisualHarness) -> None:
     async with visual.open(
-        "import-progress-details",
-        viewport=Viewport(width=1440, height=1000),
-        color_scheme="light",
-        capture_name=capture_name,
+        "import-progress-details", viewport=Viewport(width=1440, height=1000), color_scheme="light"
     ) as view:
         page = view.page
         await page.get_by_role("link", name="Import details").click()
@@ -88,12 +82,9 @@ async def test_import_progress_details(visual: VisualHarness, capture_name: str)
         await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
 
 
-async def test_compact_import_progress_on_mobile(visual: VisualHarness, capture_name: str) -> None:
+async def test_compact_import_progress_on_mobile(visual: VisualHarness) -> None:
     async with visual.open(
-        "compact-import-progress-mobile",
-        viewport=Viewport(width=390, height=844),
-        color_scheme="light",
-        capture_name=capture_name,
+        "compact-import-progress-mobile", viewport=Viewport(width=390, height=844), color_scheme="light"
     ) as view:
         page = view.page
         progress = page.get_by_role("region", name="Import progress by machine")
@@ -124,7 +115,7 @@ async def test_compact_import_progress_on_mobile(visual: VisualHarness, capture_
         assert menu_bounds is not None
         assert menu_bounds["x"] >= 0
         assert menu_bounds["x"] + menu_bounds["width"] <= 390
-        await view.capture(name=f"{capture_name}_conversation_options")
+        await view.capture(name="conversation_options")
         await page.keyboard.press("Escape")
 
         await session_list_toggle.click()
@@ -141,12 +132,9 @@ async def test_compact_import_progress_on_mobile(visual: VisualHarness, capture_
         assert refresh_bounds["y"] + refresh_bounds["height"] <= sidebar_bounds["y"] + sidebar_bounds["height"]
 
 
-async def test_inferred_subagent_parent_link(visual: VisualHarness, capture_name: str) -> None:
+async def test_inferred_subagent_parent_link(visual: VisualHarness) -> None:
     async with visual.open(
-        "inferred-subagent-parent-link",
-        viewport=Viewport(width=1440, height=1000),
-        color_scheme="light",
-        capture_name=capture_name,
+        "inferred-subagent-parent-link", viewport=Viewport(width=1440, height=1000), color_scheme="light"
     ) as view:
         page = view.page
         await page.get_by_role("checkbox", name="Subagents", exact=True).click()
@@ -165,12 +153,8 @@ async def test_inferred_subagent_parent_link(visual: VisualHarness, capture_name
 @pytest.mark.parametrize(
     "viewport", [Viewport(width=1440, height=1000), Viewport(width=390, height=844)], ids=["desktop", "mobile"]
 )
-async def test_related_sessions_menu_stays_with_title(
-    visual: VisualHarness, capture_name: str, viewport: Viewport
-) -> None:
-    async with visual.open(
-        "long-child-list", viewport=viewport, color_scheme="light", capture_name=capture_name
-    ) as view:
+async def test_related_sessions_menu_stays_with_title(visual: VisualHarness, viewport: Viewport) -> None:
+    async with visual.open("long-child-list", viewport=viewport, color_scheme="light") as view:
         page = view.page
         if viewport.width <= 760:
             await page.get_by_role("button", name="Session list").click()
@@ -202,11 +186,9 @@ async def test_related_sessions_menu_stays_with_title(
     "viewport", [Viewport(width=1440, height=780), Viewport(width=390, height=844)], ids=["desktop", "mobile"]
 )
 async def test_long_child_list_stays_scrollable_without_covering_transcript(
-    visual: VisualHarness, capture_name: str, viewport: Viewport
+    visual: VisualHarness, viewport: Viewport
 ) -> None:
-    async with visual.open(
-        "long-child-list", viewport=viewport, color_scheme="light", capture_name=capture_name
-    ) as view:
+    async with visual.open("long-child-list", viewport=viewport, color_scheme="light") as view:
         page = view.page
         if viewport.width <= 760:
             await page.get_by_role("button", name="Session list").click()
@@ -278,16 +260,13 @@ async def test_long_child_list_stays_scrollable_without_covering_transcript(
             "element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop) <= 1"
         )
         await view.check(context="child sessions scroll independently while the conversation remains available")
-        await view.capture(target=page.locator("#root"), name=f"{capture_name}_child_list_end")
+        await view.capture(target=page.locator("#root"), name="child_list_end")
 
 
 @pytest.mark.parametrize("width", [1440, 390], ids=["desktop", "mobile"])
-async def test_shared_transcript_disclosures(visual: VisualHarness, capture_name: str, width: int) -> None:
+async def test_shared_transcript_disclosures(visual: VisualHarness, width: int) -> None:
     async with visual.open(
-        "shared-transcript-disclosures",
-        viewport=Viewport(width=width, height=1000),
-        color_scheme="light",
-        capture_name=capture_name,
+        "shared-transcript-disclosures", viewport=Viewport(width=width, height=1000), color_scheme="light"
     ) as view:
         page = view.page
         await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
@@ -300,7 +279,7 @@ async def test_shared_transcript_disclosures(visual: VisualHarness, capture_name
         await expect(group).to_have_attribute("aria-expanded", "false")
         await expect(history).to_contain_text("missing test configuration")
         await expect(history.get_by_text("I will inspect the build log.", exact=True)).to_be_visible()
-        await view.capture(name=f"{capture_name}_folded")
+        await view.capture(name="folded")
         user = history.locator('[data-event-ordinal="2"]')
         raw = user.get_by_role("button", name="Raw JSONL record", exact=True)
         assert await raw.evaluate("element => getComputedStyle(element).position === 'absolute'")
@@ -314,7 +293,7 @@ async def test_shared_transcript_disclosures(visual: VisualHarness, capture_name
         await raw_panel.get_by_role("button", name="Exact line bytes (base64)").click()
         await expect(raw_panel.locator("pre")).to_have_count(1)
         await expect(history).to_have_attribute("data-layout-settled", "true")
-        await view.capture(name=f"{capture_name}_raw_inspection")
+        await view.capture(name="raw_inspection")
         await raw.click()
         await expect(raw_panel).to_have_count(0)
         await group.click()
@@ -326,16 +305,16 @@ async def test_shared_transcript_disclosures(visual: VisualHarness, capture_name
         await tool.scroll_into_view_if_needed()
         await expect(history).to_have_attribute("data-layout-settled", "true")
         await expect(tool).to_be_in_viewport()
-        await view.capture(name=f"{capture_name}_expanded")
+        await view.capture(name="expanded")
         await group.click()
         await expect(history).to_have_attribute("data-layout-settled", "true")
         await expect(group).to_have_attribute("aria-expanded", "false")
 
 
 @pytest.mark.parametrize("width", [1440, 390], ids=["desktop", "mobile"])
-async def test_codex_work_steps(visual: VisualHarness, capture_name: str, width: int) -> None:
+async def test_codex_work_steps(visual: VisualHarness, width: int) -> None:
     async with visual.open(
-        "codex-work-steps", viewport=Viewport(width=width, height=1000), color_scheme="light", capture_name=capture_name
+        "codex-work-steps", viewport=Viewport(width=width, height=1000), color_scheme="light"
     ) as view:
         page = view.page
         await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
@@ -348,14 +327,14 @@ async def test_codex_work_steps(visual: VisualHarness, capture_name: str, width:
         await expect(history).to_contain_text("Context compacted")
         await expect(history).not_to_contain_text("Structured record;")
         await expect(history.locator("[data-activity-step]")).to_have_count(0)
-        await view.capture(name=f"{capture_name}_collapsed")
+        await view.capture(name="collapsed")
 
         await history.get_by_role("button", name="1 tool call, 1 agent message", exact=True).click()
         await history.get_by_role("button", name="1 tool call, 2 reasoning steps", exact=True).click()
         await expect(history.locator('[data-activity-step="tool"]')).to_have_count(2)
         await expect(history.locator('[data-activity-step="reasoning"]')).to_have_count(1)
         await expect(history.locator('[data-activity-step="subagent"]')).to_contain_text("/root/shared_steps")
-        await view.capture(name=f"{capture_name}_steps")
+        await view.capture(name="steps")
 
         tool = history.locator('[data-activity-step="tool"]').filter(has_text="run_checks")
         await tool.get_by_role("button", name=re.compile("run_checks")).click()
@@ -364,7 +343,7 @@ async def test_codex_work_steps(visual: VisualHarness, capture_name: str, width:
         await expect(tool.locator('[data-clamped="true"]')).to_have_count(1)
         await tool.scroll_into_view_if_needed()
         await expect(history).to_have_attribute("data-layout-settled", "true")
-        await view.capture(name=f"{capture_name}_tool_output")
+        await view.capture(name="tool_output")
         await tool.get_by_role("button", name="Show all 48 lines", exact=True).click()
         await expect(tool.locator('[data-clamped="true"]')).to_have_count(0)
         await tool.hover()
@@ -373,16 +352,13 @@ async def test_codex_work_steps(visual: VisualHarness, capture_name: str, width:
         await tool.get_by_role("region", name="Raw JSONL record").first.scroll_into_view_if_needed()
         await expect(tool).to_contain_text('"call_id": "check"')
         await expect(history).to_have_attribute("data-layout-settled", "true")
-        await view.capture(name=f"{capture_name}_source")
+        await view.capture(name="source")
 
 
 @pytest.mark.parametrize("width", [1440, 390], ids=["desktop", "mobile"])
-async def test_claude_attachment_widgets(visual: VisualHarness, capture_name: str, width: int) -> None:
+async def test_claude_attachment_widgets(visual: VisualHarness, width: int) -> None:
     async with visual.open(
-        "claude-attachment-widgets",
-        viewport=Viewport(width=width, height=1000),
-        color_scheme="light",
-        capture_name=capture_name,
+        "claude-attachment-widgets", viewport=Viewport(width=width, height=1000), color_scheme="light"
     ) as view:
         page = view.page
         await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
@@ -396,13 +372,13 @@ async def test_claude_attachment_widgets(visual: VisualHarness, capture_name: st
         await expect(attachments).to_have_count(2)
         await expect(history).not_to_contain_text("Structured record;")
         await expect(history).not_to_contain_text("export const enabled")
-        await view.capture(name=f"{capture_name}_collapsed")
+        await view.capture(name="collapsed")
         edited = attachments.filter(has_text="edited text file")
         await edited.get_by_role("button", name=re.compile("Attachment · edited text file")).click()
         await edited.get_by_role("region", name="Details", exact=True).scroll_into_view_if_needed()
         await expect(edited).to_contain_text("export const enabled = true;")
         await expect(history).to_have_attribute("data-layout-settled", "true")
-        await view.capture(name=f"{capture_name}_expanded")
+        await view.capture(name="expanded")
 
 
 if __name__ == "__main__":
@@ -412,10 +388,8 @@ if __name__ == "__main__":
 @pytest.mark.parametrize(
     "viewport", [Viewport(width=1440, height=1000), Viewport(width=390, height=844)], ids=["desktop", "mobile"]
 )
-async def test_session_kind_filters(visual: VisualHarness, capture_name: str, viewport: Viewport) -> None:
-    async with visual.open(
-        "session-kind-filters", viewport=viewport, color_scheme="light", capture_name=capture_name
-    ) as view:
+async def test_session_kind_filters(visual: VisualHarness, viewport: Viewport) -> None:
+    async with visual.open("session-kind-filters", viewport=viewport, color_scheme="light") as view:
         page = view.page
         if viewport.width < 600:
             await page.get_by_role("button", name="Session list", exact=True).click()
@@ -437,4 +411,4 @@ async def test_session_kind_filters(visual: VisualHarness, capture_name: str, vi
         await expect(sidebar.get_by_role("link", name="Guardian automation fixture")).to_be_visible()
         await expect(sidebar.get_by_role("link", name="Inspect a local transcript")).to_be_visible()
         await expect(sidebar.get_by_role("button", name="Refresh session list")).to_be_enabled()
-        await view.capture(name=f"{capture_name}_all_kinds", target=page.locator("#root"))
+        await view.capture(name="all_kinds", target=page.locator("#root"))

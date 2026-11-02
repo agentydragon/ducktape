@@ -75,6 +75,7 @@ py_test(
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:gnome",
+        "//util/testing:output_writer",
         "//util/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

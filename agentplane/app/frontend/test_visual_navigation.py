@@ -356,9 +356,7 @@ async def test_composer_more_menu(view: VisualPage, app: AgentplaneFixture) -> N
 
 
 @DESKTOP_AND_MOBILE
-async def test_long_thread_name_sandbox_label(
-    view: VisualPage, app: AgentplaneFixture, viewport: Viewport, capture_name: str
-) -> None:
+async def test_long_thread_name_sandbox_label(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
     """A phone's topbar gives a long thread name the row and drops the Sandbox label, which the More
     menu still lists; a desktop topbar has room for both."""
     await app.name_thread(IDLE_THREAD, "Idle thread whose long name leaves its Sandbox no room in a phone topbar")
@@ -370,7 +368,7 @@ async def test_long_thread_name_sandbox_label(
         await expect(label).not_to_be_in_viewport()
     else:
         await expect(label).to_be_in_viewport()
-    await view.capture(f"{capture_name}-topbar", target=page.locator(".agentplane-topbar"))
+    await view.capture("topbar", target=page.locator(".agentplane-topbar"))
     await page.get_by_role("button", name="More", exact=True).click()
     await expect(page.get_by_role("menu")).to_contain_text("Sandbox: ready-sandbox")
     await view.capture()

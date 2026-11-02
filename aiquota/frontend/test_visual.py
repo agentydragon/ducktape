@@ -26,11 +26,9 @@ if not _SCENES:
 
 @pytest_asyncio.fixture(loop_scope="session")
 async def view(
-    visual: VisualHarness, scene: str, color_scheme: Literal["light", "dark"], viewport: Viewport, capture_name: str
+    visual: VisualHarness, scene: str, color_scheme: Literal["light", "dark"], viewport: Viewport
 ) -> AsyncIterator[VisualPage]:
-    async with visual.open(
-        query={"scene": scene}, viewport=viewport, color_scheme=color_scheme, capture_name=capture_name
-    ) as view:
+    async with visual.open(query={"scene": scene}, viewport=viewport, color_scheme=color_scheme) as view:
         yield view
 
 

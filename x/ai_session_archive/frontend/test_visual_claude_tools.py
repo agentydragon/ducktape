@@ -14,12 +14,9 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 @pytest.mark.parametrize("width", [1440, 390], ids=["desktop", "mobile"])
-async def test_claude_paired_steps(visual: VisualHarness, capture_name: str, width: int) -> None:
+async def test_claude_paired_steps(visual: VisualHarness, width: int) -> None:
     async with visual.open(
-        "claude-paired-steps",
-        viewport=Viewport(width=width, height=1000),
-        color_scheme="light",
-        capture_name=capture_name,
+        "claude-paired-steps", viewport=Viewport(width=width, height=1000), color_scheme="light"
     ) as view:
         page = view.page
         await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
@@ -30,7 +27,7 @@ async def test_claude_paired_steps(visual: VisualHarness, capture_name: str, wid
         await expect(history).to_have_attribute("data-layout-settled", "true")
         await expect(history).to_contain_text("The captured check failed. I'll inspect its configuration.")
         await expect(history).to_contain_text("Use the captured data only.")
-        await view.capture(name=f"{capture_name}_collapsed")
+        await view.capture(name="collapsed")
 
         group = history.get_by_role("button", name=re.compile(r"^2 tool calls, 1 reasoning step, 1 attachment"))
         await expect(group).to_contain_text("Failed")
@@ -40,7 +37,7 @@ async def test_claude_paired_steps(visual: VisualHarness, capture_name: str, wid
         read = tools.filter(has_text="README.md")
         failed = tools.filter(has_text="check-fixture")
         await expect(read.get_by_role("button", name=re.compile("^Read"))).to_have_attribute("aria-expanded", "false")
-        await view.capture(name=f"{capture_name}_steps")
+        await view.capture(name="steps")
 
         await read.get_by_role("button", name=re.compile("^Read")).click()
         await read.get_by_role("region", name="Output", exact=True).scroll_into_view_if_needed()
@@ -49,7 +46,7 @@ async def test_claude_paired_steps(visual: VisualHarness, capture_name: str, wid
         await failed.get_by_role("region", name="Output", exact=True).scroll_into_view_if_needed()
         await expect(failed).to_contain_text("The captured test could not find the required setting.")
         await expect(history).to_have_attribute("data-layout-settled", "true")
-        await view.capture(name=f"{capture_name}_tool_results")
+        await view.capture(name="tool_results")
 
         await failed.hover()
         await failed.get_by_role("button", name="Raw JSONL record", exact=True).click()
@@ -57,7 +54,7 @@ async def test_claude_paired_steps(visual: VisualHarness, capture_name: str, wid
         await expect(raw).to_have_count(2)
         await raw.last.scroll_into_view_if_needed()
         await expect(failed).to_contain_text('"tool_use_id": "run-check"')
-        await view.capture(name=f"{capture_name}_sources")
+        await view.capture(name="sources")
 
 
 if __name__ == "__main__":

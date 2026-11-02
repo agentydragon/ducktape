@@ -14,12 +14,9 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 @pytest.mark.parametrize("width", [1440, 390], ids=["desktop", "mobile"])
-async def test_compact_session_metadata(visual: VisualHarness, capture_name: str, width: int) -> None:
+async def test_compact_session_metadata(visual: VisualHarness, width: int) -> None:
     async with visual.open(
-        "compact-session-metadata",
-        viewport=Viewport(width=width, height=1000),
-        color_scheme="light",
-        capture_name=capture_name,
+        "compact-session-metadata", viewport=Viewport(width=width, height=1000), color_scheme="light"
     ) as view:
         page = view.page
         await expect(page.get_by_role("heading", name="Compare two captured versions")).to_be_visible()
@@ -27,7 +24,7 @@ async def test_compact_session_metadata(visual: VisualHarness, capture_name: str
             await page.get_by_role("button", name="Session list", exact=True).click()
         row = page.get_by_role("link", name=re.compile("Compare two captured versions"))
         await expect(row).to_be_visible()
-        await view.capture(name=f"{capture_name}_sidebar")
+        await view.capture(name="sidebar")
         if width > 600:
             resize = page.get_by_role("separator", name="Resize session list", exact=True)
             await resize.focus()
@@ -38,7 +35,7 @@ async def test_compact_session_metadata(visual: VisualHarness, capture_name: str
             assert date is not None
             assert abs(harness["y"] - date["y"]) < 1
             assert harness["x"] + harness["width"] <= date["x"]
-            await view.capture(name=f"{capture_name}_wide_sidebar")
+            await view.capture(name="wide_sidebar")
             await resize.press("Home")
             harness = await row.get_by_text("Codex CLI", exact=True).bounding_box()
             title = await row.get_by_text("Compare two captured versions", exact=True).bounding_box()
@@ -46,7 +43,7 @@ async def test_compact_session_metadata(visual: VisualHarness, capture_name: str
             assert title is not None
             assert harness["y"] >= title["y"] + title["height"]
             assert await row.evaluate("element => element.scrollWidth <= element.clientWidth")
-            await view.capture(name=f"{capture_name}_narrow_sidebar")
+            await view.capture(name="narrow_sidebar")
             await resize.press("End")
         else:
             await row.click()
@@ -59,7 +56,7 @@ async def test_compact_session_metadata(visual: VisualHarness, capture_name: str
         if width > 600:
             assert abs(cwd["y"] - dates["y"]) < 2
             assert cwd["x"] + cwd["width"] <= dates["x"]
-        await view.capture(name=f"{capture_name}_conversation_metadata")
+        await view.capture(name="conversation_metadata")
 
 
 if __name__ == "__main__":

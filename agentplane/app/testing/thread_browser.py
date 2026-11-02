@@ -8,8 +8,8 @@ as `electric`'s database, for the package conftest's history fixtures to follow;
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Iterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -203,8 +203,7 @@ def thread_source() -> ReplicationSource:
 
 
 @pytest.fixture
-async def thread_browser(
-    page: Page,
+def thread_browser_session(
     db_url: str,
     store: ThreadHTTP,
     event_logs: SessionHistory,
@@ -220,31 +219,42 @@ async def thread_browser(
     sandbox_control: SandboxControlClient,
     gateway_access: GatewayAccess,
     tmp_path: Path,
+) -> Callable[[Page], AbstractAsyncContextManager[ThreadBrowser]]:
+    @asynccontextmanager
+    async def open_browser(page: Page) -> AsyncIterator[ThreadBrowser]:
+        thread_id = await event_logs.seed(SANDBOX, SESSION)
+        await store.rename(thread_id, "Browser thread")
+        async with (
+            scripted_runner(thread_source, sandbox, gateway_service, sandbox_control, tmp_path),
+            thread_source.ingesting(history),
+            app_process(
+                db_url,
+                history_client,
+                sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
+                gateway=gateway_access,
+                browser_login=True,
+                certificate=certificate,
+                replay_after=replay_after,
+                electric_url=electric.url,
+            ) as app,
+            http2_proxy(app.url, certificate) as ingress,
+        ):
+            # The operator session the app's relay of the Dispatcher's watch requires.
+            await app.login(page)
+            async with asyncio.timeout(30):
+                opened = await thread_source.opened.get()
+                await page.goto(f"{ingress.url}/#/threads/{thread_id}")
+            yield ThreadBrowser(page, thread_source, store, event_logs, content, history, opened, app, ingress)
+
+    return open_browser
+
+
+@pytest.fixture
+async def thread_browser(
+    page: Page, thread_browser_session: Callable[[Page], AbstractAsyncContextManager[ThreadBrowser]]
 ) -> AsyncIterator[ThreadBrowser]:
-    source = thread_source
-    thread_id = await event_logs.seed(SANDBOX, SESSION)
-    await store.rename(thread_id, "Browser thread")
-    async with (
-        scripted_runner(source, sandbox, gateway_service, sandbox_control, tmp_path),
-        source.ingesting(history),
-        app_process(
-            db_url,
-            history_client,
-            sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
-            gateway=gateway_access,
-            browser_login=True,
-            certificate=certificate,
-            replay_after=replay_after,
-            electric_url=electric.url,
-        ) as app,
-        http2_proxy(app.url, certificate) as ingress,
-    ):
-        # The operator session the app's relay of the Dispatcher's watch requires.
-        await app.login(page)
-        async with asyncio.timeout(30):
-            opened = await source.opened.get()
-            await page.goto(f"{ingress.url}/#/threads/{thread_id}")
-        yield ThreadBrowser(page, source, store, event_logs, content, history, opened, app, ingress)
+    async with thread_browser_session(page) as browser:
+        yield browser
 
 
 def append_items(thread_browser: ThreadBrowser, prefix: str, numbers: range) -> event_log_pb2.EventEntry:

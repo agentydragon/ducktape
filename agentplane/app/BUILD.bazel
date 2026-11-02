@@ -364,6 +364,7 @@ py_test(
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/sandboxes/testing:sandbox_namespace",
         "//agentplane/testing:kubernetes_apiserver",
+        "//util/testing:output_writer",
         "//util/testing:undeclared_outputs",
         "//util/testing/frontend_visual:capture",
         "//util/testing/frontend_visual:viewports",

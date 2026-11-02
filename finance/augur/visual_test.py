@@ -2,7 +2,7 @@
 
 Each case boots the real dev server (hermetic prices), drives the page through
 its DOM/geometry assertions (the real regression net), and fails on
-any uncaught page error. The rendered PNGs plus a `visual-review.json` manifest
+any uncaught page error. The rendered PNGs and their structured output records
 go to undeclared outputs, where trusted CI (`devinfra/pr_visuals/publisher.py`)
 publishes them for review.
 
@@ -34,7 +34,7 @@ from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual.capture import VisualPage
 from util.testing.frontend_visual.context import deterministic_browser_context
 from util.testing.frontend_visual.page_capture import wait_for_stable
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from util.testing.output_writer import BoundTestOutputs
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
@@ -426,12 +426,9 @@ async def page(playwright: Playwright) -> AsyncIterator[Page]:
 
 
 @pytest.fixture
-async def view(page: Page, capture_name: str) -> AsyncIterator[VisualPage]:
-    view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Augur pages", capture_name=capture_name)
-    try:
+async def view(page: Page, test_outputs: BoundTestOutputs) -> AsyncIterator[VisualPage]:
+    with VisualPage(page, outputs=test_outputs, title="Augur pages") as view:
         yield view
-    finally:
-        view.errors.assert_none(context=capture_name)
 
 
 @pytest.fixture

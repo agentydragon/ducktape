@@ -30,12 +30,21 @@ py_library(
 )
 
 py_library(
+    name = "collection",
+    srcs = ["collection.py"],
+    deps = [
+        ":artifacts",
+        "//util/testing:output_records",
+    ],
+)
+
+py_library(
     name = "determinism",
     srcs = ["determinism.py"],
     deps = [
         ":artifacts",
+        ":collection",
         ":targets",
-        "//util:visual_review",
         "//util/bazel:workspace",
     ],
 )
@@ -59,9 +68,10 @@ py_test(
     name = "test_determinism",
     srcs = ["test_determinism.py"],
     deps = [
+        ":collection",
         ":determinism",
+        ":targets",
         "//:conftest",
-        "//util:visual_review",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -108,15 +118,15 @@ py_library(
     deps = [
         ":artifacts",
         ":check_run",
+        ":collection",
+        ":metadata",
         ":pull_request",
         "//devinfra/buildbuddy/ci:invocation_ids",
         "//util:visual_diff",
-        "//util:visual_review",
         "@pypi//boto3",
         "@pypi//botocore",
         "@pypi//jinja2",
-        "@pypi//more_itertools",
-        "@pypi//pydantic",
+        "@pypi//pillow",
         "@pypi//pygithub",
     ],
 )
@@ -125,6 +135,7 @@ py_library(
     name = "retention",
     srcs = ["retention.py"],
     deps = [
+        ":metadata",
         "@pypi//boto3",
         "@pypi//botocore",
         "@pypi//pygithub",
@@ -169,11 +180,13 @@ py_test(
     name = "test_publisher",
     srcs = ["test_publisher.py"],
     deps = [
+        ":artifacts",
+        ":collection",
+        ":metadata",
         ":publisher",
         ":pull_request",
         "//:conftest",
         "//devinfra/buildbuddy/ci:invocation_ids",
-        "//util:visual_review",
         "@pypi//botocore",
         "@pypi//pillow",
         "@pypi//pytest",
@@ -193,6 +206,7 @@ py_visual_test(
     assets = ["gallery_harness/index.html"],
     harness = ":gallery_visual_harness",
     test_deps = [
+        ":metadata",
         ":publisher",
         "//util:playwright",
         "//util/testing/frontend_visual:capture",
@@ -236,6 +250,7 @@ py_package(
         "devinfra.buildbuddy.ci",
         "devinfra.pr_visuals",
         "util",
+        "util.testing",
     ],
     deps = [":publisher"],
 )
@@ -285,10 +300,13 @@ py_library(
     name = "wheel_render_probe",
     srcs = ["wheel_render_probe.py"],
     deps = [
+        ":artifacts",
+        ":collection",
         ":publisher",
         "//devinfra/buildbuddy/ci:invocation_ids",
         "//util:visual_diff",
-        "//util:visual_review",
+        "//util/testing:output_records",
+        "@pypi//pillow",
     ],
 )
 
@@ -302,4 +320,21 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_test(
+    name = "test_collection",
+    srcs = ["test_collection.py"],
+    deps = [
+        ":collection",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "metadata",
+    srcs = ["metadata.py"],
+    deps = ["@pypi//pydantic"],
 )

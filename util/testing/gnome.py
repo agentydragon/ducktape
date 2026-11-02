@@ -2,8 +2,10 @@
 
 import re
 import shlex
+import tempfile
 import time
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import cast
@@ -11,8 +13,7 @@ from typing import cast
 from docker.models.containers import Container, ExecResult
 from PIL import Image
 
-from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_review import publish_review_png
+from util.testing.output_writer import BoundTestOutputs
 
 
 def exec_output(result: ExecResult) -> tuple[bytes, bytes]:
@@ -32,8 +33,11 @@ def _wait(check: Callable[[], bool], *, timeout: float, description: str) -> Non
 
 
 class GnomeSession:
-    def __init__(self, container: Container, *, extension: str, destination: str, object_path: str) -> None:
+    def __init__(
+        self, container: Container, *, screenshot_dir: Path, extension: str, destination: str, object_path: str
+    ) -> None:
         self.container = container
+        self.screenshot_dir = screenshot_dir
         self.extension = extension
         self.destination = destination
         self.object_path = object_path
@@ -128,11 +132,15 @@ class GnomeSession:
     def close_menu(self) -> None:
         self.call("CloseMenu")
 
-    def screenshot(self, path: str) -> None:
+    def screenshot(self) -> bytes:
         self.wait_for_paint()
-        result = self.exec(f"scrot --display :99 --overwrite {shlex.quote(path)}")
-        if result.exit_code != 0:
-            raise RuntimeError(f"scrot failed: {exec_output(result)}")
+        with tempfile.NamedTemporaryFile(dir=self.screenshot_dir, suffix=".png") as output:
+            path = Path(output.name)
+            path.chmod(0o666)
+            result = self.exec(f"scrot --display :99 --overwrite {shlex.quote(f'/out/{path.name}')}")
+            if result.exit_code != 0:
+                raise RuntimeError(f"scrot failed: {exec_output(result)}")
+            return path.read_bytes()
 
     def log(self) -> bytes:
         stdout, stderr = exec_output(self.container.exec_run(["cat", "/tmp/shell.log"], demux=True))
@@ -150,15 +158,19 @@ def crop_panel_menu(full: Image.Image, geometry: tuple[int, int, int, int]) -> I
     return full.crop((left, 0, full.width, bottom))
 
 
-def capture_panel_menu(
-    session: GnomeSession, output_dir: Path, *, geometry: tuple[int, int, int, int], name: str, title: str, label: str
-) -> Path:
-    """Capture and publish the panel/menu crop; output_dir is mounted at /out."""
-    session.screenshot(f"/out/{name}")
-    full_path = output_dir / name
-    assert full_path.is_file(), f"scrot did not produce {full_path}"
-    with Image.open(full_path) as full:
-        cropped = crop_panel_menu(full, geometry)
-        png = BytesIO()
-        cropped.save(png, format="PNG")
-    return publish_review_png(png.getvalue(), output_dir=undeclared_outputs_dir(), title=title, name=name, label=label)
+@dataclass(frozen=True)
+class GnomeMenuCapture:
+    """Publish crops from a shared GNOME session under one test's output identity."""
+
+    session: GnomeSession
+    outputs: BoundTestOutputs
+    title: str
+
+    def capture(self, geometry: tuple[int, int, int, int], *, label: str, checkpoint: str | None = None) -> Path:
+        with Image.open(BytesIO(self.session.screenshot())) as full:
+            cropped = crop_panel_menu(full, geometry)
+            png = BytesIO()
+            cropped.save(png, format="PNG")
+        return self.outputs.publish(
+            checkpoint=checkpoint, role="screenshot", data=png.getvalue(), suffix="png", label=label, title=self.title
+        )

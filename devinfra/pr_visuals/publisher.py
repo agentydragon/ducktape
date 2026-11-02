@@ -14,56 +14,82 @@ import subprocess
 import tempfile
 import time
 import urllib.parse
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event
-from typing import Annotated, Any, Literal, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 
 import boto3
 from botocore.exceptions import ClientError
 from github import Auth, Github
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from more_itertools import one
-from pydantic import BaseModel, Field
+from PIL import Image
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
-from devinfra.pr_visuals.artifacts import ListedArtifact, Runner, list_ci_artifacts
+from devinfra.pr_visuals.artifacts import Runner
 from devinfra.pr_visuals.check_run import upsert_check_run
+from devinfra.pr_visuals.collection import OutputObservation, collect_outputs
+from devinfra.pr_visuals.metadata import (
+    BaselineMetadata,
+    BaselinePointer,
+    ClassificationCounts,
+    ReviewAsset,
+    ReviewBundleMetadata,
+    ReviewResult,
+    ReviewTest,
+    ReviewVariant,
+)
 from devinfra.pr_visuals.pull_request import find_reviewable_pull_request
 from util.visual_diff import compare_pngs
-from util.visual_review import MANIFEST_NAME, VisualReviewAsset, VisualReviewManifest
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 COMMENT_MARKER = "<!-- pr-visuals -->"
 COMMENT_BUDGET = 55_000
 COMMENT_OPEN_TARGETS = 2
 INLINE_ASSET_LIMIT = 3
-
-type ImageDigest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+REVIEW_PREFIX = "reviews-test-outputs"
 
 
 @dataclass(frozen=True)
 class _Download:
-    listed: ListedArtifact
+    uri: str
+    invocation: str
     destination: Path
 
 
 @dataclass(frozen=True)
-class _PlannedTest:
-    target_label: str
-    slug: str
-    manifests: list[_Download]
+class DownloadedVariant:
+    path: Path
+    sha256: str
+    results: list[ReviewResult]
+
+
+@dataclass(frozen=True)
+class DownloadedAsset:
+    case_id: str
+    checkpoint: str | None
+    role: str
+    label: str
+    variants: list[DownloadedVariant]
+
+    @property
+    def path(self) -> str:
+        identity = json.dumps([self.case_id, self.checkpoint, self.role], ensure_ascii=False, separators=(",", ":"))
+        return f"{hashlib.sha256(identity.encode()).hexdigest()}.png"
 
 
 @dataclass(frozen=True)
 class DownloadedVisualTest:
     target_label: str
     slug: str
-    manifest: VisualReviewManifest
-    directory: Path
+    title: str
+    assets: list[DownloadedAsset]
+    configuration: str | None
+    issues: list[str]
+    notices: list[str] = field(default_factory=list)
 
 
 class BaselineSource(Protocol):
@@ -96,55 +122,16 @@ class S3BaselineSource:
         return cast(bytes, body)
 
 
-def _baseline_key(base_sha: str, slug: str, *parts: str) -> str:
-    """Object key for a baseline artifact at ``commits/<base_sha>/tests/<slug>/...``."""
-    return "/".join(("commits", base_sha, "tests", slug, *parts))
-
-
 def _baseline_pointer_key(slug: str) -> str:
     """Mutable per-target pointer to the last devel commit that published it.
 
     Devel-push publishes only contain targets Bazel actually re-executed
     (cache hits re-expose nothing), so a PR's base commit bundle routinely
     lacks untouched targets. The pointer bridges those gaps: it names the
-    newest devel commit whose immutable ``reviews/<sha>/…`` bundle carries
+    newest devel commit whose immutable review bundle carries
     the target, and PR runs fall back to it when the base bundle misses.
     """
-    return f"baselines/reviews/{slug}.json"
-
-
-class BaselinePointer(BaseModel):
-    commit_sha: str
-
-
-class ClassificationCounts(BaseModel):
-    modified: int = 0
-    new: int = 0
-    removed: int = 0
-    unchanged: int = 0
-
-
-class ReviewAsset(BaseModel):
-    """A visual-review asset enriched with its baseline comparison result."""
-
-    path: str
-    label: str
-    candidate_sha256: ImageDigest | None = None
-    baseline_sha256: ImageDigest | None = None
-    diff_sha256: ImageDigest | None = None
-    classification: Literal["unchanged", "modified", "new", "removed"] | None = None
-    changed_fraction: float | None = None
-    changed_pixels: int | None = None
-    candidate_dimensions: list[int] | None = None
-    baseline_dimensions: list[int] | None = None
-    dimension_changed: bool | None = None
-    # True on a modified/removed screenshot whose baseline image came from a commit other than the
-    # PR's merge base (see ResolvedBaseline.fallback), so the diff may include devel drift.
-    baseline_stale: bool | None = None
-
-
-class BaselineMetadata(BaseModel):
-    assets: list[ReviewAsset]
+    return f"baselines/{REVIEW_PREFIX}/{slug}.json"
 
 
 @dataclass(frozen=True)
@@ -155,52 +142,24 @@ class ResolvedBaseline:
 
 
 def _review_key(commit_sha: str, slug: str, *parts: str) -> str:
-    return "/".join(("reviews", commit_sha, "tests", slug, *parts))
+    return "/".join((REVIEW_PREFIX, commit_sha, "tests", slug, *parts))
 
 
 def _resolve_baseline(slug: str, base_sha: str | None, source: BaselineSource) -> ResolvedBaseline | None:
     def metadata_at(sha: str) -> BaselineMetadata | None:
-        for key in (_review_key(sha, slug, "metadata.json"), _baseline_key(sha, slug, "metadata.json")):
-            if (body := source.fetch(key)) is not None:
-                return BaselineMetadata.model_validate_json(body)
-        return None
+        body = source.fetch(_review_key(sha, slug, "metadata.json"))
+        if body is None:
+            return None
+        metadata = BaselineMetadata.model_validate_json(body)
+        return metadata if metadata.baseline_eligible else None
 
     if base_sha is not None and (metadata := metadata_at(base_sha)) is not None:
         return ResolvedBaseline(commit_sha=base_sha, metadata=metadata, fallback=False)
-    # Old publisher jobs can overlap the new wheel, so their pointers and commit
-    # bundles remain separate until no retained baseline needs the old layout.
-    for key in (_baseline_pointer_key(slug), f"baselines/{slug}.json"):
-        if (body := source.fetch(key)) is None:
-            continue
+    if (body := source.fetch(_baseline_pointer_key(slug))) is not None:
         pointer = BaselinePointer.model_validate_json(body)
         if (metadata := metadata_at(pointer.commit_sha)) is not None:
             return ResolvedBaseline(commit_sha=pointer.commit_sha, metadata=metadata, fallback=True)
     return None
-
-
-class ReviewTest(BaseModel):
-    """A test target's review data, serialized to per-test and commit metadata.
-
-    `base_sha` is the commit whose bundle the comparison actually used —
-    the PR's base commit (`merge_base_sha`), or (with `baseline_fallback=True`)
-    the devel-latest pointer's commit when the base bundle lacked this target.
-    """
-
-    target_label: str
-    slug: str
-    title: str
-    assets: list[ReviewAsset]
-    base_sha: str | None = None
-    merge_base_sha: str | None = None
-    baseline_fallback: bool | None = None
-    summary: ClassificationCounts | None = None
-    preview: ReviewAsset | None = None
-
-
-class ReviewBundleMetadata(BaseModel):
-    repository: str
-    commit_sha: str
-    tests: list[ReviewTest]
 
 
 REPO_URL = "https://github.com/agentydragon/ducktape"
@@ -355,11 +314,11 @@ def list_ci_failures(invocations: list[str], *, bbapi: Path = Path("bbapi"), run
     return sorted(failures)
 
 
-def target_slug(label: str) -> str:
+def target_slug(label: str, *, repository: str) -> str:
     readable = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")
     if not readable:
         raise ValueError(f"cannot create URL slug for Bazel target {label!r}")
-    digest = hashlib.sha256(label.encode()).hexdigest()[:10]
+    digest = hashlib.sha256(json.dumps([repository, label], separators=(",", ":")).encode()).hexdigest()[:16]
     return f"{readable[:80]}-{digest}"
 
 
@@ -375,11 +334,7 @@ def _download_all(downloads: list[_Download], *, bbapi: Path, run: Runner) -> No
     for download in downloads:
         download.destination.parent.mkdir(parents=True, exist_ok=True)
     manifest = [
-        {
-            "uri": download.listed.artifact.file.uri,
-            "destination": str(download.destination),
-            "invocation_id": download.listed.invocation_id,
-        }
+        {"uri": download.uri, "destination": str(download.destination), "invocation_id": download.invocation}
         for download in downloads
     ]
     manifest_dir = downloads[0].destination.parent
@@ -403,118 +358,114 @@ def _download_all(downloads: list[_Download], *, bbapi: Path, run: Runner) -> No
         raise RuntimeError(f"bbapi blob download did not create destinations: {', '.join(missing)}")
 
 
-def _merge_manifests(
-    target_label: str, downloads: list[_Download], parsed: list[VisualReviewManifest]
-) -> tuple[VisualReviewManifest, dict[str, str]]:
-    """One review per target, from however many results published a manifest.
-
-    Two different things produce several manifests for one label, and they reconcile differently.
-    WITHIN an invocation, a sharded test publishes one manifest per shard, each naming only the
-    scenes that shard rendered: those union into that invocation's roster.  ACROSS invocations --
-    a retry, or a child invocation discovered after the primary one -- each publishes a whole
-    roster, so they must agree.  Unioning there would paper over the case find_test_invocations
-    exists to avoid: a full sweep and an affected-set run at one commit publish different rosters
-    for the same target, and their union is a review that looks complete while taking each shot
-    from whichever run happened to be listed first.
-
-    Returns the merged manifest and, per asset path, the invocation whose result declared it.
-    """
-    titles = {manifest.title for manifest in parsed}
-    if len(titles) != 1:
-        raise ValueError(f"{target_label} exposed conflicting visual-review titles: {sorted(titles)}")
-
-    rosters: dict[str, dict[str, VisualReviewAsset]] = {}
-    for download, manifest in zip(downloads, parsed, strict=True):
-        roster = rosters.setdefault(download.listed.invocation_id, {})
-        for asset in manifest.assets:
-            if (previous := roster.get(asset.path)) is not None and previous != asset:
-                raise ValueError(f"{target_label} exposed conflicting visual-review entries for {asset.path}")
-            roster.setdefault(asset.path, asset)
-
-    canonical_id = min(rosters)
-    canonical = rosters[canonical_id]
-    for other_id, roster in sorted(rosters.items()):
-        if roster != canonical:
-            differing = sorted(set(canonical) ^ set(roster))
-            detail = f"paths {differing}" if differing else "the same paths labelled differently"
-            raise ValueError(
-                f"{target_label} published different visual-review rosters in invocations "
-                f"{canonical_id} and {other_id} ({detail}); a full sweep and an affected-set "
-                f"run at one commit do this, and there is no honest way to combine them"
-            )
-    return (
-        VisualReviewManifest(title=one(titles), assets=list(canonical.values())),
-        dict.fromkeys(canonical, canonical_id),
-    )
-
-
 def download_visual_tests(
-    invocations: list[str], destination: Path, *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run
+    invocations: list[str],
+    destination: Path,
+    *,
+    repository: str,
+    bbapi: Path = Path("bbapi"),
+    run: Runner = subprocess.run,
 ) -> list[DownloadedVisualTest]:
-    artifacts = list_ci_artifacts(invocations, bbapi=bbapi, run=run)
-    by_target: defaultdict[str, list[ListedArtifact]] = defaultdict(list)
-    for listed in artifacts:
-        by_target[listed.artifact.label].append(listed)
-
-    # One target can publish several manifests: a sharded test publishes one per shard, and a bb
-    # remote script can expose one result through more than one linked invocation (a retry, or a
-    # child invocation discovered after the primary one).  _merge_manifests reconciles them; the
-    # sort keeps the merge order stable across runs of the same artifact set.
-    planned: list[_PlannedTest] = []
-    used_slugs: dict[str, str] = {}
-    for target_label, target_artifacts in sorted(by_target.items()):
-        manifests = sorted(
-            (
-                artifact
-                for artifact in target_artifacts
-                if artifact.artifact.file.name == f"test.outputs/{MANIFEST_NAME}"
-            ),
-            key=lambda listed: (listed.invocation_id, listed.artifact.file.uri),
-        )
-        if not manifests:
-            continue
-        slug = target_slug(target_label)
-        if previous := used_slugs.get(slug):
-            raise ValueError(f"Bazel target URL slug collision: {previous} and {target_label}")
-        used_slugs[slug] = target_label
-        candidate_dir = destination / ".manifests" / slug
-        planned.append(
-            _PlannedTest(
-                target_label,
-                slug,
-                [_Download(listed, candidate_dir / f"{index}.json") for index, listed in enumerate(manifests)],
-            )
-        )
-
-    # Two waves rather than one, because the manifests are what name the assets: every
-    # manifest has to land before any asset can be asked for.
-    _download_all([download for test in planned for download in test.manifests], bbapi=bbapi, run=run)
-
+    """Materialize screenshot variants selected from exact test results by the collector."""
+    collected = collect_outputs(invocations, repository, destination / ".records", bbapi=bbapi, run=run)
+    by_target: dict[str, list[OutputObservation]] = defaultdict(list)
+    for observation in collected.selected:
+        if observation.key.role == "screenshot":
+            by_target[observation.key.target].append(observation)
+    # A failed attempt can be the only evidence that this target produces screenshots.
+    # Expose an incomplete target rather than silently reporting no visual outputs.
+    for observation in collected.observations:
+        if observation.key.role == "screenshot":
+            by_target.setdefault(observation.key.target, [])
+    for result in collected.results:
+        if result.record_count and result.issues:
+            by_target.setdefault(result.result.target, [])
     tests: list[DownloadedVisualTest] = []
-    asset_downloads: list[_Download] = []
-    for plan in planned:
-        parsed = [
-            VisualReviewManifest.model_validate_json(download.destination.read_text()) for download in plan.manifests
+    downloads: list[_Download] = []
+    for target, selected in sorted(by_target.items()):
+        target_results = [entry for entry in collected.results if entry.result.target == target]
+        issues = [
+            f"{entry.result}: {message}"
+            for entry in target_results
+            for message in entry.issues
+            if message != "superseded by retry"
         ]
-        manifest, declared_by = _merge_manifests(plan.target_label, plan.manifests, parsed)
-        test_dir = destination / plan.slug
-        test_dir.mkdir(parents=True, exist_ok=True)
-
-        listings: defaultdict[str, list[ListedArtifact]] = defaultdict(list)
-        for artifact in by_target[plan.target_label]:
-            listings[artifact.artifact.file.name].append(artifact)
-        for asset in manifest.assets:
-            candidates = listings.get(f"test.outputs/{asset.path}")
-            if candidates is None:
-                raise ValueError(f"{plan.target_label} visual manifest references missing artifact {asset.path}")
-            # A retried target lists one asset name from several invocations: take the shot from
-            # the result whose manifest named it, so image and manifest come from the same run.
-            declaring = declared_by[asset.path]
-            asset_downloads.append(
-                _Download(min(candidates, key=lambda item: item.invocation_id != declaring), test_dir / asset.path)
+        if any(entry.overall_status not in ("PASSED", "FLAKY") for entry in target_results):
+            issues.append("The overall test result did not complete successfully.")
+        notices = [
+            f"{entry.result}: superseded by a retry"
+            for entry in target_results
+            if "superseded by retry" in entry.issues
+        ]
+        configurations = {entry.result.configuration for entry in target_results}
+        configuration = next(iter(configurations)) if len(configurations) == 1 else None
+        if len(configurations) != 1 or None in configurations:
+            issues.append("Multiple or unknown Bazel configurations prevent a coherent comparison.")
+        run_rosters: dict[tuple[str, str | None, int | None], set[tuple[str, str | None, str]]] = {}
+        for result in target_results:
+            if result.selected:
+                run_key = (result.result.invocation, result.result.configuration, result.result.run)
+                run_rosters.setdefault(run_key, set())
+        grouped: dict[tuple[str, str | None, str], list[OutputObservation]] = defaultdict(list)
+        for observation in selected:
+            identity = (observation.key.case_id, observation.key.checkpoint, observation.key.role)
+            grouped[identity].append(observation)
+            run_rosters[(observation.result.invocation, observation.result.configuration, observation.result.run)].add(
+                identity
             )
-        tests.append(DownloadedVisualTest(plan.target_label, plan.slug, manifest, test_dir))
-    _download_all(asset_downloads, bbapi=bbapi, run=run)
+        if len({frozenset(roster) for roster in run_rosters.values()}) > 1:
+            issues.append("Successful runs or invocations published different screenshot rosters.")
+        titles = {item.title for item in selected if item.title}
+        if len(titles) > 1:
+            issues.append("Screenshot records disagree on the target title.")
+        title = min(titles) if titles else target
+        assets: list[DownloadedAsset] = []
+        for (case_id, checkpoint, role), observations in sorted(grouped.items(), key=lambda pair: repr(pair[0])):
+            labels = {item.label for item in observations if item.label}
+            if len(labels) > 1:
+                issues.append(f"{case_id}: screenshot records disagree on the display label.")
+            label = min(labels) if labels else case_id + (f" — {checkpoint}" if checkpoint else "")
+            variants_by_digest: dict[str, list[OutputObservation]] = defaultdict(list)
+            for item in observations:
+                if item.digest is None:
+                    issues.append(f"{case_id}: the screenshot has no verified CAS digest.")
+                    continue
+                variants_by_digest[item.digest].append(item)
+            variants: list[DownloadedVariant] = []
+            for digest, items in sorted(variants_by_digest.items()):
+                item = items[0]
+                image_path = destination / target_slug(target, repository=repository) / f"{digest}.png"
+                downloads.append(_Download(item.uri, item.result.invocation, image_path))
+                variants.append(
+                    DownloadedVariant(
+                        image_path,
+                        digest,
+                        [
+                            ReviewResult(
+                                invocation=source.result.invocation,
+                                configuration=source.result.configuration,
+                                run=source.result.run,
+                                shard=source.result.shard,
+                                attempt=source.result.attempt,
+                                status=source.status,
+                                uri=source.uri,
+                                record_uri=source.record_uri,
+                            )
+                            for source in items
+                        ],
+                    )
+                )
+            if variants:
+                assets.append(DownloadedAsset(case_id, checkpoint, role, label, variants))
+        tests.append(
+            DownloadedVisualTest(
+                target, target_slug(target, repository=repository), title, assets, configuration, issues, notices
+            )
+        )
+    # Multiple cases may deliberately have identical bytes. Download each
+    # target/digest destination once; concurrent writers to a path are unsafe.
+    unique_downloads = {download.destination: download for download in downloads}
+    _download_all(list(unique_downloads.values()), bbapi=bbapi, run=run)
     return tests
 
 
@@ -527,23 +478,16 @@ def _templates() -> Environment:
 
 
 def _asset_summary(assets: list[ReviewAsset]) -> ClassificationCounts:
-    summary = ClassificationCounts()
+    counts: Counter[str] = Counter()
     for asset in assets:
-        match asset.classification:
-            case "modified":
-                summary.modified += 1
-            case "new":
-                summary.new += 1
-            case "removed":
-                summary.removed += 1
-            case "unchanged":
-                summary.unchanged += 1
-    return summary
+        if asset.classification is not None:
+            counts[asset.classification] += 1
+    return ClassificationCounts(**counts)
 
 
 def _ordered_assets(assets: list[ReviewAsset]) -> list[ReviewAsset]:
     """Put changed screenshots first and sort each class by review impact."""
-    classification_order = {"modified": 0, "new": 1, "removed": 2, "unchanged": 3, None: 4}
+    classification_order = {"unstable": 0, "modified": 1, "new": 2, "removed": 3, "unchanged": 4, None: 5}
     return sorted(
         assets,
         key=lambda asset: (
@@ -575,10 +519,18 @@ def _asset_page_data(asset: ReviewAsset, *, asset_base: str, page_url: str, shar
     path = urllib.parse.quote(asset.path, safe="/")
     return {
         **asset.model_dump(exclude_none=True),
-        "candidate_url": _asset_url(asset_base, asset, "candidate", shared_asset_base=shared_asset_base),
+        "candidate_url": (
+            f"{shared_asset_base}{_image_key(asset.variants[0].sha256)}"
+            if asset.candidate_sha256 is None and asset.variants
+            else _asset_url(asset_base, asset, "candidate", shared_asset_base=shared_asset_base)
+        ),
         "baseline_url": _asset_url(asset_base, asset, "baseline", shared_asset_base=shared_asset_base),
         "diff_url": _asset_url(asset_base, asset, "diff", shared_asset_base=shared_asset_base),
         "anchor_url": f"{page_url}#{path}",
+        "variants": [
+            {**variant.model_dump(), "url": f"{shared_asset_base}{_image_key(variant.sha256)}"}
+            for variant in asset.variants
+        ],
     }
 
 
@@ -609,95 +561,99 @@ def _pick_preview(assets: list[ReviewAsset]) -> ReviewAsset | None:
     """
     ordered = _ordered_assets(assets)
     return next(
-        (asset for asset in ordered if asset.classification == "modified"),
-        next((asset for asset in ordered if asset.classification == "new"), None),
+        (asset for asset in ordered if asset.classification == "unstable"),
+        next(
+            (asset for asset in ordered if asset.classification == "modified"),
+            next((asset for asset in ordered if asset.classification == "new"), None),
+        ),
+    )
+
+
+def _asset_identity(asset: DownloadedAsset | ReviewAsset) -> tuple[str, str | None, str]:
+    return asset.case_id, asset.checkpoint, asset.role
+
+
+def _review_asset(
+    asset: DownloadedAsset, classification: Literal["unchanged", "modified", "new", "removed", "unstable"] | None = None
+) -> ReviewAsset:
+    return ReviewAsset(
+        path=asset.path,
+        label=asset.label,
+        case_id=asset.case_id,
+        checkpoint=asset.checkpoint,
+        role=asset.role,
+        variants=[ReviewVariant(sha256=v.sha256, results=v.results) for v in asset.variants],
+        classification=classification,
     )
 
 
 def _classify_test_assets(
     test: DownloadedVisualTest, baseline: ResolvedBaseline, baseline_source: BaselineSource, target_dir: Path
 ) -> list[ReviewAsset]:
-    """Classify a test's candidate assets against its resolved baseline.
-
-    Writes ``baseline/<path>`` (modified + removed) and ``diff/<path>``
-    (modified) PNGs into ``target_dir``. Candidate assets absent from the
-    baseline are ``new``; baseline assets absent from the candidate are
-    ``removed``; the rest are compared by :func:`compare_pngs`.
-    """
-    baseline_by_path = {asset.path: asset for asset in baseline.metadata.assets}
+    """Compare structured identities; paths only address the rendered page and staging files."""
+    baseline_by_identity = {_asset_identity(asset): asset for asset in baseline.metadata.assets}
+    if len(baseline_by_identity) != len(baseline.metadata.assets):
+        raise ValueError(f"{test.target_label}: duplicate identities in baseline metadata")
     baseline_dir = target_dir / "baseline"
     diff_dir = target_dir / "diff"
     enriched: list[ReviewAsset] = []
     stale = True if baseline.fallback else None
 
-    def materialize_baseline(path: str) -> Path | None:
-        asset = baseline_by_path[path]
-        key = (
-            _image_key(asset.candidate_sha256)
-            if asset.candidate_sha256 is not None
-            else _baseline_key(baseline.commit_sha, test.slug, path)
-        )
-        body = baseline_source.fetch(key)
+    def materialize_baseline(asset: ReviewAsset, path: str) -> Path:
+        if asset.candidate_sha256 is None:
+            raise ValueError(f"{test.target_label}: baseline has no image digest for {asset.case_id!r}")
+        body = baseline_source.fetch(_image_key(asset.candidate_sha256))
         if body is None:
-            return None
+            raise ValueError(f"{test.target_label}: missing baseline image {asset.candidate_sha256}")
+        if hashlib.sha256(body).hexdigest() != asset.candidate_sha256:
+            raise ValueError(f"{test.target_label}: corrupted baseline image {asset.candidate_sha256}")
         baseline_dir.mkdir(parents=True, exist_ok=True)
         destination = baseline_dir / path
         destination.write_bytes(body)
         return destination
 
-    for asset in test.manifest.assets:
-        baseline_asset = baseline_by_path.get(asset.path)
+    for asset in test.assets:
+        if len(asset.variants) > 1:
+            enriched.append(_review_asset(asset, "unstable"))
+            continue
+        baseline_asset = baseline_by_identity.get(_asset_identity(asset))
         if baseline_asset is None:
-            enriched.append(ReviewAsset(path=asset.path, label=asset.label, classification="new"))
+            enriched.append(_review_asset(asset, "new"))
             continue
-        candidate_path = test.directory / asset.path
-        if baseline_asset.candidate_sha256 is not None:
-            candidate_digest = hashlib.sha256(candidate_path.read_bytes()).hexdigest()
-            if candidate_digest == baseline_asset.candidate_sha256:
-                # The baseline metadata identifies these exact bytes. Keep the
-                # candidate so upload_bundle can heal a missing shared object.
-                enriched.append(
-                    ReviewAsset(
-                        path=asset.path,
-                        label=asset.label,
-                        candidate_sha256=candidate_digest,
-                        classification="unchanged",
-                    )
-                )
-                continue
-        baseline_png = materialize_baseline(asset.path)
-        if baseline_png is None:
-            enriched.append(ReviewAsset(path=asset.path, label=asset.label, classification="new"))
+        candidate = asset.variants[0]
+        if candidate.sha256 == baseline_asset.candidate_sha256:
+            enriched.append(_review_asset(asset, "unchanged"))
             continue
-        comparison = compare_pngs(candidate_path, baseline_png)
+        baseline_png = materialize_baseline(baseline_asset, asset.path)
+        comparison = compare_pngs(candidate.path, baseline_png)
         if comparison.classification == "unchanged":
             baseline_png.unlink()
-            enriched.append(ReviewAsset(path=asset.path, label=asset.label, classification="unchanged"))
+            enriched.append(_review_asset(asset, "unchanged"))
             continue
         if comparison.diff_overlay is not None:
             diff_dir.mkdir(parents=True, exist_ok=True)
             comparison.diff_overlay.save(diff_dir / asset.path)
-        enriched.append(
-            ReviewAsset(
-                path=asset.path,
-                label=asset.label,
-                classification="modified",
-                changed_fraction=comparison.changed_fraction,
-                changed_pixels=comparison.changed_pixels,
-                candidate_dimensions=list(comparison.actual_size),
-                baseline_dimensions=list(comparison.baseline_size),
-                dimension_changed=comparison.dimension_changed,
-                baseline_stale=stale,
-            )
-        )
-    candidate_paths = {asset.path for asset in test.manifest.assets}
-    for path, baseline_asset in baseline_by_path.items():
-        if path in candidate_paths:
-            continue
-        if materialize_baseline(path) is not None:
-            enriched.append(
-                ReviewAsset(path=path, label=baseline_asset.label, classification="removed", baseline_stale=stale)
-            )
+        result = _review_asset(asset, "modified")
+        result.changed_fraction = comparison.changed_fraction
+        result.changed_pixels = comparison.changed_pixels
+        result.candidate_dimensions = list(comparison.actual_size)
+        result.baseline_dimensions = list(comparison.baseline_size)
+        result.dimension_changed = comparison.dimension_changed
+        result.baseline_stale = stale
+        enriched.append(result)
+    candidate_identities = {_asset_identity(asset) for asset in test.assets}
+    # An incomplete run cannot prove that any baseline screenshot was removed.
+    if not test.issues:
+        for identity, baseline_asset in baseline_by_identity.items():
+            if identity in candidate_identities:
+                continue
+            materialize_baseline(baseline_asset, baseline_asset.path)
+            removed = baseline_asset.model_copy(deep=True)
+            removed.classification = "removed"
+            removed.candidate_sha256 = None
+            removed.variants = []
+            removed.baseline_stale = stale
+            enriched.append(removed)
     return enriched
 
 
@@ -708,6 +664,8 @@ def _share_png(image: Path, output_root: Path, *, known_digest: str | None = Non
     destination = output_root / _image_key(digest)
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
+        if hashlib.sha256(destination.read_bytes()).hexdigest() != digest:
+            raise ValueError(f"corrupt staged image at {destination}")
         image.unlink()
     else:
         image.replace(destination)
@@ -728,7 +686,7 @@ def build_bundle(
     if not tests:
         raise ValueError("cannot build a visual-review bundle without tests")
 
-    bundle = output_root / "reviews" / commit_sha
+    bundle = output_root / REVIEW_PREFIX / commit_sha
     environment = _templates()
     bundle.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(__file__).with_name("gallery.css"), bundle / "gallery.css")
@@ -739,33 +697,64 @@ def build_bundle(
     for test in tests:
         target_dir = bundle / "tests" / test.slug
         target_dir.mkdir(parents=True, exist_ok=True)
-        for asset in test.manifest.assets:
-            shutil.copyfile(test.directory / asset.path, target_dir / asset.path)
+        issues = list(test.issues)
+        if not test.configuration:
+            issues.append("The Bazel configuration is unknown; comparison and baseline publication are unavailable.")
         baseline: ResolvedBaseline | None = None
+        comparable = bool(test.configuration)
         if base_sha and baseline_source is not None:
             baseline = _resolve_baseline(test.slug, base_sha, baseline_source)
-            if baseline is None:
-                # No bundle carries this target yet — everything is new.
+            if baseline is not None and (
+                baseline.metadata.comparison_profile != "bazel-configuration-exact-v1"
+                or not test.configuration
+                or baseline.metadata.configuration != test.configuration
+            ):
+                issues.append(
+                    "The baseline and candidate configurations cannot be compared under bazel-configuration-exact-v1."
+                )
+                comparable = False
                 assets = [
-                    ReviewAsset(path=asset.path, label=asset.label, classification="new")
-                    for asset in test.manifest.assets
+                    _review_asset(asset, "unstable" if len(asset.variants) > 1 else None) for asset in test.assets
+                ]
+            elif baseline is None:
+                assets = [
+                    _review_asset(asset, "unstable" if len(asset.variants) > 1 else "new" if comparable else None)
+                    for asset in test.assets
                 ]
             else:
                 assets = _classify_test_assets(test, baseline, baseline_source, target_dir)
         else:
-            assets = [ReviewAsset(path=asset.path, label=asset.label) for asset in test.manifest.assets]
+            assets = [_review_asset(asset, "unstable" if len(asset.variants) > 1 else None) for asset in test.assets]
+        for asset in test.assets:
+            for index, variant in enumerate(asset.variants):
+                body = variant.path.read_bytes()
+                if hashlib.sha256(body).hexdigest() != variant.sha256:
+                    raise ValueError(f"{test.target_label}: screenshot content digest mismatch for {asset.case_id!r}")
+                with Image.open(variant.path) as image:
+                    if image.format != "PNG":
+                        raise ValueError(f"{test.target_label}: screenshot is not PNG: {asset.case_id!r}")
+                    image.verify()
+                staged = target_dir / f".{asset.path}.{index}"
+                staged.write_bytes(body)
+                _share_png(staged, output_root, known_digest=variant.sha256)
         for review_asset in assets:
-            review_asset.candidate_sha256 = _share_png(
-                target_dir / review_asset.path, output_root, known_digest=review_asset.candidate_sha256
-            )
+            if len(review_asset.variants) == 1:
+                review_asset.candidate_sha256 = review_asset.variants[0].sha256
             review_asset.baseline_sha256 = _share_png(target_dir / "baseline" / review_asset.path, output_root)
             review_asset.diff_sha256 = _share_png(target_dir / "diff" / review_asset.path, output_root)
         review_test = ReviewTest(
             target_label=test.target_label,
             slug=test.slug,
-            title=test.manifest.title,
+            title=test.title,
             assets=assets,
-            base_sha=baseline.commit_sha if baseline is not None else base_sha,
+            issues=issues,
+            notices=test.notices,
+            configuration=test.configuration,
+            baseline_eligible=bool(test.configuration)
+            and bool(test.assets)
+            and not issues
+            and all(len(a.variants) == 1 for a in test.assets),
+            base_sha=(baseline.commit_sha if baseline is not None else base_sha) if comparable else None,
             merge_base_sha=base_sha,
             baseline_fallback=baseline.fallback if baseline is not None else None,
             summary=_asset_summary(assets) if base_sha else None,
@@ -832,7 +821,12 @@ def upload_bundle(bundle: Path, *, endpoint: str, bucket: str, key: str, client:
         digest
         for test in metadata.tests
         for asset in test.assets
-        for digest in (asset.candidate_sha256, asset.baseline_sha256, asset.diff_sha256)
+        for digest in (
+            asset.candidate_sha256,
+            asset.baseline_sha256,
+            asset.diff_sha256,
+            *(variant.sha256 for variant in asset.variants),
+        )
         if digest is not None
     }
     failures: list[Exception] = []
@@ -866,7 +860,7 @@ def upload_bundle(bundle: Path, *, endpoint: str, bucket: str, key: str, client:
 
 
 def write_baseline_pointers(slugs: list[str], *, commit_sha: str, bucket: str, client: Any) -> None:
-    """Point ``baselines/reviews/<slug>.json`` at this commit for every published target.
+    """Point the current protocol's baseline at this commit for every published target.
 
     Runs on devel pushes after the immutable bundle upload succeeds, so PR runs
     can fall back to the newest devel bundle carrying each target (see
@@ -884,14 +878,11 @@ def write_baseline_pointers(slugs: list[str], *, commit_sha: str, bucket: str, c
 
 
 def _totals(review_tests: list[ReviewTest]) -> ClassificationCounts:
-    totals = ClassificationCounts()
+    totals: Counter[str] = Counter()
     for test in review_tests:
         if test.summary is not None:
-            totals.modified += test.summary.modified
-            totals.new += test.summary.new
-            totals.removed += test.summary.removed
-            totals.unchanged += test.summary.unchanged
-    return totals
+            totals.update(test.summary.model_dump())
+    return ClassificationCounts(**totals)
 
 
 def _preview_img(url: str, alt: str) -> str:
@@ -920,6 +911,9 @@ def _asset_comment_lines(
     label = f'<a href="{anchor}">{html.escape(asset.label)}</a>'
     stale = f" · ⚠️ stale baseline ({stale_baseline_note(test)})" if asset.baseline_stale else ""
     stale_heading = [f"<p>⚠️ stale baseline ({stale_baseline_note(test)})</p>", ""] if asset.baseline_stale else []
+    if asset.classification == "unstable":
+        heading = [f"<p><strong>{label}</strong> · unstable across runs</p>", ""] if include_heading else []
+        return [*heading, *(f"- {_preview_img(v['url'], asset.label)}" for v in urls["variants"])]
     if asset.classification == "modified":
         fraction = asset.changed_fraction or 0.0
         diff = (
@@ -950,7 +944,7 @@ def _asset_comment_lines(
 
 
 def _test_impact_key(test: ReviewTest) -> tuple[float, int, str]:
-    changed = [asset for asset in test.assets if asset.classification in {"modified", "new", "removed"}]
+    changed = [asset for asset in test.assets if asset.classification in {"modified", "new", "removed", "unstable"}]
     largest_change = max(
         (asset.changed_fraction or 0.0 for asset in changed if asset.classification == "modified"), default=0.0
     )
@@ -958,12 +952,20 @@ def _test_impact_key(test: ReviewTest) -> tuple[float, int, str]:
 
 
 def _is_unchanged(test: ReviewTest) -> bool:
-    return test.summary is not None and test.summary.modified == test.summary.new == test.summary.removed == 0
+    return (
+        test.summary is not None
+        and not test.issues
+        and test.summary.modified == test.summary.new == test.summary.removed == test.summary.unstable == 0
+    )
 
 
 def _target_section(test: ReviewTest, *, url: str, open_section: bool, ci_details_url: str | None) -> list[str]:
     counts = test.summary or ClassificationCounts()
-    assets = [asset for asset in _ordered_assets(test.assets) if asset.classification in {"modified", "new", "removed"}]
+    assets = [
+        asset
+        for asset in _ordered_assets(test.assets)
+        if asset.classification in {"modified", "new", "removed", "unstable"}
+    ]
     largest_change = max(
         (asset.changed_fraction or 0.0 for asset in assets if asset.classification == "modified"), default=None
     )
@@ -973,12 +975,16 @@ def _target_section(test: ReviewTest, *, url: str, open_section: bool, ci_detail
     asset_base = f"{url}tests/{test.slug}/"
     gallery_link = f'<a href="{html.escape(gallery_url, quote=True)}">link</a>'
     rerun_link = f' · <a href="{html.escape(ci_details_url, quote=True)}">request rerun</a>' if ci_details_url else ""
+    counts_text = _format_test_counts(counts)
+    if test.issues:
+        counts_text = "incomplete or non-comparable" + (f"; {counts_text}" if counts_text != "unchanged" else "")
     lines = [
         details,
-        f"<summary><code>{html.escape(test.target_label)}</code> — {_format_test_counts(counts)}{impact} · "
+        f"<summary><code>{html.escape(test.target_label)}</code> — {counts_text}{impact} · "
         f"{html.escape(test.title)} · {gallery_link}{rerun_link}</summary>",
         "",
     ]
+    lines.extend(f"- ⚠️ {html.escape(issue)}" for issue in test.issues)
     for index, asset in enumerate(assets):
         if len(assets) <= INLINE_ASSET_LIMIT:
             content = _asset_comment_lines(asset, asset_base=asset_base, gallery_url=gallery_url, test=test)
@@ -1068,7 +1074,12 @@ def _format_test_counts(counts: ClassificationCounts) -> str:
     doesn't read `"0 modified, 0 new, 0 removed"`. `"unchanged"` when every bucket is zero."""
     parts = [
         f"{count} {label}"
-        for count, label in ((counts.modified, "modified"), (counts.new, "new"), (counts.removed, "removed"))
+        for count, label in (
+            (counts.unstable, "unstable"),
+            (counts.modified, "modified"),
+            (counts.new, "new"),
+            (counts.removed, "removed"),
+        )
         if count
     ]
     return ", ".join(parts) if parts else "unchanged"
@@ -1160,7 +1171,9 @@ def success_comment_body(
         return "\n".join(lines)
 
     totals = _totals(review_tests)
-    if totals.modified == totals.new == totals.removed == 0:
+    if totals.modified == totals.new == totals.removed == totals.unstable == 0 and not any(
+        t.issues for t in review_tests
+    ):
         lines.append(
             f"No visual changes among the {target_count} affected Bazel test target{plural}. "
             f"[Open visual review]({page_url})."
@@ -1170,7 +1183,7 @@ def success_comment_body(
     lines += [
         f"{target_count} Bazel test target{plural} produced visual artifacts · "
         f"**{totals.modified} modified**, {totals.new} new, {totals.removed} removed, "
-        f"{totals.unchanged} unchanged. [Open visual review]({page_url}).",
+        f"{totals.unchanged} unchanged, {totals.unstable} unstable. [Open visual review]({page_url}).",
         "",
     ]
     return _with_target_sections(lines, review_tests, url, ci_details_url=ci_details_url)
@@ -1273,11 +1286,21 @@ def diff_check(review_tests: list[ReviewTest]) -> tuple[Literal["success", "neut
     if not compared:
         return None
     totals = _totals(review_tests)
-    summary = f"{totals.modified} modified, {totals.new} new, {totals.removed} removed, {totals.unchanged} unchanged."
+    summary = (
+        f"{totals.modified} modified, {totals.new} new, {totals.removed} removed, "
+        f"{totals.unchanged} unchanged, {totals.unstable} unstable."
+    )
+    if incomplete := sum(1 for test in compared if test.issues):
+        summary += f" {incomplete} target(s) have incomplete results."
     if fallbacks := sum(1 for test in compared if test.baseline_fallback):
         plural = "s" if fallbacks != 1 else ""
         summary += f" {fallbacks} target{plural} compared against the devel-latest fallback baseline."
-    return ("neutral" if totals.modified + totals.removed else "success", summary)
+    return (
+        "neutral"
+        if totals.modified + totals.removed + totals.unstable or any(t.issues for t in compared)
+        else "success",
+        summary,
+    )
 
 
 def current_workflow_url() -> str | None:
@@ -1326,7 +1349,7 @@ def main() -> None:
     workflow_url = current_workflow_url()
 
     conclusion: Literal["success", "failure", "neutral"] = "neutral"
-    summary = "No tests executed by Bazel CI exposed visual-review.json."
+    summary = "No tests executed by Bazel CI exposed screenshot output records."
     comment_body: str | None = None
     refresh_stale_comment_body: str | None = None
     details_url: str | None = args.ci_details_url or workflow_url
@@ -1373,7 +1396,7 @@ def main() -> None:
         if args.ci_conclusion != "success":
             ci_failures = list_ci_failures(invocations, run=subprocess.run)
         tests = (
-            download_visual_tests(invocations, args.work_dir / "tests", run=subprocess.run)
+            download_visual_tests(invocations, args.work_dir / "tests", repository=args.repository, run=subprocess.run)
             if readiness == "complete"
             else []
         )
@@ -1409,19 +1432,25 @@ def main() -> None:
             base_sha=base_sha,
             baseline_source=baseline_source,
         )
-        upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"reviews/{args.sha}", client=s3)
+        upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"{REVIEW_PREFIX}/{args.sha}", client=s3)
+        review_tests = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests
         if not base_sha:
             # Devel push: advance the mutable per-target fallback pointers now
             # that this commit's immutable bundle is fully uploaded and the
             # invocation is confirmed complete.
-            write_baseline_pointers([test.slug for test in tests], commit_sha=args.sha, bucket=args.bucket, client=s3)
-        public_url = f"{args.public_base_url.rstrip('/')}/reviews/{args.sha}/"
-        review_tests = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests
+            write_baseline_pointers(
+                [test.slug for test in review_tests if test.baseline_eligible],
+                commit_sha=args.sha,
+                bucket=args.bucket,
+                client=s3,
+            )
+        public_url = f"{args.public_base_url.rstrip('/')}/{REVIEW_PREFIX}/{args.sha}/"
         if base_sha:
             totals = _totals(review_tests)
             summary = (
                 f"{len(tests)} target{'s' if len(tests) != 1 else ''} · {totals.modified} modified, "
-                f"{totals.new} new, {totals.removed} removed, {totals.unchanged} unchanged."
+                f"{totals.new} new, {totals.removed} removed, {totals.unchanged} unchanged, "
+                f"{totals.unstable} unstable."
             )
         else:
             summary = f"{len(tests)} Bazel test target{'s' if len(tests) != 1 else ''} produced visual artifacts."
@@ -1436,7 +1465,10 @@ def main() -> None:
             ci_details_url=args.ci_details_url or workflow_url,
         )
         summary += _ci_failure_summary(args.ci_conclusion, ci_failures)
-        conclusion, details_url = "success", f"{public_url}index.html"
+        if incomplete := sum(1 for test in review_tests if test.issues):
+            summary += f" {incomplete} target(s) have incomplete or non-comparable results."
+        conclusion = "neutral" if any(test.issues for test in review_tests) else "success"
+        details_url = f"{public_url}index.html"
         if (diff := diff_check(review_tests)) is not None:
             diff_conclusion, diff_summary = diff
             upsert_check_run(

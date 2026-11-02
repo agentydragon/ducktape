@@ -14,6 +14,18 @@
       <div><code>{{ target_label }}</code> · {{ repository }} · <code>{{ commit_sha }}</code>{% if base_sha %} · base <code>{{ base_sha[:8] }}</code>{% endif %}</div>
     </header>
     <main>
+      {% if issues %}<div role="alert"><strong>Incomplete visual results</strong><ul>{% for issue in issues %}<li>{{ issue }}</li>{% endfor %}</ul></div>{% endif %}
+      {% if notices %}<details><summary>Retries and execution notices</summary><ul>{% for notice in notices %}<li>{{ notice }}</li>{% endfor %}</ul></details>{% endif %}
+      {% for asset in assets if asset.classification == "unstable" %}
+      <figure id="{{ asset.path }}">
+        <figcaption>{{ asset.label }}<span class="badge modified">unstable across runs</span></figcaption>
+        {% for variant in asset.variants %}
+        <div><div class="variant-provenance">{% for result in variant.results %}invocation {{ result.invocation }}, configuration {{ result.configuration }}, run {{ result.run }}, shard {{ result.shard }}, attempt {{ result.attempt }}{% if not loop.last %}; {% endif %}{% endfor %}</div>
+          <a class="sample-frame" href="{{ variant.url }}"><img src="{{ variant.url }}" alt="{{ asset.label }} variant {{ loop.index }}" loading="lazy"></a>
+        </div>
+        {% endfor %}
+      </figure>
+      {% endfor %}
       {% if base_sha %}
         {% set modified = assets | selectattr("classification", "equalto", "modified") | list %}
         {% set new_assets = assets | selectattr("classification", "equalto", "new") | list %}
@@ -71,7 +83,7 @@
         </details>
         {% endif %}
       {% else %}
-        {% for asset in assets %}
+        {% for asset in assets if asset.classification != "unstable" %}
         <figure id="{{ asset.path }}">
           <a class="sample-frame" href="{{ asset.candidate_url }}"><img src="{{ asset.candidate_url }}" alt="{{ asset.label }}" loading="lazy"></a>
           <figcaption>{{ asset.label }}</figcaption>
