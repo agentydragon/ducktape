@@ -63,12 +63,14 @@ builds, corpus runs, benchmarks or profiling jobs were added or run locally.
 Normal hosted PR CI supplies existing checks; canonical provider acceptance has
 not been established by this patch.
 
-**F16 — Retained cell payloads:** cells and interned capture descriptions remain
-reachable from the executor until chunk completion, even when an activation's
-closures are no longer live. The per-statement invocation budget does not bound
-whole-chunk retained memory. Next: trace live roots after invocation memo
-retirement at statement finalization, reclaim unreachable cell payloads and
-capture descriptions, and keep cell IDs monotonic. Preserve prefix/top values,
+**F16 — Retained cell payloads:** the initial implementation retained cells and
+interned capture descriptions until chunk completion, even when an activation's
+closures were no longer live. Weak capture interning now releases descriptions
+that have no actual or semantic owner; revoked audited-result descriptions stay
+rooted. The per-statement invocation budget still does not bound whole-chunk
+retained memory. Next: trace live roots after invocation memo retirement at
+statement finalization, reclaim unreachable cell payloads, and keep cell IDs
+monotonic. Preserve prefix/top values,
 top captures, escaped/exported callbacks, runtime heap properties, dense arrays,
 accumulated outcomes, applied accessors, descriptor maps, superclass values and
 active activation cells. Never reclaim by source location or structural capture
