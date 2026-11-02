@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart, JsonPatch
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ClusterRole, ClusterRolePolicyRule, ServiceAccount, k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecCluster, DatabaseSpecDatabaseReclaimPolicy
@@ -35,7 +35,6 @@ from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.nix_cache import ci_token
 from cluster.cdk8s.providers.cnpg.database import Database
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
-from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.rotators.attic_jwt_rotation.config import (
@@ -171,18 +170,6 @@ def _database(scope: Construct) -> None:
         postgresql=ClusterSpecPostgresql(parameters={"synchronous_commit": "off"}),
     )
     cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
-
-
-def _old_cache_iam(scope: Construct) -> None:
-    identity = s3.identity(
-        scope,
-        "old-cache-identity",
-        name=NAME,
-        namespace=NAMESPACE,
-        description="attic's NAR chunks; replicated per volume by the SeaweedFS cluster's defaultReplication.",
-    )
-    # Keep the identity until the old credential's key is confirmed revoked.
-    identity.add_json_patch(JsonPatch.replace("/spec/reclaimPolicy", "Delete"))
 
 
 def _service(scope: Construct) -> None:
@@ -596,7 +583,6 @@ def chart(app: App) -> Chart:
     namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO)
     pull_credentials.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     _database(chart)
-    _old_cache_iam(chart)
     _service(chart)
     _rotation(chart)
     _local_server(chart)
