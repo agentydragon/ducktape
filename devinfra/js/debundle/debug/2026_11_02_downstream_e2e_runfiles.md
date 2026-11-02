@@ -14,7 +14,7 @@ Validate from a downstream workspace and from the root workspace. Include the
 direct caller alongside the seven suites that exposed the failure:
 
 ```bash
-bbr test --override_module=ducktape=/path/to/ducktape \
+bazelisk test --config=rbe --override_module=ducktape=/path/to/ducktape \
   @ducktape//devinfra/js/debundle/e2e:realizability_test \
   @ducktape//devinfra/js/debundle/e2e:source_match_coalescing_cli_test \
   @ducktape//devinfra/js/debundle/e2e:edit_gate_source_match_cli_test \
@@ -23,7 +23,7 @@ bbr test --override_module=ducktape=/path/to/ducktape \
   @ducktape//devinfra/js/debundle/e2e:effect_translation_validation_test \
   @ducktape//devinfra/js/debundle/e2e:cross_module_emission_test \
   @ducktape//devinfra/js/debundle/e2e:cross_chunk_readable_imports_test
-bbr test \
+bazelisk test \
   //devinfra/js/debundle/e2e:realizability_test \
   //devinfra/js/debundle/e2e:source_match_coalescing_cli_test \
   //devinfra/js/debundle/e2e:edit_gate_source_match_cli_test \
@@ -33,3 +33,11 @@ bbr test \
   //devinfra/js/debundle/e2e:cross_module_emission_test \
   //devinfra/js/debundle/e2e:cross_chunk_readable_imports_test
 ```
+
+Direct downstream validation executed all eight suites on RBE and passed all
+eight, including the direct `rust_test` caller. The original seven-suite run
+failed before its CLI assertions; the repaired run reaches those assertions.
+The same eight suites also executed and passed from the root workspace
+([direct invocation](https://app.buildbuddy.io/invocation/d5c5a017-cdd2-4f0a-913b-ee84741f87e8)).
+This changes test tool lookup only, without changing the production pipeline
+or its acceptance rules.
