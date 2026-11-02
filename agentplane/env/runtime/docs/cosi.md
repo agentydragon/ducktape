@@ -123,6 +123,7 @@ flowchart LR
   AI["CodexAppServerInputs"]
   AO["CodexAppServerOperationResults"]
   AR["CodexAppServerRuntimes"]
+  ER["EmbeddedExecutionRuntimes"]
   J["JournalSeals"]
   ACK["IngressAcks"]
   PD["ProcessDesiredStates"]
@@ -145,7 +146,7 @@ flowchart LR
   SI & RD & RR & AR & SO -->|QPrimary / QMapped| SC
   SC -->|write| SR
   SC -.->|start / halt / seal| SM
-  AI & RD & RR & AO -->|QPrimary / QMapped| AC
+  AI & RD & RR & AO & ER -->|QPrimary / QMapped| AC
   AC -->|write| AR
   AC -.->|start / drain| AM
   SM & AM -.->|launch| PH
@@ -164,7 +165,7 @@ flowchart LR
 | `harness-host-intent`        | `HostIntents` (weak)                                                                                                                                                                      | `HostIntentStatuses` (exclusive)     | Checks startup and the synchronous Runtime connection gate, records Applying before the native effect, and fails closed on an unknown result. |
 | `runner-lifecycle`           | `RunnerDesiredStates`, `RunnerInputs`, `SessionDrainInputs`, `SessionRuntimes`, `JournalSeals`, `IngressAcks`, `CodexAppServerRuntimes`, `ProcessDesiredStates`, `ProcessStatuses` (weak) | `RunnerRuntimes` (exclusive)         | Aggregates the Host drain barrier; explicitly queues its next step after changing status.                                                     |
 | `session-lifecycle`          | `SessionInputs` (primary); `RunnerDesiredStates`, `RunnerRuntimes`, `CodexAppServerRuntimes`, `NativeOperationResults` (mapped)                                                           | `SessionRuntimes` (exclusive)        | Per Session. App-server updates map only to Codex Sessions; operation results map to their Session.                                           |
-| `codex-app-server-lifecycle` | `CodexAppServerInputs` (primary); `RunnerDesiredStates`, `RunnerRuntimes`, `CodexAppServerOperationResults` (mapped)                                                                      | `CodexAppServerRuntimes` (exclusive) | Per shared app-server; native effects run in host-owned one-off workers.                                                                      |
+| `codex-app-server-lifecycle` | `CodexAppServerInputs` (primary); `RunnerDesiredStates`, `RunnerRuntimes`, `CodexAppServerOperationResults`, `EmbeddedExecutionRuntimes` (mapped)                                         | `CodexAppServerRuntimes` (exclusive) | Per shared app-server; native effects run in host-owned one-off workers. Execution changes wake a separate live-owner readiness check.        |
 | `process-lifecycle`          | `ProcessDesiredStates` (primary), `ProcessInputs` (mapped)                                                                                                                                | `ProcessStatuses` (exclusive)        | The same single controller and registry shown above; per-domain contexts and worker barriers remain separate.                                 |
 
 The process controller and its three resource types appear in both diagrams to show their callers;

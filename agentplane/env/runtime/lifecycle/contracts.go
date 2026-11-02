@@ -24,6 +24,9 @@ const (
 	ResourceID                   = "runner"
 	HostOwner                    = "runner-host"
 	EnvironmentDesiredStateType  = "EnvironmentRuntimeDesiredStates.agentplane"
+	// EmbeddedExecutionRuntimeType is observed by the app-server controller to
+	// wake its live Execution readiness check.
+	EmbeddedExecutionRuntimeType = "EmbeddedExecutionRuntimes.agentplane"
 	EnvironmentResourceID        = "environment-runtime"
 	EnvironmentOwner             = "environment-runtime"
 )

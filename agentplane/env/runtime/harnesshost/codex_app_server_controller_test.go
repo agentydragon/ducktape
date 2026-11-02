@@ -12,16 +12,30 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/harness"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
+	"github.com/cosi-project/runtime/pkg/resource"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 type executionHealth struct {
-	mu      sync.Mutex
-	serving bool
-	failure error
+	mu       sync.Mutex
+	serving  bool
+	failure  error
+	runner   *Runner
+	t        *testing.T
+	revision uint64
 }
+
+// The fake publishes a status change like Runtime's execution controller.
+// The app-server observes its metadata and verifies the live owner separately.
+type executionHealthEvent struct{ Revision uint64 }
+
+func (executionHealthEvent) resourceType() resource.Type {
+	return runnerlifecycle.EmbeddedExecutionRuntimeType
+}
+func (v executionHealthEvent) DeepCopy() executionHealthEvent { return v }
 
 func (h *executionHealth) ConnectHost(ctx context.Context, _ *Runner) error { return ctx.Err() }
 func (h *executionHealth) WaitHostBootstrap(ctx context.Context, _ *runtimepb.Binding) error {
@@ -42,21 +56,27 @@ func (h *executionHealth) HostExecutionReady(context.Context) (bool, error) {
 
 func (h *executionHealth) set(serving bool, err error) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	h.serving = serving
 	h.failure = err
+	h.revision++
+	revision := h.revision
+	h.mu.Unlock()
+	if err := publishLifecycle(h.runner.lifecycle, "embedded-execution", executionHealthEvent{Revision: revision}); err != nil {
+		h.t.Fatalf("publish execution status: %v", err)
+	}
 }
 
 func codexHealthRunner(t *testing.T, timeout time.Duration) (*Runner, *executionHealth, string) {
 	t.Helper()
 	root := t.TempDir()
-	health := &executionHealth{}
+	health := &executionHealth{t: t}
 	marker := filepath.Join(root, "initialized")
 	config := lifecycleConfig(t, "", root, nil, "/bin/false")
 	config.Codex = &harness.LaunchConfig{Binary: codexAppServerTestBinary(t, marker), BaseURL: "https://codex.example.invalid/v1", Token: "test"}
 	config.ExecServerURL = "ws://127.0.0.1:4599"
 	config.CodexAppServerReadiness = codexappserver.Readiness{ExecServerDependencyTimeout: timeout}
 	runner := newLifecycleRunner(t, config)
+	health.runner = runner
 	runner.mu.Lock()
 	runner.runtimeBridge = health
 	runner.mu.Unlock()
@@ -64,7 +84,9 @@ func codexHealthRunner(t *testing.T, timeout time.Duration) (*Runner, *execution
 }
 
 func TestCodexJoinedStartupWaitsForSeparateExecutionHealth(t *testing.T) {
-	r, health, marker := codexHealthRunner(t, 5*time.Second)
+	// The dependency deadline exceeds the test timeout: readiness must wake on
+	// the Execution status event, rather than on the deadline timer.
+	r, health, marker := codexHealthRunner(t, 30*time.Second)
 	health.set(false, status.Error(codes.Unavailable, "starting"))
 	type result struct {
 		process *codexappserver.Process
@@ -108,7 +130,7 @@ func TestCodexJoinedStartupWaitsForSeparateExecutionHealth(t *testing.T) {
 }
 
 func TestCodexExecutionRefusalDrainsOverlappedAppServer(t *testing.T) {
-	r, health, marker := codexHealthRunner(t, 5*time.Second)
+	r, health, marker := codexHealthRunner(t, 30*time.Second)
 	if _, err := requestCodexAppServer(r); err != nil {
 		t.Fatal(err)
 	}

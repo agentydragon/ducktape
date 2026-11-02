@@ -23,6 +23,7 @@ func (*LifecycleController) Settings() controller.QSettings {
 			{Namespace: lifecycle.Namespace, Type: InputType, Kind: controller.InputQPrimary},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.DesiredStateType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.AggregateStatusType, Kind: controller.InputQMapped},
+			{Namespace: lifecycle.Namespace, Type: lifecycle.EmbeddedExecutionRuntimeType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: OperationType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: RuntimeType, Kind: controller.OutputExclusive}},
@@ -262,7 +263,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		if current.Error != "" || current.ExecServerReadyDeadline.IsZero() {
 			return nil
 		}
-		return controller.NewRequeueError(nil, min(time.Second, current.ExecServerReadyDeadline.Sub(time.Now())))
+		return controller.NewRequeueError(nil, time.Until(current.ExecServerReadyDeadline))
 	}
 	if draining != nil {
 		return write()
@@ -308,7 +309,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 					return err
 				}
 				if !current.ExecServerReadyDeadline.IsZero() {
-					return controller.NewRequeueError(nil, min(time.Second, current.ExecServerReadyDeadline.Sub(time.Now())))
+					return controller.NewRequeueError(nil, time.Until(current.ExecServerReadyDeadline))
 				}
 				return nil
 			}
@@ -390,7 +391,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		return err
 	}
 	if !current.ExecServerReadyDeadline.IsZero() {
-		return controller.NewRequeueError(nil, min(time.Second, current.ExecServerReadyDeadline.Sub(time.Now())))
+		return controller.NewRequeueError(nil, time.Until(current.ExecServerReadyDeadline))
 	}
 	return nil
 }
