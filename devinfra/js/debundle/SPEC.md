@@ -2244,8 +2244,12 @@ property invalidation. Callback and escape traversal follow current cell
 contents. Activations outside ordered source coverage retain conservative value
 summaries and cannot supply an exact mutable-cell proof. The canonical nested
 identifier census identifies captured bindings without another source scan.
-Cells are currently retained until chunk analysis completes; this establishes no
-memory bound independent of chunk size.
+After statement execution unwinds and its invocation memos retire, collection
+traces live prefix values, escaped and exported capabilities, runtime heap and
+descriptor state, revocations, and active bindings. Unreachable cell payloads,
+including cycles, can be reclaimed. Cell identities are never reused. Live
+roots, heap tables and identity slots still grow with the analyzed chunk; this
+establishes no memory bound independent of chunk size.
 Capture descriptions are weakly interned. Live values and memo keys keep their
 descriptions canonical; expired descriptions can be reclaimed, and their numeric
 identities are never reused. Revoked audited-result descriptions remain strong

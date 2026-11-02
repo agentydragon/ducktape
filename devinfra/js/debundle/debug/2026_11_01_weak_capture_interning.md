@@ -24,10 +24,12 @@ This preserves the existing conservative sharing of revocation between equal
 capture sets; the interner still proves no runtime equality, freshness or
 privacy.
 
-Lexical cells still retain their payloads until chunk completion. Captures
-reachable through those cells, escaped callbacks, heap properties, accumulated
-values, active frames or revoked capabilities remain live. F16's root trace is
-still required for reclaiming unreachable cell graphs, including cycles.
+Owner-boundary cell collection now traces actual and semantic roots before
+dropping unreachable cell payloads, including cycles. Captures reached through
+live cells, escaped callbacks, heap properties, accumulated values or revoked
+capabilities remain live. See
+<2026_11_01_retired_lexical_cells.md> for the transfer-lifetime boundary and
+remaining retention limits.
 
 ## Review
 
