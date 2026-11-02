@@ -76,6 +76,32 @@ Runtime and Host boot IDs through a native connection gate that Runtime revokes 
 disconnect or failure, even if COSI publication fails. It records Applying before the native effect;
 an interrupted application fails the Host and cannot be replayed on controller restart.
 
+### Identity scopes
+
+The similarly named `Host` types and lifecycle counters belong to separate owners. Their values are
+not interchangeable just because two counters currently have the same number.
+
+| Identity                                 | Scope                                                                                                                                                                                                                                                             |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runtime.Runtime`                        | Environment Runtime coordinator; owns the shared COSI engine and environment lifetime.                                                                                                                                                                            |
+| `harnesshost.Host`                       | Embedded Harness Host lifetime; owns retained Sessions and native harness lifecycle. A production Runtime starts it once; unexpected bridge loss fails that Runtime.                                                                                              |
+| `bootstrap.Host`                         | Runtime-owned bootstrap controller and one-shot operation; it is not a separately served host process.                                                                                                                                                            |
+| `codexappserver.Host`                    | One shared Codex app-server process and its protocol readers, used by Codex Sessions.                                                                                                                                                                             |
+| `supervision.Host`                       | A view over the shared process registry, bound to a domain lifetime and worker barrier; in Runtime's shared registry, process attempt IDs are global across the Runtime and Harness views.                                                                        |
+| Runtime boot ID / Host boot ID           | One Environment Runtime process / one embedded Harness Host lifetime. The Host binding carries both to reject observations from another lifetime.                                                                                                                 |
+| Host binding generation                  | The generation of a Runtime-published Host intent. It seeds Host desired state; Host can advance that state during local close. `ExecutionFenced` can change within the same binding.                                                                             |
+| `EnvironmentDesired.Generation`          | Runtime-owned admission generation for bootstrap and Runtime process effects. It is a different counter from the Host binding generation.                                                                                                                         |
+| Session demand / Codex app-server demand | An admitted demand sequence for one Session / one sequence shared by the app-server. Both reset when the Host enters a new Running binding generation. Their status checkpoints mean the latest demand claimed by reconciliation, not that native work succeeded. |
+| Embedded Execution demand / generation   | Runtime-owned Execution demand is separate from Session demand. Execution status generation advances for each native Execution start and scopes its start, loss and fence completion facts.                                                                       |
+| Setup operation ID / process attempt ID  | A Session `SetupAttempt` identifies one `oneoff.Operation`; the process registry assigns a distinct ID to each native process attempt. Neither is a demand sequence.                                                                                              |
+| Gateway connection epoch                 | The Gateway Lease epoch for a `WatchState` connection. A newer watch invalidates the old authorization metadata; executor streams bound to its context are canceled. Work admitted before supersession keeps its component-owned completion path.                 |
+| Local worker epochs                      | `activeStartEpoch` protects the current start-cancel handle from an older worker's cleanup; a Session's `codexExitEpoch` rejects a stale app-server exit callback. Neither is a Gateway connection epoch.                                                         |
+| Incarnation UID                          | The current Pod or virt-launcher Pod UID supplied by Gateway. Runtime uses it for environment adoption and journal sealing; it is distinct from Sandbox UID, Runtime/Host boot IDs and native process IDs.                                                        |
+
+The `Phase` fields in typed status specs describe each controller's domain lifecycle. They are
+independent of COSI's resource metadata phase. Runtime, Harness Host, Session, app-server, Execution
+and process status phases therefore do not form one shared state machine.
+
 Host's admission counter is a COSI input, incremented under that barrier before durable mutation and
 decremented when the handler settles. Missing accounting is an error, never an idle count. A drain
 intent closes admission before asynchronous teardown begins. New native effects also compare their

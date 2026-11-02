@@ -51,6 +51,7 @@ type Dependencies struct {
 	OnRuntimeChange func()
 }
 
+// Host coordinates the Environment Runtime's durable, one-shot bootstrap operation.
 type Host struct {
 	config          Config
 	ctx             context.Context
