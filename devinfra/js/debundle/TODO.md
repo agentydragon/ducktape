@@ -114,6 +114,12 @@ to one exact source/spec pair and held to the interactive budget in
   inspected. Add a bounded program-level summary with each processed chunk's
   outcome, rejection class, exact totals and report paths. Mark unprocessed
   chunks explicitly; the first fatal error is not the full inventory.
+- **F4 — Consume possible-getter witnesses in source-backed gate review.** A
+  saved private cut showed `possible_getter` fallback effects without the
+  lookup site or promoted lazy owner, so source inspection could only infer
+  their connection. Correlate the bounded lookup and owner witnesses with
+  source units in the existing review workflow; preserve exact gate totals and
+  keep private source, spec and binding details out of public artifacts.
 
 ### Pipeline performance and architecture cleanup
 

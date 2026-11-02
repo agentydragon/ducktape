@@ -2069,7 +2069,13 @@ the statement; the `reason`'s `path` names the first such path:
 - `possible_getter`: available accessor and callback bodies that a property
   read may invoke after skipped or opaque code changed the receiver's
   descriptors or prototype. The read returns an unknown value and keeps global
-  reach, including when it looks up a method's callee.
+  reach, including when it looks up a method's callee. Its reason carries one
+  witness: `lookup.lexical_owner` and the SWC byte positions in
+  `lookup.span_start` / `lookup.span_end` identify the triggering lookup, while
+  `promotion` is either `{"kind":"lazy_owner","source_owner":N}` for one
+  promoted source owner or `{"kind":"raw_callbacks"}` when raw callback
+  promotion has no single owner. This is a representative witness, not a list
+  of every lookup or owner that could contribute the effect.
 - `whole_body_promotion` (`operation`: `callable_inputs` or
   `array_iteration`): the lazy body of a callable whose inputs or iteration the
   interpreter could not model, beyond what its execution reached.
@@ -3227,7 +3233,10 @@ as constraining, keyed by `explanation.kind`:
   the provenance of that endpoint's binding effect (§ Commuting statements):
   `{"kind": "observed"}` or `{"kind": "fallback", "reason": {"path": …}}`
   naming the conservative path; the `explanation` text names each assumed
-  side.
+  side. For `possible_getter`, that reason also carries its lookup site and one
+  lazy-owner or raw-callback promotion witness. A fallback effect retains one
+  deterministic representative reason; it does not enumerate every path that
+  could contribute the same binding effect.
 
 Impure-initializer evidence (`sequenced_source_unit`, `target_source_unit`)
 also carries `synchronous_execution_complete` when synchronous analysis ran;

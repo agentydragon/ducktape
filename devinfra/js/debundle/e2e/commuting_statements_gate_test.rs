@@ -481,6 +481,20 @@ fn inerted_state_timelines(fixture: &Fixture) -> Vec<serde_json::Value> {
         .collect()
 }
 
+fn matches_expected_reason(actual: &serde_json::Value, expected: &serde_json::Value) -> bool {
+    if expected["path"] != "possible_getter" {
+        return actual == expected;
+    }
+    actual["path"] == "possible_getter"
+        && actual["lookup"]["lexical_owner"].is_number()
+        && actual["lookup"]["span_start"].is_number()
+        && actual["lookup"]["span_end"].is_number()
+        && matches!(
+            actual["promotion"]["kind"].as_str(),
+            Some("lazy_owner" | "raw_callbacks")
+        )
+}
+
 /// Both endpoints are incomplete: each hands a pool past the bound to
 /// `JSON.stringify`, so the `state` write and read exist only because the
 /// fallback assumes every pooled callback may run. That is opacity, not a
@@ -624,7 +638,7 @@ fn assert_assumed_pair_accepted(
         timelines.iter().any(|cause| {
             ["source", "target"]
                 .iter()
-                .any(|side| cause[side]["reason"] == path)
+                .any(|side| matches_expected_reason(&cause[side]["reason"], &path))
         }),
         "{path} assumed no inerted effect: {timelines:#?}"
     );

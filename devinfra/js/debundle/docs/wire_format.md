@@ -354,6 +354,17 @@ endpoint's binding effect, `{"kind": "observed"}` or
 required: a graph written before them does not deserialize, so the
 commuting-statements gate never reads an unclassified effect as assumed.
 
+A `possible_getter` reason additionally requires `lookup`, with the lexical
+source-unit ordinal and SWC byte-position span, and `promotion`. The latter is
+`{"kind":"lazy_owner","source_owner":N}` when one lazy source owner was
+promoted, or `{"kind":"raw_callbacks"}` when raw callback promotion has no
+single identified owner. The binding effect keeps one deterministic reason;
+this witness does not enumerate all contributing lookups or owners. Global
+access evidence coalesces possible-getter reasons to the lexicographically
+smallest lookup and promotion witness for that access site, so its summary
+size stays bounded by reason categories. The current reader requires this
+shape; the former unit `possible_getter` reason has no legacy decoding path.
+
 ## Ordered call-result refusal
 
 `dependency_graph.json.gz.nodes[].synchronous_execution.precision_losses[]`

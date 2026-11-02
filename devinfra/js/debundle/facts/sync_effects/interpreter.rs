@@ -58,7 +58,8 @@ use crate::reports::schema::{
     ExecutionPrecisionLoss, ExecutionPrecisionLossReason, GlobalReachCause, HavocReach,
     InferenceRule, LocalRecordFactoryRejection, NativeIntegrityCheck, NativeIntegrityGuard,
     NativePrefixObservation, NativePrototypePropertyCheck, OrderedCallAdmissionRefusal,
-    OrderedFieldReadRefusal, RecordFactoryRejectionReason,
+    OrderedFieldReadRefusal, PossibleGetterLookupSite, PossibleGetterPromotion,
+    RecordFactoryRejectionReason,
 };
 use imbl::OrdMap;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -4833,11 +4834,28 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if !external_root {
             owners.insert(effect_owner);
         }
-        self.assuming(AssumedEffectReason::PossibleGetter, |this| {
-            for owner in owners {
-                this.promote_lazy_owner(owner, effect_owner, outcome);
-            }
-            this.promote_raw_callbacks(receivers, outcome);
+        let lookup = PossibleGetterLookupSite {
+            lexical_owner: call.owner,
+            span_start: call.span.lo.0,
+            span_end: call.span.hi.0,
+        };
+        for owner in owners {
+            let reason = AssumedEffectReason::PossibleGetter {
+                lookup: lookup.clone(),
+                promotion: PossibleGetterPromotion::LazyOwner {
+                    source_owner: owner,
+                },
+            };
+            self.assuming(reason, |this| {
+                this.promote_lazy_owner(owner, effect_owner, outcome)
+            });
+        }
+        let reason = AssumedEffectReason::PossibleGetter {
+            lookup,
+            promotion: PossibleGetterPromotion::RawCallbacks,
+        };
+        self.assuming(reason, |this| {
+            this.promote_raw_callbacks(receivers, outcome)
         });
         // Promoted getters may mutate another captured object or rebind a
         // captured cell before the next operation in this same statement.
