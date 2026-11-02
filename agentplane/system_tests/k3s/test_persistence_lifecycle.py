@@ -148,6 +148,17 @@ def test_persistence_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
             with attempt:
                 if stack._baseline_process_start(dead_pid) is not None:
                     raise RuntimeError(f"k3s process {dead_pid} is still alive")
+        config = k3s.data_dir / "agent/etc/containerd/config.toml"
+        saved_config = config.read_bytes()
+        try:
+            config.write_text("[invalid\n")
+            with pytest.raises(RuntimeError, match="containerd teardown failed") as failure:
+                k3s.cleanup_stopped()
+            assert "standalone containerd log tail:" in str(failure.value)
+            assert (undeclared_outputs_dir() / "containerd-teardown.log").stat().st_size > 0
+        finally:
+            config.write_bytes(saved_config)
+        events.append({"step": "containerd_teardown_failure", "log_preserved": True})
         k3s, marker, dead_warm = stack._baseline_open(binary, changed_fingerprint, layers_in_memory=True)
         assert not dead_warm
         assert marker["identity"]["namespace_uid"] != dead_identity["namespace_uid"]

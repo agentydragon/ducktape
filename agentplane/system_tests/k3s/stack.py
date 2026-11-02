@@ -324,7 +324,8 @@ class K3s:
         crictl_config.write_text(f"runtime-endpoint: unix://{CONTAINERD_SOCKET}\ntimeout: {STOP_TIMEOUT_SECONDS}\n")
         crictl = (str(self.binary), "crictl", "--config", str(crictl_config))
         with contextlib.ExitStack() as cleanup:
-            log = cleanup.enter_context(self.log_path.with_name("containerd-teardown.log").open("wb"))
+            teardown_log = self.log_path.with_name("containerd-teardown.log")
+            log = cleanup.enter_context(teardown_log.open("wb"))
             containerd = cleanup.enter_context(
                 subprocess.Popen(
                     [str(binaries / "containerd"), "-c", str(self.data_dir / "agent/etc/containerd/config.toml")],
@@ -335,15 +336,30 @@ class K3s:
                 )
             )
             cleanup.callback(containerd.terminate)
-            for attempt in Retrying(
-                stop=stop_after_delay(STOP_TIMEOUT_SECONDS),
-                wait=wait_fixed(1),
-                retry=retry_if_exception_type(RuntimeError),
-                reraise=True,
-            ):
-                with attempt:
-                    run(*crictl, "pods")
-            run(*crictl, "rmp", "--all", "--force")
+            try:
+                for attempt in Retrying(
+                    stop=stop_after_delay(STOP_TIMEOUT_SECONDS),
+                    wait=wait_fixed(1),
+                    retry=retry_if_exception_type(RuntimeError),
+                    reraise=True,
+                ):
+                    if containerd.poll() is not None:
+                        raise RuntimeError(f"standalone containerd exited with {containerd.returncode}")
+                    with attempt:
+                        run(*crictl, "pods")
+                run(*crictl, "rmp", "--all", "--force")
+            except Exception as exc:
+                log.flush()
+                for source in (teardown_log, self.log_path.with_name("containerd.log")):
+                    destination = undeclared_outputs_dir() / source.name
+                    if source != destination and source.exists():
+                        with contextlib.suppress(OSError):
+                            shutil.copyfile(source, destination)
+                tail = teardown_log.read_bytes()[-4096:].decode("utf-8", errors="replace")
+                raise RuntimeError(
+                    f"containerd teardown failed (exit={containerd.poll()}): {exc}\n"
+                    f"standalone containerd log tail:\n{tail or '<empty>'}"
+                ) from exc
 
     def import_images(self, images: dict[str, Path]) -> None:
         """Import Bazel OCI layouts (`.rloc` files, keyed by the image reference each loads as) into
