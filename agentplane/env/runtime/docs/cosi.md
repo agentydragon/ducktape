@@ -1,8 +1,8 @@
 # Environment Runtime COSI map
 
 This is a map of the controllers and resources registered in the Runtime's **single COSI engine**
-and the single `environment-runtime` COSI namespace. Bootstrap selections, Session records and `IngressAcks`
-have a persistent backing store; the other resources are in memory. The namespace is not a process, cgroup, or
+and the single `environment-runtime` COSI namespace. Bootstrap selections, Session records, `IngressAcks`
+and `EnvironmentSeals` have a persistent backing store; the other resources are in memory. The namespace is not a process, cgroup, or
 Kubernetes namespace. Harness Host registers its controllers
 into the same engine. The Execution controller exists only when Execution
 is configured; the Codex app-server controller exists only when Codex is configured.
@@ -32,6 +32,7 @@ flowchart LR
   TR["EnvironmentRuntimeTransitionRequests"]
   TS["EnvironmentRuntimeTransitionStatuses"]
   CL["EnvironmentRuntimeCloseStatuses"]
+  Seal["EnvironmentSeals<br/>(persistent)"]
   I["HostIntents"]
   IS["HostIntentStatuses"]
   R["HostReports"]
@@ -47,6 +48,7 @@ flowchart LR
   Native[("Bootstrap scripts / VM exec-server<br/>and process domain")]
 
   API -->|publish| ED & TR & I
+  API <-->|read / write| Seal
   ED & TR -->|watch| RC
   RC -->|write| CL & TS
   RC -.->|start one-shot barriers| CW
@@ -211,15 +213,16 @@ full intent. Runtime accepts a report only after that exact intent is applied, s
 Execution fence cannot validate an older report.
 
 `EnvironmentRuntimeDesiredStates`, `HostIntents`, statuses, reports and operation state records are
-in-memory coordination state. `BootstrapSelections`, `SessionRecords` and `IngressAcks` have a COSI backing store;
-`BootstrapRequests` is live-only. The incarnation seal, bootstrap event log and journals have durable owners.
-The three backed resource specs use protobuf, including byte fields for selected bootstrap and
-Session setup scripts. COSI persists their complete metadata alongside the spec. An old JSON
+in-memory coordination state. `BootstrapSelections`, `SessionRecords`, `IngressAcks` and
+`EnvironmentSeals` have a COSI backing store; `BootstrapRequests` is live-only. The bootstrap event log
+and journals have durable owners. The four backed resource specs use protobuf, including byte fields
+for selected bootstrap and Session setup scripts. COSI persists their complete metadata alongside the spec. An old JSON
 resource in `runtime-resources.db` fails reload; legacy Session and acknowledgement files are
 never imported.
-`IngressAcks` persists the Harness Host's last History cursor and seal bit; the SQLite journal
-remains the event authority. The environment owner lock has a process lifetime even
-though its file remains on disk; see [lifecycle ownership](lifecycle.md#durable-owners). A
+`IngressAcks` persists the Harness Host's last History cursor and seal bit; `EnvironmentSeals`
+persists the Runtime's sealed incarnation UID. The SQLite journal remains the event authority.
+The environment owner lock has a process lifetime even though its file remains on disk; see
+[lifecycle ownership](lifecycle.md#durable-owners). A
 process exit observation alone does not prove that its native process domain was fenced.
 
 ## Host roles and identity scopes

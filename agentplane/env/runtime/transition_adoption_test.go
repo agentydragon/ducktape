@@ -5,24 +5,28 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 )
 
-// A Host can persist the seal after planning observed no marker. The outcome
+// A Host can persist the seal after planning observed no COSI resource. The outcome
 // must be read after adoption, so that this branch still fences and acknowledges
 // the exact sealed generation instead of starting an active successor.
 func TestAdoptionBarrierObservesSealWrittenAfterPlanning(t *testing.T) {
-	state, err := NewEnvironmentState(t.TempDir())
+	lifecycleState := state.WrapCore(namespaced.NewState(inmem.Build))
+	environmentState, err := NewEnvironmentState(lifecycleState)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := state.AdoptIncarnation("incarnation"); err != nil {
+	if err := environmentState.AdoptIncarnation("incarnation"); err != nil {
 		t.Fatal(err)
 	}
 	plan := adoptionPlan{oldUID: "incarnation", targetUID: "incarnation", sealed: false}
-	if err := state.EnterLameduck(); err != nil {
+	if err := environmentState.EnterLameduck(); err != nil {
 		t.Fatal(err)
 	}
-	c := &runtimeTransitionSequence{r: &Runtime{state: state}, adoption: plan}
+	c := &runtimeTransitionSequence{r: &Runtime{state: environmentState}, adoption: plan}
 	outcome, err := c.runAdoptionBarrier(context.Background(), adoptionBarrier{kind: adoptionIncarnation})
 	if err != nil {
 		t.Fatal(err)

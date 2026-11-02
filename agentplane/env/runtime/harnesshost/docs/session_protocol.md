@@ -153,8 +153,10 @@ harness's outcome. Tool names and argument shapes are the harness's own.
 
 - Runtime holds `<state_dir>/.agentplane-environment-runtime-owner` throughout the environment
   lifetime, including Host native cleanup, worker joins and journal close. Native Pod and subprocess
-  harnesses inherit this lock. Runtime alone owns `<state_dir>/sessions/sealed`; Host never clears or
-  adopts that marker. Runtime releases the environment lock only after its child domains are fenced.
+  harnesses inherit this lock. Runtime alone owns the `EnvironmentSeals` COSI resource; Host never
+  clears or adopts that resource. It is a hard cutover from `<state_dir>/sessions/sealed`: stop
+  pre-cutover workloads before new binaries reuse their state volumes. Runtime releases the
+  environment lock only after its child domains are fenced. Durable Session IDs and paths do not move.
 - Production Pods explicitly select PID1 supervision and reject Runtime startup outside container
   PID 1. Embedded Host shares Runtime's PID1 supervisor for native helpers. Normal Host
   `native_stopped` reports prove its native cleanup; abnormal Runtime exit alone does not prove that

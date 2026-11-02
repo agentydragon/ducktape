@@ -44,15 +44,15 @@ the embedded adapter is called directly by Runtime.
 
 ## Durable owners
 
-| State                                     | Owner   | Existing path                                       |
-| ----------------------------------------- | ------- | --------------------------------------------------- |
-| Environment lifetime lock                 | Runtime | `<state_dir>/.agentplane-environment-runtime-owner` |
-| Incarnation seal marker                   | Runtime | `<state_dir>/sessions/sealed`                       |
-| Bootstrap selection                       | Runtime | `<state_dir>/runtime-resources.db`                  |
-| Bootstrap event log                       | Runtime | `<state_dir>/initialization/events.jsonl`           |
-| Session records and History ACKs          | Host    | `<state_dir>/runtime-resources.db`                  |
-| Session journals and native continuations | Host    | `<state_dir>/sessions/`                             |
-| Shared Codex native home                  | Host    | `<state_dir>/codex/`                                |
+| State                                     | Owner   | Storage                                                    |
+| ----------------------------------------- | ------- | ---------------------------------------------------------- |
+| Environment lifetime lock                 | Runtime | `<state_dir>/.agentplane-environment-runtime-owner`        |
+| Incarnation seal                          | Runtime | `EnvironmentSeals` COSI resource in `runtime-resources.db` |
+| Bootstrap selection                       | Runtime | `<state_dir>/runtime-resources.db`                         |
+| Bootstrap event log                       | Runtime | `<state_dir>/initialization/events.jsonl`                  |
+| Session records and History ACKs          | Host    | `<state_dir>/runtime-resources.db`                         |
+| Session journals and native continuations | Host    | `<state_dir>/sessions/`                                    |
+| Shared Codex native home                  | Host    | `<state_dir>/codex/`                                       |
 
 Runtime's environment lock covers the embedded Host's retained state as well. Pod and subprocess
 native processes inherit the Runtime owner descriptor; VM native processes are fenced by their

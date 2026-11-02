@@ -1,7 +1,7 @@
 # Environment Runtime
 
 The Environment Runtime is the authority for one Sandbox environment's identity, bootstrap,
-environment-owner lock, durable quiesce marker, Gateway control listener, and lifecycle of its
+environment-owner lock, durable quiesce seal, Gateway control listener, and lifecycle of its
 Harness Host and embedded Execution API. It coordinates Host through direct lifecycle and Session
 calls and serves the public `EnvironmentRuntime` API to the existing Runner Gateway. The Host
 owns Session records, journals and native harnesses under Runtime's environment owner.
@@ -22,17 +22,24 @@ native harnesses inherit its descriptor. Runtime releases it only after Host cle
 and external process fencing complete; COSI output ownership and finalizers do not replace that
 cross-process fence.
 
-The durable seal remains `StateDir/sessions/sealed`, with the existing incarnation UID bytes as
-its payload. Runtime reads, removes, and writes this marker using the old filename, directory,
-payload and durability semantics. Session records are persisted as `SessionRecords` COSI resources
-in `StateDir/runtime-resources.db`. Harness Host reserves each record, then updates model, reasoning
-effort and native Session identity through field-scoped COSI writes under the environment owner. Its in-memory
-Session copy follows successful durable writes; concurrent changes to one Session retain write order.
-If a native frame's record update fails, Host commits the raw frame and stops receiving so recovery
-can inspect that outcome. Journals and native continuations remain under `StateDir/sessions`;
-the Harness Host's latest History acknowledgement cursor and seal bit are persisted as
-`IngressAcks` COSI resources in `StateDir/runtime-resources.db`.
-All three durable resource types use COSI's protobuf resource encoding. Reload restores
+The `EnvironmentSeals` COSI resource is a hard cutover from `StateDir/sessions/sealed`. Runtime
+never reads or imports that marker. Stop all pre-cutover Sandbox workloads before new binaries use
+their state volumes.
+
+Runtime persists a sealed incarnation UID as an `EnvironmentSeals` COSI resource in
+`StateDir/runtime-resources.db`. The active incarnation binding remains process-local and becomes
+known when Gateway adopts it. A restart restores the sealed UID, so Runtime cannot reopen that
+incarnation and must complete its exact Host flush before adopting a successor. Session records are
+persisted as `SessionRecords` COSI resources in the same database. Harness Host reserves each record,
+then updates model, reasoning effort and native Session identity through field-scoped COSI writes
+under Runtime's environment owner. Its in-memory Session copy follows successful durable writes; concurrent changes
+to one Session retain write order. If a native frame's record update fails, Host commits the raw frame
+and stops receiving so recovery can inspect that outcome. Journals and native continuations remain
+under `StateDir/sessions`; the Harness Host's latest History acknowledgement cursor and seal bit are
+persisted as `IngressAcks` COSI resources in `StateDir/runtime-resources.db`.
+An EnvironmentSeals write or delete error has an uncertain durable outcome: Runtime blocks admission
+and refuses further identity transitions until restart reloads the COSI state.
+All four durable resource types use COSI's protobuf resource encoding. Reload restores
 their owner, version and finalizers from the persisted metadata. Runtime rejects the former
 JSON COSI encoding; it does not import old Session or acknowledgement JSON files. Keep the
 state volume with the binary version that wrote it when planning this hard cutover.

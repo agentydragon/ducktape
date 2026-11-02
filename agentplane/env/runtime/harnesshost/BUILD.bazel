@@ -127,6 +127,7 @@ go_test(
         "//agentplane/env/cosi",
         "//agentplane/env/runtime:runtime_service_go_proto",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/env/runtime/cosistate",
         "//agentplane/env/runtime/harnesshost/retained",
         "//agentplane/env/runtime/lifecycle",
         "//agentplane/proto:session_go_proto",

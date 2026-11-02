@@ -188,7 +188,7 @@ budget remains authoritative across all of its native services.
 - Runtime's in-memory COSI engine schedules Host native Session/setup, app-server and supervised process
   controllers alongside Runtime bootstrap and environment process controllers. Execution
   Service owns its backend lifecycle. Session records, journals and acknowledgements remain durable
-  Host authority; the environment seal marker remains Runtime authority. There is no duplicated
+  Host authority; the `EnvironmentSeals` COSI resource remains Runtime authority. There is no duplicated
   environment controller in Host. See [lifecycle ownership](lifecycle.md).
 - Orderly Runtime shutdown also waits for Host setup and Runtime bootstrap. An unexpected process loss
   can still interrupt a script; recovery records that outcome and never silently reruns it.
