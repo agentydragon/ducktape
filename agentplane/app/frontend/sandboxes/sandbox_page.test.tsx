@@ -391,7 +391,7 @@ it("does not use an incomplete target as an environment identity", async () => {
   try {
     await render(async () => Response.json([]));
     expect(container.textContent).not.toContain("Old incarnation thread");
-    expect(container.textContent).not.toContain("New thread");
+    expect(createThreadButton().disabled).toBe(true);
   } finally {
     readySandbox.target!.namespace = namespace;
   }

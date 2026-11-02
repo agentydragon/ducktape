@@ -199,12 +199,13 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
 
 /** The sandbox's decisions as the proxy reports them: a snapshot per change, none while it is quiet. */
 function useEgressDecisions(target: TargetHandle): { snapshot: DecisionsSnapshot | null } {
-  const { namespace, name, uid } = target;
+  const { namespace, name } = target;
+  const url = liveEgressDecisionsUrl(target);
   const [snapshot, setSnapshot] = useState<DecisionsSnapshot | null>(null);
   const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
   useEffect(() => {
     setSnapshot(null);
-    return followStream(liveEgressDecisionsUrl(target), {
+    return followStream(url, {
       events: {
         snapshot: (message) => setSnapshot(JSON.parse(message.data) as DecisionsSnapshot),
         health: (message) =>
@@ -212,7 +213,7 @@ function useEgressDecisions(target: TargetHandle): { snapshot: DecisionsSnapshot
       },
       onConnection: setConnection,
     });
-  }, [namespace, name, uid]);
+  }, [namespace, url]);
   useStreamStatus(`Egress decisions of ${name}`, connection);
   return { snapshot };
 }

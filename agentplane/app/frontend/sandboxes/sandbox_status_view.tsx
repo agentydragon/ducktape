@@ -1,11 +1,12 @@
 import { Accordion, Badge, Button, Group, Paper, Stack, Table, Text, Title } from "@mantine/core";
-import { toJson } from "@bufbuild/protobuf";
-import { type JSX, type ReactNode, useEffect, useState } from "react";
+import { create, toJson } from "@bufbuild/protobuf";
+import { type JSX, type ReactNode, useEffect, useMemo, useState } from "react";
 
 import type { ThreadView } from "../schema";
 import {
   EnvironmentDescriptorSchema,
   OperatingMode,
+  TargetHandleSchema,
   type EnvironmentDescriptor,
 } from "../../../sandboxes/environments/environment_service_pb";
 import { SandboxPhase } from "../../../proto/sandboxes_pb";
@@ -522,8 +523,11 @@ function EnvironmentRuntimeDiagnostics({
 }): JSX.Element {
   const [state, setState] = useState<EnvironmentRuntimeDiagnosticsState>({ kind: "loading" });
   const [refreshVersion, setRefreshVersion] = useState(0);
-  const target = sandbox.target!;
-  const { namespace: sandboxNamespace, name: sandboxName, uid: sandboxUID } = target;
+  const { namespace: sandboxNamespace, name: sandboxName, uid: sandboxUID } = sandbox.target!;
+  const target = useMemo(
+    () => create(TargetHandleSchema, { namespace: sandboxNamespace, name: sandboxName, uid: sandboxUID }),
+    [sandboxNamespace, sandboxName, sandboxUID]
+  );
   useEffect(() => {
     if (!active) return;
     if (sandbox.phase === SandboxPhase.SUSPENDED || sandbox.operatingMode === OperatingMode.SUSPENDED) {
@@ -543,7 +547,7 @@ function EnvironmentRuntimeDiagnostics({
     return () => {
       current = false;
     };
-  }, [active, refreshVersion, sandboxNamespace, sandboxName, sandboxUID, sandbox.operatingMode, sandbox.phase]);
+  }, [active, refreshVersion, target, sandbox.operatingMode, sandbox.phase]);
   const threadsById = new Map(threads.map((thread) => [thread.id, thread]));
 
   return (
