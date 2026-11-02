@@ -27,6 +27,14 @@ import (
 
 const collectionChunk = 64
 
+type collectionSource uint8
+
+const (
+	sandboxSource collectionSource = iota + 1
+	accountSource
+	podSource
+)
+
 // WatchEnvironments sends one initial snapshot followed by coalesced per-Sandbox changes.
 func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamingServer[environmentpb.WatchEnvironmentsResponse]) error {
 	ctx := stream.Context()
@@ -132,7 +140,7 @@ func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamin
 	for {
 		var event watch.Event
 		var ok bool
-		var source string
+		var source collectionSource
 		select {
 		case <-ctx.Done():
 			return status.FromContextError(ctx.Err()).Err()
@@ -142,11 +150,11 @@ func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamin
 			}
 			continue
 		case event, ok = <-sandboxes.ResultChan():
-			source = "sandbox"
+			source = sandboxSource
 		case event, ok = <-accountEvents:
-			source = "account"
+			source = accountSource
 		case event, ok = <-pods.ResultChan():
-			source = "pod"
+			source = podSource
 		}
 		if !ok {
 			return watchFailure(ctx, errors.New("Kubernetes environment watch closed"))
@@ -159,15 +167,11 @@ func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamin
 			return watchFailure(ctx, errors.New("Kubernetes environment watch returned a non-object"))
 		}
 		switch source {
-		case "sandbox":
+		case sandboxSource, accountSource:
 			if err := refresh(object.GetName()); err != nil {
 				return err
 			}
-		case "account":
-			if err := refresh(object.GetName()); err != nil {
-				return err
-			}
-		case "pod":
+		case podSource:
 			names := make([]string, 0, len(byPod[object.GetName()]))
 			for name := range byPod[object.GetName()] {
 				names = append(names, name)
