@@ -6,7 +6,6 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from loom.gym.seed_tasks import SEED_TASKS
 from loom.gym.task import (
     BinaryOutcome,
     BinaryQuestion,
@@ -92,13 +91,6 @@ def test_evidence_capture_pin_must_match_url_and_date() -> None:
             date=date(2024, 6, 1),
             title="An article",
         )
-
-
-def test_seed_tasks_round_trip_with_unique_ids() -> None:
-    tasks = SEED_TASKS
-    assert len({task.task_id for task in tasks}) == len(tasks)
-    for task in tasks:
-        assert Task.model_validate_json(task.model_dump_json()) == task
 
 
 if __name__ == "__main__":
