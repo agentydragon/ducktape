@@ -115,10 +115,6 @@ teardown contracts rather than treating every controller as a simple resource tr
   native handle registration; its completion callback has side effects and cannot simply move
   inside a retryable updater. COSI retries update conflicts, but its absent-resource Modify path can
   still return an AlreadyExists error if a concurrent creator wins.
-- `supervision.Host.Request` publishes Process desired state through a controller writer, but its only
-  repository caller is a test controller exercising shared-output ownership. Production launches use
-  `requestNative`. Decide whether the exported controller-facing API has an external consumer before
-  removing that path; keep the immutable-attempt check and equivalent lifecycle coverage.
 - COSI's generic mappers are not drop-in replacements here. Session operation routing reads the
   operation to ignore its destruction; labels remain present on COSI's destroyed event, so a
   label-only mapper adds a wakeup after consumption. The Process host accepts a namespace at runtime,

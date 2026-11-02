@@ -158,7 +158,6 @@ func (*processTestRequesterController) Settings() controller.QSettings {
 			{Namespace: processTestNamespace, Type: processTestRequestType, Kind: controller.InputQPrimary},
 			{Namespace: processTestNamespace, Type: DesiredStateType, Kind: controller.InputQMapped},
 		},
-		Outputs:     []controller.Output{{Type: DesiredStateType, Kind: controller.OutputShared}},
 		Concurrency: optional.Some(uint(1)),
 	}
 }
@@ -188,13 +187,13 @@ func (c *processTestRequesterController) Reconcile(ctx context.Context, _ *zap.L
 		if launch == nil {
 			return fmt.Errorf("no process launch configured for %q", ptr.ID())
 		}
-		return c.host.Request(ctx, r, ptr.ID(), DesiredState{
+		return c.host.requestNative(ctx, ptr.ID(), DesiredState{
 			Owner: processTestRequester, Generation: request.Generation,
 			StartDeadline: request.StartDeadline, StopTimeout: time.Minute,
 		}, launch)
 	}
 
-	ready, err := r.Teardown(ctx, processPointer)
+	ready, err := c.host.state.Teardown(ctx, processPointer, state.WithTeardownOwner(hostOwner))
 	if state.IsNotFoundError(err) {
 		return nil
 	}
@@ -205,7 +204,7 @@ func (c *processTestRequesterController) Reconcile(ctx context.Context, _ *zap.L
 	if !ready {
 		return nil
 	}
-	return r.Destroy(ctx, processPointer)
+	return c.host.state.Destroy(ctx, processPointer, state.WithDestroyOwner(hostOwner))
 }
 
 func (c *processTestRequesterController) setLaunch(id string, launch Launch) {
@@ -361,6 +360,21 @@ func TestProcessControllerStartsOnceAndRetainsTerminalStatus(t *testing.T) {
 			t.Fatalf("started status = %+v, want launch facts retained", started)
 		}
 
+		desired, found, err := ReadDesiredState(f.ctx, f.state, processTestNamespace, id)
+		if err != nil || !found {
+			t.Fatalf("read attempt intent: found=%t err=%v", found, err)
+		}
+		changed := desired
+		changed.Generation++
+		replacement := func(context.Context) (*Instance, error) {
+			t.Error("duplicate registration replaced the original launch")
+			return nil, errors.New("unexpected replacement launch")
+		}
+		if err := f.host.requestNative(f.ctx, id, changed, replacement); err == nil {
+			t.Fatal("accepted a changed attempt generation")
+		}
+		f.requester.setLaunch(id, replacement)
+
 		f.publishRequest(t, id, processTestRequestSpec{Active: true, Generation: 1, Revision: 2})
 		waitProcessRequestReconciles(t, f, 3)
 		synctest.Wait()
@@ -390,6 +404,9 @@ func TestProcessControllerStartsOnceAndRetainsTerminalStatus(t *testing.T) {
 
 		f.publishRequest(t, id, processTestRequestSpec{Active: false, Generation: 1, Revision: 4})
 		synctest.Wait()
+		if err := f.host.requestNative(f.ctx, id, desired, replacement); err == nil {
+			t.Fatal("recreated a retired attempt")
+		}
 	})
 }
 
