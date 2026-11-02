@@ -162,6 +162,8 @@ go_library(
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/discovery",
         "//agentplane/sandboxes/discovery:environment_discovery_go_proto",
+        "//agentplane/sandboxes/lifecycle",
+        "//agentplane/sandboxes/lifecycle:environment_lifecycle_go_proto",
         "//agentplane/sandboxes/runtimeconfig",
         "//agentplane/watchhealth",
         "//agentplane/workload_auth/auth",

@@ -8,11 +8,13 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/discovery"
 	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
@@ -33,6 +35,12 @@ runner_security: {mode: mtls, tls: {cert_file: /tmp/test-cert, key_file: /tmp/te
 `
 
 type configTestTokenReviews struct{}
+
+type configTestWakeBudget struct{}
+
+func (configTestWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.ServiceAccount, string, int64) (time.Duration, error) {
+	return 0, nil
+}
 
 func (configTestTokenReviews) Create(
 	_ context.Context,
@@ -167,7 +175,13 @@ runtime_catalog:
 		}},
 	}}
 	objects := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, executionAccount).Build()
-	service, err := discovery.New("agentplane", objects, config.RuntimeCatalog, nil)
+	lifecycleService, err := lifecycle.NewService(lifecycle.Options{
+		Namespace: "agentplane", Objects: objects, WakeBudget: configTestWakeBudget{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := discovery.New("agentplane", objects, config.RuntimeCatalog, lifecycleService)
 	if err != nil {
 		t.Fatal(err)
 	}

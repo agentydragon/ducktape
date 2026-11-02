@@ -35,7 +35,7 @@ go_library(
         "//agentplane/postgres",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:delegation_go_proto",
-		"//agentplane/proto:environment_lifecycle_go_proto",
+        "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/proto:session_go_proto",
@@ -59,11 +59,11 @@ go_library(
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel//codes",
         "@io_opentelemetry_go_otel_trace//:trace",
+        "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
-        "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
@@ -114,8 +114,8 @@ go_test(
     deps = [
         ":session_dispatcher_go_proto",
         "//agentplane/proto:command_go_proto",
-        "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:delegation_go_proto",
+        "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/proto:session_go_proto",
@@ -177,10 +177,7 @@ proto_library(
 py_proto_library_with_mypy_stubs(
     name = "session_dispatcher_pb2",
     visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        ":session_dispatcher_proto",
-        "//agentplane/proto:environment_lifecycle_pb2",
-    ],
+    deps = [":session_dispatcher_proto"],
 )
 
 py_grpc_service_library(
