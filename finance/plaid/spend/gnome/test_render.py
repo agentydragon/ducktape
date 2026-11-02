@@ -18,6 +18,9 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+from finance.plaid.spend.allowance import PaceAlert, PeriodId
+from finance.plaid.spend.models import SpendView
+from finance.plaid.spend.testing import dashboard
 from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
 from util.testing.gnome.fake_daemon import fake_daemon
@@ -27,15 +30,7 @@ from util.testing.output_writer import BoundTestOutputs
 _GNOME_SHELL_TEST = OciImage("_main/gnome/test_image/gnome_shell_test.rloc", "gnome-shell-test:pinned")
 _EXTENSION_ZIP = "_main/finance/plaid/spend/gnome/plaid-spend-desktop.zip"
 _EXTENSION_UUID = "plaid-spend@allegedly.works"
-_FIXTURE_NAMES = (
-    "ready_two_cards",
-    "authentication_required",
-    "offline",
-    "retrying",
-    "allowance_paced",
-    "allowance_warming",
-    "allowance_exhausted",
-)
+_FIXTURE_NAMES = ("ready_two_cards", "authentication_required", "offline", "retrying")
 _FIXTURE_DIR = "_main/finance/plaid/spend/gnome/fixtures"
 _TEST_DBUS_DEST = "works.allegedly.PlaidSpendTest"
 _TEST_DBUS_PATH = "/works/allegedly/PlaidSpendTest"
@@ -66,11 +61,47 @@ def extension_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture(scope="module")
-def fixture_json_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+def allowance_scenarios() -> dict[str, SpendView]:
+    dashboard_url = "https://spend.example.test/"
+    ready = dashboard.spend_view()
+    allowance = ready.allowance
+    assert allowance is not None
+    # The one-cent boundary uses a $499.99 credit against $500.00 of active-cycle spend, with no carry.
+    assert allowance.prior_carry_minor_units == 0
+    exhausted = allowance.model_copy(
+        update={
+            "monthly_minor_units": 49999,
+            "daily_reference_minor_units": 1643,
+            "available_minor_units": -1,
+            "forecast": allowance.forecast.model_copy(
+                update={
+                    "projected_cycle_end_minor_units": -12501,
+                    "estimated_exhaustion_at": ready.generated_at,
+                    "alert_state": PaceAlert.EXCEEDED,
+                }
+            ),
+            "spending_signal": PaceAlert.EXCEEDED,
+        }
+    )
+    return {
+        "allowance_paced": ready.model_copy(update={"dashboard_url": dashboard_url}),
+        "allowance_warning": dashboard.spend_view(estimate_period_id=PeriodId.ROLLING_30D).model_copy(
+            update={"dashboard_url": dashboard_url}
+        ),
+        "allowance_warming": dashboard.spend_view(warmup=True).model_copy(update={"dashboard_url": dashboard_url}),
+        "allowance_exhausted": ready.model_copy(update={"allowance": exhausted, "dashboard_url": dashboard_url}),
+    }
+
+
+@pytest.fixture(scope="module")
+def fixture_json_dir(tmp_path_factory: pytest.TempPathFactory, allowance_scenarios: dict[str, SpendView]) -> Path:
     dest = tmp_path_factory.mktemp("plaid-spend-fixtures")
     for fixture_name in _FIXTURE_NAMES:
         source = get_required_path(f"{_FIXTURE_DIR}/{fixture_name}.json")
         (dest / f"{fixture_name}.json").write_bytes(Path(source).read_bytes())
+    for fixture_name, view in allowance_scenarios.items():
+        fixture = {"status": "ready", "error": "", "view": view.model_dump(mode="json")}
+        (dest / f"{fixture_name}.json").write_text(json.dumps(fixture))
     return dest
 
 
@@ -96,7 +127,7 @@ def session(
 def _card_view(amount_minor_units: int) -> str:
     return json.dumps(
         {
-            "generated_at": "2026-10-18T12:00:00Z",
+            "generated_at": "2026-10-15T12:00:00Z",
             "cards": [{"spend_minor_units": amount_minor_units, "currency": "USD"}],
         }
     )
@@ -162,9 +193,11 @@ def _menu(session: GnomeSession, fixture_name: str, expected_label: str) -> Iter
         session.close_menu()
 
 
-def _allowance_menu_text(session: GnomeSession) -> str:
+def _allowance_menu_text(session: GnomeSession, view: SpendView) -> str:
     menu_text = string_reply(session.call("GetMenuText"))
-    assert "Synthetic card" not in menu_text
+    assert view.allowance is not None
+    assert view.cards
+    assert all(card.label not in menu_text for card in view.cards)
     assert "Check a purchase / dashboard" in menu_text
     return menu_text
 
@@ -185,13 +218,16 @@ def test_card_status(
         capture_menu.capture(geometry, label=fixture_name.replace("_", " "))
 
 
-def test_allowance_paced(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
-    with _menu(session, "allowance_paced", "Flex $200 !") as geometry:
-        menu_text = _allowance_menu_text(session)
-        assert "7d $28/day" in menu_text
+def test_allowance_paced(
+    session: GnomeSession, capture_menu: GnomeMenuCapture, allowance_scenarios: dict[str, SpendView]
+) -> None:
+    view = allowance_scenarios["allowance_paced"]
+    with _menu(session, "allowance_paced", "Flex $200") as geometry:
+        menu_text = _allowance_menu_text(session, view)
+        assert "Below leash" in menu_text
+        assert "7d $13/day" in menu_text
         assert "30d $18/day" in menu_text
-        assert "Leash ~$28/day" in menu_text
-        assert "7d unmatched 3 ($12)" in menu_text
+        assert "Leash ~$23/day" in menu_text
         assert "Sync 1h ago" in menu_text
         assert "View updated" not in menu_text
         assert "sustainability target" not in menu_text
@@ -199,18 +235,44 @@ def test_allowance_paced(session: GnomeSession, capture_menu: GnomeMenuCapture) 
         capture_menu.capture(geometry, label="allowance paced")
 
 
-def test_allowance_warming(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+def test_allowance_warning(
+    session: GnomeSession, capture_menu: GnomeMenuCapture, allowance_scenarios: dict[str, SpendView]
+) -> None:
+    view = allowance_scenarios["allowance_warning"]
+    with _menu(session, "allowance_warning", "Flex $200 !") as geometry:
+        menu_text = _allowance_menu_text(session, view)
+        assert "Pace high" in menu_text
+        assert "7d $13/day" in menu_text
+        assert "30d $18/day" in menu_text
+        assert "Leash ~$23/day" in menu_text
+        assert "7d unmatched 1 ($15)" in menu_text
+        assert "30d unmatched 1 ($15)" in menu_text
+        assert "Sync 1h ago" in menu_text
+        capture_menu.capture(geometry, label="allowance warning")
+
+
+def test_allowance_warming(
+    session: GnomeSession, capture_menu: GnomeMenuCapture, allowance_scenarios: dict[str, SpendView]
+) -> None:
+    view = allowance_scenarios["allowance_warming"]
+    allowance = view.allowance
+    assert allowance is not None
     with _menu(session, "allowance_warming", "Flex $700") as geometry:
-        menu_text = _allowance_menu_text(session)
+        menu_text = _allowance_menu_text(session, view)
         assert "Pace warming up" in menu_text
         assert "7d n/a" in menu_text
-        assert "Sync 59m ago" in menu_text
+        assert "30d n/a" in menu_text
+        assert "Leash ~$23/day" in menu_text
+        assert "Sync 1h ago" in menu_text
         capture_menu.capture(geometry, label="allowance warming")
 
 
-def test_allowance_exhausted(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+def test_allowance_exhausted(
+    session: GnomeSession, capture_menu: GnomeMenuCapture, allowance_scenarios: dict[str, SpendView]
+) -> None:
     with _menu(session, "allowance_exhausted", "Flex -<$1 !!") as geometry:
-        assert "Exhausted" in _allowance_menu_text(session)
+        view = allowance_scenarios["allowance_exhausted"]
+        assert "Exhausted" in _allowance_menu_text(session, view)
         capture_menu.capture(geometry, label="allowance exhausted")
 
 

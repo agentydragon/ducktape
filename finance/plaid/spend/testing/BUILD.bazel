@@ -8,3 +8,13 @@ py_library(
     visibility = ["//finance/plaid/spend:__pkg__"],
     deps = ["//finance/plaid/spend:allowance"],
 )
+
+py_library(
+    name = "dashboard",
+    srcs = ["dashboard.py"],
+    visibility = ["//finance/plaid/spend:__subpackages__"],
+    deps = [
+        "//finance/plaid/spend:allowance",
+        "//finance/plaid/spend:models",
+    ],
+)
