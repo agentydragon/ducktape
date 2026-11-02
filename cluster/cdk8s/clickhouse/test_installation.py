@@ -29,18 +29,16 @@ def test_aiquota_history_reader_is_minted_and_scoped_to_typed_quota_history(scra
     assert "password" in secret["spec"]["target"]["template"]["data"]
 
 
-def test_shared_client_services_select_the_same_replica_during_incident(scratch_app: App) -> None:
-    chi_docs = CdkTesting.synth(installation.clickhouse_chart(scratch_app))
-    service_docs = CdkTesting.synth(installation.service_chart(scratch_app))
-    chi = next(doc for doc in chi_docs if doc["kind"] == "ClickHouseInstallation")
-    client_service = next(doc for doc in service_docs if doc["kind"] == "Service")
-    template_name = chi["spec"]["defaults"]["templates"]["serviceTemplate"]
-    template = next(t for t in chi["spec"]["templates"]["serviceTemplates"] if t["name"] == template_name)
-    gate = template["spec"]["selector"]
-    assert gate == {"statefulset.kubernetes.io/pod-name": "chi-clickhouse-default-0-1-0"}
-    assert client_service["spec"]["selector"].items() >= gate.items()
-    assert template["spec"]["type"] == "ClusterIP"
-    assert {port["name"] for port in template["spec"]["ports"]} == {"http", "tcp"}
+def test_shared_services_use_ready_installation_replicas(scratch_app: App) -> None:
+    chi = next(
+        doc
+        for doc in CdkTesting.synth(installation.clickhouse_chart(scratch_app))
+        if doc["kind"] == "ClickHouseInstallation"
+    )
+    service = next(doc for doc in CdkTesting.synth(installation.service_chart(scratch_app)) if doc["kind"] == "Service")
+    assert "serviceTemplate" not in chi["spec"]["defaults"]["templates"]
+    assert service["spec"]["selector"] == client.HTTP.pods.selector
+    assert service["spec"]["selector"]["clickhouse.altinity.com/ready"] == "yes"
 
 
 def test_retiring_full_node_preserves_surviving_host_and_replica_names(scratch_app: App) -> None:
