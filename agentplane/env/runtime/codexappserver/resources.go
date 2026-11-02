@@ -10,23 +10,24 @@ import (
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 )
 
 const (
 	LifecycleSignalType = "CodexAppServerLifecycleSignals.agentplane"
 	StatusType          = "CodexAppServerStatuses.agentplane"
-	OperationStateType  = "CodexAppServerOperationStates.agentplane"
 	ControllerName      = "codex-app-server-lifecycle"
 	ResourceID          = "codex-app-server"
 	HostOwner           = "codex-app-server-host"
 )
 
 type LifecycleSignal struct {
-	Demand        uint64
-	ExitSequence  uint64
-	ExitProcessID string
-	ExitError     string
+	OperationRevision uint64
+	Demand            uint64
+	ExitSequence      uint64
+	ExitProcessID     string
+	ExitError         string
 }
 
 type Phase uint8
@@ -47,10 +48,6 @@ type Status struct {
 	ProcessID               string
 	Error                   string
 	StopError               string
-}
-
-type operationState struct {
-	Done bool
 }
 
 type componentSpec[T any] interface {
@@ -95,5 +92,12 @@ func (LifecycleSignal) resourceType() resource.Type     { return LifecycleSignal
 func (value LifecycleSignal) DeepCopy() LifecycleSignal { return value }
 func (Status) resourceType() resource.Type              { return StatusType }
 func (value Status) DeepCopy() Status                   { return value }
-func (operationState) resourceType() resource.Type      { return OperationStateType }
-func (value operationState) DeepCopy() operationState   { return value }
+
+// Mutations preserve independent operation wakeups across demand resets and exit updates.
+func (c *Host) updateLifecycleSignal(ctx context.Context, update func(*LifecycleSignal)) error {
+	_, err := safe.StateUpdateWithConflicts(ctx, c.deps.State, componentResource(ResourceID, LifecycleSignal{}).Metadata(), func(current *typed.Resource[LifecycleSignal, componentExtension[LifecycleSignal]]) error {
+		update(current.TypedSpec())
+		return nil
+	}, state.WithUpdateOwner(HostOwner))
+	return err
+}

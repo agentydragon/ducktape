@@ -3,6 +3,7 @@ package codexappserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
@@ -42,16 +44,54 @@ type fixture struct {
 	runDone chan error
 }
 
-type initialOperationFailureState struct {
+type operationSignalState struct {
 	state.State
-	err error
+	failRevision  uint64
+	err           error
+	blockRevision uint64
+	blockAt       *atomic.Uint64
+	publishing    chan struct{}
+	release       chan struct{}
+	once          sync.Once
 }
 
-func (s initialOperationFailureState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
-	if result, ok := value.(*typed.Resource[operationState, componentExtension[operationState]]); ok && !result.TypedSpec().Done {
-		return s.err
+func (s *operationSignalState) UpdateWithConflicts(ctx context.Context, ptr resource.Pointer, update state.UpdaterFunc, opts ...state.UpdateOption) (resource.Resource, error) {
+	return s.State.UpdateWithConflicts(ctx, ptr, func(value resource.Resource) error {
+		if err := update(value); err != nil {
+			return err
+		}
+		signal, ok := value.(*typed.Resource[LifecycleSignal, componentExtension[LifecycleSignal]])
+		if !ok {
+			return nil
+		}
+		revision := signal.TypedSpec().OperationRevision
+		if s.err != nil && revision == s.failRevision {
+			return s.err
+		}
+		blockRevision := s.blockRevision
+		if s.blockAt != nil {
+			blockRevision = s.blockAt.Load()
+		}
+		if revision == blockRevision {
+			s.once.Do(func() {
+				close(s.publishing)
+				select {
+				case <-s.release:
+				case <-ctx.Done():
+				}
+			})
+		}
+		return nil
+	}, opts...)
+}
+
+func operationHost(t *testing.T, store state.State, report func(error)) *Host {
+	t.Helper()
+	host := &Host{deps: Dependencies{Context: t.Context(), State: store, Workers: &sync.WaitGroup{}, OnError: report}, changed: make(chan struct{})}
+	if err := host.Initialize(t.Context()); err != nil {
+		t.Fatal(err)
 	}
-	return s.State.Modify(ctx, value, update, opts...)
+	return host
 }
 
 func TestInitialOperationPublicationFailureClearsSlotAndSkipsWork(t *testing.T) {
@@ -63,11 +103,15 @@ func TestInitialOperationPublicationFailureClearsSlotAndSkipsWork(t *testing.T) 
 	reported := make(chan error, 1)
 	host := &Host{
 		deps: Dependencies{
-			Context: ctx, State: initialOperationFailureState{State: store, err: publicationErr}, Workers: workers,
+			Context: ctx, State: &operationSignalState{State: store, failRevision: 1, err: publicationErr}, Workers: workers,
 			OnError: func(err error) { reported <- err },
 		},
 		changed: make(chan struct{}),
 	}
+	if err := host.Initialize(ctx); err != nil {
+		t.Fatal(err)
+	}
+
 	var effects atomic.Int32
 	err := host.startOperation(&host.initializing, func(context.Context) error {
 		effects.Add(1)
@@ -372,5 +416,246 @@ func TestFailedDrainRetainsOwnership(t *testing.T) {
 	case <-p.ended:
 	case <-ctx.Done():
 		t.Fatal("readers did not settle after cleanup")
+	}
+}
+
+func TestOperationCompletionPublicationPrecedesConsumption(t *testing.T) {
+	store := &operationSignalState{State: state.WrapCore(namespaced.NewState(inmem.Build)), blockRevision: 2, publishing: make(chan struct{}), release: make(chan struct{})}
+	host := operationHost(t, store, func(err error) { t.Error(err) })
+	if err := host.startOperation(&host.initializing, func(context.Context) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	<-store.publishing
+	slot := host.initializing
+	if slot.Finished() {
+		t.Fatal("operation finished before completion publication")
+	}
+	if host.mu.TryLock() {
+		host.mu.Unlock()
+		t.Fatal("completion publication did not hold the consumption mutex")
+	}
+	attempting := make(chan struct{})
+	consumed := make(chan *oneoff.Operation, 1)
+	go func() { close(attempting); op, _ := host.takeOperation(&host.initializing); consumed <- op }()
+	<-attempting
+	select {
+	case <-consumed:
+		t.Fatal("operation consumed before completion publication")
+	default:
+	}
+	close(store.release)
+	op := <-consumed
+	host.deps.Workers.Wait()
+	if op == nil || op.Err() != nil || host.initializing != nil {
+		t.Fatalf("operation=%v slot=%v", op, host.initializing)
+	}
+	input, _, err := ReadLifecycleSignal(t.Context(), store)
+	if err != nil || input.OperationRevision != 2 || input.Demand != 0 {
+		t.Fatalf("signal=%+v error=%v", input, err)
+	}
+}
+
+func TestOperationCompletionPublicationFailureRetainsWorkError(t *testing.T) {
+	publicationErr := errors.New("completion signal failed")
+	workErr := errors.New("initialization failed")
+	store := &operationSignalState{State: state.WrapCore(namespaced.NewState(inmem.Build)), failRevision: 2, err: publicationErr}
+	reported := make(chan error, 1)
+	host := operationHost(t, store, func(err error) { reported <- err })
+	if err := host.startOperation(&host.initializing, func(context.Context) error { return workErr }); err != nil {
+		t.Fatal(err)
+	}
+	host.deps.Workers.Wait()
+	op, done := host.takeOperation(&host.initializing)
+	if !done || !errors.Is(op.Err(), workErr) || !errors.Is(op.Err(), publicationErr) {
+		t.Fatalf("operation=%v done=%t", op, done)
+	}
+	select {
+	case err := <-reported:
+		if !errors.Is(err, publicationErr) {
+			t.Fatal(err)
+		}
+	default:
+		t.Fatal("completion publication failure was not reported")
+	}
+}
+
+func TestOperationRevisionSurvivesConcurrentDemandReset(t *testing.T) {
+	for _, revision := range []uint64{1, 2} {
+		t.Run(fmt.Sprint(revision), func(t *testing.T) {
+			store := &operationSignalState{State: state.WrapCore(namespaced.NewState(inmem.Build)), blockRevision: revision, publishing: make(chan struct{}), release: make(chan struct{})}
+			host := operationHost(t, store, func(err error) { t.Error(err) })
+			if err := host.updateLifecycleSignal(t.Context(), func(input *LifecycleSignal) { input.Demand = 7 }); err != nil {
+				t.Fatal(err)
+			}
+			started := make(chan error, 1)
+			go func() { started <- host.startOperation(&host.initializing, func(context.Context) error { return nil }) }()
+			<-store.publishing
+			if err := host.ResetDemand(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			close(store.release)
+			if err := <-started; err != nil {
+				t.Fatal(err)
+			}
+			host.deps.Workers.Wait()
+			input, _, err := ReadLifecycleSignal(t.Context(), store)
+			if err != nil || input.OperationRevision != 2 || input.Demand != 0 {
+				t.Fatalf("signal=%+v error=%v", input, err)
+			}
+		})
+	}
+}
+
+func TestOperationRevisionPreservesConcurrentDemand(t *testing.T) {
+	store := &operationSignalState{State: state.WrapCore(namespaced.NewState(inmem.Build)), blockRevision: 1, publishing: make(chan struct{}), release: make(chan struct{})}
+	host := operationHost(t, store, func(err error) { t.Error(err) })
+	if err := lifecycle.PublishEnvironmentDesired(t.Context(), store, lifecycle.EnvironmentDesired{Mode: lifecycle.Running, Generation: 1}); err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan error, 1)
+	go func() { started <- host.startOperation(&host.initializing, func(context.Context) error { return nil }) }()
+	<-store.publishing
+	demand, err := host.RequestLocked(t.Context(), nil)
+	if err != nil || demand != 1 {
+		t.Fatalf("demand=%d error=%v", demand, err)
+	}
+	close(store.release)
+	if err := <-started; err != nil {
+		t.Fatal(err)
+	}
+	host.deps.Workers.Wait()
+	input, _, err := ReadLifecycleSignal(t.Context(), store)
+	if err != nil || input.OperationRevision != 2 || input.Demand != 1 {
+		t.Fatalf("signal=%+v error=%v", input, err)
+	}
+}
+
+func TestDemandResetRetriesWithoutLosingOperationRevision(t *testing.T) {
+	store := &operationSignalState{State: state.WrapCore(namespaced.NewState(inmem.Build)), blockRevision: 0, publishing: make(chan struct{}), release: make(chan struct{})}
+	host := operationHost(t, store.State, func(err error) { t.Error(err) })
+	if err := host.updateLifecycleSignal(t.Context(), func(input *LifecycleSignal) { input.Demand = 7 }); err != nil {
+		t.Fatal(err)
+	}
+	host.deps.State = store
+	reset := make(chan error, 1)
+	go func() { reset <- host.ResetDemand(t.Context()) }()
+	<-store.publishing
+	if err := host.startOperation(&host.initializing, func(context.Context) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	host.deps.Workers.Wait()
+	close(store.release)
+	if err := <-reset; err != nil {
+		t.Fatal(err)
+	}
+	input, _, err := ReadLifecycleSignal(t.Context(), store)
+	if err != nil || input.OperationRevision != 2 || input.Demand != 0 {
+		t.Fatalf("signal=%+v error=%v", input, err)
+	}
+}
+
+func TestOperationRevisionPreservesConcurrentResetAndNativeExit(t *testing.T) {
+	var store *operationSignalState
+	var blockAt atomic.Uint64
+	blockAt.Store(^uint64(0))
+	f := newFixtureWithConfiguration(t, nil, func(host *Host) {
+		store = &operationSignalState{State: host.deps.State, blockAt: &blockAt, publishing: make(chan struct{}), release: make(chan struct{})}
+		host.deps.State = store
+	})
+	ctx, cancel := context.WithTimeout(f.ctx, lifecycleTestTimeout)
+	defer cancel()
+	process, err := f.host.Host(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signal, _, err := ReadLifecycleSignal(ctx, f.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blockAt.Store(signal.OperationRevision + 1)
+	started := make(chan error, 1)
+	go func() { started <- f.host.startOperation(&f.host.draining, func(context.Context) error { return nil }) }()
+	<-store.publishing
+	if err := f.host.ResetDemand(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := process.process.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	_, err = safe.StateWatchFor[*typed.Resource[LifecycleSignal, componentExtension[LifecycleSignal]]](ctx, f.store, componentResource(ResourceID, LifecycleSignal{}).Metadata(), state.WithEventTypes(state.Created, state.Updated), state.WithCondition(func(value resource.Resource) (bool, error) {
+		return value.(*typed.Resource[LifecycleSignal, componentExtension[LifecycleSignal]]).TypedSpec().ExitSequence > signal.ExitSequence, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	close(store.release)
+	if err := <-started; err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, f, func(current Status) bool {
+		return current.Phase == Stopped && current.ExitSequence > signal.ExitSequence
+	})
+	input, _, err := ReadLifecycleSignal(ctx, f.store)
+	if err != nil || input.OperationRevision != signal.OperationRevision+2 || input.Demand != 0 || input.ExitProcessID != process.ID() {
+		t.Fatalf("signal=%+v error=%v", input, err)
+	}
+}
+
+func TestOperationCompletionWakesControllerWithoutDemand(t *testing.T) {
+	f := newFixture(t)
+	waitForStatus(t, f, func(current Status) bool { return current.EnvironmentGeneration == 1 })
+	release := make(chan struct{})
+	workErr := errors.New("test initialization refused")
+	if err := f.host.startOperation(&f.host.initializing, func(context.Context) error { <-release; return workErr }); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	current := waitForStatus(t, f, func(current Status) bool { return current.Error == workErr.Error() })
+	signal, _, err := ReadLifecycleSignal(f.ctx, f.store)
+	if err != nil || signal != (LifecycleSignal{OperationRevision: 2}) {
+		t.Fatalf("signal=%+v error=%v", signal, err)
+	}
+	if current.Phase != Stopped || current.ObservedDemand != 0 || current.ProcessID != "" {
+		t.Fatalf("status=%+v", current)
+	}
+	f.host.mu.Lock()
+	remaining := f.host.initializing
+	f.host.mu.Unlock()
+	if remaining != nil {
+		t.Fatal("controller did not consume completed operation")
+	}
+}
+
+func TestMissingLifecycleSignalFailsClosed(t *testing.T) {
+	store := state.WrapCore(namespaced.NewState(inmem.Build))
+	reported := make(chan error, 2)
+	host := &Host{deps: Dependencies{Context: t.Context(), State: store, Workers: &sync.WaitGroup{}, OnError: func(err error) { reported <- err }}, changed: make(chan struct{})}
+	if err := lifecycle.PublishEnvironmentDesired(t.Context(), store, lifecycle.EnvironmentDesired{Mode: lifecycle.Running, Generation: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := host.RequestLocked(t.Context(), nil); !state.IsNotFoundError(err) {
+		t.Fatalf("request error=%v", err)
+	}
+	var effects atomic.Int32
+	if err := host.startOperation(&host.initializing, func(context.Context) error { effects.Add(1); return nil }); !state.IsNotFoundError(err) {
+		t.Fatalf("start error=%v", err)
+	}
+	host.deps.Workers.Wait()
+	if effects.Load() != 0 || host.initializing != nil {
+		t.Fatal("missing lifecycle signal admitted work")
+	}
+	host.publishExit(&Process{})
+	for range 2 {
+		select {
+		case err := <-reported:
+			if !state.IsNotFoundError(err) {
+				t.Fatal(err)
+			}
+		default:
+			t.Fatal("missing lifecycle signal error was not reported")
+		}
+	}
+	if _, found, err := ReadLifecycleSignal(t.Context(), store); err != nil || found {
+		t.Fatalf("signal created after failure: found=%t error=%v", found, err)
 	}
 }
