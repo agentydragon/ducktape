@@ -1,4 +1,4 @@
-"""The app owns operator writes; the Sandbox Service has no deployed resources."""
+"""Environment operations are hosted in the Runner Gateway, without a Sandbox Service."""
 
 from typing import Any
 
@@ -32,7 +32,7 @@ def test_sandbox_service_resources_are_absent(staging_manifests: list[dict[str, 
     )
 
 
-def test_app_uses_direct_sandbox_access(staging_manifests: list[dict[str, Any]]) -> None:
+def test_app_proxies_environment_operations(staging_manifests: list[dict[str, Any]]) -> None:
     application = _resource(staging_manifests, "Deployment", app.NAME)["spec"]["template"]["spec"]
     container = one(item for item in application["containers"] if item["name"] == "app")
     assert not any(arg.startswith("--sandbox-service-target=") for arg in container["args"])
@@ -40,10 +40,10 @@ def test_app_uses_direct_sandbox_access(staging_manifests: list[dict[str, Any]])
 
     app_rules = _resource(staging_manifests, "Role", app.NAME.removeprefix("agentplane-"))["rules"]
     for rule in app_rules:
-        if rule["resources"] not in (["policybindings"], ["sandboxes"]):
+        if rule["resources"] != ["policybindings"]:
             assert set(rule["verbs"]) <= {"get", "list", "watch"}
     permissions = {(tuple(rule["apiGroups"]), tuple(rule["resources"]), tuple(rule["verbs"])) for rule in app_rules}
-    assert (("agentplane.allegedly.works",), ("sandboxtemplates",), ("list",)) in permissions
+    assert not any(set(rule["resources"]) & {"sandboxes", "sandboxtemplates", "pods"} for rule in app_rules)
     assert (("subresources.kubevirt.io",), ("virtualmachineinstances/console",), ("get",)) in permissions
 
     gateway = _resource(staging_manifests, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]

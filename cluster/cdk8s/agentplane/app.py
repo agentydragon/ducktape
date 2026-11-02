@@ -5,17 +5,14 @@ HTTPRoute, NetworkPolicy, and the agent and app ServiceAccounts.
 from __future__ import annotations
 
 import json
-from typing import cast
 from urllib.parse import urlsplit
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
-    ApiResource,
     ContainerResources,
     Cpu,
     CpuResources,
     EnvValue,
-    IApiResource,
     MemoryResources,
     Role,
     RoleBinding,
@@ -148,10 +145,6 @@ class App(Construct):
             "role",
             metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
             rules=[
-                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"]),
-                # The app lists names to present in the operator's create form.
-                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxtemplates")], verbs=["list"]),
-                RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
                 # The operator's console stream attaches to the Sandbox VM's serial console.
                 RolePolicyRule(
                     resources=[custom_resource("subresources.kubevirt.io", "virtualmachineinstances/console")],
@@ -171,8 +164,6 @@ class App(Construct):
                 ),
                 # The operator's grants from the sandbox page, created and revoked by the app itself.
                 RolePolicyRule(resources=[custom_resource(GROUP, "policybindings")], verbs=["create", "delete"]),
-                # Sandboxes the operator creates, edits and deletes from the app.
-                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["create", "patch", "delete"]),
             ],
         )
         RoleBinding(

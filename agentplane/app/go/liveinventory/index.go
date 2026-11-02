@@ -11,12 +11,8 @@ import (
 
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	toolscache "k8s.io/client-go/tools/cache"
 	ctrlcache "sigs.k8s.io/controller-runtime/pkg/cache"
@@ -35,8 +31,6 @@ var watched = []struct {
 	kind   watchhealth.Kind
 	policy bool
 }{
-	{&sandboxapi.Sandbox{}, "sandboxes", false},
-	{&corev1.Pod{}, "pods", false},
 	{&policyapi.PolicyBinding{}, "policybindings", true},
 	{&policyapi.PolicySet{}, "policysets", true},
 	{&egressapi.EgressCredential{}, "egresscredentials", false},
@@ -63,8 +57,6 @@ type Index struct {
 // Snapshot is the read-only Kubernetes state consumed by live routes. Each object is copied from
 // the cache so callers may safely project it after this method returns.
 type Snapshot struct {
-	Sandboxes         []sandboxapi.Sandbox
-	Pods              []corev1.Pod
 	PolicyBindings    []policyapi.PolicyBinding
 	PolicySets        []policyapi.PolicySet
 	EgressCredentials []egressapi.EgressCredential
@@ -74,15 +66,14 @@ type Snapshot struct {
 	Watch watchhealth.Status
 }
 
-// New builds the namespace-scoped cache and registers generated Sandbox, Policy, Egress, and core
-// Pod informers. It does not start any API requests until Run is called.
+// New builds the namespace-scoped Policy and Egress cache. It starts no API requests until Run.
 func New(config *rest.Config, namespace string) (*Index, error) {
 	if config == nil || namespace == "" {
 		return nil, errors.New("Kubernetes config and Sandbox namespace are required")
 	}
 	scheme := runtime.NewScheme()
 	for _, add := range []func(*runtime.Scheme) error{
-		corev1.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme, egressapi.AddToScheme,
+		policyapi.AddToScheme, egressapi.AddToScheme,
 	} {
 		if err := add(scheme); err != nil {
 			return nil, fmt.Errorf("register live inventory Kubernetes API: %w", err)
@@ -237,22 +228,6 @@ func (i *Index) WaitForSync(ctx context.Context) error {
 // unhealthy watches in Watch rather than hiding the last complete snapshot.
 func (i *Index) Snapshot(ctx context.Context) (Snapshot, error) {
 	var result Snapshot
-	var sandboxes sandboxapi.SandboxList
-	if err := i.cache.List(ctx, &sandboxes, client.InNamespace(i.namespace)); err != nil {
-		return Snapshot{}, fmt.Errorf("list cached Sandboxes: %w", err)
-	}
-	result.Sandboxes = make([]sandboxapi.Sandbox, len(sandboxes.Items))
-	for n := range sandboxes.Items {
-		result.Sandboxes[n] = *sandboxes.Items[n].DeepCopy()
-	}
-	var pods corev1.PodList
-	if err := i.cache.List(ctx, &pods, client.InNamespace(i.namespace)); err != nil {
-		return Snapshot{}, fmt.Errorf("list cached Pods: %w", err)
-	}
-	result.Pods = make([]corev1.Pod, len(pods.Items))
-	for n := range pods.Items {
-		result.Pods[n] = *pods.Items[n].DeepCopy()
-	}
 	var bindings policyapi.PolicyBindingList
 	if err := i.cache.List(ctx, &bindings, client.InNamespace(i.namespace)); err != nil {
 		return Snapshot{}, fmt.Errorf("list cached PolicyBindings: %w", err)
@@ -280,32 +255,6 @@ func (i *Index) Snapshot(ctx context.Context) (Snapshot, error) {
 	result.PolicyGeneration = i.policyGeneration.Load()
 	result.Watch = i.health.Status()
 	return result, nil
-}
-
-// GetSandbox returns one cached Sandbox and the Pod only when it is that Sandbox's current
-// incarnation. A nil Sandbox means the name is absent.
-func (i *Index) GetSandbox(ctx context.Context, name string) (*sandboxapi.Sandbox, *corev1.Pod, error) {
-	var sandbox sandboxapi.Sandbox
-	if err := i.cache.Get(ctx, types.NamespacedName{Namespace: i.namespace, Name: name}, &sandbox); apierrors.IsNotFound(err) {
-		return nil, nil, nil
-	} else if err != nil {
-		return nil, nil, fmt.Errorf("read cached Sandbox %q: %w", name, err)
-	}
-	sandboxCopy := sandbox.DeepCopy()
-	incarnation := sandbox.Status.Incarnation
-	if incarnation == nil || incarnation.Name == "" || incarnation.UID == "" {
-		return sandboxCopy, nil, nil
-	}
-	var pod corev1.Pod
-	if err := i.cache.Get(ctx, types.NamespacedName{Namespace: i.namespace, Name: incarnation.Name}, &pod); apierrors.IsNotFound(err) {
-		return sandboxCopy, nil, nil
-	} else if err != nil {
-		return nil, nil, fmt.Errorf("read cached Pod %s for Sandbox %q: %w", incarnation.Name, name, err)
-	}
-	if string(pod.UID) != incarnation.UID {
-		return sandboxCopy, nil, nil
-	}
-	return sandboxCopy, pod.DeepCopy(), nil
 }
 
 // Health returns the cache's watch health, as Snapshot reports it.

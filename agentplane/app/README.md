@@ -300,7 +300,9 @@ list or watch is failing, and each failing kind with its error and since when --
 egress proxy's readiness uses. A page whose server watch is failing says so rather than showing
 its data as live: the browser's connection and that verdict both feed the one connection
 indicator in the topbar, a spinner whose tooltip names each stream that is not current and why.
-Every stream, and the server's watch behind it, retries by itself.
+Every stream, and the server's watch behind it, retries by itself. Policy detail and egress streams
+observe changes to the selected environment through EnvironmentService, while the app watches the
+PolicyBinding, PolicySet and EgressCredential resources it composes into its own views.
 
 ## Authentication and authorization
 

@@ -115,6 +115,7 @@ type streamTestEnvironments struct {
 	err        error
 	nameGets   int
 	exactGets  int
+	changes    chan struct{}
 }
 
 func (f *streamTestEnvironments) Get(_ context.Context, name string) (*environmentpb.EnvironmentDescriptor, error) {
@@ -141,6 +142,10 @@ func (f *streamTestEnvironments) GetExactUID(_ context.Context, name, uid string
 		return nil, status.Error(codes.NotFound, "Environment target UID is no longer current")
 	}
 	return proto.Clone(f.descriptor).(*environmentpb.EnvironmentDescriptor), nil
+}
+
+func (f *streamTestEnvironments) WatchChanges(context.Context, string, string) <-chan struct{} {
+	return f.changes
 }
 
 func (f *streamTestEnvironments) set(descriptor *environmentpb.EnvironmentDescriptor) {
@@ -1126,7 +1131,7 @@ func newLiveFramesFixture() *liveFramesFixture {
 	summary := historydata.FoldSummary{Present: true, Sandbox: "demo", SandboxUID: liveFramesSandboxUID}
 	f := &liveFramesFixture{
 		live:    &countingLive{snapshot: liveFramesSnapshot(), unsubscribed: make(chan struct{}, 8)},
-		envs:    &streamTestEnvironments{descriptor: testEnvironment("tools", "demo", liveFramesSandboxUID, "tools", "demo")},
+		envs:    &streamTestEnvironments{descriptor: testEnvironment("tools", "demo", liveFramesSandboxUID, "tools", "demo"), changes: make(chan struct{}, 1)},
 		store:   &countingThreadStore{rows: []threads.Thread{{ID: liveFramesFirstThread}}},
 		updates: &streamTestChanges{changes: make(chan struct{}, 1), unsubscribed: make(chan struct{}, 8)},
 	}
@@ -1199,12 +1204,12 @@ func TestLiveSandboxStreamsSharePolicyReadsAcrossViewers(t *testing.T) {
 		}
 	}
 	changed := liveFramesSnapshot()
-	changed.Watch.Failing = map[watchhealth.Kind]watchhealth.Failure{"pods": {Error: "test failure", Since: time.Date(2026, 10, 20, 1, 4, 3, 0, time.UTC)}}
+	changed.Watch.Failing = map[watchhealth.Kind]watchhealth.Failure{"policysets": {Error: "test failure", Since: time.Date(2026, 10, 20, 1, 4, 3, 0, time.UTC)}}
 	f.live.change(changed)
-	waitForEveryStream(t, responses, `"pods":{"error":"test failure"`)
+	waitForEveryStream(t, responses, `"policysets":{"error":"test failure"`)
 	const replacementUID = "44444444-4444-4444-8444-444444444444"
 	f.envs.set(testEnvironment("tools", "demo", replacementUID, "tools", "demo"))
-	f.live.change(changed)
+	f.envs.changes <- struct{}{}
 	waitForEveryStream(t, responses, `"sandbox_uid":null`)
 	for _, response := range responses {
 		if strings.Contains(response.String(), replacementUID) {

@@ -7,12 +7,10 @@ import (
 
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -30,7 +28,7 @@ func TestIndexSnapshotsWatchesAndBroadcastsChanges(t *testing.T) {
 
 	scheme := runtime.NewScheme()
 	for _, add := range []func(*runtime.Scheme) error{
-		corev1.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme, egressapi.AddToScheme,
+		corev1.AddToScheme, policyapi.AddToScheme, egressapi.AddToScheme,
 	} {
 		if err := add(scheme); err != nil {
 			t.Fatal(err)
@@ -71,7 +69,7 @@ func TestIndexSnapshotsWatchesAndBroadcastsChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !empty.Watch.Synced || !empty.Watch.Available || len(empty.Sandboxes)+len(empty.Pods)+len(empty.PolicyBindings)+len(empty.PolicySets)+len(empty.EgressCredentials) != 0 {
+	if !empty.Watch.Synced || !empty.Watch.Available || len(empty.PolicyBindings)+len(empty.PolicySets)+len(empty.EgressCredentials) != 0 {
 		t.Fatalf("initial snapshot = %+v", empty)
 	}
 
@@ -79,36 +77,14 @@ func TestIndexSnapshotsWatchesAndBroadcastsChanges(t *testing.T) {
 	defer unsubscribeFirst()
 	second, unsubscribeSecond := index.Subscribe()
 	defer unsubscribeSecond()
-	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "runner", Namespace: namespace}, Spec: corev1.PodSpec{
-		Containers: []corev1.Container{{Name: "runner", Image: "unused.invalid/runner"}},
-	}}
-	if err := objects.Create(ctx, pod); err != nil {
-		t.Fatal(err)
-	}
-	waitSignal(t, first)
-	waitSignal(t, second)
-
-	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Name: "workspace", Namespace: namespace}, Spec: sandboxapi.SandboxSpec{
-		Template: "runner", Running: true,
-	}}
-	if err := objects.Create(ctx, sandbox); err != nil {
-		t.Fatal(err)
-	}
-	key := types.NamespacedName{Namespace: namespace, Name: sandbox.Name}
-	if err := objects.Get(ctx, key, sandbox); err != nil {
-		t.Fatal(err)
-	}
-	sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: pod.Name, UID: string(pod.UID)}
-	if err := objects.Status().Update(ctx, sandbox); err != nil {
-		t.Fatal(err)
-	}
-
 	policySet := &policyapi.PolicySet{ObjectMeta: metav1.ObjectMeta{Name: "egress", Namespace: namespace}, Spec: policyapi.PolicySetSpec{
 		Rules: []policyapi.Rule{{Type: "egress", Hosts: []string{"example.com"}}},
 	}}
 	if err := objects.Create(ctx, policySet); err != nil {
 		t.Fatal(err)
 	}
+	waitSignal(t, first)
+	waitSignal(t, second)
 	binding := &policyapi.PolicyBinding{ObjectMeta: metav1.ObjectMeta{Name: "workspace", Namespace: namespace}, Spec: policyapi.PolicyBindingSpec{
 		Subject: policyapi.ServiceAccountRef{Namespace: namespace, Name: "workspace"}, PolicySets: []string{"egress"},
 	}}
@@ -128,8 +104,7 @@ func TestIndexSnapshotsWatchesAndBroadcastsChanges(t *testing.T) {
 	eventually(t, func() bool {
 		var err error
 		snapshot, err = index.Snapshot(ctx)
-		return err == nil && len(snapshot.Sandboxes) == 1 && len(snapshot.Pods) == 1 &&
-			len(snapshot.PolicyBindings) == 1 && len(snapshot.PolicySets) == 1 && len(snapshot.EgressCredentials) == 1
+		return err == nil && len(snapshot.PolicyBindings) == 1 && len(snapshot.PolicySets) == 1 && len(snapshot.EgressCredentials) == 1
 	})
 	if snapshot.PolicyGeneration < 2 {
 		t.Fatalf("Policy generation = %d, want a binding and PolicySet event", snapshot.PolicyGeneration)
@@ -140,47 +115,14 @@ func TestIndexSnapshotsWatchesAndBroadcastsChanges(t *testing.T) {
 	if !snapshot.Watch.Available {
 		t.Fatalf("watch health = %+v", snapshot.Watch)
 	}
-	policyGeneration := snapshot.PolicyGeneration
-	if err := objects.Get(ctx, key, sandbox); err != nil {
-		t.Fatal(err)
-	}
-	sandbox.Spec.WakeOnSend = true
-	if err := objects.Update(ctx, sandbox); err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, func() bool {
-		updated, err := index.Snapshot(ctx)
-		return err == nil && len(updated.Sandboxes) == 1 && updated.Sandboxes[0].Spec.WakeOnSend
-	})
-	if got := index.PolicyGeneration(); got != policyGeneration {
-		t.Fatalf("descriptor-only Sandbox update changed policy generation: got %d, want %d", got, policyGeneration)
-	}
-
-	gotSandbox, gotPod, err := index.GetSandbox(ctx, sandbox.Name)
-	if err != nil || gotSandbox == nil || gotPod == nil || gotSandbox.Status.Incarnation.UID != string(gotPod.UID) {
-		t.Fatalf("current Sandbox incarnation = sandbox:%v pod:%v error:%v", gotSandbox, gotPod, err)
-	}
-	gotPod.Labels = map[string]string{"mutated": "caller"}
+	snapshot.PolicySets[0].Labels = map[string]string{"mutated": "caller"}
 	snapshot, err = index.Snapshot(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, mutated := snapshot.Pods[0].Labels["mutated"]; mutated {
-		t.Fatal("snapshot leaked a mutable cache Pod")
+	if _, mutated := snapshot.PolicySets[0].Labels["mutated"]; mutated {
+		t.Fatal("snapshot leaked a mutable cached PolicySet")
 	}
-
-	// An old Pod with the right name but wrong UID must not be projected as this Sandbox's current incarnation.
-	if err := objects.Get(ctx, key, sandbox); err != nil {
-		t.Fatal(err)
-	}
-	sandbox.Status.Incarnation.UID = "stale-pod-uid"
-	if err := objects.Status().Update(ctx, sandbox); err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, func() bool {
-		_, pod, err := index.GetSandbox(ctx, sandbox.Name)
-		return err == nil && pod == nil
-	})
 }
 
 func eventually(t *testing.T, check func() bool) {

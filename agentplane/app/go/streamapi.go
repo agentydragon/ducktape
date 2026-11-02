@@ -64,6 +64,7 @@ type streamLiveInventory interface {
 
 type streamSandboxInventory interface {
 	GetExactUID(context.Context, string, string) (*environmentpb.EnvironmentDescriptor, error)
+	WatchChanges(context.Context, string, string) <-chan struct{}
 }
 
 type streamHistoryStore interface {
@@ -258,6 +259,7 @@ func (r *streamingRoutes) liveSandbox(w http.ResponseWriter, request *http.Reque
 func (r *streamingRoutes) produceSandboxDetail(ctx context.Context, key sandboxDetailKey, publish func(sandboxDetail)) error {
 	liveChanges, stopLive := r.deps.Live.Subscribe()
 	defer stopLive()
+	environmentChanges := r.deps.Sandboxes.WatchChanges(ctx, key.name, key.uid)
 	for {
 		snapshot, err := r.deps.Live.Snapshot(ctx)
 		if err != nil {
@@ -290,6 +292,7 @@ func (r *streamingRoutes) produceSandboxDetail(ctx context.Context, key sandboxD
 		case <-ctx.Done():
 			return nil
 		case <-liveChanges:
+		case <-environmentChanges:
 		}
 	}
 }
@@ -309,6 +312,7 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 	changes, unsubscribe := r.deps.Live.Subscribe()
 	defer unsubscribe()
 	name := request.PathValue("name")
+	environmentChanges := r.deps.Sandboxes.WatchChanges(ctx, name, uid)
 	if err := startSSE(w); err != nil {
 		return
 	}
@@ -334,6 +338,8 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 				return
 			case <-changes:
 				continue
+			case <-environmentChanges:
+				continue
 			}
 		}
 		account := descriptor.GetExecutionAccount()
@@ -345,6 +351,8 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 			case <-ctx.Done():
 				return
 			case <-changes:
+				continue
+			case <-environmentChanges:
 				continue
 			}
 		}
@@ -394,6 +402,9 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 				return
 			case <-changes:
 				// Recheck the exact Sandbox and execution account before continuing the stream.
+				streamEnded = true
+				break
+			case <-environmentChanges:
 				streamEnded = true
 				break
 			case <-timer.C:

@@ -3,6 +3,7 @@ package sandboxes
 import (
 	"context"
 	"errors"
+	"time"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"google.golang.org/grpc"
@@ -11,6 +12,43 @@ import (
 // EnvironmentService is the generated EnvironmentService get method used by app composition.
 type EnvironmentService interface {
 	GetEnvironment(context.Context, *environmentpb.GetEnvironmentRequest, ...grpc.CallOption) (*environmentpb.EnvironmentDescriptor, error)
+	WatchEnvironment(context.Context, *environmentpb.WatchEnvironmentRequest, ...grpc.CallOption) (grpc.ServerStreamingClient[environmentpb.WatchEnvironmentResponse], error)
+}
+
+// WatchChanges signals when the exact environment changes or its watch fails. Reconnection starts
+// a fresh service snapshot; cancellation stops the watch and its retry loop.
+func (r *EnvironmentReader) WatchChanges(ctx context.Context, name, uid string) <-chan struct{} {
+	changes := make(chan struct{}, 1)
+	go func() {
+		request := &environmentpb.WatchEnvironmentRequest{Target: &environmentpb.TargetHandle{Namespace: r.namespace, Name: name, Uid: uid}}
+		for ctx.Err() == nil {
+			stream, err := r.service.WatchEnvironment(ctx, request)
+			if err == nil {
+				for {
+					_, err = stream.Recv()
+					if err != nil {
+						break
+					}
+					select {
+					case changes <- struct{}{}:
+					default:
+					}
+				}
+			}
+			select {
+			case changes <- struct{}{}:
+			default:
+			}
+			timer := time.NewTimer(time.Second)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+		}
+	}()
+	return changes
 }
 
 // EnvironmentReader forwards exact-target gets using the app's configured namespace. The service

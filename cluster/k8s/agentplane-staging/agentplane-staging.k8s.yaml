@@ -4320,28 +4320,6 @@ metadata:
   namespace: agentplane-staging
 rules:
   - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - sandboxes
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - sandboxtemplates
-    verbs:
-      - list
-  - apiGroups:
-      - ""
-    resources:
-      - pods
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
       - subresources.kubevirt.io
     resources:
       - virtualmachineinstances/console
@@ -4377,14 +4355,6 @@ rules:
       - policybindings
     verbs:
       - create
-      - delete
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - sandboxes
-    verbs:
-      - create
-      - patch
       - delete
 ---
 apiVersion: rbac.authorization.k8s.io/v1
