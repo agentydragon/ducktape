@@ -270,8 +270,8 @@ the two source units are order-independent during initialization.
    separately the pairs the gate would
    reject, the endpoints without a unique selector, and the `eager_use` edges
    that still need co-location. Its `sccs` rows say whether all proposals
-   together break each SCC; when they cannot, the blocking edge counts name
-   what co-location must still handle.
+   together break each SCC; when they cannot, the residual component member
+   paths and blocking edge counts show what co-location must still handle.
 2. **Audit.** For each proposal read both statements at the reported locations
    and establish the premise yourself: neither observes the other's effect.
    The explanation says only why the analysis could not prove the order

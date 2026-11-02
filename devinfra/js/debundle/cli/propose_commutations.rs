@@ -288,10 +288,19 @@ pub enum SccVerdict {
     PairsCannotBreak {
         /// Modules still on a constraining cycle.
         residual_modules: usize,
+        /// Remaining nontrivial cyclic components, ordered by their sorted
+        /// canonical module paths.
+        residual_components: Vec<ResidualComponent>,
         /// The constraining edges between those modules, by kind and by why
         /// no proposal inerts them; largest count first.
         blocking_edges: Vec<BlockingEdgeCount>,
     },
+}
+
+#[derive(Debug, Serialize)]
+pub struct ResidualComponent {
+    /// Canonical module paths in this component, sorted lexicographically.
+    pub modules: Vec<ModulePath>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1105,15 +1114,28 @@ impl<'a> Analysis<'a> {
                 })
                 .filter(|(_, left)| !left.is_empty())
                 .collect();
-            let mut component_of = HashMap::new();
-            for (index, component) in tarjan_scc(&module_graph(remaining.keys()))
-                .into_iter()
-                .filter(|component| component.len() > 1)
+            let mut residual_components: Vec<(Vec<ModuleId>, ResidualComponent)> =
+                tarjan_scc(&module_graph(remaining.keys()))
+                    .into_iter()
+                    .filter(|component| component.len() > 1)
+                    .map(|component| {
+                        let mut modules: Vec<ModulePath> = component
+                            .iter()
+                            .map(|module| self.report.quotient.nodes[module.0].path.clone())
+                            .collect();
+                        modules.sort();
+                        (component, ResidualComponent { modules })
+                    })
+                    .collect();
+            residual_components.sort_by(|(_, left), (_, right)| left.modules.cmp(&right.modules));
+            let component_of: HashMap<ModuleId, usize> = residual_components
+                .iter()
                 .enumerate()
-            {
-                component_of.extend(component.into_iter().map(|module| (module, index)));
-            }
-            let verdict = if component_of.is_empty() {
+                .flat_map(|(index, (component, _))| {
+                    component.iter().copied().map(move |module| (module, index))
+                })
+                .collect();
+            let verdict = if residual_components.is_empty() {
                 SccVerdict::PairsBreak
             } else {
                 let mut counts: BTreeMap<(DepKind, BlockingReason), usize> = BTreeMap::new();
@@ -1138,8 +1160,14 @@ impl<'a> Analysis<'a> {
                     })
                     .collect();
                 blocking_edges.sort_by_key(|row| std::cmp::Reverse(row.count));
+                let residual_modules = component_of.len();
+                let residual_components = residual_components
+                    .into_iter()
+                    .map(|(_, component)| component)
+                    .collect();
                 SccVerdict::PairsCannotBreak {
-                    residual_modules: component_of.len(),
+                    residual_modules,
+                    residual_components,
                     blocking_edges,
                 }
             };
@@ -1347,14 +1375,29 @@ fn render_text(report: &ProposeCommutationsReport, out: &mut String) {
                 scc.modules.len()
             )),
             SccVerdict::PairsCannotBreak {
+                residual_components,
                 residual_modules,
                 blocking_edges,
             } => {
                 out.push_str(&format!(
-                    "  SCC {} ({} modules): pairs alone cannot break it; with every proposal inerted, cycles over {residual_modules} modules remain, held by:\n",
+                    "  SCC {} ({} modules): pairs alone cannot break it; with every proposal inerted, cycles over {residual_modules} modules in {} component(s) remain, held by:\n",
                     scc.scc_id,
-                    scc.modules.len()
+                    scc.modules.len(),
+                    residual_components.len(),
                 ));
+                for (index, component) in residual_components.iter().enumerate() {
+                    let modules = component
+                        .modules
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    out.push_str(&format!(
+                        "    residual component {} ({} modules): {modules}\n",
+                        index + 1,
+                        component.modules.len(),
+                    ));
+                }
                 for row in blocking_edges {
                     out.push_str(&format!(
                         "    {} {} edge(s): {}\n",

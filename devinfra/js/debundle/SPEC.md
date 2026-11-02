@@ -2048,9 +2048,15 @@ would report. Applying a premise reads the retained verdicts of the edges
 between its endpoints; `debundle spec propose-commutations` reads the same
 field to draft entries for the constraining `sequenced` edges inside a
 rejection's blocking SCCs, so a drafted pair is accepted or rejected exactly
-as the gate decides. The field is absent
-on graphs written before it was retained; the draft command reports such an
-edge as `verdict_not_recorded` rather than classifying it itself.
+as the gate decides. For `pairs_cannot_break`, its report also names the
+remaining nontrivial cyclic components as `residual_components[].modules`;
+member paths and component rows are sorted by canonical module path, and
+`residual_modules` equals the sum of their member counts. The text report
+prints the same member paths, while `pairs_break` has no
+`residual_components` field. These identities are diagnostic only and do not
+change the gate decision. The `premise_verdict` field is absent on graphs
+written before it was retained; the draft command reports such an edge as
+`verdict_not_recorded` rather than classifying it itself.
 
 ## Ordinary own-property inspection
 
