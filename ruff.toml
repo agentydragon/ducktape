@@ -178,6 +178,7 @@ known-first-party = [
     "att_gateway",
     "augur",
     "cluster",
+    "grafana",
     "haku",
     "mako_utils",
     "nix",

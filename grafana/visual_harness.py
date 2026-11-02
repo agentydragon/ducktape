@@ -176,11 +176,11 @@ def _prepare_render_fixture(dashboard: dict) -> None:
         if variable.get("type") != "query":
             continue
         values = {
-            "namespace": "monitoring,seaweedfs",
-            "node": "storage-a,storage-b",
-            "instance": "storage-a,storage-b",
+            "namespace": "example,system",
+            "node": "node-a,node-b",
+            "instance": "node-a,node-b",
             "device": "eth0,eth1",
             "bucket": "uploads,backups",
-            "pool_node": "storage-a,storage-b",
+            "pool_node": "node-a,node-b",
         }.get(variable.get("name"), "example,other")
         variable.update(type="custom", query=values, options=[], current={})

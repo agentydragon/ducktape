@@ -1,11 +1,9 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_test")
 load("//skills:defs.bzl", "skill_package")
 
 package(default_visibility = ["//visibility:public"])
-
-exports_files(["dashboard_visual_test.py"])
 
 py_binary(
     name = "verify_dashboard",
@@ -38,33 +36,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
-    ],
-)
-
-py_library(
-    name = "visual_browser",
-    testonly = True,
-    srcs = ["visual_browser.py"],
-    deps = [
-        "//util/testing:visual_capture",
-        "@pypi//playwright",
-    ],
-)
-
-py_library(
-    name = "visual_harness",
-    testonly = True,
-    srcs = ["visual_harness.py"],
-    deps = [
-        "//third_party/containers:grafana_visual",
-        "//third_party/containers:prometheus_visual",
-        "//third_party/containers:ryuk",
-        "//util:oci",
-        "//util/testing:container_logs",
-        "//util/testing:undeclared_outputs",
-        "@pypi//docker",
-        "@pypi//httpx",
-        "@pypi//testcontainers",
     ],
 )
 
