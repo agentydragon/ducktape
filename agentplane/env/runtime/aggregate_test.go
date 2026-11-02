@@ -84,6 +84,80 @@ func TestRuntimeCloseUncertainExecutionFenceRetainsOwner(t *testing.T) {
 	}
 }
 
+func TestRuntimeCloseRetainsOwnerAfterRejectedLiveExecutionStart(t *testing.T) {
+	for _, closeFirst := range []bool{false, true} {
+		name := "rejection-before-close"
+		if closeFirst {
+			name = "close-started-before-rejection"
+		}
+		t.Run(name, func(t *testing.T) {
+			proxy := modelConfigServer(t)
+			config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
+			config.expectCloseError = true
+			first := newControllerExecutionHandle(nil)
+			config.CodexExecServer = &codexexecserver.Config{URL: "ws://unused"}
+			config.CodexBinary = "/bin/false"
+			config.HarnessEnvironment = map[string]string{}
+			config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
+				return first, nil
+			}
+			r := newLifecycleRunner(t, config)
+			current, found, err := cosiExecutionState(r)
+			if err != nil || !found || current.Phase != executionReady {
+				t.Fatalf("Execution before rejected start = %+v, found=%t, err=%v", current, found, err)
+			}
+			orphan := newControllerExecutionHandle(nil)
+			reject := func() {
+				r.executionLifecycle.completeStart(current.Generation, current.UID, current.Demand, orphan, t.Context(), nil, false)
+			}
+			closeCtx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+			defer cancel()
+			var closeErr error
+			if closeFirst {
+				// Close has set its closing bit, but its worker cannot finish
+				// before the rejected handle makes the lifecycle terminal.
+				r.lifecycleStartMu.Lock()
+				locked := true
+				defer func() {
+					if locked {
+						r.lifecycleStartMu.Unlock()
+					}
+				}()
+				closeDone := make(chan error, 1)
+				go func() { closeDone <- r.Close(closeCtx) }()
+				waitRuntime(t, r, func() bool {
+					r.mu.Lock()
+					defer r.mu.Unlock()
+					return r.closing
+				}, "Runtime Close to start before rejected Execution completion")
+				reject()
+				r.lifecycleStartMu.Unlock()
+				locked = false
+				closeErr = <-closeDone
+			} else {
+				reject()
+				closeErr = r.Close(closeCtx)
+			}
+			if closeErr == nil || !strings.Contains(closeErr.Error(), "start handle has no published completion") {
+				t.Fatalf("Close after rejected live start = %v", closeErr)
+			}
+			r.executionLifecycle.mu.Lock()
+			retained := len(r.executionLifecycle.unfencedStarts) == 1 && r.executionLifecycle.unfencedStarts[0] == orphan
+			r.executionLifecycle.mu.Unlock()
+			r.mu.Lock()
+			owned := r.executionOwner != nil && r.executionOwner.handle == first && !r.executionOwner.admitted
+			r.mu.Unlock()
+			if !retained || !owned {
+				t.Fatalf("Close lost native handles: original owner retained=%t, rejected handle retained=%t", owned, retained)
+			}
+			if owner, err := openEnvironmentOwner(config.StateDir); err == nil {
+				_ = owner.Close()
+				t.Fatal("Close released environment owner after rejected live Execution start")
+			}
+		})
+	}
+}
+
 type heldCloseExecution struct {
 	fences  atomic.Int32
 	started chan struct{}
