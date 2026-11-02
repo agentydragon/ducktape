@@ -97,5 +97,42 @@ def test_clickhouse_history_password_has_one_exact_source_reader(scratch_chart: 
     ]
 
 
+def test_quest_bearer_is_only_substituted_for_read_only_operations(scratch_chart: Chart) -> None:
+    objects = _staging_credentials_resources(scratch_chart)
+    credential = next(
+        obj for obj in objects if obj["kind"] == "EgressCredential" and obj["metadata"]["name"] == "quest-read"
+    )
+    assert credential["spec"]["source"] == {"secretRef": {"name": "quest-agent-token", "key": "token"}}
+    assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}]
+    policy = next(obj for obj in objects if obj["kind"] == "PolicySet" and obj["metadata"]["name"] == "quest-read")
+    assert policy["spec"]["rules"] == [
+        {
+            "type": "egress",
+            "hosts": ["quest.allegedly.works"],
+            "methods": ["GET"],
+            "paths": ["/openapi.json", "/guest/getReasons/*", "/guest/getPscDetails/*"],
+            "credentialRef": {"name": "quest-read"},
+        },
+        {
+            "type": "egress",
+            "hosts": ["quest.allegedly.works"],
+            "methods": ["POST"],
+            "paths": ["/guest/getPscsWithAvailability"],
+            "credentialRef": {"name": "quest-read"},
+        },
+    ]
+    network = next(
+        obj
+        for obj in objects
+        if obj["kind"] == "CiliumNetworkPolicy" and obj["metadata"]["name"] == "egress-staging-credentials"
+    )
+    assert {
+        "toEndpoints": [
+            {"matchLabels": {"app": "quest-diagnostics", "k8s:io.kubernetes.pod.namespace": "quest-diagnostics"}}
+        ],
+        "toPorts": [{"ports": [{"port": "8082", "protocol": "TCP"}]}],
+    } in network["spec"]["egress"]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -39,6 +39,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
+    QUEST_READ_POLICY,
     grocy_sf_read_egress_rules,
     home_assistant_read_egress_rules,
 )
@@ -92,7 +93,7 @@ GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET = "gaffer-private-branch-and-pr-creati
 # The reviewed Action reads and sandbox use bound to the claude-ai and haku-agent accounts. The
 # binding's existence is the grant: deleting it, or the label on the ServiceAccount, puts every
 # one of these Actions back on the human path.
-_ACCOUNT_READ_SETS = (
+HAKU_SHARED_ACTION_SETS = (
     GITHUB_READS_SET,
     GITHUB_IDENTITY_READS_SET,
     SANDBOX_SELF_SET,
@@ -103,6 +104,28 @@ _ACCOUNT_READ_SETS = (
     GROCY_SF_READS_SET,
     SSH_READS_SET,
     KUBERNETES_INSPECTION_READS_SET,
+)
+
+HAKU_SHARED_CORE_POLICIES = (
+    FORGEJO_HAKU_POLICY,
+    PACKAGES_POLICY,
+    GOOGLE_READONLY_POLICY,
+    ACTIVITYWATCH_READ_POLICY,
+    AIQUOTA_READ_POLICY,
+    QUEST_READ_POLICY,
+    HAKU_MAILBOX_POLICY,
+)
+
+HAKU_SHARED_GITHUB_POLICIES = (GITHUB_CLONE_POLICY, GITHUB_AGENTYDRAGON_AGENT_POLICY, GITHUB_ACTIONS_LOGS_POLICY)
+
+_HAKU_CLAUDE_BASE_POLICIES = (
+    BASIC_POLICY,
+    INFERENCE_EXPERIMENTS_POLICY,
+    *HAKU_SHARED_CORE_POLICIES,
+    access.COINBASE_POLICY,
+    access.PLAID_DIAGNOSTICS_POLICY,
+    _GITHUB_DOWNLOADS_POLICY,
+    *HAKU_SHARED_GITHUB_POLICIES,
 )
 
 
@@ -697,25 +720,12 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         claude_ai,
         policies=[
-            BASIC_POLICY,
-            INFERENCE_EXPERIMENTS_POLICY,
-            FORGEJO_HAKU_POLICY,
-            PACKAGES_POLICY,
-            GOOGLE_READONLY_POLICY,
-            ACTIVITYWATCH_READ_POLICY,
-            AIQUOTA_READ_POLICY,
-            HAKU_MAILBOX_POLICY,
-            access.COINBASE_POLICY,
-            access.PLAID_DIAGNOSTICS_POLICY,
-            _GITHUB_DOWNLOADS_POLICY,
-            GITHUB_CLONE_POLICY,
-            GITHUB_AGENTYDRAGON_AGENT_POLICY,
-            GITHUB_ACTIONS_LOGS_POLICY,
+            *_HAKU_CLAUDE_BASE_POLICIES,
             BUILDBUDDY_POLICY,
             MIMIR_READS_POLICY,
             # claude-ai is the account that launches orchestration_v1 workers.
             ORCHESTRATION_PRESETS_SET,
-            *_ACCOUNT_READ_SETS,
+            *HAKU_SHARED_ACTION_SETS,
         ],
     )
 
@@ -753,27 +763,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     )
 
     # Haku-like sandboxes get Coinbase only through this explicit combined PolicySet selection.
-    _account_binding(
-        scope,
-        haku_agent,
-        policies=[
-            BASIC_POLICY,
-            INFERENCE_EXPERIMENTS_POLICY,
-            FORGEJO_HAKU_POLICY,
-            PACKAGES_POLICY,
-            GOOGLE_READONLY_POLICY,
-            ACTIVITYWATCH_READ_POLICY,
-            AIQUOTA_READ_POLICY,
-            HAKU_MAILBOX_POLICY,
-            access.COINBASE_POLICY,
-            access.PLAID_DIAGNOSTICS_POLICY,
-            _GITHUB_DOWNLOADS_POLICY,
-            GITHUB_CLONE_POLICY,
-            GITHUB_AGENTYDRAGON_AGENT_POLICY,
-            GITHUB_ACTIONS_LOGS_POLICY,
-            *_ACCOUNT_READ_SETS,
-        ],
-    )
+    _account_binding(scope, haku_agent, policies=[*_HAKU_CLAUDE_BASE_POLICIES, *HAKU_SHARED_ACTION_SETS])
 
     # Every sandbox Action, auto-approved. Approving each one individually would not be a
     # boundary: a sandbox runs as the account that asked for it, so the whole group can do
