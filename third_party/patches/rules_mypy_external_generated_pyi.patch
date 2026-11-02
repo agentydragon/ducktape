@@ -1,0 +1,18 @@
+diff --git a/mypy/private/mypy.bzl b/mypy/private/mypy.bzl
+--- a/mypy/private/mypy.bzl
++++ b/mypy/private/mypy.bzl
+@@ -26,8 +26,8 @@
+ def _extract_import_dir(import_):
+-    # Remove first parent from the directory
+-    if "/" in import_:
+-        # "_main/path/to/package" -> "path/to/package"
+-        return import_.split("/", 1)[-1]
+-    else:
+-        # "_main" -> ""
++    # Main-repository imports are relative to the execroot. Imports from an
++    # external repository need its external/<repo> prefix in the execroot.
++    if import_ == "_main" or import_ == "site-packages":
+         return ""
++    if import_.startswith("_main/"):
++        return import_.split("/", 1)[1]
++    return "external/" + import_
