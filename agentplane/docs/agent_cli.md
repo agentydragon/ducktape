@@ -6,6 +6,9 @@ rules HTTP APIs through the egress proxy. It adds no authority or state and no b
 is the part `curl` leaves to every model turn: JSON quoting, the idempotency and recovery protocol, long
 waits, telling an egress refusal from a service refusal, and exit status. `agentplane --help` is what an
 agent reads first; each command's `--help` says what it wraps and the exit codes that matter.
+For the end-to-end child Session workflow, read the Actions
+[Session delegation guide](../action_service/docs/agents/session_delegation.md), also served from
+its `/llms.txt` index and through MCP `get_guide(name="session_delegation")`.
 
 The CLI overlaps `curl` and the Action Service's MCP tools on purpose. All three reach one backend
 authority (the Sandbox's ServiceAccount, through the proxy) and differ in what the caller has to write.
@@ -171,10 +174,11 @@ generated gRPC over HTTP/2; Notifications and Egress rules use HTTP.
 | `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_SESSIONS_CREDENTIAL`, `AGENTPLANE_HISTORY_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_CREDENTIAL`, `AGENTPLANE_EGRESS_CREDENTIAL` | the inert placeholder the egress proxy substitutes for that service                                              |
 | `AGENTPLANE_DESTINATION`                                                                                                                                                  | `{"destination_ref": {...}, "session_id": "..."}`: this Session for `subscribe`, `send`                          |
 
-At this branch's base the default runner deployments do not set `AGENTPLANE_SESSIONS_URL` or
-`AGENTPLANE_SESSIONS_CREDENTIAL`, or configure the egress route for Session Dispatcher calls. This CLI
-only consumes the configured placeholder; it does not project a Dispatcher audience token or add that
-route. Deployment wiring is a separate integration prerequisite.
+Managed Pod and VM environments supply the Session Dispatcher URL and inert credential placeholder
+through their shared CLI environment. The egress path holds and substitutes the audience-specific
+token. Custom environments need equivalent configuration; the CLI itself never projects a token
+or adds a route. Retained History reads need their own History configuration and backend authority;
+the Action-backed delegation tools use the Actions service's configured peers instead.
 
 The HTTP clients use `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` and `SSL_CERT_FILE` from the harness. The
 Action and Session gRPC clients use `HTTPS_PROXY` for proxy resolution even when their configured service URL is

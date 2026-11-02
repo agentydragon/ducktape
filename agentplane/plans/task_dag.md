@@ -578,6 +578,7 @@ guidance service, new network dependency, Dispatcher ownership, or runtime-unifi
 The [current guidance contract](../session_instructions/README.md) and
 [managed rollout](../central_sampler/docs/rollout_acceptance.md#managed-platform-guidance-rollout-2026-11-02-utc)
 remain valid during this later design; it does not block current reliability or delegation work.
+Related deferred work: [consolidate agents' access to documentation and system configuration](task_freezer.md#agent_platform_information_design--consolidate-documentation-and-system-configuration-access).
 
 ### `PLATFORM_GUIDANCE_SINGLE_OWNER` — consolidate platform-guidance ownership
 

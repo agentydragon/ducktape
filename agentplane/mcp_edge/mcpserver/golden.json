@@ -4,11 +4,11 @@
   "instructions": [
    {
     "max_wait_seconds": 30.0,
-    "text": "Discover Action identifiers, fetch details only when needed, then submit each request once under a fresh idempotency key. A pending receipt is not execution success. A repeated key is refused; recover a lost response with get_action_request(idempotency_key=...), never with a replacement key. This instance allows wait.wait_seconds up to 30 seconds."
+    "text": "Read get_guide(name=\"index\") for workflow guides; read the session_delegation guide before delegating. Discover Action identifiers, fetch details only when needed, then submit each request once under a fresh idempotency key. A pending receipt is not execution success. A repeated key is refused; recover a lost response with get_action_request(idempotency_key=...), never with a replacement key. This instance allows wait.wait_seconds up to 30 seconds."
    },
    {
     "max_wait_seconds": 2.5,
-    "text": "Discover Action identifiers, fetch details only when needed, then submit each request once under a fresh idempotency key. A pending receipt is not execution success. A repeated key is refused; recover a lost response with get_action_request(idempotency_key=...), never with a replacement key. This instance allows wait.wait_seconds up to 2.5 seconds."
+    "text": "Read get_guide(name=\"index\") for workflow guides; read the session_delegation guide before delegating. Discover Action identifiers, fetch details only when needed, then submit each request once under a fresh idempotency key. A pending receipt is not execution success. A repeated key is refused; recover a lost response with get_action_request(idempotency_key=...), never with a replacement key. This instance allows wait.wait_seconds up to 2.5 seconds."
    }
   ]
  },

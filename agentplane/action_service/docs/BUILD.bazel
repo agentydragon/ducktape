@@ -1,0 +1,12 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "docs",
+    srcs = ["docs.go"],
+    embedsrcs = glob(["agents/**"]),
+    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/docs",
+    visibility = [
+        "//agentplane/action_service:__pkg__",
+        "//agentplane/mcp_edge/mcpserver:__pkg__",
+    ],
+)

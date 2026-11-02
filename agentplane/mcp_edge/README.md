@@ -13,6 +13,19 @@ execution `error` object when present. These are the same error details included
 fallback and caller-authorized Action receipt; clients can inspect them without parsing text.
 An unknown outcome still requires inspecting effects before requesting another execution.
 
+## Agent guides
+
+`get_guide(name="index")` reads the workflow index; request `session_delegation` before launching
+child Sessions, or another named guide only when needed. This generic read-only tool needs no shell,
+HTTP client or execution environment and remains available when the Action catalogue cannot be read.
+It creates no Action request and grants no authority. The guide is returned as `{name, markdown}`
+in structured content with the same JSON text fallback.
+
+The edge embeds the same [guide assets](../action_service/docs/agents/llms.txt) that Actions serves
+over HTTP. Each binary carries its documentation snapshot; use `list_actions`, `get_action` and
+`get_action_policy` for current operations, schemas and permissions. The MCP initialization
+instructions point to the guide reader, while detailed workflows stay out of standing context.
+
 ## Authority
 
 The Connection API verifies the app's request-bound operator OIDC bearer independently of MCP
