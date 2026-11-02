@@ -6716,9 +6716,11 @@ data:
           description: Forwards the authenticated caller's ServiceAccount identity to same-principal Session APIs.
         direct_tools:
           - cancel_input
+          - get
           - interrupt_turn
           - observe_input
           - open
+          - read_turns
           - submit_input
 immutable: false
 ---

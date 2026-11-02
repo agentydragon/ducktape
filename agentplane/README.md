@@ -149,9 +149,9 @@ flowchart LR
     app -->|ConnectionService RPCs and health: gRPC| edge
     edge -->|authenticated ActionService gRPC| actions
     notif -->|Action history: gRPC| actions
-    actions -->|orchestration_v1 Session commands: Dispatcher gRPC| gw
+    actions -->|Session commands: broker or delegated caller, gRPC| gw
     actions -->|caller-delegated EnvironmentDiscovery list/get: gRPC| gw
-    actions -->|orchestration_v1 Session reads: gRPC| hs
+    actions -->|Session reads: broker or delegated caller, gRPC| hs
     app -->|gRPC| egress
     app --> electric
     app --> k8s

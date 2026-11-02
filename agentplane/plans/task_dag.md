@@ -158,11 +158,11 @@ discharges that deployment hold. Natural-agent usability and staging tool exposu
 Focused regression-test additions and Bazel runs remain authorized; broad disruption exercises
 remain deferred.
 
-| Lane             | Next reviewable outcome                                                                                                      | Prerequisite / stopping point                                                                        |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| P0 policy review | `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`: [resume/wake proposal #13546](https://github.com/agentydragon/ducktape/pull/13546) | Stakeholder selection precedes `EXEC_SUSPENDED_RESUME`                                               |
-| P1 delegation    | `THREAD_CREATE_AUTHORIZATION`: natural-agent usability, then `SESSION_DELEGATION_ACTIVATION`                                 | Scripted workflows landed; align the staging catalogue and complete the remaining usability capstone |
-| P1 scheduling    | `SCHEDULED_AGENT_WAKE_DESIGN`: [durable-wake proposal #13552](https://github.com/agentydragon/ducktape/pull/13552)           | Delivery/overlap/authority review precedes runtime implementation                                    |
+| Lane             | Next reviewable outcome                                                                                                      | Prerequisite / stopping point                                                                |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| P0 policy review | `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`: [resume/wake proposal #13546](https://github.com/agentydragon/ducktape/pull/13546) | Stakeholder selection precedes `EXEC_SUSPENDED_RESUME`                                       |
+| P1 delegation    | `THREAD_CREATE_AUTHORIZATION`: natural-agent usability, then `SESSION_DELEGATION_ACTIVATION`                                 | Scripted workflows landed; complete the remaining usability capstone before staging exposure |
+| P1 scheduling    | `SCHEDULED_AGENT_WAKE_DESIGN`: [durable-wake proposal #13552](https://github.com/agentydragon/ducktape/pull/13552)           | Delivery/overlap/authority review precedes runtime implementation                            |
 
 After lifecycle policy is selected, explicit resume takes the next P0 implementation slot.
 Scheduled wake and usable delegation feed the daily CI capstone. Small
@@ -554,7 +554,7 @@ and authority enforcement across all surfaces. No zero-environment child or diff
 worker is claimed by this slice.
 
 The remaining capstone edge gates general staging exposure on natural-agent usability; an isolated
-opt-in fixture can establish it first. Catalogue alignment can proceed independently. Fresh
+opt-in fixture can establish it first. Configuration checks can proceed independently. Fresh
 provisioning and broader authority keep their own decision gates. File conflicts alone do not
 serialize independent PRs.
 
@@ -599,9 +599,9 @@ require a new service and does not block current reliability or delegation work.
 [Discovery](../sandboxes/discovery/README.md) and [CLI reads](../docs/agent_cli.md) are implemented.
 Scripted external MCP and parent CLI acceptance, the optional opening-configuration repair and
 the managed guidance rollout are complete. Finish the natural-agent usability capstone, then
-enable the reviewed surface. The current draft advertises seven tools; align its explicit
-allowlist with the nine-tool contract, including retained reads, and validate the rendered
-catalogue. Preserve `basic` auto-approval plus effective-caller checks; no
+enable the reviewed surface. The draft now configures the nine-tool contract, including
+`sessions__get` and `sessions__read_turns`; validate its rendered catalogue and exact-head CI.
+Preserve `basic` auto-approval plus effective-caller checks; no
 new provisioning, authority or wake permission is implied. Activation and rollback remain separate
 from backend-code merges.
 

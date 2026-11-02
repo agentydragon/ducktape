@@ -610,7 +610,9 @@ ENV = Environment(
         session_delegation=SessionDelegationProps(
             direct_tools_by_group={
                 "environments": frozenset({"list", "get"}),
-                "sessions": frozenset({"open", "submit_input", "observe_input", "cancel_input", "interrupt_turn"}),
+                "sessions": frozenset(
+                    {"open", "submit_input", "observe_input", "get", "read_turns", "cancel_input", "interrupt_turn"}
+                ),
             }
         ),
     ),

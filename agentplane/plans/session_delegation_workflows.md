@@ -731,9 +731,9 @@ a reply address nor a creator/parent edge grants send/read access.
 - **Natural-agent usability:** complete the capstone below using the implemented discovery,
   guidance, tools and result projections. The scripted external MCP and parent CLI suites are
   landed protocol/workflow evidence, not proof of unaided discovery.
-- **Staging direct-tool exposure:** align [#13514](https://github.com/agentydragon/ducktape/pull/13514)
-  with the nine-tool contract, including `sessions__get` and `sessions__read_turns`, and validate
-  the rendered catalogue. Preserve `basic` auto-approval and effective-caller enforcement.
+- **Staging direct-tool exposure:** [#13514](https://github.com/agentydragon/ducktape/pull/13514)
+  now configures the nine-tool contract, including `sessions__get` and `sessions__read_turns`.
+  Validate the rendered catalogue and exact-head CI; preserve `basic` auto-approval and effective-caller enforcement.
   Activation and rollback are separate from the merged backend and guidance rollout.
 - **Future provisioning:** borrowed-SA/no-new-grants identity and pinned approved configuration
   remain deferred until catalogue ownership is selected. Reuse persisted caller UID; creation
@@ -759,7 +759,7 @@ has a reviewed migration. Avoid a second general authorization owner in the new 
    control/recovery when needed. Cover an existing-environment parent and an external MCP caller
    without private fixture handles or a prescribed tool script. An isolated opt-in fixture can
    establish this before general staging exposure. Replan concrete backend gaps if discovered.
-2. **Enable the reviewed staging catalogue separately.** Finish the remaining catalogue alignment,
+2. **Enable the reviewed staging catalogue separately.** Finish the updated configuration checks,
    retain activation/rollback instructions and complete the usability capstone before exposing
    the tools broadly. Backend and guidance rollout gates already discharged are not new work.
 
