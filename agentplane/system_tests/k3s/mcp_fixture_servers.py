@@ -10,6 +10,7 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     Capability,
+    ContainerLifecycle,
     ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
@@ -20,6 +21,7 @@ from cdk8s_plus_34 import (
     DeploymentStrategy,
     EnvValue,
     EphemeralStorageResources,
+    Handler,
     ImagePullPolicy,
     MemoryResources,
     PodSecurityContextProps,
@@ -78,6 +80,8 @@ def add_mcp_everything(scope: Construct, *, image: str) -> None:
         image=image,
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         command=["node", "dist/index.js", "streamableHttp"],
+        # The pinned server's graceful shutdown handler listens for SIGINT, not SIGTERM.
+        lifecycle=ContainerLifecycle(pre_stop=Handler.from_command(["/bin/sh", "-c", "kill -INT 1"])),
         ports=[ContainerPort(name="http", number=_MCP_EVERYTHING_PORT, protocol=Protocol.TCP)],
         readiness=Probe.from_tcp_socket(port=_MCP_EVERYTHING_PORT, period_seconds=Duration.seconds(5)),
         liveness=Probe.from_tcp_socket(
