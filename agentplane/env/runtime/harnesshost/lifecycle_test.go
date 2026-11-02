@@ -155,14 +155,30 @@ func waitLifecycle(t *testing.T, r *Host, predicate func() bool, want string) {
 	defer cancel()
 	for {
 		changed := r.changesSince()
+		statusBefore := r.lifecycle.status()
+		statusCtx, stopStatusWatch := context.WithCancel(ctx)
+		statusChanged := make(chan error, 1)
+		go func() {
+			statusChanged <- harnesshostlifecycle.WatchStatus(statusCtx, r.lifecycle.state, func(current harnesshostlifecycle.Status) (bool, error) {
+				return current != statusBefore, nil
+			})
+		}()
 		if predicate() {
+			stopStatusWatch()
 			return
 		}
 		select {
 		case <-changed:
+		case err := <-statusChanged:
+			if err != nil && !errors.Is(err, context.Canceled) {
+				stopStatusWatch()
+				t.Fatalf("watch lifecycle status: %v", err)
+			}
 		case <-ctx.Done():
+			stopStatusWatch()
 			t.Fatalf("timed out waiting for %s: desired_state=%+v runtime=%+v", want, r.lifecycle.desiredState(), r.lifecycle.status())
 		}
+		stopStatusWatch()
 	}
 }
 
