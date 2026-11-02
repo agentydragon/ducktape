@@ -5,10 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -22,9 +19,7 @@ import (
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -48,29 +43,9 @@ type sessionOpeningService struct {
 	store     threadOpener
 }
 
-// The native listener is private to this process's UID (MkdirTemp creates a 0700 directory).
-// HTTP callers pass RequireCaller, including cookie CSRF, before the generated gateway dials it.
+// The generated unary gateway invokes the app-owned service in process, after RequireCaller
+// authenticates HTTP callers and enforces cookie CSRF. Dispatcher remains a native gRPC call.
 func RegisterSessionRoutes(server *HTTPServer, config Config, inventory appbridge.SandboxGetter, bridge sessionOpener, store threadOpener) error {
-	socketDir, err := os.MkdirTemp("", "agentplane-session-opening-")
-	if err != nil {
-		return err
-	}
-	socketPath := filepath.Join(socketDir, "grpc.sock")
-	listener, err := net.Listen("unix", socketPath)
-	if err != nil {
-		_ = os.RemoveAll(socketDir)
-		return err
-	}
-	grpcServer := grpc.NewServer()
-	sessionopeningpb.RegisterSessionOpeningServiceServer(grpcServer, &sessionOpeningService{config: config, inventory: inventory, bridge: bridge, store: store})
-	go func() { _ = grpcServer.Serve(listener) }()
-	connection, err := grpc.NewClient("unix:"+socketPath, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry())
-	if err != nil {
-		grpcServer.Stop()
-		_ = os.RemoveAll(socketDir)
-		return err
-	}
-	cleanup := func() { _ = connection.Close(); grpcServer.Stop(); _ = os.RemoveAll(socketDir) }
 	mux := gatewayruntime.NewServeMux(
 		gatewayruntime.WithForwardResponseOption(func(ctx context.Context, w http.ResponseWriter, _ proto.Message) error {
 			if method, ok := gatewayruntime.RPCMethod(ctx); ok && strings.HasSuffix(method, "/OpenSession") {
@@ -80,11 +55,10 @@ func RegisterSessionRoutes(server *HTTPServer, config Config, inventory appbridg
 		}),
 		gatewayruntime.WithErrorHandler(sessionGatewayError),
 	)
-	if err := sessionopeningpb.RegisterSessionOpeningServiceHandlerClient(context.Background(), mux, sessionopeningpb.NewSessionOpeningServiceClient(connection)); err != nil {
-		cleanup()
+	service := &sessionOpeningService{config: config, inventory: inventory, bridge: bridge, store: store}
+	if err := sessionopeningpb.RegisterSessionOpeningServiceHandlerServer(context.Background(), mux, service); err != nil {
 		return err
 	}
-	server.addCleanup(cleanup)
 	server.RegisterRawRoute("POST /sandboxes/{name}/sessions", mux, false)
 	server.RegisterRawRoute("GET /sandboxes/{name}/sessions/{session_id}/opening", mux, false)
 	return nil

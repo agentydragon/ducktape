@@ -21,6 +21,10 @@ import (
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -103,13 +107,14 @@ var (
 )
 
 type sessionTestPeer struct {
-	sandbox    *sandboxespb.Sandbox
-	spec       *sessionpb.SessionSpec
-	setup      *string
-	id         uuid.UUID
-	calls      []string
-	failThread bool
-	failOpen   error
+	sandbox      *sandboxespb.Sandbox
+	spec         *sessionpb.SessionSpec
+	setup        *string
+	id           uuid.UUID
+	calls        []string
+	failThread   bool
+	failOpen     error
+	dispatchSpan trace.SpanContext
 }
 
 func (p *sessionTestPeer) Get(context.Context, string) (*sandboxespb.Sandbox, error) {
@@ -125,8 +130,9 @@ func (p *sessionTestPeer) OpenThread(_ context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (p *sessionTestPeer) OpenSession(_ context.Context, name, uid string, id uuid.UUID, spec *sessionpb.SessionSpec, setup *string) (*dispatcherpb.SessionOpening, error) {
+func (p *sessionTestPeer) OpenSession(ctx context.Context, name, uid string, id uuid.UUID, spec *sessionpb.SessionSpec, setup *string) (*dispatcherpb.SessionOpening, error) {
 	p.calls = append(p.calls, "dispatch")
+	p.dispatchSpan = trace.SpanContextFromContext(ctx)
 	p.spec, p.setup = spec, setup
 	if p.id != id {
 		return nil, errors.New("Thread not created before dispatch")
@@ -176,6 +182,44 @@ func sessionTestRequest(handler http.Handler, method, path, body string) *httpte
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	return response
+}
+
+func TestSessionOpeningPreservesHTTPTraceToDispatcher(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previous)
+		_ = provider.Shutdown(context.Background())
+	})
+	peer := &sessionTestPeer{sandbox: &sandboxespb.Sandbox{Uid: "uid"}}
+	handler := appHTTPHandler(sessionTestGateway(t, peer))
+	request := httptest.NewRequest(http.MethodPost, "/sandboxes/demo/sessions", strings.NewReader(`{"spec":{},"session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"uid"}`))
+	request.Header.Set("Authorization", "Bearer accepted")
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("traceparent", "00-1234567890abcdef1234567890abcdef-1234567890abcdef-01")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("POST status %d: %s", response.Code, response.Body.String())
+	}
+	var httpSpan, openingSpan tracetest.SpanStub
+	for _, span := range exporter.GetSpans() {
+		switch span.Name {
+		case "HTTP POST":
+			httpSpan = span
+		case "agentplane.session.create":
+			openingSpan = span
+		}
+	}
+	if httpSpan.SpanContext.TraceID().String() != "1234567890abcdef1234567890abcdef" ||
+		openingSpan.Parent.SpanID() != httpSpan.SpanContext.SpanID() ||
+		openingSpan.SpanContext.TraceID() != httpSpan.SpanContext.TraceID() ||
+		peer.dispatchSpan.TraceID() != openingSpan.SpanContext.TraceID() ||
+		peer.dispatchSpan.SpanID() != openingSpan.SpanContext.SpanID() {
+		t.Fatalf("HTTP span %v, opening span %v (parent %v), Dispatcher context %v", httpSpan.SpanContext, openingSpan.SpanContext, openingSpan.Parent, peer.dispatchSpan)
+	}
 }
 
 func TestSessionOpeningGatewayPreservesPresetPresenceAndWireContract(t *testing.T) {

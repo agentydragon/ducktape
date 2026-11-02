@@ -30,6 +30,17 @@ frontend; agent and service callers use native gRPC at the owning backend.
 - **Error codes in the browser.** `connections/management.tsx` still branches on HTTP status
   (three times); move it to the body's gRPC `code`, which `HttpError` carries. Session-opening
   recovery uses gRPC codes with an HTTP-status fallback for overlapping app replicas.
+- **Typed Session overrides.** Replace `SessionOpeningService.OpenSession`'s `Struct` spec and
+  `Value` setup script with a typed contract, such as an override message or field mask with an
+  explicit setup-clear operation. Preserve preset inheritance, explicit zero/empty/null behavior,
+  strict validation and the caller-minted ID; plan the HTTP, cached-client and rollback migration.
+- **Session-opening browser compatibility.** Consolidate handwritten URL, request and gRPC error
+  decoding with the shared browser facade transport. Remove the legacy Huma status fallback and
+  wire-format workarounds only after old app replicas, cached browser bundles and the supported
+  rollback window are gone; preserve uncertain-outcome reconciliation throughout.
+- **Non-JSON Session-opening errors.** Preserve HTTP status and useful diagnostics when an app
+  proxy or other intermediary returns a non-JSON failure; keep unknown outcomes reconcilable
+  without automatically replaying the opening or setup.
 - **Attribution.** Services see the app, not the operator; the Dispatcher's per-caller wake budget is
   per app. Per-operator attribution is the separate delegated-caller question.
 - **Git index.** Its `/search` gets a facade with its Go port, if an agent needs it.

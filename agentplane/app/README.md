@@ -153,9 +153,9 @@ preset defaults, while explicit empty, zero and null values clear them. An omitt
 uses the preset; null clears it; a string (including empty) replaces it. Request envelopes and
 response codecs are generated from the proto; the nested override map intentionally preserves JSON
 presence rather than duplicating the `SessionSpec` scalar schema.
-The facade retains cookie-or-reviewed-workload-token admission and cookie CSRF checks; its native
-gRPC listener is local to the process UID in a private Unix-socket directory. Backend callers use
-the Dispatcher directly and never depend on app orchestration.
+The generated unary gateway runs the app-owned service in process after cookie-or-reviewed-workload-token
+admission and cookie CSRF checks. The app calls the Dispatcher over gRPC; backend callers use the
+Dispatcher directly and never depend on app orchestration.
 
 A `SessionOpening` reports queued, delivering, runner-admitted, or failed state. The browser retains
 only its caller-minted Session ID on an uncertain response and reconciles that opening without

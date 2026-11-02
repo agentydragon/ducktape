@@ -2326,6 +2326,12 @@ facades, while recording any protocol-specific transport that must remain. Login
 static assets, health probes, API documentation and OTLP telemetry are protocol-specific HTTP
 surfaces, not application RPCs to convert mechanically.
 
+Session-opening follow-ups: replace the untyped override map with a typed contract while preserving
+omitted, null and empty semantics; retire mixed-version browser compatibility only after the
+replica, cached-bundle and rollback windows close; and preserve status information for non-JSON
+HTTP failures without treating uncertain openings as rejected. Details are in
+[generated HTTP facades](grpc_http_facade.md#open).
+
 **Prerequisites:** no dependency on the separate History-read facade track or a service rename.
 Before each independently reviewable migration, identify the owning service and preserve the app's
 client-only boundary; backend responsibilities still in the app belong with their backend authority.
