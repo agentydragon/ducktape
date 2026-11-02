@@ -9,7 +9,10 @@ import (
 
 // ReserveWakeAttempt counts distinct guarded wake generations per authenticated
 // caller across replicas. A retry of the same generation spends no new budget.
-func (s *Store) ReserveWakeAttempt(ctx context.Context, caller Account, sandboxUID string, generation int64) (time.Duration, error) {
+func (s *Store) ReserveWakeAttempt(ctx context.Context, caller ServiceAccountIdentity, sandboxUID string, generation int64) (time.Duration, error) {
+	if caller.Namespace == "" || caller.Name == "" || caller.UID == "" {
+		return 0, errors.New("wake caller namespace, name and UID are required")
+	}
 	var retryAfter time.Duration
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,
@@ -27,8 +30,9 @@ func (s *Store) ReserveWakeAttempt(ctx context.Context, caller Account, sandboxU
 		}
 		var exists bool
 		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM wake_attempt
-			WHERE caller_namespace=$1 AND caller_name=$2 AND sandbox_uid=$3 AND wake_generation=$4)`,
-			caller.Namespace, caller.Name, sandboxUID, generation).Scan(&exists); err != nil {
+			WHERE caller_namespace=$1 AND caller_name=$2 AND (caller_uid=$3 OR caller_uid='')
+			AND sandbox_uid=$4 AND wake_generation=$5)`,
+			caller.Namespace, caller.Name, caller.UID, sandboxUID, generation).Scan(&exists); err != nil {
 			return err
 		}
 		if exists {
@@ -37,8 +41,8 @@ func (s *Store) ReserveWakeAttempt(ctx context.Context, caller Account, sandboxU
 		var count int
 		var oldest sql.NullTime
 		if err := tx.QueryRowContext(ctx, `SELECT count(*),min(attempted_at) FROM wake_attempt
-			WHERE caller_namespace=$1 AND caller_name=$2 AND attempted_at>$3`,
-			caller.Namespace, caller.Name, windowStart).Scan(&count, &oldest); err != nil {
+			WHERE caller_namespace=$1 AND caller_name=$2 AND (caller_uid=$3 OR caller_uid='') AND attempted_at>$4`,
+			caller.Namespace, caller.Name, caller.UID, windowStart).Scan(&count, &oldest); err != nil {
 			return err
 		}
 		if count >= WakeLimit {
@@ -52,8 +56,8 @@ func (s *Store) ReserveWakeAttempt(ctx context.Context, caller Account, sandboxU
 			return nil
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO wake_attempt
-			(caller_namespace,caller_name,sandbox_uid,wake_generation,attempted_at)
-			VALUES ($1,$2,$3,$4,$5)`, caller.Namespace, caller.Name, sandboxUID, generation, now)
+			(caller_namespace,caller_name,caller_uid,sandbox_uid,wake_generation,attempted_at)
+			VALUES ($1,$2,$3,$4,$5,$6)`, caller.Namespace, caller.Name, caller.UID, sandboxUID, generation, now)
 		return err
 	})
 	return retryAfter, err

@@ -10,9 +10,20 @@ type queuedWork struct {
 	id, key         string
 	opening         bool
 	wakeEligible    bool
-	wakeCaller      *Account
+	wakePrincipal   *ServiceAccountIdentity
 	wakeFrom        *string
 	wakeRequestedAt *time.Time
+}
+
+func effectiveWakePrincipal(wakeCaller *Account, attribution *AdmissionAttribution) *ServiceAccountIdentity {
+	if wakeCaller == nil || attribution == nil {
+		return nil
+	}
+	effective := attribution.EffectiveCaller
+	if effective.Namespace == "" || effective.Name == "" || effective.UID == "" || effective.Account != *wakeCaller {
+		return nil
+	}
+	return &effective
 }
 
 func (w *DeliveryWorker) prepareDispatch(ctx context.Context, row *Dispatch, sandbox SandboxSnapshot, owner Owner) (bool, error) {
@@ -34,7 +45,8 @@ func (w *DeliveryWorker) prepareDispatch(ctx context.Context, row *Dispatch, san
 	}
 	return w.prepare(ctx, queuedWork{
 		id: row.CommandID, key: row.SessionID, wakeEligible: row.WakeEligible,
-		wakeCaller: row.WakeCaller, wakeFrom: row.WakeFromIncarnation,
+		wakePrincipal:   effectiveWakePrincipal(row.WakeCaller, row.Attribution),
+		wakeFrom:        row.WakeFromIncarnation,
 		wakeRequestedAt: row.WakeRequestedAt,
 	}, sandbox, owner)
 }
@@ -42,7 +54,8 @@ func (w *DeliveryWorker) prepareDispatch(ctx context.Context, row *Dispatch, san
 func (w *DeliveryWorker) prepareOpening(ctx context.Context, row *Opening, sandbox SandboxSnapshot, owner Owner) (bool, error) {
 	return w.prepare(ctx, queuedWork{
 		id: row.SessionID, key: row.SessionID, opening: true, wakeEligible: row.WakeEligible,
-		wakeCaller: row.WakeCaller, wakeFrom: row.WakeFromIncarnation,
+		wakePrincipal:   effectiveWakePrincipal(row.WakeCaller, row.Attribution),
+		wakeFrom:        row.WakeFromIncarnation,
 		wakeRequestedAt: row.WakeRequestedAt,
 	}, sandbox, owner)
 }
@@ -125,7 +138,7 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 }
 
 func (w *DeliveryWorker) wakeFor(ctx context.Context, work queuedWork, sandbox SandboxSnapshot, owner Owner) error {
-	if work.wakeCaller == nil {
+	if work.wakePrincipal == nil {
 		return w.noteWaiting(ctx, work, owner, "wake_caller_unknown")
 	}
 	var incarnation *string
@@ -156,7 +169,7 @@ func (w *DeliveryWorker) wakeFor(ctx context.Context, work queuedWork, sandbox S
 		if !current {
 			return ErrWakeSuperseded
 		}
-		retryAfter, err := w.Store.ReserveWakeAttempt(ctx, *work.wakeCaller, sandbox.UID, generation)
+		retryAfter, err := w.Store.ReserveWakeAttempt(ctx, *work.wakePrincipal, sandbox.UID, generation)
 		if err != nil {
 			return err
 		}

@@ -105,6 +105,7 @@ go_test(
         "authorization_integration_test.go",
         "store_integration_test.go",
         "store_integration_testmain_test.go",
+        "wake_integration_test.go",
     ],
     embed = [":dispatcher"],
     tags = ["requires_docker"],
