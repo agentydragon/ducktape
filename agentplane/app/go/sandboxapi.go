@@ -193,18 +193,9 @@ func sandboxHTTPError(err error) error {
 
 func classifySandboxError(err error) error {
 	var notFound *sandboxinventory.SandboxNotFoundError
-	var invalid *sandboxinventory.InvalidSandboxError
-	var conflict *sandboxinventory.SandboxConflictError
-	var running *sandboxinventory.SandboxRunningError
-	var modeUnknown *sandboxinventory.SandboxModeUnknownError
-	var tearingDown *sandboxinventory.SandboxTearingDownError
 	switch {
 	case errors.As(err, &notFound), apierrors.IsNotFound(err):
 		return huma.Error404NotFound(err.Error())
-	case errors.As(err, &invalid):
-		return huma.Error422UnprocessableEntity(err.Error())
-	case errors.As(err, &conflict), errors.As(err, &running), errors.As(err, &modeUnknown), errors.As(err, &tearingDown):
-		return huma.Error409Conflict(err.Error())
 	default:
 		switch grpcstatus.Code(err) {
 		case codes.NotFound:

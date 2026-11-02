@@ -142,11 +142,6 @@ func sessionRPCError(err error) error {
 	var service *appbridge.ServiceError
 	var refused *appbridge.RefusedError
 	var notFound *sandboxinventory.SandboxNotFoundError
-	var invalid *sandboxinventory.InvalidSandboxError
-	var conflict *sandboxinventory.SandboxConflictError
-	var running *sandboxinventory.SandboxRunningError
-	var modeUnknown *sandboxinventory.SandboxModeUnknownError
-	var tearingDown *sandboxinventory.SandboxTearingDownError
 	var quiescing *sandboxes.SandboxQuiescingError
 	switch {
 	case errors.As(err, &timeout):
@@ -159,9 +154,7 @@ func sessionRPCError(err error) error {
 		return status.Error(refused.Code, refused.Details)
 	case errors.As(err, &notFound), apierrors.IsNotFound(err):
 		return status.Error(codes.NotFound, err.Error())
-	case errors.As(err, &invalid):
-		return status.Error(codes.InvalidArgument, err.Error())
-	case errors.As(err, &conflict), errors.As(err, &running), errors.As(err, &modeUnknown), errors.As(err, &tearingDown), apierrors.IsConflict(err):
+	case apierrors.IsConflict(err):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.As(err, &quiescing):
 		slog.Error("Session opening dependency failed", "error", err)

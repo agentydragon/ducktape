@@ -2,7 +2,7 @@ import type { JSX } from "react";
 /**
  * The lifecycle controls the sandbox list and the sandbox page share: the suspend/resume button,
  * and deletion, which the API takes only from a suspended sandbox
- * (`agentplane/sandboxes/inventory/inventory.go`). The rule is restated here so the UI offers the
+ * (`agentplane/runner_gateway/environments/internal/management/access.go`). The rule is restated here so the UI offers the
  * action when it will be accepted, not so it enforces anything.
  */
 import { ActionIcon, Button, Group, Modal, Stack, Text, Tooltip } from "@mantine/core";

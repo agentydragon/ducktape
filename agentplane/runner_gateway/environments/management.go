@@ -5,8 +5,10 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/agentydragon/ducktape/agentplane/policy"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/management"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -18,11 +20,11 @@ import (
 
 // manager requires an explicit direct, Pod-bound grant. In particular, delegation and read access
 // do not confer write authority. Create records the authenticated account as the original caller.
-func (s *Service) manager(ctx context.Context) (*inventory.Access, error) {
+func (s *Service) manager(ctx context.Context) (*management.Access, error) {
 	return s.managementAccess(ctx, nil)
 }
 
-func (s *Service) managementAccess(ctx context.Context, origin *sandboxespb.SandboxLaunchOrigin) (*inventory.Access, error) {
+func (s *Service) managementAccess(ctx context.Context, origin *sandboxespb.SandboxLaunchOrigin) (*management.Access, error) {
 	identity, err := caller(ctx)
 	if err != nil {
 		return nil, err
@@ -47,7 +49,7 @@ func (s *Service) managementAccess(ctx context.Context, origin *sandboxespb.Sand
 			return nil, status.Error(codes.InvalidArgument, "launch origin requires caller and Action group")
 		}
 	}
-	return inventory.New(s.namespace, s.objects, s.defaultPolicySets, &sandboxespb.ServiceAccount{
+	return management.New(s.namespace, s.objects, s.defaultPolicySets, &sandboxespb.ServiceAccount{
 		Namespace: identity.Account.Namespace, Name: identity.Account.Name,
 	})
 }
@@ -151,19 +153,19 @@ func (s *Service) SetEnvironmentIdleSuspend(ctx context.Context, request *enviro
 
 func managementError(ctx context.Context, err error) error {
 	var missing *inventory.SandboxNotFoundError
-	var invalid *inventory.InvalidSandboxError
-	var policy *inventory.UnknownPolicySetError
-	var launcherPolicy *inventory.LauncherPolicySetError
-	var conflict *inventory.SandboxConflictError
-	var running *inventory.SandboxRunningError
-	var unknown *inventory.SandboxModeUnknownError
-	var teardown *inventory.SandboxTearingDownError
+	var invalid *management.InvalidSandboxError
+	var unknownPolicy *policy.UnknownPolicySetError
+	var launcherPolicy *management.LauncherPolicySetError
+	var conflict *management.SandboxConflictError
+	var running *management.SandboxRunningError
+	var unknown *management.SandboxModeUnknownError
+	var teardown *management.SandboxTearingDownError
 	switch {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return status.FromContextError(err).Err()
 	case errors.As(err, &missing), apierrors.IsNotFound(err):
 		return status.Error(codes.NotFound, err.Error())
-	case errors.As(err, &policy):
+	case errors.As(err, &unknownPolicy):
 		return managementRefusal(codes.InvalidArgument, "UNKNOWN_POLICY_SET", err.Error())
 	case errors.As(err, &launcherPolicy):
 		return managementRefusal(codes.InvalidArgument, "LAUNCHER_POLICY_SET", err.Error())

@@ -334,8 +334,6 @@ func TestSessionRPCErrorClassifiesWithoutHTTP(t *testing.T) {
 	}{
 		{"sandbox missing", &sandboxinventory.SandboxNotFoundError{Name: "demo"}, codes.NotFound, "demo"},
 		{"kubernetes missing", apierrors.NewNotFound(resource, "demo"), codes.NotFound, "demo"},
-		{"invalid sandbox", &sandboxinventory.InvalidSandboxError{Reason: "invalid"}, codes.InvalidArgument, "invalid"},
-		{"sandbox conflict", &sandboxinventory.SandboxConflictError{Name: "demo"}, codes.FailedPrecondition, "demo"},
 		{"kubernetes conflict", apierrors.NewConflict(resource, "demo", errors.New("conflict")), codes.FailedPrecondition, "demo"},
 		{"quiescing", &sandboxes.SandboxQuiescingError{Name: "demo"}, codes.Unavailable, "quiescing"},
 		{"canceled", context.Canceled, codes.Canceled, "canceled"},

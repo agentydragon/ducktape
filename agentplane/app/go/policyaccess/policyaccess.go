@@ -10,10 +10,10 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -241,5 +241,5 @@ func (a *Access) requireKnownPolicySets(ctx context.Context, names []string) err
 		missing = append(missing, name)
 	}
 	sort.Strings(missing)
-	return &sandboxinventory.UnknownPolicySetError{Names: missing, Kind: "PolicySet"}
+	return &policy.UnknownPolicySetError{Names: missing, Kind: "PolicySet"}
 }
