@@ -68,12 +68,14 @@ the shared deployment. These cases issue no shell tools or policy mutations. Mes
 presets, credentials, suspend/resume and storage cases retain fresh Sandbox ownership.
 Storage runs alone first, before the lazy runner pool creates any Pods, because it
 requires an empty Sandbox inventory and changes shared configuration. Only cases selected by
-pytest are started; all 13 retain separate parameter IDs, JUnit results and real execution
+pytest are started; all 14 retain separate parameter IDs, JUnit results and real execution
 durations from their OTel spans. For example, `--test_arg=-k=pod_mtls` selects only the Pod credential
 case. A case failure is reported on its own item while peers finish; early suite exit cancels and
-drains unfinished work before the shared deployment stops. MCP OAuth linkage remains parametrized and sequential because both harnesses
-update the same operator/server record. A pair failure names its harness and cancels and awaits
-its peer before fixture cleanup.
+drains unfinished work before the shared deployment stops. The first three independent MCP Actions
+items run in two case-owned slots, each with fresh clients, Sandbox scope, Dispatcher channel,
+case-owned policy resources where needed and a case-scoped scripted queue. MCP OAuth linkage remains parametrized and sequential
+because both harnesses update the same operator/server record. A pair failure names its harness and
+cancels and awaits its peer before fixture cleanup.
 The Dispatcher suite remains separate because replica coverage changes the shared Runner Gateway
 Deployment and deletes a recorded Pod while checking controller behavior.
 

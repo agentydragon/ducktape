@@ -13,10 +13,8 @@ from agentplane.system_tests.k3s.stack import Stack
 from agentplane.system_tests.operator_login import (
     LoginBlockedError,
     OperatorCredentials,
-    app_origin,
-    login_operator,
+    operator_bff_client,
     read_operator_credentials,
-    verify_action_federation,
 )
 from agentplane.system_tests.scenarios import mcp
 
@@ -50,16 +48,7 @@ async def operator_bff(base_url: str, operator_credentials: OperatorCredentials)
     previous_logging = logging.root.manager.disable
     logging.disable(logging.CRITICAL)
     try:
-        origin = str(app_origin(base_url)).rstrip("/")
-        async with httpx.AsyncClient(base_url=origin, timeout=30, follow_redirects=False) as http:
-            try:
-                await login_operator(http, operator_credentials)
-            except LoginBlockedError as exc:
-                pytest.fail(str(exc), pytrace=False)
-            except httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError:
-                pytest.fail("BLOCKED: OIDC transport or response invalid; auth details withheld", pytrace=False)
-            http.headers["Origin"] = origin
-            await verify_action_federation(http)
+        async with operator_bff_client(base_url, operator_credentials) as http:
             yield http
     except LoginBlockedError as exc:
         pytest.fail(str(exc), pytrace=False)
