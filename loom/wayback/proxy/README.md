@@ -15,8 +15,8 @@ logged on the same stream as
 `{kind: "upstream_error", request_url, status, body}` (body truncated) so a
 degraded run is diagnosable rather than collapsing into an opaque 502.
 
-See [Archive.org APIs for Loom Wayback Access](../docs/archive_org_apis.md) for
-the IA API contract and [loom/gym TODO](../gym/TODO.md) for current eval
+See [Archive.org APIs for Loom Wayback Access](../../docs/archive_org_apis.md) for
+the IA API contract and [loom/gym TODO](../../gym/TODO.md) for current eval
 reliability follow-ups.
 
 It runs as an embedded [mitmproxy](https://mitmproxy.org/) (a
