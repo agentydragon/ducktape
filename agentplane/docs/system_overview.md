@@ -202,7 +202,7 @@ flowchart LR
     history[History Service]
     subgraph unified[Runner Gateway]
         dispatcher[Dispatcher API and durable delivery]
-        discovery[EnvironmentService API]
+        environments[EnvironmentService API]
         gateway[Runner proxy and state observation]
     end
     pod[Managed Pod agent process and CLI]
@@ -215,7 +215,7 @@ flowchart LR
     k8s[Kubernetes API]
     app -->|session opens + commands| dispatcher
     app -->|Dispatch watch for the browser: gRPC| dispatcher
-    actions -->|caller-delegated EnvironmentService list/get: gRPC| discovery
+    actions -->|caller-delegated EnvironmentService list/get; resume when enabled: gRPC| environments
     actions -->|Session commands: broker or delegated caller, gRPC| dispatcher
     actions -->|Session reads: broker or delegated caller, gRPC| history
     app -->|per-Sandbox Runner Proxy: live inventory + diagnostics| gateway
@@ -223,8 +223,8 @@ flowchart LR
     dispatcher -->|central opens + commands: Sampler gRPC| central
     sandboxctl -->|Quiesce| gateway
     dispatcher -->|watch + guarded wake| k8s
-    pod -.->|Session and environment gRPC over HTTPS_PROXY/CONNECT| sidecar
-    guest -.->|Session and environment gRPC over HTTPS_PROXY/CONNECT| relay
+    pod -.->|Session and EnvironmentService list/get gRPC over HTTPS_PROXY/CONNECT| sidecar
+    guest -.->|Session and EnvironmentService list/get gRPC over HTTPS_PROXY/CONNECT| relay
     sidecar -.-> egress
     relay -.-> egress
     egress -.->|Exact RPC paths; substituted Sandbox bearer| dispatcher
@@ -233,12 +233,15 @@ flowchart LR
 Managed Pod and VM callers receive only the inert `AGENTPLANE_SESSIONS_CREDENTIAL` placeholder. The
 `AGENTPLANE_SESSIONS_URL` targets `session-dispatcher.<namespace>.svc.cluster.local:8080`. The egress sidecar
 or VM launcher relay holds the short-lived `session-dispatcher` audience token; the central proxy substitutes
-it on the allowlisted SessionDispatcher and EnvironmentService RPC paths. Backend checks of the Sandbox
-identity and object UID remain authoritative; network reachability grants no Session authority.
-The Action Service uses the same Dispatcher audience and a pod-bound Actions token on the explicitly
-opted-in discovery methods. The receiver applies the caller identity from the shared delegation
-envelope, then performs the same live Sandbox and execution-ServiceAccount UID checks as a direct
-caller. This read path does not grant Session writes, wake, or provisioning authority.
+it on the allowlisted SessionDispatcher and EnvironmentService list/get RPC paths.
+Backend checks of the Sandbox identity and object UID remain authoritative; network reachability
+grants no Session authority. The Gateway also serves `EnvironmentService.ResumeEnvironment`, which
+checks the effective caller, current execution-ServiceAccount identity, resume policy and guarded
+generation before changing desired state. Delegated resume requires a separate exact-method opt-in;
+the optional direct `operator_callers` policy defaults empty. The integration app still writes
+operator resume intent through Kubernetes. Staging caller, delegated-method and egress activation
+remain pending. Resume acceptance is not readiness, and no resume path replays Session input or
+creates a grant.
 The opt-in Session tools also forward the effective caller to Dispatcher commands and retained
 History reads. Those receivers enforce their own same-principal checks; the existing
 `orchestration_v1` broker path retains its separate authority.
@@ -540,6 +543,6 @@ external MCP bearers and forwards workload calls under the bound ServiceAccount'
 
 ## Service definitions
 
-- gRPC: [Actions](../action_service/action_service.proto), [operator Actions](../action_service/operator_action_service.proto), [Connections](../mcp_edge/connection_service.proto), [Web Push](../action_service/web_push_service.proto), [Environment Runtime](../env/runtime/control/environment_runtime.proto), [Executor](../env/runtime/execution/executor.proto), [SessionJournalIngress](../history_service/session_ingress.proto), [Session Dispatcher](../runner_gateway/dispatcher/session_dispatcher.proto), [History Service](../history_service/history_service.proto), and the Notification Service's [workload](../notification_service/notifications.proto) and [operator](../notification_service/notifications_operator.proto) APIs (the workload API also has an HTTP form). The Runner Gateway also serves standard gRPC health and proxies the Environment Runtime and Executor services over a direct mTLS connection to each runner.
+- gRPC: [Actions](../action_service/action_service.proto), [operator Actions](../action_service/operator_action_service.proto), [Connections](../mcp_edge/connection_service.proto), [Web Push](../action_service/web_push_service.proto), [Environment Service](../sandboxes/environments/environment_service.proto), [Environment Runtime](../env/runtime/control/environment_runtime.proto), [Executor](../env/runtime/execution/executor.proto), [SessionJournalIngress](../history_service/session_ingress.proto), [Session Dispatcher](../runner_gateway/dispatcher/session_dispatcher.proto), [History Service](../history_service/history_service.proto), and the Notification Service's [workload](../notification_service/notifications.proto) and [operator](../notification_service/notifications_operator.proto) APIs (the workload API also has an HTTP form). The Runner Gateway also serves standard gRPC health and proxies the Environment Runtime and Executor services over a direct mTLS connection to each runner.
 - HTTP and streaming APIs: [Integration app](../app/go/) (Bazel target: `//agentplane/app/go:agentplane-app`), [Electric proxy](../app/go/proxy/electric.go), [Action Service generated facade](../action_service/action_service.proto), [LLM ingress](../llm_ingress/server.go), and [Git index](../x/indexing/app.py).
 - Controllers and egress: [Sandbox Controller](../sandbox_controller/controller.go), [Policy Controller](../policy_controller/controller.go), [central egress proxy](../egress/proxy/proxy.go), [Go sidecar](../egress/sidecar/main.go), and [sidecar route configuration](../egress/platform_routes.py).

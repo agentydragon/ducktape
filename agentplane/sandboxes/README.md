@@ -1,13 +1,21 @@
 # Sandboxes
 
 The shared library for Sandbox requesters and readers: the integration app, Runner Gateway and
-Notification Service. Kubernetes holds all Sandbox state. The app submits desired state and operator
-grants; the Sandbox Controller reconciles them and owns Sandbox status. The Go `SandboxReader`
+Notification Service. Kubernetes holds all Sandbox state. The `lifecycle` package owns explicit
+resume authorization and its guarded `spec.running`/`wakeGeneration` updates; operator authority
+and ordinary execution-account policy are checked at request time. Automatic delivery still uses
+the catalog-backed wake path and its existing allowlist behavior until a separate integration. The
+Sandbox Controller reconciles desired state and owns Sandbox status. The Go `SandboxReader`
 reads a Sandbox and its Pod; `SandboxInventory` also creates (idempotently, by a recorded create intent),
 guards `spec.running` patches by UID and resourceVersion, refuses resume with a retryable error while the
 controller is quiescing an incarnation, and starts deletion of a suspended Sandbox. On a resourceVersion
 conflict, resume and send-wake requests reread and re-evaluate current state; concurrent wake requests
 advance one `wakeGeneration`.
+
+`spec.resumePolicy.allowOwnServiceAccount` opts the exact live execution ServiceAccount UID into explicit
+resume of idle suspension. `spec.wakeOnSend` and the existing `wake_callers` setting continue to
+govern automatic delivery wake. A separate optional direct Pod-bound `operator_callers` grant lets
+an operator explicitly resume a requested stop; delegated callers cannot use that grant.
 
 `status.operatingMode` is the controller's effective-mode report. It is absent until the controller
 first reconciles a new Sandbox, so readers expose a nullable mode and `Unspecified` phase instead of

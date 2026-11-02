@@ -14,7 +14,9 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
 - [MCP edge](mcp_edge/README.md): external Connection/OAuth authority and `/mcp`; forwards authenticated Actions calls over gRPC.
 - [Runner Gateway](runner_gateway/README.md): one process providing runner state observation,
   authorized live Runner proxy, [Session Dispatcher](runner_gateway/dispatcher/README.md) durable queue,
-  and read-only EnvironmentService.
+  and `EnvironmentService` inventory (`ListEnvironments`, `WatchEnvironments`, immediate
+  `GetEnvironment`, current-state `WatchEnvironment`) plus explicit resume through shared lifecycle
+  machinery.
   New serving Pods run the queue migration before starting ([deployment](runner_gateway/README.md#deployment)).
 - [History Service](history_service/README.md): retained Session history, read by the
   integration app and the Notification service.

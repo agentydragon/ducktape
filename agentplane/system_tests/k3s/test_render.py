@@ -183,6 +183,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations() -> None:
     gateway_config = yaml.safe_load(
         _resource(docs, "ConfigMap", f"{fixture_chart.RUNNER_GATEWAY}-settings")["data"]["settings.yaml"]
     )
+    assert gateway_config["operator_callers"] == [f"{NAMESPACE}/app"]
     assert gateway_config["runner_security"] == {
         "mode": "mtls",
         "tls": {
