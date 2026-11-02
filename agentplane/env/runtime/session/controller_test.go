@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
@@ -84,4 +85,48 @@ func pointerIDs(pointers []resource.Pointer) []string {
 	}
 	slices.Sort(ids)
 	return ids
+}
+
+func TestPreFenceWaitsForNativeExitCallbackAndItsInspection(t *testing.T) {
+	// A native reader can enqueue reconciliation after the process has exited.
+	// stopProcess must join that reader before ProcessStopped can be published.
+	s := &Session{}
+	s.connection.readers.Add(1)
+	stopped := make(chan error, 1)
+	go func() { stopped <- s.stopProcess(t.Context()) }()
+	select {
+	case err := <-stopped:
+		t.Fatalf("process stop finished before native exit callback: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	status := LifecycleStatus{EnvironmentGeneration: 7, Phase: Halted, ProcessStopped: false}
+	if s.preFenceSettled(status) {
+		t.Fatal("pre-fence cleanup settled before native exit callback joined")
+	}
+	s.mu.Lock()
+	s.reconciliations = append(s.reconciliations, &pendingReconciliation{})
+	s.mu.Unlock()
+	s.connection.readers.Done()
+	select {
+	case err := <-stopped:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("process stop did not join the native callback")
+	}
+	status.ProcessStopped = true
+	if s.preFenceSettled(status) {
+		t.Fatal("pre-fence cleanup settled with late inspection pending")
+	}
+	s.mu.Lock()
+	s.reconciliations = nil
+	s.mu.Unlock()
+	if !s.preFenceSettled(status) {
+		t.Fatal("pre-fence cleanup stayed blocked after callback and inspection settled")
+	}
+	status.Error = "inspection publication failed"
+	if s.preFenceSettled(status) {
+		t.Fatal("pre-fence cleanup settled after inspection failure")
+	}
 }

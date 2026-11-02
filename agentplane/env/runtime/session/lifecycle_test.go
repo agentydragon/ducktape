@@ -64,6 +64,70 @@ func withSessionControllerGate(t *testing.T, s *Session, gate *sync.Mutex, setup
 	setup()
 }
 
+type heldInspectionAdapter struct {
+	harness.Adapter
+	started  chan struct{}
+	release  chan struct{}
+	returned chan struct{}
+}
+
+func (*heldInspectionAdapter) BlocksCommandDispatch() bool { return true }
+
+func (a *heldInspectionAdapter) Reconcile(_ context.Context, turn string, _ bool) (*eventpb.ConversationReconciled, error) {
+	close(a.started)
+	<-a.release
+	defer close(a.returned)
+	return &eventpb.ConversationReconciled{TurnId: turn}, nil
+}
+
+func TestSessionPreFenceWaitsForInspectionJournalCommit(t *testing.T) {
+	var gate sync.Mutex
+	s, _, manager := frameTestSessionWithControllerGate(t, []string{"/bin/cat"}, true, &gate)
+	inspection := &heldInspectionAdapter{started: make(chan struct{}), release: make(chan struct{}), returned: make(chan struct{})}
+	withSessionControllerGate(t, s, &gate, func() {
+		setLifecycleStatusReady(t, manager, s)
+		s.mu.Lock()
+		s.adapter = inspection
+		s.reconciliations = append(s.reconciliations, &pendingReconciliation{turnID: "late-turn", adapter: inspection, ready: true})
+		s.mu.Unlock()
+		s.wake()
+	})
+	select {
+	case <-inspection.started:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("inspection operation did not start")
+	}
+	if err := lifecycle.PublishEnvironmentDesired(t.Context(), manager.state, lifecycle.EnvironmentDesired{Mode: lifecycle.Quiescing, Generation: 1}); err != nil {
+		t.Fatal(err)
+	}
+	waitSession(t, s, func(current LifecycleStatus) bool {
+		return current.EnvironmentGeneration == 1 && current.Phase == Halted && current.ProcessStopped && !current.PreFenceSettled
+	}, "native process stopped while inspection is active")
+	held, releaseBatch := make(chan struct{}), make(chan struct{})
+	batchDone := make(chan error, 1)
+	go func() {
+		batchDone <- s.journal.WithBatch(t.Context(), func(context.Context) error {
+			close(held)
+			<-releaseBatch
+			return nil
+		})
+	}()
+	<-held
+	close(inspection.release)
+	<-inspection.returned
+	current, found, err := ReadLifecycleStatus(t.Context(), manager.state, s.id)
+	if err != nil || !found || current.PreFenceSettled {
+		t.Fatalf("pre-fence settled before inspection observation committed: status=%+v found=%t err=%v", current, found, err)
+	}
+	close(releaseBatch)
+	if err := <-batchDone; err != nil {
+		t.Fatal(err)
+	}
+	waitSession(t, s, func(current LifecycleStatus) bool {
+		return current.EnvironmentGeneration == 1 && current.PreFenceSettled
+	}, "inspection observation committed and pre-fence cleanup settled")
+}
+
 // setSessionPhase directly changes controller-owned lifecycle status; callers must
 // pause the Session controller for the fixture mutation.
 func setSessionPhase(t *testing.T, s *Session, phase Phase) {

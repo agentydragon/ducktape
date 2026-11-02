@@ -16,7 +16,6 @@ import (
 
 const (
 	ReconcileSnapshotType = "SessionReconcileSnapshots.agentplane"
-	InspectionStatusType  = "SessionInspectionStatuses.agentplane"
 	LifecycleStatusType   = "SessionLifecycleStatuses.agentplane"
 	OwnerStatusType       = "SessionOwnerStatuses.agentplane"
 	ownerRetryType        = "SessionOwnerRetries.agentplane"
@@ -48,10 +47,6 @@ type ReconcileSnapshot struct {
 	DispatchBlocked   bool
 }
 
-// InspectionStatus changes only when inspection work starts or settles. The Runtime
-// lifecycle controller needs this barrier, not every Session dispatch dependency.
-type InspectionStatus struct{ Inspecting bool }
-
 // OwnerStatus reports that the live owner has recovered the durable Session.
 type OwnerStatus struct {
 	Ready bool
@@ -72,6 +67,10 @@ type LifecycleStatus struct {
 	AdmissionClosed  bool
 	SetupOperationID string
 	ProcessStopped   bool
+	// PreFenceSettled is the generation-qualified local shutdown barrier. It
+	// becomes true only after halt, native exit callbacks and every resulting
+	// inspection have settled. It does not wait for the global Execution fence.
+	PreFenceSettled bool
 	// Sealed is published only after the journal commit and the current
 	// generation's native and Execution fences have been observed.
 	Sealed                 bool
@@ -132,12 +131,6 @@ func (OwnerStatus) resourceType() resource.Type             { return OwnerStatus
 func (value OwnerStatus) DeepCopy() OwnerStatus             { return value }
 func (ownerRetry) resourceType() resource.Type              { return ownerRetryType }
 func (value ownerRetry) DeepCopy() ownerRetry               { return value }
-
-func (InspectionStatus) resourceType() resource.Type      { return InspectionStatusType }
-func (value InspectionStatus) DeepCopy() InspectionStatus { return value }
-func ReadInspectionStatus(ctx context.Context, reader controller.Reader, id string) (InspectionStatus, bool, error) {
-	return componentRead[InspectionStatus](ctx, reader, id)
-}
 
 func ReadOwnerStatus(ctx context.Context, reader controller.Reader, id string) (OwnerStatus, bool, error) {
 	return componentRead[OwnerStatus](ctx, reader, id)

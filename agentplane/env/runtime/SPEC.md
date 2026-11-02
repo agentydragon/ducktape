@@ -109,14 +109,18 @@ Execution starts and their fences settle. Repeated Quiesce preserves a healthy d
 only a failure for that exact generation can trigger retry.
 
 Quiesce selects the durable incarnation seal before publishing the draining revision. Native-stop
-completion requires settled admissions/setup, halted Sessions, shared app-server cleanup, all
-harness-domain process finalizers and inspection writes. Runtime then drains and fences Execution.
+completion requires settled admissions/setup, each Session's current-generation `PreFenceSettled`
+status, shared app-server cleanup and all harness-domain process finalizers. A Session publishes
+that status only after halt, its process stop proof and the resulting inspection writes settle.
+Native readers or shared Codex End callbacks are joined before process stop is reported, so late
+exit inspection cannot follow a true pre-fence status. Runtime then drains and fences Execution.
 Its fence completion names both the Execution attempt and lifecycle generation. Journals seal only
-after those exact native and Execution barriers. Each Session lifecycle controller projects a
-committed journal seal into its volatile status only after its halt, process stop and inspection
-have settled and the matching generation's global barriers permit sealing. The projection names
-the seal UID and cursor; a missing or stale projection or an unsettled admission cutoff cannot
-complete the environment barrier.
+after those exact native and Execution barriers. `PreFenceSettled` is independent of sealing, so the
+Session and aggregate barriers do not form a cycle. Each Session lifecycle controller projects a
+committed journal seal into its volatile status only after local cleanup and the matching
+generation's global barriers permit sealing and its admission cutoff has settled. The projection
+names the seal UID and cursor; a missing or stale projection or an unsettled admission cutoff
+cannot complete the environment barrier.
 The journal remains the durable seal authority, so recovery rechecks it and the fresh cleanup
 proofs before publishing status. History sends final entries and seals, persists the
 acknowledgements, and satisfies delivery only at each exact sealed cursor. The Session lifecycle

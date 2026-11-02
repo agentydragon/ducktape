@@ -878,7 +878,7 @@ func (*testAggregateController) Run(ctx context.Context, r controller.Runtime, _
 		}
 		stage := lifecycle.StageRunning
 		if desired.Mode != lifecycle.Running {
-			stage = lifecycle.Halting
+			stage = lifecycle.Stopping
 		}
 		if _, err := lifecycle.WriteStatus(ctx, r, lifecycle.Status{Generation: desired.Generation, Stage: stage}); err != nil {
 			return err

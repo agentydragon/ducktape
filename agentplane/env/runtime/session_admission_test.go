@@ -394,7 +394,7 @@ func (s *failSessionOwnerPublication) Modify(ctx context.Context, value resource
 }
 
 func TestOpenSessionFailsWhenOwnerPublicationFails(t *testing.T) {
-	for _, resourceType := range []string{session.ReconcileSnapshotType, session.InspectionStatusType} {
+	for _, resourceType := range []string{session.ReconcileSnapshotType} {
 		t.Run(resourceType, func(t *testing.T) {
 			proxy := modelConfigServer(t)
 			workspace := t.TempDir()

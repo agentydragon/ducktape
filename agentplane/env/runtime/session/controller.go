@@ -31,7 +31,6 @@ func (c *sessionLifecycleController) Settings() controller.QSettings {
 			{Namespace: lifecycle.Namespace, Type: lifecycle.AdmissionCountType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.AggregateStatusType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: codexappserver.StatusType, Kind: controller.InputQMapped},
-			{Namespace: lifecycle.Namespace, Type: InspectionStatusType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: retained.IngressAckType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: LifecycleStatusType, Kind: controller.OutputExclusive}},
@@ -40,7 +39,7 @@ func (c *sessionLifecycleController) Settings() controller.QSettings {
 }
 
 func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
-	if ptr.Type() == OwnerStatusType || ptr.Type() == InspectionStatusType || ptr.Type() == retained.IngressAckType {
+	if ptr.Type() == OwnerStatusType || ptr.Type() == retained.IngressAckType {
 		return []resource.Pointer{resource.NewMetadata(lifecycle.Namespace, ReconcileSnapshotType, ptr.ID(), resource.VersionUndefined)}, nil
 	}
 	rows, err := safe.ReaderListAll[*typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]](ctx, r)
@@ -106,6 +105,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		current.AcknowledgementPresent = false
 		current.AcknowledgementSealed = false
 		current.AcknowledgementCursor = 0
+		current.PreFenceSettled = false
 	}
 	current.AdmissionClosed = s.admissionClosed()
 	if op, done := s.takeOperation(&s.setupJob); done {
@@ -286,16 +286,15 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			}
 		}
 		s.mu.Lock()
-		inspected := s.inspection == nil && len(s.reconciliations) == 0
 		sealingPending := s.sealing != nil
 		s.mu.Unlock()
-		inspection, inspectionFound, err := ReadInspectionStatus(ctx, r, s.id)
-		if err != nil {
-			return err
-		}
-		inspected = inspected && inspectionFound && !inspection.Inspecting
+		// ProcessStopped follows connection.join (or the shared Codex
+		// app-server's stopped status, which follows every End callback). Those
+		// callbacks can enqueue inspection after process exit. Once joined,
+		// no new inspection can appear during this shutdown.
+		current.PreFenceSettled = s.preFenceSettled(current)
 		fenceReady := outer.Generation == desiredState.Generation && outer.NativeStopped && outer.Stage >= lifecycle.Sealing
-		if current.Phase == Halted && current.ProcessStopped && inspected && fenceReady && desiredState.SealUID != "" {
+		if current.PreFenceSettled && fenceReady && desiredState.SealUID != "" {
 			s.closeAdmission(desiredState.Generation)
 			if s.journal.SealState() == nil {
 				if _, err := s.startOperation(&s.sealing, func(ctx context.Context) error {
@@ -317,7 +316,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		current.AcknowledgementPresent = false
 		current.AcknowledgementSealed = false
 		current.AcknowledgementCursor = 0
-		if seal := s.journal.SealState(); seal != nil && !sealingPending && current.AdmissionClosed && current.Phase == Halted && current.ProcessStopped && inspected && fenceReady && desiredState.SealUID != "" && seal.IncarnationUID == desiredState.SealUID {
+		if seal := s.journal.SealState(); seal != nil && !sealingPending && current.AdmissionClosed && current.PreFenceSettled && fenceReady && desiredState.SealUID != "" && seal.IncarnationUID == desiredState.SealUID {
 			current.Sealed = true
 			current.SealUID = seal.IncarnationUID
 			current.SealCursor = seal.Cursor
@@ -433,4 +432,11 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 	}
 	return nil
+}
+
+func (s *Session) preFenceSettled(status LifecycleStatus) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return status.Phase == Halted && status.ProcessStopped && status.Error == "" &&
+		s.inspection == nil && len(s.reconciliations) == 0
 }

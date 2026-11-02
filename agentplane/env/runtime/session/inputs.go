@@ -45,8 +45,7 @@ func (m *Manager) publishSessionState(s *Session, demand bool) error {
 	}, state.WithUpdateOwner(lifecycle.EnvironmentOwner)); err != nil {
 		return err
 	}
-	drain := InspectionStatus{Inspecting: input.Inspections != 0 || input.InspectionRunning}
-	return publish(m.ctx, m.state, s.id, drain)
+	return nil
 }
 
 func (s *Session) wake() {

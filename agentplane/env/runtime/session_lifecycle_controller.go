@@ -21,7 +21,7 @@ type sessionLifecycleController struct{ runtime *Runtime }
 func (*sessionLifecycleController) Name() string { return sessionLifecycleControllerName }
 func (*sessionLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{lifecycle.EnvironmentDesiredStateType, executionSignalType, lifecycle.AdmissionCountType, session.OwnerStatusType, session.InspectionStatusType, session.LifecycleStatusType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
+	for _, kind := range []string{lifecycle.EnvironmentDesiredStateType, executionSignalType, lifecycle.AdmissionCountType, session.OwnerStatusType, session.LifecycleStatusType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
 		inputs = append(inputs, controller.Input{Namespace: lifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -230,18 +230,17 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			return write()
 		}
 	}
-	// Process exit can finish an outstanding inspection. Keep its journal and
-	// controller alive until the resulting observations have been committed.
-	// This pre-fence guard must not wait for Sealed: sealing itself requires the
-	// global native and Execution barriers below.
+	// Process exit can finish an outstanding inspection. Session owns this
+	// pre-fence proof, including native exit callbacks and inspection operations.
+	// It cannot wait for Sealed: sealing requires the barriers below.
 	for _, id := range ids {
-		input, found, err := session.ReadInspectionStatus(ctx, r, id)
+		status, found, err := session.ReadLifecycleStatus(ctx, r, id)
 		if err != nil {
 			return err
 		}
-		if input.Inspecting {
+		if !found || status.EnvironmentGeneration != desiredState.Generation || !status.PreFenceSettled {
 			current.Blocker = lifecycle.Blocker{
-				Kind: lifecycle.SessionInspectionPending, ResourceType: session.InspectionStatusType,
+				Kind: lifecycle.SessionInspectionPending, ResourceType: session.LifecycleStatusType,
 				ResourceID: id, ResourcePresent: found,
 			}
 			return write()
