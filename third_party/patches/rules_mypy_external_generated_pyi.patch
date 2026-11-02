@@ -1,0 +1,29 @@
+diff --git a/mypy/private/mypy.bzl b/mypy/private/mypy.bzl
+--- a/mypy/private/mypy.bzl
++++ b/mypy/private/mypy.bzl
+@@ -128,8 +128,24 @@
+     pyi_dirs = {}
+     for dep in (ctx.rule.attr.deps + additional_types):
+         if RulesPythonPyInfo in dep and hasattr(dep[RulesPythonPyInfo], "direct_pyi_files"):
+-            pyi_files.extend(dep[RulesPythonPyInfo].direct_pyi_files.to_list())
++            direct_pyi_files = dep[RulesPythonPyInfo].direct_pyi_files.to_list()
++            pyi_files.extend(direct_pyi_files)
+             pyi_dirs |= {"%s/%s" % (ctx.bin_dir.path, imp): None for imp in _extract_imports(dep) if imp != "site-packages" and imp != "_main"}
++
++            # A first-party wrapper can expose generated stubs owned by an external
++            # repository. Keep their repository and virtual-import roots in the
++            # execroot; source/wheel imports retain their existing resolution.
++            for file in direct_pyi_files:
++                if file.is_source or not file.owner:
++                    continue
++                workspace_root = file.owner.workspace_root
++                if not workspace_root.startswith("external/"):
++                    continue
++                pyi_dirs[file.root.path + "/" + workspace_root] = None
++                repository = workspace_root.removeprefix("external/")
++                for import_ in _imports(dep):
++                    if import_.startswith(repository + "/"):
++                        pyi_dirs[file.root.path + "/external/" + import_] = None
+         depsets.append(dep.default_runfiles.files)
+         if PyTypeLibraryInfo in dep:
+             types.append(dep[PyTypeLibraryInfo].directory.path + "/site-packages")

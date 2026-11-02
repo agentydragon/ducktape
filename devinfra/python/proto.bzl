@@ -48,7 +48,12 @@ _py_proto_with_mypy_stubs = rule(
 )
 
 def py_proto_library_with_mypy_stubs(name, deps, visibility = None):
-    """Expose a standard `py_proto_library` and its transitive stubs to rules_mypy."""
+    """Expose a standard `py_proto_library` and its transitive stubs to rules_mypy.
+
+    List external protos whose Python bindings are needed in deps as well as the local proto,
+    for example [":envelope_proto", "@googleapis//google/rpc:status_proto"]. A ProtoInfo import
+    alone does not supply the external module's Python binding and stubs to its consumer.
+    """
     generated_name = name + "_generated"
     _py_proto_library(
         name = generated_name,

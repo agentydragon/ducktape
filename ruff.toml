@@ -130,7 +130,7 @@ detect-same-package = false
 # Unknown packages default to third-party (no heuristics)
 default-section = "third-party"
 # Force third-party for packages that have same-named directories in repo
-known-third-party = ["ansible", "docker"]
+known-third-party = ["ansible", "docker", "google"]
 # First-party = our workspace packages (ruff uses heuristics otherwise)
 # TODO(first-party guard): add a CI/pre-commit check that fails when this list drifts
 #   — i.e. a top-level Python package is missing here, or a first-party import root
