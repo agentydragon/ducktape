@@ -1,6 +1,6 @@
-import { create, toJson } from "@bufbuild/protobuf";
-import { timestampFromDate } from "@bufbuild/protobuf/wkt";
-import { SandboxPhase, SandboxSchema } from "../../../proto/sandboxes_pb";
+import { toJson } from "@bufbuild/protobuf";
+import { SandboxSchema } from "../../../proto/sandboxes_pb";
+import { readySandbox } from "../testing/sandbox";
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
@@ -33,22 +33,8 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-const SANDBOX = create(SandboxSchema, {
-  name: "test-sandbox",
-  uid: "00000000-0000-4000-8000-000000000001",
-  namespace: "agentplane-test",
-  createdAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),
-
-  operatingMode: "Running",
-  serviceAccount: { namespace: "agentplane-test", name: "test-sandbox" },
-
-  autosuspendBlockers: [],
-
-  status: { conditions: [{ type: "Ready", status: "True" }] },
-  phase: SandboxPhase.RUNNING,
-
-  wakeOnSend: false,
-});
+const SANDBOX = readySandbox("test-sandbox", "00000000-0000-4000-8000-000000000001");
+SANDBOX.pod = undefined;
 
 function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "name">): ThreadView {
   return {

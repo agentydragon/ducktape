@@ -60,6 +60,16 @@ ts_library(
 )
 
 ts_library(
+    name = "sandbox",
+    srcs = ["sandbox.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/proto:sandboxes_pb",
+    ],
+)
+
+ts_library(
     name = "runner_status",
     srcs = ["runner_status.ts"],
     tsconfig = TSCONFIG,
@@ -81,6 +91,7 @@ filegroup(
         "langfuse_search.ts",
         "model_catalog.ts",
         "runner_status.ts",
+        "sandbox.ts",
         "watch.ts",
     ],
     visibility = ["//agentplane/app/frontend:__pkg__"],
