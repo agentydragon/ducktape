@@ -135,15 +135,20 @@ PID1 launches each child in its own process group without an environment owner d
 Runtime's open COSI database excludes a concurrent Runtime; the private PID namespace and its
 outer runtime fence contain descendants after PID1 death. The subprocess supervisor retains a
 trusted owner-descriptor copy and a parent-liveness pipe. Owners keep their database and any extra
-lock through ordinary process cleanup and journal closure. `Stop` closes stdin and sends TERM, then KILL after its grace budget;
-a canceled stop escalates and leaves the cleanup barrier owned. Leader exit triggers a KILL of the
-remaining process group. PID1 waits for the group to disappear; the subprocess supervisor sends KILL
-but does not wait for group disappearance. A reported failed fence retains the finalizer.
+lock through ordinary process cleanup and journal closure.
+`Stop` closes stdin and sends TERM, then KILL after its grace budget; a canceled stop asks the
+subprocess supervisor to escalate and returns the caller's context error. After observing leader
+exit, PID1 signals the remaining group and reaps adopted children. The subprocess supervisor is a
+child subreaper: it signals the same group while the leader is unreaped, then reaps adopted group
+members and waits for group disappearance. It keeps the leader unreaped through signaling so the
+numeric group ID cannot be reused before targeting. Group disappearance has a five-second bound; if
+the process group remains, or if the trusted subprocess supervisor exits without explicit cleanup
+confirmation, `Wait` and `Stop` report a failed fence and the finalizer remains.
 
-The subprocess backend also treats a killed supervisor as a completed process, even when the native
-child is still alive. If the child has closed its inherited owner descriptor, another process can
-acquire the owner lock. This is a known violation of the intended `Wait` and `Stop` cleanup contract;
-see the [reproduction and follow-up](../../../TODO.md#fix-subprocess-supervisor-loss-fencing).
+Unexpected supervisor loss after the native PID was reported is not recovered here: the native child
+may survive, but the backend no longer reports it as cleanly stopped. Loss before the PID report still
+has an unresolved startup contract because `Host.Launch` can discard a failed backend start as an
+already-fenced attempt; see the [remaining startup gap](../../../TODO.md#handle-subprocess-supervisor-loss-before-and-after-native-pid-report).
 
 Escaped groups require whole-container teardown. They can retain stdout/stderr pipes. Actual
 Runtime graceful shutdown joins accepted script and protocol readers; an escaped writer can

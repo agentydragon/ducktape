@@ -12,8 +12,6 @@ import (
 	"strconv"
 	"syscall"
 	"time"
-
-	"golang.org/x/sys/unix"
 )
 
 type subprocessBackend struct {
@@ -22,6 +20,7 @@ type subprocessBackend struct {
 	supervisorExecutable string
 	cmd                  *exec.Cmd
 	liveness             *os.File
+	fenceConfirmation    *os.File
 }
 
 func (b *subprocessBackend) validate() error { return nil }
@@ -66,12 +65,17 @@ func (b *subprocessBackend) start(ctx context.Context, p *Process) error {
 		closeFiles(stdinReader, stdinWriter, stdoutReader, stdoutWriter, stderrReader, stderrWriter, livenessReader, livenessWriter)
 		return fmt.Errorf("create supervisor PID report pipe: %w", err)
 	}
+	fenceReader, fenceWriter, err := os.Pipe()
+	if err != nil {
+		closeFiles(stdinReader, stdinWriter, stdoutReader, stdoutWriter, stderrReader, stderrWriter, livenessReader, livenessWriter, reportReader, reportWriter)
+		return fmt.Errorf("create supervisor fence confirmation pipe: %w", err)
+	}
 
-	extraFiles := []*os.File{livenessReader, reportWriter}
-	args := []string{SupervisorMode, "--parent-liveness-fd", "3", "--native-pid-fd", "4", "--stop-grace", b.config.StopGrace.String()}
+	extraFiles := []*os.File{livenessReader, reportWriter, fenceWriter}
+	args := []string{SupervisorMode, "--parent-liveness-fd", "3", "--native-pid-report-fd", "4", "--fence-confirmation-fd", "5", "--stop-grace", b.config.StopGrace.String()}
 	if b.stateOwnerFD != nil {
 		extraFiles = append(extraFiles, b.stateOwnerFD)
-		args = append(args, "--state-owner-fd", "5")
+		args = append(args, "--state-owner-fd", "6")
 	}
 	args = append(args, "--")
 	args = append(args, b.config.Command...)
@@ -79,7 +83,7 @@ func (b *subprocessBackend) start(ctx context.Context, p *Process) error {
 	if executable == "" {
 		executable, err = os.Executable()
 		if err != nil {
-			closeFiles(stdinReader, stdinWriter, stdoutReader, stdoutWriter, stderrReader, stderrWriter, livenessReader, livenessWriter, reportReader, reportWriter)
+			closeFiles(stdinReader, stdinWriter, stdoutReader, stdoutWriter, stderrReader, stderrWriter, livenessReader, livenessWriter, reportReader, reportWriter, fenceReader, fenceWriter)
 			return fmt.Errorf("locate runner executable: %w", err)
 		}
 	}
@@ -90,7 +94,7 @@ func (b *subprocessBackend) start(ctx context.Context, p *Process) error {
 	cmd.ExtraFiles = extraFiles
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
-		closeFiles(stdinReader, stdinWriter, stdoutReader, stdoutWriter, stderrReader, stderrWriter, livenessReader, livenessWriter, reportReader, reportWriter)
+		closeFiles(stdinReader, stdinWriter, stdoutReader, stdoutWriter, stderrReader, stderrWriter, livenessReader, livenessWriter, reportReader, reportWriter, fenceReader, fenceWriter)
 		return fmt.Errorf("start harness supervisor: %w", err)
 	}
 	_ = stdinReader.Close()
@@ -98,8 +102,10 @@ func (b *subprocessBackend) start(ctx context.Context, p *Process) error {
 	_ = stderrWriter.Close()
 	_ = livenessReader.Close()
 	_ = reportWriter.Close()
+	_ = fenceWriter.Close()
 
 	b.cmd = cmd
+	b.fenceConfirmation = fenceReader
 	launched = true
 	b.liveness = livenessWriter
 	p.attachStreams(stdinWriter, stdoutReader, stderrReader)
@@ -108,10 +114,14 @@ func (b *subprocessBackend) start(ctx context.Context, p *Process) error {
 	pid, err := readPIDReport(ctx, reportReader)
 	_ = reportReader.Close()
 	if err != nil {
-		b.killSupervisor(p)
-		_, waitErr := p.Wait(context.Background())
-		_, _ = io.Copy(io.Discard, p.Stderr())
-		return errors.Join(fmt.Errorf("harness supervisor did not report a native PID: %w", err), waitErr)
+		cleanupErr := b.killSupervisor(p)
+		if cleanupErr == nil {
+			_, cleanupErr = p.Wait(context.Background())
+		}
+		// Preserve the supervisor's startup diagnostic without waiting forever
+		// for an inherited stderr writer that survived a failed PID report.
+		p.drainFailedStartStderr()
+		return errors.Join(fmt.Errorf("harness supervisor did not report a native PID: %w", err), cleanupErr)
 	}
 	p.setNativePID(pid)
 	return nil
@@ -127,13 +137,13 @@ func (b *subprocessBackend) stop(ctx context.Context, p *Process) error {
 		_, err := p.Wait(context.Background())
 		return err
 	case <-ctx.Done():
-		b.escalate(p)
+		b.escalate()
 		return ctx.Err()
 	}
 }
 
 func (b *subprocessBackend) reapSupervisor(p *Process) {
-	err := b.cmd.Wait()
+	waitErr := b.cmd.Wait()
 	waitOwnership.Lock()
 	waitOwnership.subprocess--
 	waitOwnership.Unlock()
@@ -142,6 +152,8 @@ func (b *subprocessBackend) reapSupervisor(p *Process) {
 	if b.liveness != nil {
 		_ = b.liveness.Close()
 	}
+	fenceConfirmed, fenceErr := readFenceConfirmation(b.fenceConfirmation)
+	_ = b.fenceConfirmation.Close()
 	code := 0
 	if b.cmd.ProcessState != nil {
 		code = b.cmd.ProcessState.ExitCode()
@@ -153,15 +165,35 @@ func (b *subprocessBackend) reapSupervisor(p *Process) {
 			}
 		}
 	}
-	// ExitError is the expected representation of a nonzero exit status; Wait returns the status separately.
-	var exitError *exec.ExitError
-	if errors.As(err, &exitError) {
-		err = nil
+	if fenceErr != nil {
+		waitErr = fmt.Errorf("read native process-group fence confirmation: %w", fenceErr)
+	} else if !fenceConfirmed {
+		waitErr = errors.New("harness supervisor exited without confirming native process-group cleanup")
+	} else {
+		// ExitError is the expected representation of a nonzero native exit status;
+		// the explicit report proves cleanup completed before the supervisor exited.
+		var exitError *exec.ExitError
+		if errors.As(waitErr, &exitError) {
+			waitErr = nil
+		}
 	}
-	p.completeWith(code, err)
+	p.completeWith(code, waitErr)
 }
 
-func (b *subprocessBackend) killSupervisor(p *Process) {
+const fenceConfirmationByte = 'F'
+
+func readFenceConfirmation(file *os.File) (bool, error) {
+	if file == nil {
+		return false, errors.New("fence confirmation pipe is unavailable")
+	}
+	data, err := io.ReadAll(io.LimitReader(file, 2))
+	if err != nil {
+		return false, err
+	}
+	return len(data) == 1 && data[0] == fenceConfirmationByte, nil
+}
+
+func (b *subprocessBackend) killSupervisor(p *Process) error {
 	// EOF asks the supervisor to fence its process group. Do not signal it during
 	// startup: its Go runtime may not have installed signal handling yet.
 	if b.liveness != nil {
@@ -171,29 +203,32 @@ func (b *subprocessBackend) killSupervisor(p *Process) {
 	defer timer.Stop()
 	select {
 	case <-p.waitDone:
-		return
+		return nil
 	case <-timer.C:
 	}
-	b.escalate(p)
-	// Keep waiting until the supervisor has reaped and fenced the native process
-	// group; returning early could release state ownership while children live.
-	<-p.waitDone
+	b.escalate()
+	// Cleanup confirmation is bounded. A timeout remains an explicit failed
+	// fence; the supervisor's pipe cannot turn signal delivery into success.
+	timer.Reset(nativeGroupFenceTimeout)
+	select {
+	case <-p.waitDone:
+		return nil
+	case <-timer.C:
+		return fmt.Errorf("harness supervisor did not complete cleanup within %s after force-stop", nativeGroupFenceTimeout)
+	}
 }
 
 func (b *subprocessBackend) signalSupervisor(signal syscall.Signal) {
 	if b.cmd != nil && b.cmd.Process != nil {
-		_ = unix.Kill(-b.cmd.Process.Pid, unix.Signal(signal))
+		_ = b.cmd.Process.Signal(signal)
 	}
 }
 
-func (b *subprocessBackend) escalate(p *Process) {
-	if pid := p.PID(); pid != 0 {
-		_ = unix.Kill(-pid, unix.SIGKILL)
-	}
-	if b.cmd != nil && b.cmd.Process != nil {
-		// Leave the supervisor alive to reap the native leader while it holds state ownership.
-		_ = unix.Kill(-b.cmd.Process.Pid, unix.SIGTERM)
-	}
+func (b *subprocessBackend) escalate() {
+	// The supervisor owns the numeric native PGID. It keeps the leader unreaped
+	// while signaling, so a force request must go through it rather than risk a
+	// stale PGID that has already been reused.
+	b.signalSupervisor(syscall.SIGUSR1)
 }
 
 func readPIDReport(ctx context.Context, report *os.File) (int, error) {
