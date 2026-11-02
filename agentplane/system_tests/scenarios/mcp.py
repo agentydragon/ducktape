@@ -176,7 +176,10 @@ class PolicyObjects:
     async def create_binding(
         self, name: str, *, sandbox: environment_service_pb2.EnvironmentDescriptor, policy_sets: list[str]
     ) -> str:
-        subject = {"namespace": sandbox.execution_account.namespace, "name": sandbox.execution_account.name}
+        subject = {
+            "namespace": sandbox.execution_account.account.namespace,
+            "name": sandbox.execution_account.account.name,
+        }
         return await self._create(
             "PolicyBinding", POLICY_BINDINGS_PLURAL, name, {"subject": subject, "policySets": policy_sets}
         )
@@ -548,7 +551,7 @@ async def _wait_unbound(
     """Until the Action Service no longer resolves `binding_name` for the Sandbox's ServiceAccount:
     a deleted binding has no condition left to acknowledge, so ask the service itself."""
     with tracer.start_as_current_span("system_test.mcp.policy_unbound"):
-        account = sandbox.execution_account
+        account = sandbox.execution_account.account
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(POLICY_READY_SECONDS),
             wait=wait_fixed(1),

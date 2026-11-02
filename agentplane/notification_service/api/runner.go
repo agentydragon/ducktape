@@ -29,7 +29,7 @@ func (r *ProxyRunner) ListSessions(ctx context.Context, sandbox *sandboxreader.I
 	var sessions []string
 	err := environmentruntimeclient.WithClient(ctx, environmentruntimeclient.Config{
 		Target: environmentruntimeclient.ExpandTarget(template, sandbox.Name, sandbox.Namespace), TokenFile: r.TokenFile, Timeout: r.Timeout,
-		SandboxName: sandbox.Name, SandboxUID: sandbox.UID, SandboxNamespace: sandbox.Namespace,
+		SandboxName: sandbox.Name, SandboxUID: sandbox.Uid, SandboxNamespace: sandbox.Namespace,
 	}, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
 		response, err := client.ListSessions(ctx, &sessionpb.ListSessionsRequest{})
 		for _, summary := range response.GetSessions() {

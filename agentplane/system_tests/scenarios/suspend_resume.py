@@ -180,7 +180,7 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
     old_pod = view.kubernetes_diagnostics.pod
     target = view.target
     account = view.execution_account
-    assert account.namespace == target.namespace
+    assert account.account.namespace == target.namespace
 
     # The app API intentionally does not expose lifecycle policy edits. Set the opt-in only on this
     # test-owned Sandbox, fencing the JSON Patch by the immutable Sandbox UID.
@@ -238,13 +238,21 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
     assert suspended.target.uid == target.uid
 
     service_account = json.loads(
-        await cluster.kubectl("get", "serviceaccounts", account.name, "-n", account.namespace, "-o", "json")
+        await cluster.kubectl(
+            "get", "serviceaccounts", account.account.name, "-n", account.account.namespace, "-o", "json"
+        )
     )
     account_meta = service_account["metadata"]
-    assert account_meta["namespace"] == account.namespace
+    assert account_meta["namespace"] == account.account.namespace
     assert account_meta["uid"] == account.uid
     token = await cluster.kubectl(
-        "create", "token", account.name, "-n", account.namespace, f"--audience={TOKEN_AUDIENCE}", "--duration=600s"
+        "create",
+        "token",
+        account.account.name,
+        "-n",
+        account.account.namespace,
+        f"--audience={TOKEN_AUDIENCE}",
+        "--duration=600s",
     )
 
     async with forward(cluster) as forwarded_target:

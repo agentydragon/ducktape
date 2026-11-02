@@ -48,7 +48,7 @@ func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAcc
 		return nil, errSendDenied
 	}
 	sandbox := view.Identity
-	message.DestinationRef.UID = sandbox.UID
+	message.DestinationRef.UID = sandbox.Uid
 	// A Sandbox runs as the ServiceAccount of its own name.
 	message.Recipient = model.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}
 	sent, err := s.store.Send(ctx, message)

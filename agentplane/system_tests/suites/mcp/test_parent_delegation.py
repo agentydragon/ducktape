@@ -142,7 +142,7 @@ async def _wait_basic_policy(
     cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor, policy_objects: mcp.PolicyObjects
 ) -> None:
     inventory = json.loads(await cluster.kubectl("get", POLICY_BINDINGS_PLURAL, "-o", "json"))
-    subject = view.execution_account
+    subject = view.execution_account.account
     bindings = [
         binding
         for binding in inventory["items"]
@@ -175,11 +175,11 @@ async def test_parent_session_delegates_through_the_action_cli(
     assert parent_view.kubernetes_diagnostics.HasField("pod")
     await _wait_basic_policy(cluster, parent_view, policy_objects)
     service_account = json.loads(
-        await cluster.kubectl("get", "serviceaccount", parent_view.execution_account.name, "-o", "json")
+        await cluster.kubectl("get", "serviceaccount", parent_view.execution_account.account.name, "-o", "json")
     )
     caller_uid = service_account["metadata"]["uid"]
-    caller_namespace = parent_view.execution_account.namespace
-    caller_name = parent_view.execution_account.name
+    caller_namespace = parent_view.execution_account.account.namespace
+    caller_name = parent_view.execution_account.account.name
 
     parent = await Agent.open(
         client,
@@ -247,8 +247,8 @@ async def test_parent_session_delegates_through_the_action_cli(
         caller_uid=caller_uid,
     )
     execution_account = current["execution_account"]
-    assert execution_account["namespace"] == caller_namespace
-    assert execution_account["name"] == caller_name
+    assert execution_account["account"]["namespace"] == caller_namespace
+    assert execution_account["account"]["name"] == caller_name
     assert execution_account["uid"] == caller_uid
     assert current["observed_state"]["readiness"]["state"] == "READINESS_STATE_READY"
     configuration_group = current["configuration"]

@@ -161,9 +161,7 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
             inbox = _parsed(_output(read_request, read), notifications_pb2.ReadInboxResponse())
         assert inbox.inbox.session_id == str(recipient_agent.thread_id), inbox.inbox
         entry = one(entry for entry in inbox.entries if entry.event.message.message_id == sent.id)
-        assert entry.event.message.sender == notifications_pb2.ServiceAccount(
-            namespace=sender.execution_account.namespace, name=sender.execution_account.name
-        ), entry
+        assert entry.event.message.sender == sender.execution_account.account, entry
         assert entry.payload["body"] == BODY, entry
         assert entry.payload["from_session"] == str(sender_agent.thread_id), entry
 

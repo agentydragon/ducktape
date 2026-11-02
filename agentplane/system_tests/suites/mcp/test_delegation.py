@@ -81,7 +81,7 @@ async def _wait_basic_policy(
     cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor, policy_objects: mcp.PolicyObjects
 ) -> None:
     inventory = json.loads(await cluster.kubectl("get", POLICY_BINDINGS_PLURAL, "-o", "json"))
-    subject = view.execution_account
+    subject = view.execution_account.account
     bindings = [
         binding
         for binding in inventory["items"]
@@ -302,8 +302,8 @@ async def test_external_connection_delegates_without_the_integration_app(
         account = one(
             service_account
             for service_account in inventory.service_accounts
-            if service_account.namespace == view.execution_account.namespace
-            and service_account.name == view.execution_account.name
+            if service_account.namespace == view.execution_account.account.namespace
+            and service_account.name == view.execution_account.account.name
         )
 
         async with connected_session(
@@ -338,8 +338,8 @@ async def test_external_connection_delegates_without_the_integration_app(
                 current = await _tool(session, "environments__get", {"target": target})
                 execution_account = current.get("execution_account")
                 assert isinstance(execution_account, dict)
-                assert execution_account["namespace"] == account.namespace
-                assert execution_account["name"] == account.name
+                assert execution_account["account"]["namespace"] == account.namespace
+                assert execution_account["account"]["name"] == account.name
                 assert execution_account["uid"]
                 assert current["observed_state"]["readiness"]["state"] == "READINESS_STATE_READY"
                 configuration_group = current["configuration"]
