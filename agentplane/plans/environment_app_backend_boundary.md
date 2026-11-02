@@ -25,3 +25,22 @@ protobuf-backed service contracts for shared resource data and operations.
 Move or remove package-specific errors with their actual owners as callers migrate. The app's
 handwritten `SandboxView` can be retired when its remaining routes and consumers use the generated
 contracts. These later ownership decisions do not gate the current Discovery cutover.
+
+## TODO: Remove the redundant frontend Sandbox view and fixture conversion
+
+The app cutover in #13878 retains `sandboxView()` in `app/frontend/sandboxes/live.tsx`: it converts
+the generated `Sandbox` protobuf into the app's OpenAPI `SandboxView` for UI consumers. Its test
+helper `app/frontend/testing/sandbox_proto.ts` manually converts that view back into ProtoJSON,
+including field names, enum strings, durations and nested objects. These conversions duplicate the
+wire shape and can drift from the generated contract.
+
+Migrate inventory UI consumers and fixtures to generated `Sandbox` messages. Construct fixture
+messages with the generated schema and serialize them with the protobuf JSON codec where a wire
+response is needed; delete the handwritten reverse conversion. Keep actual presentation derivations
+such as status labels local to the UI. Move remaining detail and mutation consumers to the owning
+generated contracts, then remove the redundant app `SandboxView` and production projection. The
+detail contract and the relationship between `Sandbox` and `EnvironmentDescriptor` still need to
+be resolved; this TODO does not select their API shape or change caller authorization.
+
+Cover inventory snapshots, updates and removals with generated fixture messages, including phase,
+duration, optional fields and Pod data, and preserve existing UI behavior and authorization checks.
