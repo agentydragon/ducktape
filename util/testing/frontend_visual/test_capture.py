@@ -329,6 +329,18 @@ async def test_no_capture_can_hide_a_page_error(harness: VisualHarness) -> None:
         await crash()
 
 
+async def test_harness_preserves_existing_failure_and_attaches_browser_errors(harness: VisualHarness) -> None:
+    async def crash() -> None:
+        async with harness.open() as view:
+            async with view.page.expect_event("pageerror"):
+                await view.page.evaluate("() => setTimeout(() => { throw new Error('browser crash') }, 0)")
+            raise ValueError("original failure")
+
+    with pytest.raises(ValueError, match="original failure") as caught:
+        await crash()
+    assert any("browser crash" in note for note in getattr(caught.value, "__notes__", []))
+
+
 async def test_external_request_fails_before_publication(harness: VisualHarness) -> None:
     async def escape() -> None:
         async with harness.open() as view:

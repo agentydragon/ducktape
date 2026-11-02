@@ -407,11 +407,5 @@ class VisualHarness:
 
                         await page.route(config.inline_page.url, fulfill)
                         await page.goto(config.inline_page.url, wait_until="load")
-                try:
-                    yield view
-                except Exception:
-                    # Prefer a recorded crash to a secondary timeout waiting for the crashed component.
-                    view.errors.assert_none(context=self.case_id)
-                    raise
-                else:
-                    await view.check(context=self.case_id)
+                yield view
+                await view.check(context=self.case_id)
