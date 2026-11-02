@@ -2,7 +2,7 @@
 
 load("//devinfra/python:defs.bzl", "py_test")
 
-def grafana_dashboard_visual_test(name, dashboard, src = "//grafana/visual_tests:dashboard_visual_test.py", fixture = None, fixture_data = None, deps = []):
+def grafana_dashboard_visual_test(name, dashboard, src = "//grafana/visual_tests:dashboard_visual_test.py", fixture = None, fixture_data = None, deps = [], size = "small"):
     """Declare a dashboard-specific screenshot scenario and fixture.
 
     The default scenario replays dashboard-owned data. An optional custom
@@ -16,6 +16,7 @@ def grafana_dashboard_visual_test(name, dashboard, src = "//grafana/visual_tests
 
     py_test(
         name = name,
+        size = size,
         srcs = [src],
         main = src,
         data = [dashboard] + ([fixture_data] if fixture_data else []),

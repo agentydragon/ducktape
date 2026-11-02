@@ -25,7 +25,8 @@ Diagnose visual-test timeouts during capture and after screenshots were written.
 browser and container startup, rendering and teardown so a timeout identifies where progress
 stopped. Measure setup costs, then evaluate sharing Grafana or a browser or combining
 screenshots into one test, including effects on isolation, parallelism, caching and
-per-dashboard visual baselines.
+per-dashboard visual baselines. Explore reusing a running Grafana instance across
+BuildBuddy VMs, including whether networking and isolation make that practical.
 
 ## E. Choose a fixture strategy
 
