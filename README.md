@@ -1,8 +1,8 @@
 # GitHub Pages
 
 `gh-pages` is the publication branch for
-<https://agentydragon.github.io/ducktape/>. It holds independent, latest-only CI
-report snapshots:
+<https://agentydragon.github.io/ducktape/>. It holds independent, latest-only
+report snapshots. The CI reports are:
 
 - **Latency:** [standalone HTML](latency/index.html), [evidence](latency/evidence.json),
   [source and observation window](latency/manifest.json).
@@ -12,7 +12,10 @@ report snapshots:
   [evidence](visual-reliability/evidence.json),
   [source and observation window](visual-reliability/manifest.json).
 
-Each refresh replaces only its own directory's `index.html`, `evidence.json`,
+- **Cluster storage:** [inventory and storage options](storage/index.html), a dated
+  SeaweedFS and Piraeus report.
+
+Each CI refresh replaces only its own directory's `index.html`, `evidence.json`,
 `manifest.json`, and optional `attribution.json`, through a PR against `gh-pages`.
 Preserve the other report directories and this navigation. Remove stale optional
 attribution only within the report being refreshed. Use Git history for earlier
