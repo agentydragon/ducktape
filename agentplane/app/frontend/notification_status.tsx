@@ -1,10 +1,10 @@
 /** Read-only operator projection: curated entry summaries, no raw provider payloads or acknowledgement controls. */
 import { Accordion, Divider, Drawer, Group, Paper, ScrollArea, Select, Stack, Text } from "@mantine/core";
-import { fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 import { useEffect, useState, type JSX } from "react";
 
 import { clockTime, isoTime, timeAgo } from "./format_time";
 import { followStream } from "./live_stream";
+import { decodeNotificationWatchFrame } from "./notification_watch";
 import { followWatch } from "./watch_stream";
 import { type StreamConnection } from "./stream_reader";
 import type {
@@ -14,10 +14,6 @@ import type {
   SourceObservation,
   SubscriptionStatus,
 } from "./notification_types";
-import {
-  SandboxNotificationStatusSchema,
-  WatchSandboxNotificationsResponseSchema,
-} from "../../notification_service/notifications_operator_pb";
 
 type SubscriptionState = "active" | "expired" | "cancelled";
 type SubscriptionFilter = "not-cancelled" | SubscriptionState | "all";
@@ -131,22 +127,13 @@ export function NotificationStatus({
         },
         onFrame: (json) => {
           try {
-            const response = fromJson(WatchSandboxNotificationsResponseSchema, json as JsonValue);
-            if (response.frame.case === "snapshot") {
+            const frame = decodeNotificationWatchFrame(json, sawSnapshot);
+            if (frame.kind === "snapshot") {
               sawSnapshot = true;
-              // Keep the display's JSON projection while the wire contract and frame validation
-              // come from the generated protobuf schema.
-              setData(
-                toJson(SandboxNotificationStatusSchema, response.frame.value, {
-                  alwaysEmitImplicit: true,
-                }) as unknown as SandboxNotificationStatus
-              );
+              setData(frame.status);
               setError(null);
-            } else if (response.frame.case === "reconnectRequired") {
-              if (!sawSnapshot) throw new Error("Notification watch renewed before its initial snapshot");
-              return "reconnect";
             } else {
-              throw new Error("Notification watch returned no frame");
+              return "reconnect";
             }
           } catch (reason) {
             setError("Invalid notification status snapshot");
