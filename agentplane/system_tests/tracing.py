@@ -26,7 +26,7 @@ def timing_summary(path: Path) -> str:
             continue
         attributes = span["attributes"]
         label = span["name"]
-        for key in ("image", "deployment.name", "scenario", "harness", "pytest.nodeid"):
+        for key in ("image", "deployment.name", "manifest.name", "scenario", "harness", "pytest.nodeid"):
             if key in attributes:
                 label += f" [{attributes[key]}]"
         seconds = (
