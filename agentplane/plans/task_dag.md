@@ -2205,22 +2205,6 @@ This implementation can make a central Session-to-Sandbox placement lookup unnec
 delivery. Neither the destination design nor this node deletes retained History or the Kubernetes
 UID-to-connection locator.
 
-### MCP edge legacy Actions schema retirement
-
-```mermaid
-flowchart LR
-    MCP_EDGE_SCHEMA_RETIREMENT[In flight: retire legacy Actions schema]
-```
-
-### `MCP_EDGE_SCHEMA_RETIREMENT` — retire the approved legacy copy
-
-**Operator-approved deletion, in flight as a migration PR, 2026-11-01 PDT.** The operator approved
-losing all eight historical Actions Connection/grant/enrollment records and removing the six old
-Connection/external OAuth tables. The [retirement plan](mcp_edge_data_handoff.md) gives the exact
-scope and rollout/repair path. Exit: fresh and upgraded Actions migration tests pass, the PR's
-system tests pass, Flux applies Goose version 9, Actions remains ready, and a live MCP edge
-sign-in/tool call works against unchanged edge-owned records. Remove this node after rollout proof.
-
 ### Service API transport tracks
 
 One track per service. Tracks are independent except where an edge is drawn, and graph position
