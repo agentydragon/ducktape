@@ -874,21 +874,3 @@ func shellQuote(value string) string {
 func fileURI(path string) string {
 	return (&url.URL{Scheme: "file", Path: path}).String()
 }
-
-func numberInt64(value any) (int64, bool) {
-	switch number := value.(type) {
-	case float64:
-		return int64(number), number == float64(int64(number))
-	case int:
-		return int64(number), true
-	case int64:
-		return number, true
-	case json.Number:
-		parsed, err := number.Int64()
-		return parsed, err == nil
-	case uint64:
-		return int64(number), number <= uint64(^uint64(0)>>1)
-	default:
-		return 0, false
-	}
-}
