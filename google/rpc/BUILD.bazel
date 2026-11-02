@@ -1,7 +1,7 @@
 load("@aspect_bazel_lib//lib:copy_file.bzl", "copy_file")
 load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
-load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//visibility:public"])
 

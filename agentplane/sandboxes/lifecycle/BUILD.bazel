@@ -29,7 +29,10 @@ go_proto_library(
 
 go_library(
     name = "lifecycle",
-    srcs = ["service.go", "types.go"],
+    srcs = [
+        "service.go",
+        "types.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle",
     deps = [
         ":environment_lifecycle_go_proto",
