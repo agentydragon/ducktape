@@ -56,6 +56,7 @@ function provider(overrides: Partial<ProviderView>): ProviderView {
     extra_status: "none",
     burn: null,
     display_windows: display,
+    display_platform_credits: null,
     summary_tint: "unknown",
     summary_index: null,
     ...overrides,
@@ -63,6 +64,33 @@ function provider(overrides: Partial<ProviderView>): ProviderView {
 }
 
 describe("effectiveQuota", () => {
+  it("uses the presentation credits for current and stale snapshots", () => {
+    const raw = { total_available_usd: "10", total_paid_available_usd: "10", grants: [] };
+    const display = { ...raw, total_available_usd: "9" };
+    const result = {
+      kind: "success" as const,
+      windows: [],
+      platform_credits: raw,
+      reset_credit_expiry_lookup_failed: false,
+    };
+    const current = effectiveQuota(
+      provider({
+        last_output: { fetched_at: FETCHED_AT, result },
+        display_platform_credits: display,
+      })
+    );
+    expect(current.platformCredits).toEqual(display);
+    const stale = effectiveQuota(
+      provider({
+        last_output: { fetched_at: FETCHED_AT, result: { kind: "error", error: "offline" } },
+        last_success: { fetched_at: EARLIER, result },
+        display_platform_credits: display,
+      })
+    );
+    expect(stale.platformCredits).toEqual(display);
+    expect(stale.staleSince).toBe(EARLIER);
+  });
+
   it("shows the latest windows when the refresh succeeded", () => {
     const quota = effectiveQuota(provider({}));
     expect(quota.windows).toHaveLength(1);

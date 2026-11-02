@@ -69,10 +69,7 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
     credit_line = _format_paid_credits(paid_credits, pv.paid_credits_active)
     prepaid_balance, prepaid_stale_age = _effective_prepaid_balance(pv, now)
     prepaid_balance_line = _format_prepaid_balance(prepaid_balance, prepaid_stale_age)
-    credits_result = (
-        out_result if isinstance(out_result, FetchSuccess) else (pv.last_success.result if pv.last_success else None)
-    )
-    platform_credits = credits_result.platform_credits if credits_result else None
+    platform_credits = pv.display_platform_credits
     platform_lines = []
     if platform_credits:
         platform_lines.append(f"OpenAI API balance · ${platform_credits.total_available_usd:,.2f}")

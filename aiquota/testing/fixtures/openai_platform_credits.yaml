@@ -20,4 +20,16 @@ providers:
               expires_at: "2026-12-01T00:00:00Z"
               is_scheduled: false
               is_held_for_prepaid_transition: false
+            - granted_usd: "30"
+              used_usd: "30"
+              effective_at: "2025-01-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "10"
+              used_usd: "2"
+              effective_at: "2025-01-01T00:00:00Z"
+              expires_at: "2026-01-01T00:00:00Z"
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
 fetched_at: "2026-01-15T12:00:00Z"
