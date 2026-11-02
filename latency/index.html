@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>
-      Ducktape CI latency · reuse, cleanup and VM startup · 2 November 2026
+      Ducktape CI latency · CPU and heartbeat experiments · 2 November 2026
     </title>
     <style>
       * {
@@ -327,10 +327,471 @@
   <body>
     <main>
       <header>
-        <div class="eyebrow">Ducktape · CI latency · 2 November 2026</div>
+        <div class="eyebrow">
+          Ducktape · CI latency · controlled experiments · 2 November 2026
+        </div>
         <h1>
-          Reuse reaches more runs. VM startup remains the main test bottleneck.
+          Two CPUs are promising. Four CPUs fail. Handler refresh has no
+          measured saving.
         </h1>
+        <p class="lead">
+          Two full warm VM runs at 2 vCPUs completed in 299 and 375 seconds; the
+          shared 1-vCPU controls took 430 and 599 seconds. Both 4-vCPU runs
+          failed. Restarting a retained virt-handler restored eligibility twice,
+          but the controls had no scheduling stall, so that helper is deferred.
+        </p>
+        <p class="meta">
+          Experiment window: <strong>2 November 2026, 17:56–19:16 UTC</strong>.
+          Measured source <code>f1e187cbb483</code>; arm patches and physical
+          attempts are in <a href="evidence.json">evidence</a>.
+          <a href="manifest.json">Manifest</a>. The earlier fleet census remains
+          frozen at 08:34–14:32 UTC.
+        </p>
+        <div class="cards">
+          <div class="card">
+            <strong>299 / 375 s</strong><span>2-vCPU full warm passes</span>
+            <p class="note">
+              2/2 complete coverage passes; shared 1-vCPU controls: 430 / 599 s.
+            </p>
+          </div>
+          <div class="card">
+            <strong>0 / 2</strong><span>4-vCPU full passes</span>
+            <p class="note">
+              Guest RCU stall and QEMU TCG assertion; failed runs are not
+              speedups.
+            </p>
+          </div>
+          <div class="card">
+            <strong>No net gain</strong><span>Retained-handler refresh</span>
+            <p class="note">
+              Eligibility recovered in 29.6 / 29.9 s; controls scheduled in 5–7
+              s.
+            </p>
+          </div>
+        </div>
+        <p class="current-note">
+          Propose 2-vCPU guests with matching CPU quotas and unchanged
+          memory/OOM coverage. Keep 4 vCPUs and handler refresh out. Repair the
+          separate boot-monitor notification failure. These samples do not
+          establish a fleet-wide percentage or a 2× CI improvement.
+        </p>
+        <nav aria-label="New experiment sections">
+          <a href="#cpu-budget">CPU budgets</a
+          ><a href="#aged-heartbeat">Aged heartbeat</a
+          ><a href="#experiment-coverage">Validation and limits</a
+          ><a href="#fleet-snapshot">Earlier fleet census</a>
+        </nav>
+      </header>
+      <section id="cpu-budget">
+        <div class="eyebrow">Larger guest CPU budgets · 1 / 2 / 4 vCPUs</div>
+        <h2>Propose two CPUs per guest, keeping the full suite.</h2>
+        <p>
+          The complete VM test runs three guests concurrently under QEMU TCG.
+          The experiment changes each guest's vCPUs and matching service,
+          process and executor CPU quotas. Guest RAM, the 96 MiB OOM leaf, all
+          scenarios and the outer eight-unit BuildBuddy request stay fixed. The
+          retained Node advertises 11 CPUs and about 19.1 GiB RAM; requested
+          compute units are not its actual CPU count.
+        </p>
+        <p>
+          <a href="https://github.com/agentydragon/ducktape/pull/13969"
+            >PR #13969</a
+          >
+          applies the two-CPU fixture and its quota-aware supervision check.
+          Benchmark snapshot selectors and handler diagnostics are excluded from
+          the source change.
+        </p>
+        <div class="table-scroll narrative">
+          <table>
+            <thead>
+              <tr>
+                <th>Arm / observation</th>
+                <th>Full result</th>
+                <th>Execution / CPU-s</th>
+                <th>Setup / case / cleanup</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Arm / observation">
+                  1 vCPU ·
+                  <a
+                    href="https://app.buildbuddy.io/invocation/7149f44c-b924-4e87-a9bf-581588ef2424"
+                    >control1</a
+                  >
+                </td>
+                <td data-label="Full result">PASS</td>
+                <td data-label="Execution / CPU-s">599.1 s / 1992</td>
+                <td data-label="Setup / case / cleanup">
+                  67.4 / 412.9 / 35.2 s
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Arm / observation">
+                  1 vCPU ·
+                  <a
+                    href="https://app.buildbuddy.io/invocation/9ede858f-ec49-490c-ab53-f95d94e5e3eb"
+                    >control2</a
+                  >
+                </td>
+                <td data-label="Full result">PASS</td>
+                <td data-label="Execution / CPU-s">429.8 s / 1555</td>
+                <td data-label="Setup / case / cleanup">
+                  61.2 / 289.5 / 29.0 s
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Arm / observation">
+                  2 vCPU ·
+                  <a
+                    href="https://app.buildbuddy.io/invocation/35dd8198-40e1-40e0-8e5a-e190ac1e1e9f"
+                    >immutable2a</a
+                  >
+                </td>
+                <td data-label="Full result">PASS</td>
+                <td data-label="Execution / CPU-s">375.3 s / 1654</td>
+                <td data-label="Setup / case / cleanup">
+                  62.5 / 215.2 / 36.1 s
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Arm / observation">
+                  4 vCPU ·
+                  <a
+                    href="https://app.buildbuddy.io/invocation/d7d31806-5545-4eb7-908f-64f5a635ef93"
+                    >immutable4a</a
+                  >
+                </td>
+                <td data-label="Full result">FAIL · guest RCU stall</td>
+                <td data-label="Execution / CPU-s">460.7 s / 1448</td>
+                <td data-label="Setup / case / cleanup">
+                  52.0 / 342.0 / 28.2 s
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Arm / observation">
+                  4 vCPU ·
+                  <a
+                    href="https://app.buildbuddy.io/invocation/b1090ce5-c5be-4b17-a2aa-9ce3c10ba059"
+                    >immutable4b</a
+                  >
+                </td>
+                <td data-label="Full result">
+                  FAIL · QEMU crash; missing original shutdown
+                </td>
+                <td data-label="Execution / CPU-s">299.2 s / 1524</td>
+                <td data-label="Setup / case / cleanup">
+                  51.2 / 200.2 / 3.1 s (incomplete cleanup)
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Arm / observation">
+                  2 vCPU ·
+                  <a
+                    href="https://app.buildbuddy.io/invocation/151209f7-e9b8-4602-b870-4b664e4b112e"
+                    >immutable2b</a
+                  >
+                </td>
+                <td data-label="Full result">PASS</td>
+                <td data-label="Execution / CPU-s">299.4 s / 1318</td>
+                <td data-label="Setup / case / cleanup">
+                  52.1 / 179.6 / 28.7 s
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Both 2-vCPU observations finish before either 1-vCPU control. This
+          supports a bounded rollout of two CPUs, with a follow-up on complete
+          CI feedback and failures. It does not supply a precise expected
+          percentage: there are only two observations per arm, worker variation
+          is substantial, and the first 2/4-vCPU pair overlapped. The one-CPU
+          rows are the same heartbeat controls below, counted once.
+        </p>
+        <p class="callout">
+          Four CPUs are not selected. One guest wedged with Linux 6.12.63 RCU
+          timer stalls; the serialized repeat hit a QEMU TCG
+          <code>iotlb_to_section</code> assertion. KubeVirt replaced the latter
+          guest, but the original shutdown receipt was missing. Its 299-second
+          failed action is not a passing timing result. These failures are
+          distinct from the provider's outer Linux 5.15 kernel panic.
+        </p>
+      </section>
+      <section id="aged-heartbeat">
+        <div class="eyebrow">
+          Aged immutable retained infrastructure · control / refresh / refresh /
+          control
+        </div>
+        <h2>
+          Eligibility recovery works; a latency improvement is not established.
+        </h2>
+        <p>
+          All four observations restore the same successfully retained
+          k3s/KubeVirt snapshot after more than six minutes. Infrastructure
+          identities match; application namespaces, database instances,
+          certificates, trace collectors and workspaces are fresh. The candidate
+          deletes only the retained controller-owned virt-handler Pod and waits
+          for a Ready replacement, a new heartbeat and the real schedulable
+          label. It never edits the Node's heartbeat or eligibility label.
+        </p>
+        <div class="table-scroll narrative">
+          <table>
+            <thead>
+              <tr>
+                <th>Observation</th>
+                <th>Observed eligibility</th>
+                <th>Full result / execution</th>
+                <th>Setup / case / cleanup</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Observation">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/7149f44c-b924-4e87-a9bf-581588ef2424"
+                    >control1</a
+                  >
+                </td>
+                <td data-label="Observed eligibility">
+                  Fresh heartbeat, schedulable=true; natural refresh before
+                  import.
+                </td>
+                <td data-label="Full result / execution">PASS; 599.1 s</td>
+                <td data-label="Setup / case / cleanup">
+                  67.4 / 412.9 / 35.2 s
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Observation">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/d6d5b993-f644-4252-882c-ddbdf7de6301"
+                    >candidate1</a
+                  >
+                </td>
+                <td data-label="Observed eligibility">
+                  Stale heartbeat, schedulable=false → fresh and eligible in
+                  29.6 s.
+                </td>
+                <td data-label="Full result / execution">
+                  PASS after provider retry; 417.7 s
+                </td>
+                <td data-label="Setup / case / cleanup">
+                  77.0 / 250.3 / 29.3 s
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Observation">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/1ef7a3a3-bbde-4a7d-9df2-e2d3eed6ea55"
+                    >candidate2</a
+                  >
+                </td>
+                <td data-label="Observed eligibility">
+                  Stale heartbeat, schedulable=false → fresh and eligible in
+                  29.9 s.
+                </td>
+                <td data-label="Full result / execution">
+                  FAIL · boot-monitor receipt missing; cleanup not certified;
+                  367.9 s
+                </td>
+                <td data-label="Setup / case / cleanup">
+                  81.3 / 244.3 / 3.1 s (incomplete)
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Observation">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/9ede858f-ec49-490c-ab53-f95d94e5e3eb"
+                    >control2</a
+                  >
+                </td>
+                <td data-label="Observed eligibility">
+                  47+ minute old heartbeat, schedulable=true; normal scheduling.
+                </td>
+                <td data-label="Full result / execution">PASS; 429.8 s</td>
+                <td data-label="Setup / case / cleanup">
+                  61.2 / 289.5 / 29.0 s
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Candidate refresh recovered stale, ineligible Nodes twice, costing
+          29.6 and 29.9 seconds inside setup. Both controls scheduled their
+          launcher Pods in 5–7 seconds. The second control retained an old
+          heartbeat timestamp while already schedulable: an old timestamp alone
+          does not imply a scheduling stall. Controls took 61–67 seconds of
+          setup; candidates took 77–81 seconds. No matched control delay was
+          demonstrated, so the helper stays unpublished.
+        </p>
+        <p>
+          Candidate 1's final attempt passed in 417.7 seconds, but an earlier
+          provider VM panic cost another 382.0 seconds: its retry envelope is
+          805.3 seconds. The gap from the 599.1-second control is dominated by
+          the scenario envelope (412.9 vs 250.3 seconds), not evidence of a
+          handler saving. Candidate 2's 367.9 seconds ends in failure and
+          incomplete cleanup, so it is excluded from passing speed comparisons.
+        </p>
+        <h3>A separate evidence-collector defect has a narrow repair.</h3>
+        <p>
+          Candidate 2's native journal shows both udev monitor sockets bound and
+          PID1 accepting readiness, followed by <code>systemd-notify</code>'s
+          acknowledgement barrier timing out. The shell exited before writing
+          the required receipt.
+          <a href="https://github.com/agentydragon/ducktape/pull/13967"
+            >PR #13967</a
+          >
+          uses <code>--no-block</code> for the long-lived manager-tracked root
+          shell; socket readiness, Type=notify ordering and completeness
+          assertions remain. This repair is validated separately, outside the
+          experiment timing cohort.
+        </p>
+        <details>
+          <summary>
+            Excluded setup and failure costs remain in the evidence
+          </summary>
+          <p>
+            Initial CPU families restored an outer Firecracker VM but rebuilt
+            k3s: a clean baseline marker referenced a process that was no longer
+            alive. Those are cold receipts, not warm treatment samples. Two
+            early larger-budget seeds also exposed a supervision expectation
+            fixed at one CPU; the final comparison derives that expectation from
+            the configured quota while preserving exact systemd and kernel
+            checks.
+          </p>
+          <p>
+            All known seed, retry, selector and cancellation attempts remain in
+            <a href="evidence.json">the attempt ledger</a>. A selector with
+            unnecessary family fields failed before any VM test ran; the
+            corrected immutable selector uses only its snapshot ID. The canceled
+            historical CPU observation has a reconciled failed execution (287.9
+            seconds, 761.9 CPU-seconds); a separate cancellation row still lacks
+            clocks and usage, so the complete cost remains unknown. Provider
+            Linux 5.15 <code>update_blocked_averages</code> panics are charged
+            to their failed attempts and retries, with no fleet failure rate
+            inferred from this selected sample.
+          </p>
+        </details>
+      </section>
+      <section id="experiment-coverage">
+        <div class="eyebrow">Controls, coverage and interpretation</div>
+        <h2>
+          Measure the complete action and preserve the original test contract.
+        </h2>
+        <p>
+          Both experiments use the complete
+          <code>//agentplane/system_tests/suites:test_vm</code> suite from
+          effective devel <code>f1e187cbb483e534db543bcadc1141f4fa55e6bd</code>,
+          plus the recorded arm patches. Its three concurrent scenarios cover a
+          Codex turn, Claude setup and supervision, and Codex tool OOM recovery.
+          Guest memory stays 1.5 GiB; the OOM executor leaf stays 96 MiB.
+          Process, session, cgroup, resource, shutdown and cleanup assertions
+          remain enabled.
+        </p>
+        <p>
+          The CPU matrix changes guest vCPUs and corresponding service,
+          aggregate, process and executor quotas together. The outer request
+          stays at eight EstimatedComputeUnits. Initial larger-budget seeds
+          exposed a supervision assertion fixed at one CPU; the larger arms use
+          an expectation derived from the configured quota, with both systemd
+          and kernel checks preserved. At one CPU this checks the same
+          one-second systemd quota. Failed initial attempts remain separate from
+          the comparison.
+        </p>
+        <p>
+          The heartbeat arms share frozen helper and stack bytes, with a runtime
+          switch as the only treatment difference. They restore an immutable
+          seed snapshot after more than six minutes. The snapshot-specific
+          selector contains only its snapshot ID; family configuration metadata
+          is retained separately. A successful restore and matching retained
+          identities establish reuse. An aged snapshot is classified separately
+          from a stale heartbeat at the actual helper boundary: natural producer
+          refresh before attachment can make the treatment a no-op.
+        </p>
+        <p>
+          The final CPU matrix uses the same proven immutable infrastructure and
+          frozen stack/helper bytes as the heartbeat comparison, with handler
+          refresh disabled. The one-CPU heartbeat controls are shared controls
+          in the CPU analysis; they are not counted as additional physical
+          executions or independent evidence. Fresh guest templates supply the
+          CPU budgets and are outside the retained-infrastructure fingerprint.
+          Earlier CPU families restored Firecracker VMs but rebuilt k3s because
+          the recorded daemon was absent; those receipts remain cold setup
+          evidence.
+        </p>
+        <p>
+          Invocation IDs, physical execution IDs, source and patch hashes,
+          retained Node/process/controller identities, observed topology, phase
+          traces and coverage receipts are recorded in
+          <a href="evidence.json">evidence</a>. Later transport commits can
+          contain reverse patches that reconstruct the pinned effective source;
+          the transport commit alone is not the experiment source. One
+          source-provenance check reconstructed 27,275 regular tracked files
+          with zero mismatches.
+        </p>
+        <p>
+          Execution wall time is the physical execution-start to
+          execution-complete interval. Worker and queue clocks,
+          input/restore/output work, CPU-seconds and retry envelopes are
+          reported separately where exposed. Eight requested unit-seconds per
+          execution-second is a resource proxy, not an invoice. Missing clocks
+          or usage remain unknown. Provider retries, test failures, cold
+          rebuilds, selector failures and cancellations remain in the attempt
+          history. A selected snapshot-save policy flag is not proof that a
+          manifest was saved; an actual restore supplies that proof.
+        </p>
+        <p>
+          Passing comparisons require the original complete scenarios, expected
+          OOM exit 137 and follow-up exit 0 on the same
+          runtime/process/session/leaf, all three guest shutdown receipts, three
+          verified native journals, complete stack cleanup and release of all
+          three workspace loop devices. The earlier boot-evidence blocker was
+          repaired in
+          <a href="https://github.com/agentydragon/ducktape/pull/13935"
+            >#13935</a
+          >;
+          <a href="https://github.com/agentydragon/ducktape/pull/13940"
+            >#13940</a
+          >
+          removed duplicate journal/probe collection. Its separate
+          <a
+            href="https://app.buildbuddy.io/invocation/5c8add00-c7b3-5eea-9538-e0dcf8773808"
+            >PR validation</a
+          >
+          passed these checks. That validation is not a CPU or heartbeat
+          treatment estimate.
+        </p>
+        <p>
+          These are small controlled samples, with physical worker variation and
+          overlap between the two comparisons. The first immutable CPU2/CPU4
+          pair was dispatched concurrently; later CPU observations serialize.
+          That overlap is retained in the run ledger rather than treated as
+          identical load. Full HostCPUID is not exposed in the collected
+          responses; vendor/configuration and observed Node resources are
+          recorded without claiming identical physical hosts. Inclusive and
+          concurrent spans are never added into elapsed savings. Guest and host
+          clock domains are kept separate. No combined CPU-plus-heartbeat saving
+          or 2× whole-CI result follows from the separate treatment arms.
+        </p>
+        <p>
+          The fleet distributions below remain the frozen 08:34–14:32 UTC
+          census. They are not measurements after these candidate changes. Fleet
+          feedback, the next limiting test, reuse rates and reliability need a
+          post-merge follow-up; the existing 48-hour soak checkpoints remain on
+          4 November.
+        </p>
+      </section>
+
+      <section id="fleet-snapshot" aria-label="Earlier fleet snapshot">
+        <div class="eyebrow">
+          Frozen fleet census · 08:34–14:32 UTC · published before these
+          controlled experiments
+        </div>
+        <h2>
+          Reuse reaches more runs. VM startup remains the main test bottleneck.
+        </h2>
         <p class="lead">
           The next six-hour sample has
           <strong>111 warm k3s executions of 149</strong>, versus 50 of 92
@@ -340,9 +801,9 @@
           workloads and queues prevent a causal reuse estimate.
         </p>
         <p class="meta">
-          New arrivals: <strong>2 November 08:34–14:32 UTC</strong>. Resumed
-          Actions collection: 2026-11-02T14:35:24Z → 2026-11-02T14:43:45Z.
-          Inspected devel <code>2a7055db3c0e</code>.
+          Historical arrivals: <strong>2 November 08:34–14:32 UTC</strong>.
+          Resumed Actions collection: 2026-11-02T14:35:24Z →
+          2026-11-02T14:43:45Z. Inspected devel <code>2a7055db3c0e</code>.
           <a href="evidence.json">Evidence</a> ·
           <a href="manifest.json">Manifest</a> ·
           <a
@@ -387,7 +848,7 @@
           ><a href="#experiments">Earlier experiments</a
           ><a href="#continuity">Prior work</a><a href="#methods">Methods</a>
         </nav>
-      </header>
+      </section>
 
       <section id="reuse">
         <div class="eyebrow">
