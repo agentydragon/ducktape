@@ -3,6 +3,10 @@
 
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
+# gazelle:exclude test_outputs.py
+# gazelle:resolve py util.test_outputs //util:test_outputs
+# gazelle:resolve py util.testing.test_outputs //util/testing:test_outputs
+
 package(default_testonly = True)
 
 py_library(
@@ -10,6 +14,14 @@ py_library(
     testonly = True,
     srcs = ["undeclared_outputs.py"],
     visibility = ["//visibility:public"],
+)
+
+# keep: this module name starts with test_ because it is the protocol's established path.
+py_library(
+    name = "test_outputs",
+    srcs = ["test_outputs.py"],
+    visibility = ["//visibility:public"],
+    deps = ["//util:test_outputs"],
 )
 
 py_library(
@@ -233,5 +245,18 @@ py_library(
     deps = [
         "@pypi//asyncpg",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_output_protocol",
+    srcs = ["test_output_protocol.py"],
+    deps = [
+        "//:conftest",
+        "//util:test_outputs",
+        "//util/testing:test_outputs",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
