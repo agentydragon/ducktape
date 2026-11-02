@@ -98,10 +98,10 @@ def dispatched_command_id(body: str) -> str:
     return json_format.ParseDict(value["dispatch"], session_dispatcher_pb2.Dispatch()).command_id
 
 
-async def _review_screenshot(page: Page, case_id: str, name: str, label: str) -> None:
+async def _review_screenshot(page: Page, case_id: str, label: str) -> None:
     await VisualPage(
         page, output_dir=undeclared_outputs_dir(), title="Agentplane Thread browser", case_id=case_id
-    ).capture(name.removesuffix(".png"), label=label)
+    ).capture(label=label)
 
 
 @pytest.fixture
@@ -176,7 +176,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
                 "Sandbox no longer exists. Showing archived Thread history; controls are disabled.", exact=True
             )
         ).to_be_visible()
-        await _review_screenshot(page, case_id, "thread-archived.png", "Archived Thread after reload")
+        await _review_screenshot(page, case_id, "Archived Thread after reload")
         assert await event_logs.events(thread_id, limit=100) == thread_source.entries
 
 
@@ -689,9 +689,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         expanded_reasoning = reasoning_details.locator(".ui-disclosure-panel .ui-markdown")
         await expect(expanded_reasoning).to_contain_text("On-demand reasoning reaches past one line.")
         await expect(expanded_reasoning.locator("strong").first).to_have_text("reaches")
-        await _review_screenshot(
-            page, case_id, "thread-streamed-expanded.png", "Streamed Thread with tool call and reasoning open"
-        )
+        await _review_screenshot(page, case_id, "Streamed Thread with tool call and reasoning open")
 
         await page.reload()
         await expect(page.get_by_text("Projected browser prefix and streamed suffix", exact=True)).to_have_count(1)
@@ -774,9 +772,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
         await expect(frame).to_be_visible()
         assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == entry
         assert event_read_requested_after(entry.cursor)
-    await _review_screenshot(
-        page, case_id, f"thread-debug-{viewport_name}.png", f"Chronological debug on {viewport_name}"
-    )
+    await _review_screenshot(page, case_id, f"Chronological debug on {viewport_name}")
     await dialog.get_by_role("button", name="Older observations", exact=True).click()
     await expect(observations).to_have_count(30)
     await expect(observations.last).to_have_attribute("data-debug-observation", str(last.cursor - 30))
@@ -910,7 +906,7 @@ async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thre
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "phone"])
 async def test_streaming_message_taller_than_the_viewport_keeps_its_growing_tail_visible(
-    thread_browser: ThreadBrowser, request: pytest.FixtureRequest, case_id: str
+    thread_browser: ThreadBrowser, case_id: str
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
     await thread_browser.start_replay()
@@ -941,9 +937,7 @@ async def test_streaming_message_taller_than_the_viewport_keeps_its_growing_tail
             "message => message.getBoundingClientRect().height > message.closest('[aria-label=\"Thread history\"]').clientHeight"
         )
         await expect_history_bottom(page)
-    await _review_screenshot(
-        page, case_id, f"{request.node.name}.png", "Following the end of one tall streaming message"
-    )
+    await _review_screenshot(page, case_id, "Following the end of one tall streaming message")
 
 
 @pytest.mark.parametrize("raw", [False, True], ids=["normal", "raw"])
