@@ -223,6 +223,7 @@ py_test(
         "//finance/augur/fit:evidence_data",
         "//finance/augur/model:series",
         "//finance/evidence:loading",
+        "//finance/evidence:sources",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -71,6 +71,32 @@ def test_missing_cpi_month_is_rejected_by_both_loaders(synthetic_evidence_dir: P
         load_evidence(fred_only=fred_only)
 
 
+def test_fred_only_preserves_a_negative_latest_mortgage_rate(synthetic_evidence_dir: Path) -> None:
+    mortgage_path = synthetic_evidence_dir / sources.FRED_MORTGAGE30.output_filename
+    rows = mortgage_path.read_text().splitlines()
+    rows[-1] = f"{rows[-1].split(',')[0]},-0.25"
+    mortgage_path.write_text("\n".join(rows) + "\n")
+
+    _, evidence = load_evidence(fred_only=True)
+
+    assert evidence.current_mortgage30_rate_pct == -0.25
+    assert evidence.metadata.auxiliary_observations["mortgage30"].value == -0.25
+
+
+@pytest.mark.parametrize("fred_only", [False, True])
+@pytest.mark.parametrize("invalid_index", ["0", "-1"])
+def test_fred_price_indices_must_be_positive_before_log_returns(
+    synthetic_evidence_dir: Path, fred_only: bool, invalid_index: str
+) -> None:
+    cpi_path = synthetic_evidence_dir / sources.FRED_CPI.output_filename
+    rows = cpi_path.read_text().splitlines()
+    rows[-1] = f"{rows[-1].split(',')[0]},{invalid_index}"
+    cpi_path.write_text("\n".join(rows) + "\n")
+
+    with pytest.raises(ValueError, match="finite positive levels"):
+        load_evidence(fred_only=fred_only)
+
+
 def test_full_evidence_anchors_preserve_actual_source_units(synthetic_evidence_dir: Path) -> None:
     _, evidence = load_evidence()
     assert set(evidence.latest_observations) == set(evidence.series_names)

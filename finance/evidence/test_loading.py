@@ -20,6 +20,7 @@ from finance.evidence.loading import (
     french_international_market_frame,
     french_market_returns,
     french_risk_free_returns,
+    monthly_last,
     read_monthly_levels,
     require_contiguous_months,
     source_bytes,
@@ -30,6 +31,7 @@ from finance.evidence.loading import (
 from finance.evidence.sources import (
     EVIDENCE_SOURCES,
     FRED_CPI,
+    FRED_MORTGAGE30,
     FRENCH_FACTORS,
     FRENCH_INTERNATIONAL_INDICES,
     YAHOO_BTC,
@@ -49,6 +51,31 @@ def test_fred_frame_parses_and_drops_empty_values() -> None:
     frame = fred_series_frame(FRED_TEXT.encode(), FRED_CPI)
     assert frame["date"].to_list() == [date(2024, 12, 30), date(2024, 12, 31)]
     assert frame["value"].to_list() == [5900.0, 5881.63]
+
+
+def test_fred_zero_and_negative_rates_survive_monthly_alignment() -> None:
+    raw = fred_series_frame(
+        (
+            b"observation_date,MORTGAGE30US\n"
+            b"2024-01-15,0\n"
+            b"2024-01-31,NaN\n"
+            b"2024-02-15,-0.25\n"
+            b"2024-03-15,\n"
+            b"2024-03-31,inf\n"
+        ),
+        FRED_MORTGAGE30,
+    )
+    monthly = monthly_last(raw)
+    aligned = align_monthly_frames(
+        {
+            "mortgage_rate": monthly,
+            "reference": pl.DataFrame({"month": [date(2024, 1, 1), date(2024, 2, 1)], "value": [1.0, 2.0]}),
+        },
+        value_column="value",
+    )
+
+    assert monthly["value"].to_list() == [0.0, -0.25]
+    assert aligned["mortgage_rate"].to_list() == [0.0, -0.25]
 
 
 def test_fred_frame_rejects_missing_series_column() -> None:

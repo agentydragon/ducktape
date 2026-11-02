@@ -21,6 +21,7 @@ from finance.augur.calibration.macro_anchors import resolve_anchors
 from finance.augur.calibration.platform import Direction
 from finance.augur.fit.evidence_data import load_absolute_monthly_levels
 from finance.augur.model.series import SP500_KEY, InflationKey
+from finance.evidence import sources
 from finance.evidence.loading import MonthlyLevel
 
 ANCHOR_DATE = date(2026, 5, 27)
@@ -125,6 +126,33 @@ def test_explicit_inflation_history_requires_positive_finite_levels(value: float
 def test_derived_inflation_history_rejects_invalid_levels(value: float) -> None:
     with pytest.raises(ValueError, match="invalid level"):
         macro_anchors._dated_history([MonthlyLevel(month=date(2025, 7, 1), value=value)], date(2026, 5, 1))
+
+
+@pytest.mark.parametrize("invalid_index", ["0", "-1"])
+def test_derived_price_anchor_rejects_nonpositive_fred_index(synthetic_evidence_dir: Path, invalid_index: str) -> None:
+    path = synthetic_evidence_dir / sources.FRED_SP500.output_filename
+    rows = path.read_text().splitlines()
+    rows[-1] = f"{rows[-1].split(',')[0]},{invalid_index}"
+    path.write_text("\n".join(rows) + "\n")
+
+    with pytest.raises(ValueError, match="invalid level"):
+        resolve_anchors(_catalog())
+
+
+@pytest.mark.parametrize("invalid_index", ["0", "-1"])
+def test_derived_cpi_history_rejects_nonpositive_levels(synthetic_evidence_dir: Path, invalid_index: str) -> None:
+    path = synthetic_evidence_dir / sources.FRED_CPI.output_filename
+    rows = path.read_text().splitlines()
+    for index, row in enumerate(rows):
+        if row.startswith("2025-07-"):
+            rows[index] = f"{row.split(',')[0]},{invalid_index}"
+            break
+    else:
+        raise AssertionError("fixture must contain July 2025 CPI")
+    path.write_text("\n".join(rows) + "\n")
+
+    with pytest.raises(ValueError, match="invalid level"):
+        resolve_anchors(_catalog())
 
 
 if __name__ == "__main__":
