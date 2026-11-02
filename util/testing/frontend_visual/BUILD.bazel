@@ -9,7 +9,6 @@ py_library(
     data = [
         "chromium-font-preferences.json",
         "disable-animations.css",
-        "frozen-clock.js",
         ":frozen_clock_js",
     ],
     visibility = ["//visibility:public"],
@@ -65,7 +64,6 @@ py_library(
     name = "capture",
     srcs = ["capture.py"],
     data = [
-        "capture-diagnostics.js",
         ":capture_diagnostics_js",
     ],
     visibility = ["//visibility:public"],
@@ -111,7 +109,6 @@ py_test(
     name = "test_capture",
     srcs = ["test_capture.py"],
     data = [
-        "capture-diagnostics-fixture.js",
         ":capture_diagnostics_fixture_js",
     ],
     deps = [
