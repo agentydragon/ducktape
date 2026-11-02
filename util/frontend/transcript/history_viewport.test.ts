@@ -326,6 +326,41 @@ describe("HistoryViewport DOM boundary", () => {
     expect(rig.writes).toEqual([500, 530]);
   });
 
+  it("keeps a measured resize pending across observer callbacks before React redraws", () => {
+    const rig = new ViewportRig(
+      Array.from({ length: 7 }, (_, index) => ({ key: `pending:${index}`, height: 100 })),
+      400,
+      200
+    );
+    rig.mount();
+    rig.flush();
+    rig.controller.pointerDown();
+    rig.userScrollTo(250);
+    rig.controller.scrolled();
+    rig.controller.pointerUp();
+    rig.flush();
+    const writes = [...rig.writes];
+
+    rig.setHeight("pending:1", 700);
+    rig.resizeObserver.deliverDelayed();
+    expect(rig.renderRequests).toEqual([false]);
+    expect(rig.viewport.dataset.layoutSettled).toBe("false");
+    expect(rig.writes).toEqual(writes);
+
+    // The second delivery sees the same admitted height in the old committed
+    // plan. It must wait for React, rather than treating the stale plan as an
+    // impossible measurement or reconciling the reader against it.
+    expect(() => rig.resizeObserver.deliverDelayed()).not.toThrow();
+    expect(rig.renderRequests).toEqual([false]);
+    expect(rig.viewport.dataset.layoutSettled).toBe("false");
+    expect(rig.writes).toEqual(writes);
+
+    const updated = rig.flush();
+    expect(updated.rows[1].height).toEqual({ kind: "observed", pixels: 700 });
+    expect(rig.viewport.dataset.layoutSettled).toBe("true");
+    expect(rig.writes.at(-1)).toBe(850);
+  });
+
   it("keeps the committed reader anchor across growth, another wheel input, and scrollend", () => {
     const rig = new ViewportRig(
       Array.from({ length: 10 }, (_, index) => ({ key: `wheel-resize:${index}`, height: 100 })),

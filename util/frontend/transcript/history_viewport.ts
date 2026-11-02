@@ -167,7 +167,9 @@ export class HistoryViewport {
     const content = this.content;
     if (this.disposed || !element || !content) return;
     this.inCommit = true;
-    this.requested = false;
+    // A ResizeObserver refresh can recheck the same plan before React handles
+    // its pending redraw; keep that request queued until a new plan commits.
+    if (plan !== this.committed?.plan) this.requested = false;
     try {
       this.entities = entities;
       this.presentations = presentations;
