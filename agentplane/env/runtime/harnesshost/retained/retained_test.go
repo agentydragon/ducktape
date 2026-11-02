@@ -1,11 +1,10 @@
 package retained
 
 import (
-	"crypto/sha256"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -19,11 +18,10 @@ func TestStorePreservesRunnerSessionJSONShape(t *testing.T) {
 	}
 	totalBudget := 32768
 	nativeID := "native-session"
-	setupHash := "0123456789abcdef"
 	record := Record{
 		Harness: sessionpb.Harness_HARNESS_CLAUDE, CWD: "/workspace", Model: "route/model",
 		TotalContextBudgetTokens: &totalBudget, ReasoningEffort: "medium", Instructions: "Keep going.",
-		SetupScriptSHA256: &setupHash, EventSourceID: "bdb9e654-d77c-42a2-b006-9a0dd4f20655", NativeSessionID: &nativeID,
+		EventSourceID: "bdb9e654-d77c-42a2-b006-9a0dd4f20655", NativeSessionID: &nativeID,
 	}
 	if err := store.Write("session-1", record); err != nil {
 		t.Fatal(err)
@@ -46,21 +44,21 @@ func TestStorePreservesRunnerSessionJSONShape(t *testing.T) {
 	if string(fields["harness"]) != `"HARNESS_CLAUDE"` || fields["native_session_id"] == nil || fields["event_source_id"] == nil {
 		t.Fatalf("persisted session JSON fields = %s", data)
 	}
-	if fields["setup_script"] != nil {
-		t.Fatalf("legacy hash-only record unexpectedly gained setup source: %s", data)
+	if fields["setup_script"] != nil || fields["setup_script_sha256"] != nil {
+		t.Fatalf("record without setup source contains setup fields: %s", data)
 	}
 }
 
-func TestNewRecordPersistsSetupSourceAndDerivedCompatibilityHash(t *testing.T) {
-	script := "printf setup"
+func TestNewRecordPersistsExactSetupSource(t *testing.T) {
+	script := "printf ' setup \\t'\n\necho done"
 	record, err := NewRecord(&sessionpb.SessionSpec{
 		Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", Model: "route/model",
 	}, script, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if record.SetupScript != script || record.SetupScriptSHA256 != nil {
-		t.Fatalf("new record setup source = %q, legacy hash = %v; want source authority and no stored digest", record.SetupScript, record.SetupScriptSHA256)
+	if record.SetupScript != script {
+		t.Fatalf("new record setup source = %q; want exact source %q", record.SetupScript, script)
 	}
 	data, err := json.Marshal(record)
 	if err != nil {
@@ -70,37 +68,30 @@ func TestNewRecordPersistsSetupSourceAndDerivedCompatibilityHash(t *testing.T) {
 	if err := json.Unmarshal(data, &fields); err != nil {
 		t.Fatal(err)
 	}
-	var wireScript, wireHash string
+	var wireScript string
 	if err := json.Unmarshal(fields["setup_script"], &wireScript); err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal(fields["setup_script_sha256"], &wireHash); err != nil {
-		t.Fatal(err)
-	}
-	digest := sha256.Sum256([]byte(script))
-	if wireScript != script || wireHash != fmt.Sprintf("%x", digest) {
-		t.Fatalf("wire setup source=%q hash=%q; want source and derived compatibility hash", wireScript, wireHash)
+	if wireScript != script || fields["setup_script_sha256"] != nil {
+		t.Fatalf("wire setup source=%q setup digest=%s; want exact source and no digest", wireScript, fields["setup_script_sha256"])
 	}
 	var roundTrip Record
 	if err := json.Unmarshal(data, &roundTrip); err != nil {
 		t.Fatal(err)
 	}
-	if roundTrip.SetupScript != script || roundTrip.SetupScriptSHA256 != nil || !roundTrip.MatchesSetupScript(script) || roundTrip.MatchesSetupScript("different") {
-		t.Fatalf("round trip setup source = %q, legacy hash = %v; source must remain authority", roundTrip.SetupScript, roundTrip.SetupScriptSHA256)
+	if roundTrip.SetupScript != script || !roundTrip.MatchesSetupScript(script) || roundTrip.MatchesSetupScript("different") {
+		t.Fatalf("round trip setup source = %q; want exact source to remain authority", roundTrip.SetupScript)
 	}
-	legacyHash := fmt.Sprintf("%x", digest)
-	legacyJSON, err := json.Marshal(sessionRecordJSON{
-		Harness: "HARNESS_CLAUDE", CWD: "/workspace", Model: "route/model",
-		SetupScriptSHA256: &legacyHash, EventSourceID: "legacy-source",
-	})
-	if err != nil {
-		t.Fatal(err)
+	if !roundTrip.HasSetupScript() {
+		t.Fatal("round-tripped setup source was not retained")
 	}
-	var legacy Record
-	if err := json.Unmarshal(legacyJSON, &legacy); err != nil {
-		t.Fatal(err)
-	}
-	if legacy.SetupScript != "" || legacy.SetupScriptSHA256 == nil || !legacy.MatchesSetupScript(script) || legacy.MatchesSetupScript("different") {
-		t.Fatalf("legacy hash-only record did not remain readable/matchable: %+v", legacy)
+}
+
+func TestUnmarshalRejectsUnknownSetupDigestField(t *testing.T) {
+	data := []byte(`{"harness":"HARNESS_CLAUDE","cwd":"/workspace","model":"route/model","total_context_budget_tokens":null,"reasoning_effort":"","instructions":"","setup_script_sha256":"0123456789abcdef","event_source_id":"legacy-source","native_session_id":null}`)
+	var record Record
+	err := json.Unmarshal(data, &record)
+	if err == nil || !strings.Contains(err.Error(), `unknown field "setup_script_sha256"`) {
+		t.Fatalf("record with removed setup digest field error = %v, want unknown-field error", err)
 	}
 }
