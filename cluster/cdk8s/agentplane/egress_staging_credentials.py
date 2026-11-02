@@ -604,8 +604,8 @@ def _quest_read(scope: Construct, *, namespace: str) -> None:
         namespace=namespace,
         credential=QUEST_READ_POLICY,
         description=(
-            "Quest read-only scheduling, open-orders, and insurance API. Use https://quest.allegedly.works/openapi.json to discover "
-            "the read-only routes. The bearer is substituted only for the listed lookup paths."
+            "Quest scheduling, account, and insurance lookup API. Use https://quest.allegedly.works/openapi.json to discover "
+            "the available routes. The bearer is substituted only for the listed lookup paths."
         ),
         secret="quest-agent-token",
         key="token",
@@ -620,14 +620,33 @@ def _quest_read(scope: Construct, *, namespace: str) -> None:
                 QUEST_READ_POLICY,
                 "quest.allegedly.works",
                 method=PolicySetSpecRulesMethods.GET,
-                paths=["/openapi.json", "/guest/getReasons/*", "/guest/getPscDetails/*", "/api/getInsuranceProfile"],
+                paths=[
+                    "/openapi.json",
+                    "/guest/getReasons/*",
+                    "/guest/getPscDetails/*",
+                    "/api/getInsuranceProfile",
+                    "/guest/getTokenBasicInfoAPI/*",
+                    "/guest/getEncounterInfo/appointment",
+                    "/guest/getEncounterInfo/demographics",
+                    "/guest/getEncounterInfo/insurance",
+                    "/guest/getEncounterInfo/secondaryInsurance",
+                    "/guest/getPayorList/*",
+                    "/guest/getAppointment/*",
+                ],
             ),
-            # These Quest POSTs are read-only lookups; the order list contains sensitive health data.
+            # Quest uses POST for these lookups; their inputs and outputs can contain sensitive health data.
             _rule(
                 QUEST_READ_POLICY,
                 "quest.allegedly.works",
                 method=PolicySetSpecRulesMethods.POST,
-                paths=["/guest/getPscsWithAvailability", "/api/getOpenEorders"],
+                paths=[
+                    "/guest/getPscsWithAvailability",
+                    "/api/getOpenEorders",
+                    "/api/getUserDemographics",
+                    "/guest/examoneEligibility",
+                    "/guest/verifyInsurance/V2",
+                    "/guest/getPricing",
+                ],
             ),
         ],
     )
