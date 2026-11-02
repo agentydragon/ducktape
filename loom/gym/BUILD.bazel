@@ -228,7 +228,6 @@ py_test(
     name = "test_task",
     srcs = ["test_task.py"],
     deps = [
-        ":seed_tasks",
         ":task",
         "//:conftest",
         "@pypi//pydantic",

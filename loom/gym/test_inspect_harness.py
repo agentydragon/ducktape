@@ -17,7 +17,8 @@ import yaml
 
 # Aliased to avoid shadowing the builtin.
 from inspect_ai import eval as inspect_eval
-from inspect_ai.model import CompactionSummary, ModelOutput, get_model
+from inspect_ai.model import CompactionSummary, ModelName, ModelOutput, get_model
+from inspect_ai.scorer import Target
 from inspect_ai.solver import Generate, Solver, TaskState
 from more_itertools import one
 
@@ -26,12 +27,13 @@ from loom.gym.inspect_harness import (
     WAYBACK_PROXY_IMAGE_TAG,
     _submit_tool,
     agent_eval_task,
+    gym_proper_loss,
     sample_for_task,
     write_sandbox_compose,
 )
 from loom.gym.monthly_series import MonthlySeries, add_months
 from loom.gym.series_tasks import SeriesTaskSpec, tasks_for_spec
-from loom.gym.task import BinaryOutcome, EvidenceItem
+from loom.gym.task import BinaryOutcome, EvidenceItem, ScalarOutcome, ScalarQuestion, Task
 from loom.wayback.proxy import fake_ia
 from third_party.containers import python_3_14_slim
 from util.oci import OciImage, load_oci_image
@@ -89,6 +91,40 @@ def test_sample_carries_dossier_task_and_sandbox(tmp_path: Path) -> None:
     assert "call the submit tool" in str(sample.input)
     assert sample.sandbox is not None
     assert sample.sandbox.config == str(compose_path)
+
+
+def test_scalar_sample_metadata_reaches_scorer(tmp_path: Path) -> None:
+    task = Task(
+        task_id="scalar-metadata-test",
+        as_of=date(2024, 7, 1),
+        resolution_date=date(2024, 7, 2),
+        question=ScalarQuestion(text="What will the value be?", unit="units"),
+        outcome=ScalarOutcome(value=10.0),
+        outcome_source="test fixture",
+    )
+    sample = sample_for_task(task, {}, tmp_path / "unused-compose.yaml", archive=False)
+    sample_id = sample.id
+    assert sample_id is not None
+    state = TaskState(
+        model=ModelName("mockllm/model"),
+        sample_id=sample_id,
+        epoch=1,
+        input=str(sample.input),
+        messages=[],
+        target=Target(str(sample.target)),
+        output=ModelOutput(
+            model="mockllm/model",
+            completion=json.dumps({"quantiles": {"0.1": 9, "0.25": 9, "0.5": 9, "0.75": 9, "0.9": 9}}),
+        ),
+        metadata=sample.metadata,
+    )
+
+    score = asyncio.run(gym_proper_loss(archive=False)(state, Target(str(sample.target))))
+
+    assert score is not None
+    assert score.value == pytest.approx(0.5 * math.log(10 / 9))
+    assert score.metadata is not None
+    assert "submission_error" not in score.metadata
 
 
 def test_submit_tool_enforces_answer_shape() -> None:
