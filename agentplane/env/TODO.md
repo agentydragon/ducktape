@@ -19,8 +19,8 @@ required COSI subresource or a reason to combine resources with different owners
   wakeup, Execution carries demand and completion facts, and the Host input carries admission
   accounting. Preserve the admission lock and all teardown and fencing barriers.
 - Clarify component-specific `Host` types and document or qualify generation, demand, attempt,
-  epoch and incarnation identities by their actual scope. Some Session and app-server fields call
-  a demand sequence an attempt. Distinguish domain lifecycle phases from COSI metadata phase.
+  epoch and incarnation identities by their actual scope. Distinguish domain lifecycle phases
+  from COSI metadata phase.
 
 Treat naming changes separately from changes to resource ownership or reconciliation. Resource type
 and ID strings can appear in lifecycle blocker diagnostics; update their consumers, tests and docs

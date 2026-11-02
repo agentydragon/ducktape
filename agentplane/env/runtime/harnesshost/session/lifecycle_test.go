@@ -237,7 +237,9 @@ func TestIdleProcessExitConsumesCompletedCommandDemand(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.wake()
-	waitSession(t, s, func(current LifecycleStatus) bool { return current.Phase == Dormant && current.Attempt == 2 }, "completed demand after idle exit")
+	waitSession(t, s, func(current LifecycleStatus) bool {
+		return current.Phase == Dormant && current.ClaimedDemandSequence == 2
+	}, "completed demand after idle exit")
 	s.mu.Lock()
 	op := s.preparation
 	s.mu.Unlock()

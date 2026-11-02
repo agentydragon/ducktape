@@ -183,7 +183,8 @@ durable journal, seal, or ACK authority.
 
 The retained Session record supplies immutable configuration. `SessionInputs` carries harness kind
 and demand alongside the setup, process, dispatch and inspection facts the controller reconciles.
-`SessionLifecycleStatuses` records controller progress such as phase, attempt and native generation;
+`SessionLifecycleStatuses` records controller progress such as phase, claimed demand sequence and
+native generation;
 it is not desired runtime configuration. Reconciliation starts a dedicated Claude process per Session
 or attaches a Codex Session thread to the shared app-server. A Codex Session's process ID identifies
 that shared app-server; its per-Session attachment and router state remains in memory.

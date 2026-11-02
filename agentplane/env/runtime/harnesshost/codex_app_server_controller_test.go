@@ -112,7 +112,9 @@ func TestCodexJoinedStartupWaitsForSeparateExecutionHealth(t *testing.T) {
 	default:
 	}
 	health.set(true, nil)
-	ready := waitCodexStatus(t, r, func(v codexappserver.Status) bool { return v.Phase == codexappserver.Ready && v.Attempt == 2 }, "joined demand ready")
+	ready := waitCodexStatus(t, r, func(v codexappserver.Status) bool {
+		return v.Phase == codexappserver.Ready && v.ClaimedDemandSequence == 2
+	}, "joined demand ready")
 
 	if !ready.ExecServerReadyDeadline.IsZero() {
 		t.Fatal("consumed demand retained deadline")
@@ -136,7 +138,9 @@ func TestCodexExecutionRefusalDrainsOverlappedAppServer(t *testing.T) {
 	}
 	waitForFile(t, marker)
 	health.set(false, status.Error(codes.FailedPrecondition, "native executable unavailable"))
-	stopped := waitCodexStatus(t, r, func(v codexappserver.Status) bool { return v.Phase == codexappserver.Stopped && v.Attempt == 1 }, "execution refusal cleanup")
+	stopped := waitCodexStatus(t, r, func(v codexappserver.Status) bool {
+		return v.Phase == codexappserver.Stopped && v.ClaimedDemandSequence == 1
+	}, "execution refusal cleanup")
 	if !strings.Contains(stopped.Error, "native executable unavailable") {
 		t.Fatalf("lost readiness refusal: %+v", stopped)
 	}
@@ -160,7 +164,9 @@ func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
 	if joined.ExecServerReadyDeadline != first.ExecServerReadyDeadline {
 		t.Fatal("joined demand changed deadline")
 	}
-	stopped := waitCodexStatus(t, r, func(v codexappserver.Status) bool { return v.Phase == codexappserver.Stopped && v.Attempt == 2 }, "execution timeout")
+	stopped := waitCodexStatus(t, r, func(v codexappserver.Status) bool {
+		return v.Phase == codexappserver.Stopped && v.ClaimedDemandSequence == 2
+	}, "execution timeout")
 	if !strings.Contains(stopped.Error, "within 2s") || !stopped.ExecServerReadyDeadline.IsZero() {
 		t.Fatalf("deadline not consumed: %+v", stopped)
 	}

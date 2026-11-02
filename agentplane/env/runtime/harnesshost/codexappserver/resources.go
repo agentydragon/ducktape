@@ -39,9 +39,11 @@ const (
 )
 
 type Status struct {
-	Phase                   Phase
-	Generation              uint64
-	Attempt                 uint64
+	Phase      Phase
+	Generation uint64
+	// ClaimedDemandSequence is the latest demand claimed in this Harness Host generation.
+	// Claiming it does not mean the native work succeeded.
+	ClaimedDemandSequence   uint64
 	ExitGeneration          uint64
 	ExecServerReadyDeadline time.Time
 	ProcessID               string

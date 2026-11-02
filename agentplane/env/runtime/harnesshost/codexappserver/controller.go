@@ -88,7 +88,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			} else {
 				current.Error = op.Err().Error()
 			}
-			current.Attempt = input.Demand
+			current.ClaimedDemandSequence = input.Demand
 			current.ExecServerReadyDeadline = time.Time{}
 		} else {
 			server.mu.Lock()
@@ -106,16 +106,16 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				if current.Error != "" {
 					current.Phase = Initializing
 					current.ProcessID = p.ID()
-					current.Attempt = input.Demand
+					current.ClaimedDemandSequence = input.Demand
 				} else if dependencyErr != nil {
 					current.Phase = Initializing
 					current.ProcessID = p.ID()
-					current.Attempt = input.Demand
+					current.ClaimedDemandSequence = input.Demand
 					current.Error = dependencyErr.Error()
 				} else if ready {
 					current.Phase = Ready
 					current.ProcessID = p.ID()
-					current.Attempt = input.Demand
+					current.ClaimedDemandSequence = input.Demand
 					current.Error = ""
 					current.StopError = ""
 					current.ExecServerReadyDeadline = time.Time{}
@@ -172,10 +172,11 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		}
 		server.mu.Unlock()
 		if inactive {
-			// Demand and attempts are scoped to a Harness Host incarnation. A resumed Host must wait for
-			// fresh demand rather than replaying the previous incarnation's Codex startup request.
+			// Demand sequence checkpoints are scoped to a Harness Host incarnation. A resumed Host
+			// must wait for fresh demand rather than replaying the previous incarnation's Codex
+			// startup request.
 			current.Generation = desiredState.Generation
-			current.Attempt = 0
+			current.ClaimedDemandSequence = 0
 			current.ExitGeneration = input.ExitGeneration
 			current.Error = ""
 			current.StopError = ""
@@ -247,7 +248,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				return err
 			}
 			if dependencyErr != nil {
-				current.Attempt = input.Demand
+				current.ClaimedDemandSequence = input.Demand
 				current.Error = dependencyErr.Error()
 				initializing.Cancel()
 			} else if ready {
@@ -271,8 +272,8 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	if p != nil {
 		if p.Running() {
 			if current.Phase == Ready && current.ProcessID == p.ID() {
-				if current.Attempt < input.Demand {
-					current.Attempt = input.Demand
+				if current.ClaimedDemandSequence < input.Demand {
+					current.ClaimedDemandSequence = input.Demand
 				}
 				return write()
 			}
@@ -286,7 +287,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				} else if dependencyErr == nil && ready {
 					current.Phase = Ready
 					current.ProcessID = p.ID()
-					current.Attempt = input.Demand
+					current.ClaimedDemandSequence = input.Demand
 					current.Error = ""
 					current.StopError = ""
 					current.ExecServerReadyDeadline = time.Time{}
@@ -295,7 +296,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				if dependencyErr != nil {
 					current.Phase = Draining
 					current.ProcessID = p.ID()
-					current.Attempt = input.Demand
+					current.ClaimedDemandSequence = input.Demand
 					current.Error = dependencyErr.Error()
 					current.ExecServerReadyDeadline = time.Time{}
 					if err := server.startOperation(&server.draining, server.drainProcess); err != nil {
@@ -324,7 +325,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			return write()
 		}
 	}
-	if input.Demand <= current.Attempt {
+	if input.Demand <= current.ClaimedDemandSequence {
 		current.Phase = Stopped
 		current.ProcessID = ""
 		return write()
@@ -336,7 +337,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	}
 	if dependencyErr != nil {
 		current.Phase = Stopped
-		current.Attempt = input.Demand
+		current.ClaimedDemandSequence = input.Demand
 		current.Error = dependencyErr.Error()
 		current.ProcessID = ""
 		current.ExecServerReadyDeadline = time.Time{}
@@ -348,7 +349,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 
 	current.Phase = Initializing
 	current.Generation = desiredState.Generation
-	current.Attempt = input.Demand
+	current.ClaimedDemandSequence = input.Demand
 	current.ProcessID = ""
 	current.Error = ""
 	if err := write(); err != nil {
@@ -376,7 +377,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			server.initializingOwnerGeneration = 0
 			server.mu.Unlock()
 			current.Phase = Stopped
-			current.Attempt = input.Demand
+			current.ClaimedDemandSequence = input.Demand
 			current.ProcessID = ""
 			current.Error = err.Error()
 			current.ExecServerReadyDeadline = time.Time{}

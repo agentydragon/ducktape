@@ -148,7 +148,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		} else if desiredState.Mode == harnesshostlifecycle.Running {
 			current.Phase = Dormant
 			if input.Pending == 0 {
-				current.Attempt = input.Demand
+				current.ClaimedDemandSequence = input.Demand
 			}
 		}
 	}
@@ -301,11 +301,11 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		if pending == 0 {
 			// Demand from commands completed by this process is already satisfied.
 			// Its exit must not turn an idle Session into a fresh startup request.
-			current.Attempt = input.Demand
+			current.ClaimedDemandSequence = input.Demand
 		}
 	}
 	inspecting := input.InspectionRunning || input.Inspections > 0
-	if current.Phase == Dormant && !inspecting && input.Demand > current.Attempt && !s.executionClosed() {
+	if current.Phase == Dormant && !inspecting && input.Demand > current.ClaimedDemandSequence && !s.executionClosed() {
 		started, err := s.journal.HasStartedTurn(ctx)
 		if err != nil {
 			return err
@@ -313,7 +313,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		s.mu.Lock()
 		resuming := s.record.NativeSessionID != nil && started
 		s.mu.Unlock()
-		current.Phase, current.Attempt, current.Resuming = Preparing, input.Demand, resuming
+		current.Phase, current.ClaimedDemandSequence, current.Resuming = Preparing, input.Demand, resuming
 		current.ProcessStopped = false
 		current.Error = ""
 		if err := write(); err != nil {
