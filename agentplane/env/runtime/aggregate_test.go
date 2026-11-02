@@ -654,10 +654,7 @@ func TestEmbeddedHostLifecycleLossStillFencesExecution(t *testing.T) {
 	case <-time.After(lifecycleTestTimeout):
 		t.Fatal("Execution service did not start")
 	}
-	r.mu.Lock()
-	host := r.host
-	r.mu.Unlock()
-	r.disconnectHost(host, errors.New("simulated Host lifecycle loss"))
+	r.HostFailed(errors.New("simulated Host failure"))
 	closeCtx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
 	if err := r.Close(closeCtx); err == nil {
@@ -692,7 +689,7 @@ func TestRuntimeCloseAfterHostDisconnectRetainsOwnerWhenNativeCleanupUnproved(t 
 	r.hostLifetime = host
 	link := r.host
 	r.mu.Unlock()
-	r.disconnectHost(link, context.Canceled)
+	r.retireHost(link, nil)
 
 	for range 2 {
 		ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)

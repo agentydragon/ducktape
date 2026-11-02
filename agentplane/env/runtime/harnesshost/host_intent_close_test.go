@@ -3,6 +3,7 @@ package harnesshost
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,19 +21,70 @@ import (
 	"google.golang.org/grpc"
 )
 
-type connectedHostBridge struct {
-	completedBootstrapBridge
-	connected chan struct{}
-}
-
-func (b *connectedHostBridge) ConnectHost(ctx context.Context, _ *Host) error {
-	close(b.connected)
-	<-ctx.Done()
-	return ctx.Err()
-}
-
 type idleHistoryIngress struct {
 	ingresspb.UnimplementedSessionJournalIngressServer
+}
+
+type failedStartupState struct {
+	state.State
+	armed atomic.Bool
+	err   error
+}
+
+func (s *failedStartupState) List(ctx context.Context, kind resource.Kind, opts ...state.ListOption) (resource.List, error) {
+	if s.armed.Load() && kind.Type() == retained.SessionRecordType {
+		return resource.List{}, s.err
+	}
+	return s.State.List(ctx, kind, opts...)
+}
+
+type failureReportingBridge struct {
+	completedBootstrapBridge
+	failures chan error
+	release  chan struct{}
+}
+
+func (b *failureReportingBridge) HostFailed(err error) {
+	b.failures <- err
+	<-b.release
+}
+
+func TestHostRunReportsStartupFailureBeforeJoining(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	startupErr := errors.New("injected Session recovery failure")
+	store := &failedStartupState{State: state.WrapCore(namespaced.NewState(inmem.Build)), err: startupErr}
+	r, err := newTestHost(Config{StateDir: t.TempDir()}, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { r.cancel(); <-r.lifecycle.done.Done() })
+	r.SetRuntimeBinding("runtime", r.bootID, true)
+	bridge := &failureReportingBridge{failures: make(chan error, 1), release: make(chan struct{})}
+	store.armed.Store(true)
+	done := make(chan error, 1)
+	go func() { done <- r.Run(ctx, configuration.Endpoint{}, bridge) }()
+	select {
+	case err := <-bridge.failures:
+		if !errors.Is(err, startupErr) {
+			t.Fatalf("reported Host failure = %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("Host startup failure was not reported")
+	}
+	if r.RuntimeBindingMatches("runtime", r.bootID) {
+		t.Fatal("failed Host still admits the Runtime binding")
+	}
+	store.armed.Store(false)
+	close(bridge.release)
+	select {
+	case err := <-done:
+		if !errors.Is(err, startupErr) {
+			t.Fatalf("Host Run = %v, want startup failure", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("Host did not finish after reporting startup failure")
+	}
 }
 
 func (*idleHistoryIngress) Push(stream grpc.BidiStreamingServer[ingresspb.PushFrame, ingresspb.Acknowledgement]) error {
@@ -79,14 +131,13 @@ func TestHostRunInterruptedIntentKeepsClosingState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.SetRuntimeConnection("runtime", r.bootID, true)
+	r.SetRuntimeBinding("runtime", r.bootID, true)
 	endpoint := loopbackGRPCServer(t, func(server *grpc.Server) {
 		ingresspb.RegisterSessionJournalIngressServer(server, &idleHistoryIngress{})
 	})
-	bridge := &connectedHostBridge{connected: make(chan struct{})}
 	runCtx, stop := context.WithCancel(ctx)
 	done := make(chan error, 1)
-	go func() { done <- r.Run(runCtx, configuration.Endpoint{Target: endpoint}, bridge) }()
+	go func() { done <- r.Run(runCtx, configuration.Endpoint{Target: endpoint}, completedBootstrapBridge{}) }()
 	t.Cleanup(func() {
 		stop()
 		select {
@@ -100,11 +151,6 @@ func TestHostRunInterruptedIntentKeepsClosingState(t *testing.T) {
 			close(store.closeReadRelease)
 		}
 	})
-	select {
-	case <-bridge.connected:
-	case <-ctx.Done():
-		t.Fatal("Host Run did not complete Session startup")
-	}
 	first := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", HostBootID: r.bootID, Generation: 1, SandboxUID: "sandbox", Mode: runtimepb.LifecycleIntent_INACTIVE}
 	if err := cosi.Publish(ctx, store, harnesshostlifecycle.HostIntentResource(first), first, harnesshostlifecycle.EnvironmentOwner); err != nil {
 		t.Fatal(err)
@@ -140,7 +186,7 @@ func TestHostRunInterruptedIntentKeepsClosingState(t *testing.T) {
 	}
 	store.closeReadArmed.Store(true)
 	stop()
-	r.SetRuntimeConnection("runtime", r.bootID, false)
+	r.SetRuntimeBinding("runtime", r.bootID, false)
 	select {
 	case <-store.closeReadEntered:
 	case <-ctx.Done():

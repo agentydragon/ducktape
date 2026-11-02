@@ -29,11 +29,14 @@ func (*hostIntentController) Outputs() []controller.Output {
 }
 
 func (c *hostIntentController) Run(ctx context.Context, engine controller.Runtime, _ *zap.Logger) error {
+	startupDone := c.host.startupDone
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-engine.EventCh():
+		case <-startupDone:
+			startupDone = nil
 		}
 		desired, found, err := cosi.Read(ctx, engine, harnesshostlifecycle.HostIntentResource(harnesshostlifecycle.HostIntent{}))
 		if err != nil {
@@ -67,7 +70,7 @@ func (c *hostIntentController) Run(ctx context.Context, engine controller.Runtim
 			return err
 		}
 		if !c.eligible(desired) {
-			result.Error = "Host connection ended before intent application"
+			result.Error = "Host binding became inactive before intent application"
 			writeErr := harnesshostlifecycle.WriteHostIntentStatus(ctx, engine, result)
 			c.host.fail(fmt.Errorf("apply Host lifecycle intent: %w", errors.Join(errors.New(result.Error), writeErr)))
 			return nil
@@ -98,5 +101,5 @@ func (c *hostIntentController) eligible(desired harnesshostlifecycle.HostIntent)
 	c.host.mu.Lock()
 	startup := c.host.startupComplete && !c.host.closing && c.host.bootID == desired.HostBootID
 	c.host.mu.Unlock()
-	return startup && c.host.RuntimeConnectionMatches(desired.RuntimeBootID, desired.HostBootID)
+	return startup && c.host.RuntimeBindingMatches(desired.RuntimeBootID, desired.HostBootID)
 }

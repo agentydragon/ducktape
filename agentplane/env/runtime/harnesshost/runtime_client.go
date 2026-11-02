@@ -15,9 +15,9 @@ import (
 // RuntimeBridge exposes Runtime-owned bootstrap and Execution readiness to the
 // embedded Host. Its callbacks are made without holding the Host mutex.
 type RuntimeBridge interface {
-	ConnectHost(context.Context, *Host) error
 	WaitHostBootstrap(context.Context, *runtimepb.Binding) error
 	HostExecutionReady(context.Context) (bool, error)
+	HostFailed(error)
 }
 
 type bindingContextKey struct{}
@@ -26,31 +26,31 @@ func withBinding(ctx context.Context, binding *runtimepb.Binding) context.Contex
 	return context.WithValue(ctx, bindingContextKey{}, proto.Clone(binding).(*runtimepb.Binding))
 }
 
-type runtimeConnection struct {
+type runtimeBinding struct {
 	runtimeBootID string
 	hostBootID    string
-	connected     bool
+	active        bool
 	failed        bool
 }
 
-// Runtime revokes this native connection gate synchronously, even if COSI is
+// Runtime revokes this native binding gate synchronously, even if COSI is
 // unavailable. Intent application still comes only from the shared COSI store.
-func (r *Host) SetRuntimeConnection(runtimeBootID, hostBootID string, connected bool) {
+func (r *Host) SetRuntimeBinding(runtimeBootID, hostBootID string, active bool) {
 	for {
-		current := r.runtimeConnection.Load()
+		current := r.runtimeBinding.Load()
 		if current != nil && current.failed {
 			return
 		}
-		if r.runtimeConnection.CompareAndSwap(current, &runtimeConnection{runtimeBootID: runtimeBootID, hostBootID: hostBootID, connected: connected}) {
+		if r.runtimeBinding.CompareAndSwap(current, &runtimeBinding{runtimeBootID: runtimeBootID, hostBootID: hostBootID, active: active}) {
 			return
 		}
 	}
 }
 
-// RuntimeConnectionMatches checks the native connection gate used by Host intent admission.
-func (r *Host) RuntimeConnectionMatches(runtimeBootID, hostBootID string) bool {
-	connection := r.runtimeConnection.Load()
-	return connection != nil && connection.connected && !connection.failed && connection.runtimeBootID == runtimeBootID && connection.hostBootID == hostBootID
+// RuntimeBindingMatches checks the native gate used by Host intent admission.
+func (r *Host) RuntimeBindingMatches(runtimeBootID, hostBootID string) bool {
+	binding := r.runtimeBinding.Load()
+	return binding != nil && binding.active && !binding.failed && binding.runtimeBootID == runtimeBootID && binding.hostBootID == hostBootID
 }
 
 func (r *Host) BootID() string { return r.bootID }
@@ -92,8 +92,8 @@ func (r *Host) authorizeBindingLocked(binding *runtimepb.Binding) error {
 	if !proto.Equal(binding, r.intent.Binding) || binding.HostBootId != r.bootID {
 		return status.Error(codes.FailedPrecondition, "stale environment binding")
 	}
-	if !r.RuntimeConnectionMatches(binding.RuntimeBootId, binding.HostBootId) {
-		return status.Error(codes.Unavailable, "Harness Host is disconnected from its Environment Runtime")
+	if !r.RuntimeBindingMatches(binding.RuntimeBootId, binding.HostBootId) {
+		return status.Error(codes.Unavailable, "Harness Host binding is inactive")
 	}
 	return nil
 }
@@ -194,7 +194,7 @@ func (r *Host) waitBootstrap(ctx context.Context) error {
 	r.mu.Lock()
 	if r.bootstrapBinding == nil || r.runtimeBridge == nil {
 		r.mu.Unlock()
-		return errors.New("environment runtime is not connected")
+		return errors.New("environment runtime binding is unavailable")
 	}
 	binding := proto.Clone(r.bootstrapBinding).(*runtimepb.Binding)
 	bridge := r.runtimeBridge

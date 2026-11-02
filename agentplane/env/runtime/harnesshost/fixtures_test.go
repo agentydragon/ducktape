@@ -13,7 +13,7 @@ import (
 // by Runtime tests. Calls carry the exact in-process binding.
 type completedBootstrapBridge struct{}
 
-func (completedBootstrapBridge) ConnectHost(ctx context.Context, _ *Host) error { return ctx.Err() }
+func (completedBootstrapBridge) HostFailed(error) {}
 
 func (completedBootstrapBridge) WaitHostBootstrap(ctx context.Context, _ *runtimepb.Binding) error {
 	return ctx.Err()
@@ -29,7 +29,7 @@ func bindHost(r *Host, incarnation string) error {
 		generation = r.intent.Binding.Generation + 1
 	}
 	r.mu.Unlock()
-	r.SetRuntimeConnection("test-runtime", r.bootID, true)
+	r.SetRuntimeBinding("test-runtime", r.bootID, true)
 	return r.ApplyIntent(r.ctx, &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "test-runtime", HostBootId: r.bootID, Generation: generation}, SandboxUid: r.config.Launch.Sandbox.UID, IncarnationUid: incarnation, Mode: runtimepb.LifecycleIntent_RUNNING})
 }
 

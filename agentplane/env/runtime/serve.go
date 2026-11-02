@@ -94,6 +94,7 @@ func (r *Runtime) startHost(ctx context.Context) error {
 	r.mu.Lock()
 	r.hostLifetime = process
 	r.mu.Unlock()
+	bindErr := r.bindHost(host)
 	r.startLifecycleEngineLocked()
 	go func() {
 		process.err = host.Run(hostCtx, r.config.HostIngress, r)
@@ -110,7 +111,7 @@ func (r *Runtime) startHost(ctx context.Context) error {
 			}
 		}
 	}()
-	return nil
+	return bindErr
 }
 
 // embeddedHostLifetime keeps Runtime's existing stop-and-join fence while Host
@@ -154,7 +155,7 @@ func (r *Runtime) waitForInitialHost(ctx context.Context) error {
 			return errors.New("Runtime failed or closed while starting Harness Host")
 		}
 		report := r.hostReportLocked()
-		ready := r.host != nil && r.host.connected && r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_INACTIVE &&
+		ready := r.host != nil && r.host.active && r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_INACTIVE &&
 			report != nil && report.Ready && report.NativeStopped
 		changed := r.changes
 		host := r.hostLifetime

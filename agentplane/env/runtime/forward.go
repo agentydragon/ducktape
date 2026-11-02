@@ -36,7 +36,7 @@ func (r *Runtime) authorizeHostCall(ctx context.Context, mutation bool) (*harnes
 			return status.Error(codes.FailedPrecondition, "environment generation is not serving Host RPCs")
 		}
 		report := r.hostReportLocked()
-		if r.host == nil || !r.host.connected || report == nil || !report.Ready {
+		if r.host == nil || !r.host.active || report == nil || !report.Ready {
 			return status.Error(codes.Unavailable, "Harness Host has not applied the active environment generation")
 		}
 		if epoch.IncarnationUID() != r.intent.IncarnationUid {

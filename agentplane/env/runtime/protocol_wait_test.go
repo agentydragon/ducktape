@@ -42,7 +42,7 @@ func TestUncertainExecutionFenceIsNotRetriedForBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.mu.Lock()
-	r.host = &hostLink{connected: true}
+	r.host = &hostBinding{active: true}
 	r.intent = &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_QUIESCING}
 	publishAppliedHostIntent(t, r)
 	report := &runtimepb.HostReport{Ready: true, NativeStopped: true}
@@ -82,7 +82,7 @@ func TestUnmanagedExecutionOwnerCannotClaimFence(t *testing.T) {
 
 func TestWaitForHostQuiescedWakesForFinalReportPublishedAfterSnapshot(t *testing.T) {
 	binding := &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 1}
-	host := &hostLink{connected: true}
+	host := &hostBinding{active: true}
 	report := &runtimepb.HostReport{
 		Ready: true,
 		Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{

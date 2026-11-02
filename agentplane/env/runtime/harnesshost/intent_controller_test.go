@@ -43,41 +43,97 @@ func TestHostIntentAdmissionRequiresStartupAndExactConnection(t *testing.T) {
 		t.Fatal("intent applied before Session startup")
 	}
 	controller.host.startupComplete = true
-	connection := &runtimeConnection{runtimeBootID: "runtime", hostBootID: "host", connected: true}
-	controller.host.runtimeConnection.Store(connection)
-	if !controller.host.RuntimeConnectionMatches(desired.RuntimeBootID, desired.HostBootID) {
-		t.Fatal("exact connected Host was rejected")
+	connection := &runtimeBinding{runtimeBootID: "runtime", hostBootID: "host", active: true}
+	controller.host.runtimeBinding.Store(connection)
+	if !controller.host.RuntimeBindingMatches(desired.RuntimeBootID, desired.HostBootID) {
+		t.Fatal("exact active Host binding was rejected")
 	}
 	if !controller.eligible(desired) {
-		t.Fatal("connected Host rejected intent after startup")
+		t.Fatal("active Host rejected intent after startup")
 	}
-	for name, mutate := range map[string]func(*runtimeConnection){
-		"disconnected":         func(v *runtimeConnection) { v.connected = false },
-		"Runtime boot changed": func(v *runtimeConnection) { v.runtimeBootID = "other-runtime" },
-		"Host boot changed":    func(v *runtimeConnection) { v.hostBootID = "other-host" },
+	for name, mutate := range map[string]func(*runtimeBinding){
+		"disconnected":         func(v *runtimeBinding) { v.active = false },
+		"Runtime boot changed": func(v *runtimeBinding) { v.runtimeBootID = "other-runtime" },
+		"Host boot changed":    func(v *runtimeBinding) { v.hostBootID = "other-host" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			invalid := *connection
 			mutate(&invalid)
-			controller.host.runtimeConnection.Store(&invalid)
+			controller.host.runtimeBinding.Store(&invalid)
 			if controller.eligible(desired) {
 				t.Fatal("invalid Host connection admitted intent")
 			}
 		})
 	}
-	controller.host.runtimeConnection.Store(nil)
+	controller.host.runtimeBinding.Store(nil)
 	if controller.eligible(desired) {
 		t.Fatal("missing connection admitted intent")
 	}
 }
 
-func TestHostFailureCannotReopenRuntimeConnection(t *testing.T) {
+func TestHostFailureCannotReopenRuntimeBinding(t *testing.T) {
 	runner := &Host{fatal: make(chan error, 1)}
-	runner.SetRuntimeConnection("runtime", "host", true)
+	runner.SetRuntimeBinding("runtime", "host", true)
 	runner.fail(context.Canceled)
-	runner.SetRuntimeConnection("runtime", "host", true)
-	if runner.RuntimeConnectionMatches("runtime", "host") {
+	runner.SetRuntimeBinding("runtime", "host", true)
+	if runner.RuntimeBindingMatches("runtime", "host") {
 		t.Fatal("a failed Host was reconnected for intent application")
+	}
+}
+
+type observedIntentReadState struct {
+	state.State
+	read chan struct{}
+	once sync.Once
+}
+
+func (s *observedIntentReadState) Get(ctx context.Context, ptr resource.Pointer, opts ...state.GetOption) (resource.Resource, error) {
+	value, err := s.State.Get(ctx, ptr, opts...)
+	if ptr.Type() == harnesshostlifecycle.HostIntentStatusType {
+		s.once.Do(func() { close(s.read) })
+	}
+	return value, err
+}
+
+func TestHostIntentPublishedBeforeStartupIsAppliedAfterRecovery(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	store := &observedIntentReadState{State: state.WrapCore(namespaced.NewState(inmem.Build)), read: make(chan struct{})}
+	engine, err := cosiruntime.NewRuntime(store, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := &Host{bootID: "host", fatal: make(chan error, 1), startupDone: make(chan struct{})}
+	runner.SetRuntimeBinding("runtime", "host", true)
+	var calls atomic.Int32
+	if err := engine.RegisterController(&hostIntentController{host: runner, apply: func(context.Context, *runtimepb.LifecycleIntent) error {
+		calls.Add(1)
+		return nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	desired := harnesshostlifecycle.HostIntent{RuntimeBootID: "runtime", HostBootID: "host", Generation: 1}
+	if err := cosi.Publish(ctx, store, harnesshostlifecycle.HostIntentResource(desired), desired, harnesshostlifecycle.EnvironmentOwner); err != nil {
+		t.Fatal(err)
+	}
+	runCtx, stop := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() { done <- engine.Run(runCtx) }()
+	defer func() { stop(); <-done }()
+	select {
+	case <-store.read:
+	case <-ctx.Done():
+		t.Fatal("controller did not observe the intent before startup")
+	}
+	if calls.Load() != 0 {
+		t.Fatal("intent applied before recovery")
+	}
+	runner.mu.Lock()
+	runner.startupComplete = true
+	runner.mu.Unlock()
+	close(runner.startupDone)
+	if got := waitIntentStatus(t, ctx, store, desired, true); !got.Applied || calls.Load() != 1 {
+		t.Fatalf("intent after recovery = %+v, application count %d", got, calls.Load())
 	}
 }
 
@@ -112,7 +168,7 @@ func TestHostDisconnectAfterApplyingMarkerSkipsNativeEffect(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := &Host{bootID: "host", startupComplete: true, fatal: make(chan error, 1)}
-	runner.SetRuntimeConnection("runtime", "host", true)
+	runner.SetRuntimeBinding("runtime", "host", true)
 	var calls atomic.Int32
 	controller := &hostIntentController{host: runner, apply: func(context.Context, *runtimepb.LifecycleIntent) error { calls.Add(1); return nil }}
 	if err := engine.RegisterController(controller); err != nil {
@@ -131,7 +187,7 @@ func TestHostDisconnectAfterApplyingMarkerSkipsNativeEffect(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("Host never recorded Applying")
 	}
-	runner.SetRuntimeConnection("runtime", "host", false)
+	runner.SetRuntimeBinding("runtime", "host", false)
 	close(store.release)
 	_, err = store.WatchFor(ctx, harnesshostlifecycle.HostIntentStatusResource(harnesshostlifecycle.HostIntentStatus{}).Metadata(),
 		state.WithEventTypes(state.Created, state.Updated),
@@ -158,7 +214,7 @@ func TestHostIntentControllerFailsOnInterruptedApplication(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := &Host{bootID: "host", startupComplete: true, fatal: make(chan error, 1)}
-	runner.SetRuntimeConnection("runtime", "host", true)
+	runner.SetRuntimeBinding("runtime", "host", true)
 	var calls atomic.Int32
 	if err := engine.RegisterController(&hostIntentController{host: runner, apply: func(context.Context, *runtimepb.LifecycleIntent) error {
 		calls.Add(1)

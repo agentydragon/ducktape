@@ -28,7 +28,7 @@ type quiescePlan struct {
 	factsIdleSinceMicros int64
 	uid                  string
 	current              bool
-	host                 *hostLink
+	host                 *hostBinding
 	binding              *runtimepb.Binding
 	currentReport        bool
 	retry                bool
@@ -70,7 +70,7 @@ func (c *runtimeTransitionSequence) runQuiesceBarrier(ctx context.Context, kind 
 				report.Facts.IdleSince.AsTime().UnixMicro() != plan.request.IdleSinceMicros) {
 			return runtimeTransitionOutcome{}, status.Error(codes.Aborted, "the Sandbox is busy or its idle_since differs")
 		}
-		if r.host == nil || !r.host.connected {
+		if r.host == nil || !r.host.active {
 			return runtimeTransitionOutcome{}, status.Error(codes.Unavailable, "Harness Host lifecycle connection is unavailable")
 		}
 		if err := r.state.EnterLameduck(); err != nil {
@@ -102,10 +102,10 @@ func (c *runtimeTransitionSequence) runQuiesceBarrier(ctx context.Context, kind 
 		if failure := r.failureLocked(); failure != nil {
 			return runtimeTransitionOutcome{}, failure
 		}
-		if r.host == nil || r.host != plan.host || !r.host.connected || r.host.client == nil || r.intent == nil ||
+		if r.host == nil || r.host != plan.host || !r.host.active || r.host.client == nil || r.intent == nil ||
 			plan.binding == nil || !proto.Equal(r.intent.Binding, plan.binding) ||
 			plan.binding.RuntimeBootId != r.bootID || plan.binding.HostBootId != r.host.bootID ||
-			!r.host.client.RuntimeConnectionMatches(r.bootID, r.host.bootID) {
+			!r.host.client.RuntimeBindingMatches(r.bootID, r.host.bootID) {
 			return runtimeTransitionOutcome{}, status.Error(codes.Unavailable, "Harness Host quiesce status binding is no longer current")
 		}
 		// These resources carry the Host lifecycle error. Read only the

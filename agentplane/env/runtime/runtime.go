@@ -82,10 +82,10 @@ type executionHandle interface {
 	StopAndFence(context.Context) error
 }
 
-type hostLink struct {
-	bootID    string
-	client    *harnesshost.Host
-	connected bool
+type hostBinding struct {
+	bootID string
+	client *harnesshost.Host
+	active bool
 }
 
 // Runtime owns the embedded Host lifecycle and serves the Gateway-facing Runner API.
@@ -124,7 +124,7 @@ type Runtime struct {
 	desired                  lifecycle.EnvironmentDesired
 	bootID                   string
 	supervisor               *supervision.Supervisor
-	host                     *hostLink
+	host                     *hostBinding
 	intent                   *runtimepb.LifecycleIntent
 	lastRunning              *runtimepb.Binding
 	executorProxy            executorpb.ExecutorServer
@@ -530,7 +530,7 @@ func (r *Runtime) startExecutionForUID(ctx context.Context, uid string) error {
 func (r *Runtime) publishIntent(ctx context.Context, desiredMode lifecycle.Mode, intentMode runtimepb.LifecycleIntent_Mode, uid, sealUID string) (*runtimepb.Binding, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.closing || r.host == nil || !r.host.connected {
+	if r.closing || r.host == nil || !r.host.active {
 		return nil, status.Error(codes.Unavailable, "environment Runtime or Harness Host is closing")
 	}
 	desired := lifecycle.EnvironmentDesired{Mode: desiredMode, SealUID: sealUID, Generation: r.desired.Generation + 1}
@@ -690,7 +690,7 @@ func (r *Runtime) changedLocked() {
 func (r *Runtime) intentChangedLocked() {
 	if err := r.publishHostIntentLocked(); err != nil {
 		r.failed = true
-		r.revokeHostConnectionLocked()
+		r.revokeHostBindingLocked()
 		if r.failureErr == nil {
 			r.failureErr = err
 		}
@@ -711,7 +711,7 @@ func (r *Runtime) fail(err error) {
 		r.failureErr = err
 	}
 	r.failed = true
-	r.revokeHostConnectionLocked()
+	r.revokeHostBindingLocked()
 	r.changedLocked()
 	r.mu.Unlock()
 	select {

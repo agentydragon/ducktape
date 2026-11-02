@@ -180,7 +180,7 @@ func (c *runtimeTransitionSequence) successorBarriers(outcome adoptionOutcome) [
 func (c *runtimeTransitionSequence) planAdoption(ctx context.Context, uid string) (adoptionPlan, []runtimeTransitionStep, error) {
 	r := c.r
 	r.mu.Lock()
-	if r.closing || r.host == nil || !r.host.connected {
+	if r.closing || r.host == nil || !r.host.active {
 		r.mu.Unlock()
 		return adoptionPlan{}, nil, status.Error(codes.Unavailable, "environment Runtime or Harness Host is closing")
 	}
