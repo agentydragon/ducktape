@@ -43,6 +43,7 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSel
 from aiquota.config import CLIProxyAPISettings, Config
 from aiquota.providers.claude import ClaudeSettings
 from aiquota.providers.codex import CodexSettings
+from aiquota.providers.openai_platform import OpenAIPlatformSettings
 from aiquota.providers.zai import ZaiSettings
 from aiquota.settings import Settings
 from cluster.cdk8s import pod_policy
@@ -82,6 +83,9 @@ _CONFIG = Config(
     cli_proxy_api=CLIProxyAPISettings(url=f"{cli_proxy_api_app.SERVICE.url}/v0/management"),
     claude=ClaudeSettings(enabled=True),
     codex=CodexSettings(enabled=True),
+    openai_platform=OpenAIPlatformSettings(
+        enabled=True, url="http://openai-platform-session.openai-platform-session.svc:8080"
+    ),
     zai=ZaiSettings(enabled=False),
 )
 CONFIG_CONFIG_MAP = ConfigMapArgs(
@@ -189,7 +193,10 @@ class Aiquota(Construct):
                 name=_API_NAME,
                 namespace=NAMESPACE,
                 labels=SERVICE.pods.selector,
-                annotations={"description": "Claude and Codex subscription quota API via the CLIProxyAPI integration."},
+                annotations={
+                    "description": "AI subscription quotas and OpenAI Platform credits.",
+                    "secret.reloader.stakater.com/reload": "openai-platform-read-token",
+                },
             ),
             pod_metadata=ApiObjectMetadata(labels=SERVICE.pods.selector),
             replicas=1,
@@ -213,6 +220,11 @@ class Aiquota(Construct):
                 env_name(Settings, "cli_proxy_api_key"): cli_proxy_api_app.MANAGEMENT_PASSWORD.env_value(
                     self, "cli-proxy-api-management-ref"
                 ),
+                env_name(Settings, "openai_platform_token"): SecretRef(
+                    namespace=NAMESPACE, name="openai-platform-read-token"
+                )
+                .key("token")
+                .env_value(self, "openai-platform-token-ref", optional=True),
                 env_name(Settings, "clickhouse_url"): EnvValue.from_value(client.HTTP.url),
                 env_name(Settings, "clickhouse_database"): EnvValue.from_value("aiquota"),
                 env_name(Settings, "clickhouse_username"): _CLICKHOUSE.key("username").env_value(

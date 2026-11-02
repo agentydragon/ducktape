@@ -59,6 +59,14 @@ def chart(app: App) -> Chart:
         read=[],
         write=["quest-diagnostics-oidc"],
     )
+    opentofu.secret_access(
+        chart,
+        "openai-platform-secrets",
+        identity=identity,
+        namespace="openai-platform-session",
+        read=[],
+        write=["openai-platform-oidc"],
+    )
     opentofu.gitops_workspace(
         chart,
         "workspace",
