@@ -38,9 +38,8 @@ type closePlan struct {
 }
 
 type closeOperation struct {
-	done   chan struct{}
-	cancel context.CancelFunc
-	err    error
+	done chan struct{}
+	err  error
 }
 
 func (*runtimeLifecycleController) Name() string { return runtimeLifecycleControllerName }
@@ -61,6 +60,9 @@ func (*runtimeLifecycleController) Outputs() []controller.Output {
 
 func (c *runtimeLifecycleController) Run(ctx context.Context, r controller.Runtime, _ *zap.Logger) error {
 	c.transition.engineCtx = ctx
+	// Close stages share this Run lifetime, independent of the Close caller.
+	// Cancel on any controller exit, including reconciliation failure.
+	closeCtx, cancelClose := context.WithCancel(context.Background())
 	defer func() {
 		// A transition caller holds transitionMu until it sees terminal status.
 		// Wake it before joining workers so a Close Prepare worker cannot remain
@@ -77,9 +79,7 @@ func (c *runtimeLifecycleController) Run(ctx context.Context, r controller.Runti
 		if c.transition.cancel != nil {
 			c.transition.cancel()
 		}
-		if c.op != nil {
-			c.op.cancel()
-		}
+		cancelClose()
 		if c.transition.worker != nil {
 			<-c.transition.worker.done
 		}
@@ -102,7 +102,7 @@ func (c *runtimeLifecycleController) Run(ctx context.Context, r controller.Runti
 		case <-closeDone:
 		case <-transitionDone:
 		}
-		if err := c.reconcile(ctx, r); err != nil {
+		if err := c.reconcile(ctx, closeCtx, r); err != nil {
 			c.r.mu.Lock()
 			c.r.lifecycleControllerErr = err
 			c.r.changedLocked()
@@ -122,7 +122,7 @@ func (c *runtimeLifecycleController) Run(ctx context.Context, r controller.Runti
 	}
 }
 
-func (c *runtimeLifecycleController) reconcile(ctx context.Context, r controller.Runtime) error {
+func (c *runtimeLifecycleController) reconcile(ctx, closeCtx context.Context, r controller.Runtime) error {
 	desired, found, err := lifecycle.ReadEnvironmentDesired(ctx, r)
 	if err != nil || !found || desired.Mode != lifecycle.Closing {
 		return err
@@ -137,7 +137,6 @@ func (c *runtimeLifecycleController) reconcile(ctx context.Context, r controller
 		select {
 		case <-c.op.done:
 			workErr := c.op.err
-			c.op.cancel()
 			c.op = nil
 			if workErr != nil {
 				c.stage = lifecycle.RuntimeCloseFailed
@@ -165,12 +164,11 @@ func (c *runtimeLifecycleController) reconcile(ctx context.Context, r controller
 		}
 		return nil
 	}
-	opCtx, cancel := context.WithCancel(context.Background())
-	op := &closeOperation{done: make(chan struct{}), cancel: cancel}
+	op := &closeOperation{done: make(chan struct{})}
 	c.op = op
 	stage := c.stage
 	go func() {
-		op.err = c.runStage(opCtx, stage)
+		op.err = c.runStage(closeCtx, stage)
 		close(op.done)
 	}()
 	return nil
