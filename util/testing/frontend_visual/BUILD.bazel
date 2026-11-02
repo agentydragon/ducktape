@@ -10,6 +10,7 @@ py_library(
         "chromium-font-preferences.json",
         "disable-animations.css",
         "frozen-clock.js",
+        ":frozen_clock_js",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -17,6 +18,11 @@ py_library(
         "//util/testing/browser:launcher",
         "@pypi//playwright",
     ],
+)
+
+js_library(
+    name = "frozen_clock_js",
+    srcs = ["frozen-clock.js"],
 )
 
 py_test(
