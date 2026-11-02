@@ -6,18 +6,13 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from finance.plaid.spend.allowance import (
-    AllOf,
-    DateRange,
     Disposition,
     Kind,
-    NameContains,
-    NamePrefix,
     Period,
     PeriodId,
     PlaidCounterparty,
     ReversalPair,
     Rule,
-    RuleScope,
     TransactionPeriodId,
 )
 from finance.plaid.spend.models import (
@@ -39,12 +34,6 @@ _OWN_TRANSFERS = AnalysisCategoryView(id="own_transfers", label="Own-account tra
 _TAXES = AnalysisCategoryView(id="taxes", label="Taxes", color="#B45309")
 _UNCLASSIFIED = AnalysisCategoryView(id="unclassified", label="Unclassified", color="#D97706")
 _SHIPPING = AnalysisCategoryView(id="shipping", label="Document shipping", color="#0F766E")
-_SHIPPING_RULE = Rule(
-    condition=NamePrefix(field="name", prefix="UPS"),
-    kind=Kind.FIXED,
-    analysis_category="shipping",
-    description="Required document shipping for a synthetic example.",
-)
 
 
 def _pace_effects(amount: int = 0) -> list[PaceEffect]:
@@ -132,9 +121,9 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             pending=False,
             allowance_in_scope=True,
             disposition=Disposition.FIXED,
-            rule_number=2,
+            rule_number=dashboard.RULE_NUMBERS["shipping"],
             effective_kind=Kind.FIXED,
-            rule=_SHIPPING_RULE,
+            rule=dashboard.RULES["shipping"],
             allowance_minor_units=0,
             pace_effects=_pace_effects(),
             statement_minor_units=1850,
@@ -173,8 +162,9 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             name="EXAMPLE GROCERIES",
             amount_minor_units=7250,
             disposition=Disposition.COUNTED,
+            rule_number=dashboard.RULE_NUMBERS["groceries"],
             effective_kind=Kind.FLEXIBLE,
-            rule=Rule(condition=NamePrefix(field="name", prefix="EXAMPLE GROCERIES"), kind=Kind.FLEXIBLE),
+            rule=dashboard.RULES["groceries"],
             allowance_minor_units=7250,
             pace_effects=_pace_effects(7250),
             pfc_primary="FOOD_AND_DRINK",
@@ -191,13 +181,9 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             pending=False,
             allowance_in_scope=True,
             disposition=Disposition.HELD_REFUND,
-            rule_number=1,
+            rule_number=dashboard.RULE_NUMBERS["refund_review"],
             effective_kind=Kind.REVIEW,
-            rule=Rule(
-                condition=NamePrefix(field="name", prefix="EXAMPLE"),
-                kind=Kind.REVIEW,
-                description="Confirm the purchase before netting this refund.",
-            ),
+            rule=dashboard.RULES["refund_review"],
             allowance_minor_units=0,
             pace_effects=_pace_effects(),
             statement_minor_units=-4200,
@@ -205,7 +191,7 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             pfc_primary="GENERAL_MERCHANDISE",
             pfc_detailed="GENERAL_MERCHANDISE_OTHER",
             merchant_category_code=None,
-            category=_UNCLASSIFIED,
+            category=AnalysisCategoryView(id="refund_review", label="Refund review", color="#B45309"),
         ),
         SpendTransactionRow(
             date=date(2026, 10, 12),
@@ -217,9 +203,9 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             pending=False,
             allowance_in_scope=True,
             disposition=Disposition.FIXED,
-            rule_number=2,
+            rule_number=dashboard.RULE_NUMBERS["shipping"],
             effective_kind=Kind.FIXED,
-            rule=_SHIPPING_RULE,
+            rule=dashboard.RULES["shipping"],
             allowance_minor_units=0,
             pace_effects=_pace_effects(),
             statement_minor_units=22850,
@@ -252,21 +238,10 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             name="EXAMPLE OWN ACCOUNT TRANSFER",
             amount_minor_units=12_000,
             disposition=Disposition.REVERSED,
-            rule_number=3,
+            rule_number=dashboard.RULE_NUMBERS["reversed_original"],
             effective_kind=Kind.EXCLUDED,
             reversal_pair=dashboard.full_reversal_pair(),
-            rule=Rule(
-                condition=AllOf(
-                    conditions=[
-                        NameContains(field="name", substring="EXAMPLE OWN ACCOUNT TRANSFER"),
-                        DateRange(start=date(2026, 10, 11), end=date(2026, 10, 11)),
-                    ]
-                ),
-                kind=Kind.EXCLUDED,
-                scope=RuleScope.ONE_OFF,
-                id="example-own-account-leg",
-                description="Second leg of one own-account transfer, confirmed by the owner 2026-10-12.",
-            ),
+            rule=dashboard.RULES["reversed_original"],
             pfc_primary="TRANSFER_OUT",
             pfc_detailed="TRANSFER_OUT_OTHER",
             category=_OWN_TRANSFERS,
@@ -276,14 +251,10 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             name="EXAMPLE OWN ACCOUNT REVERSAL",
             amount_minor_units=-12_000,
             disposition=Disposition.REVERSED,
-            rule_number=2,
+            rule_number=dashboard.RULE_NUMBERS["reversal"],
             effective_kind=Kind.EXCLUDED,
             reversal_pair=dashboard.full_reversal_pair(),
-            rule=Rule(
-                condition=NamePrefix(field="name", prefix="EXAMPLE OWN ACCOUNT"),
-                kind=Kind.REVIEW,
-                description="Synthetic rule classification retained as context for the reversal.",
-            ),
+            rule=dashboard.RULES["reversal"],
             pfc_primary="TRANSFER_IN",
             pfc_detailed="TRANSFER_IN_OTHER",
             category=_OWN_TRANSFERS,
@@ -294,14 +265,9 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             merchant_name="Example Travel",
             amount_minor_units=41250,
             disposition=Disposition.COUNTED,
-            rule_number=3,
+            rule_number=dashboard.RULE_NUMBERS["travel"],
             effective_kind=Kind.FLEXIBLE,
-            rule=Rule(
-                condition=NamePrefix(field="name", prefix="EXAMPLE TRAVEL"),
-                kind=Kind.FLEXIBLE,
-                analysis_category="travel",
-                description="Synthetic discretionary trip purchase.",
-            ),
+            rule=dashboard.RULES["travel"],
             allowance_minor_units=41250,
             pace_effects=[
                 PaceEffect(period_id=period_id, amount_minor_units=41250 if period_id == PeriodId.ROLLING_30D else 0)
@@ -316,8 +282,9 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             name="EXAMPLE PURCHASE BEFORE ACTIVATION",
             amount_minor_units=5000,
             disposition=Disposition.PACE_ONLY,
+            rule_number=dashboard.RULE_NUMBERS["pre_activation"],
             effective_kind=Kind.FLEXIBLE,
-            rule=Rule(condition=NamePrefix(field="name", prefix="EXAMPLE PURCHASE"), kind=Kind.FLEXIBLE),
+            rule=dashboard.RULES["pre_activation"],
             pace_effects=[
                 PaceEffect(period_id=PeriodId.ROLLING_7D, amount_minor_units=0),
                 PaceEffect(period_id=PeriodId.ROLLING_30D, amount_minor_units=5000),
@@ -331,13 +298,9 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             name="EXAMPLE OWN TRANSFER DEBIT",
             amount_minor_units=12_500,
             disposition=Disposition.EXCLUDED,
+            rule_number=dashboard.RULE_NUMBERS["own_transfer"],
             effective_kind=Kind.EXCLUDED,
-            rule=Rule(
-                condition=NamePrefix(field="name", prefix="EXAMPLE OWN TRANSFER"),
-                kind=Kind.EXCLUDED,
-                analysis_category="own_transfers",
-                description="Synthetic own-account transfer excluded from the allowance.",
-            ),
+            rule=dashboard.RULES["own_transfer"],
             pfc_primary="TRANSFER_OUT",
             pfc_detailed="TRANSFER_OUT_OTHER",
             category=_OWN_TRANSFERS,
@@ -347,13 +310,9 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             name="EXAMPLE OWN TRANSFER CREDIT",
             amount_minor_units=-12_500,
             disposition=Disposition.EXCLUDED,
+            rule_number=dashboard.RULE_NUMBERS["own_transfer"],
             effective_kind=Kind.EXCLUDED,
-            rule=Rule(
-                condition=NamePrefix(field="name", prefix="EXAMPLE OWN TRANSFER"),
-                kind=Kind.EXCLUDED,
-                analysis_category="own_transfers",
-                description="Synthetic own-account transfer excluded from the allowance.",
-            ),
+            rule=dashboard.RULES["own_transfer"],
             pfc_primary="TRANSFER_IN",
             pfc_detailed="TRANSFER_IN_OTHER",
             category=_OWN_TRANSFERS,
@@ -364,13 +323,9 @@ def view(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransaction
             amount_minor_units=41_500,
             pending=True,
             disposition=Disposition.EXCLUDED,
+            rule_number=dashboard.RULE_NUMBERS["tax"],
             effective_kind=Kind.EXCLUDED,
-            rule=Rule(
-                condition=NamePrefix(field="name", prefix="EXAMPLE TAX"),
-                kind=Kind.EXCLUDED,
-                analysis_category="taxes",
-                description="Synthetic tax payment accounted for separately.",
-            ),
+            rule=dashboard.RULES["tax"],
             pfc_primary="TAXES",
             pfc_detailed="TAXES_OTHER_TAXES",
             category=_TAXES,
