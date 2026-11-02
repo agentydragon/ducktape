@@ -1,4 +1,10 @@
-"""Place protobuf-es outputs from an external proto in a first-party package."""
+"""Place protobuf-es outputs from an external proto in a first-party package.
+
+External aspect outputs live outside the first-party npm dependency tree. Real copies let module
+resolvers retain the consumer's package location when resolving the protobuf runtime. Callers
+wrap these files in js_library and set their local generator's rewrite_imports to this output
+package prefix. Only generated JS and declarations are staged; proto sources remain upstream.
+"""
 
 load("@aspect_bazel_lib//lib:copy_file.bzl", "COPY_FILE_TOOLCHAINS", "copy_file_action")
 load("@aspect_rules_js//js:providers.bzl", "JsInfo")
