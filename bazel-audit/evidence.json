@@ -11,6 +11,13 @@
       "refresh_status": "present_at_refresh"
     },
     {
+      "id": "B",
+      "priority": "High",
+      "category": "Ownership",
+      "title": "Decouple Haku’s schema build from an experimental service implementation",
+      "status": "deferred"
+    },
+    {
       "id": "F",
       "priority": "Medium",
       "category": "Dead target candidate",
@@ -98,16 +105,8 @@
     "External consumers and dynamically constructed labels not exhaustively known",
     "The original audit did not implement its recommendations; status fields record subsequent work"
   ],
-  "burndown_updated_utc": "2026-11-02T11:38:40Z",
-  "dispatched_in_progress": [
-    {
-      "id": "B",
-      "pull_requests": [
-        13854
-      ],
-      "status_at_update": "open"
-    }
-  ],
+  "burndown_updated_utc": "2026-11-02T11:42:26Z",
+  "dispatched_in_progress": [],
   "status_refresh": {
     "source_commit": "2cbcf945b203c1260e10c8e32a6b6e26025f254d",
     "checked_utc": "2026-11-02T11:05:00Z",
