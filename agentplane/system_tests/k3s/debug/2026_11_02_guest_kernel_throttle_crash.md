@@ -21,5 +21,3 @@ than Debian's fixed baseline. The immutable snapshot package first appeared at
 `20261102T161514Z`; its SHA-256 is
 `c26573a3b5dca6bd3bf2b06a13b81cbb845c04eb6e35d7ad57f4b885746153e4`. This change only affects
 the K3s system-test guest; it does not change the production NixOS kernel.
-
-Validation: pending.
