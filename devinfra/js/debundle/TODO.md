@@ -96,6 +96,27 @@ to one exact source/spec pair and held to the interactive budget in
    fixtures for the common anchor-choice cases of the `debundle_stabilize`
    playbook so its guidance is executable rather than only prose.
 
+### Encountered tooling friction
+
+- **F1 — Explain redundant commuting premises by authored identity.** An
+  engine improvement removed a native-read heap frontier, and the next run
+  rejected a formerly needed pair as `unused` / `no_sequenced_edge`. The
+  diagnostic named its YAML index, source-unit ordinals and minified bindings;
+  finding the authored module/member pair required a separate spec audit.
+  Include resolved module/member names and source locations, plus a scoped
+  cleanup suggestion. Keep removal explicit and reviewed.
+- **F2 — Make readable-output recovery actionable.** The unused premise
+  above made an `emit_on_rejection` run fail without its readable tree. Emit
+  a complete stale-premise report and a reviewable cleanup plan. Decide
+  explicitly whether diagnostic-only emission is valid for this failure;
+  preserve stale-input rejection and never silently ignore author contracts.
+- **F3 — Summarize the complete gate inventory.** A canonical program had
+  several rejected chunks while its pipeline stderr led with only the first
+  failure. This caused an undercount until every saved rejection report was
+  inspected. Add a bounded program-level summary with each processed chunk's
+  outcome, rejection class, exact totals and report paths. Mark unprocessed
+  chunks explicitly; the first fatal error is not the full inventory.
+
 ### Pipeline performance and architecture cleanup
 
 Proposer-gate, `debundle run` (report opt-out, chunk-level incremental

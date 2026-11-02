@@ -10,6 +10,10 @@ the validator enforces) before working on the splitting pipeline.
 - Invest in tools and side-output analyses that make spec authoring cheap; the
   pipeline emits machine-readable artifacts for suggesting source-unit/module splits and
   renames.
+- Record encountered tooling friction in this project's `TODO.md` or `debug/`
+  and commit it: confusing or insufficient output, unproductive investigation
+  paths, and missing guidance. Fix small issues directly; preserve larger
+  follow-ups with the observed behavior and a concrete next action.
 - Treat each spec as the exact contract for one configured input program. Do not
   add cross-version reasoning, multi-spec comparison, or automatic promotion or
   migration commands. For a new upstream snapshot, use the authoring workflow in
