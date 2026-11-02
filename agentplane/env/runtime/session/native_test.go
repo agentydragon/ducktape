@@ -359,6 +359,9 @@ func frameTestSessionWithControllerGate(t *testing.T, command []string, withCont
 	if err := engine.RegisterController(&testAggregateController{}); err != nil {
 		t.Fatal(err)
 	}
+	if err := engine.RegisterQController(m.OwnerController()); err != nil {
+		t.Fatal(err)
+	}
 	if withController {
 		var sessionController controller.QController = m.Controller()
 		if gate != nil {

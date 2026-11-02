@@ -100,19 +100,6 @@ controller caches and list operations may still load additional resources. Defin
 transaction boundaries with journals and command outcomes before changing storage, including
 recovery of uncertain native effects.
 
-Make Session lifecycle ownership react directly to `SessionRecords`. Today startup enumerates
-retained records and calls `Manager.Load`, while the environment Session lifecycle controller
-repeats that enumeration and load during shutdown reconciliation. `Load` constructs or recovers a
-live Session and its journal and publishes the `SessionReconcileSnapshot` watched by the Session
-controller; an existing record alone does not drive that controller. An already-loaded Session is
-returned from memory, but shutdown still repeats the inventory and load calls.
-
-Evaluate a single COSI-driven owner that constructs and recovers each live Session from its record
-and publishes observable readiness or failure. Let shutdown observe the resulting lifecycle state,
-then remove the separate startup and shutdown loading loops if that owner replaces them. Preserve
-the initial inventory and admission barriers, failed recovery and publication behavior, journal
-ownership and no-replay recovery; a resource update alone does not prove native effects settled.
-
 The broader [Session/runtime model decision](../plans/task_dag.md#session_runtime_model_design--sessions-harness-placement-and-execution-attachments)
 also covers Sessions independent of environments and harnesses inside them. Use `OpenSession` as a
 concrete example: separate reservation, placement, native process startup and observable readiness
@@ -152,16 +139,6 @@ teardown contracts rather than treating every controller as a simple resource tr
   output teardown order also differ from the Process controller's retained `Exited` status and fence
   barrier. Revisit only if a proposed design preserves those contracts; do not move one-shot effects
   into a retryable transform.
-
-## Define Session admission after publication failure
-
-`Manager.loadLocked` adds a Session and returns it after `publishSession`, whose COSI write failures
-call `Runtime.fail` but are not returned to `OpenSession`. The durable reservation may therefore be
-reported successful while Runtime has revoked further admission and the Session input was not
-published. Success acknowledges a durable reservation, not a schedulable Session; decide how callers
-observe the publication failure and recovery under that contract. Fault-inject both input and
-inspection publication failures to verify the response and restart behavior. Do not replay already
-admitted native effects to repair publication.
 
 ## Prove central execution across Pod and VM lifetimes
 

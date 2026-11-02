@@ -105,6 +105,7 @@ func newSessionTestManager(t *testing.T, environment map[string]string, destinat
 	if err := lifecycle.PublishEnvironmentDesired(ctx, resources, lifecycle.EnvironmentDesired{Mode: lifecycle.Running}); err != nil {
 		t.Fatal(err)
 	}
+	startSessionOwner(t, ctx, resources, manager)
 	t.Cleanup(func() {
 		if err := manager.Close(); err != nil {
 			t.Errorf("close session manager: %v", err)

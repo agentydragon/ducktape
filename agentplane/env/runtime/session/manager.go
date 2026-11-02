@@ -10,9 +10,12 @@ import (
 	"sync"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	"github.com/cosi-project/runtime/pkg/controller"
+	"github.com/cosi-project/runtime/pkg/resource/typed"
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 )
 
@@ -32,9 +35,11 @@ type Manager struct {
 	workers       int
 	publishMu     sync.Mutex
 
-	mu       sync.Mutex
-	loadMu   sync.Mutex
-	sessions map[string]*Session
+	mu                   sync.Mutex
+	loadMu               sync.Mutex
+	sessions             map[string]*Session
+	ownerErrors          map[string]error
+	ownerFailuresChanged chan struct{}
 	// loadMu guards freshReservations; those records have not completed their first publication.
 	freshReservations map[string]struct{}
 }
@@ -57,6 +62,7 @@ func NewManager(config Config) (*Manager, error) {
 		publishSeal: config.PublishSeal,
 		changed:     config.OnChange, fail: config.OnError,
 		workers: config.ReconcileConcurrency, sessions: map[string]*Session{}, freshReservations: map[string]struct{}{},
+		ownerErrors: map[string]error{}, ownerFailuresChanged: make(chan struct{}),
 	}
 	m.dependencies = sessionDependencies{
 		admission: config.Admission,
@@ -73,6 +79,10 @@ func NewManager(config Config) (*Manager, error) {
 }
 
 func (m *Manager) Controller() controller.QController { return &sessionLifecycleController{manager: m} }
+
+func (m *Manager) OwnerController() controller.QController {
+	return &sessionOwnerController{manager: m}
+}
 
 func (m *Manager) Get(id string) *Session {
 	m.mu.Lock()
@@ -97,11 +107,7 @@ func (m *Manager) Startup(ctx context.Context) error {
 		return err
 	}
 	for _, id := range ids {
-		s, err := m.Load(ctx, id)
-		if err != nil {
-			return err
-		}
-		if err := m.ResumeRecovered(s); err != nil {
+		if _, err := m.Wait(ctx, id); err != nil {
 			return err
 		}
 	}
@@ -113,16 +119,105 @@ func (m *Manager) Startup(ctx context.Context) error {
 // release it before returning, so publication never runs under that barrier.
 func (m *Manager) ReserveFresh(ctx context.Context, id string, reserve func() error) (*Session, error) {
 	m.loadMu.Lock()
-	defer m.loadMu.Unlock()
 	if err := reserve(); err != nil {
+		m.loadMu.Unlock()
 		return nil, err
 	}
 	m.freshReservations[id] = struct{}{}
-	return m.loadLocked(ctx, id, false)
+	m.loadMu.Unlock()
+	return m.Wait(ctx, id)
+}
+
+// Wait observes completion of the COSI-owned Session reconstruction.
+func (m *Manager) Wait(ctx context.Context, id string) (*Session, error) {
+	watchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	events := make(chan state.Event, 1)
+	if err := m.state.Watch(watchCtx, componentResource(id, OwnerStatus{}).Metadata(), events); err != nil {
+		return nil, err
+	}
+	for {
+		m.mu.Lock()
+		if err := m.ownerErrors[id]; err != nil {
+			m.mu.Unlock()
+			return nil, err
+		}
+		failed := m.ownerFailuresChanged
+		m.mu.Unlock()
+		select {
+		case event, ok := <-events:
+			if !ok {
+				return nil, errors.New("Session owner status watch closed")
+			}
+			if event.Type == state.Errored {
+				if event.Error == nil {
+					return nil, errors.New("Session owner status watch failed")
+				}
+				return nil, event.Error
+			}
+			if event.Type != state.Created && event.Type != state.Updated {
+				continue
+			}
+			owner, ok := event.Resource.(*typed.Resource[OwnerStatus, componentExtension[OwnerStatus]])
+			if !ok {
+				return nil, fmt.Errorf("unexpected Session owner status %T", event.Resource)
+			}
+			if owner.TypedSpec().Ready {
+				if s := m.Get(id); s != nil {
+					return s, nil
+				}
+				return nil, fmt.Errorf("Session %s owner reports ready without a live Session", id)
+			}
+		case <-failed:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-m.ctx.Done():
+			return nil, m.ctx.Err()
+		}
+	}
+}
+
+func (m *Manager) ownerFailed(id string, err error, failRuntime bool) {
+	m.mu.Lock()
+	if m.ownerErrors[id] == nil {
+		m.ownerErrors[id] = err
+	}
+	close(m.ownerFailuresChanged)
+	m.ownerFailuresChanged = make(chan struct{})
+	m.mu.Unlock()
+	if failRuntime {
+		m.fail(err)
+	}
+}
+
+// RetryFresh requests another owner attempt only for an explicitly retried,
+// fresh reservation that failed before a Session became visible.
+func (m *Manager) RetryFresh(ctx context.Context, id string) error {
+	m.loadMu.Lock()
+	defer m.loadMu.Unlock()
+	_, fresh := m.freshReservations[id]
+	m.mu.Lock()
+	failure := m.ownerErrors[id]
+	if !fresh || failure == nil || m.sessions[id] != nil {
+		m.mu.Unlock()
+		return nil
+	}
+	delete(m.ownerErrors, id)
+	m.mu.Unlock()
+	if err := safe.StateModify(ctx, m.state, componentResource(id, ownerRetry{}), func(value *typed.Resource[ownerRetry, componentExtension[ownerRetry]]) error {
+		value.TypedSpec().Revision++
+		return nil
+	}, state.WithUpdateOwner(lifecycle.EnvironmentOwner)); err != nil {
+		m.mu.Lock()
+		m.ownerErrors[id] = failure
+		m.mu.Unlock()
+		return err
+	}
+	return nil
 }
 
 // Retained records are reconciled before publishing any schedulable Session reconcile snapshot.
-func (m *Manager) Load(ctx context.Context, id string) (*Session, error) {
+func (m *Manager) load(ctx context.Context, id string) (*Session, error) {
 	m.loadMu.Lock()
 	defer m.loadMu.Unlock()
 	_, freshReservation := m.freshReservations[id]
@@ -176,11 +271,20 @@ func (m *Manager) loadLocked(ctx context.Context, id string, recoverRetained boo
 	m.mu.Lock()
 	m.sessions[id] = s
 	m.mu.Unlock()
+	// Once visible to controllers, retain ownership of the journal even if
+	// publication fails; shutdown must not close it under an active controller.
+	initialized = true
 	s.notifyBlockers()
-	m.publishSession(s, false)
+	if err := m.publishSessionState(s, false); err != nil {
+		return nil, err
+	}
+	if recoverRetained {
+		if err := m.ResumeRecovered(s); err != nil {
+			return nil, err
+		}
+	}
 	delete(m.freshReservations, id)
 	m.changed()
-	initialized = true
 	return s, nil
 }
 
@@ -197,7 +301,7 @@ func (m *Manager) ResumeRecovered(s *Session) error {
 		return err
 	}
 	if len(commands) > 0 || len(turns) > 0 {
-		s.requestExecution()
+		return m.publishSessionState(s, true)
 	}
 	return nil
 }
