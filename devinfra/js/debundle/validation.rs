@@ -908,10 +908,14 @@ fn nonconstraining_closure_edges(
     )
 }
 
+const ATOMIC_GROUP_CONFLICT_PREVIEW_LIMIT: usize = 8;
+const ATOMIC_GROUP_DETAIL_PREVIEW_LIMIT: usize = 20;
+
 /// Render a human-readable summary of atomic-group conflicts for
 /// inclusion in the materializer's bail message. One block per
-/// conflict listing the group's members and each member's claim. The
-/// `module_path` callback resolves [`ModuleId`]s to the canonical
+/// conflict previews the group's members and claims. Large lists are
+/// bounded here; the machine-readable conflict report remains complete.
+/// The `module_path` callback resolves [`ModuleId`]s to the canonical
 /// [`ModulePath`]s the spec author recognizes.
 pub fn render_atomic_group_conflict_summary(
     conflicts: &[AtomicGroupConflict],
@@ -919,7 +923,15 @@ pub fn render_atomic_group_conflict_summary(
     dependency_graph: &DependencyGraph,
 ) -> String {
     let mut out = String::new();
-    for (idx, c) in conflicts.iter().enumerate() {
+    let preview_count = conflicts.len().min(ATOMIC_GROUP_CONFLICT_PREVIEW_LIMIT);
+    if conflicts.len() > preview_count {
+        out.push_str(&format!(
+            "  atomic-group conflicts: showing {preview_count} of {}; {} conflict(s) omitted from this preview\n",
+            conflicts.len(),
+            conflicts.len() - preview_count,
+        ));
+    }
+    for (idx, c) in conflicts.iter().take(preview_count).enumerate() {
         if idx > 0 {
             out.push('\n');
         }
@@ -939,11 +951,14 @@ pub fn render_atomic_group_conflict_summary(
             .collect();
         conflicting_modules.sort();
         out.push_str(&format!(
-            "  atomic group {{{}}} — claims across {{{}}}:\n",
-            member_ids.join(", "),
-            conflicting_modules.join(", "),
+            "  atomic group {{{}}} ({} members) — claims across {{{}}} ({} destinations; {} claims):\n",
+            render_string_preview(&member_ids, ATOMIC_GROUP_DETAIL_PREVIEW_LIMIT),
+            member_ids.len(),
+            render_string_preview(&conflicting_modules, ATOMIC_GROUP_DETAIL_PREVIEW_LIMIT),
+            conflicting_modules.len(),
+            c.claims.len(),
         ));
-        for claim in &c.claims {
+        for claim in c.claims.iter().take(ATOMIC_GROUP_DETAIL_PREVIEW_LIMIT) {
             let names = if claim.binding_names.is_empty() {
                 String::new()
             } else {
@@ -964,11 +979,31 @@ pub fn render_atomic_group_conflict_summary(
                 module_path(claim.module),
             ));
         }
+        if c.claims.len() > ATOMIC_GROUP_DETAIL_PREVIEW_LIMIT {
+            out.push_str(&format!(
+                "    ... {} claim row(s) omitted from this preview ({} total)\n",
+                c.claims.len() - ATOMIC_GROUP_DETAIL_PREVIEW_LIMIT,
+                c.claims.len(),
+            ));
+        }
         let causes =
             analysis::reports::schema::sequenced_source_unit_causes(dependency_graph, &c.members);
-        render_sequenced_source_unit_causes(&causes, &mut out);
+        render_sequenced_source_unit_causes_with_limit(
+            &causes,
+            &mut out,
+            Some(ATOMIC_GROUP_DETAIL_PREVIEW_LIMIT),
+        );
     }
     out
+}
+
+fn render_string_preview(values: &[String], limit: usize) -> String {
+    let mut preview: Vec<String> = values.iter().take(limit).cloned().collect();
+    let omitted = values.len().saturating_sub(limit);
+    if omitted > 0 {
+        preview.push(format!("... {omitted} omitted"));
+    }
+    preview.join(", ")
 }
 
 fn sequenced_causes_from_cycle(cycle: &CycleReport) -> Vec<SequencedSourceUnitCause> {
@@ -991,11 +1026,43 @@ pub(crate) fn render_sequenced_source_unit_causes(
     causes: &[SequencedSourceUnitCause],
     out: &mut String,
 ) {
-    if causes.is_empty() {
+    render_sequenced_source_unit_causes_with_limit(causes, out, None);
+}
+
+fn render_sequenced_source_unit_causes_with_limit(
+    causes: &[SequencedSourceUnitCause],
+    out: &mut String,
+    limit: Option<usize>,
+) {
+    let mut reason_class_counts = BTreeMap::new();
+    for cause in causes {
+        if let Purity::NotPure { reasons } = &cause.purity {
+            for reason in reasons {
+                *reason_class_counts
+                    .entry(reason.rule.as_str())
+                    .or_insert(0usize) += 1;
+            }
+        }
+    }
+    let total_reasons: usize = reason_class_counts.values().sum();
+    if total_reasons == 0 {
         return;
     }
-    out.push_str("  Impure initializers behind side-effect edges:\n");
-    for cause in causes {
+    let rendered_limit = limit.unwrap_or(total_reasons).min(total_reasons);
+    out.push_str("  Impure initializers behind side-effect edges");
+    if total_reasons > rendered_limit {
+        let classes = reason_class_counts
+            .iter()
+            .map(|(class, count)| format!("{class}={count}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        out.push_str(&format!(
+            " (showing {rendered_limit} of {total_reasons} reasons; classes: {classes})"
+        ));
+    }
+    out.push_str(":\n");
+    let mut rendered = 0;
+    'causes: for cause in causes {
         let names = if cause.binding_names.is_empty() {
             cause.source_unit_id.clone()
         } else {
@@ -1010,6 +1077,9 @@ pub(crate) fn render_sequenced_source_unit_causes(
             continue;
         };
         for reason in reasons {
+            if rendered == rendered_limit {
+                break 'causes;
+            }
             let location = reason
                 .source_location
                 .as_ref()
@@ -1042,7 +1112,14 @@ pub(crate) fn render_sequenced_source_unit_causes(
             if let Some(guidance) = &reason.author_guidance {
                 out.push_str(&format!("      {guidance}\n"));
             }
+            rendered += 1;
         }
+    }
+    if total_reasons > rendered {
+        out.push_str(&format!(
+            "    ... {} initializer reason(s) omitted from this preview\n",
+            total_reasons - rendered,
+        ));
     }
 }
 
