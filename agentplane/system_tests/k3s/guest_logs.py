@@ -113,7 +113,7 @@ def _copy(
             for reader, writer in streams:
                 shutil.copyfileobj(reader, writer)
                 writer.flush()
-            for path in storage_root.glob(f"pvc_*_{namespace}_*-state/.systemd-journal/*/*.journal*"):
+            for path in storage_root.glob(f"pvc-*_{namespace}_*-state/.systemd-journal/*/*.journal*"):
                 _retain(path, destination / "journals", opened, journals, files, journal=True)
             if stop.is_set():
                 # Journald updates headers and entry objects in place. Recopy the whole file
