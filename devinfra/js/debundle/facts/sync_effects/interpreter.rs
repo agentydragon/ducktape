@@ -3,8 +3,8 @@
 use super::super::local_operations::{LocalBinding, LocalBody};
 use super::super::local_transfer::{self, LocalContext, LocalFrame};
 use super::super::value_model::{
-    AbstractValue, ArrayIteration, CallSite, Captured, CapturedContext, Context, DenseArray,
-    FrozenNamespaceProof, LexicalCaptures, LexicalCellId, MemberKey, OwnPropertyShape,
+    AbstractValue, ArrayIteration, CallSite, CaptureInterner, Captured, CapturedContext, Context,
+    DenseArray, FrozenNamespaceProof, LexicalCaptures, LexicalCellId, MemberKey, OwnPropertyShape,
     RetainedResultKind, ValueExpr, Values,
 };
 use super::runtime_callbacks::{CallbackOperation, CallbackResult};
@@ -778,7 +778,9 @@ pub(super) struct ExecutionState {
     unsettled_objects: BTreeSet<u32>,
     tainted_native_sets: BTreeSet<u32>,
     tainted_functions: BTreeSet<u32>,
-    revoked_audited_results: BTreeSet<usize>,
+    /// A revoked identity is a semantic root: equal descriptions must retain
+    /// that identity even after other references disappear.
+    revoked_audited_results: BTreeMap<usize, Captured<Values>>,
     tainted_classes: BTreeSet<u32>,
     escaped_class_capabilities: BTreeSet<u32>,
     exported_runtime_values: Values,
@@ -798,10 +800,10 @@ pub(super) struct ExecutionState {
     /// initialization prefix. Incomplete reachability requires a fresh raw
     /// closure even when the precise prefix was already summarized.
     returned_callback_owners: BTreeSet<(bool, SourceUnitOrdinal)>,
-    capture_contexts: OrdMap<Arc<LexicalCaptures>, usize>,
+    capture_contexts: CaptureInterner<LexicalCaptures>,
     lexical_cells: Vec<LexicalCell>,
     active_cells: OrdMap<Id, LexicalCellId>,
-    callback_sets: OrdMap<Arc<Values>, usize>,
+    callback_sets: CaptureInterner<Values>,
     active: BTreeSet<ActiveInvocation>,
     /// Context lookup only; completed outcomes live in the shared fact store.
     invocation_memos: OrdMap<InvocationSignature, ProgramPoint>,
@@ -1395,6 +1397,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         for (_, point) in std::mem::take(&mut self.state.invocation_memos) {
             self.queries.retire_invocation_memo(point);
         }
+        self.state.capture_contexts.sweep_dead();
+        self.state.callback_sets.sweep_dead();
     }
 
     /// The abstract callback-factory value also represents namespace members
@@ -5507,15 +5511,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn intern_captures(&mut self, captures: LexicalCaptures) -> CapturedContext {
-        if let Some((values, &identity)) = self.state.capture_contexts.get_key_value(&captures) {
-            return CapturedContext::with_identity(identity, Arc::clone(values));
-        }
-        let identity = self.state.capture_contexts.len();
-        let values = Arc::new(captures);
-        self.state
-            .capture_contexts
-            .insert(Arc::clone(&values), identity);
-        CapturedContext::with_identity(identity, values)
+        self.state.capture_contexts.intern(captures)
     }
 
     fn materialize_captures(&self, captures: Option<&LexicalCaptures>) -> Context {
@@ -5555,15 +5551,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn intern_callback_set(&mut self, values: Values) -> Captured<Values> {
-        if let Some((values, &identity)) = self.state.callback_sets.get_key_value(&values) {
-            return Captured::with_identity(identity, Arc::clone(values));
-        }
-        let identity = self.state.callback_sets.len();
-        let values = Arc::new(values);
-        self.state
-            .callback_sets
-            .insert(Arc::clone(&values), identity);
-        Captured::with_identity(identity, values)
+        self.state.callback_sets.intern(values)
     }
 
     fn deferred_callbacks(&mut self, values: Values) -> AbstractValue {
@@ -5595,7 +5583,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if self
             .state
             .revoked_audited_results
-            .contains(&captured.cache_identity())
+            .contains_key(&captured.cache_identity())
             || self
                 .state
                 .global_escaped_callbacks
@@ -5625,7 +5613,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     AbstractValue::AuditedRetainedResult(_, nested) => !self
                         .state
                         .revoked_audited_results
-                        .contains(&nested.cache_identity()),
+                        .contains_key(&nested.cache_identity()),
                     _ => true,
                 }
         })
@@ -5637,7 +5625,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if self
             .state
             .revoked_audited_results
-            .insert(captured.cache_identity())
+            .insert(captured.cache_identity(), captured.clone())
+            .is_none()
         {
             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
         }
@@ -6046,7 +6035,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     if self
                         .state
                         .revoked_audited_results
-                        .contains(&captured.cache_identity()) =>
+                        .contains_key(&captured.cache_identity()) =>
                 {
                     return global(GlobalReachCause::TaintedInput);
                 }
@@ -10431,7 +10420,7 @@ pub(crate) fn annotate_synchronous_calls(
         unsettled_objects: BTreeSet::new(),
         tainted_native_sets: BTreeSet::new(),
         tainted_functions: BTreeSet::new(),
-        revoked_audited_results: BTreeSet::new(),
+        revoked_audited_results: BTreeMap::new(),
         tainted_classes: BTreeSet::new(),
         escaped_class_capabilities: BTreeSet::new(),
         exported_runtime_values: index
@@ -10449,10 +10438,10 @@ pub(crate) fn annotate_synchronous_calls(
         fallback_callback_sizes: None,
         fallback_local_owners: BTreeSet::new(),
         returned_callback_owners: BTreeSet::new(),
-        capture_contexts: OrdMap::new(),
+        capture_contexts: CaptureInterner::default(),
         lexical_cells: Vec::new(),
         active_cells: OrdMap::new(),
-        callback_sets: OrdMap::new(),
+        callback_sets: CaptureInterner::default(),
         active: BTreeSet::new(),
         invocation_memos: OrdMap::new(),
     };

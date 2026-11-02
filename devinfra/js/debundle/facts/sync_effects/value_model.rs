@@ -6,7 +6,9 @@ use crate::facts::value_flow::static_prop as static_string_prop;
 use imbl::{OrdMap, OrdSet};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::ops::Bound::{Excluded, Unbounded};
+use std::sync::{Arc, Weak};
 use swc_common::{BytePos, Span};
 use swc_ecma_ast::*;
 
@@ -28,6 +30,15 @@ pub(super) fn static_prop(property: &MemberProp) -> Option<String> {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct Values(OrdSet<AbstractValue>);
+
+impl Hash for Values {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.len().hash(state);
+        for value in self.iter() {
+            value.hash(state);
+        }
+    }
+}
 
 impl Values {
     pub(super) fn new() -> Self {
@@ -105,7 +116,7 @@ impl<'a> IntoIterator for &'a Values {
 
 pub(super) type Context = OrdMap<Id, Values>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) struct CallSite {
     start: u32,
     end: u32,
@@ -162,14 +173,103 @@ impl<T> Captured<T> {
     }
 }
 
+/// Canonical descriptions stay interned while an actual value or semantic
+/// root owns them. The table itself never keeps their payloads alive.
+pub(super) struct CaptureInterner<T> {
+    buckets: BTreeMap<u64, Vec<WeakCapture<T>>>,
+    next_identity: usize,
+    sweep_after: Option<u64>,
+}
+
+struct WeakCapture<T> {
+    identity: usize,
+    values: Weak<T>,
+}
+
+impl<T> Default for CaptureInterner<T> {
+    fn default() -> Self {
+        Self {
+            buckets: BTreeMap::new(),
+            next_identity: 0,
+            sweep_after: None,
+        }
+    }
+}
+
+impl<T: Eq + Hash> CaptureInterner<T> {
+    pub(super) fn intern(&mut self, description: T) -> Captured<T> {
+        let mut hash = DefaultHasher::new();
+        description.hash(&mut hash);
+        let bucket = self.buckets.entry(hash.finish()).or_default();
+        bucket.retain(|entry| entry.values.strong_count() != 0);
+        for entry in bucket.iter() {
+            if let Some(values) = entry.values.upgrade()
+                && values.as_ref() == &description
+            {
+                return Captured::with_identity(entry.identity, values);
+            }
+        }
+        let identity = self.next_identity;
+        self.next_identity = identity.checked_add(1).expect("capture identity exhausted");
+        let values = Arc::new(description);
+        bucket.push(WeakCapture {
+            identity,
+            values: Arc::downgrade(&values),
+        });
+        Captured::with_identity(identity, values)
+    }
+
+    /// Payloads drop with their last strong owner. Retire a bounded batch of
+    /// dead table entries too, without scanning all live captures per owner.
+    pub(super) fn sweep_dead(&mut self) {
+        const BATCH: usize = 64;
+        let lower = self.sweep_after.map_or(Unbounded, Excluded);
+        let keys: Vec<_> = self
+            .buckets
+            .range((lower, Unbounded))
+            .map(|(&key, _)| key)
+            .take(BATCH)
+            .collect();
+        for key in &keys {
+            let bucket = self.buckets.get_mut(key).expect("collected bucket");
+            bucket.retain(|entry| entry.values.strong_count() != 0);
+            if bucket.is_empty() {
+                self.buckets.remove(key);
+            }
+        }
+        self.sweep_after = keys.last().copied();
+    }
+}
+
+impl<T> Hash for Captured<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.identity.hash(state);
+    }
+}
+
 /// One instantiated lexical cell, not a source binding or structural cache key.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) struct LexicalCellId(pub(super) usize);
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct LexicalCaptures {
     pub(super) snapshots: Context,
     pub(super) cells: OrdMap<Id, LexicalCellId>,
+}
+
+impl Hash for LexicalCaptures {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.snapshots.len().hash(state);
+        for (binding, values) in &self.snapshots {
+            binding.hash(state);
+            values.hash(state);
+        }
+        self.cells.len().hash(state);
+        for (binding, cell) in &self.cells {
+            binding.hash(state);
+            cell.hash(state);
+        }
+    }
 }
 
 impl LexicalCaptures {
@@ -200,7 +300,7 @@ impl<T> Ord for Captured<T> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum RetainedResultKind {
     Factory,
     Constructor,
@@ -208,7 +308,7 @@ pub(super) enum RetainedResultKind {
 
 /// Query ownership, not a stable provider or runtime allocation identity. These
 /// opaque values become argument positions and never enter importer state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) struct ProviderScopeId(u64);
 
 impl ProviderScopeId {
@@ -223,13 +323,13 @@ impl ProviderScopeId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum ProviderInput {
     Argument(usize),
     Capture(usize),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) struct SymbolicInputId {
     pub(super) scope: ProviderScopeId,
     pub(super) input: ProviderInput,
@@ -237,7 +337,7 @@ pub(super) struct SymbolicInputId {
 
 /// The interpreter's values: the shared lattice plus carriers for the
 /// callable and heap summaries the lattice does not express yet.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum AbstractValue {
     Value(Value),
     /// Unknown kind/capabilities; only forwarding, storing and returning this

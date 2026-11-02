@@ -1087,7 +1087,15 @@ lexical-cell contents. The executor interns immutable capture descriptions,
 containing value summaries and cell references, so value-set and invocation-key
 comparisons use canonical identities rather than recursively comparing their
 graphs. The interning key is structural; instantiated cells carry distinct
-activation identities. Opaque methods receive their receiver as an input capability;
+activation identities. Interner entries hold weak references, with exact equality
+checking hash collisions. Numeric identities increase monotonically and are never
+reused after reclamation. Values, memo keys and semantic roots retain the strong
+references they need. In particular, audited-result revocations retain the actual
+description as well as its identity, preventing proof resurrection after other
+references expire. Dead-entry cleanup visits a bounded batch at owner boundaries;
+it does not scan every live description after every statement. Lexical-cell
+payload reclamation still requires a separate root trace.
+Opaque methods receive their receiver as an input capability;
 callback discovery traverses its stored references as well as the explicit
 arguments. Receiver taint remains independent of this callback reach.
 Later stores through a tainted or unsettled object publish the new value

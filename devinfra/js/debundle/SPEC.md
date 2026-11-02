@@ -2243,6 +2243,11 @@ summaries and cannot supply an exact mutable-cell proof. The canonical nested
 identifier census identifies captured bindings without another source scan.
 Cells are currently retained until chunk analysis completes; this establishes no
 memory bound independent of chunk size.
+Capture descriptions are weakly interned. Live values and memo keys keep their
+descriptions canonical; expired descriptions can be reclaimed, and their numeric
+identities are never reused. Revoked audited-result descriptions remain strong
+semantic roots, so recreating an equal description cannot restore its proof.
+Owner-boundary cleanup retires a bounded batch of expired interner entries.
 
 Call-containing bodies, closure creation and captured writes remain outside the
 migrated allocation-only provider query and keep their established foreign-call
