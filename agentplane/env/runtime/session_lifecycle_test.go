@@ -57,9 +57,37 @@ func TestAggregateRequiresCurrentSessionPreFenceSettlement(t *testing.T) {
 	if _, err := r.OpenSession(sessionCallContext(r, t.Context()), openLifecycleSession("pre-fence", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
+	waitLifecycle(t, r, func() bool {
+		_, found, err := session.ReadLifecycleStatus(r.lifecycleContext, r.lifecycleState, "pre-fence")
+		return err == nil && found
+	}, "initial Session lifecycle status")
+	ctx := t.Context()
+	statusPtr := resource.NewMetadata(lifecycle.Namespace, session.LifecycleStatusType, "pre-fence", resource.VersionUndefined)
+	ownerPtr := resource.NewMetadata(lifecycle.Namespace, session.OwnerStatusType, "pre-fence", resource.VersionUndefined)
+	aggregatePtr := resource.NewMetadata(lifecycle.Namespace, lifecycle.AggregateStatusType, lifecycle.ResourceID, resource.VersionUndefined)
+	var outputs []resource.Resource
+	for _, ptr := range []resource.Pointer{statusPtr, ownerPtr, aggregatePtr} {
+		value, err := r.lifecycleState.Get(ctx, ptr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		outputs = append(outputs, value)
+	}
 	r.lifecycleCancel()
 	<-r.lifecycleDone
-	ctx := t.Context()
+	// COSI removes exclusive controller outputs on engine exit. Restore the
+	// observed resources for a single-threaded aggregate probe.
+	for _, value := range outputs {
+		if _, err := r.lifecycleState.Get(ctx, value.Metadata()); state.IsNotFoundError(err) {
+			copy := value.DeepCopy()
+			copy.Metadata().SetVersion(resource.VersionUndefined)
+			if err := r.lifecycleState.Create(ctx, copy, state.WithCreateOwner(string(value.Metadata().Owner()))); err != nil {
+				t.Fatal(err)
+			}
+		} else if err != nil {
+			t.Fatal(err)
+		}
+	}
 	desired := lifecycle.EnvironmentDesired{Mode: lifecycle.Quiescing, Generation: 7}
 	if err := lifecycle.PublishEnvironmentDesired(ctx, r.lifecycleState, desired); err != nil {
 		t.Fatal(err)
@@ -67,11 +95,7 @@ func TestAggregateRequiresCurrentSessionPreFenceSettlement(t *testing.T) {
 	r.mu.Lock()
 	r.desired = desired
 	r.mu.Unlock()
-	statusPtr := resource.NewMetadata(lifecycle.Namespace, session.LifecycleStatusType, "pre-fence", resource.VersionUndefined)
-	saved, err := r.lifecycleState.Get(ctx, statusPtr)
-	if err != nil {
-		t.Fatal(err)
-	}
+	saved := outputs[0]
 	setSessionStatus := func(generation uint64, settled bool) {
 		t.Helper()
 		_, err := r.lifecycleState.UpdateWithConflicts(ctx, statusPtr, func(value resource.Resource) error {
@@ -85,7 +109,6 @@ func TestAggregateRequiresCurrentSessionPreFenceSettlement(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	aggregatePtr := resource.NewMetadata(lifecycle.Namespace, lifecycle.AggregateStatusType, lifecycle.ResourceID, resource.VersionUndefined)
 	resetAggregate := func() {
 		t.Helper()
 		_, err := r.lifecycleState.UpdateWithConflicts(ctx, aggregatePtr, func(value resource.Resource) error {
