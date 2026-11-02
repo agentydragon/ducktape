@@ -2214,12 +2214,38 @@ admission, and returned capabilities remain reachable by a truncated remainder.
 An unknown target or incomplete invocation uses the existing conservative
 callback fallback at that call site without replaying prior operations.
 Invocation results remain opaque to the allocation-only judgment; a strict
-provider query declines calls. This supplies neither live captured cells nor a
-property-origin export identity proof.
-Call-containing bodies remain outside the migrated allocation-only provider
-query and keep their established foreign-call derivation where supported.
+provider query declines calls. This supplies no property-origin export identity
+proof.
+
+Ordered application bodies also create anonymous function and arrow closures.
+Each activation instantiates distinct cells for its parameters and declarations
+referenced by nested callables. Cell references survive through intermediate
+closures, including references used only after suspension. Reads use current
+cell contents; declaration initialization and local stores update those contents
+at their operation positions. Lexical cells start in TDZ, while parameters and
+`var` cells start initialized. Captured writes to a `const` or definitely
+uninitialized cell have abrupt completion. Other captured writes join possible
+values because general invocation queries can represent calls that are skipped.
+Those writes do not establish exact CommonJS cache state or ordered caller
+control. New cells and changed contents invalidate invocation memos through the
+prefix revision; structural capture interning alone proves no runtime identity.
+
+Unknown or skipped execution widens reachable mutable cells while retaining
+their known capabilities. A skipped continuation can initialize a lexical cell,
+so widening preserves both TDZ and completing possibilities. Initialized `const`
+bindings retain their value, but reachable objects still undergo ordinary
+property invalidation. Callback and escape traversal follow current cell
+contents. Activations outside ordered source coverage retain conservative value
+summaries and cannot supply an exact mutable-cell proof. The canonical nested
+identifier census identifies captured bindings without another source scan.
+Cells are currently retained until chunk analysis completes; this establishes no
+memory bound independent of chunk size.
+
+Call-containing bodies, closure creation and captured writes remain outside the
+migrated allocation-only provider query and keep their established foreign-call
+derivation where supported.
 This classification happens before selecting a query; a failed migrated
-query still never retries the legacy evaluator.
+query still never retries another evaluator.
 
 Source coverage excludes async/generator functions, defaults/rest/destructuring,
 template syntax, other operators,

@@ -13181,7 +13181,7 @@ fn infer_foreign_calls<'f>(
                         || callable
                             .local_body
                             .as_ref()
-                            .is_some_and(|body| !body.contains_calls())
+                            .is_some_and(LocalBody::allocation_only_syntax)
                 }) {
                 // This migrated slice consumes the central value/operation transfers.
                 // A failed access/coverage judgment must not retry the AST evaluator.

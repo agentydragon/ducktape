@@ -162,7 +162,23 @@ impl<T> Captured<T> {
     }
 }
 
-pub(super) type CapturedContext = Captured<Context>;
+/// One instantiated lexical cell, not a source binding or structural cache key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct LexicalCellId(pub(super) usize);
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct LexicalCaptures {
+    pub(super) snapshots: Context,
+    pub(super) cells: OrdMap<Id, LexicalCellId>,
+}
+
+impl LexicalCaptures {
+    pub(super) fn is_empty(&self) -> bool {
+        self.snapshots.is_empty() && self.cells.is_empty()
+    }
+}
+
+pub(super) type CapturedContext = Captured<LexicalCaptures>;
 
 impl<T> PartialEq for Captured<T> {
     fn eq(&self, other: &Self) -> bool {

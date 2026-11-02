@@ -1070,8 +1070,8 @@ statement. Changing prefix revisions cannot reset that expansion budget. At
 the bound, on reentry into an active callback, or when the callback pool would
 create a large argument-value cross product, an opaque call summarizes its
 callback pool together;
-recursive or unknown targets, unsupported syntax, and mutable captures fall
-back conservatively. Fallback read closures grow incrementally. For source statements
+recursive or unknown targets, unsupported syntax, and captures without live-cell
+evidence fall back conservatively. Fallback read closures grow incrementally. For source statements
 covered by retained callable facts, they follow and promote only reads that can
 occur before a definite `await`; unsupported source statements retain their whole lazy
 read set. Rebinds remain conservative. Callbacks retained by a fallback remain
@@ -1081,11 +1081,13 @@ escaping its private roots. Applying either summary rechecks initialization at
 the active source prefix; per-statement outcomes are reset at the next prefix.
 Fallback effects accumulate directly in that statement's summary and are merged
 once, rather than copied through every nested invocation. Rebinds still update
-the prefix environment immediately. Callback discovery visits each closure's capture snapshot once,
-including snapshots shared through several captured bindings. The executor
-interns immutable capture contexts bottom-up, so value-set and invocation-key
-comparisons use canonical identities rather than recursively comparing the
-capture DAG. Opaque methods receive their receiver as an input capability;
+the prefix environment immediately. Callback discovery visits each closure's
+capture environment once per traversal, including shared snapshots and current
+lexical-cell contents. The executor interns immutable capture descriptions,
+containing value summaries and cell references, so value-set and invocation-key
+comparisons use canonical identities rather than recursively comparing their
+graphs. The interning key is structural; instantiated cells carry distinct
+activation identities. Opaque methods receive their receiver as an input capability;
 callback discovery traverses its stored references as well as the explicit
 arguments. Receiver taint remains independent of this callback reach.
 Later stores through a tainted or unsettled object publish the new value
@@ -1207,8 +1209,34 @@ fallback capability roots. Unknown targets and incomplete invocations truncate
 the remainder through the existing callback fallback without replay. Their
 already executed effects remain in the outcome. All invocation results remain
 opaque to allocation-only proof, and the strict provider adapter refuses the
-operation. This does not change closure snapshots into live captured cells or
-give exported property aliases provider identity.
+operation. This gives no provider identity to exported property aliases.
+
+Anonymous function and arrow creation retain live lexical cells from ordered
+activations. A temporary join of the canonical nested identifier census with
+ordered binding declarations identifies which locals need cells, including
+deferred references and cells needed by a descendant closure. No additional
+source parse or scan is used. Each such parameter, `var`, `let` or `const` gets
+one new cell per activation. Parameters and `var` start initialized; lexical
+declarations start in TDZ. Declaration initializers and local assignments store
+at their source positions. Closure reads resolve cell contents at invocation,
+and intermediate closures retain cells for their children. Distinct factory
+activations therefore cannot share a cell merely because their values match.
+
+Writes from a nested invocation join possible cell values. The general caller
+analysis still includes possibly skipped calls, so those writes cannot yet
+erase the no-call branch or certify exact loader cache state. Const and TDZ
+errors remain abrupt. Unknown execution widens reached mutable cells without
+dropping known capabilities; a skipped enclosing continuation can move an
+uninitialized cell to possibly initialized. Initialized const bindings retain
+their value while the normal reference traversal invalidates reached heap
+properties. Paths that pre-evaluate assignments or flatten source control flow
+invalidate mutable-cell precision before using those source summaries. Failed
+ordered execution never retries already executed operations. Cell allocation
+and changed contents advance the prefix revision used in invocation memos.
+Cell identities are monotonic; their payloads currently live until chunk
+completion. Reclaiming unreachable payloads at statement finalization remains
+a memory follow-up, with live closures and all runtime heap roots preserved.
+
 Static dot-field reads from a simple binding now enter the same ordered
 executor. The fresh own-data guard is shared with field writes and is not
 weakened for borrowed records, arrays, missing fields or older allocation
