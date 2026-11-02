@@ -53,6 +53,10 @@ async def test_open_acknowledges_while_runner_bootstrap_is_still_held(
         opened = await opening
         assert opened.attached.harness_state == session_pb2.HARNESS_STATE_STOPPED
         (config.state_dir / "continue").touch()
+        completed = config.state_dir / "completed"
+        async with asyncio.timeout(10):
+            while not completed.exists():  # noqa: ASYNC110  # This marker is written by the subprocess.
+                await asyncio.sleep(0.01)
 
     assert (config.state_dir / "completed").read_text() == "done\n"
 

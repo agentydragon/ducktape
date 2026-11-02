@@ -280,6 +280,7 @@ py_test(
         "//agentplane/env/e2e/testing:gateway",
         "//agentplane/history_service/testing:go_service",
         "//agentplane/proto:session_pb2",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest_bazel",
     ],
 )
