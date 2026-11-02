@@ -1,10 +1,74 @@
 """Retention requires the permission injected through BuildBuddy's exec properties."""
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from agentplane.system_tests.k3s import stack
+
+
+def _postgres_pod(
+    uid: str,
+    *,
+    phase: str,
+    ready: bool,
+    replica_set_uid: str = "replicaset-1",
+    deleting: bool = False,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "name": f"postgres-678b844849-{uid}",
+        "uid": uid,
+        "ownerReferences": [{"controller": True, "kind": "ReplicaSet", "uid": replica_set_uid}],
+    }
+    if deleting:
+        metadata["deletionTimestamp"] = "2026-11-02T08:13:00Z"
+    status: dict[str, Any] = {"phase": phase, "conditions": [{"type": "Ready", "status": "True" if ready else "False"}]}
+    if reason is not None:
+        status["reason"] = reason
+    return {"metadata": metadata, "status": status}
+
+
+def _postgres_replica_set(uid: str) -> dict[str, Any]:
+    return {
+        "metadata": {"uid": uid, "ownerReferences": [{"controller": True, "kind": "Deployment", "uid": "deployment-1"}]}
+    }
+
+
+def test_ready_postgres_pod_ignores_evicted_replicaset_attempts() -> None:
+    pods = [_postgres_pod(f"evicted-{index}", phase="Failed", ready=False, reason="Evicted") for index in range(6)] + [
+        _postgres_pod("ready", phase="Running", ready=True)
+    ]
+
+    pod = stack._ready_fixture_postgres_pod(pods, [_postgres_replica_set("replicaset-1")], "deployment-1")
+
+    assert pod["metadata"]["uid"] == "ready"
+
+
+def test_ready_postgres_pod_rejects_zero_candidates() -> None:
+    pods = [_postgres_pod("evicted", phase="Failed", ready=False)]
+
+    with pytest.raises(RuntimeError, match=r"expected one Ready, non-terminating fixture PostgreSQL Pod.*found 0"):
+        stack._ready_fixture_postgres_pod(pods, [_postgres_replica_set("replicaset-1")], "deployment-1")
+
+
+def test_ready_postgres_pod_rejects_ambiguous_candidates() -> None:
+    pods = [
+        _postgres_pod("ready-1", phase="Running", ready=True, replica_set_uid="replicaset-1"),
+        _postgres_pod("ready-2", phase="Running", ready=True, replica_set_uid="replicaset-2"),
+    ]
+    replica_sets = [_postgres_replica_set("replicaset-1"), _postgres_replica_set("replicaset-2")]
+
+    with pytest.raises(RuntimeError, match=r"expected one Ready, non-terminating fixture PostgreSQL Pod.*found 2"):
+        stack._ready_fixture_postgres_pod(pods, replica_sets, "deployment-1")
+
+
+def test_ready_postgres_pod_ignores_terminating_candidate() -> None:
+    pods = [_postgres_pod("terminating", phase="Running", ready=True, deleting=True)]
+
+    with pytest.raises(RuntimeError, match=r"expected one Ready, non-terminating fixture PostgreSQL Pod.*found 0"):
+        stack._ready_fixture_postgres_pod(pods, [_postgres_replica_set("replicaset-1")], "deployment-1")
 
 
 @pytest.mark.parametrize("permission", [None, "", "0", "true"])
