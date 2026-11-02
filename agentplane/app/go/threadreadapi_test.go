@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -110,6 +113,89 @@ func (threadReadAcceptedTokenReviewer) Create(context.Context, *authenticationv1
 		Audiences:     []string{"agentplane"},
 		User:          authenticationv1.UserInfo{Username: "system:serviceaccount:tools:runner"},
 	}}, nil
+}
+
+type threadMetadataChangesFake struct {
+	updates      chan struct{}
+	unsubscribed chan struct{}
+}
+
+func (f *threadMetadataChangesFake) Subscribe(...string) (<-chan struct{}, func(), error) {
+	return f.updates, func() { close(f.unsubscribed) }, nil
+}
+
+func TestThreadMetadataWatchStreamsUpdatesAndCloses(t *testing.T) {
+	for _, stop := range []string{"cancel", "drain"} {
+		t.Run(stop, func(t *testing.T) {
+			authentication, err := auth.New(auth.Config{
+				TokenReviews: threadReadAcceptedTokenReviewer{}, TokenAudience: "agentplane",
+				TokenSubjects: []string{"system:serviceaccount:tools:runner"},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			changes := &threadMetadataChangesFake{updates: make(chan struct{}, 1), unsubscribed: make(chan struct{})}
+			var connected atomic.Bool
+			connected.Store(true)
+			server := NewHTTPServer(authentication)
+			if err := registerThreadMetadataGateway(server, &threadReadStoreFake{}, changes, connected.Load); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(server.Close)
+			httpServer := httptest.NewServer(server.Handler(authentication))
+			t.Cleanup(httpServer.Close)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			request, err := http.NewRequestWithContext(ctx, http.MethodGet, httpServer.URL+"/upstream/app/v1/threads:watch", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set("Authorization", "Bearer accepted")
+			request.Header.Set("Accept", "application/x-ndjson")
+			response, err := http.DefaultClient.Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("watch status = %d", response.StatusCode)
+			}
+			lines := bufio.NewReader(response.Body)
+			readFrame := func(wantConnected bool) {
+				t.Helper()
+				line, err := lines.ReadBytes('\n')
+				if err != nil {
+					t.Fatal(err)
+				}
+				var frame struct {
+					Result struct {
+						Changed          json.RawMessage `json:"changed"`
+						UpdatesConnected bool            `json:"updatesConnected"`
+					} `json:"result"`
+				}
+				if err := json.Unmarshal(line, &frame); err != nil || string(frame.Result.Changed) != "{}" || frame.Result.UpdatesConnected != wantConnected {
+					t.Fatalf("frame %s: %v", line, err)
+				}
+			}
+			readFrame(true)
+			connected.Store(false)
+			changes.updates <- struct{}{}
+			readFrame(false)
+			if stop == "cancel" {
+				cancel()
+			} else {
+				server.BeginDrain()
+				if _, err := lines.ReadByte(); !errors.Is(err, io.EOF) {
+					t.Fatalf("drained watch returned %v, want EOF", err)
+				}
+			}
+			select {
+			case <-changes.unsubscribed:
+			case <-time.After(5 * time.Second):
+				t.Fatal("watch did not unsubscribe")
+			}
+		})
+	}
 }
 
 type threadReadInventoryFake struct {
