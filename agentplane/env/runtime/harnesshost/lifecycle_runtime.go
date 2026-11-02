@@ -57,7 +57,7 @@ func newLifecycle(r *Host, store state.State, engine *cosiruntime.Runtime, engin
 	if err := harnesshostlifecycle.PublishDesired(l.host.ctx, l.state, harnesshostlifecycle.Desired{Mode: harnesshostlifecycle.Quiescing}); err != nil {
 		return nil, err
 	}
-	if err := l.state.Create(r.ctx, lifecycleResourceFor(harnesshostlifecycle.ResourceID, harnessHostInputSpec{}), state.WithCreateOwner(harnesshostlifecycle.HostOwner)); err != nil {
+	if err := l.state.Create(r.ctx, lifecycleResourceFor(harnesshostlifecycle.ResourceID, harnessHostAdmissionCountSpec{}), state.WithCreateOwner(harnesshostlifecycle.HostOwner)); err != nil {
 		return nil, err
 	}
 	return l, nil

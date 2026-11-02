@@ -262,7 +262,7 @@ func holdJournalBatch(t *testing.T, ctx context.Context, s *session.Session) fun
 // recreate missing authoritative accounting as an idle (zero) count.
 func removeAdmissionState(t *testing.T, r *Host) func() {
 	t.Helper()
-	ptr := lifecycleResourceFor(harnesshostlifecycle.ResourceID, harnessHostInputSpec{}).Metadata()
+	ptr := lifecycleResourceFor(harnesshostlifecycle.ResourceID, harnessHostAdmissionCountSpec{}).Metadata()
 	r.mu.Lock()
 	err := r.lifecycle.state.Destroy(r.ctx, ptr, state.WithDestroyOwner(harnesshostlifecycle.HostOwner))
 	r.mu.Unlock()
@@ -271,7 +271,7 @@ func removeAdmissionState(t *testing.T, r *Host) func() {
 	}
 	return func() {
 		r.mu.Lock()
-		err := r.lifecycle.state.Create(r.ctx, lifecycleResourceFor(harnesshostlifecycle.ResourceID, harnessHostInputSpec{}), state.WithCreateOwner(harnesshostlifecycle.HostOwner))
+		err := r.lifecycle.state.Create(r.ctx, lifecycleResourceFor(harnesshostlifecycle.ResourceID, harnessHostAdmissionCountSpec{}), state.WithCreateOwner(harnesshostlifecycle.HostOwner))
 		r.mu.Unlock()
 		if err != nil {
 			t.Errorf("restore admission accounting for teardown: %v", err)
@@ -411,7 +411,7 @@ func TestCloseWaitsForAdmission(t *testing.T) {
 		_, err := r.SubmitInput(hostContext(r, ctx), &environmentruntimepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "close-race", Text: "input"})
 		inputDone <- err
 	}()
-	if err := watchLifecycle(ctx, r.lifecycle, harnesshostlifecycle.ResourceID, func(input harnessHostInputSpec) (bool, error) {
+	if err := watchLifecycle(ctx, r.lifecycle, harnesshostlifecycle.ResourceID, func(input harnessHostAdmissionCountSpec) (bool, error) {
 		return input.Admissions == 1, nil
 	}); err != nil {
 		releaseBatch()
@@ -460,7 +460,7 @@ func TestCloseWaitsForAdmission(t *testing.T) {
 	if err := waitClose(t, closeDone); err != nil {
 		t.Fatalf("Close after admission completion: %v", err)
 	}
-	after, found, err := lifecycleRead[harnessHostInputSpec](ctx, r.lifecycle.state, harnesshostlifecycle.ResourceID)
+	after, found, err := lifecycleRead[harnessHostAdmissionCountSpec](ctx, r.lifecycle.state, harnesshostlifecycle.ResourceID)
 	if err != nil || !found || after.Admissions != 0 {
 		t.Fatalf("Harness Host Inputs after admission completion = %+v, found=%v err=%v; want no admissions", after, found, err)
 	}
@@ -584,7 +584,7 @@ func TestAdmissionCompletionStateFailureIsReported(t *testing.T) {
 		_, err := r.SubmitInput(hostContext(r, ctx), &environmentruntimepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "completion-accounting", Text: "input"})
 		inputDone <- err
 	}()
-	if err := watchLifecycle(ctx, r.lifecycle, harnesshostlifecycle.ResourceID, func(input harnessHostInputSpec) (bool, error) {
+	if err := watchLifecycle(ctx, r.lifecycle, harnesshostlifecycle.ResourceID, func(input harnessHostAdmissionCountSpec) (bool, error) {
 		return input.Admissions == 1, nil
 	}); err != nil {
 		t.Fatal(err)
@@ -685,7 +685,7 @@ func TestLifecycleWatchStopsWithHarnessHost(t *testing.T) {
 	cancelHost()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
-	err := watchLifecycle(ctx, l, "never-created", func(harnessHostInputSpec) (bool, error) { return false, nil })
+	err := watchLifecycle(ctx, l, "never-created", func(harnessHostAdmissionCountSpec) (bool, error) { return false, nil })
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("watch after Harness Host cancellation = %v, want context.Canceled", err)
 	}
@@ -698,7 +698,7 @@ func TestLifecycleWatchWaitsForResourceCreation(t *testing.T) {
 		l := newLifecycleWatchFixture(ctx)
 		done := make(chan error, 1)
 		go func() {
-			done <- watchLifecycle(ctx, l, "created-later", func(current harnessHostInputSpec) (bool, error) {
+			done <- watchLifecycle(ctx, l, "created-later", func(current harnessHostAdmissionCountSpec) (bool, error) {
 				return current.Admissions == 1, nil
 			})
 		}()
@@ -708,7 +708,7 @@ func TestLifecycleWatchWaitsForResourceCreation(t *testing.T) {
 			t.Fatalf("watch returned before resource creation: %v", err)
 		default:
 		}
-		if err := l.state.Create(ctx, lifecycleResourceFor("created-later", harnessHostInputSpec{Admissions: 1}), state.WithCreateOwner(harnesshostlifecycle.HostOwner)); err != nil {
+		if err := l.state.Create(ctx, lifecycleResourceFor("created-later", harnessHostAdmissionCountSpec{Admissions: 1}), state.WithCreateOwner(harnesshostlifecycle.HostOwner)); err != nil {
 			t.Fatal(err)
 		}
 		synctest.Wait()

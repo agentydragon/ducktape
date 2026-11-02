@@ -26,7 +26,7 @@ func harnessHostFenceMatches(applied harnesshostlifecycle.HostIntentStatus, inte
 func (*harnessHostLifecycleController) Name() string { return harnessHostControllerName }
 func (*harnessHostLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{harnesshostlifecycle.DesiredStateType, harnesshostlifecycle.HostIntentStatusType, harnessHostInputType, session.DrainInputType, session.LifecycleStatusType, journalSealType, ingressAckType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
+	for _, kind := range []string{harnesshostlifecycle.DesiredStateType, harnesshostlifecycle.HostIntentStatusType, harnessHostAdmissionCountType, session.DrainInputType, session.LifecycleStatusType, journalSealType, ingressAckType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
 		inputs = append(inputs, controller.Input{Namespace: harnesshostlifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -85,7 +85,7 @@ func (c *harnessHostLifecycleController) reconcile(ctx context.Context, r contro
 	if admissions != 0 {
 		current.Stage = harnesshostlifecycle.Draining
 		current.Blocker = harnesshostlifecycle.Blocker{
-			Kind: harnesshostlifecycle.AdmissionsPending, ResourceType: harnessHostInputType,
+			Kind: harnesshostlifecycle.AdmissionsPending, ResourceType: harnessHostAdmissionCountType,
 			ResourceID: harnesshostlifecycle.ResourceID, ResourcePresent: true, Admissions: uint64(admissions),
 		}
 		return write()
@@ -299,7 +299,7 @@ func (c *harnessHostLifecycleController) reconcile(ctx context.Context, r contro
 		if admissions != 0 {
 			c.l.host.mu.Unlock()
 			current.Blocker = harnesshostlifecycle.Blocker{
-				Kind: harnesshostlifecycle.AdmissionsPending, ResourceType: harnessHostInputType,
+				Kind: harnesshostlifecycle.AdmissionsPending, ResourceType: harnessHostAdmissionCountType,
 				ResourceID: harnesshostlifecycle.ResourceID, ResourcePresent: true, Admissions: uint64(admissions),
 			}
 			return write()
