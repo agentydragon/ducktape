@@ -10,6 +10,13 @@ replaying the native effect. Define one recoverable authority for configuration 
 outcome, and test both sides of the commit boundary. A shared journal transaction or an explicit
 reconciliation protocol may fit; simply reversing the writes moves the inconsistency window.
 
+If we revisit the journal's storage design, consider COSI's upstream
+[`state-sqlite`](https://github.com/cosi-project/state-sqlite) backend. It reads resources from
+SQLite rather than keeping every resource in COSI's in-memory state; controller caches and large
+lists can still retain or load many resources. Before choosing it, evaluate compatibility, memory
+and performance, cursor-based history, watch retention, and whether its transaction boundaries can
+preserve the journal's atomic event and checkpoint guarantees.
+
 ## Prove VM guest boot and console autologin
 
 The current regression checks evaluate the NixOS mount table and rendered VM resources, but do not
