@@ -113,6 +113,8 @@ oci_image_py(
     visibility = ["//visibility:public"],
 )
 
+# Electric's original digest is absent from mirror.gcr.io and its upstream Docker Hub
+# repository is broken. The pin uses the published electricsql/electric-temp image.
 oci_image_py(
     name = "electric_1_8_1",
     testonly = True,

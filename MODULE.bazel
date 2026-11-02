@@ -282,18 +282,6 @@ oci.pull(
     tag = "1.103.0",
 )
 
-# Electric 1.8.1 for real integration tests. The original digest is not cached
-# by mirror.gcr.io, and the upstream Docker Hub electric repository is broken.
-# Electric publishes 1.8.1 from electric-temp instead; pin that published
-# multi-arch manifest digest.
-oci.pull(
-    name = "electric_1_8_1",
-    digest = "sha256:910d5ebeca68c87c930ccd1b35426c7bc94d79c099ccacc8f27547b74fb4353a",
-    image = "docker.io/electricsql/electric-temp",
-    platforms = ["linux/amd64"],
-    tag = "1.8.1",
-)
-
 # Base of //cluster/tf_runner:image. Keep it at the upstream release third_party/tofu_controller's
 # fork branch is based on (v0.16.5, runner/ untouched), which release.py's chart version names.
 oci.pull(
@@ -302,15 +290,6 @@ oci.pull(
     image = "ghcr.io/flux-iac/tf-runner",
     platforms = ["linux/amd64"],
     tag = "v0.16.5",
-)
-
-# Test infrastructure: PostgreSQL for Testcontainers (match production version)
-oci.pull(
-    name = "postgres_18",
-    digest = "sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
-    image = "mirror.gcr.io/library/postgres",
-    platforms = ["linux/amd64"],
-    tag = "18",
 )
 
 # Bare-k3s fixture: published PostgreSQL 18 without LLVM JIT. CNPG supplies the
@@ -444,15 +423,6 @@ oci.pull(
     tag = "3",
 )
 
-# Test infrastructure: Testcontainers Ryuk reaper (container cleanup)
-oci.pull(
-    name = "ryuk",
-    digest = "sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0",
-    image = "mirror.gcr.io/testcontainers/ryuk",
-    platforms = ["linux/amd64"],
-    tag = "0.14.0",
-)
-
 # Test infrastructure: Grocy for MCP e2e tests (match cluster/k8s/grocy/deployment.yaml)
 oci.pull(
     name = "grocy",
@@ -500,18 +470,6 @@ oci.pull(
     tag = "3.14-slim",
 )
 
-# Unprivileged nginx for the augur frontend image (static React bundle served
-# behind oauth2-proxy + readOnlyRootFilesystem).
-# To repin:
-#   crane digest --platform linux/amd64 docker.io/nginxinc/nginx-unprivileged:1.31-alpine
-oci.pull(
-    name = "nginx_unprivileged",
-    digest = "sha256:e1754f434ace974cdf9b9f98d868082b86ab8ee703f8466e6d3d777f553d3fb9",
-    image = "mirror.gcr.io/nginxinc/nginx-unprivileged",
-    platforms = ["linux/amd64"],
-    tag = "1.31-alpine",
-)
-
 # Stalwart mailserver — base for the haku-mailbox repack (server + stalwart-cli,
 # //cluster/k8s/haku/mailbox/image). To repin:
 #   crane digest --platform linux/amd64 docker.io/stalwartlabs/stalwart:<tag>
@@ -522,7 +480,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "v0.16.22",
 )
-use_repo(oci, "cert_manager_cainjector", "cert_manager_cainjector_linux_amd64", "cert_manager_controller", "cert_manager_controller_linux_amd64", "cert_manager_webhook", "cert_manager_webhook_linux_amd64", "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "dex", "dex_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_static_debian13", "distroless_static_debian13_linux_amd64", "electric_1_8_1", "electric_1_8_1_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "kubevirt_virt_api", "kubevirt_virt_api_linux_amd64", "kubevirt_virt_controller", "kubevirt_virt_controller_linux_amd64", "kubevirt_virt_handler", "kubevirt_virt_handler_linux_amd64", "kubevirt_virt_launcher", "kubevirt_virt_launcher_linux_amd64", "kubevirt_virt_operator", "kubevirt_virt_operator_linux_amd64", "kyverno_kyverno", "kyverno_kyverno_linux_amd64", "kyverno_kyvernopre", "kyverno_kyvernopre_linux_amd64", "litellm_upstream", "litellm_upstream_linux_amd64", "mcp_everything", "mcp_everything_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "postgres_18_minimal", "postgres_18_minimal_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "tf_runner", "tf_runner_linux_amd64", "trust_manager", "trust_manager_linux_amd64")
+use_repo(oci, "cert_manager_cainjector", "cert_manager_cainjector_linux_amd64", "cert_manager_controller", "cert_manager_controller_linux_amd64", "cert_manager_webhook", "cert_manager_webhook_linux_amd64", "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "dex", "dex_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_static_debian13", "distroless_static_debian13_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "kubevirt_virt_api", "kubevirt_virt_api_linux_amd64", "kubevirt_virt_controller", "kubevirt_virt_controller_linux_amd64", "kubevirt_virt_handler", "kubevirt_virt_handler_linux_amd64", "kubevirt_virt_launcher", "kubevirt_virt_launcher_linux_amd64", "kubevirt_virt_operator", "kubevirt_virt_operator_linux_amd64", "kyverno_kyverno", "kyverno_kyverno_linux_amd64", "kyverno_kyvernopre", "kyverno_kyvernopre_linux_amd64", "litellm_upstream", "litellm_upstream_linux_amd64", "mcp_everything", "mcp_everything_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18_minimal", "postgres_18_minimal_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "stalwart", "stalwart_linux_amd64", "tf_runner", "tf_runner_linux_amd64", "trust_manager", "trust_manager_linux_amd64")
 
 # Container image pins from devinfra/image_pins.json.
 # - Generates @image_pins//:pins.bzl with NAME_IMAGE / NAME_DIGEST constants
@@ -530,7 +488,7 @@ use_repo(oci, "cert_manager_cainjector", "cert_manager_cainjector_linux_amd64", 
 # CI workflows update the JSON via devinfra/update_image_pin.py.
 image_pins = use_extension("//devinfra:image_pins.bzl", "image_pins")
 image_pins.from_file(lockfile = "//devinfra:image_pins.json")
-use_repo(image_pins, "blackbox_exporter", "blackbox_exporter_linux_amd64", "excalidraw", "excalidraw_linux_amd64", "freecad_test", "freecad_test_linux_amd64", "image_pins")
+use_repo(image_pins, "blackbox_exporter", "blackbox_exporter_linux_amd64", "electric_1_8_1", "electric_1_8_1_linux_amd64", "excalidraw", "excalidraw_linux_amd64", "freecad_test", "freecad_test_linux_amd64", "image_pins", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "ryuk", "ryuk_linux_amd64")
 
 # Hermetic deb packages for container images (rules_distroless).
 # Replaces Dockerfile apt-get with snapshot-pinned deb extraction.

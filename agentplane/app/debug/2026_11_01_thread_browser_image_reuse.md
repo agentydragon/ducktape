@@ -140,17 +140,25 @@ remains a measured alternative for a later decision.
 
 ## Adoption
 
-`test_thread_browser` uses the stable `thread-browser-images-v1` recycling key.
+`test_thread_browser` uses `thread-browser-images-v1-` followed by the four full
+infrastructure image digests, in a fixed order. `postgres_18`, `electric_1_8_1`,
+`ryuk`, and `nginx_unprivileged` are owned by `devinfra/image_pins.json`; its module
+extension both creates their OCI repositories and exports the digest constants
+loaded by this target. Repinning any of these images automatically selects a new
+snapshot baseline, without a second hash declaration or manual version bump.
+
 Its first full run prepares the shard placements; there is no seed job. The dated
 keys above identify the measured experiment, not the retained configuration.
+The existing `util.oci.load_oci_image` checks the runfiles layout digest and actual
+daemon image ID before skipping a load. A missing or changed image therefore
+loads normally, including on a cold executor. Frequently changing frontend
+images use this same guard without changing the infrastructure key.
 
-Advance the key's version when the `postgres_18`, `electric_1_8_1`, `ryuk`, or
-`nginx_unprivileged` pins in `MODULE.bazel` change, so the replacement baseline
-captures the new infrastructure images. The existing `util.oci.load_oci_image`
-checks the runfiles layout digest and actual daemon image ID before skipping a
-load. A missing or changed image therefore loads normally, including on a cold
-executor or if the recycling-key bump was missed. Frequently changing frontend
-images use this same guard without advancing the infrastructure key.
+The [pin-derived configuration validation](https://app.buildbuddy.io/invocation/fba4444e-5a21-4b37-b6ec-cd468a6e9007)
+passed all 42 cases on 16 originating shard actions with test-result caching
+disabled. The case-identity hash matched the experiment. An inspected REAPI
+Action carried exactly the four catalog digests in its recycling key. All four
+moved pin records retained their image repository, digest, tag and platform.
 
 ## Scope and follow-up
 
@@ -159,9 +167,8 @@ images use this same guard without advancing the infrastructure key.
   compiler/linter execution platforms and the global RBE image stay unchanged.
 - Use a shared image-family key for compatible browser targets when expanding.
   Every possible first action must load the family's required stable images.
-  Preserve the existing digest/daemon-ID guard and cold fallback. Key-version
-  advancement with infrastructure pin changes is manual, documented beside
-  the target's execution property; automatic pin-derived versioning is not added.
+  Preserve the existing digest/daemon-ID guard and cold fallback, and derive
+  the family's recycling key from its authoritative infrastructure image pins.
 - Frequently changing frontend images should continue through the existing
   digest guard rather than forcing all stable infrastructure images cold on
   every source commit.

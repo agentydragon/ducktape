@@ -21,5 +21,29 @@
     "image": "quay.io/prometheus/blackbox-exporter",
     "digest": "sha256:e753ff9f3fc458d02cca5eddab5a77e1c175eee484a8925ac7d524f04366c2fc",
     "platforms": ["linux/amd64"]
+  },
+  "postgres_18": {
+    "image": "mirror.gcr.io/library/postgres",
+    "digest": "sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+    "tag": "18",
+    "platforms": ["linux/amd64"]
+  },
+  "electric_1_8_1": {
+    "image": "docker.io/electricsql/electric-temp",
+    "digest": "sha256:910d5ebeca68c87c930ccd1b35426c7bc94d79c099ccacc8f27547b74fb4353a",
+    "tag": "1.8.1",
+    "platforms": ["linux/amd64"]
+  },
+  "ryuk": {
+    "image": "mirror.gcr.io/testcontainers/ryuk",
+    "digest": "sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0",
+    "tag": "0.14.0",
+    "platforms": ["linux/amd64"]
+  },
+  "nginx_unprivileged": {
+    "image": "mirror.gcr.io/nginxinc/nginx-unprivileged",
+    "digest": "sha256:e1754f434ace974cdf9b9f98d868082b86ab8ee703f8466e6d3d777f553d3fb9",
+    "tag": "1.31-alpine",
+    "platforms": ["linux/amd64"]
   }
 }
