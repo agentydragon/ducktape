@@ -25,7 +25,7 @@ func (c *sessionLifecycleController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
 			{Namespace: harnesshostlifecycle.Namespace, Type: ReconcileSnapshotType, Kind: controller.InputQPrimary},
-			{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.DesiredStateType, Kind: controller.InputQMapped},
+			{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.EnvironmentDesiredStateType, Kind: controller.InputQMapped},
 			{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.AggregateStatusType, Kind: controller.InputQMapped},
 			{Namespace: harnesshostlifecycle.Namespace, Type: codexappserver.StatusType, Kind: controller.InputQMapped},
 			{Namespace: harnesshostlifecycle.Namespace, Type: OperationStateType, Kind: controller.InputQMapped},
@@ -70,7 +70,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	if err != nil {
 		return err
 	}
-	desiredState, _, err := harnesshostlifecycle.ReadDesired(ctx, r)
+	desiredState, _, err := harnesshostlifecycle.ReadEnvironmentDesired(ctx, r)
 	if err != nil {
 		return err
 	}

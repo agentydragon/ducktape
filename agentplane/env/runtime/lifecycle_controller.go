@@ -6,10 +6,8 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
-	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"go.uber.org/zap"
-	"google.golang.org/protobuf/proto"
 )
 
 const runtimeLifecycleControllerName = "environment-runtime-lifecycle"
@@ -30,14 +28,12 @@ type runtimeLifecycleController struct {
 }
 
 type closePlan struct {
-	binding           *runtimepb.Binding
-	sealUID           string
-	active            bool
-	sessionsStarted   bool
-	executionMayExist bool
-	sessionLossErr    error
-	fenceCtx          context.Context
-	cancelFence       context.CancelFunc
+ generation uint64
+ sealUID string
+ sessionsStarted bool
+ sessionLossErr error
+ fenceCtx context.Context
+ cancelFence context.CancelFunc
 }
 
 type closeOperation struct {
@@ -218,121 +214,35 @@ func (c *runtimeLifecycleController) stopSessions(ctx context.Context) error {
 }
 
 func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecycle.RuntimeCloseStage) error {
-	p := &c.plan
-	switch stage {
-	case lifecycle.RuntimeClosePreparing:
-		return c.prepare()
-	case lifecycle.RuntimeCloseNativeStopping:
-		if p.active {
-			return c.r.waitForHostNativeStopped(p.fenceCtx, p.binding)
-		}
-		if p.sessionsStarted {
-			if err := c.stopSessions(p.fenceCtx); err != nil {
-				return fmt.Errorf("Session component became unavailable and native cleanup is unproved: %w", err)
-			}
-			p.sessionLossErr = errSessionComponentLost
-			return nil
-		}
-		if p.executionMayExist {
-			return errors.New("Session component did not start before native cleanup could be proved")
-		}
-		return nil
-	case lifecycle.RuntimeCloseExecutionFencing:
-		if p.active {
-			c.r.maybeFenceExecution(p.binding)
-			return c.r.waitForExecutionFenced(p.fenceCtx, p.binding)
-		}
-		if p.sessionsStarted {
-			if err := c.r.stopExecution(p.fenceCtx); err != nil {
-				return fmt.Errorf("fence Execution after Session component became unavailable: %w", err)
-			}
-		}
-		return nil
-	case lifecycle.RuntimeCloseHostFlushing:
-		if p.sealUID != "" && !p.active {
-			c.r.mu.Lock()
-			failure := c.r.failureLocked()
-			c.r.mu.Unlock()
-			return errors.Join(errors.New("Harness Host failed before exact sealed History acknowledgement was proved"), failure)
-		}
-		if p.sealUID != "" {
-			return c.r.waitForHostQuiesced(p.fenceCtx, p.binding)
-		}
-		return nil
-	case lifecycle.RuntimeCloseHostJoining:
-		if err := c.r.stopIngress(p.fenceCtx); err != nil {
-			return fmt.Errorf("join History ingress before Host journal close: %w", err)
-		}
-		if p.active {
-			if err := c.stopSessions(p.fenceCtx); err != nil {
-				return fmt.Errorf("stop and fence Harness Host: %w", err)
-			}
-		}
-		c.r.mu.Lock()
-		if c.r.host != nil {
-			c.r.host.active = false
-		}
-		c.r.mu.Unlock()
-		return nil
-	case lifecycle.RuntimeCloseBootstrapSettling:
-		return c.r.waitBootstrapSettled(ctx)
-	default:
-		return fmt.Errorf("unexpected Runtime Close stage %d", stage)
-	}
+ p:=&c.plan
+ switch stage {
+ case lifecycle.RuntimeClosePreparing:return c.prepare()
+ case lifecycle.RuntimeCloseNativeStopping:
+  if p.sessionsStarted{return c.r.waitForNativeStopped(p.fenceCtx,p.generation)}
+  return nil
+ case lifecycle.RuntimeCloseExecutionFencing:return c.r.waitForExecutionFenced(p.fenceCtx,p.generation)
+ case lifecycle.RuntimeCloseHostFlushing:
+  if p.sealUID!=""&&p.sessionsStarted{return c.r.waitSessionStage(p.fenceCtx,lifecycle.Quiesced)}
+  return nil
+ case lifecycle.RuntimeCloseHostJoining:
+  if err:=c.r.stopIngress(p.fenceCtx);err!=nil{return fmt.Errorf("join History delivery: %w",err)}
+  if p.sessionsStarted{return c.stopSessions(p.fenceCtx)}
+  return nil
+ case lifecycle.RuntimeCloseBootstrapSettling:return c.r.waitBootstrapSettled(ctx)
+ default:return fmt.Errorf("unexpected Runtime Close stage %d",stage)
+ }
 }
 
 func (c *runtimeLifecycleController) prepare() error {
-	r := c.r
-	r.transitionMu.Lock()
-	defer r.transitionMu.Unlock()
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.transitionUnsafe != nil {
-		return fmt.Errorf("prior Runtime transition has an uncertain Execution fence: %w", r.transitionUnsafe)
-	}
-	snapshot := r.state.Snapshot()
-	sealUID := ""
-	if snapshot.Quiesced {
-		sealUID = snapshot.IncarnationUID
-	}
-	if sealedUID, sealed, err := r.state.SealedUID(); err != nil {
-		return fmt.Errorf("read environment seal during shutdown: %w", err)
-	} else if sealed {
-		sealUID = sealedUID
-	}
-	incarnationUID := snapshot.IncarnationUID
-	if r.intent != nil && incarnationUID == "" {
-		incarnationUID = r.intent.IncarnationUid
-	}
-	if sealUID != "" {
-		incarnationUID = sealUID
-	}
-	p := &c.plan
-	p.sealUID = sealUID
-	p.sessionsStarted = r.sessions != nil
-	p.active = r.host != nil && r.host.active
-	if p.active && p.sessionsStarted {
-		select {
-		case <-r.sessionWorkerDone:
-			if r.sessionWorkerErr != nil {
-				p.active = false
-			}
-		default:
-		}
-	}
-	p.executionMayExist = r.config.CodexExecServer != nil || r.executionOwner != nil
-	if p.active {
-		mode := runtimepb.LifecycleIntent_CLOSING
-		if sealUID != "" {
-			mode = runtimepb.LifecycleIntent_QUIESCING
-		}
-		if r.intent != nil && ((sealUID != "" && r.intent.Mode == runtimepb.LifecycleIntent_QUIESCING && r.intent.SealUid == sealUID) ||
-			(sealUID == "" && r.intent.Mode == runtimepb.LifecycleIntent_CLOSING && r.intent.IncarnationUid == incarnationUID)) {
-			p.binding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
-		} else {
-			p.binding = proto.Clone(r.setIntentLocked(mode, incarnationUID, sealUID, false).Binding).(*runtimepb.Binding)
-		}
-	}
-	p.fenceCtx, p.cancelFence = context.WithTimeout(context.Background(), executionFenceGrace)
-	return nil
+ r:=c.r
+ r.transitionMu.Lock()
+ defer r.transitionMu.Unlock()
+ r.mu.Lock()
+ defer r.mu.Unlock()
+ if r.transitionUnsafe!=nil{return fmt.Errorf("prior Runtime transition has an uncertain Execution fence: %w",r.transitionUnsafe)}
+ c.plan.generation=r.desired.Generation
+ c.plan.sessionsStarted=r.sessions!=nil
+ c.plan.sealUID=r.desired.SealUID
+ c.plan.fenceCtx,c.plan.cancelFence=context.WithTimeout(context.Background(),executionFenceGrace)
+ return nil
 }

@@ -233,7 +233,7 @@ func (r *Host) WaitClosed(ctx context.Context) error {
 		if status.Error != "" {
 			return false, errors.New(status.Error)
 		}
-		desired, found, err := harnesshostlifecycle.ReadDesired(context.Background(), r.lifecycle.state)
+		desired, found, err := harnesshostlifecycle.ReadEnvironmentDesired(context.Background(), r.lifecycle.state)
 		if err != nil || !found {
 			return false, err
 		}

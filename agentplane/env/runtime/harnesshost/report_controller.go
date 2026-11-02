@@ -15,7 +15,7 @@ type hostReportController struct{ host *Host }
 func (*hostReportController) Name() string { return "harness-host-report" }
 func (*hostReportController) Inputs() []controller.Input {
 	return []controller.Input{
-		{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.DesiredStateType, Kind: controller.InputWeak},
+		{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.EnvironmentDesiredStateType, Kind: controller.InputWeak},
 		{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.AggregateStatusType, Kind: controller.InputWeak},
 	}
 }

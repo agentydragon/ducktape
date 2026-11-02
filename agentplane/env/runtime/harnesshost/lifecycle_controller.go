@@ -27,7 +27,7 @@ func harnessHostFenceMatches(applied harnesshostlifecycle.HostIntentStatus, inte
 func (*harnessHostLifecycleController) Name() string { return harnessHostControllerName }
 func (*harnessHostLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{harnesshostlifecycle.DesiredStateType, harnesshostlifecycle.HostIntentStatusType, harnessHostAdmissionCountType, session.InspectionStatusType, session.LifecycleStatusType, journalSealType, retained.IngressAckType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
+	for _, kind := range []string{harnesshostlifecycle.EnvironmentDesiredStateType, harnesshostlifecycle.HostIntentStatusType, harnessHostAdmissionCountType, session.InspectionStatusType, session.LifecycleStatusType, journalSealType, retained.IngressAckType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
 		inputs = append(inputs, controller.Input{Namespace: harnesshostlifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -52,7 +52,7 @@ func (c *harnessHostLifecycleController) Run(ctx context.Context, r controller.R
 }
 
 func (c *harnessHostLifecycleController) reconcile(ctx context.Context, r controller.Runtime) error {
-	desiredState, _, err := harnesshostlifecycle.ReadDesired(ctx, r)
+	desiredState, _, err := harnesshostlifecycle.ReadEnvironmentDesired(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -243,7 +243,7 @@ func (c *harnessHostLifecycleController) reconcile(ctx context.Context, r contro
 		}
 	}
 	c.l.host.mu.Lock()
-	latest, found, err := harnesshostlifecycle.ReadDesired(ctx, c.l.state)
+	latest, found, err := harnesshostlifecycle.ReadEnvironmentDesired(ctx, c.l.state)
 	if err != nil {
 		c.l.host.mu.Unlock()
 		return err

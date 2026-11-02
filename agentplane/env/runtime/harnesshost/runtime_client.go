@@ -178,7 +178,7 @@ func (r *Host) ApplyIntent(ctx context.Context, intent *runtimepb.LifecycleInten
 	if changedGeneration {
 		r.nativeStopped = false
 	}
-	err := harnesshostlifecycle.PublishDesired(r.ctx, r.lifecycle.state, harnesshostlifecycle.Desired{Mode: mode, SealUID: intent.SealUid, Generation: intent.Binding.Generation})
+	err := harnesshostlifecycle.PublishDesired(r.ctx, r.lifecycle.state, harnesshostlifecycle.EnvironmentDesired{Mode: mode, SealUID: intent.SealUid, Generation: intent.Binding.Generation})
 	if err == nil {
 		r.ready.Store(true)
 	}

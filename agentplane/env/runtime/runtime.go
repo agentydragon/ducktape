@@ -21,11 +21,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
-	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
+ "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+ "github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
+ "github.com/agentydragon/ducktape/agentplane/env/runtime/session"
+ "google.golang.org/protobuf/types/known/timestamppb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
@@ -80,7 +79,7 @@ type runtimeDeps struct {
 	stopSessions             func(context.Context) error
 	waitSessionsClosed       func(context.Context) error
 	closeSessions            func(context.Context) error
-	runIngress               func(context.Context, *harnesshost.Host, configuration.Endpoint) error
+	runIngress               func(context.Context, configuration.Endpoint) error
 }
 
 type executionHandle interface {
@@ -88,13 +87,7 @@ type executionHandle interface {
 	StopAndFence(context.Context) error
 }
 
-type hostBinding struct {
-	active bool
-}
-
-// Runtime owns the embedded Host lifecycle and serves the Gateway-facing Runner API.
-// Gateway epoch admission remains in env/runtime/control; every direct Host call
-// carries the exact Runtime/Host/generation binding.
+// Runtime owns environment lifecycle and its concrete components.
 type Runtime struct {
 	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 	config Config
@@ -128,9 +121,7 @@ type Runtime struct {
 	desired                  lifecycle.EnvironmentDesired
 	bootID                   string
 	supervisor               *supervision.Supervisor
-	host                     *hostBinding
-	intent                   *runtimepb.LifecycleIntent
-	lastRunning              *runtimepb.Binding
+	admissionOpen bool
 	executorProxy            executorpb.ExecutorServer
 	executionOwner           *executionLifetime
 	activeAdmissions         uint64
@@ -139,15 +130,28 @@ type Runtime struct {
 	execStreams              map[uint64]context.CancelFunc
 	execCalls                map[uint64]context.CancelFunc
 	execCallID               uint64
-	fenceInFlight            *runtimepb.Binding
+	fenceInFlight            uint64
+ fenceDone chan struct{}
+ fenceErr error
 	closing                  bool
 	failed                   bool
 	changes                  chan struct{}
 	fatal                    chan error
 	failureErr               error
 	control                  *control.Server
-	waitBootstrap            func(context.Context) error
-	sessions                 *harnesshost.Host
+	bootstrapWait            func(context.Context) error
+	sessions                 *session.Manager
+ store *retained.Store
+ codexAppServer *codexappserver.Host
+ createMu sync.Mutex
+ sealPublishMu sync.Mutex
+ idleSince *timestamppb.Timestamp
+ startupComplete bool
+ harnessSupervisor *supervision.Supervisor
+ workspaceSupervisor *supervision.Supervisor
+ harnessProcesses *supervision.Host
+ sessionWorkers sync.WaitGroup
+ sessionScripts *scripts.Runner
 	sessionWorkerDone        chan struct{}
 	sessionWorkerErr         error
 	ingress                  *ingressWorker
@@ -232,8 +236,8 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	r := &Runtime{
 		config: config, deps: deps, owner: owner, state: environmentState, supervisor: supervisor,
 		lifecycleState: lifecycleState, lifecycleStore: lifecycleStore, lifecycleCancel: cancelRuntime, lifecycleDone: make(chan struct{}), lifecycleContext: runtimeCtx,
-		bootID: uuid.NewString(), changes: make(chan struct{}), fatal: make(chan error, 1), waitBootstrap: deps.waitBootstrap,
-		desired: lifecycle.EnvironmentDesired{Mode: lifecycle.Quiescing, Generation: 1}, closeDone: make(chan struct{}),
+		bootID: uuid.NewString(), changes: make(chan struct{}), fatal: make(chan error, 1), bootstrapWait: deps.waitBootstrap,
+		desired: lifecycle.EnvironmentDesired{Mode: lifecycle.Inactive, Generation: 1}, closeDone: make(chan struct{}),
 		execStreams: make(map[uint64]context.CancelFunc), execCalls: make(map[uint64]context.CancelFunc),
 	}
 	if r.deps.startExecution == nil {
@@ -308,9 +312,6 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 	if err := engine.RegisterController(r.lifecycleCoordinator); err != nil {
 		return err
 	}
-	if err := engine.RegisterController(&hostReportObserver{runtime: r}); err != nil {
-		return err
-	}
 	if r.executionLifecycle != nil {
 		if err := engine.RegisterQController(&executionController{host: r.executionLifecycle}); err != nil {
 			return err
@@ -348,24 +349,12 @@ func (r *Runtime) startLifecycleEngineLocked() {
 	})
 }
 
-// admitLifecycleEffect serializes bootstrap admission with Runtime generation changes.
-func (r *Runtime) admitLifecycleEffect(ctx context.Context, expected lifecycle.EnvironmentDesired, effect func(context.Context) error) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if r.closing || r.desired != expected || r.desired.Mode != lifecycle.Running {
-		return nil
-	}
-	return effect(ctx)
-}
-
 // Close stops Runtime-owned bootstrap work and releases the environment-owner lock.
 // Canceling ctx only stops this caller's wait; shutdown and worker joining continue.
 func (r *Runtime) Close(ctx context.Context) error {
 	r.mu.Lock()
 	r.closing = true
+ r.admissionOpen = false
 	if r.activeTransitionCancel != nil {
 		r.activeTransitionCancel()
 	}
@@ -398,7 +387,10 @@ func (r *Runtime) Close(ctx context.Context) error {
 
 func (r *Runtime) finishClose() error {
 	r.mu.Lock()
-	desired := lifecycle.EnvironmentDesired{Mode: lifecycle.Closing, Generation: r.desired.Generation + 1}
+	desired := r.desired
+ desired.Mode, desired.Generation = lifecycle.Closing, desired.Generation+1
+ if sealedUID,sealed,err:=r.state.SealedUID();err!=nil {r.mu.Unlock();return err}else if sealed {desired.SealUID=sealedUID;desired.IncarnationUID=sealedUID}
+ r.admissionOpen = false
 	if err := lifecycle.PublishEnvironmentDesired(context.Background(), r.lifecycleState, desired); err != nil {
 		r.mu.Unlock()
 		return fmt.Errorf("publish Runtime closing state: %w", err)
@@ -515,13 +507,6 @@ func (r *Runtime) changed() {
 	r.mu.Unlock()
 }
 
-func (r *Runtime) waitForHostNativeStopped(ctx context.Context, binding *runtimepb.Binding) error {
-	_, err := r.waitForAppliedHostReport(ctx, binding, func(report *runtimepb.HostReport) bool {
-		return report.NativeStopped
-	}, errors.New("Session component became unavailable before native-stop acknowledgement"))
-	return err
-}
-
 func (r *Runtime) startExecutionForUID(ctx context.Context, uid string) error {
 	if r.config.CodexExecServer == nil {
 		return nil
@@ -531,33 +516,6 @@ func (r *Runtime) startExecutionForUID(ctx context.Context, uid string) error {
 		return err
 	}
 	return r.executionLifecycle.wait(ctx, uid, demand)
-}
-
-func (r *Runtime) publishIntent(ctx context.Context, desiredMode lifecycle.Mode, intentMode runtimepb.LifecycleIntent_Mode, uid, sealUID string) (*runtimepb.Binding, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.closing || r.host == nil || !r.host.active {
-		return nil, status.Error(codes.Unavailable, "environment Runtime or Harness Host is closing")
-	}
-	desired := lifecycle.EnvironmentDesired{Mode: desiredMode, SealUID: sealUID, Generation: r.desired.Generation + 1}
-	if err := lifecycle.PublishEnvironmentDesired(ctx, r.lifecycleState, desired); err != nil {
-		return nil, status.Errorf(codes.Unavailable, "publish environment lifecycle generation: %v", err)
-	}
-	r.desired = desired
-	intent := r.setIntentLocked(intentMode, uid, sealUID, false)
-	if intentMode != runtimepb.LifecycleIntent_RUNNING && r.executionLifecycle != nil {
-		r.executionLifecycle.cancelStart()
-	}
-	if intentMode == runtimepb.LifecycleIntent_RUNNING {
-		r.lastRunning = proto.Clone(intent.Binding).(*runtimepb.Binding)
-	}
-	return proto.Clone(intent.Binding).(*runtimepb.Binding), nil
-}
-
-func (r *Runtime) setLastRunning(binding *runtimepb.Binding) {
-	r.mu.Lock()
-	r.lastRunning = proto.Clone(binding).(*runtimepb.Binding)
-	r.mu.Unlock()
 }
 
 func (r *Runtime) requestBootstrap(ctx context.Context) error {
@@ -588,25 +546,16 @@ func (r *Runtime) stopExecution(ctx context.Context) error {
 }
 
 func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, error) {
-	r.mu.Lock()
-	var facts *environmentruntimestatepb.EnvironmentRuntimeFacts
-	hostReady := false
-	report := r.hostReportLocked()
-	intentPresent := r.host != nil && report != nil
-	if intentPresent {
-		hostReady = report.Ready
-	}
-	if hostReady && report.Facts != nil {
-		facts = proto.Clone(report.Facts).(*environmentruntimestatepb.EnvironmentRuntimeFacts)
-	}
-	desired, closing := r.desired, r.closing
-	activeAdmissions := r.activeAdmissions
-	activeExecution := r.activeExecutionCalls
-	executionRecovering := r.executionOwner.recovering()
-	r.mu.Unlock()
-	if facts == nil {
-		facts = &environmentruntimestatepb.EnvironmentRuntimeFacts{}
-	}
+ facts, err := r.sessionFacts(context.Background())
+ if err != nil { return nil, err }
+ r.mu.Lock()
+ desired, closing := r.desired, r.closing
+ activeAdmissions := r.activeAdmissions
+ activeExecution := r.activeExecutionCalls
+ executionRecovering := r.executionOwner.recovering()
+ ready := r.startupComplete && !r.failed
+ r.mu.Unlock()
+ if facts == nil { facts = &environmentruntimestatepb.EnvironmentRuntimeFacts{} }
 	bootstrapActive := false
 	if r.bootstrapHost != nil && r.bootstrapHost.Configured() {
 		request, requestFound, err := bootstrap.ReadRequest(context.Background(), r.lifecycleState)
@@ -636,7 +585,7 @@ func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, e
 			}
 		}
 	}
-	if (closing || desired.Mode == lifecycle.Closing || desired.Mode == lifecycle.Quiescing) && !hostReady {
+	if (closing || desired.Mode == lifecycle.Closing || desired.Mode == lifecycle.Quiescing) && !ready {
 		facts.QuiesceStage = environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_DRAINING
 	}
 	if activeAdmissions > 0 && !hasAutosuspendReason(facts.AutosuspendBlockers, "Admission") {
@@ -651,8 +600,8 @@ func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, e
 	if activeAdmissions > 0 || activeExecution > 0 || executionRecovering || bootstrapActive || r.state.Lameduck() || desired.Mode != lifecycle.Running {
 		facts.IdleSince = nil
 	} else if desired.Mode == lifecycle.Running {
-		// The Host's idle timestamp is valid only while the active environment binding matches.
-		if !intentPresent || !hostReady {
+		// Idle observations are valid only after Session recovery.
+		if !ready {
 			facts.IdleSince = nil
 		}
 	}
@@ -693,21 +642,6 @@ func (r *Runtime) changedLocked() {
 	r.changes = make(chan struct{})
 }
 
-func (r *Runtime) intentChangedLocked() {
-	if err := r.publishHostIntentLocked(); err != nil {
-		r.failed = true
-		r.revokeHostBindingLocked()
-		if r.failureErr == nil {
-			r.failureErr = err
-		}
-		select {
-		case r.fatal <- err:
-		default:
-		}
-	}
-	r.changedLocked()
-}
-
 func (r *Runtime) fail(err error) {
 	if err == nil {
 		return
@@ -717,7 +651,7 @@ func (r *Runtime) fail(err error) {
 		r.failureErr = err
 	}
 	r.failed = true
-	r.revokeHostBindingLocked()
+	r.admissionOpen = false
 	r.changedLocked()
 	r.mu.Unlock()
 	select {
@@ -738,5 +672,4 @@ func (r *Runtime) failureLocked() error {
 
 var (
 	_ environmentruntimepb.EnvironmentRuntimeServer = (*Runtime)(nil)
-	_ harnesshost.RuntimeBridge                     = (*Runtime)(nil)
 )

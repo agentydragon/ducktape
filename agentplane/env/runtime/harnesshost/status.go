@@ -52,7 +52,7 @@ func (r *Host) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) (*s
 			result.Processes = append(result.Processes, process)
 		}
 	}
-	desired, desiredFound, err := harnesshostlifecycle.ReadDesired(ctx, r.lifecycle.state)
+	desired, desiredFound, err := harnesshostlifecycle.ReadEnvironmentDesired(ctx, r.lifecycle.state)
 	if err != nil {
 		return nil, rpcError(err)
 	}
@@ -64,7 +64,7 @@ func (r *Host) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) (*s
 	return result, nil
 }
 
-func harnessHostLifecycleStatus(desired harnesshostlifecycle.Desired, desiredFound bool, progress harnesshostlifecycle.Status, progressFound bool) *sessionpb.EnvironmentRuntimeLifecycleStatus {
+func harnessHostLifecycleStatus(desired harnesshostlifecycle.EnvironmentDesired, desiredFound bool, progress harnesshostlifecycle.Status, progressFound bool) *sessionpb.EnvironmentRuntimeLifecycleStatus {
 	current := desiredFound && progressFound && desired.Generation == progress.Generation
 	status := &sessionpb.EnvironmentRuntimeLifecycleStatus{
 		DesiredMode:        harnessHostLifecycleMode(desired.Mode, desiredFound),
@@ -216,7 +216,7 @@ func (r *Host) factsWithContext(ctx context.Context) (*environmentruntimestatepb
 		if err != nil {
 			return nil, err
 		}
-		desiredState, _, err := harnesshostlifecycle.ReadDesired(ctx, r.lifecycle.state)
+		desiredState, _, err := harnesshostlifecycle.ReadEnvironmentDesired(ctx, r.lifecycle.state)
 		if err != nil {
 			return nil, err
 		}

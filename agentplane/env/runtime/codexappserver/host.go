@@ -80,7 +80,7 @@ type Dependencies struct {
 	HarnessEnvironment map[string]string
 	StateDir           string
 	RequestAdmission   RequestAdmission
-	Admission          lifecycle.AdmissionGuard
+	Admission          lifecycle.EnvironmentAdmissionGuard
 	ExecServerURL      string
 	ExecutionReady     func(context.Context) (bool, error)
 	Readiness          Readiness
@@ -226,7 +226,7 @@ func (c *Host) Host(ctx context.Context, s *Attachment) (*Process, error) {
 	}
 	var ready *Process
 	err := c.waitFor(ctx, func() (bool, error) {
-		desired, _, err := lifecycle.ReadDesired(c.deps.Context, c.deps.State)
+		desired, _, err := lifecycle.ReadEnvironmentDesired(c.deps.Context, c.deps.State)
 		if err != nil {
 			return false, err
 		}
@@ -277,7 +277,7 @@ func (c *Host) Host(ctx context.Context, s *Attachment) (*Process, error) {
 
 // RequestLocked records accepted demand. Caller holds the Harness Host admission barrier.
 func (c *Host) RequestLocked(ctx context.Context, s *Attachment) (uint64, error) {
-	desired, found, err := lifecycle.ReadDesired(ctx, c.deps.State)
+	desired, found, err := lifecycle.ReadEnvironmentDesired(ctx, c.deps.State)
 	if err != nil {
 		return 0, err
 	}

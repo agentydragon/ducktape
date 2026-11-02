@@ -55,7 +55,7 @@ func newLifecycle(r *Host, store state.State, engine *cosiruntime.Runtime, engin
 			return nil, err
 		}
 	}
-	if err := harnesshostlifecycle.PublishDesired(l.host.ctx, l.state, harnesshostlifecycle.Desired{Mode: harnesshostlifecycle.Quiescing}); err != nil {
+	if err := harnesshostlifecycle.PublishDesired(l.host.ctx, l.state, harnesshostlifecycle.EnvironmentDesired{Mode: harnesshostlifecycle.Quiescing}); err != nil {
 		return nil, err
 	}
 	if err := l.state.Create(r.ctx, lifecycleResourceFor(harnesshostlifecycle.ResourceID, harnessHostAdmissionCountSpec{}), state.WithCreateOwner(harnesshostlifecycle.HostOwner)); err != nil {
@@ -100,11 +100,11 @@ func (r *Host) launchProcess(ctx context.Context, owner string, supervisor *supe
 	return r.lifecycle.processes.Launch(ctx, owner, generation, supervisor, config)
 }
 
-func (l *lifecycle) desiredState() harnesshostlifecycle.Desired {
-	value, _, err := harnesshostlifecycle.ReadDesired(l.host.ctx, l.state)
+func (l *lifecycle) desiredState() harnesshostlifecycle.EnvironmentDesired {
+	value, _, err := harnesshostlifecycle.ReadEnvironmentDesired(l.host.ctx, l.state)
 	if err != nil {
 		l.host.fail(err)
-		return harnesshostlifecycle.Desired{Mode: harnesshostlifecycle.Closing}
+		return harnesshostlifecycle.EnvironmentDesired{Mode: harnesshostlifecycle.Closing}
 	}
 	return value
 }
@@ -135,7 +135,7 @@ func (l *lifecycle) setDesiredState(mode harnesshostlifecycle.Mode, sealUID stri
 	return harnesshostlifecycle.PublishDesired(l.host.ctx, l.state, desiredState)
 }
 
-func (r *Host) admitLifecycleEffect(ctx context.Context, expected harnesshostlifecycle.Desired, effect func(context.Context) error) error {
+func (r *Host) admitLifecycleEffect(ctx context.Context, expected harnesshostlifecycle.EnvironmentDesired, effect func(context.Context) error) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closing || !r.ready.Load() || r.intent == nil || r.intent.Binding == nil ||
@@ -143,7 +143,7 @@ func (r *Host) admitLifecycleEffect(ctx context.Context, expected harnesshostlif
 		!r.RuntimeBindingMatches(r.intent.Binding.RuntimeBootId) {
 		return nil
 	}
-	current, found, err := harnesshostlifecycle.ReadDesired(ctx, r.lifecycle.state)
+	current, found, err := harnesshostlifecycle.ReadEnvironmentDesired(ctx, r.lifecycle.state)
 	if err != nil {
 		return err
 	}

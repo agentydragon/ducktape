@@ -21,7 +21,7 @@ func (*LifecycleController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
 			{Namespace: lifecycle.Namespace, Type: LifecycleSignalType, Kind: controller.InputQPrimary},
-			{Namespace: lifecycle.Namespace, Type: lifecycle.DesiredStateType, Kind: controller.InputQMapped},
+			{Namespace: lifecycle.Namespace, Type: lifecycle.EnvironmentDesiredStateType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.AggregateStatusType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.ExecutionStatusType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: OperationStateType, Kind: controller.InputQMapped},
@@ -54,7 +54,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	if err != nil {
 		return err
 	}
-	desiredState, _, err := lifecycle.ReadDesired(ctx, r)
+	desiredState, _, err := lifecycle.ReadEnvironmentDesired(ctx, r)
 	if err != nil {
 		return err
 	}

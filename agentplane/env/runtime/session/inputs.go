@@ -66,7 +66,7 @@ func (s *Session) readyLocked() bool {
 }
 
 func (s *Session) executionClosed() bool {
-	desired, _, err := harnesshostlifecycle.ReadDesired(s.deps.ctx, s.deps.state)
+	desired, _, err := harnesshostlifecycle.ReadEnvironmentDesired(s.deps.ctx, s.deps.state)
 	if err != nil {
 		s.deps.fail(err)
 		return true
