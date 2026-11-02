@@ -24,6 +24,7 @@ from devinfra.pr_visuals.metadata import (
     ReviewAsset,
     ReviewBundleMetadata,
     ReviewResult,
+    ReviewResultIssue,
     ReviewTest,
 )
 from devinfra.pr_visuals.publisher import (
@@ -351,7 +352,44 @@ def test_download_marks_variant_and_target_status_issues(monkeypatch: pytest.Mon
     assert len(tests[0].assets) == 1
     assert len(tests[0].assets[0].variants) == 2
     assert tests[0].assets[0].checkpoint == "expanded"
-    assert any("FAILED" in issue for issue in tests[0].issues)
+    assert any(isinstance(issue, str) and "successfully" in issue for issue in tests[0].issues)
+
+
+def test_failed_shards_are_grouped_and_linked_in_comment_and_gallery(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    invocation = "d1fafe09-e2cf-5409-8fbc-7ab0308820c4"
+    message = "terminal attempt has no confirmed successful result (status=FAILED)"
+    results = tuple(
+        ResultCoverage(
+            ResultKey(invocation, "//ui:visual", "abcdef0123456789", 1, shard, 1),
+            "FAILED",
+            "FAILED",
+            1,
+            False,
+            (message,),
+        )
+        for shard in (1, 2, 3, 5, 10, 11)
+    )
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.collect_outputs", lambda *_a, **_k: CollectedOutputs((), (), results, (), False)
+    )
+    downloaded = download_visual_tests([invocation], tmp_path / "downloads", repository="owner/repo")
+    bundle = build_bundle(
+        downloaded, tmp_path / "site", commit_sha="b" * 40, repository="owner/repo", base_sha="a" * 40
+    )
+    test = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests[0]
+    comment = success_comment_body(
+        repository="owner/repo", commit_sha="b" * 40, url="https://visuals/", review_tests=[test], base_sha="a" * 40
+    )
+    page = (bundle / "tests" / test.slug / "index.html").read_text()
+    for rendered in (comment, page):
+        assert rendered.count(message) == 1
+        assert "shards 1-3, 5, 10-11" in rendered
+        assert f'href="https://app.buildbuddy.io/invocation/{invocation}"' in rendered
+        assert "ResultKey(" not in rendered
+        assert "abcdef0123456789" not in rendered
+    assert not test.baseline_eligible
 
 
 def test_download_rejects_ambiguous_configurations(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -375,7 +413,7 @@ def test_download_rejects_ambiguous_configurations(monkeypatch: pytest.MonkeyPat
         run=_download_runner({Blob(body).uri: body for body in (b"one", b"two")}),
     )
     assert tests[0].configuration is None
-    assert any("configurations" in issue for issue in tests[0].issues)
+    assert any(isinstance(issue, str) and "configurations" in issue for issue in tests[0].issues)
 
 
 def test_produced_outputs_survive_collection_and_content_addressed_publication(tmp_path: Path) -> None:
@@ -1086,7 +1124,7 @@ def test_configuration_mismatch_and_incomplete_result_cannot_advance_baseline(tm
     review = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests[0]
     assert not review.baseline_eligible
     assert review.assets[0].classification is None
-    assert any("configurations cannot be compared" in issue for issue in review.issues)
+    assert any(isinstance(issue, str) and "configurations cannot be compared" in issue for issue in review.issues)
     incomplete = DownloadedVisualTest(
         candidate.target_label,
         candidate.slug,
@@ -1268,7 +1306,7 @@ def _test_from_files(
     *,
     repository: str = "r",
     configuration: str | None = "cfg",
-    issues: list[str] | None = None,
+    issues: list[str | ReviewResultIssue] | None = None,
 ) -> DownloadedVisualTest:
     return DownloadedVisualTest(
         label,

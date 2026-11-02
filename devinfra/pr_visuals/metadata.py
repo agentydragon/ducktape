@@ -30,6 +30,15 @@ class ReviewResult(BaseModel):
     record_uri: str | None = None
 
 
+class ReviewResultIssue(BaseModel):
+    message: str
+    invocation: str
+    configuration: str | None
+    run: int | None
+    shards: list[int | None]
+    attempt: int | None
+
+
 class ReviewVariant(BaseModel):
     """One distinct image and the test results that produced its bytes."""
 
@@ -80,8 +89,8 @@ class ReviewTest(BaseModel):
     title: str
     assets: list[ReviewAsset]
     baseline_eligible: bool = False
-    issues: list[str] = Field(default_factory=list)
-    notices: list[str] = Field(default_factory=list)
+    issues: list[str | ReviewResultIssue] = Field(default_factory=list)
+    notices: list[str | ReviewResultIssue] = Field(default_factory=list)
     comparison_profile: str = "bazel-configuration-exact-v1"
     configuration: str | None = None
     base_sha: str | None = None

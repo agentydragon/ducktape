@@ -31,7 +31,7 @@ from PIL import Image
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.artifacts import Runner
 from devinfra.pr_visuals.check_run import upsert_check_run
-from devinfra.pr_visuals.collection import OutputObservation, collect_outputs
+from devinfra.pr_visuals.collection import OutputObservation, ResultCoverage, collect_outputs
 from devinfra.pr_visuals.metadata import (
     BaselineMetadata,
     BaselinePointer,
@@ -39,6 +39,7 @@ from devinfra.pr_visuals.metadata import (
     ReviewAsset,
     ReviewBundleMetadata,
     ReviewResult,
+    ReviewResultIssue,
     ReviewTest,
     ReviewVariant,
 )
@@ -88,8 +89,56 @@ class DownloadedVisualTest:
     title: str
     assets: list[DownloadedAsset]
     configuration: str | None
-    issues: list[str]
-    notices: list[str] = field(default_factory=list)
+    issues: list[str | ReviewResultIssue]
+    notices: list[str | ReviewResultIssue] = field(default_factory=list)
+
+
+def _result_issues(results: list[ResultCoverage], *, notices: bool = False) -> list[ReviewResultIssue]:
+    groups: dict[tuple[str, str | None, int | None, int | None, str], set[int | None]] = defaultdict(set)
+    for entry in results:
+        result = entry.result
+        for message in entry.issues:
+            if (message == "superseded by retry") != notices:
+                continue
+            groups[result.invocation, result.configuration, result.run, result.attempt, message].add(result.shard)
+    return [
+        ReviewResultIssue(
+            message=message,
+            invocation=invocation,
+            configuration=configuration,
+            run=run,
+            attempt=attempt,
+            shards=sorted(shards, key=lambda shard: (shard is None, shard or 0)),
+        )
+        for (invocation, configuration, run, attempt, message), shards in groups.items()
+    ]
+
+
+def _shard_ranges(shards: list[int | None]) -> str:
+    numbers = sorted({shard for shard in shards if shard is not None})
+    ranges: list[str] = []
+    start = end = 0
+    for number in numbers:
+        if ranges and number == end + 1:
+            end = number
+            ranges[-1] = f"{start}-{end}"
+        else:
+            start = end = number
+            ranges.append(str(number))
+    if None in shards:
+        ranges.append("unknown")
+    return ", ".join(ranges)
+
+
+def _issue_html(issue: str | ReviewResultIssue) -> str:
+    if isinstance(issue, str):
+        return html.escape(issue)
+    shard_label = "shard" if len(issue.shards) == 1 else "shards"
+    details = f"{shard_label} {_shard_ranges(issue.shards)} · run {issue.run or 'unknown'} · attempt {issue.attempt or 'unknown'}"
+    if issue.configuration:
+        details += f" · config {issue.configuration[:8]}"
+    url = f"https://app.buildbuddy.io/invocation/{urllib.parse.quote(issue.invocation, safe='')}"
+    return f'{html.escape(issue.message)} ({html.escape(details)}) · <a href="{html.escape(url, quote=True)}">BuildBuddy</a>'
 
 
 class BaselineSource(Protocol):
@@ -384,19 +433,10 @@ def download_visual_tests(
     downloads: list[_Download] = []
     for target, selected in sorted(by_target.items()):
         target_results = [entry for entry in collected.results if entry.result.target == target]
-        issues = [
-            f"{entry.result}: {message}"
-            for entry in target_results
-            for message in entry.issues
-            if message != "superseded by retry"
-        ]
+        issues: list[str | ReviewResultIssue] = list(_result_issues(target_results))
         if any(entry.overall_status not in ("PASSED", "FLAKY") for entry in target_results):
             issues.append("The overall test result did not complete successfully.")
-        notices = [
-            f"{entry.result}: superseded by a retry"
-            for entry in target_results
-            if "superseded by retry" in entry.issues
-        ]
+        notices: list[str | ReviewResultIssue] = list(_result_issues(target_results, notices=True))
         configurations = {entry.result.configuration for entry in target_results}
         configuration = next(iter(configurations)) if len(configurations) == 1 else None
         if len(configurations) != 1 or None in configurations:
@@ -538,6 +578,8 @@ def _review_test_page_data(
     test: ReviewTest, *, asset_base: str, page_url: str, shared_asset_base: str
 ) -> dict[str, Any]:
     page = test.model_dump(exclude_none=True)
+    page["issues_html"] = [_issue_html(issue) for issue in test.issues]
+    page["notices_html"] = [_issue_html(notice) for notice in test.notices]
     page["assets"] = [
         _asset_page_data(asset, asset_base=asset_base, page_url=page_url, shared_asset_base=shared_asset_base)
         for asset in _ordered_assets(test.assets)
@@ -984,7 +1026,7 @@ def _target_section(test: ReviewTest, *, url: str, open_section: bool, ci_detail
         f"{html.escape(test.title)} · {gallery_link}{rerun_link}</summary>",
         "",
     ]
-    lines.extend(f"- ⚠️ {html.escape(issue)}" for issue in test.issues)
+    lines.extend(f"- ⚠️ {_issue_html(issue)}" for issue in test.issues)
     for index, asset in enumerate(assets):
         if len(assets) <= INLINE_ASSET_LIMIT:
             content = _asset_comment_lines(asset, asset_base=asset_base, gallery_url=gallery_url, test=test)
