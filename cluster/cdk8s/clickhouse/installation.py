@@ -30,7 +30,6 @@ from clickhouse_installation_crds.com.altinity.clickhouse import (
     ClickHouseInstallationSpecDefaultsTemplates,
     ClickHouseInstallationSpecTemplates,
     ClickHouseInstallationSpecTemplatesPodTemplates,
-    ClickHouseInstallationSpecTemplatesServiceTemplates,
     ClickHouseInstallationSpecTemplatesVolumeClaimTemplates,
     ClickHouseInstallationSpecTemplatesVolumeClaimTemplatesReclaimPolicy,
 )
@@ -87,10 +86,6 @@ _PIRAEUS_SSD_STORAGE_CLASS = "piraeus-ssd-local"
 _CLICKHOUSE_PIRAEUS_103656_POD_TEMPLATE = "clickhouse-piraeus-103656"
 _CLICKHOUSE_PIRAEUS_102453_POD_TEMPLATE = "clickhouse-piraeus-102453"
 _CLICKHOUSE_PIRAEUS_HDD_CLAIM = "data-piraeus-hdd"
-# During the HDD-pool incident, keep shared client traffic on the healthy existing replica.
-# Remove the pin only after the replacement has passed independent catch-up and query checks.
-_CLIENT_REPLICA_SELECTOR = {"statefulset.kubernetes.io/pod-name": "chi-clickhouse-default-0-1-0"}
-_CLIENT_SERVICE_TEMPLATE = "incident-client-service"
 _ANY_ADDRESS = ["0.0.0.0/0", "::/0"]
 _HDD_NODE_SELECTOR = {**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "hdd"}
 _SSD_NODE_SELECTOR = {**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "ssd"}
@@ -405,22 +400,10 @@ def clickhouse_chart(app: App) -> Chart:
                 # ClickHouse to recognize its own member in the distributed-DDL host list.
                 replicas_use_fqdn="yes",
                 templates=ClickHouseInstallationSpecDefaultsTemplates(
-                    pod_template=pod_template,
-                    data_volume_claim_template=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
-                    service_template=_CLIENT_SERVICE_TEMPLATE,
+                    pod_template=pod_template, data_volume_claim_template=_CLICKHOUSE_PIRAEUS_HDD_CLAIM
                 ),
             ),
             templates=ClickHouseInstallationSpecTemplates(
-                service_templates=[
-                    ClickHouseInstallationSpecTemplatesServiceTemplates(
-                        name=_CLIENT_SERVICE_TEMPLATE,
-                        spec=k8s.ServiceSpec(
-                            type="ClusterIP",
-                            selector=_CLIENT_REPLICA_SELECTOR,
-                            ports=[k8s.ServicePort(name="http", port=8123), k8s.ServicePort(name="tcp", port=9000)],
-                        ),
-                    )
-                ],
                 pod_templates=[
                     _clickhouse_pod_template(pod_template, _HDD_NODE_SELECTOR),
                     _clickhouse_pod_template(
@@ -529,7 +512,7 @@ def service_chart(app: App) -> Chart:
             annotations={"description": "Stable client endpoint for the shared ClickHouse installation."},
         ),
         spec=k8s.ServiceSpec(
-            selector={**client.HTTP.pods.selector, **_CLIENT_REPLICA_SELECTOR},
+            selector=client.HTTP.pods.selector,
             ports=[client.HTTP.port.k8s_service_port(), client.NATIVE.port.k8s_service_port()],
         ),
     )

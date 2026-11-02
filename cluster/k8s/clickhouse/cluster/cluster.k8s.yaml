@@ -226,7 +226,6 @@ spec:
     templates:
       podTemplate: clickhouse
       dataVolumeClaimTemplate: data-piraeus-hdd
-      serviceTemplate: incident-client-service
   configuration:
     zookeeper:
       nodes:
@@ -571,17 +570,6 @@ spec:
             requests:
               storage: 500Gi
           storageClassName: piraeus-hdd-local
-    serviceTemplates:
-      - name: incident-client-service
-        spec:
-          ports:
-            - name: http
-              port: 8123
-            - name: tcp
-              port: 9000
-          selector:
-            statefulset.kubernetes.io/pod-name: chi-clickhouse-default-0-1-0
-          type: ClusterIP
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
@@ -620,7 +608,6 @@ spec:
     clickhouse.altinity.com/chi: clickhouse
     clickhouse.altinity.com/namespace: clickhouse
     clickhouse.altinity.com/ready: "yes"
-    statefulset.kubernetes.io/pod-name: chi-clickhouse-default-0-1-0
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
