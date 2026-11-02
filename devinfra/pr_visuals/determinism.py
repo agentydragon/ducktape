@@ -25,7 +25,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from devinfra.pr_visuals.artifacts import Runner, list_ci_artifacts
+from devinfra.pr_visuals.artifacts import Runner, TestResultIdentity, list_ci_artifacts
 from devinfra.pr_visuals.targets import TestRun, list_test_runs
 from util.bazel.workspace import get_build_workspace_directory
 from util.visual_review import MANIFEST_NAME, VisualReviewManifest
@@ -159,7 +159,7 @@ def observe(
     """An image counts as published only when that run's manifest declares it."""
     artifacts = list_ci_artifacts(invocations, bbapi=bbapi, run=run)
     manifests: dict[str, VisualReviewManifest] = {}
-    declared: dict[tuple[str, str], set[str]] = defaultdict(set)
+    declared: dict[tuple[str, str, TestResultIdentity | None], set[str]] = defaultdict(set)
     review: dict[Render, Observation] = {}
     for listed in artifacts:
         if listed.artifact.file.name != f"test.outputs/{MANIFEST_NAME}":
@@ -168,7 +168,10 @@ def observe(
         if uri not in manifests:
             manifests[uri] = read_manifest(uri)
         for asset in manifests[uri].assets:
-            declared[listed.invocation_id, listed.artifact.label].add(asset.path)
+            # A manifest only registers outputs from the exact test result that wrote it. A
+            # target can have several shards with the same output name, and invocation + label
+            # alone would let one shard's manifest authorize another shard's image.
+            declared[listed.invocation_id, listed.artifact.label, listed.artifact.test_result_identity].add(asset.path)
             # Keep declarations even when the PNG is absent from every run.
             review.setdefault(Render(listed.artifact.label, asset.path), Observation(by_digest={}))
 
@@ -178,7 +181,7 @@ def observe(
             continue
         render = Render(listed.artifact.label, listed.artifact.file.name.removeprefix("test.outputs/"))
         if render in review:
-            if render.asset not in declared[listed.invocation_id, render.target]:
+            if render.asset not in declared[listed.invocation_id, render.target, listed.artifact.test_result_identity]:
                 continue
             observation = review[render]
         else:

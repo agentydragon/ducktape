@@ -34,8 +34,28 @@ def _listing(by_invocation: dict[str, list[dict[str, object]]]):
     return fake_run
 
 
-def _artifact(label: str, name: str, uri: str) -> dict[str, object]:
-    return {"id": {"testResult": {"label": label}}, "file": {"name": f"test.outputs/{name}", "uri": uri}}
+def _artifact(
+    label: str,
+    name: str,
+    uri: str,
+    *,
+    configuration_id: str = "default",
+    run: int = 1,
+    shard: int = 1,
+    attempt: int = 1,
+) -> dict[str, object]:
+    return {
+        "id": {
+            "testResult": {
+                "label": label,
+                "configuration": {"id": configuration_id},
+                "run": run,
+                "shard": shard,
+                "attempt": attempt,
+            }
+        },
+        "file": {"name": f"test.outputs/{name}", "uri": uri},
+    }
 
 
 def _manifest(*names: str) -> VisualReviewManifest:
@@ -144,6 +164,30 @@ def test_shard_manifests_are_unioned_without_counting_duplicate_outputs_as_runs(
     assert analyze(observations.review, runs=2) == Findings(drifted=[], missing=[Render("//ui:visual", "list.png")])
     assert observations.review[Render("//ui:visual", "list.png")].runs_present == 1
     assert observations.review[Render("//ui:visual", "detail.png")].runs_present == 2
+
+
+def test_a_shard_manifest_does_not_authorize_another_shards_same_named_image() -> None:
+    listings = {
+        invocation: [
+            _artifact("//ui:visual", "visual-review.json", f"list-manifest-{invocation}", shard=1),
+            _artifact("//ui:visual", "visual-review.json", f"detail-manifest-{invocation}", shard=2),
+            _artifact("//ui:visual", "list.png", "stable-list", shard=1),
+            _artifact("//ui:visual", "list.png", f"wrong-list-{invocation}", shard=2),
+            _artifact("//ui:visual", "detail.png", "stable-detail", shard=2),
+        ]
+        for invocation in ("run-1", "run-2")
+    }
+    manifests = {f"list-manifest-{invocation}": _manifest("list.png") for invocation in ("run-1", "run-2")} | {
+        f"detail-manifest-{invocation}": _manifest("detail.png") for invocation in ("run-1", "run-2")
+    }
+
+    observations = observe(
+        list(listings), bbapi=Path("bbapi"), run=_listing(listings), read_manifest=manifests.__getitem__
+    )
+
+    assert analyze(observations.review, runs=2) == Findings(drifted=[], missing=[])
+    assert observations.review[Render("//ui:visual", "list.png")].by_digest == {"stable-list": ["run-1", "run-2"]}
+    assert observations.review[Render("//ui:visual", "detail.png")].by_digest == {"stable-detail": ["run-1", "run-2"]}
 
 
 def test_conflicting_outputs_in_one_run_do_not_hide_a_missing_run() -> None:

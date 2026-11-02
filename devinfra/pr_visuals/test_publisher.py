@@ -15,6 +15,8 @@ from botocore.exceptions import ClientError
 from PIL import Image
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
+from devinfra.pr_visuals import publisher as visual_publisher
+from devinfra.pr_visuals.artifacts import BuildBuddyArtifact, ListedArtifact
 from devinfra.pr_visuals.publisher import (
     COMMENT_BUDGET,
     COMMENT_MARKER,
@@ -66,6 +68,30 @@ def _manifest(title: str, *assets: str) -> bytes:
             "assets": [{"path": asset, "label": asset.removesuffix(".png")} for asset in assets],
         }
     ).encode()
+
+
+def _test_artifact(
+    label: str,
+    name: str,
+    uri: str,
+    *,
+    configuration_id: str = "default",
+    run: int = 1,
+    shard: int = 1,
+    attempt: int = 1,
+) -> dict[str, object]:
+    return {
+        "id": {
+            "testResult": {
+                "label": label,
+                "configuration": {"id": configuration_id},
+                "run": run,
+                "shard": shard,
+                "attempt": attempt,
+            }
+        },
+        "file": {"name": f"test.outputs/{name}", "uri": uri},
+    }
 
 
 def _listing(
@@ -511,6 +537,133 @@ def test_download_visual_tests_unions_a_sharded_targets_manifests(tmp_path: Path
     assert {asset.path for asset in tests[0].manifest.assets} == {"list.png", "detail.png"}
     assert (tests[0].directory / "list.png").read_bytes() == b"list-png"
     assert (tests[0].directory / "detail.png").read_bytes() == b"detail-png"
+
+
+@pytest.mark.parametrize(
+    ("second_asset_uri", "second_asset_bytes"),
+    [
+        pytest.param("screen-shard-4", b"screen from shard 4", id="different-images"),
+        pytest.param("screen-shard-3", b"screen from shard 3", id="same-content-addressed-image"),
+    ],
+)
+def test_download_visual_tests_rejects_the_same_asset_declared_by_two_shards(
+    tmp_path: Path, second_asset_uri: str, second_asset_bytes: bytes
+) -> None:
+    artifacts = [
+        _test_artifact("//ui:visual", "visual-review.json", "manifest-shard-3", shard=3),
+        _test_artifact("//ui:visual", "visual-review.json", "manifest-shard-4", shard=4),
+        _test_artifact("//ui:visual", "screen.png", "screen-shard-3", shard=3),
+        _test_artifact("//ui:visual", "screen.png", second_asset_uri, shard=4),
+    ]
+    blob_waves: list[list[dict[str, str]]] = []
+    listing = _listing(
+        artifacts,
+        {
+            "manifest-shard-3": _manifest("UI", "screen.png"),
+            "manifest-shard-4": _manifest("UI", "screen.png"),
+            "screen-shard-3": b"screen from shard 3",
+            "screen-shard-4": second_asset_bytes,
+        },
+    )
+
+    def run(command: list[str | Path], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        words = [str(part) for part in command]
+        if "blob" in words and words[words.index("blob") + 1] == "download":
+            manifest = json.loads(Path(words[words.index("--manifest") + 1]).read_text())
+            blob_waves.append(manifest)
+        return listing(command, **kwargs)
+
+    with pytest.raises(ValueError, match=r"screen\.png from multiple shards.*3 and 4"):
+        download_visual_tests(["invocation"], tmp_path / "tests", run=run)
+
+    # Only manifests are fetched before ownership is reconciled; no arbitrary shard image lands.
+    assert len(blob_waves) == 1
+    assert [item["uri"] for item in blob_waves[0]] == ["manifest-shard-3", "manifest-shard-4"]
+
+
+def test_download_visual_tests_rejects_the_same_asset_declared_by_two_configurations(tmp_path: Path) -> None:
+    artifacts = [
+        _test_artifact("//ui:visual", "visual-review.json", "manifest-config-one", configuration_id="one", shard=3),
+        _test_artifact("//ui:visual", "visual-review.json", "manifest-config-two", configuration_id="two", shard=3),
+    ]
+
+    with pytest.raises(ValueError, match=r"screen\.png from multiple configurations.*one and two"):
+        download_visual_tests(
+            ["invocation"],
+            tmp_path / "tests",
+            run=_listing(
+                artifacts,
+                {
+                    "manifest-config-one": _manifest("UI", "screen.png"),
+                    "manifest-config-two": _manifest("UI", "screen.png"),
+                },
+            ),
+        )
+
+
+def test_download_visual_tests_does_not_use_another_shards_same_named_asset(tmp_path: Path) -> None:
+    artifacts = [
+        _test_artifact("//ui:visual", "visual-review.json", "manifest-shard-3", shard=3),
+        _test_artifact("//ui:visual", "screen.png", "screen-shard-4", shard=4),
+    ]
+
+    with pytest.raises(ValueError, match=r"references missing artifact screen\.png in test result"):
+        download_visual_tests(
+            ["invocation"],
+            tmp_path / "tests",
+            run=_listing(
+                artifacts, {"manifest-shard-3": _manifest("UI", "screen.png"), "screen-shard-4": b"wrong shard image"}
+            ),
+        )
+
+
+def test_download_visual_tests_keeps_duplicate_attempts_bound_to_their_result(tmp_path: Path) -> None:
+    artifacts = [
+        _test_artifact("//ui:visual", "visual-review.json", "manifest-attempt-1", shard=3, attempt=1),
+        _test_artifact("//ui:visual", "visual-review.json", "manifest-attempt-2", shard=3, attempt=2),
+        _test_artifact("//ui:visual", "screen.png", "screen-attempt-1", shard=3, attempt=1),
+        _test_artifact("//ui:visual", "screen.png", "screen-attempt-2", shard=3, attempt=2),
+    ]
+
+    tests = download_visual_tests(
+        ["invocation"],
+        tmp_path / "tests",
+        run=_listing(
+            artifacts,
+            {
+                "manifest-attempt-1": _manifest("UI", "screen.png"),
+                "manifest-attempt-2": _manifest("UI", "screen.png"),
+                "screen-attempt-1": b"first attempt",
+                "screen-attempt-2": b"retry attempt",
+            },
+        ),
+    )
+
+    assert (tests[0].directory / "screen.png").read_bytes() == b"first attempt"
+
+
+def test_merge_manifests_keeps_the_canonical_invocations_result_when_input_order_is_reversed(tmp_path: Path) -> None:
+    later = ListedArtifact(
+        "z-retry",
+        BuildBuddyArtifact.model_validate(_test_artifact("//ui:visual", "visual-review.json", "manifest-z", attempt=1)),
+    )
+    canonical = ListedArtifact(
+        "a-canonical",
+        BuildBuddyArtifact.model_validate(_test_artifact("//ui:visual", "visual-review.json", "manifest-a", attempt=2)),
+    )
+    manifest = VisualReviewManifest.model_validate_json(_manifest("UI", "screen.png"))
+
+    _, declared_by = visual_publisher._merge_manifests(
+        "//ui:visual",
+        [
+            visual_publisher._Download(later, tmp_path / "later.json"),
+            visual_publisher._Download(canonical, tmp_path / "canonical.json"),
+        ],
+        [manifest, manifest],
+    )
+
+    assert declared_by["screen.png"][0] == "a-canonical"
+    assert declared_by["screen.png"][1] == canonical.artifact.test_result_identity
 
 
 def test_download_visual_tests_rejects_a_sweep_and_an_affected_set_run_disagreeing(tmp_path: Path) -> None:
