@@ -1,5 +1,4 @@
-# Adopt the interrupted 0-2 replica's retained PVC under a UID-pinned guard.
-# A follow-up removes the PVC only after this handoff has reconciled.
+# Keep the UID guard while Flux prunes the retired 0-2 PVC and CSI deletes its PV.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -28,25 +27,3 @@ spec:
     namespaceSelector:
       matchLabels:
         kubernetes.io/metadata.name: clickhouse
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: pvc-78e612e7-7cac-41b5-be69-f2712daa1dcf
-  uid: ee0d1d91-ca1a-4553-8139-6f8124ccc284
-  annotations:
-    kustomize.toolkit.fluxcd.io/ssa: Merge
-    kustomize.toolkit.fluxcd.io/prune: disabled
-spec:
-  persistentVolumeReclaimPolicy: Delete
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: data-piraeus-hdd-chi-clickhouse-default-0-2-0
-  namespace: clickhouse
-  uid: 78e612e7-7cac-41b5-be69-f2712daa1dcf
-  annotations:
-    kustomize.toolkit.fluxcd.io/ssa: Merge
-spec:
-  volumeName: pvc-78e612e7-7cac-41b5-be69-f2712daa1dcf

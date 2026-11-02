@@ -378,7 +378,7 @@ def clickhouse_chart(app: App) -> Chart:
                                                 )
                                             ),
                                         ),
-                                        # Keep the interrupted replica 0-2's retained PVC and Keeper identity intact.
+                                        # Use a fresh identity after the interrupted 0-2 replica.
                                         ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas(
                                             name="0-3",
                                             templates=(
