@@ -185,8 +185,9 @@ def fit_structural_macro_defaults(evidence_dir: Path, *, macro_window: MacroFitW
         value_column="value",
     )
     beta_fit = fit_rate_beta(
-        equity_levels=loading.monthly_levels(beta.select("month", pl.col("equity").alias("value"))),
-        short_rate=loading.monthly_levels(beta.select("month", pl.col("short_rate").alias("value"))),
+        months=beta["month"].to_list(),
+        equity_levels=beta["equity"].to_numpy(),
+        short_rate=beta["short_rate"].to_numpy(),
     )
 
     return StructuralMacroFittedDefaults(

@@ -7,7 +7,6 @@ other parameter here is a marginal fitted on its own longest history. See
 
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -70,30 +69,33 @@ class RateBetaFit:
     last_month: date
 
 
-def fit_rate_beta(*, equity_levels: Sequence[MonthlyLevel], short_rate: Sequence[MonthlyLevel]) -> RateBetaFit:
+def fit_rate_beta(*, months: Sequence[date], equity_levels: np.ndarray, short_rate: np.ndarray) -> RateBetaFit:
     """Regress equity's monthly log return on the same month's change in the short rate.
 
-    Inner-joined, so this necessarily runs on the COMMON window — the one place in the model
-    where the shortest series sets the sample, because a covariance off a non-overlap is not a
-    weaker estimate but an undefined one. Returns and rate changes spanning a missing calendar
-    month are omitted. `short_rate` must already be decimal-scale (not FRED percent) — this
-    function does no unit conversion of its own.
+    Inputs must be aligned to the same ordered monthly axis by the caller. Returns and rate
+    changes spanning a missing calendar month are omitted. `short_rate` is decimal-scale (not
+    FRED percent).
     """
 
-    equity_by_month = {level.month: level.value for level in equity_levels}
-    rate_by_month = {level.month: level.value for level in short_rate}
-    months = sorted(set(equity_by_month) & set(rate_by_month))
     if len(months) < MINIMUM_MONTHS:
         raise ValueError(f"need at least {MINIMUM_MONTHS} shared months; got {len(months)}")
+    if any(month.day != 1 for month in months) or any(b <= a for a, b in pairwise(months)):
+        raise ValueError("monthly axis must contain unique, increasing first-of-month dates")
+    equity = np.asarray(equity_levels, dtype=np.float64)
+    rates = np.asarray(short_rate, dtype=np.float64)
+    if equity.shape != (len(months),) or rates.shape != (len(months),):
+        raise ValueError("equity and rate arrays must match the monthly axis")
+    if not np.isfinite(equity).all() or not np.all(equity > 0) or not np.isfinite(rates).all():
+        raise ValueError("equity levels must be positive and finite, and rates must be finite")
 
-    consecutive_pairs = [(a, b) for a, b in pairwise(months) if is_next_month(a, b)]
+    consecutive = np.array([is_next_month(a, b) for a, b in pairwise(months)], dtype=bool)
     minimum_transitions = MINIMUM_MONTHS - 1
-    if len(consecutive_pairs) < minimum_transitions:
+    if consecutive.sum() < minimum_transitions:
         raise ValueError(
-            f"need at least {minimum_transitions} consecutive monthly transitions; got {len(consecutive_pairs)}"
+            f"need at least {minimum_transitions} consecutive monthly transitions; got {consecutive.sum()}"
         )
-    returns = np.array([math.log(equity_by_month[b] / equity_by_month[a]) for a, b in consecutive_pairs])
-    rate_changes = np.array([rate_by_month[b] - rate_by_month[a] for a, b in consecutive_pairs])
+    returns = np.diff(np.log(equity))[consecutive]
+    rate_changes = np.diff(rates)[consecutive]
     slope, intercept = np.polyfit(rate_changes, returns, 1)
     residuals = returns - (intercept + slope * rate_changes)
     total = float(np.var(returns))
