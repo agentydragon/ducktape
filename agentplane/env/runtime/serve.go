@@ -18,7 +18,7 @@ const hostStartupTimeout = 90 * time.Second
 // Run starts the embedded Host coordinator and Gateway-facing control server.
 // Runtime owns the environment lifecycle and management-process lifetime.
 func (r *Runtime) Run(ctx context.Context) error {
-	if err := r.startHost(ctx); err != nil {
+	if err := r.startHost(); err != nil {
 		r.lifecycleStartMu.Lock()
 		unsafe := r.lifecycleInitErr != nil
 		r.lifecycleStartMu.Unlock()
@@ -59,7 +59,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 	return errors.Join(runErr, closeErr)
 }
 
-func (r *Runtime) startHost(ctx context.Context) error {
+func (r *Runtime) startHost() error {
 	r.lifecycleStartMu.Lock()
 	defer r.lifecycleStartMu.Unlock()
 	r.mu.Lock()

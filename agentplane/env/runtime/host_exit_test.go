@@ -71,7 +71,7 @@ func TestInitialHostWaitRequiresRecoveryEvenWithReadyReport(t *testing.T) {
 			intent := &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_INACTIVE}
 			r := &Runtime{
 				sessionWorkerDone: make(chan struct{}),
-				host: &hostBinding{active: true}, intent: intent,
+				host:              &hostBinding{active: true}, intent: intent,
 				lifecycleState: state.WrapCore(namespaced.NewState(inmem.Build)), changes: make(chan struct{}), fatal: make(chan error, 1),
 			}
 			if recoveryFails {

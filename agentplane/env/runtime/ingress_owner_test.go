@@ -54,7 +54,7 @@ func ingressTestRuntime(t *testing.T, store state.State, run func(context.Contex
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.startHost(context.Background()); err != nil {
+	if err := r.startHost(); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {

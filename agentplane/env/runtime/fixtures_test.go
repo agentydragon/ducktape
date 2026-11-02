@@ -76,7 +76,7 @@ func newLifecycleRunnerWithState(t *testing.T, config runtimeTestConfig, store s
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.startHost(context.Background()); err != nil {
+	if err := r.startHost(); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {

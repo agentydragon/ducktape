@@ -69,8 +69,8 @@ publishes the full applied intent alongside the report. That intent is the repor
 the fact payload does not duplicate it. Runtime observes the resource and wakes
 waiters only when its intent application status matches that full intent, including a same-generation
 Execution fence update. An older ready sample cannot reopen admission during fence application.
-The Session worker has its own completion signal and error. An unexpected completion fails Runtime;
-Runtime joins it and the shared engine before closing journals or releasing the owner. Engine shutdown
+Runtime tracks Session recovery completion and its error directly. Recovery failure fails Runtime;
+Runtime joins History delivery and the shared engine before closing journals or releasing the owner. Engine shutdown
 joins both controllers before owner release.
 
 For quiesce and replacement, Runtime first asks Host to stop admissions and drain native work.

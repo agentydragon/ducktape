@@ -1,13 +1,14 @@
 # Harness Host
 
-Harness Host owns one environment's native Sessions, retained Session records, continuation state,
-journals and History ingress. Claude uses one native process per Session; Codex uses one shared
+Harness Host owns one environment's native Sessions, retained Session records, continuation state
+and journals. Runtime owns History delivery using Host journal sources and the durable ACK store.
+Claude uses one native process per Session; Codex uses one shared
 app-server with independent native threads. Host never adopts an environment incarnation, writes
 its seal marker, runs Sandbox bootstrap or launches the Execution Service.
 
 ## Runtime boundary
 
-Environment Runtime runs Host in the same process and provides shared configuration, a direct
+Environment Runtime starts Host Session recovery in the same process and provides shared configuration, a direct
 COSI lifecycle state and direct typed Session calls. Deployment mounts and filesystem access
 remain authoritative.
 Each native Session, shared Codex app-server and isolated workspace helper receives its 5-second
