@@ -31,3 +31,21 @@ The scoped module index and tree config are related resolver inputs; passing
 each as a separate argument made the source-unit resolver exceed the project's
 Clippy argument limit. Keep these inputs grouped in its context. The module
 path lookup returns `Option`, so use `?` when there is no path candidate.
+
+`inspect-source --id unit:<id>` uses a saved graph and explicit source root;
+it does not interpret module YAML. Keep ID dispatch and source-selection file
+loading lazy so this query does not require an existing modules directory.
+
+The regression fixture invokes `debundle --spec-root <fixture-root>
+inspect-source --id unit:0 --graph <saved-graph> --modules
+<fixture-root>/missing-modules --source-root <fixture-root>/snapshot --view raw
+--format json`. Before the lazy lookup fix, `top_level_query_cli_test` failed
+with an IO error reading `missing-modules` (Bazel invocation
+`087da76b-ac97-409b-a458-32af318b1905`, exit 3). The same test passed after the
+fix and returned the selected statement (`7b3e56fe-a10e-4ad4-81fc-90b59a9062b2`,
+exit 0).
+
+Final focused validation ran the `:peel`, `:peel_test`, `:cli`, `:cli_test`
+targets and the top-level query, chunk-scoped describe, colon-module, and graph
+provenance e2e tests. Their Clippy aspects and six tests passed in invocation
+`f79ff77b-1f3e-4236-9a9e-ffaba4652b48` (exit 0).
