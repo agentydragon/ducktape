@@ -42,7 +42,8 @@ collision detection; they must not become the identity. Do not concatenate
 unescaped user strings into a path. Validate relative paths and references,
 including traversal, symlinks, and malformed or missing files. The visual review
 is an explicit role: collecting a diagnostic must not automatically publish it
-as a review image.
+as a review image. Keep roles and media types open to other comparison consumers
+in the future; this plan implements diffing only for screenshots.
 
 Bazel invocation, configuration, shard, run, attempt, result status, and CAS
 URI are execution provenance. Preserve them for every record and staged file,
@@ -110,10 +111,12 @@ Keep these boundaries independently testable:
    upload policy need not publish every collected diagnostic.
 4. The visual review consumes the collected screenshot records and their
    published blob references to resolve baselines, compare pixels, render
-   galleries, and update the PR comment and checks. The determinism checker
-   consumes the same collection semantics but compares repeated observations;
-   it may use CAS digests without downloading PNGs. Neither consumer reconstructs
-   identity from filenames, display text, or a test framework.
+   galleries, and update the PR comment and checks. The visual determinism
+   checker consumes the same collection semantics but compares repeated
+   screenshot observations; it may use CAS digests without downloading PNGs.
+   Neither consumer reconstructs identity from filenames, display text, or a test
+   framework. Traces and diagnostics remain inspectable artifacts; adding
+   differs for them or other output types is separate work.
 
 Preserve per-target baseline provenance, explicit stale-fallback warnings,
 commit-pinned review pages, shared-blob upload ordering, current affected-test
