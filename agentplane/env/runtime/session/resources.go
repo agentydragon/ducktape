@@ -20,7 +20,6 @@ const (
 	LifecycleStatusType   = "SessionLifecycleStatuses.agentplane"
 	OwnerStatusType       = "SessionOwnerStatuses.agentplane"
 	ownerRetryType        = "SessionOwnerRetries.agentplane"
-	OperationStateType    = "SessionOperationStates.agentplane"
 	ControllerName        = "session-lifecycle"
 )
 
@@ -37,6 +36,7 @@ const (
 type ReconcileSnapshot struct {
 	Harness           sessionpb.Harness
 	Demand            uint64
+	OperationRevision uint64
 	SetupRequested    bool
 	Setup             sessionpb.SetupState
 	Pending           int
@@ -69,12 +69,6 @@ type LifecycleStatus struct {
 	SetupOperationID      string
 	ProcessStopped        bool
 	Error                 string
-}
-
-type operationState struct {
-	Session    string
-	Controller string
-	Done       bool
 }
 
 type componentSpec[T any] interface {
@@ -125,8 +119,6 @@ func (OwnerStatus) resourceType() resource.Type             { return OwnerStatus
 func (value OwnerStatus) DeepCopy() OwnerStatus             { return value }
 func (ownerRetry) resourceType() resource.Type              { return ownerRetryType }
 func (value ownerRetry) DeepCopy() ownerRetry               { return value }
-func (operationState) resourceType() resource.Type          { return OperationStateType }
-func (value operationState) DeepCopy() operationState       { return value }
 
 func (InspectionStatus) resourceType() resource.Type      { return InspectionStatusType }
 func (value InspectionStatus) DeepCopy() InspectionStatus { return value }

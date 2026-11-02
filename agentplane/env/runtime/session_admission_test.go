@@ -428,29 +428,41 @@ func (s *failJournalSealPublicationOnce) Modify(ctx context.Context, value resou
 }
 
 func (s *initialOperationFailureState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
-	if value.Metadata().Type() == session.OperationStateType {
-		desired, found, err := lifecycle.ReadEnvironmentDesired(ctx, s.State)
-		if err == nil && found {
-			var armed *atomic.Bool
-			var failure error
-			var failed chan struct{}
-			switch desired.Mode {
-			case lifecycle.Running:
-				armed, failure, failed = &s.failInitial, s.initialFailure, s.failed
-			case lifecycle.Closing:
-				armed, failure, failed = &s.failTeardown, s.teardownFailure, s.teardownFailed
-			}
-			if armed != nil {
-				_, getErr := s.State.Get(ctx, value.Metadata())
-				if state.IsNotFoundError(getErr) && armed.CompareAndSwap(true, false) {
-					close(failed)
-					return failure
-				}
-			}
-		}
+	if value.Metadata().Type() != session.ReconcileSnapshotType {
+		return s.State.Modify(ctx, value, update, opts...)
 	}
-
-	return s.State.Modify(ctx, value, update, opts...)
+	return s.State.Modify(ctx, value, func(current resource.Resource) error {
+		snapshot := current.(interface {
+			TypedSpec() *session.ReconcileSnapshot
+		}).TypedSpec()
+		before := snapshot.OperationRevision
+		if err := update(current); err != nil {
+			return err
+		}
+		// Normal snapshot writes preserve OperationRevision. Fault only a signal
+		// that registers or completes a one-off operation.
+		if snapshot.OperationRevision == before {
+			return nil
+		}
+		desired, found, err := lifecycle.ReadEnvironmentDesired(ctx, s.State)
+		if err != nil || !found {
+			return err
+		}
+		var armed *atomic.Bool
+		var failure error
+		var failed chan struct{}
+		switch desired.Mode {
+		case lifecycle.Running:
+			armed, failure, failed = &s.failInitial, s.initialFailure, s.failed
+		case lifecycle.Closing:
+			armed, failure, failed = &s.failTeardown, s.teardownFailure, s.teardownFailed
+		}
+		if armed != nil && armed.CompareAndSwap(true, false) {
+			close(failed)
+			return failure
+		}
+		return nil
+	}, opts...)
 }
 
 func failedInitialOperationHost(t *testing.T, failTeardown bool) (*Runtime, *initialOperationFailureState, string) {

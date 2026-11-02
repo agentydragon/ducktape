@@ -30,7 +30,6 @@ func (c *sessionLifecycleController) Settings() controller.QSettings {
 			{Namespace: lifecycle.Namespace, Type: lifecycle.AdmissionCountType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.AggregateStatusType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: codexappserver.StatusType, Kind: controller.InputQMapped},
-			{Namespace: lifecycle.Namespace, Type: OperationStateType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: LifecycleStatusType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(c.manager.workers)),
@@ -40,13 +39,6 @@ func (c *sessionLifecycleController) Settings() controller.QSettings {
 func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
 	if ptr.Type() == OwnerStatusType {
 		return []resource.Pointer{resource.NewMetadata(lifecycle.Namespace, ReconcileSnapshotType, ptr.ID(), resource.VersionUndefined)}, nil
-	}
-	if ptr.Type() == OperationStateType {
-		result, found, err := componentRead[operationState](ctx, r, ptr.ID())
-		if err != nil || !found || result.Controller != ControllerName || result.Session == "" {
-			return nil, err
-		}
-		return []resource.Pointer{resource.NewMetadata(lifecycle.Namespace, ReconcileSnapshotType, result.Session, resource.VersionUndefined)}, nil
 	}
 	rows, err := safe.ReaderListAll[*typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]](ctx, r)
 	if err != nil {
@@ -96,9 +88,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	}
 	if desiredState.Mode == lifecycle.Running && current.EnvironmentGeneration != desiredState.Generation {
 		for _, slot := range []**oneoff.Operation{&s.halting, &s.sealing} {
-			if op, done := s.takeOperation(slot); done {
-				c.manager.forgetOperation(op)
-			}
+			s.takeOperation(slot)
 		}
 		current = LifecycleStatus{EnvironmentGeneration: desiredState.Generation, SetupOperationID: current.SetupOperationID}
 	} else if current.EnvironmentGeneration != desiredState.Generation {
@@ -106,7 +96,6 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		current.Error = ""
 	}
 	if op, done := s.takeOperation(&s.setupJob); done {
-		c.manager.forgetOperation(op)
 		if current.SetupOperationID == "" {
 			current.SetupOperationID = op.ID()
 		}
@@ -138,9 +127,8 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 	}
 	if op, done := s.takeOperation(&s.preparation); done {
-		c.manager.forgetOperation(op)
-		// takeOperation refreshes host input synchronously. The completion resource
-		// can be queued before the worker's own refresh, so read it again here.
+		// The operation revision can arrive before the worker refreshes the snapshot.
+		// takeOperation refreshes host input synchronously, so read it again here.
 		input, _, err = componentRead[ReconcileSnapshot](ctx, r, s.id)
 		if err != nil {
 			return err
@@ -162,13 +150,11 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 	}
 	if op, done := s.takeOperation(&s.dispatching); done {
-		c.manager.forgetOperation(op)
 		if op.Err() != nil {
 			return op.Err()
 		}
 	}
 	if op, done := s.takeOperation(&s.inspection); done {
-		c.manager.forgetOperation(op)
 		if op.Err() != nil {
 			return op.Err()
 		}
@@ -249,7 +235,6 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			}
 		}
 		if op, done := s.takeOperation(&s.stopping); done {
-			c.manager.forgetOperation(op)
 			if op.Err() != nil {
 				current.Error = op.Err().Error()
 				if err := write(); err != nil {
@@ -279,7 +264,6 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			}
 		}
 		if op, done := s.takeOperation(&s.sealing); done {
-			c.manager.forgetOperation(op)
 			if op.Err() != nil {
 				return op.Err()
 			}

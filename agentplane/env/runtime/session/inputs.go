@@ -36,6 +36,7 @@ func (m *Manager) publishSessionState(s *Session, demand bool) error {
 	if err := safe.StateModify(m.ctx, m.state, componentResource(s.id, ReconcileSnapshot{}), func(current *typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]) error {
 		next := input
 		next.Demand = current.TypedSpec().Demand
+		next.OperationRevision = current.TypedSpec().OperationRevision
 		if demand {
 			next.Demand++
 		}

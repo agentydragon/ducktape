@@ -253,7 +253,7 @@ func TestPreparationCompletionRefreshesStaleSchedulingInput(t *testing.T) {
 		// Wait for any in-flight reconcile before constructing the synthetic
 		// preparation. Otherwise it can overwrite the test's Preparing phase.
 		setSessionPhase(t, s, Preparing)
-		// Model the completion resource becoming visible before the worker refreshes
+		// Model the operation revision becoming visible before the worker refreshes
 		// its Session reconcile snapshot. The native process is already live, but input is stale.
 		m.publishMu.Lock()
 		defer m.publishMu.Unlock()
@@ -273,7 +273,7 @@ func TestPreparationCompletionRefreshesStaleSchedulingInput(t *testing.T) {
 		s.mu.Unlock()
 		if err := op.Start(
 			&s.mu,
-			func(done bool) error { return m.publishOperation(s.id, op.ID(), done) },
+			func(bool) error { return m.signalOperation(s.id) },
 			m.fail, func(context.Context) error { return nil }, nil, nil,
 		); err != nil {
 			t.Fatal(err)

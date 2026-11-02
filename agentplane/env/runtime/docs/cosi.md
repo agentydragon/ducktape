@@ -24,7 +24,6 @@ flowchart LR
   SI["SessionReconcileSnapshots"]
   SS["SessionLifecycleStatuses"]
   Inspect["SessionInspectionStatuses"]
-  SO["SessionOperationStates"]
   AC(["codex-app-server-lifecycle"])
   AI["CodexAppServerLifecycleSignals"]
   AS["CodexAppServerStatuses"]
@@ -48,7 +47,7 @@ flowchart LR
   SR --> SOwner --> OwnerStatus
   API --> Retry --> SOwner
   SOwner --> SI
-  SI & OwnerStatus & ED & Count & Aggregate & AS & SO --> SC
+  SI & OwnerStatus & ED & Count & Aggregate & AS --> SC
   SC --> SS
   AI & ED & Count & Aggregate & ES --> AC
   AC --> AS
@@ -68,7 +67,7 @@ flowchart LR
 | `environment-runtime-lifecycle` | Environment desired state; direct transition requests and worker-completion channels                                                                                | Direct operation completion; Runtime-owned workers perform blocking transition/shutdown steps                |
 | `session-owner`                 | Session record (primary); explicit fresh-reservation retry (mapped)                                                                                                 | Session owner status; construct and recover one live Session and its journal                                 |
 | `environment-session-lifecycle` | Environment desired state, admission accounting, inspection and Session statuses, journal seals, ACKs, app-server status, process desired/status, Execution signals | Aggregate Session status; native cleanup, exact fence, seal and durable ACK predicates                       |
-| `session-lifecycle`             | Session snapshot (primary); owner status, desired state, admissions, aggregate status, app-server status and operation states (mapped)                              | Session lifecycle status; guarded per-Session prepare/dispatch registration and one-off halt/seal operations |
+| `session-lifecycle`             | Session snapshot (primary); owner status, desired state, admissions, aggregate status and app-server status (mapped)                                                   | Session lifecycle status; guarded per-Session prepare/dispatch registration and one-off halt/seal operations |
 | `codex-app-server-lifecycle`    | App-server signal including operation revisions (primary); desired state, accepted admissions, aggregate status and Execution status (mapped)                       | App-server status; guarded initialization, cleanup and a separate live Execution-owner readiness check       |
 | `execution-lifecycle`           | Execution signal (primary), Execution status (mapped)                                                                                                               | Execution status; exact-attempt start/loss/fence observations, retaining an unfenced owner on failure        |
 | `bootstrap-lifecycle`           | Bootstrap request (primary), status and operation state (mapped)                                                                                                    | Bootstrap status; selected bytes and durable event sequence govern one accepted attempt                      |
@@ -94,6 +93,10 @@ An explicitly retried fresh reservation wakes the owner through a live-only `Ses
 resource after a pre-publication failure; it does not replay a native effect or interrupted setup.
 
 Session snapshots carry demand, setup, pending commands, process liveness and inspection facts.
+Their `OperationRevision` advances on operation start and completion, including when those facts
+are unchanged. It schedules reconciliation without requesting execution; normal snapshot writes and
+demand resets preserve it. The operation slot mutex serializes completion publication and local
+completion with consumption.
 Session and app-server statuses record `EnvironmentGeneration`; demand and `ObservedDemand` are
 component request sequences, not native attempt counts. One-off operation slots survive controller
 restarts within the process and publish completion facts before their owning controller consumes them.
