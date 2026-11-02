@@ -249,18 +249,14 @@ pub enum SourceUnitSelectorSynthesis {
     },
 }
 
-/// Run `body` with a [`SourceUnitSelectorSynthesizer`] over the chunk whose
-/// parser identity is `source_name` and whose bytes are `source`. The chunk is
-/// parsed and indexed once for every request `body` makes. Must run inside an
-/// SWC `GLOBALS` scope.
+/// Run `body` with a [`SourceUnitSelectorSynthesizer`] over the caller's parsed
+/// chunk. The chunk is indexed once and reused for every request `body` makes.
+/// The caller must parse it inside an SWC `GLOBALS` scope.
 pub fn with_source_unit_selector_synthesizer<T>(
-    source_name: &str,
-    source: String,
+    module: &Module,
     body: impl FnOnce(&SourceUnitSelectorSynthesizer<'_>) -> Result<T>,
 ) -> Result<T> {
-    let parsed = js_ast::parse_js_module_consuming(source_name, source)
-        .with_context(|| format!("parsing source {source_name}"))?;
-    let index = ChunkSelectorIndex::new(&parsed.module);
+    let index = ChunkSelectorIndex::new(module);
     body(&SourceUnitSelectorSynthesizer { index: &index })
 }
 

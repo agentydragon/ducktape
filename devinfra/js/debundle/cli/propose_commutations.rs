@@ -338,8 +338,7 @@ pub(super) fn run(
     let mut analysis = Analysis::new(&report, &source, authored_modules.as_ref())?;
     let (mut needs_co_location, mut rejected) = analysis.collect_candidates(&sccs)?;
     let ranked = analysis.rank_candidates();
-    let (proposals, proposal_total) =
-        analysis.emit_proposals(context, ranked, limit, &mut rejected)?;
+    let (proposals, proposal_total) = analysis.emit_proposals(ranked, limit, &mut rejected)?;
     let scc_outcomes = analysis.scc_outcomes()?;
     let totals = ReportTotals {
         proposals: proposal_total,
@@ -922,80 +921,75 @@ impl<'a> Analysis<'a> {
     /// demoted.
     fn emit_proposals(
         &mut self,
-        context: &VerifiedGraphSourceContext,
         ranked: Vec<RankedCandidate>,
         limit: Option<usize>,
         rejected: &mut Vec<RejectedCandidate>,
     ) -> Result<(Vec<CommutationProposal>, usize)> {
-        with_source_unit_selector_synthesizer(
-            &context.source_path().display().to_string(),
-            context.source().to_owned(),
-            |synthesizer| {
-                let mut selectors = HashMap::new();
-                let mut proposals = Vec::new();
-                let mut total = 0;
-                for ranked in ranked {
-                    let emit = limit.is_none_or(|limit| proposals.len() < limit);
-                    let candidate = &ranked.candidate;
-                    let endpoints = [candidate.a, candidate.b].map(|node_index| {
-                        self.endpoint_selector(synthesizer, &mut selectors, node_index, emit)
-                    });
-                    let [a, b] = endpoints;
-                    let (a, b) = (a?, b?);
-                    let failure = [(candidate.a, &a), (candidate.b, &b)].into_iter().find_map(
-                        |(node_index, selector)| match selector {
-                            Some(Err(detail)) => Some((node_index, detail.clone())),
-                            _ => None,
-                        },
-                    );
-                    let sccs = std::iter::once(candidate.scc_id)
-                        .chain(ranked.also_in_sccs.iter().copied())
-                        .collect::<Vec<_>>();
-                    if let Some((failed, detail)) = failure {
-                        for &scc_id in &sccs {
-                            self.scc_mut(scc_id).rejected_pairs.insert(
-                                (candidate.a, candidate.b),
-                                BlockingReason::NoUniqueSelector,
-                            );
-                        }
-                        let (a, b) = (
-                            Some(self.node(candidate.a).id.clone()),
-                            Some(self.node(candidate.b).id.clone()),
-                        );
-                        rejected.push(RejectedCandidate {
-                            scc_id: ranked.candidate.scc_id,
-                            also_in_sccs: ranked.also_in_sccs,
-                            cut_edges: ranked.candidate.cut_edges,
-                            a,
-                            b,
-                            reason: RejectionReason::NoUniqueSelector {
-                                endpoint: self.node(failed).id.clone(),
-                                detail,
-                            },
-                        });
-                        continue;
-                    }
-                    total += 1;
-                    let unproven = [(candidate.a, &a), (candidate.b, &b)]
-                        .into_iter()
-                        .filter(|(_, selector)| selector.is_none())
-                        .map(|(node_index, _)| node_index)
-                        .collect::<Vec<_>>();
+        let source = self.source;
+        with_source_unit_selector_synthesizer(source.module(), |synthesizer| {
+            let mut selectors = HashMap::new();
+            let mut proposals = Vec::new();
+            let mut total = 0;
+            for ranked in ranked {
+                let emit = limit.is_none_or(|limit| proposals.len() < limit);
+                let candidate = &ranked.candidate;
+                let endpoints = [candidate.a, candidate.b].map(|node_index| {
+                    self.endpoint_selector(synthesizer, &mut selectors, node_index, emit)
+                });
+                let [a, b] = endpoints;
+                let (a, b) = (a?, b?);
+                let failure = [(candidate.a, &a), (candidate.b, &b)].into_iter().find_map(
+                    |(node_index, selector)| match selector {
+                        Some(Err(detail)) => Some((node_index, detail.clone())),
+                        _ => None,
+                    },
+                );
+                let sccs = std::iter::once(candidate.scc_id)
+                    .chain(ranked.also_in_sccs.iter().copied())
+                    .collect::<Vec<_>>();
+                if let Some((failed, detail)) = failure {
                     for &scc_id in &sccs {
-                        let scc = self.scc_mut(scc_id);
-                        scc.inerted.extend(candidate.inerted.iter().copied());
-                        scc.unproven_endpoints.extend(unproven.iter().copied());
+                        self.scc_mut(scc_id)
+                            .rejected_pairs
+                            .insert((candidate.a, candidate.b), BlockingReason::NoUniqueSelector);
                     }
-                    if let (Some(Ok(a)), Some(Ok(b))) = (a, b)
-                        && emit
-                    {
-                        let rank = proposals.len() + 1;
-                        proposals.push(self.proposal(rank, ranked, a, b)?);
-                    }
+                    let (a, b) = (
+                        Some(self.node(candidate.a).id.clone()),
+                        Some(self.node(candidate.b).id.clone()),
+                    );
+                    rejected.push(RejectedCandidate {
+                        scc_id: ranked.candidate.scc_id,
+                        also_in_sccs: ranked.also_in_sccs,
+                        cut_edges: ranked.candidate.cut_edges,
+                        a,
+                        b,
+                        reason: RejectionReason::NoUniqueSelector {
+                            endpoint: self.node(failed).id.clone(),
+                            detail,
+                        },
+                    });
+                    continue;
                 }
-                Ok((proposals, total))
-            },
-        )
+                total += 1;
+                let unproven = [(candidate.a, &a), (candidate.b, &b)]
+                    .into_iter()
+                    .filter(|(_, selector)| selector.is_none())
+                    .map(|(node_index, _)| node_index)
+                    .collect::<Vec<_>>();
+                for &scc_id in &sccs {
+                    let scc = self.scc_mut(scc_id);
+                    scc.inerted.extend(candidate.inerted.iter().copied());
+                    scc.unproven_endpoints.extend(unproven.iter().copied());
+                }
+                if let (Some(Ok(a)), Some(Ok(b))) = (a, b)
+                    && emit
+                {
+                    let rank = proposals.len() + 1;
+                    proposals.push(self.proposal(rank, ranked, a, b)?);
+                }
+            }
+            Ok((proposals, total))
+        })
     }
 
     /// The selector of one endpoint, synthesized and cached on first need:
