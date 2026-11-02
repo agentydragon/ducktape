@@ -38,6 +38,7 @@ from finance.plaid.spend.allowance import (
 from finance.plaid.spend.configuration import SpendConfiguration, load_configuration
 from finance.plaid.spend.models import AllowanceConfigurationView, SpendConfigurationView
 from finance.plaid.spend.reconciliation_views import allowance_view
+from finance.plaid.spend.testing.transaction import make_transaction
 from util.bazel.runfiles import get_required_path
 
 START = datetime(2026, 1, 31, tzinfo=UTC)
@@ -82,16 +83,14 @@ def row(
     pfc_primary: str | None = "SHOPPING",
     pfc_detailed: str | None = "SHOPPING_GENERAL_MERCHANDISE",
 ) -> Transaction:
-    return Transaction(
+    return make_transaction(
         account_id="card-1",
         transaction_id=transaction_id or f"tx-{day}-{amount}",
         date=date.fromisoformat(day),
         amount=Decimal(amount),
         pending=pending,
         pending_transaction_id=pending_transaction_id,
-        currency="USD",
         name="EXAMPLE SHOP",
-        merchant_name=None,
         pfc_primary=pfc_primary,
         pfc_detailed=pfc_detailed,
     )

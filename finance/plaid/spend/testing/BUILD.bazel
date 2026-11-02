@@ -1,0 +1,10 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_testonly = True)
+
+py_library(
+    name = "transaction",
+    srcs = ["transaction.py"],
+    visibility = ["//finance/plaid/spend:__pkg__"],
+    deps = ["//finance/plaid/spend:allowance"],
+)

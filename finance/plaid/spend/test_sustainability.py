@@ -32,6 +32,7 @@ from finance.plaid.spend.sustainability import (
     WithdrawalTax,
     calculate_sustainability,
 )
+from finance.plaid.spend.testing.transaction import make_transaction
 
 _NOW = datetime(2026, 4, 1, 7, tzinfo=UTC)  # April 1 midnight in Pacific.
 
@@ -87,19 +88,15 @@ def transaction(
     instant: datetime | None = None,
     account_id: str = "card",
 ) -> Transaction:
-    return Transaction(
+    return make_transaction(
         account_id=account_id,
         transaction_id=key,
-        pending_transaction_id=replacement,
         date=day,
-        authorized_datetime=instant,
         amount=Decimal(amount),
         pending=pending,
+        pending_transaction_id=replacement,
         name=name,
-        merchant_name=None,
-        pfc_primary=None,
-        pfc_detailed=None,
-        currency="USD",
+        authorized_datetime=instant,
     )
 
 
