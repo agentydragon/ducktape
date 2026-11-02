@@ -10,7 +10,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"testing/synctest"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
@@ -50,6 +49,7 @@ type operationSignalState struct {
 	failRevision  uint64
 	err           error
 	blockRevision uint64
+	blockAt       *atomic.Uint64
 	publishing    chan struct{}
 	release       chan struct{}
 	once          sync.Once
@@ -68,7 +68,11 @@ func (s *operationSignalState) UpdateWithConflicts(ctx context.Context, ptr reso
 		if s.err != nil && revision == s.failRevision {
 			return s.err
 		}
-		if revision == s.blockRevision {
+		blockRevision := s.blockRevision
+		if s.blockAt != nil {
+			blockRevision = s.blockAt.Load()
+		}
+		if revision == blockRevision {
 			s.once.Do(func() {
 				close(s.publishing)
 				select {
@@ -416,36 +420,39 @@ func TestFailedDrainRetainsOwnership(t *testing.T) {
 }
 
 func TestOperationCompletionPublicationPrecedesConsumption(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		store := &operationSignalState{State: state.WrapCore(namespaced.NewState(inmem.Build)), blockRevision: 2, publishing: make(chan struct{}), release: make(chan struct{})}
-		host := operationHost(t, store, func(err error) { t.Error(err) })
-		if err := host.startOperation(&host.initializing, func(context.Context) error { return nil }); err != nil {
-			t.Fatal(err)
-		}
-		<-store.publishing
-		slot := host.initializing
-		if slot.Finished() {
-			t.Fatal("operation finished before completion publication")
-		}
-		consumed := make(chan *oneoff.Operation, 1)
-		go func() { op, _ := host.takeOperation(&host.initializing); consumed <- op }()
-		synctest.Wait()
-		select {
-		case <-consumed:
-			t.Fatal("operation consumed before completion publication")
-		default:
-		}
-		close(store.release)
-		op := <-consumed
-		host.deps.Workers.Wait()
-		if op == nil || op.Err() != nil || host.initializing != nil {
-			t.Fatalf("operation=%v slot=%v", op, host.initializing)
-		}
-		input, _, err := ReadLifecycleSignal(t.Context(), store)
-		if err != nil || input.OperationRevision != 2 || input.Demand != 0 {
-			t.Fatalf("signal=%+v error=%v", input, err)
-		}
-	})
+	store := &operationSignalState{State: state.WrapCore(namespaced.NewState(inmem.Build)), blockRevision: 2, publishing: make(chan struct{}), release: make(chan struct{})}
+	host := operationHost(t, store, func(err error) { t.Error(err) })
+	if err := host.startOperation(&host.initializing, func(context.Context) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	<-store.publishing
+	slot := host.initializing
+	if slot.Finished() {
+		t.Fatal("operation finished before completion publication")
+	}
+	if host.mu.TryLock() {
+		host.mu.Unlock()
+		t.Fatal("completion publication did not hold the consumption mutex")
+	}
+	attempting := make(chan struct{})
+	consumed := make(chan *oneoff.Operation, 1)
+	go func() { close(attempting); op, _ := host.takeOperation(&host.initializing); consumed <- op }()
+	<-attempting
+	select {
+	case <-consumed:
+		t.Fatal("operation consumed before completion publication")
+	default:
+	}
+	close(store.release)
+	op := <-consumed
+	host.deps.Workers.Wait()
+	if op == nil || op.Err() != nil || host.initializing != nil {
+		t.Fatalf("operation=%v slot=%v", op, host.initializing)
+	}
+	input, _, err := ReadLifecycleSignal(t.Context(), store)
+	if err != nil || input.OperationRevision != 2 || input.Demand != 0 {
+		t.Fatalf("signal=%+v error=%v", input, err)
+	}
 }
 
 func TestOperationCompletionPublicationFailureRetainsWorkError(t *testing.T) {
@@ -548,7 +555,13 @@ func TestDemandResetRetriesWithoutLosingOperationRevision(t *testing.T) {
 }
 
 func TestOperationRevisionPreservesConcurrentResetAndNativeExit(t *testing.T) {
-	f := newFixture(t)
+	var store *operationSignalState
+	var blockAt atomic.Uint64
+	blockAt.Store(^uint64(0))
+	f := newFixtureWithConfiguration(t, nil, func(host *Host) {
+		store = &operationSignalState{State: host.deps.State, blockAt: &blockAt, publishing: make(chan struct{}), release: make(chan struct{})}
+		host.deps.State = store
+	})
 	ctx, cancel := context.WithTimeout(f.ctx, lifecycleTestTimeout)
 	defer cancel()
 	process, err := f.host.Host(ctx, nil)
@@ -559,10 +572,7 @@ func TestOperationRevisionPreservesConcurrentResetAndNativeExit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := &operationSignalState{State: f.store, blockRevision: signal.OperationRevision + 1, publishing: make(chan struct{}), release: make(chan struct{})}
-	f.host.mu.Lock()
-	f.host.deps.State = store
-	f.host.mu.Unlock()
+	blockAt.Store(signal.OperationRevision + 1)
 	started := make(chan error, 1)
 	go func() { started <- f.host.startOperation(&f.host.draining, func(context.Context) error { return nil }) }()
 	<-store.publishing
