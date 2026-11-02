@@ -364,8 +364,8 @@ delivery and ordering; the app does not maintain a second command queue.
 
 ## Session opening and command ownership
 
-Sandbox creation and Session opening are separate operations. The app creates and manages the
-Sandbox through Kubernetes; `POST /sandboxes/{name}/sessions` sends a client-minted Session ID, the
+Sandbox creation and Session opening are separate operations. The app proxies authenticated management
+requests to EnvironmentService in the Runner Gateway; `POST /sandboxes/{name}/sessions` sends a client-minted Session ID, the
 expected Sandbox UID and resolved spec to Dispatcher `OpenSession`. Dispatcher checks that UID against
 the current Sandbox before recording the opening, then delivers it when the Sandbox is ready. The first
 input, if any, is a separate command with its own ID and durable Dispatcher result; there is no app

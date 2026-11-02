@@ -574,8 +574,8 @@ constructing OIDC callback URLs, so there is no released-port allocation window.
 The browser reads configured models and Sandbox presets through the generated `AppService`
 ProtoJSON routes `/upstream/app-config/v1/models` and `/upstream/app-config/v1/presets`. These
 in-process handlers share the app's caller authentication boundary; the service and HTTP mapping are
-defined in `app_service.proto`. `POST
-/sandboxes` stores the selected preset label alongside the concrete Sandbox choices; it does not
+defined in `app_service.proto`. `POST /upstream/environments/v1/environments` stores the selected preset
+label alongside the concrete Sandbox choices; it does not
 store per-Sandbox Session defaults. On a new Thread open, the app resolves the defaults from its
 configured preset catalog using that Sandbox label, then overlays fields explicitly supplied for
 the Thread. `policy_sets` are the Sandbox's grants beside the deployment's defaults, and a set name
@@ -587,8 +587,8 @@ A Sandbox takes `policy_sets` alone. The shared inventory validates the app's co
 with the submitted policy sets; Action policy sets and Kubernetes grants are not create inputs.
 `GET /sandboxes/form` lists the namespace's `PolicySet`s, which the form offers; a preset names
 `PolicySet`s only. It also serves the app-level `new_sandbox_defaults`, the wake-on-message and
-idle-suspend values the form starts with whatever the preset; `POST /sandboxes` stores only what the
-caller sends, so an API caller that omits them gets neither. A preset's `inbox_tags` likewise prefill the form, and `POST /sandboxes` writes the submitted
+idle-suspend values the form starts with whatever the preset; the EnvironmentService create request stores only what the
+caller sends, so an API caller that omits them gets neither. A preset's `inbox_tags` likewise prefill the form, and the create request writes the submitted
 ones as the Sandbox's initial `spec.inboxTags`: editing a preset changes only later launches.
 
 Before opening a session on a bound Sandbox, the app sends the SandboxPreset's configured bootstrap

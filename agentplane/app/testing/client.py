@@ -125,9 +125,13 @@ class Client:
         return ParseDict(response, app_service_pb2.ListSandboxPresetsResponse())
 
     async def create_sandbox(self, spec: NewSandbox) -> SandboxView:
-        return SandboxView.model_validate(
-            await self._json("POST", "/sandboxes", json=spec.model_dump(exclude_unset=True))
-        )
+        body = spec.model_dump(exclude_unset=True)
+        if (seconds := body.pop("idle_suspend_after_seconds", None)) is not None:
+            body["idle_suspend_after"] = f"{seconds}s"
+        target = await self._json("POST", "/upstream/environments/v1/environments", json=body)
+        if target["name"] != spec.name or not target["uid"]:
+            raise RuntimeError("EnvironmentService returned an invalid created target")
+        return await self.sandbox(spec.name)
 
     async def sandbox(self, name: str) -> SandboxView:
         return SandboxView.model_validate(await self._json("GET", f"/sandboxes/{name}"))
@@ -185,13 +189,32 @@ class Client:
         raise RuntimeError("the Sandbox inventory stream ended")
 
     async def suspend_sandbox(self, name: str) -> None:
-        await self._json("POST", f"/sandboxes/{name}/suspend")
+        target = await self._management_target(name)
+        await self._json(
+            "POST",
+            f"/upstream/environments/v1/environments/{target['namespace']}/{name}:suspend",
+            json={"target": target},
+        )
 
     async def resume_sandbox(self, name: str) -> None:
-        await self._json("POST", f"/sandboxes/{name}/resume")
+        target = await self._management_target(name)
+        await self._json(
+            "POST",
+            f"/upstream/environments/v1/environments/{target['namespace']}/{name}:resume",
+            json={"target": target},
+        )
 
     async def delete_sandbox(self, name: str) -> None:
-        await self._json("DELETE", f"/sandboxes/{name}")
+        target = await self._management_target(name)
+        await self._json(
+            "DELETE",
+            f"/upstream/environments/v1/environments/{target['namespace']}/{name}",
+            params={"target.uid": target["uid"]},
+        )
+
+    async def _management_target(self, name: str) -> dict[str, str]:
+        sandbox = await self.sandbox(name)
+        return {"namespace": sandbox.namespace, "name": sandbox.name, "uid": str(sandbox.uid)}
 
     async def bindings(self, name: str) -> list[BindingView]:
         return [BindingView.model_validate(row) for row in await self._json("GET", f"/sandboxes/{name}/egress")]

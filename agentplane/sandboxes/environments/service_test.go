@@ -812,8 +812,16 @@ func TestEveryGeneratedRPCRequiresReviewedServiceAccountAdmission(t *testing.T) 
 	for _, method := range grpcmethods.Of(environmentpb.EnvironmentService_ServiceDesc) {
 		t.Run(method.Name, func(t *testing.T) {
 			want := codes.InvalidArgument
-			if method.Name == environmentpb.EnvironmentService_WatchEnvironments_FullMethodName {
+			switch method.Name {
+			case environmentpb.EnvironmentService_WatchEnvironments_FullMethodName:
 				want = codes.OK
+			case environmentpb.EnvironmentService_ListEnvironmentTemplates_FullMethodName,
+				environmentpb.EnvironmentService_CreateEnvironment_FullMethodName,
+				environmentpb.EnvironmentService_SuspendEnvironment_FullMethodName,
+				environmentpb.EnvironmentService_DeleteEnvironment_FullMethodName,
+				environmentpb.EnvironmentService_SetEnvironmentWakeOnSend_FullMethodName,
+				environmentpb.EnvironmentService_SetEnvironmentIdleSuspend_FullMethodName:
+				want = codes.PermissionDenied
 			}
 			if got := status.Code(method.Call(bearing(t, matchingToken), connection)); got != want {
 				t.Errorf("account-only reviewed caller reached %s with code %v, want %v", method.Name, got, want)

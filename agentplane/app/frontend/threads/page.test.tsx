@@ -706,7 +706,13 @@ it("disables the composer and offers resume for a fresh suspended Sandbox withou
   const resume = buttonIn(container.querySelector(".agentplane-composer-controls"), "Resume Sandbox");
   expect(resume).toBeDefined();
   await act(async () => resume?.click());
-  expect(resumeSandbox).toHaveBeenCalledExactlyOnceWith(THREAD.sandbox);
+  expect(resumeSandbox).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      namespace: "agentplane-test",
+      name: THREAD.sandbox,
+      uid: "20000000-0000-4000-8000-000000000001",
+    })
+  );
 });
 
 it.each(["SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED"])(
@@ -961,7 +967,13 @@ it("offers to resume a suspended Sandbox, and only from a current inventory", as
   const container = await render();
   const button = buttonIn(container, "Resume Sandbox");
   await act(async () => button?.click());
-  expect(resumeSandbox).toHaveBeenCalledExactlyOnceWith(THREAD.sandbox);
+  expect(resumeSandbox).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      namespace: "agentplane-test",
+      name: THREAD.sandbox,
+      uid: "20000000-0000-4000-8000-000000000001",
+    })
+  );
 });
 
 it.each([

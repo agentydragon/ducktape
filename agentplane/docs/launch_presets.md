@@ -79,7 +79,8 @@ at every session open.
 - Mutable egress/runtime settings update only through existing supported runtime operations.
 - A binding naming a SandboxPreset or ThreadPreset that is no longer configured makes
   `POST /sandboxes/{name}/sessions` answer 422 (`UnknownPresetError`); the Sandbox is neither
-  deleted nor mutated. `POST /sandboxes` answers 422 for an unknown preset at creation.
+  deleted nor mutated. The browser selects creation presets from the app's configured catalog;
+  EnvironmentService stores the submitted preset label, which is resolved at session open.
 - A changed bootstrap script is refused on a live Sandbox (below).
 
 ## Bootstrap
