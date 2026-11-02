@@ -521,20 +521,17 @@ func TestClosePublicationFailureKeepsAdmissionClosed(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		store.failDesiredPublication.Store(false)
-		if r.closeDone == nil {
+		if !r.isClosing() {
 			if err := r.CloseJournals(context.Background()); err != nil {
 				t.Errorf("close test Harness Host: %v", err)
 			}
 			return
 		}
-		<-r.closeDone
-		if r.closeErr != nil {
-			r.cancel()
-			<-r.lifecycle.done.Done()
-			r.lifecycle.workers.Wait()
-			if err := r.sessions.Close(); err != nil {
-				t.Errorf("close test Session journals after injected failure: %v", err)
-			}
+		r.cancel()
+		<-r.lifecycle.done.Done()
+		r.lifecycle.workers.Wait()
+		if err := r.sessions.Close(); err != nil {
+			t.Errorf("close test Session journals after injected failure: %v", err)
 		}
 	})
 	if err := bindHost(r, "test-incarnation"); err != nil {
@@ -567,6 +564,10 @@ func TestClosePublicationFailureKeepsAdmissionClosed(t *testing.T) {
 	}
 	if admissions, err := r.lifecycle.admissionCount(context.Background()); err != nil || admissions != 0 {
 		t.Fatalf("admissions after failed Close publication = %d, err %v; want zero", admissions, err)
+	}
+	store.failDesiredPublication.Store(false)
+	if err := r.BeginClose(context.Background()); !errors.Is(err, store.desiredPublicationErr) {
+		t.Fatalf("repeated Close after failed publication = %v, want original failure", err)
 	}
 }
 

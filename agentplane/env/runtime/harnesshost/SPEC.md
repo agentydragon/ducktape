@@ -17,8 +17,10 @@ stop grace at launch; later `Stop(ctx)` calls use that immutable process policy.
 In a Pod, Host uses Runtime's PID1 supervisor so one reaper owns every child wait. Subprocess
 fixtures also use Runtime's supervisor and inherit its environment owner descriptor. In a VM, Host's
 native services keep their distinct `harness-host` scope in the workload slice, but the owner unit
-and invocation marker are those of Environment Runtime. Runtime joins Host cleanup and fences the
-Pod PID namespace before releasing the environment owner.
+and invocation marker are those of Environment Runtime. Runtime's single Close worker drives Host
+native drain, joins the shared engine and Host workers, closes Session journals, then fences the Pod
+PID namespace before releasing the environment owner. A canceled Close waiter does not cancel that
+worker. Host has no separate asynchronous Close operation.
 
 Runtime and its Session component share one lifetime identity. Runtime publishes a typed intent
 bound to its boot ID and a nonzero generation. The shared COSI engine applies it and publishes readiness,
