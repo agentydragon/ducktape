@@ -613,8 +613,8 @@ export function ProductProjectionWorkspace({
   useEffect(() => {
     if (sellable == null) return;
     const controller = new AbortController();
-    // Fan out one combined request per scenario. The backend performs the metric-fan and terminal
-    // reductions after one shared simulation, while the two public legacy endpoints remain intact.
+    // Fan out one combined request per scenario. The backend performs both reductions after one
+    // shared simulation.
     const handle = setTimeout(() => {
       for (const { id, label, request, requestKey } of projectionRequestEntries) {
         setProjectionResourcesById((previous) => {
