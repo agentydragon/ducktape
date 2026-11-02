@@ -119,10 +119,20 @@ it("retains the previous inventory until a reconnect snapshot is complete", asyn
   await act(async () => root.unmount());
 });
 
-function Detail({ target }: { target: TargetHandle }) {
+function Detail({ target }: { target: TargetHandle | undefined }) {
   const { environment } = useEnvironmentWatch(target);
   return <span>{environment?.target?.uid ?? "waiting"}</span>;
 }
+
+it("does not connect or repeatedly report a disabled environment watch", async () => {
+  const { served } = stubWatchFetch();
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  await act(async () => root.render(<Detail target={undefined} />));
+  expect(container.textContent).toBe("waiting");
+  expect(served).toHaveLength(0);
+  await act(async () => root.unmount());
+});
 
 it("watches exact target identity and clears the old descriptor before observing a replacement", async () => {
   const { served } = stubWatchFetch();

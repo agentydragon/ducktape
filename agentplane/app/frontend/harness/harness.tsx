@@ -997,6 +997,7 @@ function autosuspendStarting(): void {
       ? {
           ...mapped,
           sandbox: "starting-sandbox",
+          sandbox_uid: "0f9c1d2e-0000-4000-8000-000000000077",
           name: "Thread waiting for Sandbox startup",
           harness_state: "HARNESS_STATE_STOPPED",
           feed_status: "ended",

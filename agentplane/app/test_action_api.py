@@ -297,8 +297,11 @@ async def test_live_action_policy_retries_failure_and_reuses_same_generation(
         assert failed["action_policy"]["code"] == "upstream_request_failed"
         assert len(_get_action_policy_calls(review)) == 1
 
-        await review.sandbox.patch_sandbox({"metadata": {"annotations": {"policy-cache-retry": "1"}}})
-        event, retried = await _read_sse_event(events)
+        # An Environment state change causes the app to retry an unavailable policy.
+        wake_on_send = not (await review.sandbox.sandbox())["spec"].get("wakeOnSend", False)
+        await review.sandbox.patch_sandbox({"spec": {"wakeOnSend": wake_on_send}})
+        async with asyncio.timeout(10):
+            event, retried = await _read_sse_event(events)
         assert event == "snapshot"
         assert retried["action_policy"]["synced"] is True
         assert len(_get_action_policy_calls(review)) == 2

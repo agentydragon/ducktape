@@ -142,7 +142,9 @@ async def _next_decisions(stream: AsyncIterator[str]) -> DecisionsSnapshot:
 async def _environment_uid(http: httpx.AsyncClient, name: str) -> str:
     response = await http.get("/upstream/environments/v1/environments", params={"limit": 100})
     response.raise_for_status()
-    return next(item["target"]["uid"] for item in response.json()["items"] if item["target"]["name"] == name)
+    uid = next(item["target"]["uid"] for item in response.json()["items"] if item["target"]["name"] == name)
+    assert isinstance(uid, str)
+    return uid
 
 
 async def test_the_streams_need_a_caller(app: AppProcess) -> None:

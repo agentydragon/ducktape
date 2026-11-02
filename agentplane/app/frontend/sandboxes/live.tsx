@@ -133,6 +133,8 @@ export function useRequiredSandboxesLive(): Live<EnvironmentChunk> {
   return live;
 }
 
+const DISABLED_ENVIRONMENT_CONNECTION: StreamConnection = { phase: "live", since: 0 };
+
 /** Exact-target observation; a reconnect begins a fresh generated EnvironmentService snapshot. */
 export function useEnvironmentWatch(target: TargetHandle | undefined): {
   environment: EnvironmentDescriptor | null;
@@ -178,7 +180,7 @@ export function useEnvironmentWatch(target: TargetHandle | undefined): {
   const environment = observed?.identity === identity ? observed.environment : null;
   const stream = useStreamStatus(
     "Environment",
-    identity === null ? { phase: "live", since: 0 } : connection,
+    identity === null ? DISABLED_ENVIRONMENT_CONNECTION : connection,
     identity !== null && environment === null ? "Waiting for environment snapshot" : null
   );
   return { environment, stream };
