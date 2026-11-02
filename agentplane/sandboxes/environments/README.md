@@ -1,8 +1,8 @@
 # Existing environment discovery
 
-`EnvironmentService` is the read-only inventory surface for existing managed Sandboxes. It is a
-separate gRPC service from the Session Dispatcher, co-hosted by the Runner Gateway on its existing
-listener. Its method paths are:
+`EnvironmentService` provides read-only discovery of existing managed Sandboxes and a separately
+authorized explicit-resume operation. It is a separate gRPC service from the Session Dispatcher,
+co-hosted by the Runner Gateway on its existing listener. Its method paths are:
 
 - `/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments`
 - `/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment`

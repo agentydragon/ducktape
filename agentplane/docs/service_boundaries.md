@@ -96,7 +96,8 @@ remain HTTP at their owning components. They are protocol endpoints, not alterna
 - **Runner Gateway:** runner control stream, verified destination bindings, the per-Sandbox Runner
   Proxy and `EnvironmentService` RPCs. The service returns existing-target facts only after exact
   ServiceAccount UID and Sandbox-owner checks, and delegates explicit resume to the lifecycle
-  manager. Automatic delivery remains on its catalog-backed wake path until a separate integration.
+  manager. Dispatcher automatic delivery wake is assessed and requested through the shared lifecycle
+  manager under the current caller identity, `wakeOnSend` and `wake_callers` policy.
   The service does not provision or grant target access. The Gateway does not own Session records
   or command admission.
   The app and Dispatcher use the proxy for live Runner RPCs; the Dispatcher owns sender-facing durable

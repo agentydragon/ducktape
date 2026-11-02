@@ -1,11 +1,12 @@
 # Sandboxes
 
 The shared library for Sandbox requesters and readers: the integration app, Runner Gateway and
-Notification Service. Kubernetes holds all Sandbox state. The `lifecycle` package owns explicit
-resume authorization and its guarded `spec.running`/`wakeGeneration` updates; operator authority
-and ordinary execution-account policy are checked at request time. Automatic delivery still uses
-the catalog-backed wake path and its existing allowlist behavior until a separate integration. The
-Sandbox Controller reconciles desired state and owns Sandbox status. The Go `SandboxReader`
+Notification Service. Kubernetes holds all Sandbox state. The Runner Gateway's `lifecycle` manager
+authorizes its explicit-resume API and automatic wake, applying guarded `spec.running`/`wakeGeneration`
+updates; operator authority and ordinary execution-account policy are checked at request time. The
+Dispatcher DeliveryWorker requests automatic wake through the shared manager, preserving the effective
+caller and applying `wakeOnSend` and the configured `wake_callers` grant. The Sandbox Controller
+reconciles desired state and owns Sandbox status. The Go `SandboxReader`
 reads a Sandbox and its Pod; `SandboxInventory` also creates (idempotently, by a recorded create intent),
 guards `spec.running` patches by UID and resourceVersion, refuses resume with a retryable error while the
 controller is quiescing an incarnation, and starts deletion of a suspended Sandbox. On a resourceVersion
