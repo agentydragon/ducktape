@@ -234,6 +234,23 @@ bazel_dep(name = "rules_pkg", version = "1.3.0")
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 
+# Isolated Grafana dashboard visual tests; Grafana matches the deployed version.
+oci.pull(
+    name = "grafana_visual",
+    digest = "sha256:e932bd6ed0e026595b08483cd0141e5103e1ab7ff8604839ff899b8dc54cabcb",
+    image = "mirror.gcr.io/grafana/grafana",
+    platforms = ["linux/amd64"],
+    tag = "12.4.1",
+)
+oci.pull(
+    name = "prometheus_visual",
+    digest = "sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996",
+    image = "mirror.gcr.io/prom/prometheus",
+    platforms = ["linux/amd64"],
+    tag = "v3.5.0",
+)
+use_repo(oci, "grafana_visual", "grafana_visual_linux_amd64", "prometheus_visual", "prometheus_visual_linux_amd64")
+
 # Most Docker Hub base images are pulled through mirror.gcr.io (Google's pull-through
 # cache of Docker Hub) instead of docker.io directly: Docker Hub's anonymous
 # per-IP pull-rate limit reliably 429s the shared CI runner during

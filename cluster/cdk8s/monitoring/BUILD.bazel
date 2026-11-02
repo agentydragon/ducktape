@@ -196,7 +196,7 @@ py_library(
 py_library(
     name = "grafana_instance",
     srcs = ["grafana_instance.py"],
-    data = [":dashboards"],
+    data = ["//cluster/cdk8s/monitoring/dashboards"],
     visibility = [
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/agentplane:__pkg__",
@@ -235,13 +235,6 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],
-)
-
-# `grafana_instance`'s dashboard JSON, also the Grafana skill verifier's candidates.
-filegroup(
-    name = "dashboards",
-    srcs = glob(["dashboards/*.json"]),
-    visibility = ["//cluster/skills/grafana:__pkg__"],
 )
 
 py_library(
@@ -494,8 +487,8 @@ py_test(
     name = "test_smokeping",
     srcs = ["test_smokeping.py"],
     data = [
-        "dashboards/home-network-overview.json",
         "testdata/smokeping_rules.yaml",
+        "//cluster/cdk8s/monitoring/dashboards:home-network-overview.json",
         "@multitool//tools/promtool",
         "@nodejs_linux_amd64//:bin/node",
     ],

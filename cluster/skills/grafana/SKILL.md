@@ -19,7 +19,9 @@ A new dashboard is two edits: the `<name>.json` file in that directory, and its 
 datasource inputs to a datasource name. `bb run //cluster/cdk8s:generate_manifests` then
 writes its `GrafanaDashboard` and `configMapGenerator` entry. A component's own dashboard
 sits beside the generator module that deploys it, declared as that module's `DASHBOARD`
-(`cluster/cdk8s/grafana/dashboard.json`, `cluster/cdk8s/github_exporter/dashboard.json`).
+(for example, `cluster/cdk8s/github_exporter/dashboard.json`). AIQuota history is
+under `monitoring/dashboards/` but remains deployed by `grafana/app.py` alongside its
+ClickHouse datasource.
 
 ## Credential consent
 

@@ -10,7 +10,7 @@ py_binary(
     srcs = ["verify_dashboard.py"],
     data = [
         "//cluster:generated/monitoring/grafana-instance/grafana-instance.k8s.yaml",
-        "//cluster/cdk8s/monitoring:dashboards",
+        "//cluster/cdk8s/monitoring/dashboards",
         "@chrome_headless_shell//:executable",
     ],
     env = {

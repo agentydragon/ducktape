@@ -3,7 +3,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 py_library(
     name = "app",
     srcs = ["app.py"],
-    data = ["dashboard.json"],
+    data = ["//cluster/cdk8s/monitoring/dashboards:aiquota-history.json"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:flux",

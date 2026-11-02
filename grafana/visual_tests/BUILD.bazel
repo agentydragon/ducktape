@@ -1,0 +1,53 @@
+# gazelle:ignore
+
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//visibility:public"],
+)
+
+exports_files(["dashboard_visual_test.py"])
+
+py_library(
+    name = "recorded",
+    srcs = ["recorded.py"],
+    deps = ["@pypi//playwright"],
+)
+
+py_library(
+    name = "visual_browser",
+    srcs = ["visual_browser.py"],
+    deps = [
+        "//util/testing:visual_capture",
+        "@pypi//playwright",
+    ],
+)
+
+py_library(
+    name = "visual_harness",
+    srcs = ["visual_harness.py"],
+    deps = [
+        "//third_party/containers:grafana_visual",
+        "//third_party/containers:prometheus_visual",
+        "//third_party/containers:ryuk",
+        "//util:oci",
+        "//util/testing:container_logs",
+        "//util/testing:undeclared_outputs",
+        "@pypi//docker",
+        "@pypi//httpx",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_test(
+    name = "test_recorded",
+    srcs = ["test_recorded.py"],
+    deps = [
+        ":recorded",
+        ":visual_harness",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
