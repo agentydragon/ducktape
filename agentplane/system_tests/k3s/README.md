@@ -311,9 +311,12 @@ and serials, `/etc/fstab`, and the udevd, udev-trigger, workspace `.device`, mak
 environment-runtime unit configuration and monotonic properties. It also retains short-monotonic
 journal records. It attempts optional `systemd-analyze` timing and critical-chain output after required
 sections; if the boot transaction is still finishing, those commands can fail and their statuses
-remain visible without making the required report partial. The report uses a two-second
-per-command bound and a 35-second runtime bound; every command has an exit-status marker, and a final
-`status=partial` or missing end marker identifies incomplete required evidence.
+remain visible without making the required report partial. Required collection shares the
+service's 35-second runtime bound. Unit properties and definitions are queried in batches to avoid
+repeated systemctl startup and connection costs. Every command has an exit-status marker, and
+`status=partial` or a missing end marker identifies incomplete required evidence. The required
+completion receipt precedes the optional analyzers, which retain their individual two-second
+bounds, so an optional probe cannot prevent completed required evidence from being certified.
 Machine-readable readiness and report receipts are written directly to the guest serial port;
 command output and udev events also go through `journal+console`. This keeps receipt parsing
 independent of systemd's journal-forwarding prefix.
