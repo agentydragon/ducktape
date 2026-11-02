@@ -6,7 +6,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -96,15 +95,21 @@ func (c *runtimeTransitionSequence) runQuiesceBarrier(ctx context.Context, kind 
 		if !plan.currentReport {
 			return runtimeTransitionOutcome{quiesce: &plan}, nil
 		}
-		bound, err := plan.host.client.BoundContext(ctx, plan.binding)
-		if err != nil {
+		if _, err := plan.host.client.BoundContext(ctx, plan.binding); err != nil {
 			return runtimeTransitionOutcome{}, status.Errorf(codes.Unavailable, "authorize Harness Host quiesce status: %v", err)
 		}
-		hostStatus, err := plan.host.client.GetStatus(bound, &sessionpb.GetStatusRequest{})
+		// Host GetStatus derives its lifecycle error from these same shared COSI
+		// resources. Read only the generation bound by the seal barrier instead
+		// of assembling an unrelated Host session/process status response.
+		desired, desiredFound, err := lifecycle.ReadDesired(ctx, r.lifecycleState)
 		if err != nil {
-			return runtimeTransitionOutcome{}, status.Errorf(codes.Unavailable, "read Harness Host quiesce status: %v", err)
+			return runtimeTransitionOutcome{}, status.Errorf(codes.Unavailable, "read Harness Host desired state: %v", err)
 		}
-		plan.retry = hostStatus.GetLifecycle().GetError() != ""
+		progress, progressFound, err := lifecycle.ReadStatus(ctx, r.lifecycleState)
+		if err != nil {
+			return runtimeTransitionOutcome{}, status.Errorf(codes.Unavailable, "read Harness Host lifecycle status: %v", err)
+		}
+		plan.retry = quiesceStatusNeedsRetry(plan.binding, desired, desiredFound, progress, progressFound)
 		return runtimeTransitionOutcome{quiesce: &plan}, nil
 	case quiescePublishIntent:
 		if !plan.retry {
@@ -129,4 +134,9 @@ func (c *runtimeTransitionSequence) runQuiesceBarrier(ctx context.Context, kind 
 	default:
 		return runtimeTransitionOutcome{}, status.Errorf(codes.Internal, "unknown Runtime quiesce barrier %d", kind)
 	}
+}
+
+func quiesceStatusNeedsRetry(binding *runtimepb.Binding, desired lifecycle.Desired, desiredFound bool, progress lifecycle.Status, progressFound bool) bool {
+	return binding != nil && desiredFound && progressFound &&
+		desired.Generation == binding.Generation && progress.Generation == desired.Generation && progress.Error != ""
 }
