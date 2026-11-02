@@ -14,7 +14,8 @@ import { SandboxesLiveProvider } from "./live";
 import { deletable, SuspendResume } from "./lifecycle";
 import { sandboxSummary } from "../sandbox_status";
 import { clone, create, toJson } from "@bufbuild/protobuf";
-import { DurationSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
+import { DurationSchema } from "@bufbuild/protobuf/wkt";
+import { testSandbox } from "../testing/sandbox";
 import { SandboxPhase, SandboxSchema, type Sandbox } from "../../../proto/sandboxes_pb";
 import { serveEventStreams } from "../testing/watch";
 
@@ -51,15 +52,9 @@ const CREATED: SandboxView = {
   suspended_by: null,
 };
 
-const CREATED_INVENTORY = create(SandboxSchema, {
-  name: CREATED.name,
-  uid: CREATED.uid,
-  namespace: CREATED.namespace,
-  createdAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),
-  operatingMode: "Running",
-  serviceAccount: { namespace: "agentplane-test", name: "test-created-sandbox" },
-  phase: SandboxPhase.CREATING,
-});
+const CREATED_INVENTORY = testSandbox(CREATED.name, CREATED.uid);
+CREATED_INVENTORY.operatingMode = "Running";
+CREATED_INVENTORY.phase = SandboxPhase.CREATING;
 
 // What the app serves when its configuration leaves the new-Sandbox defaults unset.
 const UNSET_DEFAULTS: NewSandboxDefaults = { wake_on_send: false, idle_suspend_after_seconds: null };

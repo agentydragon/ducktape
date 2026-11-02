@@ -1,6 +1,6 @@
-import { create, toJson } from "@bufbuild/protobuf";
-import { timestampFromDate } from "@bufbuild/protobuf/wkt";
+import { toJson } from "@bufbuild/protobuf";
 import { SandboxPhase, SandboxSchema, type Sandbox } from "../../proto/sandboxes_pb";
+import { readySandbox } from "./testing/sandbox";
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
 import { type JSX, act } from "react";
@@ -47,33 +47,7 @@ afterEach(async () => {
 
 function sandbox(name: string, overrides: Partial<Sandbox> = {}): Sandbox {
   const uid = `00000000-0000-4000-8000-${name.padStart(12, "0").slice(-12)}`;
-  const result = create(SandboxSchema, {
-    name,
-    uid,
-    namespace: "agentplane-test",
-    createdAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),
-
-    operatingMode: "Running",
-    serviceAccount: { namespace: "agentplane-test", name },
-
-    autosuspendBlockers: [],
-
-    status: { conditions: [{ type: "Ready", status: "True" }] },
-    phase: SandboxPhase.RUNNING,
-    pod: {
-      name,
-      namespace: "agentplane-test",
-      uid: `${uid}-pod`,
-      deleting: false,
-      nodeName: "test-node",
-      ownerReferences: [
-        { apiVersion: "agentplane.allegedly.works/v1alpha1", kind: "Sandbox", name, uid, controller: true },
-      ],
-      status: { phase: "Running", podIP: "10.0.0.1", conditions: [{ type: "Ready", status: "True" }] },
-    },
-    wakeOnSend: false,
-  });
-  return Object.assign(result, overrides);
+  return Object.assign(readySandbox(name, uid), overrides);
 }
 
 function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sandbox">): ThreadView {

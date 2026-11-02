@@ -1,4 +1,5 @@
 import { DurationSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
+import { readySandbox, suspendedSandbox } from "../testing/sandbox";
 import { AutosuspendBlockerSchema, SandboxPhase, SandboxSchema, type Sandbox } from "../../../proto/sandboxes_pb";
 // @vitest-environment happy-dom
 
@@ -81,47 +82,12 @@ let favicon: HTMLLinkElement;
 // whether it then drops. By default the thread's sandbox is running on a current inventory, so its
 // controls are live.
 type Inventory = Sandbox[] | null;
-function inventorySandbox(operating_mode: "Running" | "Suspended" = "Running", wake_on_send = false): Sandbox {
+function inventorySandbox(scenario: "ready" | "suspended" = "ready", wakeOnSend = false): Sandbox {
   const uid = "20000000-0000-4000-8000-000000000001";
-  return create(SandboxSchema, {
-    name: THREAD.sandbox,
-    uid,
-    namespace: "agentplane-test",
-    createdAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),
-
-    operatingMode: operating_mode,
-    wakeOnSend: wake_on_send,
-
-    autosuspendBlockers: [],
-
-    status: operating_mode === "Running" ? { conditions: [{ type: "Ready", status: "True" }] } : {},
-    serviceAccount: { namespace: "agentplane-test", name: THREAD.sandbox },
-    phase: operating_mode === "Running" ? SandboxPhase.RUNNING : SandboxPhase.SUSPENDED,
-    pod:
-      operating_mode === "Suspended"
-        ? undefined
-        : {
-            name: THREAD.sandbox,
-            namespace: "agentplane-test",
-            uid: "test-pod-1",
-            deleting: false,
-            nodeName: "test-node",
-            ownerReferences: [
-              {
-                apiVersion: "agentplane.allegedly.works/v1alpha1",
-                kind: "Sandbox",
-                name: THREAD.sandbox,
-                uid,
-                controller: true,
-              },
-            ],
-            status: {
-              phase: "Running",
-              podIP: "10.0.0.1",
-              conditions: [{ type: "Ready", status: "True" }],
-            },
-          },
-  });
+  const sandbox = scenario === "ready" ? readySandbox(THREAD.sandbox, uid) : suspendedSandbox(THREAD.sandbox, uid);
+  if (sandbox.pod) sandbox.pod.uid = "test-pod-1";
+  sandbox.wakeOnSend = wakeOnSend;
+  return sandbox;
 }
 
 function updatedSandbox(base: Sandbox, changes: Partial<Sandbox>): Sandbox {
@@ -679,7 +645,7 @@ it("sends the draft on Enter and clears it", async () => {
 });
 
 it("queues a message through the Dispatcher for a fresh suspended Sandbox with wake-on-message", async () => {
-  sandboxes = [updatedSandbox(inventorySandbox("Suspended", true), { suspendedBy: "Requested" })];
+  sandboxes = [updatedSandbox(inventorySandbox("suspended", true), { suspendedBy: "Requested" })];
   sharedThread = {
     harness_state: "HARNESS_STATE_STOPPED",
     feed_status: "ended",
@@ -708,7 +674,7 @@ it("queues a message through the Dispatcher for a fresh suspended Sandbox with w
 
 it("disables the composer and offers resume for a fresh suspended Sandbox without wake-on-message", async () => {
   vi.mocked(resumeSandbox).mockResolvedValue(undefined);
-  sandboxes = [updatedSandbox(inventorySandbox("Suspended", false), { suspendedBy: "Requested" })];
+  sandboxes = [updatedSandbox(inventorySandbox("suspended", false), { suspendedBy: "Requested" })];
   sharedThread = {
     harness_state: "HARNESS_STATE_STOPPED",
     feed_status: "ended",
@@ -734,7 +700,7 @@ it("disables the composer and offers resume for a fresh suspended Sandbox withou
 it.each(["SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED"])(
   "does not queue messages for a suspended Session whose setup is %s",
   async (setupState) => {
-    sandboxes = [inventorySandbox("Suspended", true)];
+    sandboxes = [inventorySandbox("suspended", true)];
     sharedThread = {
       harness_state: "HARNESS_STATE_STOPPED",
       feed_status: "ended",
@@ -751,7 +717,7 @@ it.each(["SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED"])(
 );
 
 it.each<[string, Inventory, boolean]>([
-  ["a stale suspended Sandbox", [inventorySandbox("Suspended", true)], false],
+  ["a stale suspended Sandbox", [inventorySandbox("suspended", true)], false],
   ["a missing Sandbox", [], true],
 ])("does not submit through %s inventory", async (_name, inventory, fresh) => {
   sandboxes = inventory;
@@ -764,7 +730,7 @@ it.each<[string, Inventory, boolean]>([
 });
 
 it("keeps an archived Thread read-only when its suspended Sandbox would wake on message", async () => {
-  sandboxes = [inventorySandbox("Suspended", true)];
+  sandboxes = [inventorySandbox("suspended", true)];
   sharedThread = { archived: true };
   const container = await render();
   expect(composer(container).disabled).toBe(true);
@@ -774,7 +740,7 @@ it("keeps an archived Thread read-only when its suspended Sandbox would wake on 
 });
 
 it("submits once for two Enters before the cleared draft renders, then takes the next draft", async () => {
-  sandboxes = [inventorySandbox("Suspended", true)];
+  sandboxes = [inventorySandbox("suspended", true)];
   const field = composer(await render());
   await type(field, "hello");
   await act(async () => {
@@ -884,7 +850,7 @@ it.each([
 });
 
 it("reads the Sandbox for the topbar and the composer from the one inventory stream", async () => {
-  sandboxes = [updatedSandbox(inventorySandbox("Suspended", true), { suspendedBy: "Requested" })];
+  sandboxes = [updatedSandbox(inventorySandbox("suspended", true), { suspendedBy: "Requested" })];
   const container = await render();
   const indicator = mounted.at(-1)?.topbarTitle?.querySelector(".agentplane-thread-status-indicator");
   expect(indicator?.getAttribute("data-status")).toBe("suspended");
@@ -955,7 +921,7 @@ it("shows a stopped harness as an icon in the status indicator and the favicon, 
 });
 
 it("shows a suspended Sandbox as paused in the status indicator, favicon and thread title", async () => {
-  sandboxes = [inventorySandbox("Suspended")];
+  sandboxes = [inventorySandbox("suspended")];
   const indicator = (await render()).querySelector(".agentplane-thread-status-indicator");
   expect(indicator?.getAttribute("aria-label")).toBe("Sandbox suspended");
   expect(indicator?.getAttribute("data-status")).toBe("suspended");
@@ -968,7 +934,7 @@ it.each<["Idle" | "Requested", string]>([
   ["Idle", "idle"],
   ["Requested", "on request"],
 ])("says a Sandbox suspended by %s was suspended %s, in the indicator and composer", async (suspendedBy, reason) => {
-  sandboxes = [updatedSandbox(inventorySandbox("Suspended"), { suspendedBy: suspendedBy })];
+  sandboxes = [updatedSandbox(inventorySandbox("suspended"), { suspendedBy: suspendedBy })];
   const container = await render();
   expect(container.querySelector(".agentplane-thread-status-indicator")?.getAttribute("aria-label")).toBe(
     `Sandbox suspended (${reason})`
@@ -979,7 +945,7 @@ it.each<["Idle" | "Requested", string]>([
 
 it("offers to resume a suspended Sandbox, and only from a current inventory", async () => {
   vi.mocked(resumeSandbox).mockResolvedValue(undefined);
-  sandboxes = [inventorySandbox("Suspended")];
+  sandboxes = [inventorySandbox("suspended")];
   const container = await render();
   const button = buttonIn(container, "Resume Sandbox");
   await act(async () => button?.click());
@@ -988,7 +954,7 @@ it("offers to resume a suspended Sandbox, and only from a current inventory", as
 
 it.each([
   ["a running Sandbox", [inventorySandbox()], true],
-  ["a suspended Sandbox on a stale inventory", [inventorySandbox("Suspended")], false],
+  ["a suspended Sandbox on a stale inventory", [inventorySandbox("suspended")], false],
 ])("does not offer to resume %s", async (_, inventory, fresh) => {
   sandboxes = inventory;
   inventoryFresh = fresh;
@@ -997,7 +963,7 @@ it.each([
 
 it("shows why a refused resume of a suspended Sandbox failed", async () => {
   vi.mocked(resumeSandbox).mockRejectedValue(new Error("the Sandbox is being deleted"));
-  sandboxes = [inventorySandbox("Suspended")];
+  sandboxes = [inventorySandbox("suspended")];
   const container = await render();
   await act(async () => buttonIn(container, "Resume Sandbox")?.click());
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("the Sandbox is being deleted");
@@ -1103,7 +1069,7 @@ it.each([[{ archived: false }, [], "Sandbox unavailable", "inactive"]])(
 );
 
 const RUNNING = inventorySandbox();
-const SUSPENDED = inventorySandbox("Suspended");
+const SUSPENDED = inventorySandbox("suspended");
 const ABSENT = "Sandbox absent from last inventory snapshot. Current availability unknown";
 
 function matching(text: string | RegExp): unknown {
@@ -1174,7 +1140,7 @@ it.each<[string, Inventory, { fresh?: boolean; droppedFor?: number }, string | n
 it.each(["running", "dormant", "setup", "suspended", "waking"])(
   "queues an effort change with a %s harness or Sandbox without optimistically changing it",
   async (state) => {
-    if (state === "suspended") sandboxes = [inventorySandbox("Suspended", true)];
+    if (state === "suspended") sandboxes = [inventorySandbox("suspended", true)];
     if (state === "waking") sandboxes = [waking];
     if (state === "setup") sharedThread = { setup_state: "SETUP_STATE_RUNNING" };
     const container = await render(
