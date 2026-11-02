@@ -9143,7 +9143,6 @@ impl PreparedSynchronousCallIndex {
                 NativeOwnDataReadCandidate::Exact { span, slots } => self
                     .native_own_data_read(*span)
                     .map(|(_, _, dependencies)| NativeOwnDataReadDiagnostic::Proven {
-                        span: *span,
                         dependencies,
                     })
                     .unwrap_or_else(|| NativeOwnDataReadDiagnostic::MissingProof {
