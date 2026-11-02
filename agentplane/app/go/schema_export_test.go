@@ -82,8 +82,8 @@ func TestExportOpenAPIUsesHumaSchemasForThreadRoutes(t *testing.T) {
 		t.Fatal("ThreadView.id must be documented as a UUID")
 	}
 	sandboxUID, ok := properties["sandbox_uid"].(map[string]any)
-	if !ok || sandboxUID["format"] != "uuid" {
-		t.Fatalf("ThreadView.sandbox_uid = %v, want a nullable UUID", properties["sandbox_uid"])
+	if !ok || sandboxUID["format"] != nil {
+		t.Fatalf("ThreadView.sandbox_uid = %v, want an opaque nullable string", properties["sandbox_uid"])
 	}
 	types, ok := sandboxUID["type"].([]any)
 	if !ok || len(types) != 2 || types[0] != "string" || types[1] != "null" {

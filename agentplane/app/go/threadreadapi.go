@@ -68,7 +68,7 @@ type (
 type threadView struct {
 	ID                  uuid.UUID  `json:"id" format:"uuid"`
 	Sandbox             string     `json:"sandbox"`
-	SandboxUID          *uuid.UUID `json:"sandbox_uid" format:"uuid" nullable:"true"`
+	SandboxUID          *string    `json:"sandbox_uid" nullable:"true"`
 	Harness             *string    `json:"harness" enum:"HARNESS_CLAUDE,HARNESS_CODEX,HARNESS_CENTRAL_SAMPLER"`
 	Model               *string    `json:"model"`
 	CWD                 *string    `json:"cwd"`
@@ -537,11 +537,7 @@ func makeThreadView(thread threads.Thread, summary historydata.FoldSummary) (thr
 		HarnessState: sessionpb.HarnessState_HARNESS_STATE_UNSPECIFIED.String(),
 	}
 	if summary.SandboxUID != "" {
-		sandboxUID, err := uuid.Parse(summary.SandboxUID)
-		if err != nil {
-			return threadView{}, fmt.Errorf("History Service returned an invalid Sandbox UID %q: %w", summary.SandboxUID, err)
-		}
-		view.SandboxUID = &sandboxUID
+		view.SandboxUID = stringPointer(summary.SandboxUID)
 	}
 	if summary.LastTurnStatus != nil {
 		value := eventpb.TurnStatus_name[*summary.LastTurnStatus]

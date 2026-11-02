@@ -357,14 +357,14 @@ func TestListThreadViewsFiltersBySandboxIncarnationAndBindsPageToken(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(first.Threads) != 1 || first.Threads[0].ID != ids[0] || first.Threads[0].SandboxUID == nil || first.Threads[0].SandboxUID.String() != uid || first.NextPageToken == nil {
+	if len(first.Threads) != 1 || first.Threads[0].ID != ids[0] || first.Threads[0].SandboxUID == nil || *first.Threads[0].SandboxUID != uid || first.NextPageToken == nil {
 		t.Fatalf("first page = %+v, want archived Thread %s with UID %s and a continuation", first, ids[0], uid)
 	}
 	second, err := listThreadViews(context.Background(), store, history, listing, 1, first.NextPageToken)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(second.Threads) != 1 || second.Threads[0].ID != ids[2] || second.Threads[0].SandboxUID == nil || second.Threads[0].SandboxUID.String() != uid || second.NextPageToken != nil {
+	if len(second.Threads) != 1 || second.Threads[0].ID != ids[2] || second.Threads[0].SandboxUID == nil || *second.Threads[0].SandboxUID != uid || second.NextPageToken != nil {
 		t.Fatalf("second page = %+v, want older Thread %s with UID %s and no continuation", second, ids[2], uid)
 	}
 	otherListing := threadListing{SandboxUID: stringPointer(replacementUID), IncludeArchived: true}
@@ -407,14 +407,14 @@ func TestMakeThreadViewPreservesFeedStatusEnum(t *testing.T) {
 }
 
 func TestMakeThreadViewReturnsSandboxUID(t *testing.T) {
-	uid := "11111111-1111-4111-8111-111111111111"
+	uid := "opaque-sandbox-uid"
 	view, err := makeThreadView(threads.Thread{ID: uuid.New()}, historydata.FoldSummary{
 		Present: true, Sandbox: "sandbox", SandboxUID: uid,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.SandboxUID == nil || view.SandboxUID.String() != uid {
+	if view.SandboxUID == nil || *view.SandboxUID != uid {
 		t.Fatalf("sandbox_uid = %v, want %s", view.SandboxUID, uid)
 	}
 	body, err := json.Marshal(view)

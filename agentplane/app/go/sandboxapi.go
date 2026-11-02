@@ -50,7 +50,7 @@ type newSandboxInput struct {
 type sandboxWakePolicyInput struct {
 	Name string `path:"name" minLength:"1" maxLength:"57" pattern:"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"`
 	Body struct {
-		UID        string `json:"uid" format:"uuid" required:"true"`
+		UID        string `json:"uid" minLength:"1" required:"true"`
 		WakeOnSend bool   `json:"wake_on_send"`
 	}
 }
@@ -58,7 +58,7 @@ type sandboxWakePolicyInput struct {
 type sandboxIdleSuspendInput struct {
 	Name string `path:"name" minLength:"1" maxLength:"57" pattern:"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"`
 	Body struct {
-		UID                     string `json:"uid" format:"uuid" required:"true"`
+		UID                     string `json:"uid" minLength:"1" required:"true"`
 		IdleSuspendAfterSeconds *int64 `json:"idle_suspend_after_seconds,omitempty" minimum:"60" maximum:"9223372036"`
 	}
 }
