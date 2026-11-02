@@ -77344,6 +77344,218 @@
         }
       ],
       "scope": "Post-experiment validation only; excluded from CPU/heartbeat treatment comparison. Native journal timestamps measure receipt at journald, not original producer emission times."
+    },
+    "merged_source_changes": {
+      "observed_at_utc": "2026-11-02T19:34:45.803965+00:00",
+      "cpu": {
+        "pr": 13969,
+        "head": "bf83b88a3eff68ac53296585821753ab196a1103",
+        "merge_commit": "d90c0f57bc7e0deee33b047f0893d30ae908735c",
+        "merged_at_utc": "2026-11-02T19:32:11Z",
+        "bazel_precommit_imports": "SUCCESS",
+        "visual_review_at_observation": "IN_PROGRESS"
+      },
+      "monitor": {
+        "pr": 13967,
+        "head": "c0d17ddbd3f834a046039235db2f67821da51e15",
+        "merge_commit": "9947d3d4d66217c8bbc4b890273ec8ba725a17be",
+        "merged_at_utc": "2026-11-02T19:29:14Z",
+        "bazel_precommit_imports": "SUCCESS",
+        "visual_review_at_observation": "NEUTRAL"
+      },
+      "cpu_first_48h_checkpoint_not_before_utc": "2026-11-04T19:32:11+00:00",
+      "scope": "Merge and validation evidence; no post-merge latency measurement collected, and no follow-up job scheduled."
+    },
+    "separate_cpu_pr_ci_validation": {
+      "audit": {
+        "ci_invocation": "30172bfe-5dc8-589b-939a-35ddefac8967",
+        "source_pr_head": "bf83b88a3eff68ac53296585821753ab196a1103",
+        "ci_synthetic_merge": "9175712e1148f1c10f9b00f216a7a43e397253be",
+        "status": "PASSED",
+        "test_executed_remotely": true,
+        "test_cached": false,
+        "test_execution_seconds": 304.641,
+        "persistence": {
+          "outcome": "warm",
+          "fingerprint": "2b3619f103b4b6f2bd0632571c9a6bd2775adeb2ca6fa4824f0e6ae9b46e1106",
+          "k3s": {
+            "boot_id": "37252300-14e8-42c8-a93b-05f6924fcdec",
+            "pid": 21328,
+            "process_start_ticks": "49363",
+            "namespace_uid": "84b51b14-5fd6-40dd-af0c-81d2b37533b7",
+            "node_uid": "35a52e22-3ebc-4512-b181-253674b61270",
+            "node_internal_ip": "192.168.241.2"
+          },
+          "namespace_uid": "13636db0-b6d8-459b-ba31-1d5703b07a5e",
+          "postgres_pod_uid": "054ce827-097b-47c8-bc94-07897b6aa7ce",
+          "root_certificate_uid": "52f50deb-0c9d-43e8-a4c5-fcc17a5d1a21",
+          "root_secret_uid": "a05e6f4f-1e21-4d57-bce3-bf1043680ed7",
+          "collector_namespace_uid": "2d59c790-3196-47c4-8ebc-90cc248d105f",
+          "pki_controller_uids": {
+            "cert-manager-cainjector": "03f2a819-1b74-4836-ad8f-f085d7c94d4f",
+            "cert-manager": "33a73a28-b7d7-4c09-981b-bf6c0500cdff",
+            "cert-manager-webhook": "e23feb4a-42de-4bf4-8ff5-f4d9b2b4a6a1",
+            "trust-manager": "7b2714a4-023e-4582-84c0-5601861edcf8"
+          },
+          "vm_controller_uids": {
+            "apps/v1/deployments/kubevirt/virt-operator": "c76a9661-fc23-4374-9a17-511ec8730f72",
+            "apps/v1/deployments/kubevirt/virt-api": "02ffb690-37b2-4ee7-87a6-c0a4d5a98b71",
+            "apps/v1/deployments/kubevirt/virt-controller": "134c43f1-8e10-4711-a9ed-40ea640b4593",
+            "apps/v1/daemonsets/kubevirt/virt-handler": "532e63ae-185b-4356-be67-708beffc12c4",
+            "apps/v1/deployments/kyverno/kyverno-admission-controller": "95809544-5a1e-4310-90c4-a0959935dfb9",
+            "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "983d7f5c-e034-4bac-8965-f37024aa3004"
+          },
+          "workspace_storage_class_uid": "a5e2b4dd-2ed8-40ef-8f3a-a3a05a36d275",
+          "layers_in_memory": false,
+          "model_endpoint": "http://192.168.241.2:40193",
+          "workspace_loop_devices_released": 3,
+          "cleanup": "complete"
+        },
+        "phases": {
+          "aggregation_note": "Root case and named scenario envelopes are independent concurrent intervals; do not sum them.",
+          "stack_setup_seconds": 50.253,
+          "case_root_seconds": 191.127,
+          "named_scenario_envelopes": [
+            {
+              "span": "system_test.scenario",
+              "seconds": 161.116,
+              "scenario": "vm-turn-harness_codex"
+            },
+            {
+              "span": "system_test.scenario",
+              "seconds": 184.403,
+              "scenario": "codex-tool-oom"
+            },
+            {
+              "span": "system_test.scenario",
+              "seconds": 190.338,
+              "scenario": "vm-turn-harness_claude"
+            },
+            {
+              "span": "system_test.scenario",
+              "seconds": 190.445,
+              "pytest_nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios"
+            }
+          ],
+          "guest_ready_envelopes": [
+            {
+              "span": "system_test.sandbox.ready",
+              "seconds": 86.092,
+              "sandbox": "systest-vm-2"
+            },
+            {
+              "span": "system_test.sandbox.ready",
+              "seconds": 90.699,
+              "sandbox": "systest-vm-codex-oom"
+            },
+            {
+              "span": "system_test.sandbox.ready",
+              "seconds": 107.166,
+              "sandbox": "systest-vm-1"
+            }
+          ],
+          "oom_phase_envelopes": [
+            {
+              "span": "system_test.vm_oom.baseline",
+              "seconds": 40.142
+            },
+            {
+              "span": "system_test.vm_oom.trigger_and_survival",
+              "seconds": 18.105
+            },
+            {
+              "span": "system_test.vm_oom.same_session_recovery",
+              "seconds": 7.689
+            }
+          ],
+          "stack_cleanup_seconds": 27.563
+        },
+        "native_starts": [
+          {
+            "span": "agentplane.codex.app_server.start",
+            "sandbox_uid": "67eb6572-cab8-4e89-b07e-8630eab1cf9a",
+            "harness": null,
+            "session_id": "80a009f8-99c9-431e-991b-180a77b5e472",
+            "duration_seconds": 13.535
+          },
+          {
+            "span": "agentplane.env.runtime.harness.start",
+            "sandbox_uid": "67eb6572-cab8-4e89-b07e-8630eab1cf9a",
+            "harness": "HARNESS_CODEX",
+            "session_id": "80a009f8-99c9-431e-991b-180a77b5e472",
+            "duration_seconds": 22.488
+          },
+          {
+            "span": "agentplane.codex.app_server.start",
+            "sandbox_uid": "61deb758-076c-47df-a0f9-76cea17844fc",
+            "harness": null,
+            "session_id": "05e08c94-d2c6-4017-8c13-b1397a0d50c4",
+            "duration_seconds": 11.916
+          },
+          {
+            "span": "agentplane.env.runtime.harness.start",
+            "sandbox_uid": "61deb758-076c-47df-a0f9-76cea17844fc",
+            "harness": "HARNESS_CODEX",
+            "session_id": "05e08c94-d2c6-4017-8c13-b1397a0d50c4",
+            "duration_seconds": 16.299
+          },
+          {
+            "span": "agentplane.env.runtime.harness.start",
+            "sandbox_uid": "837296f1-21e0-4ff8-a80e-fa66e5ff44dc",
+            "harness": "HARNESS_CLAUDE",
+            "session_id": "82a877ea-2c13-4ce1-8e34-15a1d0407603",
+            "duration_seconds": 25.285
+          }
+        ],
+        "oom": {
+          "oom_exit_code": 137,
+          "oom_output_marker": true,
+          "followup_exit_code": 0,
+          "followup_output_marker": true,
+          "before_cgroup": "/agentplane.slice/agentplane-executors.slice/agentplane-native-90e3770f91a26926-6c7f2733-f74e-413e-95cb-3d497a43ced9.service",
+          "after_cgroup": "/agentplane.slice/agentplane-executors.slice/agentplane-native-90e3770f91a26926-6c7f2733-f74e-413e-95cb-3d497a43ced9.service",
+          "same_leaf_cgroup_path": true,
+          "before_oom_kill": 0,
+          "after_oom_kill": 1,
+          "leaf_oom_kill_delta": 1,
+          "before_executor_oom": 0,
+          "after_executor_oom": 11,
+          "executor_oom_delta": 11,
+          "runner_identity_unchanged_before_to_after_oom": true,
+          "runner_identity_unchanged_before_to_after_followup": true,
+          "runner_after_followup_present": true,
+          "memory_max_bytes": 100663296
+        },
+        "journals": [
+          {
+            "path": "vm-artifacts/journals/pvc-6c6e4b9f-93ed-4587-b51c-922fd065f4d7_systest_systest-vm-1-state/65f2c509f5a646eba87c040456e187c3/1028881-system.journal",
+            "exit_code": 0
+          },
+          {
+            "path": "vm-artifacts/journals/pvc-7241edfe-a921-4c28-9efe-59d7723a72d2_systest_systest-vm-codex-oom-state/a639d4385bb241708c1b53183ea81eff/1028887-system.journal",
+            "exit_code": 0
+          },
+          {
+            "path": "vm-artifacts/journals/pvc-2d843d45-fea8-4602-81b6-ab29efe4340e_systest_systest-vm-2-state/3cee7fa85b224bc98475f0d07612b8e2/1028885-system.journal",
+            "exit_code": 0
+          }
+        ],
+        "launcher_incarnations": [
+          "systest_virt-launcher-systest-vm-codex-oom-cvdkl_9b85bdfc-5e14-4f28-ad0f-8793ff63fce9",
+          "systest_virt-launcher-systest-vm-1-7pvwr_a2bddf49-ed75-485c-8bf9-84fa42d10462",
+          "systest_virt-launcher-systest-vm-2-4dp9g_1b3241cc-c716-4461-bf9f-e69dd2b3fd4c"
+        ],
+        "missing_shutdown_incarnations": [],
+        "full_contract_verified": true
+      },
+      "synthetic_merge_lineage": {
+        "parents": [
+          "de5e5be170946c7d380c66fe11cead80f9f5a1c1",
+          "bf83b88a3eff68ac53296585821753ab196a1103"
+        ],
+        "sha": "9175712e1148f1c10f9b00f216a7a43e397253be"
+      },
+      "scope": "Separate fresh PR-CI execution; excluded from the immutable controlled cohort."
     }
   },
   "latest_inspected_devel_commit": "f1e187cbb483e534db543bcadc1141f4fa55e6bd"

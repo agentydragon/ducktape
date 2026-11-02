@@ -6,7 +6,7 @@
   "attribution": "not collected",
   "previous_report_branch_commit": "080c0a4880a98f57b464631631f35183256f3a9a",
   "report_html_sha256": "3337fd022c95fcaaddf7ebbd29f0ebaecb7c135fa1cee0ec8bc2ffe8ae59077e",
-  "evidence_sha256": "7f46a2f31c847c55af33fdd9bc2ff402c115f0ed8e883496bd1d24f9ca081884",
+  "evidence_sha256": "f95851ee7ede0e7e943789c398ec45e836cb66d8c6cb5cab81f2fdcf77bd42e3",
   "visual_validation_invocation": "48e3da5d-2e4d-4885-9f68-53c170d35b5b",
   "visual_validation": {
     "viewports": [
@@ -64,7 +64,7 @@
   },
   "handler_heartbeat_experiment": "Complete: stale/ineligible recovery exercised twice, but both controls scheduled normally; no net latency improvement established. Handler helper not selected for publication.",
   "monitor_repair_pr": "https://github.com/agentydragon/ducktape/pull/13967",
-  "post_merge_soak_measurement": "Not collected for the proposed CPU or monitor changes. Earlier fleet distributions are explicitly frozen, not post-treatment.",
+  "post_merge_soak_measurement": "Not yet collected for the now-merged CPU and monitor changes. Earlier fleet distributions remain frozen; the CPU 48-hour checkpoint is 2026-11-04T19:32:11Z.",
   "first_soak_checkpoint_not_before_utc": "2026-11-04T03:17:13Z",
   "storage_fix_soak_checkpoint_not_before_utc": "2026-11-04T14:21:44Z",
   "frozen_fleet_manifest": {
@@ -97,5 +97,26 @@
     "invocation": "11a4607d-3aa7-47eb-b082-1bff4c744036",
     "full_vm_suite_and_artifact_audit_passed": true,
     "included_in_treatment_timing_comparison": false
+  },
+  "merged_source_changes": {
+    "observed_at_utc": "2026-11-02T19:34:45.803965+00:00",
+    "cpu": {
+      "pr": 13969,
+      "head": "bf83b88a3eff68ac53296585821753ab196a1103",
+      "merge_commit": "d90c0f57bc7e0deee33b047f0893d30ae908735c",
+      "merged_at_utc": "2026-11-02T19:32:11Z",
+      "bazel_precommit_imports": "SUCCESS",
+      "visual_review_at_observation": "IN_PROGRESS"
+    },
+    "monitor": {
+      "pr": 13967,
+      "head": "c0d17ddbd3f834a046039235db2f67821da51e15",
+      "merge_commit": "9947d3d4d66217c8bbc4b890273ec8ba725a17be",
+      "merged_at_utc": "2026-11-02T19:29:14Z",
+      "bazel_precommit_imports": "SUCCESS",
+      "visual_review_at_observation": "NEUTRAL"
+    },
+    "cpu_first_48h_checkpoint_not_before_utc": "2026-11-04T19:32:11+00:00",
+    "scope": "Merge and validation evidence; no post-merge latency measurement collected, and no follow-up job scheduled."
   }
 }
