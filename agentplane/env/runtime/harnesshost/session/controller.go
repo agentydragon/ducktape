@@ -85,21 +85,21 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 		return err
 	}
-	if desiredState.Mode == harnesshostlifecycle.Running && current.Generation != desiredState.Generation {
+	if desiredState.Mode == harnesshostlifecycle.Running && current.HostGeneration != desiredState.Generation {
 		for _, slot := range []**oneoff.Operation{&s.halting, &s.sealing} {
 			if op, done := s.takeOperation(slot); done {
 				c.manager.forgetOperation(op)
 			}
 		}
-		current = LifecycleStatus{Generation: desiredState.Generation, SetupAttempt: current.SetupAttempt}
-	} else if current.Generation != desiredState.Generation {
-		current.Generation = desiredState.Generation
+		current = LifecycleStatus{HostGeneration: desiredState.Generation, SetupOperationID: current.SetupOperationID}
+	} else if current.HostGeneration != desiredState.Generation {
+		current.HostGeneration = desiredState.Generation
 		current.Error = ""
 	}
 	if op, done := s.takeOperation(&s.setupJob); done {
 		c.manager.forgetOperation(op)
-		if current.SetupAttempt == "" {
-			current.SetupAttempt = op.ID()
+		if current.SetupOperationID == "" {
+			current.SetupOperationID = op.ID()
 		}
 		if op.Err() != nil {
 			current.Error = op.Err().Error()
@@ -110,14 +110,14 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			return op.Err()
 		}
 	}
-	if input.SetupRequested && current.SetupAttempt == "" {
+	if input.SetupRequested && current.SetupOperationID == "" {
 		s.mu.Lock()
 		script, job := s.record.SetupScript, s.setupJob
 		s.mu.Unlock()
 		if script != "" && job == nil && input.Setup == sessionpb.SetupState_SETUP_STATE_RUNNING {
 			op, startErr := s.startOperation(&s.setupJob, func(ctx context.Context) error { return s.runSetup(ctx, script) })
 			if op != nil {
-				current.SetupAttempt = op.ID()
+				current.SetupOperationID = op.ID()
 			}
 			if startErr != nil {
 				current.Error = startErr.Error()
@@ -148,7 +148,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		} else if desiredState.Mode == harnesshostlifecycle.Running {
 			current.Phase = Dormant
 			if input.Pending == 0 {
-				current.Attempt = input.Demand
+				current.ObservedDemand = input.Demand
 			}
 		}
 	}
@@ -301,11 +301,11 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		if pending == 0 {
 			// Demand from commands completed by this process is already satisfied.
 			// Its exit must not turn an idle Session into a fresh startup request.
-			current.Attempt = input.Demand
+			current.ObservedDemand = input.Demand
 		}
 	}
 	inspecting := input.InspectionRunning || input.Inspections > 0
-	if current.Phase == Dormant && !inspecting && input.Demand > current.Attempt && !s.executionClosed() {
+	if current.Phase == Dormant && !inspecting && input.Demand > current.ObservedDemand && !s.executionClosed() {
 		started, err := s.journal.HasStartedTurn(ctx)
 		if err != nil {
 			return err
@@ -313,7 +313,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		s.mu.Lock()
 		resuming := s.record.NativeSessionID != nil && started
 		s.mu.Unlock()
-		current.Phase, current.Attempt, current.Resuming = Preparing, input.Demand, resuming
+		current.Phase, current.ObservedDemand, current.Resuming = Preparing, input.Demand, resuming
 		current.ProcessStopped = false
 		current.Error = ""
 		if err := write(); err != nil {

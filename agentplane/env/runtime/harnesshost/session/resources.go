@@ -52,14 +52,14 @@ type Input struct {
 type DrainInput struct{ Inspecting bool }
 
 type LifecycleStatus struct {
-	Phase          Phase
-	Attempt        uint64
-	Resuming       bool
-	ProcessID      string
-	Generation     uint64
-	SetupAttempt   string
-	ProcessStopped bool
-	Error          string
+	Phase            Phase
+	ObservedDemand   uint64
+	Resuming         bool
+	ProcessID        string
+	HostGeneration   uint64
+	SetupOperationID string
+	ProcessStopped   bool
+	Error            string
 }
 
 type operationState struct {

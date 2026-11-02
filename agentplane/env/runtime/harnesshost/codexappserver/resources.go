@@ -23,10 +23,10 @@ const (
 )
 
 type Input struct {
-	Demand         uint64
-	ExitGeneration uint64
-	ExitProcessID  string
-	ExitError      string
+	Demand        uint64
+	ExitSequence  uint64
+	ExitProcessID string
+	ExitError     string
 }
 
 type Phase uint8
@@ -40,9 +40,9 @@ const (
 
 type Status struct {
 	Phase                   Phase
-	Generation              uint64
-	Attempt                 uint64
-	ExitGeneration          uint64
+	HostGeneration          uint64
+	ObservedDemand          uint64
+	ExitSequence            uint64
 	ExecServerReadyDeadline time.Time
 	ProcessID               string
 	Error                   string

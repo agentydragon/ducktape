@@ -180,7 +180,7 @@ durable journal, seal, or ACK authority.
 
 The retained Session record supplies immutable configuration. `SessionInputs` carries harness kind
 and demand alongside the setup, process, dispatch and inspection facts the controller reconciles.
-`SessionLifecycleStatuses` records controller progress such as phase, attempt and native generation;
+`SessionLifecycleStatuses` records controller progress such as phase, observed demand and Host generation;
 it is not desired runtime configuration. Reconciliation starts a dedicated Claude process per Session
 or attaches a Codex Session thread to the shared app-server. A Codex Session's process ID identifies
 that shared app-server; its per-Session attachment and router state remains in memory.
@@ -199,6 +199,27 @@ is live-only. The incarnation seal, bootstrap event log, Session records,
 journals and History acknowledgements have durable owners. Owner locks have process lifetimes even
 though their lock files remain on disk; see [lifecycle ownership](lifecycle.md#durable-owners). A
 process exit observation alone does not prove that its native process domain was fenced.
+
+## Host roles and identity scopes
+
+The package-qualified Go types name distinct owners: `harnesshost.Host` owns Session admission and
+the aggregate drain barrier, `bootstrap.Host` owns the one-off bootstrap operation,
+`codexappserver.Host` owns the shared Codex process and readers, and `supervision.Host` owns process
+attempts within a scoped native process domain. The outer `Runtime` owns Close and transition
+coordination. Each keeps its own lifecycle and ownership barriers inside the shared COSI engine.
+
+| Identity                              | Scope and meaning                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Session and app-server `Input.Demand` | A sequence of work requests for that Session or shared app-server, respectively. `ObservedDemand` in their controller status is the latest sequence recorded for reconciliation. It may advance before the native effect completes or when existing work satisfies the demand; it is not a count of native launch attempts. |
+| `HostGeneration`                      | The generation of `HarnessHostDesiredStates` observed by the Session or app-server controller. It fences that controller's status across Host lifecycle changes.                                                                                                                                                            |
+| Session `SetupOperationID`            | The in-process one-off setup operation ID. It remains recorded across Host status resets to prevent another setup attempt.                                                                                                                                                                                                  |
+| App-server `ExitSequence`             | A counter advanced for each process exit observation. It is distinct from the Host generation and from the process incarnation ID.                                                                                                                                                                                          |
+| Execution status `Generation`         | A sequence local to the Execution controller, pairing start, loss and fence completion facts with its current service attempt.                                                                                                                                                                                              |
+| Process `DesiredState.Generation`     | Supplied by the process owner for that launch; it is not universally a Harness Host generation. The process resource ID uniquely identifies the individual launch attempt.                                                                                                                                                  |
+
+The workload incarnation UID, Runtime boot ID and Lease connection epoch fence external calls at
+the [control boundary](control.md#environment-runtime-control). COSI metadata phase is separate
+from the `Phase` fields above, which describe domain lifecycle progress.
 
 ## State and barriers
 

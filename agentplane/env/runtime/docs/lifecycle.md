@@ -154,10 +154,10 @@ Resources contain lifecycle values and detached snapshots, not process handles, 
 cancellations or journal connections. The host registry owns native handles and publishes observations.
 
 Session input includes demand, setup, process liveness, pending commands and inspection dependencies.
-Session lifecycle status records phase, attempt and native generation. The shared app-server has its own
-input/runtime and readiness deadline. Process desired/status/input resources are provided by
+Session lifecycle status records phase, observed demand and the Harness Host desired generation.
+The shared app-server has its own input/status and readiness deadline. Process desired/status/input resources are provided by
 `env/runtime/supervision`; finalizers remain until native cleanup is proven. `env/oneoff.Operation` owns
-one-shot slots through result publication and consumption, preventing retries from duplicating an
+one-shot slots through state publication and consumption, preventing retries from duplicating an
 in-flight effect.
 
 Session reconciliation concurrency (default 16) limits workers, not Session inventory or admission.
