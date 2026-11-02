@@ -19,14 +19,16 @@ disabled and a root shell when it is enabled.
 
 ## Simplify Environment Runtime reconciliation and coordination
 
-- Make Runtime the single lifecycle owner for Sessions, replacing the separate Harness Host object
-  and its process-shaped lifetime, boot identity, binding gate and callbacks. Initialize the Session
-  manager and controllers as Runtime components and own History delivery as a Runtime worker.
-  Consolidate the overlapping Runtime/Host desired, applied-intent and report resources where one
-  owner and its COSI controllers can express the same transitions. Retain generations needed to
-  reject stale work, synchronous admission revocation even when COSI fails, and fail-closed handling
-  of uncertain effects. Preserve native quiescence, Execution fencing, journal seal and exact History
-  acknowledgement ordering, then join the engine and remaining workers before releasing ownership.
+- Complete Runtime's Session lifecycle ownership by removing the remaining separate Harness Host
+  object. Runtime now owns Session startup, History delivery, asynchronous Close, the shared COSI
+  engine and the environment owner. Host still constructs the Session manager and controllers,
+  maintains the native binding/admission gate and RuntimeBridge callbacks for bootstrap and live
+  Execution readiness, and publishes Host desired, applied-intent and report resources. Move those
+  responsibilities into Runtime components and consolidate COSI resources where one owner can
+  preserve exact generations, synchronous admission revocation when COSI fails, and fail-closed
+  handling of uncertain effects without replay. Preserve native quiescence, Execution fencing,
+  journal seal and exact History acknowledgement ordering; join the engine and workers before owner
+  release. Evaluate Session COSI persistence separately under the Session state model below.
 - Systemd observations are typed; process start, exit and stop still use a revision wakeup and
   process-owned result slots. A start-fact prototype retained the live worker slot and required
   additional reads to reconcile COSI observations with completion and teardown. Revisit when a
