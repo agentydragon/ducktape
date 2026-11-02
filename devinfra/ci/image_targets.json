@@ -1,10 +1,5 @@
 {
   "images": {
-    "agentplane-index": {
-      "target": "//agentplane/x/indexing:image",
-      "test": "//agentplane/x/indexing/...",
-      "registry": "forgejo"
-    },
     "ai-session-archive-importer": {
       "target": "//x/ai_session_archive:ingest_image",
       "test": "//x/ai_session_archive/...",

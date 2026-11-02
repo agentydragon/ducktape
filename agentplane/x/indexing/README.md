@@ -11,8 +11,9 @@ zero chunks, so a text-to-binary change removes the old searchable version. Ther
 extension-based filter or encoding detection/conversion; `IGNORE` patterns are the only
 way to leave a path out of a snapshot.
 
-The container is `git.allegedly.works/ducktape-ci/agentplane-index`, published by the image
-roster after its test gate passes. Use a pinned published tag. The Bazel binary is
+The container target remains buildable, but the parked service has no automatic image
+publication. Build `//agentplane/x/indexing:image`, run its tests, and publish a deliberate
+tag to `git.allegedly.works/ducktape-ci/agentplane-index` before deploying. The Bazel binary is
 `//agentplane/x/indexing:main_bin`; the container target is `:image`.
 
 ## Configuration
@@ -61,7 +62,7 @@ indexed repository, a minted read token, and a worker Deployment and Service eac
 ducktape (`devel` on GitHub) and haku-state (`main` on the in-cluster Forgejo, with Git
 credentials from a Secret). The workers share a ConfigMap for the embedding endpoint
 (in-cluster Ollama), checkout path, and CA bundle, and clone into an `emptyDir`. The image tag
-there is a placeholder that Flux image automation overrides.
+there is a placeholder; set a published tag or restore the Flux image pin before revival.
 It is not currently deployed ([parked](../../../cluster/cdk8s/agentplane_index/README.md)).
 
 ## Read API
