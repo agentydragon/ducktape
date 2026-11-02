@@ -89,8 +89,9 @@ type SandboxSpec struct {
 	// +kubebuilder:default=false
 	// +kubebuilder:validation:Optional
 	Running bool `json:"running"`
-	// WakeOnSend allows authenticated user and notification sends to resume a stopped Sandbox.
-	// Omitted is false so older Sandbox manifests keep wake-on-send disabled.
+	// WakeOnSend allows queued delivery to request an automatic resume when it needs a suspended
+	// Sandbox. Caller lifecycle authority is checked separately, and a requested stop stays sticky.
+	// Omitted is false so older Sandbox manifests keep automatic wake disabled.
 	// +kubebuilder:default=false
 	WakeOnSend bool `json:"wakeOnSend,omitempty"`
 	// ResumePolicy controls whether the exact live execution ServiceAccount may request resume.

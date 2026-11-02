@@ -124,9 +124,11 @@ func sandboxSnapshot(object *sandboxapi.Sandbox) (SandboxSnapshot, error) {
 	}
 	view := SandboxSnapshot{
 		Name: object.Name, Namespace: object.Namespace, UID: string(object.UID),
-		Deleting:    object.DeletionTimestamp != nil,
-		WakeOnSend:  object.Spec.WakeOnSend,
-		ReadyDetail: "Ready condition is unavailable",
+		Deleting:       object.DeletionTimestamp != nil,
+		WakeOnSend:     object.Spec.WakeOnSend,
+		WakeGeneration: object.Spec.WakeGeneration,
+		ManualStop:     object.Status.SuspendedBy != nil && *object.Status.SuspendedBy == sandboxapi.SuspendedByRequested,
+		ReadyDetail:    "Ready condition is unavailable",
 	}
 	if object.Status.Incarnation != nil {
 		view.Incarnation = object.Status.Incarnation.UID
@@ -143,62 +145,4 @@ func sandboxSnapshot(object *sandboxapi.Sandbox) (SandboxSnapshot, error) {
 		}
 	}
 	return view, nil
-}
-
-// WakeForSend rereads the exact Sandbox UID immediately before deciding to
-// write. The object's resourceVersion makes the write conditional on the
-// decision's read; a conflict repeats the read and durable callback. The write
-// is a patch of the two desired-state fields because the Runner Gateway's Role
-// grants `patch` on Sandboxes, not `update`.
-func (k *KubernetesSandboxes) WakeForSend(ctx context.Context, name, uid string, beforeResume func(int64) error) (bool, error) {
-	for attempt := 0; attempt < 5; attempt++ {
-		var object sandboxapi.Sandbox
-		err := k.objects.Get(ctx, types.NamespacedName{Namespace: k.namespace, Name: name}, &object)
-		if apierrors.IsNotFound(err) {
-			return false, ErrWakeDeleted
-		}
-		if err != nil {
-			return false, err
-		}
-		if string(object.UID) != uid || object.DeletionTimestamp != nil {
-			return false, ErrWakeDeleted
-		}
-		if !object.Spec.WakeOnSend {
-			return false, nil
-		}
-		if object.Status.StopStage == sandboxapi.StopStageQuiescing {
-			return false, ErrWakeQuiescing
-		}
-		mode := object.Status.OperatingMode
-		if mode == "" {
-			return false, ErrWakeModeUnknown
-		}
-		if mode == sandboxapi.OperatingModeRunning {
-			return true, nil
-		}
-		if mode != sandboxapi.OperatingModeSuspended {
-			return false, ErrWakeModeUnknown
-		}
-		generation := object.Spec.WakeGeneration
-		idle := object.Status.SuspendedBy != nil && *object.Status.SuspendedBy == sandboxapi.SuspendedByIdle &&
-			object.Status.SuspendedAtWakeGeneration != nil && *object.Status.SuspendedAtWakeGeneration == generation
-		if object.Spec.Running && !idle {
-			return true, nil
-		}
-		if beforeResume != nil {
-			if err := beforeResume(generation + 1); err != nil {
-				return false, err
-			}
-		}
-		resumed := object.DeepCopy()
-		resumed.Spec.Running = true
-		resumed.Spec.WakeGeneration = generation + 1
-		if err := k.objects.Patch(ctx, resumed, client.MergeFromWithOptions(&object, client.MergeFromWithOptimisticLock{})); apierrors.IsConflict(err) {
-			continue
-		} else if err != nil {
-			return false, err
-		}
-		return true, nil
-	}
-	return false, fmt.Errorf("Sandbox wake could not pass UID/resourceVersion guard after 5 attempts")
 }

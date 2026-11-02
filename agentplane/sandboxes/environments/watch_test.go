@@ -119,7 +119,7 @@ func newWatchFixture(t *testing.T) watchFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := New(namespace, observedObjects, runtimeconfig.Catalog{}, manager, nil, map[auth.Account]struct{}{readerAccount: {}})
+	service, err := New(namespace, observedObjects, runtimeconfig.Catalog{}, manager, map[auth.Account]struct{}{readerAccount: {}})
 	if err != nil {
 		t.Fatal(err)
 	}

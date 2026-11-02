@@ -181,7 +181,7 @@ runtime_catalog:
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := environments.New("agentplane", objects, config.RuntimeCatalog, lifecycleManager, nil, nil)
+	service, err := environments.New("agentplane", objects, config.RuntimeCatalog, lifecycleManager, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

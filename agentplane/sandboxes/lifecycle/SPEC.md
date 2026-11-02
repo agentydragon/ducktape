@@ -2,11 +2,10 @@
 
 ## Ownership
 
-`lifecycle.Manager` owns current explicit-resume policy checks and the guarded desired-state update
-for an existing Sandbox. It runs in the Runner Gateway and is used by the explicit RPC and
-EnvironmentService's read-only eligibility projection. It also implements a guarded automatic-wake
-adapter; the Gateway's `DeliveryWorker` remains catalog-backed until its separate integration. The
-manager does not own Sandbox reconciliation or readiness; those remain with the Sandbox Controller.
+`lifecycle.Manager` owns current resume policy checks and the guarded desired-state update for an
+existing Sandbox. It runs in the Runner Gateway. It is shared in-process by the explicit RPC, the
+Dispatcher automatic-wake path, and EnvironmentService's read-only eligibility assessments. It does not own
+Sandbox reconciliation or readiness; those remain with the Sandbox Controller.
 
 The Kubernetes client is uncached. Every operation identifies a target by namespace, name and UID,
 checks the original effective caller's live ServiceAccount UID, and reads the current controller-owned
@@ -21,9 +20,9 @@ execution ServiceAccount. A replacement Sandbox or ServiceAccount cannot inherit
   ordinary policy; actor Pod proof and actor allowlist membership do not become the caller's grant.
 - A direct TokenReview-proven Pod-bound account listed in `operator_callers` may explicitly resume a
   requested stop. This allowlist is separate from `wake_callers`; delegated calls cannot exercise it.
-- `wake_callers` remains a restricted broker grant for automatic wake only. The current
-  catalog-backed `DeliveryWorker` path retains its existing allowlist behavior until the automatic
-  lifecycle integration lands.
+- `wake_callers` remains a restricted broker grant for automatic wake only. Automatic wake always
+  uses the original effective caller identity, requires `spec.wakeOnSend`, and cannot override
+  `spec.running=false`.
 - Neither `resumePolicy` nor `wakeOnSend` grants Kubernetes access or permission to alter policy.
 
 ## Concurrency and outcomes
@@ -58,7 +57,6 @@ facts proto does not import the API proto; the EnvironmentService proto owns its
 
 ## API boundary
 
-Only `EnvironmentService` is registered as a public environment API. Its list/get/watch operations
-remain read-only; explicit resume uses the policy and mutation contract above. Automatic delivery
-continues to use the existing catalog-backed wake path until a separate worker integration switches
-it to the manager.
+The manager is an in-process component shared by `EnvironmentService` and Dispatcher automatic
+wake. Only `EnvironmentService` is registered as a public environment API. Its list/get operations
+remain read-only; explicit resume uses the policy and mutation contract above.

@@ -19,7 +19,7 @@ from kubernetes_asyncio import client as k8s, watch as k8s_watch
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc.calls import dial
-from agentplane.proto import session_pb2
+from agentplane.proto import environment_lifecycle_pb2 as lifecycle_pb, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
@@ -535,9 +535,12 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         )
         assert queued.dispatch.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
         waiting = await _dispatch_until(
-            stub, authentication, session, lambda row: row.reason == "wake_on_send_disabled"
+            stub, authentication, session, lambda row: row.reason == "sandbox_operator_requested_stop"
         )
         assert waiting.sandbox_uid == uid
+        assert waiting.delivery_blocker.kind == lifecycle_pb.DELIVERY_BLOCKER_KIND_OPERATOR_REQUESTED_STOP
+        assert waiting.wake_assessment.state == lifecycle_pb.WAKE_STATE_DENIED
+        assert waiting.wake_assessment.reason == lifecycle_pb.WAKE_REASON_OPERATOR_REQUESTED_STOP
         waiting_sandbox = json.loads(await cluster.kubectl("get", "sandbox", sandbox, "-o", "json"))
         assert waiting_sandbox["spec"].get("running") is False
         assert waiting_sandbox["spec"].get("wakeGeneration", 0) == 0
@@ -750,7 +753,13 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                 "apiVersion": SANDBOX_API_VERSION,
                 "kind": "Sandbox",
                 "metadata": {"name": sandbox, "namespace": cluster.namespace},
-                "spec": {"template": POD_TEMPLATE, "running": False, "wakeOnSend": True, "policySets": policies},
+                "spec": {
+                    "template": POD_TEMPLATE,
+                    "running": True,
+                    "wakeOnSend": True,
+                    "idleSuspendAfter": "1m",
+                    "policySets": policies,
+                },
             },
         )
     )
@@ -770,13 +779,27 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
 
     try:
         await cluster.kubectl(
+            "wait", f"sandbox.agentplane.allegedly.works/{sandbox}", "--for=condition=Ready=True", "--timeout=300s"
+        )
+        initial = json.loads(await cluster.kubectl("get", "sandbox", sandbox, "-o", "json"))
+        initial_incarnation = initial.get("status", {}).get("incarnation", {}).get("uid")
+        assert initial_incarnation
+        await cluster.kubectl(
+            "wait",
+            f"sandbox.agentplane.allegedly.works/{sandbox}",
+            "--for=jsonpath={.status.suspendedBy}=Idle",
+            "--timeout=300s",
+        )
+        await cluster.kubectl(
             "wait",
             f"sandbox.agentplane.allegedly.works/{sandbox}",
             "--for=jsonpath={.status.stopStage}=Stopped",
             "--timeout=300s",
         )
         stopped = json.loads(await cluster.kubectl("get", "sandbox", sandbox, "-o", "json"))
-        initial_incarnation = stopped.get("status", {}).get("incarnation", {}).get("uid")
+        assert stopped["spec"]["running"] is True
+        assert stopped["status"]["suspendedBy"] == "Idle"
+        assert stopped["status"]["suspendedAtWakeGeneration"] == stopped["spec"]["wakeGeneration"] == 0
         evidence["initial_incarnation"] = initial_incarnation
         app_authentication, app_pod, app_pod_uid = await _bound_caller(cluster, "app")
         notification_authentication, notification_pod, notification_pod_uid = await _bound_caller(

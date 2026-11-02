@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"time"
+
+	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 )
 
 // ReserveWakeAttempt counts distinct guarded wake generations per authenticated
@@ -97,7 +99,7 @@ func (s *Store) NoteWaking(ctx context.Context, id string, owner Owner, incarnat
 	return stillQueued, err
 }
 
-func (s *Store) NoteWakeRequested(ctx context.Context, id string, owner Owner, opening bool) (*time.Time, error) {
+func (s *Store) NoteWakeRequestedAt(ctx context.Context, id string, owner Owner, opening bool, requestedAt time.Time) (*time.Time, error) {
 	table, key := wakeTable(opening)
 	var result *time.Time
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
@@ -105,14 +107,10 @@ func (s *Store) NoteWakeRequested(ctx context.Context, id string, owner Owner, o
 		if err != nil || !current {
 			return err
 		}
-		var now time.Time
-		if err := tx.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&now); err != nil {
-			return err
-		}
 		var requested time.Time
-		err = tx.QueryRowContext(ctx, `UPDATE `+table+` SET wake_requested_at=$3,updated_at=$3
+		err = tx.QueryRowContext(ctx, `UPDATE `+table+` SET wake_requested_at=$3,updated_at=now()
 			WHERE `+key+`=$1 AND sandbox_uid=$2 AND state=$4 AND wake_requested_at IS NULL
-			RETURNING wake_requested_at`, id, owner.SandboxUID, now, QueueState).Scan(&requested)
+			RETURNING wake_requested_at`, id, owner.SandboxUID, requestedAt, QueueState).Scan(&requested)
 		if err == nil {
 			result = &requested
 			return notify(ctx, tx)
@@ -164,12 +162,31 @@ func (s *Store) ClearWakeState(ctx context.Context, id string, owner Owner, open
 
 // FailExpiredWake returns a positive remaining duration if the PostgreSQL
 // deadline has not arrived. A nil row and zero duration means no live request.
-func (s *Store) FailExpiredWake(ctx context.Context, id string, owner Owner, opening bool, reason string) (*Dispatch, *Opening, time.Duration, error) {
+func (s *Store) FailExpiredWake(
+	ctx context.Context,
+	id string,
+	owner Owner,
+	opening bool,
+	reason string,
+	blocker *environmentpb.DeliveryBlocker,
+	assessment *environmentpb.WakeAssessment,
+) (*Dispatch, *Opening, time.Duration, error) {
+	if assessment == nil {
+		return nil, nil, 0, errors.New("wake assessment is required")
+	}
+	blockerBytes, err := wireOptional(blocker)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	assessmentBytes, err := wire(assessment)
+	if err != nil {
+		return nil, nil, 0, err
+	}
 	table, key := wakeTable(opening)
 	var dispatch *Dispatch
 	var session *Opening
 	var remaining time.Duration
-	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
+	err = transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		current, err := ownerMatch(ctx, tx, owner)
 		if err != nil || !current {
 			return err
@@ -195,12 +212,14 @@ func (s *Store) FailExpiredWake(ctx context.Context, id string, owner Owner, ope
 		remaining = 0
 		if opening {
 			session, err = scanOpening(tx.QueryRowContext(ctx, `UPDATE session_opening SET state=$3,
-				reason=$4,updated_at=$5 WHERE session_id=$1 AND sandbox_uid=$2 AND state=$6
-				RETURNING `+openingColumns, id, owner.SandboxUID, FailedState, reason, now, QueueState))
+				reason=$4,updated_at=$5,delivery_blocker=COALESCE($7,delivery_blocker),wake_assessment=$8
+				WHERE session_id=$1 AND sandbox_uid=$2 AND state=$6
+				RETURNING `+openingColumns, id, owner.SandboxUID, FailedState, reason, now, QueueState, blockerBytes, assessmentBytes))
 		} else {
 			dispatch, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch SET state=$3,
-				reason=$4,updated_at=$5 WHERE command_id=$1 AND sandbox_uid=$2 AND state=$6
-				RETURNING `+dispatchColumns, id, owner.SandboxUID, FailedState, reason, now, QueueState))
+				reason=$4,updated_at=$5,delivery_blocker=COALESCE($7,delivery_blocker),wake_assessment=$8
+				WHERE command_id=$1 AND sandbox_uid=$2 AND state=$6
+				RETURNING `+dispatchColumns, id, owner.SandboxUID, FailedState, reason, now, QueueState, blockerBytes, assessmentBytes))
 		}
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil

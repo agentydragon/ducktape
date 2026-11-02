@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from agentplane.app.testing.client import Client
 from agentplane.env.runtime.harnesshost.harness import Harness
-from agentplane.proto import session_pb2
+from agentplane.proto import environment_lifecycle_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import OperatingMode
@@ -117,15 +117,23 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         suspended_id = uuid4()
         suspended_opening = await client.open_session(view.name, suspended_id, sandbox_uid=view.uid)
         assert suspended_opening.state == session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
+        assert not suspended_opening.HasField("delivery_blocker")
+        assert suspended_opening.wake_assessment.state == environment_lifecycle_pb2.WAKE_STATE_NOT_EVALUATED
         opening_deadline = time.monotonic() + RUNNER_ANSWERS_SECONDS
         while True:
             suspended_opening = await client.session_opening(view.name, suspended_id)
             assert suspended_opening.state == session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
-            if suspended_opening.reason:
-                assert suspended_opening.reason in {"sandbox_suspended", "wake_on_send_disabled"}
+            if (
+                suspended_opening.HasField("delivery_blocker")
+                and suspended_opening.delivery_blocker.kind
+                == environment_lifecycle_pb2.DELIVERY_BLOCKER_KIND_OPERATOR_REQUESTED_STOP
+                and suspended_opening.wake_assessment.state == environment_lifecycle_pb2.WAKE_STATE_DENIED
+                and suspended_opening.wake_assessment.reason
+                == environment_lifecycle_pb2.WAKE_REASON_OPERATOR_REQUESTED_STOP
+            ):
                 break
             if time.monotonic() >= opening_deadline:
-                raise TimeoutError(f"Suspended Session opening {suspended_id} had no queue reason")
+                raise TimeoutError(f"Suspended Session opening {suspended_id} had no typed operator-stop assessment")
             await asyncio.sleep(0.2)
         still_suspended = await client.sandbox(view.name)
         assert still_suspended.operating_mode is OperatingMode.SUSPENDED
