@@ -39,26 +39,6 @@
       "refresh_status": "present_at_refresh"
     },
     {
-      "id": "L",
-      "priority": "Low",
-      "category": "Boundary",
-      "title": "Resolve the visual-helper module/package collision",
-      "status": "merged_visual_differences_investigated",
-      "pull_request": 13652,
-      "visual_capture_fix_pull_request": 13689,
-      "visual_identity_guard_pull_request": 13692,
-      "visual_identity_guard_status": "open",
-      "related_output_protocol_pull_request": 13720,
-      "related_output_protocol_status": "merged",
-      "related_output_cutover_pull_request": 13730,
-      "related_output_cutover_status": "merged",
-      "related_output_cutover_head": "1d3bc0873ad04e9b790ebff2efa566fbd62ed75b",
-      "related_output_cutover_merge_commit": "f0843d4b632608daf52b76287a6318e18d6b7142",
-      "related_output_cutover_merged_at": "2026-11-02T08:04:08Z",
-      "visual_identity_guard_note": "Rebased as regression coverage for same-named outputs across shards and attempts; collector implementation already merged in #13730.",
-      "visual_identity_guard_head": "6ad097dd9e035478898ce60a34a713a46fb9965e"
-    },
-    {
       "id": "M",
       "priority": "Low",
       "category": "Dead target candidate",
@@ -106,7 +86,7 @@
     "External consumers and dynamically constructed labels not exhaustively known",
     "The original audit did not implement its recommendations; status fields record subsequent work"
   ],
-  "burndown_updated_utc": "2026-11-02T11:49:28Z",
+  "burndown_updated_utc": "2026-11-02T11:54:03Z",
   "dispatched_in_progress": [],
   "status_refresh": {
     "source_commit": "2cbcf945b203c1260e10c8e32a6b6e26025f254d",
