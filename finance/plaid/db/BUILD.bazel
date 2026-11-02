@@ -73,12 +73,6 @@ py_library(
     ],
 )
 
-filegroup(
-    name = "migrations",
-    srcs = glob(["migrations/**"]),
-    visibility = ["//finance/budget:__pkg__"],
-)
-
 py_library(
     name = "testing",
     testonly = True,
