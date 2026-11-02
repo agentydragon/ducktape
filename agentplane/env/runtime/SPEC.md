@@ -63,7 +63,10 @@ controller restart cannot replay an uncertain effect.
 
 The Runtime directly constructs the Session manager, retained store, harness adapters, shared
 Codex app-server, controllers and History worker. Components retain their own process handles,
-one-off slots, protocol readers and worker joins. Session/app-server statuses carry the observed
+one-off slots, protocol readers and worker joins. App-server operation start/completion advances a
+revision on its lifecycle signal independently of demand; demand resets and concurrent exit updates
+preserve that revision. Completion publication and local finish share the slot mutex before consumption.
+Session/app-server statuses carry the observed
 `EnvironmentGeneration`; demand sequences, Execution attempt generations, operation IDs and process
 attempt IDs remain distinct identities. One process controller and registry serve separate Runtime
 and harness domains without combining their native containment or cleanup proofs.

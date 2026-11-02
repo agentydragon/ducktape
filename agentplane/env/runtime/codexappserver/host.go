@@ -172,7 +172,9 @@ func (c *Host) Initialize(ctx context.Context) error {
 func (c *Host) ResetDemand(ctx context.Context) error {
 	c.inputMu.Lock()
 	defer c.inputMu.Unlock()
-	return publish(ctx, c.deps.State, ResourceID, LifecycleSignal{})
+	return c.updateLifecycleSignal(ctx, func(input *LifecycleSignal) {
+		*input = LifecycleSignal{OperationRevision: input.OperationRevision}
+	})
 }
 
 func (c *Host) WithThreadHandshake(work func() error) error {
@@ -294,22 +296,16 @@ func (c *Host) RequestLocked(ctx context.Context, s *Attachment) (uint64, error)
 		}
 	}
 	c.mu.Unlock()
-	input, found, err := ReadLifecycleSignal(ctx, c.deps.State)
-	if err != nil {
-		c.clearInitializingOwner(s)
-		return 0, err
-	}
-	if !found {
-		c.clearInitializingOwner(s)
-		return 0, errors.New("Codex app-server lifecycle signals are not initialized")
-	}
-	input.Demand++
-	if err := publish(ctx, c.deps.State, ResourceID, input); err != nil {
+	var demand uint64
+	if err := c.updateLifecycleSignal(ctx, func(input *LifecycleSignal) {
+		input.Demand++
+		demand = input.Demand
+	}); err != nil {
 		c.clearInitializingOwner(s)
 		return 0, err
 	}
 	c.notify()
-	return input.Demand, nil
+	return demand, nil
 }
 
 func (c *Host) clearInitializingOwner(owner *Attachment) {
@@ -422,11 +418,7 @@ func (c *Host) waitReaders(p *Process) {
 func (c *Host) publishExit(p *Process) {
 	c.inputMu.Lock()
 	defer c.inputMu.Unlock()
-	input, found, err := ReadLifecycleSignal(c.deps.Context, c.deps.State)
-	if err == nil && !found {
-		err = errors.New("Codex app-server lifecycle signals disappeared before process exit was observed")
-	}
-	if err == nil {
+	err := c.updateLifecycleSignal(c.deps.Context, func(input *LifecycleSignal) {
 		input.ExitSequence++
 		input.ExitProcessID = p.process.ID()
 		if readerErr := p.readError(); readerErr != nil {
@@ -434,8 +426,7 @@ func (c *Host) publishExit(p *Process) {
 		} else {
 			input.ExitError = ""
 		}
-		err = publish(c.deps.Context, c.deps.State, ResourceID, input)
-	}
+	})
 	if err != nil {
 		c.deps.OnError(err)
 	}

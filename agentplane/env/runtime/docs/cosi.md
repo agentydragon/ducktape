@@ -24,7 +24,6 @@ flowchart LR
   AC(["codex-app-server-lifecycle"])
   AI["CodexAppServerLifecycleSignals"]
   AS["CodexAppServerStatuses"]
-  AO["CodexAppServerOperationStates"]
   EC(["execution-lifecycle"])
   EI["ExecutionLifecycleSignals"]
   ES["ExecutionStatuses"]
@@ -44,7 +43,7 @@ flowchart LR
   Agg --> Aggregate
   SI & ED & Count & Aggregate & AS & SO --> SC
   SC --> SS
-  AI & ED & Count & Aggregate & AO & ES --> AC
+  AI & ED & Count & Aggregate & ES --> AC
   AC --> AS
   EI & ES --> EC
   EC --> ES
@@ -62,7 +61,7 @@ flowchart LR
 | `environment-runtime-lifecycle` | Environment desired state; direct transition requests and worker-completion channels                                                                                | Direct operation completion; Runtime-owned workers perform blocking transition/shutdown steps                |
 | `environment-session-lifecycle` | Environment desired state, admission accounting, inspection and Session statuses, journal seals, ACKs, app-server status, process desired/status, Execution signals | Aggregate Session status; native cleanup, exact fence, seal and durable ACK predicates                       |
 | `session-lifecycle`             | Session snapshot (primary); desired state, accepted admissions, aggregate status, app-server status and operation states (mapped)                                   | Session lifecycle status; guarded per-Session prepare/dispatch registration and one-off halt/seal operations |
-| `codex-app-server-lifecycle`    | App-server signal (primary); desired state, accepted admissions, aggregate status, operation states and Execution status (mapped)                                   | App-server status; guarded initialization, cleanup and a separate live Execution-owner readiness check       |
+| `codex-app-server-lifecycle`    | App-server signal including operation revisions (primary); desired state, accepted admissions, aggregate status and Execution status (mapped)                       | App-server status; guarded initialization, cleanup and a separate live Execution-owner readiness check       |
 | `execution-lifecycle`           | Execution signal (primary), Execution status (mapped)                                                                                                               | Execution status; exact-attempt start/loss/fence observations, retaining an unfenced owner on failure        |
 | `bootstrap-lifecycle`           | Bootstrap request (primary), status and operation state (mapped)                                                                                                    | Bootstrap status; selected bytes and durable event sequence govern one accepted attempt                      |
 | `process-lifecycle`             | Process desired state (primary), observation (mapped)                                                                                                               | Process status; one attempt finalizer remains until its native domain is fenced                              |
