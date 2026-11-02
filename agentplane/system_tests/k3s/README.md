@@ -209,13 +209,17 @@ PID 1. The guest installs the same runner service and resource slices as
 [`vm.nix`](../../env/images/vm.nix), with fixture-specific tool paths and mount/network preparation.
 The root image includes a hardware database compiled from its Debian package closure, letting
 systemd skip rebuilding it at each boot before starting udev's device discovery.
-The runner comes from the production runner disk, as in a Pod; both harnesses, Git and `findmnt`
-are pinned in the root disk. Runner uses systemd's private manager connection; a real system bus
-also exercises denial of unprivileged management requests.
+The runner comes from the disk mounted at `/run/agentplane/environment`; Pod suites use the
+production disk, while VM suites select its test variant. That variant adds
+`/run/agentplane/environment/bin/environment-runtime-systemd-fixture`, leaving the Debian guest root
+independent. Both harnesses, Git and `findmnt` are pinned in the root disk. Runner uses systemd's
+private manager connection; a real system bus also exercises denial of unprivileged management
+requests.
 
 The Claude sandbox scenario uses `environment-vm-supervision`, which differs from `environment-vm` only by
-an explicit boot argument. Its ordinary guest root includes `environment_runtime_systemd_fixture` as test data;
-that one boot executes the remaining supervisor integration tests before starting production Runner.
+an explicit boot argument. That boot runs
+`/run/agentplane/environment/bin/environment-runtime-systemd-fixture` from the test runner disk before
+starting production Runner.
 The checks retain direct argv/stream semantics, stale invocation fencing, uncertain launch outcomes,
 scoped startup fencing, parent death, stop status and reaper retries. They need private injection or
 direct supervisor access. A failure prevents Runner startup, and the scenario requires the completed

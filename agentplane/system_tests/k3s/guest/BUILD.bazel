@@ -7,7 +7,7 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # The k3s fixture's VM guest: a Debian cloud kernel booted directly by KubeVirt with a busybox
 # initramfs, and an erofs root disk holding systemd and both harnesses. Shared production systemd
-# units supervise the runner from the fixture's runner disk.
+# units supervise the runner from the VM suite's runner disk.
 
 package(
     default_testonly = True,
@@ -218,20 +218,6 @@ pkg_tar(
     package_dir = "/usr/libexec/agentplane",
 )
 
-pkg_files(
-    # Test data for the selected boot; ordinary guests never execute this binary.
-    name = "root_supervision_fixture_file",
-    srcs = ["//agentplane/env/runtime/supervision:environment_runtime_systemd_fixture"],
-    attributes = pkg_attributes(mode = "0755"),
-    renames = {"//agentplane/env/runtime/supervision:environment_runtime_systemd_fixture": "environment-runtime-systemd-fixture"},
-)
-
-pkg_tar(
-    name = "root_supervision_fixture",
-    srcs = [":root_supervision_fixture_file"],
-    package_dir = "/usr/libexec/agentplane",
-)
-
 # Apply the fixture's /var links after the flattened Debian package directories.
 # Journald writes through the state virtiofs; /var/run uses the same /run as systemd.
 pkg_tar(
@@ -272,7 +258,6 @@ pkg_tar(
         ":root_journald",
         ":root_resource_limits",
         ":root_shared_systemd",
-        ":root_supervision_fixture",
         ":root_systemd",
         ":root_tmpfiles",
         "//agentplane/system_tests/k3s:runner_claude_harness",
