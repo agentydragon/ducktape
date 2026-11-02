@@ -3,8 +3,8 @@
 **Direction approved, 2026-11-01.** This compares the existing generic process controller with a
 separate systemd-unit controller. The first implementation registers the embedded VM exec-server
 with the process controller, publishes attempt-scoped observations through it, moves workspace
-diagnostics to that status, and removes an unused independent unit-reference API. The decision is tracked in the
-[Task DAG](../../../../plans/task_dag.md#systemd_unit_cosi_design--review-systemd-unit-resources-and-controller-ownership).
+diagnostics to that status, and removes an unused independent unit-reference API. The implemented
+contract is described in the [supervision documentation](supervision.md).
 
 ## Recommendation
 
