@@ -234,15 +234,11 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 	// Process exit can finish an outstanding inspection. Session owns this
 	// pre-fence proof, including native exit callbacks and inspection operations.
 	// It cannot wait for Sealed: sealing requires the barriers below.
-	for _, id := range ids {
-		status, found, err := session.ReadLifecycleStatus(ctx, r, id)
-		if err != nil {
-			return err
-		}
-		if !found || status.EnvironmentGeneration != desiredState.Generation || !status.PreFenceSettled {
+	for i, id := range ids {
+		if !statuses[i].PreFenceSettled {
 			current.Blocker = lifecycle.Blocker{
 				Kind: lifecycle.SessionInspectionPending, ResourceType: session.LifecycleStatusType,
-				ResourceID: id, ResourcePresent: found,
+				ResourceID: id, ResourcePresent: true,
 			}
 			return write()
 		}
