@@ -20,7 +20,9 @@ if TYPE_CHECKING:
 
 # Chromium reads generic-family choices from the profile, not from page CSS.
 _FONT_PREFERENCES = json.loads(
-    get_required_path(own_repo_rlocation("util/testing/frontend_visual/chromium-font-preferences.json")).read_text()
+    get_required_path(
+        own_repo_rlocation("util/testing/frontend_visual/assets/chromium_font_preferences.json")
+    ).read_text()
 )
 # Hard-pins every animation and transition to its first frame, for a page that inlines its own
 # `<style>`. `reduced_motion="reduce"` is not enough: it only helps component CSS that checks that
@@ -31,7 +33,7 @@ _FONT_PREFERENCES = json.loads(
 # start frame only when it is in effect at creation; applied later it freezes whatever frame the
 # animation had reached by then.
 DISABLE_ANIMATIONS_CSS = get_required_path(
-    own_repo_rlocation("util/testing/frontend_visual/disable-animations.css")
+    own_repo_rlocation("util/testing/frontend_visual/assets/disable_animations.css")
 ).read_text()
 
 
@@ -108,5 +110,5 @@ def disable_animations_script() -> str:
 
 
 def frozen_clock_script(now_ms: int) -> str:
-    source = get_required_path(own_repo_rlocation("util/testing/frontend_visual/frozen-clock.js")).read_text()
+    source = get_required_path(own_repo_rlocation("util/testing/frontend_visual/assets/frozen_clock.js")).read_text()
     return f"(() => {{ {source} frozenClock({now_ms}); }})();"

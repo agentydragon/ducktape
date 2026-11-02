@@ -111,7 +111,7 @@ async def playwright_trace(
 # Keep the browser-side snapshot in a linted JS file. It records geometry and selection positions,
 # never page text, input values, URLs, or accessible names.
 _CAPTURE_DIAGNOSTICS_JS = get_required_path(
-    own_repo_rlocation("util/testing/frontend_visual/capture-diagnostics.js")
+    own_repo_rlocation("util/testing/frontend_visual/assets/capture_diagnostics.js")
 ).read_text(encoding="utf-8")
 
 
