@@ -203,6 +203,7 @@ flowchart LR
     subgraph unified[Runner Gateway]
         dispatcher[Dispatcher API and durable delivery]
         environments[EnvironmentService API]
+        lifecycle[Shared lifecycle manager]
         gateway[Runner proxy and state observation]
     end
     pod[Managed Pod agent process and CLI]
@@ -218,11 +219,14 @@ flowchart LR
     actions -->|caller-delegated EnvironmentService list/get; resume when enabled: gRPC| environments
     actions -->|Session commands: broker or delegated caller, gRPC| dispatcher
     actions -->|Session reads: broker or delegated caller, gRPC| history
+    environments -->|resume + eligibility| lifecycle
     app -->|per-Sandbox Runner Proxy: live inventory + diagnostics| gateway
     dispatcher -->|wrapped Codex and Claude opens + commands| gateway
     dispatcher -->|central opens + commands: Sampler gRPC| central
     sandboxctl -->|Quiesce| gateway
-    dispatcher -->|watch + guarded wake| k8s
+    dispatcher -->|Sandbox watch| k8s
+    dispatcher -->|automatic wake assessment + request| lifecycle
+    lifecycle -->|guarded running + generation update| k8s
     pod -.->|Session and EnvironmentService list/get gRPC over HTTPS_PROXY/CONNECT| sidecar
     guest -.->|Session and EnvironmentService list/get gRPC over HTTPS_PROXY/CONNECT| relay
     sidecar -.-> egress
@@ -239,9 +243,10 @@ grants no Session authority. The Gateway also serves `EnvironmentService.ResumeE
 checks the effective caller, current execution-ServiceAccount identity, resume policy and guarded
 generation before changing desired state. Delegated resume requires a separate exact-method opt-in;
 the optional direct `operator_callers` policy defaults empty. The integration app still writes
-operator resume intent through Kubernetes. Staging caller, delegated-method and egress activation
-remain pending. Resume acceptance is not readiness, and no resume path replays Session input or
-creates a grant.
+operator resume intent through Kubernetes. Dispatcher automatic wake uses the shared lifecycle
+manager with the original effective caller and the `wakeOnSend` and `wake_callers` checks. Staging
+caller, delegated-method and egress activation remain pending. Resume acceptance is not readiness,
+and no resume path replays Session input or creates a grant.
 The opt-in Session tools also forward the effective caller to Dispatcher commands and retained
 History reads. Those receivers enforce their own same-principal checks; the existing
 `orchestration_v1` broker path retains its separate authority.

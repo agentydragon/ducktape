@@ -171,7 +171,7 @@ func newHarness(t *testing.T, object client.WithWatch, operatorCallers []auth.Ac
 	if err != nil {
 		t.Fatal(err)
 	}
-	apiService, err := environments.New(testNamespace, object, runtimeconfig.Catalog{}, service, nil, nil)
+	apiService, err := environments.New(testNamespace, object, runtimeconfig.Catalog{}, service, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
