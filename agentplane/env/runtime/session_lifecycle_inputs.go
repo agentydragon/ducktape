@@ -7,9 +7,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
-	"github.com/cosi-project/runtime/pkg/resource/typed"
-	"github.com/cosi-project/runtime/pkg/safe"
-	"github.com/cosi-project/runtime/pkg/state"
 )
 
 func (r *Runtime) publishSeal(id string, seal *journal.SealState) error {
@@ -28,22 +25,50 @@ func publishLifecycle[T lifecycleSpec[T]](r *Runtime, id string, value T) error 
 }
 
 func (r *Runtime) admissionCount(ctx context.Context) (int, error) {
-	input, err := safe.ReaderGet[*typed.Resource[environmentAdmissionCountSpec, lifecycleExtension[environmentAdmissionCountSpec]]](ctx, r.lifecycleState, lifecycleResourceFor(harnesshostlifecycle.ResourceID, environmentAdmissionCountSpec{}).Metadata())
+	input, found, err := lifecycleRead[environmentAdmissionCountSpec](ctx, r.lifecycleState, harnesshostlifecycle.ResourceID)
 	if err != nil {
 		return 0, err
 	}
-	return input.TypedSpec().Admissions, nil
+	if !found {
+		return 0, errors.New("Runtime admissions are not initialized")
+	}
+	return input.Admissions, nil
 }
 
 // Caller holds the Runtime admission lock: accounting must precede durable admission and serialize with closing.
 func (r *Runtime) changeAdmissionsLocked(delta int) error {
-	_, err := safe.StateUpdateWithConflicts(r.lifecycleContext, r.lifecycleState, lifecycleResourceFor(harnesshostlifecycle.ResourceID, environmentAdmissionCountSpec{}).Metadata(), func(value *typed.Resource[environmentAdmissionCountSpec, lifecycleExtension[environmentAdmissionCountSpec]]) error {
-		input := value.TypedSpec()
-		if input.Admissions+delta < 0 {
-			return errors.New("Runtime admission count would become negative")
+	if delta < 0 && r.activeAdmissions < uint64(-delta) {
+		return errors.New("Runtime admission count would become negative")
+	}
+	next := r.activeAdmissions
+	if delta < 0 {
+		next -= uint64(-delta)
+	} else {
+		next += uint64(delta)
+	}
+	value := environmentAdmissionCountSpec{Admissions: int(next)}
+	// Count publication is part of the synchronous admission gate. An uncertain
+	// write must close admission even if the backing store committed it.
+	if err := cosi.Publish(r.lifecycleContext, r.lifecycleState, lifecycleResourceFor(harnesshostlifecycle.ResourceID, value), value, harnesshostlifecycle.EnvironmentOwner); err != nil {
+		r.admissionOpen = false
+		r.failed = true
+		if r.failureErr == nil {
+			r.failureErr = err
 		}
-		input.Admissions += delta
-		return nil
-	}, state.WithUpdateOwner(harnesshostlifecycle.EnvironmentOwner))
-	return err
+		select {
+		case r.fatal <- err:
+		default:
+		}
+		return err
+	}
+	r.activeAdmissions = next
+	return nil
+}
+
+func (r *Runtime) initializeSessionLifecycle() error {
+	value := environmentAdmissionCountSpec{}
+	if err := cosi.Publish(r.lifecycleContext, r.lifecycleState, lifecycleResourceFor(harnesshostlifecycle.ResourceID, value), value, harnesshostlifecycle.EnvironmentOwner); err != nil {
+		return err
+	}
+	return r.lifecycleEngine.RegisterController(&sessionLifecycleController{runtime: r})
 }

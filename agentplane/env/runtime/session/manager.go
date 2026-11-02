@@ -40,7 +40,7 @@ type Manager struct {
 }
 
 func NewManager(config Config) (*Manager, error) {
-	if config.Context == nil || config.State == nil || config.Store == nil || config.Destination == nil || config.Scripts == nil || config.WaitBootstrap == nil || config.Environment == nil || config.EnsureWorkspace == nil || config.LaunchProcess == nil || config.ResolveModelConfig == nil || config.PublishSeal == nil || config.OnChange == nil || config.OnError == nil || config.ReconcileConcurrency <= 0 {
+	if config.Admission == nil || config.Context == nil || config.State == nil || config.Store == nil || config.Destination == nil || config.Scripts == nil || config.WaitBootstrap == nil || config.Environment == nil || config.EnsureWorkspace == nil || config.LaunchProcess == nil || config.ResolveModelConfig == nil || config.PublishSeal == nil || config.OnChange == nil || config.OnError == nil || config.ReconcileConcurrency <= 0 {
 		return nil, fmt.Errorf("invalid Session manager dependencies")
 	}
 	if config.Claude != nil {
@@ -59,7 +59,8 @@ func NewManager(config Config) (*Manager, error) {
 		workers: config.ReconcileConcurrency, sessions: map[string]*Session{}, freshReservations: map[string]struct{}{},
 	}
 	m.dependencies = sessionDependencies{
-		ctx: config.Context, state: config.State, store: config.Store,
+		admission: config.Admission,
+		ctx:       config.Context, state: config.State, store: config.Store,
 		claude: config.Claude, harnessEnvironment: maps.Clone(config.HarnessEnvironment),
 		debugCheckpoint: config.DebugCheckpoint, scripts: config.Scripts,
 		codexAppServer: config.CodexAppServer, waitBootstrap: config.WaitBootstrap, environmentState: config.Environment,

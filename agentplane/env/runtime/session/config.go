@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
@@ -23,6 +24,7 @@ type DebugCheckpointConfig struct{ Name, CommandID string }
 // Config names the concrete facilities one Session needs and the narrow
 // Runtime admission/publication gates retained by the aggregate owner.
 type Config struct {
+	Admission            lifecycle.EnvironmentAdmissionGuard
 	Context              context.Context
 	State                state.State
 	Store                *retained.Store

@@ -13,26 +13,40 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Native controllers hold this gate only while registering accepted work. Their
-// oneoff slots and process finalizers account for work after the callback returns.
-func (r *Runtime) admitLifecycleEffect(ctx context.Context, expected lifecycle.EnvironmentDesired, effect func(context.Context) error) error {
+// Accepted registration work remains counted until its component operation slot
+// is visible. Publication failures and callbacks can report failure without
+// reentering the admission mutex.
+func (r *Runtime) admitLifecycleEffect(ctx context.Context, expected lifecycle.EnvironmentDesired, effect func(context.Context) error) (resultErr error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if err := ctx.Err(); err != nil {
+		r.mu.Unlock()
 		return err
 	}
 	if r.closing || r.failed || !r.admissionOpen || r.desired != expected || expected.Mode != lifecycle.Running {
+		r.mu.Unlock()
 		return nil
 	}
+	err := r.changeAdmissionsLocked(1)
+	r.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	defer r.finishAdmission(&resultErr)
 	return effect(ctx)
 }
 
-func (r *Runtime) admitCodexRequest(ctx context.Context, effect func(context.Context) error) error {
+func (r *Runtime) admitCodexRequest(ctx context.Context, effect func(context.Context) error) (resultErr error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.closing || r.failed || !r.admissionOpen || r.desired.Mode != lifecycle.Running {
+	if !r.acceptingLocked() {
+		r.mu.Unlock()
 		return status.Error(codes.Aborted, "this Sandbox is quiesced")
 	}
+	err := r.changeAdmissionsLocked(1)
+	r.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	defer r.finishAdmission(&resultErr)
 	return effect(ctx)
 }
 

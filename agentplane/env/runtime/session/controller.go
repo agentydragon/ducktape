@@ -319,26 +319,29 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		if err := write(); err != nil {
 			return err
 		}
-		if _, err := s.startOperation(&s.preparation, func(ctx context.Context) error {
-			err := s.ensureReady(ctx)
-			if err == nil {
-				s.mu.Lock()
-				live := s.process != nil && s.process.Running()
-				s.mu.Unlock()
-				if !live {
-					err = errors.New("harness exited before preparation completed")
+		if err := s.deps.admission(ctx, desiredState, func(context.Context) error {
+			_, err := s.startOperation(&s.preparation, func(ctx context.Context) error {
+				err := s.ensureReady(ctx)
+				if err == nil {
+					s.mu.Lock()
+					live := s.process != nil && s.process.Running()
+					s.mu.Unlock()
+					if !live {
+						err = errors.New("harness exited before preparation completed")
+					}
 				}
-			}
-			if err != nil && !errors.Is(err, context.Canceled) {
-				if failure := s.settleUndispatched(s.deps.ctx, "harness startup failed before this command was dispatched: "+err.Error()); failure != nil {
-					s.deps.fail(failure)
-					return failure
+				if err != nil && !errors.Is(err, context.Canceled) {
+					if failure := s.settleUndispatched(s.deps.ctx, "harness startup failed before this command was dispatched: "+err.Error()); failure != nil {
+						s.deps.fail(failure)
+						return failure
+					}
+					if failure := s.Emit(s.deps.ctx, observation(&eventpb.HarnessLaunchFailed{Reason: err.Error()}), nil); failure != nil {
+						s.deps.fail(failure)
+						return failure
+					}
 				}
-				if failure := s.Emit(s.deps.ctx, observation(&eventpb.HarnessLaunchFailed{Reason: err.Error()}), nil); failure != nil {
-					s.deps.fail(failure)
-					return failure
-				}
-			}
+				return err
+			})
 			return err
 		}); err != nil {
 			current.Phase = Dormant
@@ -370,16 +373,19 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	}
 	s.mu.Unlock()
 	if len(dispatch) > 0 {
-		if _, err := s.startOperation(&s.dispatching, func(ctx context.Context) error {
-			for _, command := range dispatch {
-				if err := s.dispatch(ctx, command); err != nil {
-					return err
+		if err := s.deps.admission(ctx, desiredState, func(context.Context) error {
+			_, err := s.startOperation(&s.dispatching, func(ctx context.Context) error {
+				for _, command := range dispatch {
+					if err := s.dispatch(ctx, command); err != nil {
+						return err
+					}
+					if adapter.BlocksCommandDispatch() {
+						break
+					}
 				}
-				if adapter.BlocksCommandDispatch() {
-					break
-				}
-			}
-			return nil
+				return nil
+			})
+			return err
 		}); err != nil {
 			current.Error = err.Error()
 			return write()

@@ -58,10 +58,10 @@ const (
 // admission before publishing a replacement and accepts the exact revision only
 // after its local recovery work completes.
 type EnvironmentDesired struct {
- Mode Mode
- IncarnationUID string
- SealUID string
- Generation uint64
+	Mode           Mode
+	IncarnationUID string
+	SealUID        string
+	Generation     uint64
 }
 
 func (value EnvironmentDesired) DeepCopy() EnvironmentDesired { return value }
@@ -132,10 +132,10 @@ type Blocker struct {
 func (value Blocker) DeepCopy() Blocker { return value }
 
 type Status struct {
-	Generation uint64
-	Stage      Stage
-	Error      string
-	Blocker    Blocker
+	Generation    uint64
+	Stage         Stage
+	Error         string
+	Blocker       Blocker
 	NativeStopped bool
 }
 

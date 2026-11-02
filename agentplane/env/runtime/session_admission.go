@@ -71,22 +71,15 @@ func (r *Runtime) OpenSession(ctx context.Context, request *environmentruntimepb
 		return nil, rpcError(err)
 	}
 	if exists {
-		r.mu.Lock()
-		if err := r.authorizeSessionLocked(ctx, true); err != nil {
-			r.mu.Unlock()
+		if err := r.withSessionAdmission(ctx, true, &expected, func() error {
+			if err := r.changeAdmissionsLocked(1); err != nil {
+				return err
+			}
+			r.idleSince = nil
+			return nil
+		}); err != nil {
 			return nil, err
 		}
-		if !r.acceptingLocked() {
-			r.mu.Unlock()
-			return nil, status.Error(codes.Aborted, "this Sandbox is quiesced")
-		}
-		if err := r.changeAdmissionsLocked(1); err != nil {
-			r.mu.Unlock()
-			return nil, rpcError(err)
-		}
-		r.idleSince = nil
-		r.mu.Unlock()
-		r.changed()
 		defer r.finishAdmission(&resultErr)
 		record, err := r.store.Read(request.SessionId)
 		if err != nil {
@@ -121,25 +114,14 @@ func (r *Runtime) OpenSession(ctx context.Context, request *environmentruntimepb
 	}
 	admitted := false
 	s, err := r.sessions.ReserveFresh(r.lifecycleContext, request.SessionId, func() error {
-		r.mu.Lock()
-		if err := r.authorizeSessionLocked(ctx, true); err != nil {
-			r.mu.Unlock()
-			return err
-		}
-		if r.closing || !r.acceptingLocked() || r.desired != expected {
-			r.mu.Unlock()
-			return status.Error(codes.Aborted, "this Sandbox is quiesced")
-		}
-		if err := r.changeAdmissionsLocked(1); err != nil {
-			r.mu.Unlock()
-			return err
-		}
-		r.idleSince = nil
-		admitted = true
-		writeErr := r.store.Write(request.SessionId, record)
-		r.mu.Unlock()
-		r.changed()
-		return writeErr
+		return r.withSessionAdmission(ctx, true, &expected, func() error {
+			if err := r.changeAdmissionsLocked(1); err != nil {
+				return err
+			}
+			r.idleSince = nil
+			admitted = true
+			return r.store.Write(request.SessionId, record)
+		})
 	})
 	if admitted {
 		defer r.finishAdmission(&resultErr)
@@ -177,23 +159,17 @@ func (r *Runtime) admit(ctx context.Context, id string, c *commandpb.Command) (e
 	if v := c.GetInterruptTurn(); v != nil && v.TurnId == "" {
 		return nil, status.Error(codes.InvalidArgument, "interrupt_turn.turn_id is required")
 	}
-	r.mu.Lock()
-	if err := r.authorizeSessionLocked(ctx, false); err != nil {
-		r.mu.Unlock()
+	var lameduck bool
+	if err := r.withSessionAdmission(ctx, false, nil, func() error {
+		lameduck = !r.acceptingLocked()
+		if err := r.changeAdmissionsLocked(1); err != nil {
+			return err
+		}
+		r.idleSince = nil
+		return nil
+	}); err != nil {
 		return nil, err
 	}
-	if r.closing {
-		r.mu.Unlock()
-		return nil, status.Error(codes.Unavailable, "environment Runtime is closing")
-	}
-	lameduck := !r.acceptingLocked()
-	if err := r.changeAdmissionsLocked(1); err != nil {
-		r.mu.Unlock()
-		return nil, rpcError(err)
-	}
-	r.idleSince = nil
-	r.mu.Unlock()
-	r.changed()
 	defer r.finishAdmission(&resultErr)
 	exists, err := r.store.Exists(id)
 	if err != nil {
@@ -264,24 +240,25 @@ func (r *Runtime) acceptingLocked() bool {
 }
 
 func (r *Runtime) authorizeSession(ctx context.Context, running bool) (lifecycle.EnvironmentDesired, error) {
-	epoch, err := r.control.Authorize(ctx)
-	if err != nil {
-		return lifecycle.EnvironmentDesired{}, err
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if err := r.authorizeSessionEpochLocked(epoch, running); err != nil {
-		return lifecycle.EnvironmentDesired{}, err
-	}
-	return r.desired, nil
+	var expected lifecycle.EnvironmentDesired
+	err := r.withSessionAdmission(ctx, running, nil, func() error { expected = r.desired; return nil })
+	return expected, err
 }
 
-func (r *Runtime) authorizeSessionLocked(ctx context.Context, running bool) error {
-	epoch, err := r.control.Authorize(ctx)
-	if err != nil {
+func (r *Runtime) withSessionAdmission(ctx context.Context, running bool, expected *lifecycle.EnvironmentDesired, admit func() error) error {
+	return r.control.Admit(ctx, func(epoch *runtimecontrol.Epoch) error {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if err := r.authorizeSessionEpochLocked(epoch, running); err != nil {
+			return err
+		}
+		if expected != nil && r.desired != *expected {
+			return status.Error(codes.Aborted, "environment lifecycle changed before reservation")
+		}
+		err := admit()
+		r.changedLocked()
 		return err
-	}
-	return r.authorizeSessionEpochLocked(epoch, running)
+	})
 }
 
 func (r *Runtime) authorizeSessionEpochLocked(epoch *runtimecontrol.Epoch, running bool) error {

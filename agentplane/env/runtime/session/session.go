@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"sync"
 	"time"
 
@@ -67,6 +68,7 @@ type Session struct {
 // Session dependencies name only the capabilities that one session needs. The Runner
 // admission barrier and registry are deliberately absent.
 type sessionDependencies struct {
+	admission          lifecycle.EnvironmentAdmissionGuard
 	ctx                context.Context
 	state              state.State
 	store              *retained.Store
