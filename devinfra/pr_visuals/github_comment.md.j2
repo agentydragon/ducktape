@@ -66,7 +66,7 @@
 {%- endmacro %}
 
 {% macro issue(issue) -%}
-{{ issue.message | e }}{% if issue.source %} ({{ 'shard' if issue.source.shards | length == 1 else 'shards' }} {{ issue.source.shards | shard_ranges }} · run {{ issue.source.run or 'unknown' }} · attempt {{ issue.source.attempt or 'unknown' }}{% if issue.source.configuration %} · config {{ issue.source.configuration[:8] | e }}{% endif %}) · <a href="{{ issue.source.invocation | buildbuddy_url | e }}">BuildBuddy</a>{% endif %}
+{{ issue.message }}{% if issue.source %} ({{ 'shard' if issue.source.shards | length == 1 else 'shards' }} {{ issue.source.shards | shard_ranges }} · run {{ issue.source.run or 'unknown' }} · attempt {{ issue.source.attempt or 'unknown' }}{% if issue.source.configuration %} · config {{ issue.source.configuration[:8] }}{% endif %}) · <a href="{{ issue.source.invocation | buildbuddy_url }}">BuildBuddy</a>{% endif %}
 {%- endmacro %}
 
 {% macro image(url, alt) -%}
@@ -76,7 +76,7 @@
 {% macro asset_body(item, include_heading) -%}
 {% set asset = item.asset %}
 {% if include_heading %}
-<p><strong><a href="{{ item.anchor | e }}">{{ asset.label | e }}</a></strong>{% if asset.classification == 'unstable' %} · unstable across runs{% elif asset.classification == 'modified' %} · {{ '%.1f' | format((asset.changed_fraction or 0) * 100) }}% changed{% if asset.baseline_stale %} · {{ stale_warning(item.test) }}{% endif %}{% elif asset.classification == 'new' %} · new{% elif asset.classification == 'removed' %} · removed{% if asset.baseline_stale %} · {{ stale_warning(item.test) }}{% endif %}{% endif %}</p>
+<p><strong><a href="{{ item.anchor }}">{{ asset.label }}</a></strong>{% if asset.classification == 'unstable' %} · unstable across runs{% elif asset.classification == 'modified' %} · {{ '%.1f' | format((asset.changed_fraction or 0) * 100) }}% changed{% if asset.baseline_stale %} · {{ stale_warning(item.test) }}{% endif %}{% elif asset.classification == 'new' %} · new{% elif asset.classification == 'removed' %} · removed{% if asset.baseline_stale %} · {{ stale_warning(item.test) }}{% endif %}{% endif %}</p>
 
 {% elif asset.baseline_stale and asset.classification != 'unstable' %}
 <p>{{ stale_warning(item.test) }}</p>
@@ -102,7 +102,7 @@
 
 {% macro target(test, impact, gallery_url, ci_details_url, assets, open_section, inline_limit) -%}
 <details{% if open_section %} open{% endif %}>
-<summary><code>{{ test.target_label | e }}</code> — {{ counts(test) }}{% if impact is not none %} · largest change {{ '%.1f' | format(impact * 100) }}%{% endif %} · {{ test.title | e }} · <a href="{{ gallery_url | e }}">link</a>{% if ci_details_url %} · <a href="{{ ci_details_url | e }}">request rerun</a>{% endif %}</summary>
+<summary><code>{{ test.target_label }}</code> — {{ counts(test) }}{% if impact is not none %} · largest change {{ '%.1f' | format(impact * 100) }}%{% endif %} · {{ test.title }} · <a href="{{ gallery_url }}">link</a>{% if ci_details_url %} · <a href="{{ ci_details_url }}">request rerun</a>{% endif %}</summary>
 
 {% if test.issues %}
 <ul>{% for problem in test.issues %}<li>⚠️ {{ issue(problem) }}</li>{% endfor %}</ul>
@@ -113,7 +113,7 @@
 
 {% else %}
 <details{% if open_section and loop.first %} open{% endif %}>
-<summary>{{ item.asset.label | e }}{% if item.asset.classification == 'modified' and item.asset.changed_fraction is not none %} — {{ '%.1f' | format(item.asset.changed_fraction * 100) }}% changed{% elif item.asset.classification is not none %} — {{ item.asset.classification }}{% endif %}{% if item.asset.baseline_stale %} — ⚠️ stale baseline{% endif %} · <a href="{{ item.anchor | e }}">link</a></summary>
+<summary>{{ item.asset.label }}{% if item.asset.classification == 'modified' and item.asset.changed_fraction is not none %} — {{ '%.1f' | format(item.asset.changed_fraction * 100) }}% changed{% elif item.asset.classification is not none %} — {{ item.asset.classification }}{% endif %}{% if item.asset.baseline_stale %} — ⚠️ stale baseline{% endif %} · <a href="{{ item.anchor }}">link</a></summary>
 
 {{ asset_body(item, false) }}
 
