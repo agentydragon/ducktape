@@ -2215,14 +2215,26 @@ member names`, it projects onto each importing chunk's local binding
   replacing `Array.prototype[Symbol.iterator]`, installing
   `Object.prototype[Symbol.toPrimitive]`), a `Pure`-classified
   statement like `new Set(["a"])` fires user code, S edges drop,
-  and the theorem's ordering claim no longer holds. Unlike A8
-  (chunk-top shadowing), this is **not** detected — pollution can
-  live in another chunk, a vendor bundle, or host code, outside
-  what the analyzer sees. Production bundles we target don't
-  monkey-patch intrinsics; the assumption is relied on by
-  observation, like A6. (Membrane/zone-style frameworks that DO
-  patch intrinsics would need the affected whitelist entries
-  disabled for soundness.)
+  and the theorem's ordering claim no longer holds. Host and external
+  pollution can occur outside the analyzed source. Hidden mutation paths
+  beyond the modeled census remain the author's A11 obligation. Frameworks
+  that patch intrinsics need the affected whitelist entries disabled for
+  soundness.
+
+  Migrated native consumers additionally query exact intrinsic slots through
+  `IntegrityFlags`. The closed source-write census can keep a queried slot
+  intact or make its identity unknown when a possible write reaches it.
+  Unknown receivers or keys can therefore block a proof without demonstrating
+  an actual runtime mutation. `program_graph.json.gz` retains
+  `native_integrity_witnesses`; `debundle explain-integrity` explains which
+  source witnesses block a queried slot. Existing exact-site native-identity
+  inputs can supply their documented proof dependency.
+
+  These guards are additional admission requirements. The A11 heading alone
+  cannot discharge a failed slot query, and its consumer must retain the
+  opaque fallback. Consumers that have not migrated to slot queries still
+  rely on the A11 input precondition; the source census does not establish
+  whole-program intrinsic integrity for those consumers.
 
 Namespace admission retains member targets nested in destructuring assignments
 and loop heads during the existing execution-index visit. A member target can
