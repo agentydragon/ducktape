@@ -173,6 +173,10 @@ same stage boundaries for Pod, MCP, Dispatcher, VM, manual VM and real-model sui
 waits add spans for Dispatcher admission/failover, sampler setup/execution and MCP policy decisions.
 `system_test.sandbox.ready` retains controller/Pod transition events and container start timestamps.
 Cleanup events distinguish suspend acceptance, effective suspension, delete acceptance and actual deletion.
+Retained-stack cleanup has a `system_test.stack.cleanup` span with children for fixture process
+shutdown, baseline resource deletion, workspace release, clean-marker certification and trace
+collector shutdown. Namespace deletion spans distinguish the fixture namespaces from monitoring,
+which stays available until the fixture services have stopped exporting traces.
 Use `test.xml` for the verdict; a case span measures fixture lifetime. Older investigation artifacts retain
 their original `vm-phases.jsonl` and `k3s-timeline.jsonl` names.
 

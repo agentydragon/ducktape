@@ -834,11 +834,12 @@ def _baseline_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None
         for item in json.loads(k3s.kubectl("get", "pv", "-o", "json"))["items"]
         if item.get("spec", {}).get("claimRef", {}).get("namespace") in namespaces
     ]
-    for namespace in namespaces:
-        with tracer.start_as_current_span(
-            "system_test.stack.namespace.delete", attributes={"k8s.namespace.name": namespace}
-        ):
-            k3s.kubectl("delete", "namespace", namespace, "--wait=true", "--timeout=60s")
+    # Submit both fixture-owned namespace deletions before waiting, so their controller
+    # reconciliation overlaps. Keep monitoring alive until the fixture services have stopped.
+    with tracer.start_as_current_span(
+        "system_test.stack.namespaces.delete", attributes={"k8s.namespace.names": namespaces}
+    ):
+        k3s.kubectl("delete", "namespace", *namespaces, "--wait=true", "--timeout=60s")
     for name in owned_pvs:
         with tracer.start_as_current_span("system_test.stack.volume.delete", attributes={"k8s.pv.name": name}):
             k3s.kubectl("delete", "pv", name, "--ignore-not-found=true", "--wait=true", "--timeout=60s")
