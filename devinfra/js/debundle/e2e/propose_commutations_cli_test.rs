@@ -71,6 +71,28 @@ fn propose_rejected(rejected: &RejectedFixture, extra: &[&str]) -> Value {
     )
 }
 
+fn propose_rejected_text(rejected: &RejectedFixture) -> String {
+    let graph = rejected.report_path("dependency_graph.json.gz");
+    let args = [
+        "spec",
+        "propose-commutations",
+        "--graph",
+        graph.to_str().unwrap(),
+        "--source-root",
+        rejected.source_root.to_str().unwrap(),
+        "--format",
+        "text",
+    ];
+    let out = run_debundle(&args);
+    assert!(
+        out.status.success(),
+        "propose-commutations failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).expect("text report is UTF-8")
+}
+
 fn array<'a>(report: &'a Value, key: &str) -> &'a [Value] {
     report[key]
         .as_array()
@@ -218,6 +240,7 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
     let scc = only_scc(&report);
     assert_eq!(scc["verdict"], "pairs_break", "{scc:#}");
     assert_eq!(array(scc, "modules").len(), 2, "{scc:#}");
+    assert!(scc.get("residual_components").is_none(), "{scc:#}");
 }
 
 /// `--limit` keeps the best-ranked proposals, `totals` counts every one, and
@@ -317,6 +340,14 @@ fn eager_cycle_needs_co_location() {
     // No pair exists, and the SCC row says so instead of staying silent.
     let scc = only_scc(&report);
     assert_eq!(scc["residual_modules"], 2, "{scc:#}");
+    let [component] = array(scc, "residual_components") else {
+        panic!("one residual cyclic component: {scc:#}");
+    };
+    assert_eq!(
+        component["modules"],
+        serde_json::json!(["probes/inner", "probes/outer"]),
+        "{component:#}"
+    );
     for row in blocking_rows(scc) {
         assert_eq!(
             row,
@@ -326,6 +357,11 @@ fn eager_cycle_needs_co_location() {
     assert_eq!(
         draft_pairs(&report),
         Vec::<CommutingStatementsContract>::new()
+    );
+    let text = propose_rejected_text(&rejected);
+    assert!(
+        text.contains("    residual component 1 (2 modules): probes/inner, probes/outer\n"),
+        "{text}"
     );
 }
 

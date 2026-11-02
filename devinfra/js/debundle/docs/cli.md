@@ -1398,11 +1398,16 @@ debundle spec propose-commutations \
   size;
 - inerts every proposal of the SCC together and writes one `sccs` row per
   SCC (its `modules` and a `verdict`): `pairs_break`, or `pairs_cannot_break`
-  with `residual_modules` (the modules still on a constraining cycle) and
-  `blocking_edges`, the constraining edges between them counted by `kind` and
-  `reason` (`kind_not_inertable` for `eager_use` and the other kinds no
-  premise inerts, else the rejection reason of the edge's pair). An SCC with
-  no proposal still gets its row.
+  with `residual_modules` (the modules still on a constraining cycle),
+  `residual_components` (one `{modules: [...]}` row for each remaining
+  nontrivial cyclic component; `residual_modules` is the sum of their member
+  counts), and `blocking_edges`, the constraining edges
+  between them counted by `kind` and `reason` (`kind_not_inertable` for
+  `eager_use` and the other kinds no premise inerts, else the rejection reason
+  of the edge's pair). Module paths in each residual component, and component
+  rows by their member paths, are sorted deterministically. The text report
+  prints the same member paths. `pairs_break` has no `residual_components`
+  field. An SCC with no proposal still gets its row.
 
 Each proposal carries the `entry` to paste, both endpoints (source unit,
 binding, module, source location, the source unit's first line — its own
