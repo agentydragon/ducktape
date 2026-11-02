@@ -9,7 +9,7 @@ use swc_ecma_ast::Id;
 
 use crate::analysis_inputs::ResolvedCommutingStatements;
 use crate::facts::{EffectCell, SourceUnitReadClosure};
-use crate::{StatementEffectSummary, StatementFacts, StatementKind};
+use crate::{SourceLocation, StatementEffectSummary, StatementFacts, StatementKind};
 
 /// The per-chunk options dependency-graph construction reads. Every other
 /// `chunk_analysis_options` field is consumed by analysis before the graph is
@@ -117,6 +117,16 @@ fn source_unit_label(ordinal: SourceUnitOrdinal, binding: &Option<String>) -> St
     }
 }
 
+fn source_unit_location(
+    nodes: &[SourceUnit],
+    ordinal: SourceUnitOrdinal,
+) -> Option<SourceLocation> {
+    nodes
+        .iter()
+        .find(|node| node.statement_ordinal == ordinal)
+        .and_then(|node| node.source_location.clone())
+}
+
 impl fmt::Display for CommutingStatementsContradiction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -159,19 +169,77 @@ pub struct CommutingStatementsUnused {
     pub spec_location: String,
     pub a: SourceUnitOrdinal,
     pub a_binding: Option<String>,
+    /// Authored module/member assignments that resolve to endpoint `a`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub a_logical_members: Vec<spec::ResolvedMemberSelector>,
+    /// Source location of endpoint `a` in this graph's input snapshot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub a_source_location: Option<SourceLocation>,
     pub b: SourceUnitOrdinal,
     pub b_binding: Option<String>,
+    /// Authored module/member assignments that resolve to endpoint `b`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub b_logical_members: Vec<spec::ResolvedMemberSelector>,
+    /// Source location of endpoint `b` in this graph's input snapshot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub b_source_location: Option<SourceLocation>,
     pub reason: UnusedPremiseReason,
+}
+
+fn unused_endpoint_label(
+    ordinal: SourceUnitOrdinal,
+    binding: &Option<String>,
+    logical_members: &[spec::ResolvedMemberSelector],
+    source_location: &Option<SourceLocation>,
+) -> String {
+    let member_labels = logical_members
+        .iter()
+        .map(|member| format!("module `{}` member `{}`", member.module, member.name))
+        .collect::<Vec<_>>();
+    let mut label = match member_labels.as_slice() {
+        [] => match binding {
+            Some(binding) => format!("binding `{binding}`"),
+            None => "anonymous statement".to_owned(),
+        },
+        [member] => member.clone(),
+        members => format!("members [{}]", members.join(", ")),
+    };
+    if !logical_members.is_empty()
+        && let Some(binding) = binding
+    {
+        label.push_str(&format!(" (binding `{binding}`)"));
+    }
+    label.push_str(&format!(" (source unit #{})", ordinal.0));
+    if let Some(location) = source_location {
+        label.push_str(&format!(
+            " at {}:{}",
+            location.source_path, location.start_line
+        ));
+        if let Some(column) = location.start_column {
+            label.push_str(&format!(":{column}"));
+        }
+    }
+    label
 }
 
 impl fmt::Display for CommutingStatementsUnused {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{} inerts no sequenced edge: source units {} and {} {}; remove the entry",
+            "{} inerts no sequenced edge: endpoints {} and {} {}; remove the entry",
             self.spec_location,
-            source_unit_label(self.a, &self.a_binding),
-            source_unit_label(self.b, &self.b_binding),
+            unused_endpoint_label(
+                self.a,
+                &self.a_binding,
+                &self.a_logical_members,
+                &self.a_source_location,
+            ),
+            unused_endpoint_label(
+                self.b,
+                &self.b_binding,
+                &self.b_logical_members,
+                &self.b_source_location,
+            ),
             match self.reason {
                 UnusedPremiseReason::NoSequencedEdge => "are already unordered",
                 UnusedPremiseReason::SummarizedEndpoints =>
@@ -599,7 +667,7 @@ pub fn build_dependency_graph_with(
         })
         .collect();
     retain_premise_verdicts(&mut edges, &stmt_by_source_unit);
-    let commuting_premises = apply_commuting_statements(&mut edges, commuting_statements)?;
+    let commuting_premises = apply_commuting_statements(&nodes, &mut edges, commuting_statements)?;
     Ok(DependencyGraph::from_parts(
         nodes,
         edges,
@@ -756,6 +824,7 @@ fn conflicting_cell(a: &StatementEffectSummary, b: &StatementEffectSummary) -> O
 /// effects. A pair with no inertable edge is unused and the build fails so
 /// the spec sheds the stale assertion.
 fn apply_commuting_statements(
+    nodes: &[SourceUnit],
     edges: &mut [DependencyEdge],
     commuting_statements: &[ResolvedCommutingStatements],
 ) -> Result<Vec<AppliedCommutingPremise>, DependencyGraphBuildError> {
@@ -799,8 +868,12 @@ fn apply_commuting_statements(
                     spec_location: premise.spec_location.clone(),
                     a: premise.a.source_unit,
                     a_binding: premise.a.selected_binding.clone(),
+                    a_logical_members: premise.a.logical_members.clone(),
+                    a_source_location: source_unit_location(nodes, premise.a.source_unit),
                     b: premise.b.source_unit,
                     b_binding: premise.b.selected_binding.clone(),
+                    b_logical_members: premise.b.logical_members.clone(),
+                    b_source_location: source_unit_location(nodes, premise.b.source_unit),
                     reason: if summarized {
                         UnusedPremiseReason::SummarizedEndpoints
                     } else {

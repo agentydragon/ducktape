@@ -13,7 +13,7 @@ use swc_ecma_ast::{CallExpr, Expr, Id, Lit};
 
 use crate::purity::Purity;
 use crate::reports::schema::SourceLocation;
-use spec::{BuiltinGlobalRoot, CapturedValueKind, SourceMatchClaim};
+use spec::{BuiltinGlobalRoot, CapturedValueKind, ResolvedMemberSelector, SourceMatchClaim};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 pub enum KnownEffect {
@@ -709,6 +709,10 @@ pub struct CommutingEndpoint {
     /// Declared binding that identified the source unit; `None` for an
     /// anonymous statement.
     pub selected_binding: Option<String>,
+    /// Authored logical-module members whose resolved declaration is this
+    /// endpoint. Empty when no authored member maps to the declaration.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub logical_members: Vec<ResolvedMemberSelector>,
 }
 
 /// Source-resolved author premise that two source units of one chunk commute

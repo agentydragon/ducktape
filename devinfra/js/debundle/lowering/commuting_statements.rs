@@ -15,7 +15,7 @@ use js_ast::{source_unit_ordinal_for_statement, split_var_declarators};
 use selector_outcome::Outcome as SelectorOutcome;
 use selector_resolve::{Chunk as SelectorChunk, EntityIndex};
 use source_identity::{SourceUnitOrdinal, StatementId};
-use spec::{CommutingStatementsContract, SourceUnitSelector};
+use spec::{CommutingStatementsContract, ResolvedMemberSelector, SourceUnitSelector};
 use swc_ecma_ast::{Module, ModuleItem};
 
 use super::cross_module::select_one_declared_binding;
@@ -189,9 +189,52 @@ fn resolve_source_unit_endpoint(
             })?,
         _ => 0,
     };
+    let logical_members = resolved_logical_members(
+        selector,
+        chunk_name,
+        body_index,
+        selected_binding.as_deref(),
+        resolved_member_sites,
+    );
     Ok(CommutingEndpoint {
         selector: selector.clone(),
         source_unit: SourceUnitOrdinal(first_ordinal.0 + declarator_offset),
         selected_binding,
+        logical_members,
     })
+}
+
+fn resolved_logical_members(
+    selector: &SourceUnitSelector,
+    chunk_name: &str,
+    body_index: usize,
+    selected_binding: Option<&str>,
+    resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
+) -> Vec<ResolvedMemberSelector> {
+    match selector {
+        SourceUnitSelector::ResolvedMember(member) => vec![member.clone()],
+        SourceUnitSelector::SourceMatch(_) => {
+            let Some(selected_binding) = selected_binding else {
+                return Vec::new();
+            };
+            resolved_member_sites
+                .iter()
+                .filter_map(|((module, name), sites)| {
+                    sites
+                        .iter()
+                        .any(|site| {
+                            site.provider_chunk == chunk_name
+                                && site.declaration.as_ref().is_some_and(|declaration| {
+                                    declaration.body_index == body_index
+                                        && declaration.binding.as_str() == selected_binding
+                                })
+                        })
+                        .then(|| ResolvedMemberSelector {
+                            module: module.clone(),
+                            name: name.clone(),
+                        })
+                })
+                .collect()
+        }
+    }
 }
