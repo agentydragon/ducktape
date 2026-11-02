@@ -91,7 +91,6 @@ COSI input subscriptions.
 | `process-lifecycle`                | `ProcessDesiredStates` (primary), `ProcessInputs` (mapped)                                               | `ProcessStatuses` (exclusive)                                           | Runtime host owns launch callbacks, live handles, observations and workers.                                              |
 | `embedded-execution-lifecycle`     | `EmbeddedExecutionInputs` (primary), `EmbeddedExecutionRuntimes` (mapped), both in `environment-runtime` | `EmbeddedExecutionRuntimes` (exclusive)                                 | Runtime host publishes typed completion facts; the controller retains an unfenced owner on failure.                      |
 
-
 ## Harness Host
 
 ```mermaid
