@@ -119,9 +119,9 @@ class StationaryBootstrapModel:
         breaks[:, 0] = True
         if len(contiguous_month_segments(self.history.months)) == 1:
             # Preserve the original seeded circular sampler exactly for an unbroken record.
-            step = np.arange(draws)
-            block_start = np.maximum.accumulate(np.where(breaks, step, 0), axis=1)
-            transition = (np.take_along_axis(starts, block_start, axis=1) + step - block_start) % transitions
+            steps = np.arange(draws)
+            block_start = np.maximum.accumulate(np.where(breaks, steps, 0), axis=1)
+            transition = (np.take_along_axis(starts, block_start, axis=1) + steps - block_start) % transitions
             return np.concatenate([transition[:, :1], transition[:, : request.horizon_months] + 1], axis=1)
 
         source_to_transition = {int(source): index for index, source in enumerate(transition_sources)}
