@@ -1,93 +1,73 @@
 package retained
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 )
 
-func TestStorePreservesSessionJSONShape(t *testing.T) {
+func TestSessionRecordsUseCOSIState(t *testing.T) {
 	root := t.TempDir()
-	store, err := NewStore(root)
+	resources := state.WrapCore(namespaced.NewState(inmem.Build))
+	store, err := NewStore(root, resources)
 	if err != nil {
 		t.Fatal(err)
 	}
-	totalBudget := 32768
-	nativeID := "native-session"
-	record := Record{
-		Harness: sessionpb.Harness_HARNESS_CLAUDE, CWD: "/workspace", Model: "route/model",
-		TotalContextBudgetTokens: &totalBudget, ReasoningEffort: "medium", Instructions: "Keep going.",
-		EventSourceID: "bdb9e654-d77c-42a2-b006-9a0dd4f20655", NativeSessionID: &nativeID,
-	}
+	budget := 32768
+	native := "native-session"
+	record := Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, CWD: "/workspace", Model: "route/model", TotalContextBudgetTokens: &budget, SetupScript: "printf 'exact \\t'\n", EventSourceID: "source", NativeSessionID: &native}
 	if err := store.Write("session-1", record); err != nil {
 		t.Fatal(err)
 	}
+	budget = 1
+	native = "changed"
 	read, err := store.Read("session-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if read.Harness != record.Harness || read.Spec().GetCwd() != record.CWD || read.EventSourceID != record.EventSourceID || *read.NativeSessionID != nativeID {
-		t.Fatalf("session record did not round trip: %+v", read)
+	if *read.TotalContextBudgetTokens != 32768 || *read.NativeSessionID != "native-session" || read.SetupScript != record.SetupScript {
+		t.Fatalf("record = %+v", read)
 	}
-	data, err := os.ReadFile(filepath.Join(root, "session-1", "session.json"))
-	if err != nil {
+	*read.NativeSessionID = "mutated"
+	again, err := store.Read("session-1")
+	if err != nil || *again.NativeSessionID != "native-session" {
+		t.Fatalf("mutated resource: %+v, %v", again, err)
+	}
+	ids, err := store.SessionIDs()
+	if err != nil || len(ids) != 1 || ids[0] != "session-1" {
+		t.Fatalf("IDs = %v, %v", ids, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "session-1", "session.json")); !os.IsNotExist(err) {
+		t.Fatalf("unexpected Session JSON file: %v", err)
+	}
+	legacyDir := filepath.Join(root, "unregistered")
+	if err := os.Mkdir(legacyDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
+	if err := os.WriteFile(filepath.Join(legacyDir, "session.json"), []byte(`{"harness":"HARNESS_CLAUDE"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if string(fields["harness"]) != `"HARNESS_CLAUDE"` || fields["native_session_id"] == nil || fields["event_source_id"] == nil {
-		t.Fatalf("persisted session JSON fields = %s", data)
+	if exists, err := store.Exists("unregistered"); err != nil || exists {
+		t.Fatalf("file was accepted as a Session: %t, %v", exists, err)
+	}
+	ids, err = store.SessionIDs()
+	if err != nil || len(ids) != 1 || ids[0] != "session-1" {
+		t.Fatalf("file affected Session IDs: %v, %v", ids, err)
 	}
 }
 
-func TestNewRecordPersistsExactSetupSource(t *testing.T) {
+func TestNewRecordKeepsExactSetupSource(t *testing.T) {
 	script := "printf ' setup \\t'\n\necho done"
-	record, err := NewRecord(&sessionpb.SessionSpec{
-		Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", Model: "route/model",
-	}, script, nil)
+	record, err := NewRecord(&sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", Model: "route/model"}, script, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if record.SetupScript != script {
-		t.Fatalf("new record setup source = %q; want exact source %q", record.SetupScript, script)
-	}
-	data, err := json.Marshal(record)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
-		t.Fatal(err)
-	}
-	var wireScript string
-	if err := json.Unmarshal(fields["setup_script"], &wireScript); err != nil {
-		t.Fatal(err)
-	}
-	if wireScript != script {
-		t.Fatalf("wire setup source=%q; want exact source %q", wireScript, script)
-	}
-	var roundTrip Record
-	if err := json.Unmarshal(data, &roundTrip); err != nil {
-		t.Fatal(err)
-	}
-	if roundTrip.SetupScript != script || !roundTrip.MatchesSetupScript(script) || roundTrip.MatchesSetupScript("different") {
-		t.Fatalf("round trip setup source = %q; want exact source to remain authority", roundTrip.SetupScript)
-	}
-	if !roundTrip.HasSetupScript() {
-		t.Fatal("round-tripped setup source was not retained")
-	}
-}
-
-func TestUnmarshalRejectsUnknownRecordField(t *testing.T) {
-	data := []byte(`{"harness":"HARNESS_CLAUDE","cwd":"/workspace","model":"route/model","total_context_budget_tokens":null,"reasoning_effort":"","instructions":"","future_field":"value","event_source_id":"source","native_session_id":null}`)
-	var record Record
-	err := json.Unmarshal(data, &record)
-	if err == nil {
-		t.Fatal("record with unknown field was accepted")
+	if !record.MatchesSetupScript(script) || record.MatchesSetupScript("different") || !record.HasSetupScript() {
+		t.Fatalf("setup source = %q", record.SetupScript)
 	}
 }

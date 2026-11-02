@@ -1,20 +1,18 @@
 package retained
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"sync"
 	"syscall"
 
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/google/uuid"
 )
 
@@ -131,8 +129,7 @@ func WriteDurable(path string, data []byte) error {
 	return syncDirectory(filepath.Dir(path))
 }
 
-// Record is the durable session.json format. Its JSON names and string-valued
-// harness enum match the Python runner's persisted records.
+// Record is the durable Session reservation and native recovery identity.
 type Record struct {
 	Harness                  sessionpb.Harness
 	CWD                      string
@@ -144,64 +141,6 @@ type Record struct {
 	EventSourceID            string
 	NativeSessionID          *string
 	ExecutionPrincipal       *delegationpb.ServiceAccountIdentity
-}
-
-type sessionRecordJSON struct {
-	Harness                  string                               `json:"harness"`
-	CWD                      string                               `json:"cwd"`
-	Model                    string                               `json:"model"`
-	TotalContextBudgetTokens *int                                 `json:"total_context_budget_tokens"`
-	ReasoningEffort          string                               `json:"reasoning_effort"`
-	Instructions             string                               `json:"instructions"`
-	SetupScript              string                               `json:"setup_script,omitempty"`
-	EventSourceID            string                               `json:"event_source_id"`
-	NativeSessionID          *string                              `json:"native_session_id"`
-	ExecutionPrincipal       *delegationpb.ServiceAccountIdentity `json:"execution_principal,omitempty"`
-}
-
-func (r Record) MarshalJSON() ([]byte, error) {
-	name, ok := sessionpb.Harness_name[int32(r.Harness)]
-	if !ok || (r.Harness != sessionpb.Harness_HARNESS_CLAUDE && r.Harness != sessionpb.Harness_HARNESS_CODEX) {
-		return nil, fmt.Errorf("invalid persisted harness value %d", r.Harness)
-	}
-	return json.Marshal(sessionRecordJSON{
-		Harness: name, CWD: r.CWD, Model: r.Model, TotalContextBudgetTokens: r.TotalContextBudgetTokens,
-		ReasoningEffort: r.ReasoningEffort, Instructions: r.Instructions, SetupScript: r.SetupScript,
-		EventSourceID: r.EventSourceID, NativeSessionID: r.NativeSessionID,
-		ExecutionPrincipal: r.ExecutionPrincipal,
-	})
-}
-
-func (r *Record) UnmarshalJSON(data []byte) error {
-	var wire sessionRecordJSON
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&wire); err != nil {
-		return err
-	}
-	var trailing json.RawMessage
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		if err == nil {
-			return errors.New("multiple JSON values in persisted session record")
-		}
-		return err
-	}
-	harness, ok := sessionpb.Harness_value[wire.Harness]
-	if !ok || (harness != int32(sessionpb.Harness_HARNESS_CLAUDE) && harness != int32(sessionpb.Harness_HARNESS_CODEX)) {
-		return fmt.Errorf("invalid persisted harness %q", wire.Harness)
-	}
-	*r = Record{
-		Harness: sessionpb.Harness(harness), CWD: wire.CWD, Model: wire.Model,
-		TotalContextBudgetTokens: wire.TotalContextBudgetTokens, ReasoningEffort: wire.ReasoningEffort,
-		Instructions: wire.Instructions, SetupScript: wire.SetupScript,
-		EventSourceID: wire.EventSourceID, NativeSessionID: wire.NativeSessionID,
-		ExecutionPrincipal: wire.ExecutionPrincipal,
-	}
-	if principal := r.ExecutionPrincipal; principal != nil &&
-		(principal.GetAccount().GetNamespace() == "" || principal.GetAccount().GetName() == "" || principal.GetUid() == "") {
-		return errors.New("invalid persisted execution principal")
-	}
-	return nil
 }
 
 func NewRecord(spec *sessionpb.SessionSpec, setupScript string, totalContextBudgetTokens *int) (Record, error) {
@@ -240,17 +179,19 @@ type Acknowledgement struct {
 	Sealed bool   `json:"sealed"`
 }
 
-// Store owns Session JSON files and their ingress acknowledgements.
+// Store owns Session directories and their ingress acknowledgements. Session
+// records are stored in the shared COSI state.
 type Store struct {
-	mu   sync.Mutex
-	root string
+	mu    sync.Mutex
+	root  string
+	state state.State
 }
 
-func NewStore(root string) (*Store, error) {
+func NewStore(root string, resources state.State) (*Store, error) {
 	if err := EnsureDirectory(root); err != nil {
 		return nil, err
 	}
-	return &Store{root: root}, nil
+	return &Store{root: root, state: resources}, nil
 }
 
 func ValidateSessionID(sessionID string) (string, error) {
@@ -265,73 +206,6 @@ func (s *Store) Directory(sessionID string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(s.root, sessionID), nil
-}
-
-func (s *Store) SessionIDs() ([]string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	entries, err := os.ReadDir(s.root)
-	if err != nil {
-		return nil, err
-	}
-	ids := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		info, err := os.Stat(filepath.Join(s.root, entry.Name(), "session.json"))
-		if err == nil && info.Mode().IsRegular() {
-			ids = append(ids, entry.Name())
-		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, err
-		}
-	}
-	sort.Strings(ids)
-	return ids, nil
-}
-
-func (s *Store) Exists(sessionID string) (bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	directory, err := s.Directory(sessionID)
-	if err != nil {
-		return false, err
-	}
-	info, err := os.Stat(filepath.Join(directory, "session.json"))
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return info.Mode().IsRegular(), nil
-}
-
-func (s *Store) Read(sessionID string) (Record, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	directory, err := s.Directory(sessionID)
-	if err != nil {
-		return Record{}, err
-	}
-	data, err := os.ReadFile(filepath.Join(directory, "session.json"))
-	if err != nil {
-		return Record{}, err
-	}
-	var record Record
-	if err := json.Unmarshal(data, &record); err != nil {
-		return Record{}, err
-	}
-	if record.TotalContextBudgetTokens != nil && *record.TotalContextBudgetTokens <= 0 {
-		return Record{}, errors.New("total context budget must be positive")
-	}
-	return record, nil
-}
-
-func (s *Store) Write(sessionID string, record Record) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.replace(sessionID, "session.json", record)
 }
 
 func (s *Store) ReadAcknowledgement(sessionID string) (*Acknowledgement, error) {

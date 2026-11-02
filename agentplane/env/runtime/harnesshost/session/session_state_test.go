@@ -82,11 +82,11 @@ func newSessionTestManager(t *testing.T, environment map[string]string, destinat
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 	root := t.TempDir()
-	store, err := retained.NewStore(filepath.Join(root, "sessions"))
+	resources := state.WrapCore(namespaced.NewState(inmem.Build))
+	store, err := retained.NewStore(filepath.Join(root, "sessions"), resources)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resources := state.WrapCore(namespaced.NewState(inmem.Build))
 	manager, err := NewManager(withTestSessionFacilities(t, Config{
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: root,
 		Destination: destination, HarnessEnvironment: environment,

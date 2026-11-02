@@ -9,7 +9,7 @@ owns Session records, journals, native harnesses and its separate owner lock.
 ## Retained state
 
 Runtime stores the exact selected bootstrap script (1–65536 bytes) as a durable
-`BootstrapSelections` COSI resource in `StateDir/bootstrap-selections.db`. It commits the
+`BootstrapSelections` COSI resource in `StateDir/runtime-resources.db`. It commits the
 selection before launching the script and runs those selected bytes. Subsequent requests must
 match byte for byte. `StateDir/initialization/events.jsonl` remains the authority for output and
 terminal result. A selection without a terminal event is interrupted on restart, including when
@@ -20,12 +20,13 @@ Runtime opens `StateDir/.agentplane-environment-runtime-owner` and holds it lock
 Harness Host separately locks `StateDir/harness-host/.agentplane-harness-host-owner`. This is a
 direct cutover from the old `.agentplane-runner-owner` lock paths: an old process does not contend
 on the new paths, so all pre-rename Sandbox workloads must stop before the new binaries use their
-state volumes. Old lock files may remain; Session records and journals do not move.
+state volumes. Old lock files may remain; Session journals do not move.
 
 The durable seal remains `StateDir/sessions/sealed`, with the existing incarnation UID bytes as
 its payload. Runtime reads, removes, and writes this marker using the old filename, directory,
-payload and durability semantics. Session records, journals, native continuations and History ACK
-positions remain under their existing `StateDir/sessions` paths; Runtime does not move them.
+payload and durability semantics. Session records are persisted as `SessionRecords` COSI resources
+in `StateDir/runtime-resources.db`. Journals, native continuations and History ACK positions remain
+under `StateDir/sessions`.
 
 ## Lifecycle boundary
 

@@ -1,82 +1,25 @@
 package bootstrap
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
-	"github.com/cosi-project/runtime/pkg/state"
-	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
-	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
-	"github.com/cosi-project/runtime/pkg/state/impl/store/bolt"
-	"go.etcd.io/bbolt"
 )
 
-// OpenState backs only the immutable bootstrap selection in the lifecycle
-// namespace. A fresh process never restores admission or process facts.
-func OpenState(stateDir string) (state.State, *bolt.BackingStore, error) {
-	backing, err := bolt.NewBackingStore(func() (*bbolt.DB, error) {
-		return bbolt.Open(filepath.Join(stateDir, "bootstrap-selections.db"), 0o600, nil)
-	}, selectionMarshaler{})
-	if err != nil {
-		return nil, nil, err
-	}
-	// The first transaction is durable only if the database directory entry is too.
-	directory, err := os.Open(stateDir)
-	if err == nil {
-		err = directory.Sync()
-		err = errors.Join(err, directory.Close())
-	}
-	if err != nil {
-		return nil, nil, errors.Join(err, backing.Close())
-	}
-	selectionStore := selectionBackingStore{BackingStore: backing.WithNamespace(lifecycle.Namespace)}
-	build := func(namespace resource.Namespace) state.CoreState {
-		if namespace == lifecycle.Namespace {
-			return inmem.NewStateWithOptions(inmem.WithBackingStore(selectionStore))(namespace)
-		}
-		return inmem.Build(namespace)
-	}
-	return state.WrapCore(namespaced.NewState(build)), backing, nil
-}
-
-type selectionBackingStore struct{ inmem.BackingStore }
-
-func (s selectionBackingStore) Load(ctx context.Context, handler inmem.LoadHandler) error {
-	return s.BackingStore.Load(ctx, func(typ resource.Type, value resource.Resource) error {
-		if typ != SelectionType || value.Metadata().Type() != SelectionType || value.Metadata().ID() != ResourceID {
-			return fmt.Errorf("unexpected persisted bootstrap resource %s/%s", typ, value.Metadata().ID())
-		}
-		return handler(typ, value)
-	})
-}
-
-func (s selectionBackingStore) Put(ctx context.Context, typ resource.Type, value resource.Resource) error {
-	if typ != SelectionType {
-		return nil
-	}
-	return s.BackingStore.Put(ctx, typ, value)
-}
-
-func (s selectionBackingStore) Destroy(ctx context.Context, typ resource.Type, ptr resource.Pointer) error {
-	if typ != SelectionType {
-		return nil
-	}
-	return s.BackingStore.Destroy(ctx, typ, ptr)
-}
-
-// Selection is a singleton and never updated. Reconstructing its fixed COSI
-// metadata avoids a second schema for a serialized resource envelope.
+// Selection is a singleton and never updated. Its fixed COSI metadata is
+// reconstructed when the persisted selection is loaded.
 type selectionMarshaler struct{}
 
 type selectionDisk struct {
 	Script []byte `json:"script"`
+}
+
+func SelectionCodec() cosistate.Codec {
+	codec := selectionMarshaler{}
+	return cosistate.Codec{Type: SelectionType, Marshal: codec.MarshalResource, Unmarshal: codec.UnmarshalResource}
 }
 
 func (selectionMarshaler) MarshalResource(value resource.Resource) ([]byte, error) {

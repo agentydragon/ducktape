@@ -75,7 +75,7 @@ budget remains authoritative across all of its native services.
   nothing. `OpenSession` durably reserves a Session without waiting for the bootstrap. Host waits on Runtime's bound `WaitBootstrap` RPC and does not run session setup or start a native harness until the bootstrap succeeds. If it fails
   or is interrupted, admitted commands receive durable failure outcomes.
 - The first request durably selects the exact script bytes in the `BootstrapSelections` COSI
-  resource at `<state_dir>/bootstrap-selections.db`, before the script starts. Environment Runtime thereafter refuses
+  resource at `<state_dir>/runtime-resources.db`, before the script starts. Environment Runtime thereafter refuses
   changed source, including after a failed attempt: two possibly incompatible initializations must
   never be combined in one Sandbox.
 - The script runs at most once. An exact request after it ended, by a result of any exit code, only

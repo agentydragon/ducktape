@@ -16,7 +16,7 @@ func TestSupervisorStartsOneWorkerPerUnsealedSessionAndJoinsOnCancel(t *testing.
 	defer timeout()
 	runCtx, cancel := context.WithCancel(waitCtx)
 	defer cancel()
-	store, err := retained.NewStore(t.TempDir())
+	store, err := retained.NewStore(t.TempDir(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestSupervisorReportsDeliveryFailureAndRetriesUntilCancel(t *testing.T) {
 	defer timeout()
 	runCtx, cancel := context.WithCancel(waitCtx)
 	defer cancel()
-	store, err := retained.NewStore(t.TempDir())
+	store, err := retained.NewStore(t.TempDir(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

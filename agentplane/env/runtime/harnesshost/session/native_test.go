@@ -313,11 +313,11 @@ func frameTestSessionWithControllerGate(t *testing.T, command []string, withCont
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	root := t.TempDir()
-	store, err := retained.NewStore(filepath.Join(root, "sessions"))
+	resources := state.WrapCore(namespaced.NewState(inmem.Build))
+	store, err := retained.NewStore(filepath.Join(root, "sessions"), resources)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resources := state.WrapCore(namespaced.NewState(inmem.Build))
 	engine, err := cosiruntime.NewRuntime(resources, zap.L())
 	if err != nil {
 		t.Fatal(err)
@@ -698,11 +698,11 @@ func TestHarnessExitPublishesTurnRecoveryBeforeTerminalEvent(t *testing.T) {
 func TestConfirmationReplayKeepsTerminalReceipt(t *testing.T) {
 	ctx := context.Background()
 	journal := openTestJournal(t)
-	store, err := retained.NewStore(t.TempDir())
+	resources := state.WrapCore(namespaced.NewState(inmem.Build))
+	store, err := retained.NewStore(t.TempDir(), resources)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resources := state.WrapCore(namespaced.NewState(inmem.Build))
 	record, err := retained.NewRecord(&sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: t.TempDir(), Model: "test-model"}, "", nil)
 	if err != nil {
 		t.Fatal(err)

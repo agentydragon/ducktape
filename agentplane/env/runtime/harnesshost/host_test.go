@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/journal"
@@ -181,7 +182,14 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 		Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: filepath.Join(workspace, "project"), Model: "test-model",
 		Instructions: config.Launch.Instructions(sessionID, ""),
 	}
-	store, err := retained.NewStore(filepath.Join(config.StateDir, "sessions"))
+	if err := retained.EnsureDirectory(config.StateDir); err != nil {
+		t.Fatal(err)
+	}
+	resources, backing, err := cosistate.Open(config.StateDir, harnesshostlifecycle.Namespace, retained.SessionRecordCodec())
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := retained.NewStore(filepath.Join(config.StateDir, "sessions"), resources)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,6 +198,9 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.Write(sessionID, record); err != nil {
+		t.Fatal(err)
+	}
+	if err := backing.Close(); err != nil {
 		t.Fatal(err)
 	}
 	directory, err := store.Directory(sessionID)
@@ -209,7 +220,12 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := newLifecycleHost(t, config)
+	resources, reopenedBacking, err := cosistate.Open(config.StateDir, harnesshostlifecycle.Namespace, retained.SessionRecordCodec())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopenedBacking.Close()
+	r := newLifecycleHostWithState(t, config, resources)
 	request := openLifecycleSession(sessionID, filepath.Join(workspace, "project"))
 	if _, err := r.OpenSession(hostContext(r, context.Background()), request); err != nil {
 		t.Fatalf("open recovered Session without resupplying setup source: %v", err)
