@@ -9,9 +9,11 @@ import httpx
 import pytest
 import pytest_bazel
 
+from agentplane import sandbox_resource
 from agentplane.app.sandbox_models import NewSandboxDefaults
 from agentplane.app.testing.models import SandboxView, ThreadView
 from agentplane.app.testing.replication_process import AppProcess, spawn_go_app
+from agentplane.crd_group import GROUP, VERSION
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from util.net import listen_tcp
 from util.testing.postgres import DatabaseNames, create_temporary_database
@@ -58,7 +60,9 @@ async def test_go_app_serves_sandbox_and_thread_views_using_the_shared_models(ht
     assert not threads_response.json().get("nextPageToken")
 
 
-async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(http: httpx.AsyncClient) -> None:
+async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(
+    http: httpx.AsyncClient, sandbox: SandboxCluster
+) -> None:
     response = await http.post(
         "/upstream/environments/v1/environments", json={"name": "created", "template": "test-template"}
     )
@@ -81,6 +85,21 @@ async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(http
     stale = await http.delete(route, params={"target.uid": "stale-uid"})
     assert stale.status_code == 404, stale.text
     assert (await http.get("/sandboxes/created")).status_code == 200
+    pending = await http.delete(route, params={"target.uid": target["uid"]})
+    assert pending.status_code == 400, pending.text
+    assert pending.json()["code"] == 9  # FailedPrecondition: controller has not reported a mode yet.
+    assert (await http.get("/sandboxes/created")).status_code == 200
+    suspended = await http.post(f"{route}:suspend", json={"target": target})
+    assert suspended.status_code == 200, suspended.text
+    await sandbox.custom_objects.patch_namespaced_custom_object_status(
+        GROUP,
+        VERSION,
+        target["namespace"],
+        sandbox_resource.SANDBOXES_PLURAL,
+        target["name"],
+        {"status": {"operatingMode": sandbox_resource.OperatingMode.SUSPENDED.value}},
+        _content_type="application/merge-patch+json",
+    )
     deleted = await http.delete(route, params={"target.uid": target["uid"]})
     assert deleted.status_code == 200, deleted.text
     assert (await http.get("/sandboxes/created")).status_code == 404
