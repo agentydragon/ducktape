@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package agentplane.sandboxes.lifecycle;
+
+option go_package = "github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle/lifecyclepb;lifecyclepb";
+
+import "agentplane/proto/environment_lifecycle.proto";
+import "agentplane/sandboxes/discovery/environment_discovery.proto";
+
+// EnvironmentLifecycle owns authorized changes to an existing environment's desired lifecycle.
+service EnvironmentLifecycle {
+  rpc ResumeEnvironment(ResumeEnvironmentRequest) returns (ResumeEnvironmentResponse);
+}
+
+message ResumeEnvironmentRequest {
+  // All three fields identify one Sandbox; a replacement is not the requested target.
+  agentplane.sandboxes.discovery.TargetHandle target = 1;
+  // Opaque precondition for the target UID and wake generation observed by Discovery.
+  string resume_token = 2;
+}
+
+enum ResumeOutcome {
+  RESUME_OUTCOME_UNSPECIFIED = 0;
+  RESUME_OUTCOME_REQUESTED = 1;
+  RESUME_OUTCOME_ALREADY_RUNNING = 2;
+  RESUME_OUTCOME_STATE_CHANGED = 3;
+}
+
+message ResumeEnvironmentResponse {
+  agentplane.sandboxes.discovery.TargetHandle target = 1;
+  ResumeOutcome outcome = 2;
+  // Generation observed after the guarded request, when the target still exists.
+  optional uint64 wake_generation = 3;
+  agentplane.proto.ResumeEligibility eligibility = 4;
+  agentplane.proto.WakeAssessment wake = 5;
+}

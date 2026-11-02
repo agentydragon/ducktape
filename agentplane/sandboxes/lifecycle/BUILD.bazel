@@ -1,0 +1,34 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+proto_library(
+    name = "environment_lifecycle_proto",
+    srcs = ["environment_lifecycle.proto"],
+    deps = [
+        "//agentplane/proto:environment_lifecycle_proto",
+        "//agentplane/sandboxes/discovery:environment_discovery_proto",
+    ],
+)
+
+go_proto_library(
+    name = "environment_lifecycle_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle/lifecyclepb",
+    proto = ":environment_lifecycle_proto",
+    deps = [
+        "//agentplane/proto:environment_lifecycle_go_proto",
+        "//agentplane/sandboxes/discovery:environment_discovery_go_proto",
+    ],
+)
+
+go_library(
+    name = "lifecycle",
+    srcs = ["types.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle",
+)

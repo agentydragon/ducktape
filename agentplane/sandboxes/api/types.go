@@ -93,6 +93,9 @@ type SandboxSpec struct {
 	// Omitted is false so older Sandbox manifests keep wake-on-send disabled.
 	// +kubebuilder:default=false
 	WakeOnSend bool `json:"wakeOnSend,omitempty"`
+	// ResumePolicy controls whether the exact live execution ServiceAccount may request resume.
+	// Omitted policy and fields default to deny.
+	ResumePolicy *ResumePolicy `json:"resumePolicy,omitempty"`
 	// WakeGeneration is bumped by whoever wakes the Sandbox. An idle-suspended Sandbox runs again once it
 	// differs from the generation it was suspended at.
 	// +kubebuilder:default=0
@@ -117,6 +120,15 @@ type SandboxSpec struct {
 	// Bootstrap is the shell source the Sandbox's runner runs once, before its first Session.
 	// +kubebuilder:validation:MaxLength=65536
 	Bootstrap string `json:"bootstrap,omitempty"`
+}
+
+// ResumePolicy contains independent explicit-resume permissions for an ordinary execution account.
+type ResumePolicy struct {
+	// AllowOwnServiceAccount permits the Sandbox's exact live execution ServiceAccount to request
+	// resume while the Sandbox is idle-suspended. It does not authorize overriding a requested stop.
+	// +kubebuilder:default=false
+	// +kubebuilder:validation:Optional
+	AllowOwnServiceAccount bool `json:"allowOwnServiceAccount,omitempty"`
 }
 
 // Incarnation is the Pod the Sandbox's runner currently runs in: its own Pod, or its VM's
