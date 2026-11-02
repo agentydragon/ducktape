@@ -1,5 +1,6 @@
 """Prepare data and render visual-review comments for GitHub."""
 
+from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from devinfra.pr_visuals.render_common import (
     buildbuddy_url,
     classification_totals,
     ordered_assets,
+    provenance_labels_for_test,
     shard_ranges,
     test_impact_key,
 )
@@ -40,12 +42,25 @@ def _is_unchanged(test: ReviewTest) -> bool:
     )
 
 
-def _asset_data(asset: ReviewAsset, test: ReviewTest, *, asset_base: str, gallery_url: str) -> dict[str, Any]:
+def _asset_data(
+    asset: ReviewAsset,
+    test: ReviewTest,
+    *,
+    asset_base: str,
+    gallery_url: str,
+    invocation_labels: Mapping[str, str],
+    configuration_labels: Mapping[str, str],
+) -> dict[str, Any]:
     return {
         "asset": asset,
         "test": test,
         "urls": asset_page_data(
-            asset, asset_base=asset_base, page_url=gallery_url, shared_asset_base=urljoin(asset_base, "../../../../")
+            asset,
+            asset_base=asset_base,
+            page_url=gallery_url,
+            shared_asset_base=urljoin(asset_base, "../../../../"),
+            invocation_labels=invocation_labels,
+            configuration_labels=configuration_labels,
         ),
         "anchor": f"{gallery_url}#{quote(asset.path, safe='/')}",
     }
@@ -62,15 +77,28 @@ def _target_section(test: ReviewTest, *, url: str, open_section: bool, ci_detail
     )
     gallery_url = f"{url}tests/{test.slug}/index.html"
     asset_base = f"{url}tests/{test.slug}/"
+    invocation_labels, configuration_labels = provenance_labels_for_test(test)
     return str(
         _template().target(
             test,
             largest_change,
             gallery_url,
             ci_details_url,
-            [_asset_data(asset, test, asset_base=asset_base, gallery_url=gallery_url) for asset in assets],
+            [
+                _asset_data(
+                    asset,
+                    test,
+                    asset_base=asset_base,
+                    gallery_url=gallery_url,
+                    invocation_labels=invocation_labels,
+                    configuration_labels=configuration_labels,
+                )
+                for asset in assets
+            ],
             open_section,
             INLINE_ASSET_LIMIT,
+            invocation_labels,
+            configuration_labels,
         )
     )
 

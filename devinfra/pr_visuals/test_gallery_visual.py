@@ -58,14 +58,15 @@ def _asset_key(path: str) -> DownloadedAsset:
     return DownloadedAsset(f"gallery/test_visual.py::{path}", None, "screenshot", path.removesuffix(".png"), [])
 
 
-def _result(run: int) -> ReviewResult:
+def _result(
+    run: int,
+    *,
+    shard: int = 1,
+    invocation: str = "12345678-1234-1234-1234-123456789abc",
+    configuration: str = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+) -> ReviewResult:
     return ReviewResult(
-        invocation="12345678-1234-1234-1234-123456789abc",
-        configuration="1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-        run=run,
-        shard=1,
-        attempt=1,
-        status="PASSED",
+        invocation=invocation, configuration=configuration, run=run, shard=shard, attempt=1, status="PASSED"
     )
 
 
@@ -87,11 +88,24 @@ def _add_test(
         image = source / path
         image.write_bytes(body)
         base = _asset_key(path)
-        variants = [DownloadedVariant(image, hashlib.sha256(body).hexdigest(), [_result(1)])]
+        results = [_result(1, shard=shard) for shard in (1, 2, 3)] if unstable and path in unstable else [_result(1)]
+        variants = [DownloadedVariant(image, hashlib.sha256(body).hexdigest(), results)]
         if unstable and path in unstable:
             other = source / f"variant-{path}"
             other.write_bytes(unstable[path])
-            variants.append(DownloadedVariant(other, hashlib.sha256(unstable[path]).hexdigest(), [_result(2)]))
+            variants.append(
+                DownloadedVariant(
+                    other,
+                    hashlib.sha256(unstable[path]).hexdigest(),
+                    [
+                        _result(
+                            2,
+                            invocation="87654321-4321-4321-4321-cba987654321",
+                            configuration="87654321fedcba0987654321fedcba0987654321fedcba0987654321fedcba09",
+                        )
+                    ],
+                )
+            )
         assets.append(DownloadedAsset(base.case_id, None, "screenshot", base.label, variants))
 
     baseline_assets = []
@@ -244,6 +258,14 @@ async def test_generated_gallery_layout(visual: VisualHarness, tmp_path: Path) -
         await expect(dimension_change.locator(".sample-frame img")).to_have_count(2)
         unstable_asset = view.page.locator(f'figure[id="{_asset_key("new-portrait.png").path}"]')
         await expect(unstable_asset).to_contain_text("unstable across runs")
+        await expect(unstable_asset).to_contain_text("run 1 · shards 1-3 · attempt 1 · config 12345678")
+        await expect(unstable_asset).to_contain_text("run 2 · shard 1 · attempt 1 · config 87654321")
+        await expect(unstable_asset.get_by_role("link", name="BuildBuddy 12345678")).to_have_attribute(
+            "href", "https://app.buildbuddy.io/invocation/12345678-1234-1234-1234-123456789abc"
+        )
+        await expect(unstable_asset.get_by_role("link", name="BuildBuddy 87654321")).to_have_attribute(
+            "href", "https://app.buildbuddy.io/invocation/87654321-4321-4321-4321-cba987654321"
+        )
         await _assert_images_decode(view)
         await _assert_images_preserve_aspect_ratio(view)
         await _assert_sample_frame_ratios(view)

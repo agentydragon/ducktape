@@ -38,6 +38,7 @@ from devinfra.pr_visuals.metadata import (
     ReviewAsset,
     ReviewBundleMetadata,
     ReviewIssue,
+    ReviewIssueSource,
     ReviewResult,
     ReviewTest,
 )
@@ -386,10 +387,12 @@ def test_failed_shards_are_grouped_and_linked_in_comment_and_gallery(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     invocation = "d1fafe09-e2cf-5409-8fbc-7ab0308820c4"
+    configuration_one = "abcdef01" + "1" * 56
+    configuration_two = "abcdef01" + "2" * 56
     message = "terminal attempt has no confirmed successful result (status=FAILED)"
     results = []
     for shard in (1, 2, 3, 5, 10, 11):
-        result = ResultKey(invocation, "//ui:visual", "abcdef0123456789", 1, shard, 1)
+        result = ResultKey(invocation, "//ui:visual", configuration_one, 1, shard, 1)
         results.append(
             ResultCoverage(
                 result,
@@ -400,6 +403,13 @@ def test_failed_shards_are_grouped_and_linked_in_comment_and_gallery(
                 (CollectionIssue(message, result=result), CollectionIssue("bad <script>", result=result)),
             )
         )
+    second_invocation = "d1fafe09-extra"
+    second_result = ResultKey(second_invocation, "//ui:visual", configuration_two, 1, 1, 1)
+    results.append(
+        ResultCoverage(
+            second_result, "FAILED", "FAILED", 1, False, (CollectionIssue("another failure", result=second_result),)
+        )
+    )
     results_tuple = tuple(results)
     monkeypatch.setattr(
         "devinfra.pr_visuals.publisher.collect_outputs",
@@ -418,10 +428,19 @@ def test_failed_shards_are_grouped_and_linked_in_comment_and_gallery(
         assert rendered.count(message) == 1
         assert "shards 1-3, 5, 10-11" in rendered
         assert f'href="https://app.buildbuddy.io/invocation/{invocation}"' in rendered
+        assert f">BuildBuddy {invocation[:11]}</a>" in rendered
+        assert (
+            f'href="https://app.buildbuddy.io/invocation/{second_invocation}">BuildBuddy {second_invocation[:11]}</a>'
+            in rendered
+        )
+        assert "config abcdef011" in rendered
+        assert "config abcdef012" in rendered
+        assert "another failure" in rendered
         assert "bad &lt;script&gt;" in rendered
         assert "bad <script>" not in rendered
         assert "ResultKey(" not in rendered
-        assert "abcdef0123456789" not in rendered
+        assert configuration_one not in rendered
+        assert configuration_two not in rendered
     assert not test.baseline_eligible
 
 
@@ -475,6 +494,157 @@ def test_duplicate_output_issue_keeps_record_filename_in_publisher(
         "duplicate output identity: case 'dialog/mobile', checkpoint 'expanded', role 'screenshot', "
         "record 'test.outputs/test-outputs/records/duplicate.json'"
     ]
+
+
+def test_unstable_variant_provenance_groups_shards_and_uses_distinguishable_links(tmp_path: Path) -> None:
+    image_one = _png(tmp_path / "first.png", (10, 20, 30, 255))
+    image_two = _png(tmp_path / "second.png", (40, 50, 60, 255))
+    image_three = _png(tmp_path / "third.png", (70, 80, 90, 255))
+    image_four = _png(tmp_path / "fourth.png", (100, 110, 120, 255))
+    invocation_one = "d1fafe09"
+    invocation_two = "d1fafe09-2222-2222-2222-222222222222"
+    invocation_three = "d1fafe09-extra-long"
+    invocation_four = "d1fafe09-other-long"
+    invocation_five = "d1fafe09-issue-long"
+    configuration_one = "abcdef01" + "1" * 56
+    configuration_two = "abcdef01" + "2" * 56
+    configuration_three = "abcdef01" + "3" * 56
+    configuration_four = "abcdef01" + "4" * 56
+    configuration_five = "abcdef01" + "5" * 56
+
+    def result(invocation: str, configuration: str, run: int, shard: int, attempt: int) -> ReviewResult:
+        return ReviewResult(
+            invocation=invocation, configuration=configuration, run=run, shard=shard, attempt=attempt, status="PASSED"
+        )
+
+    label = "//example:visuals"
+    test = DownloadedVisualTest(
+        label,
+        target_slug(label, repository="owner/repo"),
+        "Visual states",
+        [
+            DownloadedAsset(
+                "ui/test_visual.py::test_dialog",
+                None,
+                "screenshot",
+                "Dialog",
+                [
+                    DownloadedVariant(
+                        image_one,
+                        hashlib.sha256(image_one.read_bytes()).hexdigest(),
+                        [result(invocation_one, configuration_one, 2, shard, 1) for shard in (1, 2, 3)],
+                    ),
+                    DownloadedVariant(
+                        image_two,
+                        hashlib.sha256(image_two.read_bytes()).hexdigest(),
+                        [result(invocation_two, configuration_two, 3, 1, 2)],
+                    ),
+                ],
+            ),
+            DownloadedAsset(
+                "ui/test_visual.py::test_menu",
+                None,
+                "screenshot",
+                "Menu",
+                [
+                    DownloadedVariant(
+                        image_three,
+                        hashlib.sha256(image_three.read_bytes()).hexdigest(),
+                        [result(invocation_three, configuration_three, 4, 2, 1)],
+                    ),
+                    DownloadedVariant(
+                        image_four,
+                        hashlib.sha256(image_four.read_bytes()).hexdigest(),
+                        [result(invocation_four, configuration_four, 4, 3, 1)],
+                    ),
+                ],
+            ),
+        ],
+        configuration_one,
+        [
+            ReviewIssue(
+                message="related invocation",
+                source=ReviewIssueSource(
+                    invocation=invocation_five, configuration=configuration_five, run=5, shards=[2], attempt=1
+                ),
+            )
+        ],
+    )
+    base_sha = "a" * 40
+    bundle = build_bundle([test], tmp_path / "site", commit_sha="b" * 40, repository="owner/repo", base_sha=base_sha)
+    metadata = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text())
+    page = (bundle / "tests" / test.slug / "index.html").read_text()
+    comment = success_comment_body(
+        repository="owner/repo",
+        commit_sha="b" * 40,
+        url="https://visuals/commits/head/",
+        review_tests=metadata.tests,
+        base_sha=base_sha,
+    )
+
+    for rendered in (page, comment):
+        assert "run 2 · shards 1-3 · attempt 1 · config abcdef011" in rendered
+        assert "run 3 · shard 1 · attempt 2 · config abcdef012" in rendered
+        assert "run 4 · shard 2 · attempt 1 · config abcdef013" in rendered
+        assert "run 4 · shard 3 · attempt 1 · config abcdef014" in rendered
+        assert "shard 2 · run 5 · attempt 1 · config abcdef015" in rendered
+        assert (
+            f'href="https://app.buildbuddy.io/invocation/{invocation_one}">BuildBuddy {invocation_one}</a>' in rendered
+        )
+        assert (
+            f'href="https://app.buildbuddy.io/invocation/{invocation_two}">BuildBuddy {invocation_two[:10]}</a>'
+            in rendered
+        )
+        assert (
+            f'href="https://app.buildbuddy.io/invocation/{invocation_three}">BuildBuddy {invocation_three[:10]}</a>'
+            in rendered
+        )
+        assert (
+            f'href="https://app.buildbuddy.io/invocation/{invocation_four}">BuildBuddy {invocation_four[:10]}</a>'
+            in rendered
+        )
+        assert (
+            f'href="https://app.buildbuddy.io/invocation/{invocation_five}">BuildBuddy {invocation_five[:10]}</a>'
+            in rendered
+        )
+        assert configuration_one not in rendered
+        assert configuration_two not in rendered
+        assert configuration_three not in rendered
+        assert configuration_four not in rendered
+        assert configuration_five not in rendered
+        assert rendered.count("shards 1-3") == 1
+
+
+def test_fallback_target_title_is_not_repeated_in_gallery_or_comment(tmp_path: Path) -> None:
+    label = "//example:visuals"
+    source = _single_asset_test(tmp_path / "source", label=label, repository="owner/repo")
+    source = DownloadedVisualTest(source.target_label, source.slug, label, source.assets, source.configuration, [])
+    base_sha = "a" * 40
+    bundle = build_bundle([source], tmp_path / "site", commit_sha="b" * 40, repository="owner/repo", base_sha=base_sha)
+    metadata = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text())
+    index = (bundle / "index.html").read_text()
+    page = (bundle / "tests" / source.slug / "index.html").read_text()
+    asset = metadata.tests[0].assets[0].model_copy(update={"classification": "new"})
+    comment_test = metadata.tests[0].model_copy(update={"assets": [asset], "summary": ClassificationCounts(new=1)})
+    comment = success_comment_body(
+        repository="owner/repo",
+        commit_sha="b" * 40,
+        url="https://visuals/commits/head/",
+        review_tests=[comment_test],
+        base_sha=base_sha,
+        ci_details_url="https://github.test/runs/123",
+    )
+    target_summary = comment.split("<summary>", 1)[1].split("</summary>", 1)[0]
+    detail_header = page.split("<header>", 1)[1].split("</header>", 1)[0]
+    index_summary = index.split("<p>", 1)[1].split("</p>", 1)[0]
+
+    assert f'<h2><a href="tests/{source.slug}/index.html"><code>{label}</code></a></h2>' in index
+    assert index_summary.lstrip().startswith("0 modified")
+    assert detail_header.count(label) == 1
+    assert target_summary.count(label) == 1
+    assert target_summary.count("<a ") == 2
+    assert ">link</a>" in target_summary
+    assert ">request rerun</a>" in target_summary
 
 
 def test_retry_notice_does_not_reclassify_an_issue_by_its_text(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

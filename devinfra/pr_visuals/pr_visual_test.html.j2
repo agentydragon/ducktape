@@ -1,4 +1,4 @@
-{% macro issue_list(items) %}<ul>{% for issue in items %}<li>{{ issue.message }}{% if issue.source %} ({{ "shard" if issue.source.shards | length == 1 else "shards" }} {{ issue.source.shards | shard_ranges }} · run {{ issue.source.run or "unknown" }} · attempt {{ issue.source.attempt or "unknown" }}{% if issue.source.configuration %} · config {{ issue.source.configuration[:8] }}{% endif %}) · <a href="{{ issue.source.invocation | buildbuddy_url }}">BuildBuddy</a>{% endif %}</li>{% endfor %}</ul>{% endmacro %}
+{% macro issue_list(items) %}<ul>{% for issue in items %}<li>{{ issue.message }}{% if issue.source %} ({{ "shard" if issue.source.shards | length == 1 else "shards" }} {{ issue.source.shards | shard_ranges }} · run {{ issue.source.run if issue.source.run is not none else "unknown" }} · attempt {{ issue.source.attempt if issue.source.attempt is not none else "unknown" }}{% if issue.source.configuration_label %} · config {{ issue.source.configuration_label }}{% endif %}) · <a href="{{ issue.source.invocation | buildbuddy_url }}">BuildBuddy {{ issue.source.invocation_label }}</a>{% endif %}</li>{% endfor %}</ul>{% endmacro %}
 <!doctype html>
 <html lang="en">
   <head>
@@ -11,8 +11,8 @@
   <body class="gallery-test">
     <header>
       <a href="../../index.html">All visual tests</a>
-      <h1>{{ title }}</h1>
-      <div><code>{{ target_label }}</code> · {{ repository }} · <code>{{ commit_sha }}</code>{% if base_sha %} · base <code>{{ base_sha[:8] }}</code>{% endif %}</div>
+      <h1>{% if title == target_label %}<code>{{ target_label }}</code>{% else %}{{ title }}{% endif %}</h1>
+      <div>{% if title != target_label %}<code>{{ target_label }}</code> · {% endif %}{{ repository }} · <code>{{ commit_sha }}</code>{% if base_sha %} · base <code>{{ base_sha[:8] }}</code>{% endif %}</div>
     </header>
     <main>
       {% if issues %}<div role="alert"><strong>Incomplete visual results</strong>{{ issue_list(issues) }}</div>{% endif %}
@@ -21,7 +21,7 @@
       <figure id="{{ asset.path }}">
         <figcaption>{{ asset.label }}<span class="badge modified">unstable across runs</span></figcaption>
         {% for variant in asset.variants %}
-        <div><div class="variant-provenance">{% for result in variant.results %}invocation {{ result.invocation }}, configuration {{ result.configuration }}, run {{ result.run }}, shard {{ result.shard }}, attempt {{ result.attempt }}{% if not loop.last %}; {% endif %}{% endfor %}</div>
+        <div><div class="variant-provenance">{% for source in variant.provenance %}run {{ source.run if source.run is not none else "unknown" }} · {{ "shard" if source.shards | length == 1 else "shards" }} {{ source.shards | shard_ranges }} · attempt {{ source.attempt if source.attempt is not none else "unknown" }}{% if source.configuration_label %} · config {{ source.configuration_label }}{% endif %} · <a href="{{ source.invocation_url }}">BuildBuddy {{ source.invocation_label }}</a>{% if not loop.last %}; {% endif %}{% endfor %}</div>
           <a class="sample-frame" href="{{ variant.url }}"><img src="{{ variant.url }}" alt="{{ asset.label }} variant {{ loop.index }}" loading="lazy"></a>
         </div>
         {% endfor %}
