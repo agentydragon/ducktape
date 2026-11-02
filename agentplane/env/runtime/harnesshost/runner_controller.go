@@ -110,10 +110,10 @@ func (c *harnessHostLifecycleController) reconcile(ctx context.Context, r contro
 		if err != nil {
 			return err
 		}
-		// A failure from a prior execution generation is cleared by the Session
+		// A failure from a prior Host generation is cleared by the Session
 		// controller as it observes the shutdown generation. Only surface errors
 		// that belong to this teardown; otherwise Close could race that reset.
-		if status.Generation == desiredState.Generation && status.Error != "" {
+		if status.HostGeneration == desiredState.Generation && status.Error != "" {
 			current.Error = status.Error
 			kind := harnesshostlifecycle.SessionHaltPending
 			if status.Phase == session.Halted {
@@ -128,7 +128,7 @@ func (c *harnessHostLifecycleController) reconcile(ctx context.Context, r contro
 		}
 		if status.Phase != session.Halted {
 			resourceError := ""
-			if status.Generation == desiredState.Generation {
+			if status.HostGeneration == desiredState.Generation {
 				resourceError = status.Error
 			}
 			current.Blocker = harnesshostlifecycle.Blocker{
