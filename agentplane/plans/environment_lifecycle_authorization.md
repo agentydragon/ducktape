@@ -317,15 +317,10 @@ policy review. Preserve it when splitting the parked implementation.
 
 Extract shared lifecycle policy/mutation, public RPC and Discovery, typed queued-wake receipts,
 automatic-wake integration, and CLI/Action adapters as independently reviewable changes. RPC and
-receipt work can proceed independently once their shared contracts are usable. Go-only policy
-work need not wait for a Python/TypeScript generator repair when it avoids the affected path.
+receipt work can proceed independently once their shared contracts are usable.
 Use the existing shared account identity and admission validation where applicable; delivery
-consumes the retained effective caller, and inconsistent stored attribution is an error.
-
-The parked implementation's copied `//google/rpc` sources are not an accepted codegen solution.
-Wire-dependent slices wait for a separate repair that generates the required external protobuf
-bindings from their canonical dependency. This plan records that prerequisite; it does not select
-a workaround or start the investigation. Keep common wake-observation types independent of Discovery.
+consumes the retained effective caller, and inconsistent stored attribution is an error. Keep
+common wake-observation types independent of Discovery.
 
 Migration 8 is landed: any further stored-schema changes need a new migration. Preserve retained
 state. No new binary, lifecycle database or command queue is required. Operator suspend, fresh

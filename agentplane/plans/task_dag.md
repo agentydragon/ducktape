@@ -161,19 +161,18 @@ an operator follow-up; no model exercise is dispatched.
 Focused regression-test additions and Bazel runs remain authorized; broad disruption exercises
 remain deferred.
 
-| Lane          | Next reviewable outcome                                                                                                 | Prerequisite / stopping point                                                         |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| P0 resume     | `ENVIRONMENT_LIFECYCLE_BACKEND`, `ENVIRONMENT_RESUME_API`, queued-wake receipts/integration and `EXEC_SUSPENDED_RESUME` | Approved policy; small extractions, canonical protobuf bindings and staged activation |
-| P1 delegation | `THREAD_CREATE_AUTHORIZATION`: operator follow-up for natural-agent usability                                           | Ordinary use; no model exercise is dispatched                                         |
-| P1 scheduling | `SCHEDULED_AGENT_WAKE_DESIGN`: [durable-wake proposal #13552](https://github.com/agentydragon/ducktape/pull/13552)      | Delivery/overlap/authority review precedes runtime implementation                     |
+| Lane          | Next reviewable outcome                                                                                                 | Prerequisite / stopping point                                     |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| P0 resume     | `ENVIRONMENT_LIFECYCLE_BACKEND`, `ENVIRONMENT_RESUME_API`, queued-wake receipts/integration and `EXEC_SUSPENDED_RESUME` | Approved policy; small extractions and staged activation          |
+| P1 delegation | `THREAD_CREATE_AUTHORIZATION`: operator follow-up for natural-agent usability                                           | Ordinary use; no model exercise is dispatched                     |
+| P1 scheduling | `SCHEDULED_AGENT_WAKE_DESIGN`: [durable-wake proposal #13552](https://github.com/agentydragon/ducktape/pull/13552)      | Delivery/overlap/authority review precedes runtime implementation |
 
 Explicit resume takes the next P0 implementation slot under the approved policy.
 The policy schema, migration 8 and UID-scoped wake accounting are present; explicit resume remains
 unfinished. [#13546](https://github.com/agentydragon/ducktape/pull/13546) and
 [#13716](https://github.com/agentydragon/ducktape/pull/13716) are parked implementation references,
 not active omnibus merge candidates. The authority decision does not need to be repeated.
-Wire-dependent slices need `ENVIRONMENT_RESUME_PROTO_BINDINGS`; Go-only policy work may proceed
-independently when it avoids that generator path. This docs extraction assigns no new workers.
+This docs extraction assigns no new workers.
 Scheduled wake and usable delegation feed the daily CI capstone. Small
 `SESSION_LAUNCH_FRICTION` proposals remain alongside these tracks as capacity permits. This is a
 scheduling preference, not additional dependency edges.
@@ -195,9 +194,7 @@ its old ordering does not give it precedence over the selected tracks.
 flowchart LR
     subgraph PRIORITY_ZERO[P0: lifecycle authority and explicit resume]
         ENVIRONMENT_LIFECYCLE_BACKEND[Approved resume policy and guarded mutation]
-        ENVIRONMENT_RESUME_PROTO_BINDINGS[Canonical external protobuf bindings]
         ENVIRONMENT_LIFECYCLE_BACKEND --> ENVIRONMENT_RESUME_API[Explicit resume API and Discovery]
-        ENVIRONMENT_RESUME_PROTO_BINDINGS --> ENVIRONMENT_RESUME_API
         ENVIRONMENT_RESUME_API --> EXEC_SUSPENDED_RESUME[Integrated resume and new-exec recovery]
     end
     subgraph PRIORITY_ONE[P1: useful daily-agent workflow]
@@ -1430,7 +1427,6 @@ flowchart TD
     SANDBOX_AUTODISKFUL[Decision, unscheduled: auto-diskful storage for Sandboxes]
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
-    ENVIRONMENT_RESUME_PROTO_BINDINGS[Selected P0 prerequisite: canonical external protobuf bindings]
     ENVIRONMENT_LIFECYCLE_BACKEND[Selected P0: shared resume policy and guarded mutation]
     ENVIRONMENT_RESUME_API[Selected P0: explicit resume RPC and Discovery]
     DISPATCH_WAKE_OBSERVATION[Selected P0: typed queued-wake receipts]
@@ -1438,8 +1434,6 @@ flowchart TD
     ENVIRONMENT_RESUME_AGENT_TOOLS[Selected P0: CLI and Action resume adapters]
     EXEC_SUSPENDED_RESUME[Selected P0 capstone: recover exec on a suspended Sandbox]
     ENVIRONMENT_RESUME_ACTIVATION[Operational hold: app and deployment activation]
-    ENVIRONMENT_RESUME_PROTO_BINDINGS --> ENVIRONMENT_RESUME_API
-    ENVIRONMENT_RESUME_PROTO_BINDINGS --> DISPATCH_WAKE_OBSERVATION
     ENVIRONMENT_LIFECYCLE_BACKEND --> ENVIRONMENT_RESUME_API
     ENVIRONMENT_LIFECYCLE_BACKEND --> DISPATCH_AUTHORIZED_WAKE
     DISPATCH_WAKE_OBSERVATION --> DISPATCH_AUTHORIZED_WAKE
@@ -1756,20 +1750,6 @@ differently.
 
 Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-coverage).
 
-### `ENVIRONMENT_RESUME_PROTO_BINDINGS` — generate canonical external protobuf bindings
-
-**Selected P0 prerequisite; candidate, no worker assigned.** The parked resume implementation
-copies upstream `google/rpc/status.proto` into a local `//google/rpc` package to generate bindings.
-That workaround is not selected. Isolate the affected Python/TypeScript generation path and
-repair it using the canonical external proto dependency. Preserve the approved shared structured
-error contract; do not substitute strings or change policy to bypass codegen.
-
-**Exit:** a minimal reproduction and focused generator/build evidence for the required bindings,
-with no copied proto or local `//google/rpc` compatibility package. This gates the wire-dependent
-API and receipt extractions. Go-only policy work can proceed independently when it avoids the
-affected path; file conflicts and the paused omnibus are not prerequisites. Investigation is
-separate work, not dispatched by this planning change.
-
 ### `ENVIRONMENT_LIFECYCLE_BACKEND` — own resume policy and guarded state changes
 
 **Selected P0; candidate extraction, no worker assigned.** Implement the
@@ -1791,11 +1771,13 @@ extracting small PRs from parked #13546; fresh provisioning and dispatch regroup
 
 ### `ENVIRONMENT_RESUME_API` — expose explicit resume and readiness
 
-**Selected P0; blocked on `ENVIRONMENT_LIFECYCLE_BACKEND` and `ENVIRONMENT_RESUME_PROTO_BINDINGS`.**
-Expose authenticated `EnvironmentLifecycle.ResumeEnvironment`. Discovery supplies the exact
-target, current eligibility, generation-bound token and bounded read-only readiness wait. Keep
-acceptance distinct from readiness and retain timeout/controller observations. Ordinary and
-delegated identities never inherit the app's operator authority.
+**Selected P0; blocked on `ENVIRONMENT_LIFECYCLE_BACKEND`.** Expose authenticated
+`EnvironmentLifecycle.ResumeEnvironment`. `GetEnvironment` returns the current descriptor
+immediately, including current eligibility and the generation-bound resume precondition.
+`WatchEnvironment` observes current-state changes for the exact target. Neither RPC waits for
+readiness; CLI and Action/MCP wait adapters over the watch remain follow-up work. Keep resume
+acceptance distinct from readiness. Ordinary and delegated identities never inherit the app's
+operator authority.
 
 **Exit:** direct/delegated same-account success and denial, exact target/token propagation, and
 operator requested-stop override confined to the configured direct operator path. RPC/source
@@ -1803,8 +1785,8 @@ support precedes new production settings and caller activation. Public suspend r
 
 ### `DISPATCH_WAKE_OBSERVATION` — retain typed queued-wake assessments
 
-**Selected P0; blocked on `ENVIRONMENT_RESUME_PROTO_BINDINGS`, independent of the complete lifecycle backend.**
-Use migration 8's existing storage for protobuf-defined delivery-blocker/wake assessments. Carry
+**Selected P0; independent of the complete lifecycle backend.** Use migration 8's existing storage
+for protobuf-defined delivery-blocker/wake assessments. Carry
 them through Get/List/Watch and `sessions__observe_input` with independently authorized History
 evidence. Further stored-schema changes require a new migration; do not edit migration 8.
 
@@ -1859,7 +1841,8 @@ environment. Exercise the shared guarded desired-state and wake generation/contr
 with the app unavailable.
 
 Concurrent resume requests converge on the same desired running state. Separate acceptance from
-execution readiness; provide a bounded readiness wait/status carrying the resulting incarnation.
+execution readiness; use `WatchEnvironment` to observe readiness and the resulting incarnation.
+Bounded CLI and Action/MCP wait adapters remain follow-up work.
 Admitted execution participates in busy/quiesce accounting so idle suspend cannot race admission.
 Preserve exact Sandbox UID, effective caller authorization and any supplied incarnation fence.
 After resume, execute only a newly requested command; reconnecting, resuming and adopting an
