@@ -1,7 +1,5 @@
 """The sshpiper `Pipe` CRD, applied straight from upstream `plugin/kubernetes/crd.yaml` in the
-`sshpiper-source` GitRepository (`flux_sources.py`). The cdk8s `Pipe` binding reads the same
-file through the SHA-256-pinned `sshpiper_pipe_crd` repository in `MODULE.bazel`; the CRD is
-never copied into this repository.
+`sshpiper-source` GitRepository (`flux_sources.py`). The CRD is not copied into this repository.
 
 The CRD has its own non-pruning Kustomization so it outlives individual sshpiperd deployments.
 Keep it until a cluster-wide inventory confirms no other Pipe resources depend on it.
