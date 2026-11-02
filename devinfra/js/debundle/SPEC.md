@@ -113,6 +113,9 @@ rejection preserves typed exit 3 and a truthful marker; other errors fail.
 The Bazel pipeline's default output excludes full graphs even with
 split_dependency_graphs enabled. A separate on-demand export action consumes
 the exact same Analyze artifact for its dependency_graphs output group.
+That reports-only action enables typed gate-rejection emission so it can finish
+exporting every configured chunk; exit 3 is accepted only for a gate-only
+rejection. It writes no JavaScript. Other failures still fail the action.
 
 ### Reading-only output on gate rejection
 

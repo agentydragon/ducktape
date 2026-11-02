@@ -82,20 +82,23 @@ def _debundle_pipeline_impl(ctx):
                 "--graphs",
                 "--reports-only",
                 shell.quote(graphs_dir.short_path),
-            ]),
+            ], allow_gate_rejection = True),
             mnemonic = "DebundleExportGraphs",
             progress = "Exporting full debundle graphs for %{label}",
         )
         output_groups["dependency_graphs"] = depset([graphs_dir])
     return [DefaultInfo(files = depset([out_dir])), OutputGroupInfo(**output_groups)]
 
-def _pipeline_command(ctx, plan, analysis, extra_flags):
+def _pipeline_command(ctx, plan, analysis, extra_flags, allow_gate_rejection = False):
+    run_flags = plan.run_flags
+    if allow_gate_rejection and not ctx.attr.emit_on_rejection:
+        run_flags = run_flags + ["--emit-on-rejection"]
     command = plan.debundler + " " + " ".join(
-        ["run"] + plan.run_flags + plan.spec_args + plan.package_args +
+        ["run"] + run_flags + plan.spec_args + plan.package_args +
         ["--analysis", shell.quote(analysis.short_path)] + extra_flags,
     )
-    if ctx.attr.emit_on_rejection:
-        # Only the typed, complete gate rejection passes; other errors fail.
+    if ctx.attr.emit_on_rejection or allow_gate_rejection:
+        # Only the typed gate-only rejection passes; other errors fail.
         return "{command} || {{ status=$?; [ \"$status\" -eq {gate} ] || exit \"$status\"; }}".format(
             command = command,
             gate = _GATE_REJECTED_EXIT_CODE,

@@ -53,6 +53,11 @@ output group (`--output_groups=+dependency_graphs`). The action consumes the
 same projection/Analyze artifact as the normal pipeline, with the same source,
 spec and census inputs; it does not rerun interpreter/fact analysis. Its
 `<target>.dependency_graphs/reports/tree/` contains full graphs and run diagnostics.
+It uses `--emit-on-rejection` only with `--reports-only`, so a typed gate-only
+rejection still lets the action finish exporting every configured chunk. The
+reports-only marker is retained, no JavaScript is emitted, and other failures
+still fail the action. Exact gate counts remain in each `graph_summary.json`;
+the detailed rejection report follows the materializer's existing selection.
 Graph selection does not enable full effect-conflict JSONL or other full-detail
 evidence. The default output group never depends on this export action.
 
