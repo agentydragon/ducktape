@@ -18,10 +18,7 @@ import (
 	"go.uber.org/zap"
 )
 
-const (
-	executionInputType  = "ExecutionInputs.agentplane"
-	executionResourceID = "execution"
-)
+const executionInputType = "ExecutionInputs.agentplane"
 
 type executionInput struct {
 	UID    string
@@ -98,13 +95,13 @@ func (executionExtension[T]) ResourceDefinition() spec.ResourceDefinitionSpec {
 
 func executionInputResource(value executionInput) *typed.Resource[executionInput, executionExtension[executionInput]] {
 	return typed.NewResource[executionInput, executionExtension[executionInput]](
-		resource.NewMetadata(lifecycle.Namespace, executionInputType, executionResourceID, resource.VersionUndefined), value,
+		resource.NewMetadata(lifecycle.Namespace, executionInputType, lifecycle.ExecutionResourceID, resource.VersionUndefined), value,
 	)
 }
 
 func executionStatusResource(value executionStatus) *typed.Resource[executionStatus, executionExtension[executionStatus]] {
 	return typed.NewResource[executionStatus, executionExtension[executionStatus]](
-		resource.NewMetadata(lifecycle.Namespace, lifecycle.ExecutionStatusType, executionResourceID, resource.VersionUndefined), value,
+		resource.NewMetadata(lifecycle.Namespace, lifecycle.ExecutionStatusType, lifecycle.ExecutionResourceID, resource.VersionUndefined), value,
 	)
 }
 

@@ -27,6 +27,7 @@ const (
 	// ExecutionStatusType is observed by the app-server controller to
 	// wake its live Execution readiness check.
 	ExecutionStatusType   = "ExecutionStatuses.agentplane"
+	ExecutionResourceID   = "execution"
 	EnvironmentResourceID = "environment-runtime"
 	EnvironmentOwner      = "environment-runtime"
 )
