@@ -200,9 +200,7 @@ async def test_sandbox_status_idle_suspended(view: VisualPage, app: AgentplaneFi
     await app.build(Scene.ADD_SUSPENDED_SANDBOXES)
     await app.mount_app("/sandboxes/idle-suspended-sandbox?tab=status")
     await expect(view.page.get_by_label("Idle suspend minutes for idle-suspended-sandbox")).to_have_value("30")
-    await view.page.get_by_text("Runtime diagnostics are unavailable until it is running.").wait_for(
-        state="visible"
-    )
+    await view.page.get_by_text("Runtime diagnostics are unavailable until it is running.").wait_for(state="visible")
     await view.capture(target=view.page.locator("#app"))
 
 
