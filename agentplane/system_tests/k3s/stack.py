@@ -268,6 +268,63 @@ class K3s:
         if source.exists():
             shutil.copyfile(source, self.log_path.with_name("containerd.log"))
 
+    def crictl(self, *args: str, check: bool = True) -> str:
+        config = self.work / "crictl.yaml"
+        config.write_text(f"runtime-endpoint: unix://{CONTAINERD_SOCKET}\ntimeout: {STOP_TIMEOUT_SECONDS}\n")
+        return run(str(self.binary), "crictl", "--config", str(config), *args, check=check, stdout_only=True)
+
+    @tracer.start_as_current_span("system_test.images.prune")
+    def prune_unused_images(self) -> None:
+        """Reclaim dangling CRI ID aliases, preserving named, pinned and in-use images."""
+        images = json.loads(self.crictl("images", "-o", "json"))["images"]
+        containers = json.loads(self.crictl("ps", "-a", "-o", "json"))["containers"]
+        in_use = {container["imageRef"] for container in containers}
+        obsolete = [
+            image["id"]
+            for image in images
+            if not image.get("repoTags")
+            and not image.get("repoDigests")
+            and not image.get("pinned")
+            and image["id"] not in in_use
+        ]
+        if obsolete:
+            # Kubelet GC can remove an ID between listing it and crictl's status check.
+            # Verify the postcondition instead of failing on an already-removed image.
+            output = self.crictl("rmi", *obsolete, check=False)
+            with (undeclared_outputs_dir() / "image-prune.log").open("a") as log:
+                log.write(json.dumps({"images": obsolete, "output": output}) + "\n")
+            remaining = {image["id"] for image in json.loads(self.crictl("images", "-o", "json"))["images"]}
+            if surviving := remaining.intersection(obsolete):
+                raise RuntimeError(f"obsolete containerd images survived cleanup: {sorted(surviving)}\n{output}")
+
+    def report_storage(self, stage: str) -> None:
+        """Capture the filesystem and kubelet signals behind node-pressure evictions."""
+        output = undeclared_outputs_dir() / "storage" / stage
+        output.mkdir(parents=True, exist_ok=True)
+        paths = ["/", "/workspace", "/var/lib/kubelet", str(self.data_dir / "agent/containerd")]
+        paths.append(str(self.data_dir / "agent/containerd/io.containerd.snapshotter.v1.overlayfs"))
+        for name, command in [
+            ("filesystems.txt", ["df", "-PT", "-B1", *paths]),
+            ("inodes.txt", ["df", "-Pi", *paths]),
+            ("containerd-usage.txt", ["du", "-x", "-B1", "--max-depth=2", str(self.data_dir / "agent/containerd")]),
+            ("images.txt", [str(self.binary), "ctr", "--address", CONTAINERD_SOCKET, "-n", "k8s.io", "images", "ls"]),
+        ]:
+            (output / name).write_text(run(*command, check=False, timeout=15))
+        (output / "cri-images.json").write_text(self.crictl("images", "-o", "json", check=False))
+        for name, resource in [
+            ("summary.json", "/api/v1/nodes/env/proxy/stats/summary"),
+            ("config.json", "/api/v1/nodes/env/proxy/configz"),
+            ("metrics.txt", "/api/v1/nodes/env/proxy/metrics"),
+        ]:
+            (output / name).write_text(
+                self.kubectl("get", "--raw", resource, "--request-timeout=5s", check=False, timeout=10)
+            )
+        (output / "resources.yaml").write_text(
+            self.kubectl(
+                "get", "nodes,pods,events", "-A", "-o", "yaml", "--request-timeout=5s", check=False, timeout=10
+            )
+        )
+
     @contextlib.contextmanager
     def profile_containerd(self, kind: str, seconds: int, destination: Path) -> Iterator[None]:
         """Capture a bounded, real Go profiler sample without delaying stack readiness."""
@@ -322,9 +379,6 @@ class K3s:
         """Remove Pods after an owned detached server has exited between test actions."""
         self._preserve_containerd_log()
         binaries = self.data_dir / "data/current/bin"
-        crictl_config = self.work / "crictl.yaml"
-        crictl_config.write_text(f"runtime-endpoint: unix://{CONTAINERD_SOCKET}\ntimeout: {STOP_TIMEOUT_SECONDS}\n")
-        crictl = (str(self.binary), "crictl", "--config", str(crictl_config))
         with contextlib.ExitStack() as cleanup:
             teardown_log = self.log_path.with_name("containerd-teardown.log")
             log = cleanup.enter_context(teardown_log.open("wb"))
@@ -348,8 +402,11 @@ class K3s:
                     if containerd.poll() is not None:
                         raise RuntimeError(f"standalone containerd exited with {containerd.returncode}")
                     with attempt:
-                        run(*crictl, "pods")
-                run(*crictl, "rmp", "--all", "--force")
+                        self.crictl("pods")
+                self.crictl("rmp", "--all", "--force")
+                # Rebuilds reset the kubelet's image ages. Remove stale ID aliases while
+                # the kubelet is stopped, before its two-minute GC age can permit evictions.
+                self.prune_unused_images()
             except Exception as exc:
                 log.flush()
                 for source in (teardown_log, self.log_path.with_name("containerd.log")):
@@ -367,6 +424,7 @@ class K3s:
         """Import Bazel OCI layouts, keyed by the image reference each loads as, into
         containerd one image at a time. Blob digests are preserved, and a blob containerd
         already holds (an earlier image's, or on a recycled runner the last stack's) is not streamed again."""
+        self.prune_unused_images()
         for image, layout in images.items():
             with tracer.start_as_current_span("system_test.image.import", attributes={"image": image}):
                 index = json.loads((layout / "index.json").read_text())
@@ -375,6 +433,9 @@ class K3s:
                 blobs = {blob.relative_to(layout).as_posix(): blob for blob in (layout / "blobs").glob("*/*")}
                 stored = self._stored_blobs()
                 self._import_layout(index["manifests"], {name: blobs[name] for name in blobs.keys() - stored})
+            # Retargeting a fixture tag leaves its old CRI config-ID alias behind. Reclaim it
+            # before another import grows the store; kubelet GC waits two minutes on fresh IDs.
+            self.prune_unused_images()
 
     def _stored_blobs(self) -> set[str]:
         """The OCI layout paths (`blobs/sha256/<hex>`) of the blobs containerd holds."""
@@ -997,6 +1058,8 @@ def running_stack(
                 process = k3s.start(layers_in_memory=not fixture.vm_sandboxes)
                 cleanup.callback(k3s.stop, process)
             setup.add_event("node Ready")
+            k3s.report_storage("before-import")
+            cleanup.callback(k3s.report_storage, "final")
             cluster = Cluster(
                 kubeconfig=k3s.kubeconfig, namespace=fixture.namespace, kubectl_command=(str(k3s.binary), "kubectl")
             )

@@ -1,11 +1,76 @@
-"""Retention requires the permission injected through BuildBuddy's exec properties."""
+"""Executor retention permission and image-cache safety."""
 
+import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from agentplane.system_tests.k3s import stack
+
+
+@pytest.mark.parametrize(
+    ("references", "container_refs"),
+    [
+        ({"repoTags": ["fixture:current"]}, []),
+        ({"repoDigests": ["fixture@sha256:current"]}, []),
+        ({"pinned": True}, []),
+        ({}, ["sha256:protected"]),
+    ],
+)
+def test_image_cleanup_preserves_referenced_pinned_and_container_used_images(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, references: dict[str, Any], container_refs: list[str]
+) -> None:
+    k3s = stack.K3s(tmp_path, tmp_path / "unused-k3s")
+    removed: list[str] = []
+
+    def crictl(*args: str, check: bool = True) -> str:
+        match args:
+            case ("images", "-o", "json"):
+                images = [{"id": "sha256:protected", **references}]
+                if not removed:
+                    images.append({"id": "sha256:obsolete"})
+                return json.dumps({"images": images})
+            case ("ps", "-a", "-o", "json"):
+                # Use the resolved ID rather than the requested tag, which can now name a newer image.
+                return json.dumps(
+                    {"containers": [{"imageRef": ref, "image": {"image": "fixture:current"}} for ref in container_refs]}
+                )
+            case ("rmi", *ids):
+                removed.extend(ids)
+                if check:
+                    raise RuntimeError("image was concurrently collected")
+                return "image was concurrently collected"
+            case _:
+                raise AssertionError(args)
+
+    monkeypatch.setattr(k3s, "crictl", crictl)
+
+    k3s.prune_unused_images()
+
+    assert removed == ["sha256:obsolete"]
+
+
+def test_image_cleanup_surfaces_a_failed_removal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    k3s = stack.K3s(tmp_path, tmp_path / "unused-k3s")
+
+    def crictl(*args: str, check: bool = True) -> str:
+        match args:
+            case ("images", "-o", "json"):
+                return json.dumps({"images": [{"id": "sha256:obsolete"}]})
+            case ("ps", "-a", "-o", "json"):
+                return json.dumps({"containers": []})
+            case ("rmi", "sha256:obsolete"):
+                if check:
+                    raise RuntimeError("runtime removal failed")
+                return "runtime removal failed"
+            case _:
+                raise AssertionError(args)
+
+    monkeypatch.setattr(k3s, "crictl", crictl)
+
+    with pytest.raises(RuntimeError, match="obsolete containerd images survived cleanup"):
+        k3s.prune_unused_images()
 
 
 def _postgres_pod(
