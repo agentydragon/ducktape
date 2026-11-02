@@ -24,6 +24,7 @@ export type ThreadsSnapshot = {
 };
 
 export type { ThreadListing };
+const DISABLED_CONNECTION: StreamConnection = { phase: "live", since: 0 };
 
 export const THREAD_PAGE = 50;
 const SEARCH_PAUSE_MS = 300;
@@ -224,11 +225,7 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
     : state.snapshot && !state.snapshot.updates_connected
       ? "thread updates disconnected; showing the last snapshot"
       : null;
-  const stream = useStreamStatus(
-    "Threads",
-    enabled ? connection : { phase: "live", since: 0 },
-    enabled ? stalled : null
-  );
+  const stream = useStreamStatus("Threads", enabled ? connection : DISABLED_CONNECTION, enabled ? stalled : null);
   return { ...state, stream };
 }
 

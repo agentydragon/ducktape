@@ -31,6 +31,7 @@ export interface Live<T> {
   health: WatchHealth | null;
   stream: StreamStatus;
 }
+const DISABLED_CONNECTION: StreamConnection = { phase: "live", since: 0 };
 /** The stream at `url`, which the connection indicator calls `name`. */
 export function useLive<T extends { watch: WatchHealth }>(
   url: string | null,
@@ -72,11 +73,7 @@ export function useLive<T extends { watch: WatchHealth }>(
   }, [url]);
   const stalled =
     state.health && !state.health.healthy ? unhealthy(state.health) : state.snapshot && stalledBy(state.snapshot);
-  const stream = useStreamStatus(
-    name,
-    url === null ? { phase: "live", since: 0 } : connection,
-    url === null ? null : stalled
-  );
+  const stream = useStreamStatus(name, url === null ? DISABLED_CONNECTION : connection, url === null ? null : stalled);
   return { ...state, stream };
 }
 /** Why the server's watch is not healthy, as it last reported: each failing kind, or not yet synced. */
