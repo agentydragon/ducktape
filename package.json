@@ -37,7 +37,6 @@
     "@opentelemetry/sdk-trace-web": "^2.0.0",
     "@tabler/icons-react": "^3.46.0",
     "@uiw/react-codemirror": "^4.25.11",
-    "@uiw/react-json-view": "2.0.0-alpha.43",
     "chart.js": "^4.4.8",
     "date-fns": "^4.4.0",
     "decimal.js": "10.6.0",
