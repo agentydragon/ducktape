@@ -124,8 +124,7 @@ func (h *Host) Request(ctx context.Context, r controller.QRuntime, id string, sp
 	}
 	spec.Domain = h.domain
 	return h.register(ctx, r, id, spec, launch, func() error {
-		_, err := writeResource(ctx, r, h.namespace, id, spec)
-		return err
+		return writeResource(ctx, r, h.namespace, id, spec)
 	})
 }
 

@@ -75,8 +75,7 @@ func (c *Controller) Reconcile(ctx context.Context, _ *zap.Logger, r controller.
 		current.Systemd = facts.Systemd
 	}
 	write := func() error {
-		_, err := writeResource(ctx, r, c.host.namespace, id, current)
-		return err
+		return writeResource(ctx, r, c.host.namespace, id, current)
 	}
 
 	snapshot, registered := host.snapshot(id)

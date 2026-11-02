@@ -9,6 +9,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 )
 
@@ -180,8 +181,11 @@ func readResource[T resourceSpec[T]](ctx context.Context, reader controller.Read
 	return cosi.Read(ctx, reader, resourceFor(namespace, id, zero))
 }
 
-func writeResource[T resourceSpec[T]](ctx context.Context, writer controller.ReaderWriter, namespace resource.Namespace, id string, value T) (bool, error) {
-	return cosi.Write(ctx, writer, resourceFor(namespace, id, value), value)
+func writeResource[T resourceSpec[T]](ctx context.Context, writer controller.Writer, namespace resource.Namespace, id string, value T) error {
+	return safe.WriterModify(ctx, writer, resourceFor(namespace, id, value), func(current *typed.Resource[T, resourceExtension[T]]) error {
+		*current.TypedSpec() = value
+		return nil
+	})
 }
 
 func publishResource[T resourceSpec[T]](ctx context.Context, store state.State, namespace resource.Namespace, id string, value T) error {
