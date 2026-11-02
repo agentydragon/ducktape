@@ -3,6 +3,8 @@ package runtime
 import (
 	"context"
 	"errors"
+	"strings"
+	"sync"
 	"testing"
 
 	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
@@ -23,6 +25,32 @@ import (
 )
 
 type failedHostIntentPublishState struct{ state.State }
+
+// Pause after returning the old report value from storage, while the waiter
+// still holds Runtime.mu. This forces publication into the read/subscription gap.
+type pausedHostReportReadState struct {
+	state.State
+	read       chan struct{}
+	resume     chan struct{}
+	once       sync.Once
+	resumeOnce sync.Once
+}
+
+func (s *pausedHostReportReadState) release() { s.resumeOnce.Do(func() { close(s.resume) }) }
+
+func (s *pausedHostReportReadState) Get(ctx context.Context, pointer resource.Pointer, opts ...state.GetOption) (resource.Resource, error) {
+	value, err := s.State.Get(ctx, pointer, opts...)
+	if pointer.Type() == lifecycle.HostReportType {
+		s.once.Do(func() {
+			close(s.read)
+			select {
+			case <-s.resume:
+			case <-ctx.Done():
+			}
+		})
+	}
+	return value, err
+}
 
 func (s *failedHostIntentPublishState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
 	if value.Metadata().Type() == lifecycle.HostIntentType {
@@ -150,6 +178,107 @@ func TestDirectHostReportRequiresExactAppliedIntent(t *testing.T) {
 	r.intent.ExecutionFenced = true
 	if r.hostReportLocked() != nil {
 		t.Fatal("old report acknowledged same-generation fence")
+	}
+}
+
+func TestHostReportWaitsAcrossReadAndSubscription(t *testing.T) {
+	for _, nativeStopped := range []bool{false, true} {
+		name := "ready"
+		if nativeStopped {
+			name = "native-stopped"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
+			defer cancel()
+			binding := &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 3}
+			intent := &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_RUNNING}
+			base := state.WrapCore(namespaced.NewState(inmem.Build))
+			paused := &pausedHostReportReadState{State: base, read: make(chan struct{}), resume: make(chan struct{})}
+			defer paused.release()
+			r := &Runtime{
+				host: &hostLink{bootID: "host", connected: true}, intent: intent,
+				lifecycleState: paused, changes: make(chan struct{}), fatal: make(chan error, 1),
+			}
+			publishAppliedHostIntent(t, r)
+			result := make(chan error, 1)
+			go func() {
+				if nativeStopped {
+					result <- r.waitForHostNativeStopped(ctx, binding)
+					return
+				}
+				_, err := r.waitForHostReady(ctx, binding)
+				result <- err
+			}()
+			select {
+			case <-paused.read:
+			case <-ctx.Done():
+				t.Fatal("Host report waiter did not read the initial report")
+			}
+			report := lifecycle.HostReport{Intent: proto.Clone(intent).(*runtimepb.LifecycleIntent), Report: &runtimepb.HostReport{Ready: true, NativeStopped: nativeStopped}}
+			if err := cosi.Publish(ctx, base, lifecycle.HostReportResource(report), report, "harness-host-report"); err != nil {
+				t.Fatal(err)
+			}
+			woke := make(chan struct{})
+			go func() { r.changed(); close(woke) }()
+			paused.release()
+			select {
+			case err := <-result:
+				if err != nil {
+					t.Fatalf("Host report wait: %v", err)
+				}
+			case <-ctx.Done():
+				t.Fatal("report publication was lost between read and subscription")
+			}
+			<-woke
+		})
+	}
+}
+
+func TestHostReportWaitsPreserveFailureAndDisconnectPrecedence(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		nativeStopped bool
+		failed        bool
+		want          string
+	}{
+		{name: "ready disconnect", want: "Harness Host lifecycle connection is unavailable"},
+		{name: "native stop disconnect", nativeStopped: true, want: "Harness Host lifecycle connection was lost before native-stop acknowledgement"},
+		{name: "ready failure", failed: true, want: "Runtime failed"},
+		{name: "native stop failure", nativeStopped: true, failed: true, want: "Runtime failed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
+			defer cancel()
+			binding := &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 1}
+			r := &Runtime{
+				host: &hostLink{bootID: "host", connected: true}, intent: &runtimepb.LifecycleIntent{Binding: binding},
+				lifecycleState: state.WrapCore(namespaced.NewState(inmem.Build)), changes: make(chan struct{}), fatal: make(chan error, 1),
+			}
+			result := make(chan error, 1)
+			go func() {
+				if test.nativeStopped {
+					result <- r.waitForHostNativeStopped(ctx, binding)
+					return
+				}
+				_, err := r.waitForHostReady(ctx, binding)
+				result <- err
+			}()
+			r.mu.Lock()
+			if test.failed {
+				r.failureErr = errors.New("Runtime failed")
+			}
+			r.host.connected = false
+			r.changedLocked()
+			r.mu.Unlock()
+			select {
+			case err := <-result:
+				if err == nil || !strings.Contains(err.Error(), test.want) {
+					t.Fatalf("Host report wait = %v, want %q", err, test.want)
+				}
+			case <-ctx.Done():
+				t.Fatal("disconnect or failure did not wake Host report waiter")
+			}
+		})
 	}
 }
 

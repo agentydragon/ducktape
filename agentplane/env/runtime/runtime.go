@@ -524,30 +524,10 @@ func (r *Runtime) changed() {
 }
 
 func (r *Runtime) waitForHostNativeStopped(ctx context.Context, binding *runtimepb.Binding) error {
-	for {
-		r.mu.Lock()
-		if failure := r.failureLocked(); failure != nil {
-			r.mu.Unlock()
-			return failure
-		}
-		host := r.host
-		if host == nil || !host.connected {
-			r.mu.Unlock()
-			return errors.New("Harness Host lifecycle connection was lost before native-stop acknowledgement")
-		}
-		report := r.hostReportLocked()
-		if report != nil && report.Ready && report.NativeStopped && r.intent != nil && proto.Equal(r.intent.Binding, binding) {
-			r.mu.Unlock()
-			return nil
-		}
-		changed := r.changes
-		r.mu.Unlock()
-		select {
-		case <-changed:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
+	_, err := r.waitForAppliedHostReport(ctx, binding, func(report *runtimepb.HostReport) bool {
+		return report.NativeStopped
+	}, errors.New("Harness Host lifecycle connection was lost before native-stop acknowledgement"))
+	return err
 }
 
 func (r *Runtime) startExecutionForUID(ctx context.Context, uid string) error {
