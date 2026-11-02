@@ -14,7 +14,6 @@ import { createRoot } from "react-dom/client";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 
-import { api } from "../client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
 import type * as LiveModule from "../live";

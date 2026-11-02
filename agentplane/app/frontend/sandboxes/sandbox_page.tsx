@@ -21,8 +21,16 @@ import { useSearchParams } from "react-router";
 
 import { api, displayableError } from "../client";
 import { findThread, getThread } from "../threads/client";
-import { getSessionOpening, openSession, sessionOpeningRejected, sessionOpeningNotVisible } from "./client";
-import { deleteEnvironment, resumeSandbox, sandboxTarget, suspendEnvironment } from "./client";
+import {
+  deleteEnvironment,
+  getSessionOpening,
+  openSession,
+  resumeSandbox,
+  sandboxTarget,
+  sessionOpeningRejected,
+  sessionOpeningNotVisible,
+  suspendEnvironment,
+} from "./client";
 import type { TargetHandle } from "../../../sandboxes/environments/environment_service_pb";
 import { ActionPolicySection } from "../actions/policy";
 import { EgressLog } from "./egress";
