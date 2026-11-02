@@ -6,15 +6,7 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from rich.text import Text
 
-from aiquota.models import (
-    AllQuotas,
-    ExtraSpend,
-    FetchSuccess,
-    PaidCredits,
-    PrepaidBalance,
-    PrepaidBalanceAvailable,
-    SuccessfulProviderFetch,
-)
+from aiquota.models import AllQuotas, ExtraSpend, FetchSuccess, PaidCredits, PrepaidBalance, PrepaidBalanceAvailable
 from aiquota.render.format import (
     format_age,
     format_burn,
@@ -22,7 +14,7 @@ from aiquota.render.format import (
     format_peak_schedule,
     format_prepaid_balance,
 )
-from aiquota.render.view_model import ProviderView, WindowView, to_view
+from aiquota.render.view_model import AllQuotasView, ProviderView, WindowView, to_view
 
 
 def render(quotas: AllQuotas, now: datetime | None = None, tz: tzinfo | None = None) -> str:
@@ -33,7 +25,11 @@ def render(quotas: AllQuotas, now: datetime | None = None, tz: tzinfo | None = N
 def render_text(quotas: AllQuotas, now: datetime | None = None, tz: tzinfo | None = None) -> Text:
     """Apply the server-owned tint to terminal rows; Rich disables color when redirected."""
     render_time = now or datetime.now(UTC)
-    view = to_view(quotas, render_time)
+    return render_view(to_view(quotas, render_time), render_time, tz)
+
+
+def render_view(view: AllQuotasView, now: datetime | None = None, tz: tzinfo | None = None) -> Text:
+    render_time = now or datetime.now(UTC)
     widths = _column_widths(view.providers, render_time)
     return Text("\n").join(_render_provider(provider, render_time, widths, tz) for provider in view.providers)
 
@@ -151,13 +147,9 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
 
 
 def _effective_prepaid_balance(pv: ProviderView, now: datetime) -> tuple[PrepaidBalance | None, str | None]:
-    out_result = pv.last_output.result
-    if isinstance(out_result, FetchSuccess) and out_result.prepaid_balance is not None:
-        return out_result.prepaid_balance, None
-    if pv.last_success is not None and pv.last_success.result.prepaid_balance is not None:
-        stale_age = format_age((now - pv.last_success.fetched_at).total_seconds())
-        return pv.last_success.result.prepaid_balance, stale_age
-    return None, None
+    stale_since = pv.display.prepaid_stale_since
+    age = format_age((now - stale_since).total_seconds()) if stale_since is not None else None
+    return pv.display.prepaid_balance, age
 
 
 def _burn_lines(pv: ProviderView, now: datetime, tz: tzinfo | None) -> list[str]:
@@ -173,28 +165,20 @@ def _burn_lines(pv: ProviderView, now: datetime, tz: tzinfo | None) -> list[str]
 def _effective_windows(
     pv: ProviderView, now: datetime
 ) -> tuple[list[WindowView], ExtraSpend | None, PaidCredits | None, int | None, list[datetime], bool, str | None]:
-    out_result = pv.last_output.result
-    # If the latest call gave us nothing usable, fall back to the prior
-    # successful snapshot — stale-but-real numbers beat "no data".
-    if isinstance(out_result, FetchSuccess) and (
-        out_result.windows
-        or out_result.available_reset_credits is not None
-        or out_result.paid_credits is not None
-        or out_result.platform_credits is not None
-        or out_result.prepaid_balance is not None
-    ):
-        return (
-            pv.display_windows,
-            out_result.extra_spend,
-            out_result.paid_credits,
-            out_result.available_reset_credits,
-            out_result.available_reset_credit_expiries,
-            out_result.reset_credit_expiry_lookup_failed,
-            None,
-        )
-    if pv.last_success is not None:
-        return _stale_windows(pv.last_success, now, pv.display_windows)
-    return [], None, None, None, [], False, None
+    result = pv.display.result
+    stale_since = pv.display.observed_at if pv.display.source == "last_success" else None
+    stale_age = format_age((now - stale_since).total_seconds()) if stale_since is not None else None
+    if result is None:
+        return [], None, None, None, [], False, None
+    return (
+        pv.display_windows,
+        result.extra_spend,
+        result.paid_credits,
+        result.available_reset_credits,
+        result.available_reset_credit_expiries,
+        result.reset_credit_expiry_lookup_failed,
+        stale_age,
+    )
 
 
 def _column_widths(providers: list[ProviderView], now: datetime) -> _ColumnWidths:
@@ -207,20 +191,6 @@ def _column_widths(providers: list[ProviderView], now: datetime) -> _ColumnWidth
     return _ColumnWidths(
         reset=max((len(row.reset) for row in rows), default=0),
         pace=max((len(row.pace) for row in rows if row.pace), default=0),
-    )
-
-
-def _stale_windows(
-    snap: SuccessfulProviderFetch, now: datetime, windows: list[WindowView]
-) -> tuple[list[WindowView], ExtraSpend | None, PaidCredits | None, int | None, list[datetime], bool, str]:
-    return (
-        windows,
-        snap.result.extra_spend,
-        snap.result.paid_credits,
-        snap.result.available_reset_credits,
-        snap.result.available_reset_credit_expiries,
-        snap.result.reset_credit_expiry_lookup_failed,
-        format_age((now - snap.fetched_at).total_seconds()),
     )
 
 

@@ -7,7 +7,7 @@ from rich.console import Console
 
 from aiquota.cache import QuotaService
 from aiquota.config import DEFAULT_CONFIG_PATH, load as load_config
-from aiquota.render import human as render_human, tmux as render_tmux, view_model
+from aiquota.render import human as render_human, tmux as render_tmux
 
 _CONFIG_OPTION = typer.Option(DEFAULT_CONFIG_PATH, "--config", "-c", help="Config file path")
 _DEBUG_OPTION = typer.Option(False, "--debug", "--verbose", "-v", help="Dump live provider responses to stderr")
@@ -36,15 +36,15 @@ def fetch(ctx: typer.Context) -> None:
     and GNOME popup agree within the cache TTL. The cache refreshes itself
     when older than `CACHE_TTL` (see aiquota/cache.py).
     """
-    quotas = asyncio.run(_service(ctx).fetch_all())
-    Console().print(render_human.render_text(quotas), highlight=False)
+    view = asyncio.run(_service(ctx).fetch_view())
+    Console().print(render_human.render_view(view), highlight=False)
 
 
 @app.command()
 def tmux(ctx: typer.Context) -> None:
     """Render quota status as a tmux status line segment."""
-    quotas = asyncio.run(_service(ctx).fetch_all())
-    sys.stdout.write(render_tmux.render(quotas.providers))
+    view = asyncio.run(_service(ctx).fetch_view())
+    sys.stdout.write(render_tmux.render_view(view.providers))
 
 
 @app.command(name="gnome-extension-json")
@@ -55,8 +55,7 @@ def gnome_extension_json(ctx: typer.Context) -> None:
     `extra_status`) so the extension and the CLI can't drift on policy
     decisions. See aiquota/AGENTS.md.
     """
-    quotas = asyncio.run(_service(ctx).fetch_all())
-    view = view_model.to_view(quotas)
+    view = asyncio.run(_service(ctx).fetch_view())
     sys.stdout.write(view.model_dump_json(indent=2))
     sys.stdout.write("\n")
 

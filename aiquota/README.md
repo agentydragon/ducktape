@@ -25,7 +25,7 @@ Authorization: Bearer <AIQUOTA_API_BEARER_TOKEN>
 ```
 
 `/v1/quotas` returns the shared view model (`aiquota/render/view_model.py`): each
-provider's normalized windows plus the derived policy bits every surface renders —
+provider's selected display snapshot, its provenance and the latest fetch status, plus the derived policy bits every surface renders —
 `currently_over_plan`, `extra_status`, the peak-burn schedule, and per-window presentation (pace, forecast, tint and meter position). Serving those rather
 than letting each client re-derive them is what keeps the CLI, GNOME popup, browser
 dashboard, and Haku Console from drifting (see AGENTS.md). `/raw` returns the response body

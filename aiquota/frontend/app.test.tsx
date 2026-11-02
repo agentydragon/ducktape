@@ -23,6 +23,11 @@ class Stream extends EventTarget {
           providers: [
             {
               provider: "codex",
+              display: {
+                source: "current",
+                observed_at: fetchedAt,
+                result: { kind: "success", windows: [], available_reset_credits: resets },
+              },
               last_output: {
                 fetched_at: fetchedAt,
                 result: {
@@ -100,6 +105,12 @@ describe("quota subscription", () => {
             providers: [
               {
                 provider: "claude",
+                display: {
+                  source: "current",
+                  observed_at: "2026-01-15T12:00:00Z",
+                  result: { kind: "success", windows: [] },
+                  prepaid_balance: { kind: "available", amount_minor: 12345, exponent: 2, currency: "USD" },
+                },
                 last_output: {
                   fetched_at: "2026-01-15T12:00:00Z",
                   result: {
@@ -136,6 +147,12 @@ describe("quota subscription", () => {
             providers: [
               {
                 provider: "claude",
+                display: {
+                  source: "current",
+                  observed_at: "2026-01-15T12:00:00Z",
+                  result: { kind: "success", windows: [] },
+                  prepaid_balance: { kind: "unavailable" },
+                },
                 last_output: {
                   fetched_at: "2026-01-15T12:00:00Z",
                   result: { kind: "success", windows: [], prepaid_balance: { kind: "unavailable" } },
@@ -169,6 +186,11 @@ describe("quota subscription", () => {
             providers: [
               {
                 provider: "codex",
+                display: {
+                  source: "current",
+                  observed_at: "2026-01-15T12:00:00Z",
+                  result: { kind: "success", windows: [raw] },
+                },
                 last_output: { fetched_at: "2026-01-15T12:00:00Z", result: { kind: "success", windows: [raw] } },
                 last_success: null,
                 currently_over_plan: false,

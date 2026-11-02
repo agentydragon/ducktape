@@ -35,6 +35,7 @@ def view_payload() -> dict[str, object]:
         "providers": [
             {
                 "provider": "codex",
+                "display": {"source": "current", "observed_at": fetch["fetched_at"], "result": fetch["result"]},
                 "last_output": fetch,
                 "last_success": fetch,
                 "currently_over_plan": True,

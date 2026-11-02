@@ -26,20 +26,8 @@ def _render_provider(pq: ProviderView) -> str:
     prefix = PROVIDER_PREFIX.get(pq.provider, pq.provider[0].upper())
     result = pq.last_output.result
 
-    # Pick the windows to render: prefer the latest fetch when it succeeded,
-    # else fall back to the last successful snapshot.
-    if isinstance(result, FetchSuccess) and (
-        result.windows
-        or result.available_reset_credits is not None
-        or result.paid_credits is not None
-        or result.prepaid_balance is not None
-    ):
-        windows, stale = pq.display_windows, False
-    elif pq.last_success is not None:
-        windows, stale = pq.display_windows, True
-    else:
-        windows = []
-        stale = False
+    windows = pq.display_windows
+    stale = pq.display.source == "last_success"
 
     errored = not isinstance(result, FetchSuccess)
     if errored and not windows:
@@ -62,8 +50,13 @@ def _render_provider(pq: ProviderView) -> str:
     return f"#[fg={color}]{prefix}:{pct}%#[default]"
 
 
-def render(providers: list[ProviderQuota]) -> str:
-    segments = [render_provider(pq) for pq in providers]
+def render_view(providers: list[ProviderView]) -> str:
+    segments = [_render_provider(pq) for pq in providers]
     if not segments:
         return ""
     return f"{_AI_GLYPH} " + " ".join(segments)
+
+
+def render(providers: list[ProviderQuota]) -> str:
+    segments = [render_provider(pq) for pq in providers]
+    return f"{_AI_GLYPH} " + " ".join(segments) if segments else ""

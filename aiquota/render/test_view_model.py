@@ -11,6 +11,7 @@ from aiquota.models import (
     PaidCredits,
     PlatformCreditGrant,
     PlatformCredits,
+    PrepaidBalanceAvailable,
     ProviderFetch,
     ProviderQuota,
     QuotaWindow,
@@ -170,3 +171,51 @@ def test_platform_grants_filter_tracks_time_and_preserves_snapshot() -> None:
     assert stale.display_platform_credits.grants == [credits.grants[i] for i in (3, 4)]
     assert stale.last_success is not None
     assert stale.last_success.result.platform_credits == credits
+
+
+def test_display_selection_preserves_latest_check_and_snapshot_provenance() -> None:
+    older = _NOW - timedelta(hours=1)
+    old_result = FetchSuccess(windows=[QuotaWindow(used_percent=25, reset_seconds=60, window_seconds=3600)])
+    old = SuccessfulProviderFetch(fetched_at=older, result=old_result)
+    cases: list[tuple[FetchSuccess | FetchError, SuccessfulProviderFetch | None, str, datetime | None]] = [
+        (FetchSuccess(available_reset_credits=0), old, "current", _NOW),
+        (FetchSuccess(), old, "last_success", older),
+        (FetchError(error="offline"), old, "last_success", older),
+        (FetchError(error="offline"), None, "none", None),
+        (FetchSuccess(paid_credits=PaidCredits(balance="1")), old, "current", _NOW),
+    ]
+    for result, prior, expected_source, expected_time in cases:
+        pq = ProviderQuota(
+            provider="codex", last_output=ProviderFetch(fetched_at=_NOW, result=result), last_success=prior
+        )
+        view = to_view(AllQuotas(providers=[pq], fetched_at=_NOW), _NOW).providers[0]
+        assert (view.display.source, view.display.observed_at) == (expected_source, expected_time)
+        assert view.last_output == pq.last_output
+        assert view.display.result == (result if expected_source == "current" else old_result if prior else None)
+
+
+def test_display_selection_handles_hidden_windows_and_credit_metadata() -> None:
+    hidden = QuotaWindow(used_percent=25, reset_seconds=60, window_seconds=3600, display=False)
+    result = FetchSuccess(windows=[hidden], available_reset_credits=0, reset_credit_expiry_lookup_failed=True)
+    pq = ProviderQuota(provider="codex", last_output=ProviderFetch(fetched_at=_NOW, result=result))
+    view = to_view(AllQuotas(providers=[pq], fetched_at=_NOW), _NOW).providers[0]
+    assert view.display.source == "current"
+    assert view.display.result == result
+    assert view.display_windows == []
+    assert view.display.result is not None
+    assert view.display.result.available_reset_credits == 0
+    assert view.display.result.reset_credit_expiry_lookup_failed
+
+
+def test_display_selection_retains_prepaid_balance_with_its_own_timestamp() -> None:
+    older = _NOW - timedelta(hours=1)
+    balance = PrepaidBalanceAvailable(amount_minor=12345, exponent=2, currency="USD")
+    prior = SuccessfulProviderFetch(fetched_at=older, result=FetchSuccess(prepaid_balance=balance))
+    current = FetchSuccess(available_reset_credits=0)
+    pq = ProviderQuota(
+        provider="claude", last_output=ProviderFetch(fetched_at=_NOW, result=current), last_success=prior
+    )
+    view = to_view(AllQuotas(providers=[pq], fetched_at=_NOW), _NOW).providers[0]
+    assert view.display.source == "current"
+    assert view.display.prepaid_balance == balance
+    assert view.display.prepaid_stale_since == older

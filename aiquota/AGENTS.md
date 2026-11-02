@@ -15,7 +15,10 @@ Any presentation change to one surface is mirrored in the other two (the user re
 by side and reports drift as a bug): the single "currently over plan" / "extra spend active"
 signal, window-row layout (label, used %, reset, pace, forecast), header (provider,
 error/stale annotations, extra-spend tail), collapsed view while burning extra. Shared
-quota presentation decisions live in <render/view_model.py>.
+quota presentation decisions live in <render/view_model.py>. Its display selection identifies
+the current or last substantive result and its timestamp; clients render that selection and
+the latest fetch error without choosing a fallback themselves. Prepaid balance can have a
+separate stale timestamp because it is fetched independently.
 
 The API emits time-refreshed window presentation views on the event stream. Python computes
 pace, forecast, tint and meter position once in the shared view model; the CLI, browser and

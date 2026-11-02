@@ -6,7 +6,14 @@ from pathlib import Path
 from platformdirs import user_cache_dir
 
 from aiquota.config import Config
-from aiquota.models import AllQuotas, FetchSuccess, ProviderFetch, ProviderQuota, SuccessfulProviderFetch
+from aiquota.models import (
+    AllQuotas,
+    FetchSuccess,
+    ProviderFetch,
+    ProviderQuota,
+    SuccessfulProviderFetch,
+    is_substantive,
+)
 from aiquota.providers.base import Provider
 from aiquota.providers.claude import ClaudeProvider
 from aiquota.providers.cli_proxy_api import CLIProxyAPIManagementClient
@@ -15,6 +22,7 @@ from aiquota.providers.codex import CodexProvider
 from aiquota.providers.openai_platform import OpenAIPlatformProvider
 from aiquota.providers.zai import ZaiProvider
 from aiquota.remote import QuotaAPIClient
+from aiquota.render.view_model import AllQuotasView, to_view
 
 CACHE_TTL = timedelta(seconds=120)
 
@@ -48,8 +56,15 @@ class QuotaCache:
         self.write(fresh)
         return fresh
 
-    async def fetch_remote(self, fetcher: Callable[[], Awaitable[AllQuotas]], force_refresh: bool = False) -> AllQuotas:
-        cached = self.read()
+    async def fetch_remote_view(
+        self, fetcher: Callable[[], Awaitable[AllQuotasView]], force_refresh: bool = False
+    ) -> AllQuotasView:
+        cached: AllQuotasView | None
+        try:
+            cached = AllQuotasView.model_validate_json(self.path.read_text())
+        except OSError, ValueError:
+            raw = self.read()
+            cached = to_view(raw) if raw is not None else None
         if not force_refresh and cached is not None and datetime.now(UTC) - cached.fetched_at < self.ttl:
             return cached
         try:
@@ -58,7 +73,11 @@ class QuotaCache:
             if cached is None:
                 raise
             return cached
-        self.write(fresh)
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(fresh.model_dump_json())
+        except OSError:
+            pass
         return fresh
 
 
@@ -78,8 +97,14 @@ class QuotaService:
 
     async def fetch_all(self) -> AllQuotas:
         if self.remote_client:
-            return await self.cache.fetch_remote(self.remote_client.fetch, force_refresh=self.debug)
+            view = await self.cache.fetch_remote_view(self.remote_client.fetch, force_refresh=self.debug)
+            return AllQuotas.model_validate(view, from_attributes=True)
         return await self.cache.fetch_all(self.providers, force_refresh=self.debug)
+
+    async def fetch_view(self) -> AllQuotasView:
+        if self.remote_client:
+            return await self.cache.fetch_remote_view(self.remote_client.fetch, force_refresh=self.debug)
+        return to_view(await self.fetch_all())
 
 
 def _instantiate(
@@ -103,13 +128,7 @@ def _instantiate(
 def _assemble(name: str, output: ProviderFetch, prior: ProviderQuota | None) -> ProviderQuota:
     """Wrap a provider fetch, retaining the last substantive quota snapshot."""
     success: SuccessfulProviderFetch | None = None
-    if isinstance(output.result, FetchSuccess) and (
-        output.result.windows
-        or output.result.available_reset_credits is not None
-        or output.result.paid_credits is not None
-        or output.result.platform_credits is not None
-        or output.result.prepaid_balance is not None
-    ):
+    if isinstance(output.result, FetchSuccess) and is_substantive(output.result):
         success = SuccessfulProviderFetch(fetched_at=output.fetched_at, result=output.result)
     return ProviderQuota(
         provider=name, last_output=output, last_success=success or (prior.last_success if prior else None)

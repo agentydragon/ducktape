@@ -81,7 +81,9 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
       {quota.paidCredits && (
         <PaidCreditsStrip credits={quota.paidCredits} active={paidCreditsActive} windows={quota.windows} />
       )}
-      {quota.prepaidBalance && <PrepaidBalanceStrip balance={quota.prepaidBalance} />}
+      {quota.prepaidBalance && (
+        <PrepaidBalanceStrip balance={quota.prepaidBalance} staleSince={quota.prepaidStaleSince} now={now} />
+      )}
       {quota.platformCredits && (
         <div className="aiquota-aside">
           <p>OpenAI API balance · {formatUsd(Number(quota.platformCredits.total_available_usd))}</p>
@@ -259,12 +261,25 @@ function PaidCreditsStrip({
   );
 }
 
-function PrepaidBalanceStrip({ balance }: { balance: PrepaidBalance }): JSX.Element {
+function PrepaidBalanceStrip({
+  balance,
+  staleSince,
+  now,
+}: {
+  balance: PrepaidBalance;
+  staleSince: string | null;
+  now: number;
+}): JSX.Element {
   const line =
     balance.kind === "available"
       ? `Claude prepaid balance · ${formatPrepaidBalance(balance.amount_minor, balance.exponent, balance.currency)}`
       : "Claude prepaid balance unavailable";
-  return <p className="aiquota-aside">{line}</p>;
+  return (
+    <p className="aiquota-aside">
+      {line}
+      {staleSince && ` (stale ${formatAge((now - Date.parse(staleSince)) / 1000)})`}
+    </p>
+  );
 }
 
 function formatCreditBalance(raw: string | null | undefined): string {

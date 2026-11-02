@@ -15,6 +15,7 @@ from aiquota.models import (
     SuccessfulProviderFetch,
 )
 from aiquota.providers.base import Provider
+from aiquota.render.view_model import AllQuotasView, DisplaySelection, to_view
 
 if __name__ == "__main__":
     pytest_bazel.main()
@@ -133,10 +134,10 @@ async def test_remote_refresh_falls_back_to_stale_local_snapshot(tmp_path: Path)
     cached = AllQuotas(providers=[], fetched_at=datetime.now(UTC) - timedelta(hours=1))
     cache.write(cached)
 
-    async def unavailable() -> AllQuotas:
+    async def unavailable() -> AllQuotasView:
         raise OSError("offline")
 
-    assert await cache.fetch_remote(unavailable, force_refresh=True) == cached
+    assert await cache.fetch_remote_view(unavailable, force_refresh=True) == to_view(cached)
 
 
 def _success(
@@ -205,3 +206,23 @@ def test_assemble_records_banked_resets_without_windows() -> None:
 
     assert pq.last_success is not None
     assert pq.last_success.result.available_reset_credits == 2
+
+
+async def test_remote_view_cache_preserves_server_selection(tmp_path: Path) -> None:
+    now = datetime.now(UTC)
+    fetch = _success(now, short_window=QuotaWindow(used_percent=10, reset_seconds=3600, window_seconds=18000))
+    view = to_view(AllQuotas(providers=[ProviderQuota(provider="test", last_output=fetch)], fetched_at=now), now)
+    # A server selection must survive caching even if local selection policy changes.
+    view.providers[0].display = DisplaySelection(source="none", observed_at=None, result=None)
+    cache = QuotaCache(path=tmp_path / "cache.json")
+
+    async def fetch_view() -> AllQuotasView:
+        return view
+
+    assert await cache.fetch_remote_view(fetch_view, force_refresh=True) == view
+
+    async def unavailable() -> AllQuotasView:
+        raise OSError("offline")
+
+    assert await cache.fetch_remote_view(unavailable, force_refresh=True) == view
+    assert cache.read() is not None  # the desktop's raw-cache reader remains compatible

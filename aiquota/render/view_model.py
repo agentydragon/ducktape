@@ -10,10 +10,12 @@ from aiquota.models import (
     AllQuotas,
     FetchSuccess,
     PlatformCredits,
+    PrepaidBalance,
     ProviderFetch,
     ProviderQuota,
     QuotaWindow,
     SuccessfulProviderFetch,
+    is_substantive,
 )
 from aiquota.pace import TINT_RANK, compute_pace, is_exhausted, tint_for
 from aiquota.peak_windows import BurnStatus, status_for
@@ -42,8 +44,17 @@ class WindowView(QuotaWindow):
     exhausted: bool
 
 
+class DisplaySelection(BaseModel):
+    source: Literal["current", "last_success", "none"]
+    observed_at: datetime | None
+    result: FetchSuccess | None
+    prepaid_balance: PrepaidBalance | None = None
+    prepaid_stale_since: datetime | None = None
+
+
 class ProviderView(BaseModel):
     provider: str
+    display: DisplaySelection
     last_output: ProviderFetch
     last_success: SuccessfulProviderFetch | None
     currently_over_plan: bool
@@ -70,17 +81,21 @@ def to_view(quotas: AllQuotas, now: datetime | None = None) -> AllQuotasView:
 
 def _provider_view(pq: ProviderQuota, now: datetime) -> ProviderView:
     result = pq.last_output.result
-    source: FetchSuccess | None
-    if isinstance(result, FetchSuccess) and (
-        result.windows
-        or result.available_reset_credits is not None
-        or result.paid_credits is not None
-        or result.platform_credits is not None
-        or result.prepaid_balance is not None
-    ):
-        source = result
+    if isinstance(result, FetchSuccess) and is_substantive(result):
+        selection = DisplaySelection(source="current", observed_at=pq.last_output.fetched_at, result=result)
+    elif pq.last_success is not None:
+        selection = DisplaySelection(
+            source="last_success", observed_at=pq.last_success.fetched_at, result=pq.last_success.result
+        )
     else:
-        source = pq.last_success.result if pq.last_success is not None else None
+        selection = DisplaySelection(source="none", observed_at=None, result=None)
+    # Prepaid is a separate endpoint; preserve the CLI's per-field fallback.
+    if isinstance(result, FetchSuccess) and result.prepaid_balance is not None:
+        selection.prepaid_balance = result.prepaid_balance
+    elif pq.last_success is not None and pq.last_success.result.prepaid_balance is not None:
+        selection.prepaid_balance = pq.last_success.result.prepaid_balance
+        selection.prepaid_stale_since = pq.last_success.fetched_at
+    source = selection.result
     windows = [window for window in source.windows if window.display] if source is not None else []
     longest = max((window.window_seconds for window in windows), default=0)
     display_windows = [_window_view(window, now, window.window_seconds < longest) for window in windows]
@@ -119,6 +134,7 @@ def _provider_view(pq: ProviderQuota, now: datetime) -> ProviderView:
     )
     return ProviderView(
         provider=pq.provider,
+        display=selection,
         last_output=pq.last_output,
         last_success=pq.last_success,
         currently_over_plan=currently_over_plan(pq.last_output),
