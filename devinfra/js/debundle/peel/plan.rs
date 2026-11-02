@@ -1220,8 +1220,12 @@ pub fn run_source_selection_report(
     source_context: Option<&VerifiedGraphSourceContext>,
 ) -> Result<SourceSelectionReport> {
     let graph = load_graph(&args.common.dependency_graph_path)?;
-    let module_files = collect_module_files(&args.common.modules_root)?;
     let selection = &args.selection;
+    let module_files = if matches!(selection, SelectionKind::ModulePath(_)) {
+        collect_module_files(&args.common.modules_root)?
+    } else {
+        Vec::new()
+    };
     let query = query_report(selection);
     let ResolvedSelection {
         source_unit_ids,

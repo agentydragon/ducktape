@@ -24,6 +24,45 @@ fn inspect_source_graph_id_selects_only_its_statement_on_one_line() {
 }
 
 #[test]
+fn inspect_source_unit_id_does_not_read_the_current_module_tree() {
+    let fixture = GraphFixture::new("const answer = 42;\n", &[]);
+    let spec_root = fixture.root().to_str().unwrap();
+    let graph = fixture.graph.to_str().unwrap();
+    let missing_modules = fixture.root().join("missing-modules");
+    let missing_modules = missing_modules.to_str().unwrap();
+    let source_root = fixture.root().join("snapshot");
+    let source_root = source_root.to_str().unwrap();
+
+    let out = fixture.command(&[
+        "--spec-root",
+        spec_root,
+        "inspect-source",
+        "--id",
+        "unit:0",
+        "--graph",
+        graph,
+        "--modules",
+        missing_modules,
+        "--source-root",
+        source_root,
+        "--view",
+        "raw",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        report["files"][0]["statements"][0]["source"],
+        "const answer = 42;"
+    );
+}
+
+#[test]
 fn inspect_source_maps_split_graph_ordinals_to_one_raw_body_item() {
     let fixture = GraphFixture::new(
         "const a = 1, b = 2; console.log(a, b);",

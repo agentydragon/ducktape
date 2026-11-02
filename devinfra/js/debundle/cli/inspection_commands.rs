@@ -245,7 +245,7 @@ impl std::error::Error for UnsupportedIdentifierPrefix {}
 /// claim path as other structured IDs, so binding members and anonymous
 /// statements stay in sync. Unknown colon prefixes are rejected after checking
 /// for a real module path, since `:` is legal in Linux filenames.
-fn dispatch_id_selection(id: &str, module_paths: &[String]) -> Result<SelectionKind> {
+fn dispatch_id_selection(id: &str, module_paths: &mut ModulePathIndex) -> Result<SelectionKind> {
     // Prefix-based dispatch covers the structured ID kinds emitted by
     // the analysis crate.
     if id.starts_with("unit:") {
@@ -264,7 +264,7 @@ fn dispatch_id_selection(id: &str, module_paths: &[String]) -> Result<SelectionK
     // Spec authors sometimes have flat module paths (no `/`); the
     // existence check is the only reliable disambiguator vs. binding
     // names that happen to spell a module-like word.
-    if let Some(module_path) = resolve_id_as_module_path(id, module_paths) {
+    if let Some(module_path) = module_paths.resolve_id(id)? {
         return Ok(SelectionKind::ModulePath(module_path));
     }
     if id.starts_with("auto_partition_") || id.starts_with("extend:") {
@@ -293,7 +293,7 @@ fn unsupported_typed_prefix(id: &str) -> Option<(&str, &str)> {
 }
 
 pub(super) fn validate_query_id(id: &str, modules_root: &std::path::Path) -> Result<()> {
-    dispatch_id_selection(id, &module_paths_under(modules_root)?).map(|_| ())
+    dispatch_id_selection(id, &mut ModulePathIndex::under(modules_root)).map(|_| ())
 }
 
 fn describe_ids(args: &DescribeArgs) -> Result<Vec<String>> {
@@ -320,10 +320,49 @@ pub(super) fn validate_describe_query(args: &DescribeArgs) -> Result<ValidatedDe
     let ids = describe_ids(args)?;
     // Preserve the early unsupported-prefix check. The verified, chunk-scoped
     // module index is built after provenance preflight in `run_describe`.
-    let module_paths = module_paths_under(&args.common.modules_root)?;
+    let mut module_paths = ModulePathIndex::under(&args.common.modules_root);
     ids.iter()
-        .try_for_each(|id| dispatch_id_selection(id, &module_paths).map(|_| ()))?;
+        .try_for_each(|id| dispatch_id_selection(id, &mut module_paths).map(|_| ()))?;
     Ok(ValidatedDescribeQuery { ids })
+}
+
+/// Resolve module paths only when a query needs the path-versus-binding
+/// disambiguation. Reserved typed IDs have a complete interpretation without
+/// reading the current modules tree.
+struct ModulePathIndex {
+    modules_root: Option<PathBuf>,
+    paths: Option<Vec<String>>,
+}
+
+impl ModulePathIndex {
+    fn under(modules_root: &std::path::Path) -> Self {
+        Self {
+            modules_root: Some(modules_root.to_path_buf()),
+            paths: None,
+        }
+    }
+
+    fn from_paths(paths: Vec<String>) -> Self {
+        Self {
+            modules_root: None,
+            paths: Some(paths),
+        }
+    }
+
+    fn resolve_id(&mut self, id: &str) -> Result<Option<String>> {
+        Ok(resolve_id_as_module_path(id, self.paths()?))
+    }
+
+    fn paths(&mut self) -> Result<&[String]> {
+        if self.paths.is_none() {
+            let modules_root = self
+                .modules_root
+                .as_deref()
+                .context("module path index has no modules root")?;
+            self.paths = Some(module_paths_under(modules_root)?);
+        }
+        Ok(self.paths.as_deref().expect("module paths were loaded"))
+    }
 }
 
 fn module_paths_under(modules_root: &std::path::Path) -> Result<Vec<String>> {
@@ -367,12 +406,12 @@ pub(super) fn run_describe(
         args.size_cap_lines,
         source_context,
     )?;
-    let module_paths = session.module_paths();
+    let mut module_paths = ModulePathIndex::from_paths(session.module_paths());
     let selections = ids
         .iter()
         .enumerate()
         .map(|(index, id)| {
-            dispatch_id_selection(id, &module_paths)
+            dispatch_id_selection(id, &mut module_paths)
                 .with_context(|| format!("describing item {} ({id:?})", index + 1))
         })
         .collect::<Result<Vec<_>>>()?;
@@ -444,7 +483,7 @@ pub(super) fn run_inspect_source(
     if let Some(id) = &args.id {
         let graph = args.graph.clone().context("--id requires --graph")?;
         let modules = args.modules.clone().context("--id requires --modules")?;
-        let selection = dispatch_id_selection(id, &module_paths_under(&modules)?)?;
+        let selection = dispatch_id_selection(id, &mut ModulePathIndex::under(&modules))?;
         let selected = run_source_selection_report(
             &SourceSelectionArgs {
                 common: PeelCommonArgs {
