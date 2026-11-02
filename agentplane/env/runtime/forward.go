@@ -49,7 +49,9 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 		r.execCallID++
 		callID = r.execCallID
 		r.execCalls[callID] = cancel
-		r.activeAdmissions++
+		if err := r.changeAdmissionsLocked(1); err != nil {
+			return err
+		}
 		r.activeExecutionCalls++
 		r.changedLocked()
 		admitted = true
@@ -65,14 +67,15 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 		cancel()
 		r.mu.Lock()
 		delete(r.execCalls, callID)
-		if r.activeAdmissions > 0 {
-			r.activeAdmissions--
-		}
+		admissionErr := r.changeAdmissionsLocked(-1)
 		if r.activeExecutionCalls > 0 {
 			r.activeExecutionCalls--
 		}
 		r.changedLocked()
 		r.mu.Unlock()
+		if admissionErr != nil {
+			r.fail(admissionErr)
+		}
 	}
 	return client, outgoing, finish, nil
 }

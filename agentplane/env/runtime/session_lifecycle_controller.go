@@ -119,7 +119,7 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			}
 			return write()
 		}
-		if status.Phase != session.Halted {
+		if !found || status.HostGeneration != desiredState.Generation || status.Phase != session.Halted {
 			resourceError := ""
 			if status.HostGeneration == desiredState.Generation {
 				resourceError = status.Error
@@ -144,7 +144,7 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		if err != nil {
 			return err
 		}
-		if !status.ProcessStopped {
+		if !found || status.HostGeneration != desiredState.Generation || !status.ProcessStopped {
 			current.Blocker = harnesshostlifecycle.Blocker{
 				Kind: harnesshostlifecycle.SessionProcessPending, ResourceType: session.LifecycleStatusType,
 				ResourceID: s.ID(), ProcessID: status.ProcessID, ResourcePresent: found,
@@ -259,6 +259,10 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 	}
 	if desiredState.SealUID != "" && !fenced {
 		current.Stage = harnesshostlifecycle.Fencing
+		return write()
+	}
+	if desiredState.SealUID == "" && desiredState.Mode != harnesshostlifecycle.Closing {
+		current.Blocker = harnesshostlifecycle.Blocker{}
 		return write()
 	}
 	if desiredState.SealUID != "" {

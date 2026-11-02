@@ -8,7 +8,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
-	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
@@ -338,7 +337,7 @@ func (h *executionLifecycle) launch(uid string, demand, generation uint64, recov
 			return
 		}
 		h.r.mu.Lock()
-		allowed := !h.r.closing && (!recovery || h.r.intent != nil && h.r.intent.Mode == runtimepb.LifecycleIntent_RUNNING && h.r.intent.IncarnationUid == uid && h.r.intent.GetBinding().GetGeneration() == lossBinding)
+		allowed := !h.r.closing && (!recovery || h.r.admissionOpen && h.r.desired.Mode == lifecycle.Running && h.r.desired.IncarnationUID == uid && h.r.desired.Generation == lossBinding)
 		h.r.mu.Unlock()
 		if !allowed {
 			h.completeStart(generation, uid, demand, nil, nil, nil, true)
@@ -357,7 +356,7 @@ func (h *executionLifecycle) launch(uid string, demand, generation uint64, recov
 		}
 		if err == nil && handle != nil {
 			h.r.mu.Lock()
-			stale := h.r.closing || recovery && (h.r.intent == nil || h.r.intent.Mode != runtimepb.LifecycleIntent_RUNNING || h.r.intent.IncarnationUid != uid || h.r.intent.GetBinding().GetGeneration() != lossBinding)
+			stale := h.r.closing || recovery && (!h.r.admissionOpen || h.r.desired.Mode != lifecycle.Running || h.r.desired.IncarnationUID != uid || h.r.desired.Generation != lossBinding)
 			h.r.mu.Unlock()
 			latest, latestFound, readErr := cosi.Read(context.Background(), h.state, executionSignalResource(executionSignal{}))
 			if readErr != nil {
@@ -632,10 +631,10 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				current.Error = loss.Error
 			}
 			h.r.mu.Lock()
-			if h.r.intent == nil || h.r.intent.Mode != runtimepb.LifecycleIntent_RUNNING || h.r.intent.IncarnationUid != loss.UID {
+			if !h.r.admissionOpen || h.r.desired.Mode != lifecycle.Running || h.r.desired.IncarnationUID != loss.UID {
 				current.AwaitDemand = true
 			} else {
-				current.LossBinding = h.r.intent.GetBinding().GetGeneration()
+				current.LossBinding = h.r.desired.Generation
 			}
 			owner := h.r.executionOwner
 			if owner == nil || owner.uid != loss.UID {
@@ -665,7 +664,7 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				current.Phase, current.FencedGeneration = executionStopped, current.Generation
 				if current.Lost {
 					h.r.mu.Lock()
-					allowed := !h.r.closing && h.r.intent != nil && h.r.intent.Mode == runtimepb.LifecycleIntent_RUNNING && h.r.intent.IncarnationUid == current.UID && h.r.intent.GetBinding().GetGeneration() == current.LossBinding
+					allowed := !h.r.closing && h.r.admissionOpen && h.r.desired.Mode == lifecycle.Running && h.r.desired.IncarnationUID == current.UID && h.r.desired.Generation == current.LossBinding
 					h.r.mu.Unlock()
 					if !allowed {
 						current.AwaitDemand = true
@@ -719,7 +718,7 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		recovery := current.Lost && input.UID == current.UID && input.Demand == current.Demand
 		if recovery {
 			h.r.mu.Lock()
-			allowed := !h.r.closing && h.r.intent != nil && h.r.intent.Mode == runtimepb.LifecycleIntent_RUNNING && h.r.intent.IncarnationUid == input.UID && h.r.intent.GetBinding().GetGeneration() == current.LossBinding
+			allowed := !h.r.closing && h.r.admissionOpen && h.r.desired.Mode == lifecycle.Running && h.r.desired.IncarnationUID == input.UID && h.r.desired.Generation == current.LossBinding
 			h.r.mu.Unlock()
 			if !allowed {
 				// Quiescing or closing consumed this loss. A later RUNNING
