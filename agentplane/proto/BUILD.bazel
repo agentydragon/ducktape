@@ -197,10 +197,7 @@ ts_proto_library(
     node_modules = "//:node_modules",
     proto = ":session_proto",
     visibility = ["//visibility:public"],
-    deps = [
-        ":delegation_pb",
-        ":identity_pb",
-    ],
+    deps = [":identity_pb"],
 )
 
 proto_library(
@@ -262,10 +259,7 @@ go_proto_library(
     name = "session_go_proto",
     importpath = "github.com/agentydragon/ducktape/agentplane/proto/session",
     proto = ":session_proto",
-    deps = [
-        ":delegation_go_proto",
-        ":identity_go_proto",
-    ],
+    deps = [":identity_go_proto"],
 )
 
 go_proto_library(

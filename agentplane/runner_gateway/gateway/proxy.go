@@ -61,7 +61,7 @@ func (p *environmentRuntimeProxy) connection(ctx context.Context, allowSuspendin
 	if err != nil {
 		return nil, err
 	}
-	if view.incarnation == nil || !proto.Equal(&connection.identity, &view.identity) || connection.podUID != view.incarnation.UID {
+	if view.incarnation == nil || !proto.Equal(connection.identity, view.identity) || connection.podUID != view.incarnation.UID {
 		return nil, status.Error(codes.Unavailable, "runner connection belongs to another incarnation")
 	}
 	return connection, nil

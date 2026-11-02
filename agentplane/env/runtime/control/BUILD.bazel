@@ -78,7 +78,6 @@ go_proto_library(
     proto = ":environment_runtime_proto",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
-        "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:environment_runtime_state_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:identity_go_proto",

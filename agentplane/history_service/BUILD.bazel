@@ -220,7 +220,6 @@ go_proto_library(
     deps = [
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:identity_go_proto",
-        "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/proto:session_go_proto",
     ],
 )

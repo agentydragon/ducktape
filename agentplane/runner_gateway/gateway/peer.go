@@ -110,7 +110,7 @@ func (g *Gateway) validateRunnerDestination(ctx context.Context, expected runner
 	if err != nil {
 		return err
 	}
-	if !proto.Equal(&current.identity, &expected.identity) || current.podUID != expected.podUID || current.peerURI != expected.peerURI {
+	if !proto.Equal(current.identity, expected.identity) || current.podUID != expected.podUID || current.peerURI != expected.peerURI {
 		return status.Error(codes.PermissionDenied, "runner incarnation or credential changed")
 	}
 	return nil
