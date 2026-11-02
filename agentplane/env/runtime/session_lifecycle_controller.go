@@ -110,7 +110,10 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 	}
 	// Retained COSI records define the drain membership, including any Session
 	// whose live owner or status has not yet become available.
-	for _, id := range ids {
+	// Keep each valid observation for the later barriers in this reconciliation.
+	// Return on the first blocker before reading a later Session.
+	statuses := make([]session.LifecycleStatus, len(ids))
+	for i, id := range ids {
 		status, found, err := session.ReadLifecycleStatus(ctx, r, id)
 		if err != nil {
 			return err
@@ -143,23 +146,21 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			}
 			return write()
 		}
+		statuses[i] = status
 	}
 	if current.Stage < lifecycle.Stopping {
 		current.Stage = lifecycle.Stopping
 		current.Blocker = lifecycle.Blocker{}
-		if err := write(); err != nil {
-			return err
-		}
+		// Publishing Stopping wakes Session controllers. Reconcile again so
+		// subsequent barriers observe their response to this stage transition.
+		return write()
 	}
-	for _, id := range ids {
-		status, found, err := session.ReadLifecycleStatus(ctx, r, id)
-		if err != nil {
-			return err
-		}
-		if !found || status.EnvironmentGeneration != desiredState.Generation || !status.ProcessStopped {
+	for i, id := range ids {
+		status := statuses[i]
+		if !status.ProcessStopped {
 			current.Blocker = lifecycle.Blocker{
 				Kind: lifecycle.SessionProcessPending, ResourceType: session.LifecycleStatusType,
-				ResourceID: id, ProcessID: status.ProcessID, ResourcePresent: found,
+				ResourceID: id, ProcessID: status.ProcessID, ResourcePresent: true,
 			}
 			return write()
 		}
@@ -285,15 +286,12 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			current.Blocker = lifecycle.Blocker{}
 			return write()
 		}
-		for _, id := range ids {
-			status, found, err := session.ReadLifecycleStatus(ctx, r, id)
-			if err != nil {
-				return err
-			}
-			if !sessionSealComplete(status, found, desiredState) {
+		for i, id := range ids {
+			status := statuses[i]
+			if !sessionSealComplete(status, true, desiredState) {
 				current.Blocker = lifecycle.Blocker{
 					Kind: lifecycle.JournalSealPending, ResourceType: session.LifecycleStatusType,
-					ResourceID: id, ResourcePresent: found, JournalSealPresent: status.Sealed,
+					ResourceID: id, ResourcePresent: true, JournalSealPresent: status.Sealed,
 					JournalSealUID: status.SealUID, ExpectedJournalSealUID: desiredState.SealUID,
 					JournalSealCursor: status.SealCursor,
 				}
@@ -334,24 +332,17 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		return err
 	}
 	current.Stage = lifecycle.Flushing
-	for _, id := range ids {
-		status, found, err := session.ReadLifecycleStatus(ctx, r, id)
-		if err != nil {
-			return err
-		}
-		if !sessionDeliveryComplete(status, found, desiredState) {
-			currentGeneration := found && status.EnvironmentGeneration == desiredState.Generation
-			if !currentGeneration {
-				status = session.LifecycleStatus{}
-			}
+	for i, id := range ids {
+		status := statuses[i]
+		if !sessionDeliveryComplete(status, true, desiredState) {
 			current.Blocker = lifecycle.Blocker{
 				Kind: lifecycle.IngressAcknowledgementPending, ResourceType: retained.IngressAckType,
-				ResourceID: id, ResourcePresent: currentGeneration && status.AcknowledgementPresent,
-				JournalSealPresent: currentGeneration && status.Sealed,
+				ResourceID: id, ResourcePresent: status.AcknowledgementPresent,
+				JournalSealPresent: status.Sealed,
 				JournalSealUID:     status.SealUID, ExpectedJournalSealUID: desiredState.SealUID,
 				JournalSealCursor:      status.SealCursor,
-				AcknowledgementPresent: currentGeneration && status.AcknowledgementPresent,
-				AcknowledgementSealed:  currentGeneration && status.AcknowledgementSealed,
+				AcknowledgementPresent: status.AcknowledgementPresent,
+				AcknowledgementSealed:  status.AcknowledgementSealed,
 				AcknowledgementCursor:  status.AcknowledgementCursor,
 			}
 			return write()
