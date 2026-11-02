@@ -51,6 +51,14 @@ def chart(app: App) -> Chart:
     opentofu.secret_access(
         chart, "study-casino-secrets", identity=identity, namespace="study-casino", read=[], write=["study-casino-oidc"]
     )
+    opentofu.secret_access(
+        chart,
+        "quest-diagnostics-secrets",
+        identity=identity,
+        namespace="quest-diagnostics",
+        read=[],
+        write=["quest-diagnostics-oidc"],
+    )
     opentofu.gitops_workspace(
         chart,
         "workspace",
