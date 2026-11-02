@@ -337,7 +337,6 @@ class VisualHarness:
     @asynccontextmanager
     async def open(
         self,
-        name: str | None = None,
         *,
         viewport: Viewport | None = None,
         color_scheme: Literal["light", "dark"] = "light",
@@ -391,10 +390,9 @@ class VisualHarness:
             ) as view:
                 await fence.install(page)
                 if config.inline_page is None:
-                    parameters = query if query is not None else ({"page": name} if name is not None else {})
                     url = config.harness_url
-                    if parameters:
-                        url += f"?{urlencode(parameters)}"
+                    if query:
+                        url += f"?{urlencode(query)}"
                     await page.goto(url, wait_until="domcontentloaded")
                 else:
                     html = inline_page_html(
@@ -413,7 +411,7 @@ class VisualHarness:
                     yield view
                 except Exception:
                     # Prefer a recorded crash to a secondary timeout waiting for the crashed component.
-                    view.errors.assert_none(context=name or "visual page")
+                    view.errors.assert_none(context=self.case_id)
                     raise
                 else:
-                    await view.check(context=name or "visual page")
+                    await view.check(context=self.case_id)

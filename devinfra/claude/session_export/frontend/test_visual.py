@@ -31,7 +31,7 @@ OpenFixture = Callable[[str], AbstractAsyncContextManager[VisualPage]]
 def open_fixture(visual: VisualHarness, viewport: Viewport, color_scheme: Literal["light", "dark"]) -> OpenFixture:
     @asynccontextmanager
     async def open_scene(fixture_id: str) -> AsyncIterator[VisualPage]:
-        async with visual.open(fixture_id, viewport=viewport, color_scheme=color_scheme) as view:
+        async with visual.open(query={"page": fixture_id}, viewport=viewport, color_scheme=color_scheme) as view:
             await expect(view.page.locator("#app > *").first).to_be_attached()
             await view.check(context="fixture ready")
             yield view

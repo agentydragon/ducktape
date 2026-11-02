@@ -18,7 +18,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 async def view(
     visual: VisualHarness, viewport: Viewport, color_scheme: Literal["light", "dark"]
 ) -> AsyncIterator[VisualPage]:
-    async with visual.open("OAuthPage", viewport=viewport, color_scheme=color_scheme) as view:
+    async with visual.open(query={"page": "OAuthPage"}, viewport=viewport, color_scheme=color_scheme) as view:
         yield view
 
 

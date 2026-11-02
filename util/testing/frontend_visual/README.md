@@ -40,7 +40,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 async def test_details(visual: VisualHarness) -> None:
-    async with visual.open("example") as view:
+    async with visual.open() as view:
         await view.page.get_by_role("button", name="Details").click()
         panel = view.page.get_by_role("region", name="Details")
         await expect(panel).to_be_visible()
@@ -61,7 +61,7 @@ setup APIs, configure the mocks and mount the component from Python before asser
 readiness. Do not add a name-to-recipe registry just to open a page.
 
 `visual.open()` accepts browser geometry (`util/testing/frontend_visual/viewports.py`), color scheme,
-query parameters and an optional frozen instant. Inline harnesses use `window_globals`
+explicit query parameters and an optional frozen instant. Inline harnesses use `window_globals`
 instead of a query. The macro's `page_url` gives an inline document an origin for
 storage; `served_documents` supplies mock iframe documents.
 

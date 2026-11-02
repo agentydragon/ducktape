@@ -25,7 +25,6 @@ def open_fixture(visual: VisualHarness, color_scheme: Literal["light", "dark"]) 
     @asynccontextmanager
     async def open_scene(fixture_id: str, viewport: Viewport) -> AsyncIterator[VisualPage]:
         async with visual.open(
-            fixture_id,
             viewport=Viewport(width=viewport.width, height=viewport.height, device_scale_factor=2),
             color_scheme=color_scheme,
             window_globals={"__FIXTURE__": fixture_id, "__COLOR_SCHEME__": color_scheme},
