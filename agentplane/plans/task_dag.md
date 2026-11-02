@@ -612,7 +612,8 @@ before migrating each caller. Preserve caller authorization and test the backend
 The [eventual app/backend boundary](environment_app_backend_boundary.md) describes the remaining
 responsibilities in `app/go/sandboxes` and their separate ownership decisions. Those decisions do
 not gate completion of the Discovery cutover. Its [frontend Sandbox view TODO](environment_app_backend_boundary.md#todo-remove-the-redundant-frontend-sandbox-view)
-tracks replacing the production projection as the remaining callers migrate to generated contracts.
+tracks reconciling the overlapping inventory representations and migrating any remaining consumers
+to generated contracts.
 
 ### `SESSION_TOOL_SURFACE_CONVERGENCE_DESIGN` — review a common Agentplane tool surface
 
