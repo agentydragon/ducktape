@@ -53,9 +53,14 @@ the source base was `6d14473a8f0fdda01a7b4f226a2cf92bbece99d7` plus the experime
 ## Repair and follow-up
 
 Remove only untagged, unpinned CRI images not referenced by any existing container, before imports,
-after each replacement, and while the kubelet is stopped during a cold rebuild. Preserve tagged
+after imports adding new blobs, at group completion, and while the kubelet is stopped during a cold rebuild. Preserve tagged
 and digest-named caches, current pinned images, and container-used IDs. Verify removal by rereading
 the CRI inventory, tolerating another collector removing an ID concurrently but surfacing survivors.
 Keep filesystem, kubelet and image inventories in undeclared outputs so another failure retains
 the actual pressure signal and capacity. Follow recurrence after this change lands; do not infer
 fleet reliability from one controlled pair or from cached CI results.
+
+Sweeping after every cached import cost 8.51 seconds across 22 calls in Dispatcher and 12.00 seconds
+across 26 calls in MCP Actions in the [initial validation](https://app.buildbuddy.io/invocation/4aec62a2-89b2-4296-a4fe-b81ce4352e62).
+Group boundaries and new-blob imports select the sweeps; unchanged cached imports do not need an
+individual sweep because they do not grow the store.

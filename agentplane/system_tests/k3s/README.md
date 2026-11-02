@@ -10,7 +10,7 @@ containerd keeps unpacked image layers (its overlayfs snapshotter's root) on a t
 with VM Sandboxes ([measurements](debug/stack_timings.md#image-layers-in-memory-2026-10-21)).
 The stack pins its imported OCI images in containerd's CRI metadata. Kubelet image GC can otherwise
 delete an image before a later Sandbox uses it; these fixture-local tags cannot be pulled from a registry.
-Before imports and after each image replacement, the stack removes untagged, unpinned CRI images
+At import-group boundaries and after imports adding new blobs, the stack removes untagged, unpinned CRI images
 that no container uses. Named caches stay warm, including k3s's own images. Cleanup also runs with
 the kubelet stopped during a cold rebuild, before restored obsolete layers can trigger evictions
 while a fresh kubelet waits for its image-GC minimum age. See the

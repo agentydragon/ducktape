@@ -432,10 +432,15 @@ class K3s:
                     descriptor.setdefault("annotations", {})["org.opencontainers.image.ref.name"] = image
                 blobs = {blob.relative_to(layout).as_posix(): blob for blob in (layout / "blobs").glob("*/*")}
                 stored = self._stored_blobs()
-                self._import_layout(index["manifests"], {name: blobs[name] for name in blobs.keys() - stored})
+                missing = {name: blobs[name] for name in blobs.keys() - stored}
+                self._import_layout(index["manifests"], missing)
             # Retargeting a fixture tag leaves its old CRI config-ID alias behind. Reclaim it
-            # before another import grows the store; kubelet GC waits two minutes on fresh IDs.
-            self.prune_unused_images()
+            # when importing new blobs grows the store; unchanged cached imports need no sweep.
+            if missing:
+                self.prune_unused_images()
+        # Retargeting to a fully cached version can also leave an old alias, without growing
+        # the store during the group. Reclaim those aliases before yielding to the fixture.
+        self.prune_unused_images()
 
     def _stored_blobs(self) -> set[str]:
         """The OCI layout paths (`blobs/sha256/<hex>`) of the blobs containerd holds."""
