@@ -28,8 +28,11 @@ from finance.augur.model.conditioning import ExogenousObservedPoint, Observation
 from finance.augur.model.evidence import EvidenceMetadata, EvidenceMode
 from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries
 from finance.augur.model.series import SP500_KEY, HomeValueKey, InflationKey, LevelSeriesKey, LocationId, RentKey
-from finance.evidence.loading import evidence_dir_from_env, monthly_last, read_fred_series, require_positive_levels
+from finance.evidence.loading import evidence_dir_from_env, fred_series_frame, monthly_last, require_positive_levels
+from finance.evidence.snapshot import EvidenceSnapshot
 from finance.evidence.sources import FRED_CPI, FRED_MORTGAGE30, FRED_SF_RENT_CPI, FRED_SFXRSA, FRED_SP500
+
+_FRED_ONLY_EVIDENCE_SOURCES = (FRED_SP500, FRED_SFXRSA, FRED_SF_RENT_CPI, FRED_CPI, FRED_MORTGAGE30)
 
 
 def load_evidence(*, fred_only: bool = False) -> tuple[HistoricalSeries, ExogenousEvidence]:
@@ -88,11 +91,12 @@ def _evidence_fred_only() -> ExogenousEvidence:
         RentKey(location_id=LocationId("san_francisco_ca")),
         InflationKey(),
     )
-    sp500 = monthly_last(read_fred_series(evidence_dir_from_env(), FRED_SP500))
-    home = monthly_last(read_fred_series(evidence_dir_from_env(), FRED_SFXRSA))
-    rent = monthly_last(read_fred_series(evidence_dir_from_env(), FRED_SF_RENT_CPI))
-    cpi = monthly_last(read_fred_series(evidence_dir_from_env(), FRED_CPI))
-    mortgage = read_fred_series(evidence_dir_from_env(), FRED_MORTGAGE30)
+    snapshot = EvidenceSnapshot.capture(evidence_dir_from_env(), _FRED_ONLY_EVIDENCE_SOURCES)
+    sp500 = monthly_last(fred_series_frame(snapshot.source_bytes(FRED_SP500), FRED_SP500))
+    home = monthly_last(fred_series_frame(snapshot.source_bytes(FRED_SFXRSA), FRED_SFXRSA))
+    rent = monthly_last(fred_series_frame(snapshot.source_bytes(FRED_SF_RENT_CPI), FRED_SF_RENT_CPI))
+    cpi = monthly_last(fred_series_frame(snapshot.source_bytes(FRED_CPI), FRED_CPI))
+    mortgage = fred_series_frame(snapshot.source_bytes(FRED_MORTGAGE30), FRED_MORTGAGE30)
 
     aligned = _align_inner(
         {
@@ -145,6 +149,8 @@ def _evidence_fred_only() -> ExogenousEvidence:
         current_mortgage30_rate_pct=float(mortgage["value"].to_list()[-1]),
         latest_observations=latest_observations,
         metadata=metadata,
+        public_evidence_revision=snapshot.revision,
+        public_evidence_source_sha256=snapshot.source_hashes(),
     )
 
 
