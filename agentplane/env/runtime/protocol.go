@@ -201,6 +201,10 @@ func (r *Runtime) waitSessionStage(ctx context.Context, minimum lifecycle.Stage)
 }
 
 func (r *Runtime) waitForNativeStopped(ctx context.Context, generation uint64) error {
+	return r.waitForNativeStop(ctx, generation, false)
+}
+
+func (r *Runtime) waitForNativeStop(ctx context.Context, generation uint64, closing bool) error {
 	return r.waitForLifecycle(ctx, func() (bool, error) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
@@ -218,6 +222,9 @@ func (r *Runtime) waitForNativeStopped(ctx context.Context, generation uint64) e
 			if current.NativeStopped {
 				return true, nil
 			}
+		}
+		if closing {
+			return false, nil
 		}
 		return false, r.failureLocked()
 	})

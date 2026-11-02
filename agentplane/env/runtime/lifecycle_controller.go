@@ -28,12 +28,13 @@ type runtimeLifecycleController struct {
 }
 
 type closePlan struct {
-	generation      uint64
-	sealUID         string
-	sessionsStarted bool
-	sessionLossErr  error
-	fenceCtx        context.Context
-	cancelFence     context.CancelFunc
+	generation       uint64
+	sealUID          string
+	sessionsStarted  bool
+	sessionLossErr   error
+	nativeCleanupErr error
+	fenceCtx         context.Context
+	cancelFence      context.CancelFunc
 }
 
 type closeOperation struct {
@@ -186,6 +187,9 @@ func nextRuntimeCloseStage(stage lifecycle.RuntimeCloseStage) (lifecycle.Runtime
 	case lifecycle.RuntimeCloseExecutionFencing:
 		return lifecycle.RuntimeCloseHostFlushing, nil
 	case lifecycle.RuntimeCloseHostFlushing:
+		if p.nativeCleanupErr != nil {
+			return errors.Join(p.nativeCleanupErr, p.sessionLossErr)
+		}
 		return lifecycle.RuntimeCloseHostJoining, nil
 	case lifecycle.RuntimeCloseHostJoining:
 		return lifecycle.RuntimeCloseBootstrapSettling, nil
@@ -220,12 +224,16 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecyc
 		return c.prepare()
 	case lifecycle.RuntimeCloseNativeStopping:
 		if p.sessionsStarted {
-			return c.r.waitForNativeStopped(p.fenceCtx, p.generation)
+			p.nativeCleanupErr = c.r.waitForNativeStop(p.fenceCtx, p.generation, true)
+			return nil
 		}
 		return nil
 	case lifecycle.RuntimeCloseExecutionFencing:
 		return c.r.waitForExecutionFenced(p.fenceCtx, p.generation)
 	case lifecycle.RuntimeCloseHostFlushing:
+		if p.nativeCleanupErr != nil {
+			return errors.Join(p.nativeCleanupErr, p.sessionLossErr)
+		}
 		if p.sealUID != "" && p.sessionsStarted {
 			return c.r.waitSessionStage(p.fenceCtx, lifecycle.Quiesced)
 		}
@@ -256,6 +264,7 @@ func (c *runtimeLifecycleController) prepare() error {
 	}
 	c.plan.generation = r.desired.Generation
 	c.plan.sessionsStarted = r.sessions != nil
+	c.plan.sessionLossErr = r.failureLocked()
 	c.plan.sealUID = r.desired.SealUID
 	c.plan.fenceCtx, c.plan.cancelFence = context.WithTimeout(context.Background(), executionFenceGrace)
 	return nil
