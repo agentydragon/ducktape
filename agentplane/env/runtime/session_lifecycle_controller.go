@@ -21,7 +21,7 @@ type sessionLifecycleController struct{ runtime *Runtime }
 func (*sessionLifecycleController) Name() string { return sessionLifecycleControllerName }
 func (*sessionLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{lifecycle.EnvironmentDesiredStateType, executionSignalType, lifecycle.AdmissionCountType, session.OwnerStatusType, session.InspectionStatusType, session.LifecycleStatusType, journalSealType, retained.IngressAckType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
+	for _, kind := range []string{lifecycle.EnvironmentDesiredStateType, executionSignalType, lifecycle.AdmissionCountType, session.OwnerStatusType, session.InspectionStatusType, session.LifecycleStatusType, retained.IngressAckType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
 		inputs = append(inputs, controller.Input{Namespace: lifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -231,6 +231,8 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 	}
 	// Process exit can finish an outstanding inspection. Keep its journal and
 	// controller alive until the resulting observations have been committed.
+	// This pre-fence guard must not wait for Sealed: sealing itself requires the
+	// global native and Execution barriers below.
 	for _, s := range sessions {
 		input, found, err := session.ReadInspectionStatus(ctx, r, s.ID())
 		if err != nil {
@@ -283,15 +285,16 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 			return write()
 		}
 		for _, s := range sessions {
-			seal, found, err := lifecycleRead[journalSealSpec](ctx, r, s.ID())
+			status, found, err := session.ReadLifecycleStatus(ctx, r, s.ID())
 			if err != nil {
 				return err
 			}
-			if !found || !seal.Present || seal.IncarnationUID != desiredState.SealUID {
+			if !found || status.EnvironmentGeneration != desiredState.Generation || !status.Sealed || status.SealUID != desiredState.SealUID {
 				current.Blocker = lifecycle.Blocker{
-					Kind: lifecycle.JournalSealPending, ResourceType: journalSealType,
-					ResourceID: s.ID(), ResourcePresent: found, JournalSealPresent: seal.Present,
-					JournalSealUID: seal.IncarnationUID, ExpectedJournalSealUID: desiredState.SealUID,
+					Kind: lifecycle.JournalSealPending, ResourceType: session.LifecycleStatusType,
+					ResourceID: s.ID(), ResourcePresent: found, JournalSealPresent: status.Sealed,
+					JournalSealUID: status.SealUID, ExpectedJournalSealUID: desiredState.SealUID,
+					JournalSealCursor: status.SealCursor,
 				}
 				return write()
 			}
@@ -331,7 +334,7 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 	}
 	current.Stage = lifecycle.Flushing
 	for _, s := range sessions {
-		seal, sealFound, err := lifecycleRead[journalSealSpec](ctx, r, s.ID())
+		status, sealFound, err := session.ReadLifecycleStatus(ctx, r, s.ID())
 		if err != nil {
 			return err
 		}
@@ -339,12 +342,12 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		if err != nil {
 			return err
 		}
-		if !ackFound || !ack.Sealed || ack.Cursor != seal.Cursor {
+		if !sealFound || status.EnvironmentGeneration != desiredState.Generation || !status.Sealed || status.SealUID != desiredState.SealUID || !ackFound || !ack.Sealed || ack.Cursor != status.SealCursor {
 			current.Blocker = lifecycle.Blocker{
 				Kind: lifecycle.IngressAcknowledgementPending, ResourceType: retained.IngressAckType,
-				ResourceID: s.ID(), ResourcePresent: ackFound, JournalSealPresent: sealFound && seal.Present,
-				JournalSealUID: seal.IncarnationUID, ExpectedJournalSealUID: desiredState.SealUID,
-				JournalSealCursor: seal.Cursor, AcknowledgementPresent: ackFound,
+				ResourceID: s.ID(), ResourcePresent: ackFound, JournalSealPresent: sealFound && status.Sealed,
+				JournalSealUID: status.SealUID, ExpectedJournalSealUID: desiredState.SealUID,
+				JournalSealCursor: status.SealCursor, AcknowledgementPresent: ackFound,
 				AcknowledgementSealed: ack.Sealed, AcknowledgementCursor: ack.Cursor,
 			}
 			return write()
