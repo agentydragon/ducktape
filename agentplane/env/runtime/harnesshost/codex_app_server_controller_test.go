@@ -61,7 +61,7 @@ func (h *executionHealth) set(serving bool, err error) {
 	h.revision++
 	revision := h.revision
 	h.mu.Unlock()
-	if err := publishLifecycle(h.runner.lifecycle, "embedded-execution", executionHealthEvent{Revision: revision}); err != nil {
+	if err := publishLifecycle(h.runner.lifecycle, runnerlifecycle.ExecutionResourceID, executionHealthEvent{Revision: revision}); err != nil {
 		h.t.Fatalf("publish execution status: %v", err)
 	}
 }
