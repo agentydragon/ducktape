@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codex"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/harness"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -164,7 +165,7 @@ func TestConcurrentConfigurationOutcomesFollowJournalOrder(t *testing.T) {
 	}
 }
 
-func TestCodexTurnResponseUsesConfirmedModelWithinBatch(t *testing.T) {
+func TestCodexRecoveredTurnResponseUsesConfirmedModelWithinBatch(t *testing.T) {
 	ctx, root, _, store, manager := newSessionTestManager(t, nil, func(string) string { return "destination" })
 	s := reserveTestSession(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
 	for _, command := range []*commandpb.Command{
@@ -181,13 +182,11 @@ func TestCodexTurnResponseUsesConfirmedModelWithinBatch(t *testing.T) {
 	if err := s.journal.RecordNativeRequest(ctx, "request", harness.CodexTurnStart, []string{"input", "model"}); err != nil {
 		t.Fatal(err)
 	}
-	adapter := codex.New(s)
-	if err := adapter.(harness.RecoveryAdapter).Recover(ctx); err != nil {
+	if err := s.Emit(ctx, observation(&eventpb.Native{Direction: eventpb.Direction_DIRECTION_FROM_HARNESS, Line: `{"id":"request","result":{"turn":{"id":"turn"}}}`}), nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.journal.WithBatch(ctx, func(ctx context.Context) error {
-		return s.receive(ctx, []byte(`{"id":"request","result":{"turn":{"id":"turn"}}}`), adapter)
-	}); err != nil {
+	adapter := codex.New(s)
+	if err := s.journal.WithBatch(ctx, adapter.(harness.RecoveryAdapter).Recover); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := s.journal.Since(ctx, 2, 10)
