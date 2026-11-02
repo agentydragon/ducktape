@@ -14,9 +14,9 @@ environment, attaches a Session or grants authorization.
 - Methods admit a direct TokenReview-verified ServiceAccount or an explicitly configured
   Actions delegation using the Runner Gateway's existing Dispatcher audience and served namespace
   set. `ListEnvironments`, `GetEnvironment`, `WatchEnvironment`, and `WatchEnvironments` may be
-  added to the Gateway's exact delegated method list. `ResumeEnvironment` requires its own explicit
-  method opt-in and independently authorizes through the lifecycle manager; read opt-ins do not
-  grant Dispatcher writes or Gateway proxy methods.
+  added to the Gateway's exact delegated method list. `ResumeEnvironment` is separately authorized
+  through the lifecycle manager; these methods do not grant Dispatcher writes or Gateway proxy
+  methods.
 - The handler obtains the admitted effective caller from shared workload authentication and requires
   a complete ServiceAccount identity, including its UID. Direct calls retain their existing
   reviewed-account path.
@@ -91,9 +91,8 @@ the stream; a successful review leaves it open. A stalled send is bounded by fiv
   against its exact live ServiceAccount identity, the Sandbox `resumePolicy`, and applicable direct
   operator authority. It is independent of automatic wake-on-send policy. Deleting environments
   remain visible to broad readers without explicit-resume eligibility or a resume token.
-- The legacy `resume` field continues to report the current automatic-wake allowlist projection.
-  The catalog-backed DeliveryWorker keeps its existing wake behavior until a separate manager
-  integration.
+- Automatic wake eligibility remains a separate assessment using `wakeOnSend` and the configured
+  wake-caller policy.
 - The descriptor's wake generation and opaque resume token bind an ordinary resume precondition to
   the observed Sandbox UID and generation. The token is not authority; the manager rechecks current
   identity, policy and state at mutation time.
@@ -118,6 +117,17 @@ Broad readers can continue namespace pages; their grant permits seeing all names
 Malformed requests and nonempty cursors from ordinary callers fail `INVALID_ARGUMENT`. Object authorization failures fail
 `NOT_FOUND`. Kubernetes reads for the exact candidate or its live ownership fail closed with
 `UNAVAILABLE` rather than returning partial facts.
+
+## CLI
+
+- `agentplane environments list [--limit N] [--after TOKEN]`
+- `agentplane environments get NAMESPACE NAME UID`
+- `agentplane environments resume NAMESPACE NAME UID --resume-token TOKEN`
+
+All use the existing `AGENTPLANE_SESSIONS_URL` / `AGENTPLANE_SESSIONS_CREDENTIAL` connection. A
+resume response is acceptance, not readiness, and an uncertain reply is never retried automatically.
+Reconcile current readiness and any uncertain effect before opening a new Session or submitting
+input. CLI and Action/MCP wait adapters over `WatchEnvironment` remain follow-up work.
 
 ## Resume and ownership
 

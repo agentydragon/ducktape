@@ -36,7 +36,6 @@ type Service struct {
 	sandboxes              *sandboxreader.Reader
 	runtime                runtimeconfig.Catalog
 	lifecycle              *lifecycle.Manager
-	wakeCallers            map[auth.Account]struct{}
 	readers                map[auth.Account]struct{}
 	collectionAuthInterval time.Duration
 }
@@ -46,7 +45,6 @@ func New(
 	objects client.WithWatch,
 	runtime runtimeconfig.Catalog,
 	lifecycleManager *lifecycle.Manager,
-	wakeCallers map[auth.Account]struct{},
 	readers map[auth.Account]struct{},
 ) (*Service, error) {
 	if namespace == "" || objects == nil || lifecycleManager == nil {
@@ -56,15 +54,7 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	wake := make(map[auth.Account]struct{}, len(wakeCallers))
-	for account := range wakeCallers {
-		wake[account] = struct{}{}
-	}
-	return &Service{
-		namespace: namespace, objects: objects, sandboxes: sandboxes, runtime: runtime,
-		lifecycle: lifecycleManager, wakeCallers: wake, readers: readers,
-		collectionAuthInterval: auth.DefaultVerdictTTL,
-	}, nil
+	return &Service{namespace: namespace, objects: objects, sandboxes: sandboxes, runtime: runtime, lifecycle: lifecycleManager, readers: readers, collectionAuthInterval: auth.DefaultVerdictTTL}, nil
 }
 
 // Methods admits direct TokenReview-verified ServiceAccounts in the configured Resolver namespaces.
@@ -274,11 +264,6 @@ func (s *Service) describe(
 	case api.OperatingModeSuspended:
 		mode = environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED
 		resume = environmentpb.ResumeState_RESUME_STATE_NOT_AVAILABLE
-		_, callerCanWake := s.wakeCallers[caller.Account]
-		if object.Status.StopStage != api.StopStageQuiescing && object.Status.StopStage != api.StopStageDeleting &&
-			object.Spec.WakeOnSend && callerCanWake {
-			resume = environmentpb.ResumeState_RESUME_STATE_AVAILABLE
-		}
 	}
 	target := lifecycle.Target{Namespace: object.Namespace, Name: object.Name, UID: string(object.UID)}
 	var eligibility *environmentlifecyclepb.ResumeEligibility
@@ -288,6 +273,19 @@ func (s *Service) describe(
 		eligibility, generation, err = s.lifecycle.Eligibility(ctx, target)
 		if err != nil {
 			return nil, err
+		}
+		if object.Status.OperatingMode == api.OperatingModeSuspended {
+			wake, err := s.lifecycle.AssessAutomaticWake(ctx, target, lifecycle.ServiceAccount{
+				Namespace: caller.Account.Namespace,
+				Name:      caller.Account.Name,
+				UID:       caller.ServiceAccountUID,
+			})
+			if err != nil {
+				return nil, status.Error(codes.Unavailable, "automatic wake eligibility is unavailable")
+			}
+			if wake.GetState() == environmentlifecyclepb.WakeState_WAKE_STATE_ELIGIBLE {
+				resume = environmentpb.ResumeState_RESUME_STATE_AVAILABLE
+			}
 		}
 	}
 	descriptor := &environmentpb.EnvironmentDescriptor{
