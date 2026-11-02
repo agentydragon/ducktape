@@ -4,8 +4,8 @@ import (
 	"errors"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/ingress"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/ingress"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 )
 
 // Startup recovers durable Session state before Runtime starts History delivery

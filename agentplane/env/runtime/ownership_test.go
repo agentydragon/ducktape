@@ -14,7 +14,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/harness"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 )
 
 const ownershipFixtureMode = "--test-runtime-ownership-fixture"

@@ -4,7 +4,7 @@ import (
 	"context"
 	"sort"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"

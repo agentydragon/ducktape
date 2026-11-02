@@ -102,7 +102,7 @@ py_library(
     ],
     deps = [
         ":sandbox_models",
-        "//agentplane/env/runtime/harnesshost:harness",
+        "//agentplane/env/runtime:harness",
         "@pypi//pydantic",
     ],
 )

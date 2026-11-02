@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 )
 
 func configurationFixture(t *testing.T) (map[string]any, string, string) {

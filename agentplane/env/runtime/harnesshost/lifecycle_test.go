@@ -17,8 +17,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"

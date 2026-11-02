@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"

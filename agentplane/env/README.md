@@ -20,7 +20,7 @@ owns Sessions, harnesses and journals; Execution owns the native exec-server and
 
 Shared process machinery is in `env/runtime/supervision`; one-shot operation bookkeeping is in
 `env/oneoff`, shell execution in `env/scripts`, and Go deployment parsing in `env/configuration`.
-Host owns workspace containment and helpers in `env/runtime/harnesshost/workspace`. The `env/e2e/` contains cross-service integration tests; image and VM packaging lives in `env/images/`.
+Host owns workspace containment and helpers in `env/runtime/workspace`. The `env/e2e/` contains cross-service integration tests; image and VM packaging lives in `env/images/`.
 
 Runtime constructs Host from the same `--config` and `--launch-file` and coordinates its lifecycle
 and Session calls directly in the process. Production Pod Runtime is PID1 and Host shares its reaper.

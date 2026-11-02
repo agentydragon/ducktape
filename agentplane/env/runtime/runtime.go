@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,15 +14,18 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/bootstrap"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
@@ -41,20 +45,25 @@ const (
 	HostScopeID     supervision.SystemdScopeID = "harness-host"
 )
 
-// Config contains the resolved environment and embedded Host configuration.
+// Config contains the resolved environment configuration.
 type Config struct {
-	Control            configuration.EnvironmentRuntimeControlConfiguration
-	StateDir           string
-	Launch             configuration.SandboxLaunch
-	Supervision        string
-	PodPID1            bool
-	VMProcessLauncher  *supervision.SystemdLauncher
-	CodexExecServer    *codexexecserver.Config
-	CodexBinary        string
-	HarnessEnvironment map[string]string
-	InitializationCwd  string
-	HostConfig         harnesshost.Config
-	HostIngress        configuration.Endpoint
+	Control                     configuration.EnvironmentRuntimeControlConfiguration
+	StateDir                    string
+	Launch                      configuration.SandboxLaunch
+	Supervision                 string
+	PodPID1                     bool
+	VMProcessLauncher           *supervision.SystemdLauncher
+	CodexExecServer             *codexexecserver.Config
+	CodexBinary                 string
+	HarnessEnvironment          map[string]string
+	InitializationCwd           string
+	SessionReconcileConcurrency int
+	Claude, Codex               *harness.LaunchConfig
+	CodexAppServerReadiness     codexappserver.Readiness
+	WorkspaceRoot               string
+	DebugCheckpoint             *session.DebugCheckpointConfig
+	HTTPClient                  *http.Client
+	HistoryIngress              configuration.Endpoint
 }
 
 type childExit struct {

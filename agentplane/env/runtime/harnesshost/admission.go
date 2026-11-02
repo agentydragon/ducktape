@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/journal"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/workspace"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"

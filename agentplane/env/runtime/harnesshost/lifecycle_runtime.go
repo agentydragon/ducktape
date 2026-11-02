@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"

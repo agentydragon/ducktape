@@ -10,7 +10,7 @@ go_binary(
         "//agentplane/env/configuration",
         "//agentplane/env/runtime",
         "//agentplane/env/runtime/harnesshost",
-        "//agentplane/env/runtime/harnesshost/workspace",
+        "//agentplane/env/runtime/workspace",
         "//agentplane/env/runtime/supervision",
         "//agentplane/observability",
         "@io_opentelemetry_go_otel//attribute",

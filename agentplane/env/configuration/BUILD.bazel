@@ -12,9 +12,9 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/env/configuration",
     deps = [
         "//agentplane/env/runtime/execution/codexexecserver",
-        "//agentplane/env/runtime/harnesshost/codexappserver",
-        "//agentplane/env/runtime/harnesshost/harness",
-        "//agentplane/env/runtime/harnesshost/session",
+        "//agentplane/env/runtime/codexappserver",
+        "//agentplane/env/runtime/harness",
+        "//agentplane/env/runtime/session",
         "//agentplane/env/runtime/supervision",
         "//agentplane/environment_runtime_transport",
         "//agentplane/session_instructions",
@@ -34,7 +34,7 @@ go_test(
     race = "on",
     deps = [
         "//agentplane/env/runtime/execution/codexexecserver",
-        "//agentplane/env/runtime/harnesshost/codexappserver",
+        "//agentplane/env/runtime/codexappserver",
         "@io_bazel_rules_go//go/runfiles",
     ],
 )

@@ -11,9 +11,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	runtime "github.com/agentydragon/ducktape/agentplane/env/runtime"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/workspace"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
@@ -122,15 +121,10 @@ func runService(ctx context.Context, args []string) error {
 		Supervision: settings.Supervision, PodPID1: settings.PodPID1, VMProcessLauncher: settings.VMProcessLauncher,
 		CodexExecServer: settings.CodexExecServer, CodexBinary: codexBinary,
 		HarnessEnvironment: settings.HarnessEnvironment, InitializationCwd: settings.InitializationCwd,
-		HostIngress: ingress,
-		HostConfig: harnesshost.Config{
-			StateDir: settings.StateDir, SessionReconcileConcurrency: settings.SessionReconcileConcurrency,
-			Launch: settings.Launch, HarnessEnvironment: settings.HarnessEnvironment,
-			Claude: settings.Claude, Codex: settings.Codex, VMProcessLauncher: settings.VMProcessLauncher,
-			CodexAppServerReadiness: settings.CodexAppServerReadiness,
-			WorkspaceRoot:           settings.WorkspaceRoot, InitializationCwd: settings.InitializationCwd,
-			DebugCheckpoint: settings.DebugCheckpoint,
-		},
+		HistoryIngress: ingress, SessionReconcileConcurrency: settings.SessionReconcileConcurrency,
+		Claude: settings.Claude, Codex: settings.Codex,
+		CodexAppServerReadiness: settings.CodexAppServerReadiness,
+		WorkspaceRoot:           settings.WorkspaceRoot, DebugCheckpoint: settings.DebugCheckpoint,
 	})
 	if err != nil {
 		return err

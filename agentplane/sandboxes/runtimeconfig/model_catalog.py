@@ -6,7 +6,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from agentplane.env.runtime.harnesshost.harness import Harness
+from agentplane.env.runtime.harness import Harness
 
 
 class Provenance(StrEnum):

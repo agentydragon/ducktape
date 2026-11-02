@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/harness"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )

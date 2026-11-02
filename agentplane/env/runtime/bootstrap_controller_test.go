@@ -13,7 +13,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	"github.com/cosi-project/runtime/pkg/resource"

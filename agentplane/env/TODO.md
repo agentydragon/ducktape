@@ -190,7 +190,7 @@ the supported harnesses and model routes before replacing their defaults.
 
 The [native interrupted-turn test](../native/claude/test_turns.py) waits for the interrupt marker to
 persist; it does not establish the no-flush case or the Harness Host's reconciliation result. Compare
-those boundaries against `runtime/harnesshost/claude/history.go` and `adapter.go` with real-binary tests;
+those boundaries against `runtime/claude/history.go` and `adapter.go` with real-binary tests;
 retain unknown results when the transcript does not prove what survived.
 
 ## Reconcile conversations that were compacted

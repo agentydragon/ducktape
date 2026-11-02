@@ -109,8 +109,8 @@ def assert_vm_process_trace_contract(output_dir: Path) -> None:
         {
             "agentplane.env.runtime.control.EnvironmentRuntime/OpenSession",
             "Environment Runtime OpenSession",
-            "agentplane.env.runtime.harnesshost.harness.start",
-            "agentplane.env.runtime.harnesshost.harness.handshake",
+            "agentplane.env.runtime.harness.start",
+            "agentplane.env.runtime.harness.handshake",
         },
         "VM",
     )

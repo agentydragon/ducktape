@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/harness"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"go.uber.org/zap"
 )

@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/workspace"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 )
 
