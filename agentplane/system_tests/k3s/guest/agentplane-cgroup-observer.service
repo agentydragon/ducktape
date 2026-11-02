@@ -1,5 +1,6 @@
 [Unit]
 Description=Publish read-only cgroup evidence for VM tests
+ConditionKernelCommandLine=agentplane.cgroup-observer=1
 After=agentplane-guest-prepare.service
 Requires=agentplane-guest-prepare.service
 Before=agentplane-environment-runtime.service

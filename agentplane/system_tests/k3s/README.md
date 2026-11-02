@@ -251,8 +251,11 @@ native command item with that exit code; the turn itself completes normally. Run
 and app-server process identity/PID stay unchanged before and after the OOM and a successful
 follow-up turn. That command runs in the same executor leaf and reports exit zero. Evidence goes
 to `test.outputs/vm-codex-oom.json`, alongside the guest console and scripted upstream requests.
-The test guest runs a root observer outside the execution slices to publish read-only snapshots of
-executor limits and OOM counters. Tool processes retain production's UID and cgroup permissions.
+The OOM template explicitly sets `agentplane.cgroup-observer=1`, starting a root observer outside
+the execution slices to publish read-only snapshots of executor limits and OOM counters. Other
+guests retain the observer unit for the unprivileged restart-denial check without starting its
+polling process ([native CPU evidence](../debug/vm_observer_scope.md)). Tool processes retain
+production's UID and cgroup permissions.
 The executor aggregate's hierarchical OOM counter proves the constrained subtree, while the leaf's
 victim counter proves the single kill: either the aggregate or leaf limit can trigger first.
 This exercises the test guest's kernel, shared production systemd units, and production Runner/Codex
