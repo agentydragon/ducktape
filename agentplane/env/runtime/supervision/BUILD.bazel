@@ -51,6 +51,7 @@ go_test(
     exec_properties = {"test.dockerUser": "0:0"},
     race = "on",
     deps = [
+        "//agentplane/env/runtime/lifecycle",
         "@com_github_cosi_project_runtime//pkg/controller",
         "@com_github_cosi_project_runtime//pkg/controller/runtime",
         "@com_github_cosi_project_runtime//pkg/resource",
