@@ -77,11 +77,13 @@ function timestamp(value: string): string {
 
 export function NotificationStatus({
   sandbox,
+  sandboxUID,
   sessionId,
   opened,
   onClose,
 }: {
   sandbox: string;
+  sandboxUID: string | null;
   sessionId?: string;
   opened: boolean;
   onClose: () => void;
@@ -92,22 +94,29 @@ export function NotificationStatus({
   const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
   useEffect(() => {
     if (!opened) return;
+    if (!sandboxUID) {
+      setError("The Sandbox identity is unavailable.");
+      return;
+    }
     setData(null);
     setError(null);
-    return followStream(`/sandboxes/${encodeURIComponent(sandbox)}/notifications/stream`, {
-      events: {
-        snapshot: (message) => {
-          try {
-            setData(JSON.parse(message.data) as SandboxNotificationStatus);
-            setError(null);
-          } catch {
-            setError("Invalid notification status snapshot");
-          }
+    return followStream(
+      `/sandboxes/${encodeURIComponent(sandbox)}/notifications/stream?sandbox_uid=${encodeURIComponent(sandboxUID)}`,
+      {
+        events: {
+          snapshot: (message) => {
+            try {
+              setData(JSON.parse(message.data) as SandboxNotificationStatus);
+              setError(null);
+            } catch {
+              setError("Invalid notification status snapshot");
+            }
+          },
         },
-      },
-      onConnection: setConnection,
-    });
-  }, [opened, sandbox]);
+        onConnection: setConnection,
+      }
+    );
+  }, [opened, sandbox, sandboxUID]);
   const observedAt = data?.observedAt;
   const inboxes =
     data?.inboxes

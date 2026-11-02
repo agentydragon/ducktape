@@ -172,9 +172,9 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
     )
     assert "POD_MTLS_OK" in "\n".join(turn.tool_outputs)
 
-    await client.suspend_sandbox(view.target.name, uid=view.target.uid)
+    await client.suspend_sandbox(view.target)
     await _wait_suspended(client, view.target)
-    await client.resume_sandbox(view.target.name, uid=view.target.uid)
+    await client.resume_sandbox(view.target)
     resumed = await wait_until_running(client, view.target)
     assert resumed.target.uid == view.target.uid
     assert resumed.HasField("pod")

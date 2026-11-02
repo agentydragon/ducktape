@@ -29,7 +29,7 @@ message CreateSandboxRequest {
   reserved 3, 4, 5, 6;
   reserved "egress_policies", "action_policy_sets", "kubernetes_grants", "session_defaults";
   string bootstrap = 7;
-  // PolicySet names to bind, beside the app's defaults.
+  // PolicySet names to bind, beside the EnvironmentService defaults.
   repeated string policy_sets = 8;
   // The app's preset this Sandbox was made from, recorded as a label; the controller never resolves it.
   optional string preset = 9;
@@ -39,6 +39,15 @@ message CreateSandboxRequest {
   google.protobuf.Duration idle_suspend_after = 11;
   // The Sandbox's initial `spec.inboxTags`.
   repeated string inbox_tags = 12;
+  // Present only for an authorized Action Service launch. This is part of the idempotent
+  // creation intent; the Action Service separately owns the resulting launcher policy grants.
+  SandboxLaunchOrigin launch_origin = 13;
+}
+
+message SandboxLaunchOrigin {
+  ServiceAccount caller = 1;
+  string action_group = 2;
+  repeated string launcher_grants = 3;
 }
 
 message SandboxBinding {

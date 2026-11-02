@@ -1,8 +1,20 @@
 import { create, fromJson, toJson, type JsonObject } from "@bufbuild/protobuf";
-import { ValueSchema } from "@bufbuild/protobuf/wkt";
+import { DurationSchema, ValueSchema } from "@bufbuild/protobuf/wkt";
 
 import type { components } from "../schema";
-import { api, ok, fetchWithLogin, HttpError } from "../client";
+import { fetchWithLogin, HttpError } from "../client";
+import { CreateSandboxRequestSchema, type CreateSandboxRequest } from "../../../proto/sandboxes_pb";
+import {
+  EnvironmentMutationRequestSchema,
+  ListEnvironmentTemplatesResponseSchema,
+  ResumeEnvironmentRequestSchema,
+  ResumeEnvironmentResponseSchema,
+  ResumeOutcome,
+  SetEnvironmentIdleSuspendRequestSchema,
+  SetEnvironmentWakeOnSendRequestSchema,
+  TargetHandleSchema,
+  type TargetHandle,
+} from "../../../sandboxes/environments/environment_service_pb";
 import {
   EnvironmentRuntimeStatusSchema,
   SessionSpecSchema,
@@ -131,7 +143,90 @@ export async function getEnvironmentRuntimeStatus(
   return fromJson(EnvironmentRuntimeStatusSchema, body as JsonObject);
 }
 
-/** Asks for the Sandbox to run; the watch behind the live streams brings back the change. */
-export async function resumeSandbox(name: string, uid: string): Promise<void> {
-  ok(await api.POST("/sandboxes/{name}/resume", { params: { path: { name } }, body: { uid } }));
+const environmentPath = (target: TargetHandle): string =>
+  `/upstream/environments/v1/environments/${encodeURIComponent(target.namespace)}/${encodeURIComponent(target.name)}`;
+
+async function environmentJSON(path: string, init?: RequestInit): Promise<JsonObject> {
+  const response = await fetchWithLogin(path, init);
+  const body: unknown = await response.json();
+  if (!response.ok) throw new HttpError(response, body);
+  if (typeof body !== "object" || body === null || Array.isArray(body))
+    throw new Error("Invalid EnvironmentService response");
+  return body as JsonObject;
+}
+
+function environmentPost(method: string, body: JsonObject): RequestInit {
+  return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+}
+
+export async function listEnvironmentTemplates(): Promise<string[]> {
+  return fromJson(
+    ListEnvironmentTemplatesResponseSchema,
+    await environmentJSON("/upstream/environments/v1/environment-templates")
+  ).names;
+}
+
+export async function createEnvironment(request: CreateSandboxRequest): Promise<TargetHandle> {
+  const body = toJson(CreateSandboxRequestSchema, request) as JsonObject;
+  const target = fromJson(
+    TargetHandleSchema,
+    await environmentJSON("/upstream/environments/v1/environments", environmentPost("POST", body))
+  );
+  if (!target.namespace || !target.uid || target.name !== request.name)
+    throw new Error("EnvironmentService returned an invalid created target");
+  return target;
+}
+
+export async function suspendEnvironment(target: TargetHandle): Promise<void> {
+  const request = create(EnvironmentMutationRequestSchema, { target });
+  await environmentJSON(
+    `${environmentPath(target)}:suspend`,
+    environmentPost("POST", toJson(EnvironmentMutationRequestSchema, request) as JsonObject)
+  );
+}
+
+export async function resumeSandbox(target: TargetHandle): Promise<void> {
+  const request = create(ResumeEnvironmentRequestSchema, { target });
+  const response = fromJson(
+    ResumeEnvironmentResponseSchema,
+    await environmentJSON(
+      `${environmentPath(target)}:resume`,
+      environmentPost("POST", toJson(ResumeEnvironmentRequestSchema, request) as JsonObject)
+    )
+  );
+  if (
+    response.target?.namespace !== target.namespace ||
+    response.target.name !== target.name ||
+    response.target.uid !== target.uid
+  )
+    throw new Error("EnvironmentService returned a different target");
+  if (response.outcome === ResumeOutcome.STATE_CHANGED)
+    throw new Error("Environment state changed; refresh and try again");
+  if (response.outcome !== ResumeOutcome.REQUESTED && response.outcome !== ResumeOutcome.ALREADY_RUNNING)
+    throw new Error("EnvironmentService returned no resume outcome");
+}
+
+export async function deleteEnvironment(target: TargetHandle): Promise<void> {
+  await environmentJSON(`${environmentPath(target)}?target.uid=${encodeURIComponent(target.uid)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function setEnvironmentWakeOnSend(target: TargetHandle, wakeOnSend: boolean): Promise<void> {
+  const request = create(SetEnvironmentWakeOnSendRequestSchema, { target, wakeOnSend });
+  await environmentJSON(
+    `${environmentPath(target)}:wake-policy`,
+    environmentPost("PATCH", toJson(SetEnvironmentWakeOnSendRequestSchema, request) as JsonObject)
+  );
+}
+
+export async function setEnvironmentIdleSuspend(target: TargetHandle, seconds: number | null): Promise<void> {
+  const request = create(SetEnvironmentIdleSuspendRequestSchema, {
+    target,
+    idleSuspendAfter: seconds === null ? undefined : create(DurationSchema, { seconds: BigInt(seconds) }),
+  });
+  await environmentJSON(
+    `${environmentPath(target)}:idle-suspend`,
+    environmentPost("PATCH", toJson(SetEnvironmentIdleSuspendRequestSchema, request) as JsonObject)
+  );
 }

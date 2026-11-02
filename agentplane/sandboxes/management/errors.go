@@ -1,4 +1,4 @@
-package sandboxes
+package management
 
 import "fmt"
 
@@ -51,6 +51,13 @@ func (e *SandboxQuiescingError) Error() string {
 type UnknownPolicySetError struct {
 	Names []string
 	Kind  string
+}
+
+// LauncherPolicySetError identifies policy sets owned by another Sandbox's launcher.
+type LauncherPolicySetError struct{ Names []string }
+
+func (e *LauncherPolicySetError) Error() string {
+	return fmt.Sprintf("PolicySets %s are other Sandboxes' launcher grants", joinNames(e.Names))
 }
 
 func (e *UnknownPolicySetError) Error() string {

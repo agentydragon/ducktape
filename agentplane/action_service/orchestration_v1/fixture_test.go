@@ -18,19 +18,44 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/environments"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
+	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+type launchTokenReview struct{ namespace string }
+
+func (r launchTokenReview) Create(_ context.Context, request *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
+	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
+		Authenticated: request.Spec.Token == "action-fixture-token", Audiences: request.Spec.Audiences,
+		User: authenticationv1.UserInfo{
+			Username: "system:serviceaccount:" + r.namespace + ":actions", UID: "actions-uid",
+			Extra: map[string]authenticationv1.ExtraValue{"authentication.kubernetes.io/pod-name": {"actions-pod"}, "authentication.kubernetes.io/pod-uid": {"actions-pod-uid"}},
+		},
+	}}, nil
+}
+
+type unusedWakeBudget struct{}
+
+func (unusedWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.ServiceAccount, string, int64) (time.Duration, error) {
+	return 0, nil
+}
 
 const (
 	testGroup         = "test-orchestration"
@@ -55,7 +80,7 @@ func TestMain(m *testing.M) {
 	os.Exit(kubeapiserver.Run(m, func(started *kubeapiserver.Server) error {
 		server = started
 		scheme := runtime.NewScheme()
-		for _, add := range []func(*runtime.Scheme) error{sandboxapi.AddToScheme, policyapi.AddToScheme} {
+		for _, add := range []func(*runtime.Scheme) error{sandboxapi.AddToScheme, policyapi.AddToScheme, corev1.AddToScheme} {
 			if err := add(scheme); err != nil {
 				return err
 			}
@@ -96,10 +121,30 @@ func newFixture(t *testing.T) fixture {
 	}
 	dispatcher := &recordingDispatcher{openings: map[string]*dispatcherpb.SessionOpening{}}
 	history := &fakeHistory{summaries: map[string]*historypb.SessionSummary{}}
+	objects, err := client.NewWithWatch(server.Config, client.Options{Scheme: kube.Scheme()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := lifecycle.NewManager(lifecycle.Options{Namespace: namespace, Objects: objects, WakeBudget: unusedWakeBudget{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := environments.New(namespace, objects, runtimeconfig.Catalog{}, manager, nil, environments.ManagementOptions{
+		Launchers: map[auth.Account]struct{}{{Namespace: namespace, Name: "actions"}: {}}, DefaultPolicySets: []string{testDefaultPolicy},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, err := auth.NewResolver(launchTokenReview{namespace}, "environment-test", []string{namespace}, auth.WithVerdictTTL(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods := environments.Methods(resolver)
+	environment := environmentpb.NewEnvironmentServiceClient(serve(t, func(s *grpc.Server) { environmentpb.RegisterEnvironmentServiceServer(s, service) }, methods.ServerOptions(0)...))
 	executor, err := NewExecutor(testGroup, catalog.OrchestrationBinding{
-		Description: "test orchestration", Namespace: namespace, DefaultPolicySets: []string{testDefaultPolicy},
+		Description: "test orchestration", Namespace: namespace,
 		Presets: json.RawMessage(testPresets),
-	}, kube,
+	}, kube, environment,
 		dispatcherpb.NewSessionDispatcherClient(serve(t, func(s *grpc.Server) { dispatcherpb.RegisterSessionDispatcherServer(s, dispatcher) })),
 		historypb.NewHistoryServiceClient(serve(t, func(s *grpc.Server) { historypb.RegisterHistoryServiceServer(s, history) })), 30*time.Second)
 	if err != nil {
@@ -112,16 +157,19 @@ func newFixture(t *testing.T) fixture {
 }
 
 // serve serves what register registers in memory until the test ends, and is a connection to it.
-func serve(t *testing.T, register func(*grpc.Server)) *grpc.ClientConn {
+func serve(t *testing.T, register func(*grpc.Server), serverOptions ...grpc.ServerOption) *grpc.ClientConn {
 	t.Helper()
 	listener := bufconn.Listen(1 << 20)
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(serverOptions...)
 	register(grpcServer)
 	go grpcServer.Serve(listener)
 	t.Cleanup(grpcServer.Stop)
 	connection, err := grpc.NewClient("passthrough:///test-peer",
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return listener.DialContext(ctx) }),
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(func(ctx context.Context, method string, req, reply any, conn *grpc.ClientConn, invoke grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+			return invoke(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer action-fixture-token"), method, req, reply, conn, opts...)
+		}))
 	if err != nil {
 		t.Fatal(err)
 	}

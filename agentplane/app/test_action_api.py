@@ -144,8 +144,8 @@ def _get_action_policy_calls(review: FederationReview) -> list[Any]:
 
 
 @asynccontextmanager
-async def _live_sandbox_stream(browser: httpx.AsyncClient, name: str) -> AsyncIterator[Any]:
-    async with browser.stream("GET", f"/live/sandboxes/{name}", timeout=None) as response:
+async def _live_sandbox_stream(browser: httpx.AsyncClient, name: str, uid: str) -> AsyncIterator[Any]:
+    async with browser.stream("GET", f"/live/sandboxes/{name}", params={"sandbox_uid": uid}, timeout=None) as response:
         assert response.status_code == 200
         yield response.aiter_lines()
 
@@ -289,7 +289,7 @@ async def test_live_action_policy_retries_failure_and_reuses_same_generation(
     review.service.fail_next_policy_unavailable()
     async with (
         httpx.AsyncClient(base_url=review.app.url, cookies=review.app.cookies, timeout=None) as browser,
-        _live_sandbox_stream(browser, review.sandbox.name) as events,
+        _live_sandbox_stream(browser, review.sandbox.name, review.sandbox.uid) as events,
     ):
         event, failed = await _read_sse_event(events)
         assert event == "snapshot"
@@ -336,7 +336,7 @@ async def test_live_action_policy_invalidates_on_policy_set_and_binding_events(
     review.service.policy = _action_policy_response(synced=True)
     async with (
         httpx.AsyncClient(base_url=review.app.url, cookies=review.app.cookies, timeout=None) as browser,
-        _live_sandbox_stream(browser, review.sandbox.name) as events,
+        _live_sandbox_stream(browser, review.sandbox.name, review.sandbox.uid) as events,
     ):
         event, initial = await _read_sse_event(events)
         assert event == "snapshot"
@@ -436,7 +436,7 @@ async def test_live_action_policy_is_scoped_to_each_sandbox_service_account(
     )
 
     async with httpx.AsyncClient(base_url=review.app.url, cookies=review.app.cookies, timeout=None) as browser:
-        async with _live_sandbox_stream(browser, first_name) as events:
+        async with _live_sandbox_stream(browser, first_name, review.sandbox.uid) as events:
             event, first = await _read_sse_event(events)
             assert event == "snapshot"
             first_environment = await _get_environment(browser, namespace, first_name, first["sandbox_uid"])
@@ -445,7 +445,7 @@ async def test_live_action_policy_is_scoped_to_each_sandbox_service_account(
             assert first_environment.execution_account.uid
             assert first["action_policy"]["synced"] is True
 
-        async with _live_sandbox_stream(browser, second_name) as events:
+        async with _live_sandbox_stream(browser, second_name, second_sandbox["metadata"]["uid"]) as events:
             while True:
                 event, second = await _read_sse_event(events)
                 assert event == "snapshot"

@@ -1,4 +1,4 @@
-package sandboxes
+package management
 
 import (
 	"context"
@@ -124,11 +124,11 @@ func TestCreateAppliesDefaultsAndCallerIntentAndIsIdempotent(t *testing.T) {
 		fmt.Sprint(stored.Spec.InboxTags) != "[team-a team-b]" || stored.Spec.IdleSuspendAfter.Duration != time.Minute {
 		t.Fatalf("stored create spec = %#v", stored.Spec)
 	}
-	if stored.Labels[sandboxview.PresetLabel] != preset || stored.Annotations[CreateIntentAnnotation] == "" {
+	if stored.Labels[sandboxview.PresetLabel] != preset || stored.Annotations[sandboxapi.CreateIntentAnnotation] == "" {
 		t.Fatalf("stored metadata = %#v", stored.ObjectMeta)
 	}
 	wantIntent := `{"caller":{"name":"app","namespace":"test-sandboxes"},"request":{"bootstrap":"echo < start","idle_suspend_after":"60s","inbox_tags":["team-b","team-a","team-b"],"name":"created-sandbox","policy_sets":["extra-policy"],"preset":"selected-preset","template":"pod-template","wake_on_send":true}}`
-	if got := stored.Annotations[CreateIntentAnnotation]; got != wantIntent {
+	if got := stored.Annotations[sandboxapi.CreateIntentAnnotation]; got != wantIntent {
 		t.Fatalf("create intent = %s, want %s", got, wantIntent)
 	}
 	retry, err := access.Create(context.Background(), request)
@@ -163,6 +163,25 @@ func TestCreateRejectsUnknownPolicySetsAndInvalidRequests(t *testing.T) {
 	} {
 		if _, err := access.Create(context.Background(), request); !isInvalid(err) {
 			t.Errorf("Create(%q) = %v, want InvalidSandboxError", request.GetName(), err)
+		}
+	}
+}
+
+func TestCreateRejectsLauncherPolicySets(t *testing.T) {
+	access, _ := newAccess(
+		t,
+		&policyapi.PolicySet{ObjectMeta: metav1.ObjectMeta{Name: "default-policy", Namespace: namespace}},
+		&policyapi.PolicySet{ObjectMeta: metav1.ObjectMeta{Name: "other.launcher", Namespace: namespace}},
+		&policyapi.PolicySet{ObjectMeta: metav1.ObjectMeta{
+			Name: "owned-policy", Namespace: namespace,
+			OwnerReferences: []metav1.OwnerReference{{APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: "other", UID: "other-uid"}},
+		}},
+	)
+	for _, name := range []string{"other.launcher", "owned-policy"} {
+		_, err := access.Create(context.Background(), &sandboxespb.CreateSandboxRequest{Name: "new-target", Template: "pod", PolicySets: []string{name}})
+		var reserved *LauncherPolicySetError
+		if !errors.As(err, &reserved) {
+			t.Errorf("Create with PolicySet %q = %v, want LauncherPolicySetError", name, err)
 		}
 	}
 }

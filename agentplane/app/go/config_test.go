@@ -122,7 +122,6 @@ sandbox_presets:
     title: Alpha
     template: linux
     thread_preset: DefaultThread
-default_policy_sets: []
 new_sandbox_defaults:
   wake_on_send: true
   idle_suspend_after_seconds: 900
@@ -248,7 +247,6 @@ models:
     HARNESS_CODEX: []
 thread_presets: {}
 sandbox_presets: {}
-default_policy_sets: []
 egress_admin_url: http://egress:8080
 connection_service_url: http://connection:8080/
 action_federation:
@@ -285,7 +283,6 @@ log_levels: {}
 		`--models={"models":[{"model":"cli-model","display_name":"CLI Model","reasoning_efforts":["high"]}],"harnesses":{"HARNESS_CLAUDE":["cli-model"],"HARNESS_CODEX":["cli-model"]}}`,
 		`--thread-presets={"cli-thread":{"title":"CLI Thread","harness":"HARNESS_CLAUDE","model":"cli-model"}}`,
 		`--sandbox-presets={"CLI Sandbox":{"title":"CLI Sandbox","template":"linux","thread_preset":"cli-thread"}}`,
-		`--default-policy-sets=["cli-a","cli-b"]`,
 		`--token-subjects=["system:serviceaccount:app:worker"]`,
 		"--runner-gateway-target", "cli-runner:9090",
 		"--runner-gateway-token-file=/cli/runner-token",
@@ -306,7 +303,6 @@ log_levels: {}
 		t.Fatalf("Runner Gateway control target was not retained from YAML: %q", c.RunnerGatewayControlTarget)
 	}
 	if len(c.Models.Models) != 1 || c.Models.Models[0].Model != "cli-model" ||
-		!reflect.DeepEqual(c.DefaultPolicySets, []string{"cli-a", "cli-b"}) ||
 		!reflect.DeepEqual(c.TokenSubjects, []string{"system:serviceaccount:app:worker"}) {
 		t.Fatalf("structured CLI settings were not applied: %+v", c)
 	}

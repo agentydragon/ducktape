@@ -9,16 +9,54 @@ import {
   SessionSpecSchema,
 } from "../../../proto/session_pb";
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import { TargetHandleSchema } from "../../../sandboxes/environments/environment_service_pb";
 import {
   getEnvironmentRuntimeStatus,
   openSession,
   getSessionOpening,
   sessionOpeningRejected,
   sessionOpeningNotVisible,
+  resumeSandbox,
+  suspendEnvironment,
+  deleteEnvironment,
+  setEnvironmentIdleSuspend,
 } from "./client";
 
 const id = "b351b316-fdc4-4f50-a642-758992ae3323";
 afterEach(() => vi.unstubAllGlobals());
+
+it("sends the generated exact target through the EnvironmentService facade", async () => {
+  const target = create(TargetHandleSchema, { namespace: "team", name: "box", uid: "opaque-uid" });
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(Response.json({}))
+    .mockResolvedValueOnce(
+      Response.json({
+        target: { namespace: "team", name: "box", uid: "opaque-uid" },
+        outcome: "RESUME_OUTCOME_REQUESTED",
+      })
+    )
+    .mockResolvedValueOnce(Response.json({}))
+    .mockResolvedValueOnce(Response.json({}));
+  vi.stubGlobal("fetch", fetchMock);
+  await suspendEnvironment(target);
+  await resumeSandbox(target);
+  await setEnvironmentIdleSuspend(target, 90);
+  await deleteEnvironment(target);
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+    "/upstream/environments/v1/environments/team/box:suspend",
+    "/upstream/environments/v1/environments/team/box:resume",
+    "/upstream/environments/v1/environments/team/box:idle-suspend",
+    "/upstream/environments/v1/environments/team/box?target.uid=opaque-uid",
+  ]);
+  expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual({
+    target: { namespace: "team", name: "box", uid: "opaque-uid" },
+  });
+  expect(JSON.parse(fetchMock.mock.calls[2]![1].body)).toEqual({
+    target: { namespace: "team", name: "box", uid: "opaque-uid" },
+    idleSuspendAfter: "90s",
+  });
+});
 
 it.each([undefined, null, "", "setup"])(
   "keeps the existing HTTP request and projected response for setup %s",

@@ -63,6 +63,7 @@ go_library(
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/environments:environment_service_go_proto",
+        "//agentplane/sandboxes/management",
         "//agentplane/sandboxes/runtimeconfig",
         "//agentplane/sandboxes/view",
         "//agentplane/watchhealth",
@@ -170,18 +171,6 @@ go_test(
 )
 
 go_test(
-    name = "sandboxapi_test",
-    srcs = ["sandboxapi_test.go"],
-    embed = [":main_lib"],
-    deps = [
-        "//agentplane/sandboxes/environments:environment_service_go_proto",
-        "@com_github_danielgtaylor_huma_v2//:huma",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//status",
-    ],
-)
-
-go_test(
     name = "config_test",
     srcs = ["config_test.go"],
     embed = [":main_lib"],
@@ -208,6 +197,7 @@ go_test(
         "//agentplane/app/go/policyaccess",
         "//agentplane/app/go/sandboxes",
         "//agentplane/policy/api/v1alpha1",
+        "//agentplane/sandboxes/management",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/runtime",
@@ -228,6 +218,7 @@ go_test(
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
+        "//agentplane/sandboxes/management",
         "@com_github_danielgtaylor_huma_v2//:huma",
         "@com_github_google_uuid//:uuid",
         "@io_k8s_api//authentication/v1:authentication",
@@ -273,6 +264,7 @@ go_test(
     srcs = ["threadreadapi_test.go"],
     embed = [":main_lib"],
     deps = [
+        "//agentplane/app:app_service_go_proto",
         "//agentplane/app/go/auth",
         "//agentplane/app/go/historydata",
         "//agentplane/app/go/threads",
@@ -284,6 +276,8 @@ go_test(
         "@com_github_google_uuid//:uuid",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
     ],
 )
 

@@ -269,8 +269,8 @@ async def fresh_workspace_storage_survives_replacement(
         environment_runtime["volumeMounts"].append({"name": "workspace", "mountPath": workspace_dir})
     marker = f"storage-test-{uuid4().hex}"
     bootstrap = f"set -eu\nprintf '%s\\n' {marker} > /state/storage-systest-state\nprintf '%s\\n' {marker} > {workspace_dir}/storage-systest-workspace\nsync\n"
-    config = await _object(cluster, "configmap", "app-config")
-    policies = yaml.safe_load(config["data"]["config.yaml"])["default_policy_sets"]
+    config = await _object(cluster, "configmap", "runner-gateway-settings")
+    policies = yaml.safe_load(config["data"]["settings.yaml"])["environment_default_policy_sets"]
     assert policies
     assert all(isinstance(policy, str) for policy in policies)
     evidence: dict = {

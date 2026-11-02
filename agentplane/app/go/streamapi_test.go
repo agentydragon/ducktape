@@ -180,51 +180,6 @@ func (f *streamTestLive) Subscribe() (<-chan struct{}, func()) {
 	return f.changes, func() {}
 }
 
-func TestSandboxThreadsUseCurrentSandboxUID(t *testing.T) {
-	const oldUID = "11111111-1111-4111-8111-111111111111"
-	const currentUID = "22222222-2222-4222-8222-222222222222"
-	oldID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	currentID := uuid.MustParse("00000000-0000-0000-0000-000000000002")
-	store := &streamTestThreadStore{rows: []threads.Thread{{ID: oldID}, {ID: currentID}}}
-	history := &streamTestHistory{
-		summaries: map[uuid.UUID]historydata.FoldSummary{
-			oldID:     {Present: true, Sandbox: "reused-name", SandboxUID: oldUID},
-			currentID: {Present: true, Sandbox: "reused-name", SandboxUID: currentUID},
-		},
-		sandboxes:   map[uuid.UUID]string{oldID: "reused-name", currentID: "reused-name"},
-		sandboxUIDs: map[uuid.UUID]string{oldID: oldUID, currentID: currentUID},
-	}
-	routes := &streamingRoutes{deps: StreamingDependencies{
-		Threads: store,
-		History: history,
-	}}
-	got, err := routes.sandboxThreads(context.Background(), "reused-name", currentUID, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	views := got.([]threadView)
-	if len(views) != 1 || views[0].ID != currentID {
-		t.Fatalf("replacement Sandbox threads = %+v, want only %s", views, currentID)
-	}
-
-	for _, identity := range []struct {
-		name string
-		uid  string
-	}{
-		{},
-		{name: "reused-name"},
-	} {
-		got, err := routes.sandboxThreads(context.Background(), identity.name, identity.uid, true)
-		if err != nil {
-			t.Fatal(err)
-		}
-		views := got.([]threadView)
-		if len(views) != 0 {
-			t.Fatalf("threads without a current Sandbox UID = %+v, want an empty list", views)
-		}
-	}
-}
-
 type decisionTestStream struct {
 	grpc.ServerStreamingClient[egress_adminpb.WatchDecisionsResponse]
 	messages []*egress_adminpb.WatchDecisionsResponse
@@ -267,7 +222,7 @@ func TestEgressDecisionStreamSnapshotsUpdatesAndDisconnect(t *testing.T) {
 	environments := &streamTestEnvironments{descriptor: testEnvironment("tools", "demo", "sandbox-uid", "tools", "demo")}
 	routes := &streamingRoutes{server: server, deps: StreamingDependencies{Live: live, Sandboxes: environments, Egress: watcher}}
 	ctx, cancel := context.WithCancel(context.Background())
-	request := httptest.NewRequest(http.MethodGet, "/live/sandboxes/demo/egress/decisions", nil).WithContext(ctx)
+	request := httptest.NewRequest(http.MethodGet, "/live/sandboxes/demo/egress/decisions?sandbox_uid=sandbox-uid", nil).WithContext(ctx)
 	request.SetPathValue("name", "demo")
 	response := newStreamingRecorder()
 	done := make(chan struct{})
@@ -1219,63 +1174,43 @@ func (f *liveFramesFixture) assertReads(t *testing.T, step string, snapshots, th
 func (f *liveFramesFixture) awaitProducerStopped(t *testing.T) {
 	t.Helper()
 	select {
-	case <-f.updates.unsubscribed:
+	case <-f.live.unsubscribed:
 	case <-time.After(2 * time.Second):
 		t.Fatal("the shared producer did not stop after its last stream ended")
 	}
 }
 
-func TestLiveSandboxStreamsShareThreadReadsAcrossViewers(t *testing.T) {
+func TestLiveSandboxStreamsSharePolicyReadsAcrossViewers(t *testing.T) {
 	f := newLiveFramesFixture()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	responses, wait := openLiveStreams(ctx, f.routes.liveSandbox, func() *http.Request {
-		request := httptest.NewRequest(http.MethodGet, "/live/sandboxes/demo?include_archived=false", nil)
+		request := httptest.NewRequest(http.MethodGet, "/live/sandboxes/demo?sandbox_uid="+liveFramesSandboxUID, nil)
 		request.SetPathValue("name", "demo")
 		return request
 	}, 2)
-
 	waitForEveryStream(t, responses, `"sandbox_uid":"`+liveFramesSandboxUID+`"`)
-	waitForEveryStream(t, responses, liveFramesFirstThread.String())
-	f.assertReads(t, "initial frame", 1, 1)
-
+	if got := f.live.readCount(); got != 1 {
+		t.Fatalf("initial shared reads = %d, want 1", got)
+	}
+	for _, response := range responses {
+		if strings.Contains(response.String(), `"threads"`) {
+			t.Fatal("policy stream included Thread enrichment")
+		}
+	}
 	changed := liveFramesSnapshot()
 	changed.Watch.Failing = map[watchhealth.Kind]watchhealth.Failure{"pods": {Error: "test failure", Since: time.Date(2026, 10, 20, 1, 4, 3, 0, time.UTC)}}
 	f.live.change(changed)
 	waitForEveryStream(t, responses, `"pods":{"error":"test failure"`)
-	f.assertReads(t, "Kubernetes-only change", 2, 1)
-	if nameGets, exactGets := f.envs.readCounts(); nameGets != 1 || exactGets != 1 {
-		t.Fatalf("steady-state Environment reads = name %d exact %d, want name 1 exact 1", nameGets, exactGets)
-	}
-
-	f.store.setRows(threads.Thread{ID: liveFramesSecondThread}, threads.Thread{ID: liveFramesFirstThread})
-	f.updates.changes <- struct{}{}
-	waitForEveryStream(t, responses, liveFramesSecondThread.String())
-	f.assertReads(t, "thread update", 3, 2)
-	if nameGets, exactGets := f.envs.readCounts(); nameGets != 1 || exactGets != 2 {
-		t.Fatalf("thread-update Environment reads = name %d exact %d, want name 1 exact 2", nameGets, exactGets)
-	}
-
 	const replacementUID = "44444444-4444-4444-8444-444444444444"
 	f.envs.set(testEnvironment("tools", "demo", replacementUID, "tools", "demo"))
 	f.live.change(changed)
-	waitForEveryStream(t, responses, `"sandbox_uid":"`+replacementUID+`"`)
+	waitForEveryStream(t, responses, `"sandbox_uid":null`)
 	for _, response := range responses {
-		body := response.String()
-		index := strings.LastIndex(body, `"sandbox_uid":"`+replacementUID+`"`)
-		frame := ""
-		if index >= 0 {
-			frame = body[index:]
-		}
-		if index < 0 || !strings.Contains(frame, `"threads":[]`) || strings.Contains(frame, liveFramesFirstThread.String()) || strings.Contains(frame, liveFramesSecondThread.String()) {
-			t.Fatalf("replacement frame reused prior Sandbox threads: %s", frame)
+		if strings.Contains(response.String(), replacementUID) {
+			t.Fatal("stream followed a same-name replacement")
 		}
 	}
-	f.assertReads(t, "same-name Environment replacement", 4, 3)
-	if nameGets, exactGets := f.envs.readCounts(); nameGets != 2 || exactGets != 3 {
-		t.Fatalf("replacement Environment reads = name %d exact %d, want name 2 exact 3", nameGets, exactGets)
-	}
-
 	cancel()
 	wait()
 	f.awaitProducerStopped(t)
@@ -1297,6 +1232,45 @@ func TestEnvironmentListForwardsPagination(t *testing.T) {
 	server.Handler(authentication).ServeHTTP(response, request)
 	if response.Code != http.StatusOK || gotPath != "v1/environments" || gotQuery != "limit=17&page_token=opaque" {
 		t.Fatalf("list = %d, forwarded %q?%s", response.Code, gotPath, gotQuery)
+	}
+}
+
+func TestEnvironmentMutationFacadeOnlyForwardsKnownMethods(t *testing.T) {
+	authentication := newStreamTestAuth(t)
+	server := NewHTTPServer(authentication)
+	var forwarded []string
+	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, request *http.Request, _ context.Context, path, _ string) error {
+		forwarded = append(forwarded, request.Method+" "+path+"?"+request.URL.RawQuery)
+		w.WriteHeader(http.StatusOK)
+		return nil
+	}}
+	RegisterStreamingRoutes(server, StreamingDependencies{DispatcherHTTP: upstream})
+	handler := server.Handler(authentication)
+	for _, test := range []struct {
+		method, path string
+		status       int
+	}{
+		{http.MethodGet, "/upstream/environments/v1/environment-templates", http.StatusOK},
+		{http.MethodPost, "/upstream/environments/v1/environments", http.StatusOK},
+		{http.MethodPost, "/upstream/environments/v1/environments/team/box:suspend", http.StatusOK},
+		{http.MethodPost, "/upstream/environments/v1/environments/team/box:resume", http.StatusOK},
+		{http.MethodPatch, "/upstream/environments/v1/environments/team/box:wake-policy", http.StatusOK},
+		{http.MethodPatch, "/upstream/environments/v1/environments/team/box:idle-suspend", http.StatusOK},
+		{http.MethodDelete, "/upstream/environments/v1/environments/team/box?target.uid=old", http.StatusOK},
+		{http.MethodPost, "/upstream/environments/v1/environments/team/box:unknown", http.StatusNotFound},
+		{http.MethodPatch, "/upstream/environments/v1/environments/team/box:resume", http.StatusNotFound},
+		{http.MethodDelete, "/upstream/environments/v1/environments/team/box:resume", http.StatusNotFound},
+	} {
+		request := httptest.NewRequest(test.method, test.path, nil)
+		request.Header.Set("Authorization", "Bearer accepted")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != test.status {
+			t.Errorf("%s %s = %d, want %d", test.method, test.path, response.Code, test.status)
+		}
+	}
+	if len(forwarded) != 7 || forwarded[6] != "DELETE v1/environments/team/box?target.uid=old" {
+		t.Fatalf("forwarded = %v", forwarded)
 	}
 }
 

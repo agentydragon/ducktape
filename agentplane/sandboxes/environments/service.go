@@ -39,6 +39,9 @@ type Service struct {
 	runtime                runtimeconfig.Catalog
 	lifecycle              *lifecycle.Manager
 	readers                map[auth.Account]struct{}
+	managers               map[auth.Account]struct{}
+	launchers              map[auth.Account]struct{}
+	defaultPolicySets      []string
 	collectionAuthInterval time.Duration
 }
 
@@ -48,6 +51,7 @@ func New(
 	runtime runtimeconfig.Catalog,
 	lifecycleManager *lifecycle.Manager,
 	readers map[auth.Account]struct{},
+	management ...ManagementOptions,
 ) (*Service, error) {
 	if namespace == "" || objects == nil || lifecycleManager == nil {
 		return nil, errors.New("Sandbox namespace, uncached Kubernetes watch client, and lifecycle manager are required")
@@ -56,7 +60,23 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	return &Service{namespace: namespace, objects: objects, sandboxes: sandboxes, runtime: runtime, lifecycle: lifecycleManager, readers: readers, collectionAuthInterval: auth.DefaultVerdictTTL}, nil
+	if len(management) > 1 {
+		return nil, errors.New("at most one environment management configuration is allowed")
+	}
+	service := &Service{namespace: namespace, objects: objects, sandboxes: sandboxes, runtime: runtime, lifecycle: lifecycleManager, readers: readers, collectionAuthInterval: auth.DefaultVerdictTTL}
+	if len(management) == 1 {
+		service.managers = management[0].Managers
+		service.launchers = management[0].Launchers
+		service.defaultPolicySets = slices.Clone(management[0].DefaultPolicySets)
+	}
+	return service, nil
+}
+
+// ManagementOptions grants mutation authority independently of inventory and resume grants.
+type ManagementOptions struct {
+	Managers          map[auth.Account]struct{}
+	Launchers         map[auth.Account]struct{}
+	DefaultPolicySets []string
 }
 
 // Methods admits direct TokenReview-verified ServiceAccounts in the configured Resolver namespaces.
@@ -65,11 +85,17 @@ func New(
 func Methods(resolver *auth.Resolver) auth.Methods {
 	rule := auth.ReviewedServiceAccount(resolver)
 	return auth.Methods{
-		environmentpb.EnvironmentService_ListEnvironments_FullMethodName:  rule,
-		environmentpb.EnvironmentService_WatchEnvironments_FullMethodName: rule,
-		environmentpb.EnvironmentService_GetEnvironment_FullMethodName:    rule,
-		environmentpb.EnvironmentService_WatchEnvironment_FullMethodName:  rule,
-		environmentpb.EnvironmentService_ResumeEnvironment_FullMethodName: rule,
+		environmentpb.EnvironmentService_ListEnvironmentTemplates_FullMethodName:  rule,
+		environmentpb.EnvironmentService_CreateEnvironment_FullMethodName:         rule,
+		environmentpb.EnvironmentService_ListEnvironments_FullMethodName:          rule,
+		environmentpb.EnvironmentService_WatchEnvironments_FullMethodName:         rule,
+		environmentpb.EnvironmentService_GetEnvironment_FullMethodName:            rule,
+		environmentpb.EnvironmentService_WatchEnvironment_FullMethodName:          rule,
+		environmentpb.EnvironmentService_ResumeEnvironment_FullMethodName:         rule,
+		environmentpb.EnvironmentService_SuspendEnvironment_FullMethodName:        rule,
+		environmentpb.EnvironmentService_DeleteEnvironment_FullMethodName:         rule,
+		environmentpb.EnvironmentService_SetEnvironmentWakeOnSend_FullMethodName:  rule,
+		environmentpb.EnvironmentService_SetEnvironmentIdleSuspend_FullMethodName: rule,
 	}
 }
 

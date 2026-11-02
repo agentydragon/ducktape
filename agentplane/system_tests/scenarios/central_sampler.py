@@ -545,7 +545,7 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         await _wait_for_execution_progress(deployed, session_id, "process", "running")
 
         previous_incarnation = deployed.incarnation_uid
-        await client.suspend_sandbox(deployed.sandbox, uid=deployed.sandbox_uid)
+        await client.suspend_sandbox(target)
         async with asyncio.timeout(SANDBOX_READY_SECONDS):
             while True:
                 suspended = await client.get_environment(target)
@@ -556,7 +556,7 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
                     break
                 await asyncio.sleep(0.2)
 
-        await client.resume_sandbox(deployed.sandbox, uid=deployed.sandbox_uid)
+        await client.resume_sandbox(target)
         resumed = await wait_until_running(client, target)
         assert resumed.target.uid == deployed.sandbox_uid
         assert resumed.HasField("pod")

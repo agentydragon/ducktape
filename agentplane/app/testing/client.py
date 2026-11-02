@@ -28,13 +28,12 @@ from agentplane.app.testing.models import (
     BindingView,
     DecisionsSnapshot,
     DecisionsUnavailable,
-    NewSandbox,
     ThreadMetadata,
     ThreadView,
     thread_view_from_proto_json,
 )
 from agentplane.egress.decisions import Decision
-from agentplane.proto import event_log_pb2, session_pb2
+from agentplane.proto import event_log_pb2, sandboxes_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandboxes.environments import environment_service_pb2
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
@@ -125,9 +124,9 @@ class Client:
         response = await self._json("GET", "/upstream/app-config/v1/presets")
         return ParseDict(response, app_service_pb2.ListSandboxPresetsResponse())
 
-    async def create_sandbox(self, spec: NewSandbox) -> environment_service_pb2.TargetHandle:
+    async def create_sandbox(self, spec: sandboxes_pb2.CreateSandboxRequest) -> environment_service_pb2.TargetHandle:
         """Create once and return the exact incarnation acknowledged by the app."""
-        response = await self._json("POST", "/sandboxes", json=spec.model_dump(exclude_unset=True))
+        response = await self._json("POST", "/upstream/environments/v1/environments", json=MessageToDict(spec))
         if not isinstance(response, dict) or not isinstance(response.get("name"), str) or not response.get("name"):
             raise RuntimeError("Sandbox creation acknowledgement did not include a name")
         if response["name"] != spec.name:
@@ -139,7 +138,7 @@ class Client:
         if not isinstance(uid, str) or not uid:
             raise RuntimeError("Sandbox creation acknowledgement did not include a UID")
         self.opened_sandbox_uids.add(uid)
-        return environment_service_pb2.TargetHandle(namespace=namespace, name=response["name"], uid=uid)
+        return ParseDict(response, environment_service_pb2.TargetHandle())
 
     async def get_environment(
         self, target: environment_service_pb2.TargetHandle
@@ -223,22 +222,42 @@ class Client:
                 raise RuntimeError("the Sandbox inventory stream ended")
             await asyncio.sleep(RECONNECT_PAUSE_SECONDS)
 
-    async def suspend_sandbox(self, name: str, *, uid: str) -> None:
-        await self._json("POST", f"/sandboxes/{name}/suspend", json={"uid": uid})
+    async def suspend_sandbox(self, target: environment_service_pb2.TargetHandle) -> None:
+        request = environment_service_pb2.EnvironmentMutationRequest(target=target)
+        await self._json("POST", f"{self._environment_path(target)}:suspend", json=MessageToDict(request))
 
-    async def resume_sandbox(self, name: str, *, uid: str) -> None:
-        await self._json("POST", f"/sandboxes/{name}/resume", json={"uid": uid})
+    async def resume_sandbox(self, target: environment_service_pb2.TargetHandle) -> None:
+        request = environment_service_pb2.ResumeEnvironmentRequest(target=target)
+        data = await self._json("POST", f"{self._environment_path(target)}:resume", json=MessageToDict(request))
+        response = ParseDict(data, environment_service_pb2.ResumeEnvironmentResponse())
+        if response.target != target or response.outcome not in (
+            environment_service_pb2.RESUME_OUTCOME_REQUESTED,
+            environment_service_pb2.RESUME_OUTCOME_ALREADY_RUNNING,
+        ):
+            raise RuntimeError(f"Environment resume was not accepted: {response}")
 
-    async def delete_sandbox(self, name: str, *, uid: str) -> None:
-        await self._json("DELETE", f"/sandboxes/{name}", json={"uid": uid})
+    async def delete_sandbox(self, target: environment_service_pb2.TargetHandle) -> None:
+        await self._json("DELETE", self._environment_path(target), params={"target.uid": target.uid})
 
-    async def bindings(self, name: str) -> list[BindingView]:
-        return [BindingView.model_validate(row) for row in await self._json("GET", f"/sandboxes/{name}/egress")]
+    @staticmethod
+    def _environment_path(target: environment_service_pb2.TargetHandle) -> str:
+        return (
+            f"/upstream/environments/v1/environments/{quote(target.namespace, safe='')}/{quote(target.name, safe='')}"
+        )
 
-    async def decisions(self, name: str) -> list[Decision]:
+    async def bindings(self, name: str, uid: str) -> list[BindingView]:
+        return [
+            BindingView.model_validate(row)
+            for row in await self._json("GET", f"/sandboxes/{name}/egress", params={"uid": uid})
+        ]
+
+    async def decisions(self, name: str, uid: str) -> list[Decision]:
         """The first frame of the sandbox's egress decision stream, oldest first."""
         async with self._http.stream(
-            "GET", f"/live/sandboxes/{name}/egress/decisions", headers={"Accept": "text/event-stream"}
+            "GET",
+            f"/live/sandboxes/{name}/egress/decisions",
+            params={"sandbox_uid": uid},
+            headers={"Accept": "text/event-stream"},
         ) as response:
             response.raise_for_status()
             kind = None

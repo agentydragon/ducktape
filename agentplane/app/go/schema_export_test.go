@@ -130,124 +130,17 @@ func TestExportOpenAPIUsesHumaSchemasForThreadRoutes(t *testing.T) {
 	}
 }
 
-func TestSandboxOpenAPIUsesUIDFencedDeleteAndRemovesDuplicateReadRoutes(t *testing.T) {
+func TestSandboxOpenAPILeavesEnvironmentOperationsToGeneratedService(t *testing.T) {
 	var output bytes.Buffer
 	if err := exportOpenAPI(&output); err != nil {
 		t.Fatal(err)
 	}
 	document := assertSaneOpenAPI(t, output.Bytes())
-	if _, ok := document.Paths["/sandboxes"]["get"]; ok {
-		t.Fatal("app OpenAPI still exposes a duplicate Sandbox list route")
-	}
-	if _, ok := document.Paths["/sandboxes/{name}"]["get"]; ok {
-		t.Fatal("app OpenAPI still exposes a duplicate Sandbox detail route")
-	}
-	var createOperation struct {
-		Responses map[string]struct {
-			Content map[string]struct {
-				Schema map[string]any `json:"schema"`
-			} `json:"content"`
-		} `json:"responses"`
-	}
-	if err := json.Unmarshal(document.Paths["/sandboxes"]["post"], &createOperation); err != nil {
-		t.Fatal(err)
-	}
-	acknowledgementHasTarget := false
-	for _, response := range createOperation.Responses {
-		if content, ok := response.Content["application/json"]; ok && schemaContainsProperties(document, content.Schema, "namespace", "name", "uid") {
-			acknowledgementHasTarget = true
+	for _, path := range []string{"/sandboxes", "/sandboxes/{name}", "/sandboxes/{name}/suspend", "/sandboxes/{name}/resume", "/sandboxes/templates"} {
+		if _, ok := document.Paths[path]; ok {
+			t.Errorf("app OpenAPI still exposes environment operation %q", path)
 		}
 	}
-	if !acknowledgementHasTarget {
-		t.Fatal("POST /sandboxes response schema must expose the exact created namespace, name, and UID")
-	}
-	var operation struct {
-		RequestBody struct {
-			Required bool `json:"required"`
-			Content  map[string]struct {
-				Schema map[string]any `json:"schema"`
-			} `json:"content"`
-		} `json:"requestBody"`
-	}
-	if err := json.Unmarshal(document.Paths["/sandboxes/{name}"]["delete"], &operation); err != nil {
-		t.Fatal(err)
-	}
-	body, ok := operation.RequestBody.Content["application/json"]
-	if !operation.RequestBody.Required || !ok {
-		t.Fatal("DELETE /sandboxes/{name} must require a JSON UID body")
-	}
-	if !schemaContainsRequired(document, body.Schema, "uid") {
-		t.Fatalf("DELETE request body schema = %v, want required uid", body.Schema)
-	}
-	if !schemaContainsProperties(document, body.Schema, "uid") {
-		t.Fatalf("DELETE request body schema = %v, want uid property", body.Schema)
-	}
-}
-
-func schemaContainsRequired(document openAPIDocument, schema map[string]any, name string) bool {
-	if required, ok := schema["required"].([]any); ok {
-		for _, candidate := range required {
-			if candidate == name {
-				return true
-			}
-		}
-	}
-	if reference, ok := schema["$ref"].(string); ok {
-		const prefix = "#/components/schemas/"
-		if strings.HasPrefix(reference, prefix) {
-			if referenced := document.Components.Schemas[strings.TrimPrefix(reference, prefix)]; referenced != nil {
-				return schemaContainsRequired(document, referenced, name)
-			}
-		}
-	}
-	for _, groupName := range []string{"allOf", "anyOf", "oneOf"} {
-		if group, ok := schema[groupName].([]any); ok {
-			for _, child := range group {
-				if childSchema, ok := child.(map[string]any); ok && schemaContainsRequired(document, childSchema, name) {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
-func schemaContainsProperties(document openAPIDocument, schema map[string]any, names ...string) bool {
-	if reference, ok := schema["$ref"].(string); ok {
-		const prefix = "#/components/schemas/"
-		if strings.HasPrefix(reference, prefix) {
-			if referenced := document.Components.Schemas[strings.TrimPrefix(reference, prefix)]; referenced != nil {
-				return schemaContainsProperties(document, referenced, names...)
-			}
-		}
-	}
-	if properties, ok := schema["properties"].(map[string]any); ok {
-		allPresent := true
-		for _, name := range names {
-			if _, exists := properties[name]; !exists {
-				allPresent = false
-				break
-			}
-		}
-		if allPresent {
-			return true
-		}
-		for _, property := range properties {
-			if child, ok := property.(map[string]any); ok && schemaContainsProperties(document, child, names...) {
-				return true
-			}
-		}
-	}
-	for _, groupName := range []string{"allOf", "anyOf", "oneOf"} {
-		if group, ok := schema[groupName].([]any); ok {
-			for _, child := range group {
-				if childSchema, ok := child.(map[string]any); ok && schemaContainsProperties(document, childSchema, names...) {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }
 
 type openAPIDocument struct {

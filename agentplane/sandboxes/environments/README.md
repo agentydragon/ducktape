@@ -1,8 +1,8 @@
-# Existing environment discovery
+# EnvironmentService
 
-`EnvironmentService` provides read-only discovery of existing managed Sandboxes and a separately
+`EnvironmentService` provides discovery and management of managed Sandboxes and a separately
 authorized explicit-resume operation. It is a separate gRPC service from the Session Dispatcher,
-co-hosted by the Runner Gateway on its existing listener. Its method paths are:
+co-hosted in the same Runner Gateway binary and on its existing listener. Its read method paths are:
 
 - `/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments`
 - `/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment`
@@ -10,13 +10,21 @@ co-hosted by the Runner Gateway on its existing listener. Its method paths are:
 - `/agentplane.sandboxes.environments.EnvironmentService/WatchEnvironment`
 - `/agentplane.sandboxes.environments.EnvironmentService/ResumeEnvironment`
 
-All methods accept direct TokenReview-verified ServiceAccount credentials and the explicitly
+Read and resume methods accept direct TokenReview-verified ServiceAccount credentials and the explicitly
 configured Actions delegation. Delegated calls use the existing Dispatcher audience and are opted
 into by exact full RPC method name. The handler checks the admitted effective caller's namespace,
 name, and immutable ServiceAccount UID. Ordinary callers see only Sandboxes whose live, controller-owned
 execution ServiceAccount has that exact identity; explicitly configured direct readers see the namespace. A Sandbox's namespace/name or labels alone do
 not establish access. A target handle is the Sandbox namespace, name, and UID; get returns
 `NOT_FOUND` for an absent or replaced target, and for a deleting or foreign target for ordinary callers.
+
+Management methods create environments, list templates, suspend or delete an exact target, and
+change wake-on-send and idle-suspend settings. They require a direct Pod-bound account configured
+in `environment_managers`. A separate `environment_launchers` grant permits the Action Service to
+create with an Action launch origin, but does not grant other management methods. The Gateway applies
+its default PolicySets; creation records intent and caller attribution for safe retries. The app
+proxies environment requests, while thread composition remains an app responsibility. See the
+[service contract](SPEC.md) for authorization and fencing details.
 
 `EnvironmentDescriptor` is the canonical service projection: it carries the caller-facing inventory
 facts plus Sandbox creation time, binding, raw status, phase, preset, autosuspend policy/blockers,

@@ -48,6 +48,7 @@ def _create_targets(client: Client, names: tuple[str, ...]) -> dict[str, envpb.T
 @pytest.fixture
 def cluster() -> Cluster:
     access = create_autospec(Cluster, instance=True)
+    access.namespace = "test-namespace"
     access.kubectl.side_effect = RuntimeError("test diagnostics unavailable")
     return cast(Cluster, access)
 
@@ -178,7 +179,9 @@ async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluste
             ]:
                 client.delete_sandbox.assert_not_awaited()
                 yield [_environment(name, uid, ready=False, operating_mode=mode)]
-            client.delete_sandbox.assert_awaited_once_with("owned-test-sandbox", uid=uid)
+            client.delete_sandbox.assert_awaited_once_with(
+                envpb.TargetHandle(namespace=cluster.namespace, name="owned-test-sandbox", uid=uid)
+            )
             deletion_observed = True
             yield []
         finally:
@@ -189,9 +192,9 @@ async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluste
     await suspend_and_delete(cluster, client, "owned-test-sandbox", uid)
 
     assert client.mock_calls == [
-        call.suspend_sandbox("owned-test-sandbox", uid=uid),
+        call.suspend_sandbox(envpb.TargetHandle(namespace=cluster.namespace, name="owned-test-sandbox", uid=uid)),
         call.sandbox_snapshots(),
-        call.delete_sandbox("owned-test-sandbox", uid=uid),
+        call.delete_sandbox(envpb.TargetHandle(namespace=cluster.namespace, name="owned-test-sandbox", uid=uid)),
     ]
     assert closed
     assert deletion_observed

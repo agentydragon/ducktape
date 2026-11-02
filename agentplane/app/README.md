@@ -30,10 +30,9 @@ protobuf payloads use standard ProtoJSON, with 64-bit integers encoded as decima
 
 ## Sandbox lifecycle ownership
 
-The app uses the shared `agentplane/sandboxes` inventory to submit lifecycle requests directly to
-Kubernetes as the requesting operator. The Sandbox Controller reconciles the requested `spec` and
-owns `status`. Required `default_policy_sets` come from the app ConfigMap, including when the set is
-empty. The former Sandbox Service Deployment, API and server source are retired.
+The app proxies environment lifecycle requests to EnvironmentService in the Runner Gateway, using
+its service account. EnvironmentService owns request authorization, default PolicySets and fenced
+mutations; the Sandbox Controller reconciles the requested `spec` and owns `status`.
 
 ## Dependency boundary
 
@@ -43,8 +42,7 @@ attachments, and app-only provisioning or prompt/bootstrap state, including in v
 [service dependency rule](../docs/service_boundaries.md).
 
 Backend responsibilities needed by another service move to an independent owner, not a temporary
-app endpoint. The shared `agentplane/sandboxes` library owns Sandbox request construction; the app uses
-it directly as the requesting operator. The [Session Dispatcher](../runner_gateway/dispatcher/README.md)
+app endpoint. EnvironmentService owns Sandbox management. The [Session Dispatcher](../runner_gateway/dispatcher/README.md)
 owns opening and durable command delivery; the [Runner Gateway](../runner_gateway/README.md) owns the
 runner control stream and authorized live Runner proxy; the
 [History Service](../history_service/README.md) owns the Session Event archive and its Thread fold.
@@ -274,9 +272,10 @@ Staging runs two app replicas on separate nodes with `RollingUpdate` (`maxUnavai
 The shared Sandbox inventory uses the generated EnvironmentService watch through
 `/upstream/environments/v1/environments:watch`. Protobuf snapshot chunks replace the inventory
 when complete; subsequent upserts and UID-fenced removals update individual Sandboxes. `/live/sandboxes/{name}` is an authenticated SSE stream carrying a
-whole detail snapshot on change and a health frame through the quiet. What it pushes: one Sandbox's bindings with each reader's verdict,
-its Action policy list, and its threads, the last of these from the store rather than a watch, since the app is the
-only writer of a thread's name. The Sandbox page uses those History Thread summaries as its retained
+whole policy detail snapshot on change and a health frame through the quiet. It pushes one Sandbox's
+bindings with each reader's verdict and its Action policy list. The Sandbox page gets its threads
+separately from the app's metadata RPC and History watches, using the selected Sandbox UID. It uses
+those History Thread summaries as its retained
 Session inventory; its harness and turn fields are last observed History values. Suspending or
 removing a runner Pod does not clear projected Threads, and the app does not claim their harnesses
 are still running. Archived Threads stay hidden unless the operator chooses **Show archived**.
@@ -327,7 +326,7 @@ and both are cryptographic:
 
   ```sh
   TOKEN=$(kubectl -n agentplane-staging create token agentplane-agent --audience=agentplane)
-  curl -H "Authorization: Bearer $TOKEN" https://agentplane-staging.allegedly.works/sandboxes
+  curl -H "Authorization: Bearer $TOKEN" 'https://agentplane-staging.allegedly.works/upstream/environments/v1/environments?limit=100'
   ```
 
 Nothing is inferred from a request header, and nothing in front of the app authenticates for it:
@@ -572,8 +571,8 @@ constructing OIDC callback URLs, so there is no released-port allocation window.
 The browser reads configured models and Sandbox presets through the generated `AppService`
 ProtoJSON routes `/upstream/app-config/v1/models` and `/upstream/app-config/v1/presets`. These
 in-process handlers share the app's caller authentication boundary; the service and HTTP mapping are
-defined in `app_service.proto`. `POST
-/sandboxes` stores the selected preset label alongside the concrete Sandbox choices; it does not
+defined in `app_service.proto`. `CreateEnvironment` stores the selected preset label alongside the
+concrete Sandbox choices; it does not
 store per-Sandbox Session defaults. On a new Thread open, the app resolves the defaults from its
 configured preset catalog using that Sandbox label, then overlays fields explicitly supplied for
 the Thread. `policy_sets` are the Sandbox's grants beside the deployment's defaults, and a set name
@@ -581,12 +580,12 @@ the namespace does not hold is refused with 422 before the Sandbox exists.
 The form records the picked preset in the URL (`/#/?preset=<name>`) so a launch form can be linked
 to.
 
-A Sandbox takes `policy_sets` alone. The shared inventory validates the app's configured default sets
-with the submitted policy sets; Action policy sets and Kubernetes grants are not create inputs.
+A Sandbox takes `policy_sets` alone. EnvironmentService validates the Gateway's configured default
+sets with the submitted policy sets; Action policy sets and Kubernetes grants are not create inputs.
 `GET /sandboxes/form` lists the namespace's `PolicySet`s, which the form offers; a preset names
 `PolicySet`s only. It also serves the app-level `new_sandbox_defaults`, the wake-on-message and
-idle-suspend values the form starts with whatever the preset; `POST /sandboxes` stores only what the
-caller sends, so an API caller that omits them gets neither. A preset's `inbox_tags` likewise prefill the form, and `POST /sandboxes` writes the submitted
+idle-suspend values the form starts with whatever the preset; `CreateEnvironment` stores only what the
+caller sends, so an API caller that omits them gets neither. A preset's `inbox_tags` likewise prefill the form, and `CreateEnvironment` writes the submitted
 ones as the Sandbox's initial `spec.inboxTags`: editing a preset changes only later launches.
 
 Before opening a session on a bound Sandbox, the app sends the SandboxPreset's configured bootstrap
@@ -663,8 +662,8 @@ one. Which lists the service enforces is its contract
   it, and nothing brings that back. The rule lives in the API rather than in the browser, so it also
   binds the agent driving staging with a token; the two clicks it costs an operator are suspend and
   then delete. A running sandbox answers `DELETE` with 409 and a message saying to suspend it.
-- **Resume is owned by the Runner Gateway:** `POST /sandboxes/{name}/resume` reads the current
-  Sandbox UID and calls EnvironmentService with the app's Pod-bound operator credential. The
+- **Resume is owned by the Runner Gateway:** the app proxies `ResumeEnvironment` with the
+  frontend-selected Sandbox UID and its Pod-bound operator credential. The
   Gateway rechecks target state and operator authority before changing desired state; the app does
   not patch `running` or `wakeGeneration`. A response confirms acceptance only, not readiness.
   `wake_on_send` remains a separate setting for automatic wake caused by queued work.

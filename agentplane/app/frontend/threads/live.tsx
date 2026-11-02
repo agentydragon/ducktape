@@ -18,6 +18,7 @@ export type ThreadsSnapshot = {
   threads: ThreadView[];
   more: boolean;
   archived_count: number;
+  sandbox_uid?: string;
   updates_connected: boolean;
   watch: WatchHealth;
 };
@@ -87,7 +88,7 @@ function threadWatchHealth(connected: boolean, since: number | null): WatchHealt
 }
 
 /** Follows History and app-owned metadata watches, joining their generated reads in the browser. */
-function useThreadsLive(listing: ThreadListing, openThreadId: string | null): Live<ThreadsSnapshot> {
+export function useThreadsLive(listing: ThreadListing | null, openThreadId: string | null): Live<ThreadsSnapshot> {
   const [state, setState] = useState<Pick<Live<ThreadsSnapshot>, "snapshot" | "health">>({
     snapshot: null,
     health: null,
@@ -97,8 +98,13 @@ function useThreadsLive(listing: ThreadListing, openThreadId: string | null): Li
   const currentListing = useRef({ listing, openThreadId });
   currentListing.current = { listing, openThreadId };
   const refreshRef = useRef<() => void>(() => undefined);
+  const sandboxUID = listing?.sandboxUID;
+  const enabled = listing !== null;
 
   useEffect(() => {
+    setState({ snapshot: null, health: null });
+    setRefreshError(null);
+    if (!enabled) return;
     let closed = false;
     let running = false;
     let dirty = false;
@@ -128,12 +134,18 @@ function useThreadsLive(listing: ThreadListing, openThreadId: string | null): Li
           dirty = false;
           try {
             const current = currentListing.current;
+            if (current.listing === null) return;
             const windowData = await listThreadWindow(current.listing, current.openThreadId, lifetime.signal);
             if (closed) return;
             if (updatesConnected) disconnectedSince = null;
             else disconnectedSince ??= Date.now();
             const watch = threadWatchHealth(updatesConnected, disconnectedSince);
-            const snapshot = { ...windowData, updates_connected: updatesConnected, watch };
+            const snapshot = {
+              ...windowData,
+              sandbox_uid: current.listing.sandboxUID,
+              updates_connected: updatesConnected,
+              watch,
+            };
             setState({ snapshot, health: watch });
             setRefreshError(null);
             retryAttempt = 0;
@@ -199,7 +211,7 @@ function useThreadsLive(listing: ThreadListing, openThreadId: string | null): Li
       stopHistory();
       stopMetadata();
     };
-  }, []);
+  }, [enabled, sandboxUID]);
 
   useEffect(() => {
     // Render the initial read even if a watch is slow to open. Once both watches have sent their

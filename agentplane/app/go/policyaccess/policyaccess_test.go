@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	appsandboxes "github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
+	management "github.com/agentydragon/ducktape/agentplane/sandboxes/management"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -321,7 +321,7 @@ func TestGrantValidatesPolicySetsAndCreatesIndependentSandboxOwnedBindings(t *te
 		t.Fatalf("repeated grant changed existing binding rather than adding one: %#v, %v", views, err)
 	}
 	_, err = access.Grant(context.Background(), sandbox, []string{"z-missing", "a-missing", "z-missing"}, nil)
-	var unknown *appsandboxes.UnknownPolicySetError
+	var unknown *management.UnknownPolicySetError
 	if !errors.As(err, &unknown) || !reflect.DeepEqual(unknown.Names, []string{"a-missing", "z-missing"}) {
 		t.Fatalf("Grant with missing sets = %v", err)
 	}

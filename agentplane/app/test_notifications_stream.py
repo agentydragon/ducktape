@@ -61,7 +61,9 @@ async def test_sandbox_watch_is_pinned_to_the_current_uid_and_renews_its_token(
         peer.service.sandbox_script.put_nowait(
             notifications_operator_pb2.WatchSandboxNotificationsResponse(reconnect_required=Empty())
         )
-        response = await http.get(f"/sandboxes/{sandbox.name}/notifications/stream")
+        response = await http.get(
+            f"/sandboxes/{sandbox.name}/notifications/stream", params={"sandbox_uid": sandbox.uid}
+        )
         assert response.status_code == 200, response.text
         assert response.text.splitlines()[0] == "event: snapshot"
         assert json.loads(response.text.splitlines()[1].removeprefix("data: ")) == {"inboxes": []}

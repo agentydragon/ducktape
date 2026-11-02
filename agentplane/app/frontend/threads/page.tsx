@@ -177,9 +177,7 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
               composerPlaceholder={composerPlaceholder}
               onResumeSandbox={() => {
                 if (canResumeSandbox && thread && sandbox?.target) {
-                  void resumeSandbox(thread.sandbox, sandbox.target.uid).catch((reason: unknown) =>
-                    setError(displayableError(reason))
-                  );
+                  void resumeSandbox(sandbox.target).catch((reason: unknown) => setError(displayableError(reason)));
                 }
               }}
               onStatusChange={setTabStatus}

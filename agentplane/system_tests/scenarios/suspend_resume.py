@@ -416,7 +416,7 @@ class _ResumeRun:
             attributes={"sandbox.name": self.view.target.name, "sandbox.uid": str(self.view.target.uid)},
         ):
             assert len({agent.thread_id for agent in self.agents.values()}) == len(self.agents)
-            await self.client.suspend_sandbox(self.view.target.name, uid=self.view.target.uid)
+            await self.client.suspend_sandbox(self.view.target)
             await _wait_until_suspended_without_pod(self.client, self.view.target)
             assert _storage_volumes(self.cluster, self.view.target.uid) == self.storage_volumes
             for harness, agent in self.agents.items():
@@ -437,7 +437,7 @@ class _ResumeRun:
                 ]
             )
             self.save()
-            await self.client.resume_sandbox(self.view.target.name, uid=self.view.target.uid)
+            await self.client.resume_sandbox(self.view.target)
 
             resumed = await wait_until_running(self.client, self.view.target)
             assert resumed.target.uid == self.view.target.uid

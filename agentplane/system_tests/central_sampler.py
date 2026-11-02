@@ -193,8 +193,8 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             caller_token = await _bound_token(cluster, core, "app", app, "session-dispatcher")
             reader_token = directory / "history-reader-token"
             reader_token.write_text(await _bound_token(cluster, core, "app", app, HISTORY_READER_AUDIENCE))
-            app_config = await core.read_namespaced_config_map("app-config", cluster.namespace)
-            policies = yaml.safe_load(app_config.data["config.yaml"])["default_policy_sets"]
+            app_config = await core.read_namespaced_config_map("runner-gateway-settings", cluster.namespace)
+            policies = yaml.safe_load(app_config.data["settings.yaml"])["environment_default_policy_sets"]
             sandbox = "systest-central-" + uuid4().hex[:8]
             created = json.loads(
                 await cluster.kubectl(

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
@@ -22,9 +23,43 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+func TestListThreadMetadataScopesPagesToExactEnvironmentUID(t *testing.T) {
+	first, replacement, last := uuid.New(), uuid.New(), uuid.New()
+	now := time.Now()
+	store := &threadReadStoreFake{rows: []threads.Thread{
+		{ID: first, CreatedAt: now},
+		{ID: replacement, CreatedAt: now.Add(-time.Second)},
+		{ID: last, CreatedAt: now.Add(-2 * time.Second), Archived: true},
+	}}
+	history := &threadReadHistoryFake{
+		summaries: map[uuid.UUID]historydata.FoldSummary{
+			first:       {Present: true, Sandbox: "worker", SandboxUID: "old"},
+			replacement: {Present: true, Sandbox: "worker", SandboxUID: "new"},
+			last:        {Present: true, Sandbox: "worker", SandboxUID: "old"},
+		},
+		sandboxUIDs: map[uuid.UUID]string{first: "old", replacement: "new", last: "old"},
+		sandboxes:   map[uuid.UUID]string{first: "worker", replacement: "worker", last: "worker"},
+	}
+	service := &appService{threadReader: store, threadHistory: history}
+	page, err := service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: "old", Limit: 1, IncludeArchived: true})
+	if err != nil || len(page.GetThreads()) != 1 || page.GetThreads()[0].GetThreadId() != first.String() || page.GetNextPageToken() == "" || page.GetArchivedCount() != 1 {
+		t.Fatalf("first page = %v, %v", page, err)
+	}
+	next, err := service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: "old", Limit: 1, IncludeArchived: true, PageToken: page.GetNextPageToken()})
+	if err != nil || len(next.GetThreads()) != 1 || next.GetThreads()[0].GetThreadId() != last.String() || next.GetNextPageToken() != "" {
+		t.Fatalf("next page = %v, %v", next, err)
+	}
+	_, err = service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: "new", Limit: 1, IncludeArchived: true, PageToken: page.GetNextPageToken()})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("continuation for another UID = %v, want InvalidArgument", err)
+	}
+}
 
 type threadReadStoreFake struct {
 	rows []threads.Thread

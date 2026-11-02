@@ -1,4 +1,4 @@
-"""The Action Service creates Sandboxes and launcher grants only in the orchestration_v1 executor's shape."""
+"""The Action Service creates launcher grants only in the orchestration_v1 executor's shape."""
 
 from __future__ import annotations
 
@@ -120,26 +120,23 @@ async def test_the_action_service_writes_only_launcher_shaped_grants(scratch_cha
                     return False
                 return True
 
-            launcher_bound = _sandbox("test-launcher-bound", "test-other.launcher")
-            # The API server loads a new policy in the background, and shows no sign of having loaded it.
-            async for attempt in AsyncRetrying(stop=stop_after_delay(30), wait=wait_fixed(0.1), reraise=True):
-                with attempt:
-                    assert not await admitted(action_service, launcher_bound)
-
             launched = cast(
                 Body,
-                await action_service.create_namespaced_custom_object(
+                await operator.create_namespaced_custom_object(
                     GROUP, VERSION, NAMESPACE, "sandboxes", _sandbox("test-launched", "test-default")
                 ),
             )
             policy_set, policy_binding = _launcher_grant(launched)
+            # The API server loads a new policy in the background, and shows no sign of having loaded it.
+            async for attempt in AsyncRetrying(stop=stop_after_delay(30), wait=wait_fixed(0.1), reraise=True):
+                with attempt:
+                    assert not await admitted(action_service, _without(policy_set, ("metadata", "ownerReferences")))
             assert await admitted(action_service, policy_set)
             assert await admitted(action_service, policy_binding)
 
             other = {"name": "test-other", "uid": "3b1c0f1e-7a52-4f0c-9d52-2d7a54f0b2a1"}
             owners = ("metadata", "ownerReferences")
             denied = {
-                "a Sandbox bound to a launcher grant": launcher_bound,
                 "an unowned grant": _without(policy_set, owners),
                 "a grant owned by two Sandboxes": _with(
                     policy_set, owners, [_owner(launched), {**_owner(launched), **other}]

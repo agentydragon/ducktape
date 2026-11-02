@@ -19,8 +19,8 @@ from google.protobuf.message import Message
 from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
-from agentplane.app.testing.models import NewSandbox
 from agentplane.crd_group import GROUP
+from agentplane.proto import sandboxes_pb2
 from agentplane.sandboxes.environments import environment_service_pb2
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.tracing import tracer
@@ -104,16 +104,17 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
             with phase_tracer.start_as_current_span(
                 "system_test.sandbox.create", attributes={"sandbox.name": name, "sandbox.template": template}
             ):
-                request = NewSandbox(
+                request = sandboxes_pb2.CreateSandboxRequest(
                     name=name,
                     template=template,
-                    preset=preset,
                     policy_sets=policies or [],
                     inbox_tags=list(inbox_tags),
                     bootstrap=bootstrap,
                 )
+                if preset is not None:
+                    request.preset = preset
                 if idle_suspend_after_seconds is not None:
-                    request.idle_suspend_after_seconds = idle_suspend_after_seconds
+                    request.idle_suspend_after.seconds = idle_suspend_after_seconds
                 created = await client.create_sandbox(request)
             # Register the exact acknowledged incarnation before any follow-on watch or Get can fail.
             owned.append((created.name, created.uid))
@@ -214,7 +215,8 @@ async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: s
     with tracer.start_as_current_span(
         "system_test.sandbox.cleanup", attributes={"sandbox.name": name, "sandbox.uid": uid}
     ) as cleanup:
-        await client.suspend_sandbox(name, uid=uid)
+        target = environment_service_pb2.TargetHandle(namespace=cluster.namespace, name=name, uid=uid)
+        await client.suspend_sandbox(target)
         cleanup.add_event("suspend.accepted")
         # Deletion admission reads effective mode, which the controller publishes after the spec write.
         delete_requested = False
@@ -235,7 +237,7 @@ async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: s
                         )
                     if not delete_requested and view.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED:
                         cleanup.add_event("suspended")
-                        await client.delete_sandbox(name, uid=uid)
+                        await client.delete_sandbox(target)
                         cleanup.add_event("delete.accepted")
                         # The delete response only accepts the request. Keep controllers and kubelet alive
                         # until the finalizer has removed the VM/Pod and released its volumes.

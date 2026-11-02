@@ -33,34 +33,34 @@ export interface Live<T> {
 }
 /** The stream at `url`, which the connection indicator calls `name`. */
 export function useLive<T extends { watch: WatchHealth }>(
-  url: string,
+  url: string | null,
   name: string,
   /** Why the last snapshot's own content says its data is not moving, where it can. */
   stalledBy: (snapshot: T) => string | null = () => null
 ): Live<T> {
   const [state, setState] = useState<Pick<Live<T>, "snapshot" | "health">>({ snapshot: null, health: null });
   const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
-  // A different object starts blank; the same one under a different filter does not. Only the path
-  // says which this is, so a query-string-only change resets nothing.
-  const resource = new URL(url, window.location.origin).pathname;
+  // An exact Sandbox UID is part of the resource identity, while other query filters are not.
+  const parsed = url === null ? null : new URL(url, window.location.origin);
+  const resource =
+    parsed === null ? null : `${parsed.pathname}?sandbox_uid=${parsed.searchParams.get("sandbox_uid") ?? ""}`;
   useEffect(() => setState({ snapshot: null, health: null }), [resource]);
-  useEffect(
-    () =>
-      followStream(url, {
-        events: {
-          snapshot: (message) => {
-            const snapshot = JSON.parse(message.data) as T;
-            setState({ snapshot, health: snapshot.watch });
-          },
-          health: (message) => {
-            const health = JSON.parse(message.data) as WatchHealth;
-            setState((current) => ({ ...current, health }));
-          },
+  useEffect(() => {
+    if (url === null) return;
+    return followStream(url, {
+      events: {
+        snapshot: (message) => {
+          const snapshot = JSON.parse(message.data) as T;
+          setState({ snapshot, health: snapshot.watch });
         },
-        onConnection: setConnection,
-      }),
-    [url]
-  );
+        health: (message) => {
+          const health = JSON.parse(message.data) as WatchHealth;
+          setState((current) => ({ ...current, health }));
+        },
+      },
+      onConnection: setConnection,
+    });
+  }, [url]);
   const stalled =
     state.health && !state.health.healthy ? unhealthy(state.health) : state.snapshot && stalledBy(state.snapshot);
   const stream = useStreamStatus(name, connection, stalled);

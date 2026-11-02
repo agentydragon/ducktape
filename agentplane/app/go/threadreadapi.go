@@ -51,7 +51,6 @@ type threadReadHistory interface {
 }
 
 type threadSandboxInventory interface {
-	Get(context.Context, string) (*environmentpb.EnvironmentDescriptor, error)
 	GetExactUID(context.Context, string, string) (*environmentpb.EnvironmentDescriptor, error)
 }
 
@@ -281,10 +280,60 @@ func (s *appService) ListThreadMetadata(ctx context.Context, request *apppb.List
 		return nil, status.Errorf(codes.InvalidArgument, "limit must be between 1 and %d", threadMaxPageSize)
 	}
 	listing := threadListing{IncludeArchived: request.GetIncludeArchived()}
+	if request.GetSandboxUid() != "" {
+		listing.SandboxUID = stringPointer(request.GetSandboxUid())
+	}
 	var token *string
 	if request.GetPageToken() != "" {
 		value := request.GetPageToken()
 		token = &value
+	}
+	if listing.SandboxUID != nil {
+		if s.threadHistory == nil {
+			return nil, status.Error(codes.Unavailable, "Thread history is unavailable")
+		}
+		page, err := listThreadViews(ctx, s.threadReader, s.threadHistory, listing, limit, token)
+		if err != nil {
+			if errors.Is(err, errMalformedThreadPageToken) || errors.Is(err, errMismatchedThreadListing) {
+				return nil, status.Error(codes.InvalidArgument, err.Error())
+			}
+			return nil, status.Error(codes.Unavailable, "list Environment Threads")
+		}
+		response := &apppb.ListThreadMetadataResponse{Threads: make([]*apppb.ThreadMetadata, 0, len(page.Threads))}
+		for _, thread := range page.Threads {
+			response.Threads = append(response.Threads, &apppb.ThreadMetadata{
+				ThreadId: thread.ID.String(), CreatedAt: timestamppb.New(thread.CreatedAt), Name: thread.Name, Archived: thread.Archived,
+			})
+		}
+		if page.NextPageToken != nil {
+			response.NextPageToken = *page.NextPageToken
+		}
+		// ArchivedCount follows the same Sandbox UID filter, independent of whether this page
+		// includes archived Threads. Do not report the unrelated namespace-wide count.
+		matching, err := s.threadHistory.FindSessions(ctx, nil, nil, listing.SandboxUID)
+		if err != nil {
+			return nil, status.Error(codes.Unavailable, "count archived Environment Threads")
+		}
+		var cursor *threads.PageCursor
+		for {
+			countPage, err := s.threadReader.ListPage(ctx, threadMaxPageSize, cursor, true)
+			if err != nil {
+				return nil, status.Error(codes.Unavailable, "count archived Environment Threads")
+			}
+			for _, thread := range countPage.Threads {
+				if _, belongs := matching[thread.ID]; belongs && thread.Archived {
+					response.ArchivedCount++
+				}
+			}
+			if countPage.Next == nil {
+				break
+			}
+			if cursor != nil && !cursorBefore(cursor, countPage.Next) {
+				return nil, status.Error(codes.Internal, "Thread metadata page cursor did not advance")
+			}
+			cursor = countPage.Next
+		}
+		return response, nil
 	}
 	after, err := decodeThreadPageToken(token, listing)
 	if err != nil {
@@ -588,17 +637,14 @@ func ensureThreadArchivable(ctx context.Context, thread threads.Thread, summary 
 	if inventory == nil {
 		return errors.New("Sandbox inventory is unavailable")
 	}
-	var sandbox *environmentpb.EnvironmentDescriptor
-	var err error
-	if summary.SandboxUID != "" {
-		sandbox, err = inventory.GetExactUID(ctx, summary.Sandbox, summary.SandboxUID)
-	} else {
-		sandbox, err = inventory.Get(ctx, summary.Sandbox)
+	if summary.SandboxUID == "" {
+		return errors.New("Thread has no Sandbox UID; its Environment cannot be identified")
+	}
+	sandbox, err := inventory.GetExactUID(ctx, summary.Sandbox, summary.SandboxUID)
+	if status.Code(err) == codes.NotFound {
+		return nil // This exact Environment is gone, so it cannot have a running harness.
 	}
 	if err != nil {
-		if summary.SandboxUID == "" && status.Code(err) == codes.NotFound {
-			return nil // A deleted Sandbox has no running harness to keep visible.
-		}
 		return err
 	}
 	if sandbox.GetPod() == nil {

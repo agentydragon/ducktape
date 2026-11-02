@@ -60,9 +60,11 @@ function GrantPolicySets({
 /** The bindings that name the sandbox's ServiceAccount, where an operator adds one or revokes one. */
 export function PolicyBindingsSection({
   sandbox,
+  sandboxUID,
   bindings,
 }: {
   sandbox: string;
+  sandboxUID: string;
   bindings: BindingView[] | null;
 }): JSX.Element {
   const [error, setError] = useState<string | null>(null);
@@ -93,6 +95,7 @@ export function PolicyBindingsSection({
     const { error: failure } = await api.POST("/sandboxes/{name}/policy-bindings", {
       params: { path: { name: sandbox } },
       body: {
+        uid: sandboxUID,
         policy_sets: picked,
         ...(duration === "forever"
           ? {}

@@ -48,6 +48,7 @@ export interface ThreadListing {
   limit: number;
   search: string | null;
   includeArchived: boolean;
+  sandboxUID?: string;
 }
 export type ThreadWindow = { threads: ThreadView[]; more: boolean; archived_count: number };
 export type ObservationEntry = { cursor: string; entry: JsonValue };
@@ -612,6 +613,7 @@ export async function listThreadWindow(
   let more = false;
   for (;;) {
     const query = new URLSearchParams({ include_archived: String(listing.includeArchived), limit: "200" });
+    if (listing.sandboxUID) query.set("sandbox_uid", listing.sandboxUID);
     if (pageToken !== "") query.set("page_token", pageToken);
     const metadata = await fetchProto(
       `/upstream/app/v1/threads?${query}`,

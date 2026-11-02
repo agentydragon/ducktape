@@ -38,6 +38,7 @@ const (
 	foreignNamespace   = "other-envs"
 	dispatcherAudience = "session-dispatcher-test"
 	actionsToken       = "trusted-actions"
+	launcherToken      = "trusted-launcher"
 	untrustedToken     = "untrusted-actions"
 	sandboxName        = "workspace"
 	sandboxUID         = "sandbox-uid-current"
@@ -92,6 +93,13 @@ func testTokenReviews() tokenReviewStub {
 				"authentication.kubernetes.io/pod-uid":  {"actions-pod-uid"},
 			},
 		},
+		launcherToken: {
+			Username: "system:serviceaccount:" + discoveryNamespace + ":launcher", UID: "launcher-uid",
+			Extra: map[string]authenticationv1.ExtraValue{
+				"authentication.kubernetes.io/pod-name": {"launcher-pod"},
+				"authentication.kubernetes.io/pod-uid":  {"launcher-pod-uid"},
+			},
+		},
 		untrustedToken: {
 			Username: "system:serviceaccount:" + foreignNamespace + ":actions", UID: "other-actions-uid",
 			Extra: map[string]authenticationv1.ExtraValue{
@@ -128,6 +136,8 @@ func serveDiscoveryWithOptions(
 	if err != nil {
 		t.Fatal(err)
 	}
+	service.managers = map[auth.Account]struct{}{{Namespace: discoveryNamespace, Name: "actions"}: {}}
+	service.launchers = map[auth.Account]struct{}{{Namespace: discoveryNamespace, Name: "launcher"}: {}}
 	resolver, err := auth.NewResolver(testTokenReviews(), dispatcherAudience, []string{discoveryNamespace, foreignNamespace}, auth.WithVerdictTTL(0))
 	if err != nil {
 		t.Fatal(err)
@@ -221,6 +231,51 @@ func delegatedBearing(t *testing.T, token string, account auth.Account, uid stri
 		"authorization", "Agentplane-Delegated "+token,
 		auth.DelegationMetadataKey, string(encoded),
 	))
+}
+
+func TestManagementRequiresDirectGrantedPodAndFencesTarget(t *testing.T) {
+	objects := baseReader(t)
+	method := environmentpb.EnvironmentService_SetEnvironmentWakeOnSend_FullMethodName
+	rpc := serveDiscoveryWithDelegation(t, objects, runtimeconfig.Catalog{}, []string{method})
+	target := &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
+	request := &environmentpb.SetEnvironmentWakeOnSendRequest{Target: target, WakeOnSend: true}
+	if _, err := rpc.SetEnvironmentWakeOnSend(bearing(t, matchingToken), request); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("account-only caller: got %v", err)
+	}
+	actor := auth.Account{Namespace: discoveryNamespace, Name: sandboxName}
+	if _, err := rpc.SetEnvironmentWakeOnSend(delegatedBearing(t, actionsToken, actor, executionUID), request); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("delegated caller borrowed management grant: got %v", err)
+	}
+	stale := proto.Clone(request).(*environmentpb.SetEnvironmentWakeOnSendRequest)
+	stale.Target.Uid = "old-uid"
+	if _, err := rpc.SetEnvironmentWakeOnSend(bearing(t, actionsToken), stale); status.Code(err) != codes.NotFound {
+		t.Fatalf("stale target: got %v", err)
+	}
+	if _, err := rpc.SetEnvironmentWakeOnSend(bearing(t, actionsToken), request); err != nil {
+		t.Fatal(err)
+	}
+	stored := &sandboxapi.Sandbox{}
+	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, stored); err != nil {
+		t.Fatal(err)
+	}
+	if !stored.Spec.WakeOnSend {
+		t.Fatal("authorized mutation was not applied")
+	}
+}
+
+func TestActionLauncherGrantDoesNotConferGeneralManagement(t *testing.T) {
+	rpc := serveDiscovery(t, baseReader(t), runtimeconfig.Catalog{})
+	origin := &sandboxpb.SandboxLaunchOrigin{Caller: &sandboxpb.ServiceAccount{Namespace: discoveryNamespace, Name: sandboxName}, ActionGroup: "orchestration_v1"}
+	request := &sandboxpb.CreateSandboxRequest{Name: "created", Template: "test", LaunchOrigin: origin}
+	if _, err := rpc.CreateEnvironment(bearing(t, actionsToken), request); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("manager supplied broker origin: %v", err)
+	}
+	if _, err := rpc.CreateEnvironment(bearing(t, launcherToken), &sandboxpb.CreateSandboxRequest{Name: "created", Template: "test"}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("launcher omitted broker origin: %v", err)
+	}
+	if _, err := rpc.SuspendEnvironment(bearing(t, launcherToken), &environmentpb.EnvironmentMutationRequest{Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("launcher suspended environment: %v", err)
+	}
 }
 
 func TestListAndGetReturnTheExactExecutionAccountIdentity(t *testing.T) {
@@ -930,8 +985,16 @@ func TestEveryGeneratedRPCRequiresReviewedServiceAccountAdmission(t *testing.T) 
 	for _, method := range grpcmethods.Of(environmentpb.EnvironmentService_ServiceDesc) {
 		t.Run(method.Name, func(t *testing.T) {
 			want := codes.InvalidArgument
-			if method.Name == environmentpb.EnvironmentService_WatchEnvironments_FullMethodName {
+			switch method.Name {
+			case environmentpb.EnvironmentService_WatchEnvironments_FullMethodName:
 				want = codes.OK
+			case environmentpb.EnvironmentService_ListEnvironmentTemplates_FullMethodName,
+				environmentpb.EnvironmentService_CreateEnvironment_FullMethodName,
+				environmentpb.EnvironmentService_SuspendEnvironment_FullMethodName,
+				environmentpb.EnvironmentService_DeleteEnvironment_FullMethodName,
+				environmentpb.EnvironmentService_SetEnvironmentWakeOnSend_FullMethodName,
+				environmentpb.EnvironmentService_SetEnvironmentIdleSuspend_FullMethodName:
+				want = codes.PermissionDenied
 			}
 			if got := status.Code(method.Call(bearing(t, matchingToken), connection)); got != want {
 				t.Errorf("account-only reviewed caller reached %s with code %v, want %v", method.Name, got, want)

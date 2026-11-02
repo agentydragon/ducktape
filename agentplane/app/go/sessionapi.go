@@ -12,11 +12,11 @@ import (
 
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	appbridge "github.com/agentydragon/ducktape/agentplane/app/go/bridge"
-	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/management"
 	"github.com/google/uuid"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc/codes"
@@ -143,13 +143,13 @@ func sessionRPCError(err error) error {
 	var missing *appbridge.SessionOpeningNotFoundError
 	var service *appbridge.ServiceError
 	var refused *appbridge.RefusedError
-	var notFound *sandboxes.SandboxNotFoundError
-	var invalid *sandboxes.InvalidSandboxError
-	var conflict *sandboxes.SandboxConflictError
-	var running *sandboxes.SandboxRunningError
-	var modeUnknown *sandboxes.SandboxModeUnknownError
-	var tearingDown *sandboxes.SandboxTearingDownError
-	var quiescing *sandboxes.SandboxQuiescingError
+	var notFound *management.SandboxNotFoundError
+	var invalid *management.InvalidSandboxError
+	var conflict *management.SandboxConflictError
+	var running *management.SandboxRunningError
+	var modeUnknown *management.SandboxModeUnknownError
+	var tearingDown *management.SandboxTearingDownError
+	var quiescing *management.SandboxQuiescingError
 	switch {
 	case errors.As(err, &timeout):
 		return status.Error(codes.DeadlineExceeded, err.Error())

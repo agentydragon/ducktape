@@ -197,12 +197,12 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
 }
 
 /** The sandbox's decisions as the proxy reports them: a snapshot per change, none while it is quiet. */
-function useEgressDecisions(name: string): { snapshot: DecisionsSnapshot | null } {
+function useEgressDecisions(name: string, uid: string): { snapshot: DecisionsSnapshot | null } {
   const [snapshot, setSnapshot] = useState<DecisionsSnapshot | null>(null);
   const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
   useEffect(() => {
     setSnapshot(null);
-    return followStream(liveEgressDecisionsUrl(name), {
+    return followStream(liveEgressDecisionsUrl(name, uid), {
       events: {
         snapshot: (message) => setSnapshot(JSON.parse(message.data) as DecisionsSnapshot),
         health: (message) =>
@@ -210,14 +210,14 @@ function useEgressDecisions(name: string): { snapshot: DecisionsSnapshot | null 
       },
       onConnection: setConnection,
     });
-  }, [name]);
+  }, [name, uid]);
   useStreamStatus(`Egress decisions of ${name}`, connection);
   return { snapshot };
 }
 
 /** What recently left the sandbox, or was refused, as the egress proxy reports it. */
-export function EgressLog({ name }: { name: string }): JSX.Element {
-  const decisions = useEgressDecisions(name);
+export function EgressLog({ name, uid }: { name: string; uid: string }): JSX.Element {
+  const decisions = useEgressDecisions(name, uid);
   return (
     <Stack gap="xs">
       <Title order={5}>Recent decisions</Title>

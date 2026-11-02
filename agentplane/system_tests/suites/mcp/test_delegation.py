@@ -16,10 +16,9 @@ from google.protobuf.json_format import ParseDict
 from more_itertools import one
 
 from agentplane.app.testing.client import Client
-from agentplane.app.testing.models import NewSandbox
 from agentplane.mcp_edge import connection_service_pb2
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL
-from agentplane.proto import session_pb2
+from agentplane.proto import sandboxes_pb2, session_pb2
 from agentplane.sandboxes.environments import environment_service_pb2
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.k3s.stack import Stack
@@ -252,8 +251,8 @@ async def _capture_submit_boundary(
     return evidence
 
 
-async def _capture_egress_decisions(cluster: Cluster, token: str, name: str) -> list[dict[str, Any]]:
-    """Read the proxy's name-only decision snapshot once the integration app is restored."""
+async def _capture_egress_decisions(cluster: Cluster, token: str, name: str, uid: str) -> list[dict[str, Any]]:
+    """Read the proxy's exact Sandbox decision snapshot once the integration app is restored."""
     service = json.loads(await cluster.kubectl("get", "service", "app", "-o", "json", timeout_s=15))
     remote_port = service["spec"]["ports"][0]["port"]
     forward = PortForward(
@@ -268,7 +267,7 @@ async def _capture_egress_decisions(cluster: Cluster, token: str, name: str) -> 
         Client(base_url=f"http://{endpoint}", token=token) as diagnostics_client,
     ):
         async with asyncio.timeout(20):
-            decisions = await diagnostics_client.decisions(name)
+            decisions = await diagnostics_client.decisions(name, uid)
     return [decision.model_dump(mode="json") for decision in decisions]
 
 
@@ -289,7 +288,7 @@ async def test_external_connection_delegates_without_the_integration_app(
 
     cluster = deployment.cluster
     name = "systest-delegation-caller"
-    created = await client.create_sandbox(NewSandbox(name=name, template=POD_TEMPLATE))
+    created = await client.create_sandbox(sandboxes_pb2.CreateSandboxRequest(name=name, template=POD_TEMPLATE))
     app_needs_restore = False
     boundary_evidence: dict[str, Any] | None = None
     try:
@@ -501,7 +500,7 @@ async def test_external_connection_delegates_without_the_integration_app(
                 if boundary_evidence is not None:
                     try:
                         boundary_evidence["egress_decisions_after_app_restore"] = await _capture_egress_decisions(
-                            cluster, deployment.token, name
+                            cluster, deployment.token, name, created.uid
                         )
                     except Exception as error:
                         boundary_evidence["egress_decision_capture_error"] = type(error).__name__

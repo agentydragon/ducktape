@@ -68,9 +68,9 @@ async def test_go_app_serves_environment_and_thread_views_from_generated_contrac
     assert environment.HasField("pod")
     assert environment.readiness.state == environment_service_pb2.READINESS_STATE_READY
 
-    templates = await http.get("/sandboxes/templates")
+    templates = await http.get("/upstream/environments/v1/environment-templates")
     assert templates.status_code == 200, templates.text
-    assert templates.json() == []
+    assert templates.json().get("names", []) == []
 
     threads_response = await http.get("/upstream/app/v1/threads")
     assert threads_response.status_code == 200, threads_response.text
@@ -79,14 +79,16 @@ async def test_go_app_serves_environment_and_thread_views_from_generated_contrac
 
 
 async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(http: httpx.AsyncClient) -> None:
-    response = await http.post("/sandboxes", json={"name": "created", "template": "test-template"})
-    assert response.status_code == 201, response.text
+    response = await http.post(
+        "/upstream/environments/v1/environments", json={"name": "created", "template": "test-template"}
+    )
+    assert response.status_code == 200, response.text
     assert response.json()["namespace"]
     assert response.json()["name"] == "created"
     assert response.json()["uid"]
 
-    invalid = await http.post("/sandboxes", json={"name": "missing-template"})
-    assert invalid.status_code == 422
+    invalid = await http.post("/upstream/environments/v1/environments", json={"name": "missing-template"})
+    assert invalid.status_code == 400
 
 
 async def test_go_openapi_tracks_selected_python_http_contract_fields(http: httpx.AsyncClient) -> None:
@@ -96,7 +98,7 @@ async def test_go_openapi_tracks_selected_python_http_contract_fields(http: http
     paths = document["paths"]
     schemas = document["components"]["schemas"]
 
-    assert "/sandboxes" in paths
+    assert "/sandboxes" not in paths
     assert "/threads" not in paths
     assert "/threads/{thread_id}" in paths
     assert "/frontend-config" in paths

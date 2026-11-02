@@ -883,6 +883,10 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
   },
 ];
 
+for (const thread of THREADS_WITH_SANDBOXES) {
+  thread.sandbox_uid = SANDBOXES.find((sandbox) => sandbox.target?.name === thread.sandbox)?.target?.uid ?? null;
+}
+
 function withDormantSession(thread: ThreadView): ThreadView {
   return thread.id === RUNNING_THREAD
     ? {
@@ -2671,7 +2675,7 @@ routes.push(
       ],
     }),
   ],
-  ["GET", /^\/sandboxes\/templates$/, () => ["runner"]],
+  ["GET", /^\/upstream\/environments\/v1\/environment-templates$/, () => ({ names: ["runner"] })],
   ["GET", /^\/sandboxes\/form$/, () => ({ policy_sets: [...TEST_CODER_POLICY_SETS, "pypi", "github-public"] })],
   [
     "GET",
@@ -3204,7 +3208,10 @@ routes.push(
     "GET",
     /^\/upstream\/app\/v1\/threads$/,
     (_match, query) => {
-      const all = THREADS_WITH_SANDBOXES.map(mapThread);
+      const sandboxUID = query.get("sandbox_uid");
+      const all = THREADS_WITH_SANDBOXES.map(mapThread).filter(
+        (thread) => sandboxUID === null || thread.sandbox_uid === sandboxUID
+      );
       const archivedCount = all.filter((thread) => thread.archived).length;
       const includeArchived = query.get("include_archived") === "true";
       const listed = all.filter((thread) => includeArchived || !thread.archived);
@@ -3448,8 +3455,6 @@ function liveEvents(url: URL): ServerSentEvent[] {
       sandbox_uid: SANDBOXES.find((row) => row.target?.name === decodeURIComponent(sandbox))?.target?.uid ?? null,
       bindings: BINDINGS,
       action_policy: ACTION_POLICY,
-      threads: THREADS,
-      updates_connected: !flags.has("threadDatabaseDisconnected"),
       watch: watch(),
     };
     return [{ event: "snapshot", data: snapshot }];

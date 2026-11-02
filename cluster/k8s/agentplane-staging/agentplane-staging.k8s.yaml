@@ -4009,9 +4009,6 @@ data:
           if [ ! -f "$marker" ]; then
             printf '%s\n' 'public-coder workspace initialized' > "$marker"
           fi
-    default_policy_sets:
-      - basic
-      - inference-experiments
     new_sandbox_defaults:
       wake_on_send: true
       idle_suspend_after_seconds: 900
@@ -6335,9 +6332,6 @@ data:
           kind: orchestration_v1
           description: Run by this service, on each request's Decision, with its own authority.
           namespace: agentplane-staging
-          default_policy_sets:
-            - basic
-            - inference-experiments
           presets:
             public-coder:
               title: Public coder
@@ -7054,7 +7048,6 @@ rules:
       - sandboxes
     verbs:
       - get
-      - create
   - apiGroups:
       - agentplane.allegedly.works
     resources:
@@ -7161,13 +7154,10 @@ spec:
         operations:
           - CREATE
         resources:
-          - sandboxes
           - policysets
           - policybindings
   validations:
-    - expression: variables.grant || !object.spec.?policySets.orValue([]).exists(set, set.endsWith('.launcher'))
-      message: A Sandbox this service launches is bound to no launcher grant.
-    - expression: "!variables.grant || (size(variables.owners) == 1 && variables.owners[0].apiVersion.startsWith('agentplane.allegedly.works/') && variables.owners[0].kind == 'Sandbox' && object.metadata.name == variables.owners[0].name + '.launcher')"
+    - expression: (size(variables.owners) == 1 && variables.owners[0].apiVersion.startsWith('agentplane.allegedly.works/') && variables.owners[0].kind == 'Sandbox' && object.metadata.name == variables.owners[0].name + '.launcher')
       message: A launcher grant is owned by one Sandbox and named for it.
     - expression: request.resource.resource != 'policybindings' || object.spec.policySets == [object.metadata.name]
       message: A launcher grant's PolicyBinding binds only its own PolicySet.
@@ -7176,8 +7166,6 @@ spec:
   variables:
     - expression: object.metadata.?ownerReferences.orValue([])
       name: owners
-    - expression: request.resource.resource != 'sandboxes'
-      name: grant
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding

@@ -17,8 +17,7 @@ from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags, Trace
 
 from agentplane.app.testing import client as client_module
 from agentplane.app.testing.client import Client, SessionStreamError
-from agentplane.app.testing.models import NewSandbox
-from agentplane.proto import event_log_pb2, session_pb2
+from agentplane.proto import event_log_pb2, sandboxes_pb2, session_pb2
 from agentplane.sandboxes.environments import environment_service_pb2
 
 # A server answers one connection per call: `(after, writer)`. Raw sockets, because what is under
@@ -482,12 +481,12 @@ async def test_create_sandbox_captures_the_exact_complete_ack_without_retrying()
         )
 
     async with _app(created, requests=observed) as (client, _):
-        target = await client.create_sandbox(NewSandbox(name="box", template="test-template"))
+        target = await client.create_sandbox(sandboxes_pb2.CreateSandboxRequest(name="box", template="test-template"))
 
     assert target == environment_service_pb2.TargetHandle(namespace="test-ns", name="box", uid=str(uid))
     assert client.opened_sandbox_uids == {uid}
     assert len(observed) == 1
-    assert "POST /sandboxes HTTP/1.1" in observed[0]
+    assert "POST /upstream/environments/v1/environments HTTP/1.1" in observed[0]
 
 
 async def test_open_session_rejects_a_different_sandbox_uid() -> None:
@@ -504,21 +503,29 @@ async def test_sandbox_mutations_carry_the_expected_uid() -> None:
     observed: list[str] = []
     uid = str(uuid4())
 
-    async def accepted(_after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(writer, "204 No Content")
+    target = environment_service_pb2.TargetHandle(namespace="test-ns", name="box", uid=uid)
 
-    async with _app(accepted, accepted, accepted, requests=observed) as (client, _):
-        await client.suspend_sandbox("box", uid=uid)
-        await client.resume_sandbox("box", uid=uid)
-        await client.delete_sandbox("box", uid=uid)
+    async def accepted(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(writer, "200 OK", b"{}", "application/json")
+
+    async def resumed(_after: int, writer: asyncio.StreamWriter) -> None:
+        body = {"target": {"namespace": "test-ns", "name": "box", "uid": uid}, "outcome": "RESUME_OUTCOME_REQUESTED"}
+        await _respond(writer, "200 OK", json.dumps(body).encode(), "application/json")
+
+    async with _app(accepted, resumed, accepted, requests=observed) as (client, _):
+        await client.suspend_sandbox(target)
+        await client.resume_sandbox(target)
+        await client.delete_sandbox(target)
 
     paths_and_methods = [request.split("\r\n", 1)[0] for request in observed]
     assert paths_and_methods == [
-        "POST /sandboxes/box/suspend HTTP/1.1",
-        "POST /sandboxes/box/resume HTTP/1.1",
-        "DELETE /sandboxes/box HTTP/1.1",
+        "POST /upstream/environments/v1/environments/test-ns/box:suspend HTTP/1.1",
+        "POST /upstream/environments/v1/environments/test-ns/box:resume HTTP/1.1",
+        f"DELETE /upstream/environments/v1/environments/test-ns/box?target.uid={uid} HTTP/1.1",
     ]
-    assert [json.loads(request.split("\r\n\r\n", 1)[1]) for request in observed] == [{"uid": str(uid)}] * 3
+    assert [json.loads(request.split("\r\n\r\n", 1)[1]) for request in observed[:2]] == [
+        {"target": {"namespace": "test-ns", "name": "box", "uid": uid}}
+    ] * 2
 
 
 if __name__ == "__main__":

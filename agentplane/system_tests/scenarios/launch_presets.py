@@ -106,7 +106,7 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
     with tracer.start_as_current_span(
         "system_test.launch_preset.suspend_queue", record_exception=False, set_status_on_exception=False
     ):
-        await client.suspend_sandbox(view.target.name, uid=view.target.uid)
+        await client.suspend_sandbox(view.target)
         suspend_deadline = time.monotonic() + SANDBOX_READY_SECONDS
         while True:
             suspended = await client.get_environment(view.target)
@@ -146,7 +146,7 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
     with tracer.start_as_current_span(
         "system_test.launch_preset.resume_and_admit", record_exception=False, set_status_on_exception=False
     ):
-        await client.resume_sandbox(view.target.name, uid=view.target.uid)
+        await client.resume_sandbox(view.target)
         resumed = await wait_until_running(client, view.target)
         assert resumed.target.uid == view.target.uid
         assert resumed.HasField("pod")

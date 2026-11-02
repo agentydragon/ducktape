@@ -2,16 +2,17 @@
 
 ## Purpose
 
-Expose discovery and observation of existing Agentplane Sandbox targets, and independently
-authorized resume requests for existing targets. List/get/watch return facts needed to choose a
-target and prepare a Session request; `GetEnvironment` returns immediately and
-`WatchEnvironment` observes current-state changes. `ResumeEnvironment` delegates guarded mutation
-and current authorization checks to the shared lifecycle manager. None of these methods creates an
-environment, attaches a Session or grants authorization.
+Expose discovery, observation and management of Agentplane environments. The service runs in the
+Runner Gateway binary alongside the Session Dispatcher, sharing its lifecycle manager. List/get/watch
+return facts needed to choose a target and prepare a Session request; `GetEnvironment` returns
+immediately and `WatchEnvironment` observes current-state changes. Management creates environments,
+lists templates, suspends and deletes targets, and changes wake and idle-suspend settings. Resume
+delegates guarded mutation and current authorization checks to the shared lifecycle manager. These
+operations do not attach a Session or grant authorization.
 
 ## Caller and object authorization
 
-- Methods admit a direct TokenReview-verified ServiceAccount or an explicitly configured
+- Read and resume methods admit a direct TokenReview-verified ServiceAccount or an explicitly configured
   Actions delegation using the Runner Gateway's existing Dispatcher audience and served namespace
   set. `ListEnvironments`, `GetEnvironment`, `WatchEnvironment`, and `WatchEnvironments` may be
   added to the Gateway's exact delegated method list. `ResumeEnvironment` is separately authorized
@@ -38,6 +39,17 @@ Delegated calls keep the Actions actor separate from the effective caller. They 
 live Sandbox-owned ServiceAccount UID checks as direct calls. The dispatcher still rechecks
 identity at Session admission. Discovery is not an authorization lease and is not a substitute for
 mutation-time checks.
+
+Management methods require a direct, Pod-bound ServiceAccount listed in `environment_managers`;
+read access and delegation do not grant management access. A separately configured direct Pod-bound
+`environment_launchers` account may create an environment only when the request identifies its
+Action caller, Action group, and launcher grants. This grant does not authorize other management
+operations. The app uses its manager identity to proxy its authenticated requests; the Action Service
+uses the launcher identity for approved launches and owns its separate PolicySet and PolicyBinding
+grants. Create applies the Gateway's default PolicySets and records caller and request intent to
+support idempotent adoption; different intents cannot adopt the same name. Mutations require the
+target UID and preserve Kubernetes resource-version fencing. The Sandbox Controller reconciles
+the resulting desired state.
 
 ## Snapshot reads and watches
 

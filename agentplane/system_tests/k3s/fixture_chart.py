@@ -220,9 +220,9 @@ def environment(
         # These scenarios check delivery and acknowledgement; worker integration tests cover
         # debounce deadlines. Keep batching enabled without a minute-long wait per notice.
         notifications_debounce=NoticeDebounceSettings(quiet_seconds=1, max_wait_seconds=2),
+        default_policy_sets=frozenset(egress.DEFAULT_POLICIES),
         app_config=AppSettingsConfig(
             models=catalog,
-            default_policy_sets=set(egress.DEFAULT_POLICIES),
             connection_service_url=AnyHttpUrl(MCP_EDGE_SERVICE.url),
             thread_presets={launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)},
             sandbox_presets={

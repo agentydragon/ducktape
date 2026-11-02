@@ -129,6 +129,7 @@ class RunnerGateway(Construct):
         database_url: EnvValue,
         dispatcher_callers: Mapping[ServiceAccountRef, Pods],
         operator_callers: Mapping[ServiceAccountRef, Pods] | None = None,
+        environment_launchers: Mapping[ServiceAccountRef, Pods] | None = None,
         delegation_actor: ServiceAccountRef | None,
         extra_delegated_methods: tuple[str, ...] = (),
         gateway_callers: Mapping[ServiceAccountRef, Pods],
@@ -193,6 +194,9 @@ class RunnerGateway(Construct):
         content = {
             "dispatcher_callers": dispatcher_accounts,
             "environment_readers": [_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))],
+            "environment_managers": [_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))],
+            "environment_launchers": sorted(map(_account, environment_launchers or {})),
+            "environment_default_policy_sets": sorted(env.default_policy_sets),
             "gateway_callers": gateway_accounts,
             "runner_security": MTLS(
                 mode="mtls", tls=TLS(cert_file=_RUNNER_TLS_CERT, key_file=_RUNNER_TLS_KEY, ca_file=_RUNNER_TLS_CA)
@@ -374,7 +378,12 @@ class RunnerGateway(Construct):
                     verbs=["get", "list", "watch"],
                 ),
                 RolePolicyRule(
-                    resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch", "patch"]
+                    resources=[custom_resource(GROUP, "sandboxes")],
+                    verbs=["get", "list", "watch", "create", "patch", "delete"],
+                ),
+                RolePolicyRule(
+                    resources=[custom_resource(GROUP, "sandboxtemplates"), custom_resource(GROUP, "policysets")],
+                    verbs=["get", "list"],
                 ),
                 RolePolicyRule(
                     resources=[custom_resource("coordination.k8s.io", "leases")],
@@ -419,6 +428,7 @@ def serving_chart(
         database_url=dispatcher_database_url,
         dispatcher_callers=callers | orchestration | session_delegation,
         operator_callers=operator_callers,
+        environment_launchers=orchestration,
         delegation_actor=(
             ServiceAccountRef(namespace=env.namespace, name=actions.NAME)
             if env.actions.orchestration_v1 is not None or env.actions.session_delegation is not None

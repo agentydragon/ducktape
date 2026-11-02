@@ -210,6 +210,8 @@ class Environment:
     vm_sandboxes: bool
     # Deployment-published runtime facts shared with the co-hosted discovery service.
     runtime_catalog: Catalog | None = None
+    # PolicySets applied by EnvironmentService to every new Sandbox.
+    default_policy_sets: frozenset[str] = frozenset()
     # None keeps the central code-mode service, its route, and its cross-service grants absent.
     central_sampler: CentralSamplerProps | None = None
     # Optional StorageClass for both claims owned by a VM Sandbox. If unset, they use the runner

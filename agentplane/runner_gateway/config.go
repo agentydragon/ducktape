@@ -26,30 +26,33 @@ const settingPrefix = "AGENTPLANE_RUNNER_GATEWAY_"
 // The database URL is a Secret and the Pod IP comes from the Downward API, so both are environment
 // values. Kubernetes sets the Pod hostname to its name unless an explicit hostname is configured.
 type config struct {
-	RunnerSecurity              environment_runtime_transport.Security `mapstructure:"runner_security"`
-	Namespace                   string                                 `mapstructure:"sandbox_namespace"`
-	DispatcherDatabaseURL       string                                 `mapstructure:"dispatcher_database_url"`
-	PodName                     string                                 `mapstructure:"pod_name"`
-	PodIP                       string                                 `mapstructure:"pod_ip"`
-	RunnerTokenFile             string                                 `mapstructure:"runner_token_file"`
-	Kubeconfig                  string                                 `mapstructure:"kubeconfig"`
-	KubernetesClientQPS         float32                                `mapstructure:"kubernetes_client_qps"`
-	ListenAddress               string                                 `mapstructure:"listen_address"`
-	HTTPListenAddress           string                                 `mapstructure:"http_listen_address"`
-	ProxyPort                   int                                    `mapstructure:"proxy_port"`
-	RunnerControlTargetTemplate string                                 `mapstructure:"runner_control_target_template"`
-	DispatcherAudience          string                                 `mapstructure:"dispatcher_audience"`
-	GatewayAudience             string                                 `mapstructure:"gateway_audience"`
-	EnvironmentReaders          []auth.Account                         `mapstructure:"environment_readers"`
-	DispatcherCallers           []auth.Account                         `mapstructure:"dispatcher_callers"`
-	Delegation                  *delegationConfig                      `mapstructure:"delegation"`
-	GatewayCallers              []auth.Account                         `mapstructure:"gateway_callers"`
-	WakeCallers                 []auth.Account                         `mapstructure:"wake_callers"`
-	OperatorCallers             []auth.Account                         `mapstructure:"operator_callers"`
-	ControllerAccount           *auth.Account                          `mapstructure:"sandbox_controller_account"`
-	QueueCap                    int                                    `mapstructure:"max_queued_per_session"`
-	WatchLeaseSeconds           int                                    `mapstructure:"dispatcher_watch_lease_seconds"`
-	RunnerTimeoutSeconds        int                                    `mapstructure:"runner_request_timeout_seconds"`
+	RunnerSecurity               environment_runtime_transport.Security `mapstructure:"runner_security"`
+	Namespace                    string                                 `mapstructure:"sandbox_namespace"`
+	DispatcherDatabaseURL        string                                 `mapstructure:"dispatcher_database_url"`
+	PodName                      string                                 `mapstructure:"pod_name"`
+	PodIP                        string                                 `mapstructure:"pod_ip"`
+	RunnerTokenFile              string                                 `mapstructure:"runner_token_file"`
+	Kubeconfig                   string                                 `mapstructure:"kubeconfig"`
+	KubernetesClientQPS          float32                                `mapstructure:"kubernetes_client_qps"`
+	ListenAddress                string                                 `mapstructure:"listen_address"`
+	HTTPListenAddress            string                                 `mapstructure:"http_listen_address"`
+	ProxyPort                    int                                    `mapstructure:"proxy_port"`
+	RunnerControlTargetTemplate  string                                 `mapstructure:"runner_control_target_template"`
+	DispatcherAudience           string                                 `mapstructure:"dispatcher_audience"`
+	GatewayAudience              string                                 `mapstructure:"gateway_audience"`
+	EnvironmentReaders           []auth.Account                         `mapstructure:"environment_readers"`
+	EnvironmentManagers          []auth.Account                         `mapstructure:"environment_managers"`
+	EnvironmentLaunchers         []auth.Account                         `mapstructure:"environment_launchers"`
+	EnvironmentDefaultPolicySets []string                               `mapstructure:"environment_default_policy_sets"`
+	DispatcherCallers            []auth.Account                         `mapstructure:"dispatcher_callers"`
+	Delegation                   *delegationConfig                      `mapstructure:"delegation"`
+	GatewayCallers               []auth.Account                         `mapstructure:"gateway_callers"`
+	WakeCallers                  []auth.Account                         `mapstructure:"wake_callers"`
+	OperatorCallers              []auth.Account                         `mapstructure:"operator_callers"`
+	ControllerAccount            *auth.Account                          `mapstructure:"sandbox_controller_account"`
+	QueueCap                     int                                    `mapstructure:"max_queued_per_session"`
+	WatchLeaseSeconds            int                                    `mapstructure:"dispatcher_watch_lease_seconds"`
+	RunnerTimeoutSeconds         int                                    `mapstructure:"runner_request_timeout_seconds"`
 
 	CentralSampler  *dispatcher.CentralTarget `mapstructure:"central_sampler"`
 	ExecutorCallers []auth.Account            `mapstructure:"executor_callers"`
@@ -150,6 +153,16 @@ func (c *config) validate() error {
 	for _, account := range c.EnvironmentReaders {
 		if account.Namespace == "" || account.Name == "" {
 			return errors.New("environment_readers requires namespace and name")
+		}
+	}
+	for _, account := range c.EnvironmentManagers {
+		if account.Namespace == "" || account.Name == "" {
+			return errors.New("environment_managers requires namespace and name")
+		}
+	}
+	for _, account := range c.EnvironmentLaunchers {
+		if account.Namespace == "" || account.Name == "" {
+			return errors.New("environment_launchers requires namespace and name")
 		}
 	}
 	for _, account := range c.WakeCallers {

@@ -14,9 +14,9 @@ Actions are `list_launch_presets`, `launch_sandbox`, `open_session`, `submit_inp
 
 ## The contract
 
-**The Decision is the authority.** The executor acts with the Action Service's own account: it
-creates Sandboxes, PolicySets and PolicyBindings, and the Session Dispatcher and the History Service
-trust it as a caller, as they trust the app acting for its operator. A request reaches that only
+**The Decision is the authority.** The executor calls EnvironmentService with the Action Service's
+own account to create Sandboxes, and creates PolicySets and PolicyBindings itself. The Session
+Dispatcher and the History Service trust it as a caller, as they trust the app acting for its operator. A request reaches that only
 once it is decided, by the operator or by an `action_auto_approve` rule the operator wrote, so each
 Action is an act the operator delegates. No backend checks the caller itself yet.
 
@@ -106,12 +106,14 @@ also ties the Session's opening/history to that UID before calling `FollowSessio
 An environment offers the group with `ActionsProps.orchestration_v1`
 (`cluster/cdk8s/agentplane/environment.py`). Its Action Service then:
 
-- has the group in its settings, with the app's presets and default PolicySets, and the
-  `session_dispatcher` and `history_service` it calls with projected tokens of their audiences;
+- has the group in its settings, with the app's presets, and the `session_dispatcher` and
+  `history_service` it calls with projected tokens of their audiences; EnvironmentService applies
+  the Gateway's default PolicySets;
 - is a caller and waker of the Session Dispatcher and a reader of the History Service;
-- may get and create Sandboxes, PolicySets and PolicyBindings in its namespace;
-- creates those only in the executor's shape, which a ValidatingAdmissionPolicy enforces: a
-  Sandbox bound to no launcher grant, and a grant owned by one Sandbox, named for it, whose rules
+- has an EnvironmentService launcher grant to create on behalf of an Action caller; may read
+  Sandboxes and get and create PolicySets and PolicyBindings in its namespace;
+- creates grants only in the executor's shape, which a ValidatingAdmissionPolicy enforces: a
+  grant owned by one Sandbox, named for it, whose rules
   name only that incarnation and only this group's Actions. The policy cannot see who called the
   launch, so it bounds what a grant reaches, not who holds it.
 

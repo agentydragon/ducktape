@@ -11,7 +11,6 @@ import { useStreamStatus } from "../stream_status";
 import { type Live, type WatchHealth } from "../live";
 
 import type { ActionPolicyUnavailable, ActionPolicyView } from "../actions/client";
-import type { ThreadView } from "../schema";
 import type { BindingView, Decision } from "./client";
 
 export type SandboxesSnapshot = { sandboxes: EnvironmentDescriptor[]; watch: WatchHealth };
@@ -19,8 +18,6 @@ export type SandboxSnapshot = {
   sandbox_uid: string | null;
   bindings: BindingView[];
   action_policy: ActionPolicyView | ActionPolicyUnavailable | null;
-  threads: ThreadView[] | { kind: "unavailable"; code: string };
-  updates_connected: boolean;
   watch: WatchHealth;
 };
 export type DecisionsSnapshot = { watching: boolean; decisions: Decision[] | { detail: string } };
@@ -29,12 +26,12 @@ export function liveSandboxesUrl(): string {
   return "/upstream/environments/v1/environments:watch";
 }
 
-export function liveSandboxUrl(name: string, includeArchived: boolean): string {
-  return `/live/sandboxes/${encodeURIComponent(name)}?include_archived=${includeArchived}`;
+export function liveSandboxUrl(name: string, uid: string): string {
+  return `/live/sandboxes/${encodeURIComponent(name)}?sandbox_uid=${encodeURIComponent(uid)}`;
 }
 
-export function liveEgressDecisionsUrl(name: string): string {
-  return `/live/sandboxes/${encodeURIComponent(name)}/egress/decisions`;
+export function liveEgressDecisionsUrl(name: string, uid: string): string {
+  return `/live/sandboxes/${encodeURIComponent(name)}/egress/decisions?sandbox_uid=${encodeURIComponent(uid)}`;
 }
 
 const SandboxesLiveContext = createContext<Live<SandboxesSnapshot> | null>(null);

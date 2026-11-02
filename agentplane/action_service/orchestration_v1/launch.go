@@ -14,7 +14,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -38,115 +43,73 @@ type Launched struct {
 // name.
 func launcherName(sandbox string) string { return sandbox + ".launcher" }
 
-// launch creates the Sandbox args describe and writes its launcher grants for caller. A launch the same caller made
-// with the same arguments, whatever became of its attempt, is adopted and its grants completed.
+// launch creates the Environment through its owning service, then writes Action-owned launcher grants.
+// The authorized Action broker supplies caller and grant intent so same-name retries cannot adopt
+// another launch, including one that requested a different set of grants.
 func (e *Executor) launch(ctx context.Context, caller store.ServiceAccount, args contract.LaunchArgs) (Launched, error) {
 	for _, list := range [][]string{args.PolicySets, args.InboxTags, args.LauncherGrants} {
 		slices.Sort(list)
 	}
-	intent, err := json.Marshal(struct {
-		Caller store.ServiceAccount `json:"caller"`
-		Launch contract.LaunchArgs  `json:"launch"`
-	}{caller, args})
+	request := &sandboxespb.CreateSandboxRequest{
+		Name: args.Name, Template: args.Template, PolicySets: args.PolicySets, InboxTags: args.InboxTags,
+		Bootstrap: args.Bootstrap, WakeOnSend: args.WakeOnSend,
+		LaunchOrigin: &sandboxespb.SandboxLaunchOrigin{
+			Caller:      &sandboxespb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name},
+			ActionGroup: e.group, LauncherGrants: args.LauncherGrants,
+		},
+	}
+	if args.IdleSuspendAfterSeconds != nil {
+		request.IdleSuspendAfter = durationpb.New(time.Duration(*args.IdleSuspendAfterSeconds) * time.Second)
+	}
+	if e.environment == nil {
+		return Launched{}, fmt.Errorf("%w: EnvironmentService is unavailable", worker.ErrOutcomeUnknown)
+	}
+	target, err := e.environment.CreateEnvironment(ctx, request)
 	if err != nil {
-		return Launched{}, err
+		return Launched{}, launchError(err)
 	}
-	sandbox, err := e.launched(ctx, args.Name, string(intent))
-	if err == nil && sandbox == nil {
-		sandbox, err = e.create(ctx, args, string(intent))
+	if target.GetNamespace() != e.binding.Namespace || target.GetName() != args.Name || target.GetUid() == "" {
+		return Launched{}, fmt.Errorf("%w: EnvironmentService returned an invalid created target", worker.ErrOutcomeUnknown)
 	}
-	if err != nil {
-		return Launched{}, err
+	var sandbox sandboxapi.Sandbox
+	if err := e.kube.Get(ctx, client.ObjectKey{Namespace: target.GetNamespace(), Name: target.GetName()}, &sandbox); err != nil {
+		return Launched{}, fmt.Errorf("%w: reading created Environment: %w", worker.ErrOutcomeUnknown, err)
 	}
-	if err := e.grant(ctx, caller, sandbox, args.LauncherGrants); err != nil {
+	if string(sandbox.UID) != target.GetUid() || sandbox.DeletionTimestamp != nil {
+		return Launched{}, fmt.Errorf("%w: created Environment was replaced or deleted before launcher grants", worker.ErrOutcomeUnknown)
+	}
+	if err := e.grant(ctx, caller, &sandbox, args.LauncherGrants); err != nil {
 		var refused *refusal
 		if errors.As(err, &refused) {
-			refused.message = fmt.Sprintf("Sandbox %q was launched, but its launcher grants were not written: %s",
-				sandbox.Name, refused.message)
+			refused.message = fmt.Sprintf("Sandbox %q was launched, but its launcher grants were not written: %s", sandbox.Name, refused.message)
 		}
 		return Launched{}, err
 	}
-	return Launched{
-		Sandbox: contract.SandboxRef{Name: sandbox.Name, UID: sandbox.UID}, LauncherGrants: append([]string{}, args.LauncherGrants...),
-	}, nil
+	return Launched{Sandbox: contract.SandboxRef{Name: sandbox.Name, UID: sandbox.UID}, LauncherGrants: append([]string{}, args.LauncherGrants...)}, nil
 }
 
-// launched is the Sandbox of the name that a launch with this intent made; nil when there is none. Another one of the
-// name is refused.
-func (e *Executor) launched(ctx context.Context, name, intent string) (*sandboxapi.Sandbox, error) {
-	var sandbox sandboxapi.Sandbox
-	err := e.kube.Get(ctx, client.ObjectKey{Namespace: e.binding.Namespace, Name: name}, &sandbox)
-	switch {
-	case apierrors.IsNotFound(err):
-		return nil, nil
-	case err != nil:
-		return nil, kubeError("reading the Sandbox", err)
-	case sandbox.DeletionTimestamp != nil || sandbox.Annotations[sandboxapi.CreateIntentAnnotation] != intent:
-		return nil, refuse("sandbox_exists", "a Sandbox named %q exists that this caller did not launch with these arguments", name)
+func launchError(err error) error {
+	result := status.Convert(err)
+	if result.Code() == codes.AlreadyExists {
+		return refuse("sandbox_exists", "%s", result.Message())
 	}
-	return &sandbox, nil
-}
-
-func (e *Executor) create(ctx context.Context, args contract.LaunchArgs, intent string) (*sandboxapi.Sandbox, error) {
-	policySets := slices.Compact(slices.Sorted(slices.Values(slices.Concat(e.binding.DefaultPolicySets, args.PolicySets))))
-	if err := e.requirePolicySets(ctx, policySets); err != nil {
-		return nil, err
-	}
-	sandbox := &sandboxapi.Sandbox{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: args.Name, Namespace: e.binding.Namespace,
-			Annotations: map[string]string{sandboxapi.CreateIntentAnnotation: intent},
-		},
-		Spec: sandboxapi.SandboxSpec{
-			Template: args.Template, Running: true, WakeOnSend: args.WakeOnSend, PolicySets: policySets,
-			InboxTags: args.InboxTags, Bootstrap: args.Bootstrap,
-		},
-	}
-	if seconds := args.IdleSuspendAfterSeconds; seconds != nil {
-		sandbox.Spec.IdleSuspendAfter = &metav1.Duration{Duration: time.Duration(*seconds) * time.Second}
-	}
-	err := e.kube.Create(ctx, sandbox)
-	if apierrors.IsAlreadyExists(err) {
-		// Created since launched read it: by an attempt at this launch, or by another.
-		existing, err := e.launched(ctx, args.Name, intent)
-		if err == nil && existing == nil {
-			err = refuse("sandbox_exists", "a Sandbox named %q was created and deleted while this launch ran", args.Name)
+	if result.Code() == codes.InvalidArgument {
+		for _, detail := range result.Details() {
+			if info, ok := detail.(*errdetails.ErrorInfo); ok && info.Domain == "agentplane.environments" {
+				switch info.Reason {
+				case "UNKNOWN_POLICY_SET":
+					return refuse("unknown_policy_set", "%s", result.Message())
+				case "LAUNCHER_POLICY_SET":
+					return refuse("launcher_policy_set", "%s", result.Message())
+				}
+			}
 		}
-		return existing, err
+		return refuse("invalid_arguments", "%s", result.Message())
 	}
-	if err != nil {
-		return nil, kubeError("creating the Sandbox", err)
+	if result.Code() == codes.PermissionDenied || result.Code() == codes.Unauthenticated {
+		return refuse("environment_refused", "%s", result.Message())
 	}
-	return sandbox, nil
-}
-
-// requirePolicySets refuses a PolicySet that does not exist, and one that is a launcher grant: bound to the new
-// Sandbox's account, it would give that account what another Sandbox's launcher was granted.
-func (e *Executor) requirePolicySets(ctx context.Context, names []string) error {
-	var missing, granted []string
-	for _, name := range names {
-		var set policyapi.PolicySet
-		err := e.kube.Get(ctx, client.ObjectKey{Namespace: e.binding.Namespace, Name: name}, &set)
-		switch {
-		case apierrors.IsNotFound(err):
-			missing = append(missing, name)
-		case err != nil:
-			return kubeError("reading PolicySets", err)
-		case slices.ContainsFunc(set.OwnerReferences, isSandbox):
-			granted = append(granted, name)
-		}
-	}
-	if len(missing) > 0 {
-		return refuse("unknown_policy_set", "no PolicySet exists named %q", missing)
-	}
-	if len(granted) > 0 {
-		return refuse("launcher_policy_set", "PolicySets %q are other Sandboxes' launcher grants", granted)
-	}
-	return nil
-}
-
-func isSandbox(owner metav1.OwnerReference) bool {
-	return owner.APIVersion == sandboxapi.GroupVersion.String() && owner.Kind == sandboxapi.SandboxKind
+	return fmt.Errorf("%w: EnvironmentService create: %w", worker.ErrOutcomeUnknown, err)
 }
 
 // grant writes the launcher grants on sandbox for caller, when there are any: a PolicySet of their rules and a

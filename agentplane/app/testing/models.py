@@ -7,10 +7,9 @@ from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from agentplane.action_service.policy_view import EffectivePolicyView
-from agentplane.app.sandbox_models import MIN_IDLE_SUSPEND_AFTER_SECONDS, InboxTag
 from agentplane.egress.decisions import Decision
 from agentplane.egress.resources import Target
 from agentplane.env.runtime.harness import Harness
@@ -18,21 +17,6 @@ from agentplane.policy_sets import ConditionStatus
 from agentplane.subjects import ServiceAccountRef
 
 SUBSET_ROW_LIMIT = 200
-
-SandboxName = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", min_length=1, max_length=57)]
-
-
-class NewSandbox(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: SandboxName
-    template: str = Field(min_length=1)
-    preset: str | None = None
-    policy_sets: list[str] = Field(default_factory=list)
-    inbox_tags: list[InboxTag] = Field(default_factory=list)
-    bootstrap: str = Field(default="", max_length=65_536)
-    wake_on_send: bool = False
-    idle_suspend_after_seconds: int | None = Field(default=None, ge=MIN_IDLE_SUSPEND_AFTER_SECONDS)
 
 
 class CredentialView(BaseModel):

@@ -19,6 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
@@ -205,6 +206,9 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	if err := sandboxapi.AddToScheme(scheme); err != nil {
 		return err
 	}
+	if err := policyapi.AddToScheme(scheme); err != nil {
+		return err
+	}
 	if err := kubevirtv1.AddToScheme(scheme); err != nil {
 		return err
 	}
@@ -249,7 +253,9 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	if err != nil {
 		return err
 	}
-	environmentService, err := environments.New(c.Namespace, objects, c.RuntimeCatalog, lifecycleManager, accountSet(c.EnvironmentReaders))
+	environmentService, err := environments.New(c.Namespace, objects, c.RuntimeCatalog, lifecycleManager, accountSet(c.EnvironmentReaders), environments.ManagementOptions{
+		Managers: accountSet(c.EnvironmentManagers), Launchers: accountSet(c.EnvironmentLaunchers), DefaultPolicySets: c.EnvironmentDefaultPolicySets,
+	})
 	if err != nil {
 		return err
 	}
@@ -257,8 +263,9 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	if c.Delegation != nil {
 		delegatedActors = append(delegatedActors, c.Delegation.Actor)
 	}
+	dispatchAccounts := append(append(append(append([]auth.Account{}, c.DispatcherCallers...), c.EnvironmentReaders...), c.EnvironmentManagers...), c.EnvironmentLaunchers...)
 	dispatchAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.DispatcherAudience,
-		accountNamespaces(append(append([]auth.Account{}, c.DispatcherCallers...), c.EnvironmentReaders...), &auth.Account{Namespace: c.Namespace}, delegatedActors...))
+		accountNamespaces(dispatchAccounts, &auth.Account{Namespace: c.Namespace}, delegatedActors...))
 	if err != nil {
 		return err
 	}

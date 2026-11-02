@@ -43,7 +43,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	dbmigrate "github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/util/netlistener"
@@ -153,11 +152,6 @@ func run(ctx context.Context, config Config) error {
 		return err
 	}
 	threadStore := threads.NewStore(db)
-	inventory, err := sandboxes.New(config.SandboxNamespace, objects, config.DefaultPolicySets,
-		&sandboxespb.ServiceAccount{Namespace: config.SandboxNamespace, Name: "app"})
-	if err != nil {
-		return fmt.Errorf("configure Sandbox inventory: %w", err)
-	}
 	policies := policyaccess.New(config.SandboxNamespace, objects)
 	liveIndex, err := liveinventory.New(kubeConfig, config.SandboxNamespace)
 	if err != nil {
@@ -187,13 +181,6 @@ func run(ctx context.Context, config Config) error {
 	environments, err := sandboxes.NewEnvironmentReader(config.SandboxNamespace, environmentpb.NewEnvironmentServiceClient(environmentConn))
 	if err != nil {
 		return fmt.Errorf("configure Environment Service reader: %w", err)
-	}
-	environmentClient, err := bridge.NewEnvironmentClient(bridge.EnvironmentConfig{
-		Target: config.SessionDispatcherTarget, TokenFile: config.SessionDispatcherTokenFile,
-		Timeout: time.Duration(config.SessionDispatcherRequestTimeoutSecs * float64(time.Second)),
-	})
-	if err != nil {
-		return fmt.Errorf("configure EnvironmentService: %w", err)
 	}
 	appBridge, err := bridge.New(environments, runner, dispatcher)
 	if err != nil {
@@ -339,7 +326,7 @@ func run(ctx context.Context, config Config) error {
 	server := NewHTTPServer(appAuth)
 	app := &appService{
 		config: config, environments: environments, bridge: appBridge, runnerStatus: appBridge,
-		threadWriter: threadStore, threadReader: threadStore,
+		threadWriter: threadStore, threadReader: threadStore, threadHistory: history,
 		updates: wakeupHub, updatesConnected: wakeupHub.Connected, drainDone: server.DrainDone(),
 	}
 	if err := RegisterAppConfigRoutes(server, app); err != nil {
@@ -348,7 +335,6 @@ func run(ctx context.Context, config Config) error {
 	if err := RegisterCoreRoutes(server, config); err != nil {
 		return fmt.Errorf("register core routes: %w", err)
 	}
-	RegisterSandboxRoutes(server, config, inventory, environmentClient)
 	RegisterPolicyRoutes(server, config, environments, policies)
 	if err := RegisterSessionRoutes(server, app); err != nil {
 		return fmt.Errorf("register Session opening facade: %w", err)

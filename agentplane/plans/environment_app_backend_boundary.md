@@ -7,17 +7,17 @@ protobuf-backed service contracts for shared resource data and operations.
 
 - **Inventory and discovery:** EnvironmentService owns the shared `EnvironmentDescriptor` for
   exact-UID gets, lists and collection watches, including the app's diagnostic fields. The app
-  composes that data with its threads and policy details; the ownership of those other details
+  composes that data with its threads through separate app RPCs; the ownership of policy details
   remains a separate decision.
 - **Lifecycle and configuration:** The selected
   [resume backend](task_dag.md#environment_lifecycle_backend--own-resume-policy-and-guarded-state-changes)
-  owns shared authorization and guarded mutation, initially hosted in the Gateway. The Sandbox
-  Controller reconciles desired state into Pod/VM transitions. Suspend, delete and wake/idle
-  configuration need separately authorized backend contracts; preserve UID/resource-version
-  fences and retry semantics. The service's eventual deployment remains open.
+  owns shared authorization and guarded mutation. EnvironmentService runs in the existing Runner
+  Gateway binary and shares its lifecycle manager. The Sandbox Controller reconciles desired state
+  into Pod/VM transitions. Suspend, delete and wake/idle configuration use separately authorized
+  backend contracts with UID/resource-version fences and preserved retry semantics.
 - **Creation and templates:** The [environment management](task_dag.md#environment_management--dedicated-environment-tools-and-creation)
-  and catalogue decisions own provisioning and template placement. Preserve creation's caller
-  attribution, idempotency and unknown-outcome handling when extracting the app's implementation.
+  and catalogue decisions own provisioning and template placement. EnvironmentService owns creation
+  and template listing, including caller attribution, idempotency and unknown-outcome handling.
 - **Console:** Decide whether the KubeVirt console connector becomes a shared backend capability
   or remains an app-specific transport. A browser-facing streaming adapter may remain in the app.
 

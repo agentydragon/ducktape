@@ -11,6 +11,13 @@ data:
       - agentplane-staging/notifications
     environment_readers:
       - agentplane-staging/app
+    environment_managers:
+      - agentplane-staging/app
+    environment_launchers:
+      - agentplane-staging/actions
+    environment_default_policy_sets:
+      - basic
+      - inference-experiments
     gateway_callers:
       - agentplane-staging/app
       - agentplane-staging/notifications
@@ -470,7 +477,23 @@ rules:
       - get
       - list
       - watch
+      - create
       - patch
+      - delete
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxtemplates
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policysets
+    verbs:
+      - get
+      - list
   - apiGroups:
       - coordination.k8s.io
     resources:

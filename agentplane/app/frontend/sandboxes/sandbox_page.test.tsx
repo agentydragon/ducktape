@@ -18,6 +18,7 @@ import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 
 import { api } from "../client";
+import * as sandboxClient from "./client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
 import type * as LiveModule from "../live";
@@ -45,11 +46,11 @@ const live = vi.hoisted(
   () =>
     ({
       snapshot: {
-        sandbox_uid: "00000000-0000-4000-8000-000000000001",
-        threads: [] as SandboxSnapshot["threads"],
+        sandbox_uid: "00000000-0000-4000-8000-000000000001" as string | null,
+        threads: [] as ThreadView[] | { kind: "unavailable"; code: string },
         bindings: [],
         action_policy: null,
-        updates_connected: true,
+        updates_connected: true as boolean,
         watch: { healthy: true, failing: {} },
       },
       health: { healthy: true, failing: {} },
@@ -59,14 +60,34 @@ const live = vi.hoisted(
         stalled: null,
         standing: "current",
       },
-    }) satisfies Live<SandboxSnapshot>
+    }) satisfies Live<
+      SandboxSnapshot & { threads: ThreadView[] | { kind: "unavailable"; code: string }; updates_connected: boolean }
+    >
 );
 vi.mock("../live", async (importOriginal) => ({
   ...(await importOriginal<typeof LiveModule>()),
-  useLive: (url: string) =>
-    url.includes("/other-test?")
+  useLive: (url: string | null) =>
+    url?.includes("/other-test")
       ? { ...live, snapshot: { ...live.snapshot, sandbox_uid: "00000000-0000-4000-8000-000000000002" } }
       : live,
+}));
+
+vi.mock("../threads/live", () => ({
+  useThreadsLive: (listing: { sandboxUID: string } | null) => ({
+    snapshot: Array.isArray(live.snapshot.threads)
+      ? {
+          threads: live.snapshot.threads,
+          sandbox_uid: listing?.sandboxUID,
+          more: false,
+          updates_connected: live.snapshot.updates_connected,
+        }
+      : null,
+    stream: {
+      stalled: Array.isArray(live.snapshot.threads) ? null : live.snapshot.threads.code,
+      standing: "current",
+    },
+    health: live.health,
+  }),
 }));
 
 const readySandbox = makeReadySandbox("startup-test", "00000000-0000-4000-8000-000000000001");
@@ -80,7 +101,7 @@ vi.mock("./live", async (importOriginal) => ({
   ...(await importOriginal<typeof SandboxLiveModule>()),
   useRequiredSandboxesLive: () => inventory,
 }));
-const mutableSnapshot = live.snapshot as SandboxSnapshot;
+const mutableSnapshot = live.snapshot;
 const readyPod = readySandbox.pod;
 const readyStatus = readySandbox.status;
 
@@ -403,18 +424,13 @@ it("shows runner process and Session diagnostics, including a dormant Session", 
 it("saves the wake policy from the Status tab", async () => {
   await render(async () => Response.json([]));
   await act(async () => tab("Status").click());
-  const patch = vi
-    .spyOn(api, "PATCH")
-    .mockResolvedValue({ data: undefined, response: new Response(null, { status: 204 }) } as never);
+  const patch = vi.spyOn(sandboxClient, "setEnvironmentWakeOnSend").mockResolvedValue(undefined);
   try {
     const wake = container.querySelector<HTMLInputElement>('input[aria-label="Wake on message for startup-test"]');
     if (!wake) throw new Error("Missing Wake on message checkbox");
     await act(async () => wake.click());
 
-    expect(patch).toHaveBeenCalledWith("/sandboxes/{name}/wake-policy", {
-      params: { path: { name: "startup-test" } },
-      body: { uid: readySandbox.target!.uid, wake_on_send: true },
-    });
+    expect(patch).toHaveBeenCalledWith(readySandbox.target, true);
   } finally {
     patch.mockRestore();
   }
@@ -1037,7 +1053,7 @@ it("offers Delete in the actions menu only for a suspended Sandbox", async () =>
   expect(deleteItem().disabled).toBe(false);
   await act(async () => deleteItem().click());
   expect(document.body.textContent).toContain("Delete startup-test?");
-  const deleted = vi.spyOn(api, "DELETE").mockResolvedValue({ response: new Response(null, { status: 204 }) } as never);
+  const deleted = vi.spyOn(sandboxClient, "deleteEnvironment").mockResolvedValue(undefined);
   // The confirmation belongs to the incarnation originally selected, even if its name is reused.
   readySandbox.target!.uid = "00000000-0000-4000-8000-000000000099";
   mutableSnapshot.sandbox_uid = readySandbox.target!.uid;
@@ -1047,10 +1063,12 @@ it("offers Delete in the actions menu only for a suspended Sandbox", async () =>
   );
   if (!confirm) throw new Error("Missing delete confirmation");
   await act(async () => confirm.click());
-  expect(deleted).toHaveBeenCalledWith("/sandboxes/{name}", {
-    params: { path: { name: "startup-test" } },
-    body: { uid: "00000000-0000-4000-8000-000000000001" },
-  });
+  expect(deleted).toHaveBeenCalledWith(
+    expect.objectContaining({
+      name: "startup-test",
+      uid: "00000000-0000-4000-8000-000000000001",
+    })
+  );
 });
 
 it("links the Sandbox and its Threads to their scoped Grafana trace searches", async () => {

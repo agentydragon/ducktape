@@ -11,7 +11,7 @@ import pytest_bazel
 from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
-from agentplane.app.testing.models import NewSandbox
+from agentplane.proto import sandboxes_pb2
 from agentplane.sandboxes.environments import environment_service_pb2 as envpb
 from agentplane.system_tests import native_artifacts, sandbox, scenario
 from agentplane.system_tests.cluster import Cluster
@@ -27,7 +27,7 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
         client.__aenter__.return_value = client
         client.opened_sandbox_uids = set()
 
-        async def create(spec: NewSandbox) -> envpb.TargetHandle:
+        async def create(spec: sandboxes_pb2.CreateSandboxRequest) -> envpb.TargetHandle:
             view = views[spec.name] = envpb.EnvironmentDescriptor(
                 target=envpb.TargetHandle(namespace="test", name=spec.name, uid=str(uuid4())),
                 execution_account=envpb.AccountHandle(namespace="test", name="runner"),

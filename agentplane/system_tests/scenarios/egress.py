@@ -108,14 +108,16 @@ class Probe(BaseModel):
     unlisted_refused: bool = Field(description="Whether the host no policy names was refused.")
 
 
-async def _decision_for(client: Client, sandbox: str, host: str, *, after: datetime | None = None) -> Decision:
+async def _decision_for(
+    client: Client, sandbox: str, uid: str, host: str, *, after: datetime | None = None
+) -> Decision:
     """The newest decision about `host`, once the proxy has one later than `after`."""
     with tracer.start_as_current_span(
         "system_test.egress.proxy_decision", record_exception=False, set_status_on_exception=False
     ):
         async for attempt in AsyncRetrying(stop=stop_after_delay(DECISION_SECONDS), wait=wait_fixed(1), reraise=True):
             with attempt:
-                decisions = await client.decisions(sandbox)
+                decisions = await client.decisions(sandbox, uid)
                 for decision in reversed(decisions):
                     if decision.host == host and (after is None or decision.at > after):
                         return decision
@@ -155,12 +157,12 @@ async def a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     )
     assert probe.unlisted_refused, f"{UNLISTED_HOST} was reachable:\n{turn.transcript}"
 
-    admitted = await _decision_for(client, view.target.name, probe_credential.HOST)
+    admitted = await _decision_for(client, view.target.name, view.target.uid, probe_credential.HOST)
     assert admitted.outcome is Outcome.ALLOW, f"{admitted!r}"
     assert admitted.policy == probe_credential.POLICY_SET, f"{admitted!r}"
     assert admitted.substituted, f"the API call was admitted with no credential substituted: {admitted!r}"
 
-    refused = await _decision_for(client, view.target.name, UNLISTED_HOST)
+    refused = await _decision_for(client, view.target.name, view.target.uid, UNLISTED_HOST)
     assert refused.outcome is Outcome.DENY, f"{refused!r}"
     assert refused.reason == "no-rule", f"{refused!r}"
 
@@ -198,7 +200,9 @@ async def the_model_call_itself_goes_through_the_proxy(
         await model.reply(await model.request(), Text("ok"))
     turn = answered.result()
 
-    served = await _decision_for(client, view.target.name, f"llm-ingress.{cluster.namespace}.svc.cluster.local")
+    served = await _decision_for(
+        client, view.target.name, view.target.uid, f"llm-ingress.{cluster.namespace}.svc.cluster.local"
+    )
     assert served.outcome is Outcome.ALLOW, f"{served!r}\n{turn.transcript}"
     assert served.policy == BASIC_POLICY, f"the model call was admitted by another policy: {served!r}"
     assert served.substituted, (
@@ -262,7 +266,7 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
     command = f"curl -sS -o /dev/null -w '%{{http_code}}\\n' http://{host}{path}"
 
     await agent.run_shell(model, command)
-    refused = await _decision_for(client, view.target.name, host)
+    refused = await _decision_for(client, view.target.name, view.target.uid, host)
     assert refused.outcome is Outcome.DENY, f"an unbound sandbox was admitted: {refused!r}"
 
     # The app's grant route needs an operator login, which this agent-token suite does not hold, so
@@ -276,7 +280,7 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
             with attempt:
                 after = datetime.now(UTC)
                 turn = await agent.run_shell(model, command)
-                admitted = await _decision_for(client, view.target.name, host, after=after)
+                admitted = await _decision_for(client, view.target.name, view.target.uid, host, after=after)
                 assert admitted.outcome is Outcome.ALLOW, f"{admitted!r}\n{turn.transcript}"
                 assert admitted.policy == runtime_grant.POLICY_SET, f"{admitted!r}"
 

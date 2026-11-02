@@ -1,5 +1,5 @@
-// Package sandboxes provides the app's caller-scoped access to the namespaced Sandbox inventory.
-package sandboxes
+// Package management owns namespaced Sandbox creation and lifecycle mutations.
+package management
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -27,14 +28,11 @@ import (
 )
 
 const (
-	CreateIntentAnnotation = "agentplane.allegedly.works/create-intent"
-
 	maxBootstrapCharacters = 65_536
 	mutationAttempts       = 5
 )
 
-// Access is the app's namespace-scoped Sandbox service. Its caller and default policy sets are
-// fixed at construction, as they are for the app process identity.
+// Access implements namespace-scoped Sandbox mutations for one authenticated caller.
 type Access struct {
 	namespace        string
 	objects          client.Client
@@ -43,7 +41,7 @@ type Access struct {
 	caller           *sandboxespb.ServiceAccount
 }
 
-// New creates access over one Sandbox namespace and app caller identity.
+// New creates access over one Sandbox namespace and caller identity.
 func New(
 	namespace string,
 	objects client.Client,
@@ -158,8 +156,8 @@ func (a *Access) SetWakeOnSend(ctx context.Context, name, uid string, wakeOnSend
 func (a *Access) SetIdleSuspendAfter(ctx context.Context, name, uid string, value *durationpb.Duration) error {
 	var duration *metav1.Duration
 	if value != nil {
-		if err := value.CheckValid(); err != nil {
-			return &InvalidSandboxError{Reason: "idle suspend duration is invalid"}
+		if err := value.CheckValid(); err != nil || value.AsDuration() < time.Minute {
+			return &InvalidSandboxError{Reason: "idle suspend duration must be at least one minute"}
 		}
 		duration = &metav1.Duration{Duration: value.AsDuration()}
 	}
@@ -252,18 +250,29 @@ func (a *Access) requirePolicySets(ctx context.Context, names []string) error {
 	if err := a.objects.List(ctx, &sets, client.InNamespace(a.namespace)); err != nil {
 		return fmt.Errorf("list PolicySets: %w", err)
 	}
-	known := make(map[string]struct{}, len(sets.Items))
+	known := make(map[string]bool, len(sets.Items))
 	for _, set := range sets.Items {
-		known[set.Name] = struct{}{}
+		ownedBySandbox := false
+		for _, owner := range set.OwnerReferences {
+			if owner.APIVersion == sandboxapi.GroupVersion.String() && owner.Kind == sandboxapi.SandboxKind {
+				ownedBySandbox = true
+			}
+		}
+		known[set.Name] = ownedBySandbox
 	}
-	missing := make([]string, 0)
+	missing, reserved := make([]string, 0), make([]string, 0)
 	for _, name := range names {
-		if _, ok := known[name]; !ok {
+		if owned, ok := known[name]; !ok {
 			missing = append(missing, name)
+		} else if owned || strings.HasSuffix(name, ".launcher") {
+			reserved = append(reserved, name)
 		}
 	}
 	if len(missing) > 0 {
 		return &UnknownPolicySetError{Names: missing, Kind: "PolicySet"}
+	}
+	if len(reserved) > 0 {
+		return &LauncherPolicySetError{Names: reserved}
 	}
 	return nil
 }
@@ -277,7 +286,7 @@ func (a *Access) retry(ctx context.Context, name, intent string) (*sandboxapi.Sa
 		}
 		return nil, err
 	}
-	if resource.DeletionTimestamp != nil || resource.Annotations[CreateIntentAnnotation] != intent {
+	if resource.DeletionTimestamp != nil || resource.Annotations[sandboxapi.CreateIntentAnnotation] != intent {
 		return nil, &SandboxConflictError{Name: name}
 	}
 	return resource, nil
@@ -322,7 +331,7 @@ func sandboxForCreate(
 	policySets []string,
 	intent string,
 ) *sandboxapi.Sandbox {
-	annotations := map[string]string{CreateIntentAnnotation: intent}
+	annotations := map[string]string{sandboxapi.CreateIntentAnnotation: intent}
 	labels := map[string]string{}
 	if request.Preset != nil {
 		labels[sandboxview.PresetLabel] = request.GetPreset()
@@ -362,8 +371,8 @@ func validateCreate(request *sandboxespb.CreateSandboxRequest) error {
 		return &InvalidSandboxError{Reason: "script exceeds 65536 characters"}
 	}
 	if request.IdleSuspendAfter != nil {
-		if err := request.IdleSuspendAfter.CheckValid(); err != nil || request.IdleSuspendAfter.AsDuration() < 0 {
-			return &InvalidSandboxError{Reason: "idle suspend duration is invalid"}
+		if err := request.IdleSuspendAfter.CheckValid(); err != nil || request.IdleSuspendAfter.AsDuration() < time.Minute {
+			return &InvalidSandboxError{Reason: "idle suspend duration must be at least one minute"}
 		}
 	}
 	return nil

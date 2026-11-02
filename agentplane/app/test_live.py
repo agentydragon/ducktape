@@ -10,7 +10,6 @@ import grpc
 import httpx
 import pytest
 import pytest_bazel
-from google.protobuf.json_format import ParseDict
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
@@ -29,11 +28,8 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
-from agentplane.sandboxes.environments import environment_service_pb2
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-
-# gazelle:include_dep @pypi//protobuf
 
 
 @pytest.fixture
@@ -143,6 +139,12 @@ async def _next_decisions(stream: AsyncIterator[str]) -> DecisionsSnapshot:
     return DecisionsSnapshot.model_validate_json(await anext(stream))
 
 
+async def _environment_uid(http: httpx.AsyncClient, name: str) -> str:
+    response = await http.get("/upstream/environments/v1/environments", params={"limit": 100})
+    response.raise_for_status()
+    return next(item["target"]["uid"] for item in response.json()["items"] if item["target"]["name"] == name)
+
+
 async def test_the_streams_need_a_caller(app: AppProcess) -> None:
     async with httpx.AsyncClient(base_url=app.url) as unauthenticated:
         for route in (
@@ -156,7 +158,7 @@ async def test_the_streams_need_a_caller(app: AppProcess) -> None:
             assert (await unauthenticated.get(route)).status_code == 401
 
 
-async def test_threads_the_history_service_cannot_list_are_said_so_in_the_frame(
+async def test_environment_thread_rpc_reports_history_unavailable(
     db_url: str,
     history_client: HistoryServiceClient,
     namespace: SandboxNamespace,
@@ -175,18 +177,14 @@ async def test_threads_the_history_service_cannot_list_are_said_so_in_the_frame(
         ) as app,
         httpx.AsyncClient(base_url=app.url, cookies=app.cookies, headers={"Origin": app.url}) as http,
         asyncio.timeout(10),
-        http.stream("GET", "/live/sandboxes/runner-1") as response,
     ):
-        snapshot = json.loads(await anext(_snapshots(response)))
-        environment_response = await http.get(
-            f"/upstream/environments/v1/environments/{namespace.name}/runner-1",
-            params={"target.uid": snapshot["sandbox_uid"]},
+        environments = await http.get("/upstream/environments/v1/environments", params={"limit": 100})
+        assert environments.status_code == 200, environments.text
+        uid = next(
+            item["target"]["uid"] for item in environments.json()["items"] if item["target"]["name"] == "runner-1"
         )
-        assert environment_response.status_code == 200, environment_response.text
-        environment = ParseDict(environment_response.json(), environment_service_pb2.EnvironmentDescriptor())
-        assert environment.target.name == "runner-1"
-        assert environment.target.uid == snapshot["sandbox_uid"]
-        assert snapshot["threads"] == {"kind": "unavailable", "code": "UNAVAILABLE"}
+        response = await http.get("/upstream/app/v1/threads", params={"sandbox_uid": uid})
+        assert response.status_code == 503, response.text
 
 
 async def test_thread_metadata_watch_follows_replica_commits(
@@ -357,7 +355,11 @@ async def test_egress_decision_stream_receives_snapshots_and_recovers(
 ) -> None:
     subject = (namespace.name, "runner-1")
     egress_admin.decisions[subject] = [decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "allow")]
-    async with asyncio.timeout(10), http.stream("GET", "/live/sandboxes/runner-1/egress/decisions") as response:
+    uid = await _environment_uid(http, "runner-1")
+    async with (
+        asyncio.timeout(10),
+        http.stream("GET", "/live/sandboxes/runner-1/egress/decisions", params={"sandbox_uid": uid}) as response,
+    ):
         stream = _snapshots(response)
         first = await _next_decisions(stream)
         assert isinstance(first.decisions, list)
@@ -399,7 +401,11 @@ async def test_egress_decision_stream_reconnects_after_lease_with_rotated_token(
 ) -> None:
     subject = (namespace.name, "runner-1")
     egress_admin.decisions[subject] = [decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "allow")]
-    async with asyncio.timeout(10), http.stream("GET", "/live/sandboxes/runner-1/egress/decisions") as response:
+    uid = await _environment_uid(http, "runner-1")
+    async with (
+        asyncio.timeout(10),
+        http.stream("GET", "/live/sandboxes/runner-1/egress/decisions", params={"sandbox_uid": uid}) as response,
+    ):
         stream = _snapshots(response)
         assert (await _next_decisions(stream)).watching
         assert egress_admin.tokens == ["Bearer fake-token"]
@@ -410,7 +416,10 @@ async def test_egress_decision_stream_reconnects_after_lease_with_rotated_token(
 
 
 async def test_egress_decision_stream_says_a_sandbox_is_missing(http: httpx.AsyncClient) -> None:
-    async with asyncio.timeout(10), http.stream("GET", "/live/sandboxes/nope/egress/decisions") as response:
+    async with (
+        asyncio.timeout(10),
+        http.stream("GET", "/live/sandboxes/nope/egress/decisions", params={"sandbox_uid": "missing"}) as response,
+    ):
         missing = await _next_decisions(_snapshots(response))
         assert not missing.watching
         assert isinstance(missing.decisions, DecisionsUnavailable)

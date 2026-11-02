@@ -289,7 +289,7 @@ func TestAnExecutorRefusesAPresetThatCannotFillItsActions(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			binding := catalog.OrchestrationBinding{Description: "d", Namespace: "test", Presets: json.RawMessage(presets)}
-			if _, err := NewExecutor(testGroup, binding, kube, nil, nil, 30*time.Second); err == nil {
+			if _, err := NewExecutor(testGroup, binding, kube, nil, nil, nil, 30*time.Second); err == nil {
 				t.Error("NewExecutor() accepted the presets")
 			}
 		})
