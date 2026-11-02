@@ -164,17 +164,15 @@ spa_bundle(
 #
 # Generated from the scenario YAML the GNOME renders and the CLI snapshot also use, by the
 # Python that serves and renders it: `scenes.json` is exactly what `/v1/quotas` returns for
-# each scenario, `format_cases.json` what the Python renderers print for every window in them.
+# each scenario.
 
 genrule(
     name = "web_fixtures",
     testonly = True,
     outs = [
         "fixtures/scenes.json",
-        "fixtures/format_cases.json",
     ],
-    cmd = "$(location //aiquota/testing:export_web_fixtures_bin) --scenes $(location fixtures/scenes.json) " +
-          "--format-cases $(location fixtures/format_cases.json)",
+    cmd = "$(location //aiquota/testing:export_web_fixtures_bin) --scenes $(location fixtures/scenes.json)",
     tools = ["//aiquota/testing:export_web_fixtures_bin"],
 )
 

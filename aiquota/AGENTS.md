@@ -15,13 +15,12 @@ Any presentation change to one surface is mirrored in the other two (the user re
 by side and reports drift as a bug): the single "currently over plan" / "extra spend active"
 signal, window-row layout (label, used %, reset, pace, forecast), header (provider,
 error/stale annotations, extra-spend tail), collapsed view while burning extra. Shared
-formatters go in <render/format.py>, ported to JS.
+quota presentation decisions live in <render/view_model.py>.
 
-Both JS surfaces compute live countdown and pace locally because they tick every second. They
-share the runtime-neutral implementation in <shared/presentation.ts>; the browser adapts its
-snake_case API data in <frontend/format.ts>, and the GNOME zip carries the emitted module
-beside `extension.js`. The browser format test replays Python-generated cases, and the GNOME
-render test loads the packaged extension across the shared scenarios.
+The API emits time-refreshed window presentation views on the event stream. Python computes
+pace, forecast, tint and meter position once in the shared view model; the CLI, browser and
+GNOME extension render those fields. Presentation updates do not poll providers. The desktop
+daemon forwards the server view and only writes its raw cache when the quota data changes.
 
 Scenarios in `testing/fixtures/*.yaml` are `AllQuotas` Pydantic model data with fixed timestamps.
 CLI snapshots (`render/test_human.py`) load those models directly; GNOME and browser fixtures

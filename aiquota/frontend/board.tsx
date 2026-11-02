@@ -17,27 +17,19 @@
 
 import { type JSX } from "react";
 
-import type { AllQuotasView, BurnStatus, ExtraSpend, PaidCredits, ProviderView, QuotaWindow } from "./schema";
-import { displayUsedPercent, formatKnownExpiries, formatUsd, formatUsdWhole, formatWindowLabel } from "./format";
+import type { AllQuotasView, BurnStatus, ExtraSpend, PaidCredits, ProviderView, WindowView } from "./schema";
+import { formatKnownExpiries, formatUsd, formatUsdWhole } from "./format";
 import {
-  bindingTint,
-  computePace,
   formatAge,
   formatClock,
   formatDuration,
-  formatPace,
-  formatPaceForecast,
   formatPeakInterval,
   formatPrepaidBalance,
   formatMultiplier,
   roundHalfToEven,
-  elapsedFraction,
-  isExhausted,
-  tintFor,
   type Tint,
-  type WindowMath,
 } from "../shared/presentation.js";
-import { effectiveQuota, isShortWindow, resetSeconds, type EffectiveQuota, type PrepaidBalance } from "./quotas";
+import { effectiveQuota, type EffectiveQuota, type PrepaidBalance } from "./quotas";
 
 // The payload carries provider ids; these are how the vendors write their names, matching the
 // GNOME panel's labels. An id with no entry shows as itself rather than being guessed at.
@@ -59,7 +51,7 @@ export function QuotaBoard({ quotas, now }: { quotas: AllQuotasView; now: number
 
 function ProviderCard({ provider, now }: { provider: ProviderView; now: number }): JSX.Element {
   const quota = effectiveQuota(provider);
-  const tint = providerTint(provider, quota, now);
+  const tint = providerTint(provider, quota);
   const overPlan = provider.currently_over_plan;
   const paidCreditsActive = provider.paid_credits_active;
   return (
@@ -80,9 +72,9 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
       </header>
 
       {quota.error !== null && <p className="aiquota-error">{quota.error}</p>}
-      {overPlan && <OverPlanStrip extra={quota.extraSpend} windows={quota.windows} now={now} />}
+      {overPlan && <OverPlanStrip extra={quota.extraSpend} windows={quota.windows} />}
       {quota.paidCredits && (
-        <PaidCreditsStrip credits={quota.paidCredits} active={paidCreditsActive} windows={quota.windows} now={now} />
+        <PaidCreditsStrip credits={quota.paidCredits} active={paidCreditsActive} windows={quota.windows} />
       )}
       {quota.prepaidBalance && <PrepaidBalanceStrip balance={quota.prepaidBalance} />}
       {quota.resetCredits !== null && (
@@ -102,9 +94,7 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
               <WindowRow
                 key={`${window.name ?? ""}-${window.window_seconds}`}
                 window={window}
-                isShort={isShortWindow(window, quota.windows)}
                 stale={quota.staleSince !== null}
-                now={now}
               />
             ))}
 
@@ -115,49 +105,28 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
   );
 }
 
-function WindowRow({
-  window,
-  isShort,
-  stale,
-  now,
-}: {
-  window: QuotaWindow;
-  isShort: boolean;
-  stale: boolean;
-  now: number;
-}): JSX.Element {
-  const math: WindowMath = {
-    usedPercent: window.used_percent,
-    resetSeconds: resetSeconds(window, now),
-    windowSeconds: window.window_seconds,
-  };
-  const exhausted = isExhausted(math);
-  const pace = exhausted ? null : computePace(math);
-  const tint = stale ? "stale" : tintFor(pace, window.used_percent, isShort);
-  const label = formatWindowLabel(window);
-  const used = displayUsedPercent(window);
-  const paceText = formatPace(pace);
-  const forecast = formatPaceForecast(pace, math.resetSeconds);
+function WindowRow({ window, stale }: { window: WindowView; stale: boolean }): JSX.Element {
+  const tint = stale ? "stale" : window.tint;
   return (
     <section className="aiquota-window">
       <div className="aiquota-window-head">
-        <span className="aiquota-window-label">{label}</span>
-        <span className="aiquota-window-used">{used}%</span>
+        <span className="aiquota-window-label">{window.label}</span>
+        <span className="aiquota-window-used">{window.used}%</span>
       </div>
       <Meter
         usedPercent={window.used_percent}
-        elapsed={elapsedFraction(math)}
+        elapsed={window.elapsed}
         tint={tint}
-        label={`${label}: ${used}% used, ${roundHalfToEven(elapsedFraction(math) * 100)}% of the window elapsed`}
+        label={`${window.label}: ${window.used}% used, ${roundHalfToEven(window.elapsed * 100)}% of the window elapsed`}
       />
       <div className="aiquota-window-meta">
-        <span>↻ {formatDuration(math.resetSeconds)}</span>
-        {exhausted ? (
+        <span>↻ {window.reset}</span>
+        {window.exhausted ? (
           <span className="aiquota-exhausted">exhausted</span>
         ) : (
           <>
-            {paceText && <span className={`aiquota-pace aiquota-tint-${tint}`}>Δ{paceText}</span>}
-            {forecast && <span>{forecast}</span>}
+            {window.pace && <span className={`aiquota-pace aiquota-tint-${tint}`}>Δ{window.pace}</span>}
+            {window.forecast && <span>{window.forecast}</span>}
           </>
         )}
       </div>
@@ -205,27 +174,14 @@ function Meter({
  * CLI and the GNOME popup both drop the bars here and show the two countdowns on one line —
  * what is left to know is when the plan starts covering work again.
  */
-function OverPlanStrip({
-  extra,
-  windows,
-  now,
-}: {
-  extra: ExtraSpend | null;
-  windows: QuotaWindow[];
-  now: number;
-}): JSX.Element {
+function OverPlanStrip({ extra, windows }: { extra: ExtraSpend | null; windows: WindowView[] }): JSX.Element {
   return (
     <div className="aiquota-strip aiquota-strip-over-plan">
       <p className="aiquota-strip-line">
         ⚡ Paying above subscription{extra ? ` — ${extraSpendText(extra)} this month` : ""}
       </p>
       <p className="aiquota-strip-note">
-        {windows
-          .map(
-            (window) =>
-              `${formatWindowLabel(window)}: ${displayUsedPercent(window)}% ↻ ${formatDuration(resetSeconds(window, now))}`
-          )
-          .join("   ")}
+        {windows.map((window) => `${window.label}: ${window.used}% ↻ ${window.reset}`).join("   ")}
       </p>
     </div>
   );
@@ -263,12 +219,10 @@ function PaidCreditsStrip({
   credits,
   active,
   windows,
-  now,
 }: {
   credits: PaidCredits;
   active: boolean;
-  windows: QuotaWindow[];
-  now: number;
+  windows: WindowView[];
 }): JSX.Element {
   const amount = credits.unlimited ? "unlimited credits" : formatCreditBalance(credits.balance);
   return (
@@ -278,12 +232,7 @@ function PaidCreditsStrip({
       </p>
       {active && (
         <p className="aiquota-strip-note">
-          {windows
-            .map(
-              (window) =>
-                `${formatWindowLabel(window)}: ${displayUsedPercent(window)}% ↻ ${formatDuration(resetSeconds(window, now))}`
-            )
-            .join("   ")}
+          {windows.map((window) => `${window.label}: ${window.used}% ↻ ${window.reset}`).join("   ")}
         </p>
       )}
     </div>
@@ -334,20 +283,10 @@ function extraSpendText(extra: ExtraSpend): string {
   return `extra ${formatUsd(extra.used_usd)}/${formatUsdWhole(extra.monthly_limit_usd)} (${roundHalfToEven(extra.utilization)}%)`;
 }
 
-function providerTint(provider: ProviderView, quota: EffectiveQuota, now: number): Tint | "error" {
+function providerTint(provider: ProviderView, quota: EffectiveQuota): Tint | "error" {
   if (quota.error !== null && quota.windows.length === 0) return "error";
   if (quota.windows.length === 0) return "unknown";
-  if (provider.currently_over_plan) return "hot";
+  if (provider.currently_over_plan || provider.paid_credits_active) return "hot";
   if (quota.staleSince !== null) return "stale";
-  return bindingTint(
-    quota.windows.map((window) => {
-      const math: WindowMath = {
-        usedPercent: window.used_percent,
-        resetSeconds: resetSeconds(window, now),
-        windowSeconds: window.window_seconds,
-      };
-      const exhausted = isExhausted(math);
-      return exhausted ? "hot" : tintFor(computePace(math), window.used_percent, isShortWindow(window, quota.windows));
-    })
-  );
+  return provider.summary_tint;
 }

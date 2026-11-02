@@ -19,6 +19,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":format_lib",
         "//aiquota:models",
         "//aiquota:pace",
         "//aiquota:peak_windows",
@@ -35,7 +36,7 @@ py_library(
         ":format_lib",
         ":view_model_lib",
         "//aiquota:models",
-        "//aiquota:pace",
+        "@pypi//rich",
     ],
 )
 
@@ -45,8 +46,8 @@ py_library(
     imports = ["../.."],
     visibility = ["//aiquota:__pkg__"],
     deps = [
+        ":view_model_lib",
         "//aiquota:models",
-        "//aiquota:pace",
     ],
 )
 

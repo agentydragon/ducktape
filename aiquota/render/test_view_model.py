@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest_bazel
 
@@ -98,3 +98,18 @@ def test_paid_credits_active_only_with_balance_and_exhausted_window() -> None:
         for view in to_view(AllQuotas(providers=providers, fetched_at=_NOW)).providers
     }
     assert statuses == {"positive": True, "empty": False, "no_credits": False}
+
+
+def test_window_presentation_updates_from_one_snapshot() -> None:
+    window = QuotaWindow(
+        used_percent=60, reset_seconds=9000, window_seconds=18000, reset_at=_NOW + timedelta(hours=2, minutes=30)
+    )
+    quota = AllQuotas(
+        fetched_at=_NOW, providers=[ProviderQuota(provider="claude", last_output=_fetch(short_window=window))]
+    )
+    first = to_view(quota, _NOW).providers[0]
+    later = to_view(quota, _NOW + timedelta(hours=1)).providers[0]
+    assert (first.display_windows[0].pace, first.summary_tint, first.summary_index) == ("+10%", "warn", 0)
+    assert (later.display_windows[0].pace, later.summary_tint) == ("-10%", "cool")
+    assert (first.display_windows[0].reset, later.display_windows[0].reset) == ("2h30m", "1h30m")
+    assert (first.display_windows[0].elapsed, later.display_windows[0].elapsed) == (0.5, 0.7)
