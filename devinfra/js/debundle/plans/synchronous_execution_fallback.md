@@ -13,11 +13,15 @@ unresolved roots through `SourceUnitReadClosure` and adds closure reads as eager
 uses. The code does not condition this promotion on `HavocReach`.
 
 The smallest safe next slice is to let a bounded, source-known incomplete
-statement use its represented effects only after the effect set covers the
-read and rebind effects of every callback it can run. Preserve the separate
-ordering constraints for uninitialized observations. Keep the fallback for
-`Global` reach and for any statement whose loss effects remain unrepresented.
-Do not infer completeness from the reach label alone.
+statement use its represented effects only after the effect closure covers all
+behavior whose omission could make a dropped constraint unsound: source reads
+and rebinds, initialization order, property lookups and accessors/getters, heap
+mutation, global reads and writes, and host-triggered callbacks or reentry. The
+closure must include effects of every callback and accessor the statement can
+run. Preserve the separate ordering constraints for uninitialized
+observations. Keep the fallback for `Global` reach and whenever any effect
+domain remains unrepresented. `HavocReach` and a list of precision-loss sites
+classify possible code; neither proves this effect closure complete.
 
 A legacy acceptance rejected by an effect-based validator is differential
 evidence, not by itself a defect in the validator: it can expose an unsound
@@ -39,4 +43,4 @@ ordering constraint.
 The current reach classifier and precision-loss report are in
 `facts/sync_effects/interpreter.rs` and `e2e/synchronous_precision_report_test.rs`;
 the remaining promotion fallback is in `graph/build.rs`. See
-`plans/abstract_interpreter.md` for the broader effect-domain migration.
+<abstract_interpreter.md> for the broader effect-domain migration.
