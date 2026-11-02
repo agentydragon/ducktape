@@ -191,7 +191,7 @@ node's edge from `DISPATCHER_PERSISTENCE_MODEL_DESIGN` stays; its other blockers
 
 ## Order of work
 
-Each step is its own PR or batch, and each that changes traffic updates the README system overview. Steps 4 and 5
+Each step is its own PR or batch, and each that changes traffic updates the [system overview](../docs/system_overview.md#system-overview). Steps 4 and 5
 are independent once step 3 has landed.
 
 1. **Serve `RunnerGateway` beside the old services.** Gateway image only. It wraps the existing Dispatcher and

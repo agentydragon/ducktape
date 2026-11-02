@@ -2054,7 +2054,7 @@ fields, tables and columns; one name per concept across code, settings, manifest
 Thread for its projection; no "hub", "follow" or "shadow" left); READMEs, `SPEC.md` files and
 `docs/` describing the code as it is, without cutover narration; no compatibility branch,
 optional-with-fallback setting or `CLEANUP` tombstone whose condition is met; the system diagram in
-`agentplane/README.md` showing exactly the deployed services and the traffic between them in
+`agentplane/docs/system_overview.md` showing exactly the deployed services and the traffic between them in
 `cluster/cdk8s/agentplane`. Known now: egress and app test support each build a throwaway CA;
 `docs/operator_federation.md` says "Event & Notification Hub";
 `cluster/cdk8s/agentplane/test_sandbox_service.py` is named for the retired Sandbox Service. Findings are fixed in
