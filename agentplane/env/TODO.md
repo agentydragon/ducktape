@@ -66,10 +66,10 @@ for durable replay.
 ## Simplify ownership and process fencing with COSI lifecycle primitives
 
 Runtime and embedded Harness Host share the environment owner fence and inherited native
-descriptor. Revisit the remaining Runtime and Execution owner flocks. Execution has no standalone API
-process; its independently supervised Pod companion retains the generation lease and namespace fence.
-Map each lock's protected state and lifetime across Pod PID 1, subprocess and VM systemd supervision,
-including inherited owner descriptors and the execution companion. Determine
+descriptor. Execution uses Runtime ownership and the COSI Execution controller's serial, joined native
+fence; its independently supervised Pod companion retains the generation lease and namespace fence.
+Revisit the remaining Runtime owner flock across Pod PID 1, subprocess and VM systemd supervision,
+including inherited owner descriptors. Determine
 whether one ownership fence, the COSI backing database's process lock, or another mechanism can
 replace redundant locks while still covering children that outlive their parent.
 

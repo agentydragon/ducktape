@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"syscall"
 	"time"
 
 	execution "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/adapter"
@@ -25,7 +22,9 @@ import (
 var ErrFencedBackendLoss = errors.New("execution backend loss was fenced")
 
 // RunEmbedded keeps the native backend under the Runtime process lifetime. The
-// ready callback publishes the typed adapter after native readiness.
+// Runtime holds the environment owner and serializes attempts through its Execution
+// controller; each prior service must return fenced before its successor starts.
+// The ready callback publishes the typed adapter after native readiness.
 func RunEmbedded(ctx context.Context, config Config, ready func(executorpb.ExecutorServer, context.Context)) error {
 	if ready == nil {
 		return errors.New("embedded Execution API requires a ready callback")
@@ -39,11 +38,6 @@ func runOwned(ctx context.Context, config Config, ready func(executorpb.Executor
 	if err != nil {
 		return err
 	}
-	owner, err := lock(config.StateDir)
-	if err != nil {
-		return err
-	}
-	defer owner.Close()
 	var supervisor *supervision.Supervisor
 	switch config.Backend {
 	case "companion":
@@ -76,43 +70,6 @@ func runOwned(ctx context.Context, config Config, ready func(executorpb.Executor
 		Config: codexexecserver.Config{URL: config.ExecutorURL, ContainerSocket: config.ContainerSocket}, Binary: config.Binary,
 		StateDir: config.WorkingDirectory, Environment: config.Environment, Supervisor: supervisor, LaunchProcess: launchProcess,
 	}), ready)
-}
-
-func lock(directory string) (*os.File, error) {
-	if err := os.MkdirAll(directory, 0700); err != nil {
-		return nil, err
-	}
-	// Kubernetes may add fsGroup permissions to a persistent directory when a
-	// volume is mounted into a replacement Pod. Open the directory without
-	// following a replacement symlink, then restore its private mode through the
-	// file descriptor before creating or opening the owner lock.
-	directoryFD, err := syscall.Open(directory, syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
-	if err != nil {
-		return nil, err
-	}
-	directoryFile := os.NewFile(uintptr(directoryFD), directory)
-	defer directoryFile.Close()
-	if err := syscall.Fchmod(directoryFD, 0700); err != nil {
-		return nil, fmt.Errorf("make execution state directory private: %w", err)
-	}
-	var info syscall.Stat_t
-	if err := syscall.Fstat(directoryFD, &info); err != nil {
-		return nil, err
-	}
-	// Execution state is private to the environment owner.
-	if info.Mode&syscall.S_IFMT != syscall.S_IFDIR || info.Mode&0077 != 0 {
-		return nil, errors.New("execution state directory must be private (0700)")
-	}
-	ownerFD, err := syscall.Openat(directoryFD, ".agentplane-execution-owner", syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0600)
-	if err != nil {
-		return nil, err
-	}
-	owner := os.NewFile(uintptr(ownerFD), filepath.Join(directory, ".agentplane-execution-owner"))
-	if err := syscall.Flock(ownerFD, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		_ = owner.Close()
-		return nil, fmt.Errorf("execution service already owns state directory: %w", err)
-	}
-	return owner, nil
 }
 
 func runWithReady(ctx context.Context, config Config, start codexexecserver.Start, ready func(executorpb.ExecutorServer, context.Context)) (result error) {
