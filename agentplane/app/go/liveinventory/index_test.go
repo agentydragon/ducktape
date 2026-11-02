@@ -140,6 +140,21 @@ func TestIndexSnapshotsWatchesAndBroadcastsChanges(t *testing.T) {
 	if !snapshot.Watch.Available {
 		t.Fatalf("watch health = %+v", snapshot.Watch)
 	}
+	policyGeneration := snapshot.PolicyGeneration
+	if err := objects.Get(ctx, key, sandbox); err != nil {
+		t.Fatal(err)
+	}
+	sandbox.Spec.WakeOnSend = true
+	if err := objects.Update(ctx, sandbox); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, func() bool {
+		updated, err := index.Snapshot(ctx)
+		return err == nil && len(updated.Sandboxes) == 1 && updated.Sandboxes[0].Spec.WakeOnSend
+	})
+	if got := index.PolicyGeneration(); got != policyGeneration {
+		t.Fatalf("descriptor-only Sandbox update changed policy generation: got %d, want %d", got, policyGeneration)
+	}
 
 	gotSandbox, gotPod, err := index.GetSandbox(ctx, sandbox.Name)
 	if err != nil || gotSandbox == nil || gotPod == nil || gotSandbox.Status.Incarnation.UID != string(gotPod.UID) {

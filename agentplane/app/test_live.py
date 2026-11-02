@@ -11,6 +11,7 @@ import httpx
 import pytest
 import pytest_bazel
 from google.protobuf.json_format import ParseDict
+from kubernetes_asyncio import client as k8s_client
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -27,6 +28,7 @@ from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
+from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
 from agentplane.sandboxes.environments import environment_service_pb2
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
@@ -36,7 +38,24 @@ from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
 @pytest.fixture
 async def seeded(namespace: SandboxNamespace) -> None:
-    await namespace.runner("runner-1")
+    runner, _ = await namespace.runner("runner-1")
+    await namespace.core_v1.create_namespaced_service_account(
+        namespace.name,
+        k8s_client.V1ServiceAccount(
+            metadata=k8s_client.V1ObjectMeta(
+                name="runner-1",
+                owner_references=[
+                    k8s_client.V1OwnerReference(
+                        api_version=SANDBOX_API_VERSION,
+                        kind=SANDBOX_KIND,
+                        name="runner-1",
+                        uid=runner["metadata"]["uid"],
+                        controller=True,
+                    )
+                ],
+            )
+        ),
+    )
     await namespace.sandbox("shelved", running=False)
     await namespace.egress_policy_set("github", [{"hosts": ["api.github.com"], "methods": ["GET"]}])
     await namespace.policy_binding("runner-1-picked", subject=namespace.account("runner-1"), policy_sets=["github"])
@@ -334,7 +353,7 @@ async def database_reconnect_gate(db_url: str) -> AsyncIterator[tuple[str, async
 
 
 async def test_egress_decision_stream_receives_snapshots_and_recovers(
-    http: httpx.AsyncClient, namespace: SandboxNamespace, egress_admin: FakeEgressAdmin
+    http: httpx.AsyncClient, namespace: SandboxNamespace, seeded: None, egress_admin: FakeEgressAdmin
 ) -> None:
     subject = (namespace.name, "runner-1")
     egress_admin.decisions[subject] = [decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "allow")]
@@ -372,7 +391,11 @@ async def test_egress_decision_stream_receives_snapshots_and_recovers(
 
 
 async def test_egress_decision_stream_reconnects_after_lease_with_rotated_token(
-    http: httpx.AsyncClient, namespace: SandboxNamespace, egress_admin: FakeEgressAdmin, egress_token_file: Path
+    http: httpx.AsyncClient,
+    namespace: SandboxNamespace,
+    seeded: None,
+    egress_admin: FakeEgressAdmin,
+    egress_token_file: Path,
 ) -> None:
     subject = (namespace.name, "runner-1")
     egress_admin.decisions[subject] = [decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "allow")]

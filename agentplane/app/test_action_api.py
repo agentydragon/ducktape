@@ -10,6 +10,7 @@ The retired ASGI-only checks moved to Go tests alongside the owning behavior:
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -159,6 +160,25 @@ async def _get_environment(
     return ParseDict(response.json(), environment_service_pb2.EnvironmentDescriptor())
 
 
+@asynccontextmanager
+async def _environment_watch(browser: httpx.AsyncClient) -> AsyncIterator[Any]:
+    async with browser.stream(
+        "GET", "/upstream/environments/v1/environments:watch", headers={"Accept": "application/x-ndjson"}, timeout=None
+    ) as response:
+        assert response.status_code == 200
+        yield response.aiter_lines()
+
+
+async def _next_environment_frame(lines: Any) -> environment_service_pb2.WatchEnvironmentsResponse:
+    async for line in lines:
+        if line:
+            envelope = json.loads(line)
+            if "error" in envelope:
+                raise AssertionError(f"EnvironmentService watch failed: {envelope['error']}")
+            return ParseDict(envelope["result"], environment_service_pb2.WatchEnvironmentsResponse())
+    raise AssertionError("EnvironmentService watch ended before its next frame")
+
+
 def _action_policy_response(*, synced: bool) -> action_service_pb2.GetActionPolicyResponse:
     return action_service_pb2.GetActionPolicyResponse(
         action_policy=action_service_pb2.CallerActionPolicy(synced=synced)
@@ -283,18 +303,30 @@ async def test_live_action_policy_retries_failure_and_reuses_same_generation(
         assert retried["action_policy"]["synced"] is True
         assert len(_get_action_policy_calls(review)) == 2
 
-        # A stream skips a frame identical to its last one, so this change must show in the frame.
+        # This descriptor-only change does not change the composite live frame; read its current facts
+        # directly and make sure it does not force another ActionPolicy generation.
         wake_on_send = not (await review.sandbox.sandbox())["spec"].get("wakeOnSend", False)
-        await review.sandbox.patch_sandbox({"spec": {"wakeOnSend": wake_on_send}})
-        event, reused = await _read_sse_event(events)
-        assert event == "snapshot"
-        environment = await _get_environment(
-            browser, review.sandbox.namespace, review.sandbox.name, reused["sandbox_uid"]
-        )
-        assert environment.target.uid == review.sandbox.uid
-        assert environment.wake_on_send is wake_on_send
-        assert reused["action_policy"]["synced"] is True
-        assert len(_get_action_policy_calls(review)) == 2
+        async with _environment_watch(browser) as environment_events:
+            while (await _next_environment_frame(environment_events)).WhichOneof("frame") != "snapshot_complete":
+                pass
+            await review.sandbox.patch_sandbox({"spec": {"wakeOnSend": wake_on_send}})
+            async with asyncio.timeout(10):
+                while True:
+                    frame = await _next_environment_frame(environment_events)
+                    if frame.WhichOneof("frame") != "upsert":
+                        continue
+                    environment = frame.upsert
+                    if environment.target.uid == review.sandbox.uid:
+                        break
+
+            assert environment.target.uid == review.sandbox.uid
+            assert environment.wake_on_send is wake_on_send
+            environment = await _get_environment(
+                browser, review.sandbox.namespace, review.sandbox.name, review.sandbox.uid
+            )
+            assert environment.wake_on_send is wake_on_send
+            assert retried["action_policy"]["synced"] is True
+            assert len(_get_action_policy_calls(review)) == 2
 
 
 async def test_live_action_policy_invalidates_on_policy_set_and_binding_events(
