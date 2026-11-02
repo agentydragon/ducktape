@@ -216,9 +216,8 @@ go_proto_library(
     proto = ":sampler_proto",
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
-        "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
     ],
 )
