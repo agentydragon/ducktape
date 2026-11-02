@@ -128,6 +128,7 @@ class RunnerGateway(Construct):
         *,
         database_url: EnvValue,
         dispatcher_callers: Mapping[ServiceAccountRef, Pods],
+        operator_callers: Mapping[ServiceAccountRef, Pods],
         delegation_actor: ServiceAccountRef | None,
         gateway_callers: Mapping[ServiceAccountRef, Pods],
         wake_callers: frozenset[ServiceAccountRef],
@@ -139,14 +140,15 @@ class RunnerGateway(Construct):
         image: str = _IMAGE,
     ) -> None:
         super().__init__(scope, id)
-        if not dispatcher_callers or not gateway_callers:
-            raise ValueError("Runner Gateway needs explicit Dispatcher and proxy caller grants")
+        if not dispatcher_callers or not operator_callers or not gateway_callers:
+            raise ValueError("Runner Gateway needs explicit Dispatcher, operator and proxy caller grants")
         if not wake_callers <= dispatcher_callers.keys():
             raise ValueError("wake callers must also be Dispatcher callers")
 
         namespace = env.namespace
         self.env = env
         self.dispatcher_callers = dispatcher_callers
+        self.operator_callers = operator_callers
         self.sandbox_controller_pods = sandbox_controller[1]
         proxy = runner_gateway.service(namespace)
         dispatcher_http = session_dispatcher.http_service(namespace)
@@ -170,6 +172,7 @@ class RunnerGateway(Construct):
             }.items()
         }
         dispatcher_accounts = sorted(map(_account, dispatcher_callers))
+        operator_accounts = sorted(map(_account, operator_callers))
         gateway_accounts = sorted(map(_account, proxy_callers))
         wake_accounts = sorted(map(_account, wake_callers))
         central_sampler_account = ServiceAccountRef(namespace=namespace, name=central_sampler.NAME)
@@ -187,6 +190,7 @@ class RunnerGateway(Construct):
         # Lists are file-only settings.
         content = {
             "dispatcher_callers": dispatcher_accounts,
+            "operator_callers": operator_accounts,
             "gateway_callers": gateway_accounts,
             "runner_security": MTLS(
                 mode="mtls", tls=TLS(cert_file=_RUNNER_TLS_CERT, key_file=_RUNNER_TLS_KEY, ca_file=_RUNNER_TLS_CA)
@@ -216,6 +220,7 @@ class RunnerGateway(Construct):
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
                     "/agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments",
                     "/agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment",
+                    "/agentplane.sandboxes.lifecycle.EnvironmentLifecycle/ResumeEnvironment",
                 ],
             }
         settings = SettingsFile(
@@ -401,6 +406,11 @@ def serving_chart(app: App, *, env: Environment) -> Chart:
         env,
         database_url=dispatcher_database_url,
         dispatcher_callers=callers | orchestration | session_delegation,
+        operator_callers={
+            ServiceAccountRef(namespace=env.namespace, name=app_component.NAME): app_component.service(
+                env.namespace
+            ).pods
+        },
         delegation_actor=(
             ServiceAccountRef(namespace=env.namespace, name=actions.NAME)
             if env.actions.orchestration_v1 is not None or env.actions.session_delegation is not None

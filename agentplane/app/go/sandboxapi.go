@@ -10,6 +10,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/httperror"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
+	lifecyclepb "github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle/lifecyclepb"
 	"github.com/danielgtaylor/huma/v2"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
@@ -115,7 +117,15 @@ type sandboxIdleSuspendInput struct {
 }
 
 // RegisterSandboxRoutes installs the inventory and lifecycle routes over the namespaced Kubernetes API.
-func RegisterSandboxRoutes(server *HTTPServer, config Config, inventory *sandboxes.Access) {
+type environmentLifecycleResumer interface {
+	ResumeEnvironment(context.Context, *lifecyclepb.ResumeEnvironmentRequest) (*lifecyclepb.ResumeEnvironmentResponse, error)
+}
+
+type sandboxLifecycleInventory interface {
+	Get(context.Context, string) (*sandboxespb.Sandbox, error)
+}
+
+func RegisterSandboxRoutes(server *HTTPServer, config Config, inventory *sandboxes.Access, lifecycle environmentLifecycleResumer) {
 	api := server.ProtectedAPI()
 	huma.Register[struct{}, sandboxListOutput](api, huma.Operation{
 		OperationID: "listSandboxes", Method: http.MethodGet, Path: "/sandboxes", Tags: []string{"sandboxes"},
@@ -182,7 +192,7 @@ func RegisterSandboxRoutes(server *HTTPServer, config Config, inventory *sandbox
 		return inventory.Suspend(ctx, name)
 	})
 	registerSandboxMutation(api, "resumeSandbox", "resume", http.MethodPost, func(ctx context.Context, name string) error {
-		return inventory.Resume(ctx, name)
+		return requestSandboxResume(ctx, config.SandboxNamespace, name, inventory, lifecycle)
 	})
 	huma.Register[sandboxWakePolicyInput, struct{}](api, huma.Operation{
 		OperationID: "setSandboxWakePolicy", Method: http.MethodPatch, Path: "/sandboxes/{name}/wake-policy", Tags: []string{"sandboxes"},
@@ -212,6 +222,42 @@ func RegisterSandboxRoutes(server *HTTPServer, config Config, inventory *sandbox
 	registerSandboxMutation(api, "deleteSandbox", "", http.MethodDelete, func(ctx context.Context, name string) error {
 		return inventory.Delete(ctx, name)
 	})
+}
+
+func requestSandboxResume(
+	ctx context.Context,
+	namespace string,
+	name string,
+	inventory sandboxLifecycleInventory,
+	lifecycle environmentLifecycleResumer,
+) error {
+	if inventory == nil || lifecycle == nil {
+		return errors.New("Sandbox inventory and Environment Lifecycle are unavailable")
+	}
+	current, err := inventory.Get(ctx, name)
+	if err != nil {
+		return err
+	}
+	if current.GetNamespace() != namespace || current.GetName() != name || current.GetUid() == "" {
+		return errors.New("current Sandbox identity is incomplete")
+	}
+	target := &discoverypb.TargetHandle{Namespace: namespace, Name: name, Uid: current.GetUid()}
+	response, err := lifecycle.ResumeEnvironment(ctx, &lifecyclepb.ResumeEnvironmentRequest{Target: target})
+	if err != nil {
+		return err
+	}
+	if response == nil || response.GetTarget() == nil || response.GetTarget().GetNamespace() != namespace ||
+		response.GetTarget().GetName() != name || response.GetTarget().GetUid() != current.GetUid() {
+		return errors.New("Environment Lifecycle returned a different Sandbox identity")
+	}
+	if response.GetOutcome() == lifecyclepb.ResumeOutcome_RESUME_OUTCOME_STATE_CHANGED {
+		return grpcstatus.Error(codes.Aborted, "environment state changed; refresh and try again")
+	}
+	if response.GetOutcome() != lifecyclepb.ResumeOutcome_RESUME_OUTCOME_REQUESTED &&
+		response.GetOutcome() != lifecyclepb.ResumeOutcome_RESUME_OUTCOME_ALREADY_RUNNING {
+		return errors.New("Environment Lifecycle returned no resume outcome")
+	}
+	return nil
 }
 
 func registerSandboxMutation(api huma.API, operationID, suffix string, method string, change func(context.Context, string) error) {
@@ -317,7 +363,6 @@ func classifySandboxError(err error) error {
 	var running *sandboxes.SandboxRunningError
 	var modeUnknown *sandboxes.SandboxModeUnknownError
 	var tearingDown *sandboxes.SandboxTearingDownError
-	var quiescing *sandboxes.SandboxQuiescingError
 	switch {
 	case errors.As(err, &notFound), apierrors.IsNotFound(err):
 		return huma.Error404NotFound(err.Error())
@@ -325,8 +370,6 @@ func classifySandboxError(err error) error {
 		return huma.Error422UnprocessableEntity(err.Error())
 	case errors.As(err, &conflict), errors.As(err, &running), errors.As(err, &modeUnknown), errors.As(err, &tearingDown):
 		return huma.Error409Conflict(err.Error())
-	case errors.As(err, &quiescing):
-		return huma.Error503ServiceUnavailable(err.Error())
 	default:
 		switch grpcstatus.Code(err) {
 		case codes.NotFound:

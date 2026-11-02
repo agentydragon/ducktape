@@ -176,6 +176,13 @@ func run(ctx context.Context, config Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Session Dispatcher: %w", err)
 	}
+	lifecycle, err := bridge.NewLifecycleClient(bridge.LifecycleConfig{
+		Target: config.SessionDispatcherTarget, TokenFile: config.SessionDispatcherTokenFile,
+		Timeout: time.Duration(config.SessionDispatcherRequestTimeoutSecs * float64(time.Second)),
+	})
+	if err != nil {
+		return fmt.Errorf("configure Environment Lifecycle: %w", err)
+	}
 	appBridge, err := bridge.New(inventory, runner, dispatcher)
 	if err != nil {
 		return fmt.Errorf("configure Runner bridge: %w", err)
@@ -320,7 +327,7 @@ func run(ctx context.Context, config Config) error {
 	if err := RegisterCoreRoutes(server, config); err != nil {
 		return fmt.Errorf("register core routes: %w", err)
 	}
-	RegisterSandboxRoutes(server, config, inventory)
+	RegisterSandboxRoutes(server, config, inventory, lifecycle)
 	RegisterPolicyRoutes(server, config, inventory, policies)
 	RegisterSessionRoutes(server, config, inventory, appBridge, threadStore)
 	RegisterRunnerRoutes(server, appBridge)

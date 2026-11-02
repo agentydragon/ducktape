@@ -88,7 +88,7 @@ def test_basic_policy_auto_approves_only_same_principal_session_actions(
         {
             "type": "exact_actions",
             "actions": {
-                "environments": ["get", "list"],
+                "environments": ["get", "list", "resume"],
                 "sessions": [
                     "cancel_input",
                     "get",
@@ -224,8 +224,10 @@ def test_session_dispatcher_egress_is_limited_to_the_delegation_rpc_surfaces(
         "/agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments",
         "/agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment",
     ]
+    lifecycle_paths = ["/agentplane.sandboxes.lifecycle.EnvironmentLifecycle/ResumeEnvironment"]
     expected_permissions = {
-        (BASIC_POLICY, credential_name, destination, "POST", path, True) for path in (*session_paths, *discovery_paths)
+        (BASIC_POLICY, credential_name, destination, "POST", path, True)
+        for path in (*session_paths, *discovery_paths, *lifecycle_paths)
     }
 
     def host_matches_destination(pattern: str) -> bool:

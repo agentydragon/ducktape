@@ -1,8 +1,9 @@
 # Runner Gateway
 
 The Runner Gateway combines durable Session Dispatcher admission and delivery, read-only
-`EnvironmentDiscovery`, and a Sandbox-fenced Runner proxy. Discovery and Dispatcher share the
-Gateway listener and Dispatcher TokenReview audience. The Gateway dials each Runner's native gRPC
+`EnvironmentDiscovery`, policy-enforced `EnvironmentLifecycle` resume, and a Sandbox-fenced Runner proxy.
+Discovery, Lifecycle and Dispatcher share the Gateway listener and Dispatcher TokenReview audience.
+The Gateway dials each Runner's native gRPC
 server on private port `9090`. Its public `listen_address` serves Dispatcher and proxies for the
 Runner and optional Executor services with the existing caller authorization. The Sandbox
 Controller owns `Sandbox.status`.
@@ -40,7 +41,9 @@ conversation and from Runner admission.
   [`settings.py`](settings.py) is the authoring schema), including the optional `http_listen_address`
   for the Dispatcher's HTTP/JSON facade (none when unset). The independent `delegation` policy names
   an Actions actor, caller namespace scope, and exact full RPC methods; it can include the two
-  `EnvironmentDiscovery` read methods without delegating other Gateway methods.
+  `EnvironmentDiscovery` read methods and the lifecycle resume method without delegating other
+  Gateway methods. The separate `operator_callers` allowlist is restricted to direct, Pod-bound
+  callers and gives only its configured operator broker the requested-stop override.
 - `gateway/`: Runner connections, authenticated proxy, Sandbox/Pod validation and connection ownership.
 - `dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.
 - `migrations/`: Goose migrations for the Dispatcher database.

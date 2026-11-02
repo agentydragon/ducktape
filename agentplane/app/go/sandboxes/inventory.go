@@ -183,17 +183,7 @@ func (a *Access) Suspend(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	return a.setRunning(ctx, name, view.GetUid(), false)
-}
-
-// Resume requests that the exact current Sandbox run. A controller-reported idle suspension is
-// woken by advancing wakeGeneration exactly once.
-func (a *Access) Resume(ctx context.Context, name string) error {
-	view, err := a.Get(ctx, name)
-	if err != nil {
-		return err
-	}
-	return a.setRunning(ctx, name, view.GetUid(), true)
+	return a.setStopped(ctx, name, view.GetUid())
 }
 
 // SetWakeOnSend changes the durable wake policy on the UID selected by the caller.
@@ -258,7 +248,7 @@ func (a *Access) Delete(ctx context.Context, name string) error {
 	})
 }
 
-func (a *Access) setRunning(ctx context.Context, name, uid string, running bool) error {
+func (a *Access) setStopped(ctx context.Context, name, uid string) error {
 	return a.retryConflict(func() error {
 		resource, err := a.incarnation(ctx, name, uid)
 		if err != nil {
@@ -267,35 +257,10 @@ func (a *Access) setRunning(ctx context.Context, name, uid string, running bool)
 		if resource.DeletionTimestamp != nil {
 			return &SandboxTearingDownError{Name: name}
 		}
-		if running && resource.Status.StopStage == sandboxapi.StopStageQuiescing {
-			return &SandboxQuiescingError{Name: name}
+		if !resource.Spec.Running {
+			return nil
 		}
-		if running {
-			if resource.Status.OperatingMode == sandboxapi.OperatingModeSuspended {
-				return a.requestResume(ctx, resource, name, uid)
-			}
-			if resource.Spec.Running {
-				return nil
-			}
-		}
-		return a.patchSpec(ctx, resource, map[string]any{"running": running})
-	})
-}
-
-func (a *Access) requestResume(ctx context.Context, resource *sandboxapi.Sandbox, name, uid string) error {
-	if resource.Status.StopStage == sandboxapi.StopStageQuiescing {
-		return &SandboxQuiescingError{Name: name}
-	}
-	idleStillSuspended := resource.Status.SuspendedBy != nil &&
-		*resource.Status.SuspendedBy == sandboxapi.SuspendedByIdle &&
-		resource.Status.SuspendedAtWakeGeneration != nil &&
-		*resource.Status.SuspendedAtWakeGeneration == resource.Spec.WakeGeneration
-	if resource.Spec.Running && !idleStillSuspended {
-		return nil
-	}
-	return a.patchSpec(ctx, resource, map[string]any{
-		"running":        true,
-		"wakeGeneration": resource.Spec.WakeGeneration + 1,
+		return a.patchSpec(ctx, resource, map[string]any{"running": false})
 	})
 }
 

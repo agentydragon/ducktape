@@ -121,7 +121,7 @@ def _session_delegation_groups(props: SessionDelegationProps) -> dict[str, Actio
     return {
         ENVIRONMENTS_GROUP: ActionGroup(
             title="Environments",
-            description="Find and refresh existing environments that the authenticated caller may use for Sessions.",
+            description="Find, refresh, and resume existing environments that the authenticated caller may use for Sessions.",
             executor=executor,
             direct_tools=props.direct_tools_by_group.get(ENVIRONMENTS_GROUP),
         ),

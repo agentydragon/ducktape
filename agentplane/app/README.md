@@ -640,10 +640,11 @@ one. Which lists the service enforces is its contract
   it, and nothing brings that back. The rule lives in the API rather than in the browser, so it also
   binds the agent driving staging with a token; the two clicks it costs an operator are suspend and
   then delete. A running sandbox answers `DELETE` with 409 and a message saying to suspend it.
-- **Resume during a suspend is retryable:** the Sandbox page's explicit resume requests Sandbox
-  lifecycle state through `POST /sandboxes/{name}/resume`; while the controller seals an incarnation,
-  the app returns HTTP 503. Retry after the Sandbox reaches Suspended. This remains available when
-  `wake_on_send` is off; that setting controls whether queued work may wake the Sandbox.
+- **Resume is owned by the Runner Gateway:** `POST /sandboxes/{name}/resume` reads the current
+  Sandbox UID and calls Environment Lifecycle with the app's Pod-bound operator credential. The
+  Gateway rechecks target state and operator authority before changing desired state; the app does
+  not patch `running` or `wakeGeneration`. A response confirms acceptance only, not readiness.
+  `wake_on_send` remains a separate setting for automatic wake caused by queued work.
 - **Raw is additive:** both modes use the same chronological thread blocks and disclosure
   state. Compact Event summaries sit between those blocks; expanded details retain the full generated
   envelope, native payload, and causal references. JSON wraps instead of forcing horizontal scrolling.

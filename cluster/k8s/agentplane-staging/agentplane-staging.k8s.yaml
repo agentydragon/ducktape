@@ -2021,11 +2021,22 @@ spec:
         - /agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments
         - /agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment
       type: egress
+    - clusterInternal: true
+      credentialRef:
+        name: agentplane-session-dispatcher-workload
+      hosts:
+        - session-dispatcher.agentplane-staging.svc.cluster.local
+      methods:
+        - POST
+      paths:
+        - /agentplane.sandboxes.lifecycle.EnvironmentLifecycle/ResumeEnvironment
+      type: egress
     - policy:
         actions:
           environments:
             - get
             - list
+            - resume
           sessions:
             - cancel_input
             - get
@@ -6701,13 +6712,14 @@ data:
           - wait_for_turn
       environments:
         title: Environments
-        description: Find and refresh existing environments that the authenticated caller may use for Sessions.
+        description: Find, refresh, and resume existing environments that the authenticated caller may use for Sessions.
         executor:
           kind: session_delegation
           description: Forwards the authenticated caller's ServiceAccount identity to same-principal Session APIs.
         direct_tools:
           - get
           - list
+          - resume
       sessions:
         title: Sessions
         description: Open and control Sessions in an existing same-principal environment. Opening does not start a turn; submit input separately.

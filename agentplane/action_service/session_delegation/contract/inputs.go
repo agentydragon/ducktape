@@ -13,8 +13,9 @@ const (
 	GroupEnvironments = "environments"
 	GroupSessions     = "sessions"
 
-	ActionListEnvironments = "list"
-	ActionGetEnvironment   = "get"
+	ActionListEnvironments  = "list"
+	ActionGetEnvironment    = "get"
+	ActionResumeEnvironment = "resume"
 
 	ActionOpenSession   = "open"
 	ActionSubmitInput   = "submit_input"
@@ -59,7 +60,13 @@ type ListEnvironmentsArgs struct {
 }
 
 type GetEnvironmentArgs struct {
-	Target TargetRef `json:"target"`
+	Target              TargetRef `json:"target"`
+	WaitForReadySeconds *int      `json:"wait_for_ready_seconds,omitempty" jsonschema_description:"Wait up to this many seconds (0-30) for readiness, then return the latest facts even if still not ready. This read never resumes the environment." jsonschema:"minimum=0,maximum=30"`
+}
+
+type ResumeEnvironmentArgs struct {
+	Target      TargetRef `json:"target"`
+	ResumeToken string    `json:"resume_token" jsonschema_description:"Opaque precondition returned by a fresh environments__get for this exact Sandbox UID and wake generation. Copy it without modification." jsonschema:"minLength=1,maxLength=2048"`
 }
 
 type SessionSpec struct {
@@ -114,15 +121,16 @@ type InterruptTurnArgs struct {
 }
 
 type Inputs struct {
-	ListEnvironments catalog.Input[ListEnvironmentsArgs]
-	GetEnvironment   catalog.Input[GetEnvironmentArgs]
-	OpenSession      catalog.Input[OpenSessionArgs]
-	SubmitInput      catalog.Input[SubmitInputArgs]
-	ObserveInput     catalog.Input[ObserveInputArgs]
-	GetSession       catalog.Input[GetSessionArgs]
-	ReadTurns        catalog.Input[ReadTurnsArgs]
-	CancelInput      catalog.Input[CancelInputArgs]
-	InterruptTurn    catalog.Input[InterruptTurnArgs]
+	ListEnvironments  catalog.Input[ListEnvironmentsArgs]
+	GetEnvironment    catalog.Input[GetEnvironmentArgs]
+	ResumeEnvironment catalog.Input[ResumeEnvironmentArgs]
+	OpenSession       catalog.Input[OpenSessionArgs]
+	SubmitInput       catalog.Input[SubmitInputArgs]
+	ObserveInput      catalog.Input[ObserveInputArgs]
+	GetSession        catalog.Input[GetSessionArgs]
+	ReadTurns         catalog.Input[ReadTurnsArgs]
+	CancelInput       catalog.Input[CancelInputArgs]
+	InterruptTurn     catalog.Input[InterruptTurnArgs]
 }
 
 func NewInputs() (Inputs, error) {
@@ -134,8 +142,13 @@ func NewInputs() (Inputs, error) {
 		return Inputs{}, err
 	}
 	if inputs.GetEnvironment, err = newInput[GetEnvironmentArgs](ActionGetEnvironment,
-		"Refresh one existing environment and its current Session configuration. Supply the complete target reference, including the UID returned by `environments__list`; a same-name replacement is a different environment and is refused. This read creates nothing and does not wake the target. The result is the current descriptor, or a structured error if the exact incarnation is gone or unavailable.",
+		"Refresh one existing environment and its current Session configuration. Supply the complete target reference, including the UID returned by `environments__list`; a same-name replacement is a different environment and is refused. Optionally wait 0-30 seconds for readiness; if the bound expires, the result is the latest descriptor with current readiness facts. This read creates nothing and never resumes the target.",
 		"Get environment", &catalog.ToolAnnotations{ReadOnlyHint: new(true), OpenWorldHint: new(false)}); err != nil {
+		return Inputs{}, err
+	}
+	if inputs.ResumeEnvironment, err = newInput[ResumeEnvironmentArgs](ActionResumeEnvironment,
+		"Request resume of one exact existing environment that the authenticated caller is currently allowed to use. Copy the complete target, including its immutable UID, and opaque `resume_token` from a fresh `environments__get`; the token binds this request to the observed Sandbox UID and wake generation. The backend rechecks current policy and state. `REQUESTED` means desired running state was accepted, not that the environment is ready or that prior commands ran. Read or wait with `environments__get` before issuing new work. If the reply is uncertain, refresh the same target and use only a fresh descriptor's token for another explicit request; never replay earlier task input or invent a generation.",
+		"Resume environment", &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(false), IdempotentHint: new(true)}); err != nil {
 		return Inputs{}, err
 	}
 	if inputs.OpenSession, err = newInput[OpenSessionArgs](ActionOpenSession,
@@ -188,8 +201,9 @@ func newInput[T any](name, description, title string, annotations *catalog.ToolA
 
 func (inputs Inputs) EnvironmentActions() map[string]catalog.ActionDefinition {
 	return map[string]catalog.ActionDefinition{
-		inputs.ListEnvironments.Name(): inputs.ListEnvironments.Definition(),
-		inputs.GetEnvironment.Name():   inputs.GetEnvironment.Definition(),
+		inputs.ListEnvironments.Name():  inputs.ListEnvironments.Definition(),
+		inputs.GetEnvironment.Name():    inputs.GetEnvironment.Definition(),
+		inputs.ResumeEnvironment.Name(): inputs.ResumeEnvironment.Definition(),
 	}
 }
 

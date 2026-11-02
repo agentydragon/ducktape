@@ -18,6 +18,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
+	lifecyclepb "github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle/lifecyclepb"
 	sessionclient "github.com/agentydragon/ducktape/agentplane/session_client"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/workload_auth/grpc"
 	"github.com/google/uuid"
@@ -33,6 +34,7 @@ type Executor struct {
 	group      string
 	binding    catalog.SessionDelegationBinding
 	discovery  discoverypb.EnvironmentDiscoveryClient
+	lifecycle  lifecyclepb.EnvironmentLifecycleClient
 	dispatcher dispatcherpb.SessionDispatcherClient
 	history    historypb.HistoryServiceClient
 	inputs     contract.Inputs
@@ -42,6 +44,7 @@ func NewExecutor(
 	group string,
 	binding catalog.SessionDelegationBinding,
 	discovery discoverypb.EnvironmentDiscoveryClient,
+	lifecycle lifecyclepb.EnvironmentLifecycleClient,
 	dispatcher dispatcherpb.SessionDispatcherClient,
 	history historypb.HistoryServiceClient,
 ) (*Executor, error) {
@@ -49,7 +52,7 @@ func NewExecutor(
 	if err != nil {
 		return nil, err
 	}
-	return &Executor{group: group, binding: binding, discovery: discovery, dispatcher: dispatcher, history: history, inputs: inputs}, nil
+	return &Executor{group: group, binding: binding, discovery: discovery, lifecycle: lifecycle, dispatcher: dispatcher, history: history, inputs: inputs}, nil
 }
 
 // Actions are only the implemented, reviewed operations belonging to this ActionGroup.
@@ -121,6 +124,26 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		response, err := e.discovery.ListEnvironments(ctx, &discoverypb.ListEnvironmentsRequest{Limit: uint32(args.Limit), PageToken: pageToken})
 		if err != nil {
 			return nil, readFailure("Environment Discovery", err)
+		}
+		return protoResult(response)
+	case contract.ActionResumeEnvironment:
+		args, err := e.inputs.ResumeEnvironment.Decode(request.Arguments)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateTargetNamespace(request.Caller.Namespace, args.Target); err != nil {
+			return nil, err
+		}
+		response, err := e.lifecycle.ResumeEnvironment(ctx, &lifecyclepb.ResumeEnvironmentRequest{
+			Target: &discoverypb.TargetHandle{
+				Namespace: args.Target.Namespace,
+				Name:      args.Target.Name,
+				Uid:       args.Target.UID,
+			},
+			ResumeToken: args.ResumeToken,
+		})
+		if err != nil {
+			return nil, writeFailure("Environment Lifecycle", err)
 		}
 		return protoResult(response)
 	case "get":
@@ -271,9 +294,16 @@ func (e *Executor) getEnvironment(ctx context.Context, request store.ExecutionRe
 	if err != nil {
 		return nil, err
 	}
-	response, err := e.discovery.GetEnvironment(ctx, &discoverypb.GetEnvironmentRequest{Target: &discoverypb.TargetHandle{
+	if err := validateTargetNamespace(request.Caller.Namespace, args.Target); err != nil {
+		return nil, err
+	}
+	getRequest := &discoverypb.GetEnvironmentRequest{Target: &discoverypb.TargetHandle{
 		Namespace: args.Target.Namespace, Name: args.Target.Name, Uid: args.Target.UID,
-	}})
+	}}
+	if args.WaitForReadySeconds != nil {
+		getRequest.WaitForReadySeconds = uint32(*args.WaitForReadySeconds)
+	}
+	response, err := e.discovery.GetEnvironment(ctx, getRequest)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return nil, refuse("target_not_found", "the exact environment incarnation is no longer available")

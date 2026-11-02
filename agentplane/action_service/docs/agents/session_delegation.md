@@ -4,8 +4,10 @@ Use this workflow to run a task in a separate Agentplane Session, then read the 
 It works from an authorized workload shell or an external MCP connection. The caller needs an
 eligible **existing** environment; an external MCP caller can have no local environment or parent
 Session of its own. Authorization stays with the authenticated caller and the owning backends; a
-target or parent relationship grants nothing. This workflow creates no environment or grants, and
-adds no wake or resume authority. Any existing backend wake-on-send policy still applies.
+target or parent relationship grants nothing. This workflow creates no environment or grants.
+Explicit resume is available only when the receiving backend allows the authenticated effective
+caller under the target's current policy; it does not grant access to other callers or to a new
+environment. Automatic wake-on-send remains a separate backend policy.
 
 ## Discover the tools and an existing target
 
@@ -42,6 +44,14 @@ separate directory per Session. If workspace or runtime choices are absent or un
 operator for a suitable target and settings. Do not substitute guessed runtime settings or another
 target's UID.
 
+If the exact environment is suspended or otherwise not Ready, inspect `resume_eligibility`. Only
+continue when its state is `AVAILABLE`; use its fresh `resume_token` with `environments__resume`.
+The service rechecks the effective caller's current policy and the complete target. A `REQUESTED`
+result is accepted desired state, not readiness. Then call `environments__get` with
+`wait_for_ready_seconds` from 1 through 30, and continue only when the returned readiness is
+`READY`. If permission is denied or the wait expires, stop and ask the operator. This works for an
+external MCP-only caller without a local environment or parent Session.
+
 ## MCP call recipe
 
 Replace every `<...>` placeholder with a returned value: copy `target` from an
@@ -60,6 +70,32 @@ Refresh the exact target from discovery with `environments__get`:
   }
 }
 ```
+
+When that descriptor reports resume eligibility `AVAILABLE`, copy its current `resume_token` and
+request resume on the same exact target:
+
+```json
+{
+  "target": { "namespace": "<target.namespace>", "name": "<target.name>", "uid": "<target.uid>" },
+  "resume_token": "<resume_token from the fresh environments__get>"
+}
+```
+
+Use that input with `environments__resume`. `REQUESTED` means the backend accepted the desired
+running-state update; it does not prove readiness or prior command delivery. Read again and wait
+only for a bounded interval:
+
+```json
+{
+  "target": { "namespace": "<target.namespace>", "name": "<target.name>", "uid": "<target.uid>" },
+  "wait_for_ready_seconds": 30
+}
+```
+
+Pass this input to `environments__get`. If readiness is still not `READY` when the bound expires,
+stop and reconcile with the operator before opening or submitting new work. An uncertain resume
+reply is not retried; refresh the same target and use only a fresh descriptor's token. Never replay
+an earlier input or execution request.
 
 Call `sessions__open` with `harness` and `model` from one returned `configurations` entry, and put a
 unique directory below the returned `workspace.root` in `cwd`:
@@ -123,7 +159,19 @@ correlate by command ID. Preserve source states, gaps, and errors when interpret
 
 ## CLI equivalent
 
-With direct Session/History credentials configured, the CLI sequence is:
+The environment commands use the existing Dispatcher endpoint and credential configured by
+`AGENTPLANE_SESSIONS_URL` and `AGENTPLANE_SESSIONS_CREDENTIAL`. Refresh, resume, then wait for
+readiness before opening a Session or submitting input:
+
+```sh
+agentplane environments get '<target.namespace>' '<target.name>' '<target.uid>'
+agentplane environments resume '<target.namespace>' '<target.name>' '<target.uid>' --resume-token '<fresh token from get>'
+agentplane environments get '<target.namespace>' '<target.name>' '<target.uid>' --wait-seconds 30
+```
+
+`--timeout` must exceed `--wait-seconds` to receive the final readiness descriptor. `REQUESTED`
+does not mean Ready. With direct Session/History credentials configured, continue with the CLI
+sequence below only after readiness is confirmed:
 
 ```sh
 agentplane sessions open '11111111-1111-4111-8111-111111111111' --sandbox '<target.name>' --sandbox-uid '<target.uid>' --spec '{"harness":"<configurations[0].harness>","model":"<configurations[0].model>","cwd":"<workspace.root>/<unique-session-directory>","reasoning_effort":"<configurations[0].reasoning_efforts[0]>"}'

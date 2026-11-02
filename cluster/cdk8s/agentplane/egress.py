@@ -124,6 +124,7 @@ _ENVIRONMENT_DISCOVERY_GRPC_PATHS = (
     "/agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments",
     "/agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment",
 )
+_ENVIRONMENT_LIFECYCLE_GRPC_PATHS = ("/agentplane.sandboxes.lifecycle.EnvironmentLifecycle/ResumeEnvironment",)
 
 # The egress PolicySets created below that every environment ships. A name is exported
 # because a preset or an explicit grant refers to the policy by name; each lives with the
@@ -449,12 +450,19 @@ def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, lit
                 paths=list(_ENVIRONMENT_DISCOVERY_GRPC_PATHS),
                 credential_ref=PolicySetSpecRulesCredentialRef(name=session_dispatcher.WORKLOAD_CREDENTIAL),
             ),
+            Rule.egress(
+                hosts=[session_dispatcher.service(namespace).fqdn],
+                cluster_internal=True,
+                methods=[PolicySetSpecRulesMethods.POST],
+                paths=list(_ENVIRONMENT_LIFECYCLE_GRPC_PATHS),
+                credential_ref=PolicySetSpecRulesCredentialRef(name=session_dispatcher.WORKLOAD_CREDENTIAL),
+            ),
             # These caller-authorized Action adapters use the same Dispatcher/Discovery APIs at the
             # effective caller's own authority. The receivers check the caller UID and resource
             # ownership; this exact list grants no provisioning, broker or unrelated Actions.
             AutoApproveIf.exact_actions(
                 actions={
-                    "environments": ["get", "list"],
+                    "environments": ["get", "list", "resume"],
                     "sessions": [
                         "cancel_input",
                         "get",
