@@ -818,7 +818,7 @@ fn verify_mixed_graph_command(
             spec_root,
             graph_source_root,
             graph_package_roots,
-            None,
+            args.tree_config.as_deref(),
         )
         .map(Some),
         DebundleCommand::InspectSource(args) if args.id.is_some() => {

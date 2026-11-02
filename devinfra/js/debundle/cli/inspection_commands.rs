@@ -40,6 +40,10 @@ pub(super) struct DescribeArgs {
     #[command(flatten)]
     pub common: PeelCommonArgs,
 
+    /// Tree config for chunk-scoped queries over an app-level modules tree.
+    #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
+    pub tree_config: Option<PathBuf>,
+
     /// Hard line ceiling used when resolving proposal-id references.
     #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
     pub size_cap_lines: usize,
@@ -82,7 +86,6 @@ pub(super) struct DescribeArgs {
 
 pub(super) struct ValidatedDescribeQuery {
     ids: Vec<String>,
-    selections: Vec<SelectionKind>,
 }
 
 /// Args for `debundle inspect-source`.
@@ -242,7 +245,7 @@ impl std::error::Error for UnsupportedIdentifierPrefix {}
 /// claim path as other structured IDs, so binding members and anonymous
 /// statements stay in sync. Unknown colon prefixes are rejected after checking
 /// for a real module path, since `:` is legal in Linux filenames.
-fn dispatch_id_selection(id: &str, modules_root: &std::path::Path) -> Result<SelectionKind> {
+fn dispatch_id_selection(id: &str, module_paths: &[String]) -> Result<SelectionKind> {
     // Prefix-based dispatch covers the structured ID kinds emitted by
     // the analysis crate.
     if id.starts_with("unit:") {
@@ -261,7 +264,7 @@ fn dispatch_id_selection(id: &str, modules_root: &std::path::Path) -> Result<Sel
     // Spec authors sometimes have flat module paths (no `/`); the
     // existence check is the only reliable disambiguator vs. binding
     // names that happen to spell a module-like word.
-    if let Some(module_path) = resolve_id_as_module_path(id, modules_root)? {
+    if let Some(module_path) = resolve_id_as_module_path(id, module_paths) {
         return Ok(SelectionKind::ModulePath(module_path));
     }
     if id.starts_with("auto_partition_") || id.starts_with("extend:") {
@@ -290,7 +293,7 @@ fn unsupported_typed_prefix(id: &str) -> Option<(&str, &str)> {
 }
 
 pub(super) fn validate_query_id(id: &str, modules_root: &std::path::Path) -> Result<()> {
-    dispatch_id_selection(id, modules_root).map(|_| ())
+    dispatch_id_selection(id, &module_paths_under(modules_root)?).map(|_| ())
 }
 
 fn describe_ids(args: &DescribeArgs) -> Result<Vec<String>> {
@@ -315,43 +318,42 @@ pub(super) fn validate_describe_query(args: &DescribeArgs) -> Result<ValidatedDe
         bail!("--limit must be greater than zero; use --all for exhaustive results");
     }
     let ids = describe_ids(args)?;
-    let selections = ids
-        .iter()
-        .enumerate()
-        .map(|(index, id)| {
-            dispatch_id_selection(id, &args.common.modules_root)
-                .with_context(|| format!("describing item {} ({id:?})", index + 1))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    Ok(ValidatedDescribeQuery { ids, selections })
+    // Preserve the early unsupported-prefix check. The verified, chunk-scoped
+    // module index is built after provenance preflight in `run_describe`.
+    let module_paths = module_paths_under(&args.common.modules_root)?;
+    ids.iter()
+        .try_for_each(|id| dispatch_id_selection(id, &module_paths).map(|_| ()))?;
+    Ok(ValidatedDescribeQuery { ids })
 }
 
-fn resolve_id_as_module_path(id: &str, modules_root: &std::path::Path) -> Result<Option<String>> {
+fn module_paths_under(modules_root: &std::path::Path) -> Result<Vec<String>> {
+    Ok(collect_module_files(modules_root)?
+        .iter()
+        .map(|path| module_path_from_file(path, modules_root))
+        .collect())
+}
+
+fn resolve_id_as_module_path(id: &str, module_paths: &[String]) -> Option<String> {
     let module_id = id.strip_suffix(".yaml").unwrap_or(id);
-    let candidate = modules_root.join(format!("{module_id}.yaml"));
-    if candidate.is_file() {
-        return Ok(Some(module_id.to_string()));
+    if module_paths.iter().any(|path| path == module_id) {
+        return Some(module_id.to_string());
     }
     if module_id.contains('/') {
-        return Ok(None);
+        return None;
     }
 
-    let filename = format!("{module_id}.yaml");
-    let mut matches = collect_module_files(modules_root)
-        .with_context(|| format!("walking modules tree {}", modules_root.display()))?
-        .into_iter()
-        .filter(|path| {
-            path.file_name()
-                .is_some_and(|name| name == filename.as_str())
-        })
-        .map(|path| module_path_from_file(&path, modules_root));
+    let mut matches = module_paths.iter().filter(|path| {
+        std::path::Path::new(path)
+            .file_name()
+            .is_some_and(|name| name == module_id)
+    });
     let Some(first) = matches.next() else {
-        return Ok(None);
+        return None;
     };
     if matches.next().is_some() {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(first))
+    Some(first.clone())
 }
 
 pub(super) fn run_describe(
@@ -359,13 +361,23 @@ pub(super) fn run_describe(
     source_context: Option<VerifiedGraphSourceContext>,
     validated: ValidatedDescribeQuery,
 ) -> Result<()> {
-    let ValidatedDescribeQuery { ids, selections } = validated;
+    let ValidatedDescribeQuery { ids } = validated;
     let mut session = ExplainSession::load(
         args.common.clone(),
+        args.tree_config.clone(),
         args.source_root.clone(),
         args.size_cap_lines,
         source_context,
     )?;
+    let module_paths = session.module_paths();
+    let selections = ids
+        .iter()
+        .enumerate()
+        .map(|(index, id)| {
+            dispatch_id_selection(id, &module_paths)
+                .with_context(|| format!("describing item {} ({id:?})", index + 1))
+        })
+        .collect::<Result<Vec<_>>>()?;
     // Finish the entire batch before emitting any result, including NDJSON.
     // A failed item must not leave an apparently successful partial document.
     let results = selections
@@ -434,7 +446,7 @@ pub(super) fn run_inspect_source(
     if let Some(id) = &args.id {
         let graph = args.graph.clone().context("--id requires --graph")?;
         let modules = args.modules.clone().context("--id requires --modules")?;
-        let selection = dispatch_id_selection(id, &modules)?;
+        let selection = dispatch_id_selection(id, &module_paths_under(&modules)?)?;
         let selected = run_source_selection_report(
             &SourceSelectionArgs {
                 common: PeelCommonArgs {

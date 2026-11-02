@@ -432,6 +432,13 @@ prefixes are `unit:`, `logical:`, `atomic:`, `diagnostic:`, `extend:`, and
 `auto_partition_`. Existing module paths are checked before rejecting an
 unknown colon prefix because colons are legal in module filenames.
 
+`describe --tree-config <file>` may query with `--modules` set to the full
+app-level modules tree. It checks the graph's captured config and resolves
+module paths and binding homes only from the configured YAML roots for that
+graph chunk. Claims from those roots are resolved together with the ordinary
+selector resolver. `--include-proposals` uses the same chunk scope. Without
+`--tree-config`, the existing single-root `--modules` query remains in effect.
+
 `describe --batch` accepts a nonempty JSON array of identifiers and returns the
 same per-selection reports as separate `describe` calls, in request order with
 duplicates retained. One invocation loads and verifies one graph and shares

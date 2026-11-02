@@ -76,12 +76,14 @@ struct AuthoringConfig {
 #[derive(Debug, Clone)]
 pub struct ModuleTreeScope {
     roots: Vec<PathBuf>,
+    includes_binding_patches: bool,
 }
 
 impl ModuleTreeScope {
     pub fn from_config(config_path: &Path, chunk_id: &str) -> Result<Self> {
         let config: AuthoringConfig = read_yaml(config_path)?;
         validate_module_roots(&config.module_roots)?;
+        let includes_binding_patches = config.main_chunk_id == chunk_id;
         let roots = if config.module_roots.is_empty() {
             if config.main_chunk_id != chunk_id {
                 bail!("tree config has no module root for graph chunk {chunk_id:?}");
@@ -97,11 +99,18 @@ impl ModuleTreeScope {
         if roots.is_empty() {
             bail!("tree config has no module root for graph chunk {chunk_id:?}");
         }
-        Ok(Self { roots })
+        Ok(Self {
+            roots,
+            includes_binding_patches,
+        })
     }
 
     pub fn roots(&self) -> &[PathBuf] {
         &self.roots
+    }
+
+    pub fn includes_binding_patches(&self) -> bool {
+        self.includes_binding_patches
     }
 
     pub fn contains(&self, path: &Path) -> bool {

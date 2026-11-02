@@ -142,6 +142,7 @@ pub struct VerifiedGraphSourceContext {
     chunk_id: String,
     source_path: PathBuf,
     input_file: PathBuf,
+    modules_root: Option<PathBuf>,
     sha256: String,
     source: Arc<str>,
 }
@@ -157,6 +158,14 @@ impl VerifiedGraphSourceContext {
 
     pub fn input_file(&self) -> &Path {
         &self.input_file
+    }
+
+    /// The full authored modules tree root recorded for this graph, when the
+    /// graph came from a tree spec. Callers may receive an exact chunk subtree
+    /// as their `--modules` argument; after compatibility verification they
+    /// can use this root to interpret the configured chunk scope consistently.
+    pub fn modules_root(&self) -> Option<&Path> {
+        self.modules_root.as_deref()
     }
 
     pub fn sha256(&self) -> &str {
@@ -1010,10 +1019,18 @@ impl GraphProvenance {
             source.chunk_id
         );
         let input_file = self.resolve(&source.input_file.root, &source.input_file.path, current)?;
+        let modules_root = self
+            .modules_directory
+            .as_deref()
+            .map(|directory| self.resolve(&InputRoot::Spec, directory, current))
+            .transpose()?
+            .map(|path| absolute(&path))
+            .transpose()?;
         Ok(Some(VerifiedGraphSourceContext {
             chunk_id: source.chunk_id.clone(),
             source_path: source.source_path.clone(),
             input_file: absolute(&input_file)?,
+            modules_root,
             sha256: source.sha256.clone(),
             source: Arc::from(
                 String::from_utf8(bytes).context("captured JavaScript source is not UTF-8")?,
