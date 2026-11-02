@@ -21,7 +21,6 @@ import type { Live } from "../live";
 import { SandboxRoute } from "../app";
 import { SandboxPage } from "./sandbox_page";
 import { TopbarContext } from "../topbar";
-import type { EnvironmentRuntimeStatusView } from "./client";
 import type { SandboxSnapshot } from "./live";
 
 const fetchMock = vi.hoisted(() => {
@@ -445,7 +444,7 @@ it("opens the Kubernetes status items that have an unmet condition and no others
 });
 
 it("refreshes the runner snapshot and replaces old process and Session details", async () => {
-  let status: EnvironmentRuntimeStatusView = {
+  let status: object = {
     environment_runtime_boot_id: "boot-before-refresh",
     lifecycle: {
       desired_mode: "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING",

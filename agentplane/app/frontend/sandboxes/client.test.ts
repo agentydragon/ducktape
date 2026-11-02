@@ -2,9 +2,20 @@ import { create } from "@bufbuild/protobuf";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { HttpError } from "../client";
-import { SessionSpecSchema, Harness } from "../../../proto/session_pb";
+import {
+  EnvironmentRuntimeLifecycleBlockerKind,
+  EnvironmentRuntimeLifecycleMode,
+  Harness,
+  SessionSpecSchema,
+} from "../../../proto/session_pb";
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
-import { openSession, getSessionOpening, sessionOpeningRejected, sessionOpeningNotVisible } from "./client";
+import {
+  getEnvironmentRuntimeStatus,
+  openSession,
+  getSessionOpening,
+  sessionOpeningRejected,
+  sessionOpeningNotVisible,
+} from "./client";
 
 const id = "b351b316-fdc4-4f50-a642-758992ae3323";
 afterEach(() => vi.unstubAllGlobals());
@@ -55,6 +66,52 @@ it("looks up the same Session identity without repeating an uncertain Open", asy
     "/sandboxes/test/sessions",
     `/sandboxes/test/sessions/${id}/opening`,
   ]);
+});
+
+it("reads the AppService runner status as the existing generated EnvironmentRuntimeStatus", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    Response.json({
+      environment_runtime_boot_id: "fixture-boot",
+      lifecycle: {
+        desired_mode: "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING",
+        desired_generation: "9223372036854775809",
+        progress_generation: "7",
+        progress_available: true,
+        progress_current: false,
+        stage: "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING",
+        blocker: {
+          kind: "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT",
+          journal_seal_cursor: "9223372036854775811",
+          acknowledgement_cursor: "9223372036854775810",
+        },
+      },
+    })
+  );
+  vi.stubGlobal("fetch", fetchMock);
+
+  const status = await getEnvironmentRuntimeStatus("test");
+
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  const [url, init] = fetchMock.mock.calls[0]!;
+  expect(url).toBe("/sandboxes/test/runner-status");
+  expect(new Headers(init.headers).get("Accept")).toBe("application/json");
+  expect(status.environmentRuntimeBootId).toBe("fixture-boot");
+  expect(status.lifecycle?.desiredMode).toBe(EnvironmentRuntimeLifecycleMode.QUIESCING);
+  expect(status.lifecycle?.desiredGeneration).toBe(9223372036854775809n);
+  expect(status.lifecycle?.blocker?.kind).toBe(EnvironmentRuntimeLifecycleBlockerKind.INGRESS_ACKNOWLEDGEMENT);
+  expect(status.lifecycle?.blocker?.journalSealCursor).toBe(9223372036854775811n);
+  expect(status.processes).toEqual([]);
+});
+
+it("keeps runner status errors readable across old and generated AppService responses", async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(Response.json({ detail: "Runner is unavailable" }, { status: 503 }))
+    .mockResolvedValueOnce(Response.json({ code: 14, message: "Runner is unavailable" }, { status: 503 }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(getEnvironmentRuntimeStatus("test")).rejects.toMatchObject({ status: 503 });
+  await expect(getEnvironmentRuntimeStatus("test")).rejects.toMatchObject({ status: 503, code: 14 });
 });
 
 it.each([1, 2, 4, 8, 13, 14, 15])("keeps gRPC outcome %s uncertain", (code) => {

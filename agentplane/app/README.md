@@ -145,7 +145,9 @@ Idle Sessions can be archived while their harness process remains live. The UI d
 observable active turns, setup, or a pending local launch; the server checks whether Session work is
 unfinished before accepting the archive request.
 The app's protobuf-defined `AppService` serves the generated HTTP facade at
-`POST /sandboxes/{name}/sessions` and `GET /sandboxes/{name}/sessions/{id}/opening`.
+`POST /sandboxes/{name}/sessions`, `GET /sandboxes/{name}/sessions/{id}/opening`, and
+`GET /sandboxes/{name}/runner-status`. The status route returns the existing
+`EnvironmentRuntimeStatus` message and reads the current Runner over native gRPC.
 It is an interface for the app's human frontend, not an API for in-cluster services. Backend callers
 use the [Session Dispatcher](../runner_gateway/dispatcher/README.md) directly with a complete
 `SessionSpec` and do not depend on app orchestration. The app interface resolves the Sandbox's

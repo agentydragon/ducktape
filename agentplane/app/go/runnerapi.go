@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
+	"errors"
+	"log/slog"
 
+	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
+	"github.com/agentydragon/ducktape/agentplane/app/go/bridge"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"github.com/danielgtaylor/huma/v2"
+	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -14,27 +18,44 @@ type runnerStatusReader interface {
 	EnvironmentRuntimeStatus(context.Context, string) (*sessionpb.EnvironmentRuntimeStatus, error)
 }
 
-type runnerStatusOutput struct {
-	Body map[string]any
+// RegisterRunnerRoutes exposes the generated AppService HTTP route through the app's
+// authenticated caller boundary. Keep the existing ProtoJSON body for cached browser bundles.
+func RegisterRunnerRoutes(server *HTTPServer, service *appService) error {
+	mux := gatewayruntime.NewServeMux(
+		gatewayruntime.WithErrorHandler(sessionGatewayError),
+		gatewayruntime.WithMarshalerOption(gatewayruntime.MIMEWildcard, &gatewayruntime.JSONPb{
+			MarshalOptions: protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true},
+		}),
+	)
+	if err := apppb.RegisterAppServiceHandlerServer(context.Background(), mux, service); err != nil {
+		return err
+	}
+	server.RegisterRawRoute("GET /sandboxes/{name}/runner-status", mux, false)
+	return nil
 }
 
-func RegisterRunnerRoutes(server *HTTPServer, bridge runnerStatusReader) {
-	huma.Register[sandboxNameInput, runnerStatusOutput](server.ProtectedAPI(), huma.Operation{
-		OperationID: "getSandboxEnvironmentRuntimeStatus", Method: http.MethodGet, Path: "/sandboxes/{name}/runner-status", Tags: []string{"sandboxes"},
-		Summary: "Read the current live Runner status without waking the Sandbox",
-	}, func(ctx context.Context, input *sandboxNameInput) (*runnerStatusOutput, error) {
-		status, err := bridge.EnvironmentRuntimeStatus(ctx, input.Name)
-		if err != nil {
-			return nil, sandboxHTTPError(err)
-		}
-		encoded, err := (protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true}).Marshal(status)
-		if err != nil {
-			return nil, huma.Error500InternalServerError("Runner status could not be encoded")
-		}
-		var view map[string]any
-		if err := json.Unmarshal(encoded, &view); err != nil {
-			return nil, huma.Error500InternalServerError("Runner status could not be decoded")
-		}
-		return &runnerStatusOutput{Body: view}, nil
-	})
+func (s *appService) GetEnvironmentRuntimeStatus(
+	ctx context.Context, request *apppb.GetEnvironmentRuntimeStatusRequest,
+) (*sessionpb.EnvironmentRuntimeStatus, error) {
+	if s.runnerStatus == nil {
+		slog.ErrorContext(ctx, "Runner status proxy is not configured")
+		return nil, grpcstatus.Error(codes.Unavailable, "Upstream service unavailable")
+	}
+	status, err := s.runnerStatus.EnvironmentRuntimeStatus(ctx, request.GetName())
+	if err != nil {
+		return nil, runnerStatusRPCError(err)
+	}
+	return status, nil
+}
+
+// Preserve the old Huma route's generic 503 for runner service/refusal and request-cancellation
+// failures. Other Sandbox inventory and upstream errors use the AppService's shared RPC mapping.
+func runnerStatusRPCError(err error) error {
+	var service *bridge.ServiceError
+	var refused *bridge.RefusedError
+	if errors.As(err, &service) || errors.As(err, &refused) || errors.Is(err, context.Canceled) {
+		slog.Error("upstream request failed", "status", 503, "response", "Upstream service unavailable", "error", err)
+		return grpcstatus.Error(codes.Unavailable, "Upstream service unavailable")
+	}
+	return sessionRPCError(err)
 }

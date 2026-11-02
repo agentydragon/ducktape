@@ -3,13 +3,18 @@ import { type JSX, type ReactNode, useEffect, useState } from "react";
 
 import type { SandboxView, ThreadView } from "../schema";
 import { displayableError } from "../client";
-import {
-  getEnvironmentRuntimeStatus,
-  type EnvironmentRuntimeLifecycleBlockerView,
-  type EnvironmentRuntimeLifecycleView,
-  type EnvironmentRuntimeStatusView,
-} from "./client";
+import { getEnvironmentRuntimeStatus } from "./client";
 import { harnessLabel } from "../model_catalog";
+import {
+  EnvironmentRuntimeLifecycleBlockerKind,
+  EnvironmentRuntimeLifecycleMode,
+  EnvironmentRuntimeLifecycleStage,
+  Harness as ProtoHarness,
+  ProcessState,
+  SessionExecutionState,
+  type EnvironmentRuntimeLifecycleStatus,
+  type EnvironmentRuntimeStatus,
+} from "../../../proto/session_pb";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import { IdleSuspendInput } from "./idle_suspend";
 import { JsonView } from "../../../../util/frontend/json_view";
@@ -288,119 +293,138 @@ function SandboxDetails({
   );
 }
 
-function processStateLabel(state: EnvironmentRuntimeStatusView["processes"][number]["state"]): string {
+function processStateLabel(state: ProcessState): string {
   switch (state) {
-    case "PROCESS_STATE_STARTING":
+    case ProcessState.STARTING:
       return "Starting";
-    case "PROCESS_STATE_RUNNING":
+    case ProcessState.RUNNING:
       return "Running";
-    case "PROCESS_STATE_STOPPING":
+    case ProcessState.STOPPING:
       return "Stopping";
-    case "PROCESS_STATE_UNSPECIFIED":
+    case ProcessState.UNSPECIFIED:
       return "Unspecified";
   }
+  return "Unknown";
 }
 
-function executionStateLabel(state: EnvironmentRuntimeStatusView["sessions"][number]["execution_state"]): string {
+function executionStateLabel(state: SessionExecutionState): string {
   switch (state) {
-    case "SESSION_EXECUTION_STATE_DORMANT":
+    case SessionExecutionState.DORMANT:
       return "Dormant";
-    case "SESSION_EXECUTION_STATE_PREPARING":
+    case SessionExecutionState.PREPARING:
       return "Preparing";
-    case "SESSION_EXECUTION_STATE_READY":
+    case SessionExecutionState.READY:
       return "Ready";
-    case "SESSION_EXECUTION_STATE_FAILED":
+    case SessionExecutionState.FAILED:
       return "Failed";
-    case "SESSION_EXECUTION_STATE_UNSPECIFIED":
+    case SessionExecutionState.UNSPECIFIED:
       return "Unspecified";
   }
+  return "Unknown";
 }
 
-function lifecycleModeLabel(mode: EnvironmentRuntimeLifecycleView["desired_mode"]): string {
+function lifecycleModeLabel(mode: EnvironmentRuntimeLifecycleStatus["desiredMode"]): string {
   switch (mode) {
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_RUNNING":
+    case EnvironmentRuntimeLifecycleMode.RUNNING:
       return "Running";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING":
+    case EnvironmentRuntimeLifecycleMode.QUIESCING:
       return "Quiescing";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_CLOSING":
+    case EnvironmentRuntimeLifecycleMode.CLOSING:
       return "Closing";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_UNSPECIFIED":
+    case EnvironmentRuntimeLifecycleMode.UNSPECIFIED:
       return "Unknown";
   }
+  return "Unknown";
 }
 
-function lifecycleStageLabel(stage: EnvironmentRuntimeLifecycleView["stage"]): string {
+function lifecycleStageLabel(stage: EnvironmentRuntimeLifecycleStatus["stage"]): string {
   switch (stage) {
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_RUNNING":
+    case EnvironmentRuntimeLifecycleStage.RUNNING:
       return "Running";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_DRAINING":
+    case EnvironmentRuntimeLifecycleStage.DRAINING:
       return "Draining admissions";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_HALTING":
+    case EnvironmentRuntimeLifecycleStage.HALTING:
       return "Halting Sessions";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_STOPPING":
+    case EnvironmentRuntimeLifecycleStage.STOPPING:
       return "Stopping processes";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FENCING":
+    case EnvironmentRuntimeLifecycleStage.FENCING:
       return "Fencing processes";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_SEALING":
+    case EnvironmentRuntimeLifecycleStage.SEALING:
       return "Sealing journals";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING":
+    case EnvironmentRuntimeLifecycleStage.FLUSHING:
       return "Flushing history";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_QUIESCED":
+    case EnvironmentRuntimeLifecycleStage.QUIESCED:
       return "Quiesced";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_CLOSED":
+    case EnvironmentRuntimeLifecycleStage.CLOSED:
       return "Closed";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_UNSPECIFIED":
+    case EnvironmentRuntimeLifecycleStage.UNSPECIFIED:
       return "Unknown";
   }
+  return "Unknown";
 }
 
-function lifecycleBlockerLabel(kind: EnvironmentRuntimeLifecycleBlockerView["kind"]): string {
+function lifecycleBlockerLabel(kind: EnvironmentRuntimeLifecycleBlockerKind): string {
   switch (kind) {
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_ADMISSIONS":
+    case EnvironmentRuntimeLifecycleBlockerKind.ADMISSIONS:
       return "command admission";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_HALT":
+    case EnvironmentRuntimeLifecycleBlockerKind.SESSION_HALT:
       return "Session halt";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_PROCESS":
+    case EnvironmentRuntimeLifecycleBlockerKind.SESSION_PROCESS:
       return "Session process stop";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_CODEX_APP_SERVER":
+    case EnvironmentRuntimeLifecycleBlockerKind.CODEX_APP_SERVER:
       return "Codex app-server stop";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_CODEX_EXEC_SERVER":
+    case EnvironmentRuntimeLifecycleBlockerKind.CODEX_EXEC_SERVER:
       return "Codex exec-server fence";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_BOOTSTRAP":
+    case EnvironmentRuntimeLifecycleBlockerKind.BOOTSTRAP:
       return "Sandbox bootstrap";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_PROCESS_CLEANUP":
+    case EnvironmentRuntimeLifecycleBlockerKind.PROCESS_CLEANUP:
       return "native process cleanup";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_INSPECTION":
+    case EnvironmentRuntimeLifecycleBlockerKind.SESSION_INSPECTION:
       return "Session inspection";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_JOURNAL_SEAL":
+    case EnvironmentRuntimeLifecycleBlockerKind.JOURNAL_SEAL:
       return "Session journal seal";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT":
+    case EnvironmentRuntimeLifecycleBlockerKind.INGRESS_ACKNOWLEDGEMENT:
       return "History acknowledgement";
-    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_UNSPECIFIED":
+    case EnvironmentRuntimeLifecycleBlockerKind.UNSPECIFIED:
       return "unknown barrier";
   }
+  return "unknown barrier";
 }
 
-function EnvironmentRuntimeLifecycleCard({ lifecycle }: { lifecycle: EnvironmentRuntimeLifecycleView }): JSX.Element {
+function runtimeHarnessLabel(harness: ProtoHarness): string {
+  switch (harness) {
+    case ProtoHarness.CLAUDE:
+      return harnessLabel("HARNESS_CLAUDE");
+    case ProtoHarness.CODEX:
+      return harnessLabel("HARNESS_CODEX");
+    case ProtoHarness.CENTRAL_SAMPLER:
+      return harnessLabel("HARNESS_CENTRAL_SAMPLER");
+    case ProtoHarness.UNSPECIFIED:
+      return harnessLabel("HARNESS_UNSPECIFIED");
+  }
+  return harnessLabel("HARNESS_UNSPECIFIED");
+}
+
+function EnvironmentRuntimeLifecycleCard({ lifecycle }: { lifecycle: EnvironmentRuntimeLifecycleStatus }): JSX.Element {
   const blocker = lifecycle.blocker;
   const stage = lifecycleStageLabel(lifecycle.stage);
-  const progress = !lifecycle.progress_available
-    ? `Progress not published for generation ${lifecycle.desired_generation}.`
-    : lifecycle.progress_current
+  const progress = !lifecycle.progressAvailable
+    ? `Progress not published for generation ${lifecycle.desiredGeneration}.`
+    : lifecycle.progressCurrent
       ? `Progress · ${stage}`
-      : `Last progress · generation ${lifecycle.progress_generation} · ${stage}`;
+      : `Last progress · generation ${lifecycle.progressGeneration} · ${stage}`;
 
   return (
     <Paper data-testid="harness-host-lifecycle" withBorder p="sm" radius="md">
       <Stack gap={4}>
         <Group justify="space-between" wrap="wrap" gap="xs">
           <Title order={6}>Lifecycle</Title>
-          <Badge>{lifecycleModeLabel(lifecycle.desired_mode)}</Badge>
+          <Badge>{lifecycleModeLabel(lifecycle.desiredMode)}</Badge>
         </Group>
         <Text size="sm">
-          Desired generation {lifecycle.desired_generation} · {progress}
+          Desired generation {lifecycle.desiredGeneration} · {progress}
         </Text>
-        {lifecycle.progress_available && !lifecycle.progress_current && (
+        {lifecycle.progressAvailable && !lifecycle.progressCurrent && (
           <Text size="xs" c="orange">
             Waiting for progress from the desired generation.
           </Text>
@@ -409,16 +433,16 @@ function EnvironmentRuntimeLifecycleCard({ lifecycle }: { lifecycle: Environment
           <>
             <Text size="sm" c="orange">
               Blocked at {lifecycleBlockerLabel(blocker.kind)}
-              {blocker.resource_id && ` · ${blocker.resource_id}`}
+              {blocker.resourceId && ` · ${blocker.resourceId}`}
             </Text>
-            {blocker.resource_type && (
+            {blocker.resourceType && (
               <Text size="xs" c="dimmed">
-                Resource · {blocker.resource_type} · {blocker.resource_present ? "present" : "missing"}
+                Resource · {blocker.resourceType} · {blocker.resourcePresent ? "present" : "missing"}
               </Text>
             )}
-            {blocker.process_id && (
+            {blocker.processId && (
               <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                Process · {blocker.process_id}
+                Process · {blocker.processId}
               </Text>
             )}
             {blocker.error && (
@@ -426,33 +450,33 @@ function EnvironmentRuntimeLifecycleCard({ lifecycle }: { lifecycle: Environment
                 Resource error · {blocker.error}
               </Text>
             )}
-            {blocker.kind === "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_ADMISSIONS" && (
+            {blocker.kind === EnvironmentRuntimeLifecycleBlockerKind.ADMISSIONS && (
               <Text size="xs" c="dimmed">
                 In-flight admissions · {blocker.admissions}
               </Text>
             )}
-            {blocker.kind === "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_JOURNAL_SEAL" && (
+            {blocker.kind === EnvironmentRuntimeLifecycleBlockerKind.JOURNAL_SEAL && (
               <Text size="xs" c="dimmed">
-                Journal seal · {blocker.journal_seal_present ? blocker.journal_seal_uid || "present" : "not present"}
-                {blocker.expected_journal_seal_uid && ` · expected ${blocker.expected_journal_seal_uid}`}
+                Journal seal · {blocker.journalSealPresent ? blocker.journalSealUid || "present" : "not present"}
+                {blocker.expectedJournalSealUid && ` · expected ${blocker.expectedJournalSealUid}`}
               </Text>
             )}
-            {blocker.kind === "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT" && (
+            {blocker.kind === EnvironmentRuntimeLifecycleBlockerKind.INGRESS_ACKNOWLEDGEMENT && (
               <Text size="xs" c="dimmed">
-                {blocker.acknowledgement_present
-                  ? `Acknowledged cursor · ${blocker.acknowledgement_cursor} of ${blocker.journal_seal_cursor} · sealed ${blocker.acknowledgement_sealed ? "yes" : "no"}`
-                  : `No acknowledgement · final cursor ${blocker.journal_seal_cursor}`}
+                {blocker.acknowledgementPresent
+                  ? `Acknowledged cursor · ${blocker.acknowledgementCursor} of ${blocker.journalSealCursor} · sealed ${blocker.acknowledgementSealed ? "yes" : "no"}`
+                  : `No acknowledgement · final cursor ${blocker.journalSealCursor}`}
               </Text>
             )}
-            {blocker.kind === "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT" &&
-              blocker.expected_journal_seal_uid &&
-              blocker.journal_seal_uid !== blocker.expected_journal_seal_uid && (
+            {blocker.kind === EnvironmentRuntimeLifecycleBlockerKind.INGRESS_ACKNOWLEDGEMENT &&
+              blocker.expectedJournalSealUid &&
+              blocker.journalSealUid !== blocker.expectedJournalSealUid && (
                 <Text size="xs" c="dimmed">
-                  Journal seal · {blocker.journal_seal_present ? blocker.journal_seal_uid || "present" : "not present"}
-                  {` · expected ${blocker.expected_journal_seal_uid}`}
+                  Journal seal · {blocker.journalSealPresent ? blocker.journalSealUid || "present" : "not present"}
+                  {` · expected ${blocker.expectedJournalSealUid}`}
                 </Text>
               )}
-            {blocker.finalizers_pending && (
+            {blocker.finalizersPending && (
               <Text size="xs" c="dimmed">
                 Native process cleanup finalizer is still present.
               </Text>
@@ -471,7 +495,7 @@ function EnvironmentRuntimeLifecycleCard({ lifecycle }: { lifecycle: Environment
 
 type HarnessHostDiagnosticsState =
   | { kind: "loading" }
-  | { kind: "available"; value: EnvironmentRuntimeStatusView; observedAt: string }
+  | { kind: "available"; value: EnvironmentRuntimeStatus; observedAt: string }
   | { kind: "unavailable"; reason: string }
   | { kind: "suspended" };
 
@@ -546,7 +570,7 @@ function HarnessHostDiagnostics({
           <Text size="xs" c="dimmed">
             Snapshot read <TimeAgo value={state.observedAt} />
           </Text>
-          <Text size="sm">Environment Runtime boot ID · {state.value.environment_runtime_boot_id}</Text>
+          <Text size="sm">Environment Runtime boot ID · {state.value.environmentRuntimeBootId}</Text>
           {state.value.lifecycle ? (
             <EnvironmentRuntimeLifecycleCard lifecycle={state.value.lifecycle} />
           ) : (
@@ -562,19 +586,19 @@ function HarnessHostDiagnostics({
             <Stack gap="xs">
               <Title order={6}>Harness processes</Title>
               {state.value.processes.map((process) => (
-                <Paper key={process.process_id} withBorder p="sm" radius="md">
+                <Paper key={process.processId} withBorder p="sm" radius="md">
                   <Stack gap={4}>
                     <Group justify="space-between" wrap="wrap" gap="xs">
-                      <Text fw={600}>{harnessLabel(process.harness)}</Text>
+                      <Text fw={600}>{runtimeHarnessLabel(process.harness)}</Text>
                       <Badge>{processStateLabel(process.state)}</Badge>
                     </Group>
-                    <Text size="sm">PID {process.pid ?? "not started"}</Text>
+                    <Text size="sm">PID {process.pid === undefined ? "not started" : process.pid.toString()}</Text>
                     <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                      Process ID · {process.process_id}
+                      Process ID · {process.processId}
                     </Text>
                     <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
                       Assigned Sessions ·{" "}
-                      {process.assigned_session_ids.length ? process.assigned_session_ids.join(", ") : "None"}
+                      {process.assignedSessionIds.length ? process.assignedSessionIds.join(", ") : "None"}
                     </Text>
                   </Stack>
                 </Paper>
@@ -589,32 +613,32 @@ function HarnessHostDiagnostics({
             <Stack gap="xs">
               <Title order={6}>Sessions</Title>
               {state.value.sessions.map((session) => {
-                const title = threadsById.get(session.session_id)?.name?.trim();
+                const title = threadsById.get(session.sessionId)?.name?.trim();
                 return (
-                  <Paper key={session.session_id} withBorder p="sm" radius="md">
+                  <Paper key={session.sessionId} withBorder p="sm" radius="md">
                     <Stack gap={4}>
                       <Group justify="space-between" wrap="wrap" gap="xs">
                         <Text fw={600} style={{ overflowWrap: "anywhere" }}>
-                          {title || session.session_id}
+                          {title || session.sessionId}
                         </Text>
-                        <Badge>{executionStateLabel(session.execution_state)}</Badge>
+                        <Badge>{executionStateLabel(session.executionState)}</Badge>
                       </Group>
                       {title && (
                         <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                          Session ID · {session.session_id}
+                          Session ID · {session.sessionId}
                         </Text>
                       )}
                       <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                        Process ID · {session.process_id ?? "—"}
+                        Process ID · {session.processId ?? "—"}
                       </Text>
                       <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                        Native Session ID · {session.native_session_id ?? "—"}
+                        Native Session ID · {session.nativeSessionId ?? "—"}
                       </Text>
                       <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                        Active turn · {session.active_turn_id ?? "—"}
+                        Active turn · {session.activeTurnId ?? "—"}
                       </Text>
                       <Text size="xs" c="dimmed">
-                        Failure cursor · {session.failure_cursor ?? "—"}
+                        Failure cursor · {session.failureCursor?.toString() ?? "—"}
                         {session.busy ? " · Work in progress" : ""}
                       </Text>
                     </Stack>

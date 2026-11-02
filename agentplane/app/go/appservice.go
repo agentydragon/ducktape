@@ -13,6 +13,7 @@ type appService struct {
 	config           Config
 	inventory        appbridge.SandboxGetter
 	bridge           sessionOpener
+	runnerStatus     runnerStatusReader
 	threadWriter     threadOpener
 	threadReader     threadReadStore
 	updates          auth.ChangeSource

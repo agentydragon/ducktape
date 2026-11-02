@@ -61,6 +61,14 @@ service AppService {
       response_body: "opening"
     };
   }
+
+  // Read the current live Runner status without waking the Sandbox.
+  rpc GetEnvironmentRuntimeStatus(GetEnvironmentRuntimeStatusRequest)
+      returns (agentplane.proto.EnvironmentRuntimeStatus) {
+    option (google.api.http) = {
+      get: "/sandboxes/{name}/runner-status"
+    };
+  }
 }
 
 message ListModelsResponse {
@@ -153,6 +161,10 @@ message OpenSessionRequest {
 message GetSessionOpeningRequest {
   string name = 1;
   string session_id = 2;
+}
+
+message GetEnvironmentRuntimeStatusRequest {
+  string name = 1;
 }
 
 message OpenSessionResponse {
