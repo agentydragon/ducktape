@@ -14,6 +14,8 @@ import (
 
 const runtimeLifecycleControllerName = "environment-runtime-lifecycle"
 
+var errSessionComponentLost = errors.New("Session component lifecycle connection was lost")
+
 // The controller owns Runtime's Close and epoch transition sequences. Each
 // blocking boundary runs in a worker; its single event loop stays free to
 // observe either completion and gives Close reconciliation priority.
@@ -31,9 +33,9 @@ type closePlan struct {
 	binding           *runtimepb.Binding
 	sealUID           string
 	active            bool
-	host              hostLifetime
+	sessionsStarted   bool
 	executionMayExist bool
-	hostRunErr        error
+	sessionLossErr    error
 	fenceCtx          context.Context
 	cancelFence       context.CancelFunc
 }
@@ -208,14 +210,11 @@ func (c *runtimeLifecycleController) publish(ctx context.Context, r controller.R
 	return nil
 }
 
-func stopHost(ctx context.Context, host hostLifetime) error {
-	if host == nil {
-		return nil
-	}
-	if err := host.Stop(ctx); err != nil {
+func (c *runtimeLifecycleController) stopSessions(ctx context.Context) error {
+	if err := c.r.stopSessions(ctx); err != nil {
 		return err
 	}
-	return host.WaitClosed(ctx)
+	return c.r.waitSessionsClosed(ctx)
 }
 
 func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecycle.RuntimeCloseStage) error {
@@ -227,11 +226,11 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecyc
 		if p.active {
 			return c.r.waitForHostNativeStopped(p.fenceCtx, p.binding)
 		}
-		if p.host != nil {
-			if err := stopHost(p.fenceCtx, p.host); err != nil {
+		if p.sessionsStarted {
+			if err := c.stopSessions(p.fenceCtx); err != nil {
 				return fmt.Errorf("Runtime lost its Host lifecycle connection and native cleanup is unproved: %w", err)
 			}
-			p.hostRunErr = errors.New("Harness Host lifecycle connection was lost")
+			p.sessionLossErr = errSessionComponentLost
 			return nil
 		}
 		if p.executionMayExist {
@@ -243,7 +242,7 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecyc
 			c.r.maybeFenceExecution(p.binding)
 			return c.r.waitForExecutionFenced(p.fenceCtx, p.binding)
 		}
-		if p.host != nil {
+		if p.sessionsStarted {
 			if err := c.r.stopExecution(p.fenceCtx); err != nil {
 				return fmt.Errorf("fence Execution after Host lifecycle loss: %w", err)
 			}
@@ -256,7 +255,7 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecyc
 		return nil
 	case lifecycle.RuntimeCloseHostJoining:
 		if p.active {
-			if err := stopHost(p.fenceCtx, p.host); err != nil {
+			if err := c.stopSessions(p.fenceCtx); err != nil {
 				return fmt.Errorf("stop and fence Harness Host: %w", err)
 			}
 		}
@@ -301,11 +300,11 @@ func (c *runtimeLifecycleController) prepare() error {
 	}
 	p := &c.plan
 	p.sealUID = sealUID
-	p.host = r.hostLifetime
+	p.sessionsStarted = r.sessions != nil
 	p.active = r.host != nil && r.host.active
-	if p.active && p.host != nil {
+	if p.active && p.sessionsStarted {
 		select {
-		case <-p.host.Done():
+		case <-r.sessionWorkerDone:
 			p.active = false
 		default:
 		}

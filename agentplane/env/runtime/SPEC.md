@@ -52,7 +52,7 @@ state volume with the binary version that wrote it when planning this hard cutov
 
 ## Lifecycle boundary
 
-Each Host lifetime reports the exact Runtime boot ID and monotonically increasing
+The Runtime-owned Session component reports the exact Runtime boot ID and monotonically increasing
 environment generation it applied. Runtime applies a
 `LifecycleIntent` containing the Sandbox UID, incarnation UID, mode and seal UID. The initial mode
 is `INACTIVE`. Session RPCs are forwarded only after the Host reports `ready` for the exact binding.
@@ -66,7 +66,9 @@ publishes the full applied intent alongside the report. That intent is the repor
 the fact payload does not duplicate it. Runtime observes the resource and wakes
 waiters only when its intent application status matches that full intent, including a same-generation
 Execution fence update. An older ready sample cannot reopen admission during fence application.
-Engine shutdown joins both controllers before owner release.
+The Session worker has its own completion signal and error. An unexpected completion fails Runtime;
+Runtime joins it and the shared engine before closing journals or releasing the owner. Engine shutdown
+joins both controllers before owner release.
 
 For quiesce and replacement, Runtime first asks Host to stop admissions and drain native work.
 `native_stopped` is reported only after admitted setup, Session calls, shared app-server work and

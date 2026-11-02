@@ -32,8 +32,9 @@ and the shared Codex home stays under `<state_dir>/codex`.
 The lifecycle coordinator binds every intent/report to the same process boots and generation.
 Host drains admitted work and native processes before reporting `native_stopped`. Runtime fences
 Execution before acknowledging `execution_fenced`; only then may Host seal journals and report exact
-History acknowledgements. Losing the Host lifetime closes native admission and drains Host without
-creating a seal. An abnormal Pod Runtime exit requires the outer container fence before replacement.
+History acknowledgements. Unexpected Session worker completion closes native admission and drains
+Sessions without creating a seal. An abnormal Pod Runtime exit requires the outer container fence
+before replacement.
 See [Host contract](runtime/harnesshost/SPEC.md) and [lifecycle](runtime/docs/lifecycle.md).
 
 The Runtime and execution companion executables ship with the `agentplane` CLI in `//agentplane/env/images:disk_image`.

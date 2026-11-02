@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -16,29 +17,6 @@ import (
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 	"google.golang.org/protobuf/proto"
 )
-
-type observedHostExit struct {
-	hostLifetime
-	done       chan struct{}
-	subscribed chan struct{}
-	once       sync.Once
-	code       int
-	err        error
-}
-
-func (h *observedHostExit) Done() <-chan struct{} {
-	h.once.Do(func() { close(h.subscribed) })
-	return h.done
-}
-
-func (h *observedHostExit) Wait(ctx context.Context) (int, error) {
-	select {
-	case <-h.done:
-		return h.code, h.err
-	case <-ctx.Done():
-		return 0, ctx.Err()
-	}
-}
 
 func TestInitialHostWaitObservesExitAcrossSubscription(t *testing.T) {
 	for _, beforeSubscribe := range []bool{true, false} {
@@ -49,26 +27,28 @@ func TestInitialHostWaitObservesExitAcrossSubscription(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
-			failure := errors.New("Host stopped during startup")
-			host := &observedHostExit{done: make(chan struct{}), subscribed: make(chan struct{}), code: 1, err: failure}
-			r := &Runtime{hostLifetime: host, changes: make(chan struct{})}
+			failure := errors.New("Session worker stopped during startup")
+			r := &Runtime{sessionWorkerDone: make(chan struct{}), sessionWorkerErr: failure, changes: make(chan struct{})}
+			subscribed := make(chan struct{})
+			var observed sync.Once
+			r.deps.afterInitialWaitSnapshot = func() { observed.Do(func() { close(subscribed) }) }
 			if beforeSubscribe {
-				close(host.done)
+				close(r.sessionWorkerDone)
 			}
 			result := make(chan error, 1)
 			go func() { result <- r.waitForInitialHost(ctx) }()
 			select {
-			case <-host.subscribed:
+			case <-subscribed:
 			case <-ctx.Done():
-				t.Fatal("initial Host wait did not subscribe to lifetime completion")
+				t.Fatal("initial Session wait did not observe worker completion")
 			}
 			if !beforeSubscribe {
-				close(host.done)
+				close(r.sessionWorkerDone)
 			}
 			select {
 			case err := <-result:
-				if !errors.Is(err, failure) || !strings.Contains(err.Error(), "status=1") {
-					t.Fatalf("initial Host wait = %v, want original exit cause and status", err)
+				if !errors.Is(err, failure) {
+					t.Fatalf("initial Session wait = %v, want original worker error", err)
 				}
 			case <-ctx.Done():
 				t.Fatal("Host exit did not wake initial wait")
@@ -78,11 +58,10 @@ func TestInitialHostWaitObservesExitAcrossSubscription(t *testing.T) {
 }
 
 func TestInitialHostWaitReportsCleanUnexpectedExit(t *testing.T) {
-	host := &observedHostExit{done: make(chan struct{}), subscribed: make(chan struct{})}
-	r := &Runtime{hostLifetime: host, changes: make(chan struct{})}
-	close(host.done)
+	r := &Runtime{sessionWorkerDone: make(chan struct{}), changes: make(chan struct{})}
+	close(r.sessionWorkerDone)
 	err := r.waitForInitialHost(t.Context())
-	if err == nil || !strings.Contains(err.Error(), "status=0") || strings.Contains(err.Error(), "%!w") {
+	if err == nil || !strings.Contains(err.Error(), "Session worker stopped") {
 		t.Fatalf("clean unexpected Host exit = %v", err)
 	}
 }
@@ -96,11 +75,12 @@ func TestInitialHostWaitOrdersReadyReportAndExit(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
-			host := &observedHostExit{done: make(chan struct{}), subscribed: make(chan struct{}), err: errors.New("Host exited")}
+			workerErr := errors.New("Session worker exited")
 			binding := &runtimepb.Binding{RuntimeBootId: "runtime", Generation: 1}
 			intent := &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_INACTIVE}
 			r := &Runtime{
-				hostLifetime: host, host: &hostBinding{active: true}, intent: intent,
+				sessionWorkerDone: make(chan struct{}), sessionWorkerErr: workerErr,
+				host: &hostBinding{active: true}, intent: intent,
 				lifecycleState: state.WrapCore(namespaced.NewState(inmem.Build)), changes: make(chan struct{}), fatal: make(chan error, 1),
 			}
 			publishAppliedHostIntent(t, r)
@@ -111,18 +91,18 @@ func TestInitialHostWaitOrdersReadyReportAndExit(t *testing.T) {
 				t.Fatal(err)
 			}
 			if exitBeforeRead {
-				close(host.done)
+				close(r.sessionWorkerDone)
 			}
 			err := r.waitForInitialHost(ctx)
 			if exitBeforeRead {
-				if !errors.Is(err, host.err) {
+				if !errors.Is(err, workerErr) {
 					t.Fatalf("ready report won after Host exit: %v", err)
 				}
 			} else if err != nil {
 				t.Fatalf("ready report before Host exit was rejected: %v", err)
 			}
 			if !exitBeforeRead {
-				close(host.done)
+				close(r.sessionWorkerDone)
 			}
 		})
 	}
@@ -137,14 +117,16 @@ func TestInitialHostWaitWakesOnRuntimeFailureOrClose(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
-			host := &observedHostExit{done: make(chan struct{}), subscribed: make(chan struct{})}
-			r := &Runtime{hostLifetime: host, changes: make(chan struct{})}
+			r := &Runtime{sessionWorkerDone: make(chan struct{}), changes: make(chan struct{})}
+			subscribed := make(chan struct{})
+			var observed sync.Once
+			r.deps.afterInitialWaitSnapshot = func() { observed.Do(func() { close(subscribed) }) }
 			result := make(chan error, 1)
 			go func() { result <- r.waitForInitialHost(ctx) }()
 			select {
-			case <-host.subscribed:
+			case <-subscribed:
 			case <-ctx.Done():
-				t.Fatal("initial Host wait did not subscribe")
+				t.Fatal("initial Session wait did not observe Runtime state")
 			}
 			r.mu.Lock()
 			r.failed = !closing
@@ -170,16 +152,16 @@ func TestClosePreparationTreatsExitedHostAsDisconnected(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = r.owner.Close() })
-	host := &observedHostExit{done: make(chan struct{}), subscribed: make(chan struct{})}
-	r.hostLifetime = host
+	r.sessionWorkerDone = make(chan struct{})
+	r.sessions = &harnesshost.Host{}
 	r.host = &hostBinding{active: true}
-	close(host.done)
+	close(r.sessionWorkerDone)
 	coordinator := &runtimeLifecycleController{r: r}
 	if err := coordinator.prepare(); err != nil {
 		t.Fatal(err)
 	}
 	defer coordinator.plan.cancelFence()
-	if coordinator.plan.active || coordinator.plan.binding != nil || coordinator.plan.host != host {
+	if coordinator.plan.active || coordinator.plan.binding != nil || !coordinator.plan.sessionsStarted {
 		t.Fatalf("Close plan after Host exit = %+v, want disconnected Host with cleanup ownership", coordinator.plan)
 	}
 }

@@ -19,11 +19,11 @@ native services keep their distinct `harness-host` scope in the workload slice, 
 and invocation marker are those of Environment Runtime. Runtime joins Host cleanup and fences the
 Pod PID namespace before releasing the environment owner.
 
-Runtime and its embedded Host share one lifetime identity. Runtime publishes a typed intent bound to its boot ID
-and a nonzero generation. The shared COSI engine applies it and publishes readiness,
+Runtime and its Session component share one lifetime identity. Runtime publishes a typed intent
+bound to its boot ID and a nonzero generation. The shared COSI engine applies it and publishes readiness,
 native cleanup and EnvironmentRuntimeFacts with that exact binding in the report's sampled intent.
 The fact payload carries no second binding. Host process attempts share
-the Runtime's COSI process controller and registry, but retain the Host lifetime and worker barrier.
+the Runtime's COSI process controller and registry, but retain their native worker barrier.
 The Host drain waits for Host-domain process finalizers; Runtime-domain attempts have their own
 cleanup barriers. Mode/identity changes require a new generation;
 Execution fence acknowledgement may advance monotonically within the same generation.
@@ -42,10 +42,10 @@ serves external WatchState, health, epoch ownership and Quiesce.
    successful application of the exact intent before sealing.
 5. A seal-bearing intent seals each journal at its final cursor. Host keeps History ingress alive
    until the exact sealed cursor is acknowledged durably, then reports QUIESCED.
-6. Runtime stops and joins Host before releasing the environment owner.
+6. Runtime stops and joins the Session worker before releasing the environment owner.
 
 A CLOSING intent may carry no seal (ordinary shutdown), or preserve the current incarnation's seal.
-Host lifetime loss closes admission and triggers local cleanup without manufacturing a seal. Failed
+An unexpected Session worker completion closes admission and triggers local cleanup without manufacturing a seal. Failed
 cleanup retains Runtime ownership. A Pod Runtime exit does not by itself fence escaped native descendants;
 abnormal replacement requires the outer container fence. VM native services use the Host's distinct
 systemd scope with the Runtime service's invocation marker.

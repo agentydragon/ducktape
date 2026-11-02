@@ -42,7 +42,7 @@ func (r *Runtime) authorizeHostCall(ctx context.Context, mutation bool) (*harnes
 		if epoch.IncarnationUID() != r.intent.IncarnationUid {
 			return status.Error(codes.Aborted, "control epoch does not match the active environment generation")
 		}
-		client = r.host.client
+		client = r.sessions
 		binding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
 		if mutation {
 			r.activeAdmissions++

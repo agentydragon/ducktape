@@ -90,61 +90,53 @@ func (r *Runtime) startHost(ctx context.Context) error {
 		return err
 	}
 	hostCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	process := &embeddedHostLifetime{host: host, cancel: cancel, done: make(chan struct{})}
 	r.mu.Lock()
-	r.hostLifetime = process
+	r.sessions = host
+	r.sessionWorkerCancel = cancel
+	r.sessionWorkerDone = make(chan struct{})
 	r.mu.Unlock()
-	bindErr := r.bindHost(host)
+	bindErr := r.bindHost()
 	r.startLifecycleEngineLocked()
 	go func() {
-		process.err = host.Run(hostCtx, r.config.HostIngress, r)
-		close(process.done)
+		r.sessionWorkerErr = host.Run(hostCtx, r.config.HostIngress, r)
+		close(r.sessionWorkerDone)
 		r.mu.Lock()
 		closing := r.closing
 		r.mu.Unlock()
 		if !closing {
-			code, err := process.Wait(context.Background())
-			if err != nil {
-				r.fail(fmt.Errorf("Harness Host stopped before Runtime shutdown (status=%d): %w", code, err))
+			if r.sessionWorkerErr != nil {
+				r.fail(fmt.Errorf("Session worker stopped before Runtime shutdown: %w", r.sessionWorkerErr))
 			} else {
-				r.fail(fmt.Errorf("Harness Host stopped before Runtime shutdown (status=%d)", code))
+				r.fail(errors.New("Session worker stopped before Runtime shutdown"))
 			}
 		}
 	}()
 	return bindErr
 }
 
-// embeddedHostLifetime keeps Runtime's existing stop-and-join fence while Host
-// runs in the same management process. Its context is independent of the
-// Runtime Run caller, so a signal cannot bypass the coordinated drain.
-type embeddedHostLifetime struct {
-	host   *harnesshost.Host
-	cancel context.CancelFunc
-	done   chan struct{}
-	err    error
-}
-
-func (p *embeddedHostLifetime) Done() <-chan struct{} { return p.done }
-
-func (p *embeddedHostLifetime) Stop(ctx context.Context) error {
-	p.cancel()
-	return ctx.Err()
-}
-
-func (p *embeddedHostLifetime) WaitClosed(ctx context.Context) error { return p.host.WaitClosed(ctx) }
-
-func (p *embeddedHostLifetime) Cleanup(ctx context.Context) error { return p.host.Close(ctx) }
-
-func (p *embeddedHostLifetime) Wait(ctx context.Context) (int, error) {
-	select {
-	case <-p.done:
-		if p.err != nil {
-			return 1, p.err
-		}
-		return 0, nil
-	case <-ctx.Done():
-		return 0, ctx.Err()
+func (r *Runtime) stopSessions(ctx context.Context) error {
+	r.sessionWorkerCancel()
+	if err := ctx.Err(); err != nil {
+		return err
 	}
+	if r.deps.stopSessions != nil {
+		return r.deps.stopSessions(ctx)
+	}
+	return nil
+}
+
+func (r *Runtime) waitSessionsClosed(ctx context.Context) error {
+	if r.deps.waitSessionsClosed != nil {
+		return r.deps.waitSessionsClosed(ctx)
+	}
+	return r.sessions.WaitClosed(ctx)
+}
+
+func (r *Runtime) closeSessions(ctx context.Context) error {
+	if r.deps.closeSessions != nil {
+		return r.deps.closeSessions(ctx)
+	}
+	return r.sessions.Close(ctx)
 }
 
 func (r *Runtime) waitForInitialHost(ctx context.Context) error {
@@ -158,13 +150,16 @@ func (r *Runtime) waitForInitialHost(ctx context.Context) error {
 		ready := r.host != nil && r.host.active && r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_INACTIVE &&
 			report != nil && report.Ready && report.NativeStopped
 		changed := r.changes
-		host := r.hostLifetime
+		workerDone := r.sessionWorkerDone
 		r.mu.Unlock()
+		if r.deps.afterInitialWaitSnapshot != nil {
+			r.deps.afterInitialWaitSnapshot()
+		}
 		// A completed Host may leave an already-published ready report behind.
 		// The lifetime exit takes precedence before exposing Gateway control.
 		select {
-		case <-host.Done():
-			return initialHostExit(host)
+		case <-workerDone:
+			return r.initialSessionWorkerExit()
 		default:
 		}
 		if ready {
@@ -172,18 +167,17 @@ func (r *Runtime) waitForInitialHost(ctx context.Context) error {
 		}
 		select {
 		case <-changed:
-		case <-host.Done():
-			return initialHostExit(host)
+		case <-workerDone:
+			return r.initialSessionWorkerExit()
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
 }
 
-func initialHostExit(host hostLifetime) error {
-	code, err := host.Wait(context.Background())
-	if err != nil {
-		return fmt.Errorf("Harness Host exited before initial lifecycle acknowledgement (status=%d): %w", code, err)
+func (r *Runtime) initialSessionWorkerExit() error {
+	if r.sessionWorkerErr != nil {
+		return fmt.Errorf("Session worker stopped before initial lifecycle acknowledgement: %w", r.sessionWorkerErr)
 	}
-	return fmt.Errorf("Harness Host exited before initial lifecycle acknowledgement (status=%d)", code)
+	return errors.New("Session worker stopped before initial lifecycle acknowledgement")
 }

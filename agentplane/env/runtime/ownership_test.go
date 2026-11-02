@@ -47,7 +47,7 @@ func runOwnershipFixture(args []string) error {
 		return err
 	}
 	r.mu.Lock()
-	host, binding := r.host.client, r.intent.Binding
+	host, binding := r.sessions, r.intent.Binding
 	r.mu.Unlock()
 	bound, err := host.BoundContext(ctx, binding)
 	if err != nil {

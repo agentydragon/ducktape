@@ -64,7 +64,7 @@ func TestHostIntentPublicationFailureRevokesNativeConnection(t *testing.T) {
 	client.SetRuntimeBinding("runtime", true)
 	intent := &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "runtime", Generation: 1}}
 	r := &Runtime{
-		bootID: "runtime", host: &hostBinding{client: client, active: true}, intent: intent,
+		bootID: "runtime", sessions: client, host: &hostBinding{active: true}, intent: intent,
 		lifecycleState: &failedHostIntentPublishState{State: state.WrapCore(namespaced.NewState(inmem.Build))},
 		changes:        make(chan struct{}), fatal: make(chan error, 1),
 	}

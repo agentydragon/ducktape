@@ -102,10 +102,10 @@ func (c *runtimeTransitionSequence) runQuiesceBarrier(ctx context.Context, kind 
 		if failure := r.failureLocked(); failure != nil {
 			return runtimeTransitionOutcome{}, failure
 		}
-		if r.host == nil || r.host != plan.host || !r.host.active || r.host.client == nil || r.intent == nil ||
+		if r.host == nil || r.host != plan.host || !r.host.active || r.sessions == nil || r.intent == nil ||
 			plan.binding == nil || !proto.Equal(r.intent.Binding, plan.binding) ||
 			plan.binding.RuntimeBootId != r.bootID ||
-			!r.host.client.RuntimeBindingMatches(r.bootID) {
+			!r.sessions.RuntimeBindingMatches(r.bootID) {
 			return runtimeTransitionOutcome{}, status.Error(codes.Unavailable, "Harness Host quiesce status binding is no longer current")
 		}
 		// These resources carry the Host lifecycle error. Read only the

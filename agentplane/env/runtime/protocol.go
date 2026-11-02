@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
@@ -14,10 +13,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// bindHost installs the one embedded Host and publishes its initial intent.
+// bindHost publishes the one Session component's initial intent.
 // Caller holds lifecycleStartMu so Close cannot race Host initialization.
-func (r *Runtime) bindHost(client *harnesshost.Host) error {
-	host := &hostBinding{client: client, active: true}
+func (r *Runtime) bindHost() error {
+	client := r.sessions
+	host := &hostBinding{active: true}
 	r.mu.Lock()
 	if r.closing || r.failed {
 		r.mu.Unlock()
