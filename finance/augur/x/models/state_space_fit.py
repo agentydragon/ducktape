@@ -167,16 +167,21 @@ def _historical_cumulative_return(
     except ValueError:
         return None
     periods = [pd.Period(month, freq="M") for month in historical.months]
+    if any(later <= earlier for earlier, later in pairwise(periods)):
+        raise ValueError("SP500 history months must be unique and increasing")
     start_period = pd.Period(start, freq="M")
     end_period = pd.Period(end, freq="M")
+    if end_period <= start_period:
+        return None
+    period_indices = {period: idx for idx, period in enumerate(periods)}
+    start_idx = period_indices.get(start_period)
+    end_idx = period_indices.get(end_period)
+    if start_idx is None or end_idx is None:
+        return None
+    if any(period not in period_indices for period in pd.period_range(start_period, end_period, freq="M")):
+        return None
     log_levels = np.log(historical.levels[:, factor_idx])
-    total = 0.0
-    matched = False
-    for idx in range(1, len(periods)):
-        if start_period < periods[idx] <= end_period:
-            total += float(log_levels[idx] - log_levels[idx - 1])
-            matched = True
-    return total if matched else None
+    return float(log_levels[end_idx] - log_levels[start_idx])
 
 
 def _monthly_sigma(historical: HistoricalSeries, factor_name: str) -> float:
