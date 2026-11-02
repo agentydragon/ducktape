@@ -12,29 +12,24 @@ validation of the candidate emit:
 Neither pass survives as a verdict. Cycle detection becomes at most a hint to
 the order search. The ESM loader model becomes a plain, exact component: it
 evaluates the emitted import lists as ECMA-262 does, cyclic or not, and it
-always runs on the real emitted order, never on a fallback order. Today Pass 2
-runs on a `ModuleId` order whenever Pass 1 is cyclic, which manufactured
-Tana's 1,800-module SCC (`debug/2026_10_31_tana_scc_pessimism.md`).
+always runs on the real emitted order, never on a fallback order.
 
-The architecture this serves is <target_architecture.md>. This plan burns
-down as its steps land.
+The architecture this serves is <target_architecture.md>. This plan contains
+the remaining migration; the existing report-only checkers do not decide
+acceptance.
 
 ## Problem
 
-The gate materializes an ordering edge for every statement pair the analysis
-cannot prove independent, then rejects any module-level cycle among them. On
-Tana (gaffer-private pin `e1f145dd`, spec including gaffer #686) that is
-2,118,225 dependency edges. Pass 1 fails on constraining SCCs of 963 and 2
-modules. Dropping the 1,054 cross-module `cell_order` edges out of an opaque
-heap frontier makes Pass 1 acyclic. The reported 1,800-module cycle is an
-all-edge SCC that Pass 2 judged on the degraded order Pass 1 left behind.
+The gate materializes ordering edges for pairs the analysis cannot prove
+independent, then rejects module-level cycles among them. Many of those pairs
+keep their source order in the emit. Opaque heap frontiers can induce cycles
+through the graph encoding even when a candidate order could preserve all
+actual conflicts. Translation validation checks the reordered pairs directly;
+it still needs conservative effect coverage and an acceptable candidate order.
 
-Almost none of those edges concern a pair the emit reorders
-([§ Measurements](#measurements)): under a realizable candidate order, 2,640
-statement pairs that carry an edge swap, against 2.1 million edges. The
-precision budget is spent on pairs that never move, and the conservative
-encoding of opaque heap effects (frontier barriers chained through the
-statement list) creates cycles that no single reordered pair would.
+Historical investigations live in <../debug/2026_10_31_tana_scc_pessimism.md>
+and <../debug/2026_10_31_pure_call_heap_frontier.md>. Their counts describe the
+recorded inputs and engines, not current canonical outcomes.
 
 ## Semantics
 
@@ -97,7 +92,7 @@ existing edges, accepts every spec today's gate accepts on the same order.
 Conversely, a constraining module cycle forces some violated edge in every
 order, so TV over edges rejects exactly what today rejects. The gain comes
 only when the pair check is sharper than the edge set. TV needs that
-sharpness on the swapped pairs alone, which the measurement shows are few.
+sharpness on the swapped pairs alone.
 
 That equivalence holds for edges whose dependency precedes the dependent in
 the source. A **forward** ordering edge, an at-init read of a later
@@ -116,8 +111,8 @@ the effect-set check must judge.
 
 ## Checking without retaining all pairs
 
-Tana swaps 7.7 million statement pairs under a realizable order. The sweep
-retains, per cell, already-run readers and writers ordered by source ordinal.
+The sweep retains, per cell, already-run readers and writers ordered by source
+ordinal.
 For each statement `u`:
 
 - a write to `c` conflicts if an already-run reader or writer of `c` has a
@@ -149,19 +144,17 @@ canonical comparisons remain necessary for the full TV2 migration.
   imports and bare var redeclarations). Today these live, in
   partial form, in `StatementFacts` (`reads`, `rebinds`, `heap_contents`,
   `global_reads`/`global_writes`, `synchronous_calls`).
-- **Narrow initialized-owner coverage for comma-split declarations.** The
-  canonical item view retains the original parent and declarator index; the
-  existing source collector checks that child against the singleton analysis
-  view. Each sibling keeps its own source-unit effect record and order. Only
-  the existing simple binding and leaf-syntax subset can reach the existing
-  EvaluateInitializer completion proof, including initialized local reads.
+- **Complete domain coverage.** The initialized-owner collector proves only a
+  narrow binding/leaf-syntax subset, including comma-split declarators.
   Exports, destructuring, effectful expressions, getters, calls/callbacks and
-  TDZ reads remain uncovered; this supplies no general effect-domain closure.
+  TDZ reads still need coverage or conservative havoc. Neither this completion
+  proof nor synchronous completeness proves arbitrary property/global/host
+  coverage.
 - **Synchronous callee effects folded into the caller**, which the interpreter
   already does for binding and collection accesses. Bounded fallback reach
   is currently report-only, without a retained effect-domain closure;
   incomplete or unmodelled domains remain conservative `Havoc` until that
-  closure exists (`plans/synchronous_execution_fallback.md`). Neither purity
+  closure exists (<synchronous_execution_fallback.md>). Neither purity
   nor synchronous completeness certifies arbitrary property/global/host
   effect coverage.
 - **Host-ordered effects**: microtask and timer enqueue, and host output.
@@ -234,8 +227,8 @@ swapped conflicting pairs, not only the first.
   - Step 9 ("`EffectsDisjoint` and gate consumption") is this gate's pair
     check. TV needs it applied to swapped pairs only, not to every
     `Sequenced` edge.
-  - Step 4c keeps purity and the interpreter in one per-chunk context. TV
-    reads the settled per-statement result and adds no constraint on it.
+  - The purity migration preserves one per-chunk context. TV reads the
+    settled per-statement result and adds no constraint on it.
 - **Staged pipeline** (<staged_pipeline.md>):
   - TV runs in S4 on the S3 facts artifact, which must carry the effect sets.
     It already carries `StatementFacts`.
@@ -251,16 +244,12 @@ swapped conflicting pairs, not only the first.
 
 ## Migration
 
-Each step keeps today's gate authoritative until the comparison is clean.
-Step 1 has landed: TV over today's edges runs beside the gate, writes
-`translation_validation.json`, and agrees with the gate on every e2e fixture
-and on both canonical inputs. Its default wire report now retains exact category
-counts and twenty deterministic examples per category. The same checker can
-stream every result with `run --full-report translation-validation`; the
-complete legacy pair set remains available to effect-TV comparison. Neither
-acceptance nor the comparison derives facts from those sampled examples.
+Keep today's gate authoritative until the differences between edge-TV and
+effect-TV have been explained and the replacement has complete effect
+coverage. Bounded report examples are not proof inputs: comparisons must use
+the complete conflict enumeration.
 
-2. **Effect-set conflicts.** Switch the sweep to effect sets (needs
+1. **Effect-set conflicts.** Switch the sweep to effect sets (needs
    abstract-interpreter step 7) and report the differences against the
    edge-based verdict per category. Classify each discrepancy from its source
    and effect witnesses before changing authority. A new acceptance may expose
@@ -270,14 +259,14 @@ acceptance nor the comparison derives facts from those sampled examples.
    effect. Verdict disagreement alone does not identify which checker is wrong.
    - Forward edges move into the sweep here (§ Relation to today's gate).
      The gate accepts some orders only by swapping a forward edge, which
-     step 1 reports as `forward_edges_swapped` outside its verdict: on
-     Claude, the accepted chunks `mcp` (30) and `remoteWorkerWire` (6).
-     Each needs an effect fact showing the read does not run at init, as a
-     `no_reentry_call` callback's does not; otherwise TV rejects them.
-3. **Search.** Seed from hard edges and add the refine loop. Report
+     the edge-TV report lists as `forward_edges_swapped` outside its verdict.
+     For each such case, prove the read cannot run at initialization or retain
+     the conflict. Existing pair premises and legacy acceptance do not prove
+     that a callback is deferred.
+2. **Search.** Seed from hard edges and add the refine loop. Report
    side by side: today's verdict, TV's verdict, and swapped pairs per
    category.
-4. **Flip.** TV decides; today's gate becomes a report section for one
+3. **Flip.** TV decides; today's gate becomes a report section for one
    release, then goes, Pass 1's cycle verdict and Pass 2's degraded-order
    fallback with it. `commuting_statements` diagnostics move to the
    effect-set definition of "unused".
@@ -286,156 +275,26 @@ acceptance nor the comparison derives facts from those sampled examples.
      (`peel/propose.rs` decomposition validation) have none, so they get
      no TV verdict. Before the flip they need that order, or keep today's
      gate as their verdict.
-5. **Slim.** The graph build materializes hard edges only, and the full edge
+4. **Slim.** The graph build materializes hard edges only, and the full edge
    set moves behind the tooling queries that still need it.
 
 The comparison runs in e2e as differential tests
 (`e2e/translation_validation_differential_test.rs`, plus the oracle in every
 e2e test), and on the canonical inputs as a report diff.
 
-## Measurements
-
-### Initial report-only effect projection
-
-`effect_translation_validation.json` is a sibling of the unchanged edge-TV
-report. It projects guarded initialization writes, eager and synchronous
-binding reads/rebinds, collection accesses and allocation sites from staged
-facts. Unknown global/property/host coverage is separate from legacy timing
-opacity and stays global Havoc. Composed heap provenance is explicitly
-unclassified where the producer has no per-access evidence. Counts cover
-all raw conflicting swapped pairs, existing premise dispositions and
-observed contradictions; this report never rejects or drives the old oracle.
-
-Defaults retain twenty deterministic pair examples with up to twenty cells
-each, and exact pair/cell counts. The sweep merges per-cell ordered suffix
-iterators and aggregates one pair's cells at a time. `examples_truncated`
-and each pair's `cells_truncated` state whether details were omitted;
-`--effect-conflicts-jsonl` now provides full rows through the same enumeration.
-The report makes
-no full semantic precision claim and does not complete step 2. In particular
-the active Claude mcp/remoteWorkerWire forward reads remain reportable with
-their existing pair-premise dispositions; oldgate acceptance is not proof
-that their callbacks cannot execute at init.
-
-### Original prototype measurements
-
-The prototype is an offline script over existing `dependency_graph.json.gz`
-outputs; it changes no engine code and is not committed.
-
-It rebuilds the emitted module order as the gate's simulator does:
-
-- module import graph from cross-module dependency edges;
-- dependency-first Kahn toposort of the constraining subgraph, `ModuleId`
-  tie-break;
-- Lemma 2 entry-import order;
-- DFS post-order, with entry last.
-
-It then counts swapped statement pairs and classifies every edge as:
-
-- intra-module (never swaps);
-- cross-module, order kept;
-- cross-module, swapped;
-- violated (a constraining edge whose target evaluates after its source).
-
-Check of the rebuild: with every edge kept it reproduces the gate's
-constraining SCCs of 963 and 2 modules exactly.
-
-**Candidate order.** Pass 1 fails on Tana, so the candidate order is
-heuristic. The toposort uses the constraining subgraph minus the 1,054
-cross-module `cell_order` edges out of a heap frontier, which leaves it
-acyclic. Those dropped edges are then judged like any other.
-
-**Tana** (pin `e1f145dd`, 9,709 source units, 2,781 modules):
-
-| Quantity                                          | Count             |
-| ------------------------------------------------- | ----------------- |
-| Statement pairs                                   | 47,127,486        |
-| Swapped pairs                                     | 7,742,456 (16.4%) |
-| Swapped pairs, both impure                        | 15,543 of 410,871 |
-| Swapped pairs, both with incomplete execution     | 6,079 of 339,900  |
-| Dependency edges                                  | 2,118,225         |
-| Intra-module                                      | 10,867            |
-| Cross-module, order kept                          | 2,102,938 (99.3%) |
-| Cross-module, swapped                             | 4,420 (0.21%)     |
-| Distinct swapped statement / module pairs on them | 2,640 / 1,187     |
-| Constraining edges violated by this order         | 3,841             |
-
-Swapped edges by category; the second figure is how many of them are
-violated constraining edges:
-
-| Category                                         | Swapped | Violated |
-| ------------------------------------------------ | ------: | -------: |
-| `eager_use`                                      |   1,757 |    1,748 |
-| `sequenced` `binding_timeline` fallback→observed |   1,683 |    1,683 |
-| `lazy_use` (non-constraining)                    |     562 |        0 |
-| `sequenced` `cell_order` `after_barrier`         |     342 |      341 |
-| `sequenced` `cell_order` other frontier barriers |      35 |       35 |
-| `sequenced` `binding_timeline` observed→observed |      28 |       28 |
-| `sequenced` `binding_timeline` other             |      13 |        6 |
-| `cell_order` definite (`read_after_write`, …)    |       0 |        0 |
-
-What the numbers show:
-
-- **Edge relevance.** 99.5% of the edge machinery concerns pairs this order
-  never reorders.
-- **Pass 2 failures.** The violated `eager_use` and fallback→observed
-  `binding_timeline` edges are the Pass 2 failures on this order. They sit in
-  lazy-import I-cycles, where the DFS enters a cycle at the wrong member, so
-  this particular order is not acceptable either.
-- **Where precision matters.** For Tana's spec, about 3,800 pairs need it.
-  The heap-barrier pairs (376) and the fallback pairs (1,689) are where the
-  interpreter's refinement matters. The 6,079 swapped pairs of
-  incomplete-execution statements are the honest upper bound on opaque
-  conflicts today's barrier chain stands for.
-
-**Claude CLI** (gaffer-private `831c8502` spec, 76 chunks, 43,949 units, same
-heuristic order):
-
-- 120,630,553 statement pairs, of which 2,023,777 swap.
-- 3,602,083 edges: 3,565,952 intra-module (most code still unassigned),
-  19,425 cross-module with order kept, 16,706 cross-module swapped.
-- 7,258 violated constraining edges, all in the five chunks the gate rejects:
-  `binding_timeline` observed→fallback 6,955, observed→observed 300, heap
-  barrier 3.
-- Four of those chunks keep a small constraining SCC even without heap
-  barriers: `api` 4 modules, `cli` 7, `featureFlags` 8, `toolCgroup` 2.
-
-**Edge-based TV on the real emitted order** (the engine that landed it,
-2026-10-31). Unlike the prototype, this is the order the emitter writes:
-when the constraining subgraph is cyclic the emitter has no linker order and
-sorts module imports by `ModuleId`, the degraded order the plan replaces.
-
-| Input (gaffer-private #693, `988eeeab`)     | Chunks rejected by both | Swapped pairs | Conflicting edges (statement pairs, module pairs) | Forward edges kept / swapped |
-| ------------------------------------------- | ----------------------: | ------------: | ------------------------------------------------- | ---------------------------: |
-| Tana                                        |                  1 of 1 |    15,109,993 | 267,217 (134,302, 25,523)                         |                       6 / 15 |
-| Claude CLI (75 of 76 chunks reach the gate) |                 5 of 75 |     2,024,711 | 3,968 (3,968, 18)                                 |                    0 / 4,025 |
-
-TV and the gate agree on every chunk.
-
-- Tana's conflicts: `eager_use` 136,262, `binding_timeline` 130,764,
-  `cell_order` 191, on the `ModuleId` order left by the gate's constraining
-  SCCs of 963 and 2 modules.
-- Claude's conflicts, in the five rejected chunks (`api` 706, `cli` 2,102,
-  `featureFlags` 1,078, `toolCgroup` 80, `sessionSDK` 2), are
-  `binding_timeline` edges but for three heap-frontier `cell_order` edges.
-  Each `binding_timeline` conflict sits opposite a swapped forward
-  `eager_use` edge: an at-init read of a later declaration split from it. `mcp` (30)
-  and `remoteWorkerWire` (6) are accepted with swapped forward edges.
-- TV adds no measurable time: the runs took 1:39 (Tana) and 0:52 (Claude)
-  against 1:56 and 1:01 for the same inputs on `cb9eebe9`.
-
 ## Open questions
 
 - **Search granularity.** Do phantom imports between whole modules give the
   search enough freedom, or do some conflicts need a statement moved to
-  another module (a spec edit, out of scope)? Step 3's report will show how
+  another module (a spec edit, out of scope)? The search report must show how
   often the refine loop stops because a hard edge would close a cycle.
 - **Host-ordered effects.** Microtask and timer enqueue and host output need
   an explicit cell before TV can accept swaps of statements that only enqueue.
   Until then those stay `Havoc`, which is safe.
-- **Fallback reach.** The 6,079 opaque-opaque swapped pairs on Tana decide
-  whether TV accepts in practice. If fallback reach stays global, TV rejects
-  the same specs, with better diagnostics.
+- **Fallback reach.** Global reach makes swapped opaque statements conflict.
+  Narrowing it requires the domain-closure proof in
+  <synchronous_execution_fallback.md>; better diagnostics alone do not improve
+  acceptance.
 - **Swap-count stability.** An edit in one module can reorder others and
   surface new swapped pairs. Diagnostics should say the conflict is new to
   this order, and the search should prefer orders close to the previous

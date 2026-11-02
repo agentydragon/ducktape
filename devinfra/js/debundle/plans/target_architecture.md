@@ -117,25 +117,23 @@ Validation is translation validation (<translation_validation_gate.md>).
 
 ## From today
 
-| Today                                                                                | Target                                                  |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------- |
-| Pass 1 rejects any cycle among 2.1 M globally materialized constraining edges (Tana) | Retired; only swapped pairs are checked                 |
-| Pass 2 simulates on a `ModuleId` order when Pass 1 is cyclic                         | Exact loader model on the real order, no verdict        |
-| Atomic groups decide acceptance (`atomic_group_conflicts.json`)                      | At most a planning aid                                  |
-| Purity classifier, heap-barrier chain, fallback edges                                | Effect sets plus `Havoc` reach                          |
-| Separate checks: strip split-brain/privacy, commuting gate, TDZ                      | One conflict check                                      |
-| Premises carry `audited_source_sha256` and evidence in reports                       | Premises carry an engine audit list and a runtime probe |
-| Analysis recomputed on every edit                                                    | Cached; assignment edits rerun stages 3–5               |
-| `dependency_graph.json.gz` (about 1 GB before compression)                           | Small default reports                                   |
+| Today                                                                | Target                                                  |
+| -------------------------------------------------------------------- | ------------------------------------------------------- |
+| Pass 1 rejects cycles among globally materialized constraining edges | Retired; only swapped pairs are checked                 |
+| Pass 2 simulates on a `ModuleId` order when Pass 1 is cyclic         | Exact loader model on the real order, no verdict        |
+| Atomic groups decide acceptance (`atomic_group_conflicts.json`)      | At most a planning aid                                  |
+| Purity classifier, heap-barrier chain, fallback edges                | Effect sets plus `Havoc` reach                          |
+| Separate checks: strip split-brain/privacy, commuting gate, TDZ      | One conflict check                                      |
+| Premises carry `audited_source_sha256` and evidence in reports       | Premises carry an engine audit list and a runtime probe |
 
 ## Plans as steps
 
-- <abstract_interpreter.md>, steps 4c–9: the single interpreter and its effect
-  sets. Step 7 supplies the cells validation reads. Step 9 (`EffectsDisjoint`)
-  is the pair check.
+- <abstract_interpreter.md>: execution-derived purity, remaining certificates,
+  complete statement effects, scoped fallback reach and effect-set premise
+  checking.
 - <synchronous_execution_fallback.md>: `Havoc` reach. It decides how many
   swapped opaque pairs commute.
-- <staged_pipeline.md>: the stage 2 cache and the fast loop.
+- <staged_pipeline.md>: remaining stage-boundary and cache-identity work.
 - <translation_validation_gate.md>: stages 3 and 4, and the migration from
   Pass 1 and Pass 2.
 - <host_behavior.md>: host premises as explicit behavior keys.
@@ -147,21 +145,20 @@ Validation is translation validation (<translation_validation_gate.md>).
 
 ## Known open problems
 
-Evidence: `debug/2026_10_31_tana_scc_pessimism.md`,
-`debug/2026_10_31_pure_call_heap_frontier.md`, and the swapped-pair
-measurements in <translation_validation_gate.md>.
+Historical evidence: <../debug/2026_10_31_tana_scc_pessimism.md> and
+<../debug/2026_10_31_pure_call_heap_frontier.md>. Current gate outcomes require
+replay of the canonical inputs in gaffer-private.
 
-- **Heap locality for vendor callees.** Tana's 1,335 heap-barrier statements
-  form one total chain. Foreign-held arrays exist from statement 0, and only 4
-  statements observe arrays precisely, so no small sound change breaks the
-  chain. Every gate, including translation validation, needs heap-locality
-  knowledge for the write-capable callees: an audited premise or a vendor
-  summary, plus completed execution of the incomplete statements.
-- **Fallback reach.** Under a realizable order, 6,079 swapped pairs on Tana
-  are between two statements with incomplete execution. With a global reach
-  they all conflict.
-- **The "observed" provenance label covers pool-callback effects.** 21,812 of
-  Tana's 23,102 observed `binding_timeline` edges come from statements that
-  hit the escaped-callback pool limit. "Observed" must mean an observed effect
-  of the statement itself, or diagnostics and premise contradiction checks
-  trust effects that only the pool produced.
+- **Heap locality for vendor callees.** Opaque write-capable callees retain
+  conservative heap barriers. Finer modules need an audited locality premise
+  or a derived vendor summary, plus coverage of incomplete execution. A
+  callback-reinvocation promise alone supplies no heap-locality proof.
+- **Fallback reach.** Swapped statements with incomplete execution conflict
+  under global reach. Bounded reach remains report-only until the complete
+  effect-domain proof is retained.
+- **Callback-effect provenance.** The unknown global-property dispatch defect
+  is fixed; the separate dense-array callback-promotion route is still an
+  unproven candidate. Canonical attribution needs per-call target/contributor
+  evidence that the batch report does not retain. See
+  <../debug/2026_11_02_global_object_callback_provenance.md>; the old batch
+  counts do not establish membership in current residual components.
