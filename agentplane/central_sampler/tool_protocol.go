@@ -3,7 +3,6 @@ package centralsampler
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 )
 
@@ -35,14 +34,4 @@ func decodeToolInput(data []byte, value any) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	return decoder.Decode(value)
-}
-
-func toolYieldTime(value *int, fallback int) (int, error) {
-	if value == nil {
-		return fallback, nil
-	}
-	if *value < 0 || *value > 60000 {
-		return 0, errors.New("yield_time_ms must be an integer between 0 and 60000")
-	}
-	return *value, nil
 }

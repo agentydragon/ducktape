@@ -115,8 +115,3 @@ func (s *Store) recordEvidenceWithSources(ctx context.Context, tx *sql.Tx, owner
 	}
 	return sources, nil
 }
-
-func stringValue(value any) string {
-	text, _ := value.(string)
-	return text
-}
