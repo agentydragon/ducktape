@@ -191,6 +191,13 @@ func TestExecutionControllerFailedFenceIsTerminal(t *testing.T) {
 	first := <-started
 	first.exited <- childExit{}
 	current := waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionFailed })
+	input, _, err := cosi.Read(context.Background(), r.lifecycleState, executionInputResource(executionInput{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.Fence.Generation != current.Generation || input.Fence.UID != current.UID || input.Fence.Error != fenceErr.Error() {
+		t.Fatalf("failed fence fact lost its generation or cause: %+v", input.Fence)
+	}
 	if current.FencedGeneration == current.Generation || starts.Load() != 1 {
 		t.Fatalf("uncertain fence permitted successor: state=%+v starts=%d", current, starts.Load())
 	}
@@ -202,6 +209,89 @@ func TestExecutionControllerFailedFenceIsTerminal(t *testing.T) {
 	}
 	if err := r.startExecutionForUID(t.Context(), "next-incarnation"); err == nil {
 		t.Fatal("terminal failed fence admitted new incarnation")
+	}
+}
+
+func TestExecutionControllerImmediateExitAndLatePriorLoss(t *testing.T) {
+	var starts atomic.Int32
+	var firstFenced atomic.Bool
+	handles := make(chan *controllerExecutionHandle, 3)
+	r := newExecutionControllerRuntime(t, func(context.Context, Config, string) (executionHandle, error) {
+		generation := starts.Add(1)
+		if generation > 1 && !firstFenced.Load() {
+			t.Error("replacement started before the first generation fenced")
+		}
+		handle := newControllerExecutionHandle(func(context.Context) error {
+			if generation == 1 {
+				firstFenced.Store(true)
+			}
+			return nil
+		})
+		if generation == 1 {
+			// The watcher can publish loss before the controller writes Ready.
+			handle.exited <- childExit{}
+		}
+		handles <- handle
+		return handle, nil
+	})
+	if err := r.startExecutionForUID(t.Context(), "incarnation"); err != nil {
+		t.Fatal(err)
+	}
+	first := <-handles
+	second := <-handles
+	if first == second {
+		t.Fatal("recovery reused the exited owner")
+	}
+	current := waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionReady && s.Generation == 2 })
+	if current.FencedGeneration != 1 || starts.Load() != 2 {
+		t.Fatalf("immediate loss did not fence before one replacement: state=%+v starts=%d", current, starts.Load())
+	}
+
+	// Model a watcher that observed generation 1's exit but was delayed before
+	// publishing it. Its late fact must not replace generation 2's loss fact.
+	oldExitObserved := make(chan struct{})
+	releaseOldExit := make(chan struct{})
+	oldExitPublished := make(chan struct{})
+	go func() {
+		close(oldExitObserved)
+		<-releaseOldExit
+		r.executionLifecycle.completeLoss(1, "incarnation", errors.New("late prior exit"))
+		close(oldExitPublished)
+	}()
+	<-oldExitObserved
+	second.exited <- childExit{}
+	deadline := time.NewTimer(3 * time.Second)
+	defer deadline.Stop()
+	for {
+		input, _, err := cosi.Read(context.Background(), r.lifecycleState, executionInputResource(executionInput{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if input.Loss.Generation == 2 {
+			break
+		}
+		select {
+		case <-r.changesSince():
+		case <-deadline.C:
+			t.Fatal("second generation loss was not published")
+		}
+	}
+	close(releaseOldExit)
+	<-oldExitPublished
+	input, _, err := cosi.Read(context.Background(), r.lifecycleState, executionInputResource(executionInput{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.Loss.Generation != 2 || input.Loss.Error != "" {
+		t.Fatalf("late prior exit overwrote current loss: %+v", input.Loss)
+	}
+	third := <-handles
+	if third == second {
+		t.Fatal("second loss reused its exited owner")
+	}
+	current = waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionReady && s.Generation == 3 })
+	if current.FencedGeneration != 2 || starts.Load() != 3 {
+		t.Fatalf("current loss did not fence and recover: state=%+v starts=%d", current, starts.Load())
 	}
 }
 

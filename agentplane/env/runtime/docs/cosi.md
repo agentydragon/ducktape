@@ -50,7 +50,7 @@ flowchart LR
   RC -->|write| CL & TS
   RC -.->|coordinate effects| API
   API -.->|request start / fence| EH
-  EH -->|publish| EI
+  EH -->|publish intent + completion facts| EI
   EI & ER -->|QPrimary / QMapped| EC
   EC -->|write| ER
   EC -.->|start / stop| EH
@@ -76,7 +76,7 @@ flowchart LR
   PS -.->|read / watch| PH
 ```
 
-The optional embedded Execution controller shares the namespace and engine. Its host publishes `EmbeddedExecutionInputs`; `embedded-execution-lifecycle` reads those inputs and
+The optional embedded Execution controller shares the namespace and engine. Its host publishes `EmbeddedExecutionInputs` with desired UID/demand and generation-bound start, loss and fence completion facts; `embedded-execution-lifecycle` reads those inputs and
 its own `EmbeddedExecutionRuntimes`, and writes the latter. Its effect starts/stops the embedded
 service; for a VM, that service uses the Runtime process host above to launch the native exec-server.
 In a Pod the native executor is in the separate companion container. The Runtime's transition and
@@ -90,7 +90,7 @@ COSI input subscriptions.
 | `environment-host-report`      | `HostIntents`, `HostIntentStatuses` (weak)                                                               | `HostReports` (exclusive)                                               | Also wakes on Host notifications and samples a report for the applied intent.                                            |
 | `bootstrap-lifecycle`          | `BootstrapInputs` (primary); `BootstrapRuntimes`, `BootstrapOperationResults` (mapped)                   | `BootstrapRuntimes` (exclusive)                                         | Host owns admitted one-off work and publishes operation completion. Runtime admission checks the environment generation. |
 | `process-lifecycle`            | `ProcessDesiredStates` (primary), `ProcessInputs` (mapped)                                               | `ProcessStatuses` (exclusive)                                           | Runtime host owns launch callbacks, live handles, observations and workers.                                              |
-| `embedded-execution-lifecycle` | `EmbeddedExecutionInputs` (primary), `EmbeddedExecutionRuntimes` (mapped), both in `environment-runtime` | `EmbeddedExecutionRuntimes` (exclusive)                                 | Runtime host queues worker outcomes through its input; the controller retains an unfenced owner on failure.              |
+| `embedded-execution-lifecycle` | `EmbeddedExecutionInputs` (primary), `EmbeddedExecutionRuntimes` (mapped), both in `environment-runtime` | `EmbeddedExecutionRuntimes` (exclusive)                                 | Runtime host publishes typed completion facts; the controller retains an unfenced owner on failure.                      |
 
 ## Harness Host
 
