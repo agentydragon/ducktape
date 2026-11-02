@@ -2,8 +2,8 @@ import { create } from "@bufbuild/protobuf";
 import { DurationSchema } from "@bufbuild/protobuf/wkt";
 import { describe, expect, it } from "vitest";
 
-import { SandboxPhase, SandboxPodSchema, type Sandbox } from "../../proto/sandboxes_pb";
-import { testSandbox } from "./testing/sandbox";
+import { SandboxPhase, type Sandbox } from "../../proto/sandboxes_pb";
+import { readySandbox, testSandbox } from "./testing/sandbox";
 import type { SandboxView } from "./schema";
 import {
   hasVmConsole,
@@ -111,26 +111,15 @@ describe("the shared status helpers accept the live Sandbox proto", () => {
   });
 
   it("reads controller and Pod status, owner references, and common policy fields", () => {
-    const running = protoSandbox({
-      phase: SandboxPhase.RUNNING,
-      operatingMode: "Running",
-      status: { conditions: [{ type: "Ready", status: "True" }] },
-      wakeOnSend: true,
-      pod: create(SandboxPodSchema, {
-        name: "test-sandbox-launcher",
-        namespace: "agentplane-test",
-        uid: `${UID}-pod`,
-        ownerReferences: [
-          {
-            apiVersion: "kubevirt.io/v1",
-            kind: "VirtualMachineInstance",
-            uid: "vmi-uid",
-            controller: true,
-          },
-        ],
-        status: { phase: "Running", podIP: "10.0.0.1" },
-      }),
-    });
+    const running = readySandbox("test-sandbox", UID);
+    running.wakeOnSend = true;
+    const pod = running.pod;
+    if (!pod) throw new Error("Missing ready Sandbox Pod");
+    const owner = pod.ownerReferences[0];
+    if (!owner) throw new Error("Missing ready Sandbox owner reference");
+    owner.apiVersion = "kubevirt.io/v1";
+    owner.kind = "VirtualMachineInstance";
+    owner.uid = "vmi-uid";
     expect(sandboxReady(running)).toBe(true);
     expect(sandboxSummary(running)).toEqual({ label: "Ready", kind: "ready" });
     expect(hasVmConsole(running)).toBe(true);
