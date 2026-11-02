@@ -1,7 +1,7 @@
 # Cross-agent communication and authorization: design space
 
 Status: **messaging, same-principal retained reads and delegation tools implemented with scripted
-workflow acceptance; natural-agent usability and staging tool exposure remain open; broader
+workflow acceptance; staging tools active; natural-agent usability remains open; broader
 archive policy held.** The send
 rule (`session_inbox_access`), inbox tags, peer messages, receipts and notices are the Notification
 Service's contract ([API](../notification_service/docs/api.md#messages)). This plan keeps the agreed
@@ -34,7 +34,7 @@ The [delegation implementation plan](session_delegation_workflows.md) supplies t
 sequences and remaining integration work. Same-SA admission, narrow retained reads, shared
 delegated auth, receiver enforcement, Discovery, guidance and Action/MCP adapters are implemented.
 Scripted parent CLI and external MCP workflows have landed, and managed guidance has rolled out;
-natural-agent usability and the separate staging tool catalogue/activation remain open. Creating
+the staging tool catalogue is active; natural-agent usability remains open. Creating
 new environments and broader cross-SA grants keep their separate design gates.
 
 ## Requirements and preferences

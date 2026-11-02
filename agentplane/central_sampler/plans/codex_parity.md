@@ -13,7 +13,7 @@ spawning and communication for a daily CI-maintenance agent. The operator deferr
 disruption/continuation acceptance pending normal use; revisit it only on
 [observed instability](../../plans/task_freezer.md#central_sampler_reliability_followup--investigate-instability-observed-in-normal-use).
 The [delegation interfaces and scripted workflows](../../plans/session_delegation_workflows.md)
-are implemented; natural-agent usability and staging tool exposure remain open. Use Codex
+are implemented and exposed in staging; natural-agent usability remains open. Use Codex
 multi-agent v2, its agent message board and Claude Code subagents as reference designs for that
 remaining usability work. Agent discovery/use and sound domain contracts are acceptance criteria.
 The gaps below are candidates when the chosen workflow needs them, not a competing feature-parity queue.

@@ -49,7 +49,7 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   broader cross-SA transcript reads/archive policy, delegation usability and Sandbox launch
 - [Caller-privilege Session delegation](session_delegation_workflows.md) — approved existing-environment
   and external MCP workflows have implemented tools and scripted acceptance. Natural-agent usability
-  and staging tool exposure remain open; fresh provisioning is deferred. Service-mediated caller
+  remains open; staging tool exposure is active and fresh provisioning is deferred. Service-mediated caller
   identity follows the implemented [delegated authorization contract](../docs/delegated_authorization.md).
 - [Generated HTTP facades](grpc_http_facade.md) — what is left: History reads, the app-contract
   question, browser error codes, attribution, and direct browser access as a later option

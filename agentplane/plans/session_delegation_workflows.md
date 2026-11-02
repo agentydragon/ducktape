@@ -1,6 +1,6 @@
 # Caller-privilege Session delegation
 
-Status: **existing-environment tools and scripted acceptance implemented; staging activation approved;
+Status: **existing-environment tools and scripted acceptance implemented; staging tools active;
 natural-agent usability is an operator follow-up; fresh provisioning deferred.** The remaining
 workflow capstone is tracked under
 [`THREAD_CREATE_AUTHORIZATION`](task_dag.md#thread_create_authorization--caller-privilege-delegation-capstone).
@@ -14,14 +14,15 @@ is `//agentplane/system_tests/suites/mcp:test_delegation`; it performs real Conn
 proves discovery, explicit input, observation and retained reads with the integration app scaled to
 zero. Parent CLI acceptance is `//agentplane/system_tests/suites/mcp:test_parent_delegation`.
 Both suites prescribe model calls while exercising real interfaces; they do not establish unaided
-natural-agent usability. Their generated Sandboxes opt into the direct tools; staging tool exposure
-remains separate in [#13514](https://github.com/agentydragon/ducktape/pull/13514).
+natural-agent usability. Their generated Sandboxes opt into the direct tools; staging exposes the
+same nine-tool catalogue through [#13514](https://github.com/agentydragon/ducktape/pull/13514).
 
 **Status checked, 2026-11-02 UTC:** guidance, Discovery, caller-delegating Action/MCP adapters,
 retained-result projections and both scripted workflow suites have merged. The
 [managed guidance rollout](../central_sampler/docs/rollout_acceptance.md#managed-platform-guidance-rollout-2026-11-02-utc)
-is verified. The remaining work is natural-agent usability and the staging catalogue/activation,
-not another backend or adapter implementation.
+is verified. The remaining work is natural-agent usability, not another backend or adapter
+implementation. On 2026-11-02 UTC, staging had all nine tools and both delegation peers in the
+Actions ConfigMap, with the Actions deployment 2/2 ready and up to date.
 
 ## Recommendation and decisions
 
@@ -112,14 +113,14 @@ now where little additional work is needed. Actions-first is acceptable elsewher
 verified caller and backend ownership, and record each remaining RPC/CLI extraction explicitly.
 This does not require a new service or binary, a general transport rewrite, or `orchestration_v1`.
 
-| Operation                                                 | Backend mapping                                                                            | Implemented surface / deferred work                                                                                                                                                                                                                 |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Open, submit input, cancel queued input, interrupt a turn | Existing `SessionDispatcher.OpenSession`, `SubmitInput`, `CancelDispatch`, `InterruptTurn` | Implemented through `sessions__open`, `sessions__submit_input`, `sessions__cancel_input`, and `sessions__interrupt_turn`; CLI also exposes owning Dispatcher calls. Additional briefing is additive; staging direct-tool exposure remains separate. |
-| Get Session                                               | `SessionDispatcher.GetSessionOpening` plus `HistoryService.GetSessionSummary`              | `session_client.GetSession` composes both sources without a live-environment lookup; exposed through `sessions__get` and `agentplane sessions get`. No new owning snapshot RPC is needed now.                                                       |
-| Read turns, observe one input                             | Existing History reads/follows plus Dispatcher command receipts                            | `session_client.ObserveInput` and `ReadTurns` preserve source facts and cursor coverage; exposed through `sessions__observe_input`, `sessions__read_turns`, and `agentplane sessions observe-input/read-turns`. No new owning RPC is needed now.    |
-| List/get existing environments                            | `EnvironmentDiscovery` over Sandbox inventory and shared runtime/configuration sources     | Exposed through `environments__list` and `environments__get`. The Action route carries the original caller to Discovery; it never queries under Actions' broad SA or returns an unfiltered namespace list.                                          |
-| List templates                                            | Full deployment-published catalogue                                                        | Extract shared defaults from app-owned presets. Direct backend read can share the Action Service process; no app calls. TODO: dedicated read RPC/CLI if initially exposed as an Action.                                                             |
-| Create environment, observe creation                      | Dedicated `environments/create` Action plus neutral provisioning/lookup code               | Deferred: implement shared-account environments and the reviewed catalogue. Reuse persisted caller UID. TODO: typed create/lookup RPCs and CLI access for initially Action-only operations; direct create still needs approval authority.           |
+| Operation                                                 | Backend mapping                                                                            | Implemented surface / deferred work                                                                                                                                                                                                              |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Open, submit input, cancel queued input, interrupt a turn | Existing `SessionDispatcher.OpenSession`, `SubmitInput`, `CancelDispatch`, `InterruptTurn` | Implemented through `sessions__open`, `sessions__submit_input`, `sessions__cancel_input`, and `sessions__interrupt_turn`; CLI also exposes owning Dispatcher calls. Additional briefing is additive; the direct tools are exposed in staging.    |
+| Get Session                                               | `SessionDispatcher.GetSessionOpening` plus `HistoryService.GetSessionSummary`              | `session_client.GetSession` composes both sources without a live-environment lookup; exposed through `sessions__get` and `agentplane sessions get`. No new owning snapshot RPC is needed now.                                                    |
+| Read turns, observe one input                             | Existing History reads/follows plus Dispatcher command receipts                            | `session_client.ObserveInput` and `ReadTurns` preserve source facts and cursor coverage; exposed through `sessions__observe_input`, `sessions__read_turns`, and `agentplane sessions observe-input/read-turns`. No new owning RPC is needed now. |
+| List/get existing environments                            | `EnvironmentDiscovery` over Sandbox inventory and shared runtime/configuration sources     | Exposed through `environments__list` and `environments__get`. The Action route carries the original caller to Discovery; it never queries under Actions' broad SA or returns an unfiltered namespace list.                                       |
+| List templates                                            | Full deployment-published catalogue                                                        | Extract shared defaults from app-owned presets. Direct backend read can share the Action Service process; no app calls. TODO: dedicated read RPC/CLI if initially exposed as an Action.                                                          |
+| Create environment, observe creation                      | Dedicated `environments/create` Action plus neutral provisioning/lookup code               | Deferred: implement shared-account environments and the reviewed catalogue. Reuse persisted caller UID. TODO: typed create/lookup RPCs and CLI access for initially Action-only operations; direct create still needs approval authority.        |
 
 ### Budget and broader-policy boundaries
 
@@ -399,8 +400,8 @@ Connection consent, then scales the integration app to zero before any delegatio
 An account can legitimately receive an empty target list. The acceptance fixture creates a
 Sandbox-owned ServiceAccount, marks that exact account eligible for MCP token minting, and completes
 operator Connection consent for it; the chart does not precreate the account. This proves the
-same-SA contract in the disposable fixture. Staging direct-tool activation remains separate in
-[#13514](https://github.com/agentydragon/ducktape/pull/13514); the managed-guidance rollout is complete.
+same-SA contract in the disposable fixture. Staging direct-tool activation and the managed-guidance
+rollout are complete.
 
 ### Later: when no eligible environment exists, dedicated provisioning Actions
 
@@ -732,10 +733,6 @@ a reply address nor a creator/parent edge grants send/read access.
   guidance, tools and result projections. The scripted external MCP and parent CLI suites are
   landed protocol/workflow evidence, not proof of unaided discovery. The operator will test with
   a prompt later; this is not a merge or rollout gate (operator, 2026-11-02 UTC).
-- **Staging direct-tool exposure:** [#13514](https://github.com/agentydragon/ducktape/pull/13514)
-  now configures the nine-tool contract, including `sessions__get` and `sessions__read_turns`.
-  Validate the rendered catalogue and exact-head CI; preserve `basic` auto-approval and effective-caller enforcement.
-  Activation and rollback are separate from the merged backend and guidance rollout.
 - **Future provisioning:** borrowed-SA/no-new-grants identity and pinned approved configuration
   remain deferred until catalogue ownership is selected. Reuse persisted caller UID; creation
   remains outside the first release.
@@ -752,17 +749,13 @@ all-Sandbox grants or a general delegation hierarchy is not a prerequisite. Exis
 [`ORCHESTRATION_V1_BACKEND_GRANTS`](task_dag.md#orchestration_v1_backend_grants--orchestration_v1-operations-on-backend-grants)
 has a reviewed migration. Avoid a second general authorization owner in the new facade.
 
-## Remaining usability capstone and exposure order
+## Remaining usability capstone
 
-1. **Enable the reviewed staging catalogue.** The operator approved merging #13514 after
-   automated checks, with activation/rollback instructions retained. Backend and guidance rollout
-   gates already discharged are not new work.
-2. **Evaluate natural delegation through normal use.** Give a real agent an
-   ordinary assignment and verify it discovers the target and schemas, prepares its directory,
-   opens a child, submits separate input and reads a correlated result. Include follow-up and
-   control/recovery when needed. Cover an existing-environment parent and an external MCP caller
-   without private fixture handles or a prescribed tool script. The operator may run a prompt
-   later; it does not gate staging activation. Replan concrete backend gaps if discovered.
+**Evaluate natural delegation through normal use.** Give a real agent an ordinary assignment and
+verify it discovers the target and schemas, prepares its directory, opens a child, submits separate
+input and reads a correlated result. Include follow-up and control/recovery when needed. Cover an
+existing-environment parent and an external MCP caller without private fixture handles or a prescribed
+tool script. The operator may run a prompt later; replan concrete backend gaps if discovered.
 
 Reuse the scripted suites and owning service tests for published-schema behavior, separate opening
 and first input, command correlation and app-independent operation. Preserve authorization and

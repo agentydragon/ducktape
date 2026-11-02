@@ -154,18 +154,16 @@ in the [Runtime specification](../env/runtime/SPEC.md); the native output-loss d
 are in the [incident record](../debug/2026_11_01_native_command_output_loss.md). The
 [delegation plan](session_delegation_workflows.md) records implemented tools and scripted external
 MCP/parent CLI acceptance. The [managed-guidance rollout record](../central_sampler/docs/rollout_acceptance.md#managed-platform-guidance-rollout-2026-11-02-utc)
-discharges that deployment hold. Natural-agent usability and staging tool exposure remain open.
-**Operator decision, 2026-11-02 UTC:** merge the staging configuration after automated checks;
-the operator may test delegation with an ordinary prompt later. That usability follow-up is not
-a merge or rollout gate, and no model exercise is dispatched.
+discharges that deployment hold. Staging tool exposure is active. Natural-agent usability remains
+an operator follow-up; no model exercise is dispatched.
 Focused regression-test additions and Bazel runs remain authorized; broad disruption exercises
 remain deferred.
 
-| Lane             | Next reviewable outcome                                                                                                      | Prerequisite / stopping point                                                   |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| P0 policy review | `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`: [resume/wake proposal #13546](https://github.com/agentydragon/ducktape/pull/13546) | Stakeholder selection precedes `EXEC_SUSPENDED_RESUME`                          |
-| P1 delegation    | `SESSION_DELEGATION_ACTIVATION`: merge and verify staging tool exposure                                                      | Automated checks; the operator's later usability check does not gate activation |
-| P1 scheduling    | `SCHEDULED_AGENT_WAKE_DESIGN`: [durable-wake proposal #13552](https://github.com/agentydragon/ducktape/pull/13552)           | Delivery/overlap/authority review precedes runtime implementation               |
+| Lane             | Next reviewable outcome                                                                                                      | Prerequisite / stopping point                                     |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| P0 policy review | `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`: [resume/wake proposal #13546](https://github.com/agentydragon/ducktape/pull/13546) | Stakeholder selection precedes `EXEC_SUSPENDED_RESUME`            |
+| P1 delegation    | `THREAD_CREATE_AUTHORIZATION`: operator follow-up for natural-agent usability                                                | Ordinary use; no model exercise is dispatched                     |
+| P1 scheduling    | `SCHEDULED_AGENT_WAKE_DESIGN`: [durable-wake proposal #13552](https://github.com/agentydragon/ducktape/pull/13552)           | Delivery/overlap/authority review precedes runtime implementation |
 
 After lifecycle policy is selected, explicit resume takes the next P0 implementation slot.
 Scheduled wake and usable delegation feed the daily CI capstone. Small
@@ -193,8 +191,6 @@ flowchart LR
     end
     subgraph PRIORITY_ONE[P1: useful daily-agent workflow]
         THREAD_CREATE_AUTHORIZATION[Operator follow-up: delegation usability]
-        SESSION_DELEGATION_ACTIVATION[Approved: staging tool exposure]
-        SESSION_DELEGATION_ACTIVATION --> DAILY_CI_AGENT[Daily CI product milestone]
         SCHEDULED_AGENT_WAKE_DESIGN[Review durable scheduled wake] --> SCHEDULED_AGENT_WAKE
         SCHEDULED_AGENT_WAKE[Durable scheduled wake] --> DAILY_CI_AGENT
     end
@@ -441,7 +437,6 @@ flowchart TD
     PLATFORM_GUIDANCE_OWNERSHIP_DESIGN[Later decision: platform-guidance ownership and composition]
     PLATFORM_GUIDANCE_SINGLE_OWNER[Later refactor: one platform-guidance owner]
     PLATFORM_GUIDANCE_OWNERSHIP_DESIGN --> PLATFORM_GUIDANCE_SINGLE_OWNER
-    SESSION_DELEGATION_ACTIVATION[Approved: expose staging delegation tools]
     APP_ENVIRONMENT_DISCOVERY[Later: app inventory through backend Discovery]
     SESSION_TOOL_SURFACE_CONVERGENCE_DESIGN[Later decision: compare Agentplane tool surfaces]
     ENVIRONMENT_SHARED_ACCOUNT[Deferred: shared-SA environment identity]
@@ -458,7 +453,6 @@ flowchart TD
     SCHEDULED_AGENT_WAKE[Selected P1: durable scheduled wake]
     DAILY_CI_AGENT[Selected P1 capstone: daily CI-maintenance agent]
     SCHEDULED_AGENT_WAKE --> DAILY_CI_AGENT
-    SESSION_DELEGATION_ACTIVATION --> DAILY_CI_AGENT
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
     ORCHESTRATION_V1_BACKEND_GRANTS[Blocked: orchestration_v1 operations on backend grants]
     THREAD_READ_POLICY --> ORCHESTRATION_V1_BACKEND_GRANTS
@@ -593,19 +587,6 @@ Preserve frozen instructions for existing Sessions, additive caller instructions
 base prompts. Exit with both native and central workflows using the common owner and the redundant
 ownership removed. Owner placement and distribution remain design choices; this item does not
 require a new service and does not block current reliability or delegation work.
-
-### `SESSION_DELEGATION_ACTIVATION` — enable the reviewed staging tool surface
-
-**Approved to merge by the operator, 2026-11-02 UTC; [#13514](https://github.com/agentydragon/ducktape/pull/13514).** The backend
-[Session tools](../action_service/session_delegation/README.md),
-[Discovery](../sandboxes/discovery/README.md) and [CLI reads](../docs/agent_cli.md) are implemented.
-Scripted external MCP and parent CLI acceptance, the optional opening-configuration repair and
-the managed guidance rollout are complete. Enable the reviewed surface after automated checks;
-the operator's later prompt-based usability check does not gate activation. The PR configures the nine-tool contract, including
-`sessions__get` and `sessions__read_turns`; validate its rendered catalogue and exact-head CI.
-Preserve `basic` auto-approval plus effective-caller checks; no
-new provisioning, authority or wake permission is implied. Activation and rollback remain separate
-from backend-code merges.
 
 ### `APP_ENVIRONMENT_DISCOVERY` — use backend Discovery for the integration app
 
