@@ -579,9 +579,10 @@ or their other consumers. Reconcile the collection's Sandbox protobuf with the e
 `EnvironmentDescriptor` list/get contract, including operator diagnostics and exact-UID reads,
 before migrating each caller. Preserve caller authorization and test the backend without the app.
 
-The [eventual app/backend boundary](environment_app_backend_boundary.md) describes the remaining
-responsibilities in `app/go/sandboxes` and their separate ownership decisions. Those decisions do
-not gate completion of the Discovery cutover. Its [frontend Sandbox view TODO](environment_app_backend_boundary.md#todo-remove-the-redundant-frontend-sandbox-view)
+The [eventual app/backend boundary](environment_app_backend_boundary.md) describes the Sandbox
+routes the app still owns, their direct calls to `sandboxes/inventory`, and the separate backend
+ownership decisions. Those decisions do not gate completion of the Discovery cutover. Its
+[frontend Sandbox view TODO](environment_app_backend_boundary.md#todo-remove-the-redundant-frontend-sandbox-view)
 tracks reconciling the overlapping inventory representations and migrating any remaining consumers
 to generated contracts.
 

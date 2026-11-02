@@ -1,5 +1,6 @@
-// Package sandboxes provides the app's caller-scoped access to the namespaced Sandbox inventory.
-package sandboxes
+// Package inventory provides namespace-scoped access to Kubernetes Sandbox
+// resources and lifecycle management.
+package inventory
 
 import (
 	"context"
@@ -33,8 +34,7 @@ const (
 	mutationAttempts       = 5
 )
 
-// Access is the app's namespace-scoped Sandbox service. Its caller and default policy sets are
-// fixed at construction, as they are for the app process identity.
+// Access scopes Sandbox operations to one namespace, caller identity, and set of default policies.
 type Access struct {
 	namespace        string
 	objects          client.Client
@@ -43,7 +43,7 @@ type Access struct {
 	caller           *sandboxespb.ServiceAccount
 }
 
-// New creates access over one Sandbox namespace and app caller identity.
+// New creates access over one Sandbox namespace and caller identity.
 func New(
 	namespace string,
 	objects client.Client,

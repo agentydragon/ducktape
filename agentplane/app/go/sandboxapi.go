@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/httperror"
-	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
+	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
 	"github.com/danielgtaylor/huma/v2"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
@@ -124,7 +124,7 @@ type sandboxLifecycleInventory interface {
 }
 
 // RegisterSandboxRoutes installs inventory and lifecycle routes; explicit resume calls EnvironmentService.
-func RegisterSandboxRoutes(server *HTTPServer, config Config, inventory *sandboxes.Access, environmentClient environmentResumer) {
+func RegisterSandboxRoutes(server *HTTPServer, config Config, inventory *sandboxinventory.Access, environmentClient environmentResumer) {
 	api := server.ProtectedAPI()
 	huma.Register[struct{}, sandboxListOutput](api, huma.Operation{
 		OperationID: "listSandboxes", Method: http.MethodGet, Path: "/sandboxes", Tags: []string{"sandboxes"},
@@ -356,12 +356,12 @@ func sandboxHTTPError(err error) error {
 }
 
 func classifySandboxError(err error) error {
-	var notFound *sandboxes.SandboxNotFoundError
-	var invalid *sandboxes.InvalidSandboxError
-	var conflict *sandboxes.SandboxConflictError
-	var running *sandboxes.SandboxRunningError
-	var modeUnknown *sandboxes.SandboxModeUnknownError
-	var tearingDown *sandboxes.SandboxTearingDownError
+	var notFound *sandboxinventory.SandboxNotFoundError
+	var invalid *sandboxinventory.InvalidSandboxError
+	var conflict *sandboxinventory.SandboxConflictError
+	var running *sandboxinventory.SandboxRunningError
+	var modeUnknown *sandboxinventory.SandboxModeUnknownError
+	var tearingDown *sandboxinventory.SandboxTearingDownError
 	switch {
 	case errors.As(err, &notFound), apierrors.IsNotFound(err):
 		return huma.Error404NotFound(err.Error())

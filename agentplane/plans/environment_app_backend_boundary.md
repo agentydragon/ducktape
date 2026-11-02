@@ -1,8 +1,8 @@
 # Environment management: app/backend boundary
 
-The eventual goal is to retire `app/go/sandboxes` as an app-owned domain backend as its callers
-move to their owning services. The app remains responsible for browser authentication, presentation
-and orchestration; backends own shared resource behavior and must operate without the app. Use
+The app still owns Sandbox HTTP routes and invokes the shared `sandboxes/inventory` package
+directly. The app remains responsible for browser authentication, presentation and orchestration;
+backends own shared resource behavior and must operate without the app. Move the app's callers to
 protobuf-backed service contracts for shared resource data and operations.
 
 - **Inventory and discovery:** Move app list/get, detail streams and their consumers to the
@@ -18,13 +18,14 @@ protobuf-backed service contracts for shared resource data and operations.
   fences and retry semantics. The service's eventual deployment remains open.
 - **Creation and templates:** The [environment management](task_dag.md#environment_management--dedicated-environment-tools-and-creation)
   and catalogue decisions own provisioning and template placement. Preserve creation's caller
-  attribution, idempotency and unknown-outcome handling when extracting the app's implementation.
+  attribution, idempotency and unknown-outcome handling as the app's callers move to that owner.
 - **Console:** Decide whether the KubeVirt console connector becomes a shared backend capability
   or remains an app-specific transport. A browser-facing streaming adapter may remain in the app.
 
-Move or remove package-specific errors with their actual owners as callers migrate. The app's
-handwritten `SandboxView` can be retired when its remaining routes and consumers use the generated
-contracts. These later ownership decisions do not gate the current Discovery cutover.
+Inventory errors live with the shared Kubernetes owner; app-specific response errors remain with
+their route owner. The app's handwritten `SandboxView` can be retired when its remaining routes and
+consumers use the generated contracts. These later ownership decisions do not gate the current
+Discovery cutover.
 
 ## TODO: Remove the redundant frontend Sandbox view
 

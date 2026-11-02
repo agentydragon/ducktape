@@ -19,6 +19,7 @@ import (
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
@@ -331,10 +332,10 @@ func TestSessionRPCErrorClassifiesWithoutHTTP(t *testing.T) {
 		wantCode   codes.Code
 		wantDetail string
 	}{
-		{"sandbox missing", &sandboxes.SandboxNotFoundError{Name: "demo"}, codes.NotFound, "demo"},
+		{"sandbox missing", &sandboxinventory.SandboxNotFoundError{Name: "demo"}, codes.NotFound, "demo"},
 		{"kubernetes missing", apierrors.NewNotFound(resource, "demo"), codes.NotFound, "demo"},
-		{"invalid sandbox", &sandboxes.InvalidSandboxError{Reason: "invalid"}, codes.InvalidArgument, "invalid"},
-		{"sandbox conflict", &sandboxes.SandboxConflictError{Name: "demo"}, codes.FailedPrecondition, "demo"},
+		{"invalid sandbox", &sandboxinventory.InvalidSandboxError{Reason: "invalid"}, codes.InvalidArgument, "invalid"},
+		{"sandbox conflict", &sandboxinventory.SandboxConflictError{Name: "demo"}, codes.FailedPrecondition, "demo"},
 		{"kubernetes conflict", apierrors.NewConflict(resource, "demo", errors.New("conflict")), codes.FailedPrecondition, "demo"},
 		{"quiescing", &sandboxes.SandboxQuiescingError{Name: "demo"}, codes.Unavailable, "quiescing"},
 		{"canceled", context.Canceled, codes.Canceled, "canceled"},

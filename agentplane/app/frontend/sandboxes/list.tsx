@@ -317,7 +317,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                         </ActionIcon>
                       </Menu.Target>
                       <Menu.Dropdown>
-                        {/* The API refuses a running sandbox (app/go/sandboxes/inventory.go); suspend is one click left. */}
+                        {/* The API refuses a running sandbox (agentplane/sandboxes/inventory/inventory.go); suspend is one click left. */}
                         <Menu.Item color="red" disabled={!deletable(row)} onClick={() => setConfirmingDelete(row.name)}>
                           Delete
                         </Menu.Item>

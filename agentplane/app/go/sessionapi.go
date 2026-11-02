@@ -17,6 +17,7 @@ import (
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
 	"github.com/google/uuid"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc/codes"
@@ -140,12 +141,12 @@ func sessionRPCError(err error) error {
 	var missing *appbridge.SessionOpeningNotFoundError
 	var service *appbridge.ServiceError
 	var refused *appbridge.RefusedError
-	var notFound *sandboxes.SandboxNotFoundError
-	var invalid *sandboxes.InvalidSandboxError
-	var conflict *sandboxes.SandboxConflictError
-	var running *sandboxes.SandboxRunningError
-	var modeUnknown *sandboxes.SandboxModeUnknownError
-	var tearingDown *sandboxes.SandboxTearingDownError
+	var notFound *sandboxinventory.SandboxNotFoundError
+	var invalid *sandboxinventory.InvalidSandboxError
+	var conflict *sandboxinventory.SandboxConflictError
+	var running *sandboxinventory.SandboxRunningError
+	var modeUnknown *sandboxinventory.SandboxModeUnknownError
+	var tearingDown *sandboxinventory.SandboxTearingDownError
 	var quiescing *sandboxes.SandboxQuiescingError
 	switch {
 	case errors.As(err, &timeout):

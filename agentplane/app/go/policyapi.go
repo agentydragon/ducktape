@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
-	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
+	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
 	"github.com/danielgtaylor/huma/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -41,7 +41,7 @@ type policyBindingNameInput struct {
 
 // RegisterPolicyRoutes installs the caller-readable Egress views and operator-only grant/revoke
 // operations. Access uses the existing typed PolicyBinding, PolicySet, and EgressCredential CRDs.
-func RegisterPolicyRoutes(server *HTTPServer, config Config, inventory *sandboxes.Access, policies *policyaccess.Access) {
+func RegisterPolicyRoutes(server *HTTPServer, config Config, inventory *sandboxinventory.Access, policies *policyaccess.Access) {
 	readAPI := server.ProtectedAPI()
 	huma.Register[struct{}, sandboxFormOutput](readAPI, huma.Operation{
 		OperationID: "getSandboxForm", Method: http.MethodGet, Path: "/sandboxes/form", Tags: []string{"sandboxes"},
@@ -107,7 +107,7 @@ func RegisterPolicyRoutes(server *HTTPServer, config Config, inventory *sandboxe
 
 func policyHTTPError(err error) error {
 	var notFound *policyaccess.BindingNotFoundError
-	var missingSets *sandboxes.UnknownPolicySetError
+	var missingSets *sandboxinventory.UnknownPolicySetError
 	var fromGit *policyaccess.FluxOwnedBindingError
 	var fromSandbox *policyaccess.SandboxOwnedBindingError
 	var notVisible *policyaccess.CreatedBindingNotVisibleError

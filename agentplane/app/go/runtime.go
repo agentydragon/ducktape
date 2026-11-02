@@ -46,6 +46,7 @@ import (
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
 	"github.com/agentydragon/ducktape/util/netlistener"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
@@ -153,7 +154,7 @@ func run(ctx context.Context, config Config) error {
 		return err
 	}
 	threadStore := threads.NewStore(db)
-	inventory, err := sandboxes.New(config.SandboxNamespace, objects, config.DefaultPolicySets,
+	inventory, err := sandboxinventory.New(config.SandboxNamespace, objects, config.DefaultPolicySets,
 		&sandboxespb.ServiceAccount{Namespace: config.SandboxNamespace, Name: "app"})
 	if err != nil {
 		return fmt.Errorf("configure Sandbox inventory: %w", err)
