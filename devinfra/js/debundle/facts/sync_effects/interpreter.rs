@@ -801,7 +801,7 @@ pub(super) struct ExecutionState {
     /// closure even when the precise prefix was already summarized.
     returned_callback_owners: BTreeSet<(bool, SourceUnitOrdinal)>,
     capture_contexts: CaptureInterner<LexicalCaptures>,
-    lexical_cells: Vec<LexicalCell>,
+    lexical_cells: LexicalCells,
     active_cells: OrdMap<Id, LexicalCellId>,
     callback_sets: CaptureInterner<Values>,
     active: BTreeSet<ActiveInvocation>,
@@ -822,7 +822,211 @@ struct LexicalCell {
     initialization: CellInitialization,
 }
 
+/// Slots are never reused. Retiring a cell frees its box and value graph,
+/// leaving only an empty identity slot behind.
+struct LexicalCells {
+    slots: Vec<Option<Box<LexicalCell>>>,
+    occupied: Vec<LexicalCellId>,
+    next_collection_at: usize,
+}
+
+impl Default for LexicalCells {
+    fn default() -> Self {
+        Self {
+            slots: Vec::new(),
+            occupied: Vec::new(),
+            next_collection_at: 1,
+        }
+    }
+}
+
+impl LexicalCells {
+    fn insert(&mut self, cell: LexicalCell) -> LexicalCellId {
+        let id = LexicalCellId(self.slots.len());
+        self.slots.push(Some(Box::new(cell)));
+        self.occupied.push(id);
+        id
+    }
+
+    fn collection_due(&self, last_owner: bool) -> bool {
+        !self.occupied.is_empty() && (last_owner || self.slots.len() >= self.next_collection_at)
+    }
+
+    fn sweep(&mut self, marked: &FxHashSet<LexicalCellId>, trace_work: usize) {
+        self.occupied.retain(|id| {
+            if marked.contains(id) {
+                true
+            } else {
+                self.slots[id.0] = None;
+                false
+            }
+        });
+        // Allocation-driven scheduling amortizes the root walk. This counts
+        // graph nodes for collection policy, not elapsed time or telemetry.
+        self.next_collection_at = self.slots.len().saturating_add(trace_work.max(64));
+    }
+}
+
+impl std::ops::Index<usize> for LexicalCells {
+    type Output = LexicalCell;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        self.slots[index]
+            .as_deref()
+            .expect("live lexical-cell reference")
+    }
+}
+
+impl std::ops::IndexMut<usize> for LexicalCells {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        self.slots[index]
+            .as_deref_mut()
+            .expect("live lexical-cell reference")
+    }
+}
+
+/// All references here borrow the one settled owner-boundary state. Separate
+/// visited sets respect the two interner identity namespaces and break cycles
+/// through cells without cloning captured graphs.
+struct CellTrace<'a> {
+    arena: &'a LexicalCells,
+    pending: Vec<&'a Values>,
+    cells: FxHashSet<LexicalCellId>,
+    contexts: FxHashSet<usize>,
+    callback_sets: FxHashSet<usize>,
+    work: usize,
+}
+
+impl<'a> CellTrace<'a> {
+    fn new(arena: &'a LexicalCells) -> Self {
+        Self {
+            arena,
+            pending: Vec::new(),
+            cells: FxHashSet::default(),
+            contexts: FxHashSet::default(),
+            callback_sets: FxHashSet::default(),
+            work: 0,
+        }
+    }
+
+    fn values(&mut self, values: &'a Values) {
+        self.pending.push(values);
+    }
+
+    fn cell(&mut self, id: LexicalCellId) {
+        if self.cells.insert(id) {
+            self.work = self.work.saturating_add(1);
+            self.pending.push(&self.arena[id.0].values);
+        }
+    }
+
+    fn retained(&mut self, captured: &'a Captured<Values>) {
+        if self.callback_sets.insert(captured.cache_identity()) {
+            self.values(&captured.values);
+        }
+    }
+
+    fn finish(mut self) -> (FxHashSet<LexicalCellId>, usize) {
+        while let Some(values) = self.pending.pop() {
+            self.work = self.work.saturating_add(values.len()).saturating_add(1);
+            for value in values {
+                match value {
+                    AbstractValue::Closure(_, captures) => {
+                        if self.contexts.insert(captures.cache_identity()) {
+                            for values in captures.values.snapshots.values() {
+                                self.values(values);
+                            }
+                            for cell in captures.values.cells.values() {
+                                self.cell(*cell);
+                            }
+                        }
+                    }
+                    AbstractValue::Instance(_, captured)
+                    | AbstractValue::DeferredCallbacks(captured)
+                    | AbstractValue::AuditedRetainedResult(_, captured) => self.retained(captured),
+                    AbstractValue::Value(_)
+                    | AbstractValue::SymbolicInput(_)
+                    | AbstractValue::ClassMembers(_)
+                    | AbstractValue::CallbackFactory
+                    | AbstractValue::InlineCallbackFactory
+                    | AbstractValue::OwnDescriptorMap(_)
+                    | AbstractValue::ForeignDeferredRecord
+                    | AbstractValue::ObjectAssign
+                    | AbstractValue::ArrayIntrinsic
+                    | AbstractValue::GlobalObject => {}
+                }
+            }
+        }
+        (self.cells, self.work)
+    }
+}
+
 impl ExecutionState {
+    /// Only RuntimeRules calls this, after the owner executor and every
+    /// single-consumer transfer payload have unwound. Keep all value-bearing
+    /// state fields in this root list when extending ExecutionState.
+    pub(super) fn reclaim_lexical_cells(&mut self, last_owner: bool) {
+        if !self.lexical_cells.collection_due(last_owner) {
+            return;
+        }
+        assert!(self.current_top_owner.is_none());
+        assert_eq!(self.invocation_depth, 0);
+        assert!(self.active.is_empty());
+        assert!(self.invocation_memos.is_empty());
+        let mut trace = CellTrace::new(&self.lexical_cells);
+        for values in self
+            .prefix_values
+            .values()
+            .chain(self.top_env.values())
+            .chain(self.top_captures.values())
+            .chain(self.class_superclasses.values())
+            .chain(self.accumulated_values.values())
+        {
+            trace.values(values);
+        }
+        trace.values(&self.global_escaped_callbacks);
+        trace.values(&self.exported_runtime_values);
+        trace.values(&self.fallback_outcome.returns);
+        for properties in self.prefix_object_properties.values() {
+            for values in properties.values() {
+                trace.values(values);
+            }
+        }
+        for array in self.dense_arrays.values() {
+            for values in &array.slots {
+                trace.values(values);
+            }
+        }
+        for properties in self.applied_accessors.values() {
+            for accessor in properties.values() {
+                trace.values(&accessor.getter);
+                trace.values(&accessor.setter);
+            }
+        }
+        for descriptors in self.own_descriptor_maps.values() {
+            trace.values(&descriptors.retained_values);
+            for descriptor in descriptors.properties.values() {
+                match descriptor {
+                    CapturedPropertyDescriptor::Data(values) => trace.values(values),
+                    CapturedPropertyDescriptor::Accessor { getter, setter } => {
+                        trace.values(getter);
+                        trace.values(setter);
+                    }
+                }
+            }
+        }
+        for captured in self.revoked_audited_results.values() {
+            trace.retained(captured);
+        }
+        for cell in self.active_cells.values() {
+            trace.cell(*cell);
+        }
+        let (marked, work) = trace.finish();
+        self.lexical_cells.sweep(&marked, work);
+        self.capture_contexts.sweep_dead();
+        self.callback_sets.sweep_dead();
+    }
+
     /// Skipped local code can change descriptors or prototypes even when no
     /// escape to foreign code was observed. Neither set permits prefix reads.
     fn object_properties_are_settled(&self, object: &u32) -> bool {
@@ -988,8 +1192,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             {
                 continue;
             }
-            let cell = LexicalCellId(self.executor.state.lexical_cells.len());
-            self.executor.state.lexical_cells.push(LexicalCell {
+            let cell = self.executor.state.lexical_cells.insert(LexicalCell {
                 values: frame.environment[binding].clone(),
                 kind: *kind,
                 initialization: match kind {
@@ -10439,7 +10642,7 @@ pub(crate) fn annotate_synchronous_calls(
         fallback_local_owners: BTreeSet::new(),
         returned_callback_owners: BTreeSet::new(),
         capture_contexts: CaptureInterner::default(),
-        lexical_cells: Vec::new(),
+        lexical_cells: LexicalCells::default(),
         active_cells: OrdMap::new(),
         callback_sets: CaptureInterner::default(),
         active: BTreeSet::new(),

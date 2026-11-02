@@ -434,7 +434,11 @@ impl RuntimeRules<'_, '_> {
         let mut executor = Executor::new(self.inputs, state, queries);
         let effects = executor.execute_owner(owner);
         executor.mark_allocation_opaque();
-        let (state, _, _) = executor.into_transfer();
+        let (mut state, _, _) = executor.into_transfer();
+        // Requests/results are taken at their single-consumer sites, and
+        // owner finalization retires invocation memos. No active transfer
+        // frame can hold a cell reference outside this settled prefix now.
+        state.reclaim_lexical_cells(owner.0 + 1 == self.owner_count);
         context.propose(
             RuntimeKey::Effects(owner),
             RuntimeFact::Effects(Box::new(effects)),

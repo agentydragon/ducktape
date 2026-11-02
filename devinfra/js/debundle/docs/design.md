@@ -1093,8 +1093,8 @@ reused after reclamation. Values, memo keys and semantic roots retain the strong
 references they need. In particular, audited-result revocations retain the actual
 description as well as its identity, preventing proof resurrection after other
 references expire. Dead-entry cleanup visits a bounded batch at owner boundaries;
-it does not scan every live description after every statement. Lexical-cell
-payload reclamation still requires a separate root trace.
+it does not scan every live description after every statement. Lexical cells
+use a separate root trace after statement execution has unwound.
 Opaque methods receive their receiver as an input capability;
 callback discovery traverses its stored references as well as the explicit
 arguments. Receiver taint remains independent of this callback reach.
@@ -1245,9 +1245,24 @@ properties. Paths that pre-evaluate assignments or flatten source control flow
 invalidate mutable-cell precision before using those source summaries. Failed
 ordered execution never retries already executed operations. Cell allocation
 and changed contents advance the prefix revision used in invocation memos.
-Cell identities are monotonic; their payloads currently live until chunk
-completion. Reclaiming unreachable payloads at statement finalization remains
-a memory follow-up, with live closures and all runtime heap roots preserved.
+Cell identities are monotonic and never reused. After the owner executor has
+returned, single-consumer transfer requests/results are consumed and invocation
+memos are retired. Collection at this boundary traces prefix/top values and
+captures, escapes and exports, heap properties, dense arrays, accumulated
+values, accessors, descriptor maps, superclass values, revoked audited results
+and active bindings. Capture descriptions lead to their snapshots and current
+cell contents; the weak interner tables and unmarked arena cells are not roots.
+A borrowed iterative walk visits each capture identity and cell once, allowing
+unreachable cell/capture cycles to be released without copying their graphs.
+
+Each cell has a boxed payload behind a permanent identity slot. Sweeping drops
+unmarked payloads and retains empty slots, so a stale reference cannot silently
+alias a later activation. Allocation-driven scheduling spaces collections by
+the preceding trace's graph work, with a final collection at the last owner.
+No collection runs inside a transfer, where caller frames can hold cell
+references outside the state. Existing heap tables and semantic roots remain
+conservative roots; this is not a general heap collector or a whole-chunk
+memory bound.
 
 Static dot-field reads from a simple binding now enter the same ordered
 executor. The fresh own-data guard is shared with field writes and is not
