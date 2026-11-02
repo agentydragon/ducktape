@@ -44,13 +44,15 @@ the embedded adapter is called directly by Runtime.
 
 ## Durable owners
 
-| State                              | Owner   | Existing path                                       |
-| ---------------------------------- | ------- | --------------------------------------------------- |
-| Environment lifetime lock          | Runtime | `<state_dir>/.agentplane-environment-runtime-owner` |
-| Incarnation seal marker            | Runtime | `<state_dir>/sessions/sealed`                       |
-| Bootstrap request and log          | Runtime | `<state_dir>/initialization/`                       |
-| Session records, journals and ACKs | Host    | `<state_dir>/sessions/`                             |
-| Shared Codex native home           | Host    | `<state_dir>/codex/`                                |
+| State                                     | Owner   | Existing path                                       |
+| ----------------------------------------- | ------- | --------------------------------------------------- |
+| Environment lifetime lock                 | Runtime | `<state_dir>/.agentplane-environment-runtime-owner` |
+| Incarnation seal marker                   | Runtime | `<state_dir>/sessions/sealed`                       |
+| Bootstrap selection                       | Runtime | `<state_dir>/runtime-resources.db`                  |
+| Bootstrap event log                       | Runtime | `<state_dir>/initialization/events.jsonl`           |
+| Session records and History ACKs          | Host    | `<state_dir>/runtime-resources.db`                  |
+| Session journals and native continuations | Host    | `<state_dir>/sessions/`                             |
+| Shared Codex native home                  | Host    | `<state_dir>/codex/`                                |
 
 Runtime's environment lock covers the embedded Host's retained state as well. Pod and subprocess
 native processes inherit the Runtime owner descriptor; VM native processes are fenced by their
@@ -132,8 +134,9 @@ accepted Host setup settles.
 Host reports native cleanup only after admissions, setup, shared app-server, process finalizers and
 inspection writes settle. Runtime cannot turn an old report into a new generation's fence proof.
 Host waits for the matching Execution fence before sealing. Under-cursor or unsealed ACKs leave Host
-FLUSHING. CLOSING preserves an existing seal and follows the same flush path; CLOSING without a seal
-performs native cleanup without ending the incarnation's history.
+FLUSHING. CLOSING preserves an existing seal and waits for its journal seals; Runtime Close waits for
+Host quiescence and exact History ACKs before requesting Host close when a seal is present. CLOSING
+without a seal performs native cleanup without ending the incarnation's history.
 
 Host lifetime loss closes admission and starts local cleanup without inventing a seal. Local
 Close callers share one cleanup; cancellation ends only the caller's wait. Engine exit and teardown
