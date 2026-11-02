@@ -951,9 +951,11 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             frame,
             receivers.clone(),
             self.owner,
-            ExecutionOperation::MemberRead,
+            ExecutionPrecisionLossReason::UnsupportedOperation {
+                operation: ExecutionOperation::MemberRead,
+                ordered_field_read_refusal: Some(refusal),
+            },
             span,
-            Some(refusal),
             self.outcome,
         );
         None
@@ -971,9 +973,11 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             frame,
             reached,
             self.owner,
-            ExecutionOperation::PropertyWrite,
+            ExecutionPrecisionLossReason::UnsupportedOperation {
+                operation: ExecutionOperation::PropertyWrite,
+                ordered_field_read_refusal: None,
+            },
             span,
-            None,
             self.outcome,
         );
     }
@@ -7680,9 +7684,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         frame: &LocalFrame,
         mut reached: Values,
         owner: SourceUnitOrdinal,
-        operation: ExecutionOperation,
+        reason: ExecutionPrecisionLossReason,
         span: Span,
-        ordered_field_read_refusal: Option<OrderedFieldReadRefusal>,
         outcome: &mut Outcome,
     ) {
         reached.extend(frame.inputs.iter().cloned());
@@ -7698,10 +7701,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             owner,
             &[reached],
             &frame.environment,
-            ExecutionPrecisionLossReason::UnsupportedOperation {
-                operation,
-                ordered_field_read_refusal,
-            },
+            reason,
             HavocReach::Global {
                 cause: GlobalReachCause::UnmodelledOperation,
             },
