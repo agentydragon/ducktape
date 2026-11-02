@@ -12,7 +12,7 @@ import (
 
 // Run joins the embedded Host controllers under Runtime's management lifetime.
 // Only the public Gateway control server remains a network listener.
-func (r *Runner) Run(ctx context.Context, endpoint configuration.Endpoint, bridge RuntimeBridge) error {
+func (r *Host) Run(ctx context.Context, endpoint configuration.Endpoint, bridge RuntimeBridge) error {
 	if bridge == nil {
 		return errors.New("Harness Host requires its Runtime coordinator")
 	}
@@ -52,7 +52,7 @@ func (r *Runner) Run(ctx context.Context, endpoint configuration.Endpoint, bridg
 	return errors.Join(failure, closeErr)
 }
 
-func (r *Runner) newIngressSupervisor(endpoint configuration.Endpoint) *ingress.Supervisor {
+func (r *Host) newIngressSupervisor(endpoint configuration.Endpoint) *ingress.Supervisor {
 	return ingress.NewSupervisor(ingress.SupervisorConfig{
 		Target: endpoint.Target, Bearer: endpoint.Bearer, Store: r.store, Changes: r.changesSince, Inventory: r.ingressSources, OnWorkerFailure: r.fail,
 		OnAcknowledgement: func(id string, ack retained.Acknowledgement) error {
@@ -65,7 +65,7 @@ func (r *Runner) newIngressSupervisor(endpoint configuration.Endpoint) *ingress.
 	})
 }
 
-func (r *Runner) ingressSources() []ingress.Source {
+func (r *Host) ingressSources() []ingress.Source {
 	current := r.sessions.Inventory()
 	sources := make([]ingress.Source, 0, len(current))
 	for _, s := range current {

@@ -15,7 +15,7 @@ import (
 // RuntimeBridge exposes Runtime-owned bootstrap and Execution readiness to the
 // embedded Host. Its callbacks are made without holding the Host mutex.
 type RuntimeBridge interface {
-	ConnectHost(context.Context, *Runner) error
+	ConnectHost(context.Context, *Host) error
 	WaitHostBootstrap(context.Context, *runtimepb.Binding) error
 	HostExecutionReady(context.Context) (bool, error)
 }
@@ -35,7 +35,7 @@ type runtimeConnection struct {
 
 // Runtime revokes this native connection gate synchronously, even if COSI is
 // unavailable. Intent application still comes only from the shared COSI store.
-func (r *Runner) SetRuntimeConnection(runtimeBootID, hostBootID string, connected bool) {
+func (r *Host) SetRuntimeConnection(runtimeBootID, hostBootID string, connected bool) {
 	for {
 		current := r.runtimeConnection.Load()
 		if current != nil && current.failed {
@@ -48,16 +48,16 @@ func (r *Runner) SetRuntimeConnection(runtimeBootID, hostBootID string, connecte
 }
 
 // RuntimeConnectionMatches checks the native connection gate used by Host intent admission.
-func (r *Runner) RuntimeConnectionMatches(runtimeBootID, hostBootID string) bool {
+func (r *Host) RuntimeConnectionMatches(runtimeBootID, hostBootID string) bool {
 	connection := r.runtimeConnection.Load()
 	return connection != nil && connection.connected && !connection.failed && connection.runtimeBootID == runtimeBootID && connection.hostBootID == hostBootID
 }
 
-func (r *Runner) BootID() string { return r.bootID }
+func (r *Host) BootID() string { return r.bootID }
 
 // BoundContext checks the exact lifecycle binding at direct-call ingress. Native
 // admission repeats this check under the Host mutex before any durable mutation.
-func (r *Runner) BoundContext(ctx context.Context, binding *runtimepb.Binding) (context.Context, error) {
+func (r *Host) BoundContext(ctx context.Context, binding *runtimepb.Binding) (context.Context, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err := r.authorizeBindingLocked(binding); err != nil {
@@ -66,7 +66,7 @@ func (r *Runner) BoundContext(ctx context.Context, binding *runtimepb.Binding) (
 	return withBinding(ctx, binding), nil
 }
 
-func (r *Runner) environment() session.Environment {
+func (r *Host) environment() session.Environment {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.intent == nil {
@@ -77,12 +77,12 @@ func (r *Runner) environment() session.Environment {
 
 // Caller holds the synchronous native admission barrier. The interceptor alone
 // cannot fence a request that spent time waiting on model lookup or creation.
-func (r *Runner) authorizeLocked(ctx context.Context) error {
+func (r *Host) authorizeLocked(ctx context.Context) error {
 	binding, _ := ctx.Value(bindingContextKey{}).(*runtimepb.Binding)
 	return r.authorizeBindingLocked(binding)
 }
 
-func (r *Runner) authorizeBindingLocked(binding *runtimepb.Binding) error {
+func (r *Host) authorizeBindingLocked(binding *runtimepb.Binding) error {
 	if r.closing || !r.ready.Load() || r.intent == nil {
 		return status.Error(codes.Unavailable, "Harness Host has no ready environment binding")
 	}
@@ -95,7 +95,7 @@ func (r *Runner) authorizeBindingLocked(binding *runtimepb.Binding) error {
 	return nil
 }
 
-func (r *Runner) ApplyIntent(ctx context.Context, intent *runtimepb.LifecycleIntent) error {
+func (r *Host) ApplyIntent(ctx context.Context, intent *runtimepb.LifecycleIntent) error {
 	if intent == nil || intent.Binding == nil || intent.Binding.RuntimeBootId == "" || intent.Binding.HostBootId != r.bootID || intent.Binding.Generation == 0 || intent.SandboxUid != r.config.Launch.Sandbox.UID {
 		return errors.New("invalid environment lifecycle binding")
 	}
@@ -183,7 +183,7 @@ func (r *Runner) ApplyIntent(ctx context.Context, intent *runtimepb.LifecycleInt
 	return err
 }
 
-func (r *Runner) waitBootstrap(ctx context.Context) error {
+func (r *Host) waitBootstrap(ctx context.Context) error {
 	r.mu.Lock()
 	if r.bootstrapBinding == nil || r.runtimeBridge == nil {
 		r.mu.Unlock()
@@ -195,7 +195,7 @@ func (r *Runner) waitBootstrap(ctx context.Context) error {
 	return bridge.WaitHostBootstrap(ctx, binding)
 }
 
-func (r *Runner) executionReady(ctx context.Context) (bool, error) {
+func (r *Host) executionReady(ctx context.Context) (bool, error) {
 	r.mu.Lock()
 	bridge := r.runtimeBridge
 	r.mu.Unlock()

@@ -55,7 +55,7 @@ func insecureControl() configuration.EnvironmentRuntimeControlConfiguration {
 }
 
 // The fixture composes production Runtime and Host through their direct coordinator.
-func newLifecycleRunner(t *testing.T, config runtimeTestConfig) *Runtime {
+func newLifecycleRuntime(t *testing.T, config runtimeTestConfig) *Runtime {
 	t.Helper()
 	return newLifecycleRunnerWithState(t, config, nil)
 }
@@ -174,7 +174,7 @@ func waitClose(t *testing.T, done <-chan error) error {
 }
 
 type localHostLifetime struct {
-	host   *harnesshost.Runner
+	host   *harnesshost.Host
 	cancel context.CancelFunc
 	done   chan struct{}
 	err    error

@@ -21,7 +21,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (r *Runner) OpenSession(ctx context.Context, request *environmentruntimepb.OpenSessionRequest) (response *environmentruntimepb.OpenSessionResponse, resultErr error) {
+func (r *Host) OpenSession(ctx context.Context, request *environmentruntimepb.OpenSessionRequest) (response *environmentruntimepb.OpenSessionResponse, resultErr error) {
 	ctx, span := observability.Start(
 		ctx, "Environment Runtime OpenSession",
 		trace.WithAttributes(
@@ -163,7 +163,7 @@ func compatibleExecutionPrincipal(retained, incoming *delegationpb.ServiceAccoun
 	return incoming == nil || proto.Equal(retained, incoming)
 }
 
-func (r *Runner) admit(ctx context.Context, id string, c *commandpb.Command) (entry *eventlogpb.EventEntry, resultErr error) {
+func (r *Host) admit(ctx context.Context, id string, c *commandpb.Command) (entry *eventlogpb.EventEntry, resultErr error) {
 	if c.CommandId == "" || c.Operation == nil {
 		return nil, status.Error(codes.InvalidArgument, "command_id and operation required")
 	}
@@ -203,7 +203,7 @@ func (r *Runner) admit(ctx context.Context, id string, c *commandpb.Command) (en
 	return entry, rpcError(err)
 }
 
-func (r *Runner) finishAdmission(resultErr *error) {
+func (r *Host) finishAdmission(resultErr *error) {
 	r.mu.Lock()
 	err := r.lifecycle.changeAdmissionsLocked(-1)
 	r.mu.Unlock()
@@ -214,22 +214,22 @@ func (r *Runner) finishAdmission(resultErr *error) {
 	}
 }
 
-func (r *Runner) SubmitInput(ctx context.Context, q *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
+func (r *Host) SubmitInput(ctx context.Context, q *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
 	entry, err := r.admit(ctx, q.SessionId, &commandpb.Command{CommandId: q.CommandId, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: q.Text}}})
 	return &environmentruntimepb.SubmitInputResponse{Admission: entry}, err
 }
 
-func (r *Runner) ChangeModel(ctx context.Context, q *environmentruntimepb.ChangeModelRequest) (*environmentruntimepb.ChangeModelResponse, error) {
+func (r *Host) ChangeModel(ctx context.Context, q *environmentruntimepb.ChangeModelRequest) (*environmentruntimepb.ChangeModelResponse, error) {
 	entry, err := r.admit(ctx, q.SessionId, &commandpb.Command{CommandId: q.CommandId, Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: q.Model}}})
 	return &environmentruntimepb.ChangeModelResponse{Admission: entry}, err
 }
 
-func (r *Runner) ChangeReasoningEffort(ctx context.Context, q *environmentruntimepb.ChangeReasoningEffortRequest) (*environmentruntimepb.ChangeReasoningEffortResponse, error) {
+func (r *Host) ChangeReasoningEffort(ctx context.Context, q *environmentruntimepb.ChangeReasoningEffortRequest) (*environmentruntimepb.ChangeReasoningEffortResponse, error) {
 	entry, err := r.admit(ctx, q.SessionId, &commandpb.Command{CommandId: q.CommandId, Operation: &commandpb.Command_ChangeReasoningEffort{ChangeReasoningEffort: &commandpb.ChangeReasoningEffort{Effort: q.Effort}}})
 	return &environmentruntimepb.ChangeReasoningEffortResponse{Admission: entry}, err
 }
 
-func (r *Runner) InterruptTurn(ctx context.Context, q *environmentruntimepb.InterruptTurnRequest) (*environmentruntimepb.InterruptTurnResponse, error) {
+func (r *Host) InterruptTurn(ctx context.Context, q *environmentruntimepb.InterruptTurnRequest) (*environmentruntimepb.InterruptTurnResponse, error) {
 	entry, err := r.admit(ctx, q.SessionId, &commandpb.Command{CommandId: q.CommandId, Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: q.TurnId}}})
 	return &environmentruntimepb.InterruptTurnResponse{Admission: entry}, err
 }
