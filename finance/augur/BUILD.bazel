@@ -51,9 +51,9 @@ py_library(
 py_binary(
     name = "dev",
     data = [
-        "//finance/augur/api:public_fixture_calibration_catalog",
         "//finance/augur/api:public_fixture_config",
         "//finance/augur/api:public_fixture_properties",
+        "//finance/augur/calibration:example_openai_catalog",
         "//finance/augur/frontend:bundle_base",
     ],
     env = {
@@ -70,9 +70,9 @@ py_test(
     srcs = ["browser_shell_test.py"],
     data = [
         ":dev",
-        "//finance/augur/api:public_fixture_calibration_catalog",
         "//finance/augur/api:public_fixture_config",
         "//finance/augur/api:public_fixture_properties",
+        "//finance/augur/calibration:example_openai_catalog",
     ],
     env = {
         "AUGUR_BUNDLE_INDEX_RUNFILE": "_main/finance/augur/frontend/dist/index.html",
@@ -102,9 +102,9 @@ py_test(
     size = "large",
     srcs = ["visual_test.py"],
     data = [
-        "//finance/augur/api:public_fixture_calibration_catalog",
         "//finance/augur/api:public_fixture_config",
         "//finance/augur/api:public_fixture_properties",
+        "//finance/augur/calibration:example_openai_catalog",
         "//finance/augur/frontend:bundle_base",
     ],
     env = {

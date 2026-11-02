@@ -258,10 +258,10 @@ py_test(
     size = "medium",
     srcs = ["server_test.py"],
     data = [
-        ":public_fixture_calibration_catalog",
         ":public_fixture_config",
         ":public_fixture_properties",
         ":server_bin",
+        "//finance/augur/calibration:example_openai_catalog",
     ],
     deps = [
         ":conftest",
@@ -281,9 +281,9 @@ py_test(
     size = "medium",
     srcs = ["test_calibration_endpoint.py"],
     data = [
-        ":public_fixture_calibration_catalog",
         ":public_fixture_config",
         ":public_fixture_properties",
+        "//finance/augur/calibration:example_openai_catalog",
     ],
     deps = [
         ":config",
@@ -482,13 +482,4 @@ filegroup(
 filegroup(
     name = "public_fixture_properties",
     srcs = ["testdata/properties.json"],
-)
-
-# The public fixture config registers a calibration catalog at
-# `../../calibration/example_openai_catalog.yaml`; anything that loads that config at
-# startup (the server binary under test, the calibration endpoint test) needs the
-# catalog in its runfiles at the resolved path.
-filegroup(
-    name = "public_fixture_calibration_catalog",
-    srcs = ["//finance/augur/calibration:example_openai_catalog"],
 )
