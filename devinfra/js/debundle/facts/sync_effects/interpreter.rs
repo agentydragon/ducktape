@@ -7694,7 +7694,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .map(|object| AbstractValue::Value(Value::Alloc(Kind::Object, *object))),
         );
         self.publish_values(&reached);
-        let fallback = self.bounded_invocation_fallback(
+        let mut fallback = self.bounded_invocation_fallback(
             owner,
             &[reached],
             &frame.environment,

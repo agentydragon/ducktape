@@ -230,14 +230,14 @@ fn expression(
                     // broadened for reads of other receivers.
                     let values =
                         context.heap().properties[&object][&Some(property.clone())].clone();
-                    return Some(completing(values, frame));
+                    Some(completing(values, frame))
                 }
                 Err(refusal) => {
                     let result = context.unproved_field_read(
                         frame, receiver, &receivers, property, *span, refusal,
                     )?;
                     judgment.compose(&result.judgment);
-                    return Some(completing(result.values, frame));
+                    Some(completing(result.values, frame))
                 }
             }
         }
