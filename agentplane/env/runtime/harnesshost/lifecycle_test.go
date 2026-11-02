@@ -145,7 +145,7 @@ func lifecycleTestBlockedSetupWithState(t *testing.T, store state.State) (*Runne
 }
 
 func sessionStopping(r *Runner, s *session.Session) bool {
-	current, found, err := session.ReadRuntime(r.ctx, r.lifecycle.state, s.ID())
+	current, found, err := session.ReadLifecycleStatus(r.ctx, r.lifecycle.state, s.ID())
 	return err == nil && found && current.Phase == session.Stopping
 }
 
@@ -307,7 +307,7 @@ func TestClosingIntentPreservesSealAndWaitsForSetup(t *testing.T) {
 	blocked := runnerLifecycleSnapshot(t, r)
 	if !blocked.ProgressCurrent || blocked.Stage != sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_HALTING ||
 		blocked.Blocker == nil || blocked.Blocker.Kind != sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_HALT ||
-		blocked.Blocker.ResourceId != s.ID() || blocked.Blocker.ResourceType != session.RuntimeType || !blocked.Blocker.ResourcePresent {
+		blocked.Blocker.ResourceId != s.ID() || blocked.Blocker.ResourceType != session.LifecycleStatusType || !blocked.Blocker.ResourcePresent {
 		t.Fatalf("GetStatus while setup blocks halt = %+v", blocked)
 	}
 

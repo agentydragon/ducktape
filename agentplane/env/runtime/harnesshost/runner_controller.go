@@ -26,7 +26,7 @@ func hostFenceMatches(applied runnerlifecycle.HostIntentStatus, intent *runtimep
 func (*runnerLifecycleController) Name() string { return runnerControllerName }
 func (*runnerLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{runnerlifecycle.DesiredStateType, runnerlifecycle.HostIntentStatusType, runnerInputType, session.DrainInputType, session.RuntimeType, journalSealType, ingressAckType, codexappserver.RuntimeType, supervision.DesiredStateType, supervision.StatusType} {
+	for _, kind := range []string{runnerlifecycle.DesiredStateType, runnerlifecycle.HostIntentStatusType, runnerInputType, session.DrainInputType, session.LifecycleStatusType, journalSealType, ingressAckType, codexappserver.RuntimeType, supervision.DesiredStateType, supervision.StatusType} {
 		inputs = append(inputs, controller.Input{Namespace: runnerlifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -106,34 +106,34 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 	}
 	sessions := c.l.runner.sessions.Inventory()
 	for _, s := range sessions {
-		runtime, found, err := session.ReadRuntime(ctx, r, s.ID())
+		status, found, err := session.ReadLifecycleStatus(ctx, r, s.ID())
 		if err != nil {
 			return err
 		}
 		// A failure from a prior execution generation is cleared by the Session
 		// controller as it observes the shutdown generation. Only surface errors
 		// that belong to this teardown; otherwise Close could race that reset.
-		if runtime.Generation == desiredState.Generation && runtime.Error != "" {
-			current.Error = runtime.Error
+		if status.Generation == desiredState.Generation && status.Error != "" {
+			current.Error = status.Error
 			kind := runnerlifecycle.SessionHaltPending
-			if runtime.Phase == session.Halted {
+			if status.Phase == session.Halted {
 				kind = runnerlifecycle.SessionProcessPending
 			}
 			current.Blocker = runnerlifecycle.Blocker{
-				Kind: kind, ResourceType: session.RuntimeType,
-				Error: runtime.Error, ResourceID: s.ID(), ProcessID: runtime.ProcessID,
+				Kind: kind, ResourceType: session.LifecycleStatusType,
+				Error: status.Error, ResourceID: s.ID(), ProcessID: status.ProcessID,
 				ResourcePresent: found,
 			}
 			return write()
 		}
-		if runtime.Phase != session.Halted {
+		if status.Phase != session.Halted {
 			resourceError := ""
-			if runtime.Generation == desiredState.Generation {
-				resourceError = runtime.Error
+			if status.Generation == desiredState.Generation {
+				resourceError = status.Error
 			}
 			current.Blocker = runnerlifecycle.Blocker{
-				Kind: runnerlifecycle.SessionHaltPending, ResourceType: session.RuntimeType,
-				Error: resourceError, ResourceID: s.ID(), ProcessID: runtime.ProcessID,
+				Kind: runnerlifecycle.SessionHaltPending, ResourceType: session.LifecycleStatusType,
+				Error: resourceError, ResourceID: s.ID(), ProcessID: status.ProcessID,
 				ResourcePresent: found,
 			}
 			return write()
@@ -147,14 +147,14 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		}
 	}
 	for _, s := range sessions {
-		runtime, found, err := session.ReadRuntime(ctx, r, s.ID())
+		status, found, err := session.ReadLifecycleStatus(ctx, r, s.ID())
 		if err != nil {
 			return err
 		}
-		if !runtime.ProcessStopped {
+		if !status.ProcessStopped {
 			current.Blocker = runnerlifecycle.Blocker{
-				Kind: runnerlifecycle.SessionProcessPending, ResourceType: session.RuntimeType,
-				ResourceID: s.ID(), ProcessID: runtime.ProcessID, ResourcePresent: found,
+				Kind: runnerlifecycle.SessionProcessPending, ResourceType: session.LifecycleStatusType,
+				ResourceID: s.ID(), ProcessID: status.ProcessID, ResourcePresent: found,
 			}
 			return write()
 		}

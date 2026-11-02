@@ -44,7 +44,7 @@ func copied[T any](value *T) *T {
 func (s *Session) Observe() Observation {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	current := s.runtimeState()
+	current := s.lifecycleStatus()
 	checkpoint := s.journal.RecoveryState()
 	live := s.process != nil && s.process.Running()
 	result := Observation{

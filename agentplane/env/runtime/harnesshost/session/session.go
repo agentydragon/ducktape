@@ -112,7 +112,7 @@ func (s *Session) Session() harness.SessionSnapshot {
 	}
 	snapshot := harness.SessionSnapshot{Directory: s.directory(), Cwd: s.record.CWD, Model: s.record.Model, ReasoningEffort: s.record.ReasoningEffort, Instructions: s.record.Instructions, NativeSessionID: native, TotalContextBudgetTokens: s.record.TotalContextBudgetTokens, ActiveTurnID: s.activeTurn, Environment: s.environment()}
 	s.mu.Unlock()
-	snapshot.Resuming = s.runtimeState().Resuming
+	snapshot.Resuming = s.lifecycleStatus().Resuming
 	return snapshot
 }
 

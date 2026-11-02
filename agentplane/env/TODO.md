@@ -7,21 +7,17 @@ COSI resources have metadata and an opaque spec; `Status` is a useful project co
 required COSI subresource or a reason to combine resources with different owners. The current
 [COSI map](runtime/docs/cosi.md) shows the resource and controller boundaries.
 
-- Rename `runner-lifecycle`, `RunnerDesiredStates`, `RunnerRuntimes`, the `runner` resource ID,
-  `runner-host` owner, and the Harness Host `Runner` type around **Harness Host**. In particular,
-  `RunnerRuntimes` is the singleton Host lifecycle status and coordination state; a name such as
-  `HarnessHostLifecycleStatuses` describes it. Preserve the Host drain barrier and its distinction
-  from the outer Runtime close and transition coordinator.
+- Replace the legacy controller/resource/owner identifiers (`runner-lifecycle`,
+  `RunnerDesiredStates`, `RunnerRuntimes`, `runner`, `runner-host`, and `Runner`) with names that
+  identify **Harness Host**. In particular, `RunnerRuntimes` is the singleton Harness Host lifecycle
+  status and coordination state; a name such as `HarnessHostLifecycleStatuses` describes it.
+  Preserve the Host drain barrier and its distinction from the Environment Runtime close and
+  transition coordinator.
 - Rename the other controller-owned `*Runtimes` status resources and Go types consistently:
-  `BootstrapRuntimes` → `BootstrapStatuses`, `SessionRuntimes` → `SessionLifecycleStatuses`,
-  `CodexAppServerRuntimes` → `CodexAppServerStatuses`, and `EmbeddedExecutionRuntimes` →
+  `BootstrapRuntimes` → `BootstrapStatuses`, `CodexAppServerRuntimes` → `CodexAppServerStatuses`,
+  and `EmbeddedExecutionRuntimes` →
   `ExecutionStatuses`. `EnvironmentRuntimeTransitions` and `EnvironmentRuntimeCloses` also hold
   status and should say so. Align type names, constants, readers, diagrams and documentation.
-  For Sessions, the retained record supplies configuration and `SessionInputs` supplies harness
-  kind and demand; `SessionRuntimes` records controller progress, not a desired runtime spec. The
-  controller realizes demand by launching a Session-owned Claude process or attaching to the
-  shared Codex app-server and establishing a thread. A Codex Session's process ID identifies the
-  shared app-server, and its attachment/router state also lives in memory.
 - Rename `environment-runtime-close` and its controller type to reflect that the same controller
   also coordinates adoption and quiesce transitions. Drop `embedded` from the Execution controller
   and resource names where it merely describes how the service is packaged.

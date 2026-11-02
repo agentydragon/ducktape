@@ -196,7 +196,7 @@ func (s *Session) prepare(ctx context.Context, adapter harness.Adapter, pid int)
 	s.record.NativeSessionID = &native
 	record := *s.record
 	s.mu.Unlock()
-	resuming := s.runtimeState().Resuming
+	resuming := s.lifecycleStatus().Resuming
 	if err := s.deps.store.Write(s.id, record); err != nil {
 		return err
 	}
@@ -227,7 +227,7 @@ func (s *Session) prepare(ctx context.Context, adapter harness.Adapter, pid int)
 // An ordinary native RPC can block the dispatch operation while the interrupt must still reach the
 // currently active turn.
 func (s *Session) dispatchControl(ctx context.Context) error {
-	phase := s.runtimeState().Phase
+	phase := s.lifecycleStatus().Phase
 	if phase != Ready && phase != Stopping {
 		return nil
 	}
@@ -240,7 +240,7 @@ func (s *Session) dispatchControl(ctx context.Context) error {
 			continue
 		}
 		s.mu.Lock()
-		if s.runtimeState().Phase == Halted || s.halting.Finished() || s.dispatched[command.CommandId] || s.controlDispatches[command.CommandId] != nil {
+		if s.lifecycleStatus().Phase == Halted || s.halting.Finished() || s.dispatched[command.CommandId] || s.controlDispatches[command.CommandId] != nil {
 			s.mu.Unlock()
 			continue
 		}
