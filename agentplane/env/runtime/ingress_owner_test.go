@@ -28,6 +28,26 @@ type pausedRecoveryState struct {
 	err     error
 }
 
+type failingSealedAcknowledgementState struct {
+	state.State
+	err      error
+	failed   chan struct{}
+	failOnce sync.Once
+}
+
+func (s *failingSealedAcknowledgementState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
+	return s.State.Modify(ctx, value, func(current resource.Resource) error {
+		if err := update(current); err != nil {
+			return err
+		}
+		if ack, ok := current.(*retained.IngressAckResource); ok && ack.TypedSpec().Value.Sealed {
+			s.failOnce.Do(func() { close(s.failed) })
+			return s.err
+		}
+		return nil
+	}, opts...)
+}
+
 func (s *pausedRecoveryState) List(ctx context.Context, kind resource.Kind, opts ...state.ListOption) (resource.List, error) {
 	if kind.Type() == retained.SessionRecordType {
 		s.once.Do(func() { close(s.entered) })
@@ -353,7 +373,7 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 	config.deps.runIngress = func(ctx context.Context, host *harnesshost.Host, endpoint configuration.Endpoint) error {
 		deliveryCtx, cancel := context.WithCancel(ctx)
 		deliveryDone := make(chan error, 1)
-		go func() { deliveryDone <- host.IngressSupervisor(endpoint).Run(deliveryCtx) }()
+		go func() { deliveryDone <- host.IngressSupervisor(endpoint, host.ReportFailure).Run(deliveryCtx) }()
 		select {
 		case <-failDelivery:
 			cancel()
@@ -429,5 +449,72 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 	if owner, err := openEnvironmentOwner(r.config.StateDir); err == nil {
 		_ = owner.Close()
 		t.Fatal("Runtime released owner without the exact durable sealed History acknowledgement")
+	}
+}
+
+func TestRuntimeRetainsOwnerWhenSessionDeliveryCannotPersistSealedAcknowledgement(t *testing.T) {
+	sealSeen := make(chan struct{})
+	releaseSeal := make(chan struct{})
+	var releaseOnce sync.Once
+	history := &acknowledgingHistory{
+		acks: map[string]*ingresspb.Acknowledgement{}, sealSeen: sealSeen, releaseSeal: releaseSeal,
+	}
+	storageErr := errors.New("injected sealed History acknowledgement storage failure")
+	store := &failingSealedAcknowledgementState{
+		State: state.WrapCore(namespaced.NewState(inmem.Build)), err: storageErr, failed: make(chan struct{}),
+	}
+	var r *Runtime
+	t.Cleanup(func() {
+		if r != nil {
+			_ = r.owner.Close()
+		}
+	})
+	proxy := modelConfigServer(t)
+	workspace := t.TempDir()
+	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
+	config.Config.HostIngress.Target = startHistoryService(t, history)
+	config.expectCloseError = true
+	r = newLifecycleRunnerWithState(t, config, store)
+	t.Cleanup(func() { releaseOnce.Do(func() { close(releaseSeal) }) })
+	client := startDirectExecutionTestClient(t, r, "test-incarnation")
+	if _, err := client.runner.OpenSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+		t.Fatal(err)
+	}
+	ctx := ingressTestContext(t)
+	if _, err := r.Quiesce(ctx, &sessionpb.QuiesceRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-sealSeen:
+	case <-ctx.Done():
+		t.Fatal("History did not receive the Session seal")
+	}
+	closed := make(chan error, 1)
+	go func() { closed <- r.Close(ctx) }()
+	waitRuntime(t, r, func() bool {
+		status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
+		return err == nil && found && status.Stage == lifecycle.RuntimeCloseHostFlushing
+	}, "Runtime Close to wait for the sealed History acknowledgement")
+	releaseOnce.Do(func() { close(releaseSeal) })
+	select {
+	case <-store.failed:
+	case <-ctx.Done():
+		t.Fatal("sealed History acknowledgement write did not fail")
+	}
+	select {
+	case err := <-closed:
+		if err == nil || !strings.Contains(err.Error(), storageErr.Error()) {
+			t.Fatalf("Runtime Close after local sealed ACK storage failure = %v, want storage cause", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("Runtime Close did not report local sealed ACK storage failure")
+	}
+	ack, found, err := retained.ReadAcknowledgement(ctx, r.lifecycleState, "session-1")
+	if err != nil || found && ack.Sealed {
+		t.Fatalf("durable sealed History ACK after failed write = %+v, found=%t, err=%v", ack, found, err)
+	}
+	if owner, err := openEnvironmentOwner(r.config.StateDir); err == nil {
+		_ = owner.Close()
+		t.Fatal("Runtime released owner without durable sealed History acknowledgement")
 	}
 }

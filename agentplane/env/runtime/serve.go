@@ -133,18 +133,22 @@ func (r *Runtime) startIngress(host *harnesshost.Host, endpoint configuration.En
 		if r.sessionWorkerErr != nil || ctx.Err() != nil {
 			return
 		}
-		run := r.deps.runIngress
-		if run == nil {
-			run = func(ctx context.Context, host *harnesshost.Host, endpoint configuration.Endpoint) error {
-				return host.IngressSupervisor(endpoint).Run(ctx)
-			}
-		}
-		if err := run(ctx, host, endpoint); err != nil && ctx.Err() == nil {
+		reportFailure := func(err error) {
 			failure := fmt.Errorf("History ingress stopped: %w", err)
 			// Record the cause and revoke native admission before Host failure
 			// observation can retire the binding during Close.
 			r.fail(failure)
 			host.ReportFailure(failure)
+			worker.cancel()
+		}
+		run := r.deps.runIngress
+		if run == nil {
+			run = func(ctx context.Context, host *harnesshost.Host, endpoint configuration.Endpoint) error {
+				return host.IngressSupervisor(endpoint, reportFailure).Run(ctx)
+			}
+		}
+		if err := run(ctx, host, endpoint); err != nil && ctx.Err() == nil {
+			reportFailure(err)
 		}
 	}()
 }

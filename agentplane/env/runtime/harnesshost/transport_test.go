@@ -126,7 +126,7 @@ func TestIngressSupervisorPublishesSealedAcknowledgementToQuiesce(t *testing.T) 
 	})
 	loopDone := make(chan error, 1)
 	go func() {
-		loopDone <- runner.newIngressSupervisor(configuration.Endpoint{Target: endpoint, Bearer: "ingress-token"}).Run(ctx)
+		loopDone <- runner.IngressSupervisor(configuration.Endpoint{Target: endpoint, Bearer: "ingress-token"}, runner.fail).Run(ctx)
 	}()
 
 	select {

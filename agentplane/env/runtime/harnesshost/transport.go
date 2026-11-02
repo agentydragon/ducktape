@@ -35,20 +35,17 @@ func (r *Host) Failures() <-chan error { return r.fatal }
 // ReportFailure closes the Host admission gate before notifying Runtime.
 func (r *Host) ReportFailure(err error) { r.fail(err) }
 
-func (r *Host) newIngressSupervisor(endpoint configuration.Endpoint) *ingress.Supervisor {
+// IngressSupervisor supplies Session journals and the durable ACK store to a
+// Runtime-owned delivery worker. Runtime receives local worker failures before
+// it joins that worker, so admission can be fenced without waiting for siblings.
+func (r *Host) IngressSupervisor(endpoint configuration.Endpoint, onWorkerFailure func(error)) *ingress.Supervisor {
 	return ingress.NewSupervisor(ingress.SupervisorConfig{
-		Target: endpoint.Target, Bearer: endpoint.Bearer, Store: r.store, Changes: r.changesSince, Inventory: r.ingressSources, OnWorkerFailure: r.fail,
+		Target: endpoint.Target, Bearer: endpoint.Bearer, Store: r.store, Changes: r.changesSince, Inventory: r.ingressSources, OnWorkerFailure: onWorkerFailure,
 		OnAcknowledgement: func(_ string, _ retained.Acknowledgement) error {
 			r.changed()
 			return nil
 		},
 	})
-}
-
-// IngressSupervisor supplies the Session inventory and durable ACK store to a
-// Runtime-owned delivery worker.
-func (r *Host) IngressSupervisor(endpoint configuration.Endpoint) *ingress.Supervisor {
-	return r.newIngressSupervisor(endpoint)
 }
 
 func (r *Host) ingressSources() []ingress.Source {
