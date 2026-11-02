@@ -117,7 +117,10 @@ func TestSystemdKernelFixture(t *testing.T) {
 	t.Run("held_old_invocation_is_fenced_after_successor_inventory", func(t *testing.T) {
 		ownerSuffix := strings.ReplaceAll(uuid.NewString(), "-", "")
 		ownerUnit := "agentplane-proof-owner-" + ownerSuffix + ".service"
-		directoryName := "agentplane-proof-lifetime-" + ownerSuffix
+		// The Runtime unit uses ProtectSystem=strict and allows writes only under
+		// /run/agentplane/execution-service; keep this synthetic owner's lifetime
+		// directory inside that dedicated writable subtree.
+		directoryName := filepath.Join("agentplane", "execution-service", "proof-"+ownerSuffix)
 		lifetimeDirectory := filepath.Join("/run", directoryName)
 		owner := SystemdOwner{
 			Unit: ownerUnit, LifetimeDirectory: lifetimeDirectory,
