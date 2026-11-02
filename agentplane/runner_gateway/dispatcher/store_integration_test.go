@@ -18,6 +18,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
@@ -28,8 +29,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/util/workqueue"
 )
 
@@ -264,6 +263,43 @@ func TestWakeAssessmentRoundTripsForDispatchAndOpening(t *testing.T) {
 	}
 }
 
+func TestExpiredWakeFailureStoresTypedAssessmentWithTerminalDelivery(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t, 3)
+	uid := uuid.NewString()
+	dispatch, err := store.Enqueue(ctx, "wake-deadline-session", "sandbox-wake-deadline", uid,
+		input("wake-deadline-command", "hello"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := store.ClaimSandboxOwner(ctx, uid, "wake-deadline-lease", 1, "wake-deadline-replica", 0)
+	if err != nil || owner == nil {
+		t.Fatalf("claim Sandbox owner: %+v %v", owner, err)
+	}
+	requestedAt := time.Now().Add(-WakeDeadline - time.Second)
+	if _, err := store.NoteWakeRequestedAt(ctx, dispatch.CommandID, *owner, false, requestedAt); err != nil {
+		t.Fatal(err)
+	}
+	assessment := &environmentpb.WakeAssessment{
+		State:      environmentpb.WakeState_WAKE_STATE_FAILED,
+		Reason:     environmentpb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE,
+		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(5),
+		Error: status.New(codes.DeadlineExceeded, "Sandbox did not become Ready before the wake deadline").Proto(),
+	}
+	failed, _, remaining, err := store.FailExpiredWake(ctx, dispatch.CommandID, *owner, false,
+		"wake_deadline_expired", nil, assessment)
+	if err != nil || remaining != 0 || failed == nil {
+		t.Fatalf("expired wake: row=%+v remaining=%v error=%v", failed, remaining, err)
+	}
+	stored, err := store.GetDispatch(ctx, dispatch.CommandID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.State != FailedState || !proto.Equal(stored.WakeAssessment, assessment) {
+		t.Fatalf("terminal dispatch lost typed wake failure: state=%s assessment=%v", stored.State, stored.WakeAssessment)
+	}
+}
+
 func TestOpeningAndOwnershipFence(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t, 3)
@@ -304,6 +340,10 @@ func TestOpeningAndOwnershipFence(t *testing.T) {
 	}
 }
 
+func wakeBudgetCaller(namespace, name, uid string) ServiceAccountIdentity {
+	return ServiceAccountIdentity{Account: Account{Namespace: namespace, Name: name}, UID: uid}
+}
+
 func TestConcurrentSessionCapAndWakeBudget(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t, 2)
@@ -333,7 +373,7 @@ func TestConcurrentSessionCapAndWakeBudget(t *testing.T) {
 	if accepted != 2 || full != 1 {
 		t.Fatalf("cap race: accepted=%d full=%d", accepted, full)
 	}
-	caller := ServiceAccountIdentity{Account: Account{"agentplane", "app"}, UID: "wake-budget-app-uid"}
+	caller := wakeBudgetCaller("agentplane", "app", "wake-budget-app-uid")
 	var wakeWG sync.WaitGroup
 	wakeErrs := make(chan error, WakeLimit+1)
 	wakeDurations := make(chan bool, WakeLimit+1)
@@ -376,10 +416,208 @@ func TestConcurrentSessionCapAndWakeBudget(t *testing.T) {
 	if wait, err := store.ReserveWakeAttempt(ctx, caller, sandboxUID, acceptedGeneration); err != nil || wait != 0 {
 		t.Fatalf("same-generation retry: %v %v", wait, err)
 	}
-	replacement := caller
-	replacement.UID = "replacement-wake-budget-app-uid"
+	replacement := wakeBudgetCaller(caller.Namespace, caller.Name, "replacement-wake-budget-app-uid")
 	if wait, err := store.ReserveWakeAttempt(ctx, replacement, sandboxUID, acceptedGeneration); err != nil || wait != 0 {
-		t.Fatalf("replacement ServiceAccount inherited the old UID budget: %v %v", wait, err)
+		t.Fatalf("replacement ServiceAccount inherited old budget: %v %v", wait, err)
+	}
+}
+
+func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t, 3)
+
+	legacyFirst := wakeBudgetCaller("mixed-writer", "legacy-first", "")
+	currentFirst := legacyFirst
+	currentFirst.UID = "current-first-uid"
+	legacySandboxUID := uuid.NewString()
+	if wait, err := reserveWakeAttemptAsPreviousWriter(ctx, store, legacyFirst, legacySandboxUID, 1); err != nil || wait != 0 {
+		t.Fatalf("legacy first reservation: %v %v", wait, err)
+	}
+	if wait, err := store.ReserveWakeAttempt(ctx, currentFirst, legacySandboxUID, 1); err != nil || wait != 0 {
+		t.Fatalf("current reader did not recognize legacy same-generation reservation: %v %v", wait, err)
+	}
+	assertWakeAttemptCount(t, store, legacyFirst, legacySandboxUID, 1)
+
+	currentThenLegacy := wakeBudgetCaller("mixed-writer", "current-first", "current-first-uid")
+	currentSandboxUID := uuid.NewString()
+	if wait, err := store.ReserveWakeAttempt(ctx, currentThenLegacy, currentSandboxUID, 1); err != nil || wait != 0 {
+		t.Fatalf("current first reservation: %v %v", wait, err)
+	}
+	if wait, err := reserveWakeAttemptAsPreviousWriter(ctx, store, currentThenLegacy, currentSandboxUID, 1); err != nil || wait != 0 {
+		t.Fatalf("legacy reader did not recognize current same-generation reservation: %v %v", wait, err)
+	}
+	assertWakeAttemptCount(t, store, currentThenLegacy, currentSandboxUID, 1)
+
+	// Hold the old advisory key so this check proves new writers serialize with
+	// previous replicas before reading or inserting their budget row.
+	lockCaller := wakeBudgetCaller("mixed-writer", "shared-lock", "shared-lock-uid")
+	lockSandboxUID := uuid.NewString()
+	lockKey := "dispatcher-wake:" + lockCaller.Namespace + ":" + lockCaller.Name
+	lockTx, err := store.DB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal("begin old-writer lock fixture:", err)
+	}
+	if _, err := lockTx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", lockKey); err != nil {
+		_ = lockTx.Rollback()
+		t.Fatal("take old-writer advisory lock:", err)
+	}
+	newWriterDone := make(chan error, 1)
+	newWriterStarted := make(chan struct{})
+	go func() {
+		close(newWriterStarted)
+		_, err := store.ReserveWakeAttempt(ctx, lockCaller, lockSandboxUID, 1)
+		newWriterDone <- err
+	}()
+	<-newWriterStarted
+	select {
+	case err := <-newWriterDone:
+		_ = lockTx.Rollback()
+		t.Fatalf("new writer passed an old-version lock before release: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	if err := lockTx.Commit(); err != nil {
+		t.Fatal("release old-writer advisory lock:", err)
+	}
+	select {
+	case err := <-newWriterDone:
+		if err != nil {
+			t.Fatal("new writer after old lock release:", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("new writer stayed blocked after old lock release")
+	}
+
+	// An interleaved old/new burst consumes one shared ten-wake budget even
+	// though old writes use the empty UID and current writes use the live UID.
+	mixedCaller := wakeBudgetCaller("mixed-writer", "shared-cap", "shared-cap-uid")
+	mixedSandboxUID := uuid.NewString()
+	type reservationResult struct {
+		limited bool
+		err     error
+	}
+	const reservations = WakeLimit + 4
+	results := make(chan reservationResult, reservations)
+	var wg sync.WaitGroup
+	for i := 0; i < reservations; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			var wait time.Duration
+			var err error
+			if i%2 == 0 {
+				wait, err = reserveWakeAttemptAsPreviousWriter(ctx, store, mixedCaller, mixedSandboxUID, int64(i+1))
+			} else {
+				wait, err = store.ReserveWakeAttempt(ctx, mixedCaller, mixedSandboxUID, int64(i+1))
+			}
+			results <- reservationResult{limited: wait > 0, err: err}
+		}(i)
+	}
+	wg.Wait()
+	close(results)
+	accepted, limited := 0, 0
+	for result := range results {
+		if result.err != nil {
+			t.Fatal("mixed writer reservation:", result.err)
+		}
+		if result.limited {
+			limited++
+		} else {
+			accepted++
+		}
+	}
+	if accepted != WakeLimit || limited != reservations-WakeLimit {
+		t.Fatalf("mixed-writer shared cap: accepted=%d limited=%d, want accepted=%d limited=%d",
+			accepted, limited, WakeLimit, reservations-WakeLimit)
+	}
+	assertWakeAttemptCount(t, store, mixedCaller, mixedSandboxUID, WakeLimit)
+
+	// Old code sees every UID for the named caller, while the new caller must
+	// not inherit another nonempty UID's reservations after ServiceAccount replacement.
+	replaced := wakeBudgetCaller("mixed-writer", "uid-replacement", "old-uid")
+	replacementSandboxUID := uuid.NewString()
+	for generation := int64(1); generation <= WakeLimit; generation++ {
+		if wait, err := store.ReserveWakeAttempt(ctx, replaced, replacementSandboxUID, generation); err != nil || wait != 0 {
+			t.Fatalf("old UID reservation %d: %v %v", generation, wait, err)
+		}
+	}
+	if wait, err := reserveWakeAttemptAsPreviousWriter(ctx, store, replaced, replacementSandboxUID, WakeLimit+1); err != nil || wait == 0 {
+		t.Fatalf("previous writer did not count all nonempty UIDs: %v %v", wait, err)
+	}
+	replaced.UID = "replacement-uid"
+	if wait, err := store.ReserveWakeAttempt(ctx, replaced, replacementSandboxUID, WakeLimit+1); err != nil || wait != 0 {
+		t.Fatalf("replacement UID inherited another nonempty UID's budget: %v %v", wait, err)
+	}
+}
+
+// reserveWakeAttemptAsPreviousWriter reproduces the SQL shape deployed before
+// caller_uid existed: namespace/name locking, all-UID reads, and an INSERT that
+// relies on the migration's empty-UID default.
+func reserveWakeAttemptAsPreviousWriter(
+	ctx context.Context,
+	store *Store,
+	caller ServiceAccountIdentity,
+	sandboxUID string,
+	generation int64,
+) (time.Duration, error) {
+	var retryAfter time.Duration
+	err := transaction(ctx, store.DB, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,
+			"dispatcher-wake:"+caller.Namespace+":"+caller.Name)
+		if err != nil {
+			return err
+		}
+		var now time.Time
+		if err := tx.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&now); err != nil {
+			return err
+		}
+		windowStart := now.Add(-WakeWindow)
+		if _, err := tx.ExecContext(ctx, "DELETE FROM wake_attempt WHERE attempted_at <= $1", windowStart); err != nil {
+			return err
+		}
+		var exists bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM wake_attempt
+			WHERE caller_namespace=$1 AND caller_name=$2 AND sandbox_uid=$3 AND wake_generation=$4)`,
+			caller.Namespace, caller.Name, sandboxUID, generation).Scan(&exists); err != nil {
+			return err
+		}
+		if exists {
+			return nil
+		}
+		var count int
+		var oldest sql.NullTime
+		if err := tx.QueryRowContext(ctx, `SELECT count(*),min(attempted_at) FROM wake_attempt
+			WHERE caller_namespace=$1 AND caller_name=$2 AND attempted_at>$3`,
+			caller.Namespace, caller.Name, windowStart).Scan(&count, &oldest); err != nil {
+			return err
+		}
+		if count >= WakeLimit {
+			if !oldest.Valid {
+				return errors.New("wake budget full without attempt")
+			}
+			retryAfter = oldest.Time.Add(WakeWindow).Sub(now)
+			if retryAfter < time.Millisecond {
+				retryAfter = time.Millisecond
+			}
+			return nil
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO wake_attempt
+			(caller_namespace,caller_name,sandbox_uid,wake_generation,attempted_at)
+			VALUES ($1,$2,$3,$4,$5)`, caller.Namespace, caller.Name, sandboxUID, generation, now)
+		return err
+	})
+	return retryAfter, err
+}
+
+func assertWakeAttemptCount(t *testing.T, store *Store, caller ServiceAccountIdentity, sandboxUID string, want int) {
+	t.Helper()
+	var count int
+	if err := store.DB.QueryRow(`SELECT count(*) FROM wake_attempt
+		WHERE caller_namespace=$1 AND caller_name=$2 AND sandbox_uid=$3`,
+		caller.Namespace, caller.Name, sandboxUID).Scan(&count); err != nil {
+		t.Fatal("count wake attempts:", err)
+	}
+	if count != want {
+		t.Fatalf("wake attempt count for %s/%s sandbox %s = %d, want %d", caller.Namespace, caller.Name, sandboxUID, count, want)
 	}
 }
 
@@ -531,7 +769,7 @@ func TestTerminalPayloadRoundTripForWatchers(t *testing.T) {
 func TestRPCAdmissionReturnsSameQueuedReceiptAndConflicts(t *testing.T) {
 	store := testStore(t, 3)
 	service := &Service{
-		Store: store, DispatcherCallers: configuredDispatcherCallers(), WakeCallers: map[auth.Account]struct{}{caller: {}}, Sandboxes: oneSandbox{},
+		Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: oneSandbox{},
 	}
 	ctx := admitted(t)
 	request := &dispatcherpb.SubmitInputRequest{CommandId: "api-a", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, Text: "hello"}
@@ -572,6 +810,23 @@ func (w *collectedWatch) Send(frame *dispatcherpb.WatchDispatchesResponse) error
 	return nil
 }
 
+type channelWatch struct {
+	grpc.ServerStream
+	ctx    context.Context
+	frames chan *dispatcherpb.WatchDispatchesResponse
+}
+
+func (w *channelWatch) Context() context.Context { return w.ctx }
+
+func (w *channelWatch) Send(frame *dispatcherpb.WatchDispatchesResponse) error {
+	select {
+	case w.frames <- frame:
+		return nil
+	case <-w.ctx.Done():
+		return w.ctx.Err()
+	}
+}
+
 type blockedDispatchWatch struct {
 	grpc.ServerStream
 	ctx          context.Context
@@ -589,23 +844,6 @@ func (w *blockedDispatchWatch) Send(*dispatcherpb.WatchDispatchesResponse) error
 	<-w.release
 	w.finishedOnce.Do(func() { close(w.finished) })
 	return nil
-}
-
-type channelWatch struct {
-	grpc.ServerStream
-	ctx    context.Context
-	frames chan *dispatcherpb.WatchDispatchesResponse
-}
-
-func (w *channelWatch) Context() context.Context { return w.ctx }
-
-func (w *channelWatch) Send(frame *dispatcherpb.WatchDispatchesResponse) error {
-	select {
-	case w.frames <- frame:
-		return nil
-	case <-w.ctx.Done():
-		return w.ctx.Err()
-	}
 }
 
 func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
@@ -794,11 +1032,10 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 }
 
 func TestInterruptTurnRequiresTurnAndPropagatesRunnerRejection(t *testing.T) {
-	callers := map[auth.Account]struct{}{caller: {}}
 	ctx := admitted(t)
 
 	blocked := &Service{
-		Store: testStore(t, 3), DispatcherCallers: configuredDispatcherCallers(), WakeCallers: callers, Sandboxes: blockedSandbox{},
+		Store: testStore(t, 3), DispatcherCallers: configuredDispatcherCallers(), Sandboxes: blockedSandbox{},
 	}
 	_, err := blocked.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
 		CommandId: "interrupt-empty-turn", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID,
@@ -810,7 +1047,7 @@ func TestInterruptTurnRequiresTurnAndPropagatesRunnerRejection(t *testing.T) {
 	rejection := status.Error(codes.FailedPrecondition, "turn is no longer current")
 	runner := &rejectingRunner{err: rejection}
 	service := &Service{
-		Store: testStore(t, 3), DispatcherCallers: configuredDispatcherCallers(), WakeCallers: callers, Sandboxes: oneSandbox{}, Runner: runner,
+		Store: testStore(t, 3), DispatcherCallers: configuredDispatcherCallers(), Sandboxes: oneSandbox{}, Runner: runner,
 	}
 	_, err = service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
 		CommandId: "interrupt-stale-turn", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, TurnId: "turn-stale",
@@ -854,21 +1091,90 @@ func (*growingCatalog) WaitSynced(context.Context) bool { return true }
 
 type testWake struct{}
 
-func (testWake) WakeForSend(context.Context, string, string, func(int64) error) (bool, error) {
-	return false, errors.New("unexpected Sandbox wake")
+func (testWake) RequestWake(_ context.Context, _ lifecycle.Target, _ lifecycle.ServiceAccount) (*environmentpb.WakeAssessment, error) {
+	return &environmentpb.WakeAssessment{
+		State:      environmentpb.WakeState_WAKE_STATE_NOT_NEEDED,
+		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(0),
+	}, nil
 }
 
-type exhaustedWakeBudget struct{ calls int }
+type rateLimitedWake struct {
+	calls int
+}
 
-func (w *exhaustedWakeBudget) WakeForSend(_ context.Context, _, _ string, beforeResume func(int64) error) (bool, error) {
+func (w *rateLimitedWake) RequestWake(_ context.Context, _ lifecycle.Target, _ lifecycle.ServiceAccount) (*environmentpb.WakeAssessment, error) {
 	w.calls++
-	return false, beforeResume(WakeLimit + 1)
+	return &environmentpb.WakeAssessment{
+		State:      environmentpb.WakeState_WAKE_STATE_RATE_LIMITED,
+		Reason:     environmentpb.WakeReason_WAKE_REASON_WAKE_BUDGET_EXHAUSTED,
+		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(1),
+		RetryAt: timestamppb.New(time.Now().Add(time.Minute)),
+	}, nil
 }
 
-type failingWake struct{ err error }
+type scriptedWake struct {
+	assessments []*environmentpb.WakeAssessment
+	callers     []lifecycle.ServiceAccount
+	targets     []lifecycle.Target
+}
 
-func (w failingWake) WakeForSend(context.Context, string, string, func(int64) error) (bool, error) {
-	return false, w.err
+func (w *scriptedWake) RequestWake(_ context.Context, target lifecycle.Target, caller lifecycle.ServiceAccount) (*environmentpb.WakeAssessment, error) {
+	w.callers = append(w.callers, caller)
+	w.targets = append(w.targets, target)
+	if len(w.assessments) == 0 {
+		return nil, errors.New("unexpected lifecycle wake request")
+	}
+	assessment := w.assessments[0]
+	w.assessments = w.assessments[1:]
+	return assessment, nil
+}
+
+type wakeWorkerFixture struct {
+	store    *Store
+	opening  *Opening
+	dispatch *Dispatch
+	owner    Owner
+	sandbox  SandboxSnapshot
+	caller   lifecycle.ServiceAccount
+	worker   *DeliveryWorker
+}
+
+func newWakeWorkerFixture(t *testing.T, spec *sessionpb.SessionSpec, wake WakeRequester) wakeWorkerFixture {
+	t.Helper()
+	ctx := context.Background()
+	store := testStore(t, 3)
+	sandboxName, sandboxUID := "sandbox-"+uuid.NewString()[:8], uuid.NewString()
+	sessionID, commandID := uuid.NewString(), uuid.NewString()
+	caller := lifecycle.ServiceAccount{Namespace: "agentplane", Name: sandboxName, UID: uuid.NewString()}
+	actor := lifecycle.ServiceAccount{Namespace: "agentplane", Name: "action-broker", UID: uuid.NewString()}
+	callerIdentity := ServiceAccountIdentity{Account: Account{Namespace: caller.Namespace, Name: caller.Name}, UID: caller.UID}
+	actorIdentity := ServiceAccountIdentity{Account: Account{Namespace: actor.Namespace, Name: actor.Name}, UID: actor.UID}
+	attribution := &AdmissionAttribution{Actor: actorIdentity, EffectiveCaller: callerIdentity}
+	opening, err := store.OpenSessionWithIdentity(ctx, sessionID, sandboxName, sandboxUID, spec, nil, nil,
+		&callerIdentity, &actorIdentity, attribution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatch, err := store.EnqueueForCaller(ctx, sessionID, sandboxName, sandboxUID, input(commandID, "hello"), nil,
+		CallerIdentity{ServiceAccountIdentity: callerIdentity, Attribution: attribution})
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := store.ClaimSandboxOwner(ctx, sandboxUID, "lease-"+sandboxName, 1, "wake-test-worker", 0)
+	if err != nil || owner == nil {
+		t.Fatalf("claim Sandbox owner: %+v %v", owner, err)
+	}
+	worker := &DeliveryWorker{Store: store, Wake: wake, Leases: testLease{store: store}}
+	worker.init()
+	t.Cleanup(worker.queue.ShutDown)
+	return wakeWorkerFixture{
+		store: store, opening: opening, dispatch: dispatch, owner: *owner, caller: caller,
+		sandbox: SandboxSnapshot{
+			Name: sandboxName, Namespace: "agentplane", UID: sandboxUID, Incarnation: "before-wake",
+			Blocker: "sandbox_suspended", WakeOnSend: true, WakeGeneration: 7,
+		},
+		worker: worker,
+	}
 }
 
 type testLease struct{ store *Store }
@@ -1098,141 +1404,257 @@ func (r *acceptingRunner) OpenSession(_ context.Context, _ SandboxSnapshot, sess
 	return nil
 }
 
-func TestWorkerDeliversWakeLimitedWorkAfterSandboxBecomesReady(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	store := testStore(t, 3)
-	const uid = "00000000-0000-4000-8000-000000000072"
-	const sandboxName = "sandbox-manually-resumed"
-	caller := ServiceAccountIdentity{Account: Account{Namespace: "agentplane", Name: "wake-budget-ready-test"}, UID: "wake-budget-ready-uid"}
-	for generation := int64(1); generation <= WakeLimit; generation++ {
-		if delay, err := store.ReserveWakeAttempt(ctx, caller, uid, generation); err != nil || delay != 0 {
-			t.Fatalf("reserve wake generation %d: delay %s, error %v", generation, delay, err)
-		}
+func TestWorkerKeepsWakeBlockedWorkQueuedAndObservable(t *testing.T) {
+	cases := []struct {
+		name       string
+		wakeOnSend bool
+		manualStop bool
+		assessment *environmentpb.WakeAssessment
+		wantState  environmentpb.WakeState
+		wantReason environmentpb.WakeReason
+		wantCalls  int
+	}{
+		{name: "automatic wake disabled", wantState: environmentpb.WakeState_WAKE_STATE_AUTOMATIC_WAKE_DISABLED},
+		{
+			name: "caller denied", wakeOnSend: true,
+			assessment: &environmentpb.WakeAssessment{
+				State:  environmentpb.WakeState_WAKE_STATE_DENIED,
+				Reason: environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED,
+			},
+			wantState:  environmentpb.WakeState_WAKE_STATE_DENIED,
+			wantReason: environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED,
+			wantCalls:  1,
+		},
+		{
+			name: "manual stop is sticky", wakeOnSend: true, manualStop: true,
+			wantState:  environmentpb.WakeState_WAKE_STATE_DENIED,
+			wantReason: environmentpb.WakeReason_WAKE_REASON_OPERATOR_REQUESTED_STOP,
+		},
+		{
+			name: "known backend failure", wakeOnSend: true,
+			assessment: &environmentpb.WakeAssessment{
+				State:  environmentpb.WakeState_WAKE_STATE_FAILED,
+				Reason: environmentpb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE,
+				Error:  status.New(codes.Unavailable, "Sandbox API is unavailable").Proto(),
+			},
+			wantState:  environmentpb.WakeState_WAKE_STATE_FAILED,
+			wantReason: environmentpb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE,
+			wantCalls:  1,
+		},
 	}
-	attribution := &AdmissionAttribution{Actor: caller, EffectiveCaller: caller}
-	privilegedCaller := CallerIdentity{ServiceAccountIdentity: caller, Privileged: true, Attribution: attribution}
-	if _, err := store.EnqueueForCaller(ctx, "wake-ready-command-session", sandboxName, uid,
-		input("wake-ready-command", "hello"), &caller.Account, privilegedCaller); err != nil {
-		t.Fatal(err)
-	}
-	execution := ServiceAccountIdentity{Account: Account{Namespace: "agentplane", Name: sandboxName}, UID: "wake-ready-execution-uid"}
-	if _, err := store.OpenSessionWithIdentity(ctx, "wake-ready-opening-session", sandboxName, uid,
-		&sessionpb.SessionSpec{}, nil, &caller.Account, &execution, &caller, attribution); err != nil {
-		t.Fatal(err)
-	}
-	catalog := &executionAccountCatalog{growingCatalog: &growingCatalog{sandboxes: []SandboxSnapshot{{
-		Name: sandboxName, Namespace: "agentplane", UID: uid, Incarnation: "old-pod",
-		Blocker: "sandbox_suspended", WakeOnSend: true,
-	}}}, accountUID: execution.UID}
-	runner := &acceptingRunner{calls: make(chan string, 2)}
-	leases := testLease{store: store}
-	wake := &exhaustedWakeBudget{}
-	worker := &DeliveryWorker{Store: store, Catalog: catalog, Wake: wake, Leases: leases, Runner: runner}
-	worker.init()
-	defer worker.queue.ShutDown()
-	owner, err := leases.Acquire(ctx, sandboxName, uid)
-	if err != nil || owner == nil {
-		t.Fatalf("acquire owner: %+v %v", owner, err)
-	}
-	worker.owners[uid] = *owner
-	for _, sessionID := range []string{"wake-ready-command-session", "wake-ready-opening-session"} {
-		if err := worker.processSession(ctx, sessionID); err != nil {
-			t.Fatal(err)
-		}
-		if retry := worker.retryFor(sessionID); retry.kind != retryWakeBudget || time.Until(retry.until) < 20*time.Second {
-			t.Fatalf("%s did not retain a long wake-budget delay: %+v", sessionID, retry)
-		}
-	}
-	if row, err := store.GetDispatch(ctx, "wake-ready-command"); err != nil || row.Reason != "wake_rate_limited" {
-		t.Fatalf("command was not wake limited: %+v %v", row, err)
-	}
-	if row, err := store.GetOpening(ctx, "wake-ready-opening-session"); err != nil || row.Reason != "wake_rate_limited" {
-		t.Fatalf("opening was not wake limited: %+v %v", row, err)
-	}
-	if err := worker.reconcile(ctx, false); err != nil {
-		t.Fatal(err)
-	}
-	if got := worker.queue.Len(); got != 2 {
-		t.Fatalf("notification queued %d wake-limited sessions, want 2", got)
-	}
-	for range 2 {
-		sessionID, shutdown := worker.queue.Get()
-		if shutdown {
-			t.Fatal("queue shut down during notification reconciliation")
-		}
-		if err := worker.processSession(ctx, sessionID); err != nil {
-			t.Fatal(err)
-		}
-		worker.queue.Done(sessionID)
-	}
-	if wake.calls != 2 {
-		t.Fatalf("suspended notification retried wake %d times, want 2 initial attempts", wake.calls)
-	}
-	catalog.sandboxes[0].Incarnation = "new-pod"
-	catalog.sandboxes[0].Blocker = ""
-	if err := worker.reconcile(ctx, false); err != nil {
-		t.Fatal(err)
-	}
-	go worker.runQueue(ctx)
-	want := map[string]bool{"wake-ready-command": false, "opening:wake-ready-opening-session": false}
-	for range want {
-		select {
-		case got := <-runner.calls:
-			if _, okay := want[got]; !okay || want[got] {
-				t.Fatalf("unexpected Runner call %q", got)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var wake *scriptedWake
+			if tc.assessment != nil {
+				assessment := proto.Clone(tc.assessment).(*environmentpb.WakeAssessment)
+				assessment.ObservedAt = timestamppb.Now()
+				assessment.TargetGeneration = proto.Uint64(7)
+				wake = &scriptedWake{assessments: []*environmentpb.WakeAssessment{assessment}}
 			}
-			want[got] = true
-		case <-time.After(5 * time.Second):
-			t.Fatal("ready Sandbox did not receive wake-limited work promptly")
-		}
+			fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
+			fixture.sandbox.WakeOnSend = tc.wakeOnSend
+			fixture.sandbox.ManualStop = tc.manualStop
+			if ready, err := fixture.worker.prepareDispatch(context.Background(), fixture.dispatch, fixture.sandbox, fixture.owner); err != nil || ready {
+				t.Fatalf("blocked work preparation = %v, %v", ready, err)
+			}
+			row, err := fixture.store.GetDispatch(context.Background(), fixture.dispatch.CommandID)
+			if err != nil || row.State != QueueState || row.WakeAssessment.GetState() != tc.wantState ||
+				row.WakeAssessment.GetReason() != tc.wantReason || row.WakeAssessment.GetObservedAt() == nil ||
+				row.WakeAssessment.TargetGeneration == nil || row.DeliveryBlocker.GetKind() == 0 {
+				t.Fatalf("wake-blocked dispatch was not durably observable: %+v %v", row, err)
+			}
+			var calls int
+			if wake != nil {
+				calls = len(wake.callers)
+			}
+			if calls != tc.wantCalls {
+				t.Fatalf("lifecycle calls = %d, want %d", calls, tc.wantCalls)
+			}
+		})
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		command, commandErr := store.GetDispatch(ctx, "wake-ready-command")
-		opening, openingErr := store.GetOpening(ctx, "wake-ready-opening-session")
-		if commandErr == nil && openingErr == nil && command.State == AdmittedState && opening.State == AdmittedState {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatal("ready work reached Runner but was not durably admitted")
 }
 
-func TestWorkerQueuesWithTheKubernetesFailureThatBlockedAWake(t *testing.T) {
-	ctx := context.Background()
-	store := testStore(t, 3)
-	const uid = "00000000-0000-4000-8000-000000000074"
-	const sandboxName = "sandbox-wake-forbidden"
-	caller := ServiceAccountIdentity{Account: Account{Namespace: "agentplane", Name: "wake-forbidden-test"}, UID: "wake-forbidden-uid"}
-	attribution := &AdmissionAttribution{Actor: caller, EffectiveCaller: caller}
-	privilegedCaller := CallerIdentity{ServiceAccountIdentity: caller, Privileged: true, Attribution: attribution}
-	if _, err := store.EnqueueForCaller(ctx, "wake-forbidden-session", sandboxName, uid,
-		input("wake-forbidden-command", "hello"), &caller.Account, privilegedCaller); err != nil {
-		t.Fatal(err)
+func TestWorkerDoesNotRequestWakeAfterLosingQueueLease(t *testing.T) {
+	wake := &scriptedWake{}
+	fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
+	fixture.worker.Leases = &unreliableLease{testLease: testLease{store: fixture.store}, live: false}
+	ready, err := fixture.worker.prepareDispatch(context.Background(), fixture.dispatch, fixture.sandbox, fixture.owner)
+	if err != nil || ready || len(wake.callers) != 0 {
+		t.Fatalf("wake after lease loss: ready=%v calls=%d err=%v", ready, len(wake.callers), err)
 	}
-	forbidden := apierrors.NewForbidden(
-		schema.GroupResource{Group: "agentplane.allegedly.works", Resource: "sandboxes"}, sandboxName,
-		errors.New("the Role does not grant this verb"),
-	)
-	leases := testLease{store: store}
-	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{SandboxSnapshot{
-		Name: sandboxName, Namespace: "agentplane", UID: uid, Incarnation: "old-pod",
-		Blocker: "sandbox_suspended", WakeOnSend: true,
-	}}, Wake: failingWake{forbidden}, Leases: leases, Runner: &acceptingRunner{calls: make(chan string, 1)}}
-	worker.init()
-	defer worker.queue.ShutDown()
-	owner, err := leases.Acquire(ctx, sandboxName, uid)
-	if err != nil || owner == nil {
-		t.Fatalf("acquire owner: %+v %v", owner, err)
+	stored, err := fixture.store.GetDispatch(context.Background(), fixture.dispatch.CommandID)
+	if err != nil || stored.State != QueueState || stored.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_NOT_EVALUATED {
+		t.Fatalf("lease loss changed queued receipt: %+v %v", stored, err)
 	}
-	worker.owners[uid] = *owner
-	if err := worker.processSession(ctx, "wake-forbidden-session"); err != nil {
-		t.Fatal(err)
+}
+
+func TestWorkerPersistsRateLimitForDispatchAndOpening(t *testing.T) {
+	for _, kind := range []string{"dispatch", "opening"} {
+		t.Run(kind, func(t *testing.T) {
+			assessment := &environmentpb.WakeAssessment{
+				State:      environmentpb.WakeState_WAKE_STATE_RATE_LIMITED,
+				Reason:     environmentpb.WakeReason_WAKE_REASON_WAKE_BUDGET_EXHAUSTED,
+				ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(7),
+				RetryAt: timestamppb.New(time.Now().Add(time.Minute)),
+			}
+			wake := &scriptedWake{assessments: []*environmentpb.WakeAssessment{assessment}}
+			fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
+			var ready bool
+			var err error
+			if kind == "dispatch" {
+				ready, err = fixture.worker.prepareDispatch(context.Background(), fixture.dispatch, fixture.sandbox, fixture.owner)
+			} else {
+				ready, err = fixture.worker.prepareOpening(context.Background(), fixture.opening, fixture.sandbox, fixture.owner)
+			}
+			if err != nil || ready {
+				t.Fatalf("rate-limited work preparation = %v, %v", ready, err)
+			}
+			if kind == "dispatch" {
+				row, err := fixture.store.GetDispatch(context.Background(), fixture.dispatch.CommandID)
+				if err != nil || row.State != QueueState || row.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_RATE_LIMITED ||
+					row.WakeAssessment.GetRetryAt() == nil || row.WakeAssessment.GetObservedAt() == nil {
+					t.Fatalf("rate-limited dispatch: %+v %v", row, err)
+				}
+			} else {
+				row, err := fixture.store.GetOpening(context.Background(), fixture.opening.SessionID)
+				if err != nil || row.State != QueueState || row.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_RATE_LIMITED ||
+					row.WakeAssessment.GetRetryAt() == nil || row.WakeAssessment.GetObservedAt() == nil {
+					t.Fatalf("rate-limited opening: %+v %v", row, err)
+				}
+			}
+			if len(wake.callers) != 1 {
+				t.Fatalf("lifecycle calls = %d, want one", len(wake.callers))
+			}
+			if kind == "dispatch" {
+				row, err := fixture.store.GetDispatch(context.Background(), fixture.dispatch.CommandID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := fixture.worker.prepareDispatch(context.Background(), row, fixture.sandbox, fixture.owner); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				row, err := fixture.store.GetOpening(context.Background(), fixture.opening.SessionID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := fixture.worker.prepareOpening(context.Background(), row, fixture.sandbox, fixture.owner); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if len(wake.callers) != 1 {
+				t.Fatalf("rate-limited wake retried before retry_at: %d calls", len(wake.callers))
+			}
+		})
 	}
-	row, err := store.GetDispatch(ctx, "wake-forbidden-command")
-	if err != nil || row.State != QueueState || row.Reason != "sandbox_wake_failed: "+forbidden.Error() {
-		t.Fatalf("the failed wake was not named: %+v %v", row, err)
+}
+
+func TestWorkerRetriesAuthorizedWakeAfterDenialUsingEffectiveCaller(t *testing.T) {
+	requested := &environmentpb.WakeAssessment{
+		State:      environmentpb.WakeState_WAKE_STATE_REQUESTED,
+		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(7),
+	}
+	wake := &scriptedWake{assessments: []*environmentpb.WakeAssessment{
+		{
+			State: environmentpb.WakeState_WAKE_STATE_DENIED, Reason: environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED,
+			ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(7),
+		},
+		requested,
+	}}
+	fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
+	prepare := func() *Dispatch {
+		t.Helper()
+		row, err := fixture.store.GetDispatch(context.Background(), fixture.dispatch.CommandID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ready, err := fixture.worker.prepareDispatch(context.Background(), row, fixture.sandbox, fixture.owner); err != nil || ready {
+			t.Fatalf("wake retry preparation = %v, %v", ready, err)
+		}
+		row, err = fixture.store.GetDispatch(context.Background(), fixture.dispatch.CommandID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return row
+	}
+	first := prepare()
+	if first.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_DENIED || first.State != QueueState {
+		t.Fatalf("first denial failed queued delivery: %+v", first)
+	}
+	second := prepare()
+	if second.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_REQUESTED || second.State != QueueState || second.WakeRequestedAt == nil {
+		t.Fatalf("later authorized wake was not recorded while queued: %+v", second)
+	}
+	if len(wake.callers) != 2 || wake.callers[0] != fixture.caller || wake.callers[1] != fixture.caller {
+		t.Fatalf("wake used caller identities %v, want retained effective caller %+v", wake.callers, fixture.caller)
+	}
+	if wake.targets[0].UID != fixture.sandbox.UID || wake.targets[0].Namespace != fixture.sandbox.Namespace || wake.targets[0].Name != fixture.sandbox.Name {
+		t.Fatalf("wake target was not UID-fenced: %+v", wake.targets[0])
+	}
+	prepare()
+	if len(wake.callers) != 2 {
+		t.Fatalf("requested wake was retried before readiness: %d calls", len(wake.callers))
+	}
+}
+
+func TestWorkerDoesNotRepeatUnknownWakeInSameGeneration(t *testing.T) {
+	wake := &scriptedWake{assessments: []*environmentpb.WakeAssessment{
+		{
+			State: environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN, Reason: environmentpb.WakeReason_WAKE_REASON_OUTCOME_UNKNOWN,
+			ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(7),
+			Error: status.New(codes.Unavailable, "patch reply was lost").Proto(),
+		},
+		{State: environmentpb.WakeState_WAKE_STATE_DENIED, Reason: environmentpb.WakeReason_WAKE_REASON_TARGET_CHANGED},
+	}}
+	fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
+	prepare := func(sandbox SandboxSnapshot) *Dispatch {
+		t.Helper()
+		row, err := fixture.store.GetDispatch(context.Background(), fixture.dispatch.CommandID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ready, err := fixture.worker.prepareDispatch(context.Background(), row, sandbox, fixture.owner); err != nil || ready {
+			t.Fatalf("unknown wake preparation = %v, %v", ready, err)
+		}
+		row, err = fixture.store.GetDispatch(context.Background(), fixture.dispatch.CommandID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return row
+	}
+	unknown := prepare(fixture.sandbox)
+	if unknown.State != QueueState || unknown.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN ||
+		unknown.WakeAssessment.GetObservedAt() == nil || unknown.WakeAssessment.TargetGeneration == nil ||
+		unknown.WakeAssessment.GetError().GetCode() != int32(codes.Unavailable) {
+		t.Fatalf("unknown wake outcome was not retained as a structured queued observation: %+v", unknown)
+	}
+	prepare(fixture.sandbox)
+	if len(wake.callers) != 1 {
+		t.Fatalf("unknown wake was repeated in the same generation: %d calls", len(wake.callers))
+	}
+	changedGeneration := fixture.sandbox
+	changedGeneration.WakeGeneration++
+	changed := prepare(changedGeneration)
+	if len(wake.callers) != 2 || changed.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_DENIED || changed.State != QueueState {
+		t.Fatalf("changed generation did not trigger a fresh assessment: calls=%d receipt=%+v", len(wake.callers), changed)
+	}
+}
+
+func TestCentralOpeningAndInputBypassSuspendedExecutorWake(t *testing.T) {
+	fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER}, nil)
+	if ready, err := fixture.worker.prepareOpening(context.Background(), fixture.opening, fixture.sandbox, fixture.owner); err != nil || !ready {
+		t.Fatalf("central opening required executor wake: ready=%v err=%v", ready, err)
+	}
+	if ready, err := fixture.worker.prepareDispatch(context.Background(), fixture.dispatch, fixture.sandbox, fixture.owner); err != nil || !ready {
+		t.Fatalf("central input required executor wake: ready=%v err=%v", ready, err)
+	}
+	dispatch, err := fixture.store.GetDispatch(context.Background(), fixture.dispatch.CommandID)
+	if err != nil || dispatch.State != QueueState || dispatch.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_NOT_NEEDED || dispatch.DeliveryBlocker != nil {
+		t.Fatalf("central input did not retain a deliverable queued receipt: %+v %v", dispatch, err)
+	}
+	opening, err := fixture.store.GetOpening(context.Background(), fixture.opening.SessionID)
+	if err != nil || opening.State != QueueState || opening.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_NOT_NEEDED || opening.DeliveryBlocker != nil {
+		t.Fatalf("central opening did not retain a deliverable queued receipt: %+v %v", opening, err)
 	}
 }
 
@@ -1259,7 +1681,7 @@ func TestWorkerNotificationPreservesFailureBackoff(t *testing.T) {
 		t.Fatalf("acquire owner: %+v %v", owner, err)
 	}
 	worker.owners[uid] = *owner
-	worker.setRetry(sessionID, commandID, time.Minute, retryFailure)
+	worker.setRetry(sessionID, commandID, time.Minute)
 	before := len(recorded.delays)
 	if err := worker.reconcile(ctx, false); err != nil {
 		t.Fatal(err)
@@ -1497,7 +1919,18 @@ func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 	worker := &DeliveryWorker{Store: store}
 	worker.init()
 	defer worker.queue.ShutDown()
-	if ready, err := worker.prepareDispatch(ctx, row, sandbox, Owner{}); err != nil || !ready {
+	generation, err := store.OwnershipGeneration(ctx, sandboxUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := store.ClaimSandboxOwner(ctx, sandboxUID, "central-"+uuid.NewString(), 1, "central-worker", generation)
+	if err != nil || owner == nil {
+		t.Fatalf("claim central Sandbox owner: %+v %v", owner, err)
+	}
+	if ready, err := worker.prepareOpening(ctx, opening, sandbox, *owner); err != nil || !ready {
+		t.Fatalf("central opening readiness %v %v", ready, err)
+	}
+	if ready, err := worker.prepareDispatch(ctx, row, sandbox, *owner); err != nil || !ready {
 		t.Fatalf("central command readiness %v %v", ready, err)
 	}
 	runner := &acceptingRunner{calls: make(chan string, 1)}

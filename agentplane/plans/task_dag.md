@@ -1429,14 +1429,12 @@ flowchart TD
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
     ENVIRONMENT_LIFECYCLE_BACKEND[Selected P0: shared resume policy and guarded mutation]
     ENVIRONMENT_RESUME_API[Selected P0: explicit resume RPC and Discovery]
-    DISPATCH_WAKE_OBSERVATION[Selected P0: typed queued-wake receipts]
     DISPATCH_AUTHORIZED_WAKE[Selected P0: automatic wake through shared authority]
     ENVIRONMENT_RESUME_AGENT_TOOLS[Selected P0: CLI and Action resume adapters]
     EXEC_SUSPENDED_RESUME[Selected P0 capstone: recover exec on a suspended Sandbox]
     ENVIRONMENT_RESUME_ACTIVATION[Operational hold: app and deployment activation]
     ENVIRONMENT_LIFECYCLE_BACKEND --> ENVIRONMENT_RESUME_API
     ENVIRONMENT_LIFECYCLE_BACKEND --> DISPATCH_AUTHORIZED_WAKE
-    DISPATCH_WAKE_OBSERVATION --> DISPATCH_AUTHORIZED_WAKE
     ENVIRONMENT_RESUME_API --> ENVIRONMENT_RESUME_AGENT_TOOLS
     ENVIRONMENT_RESUME_API --> EXEC_SUSPENDED_RESUME
     DISPATCH_AUTHORIZED_WAKE --> EXEC_SUSPENDED_RESUME
@@ -1752,7 +1750,7 @@ Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-co
 
 ### `ENVIRONMENT_LIFECYCLE_BACKEND` — own resume policy and guarded state changes
 
-**Selected P0; candidate extraction, no worker assigned.** Implement the
+**Selected P0; backend/API implementation under review in [#13915](https://github.com/agentydragon/ducktape/pull/13915), 2026-11-02 UTC.** Implement the
 [approved authority contract](environment_lifecycle_authorization.md#selected-policy). The policy
 decision is complete: exact live execution-SA resume requires `resumePolicy.allowOwnServiceAccount=true`;
 explicit and automatic resume share authority; operator-requested stops remain sticky for ordinary
@@ -1767,12 +1765,12 @@ depends on the app; no new binary, database or command queue is required.
 
 **Exit:** focused authorization, replacement/revocation, requested-stop, token/conflict, budget and
 uncertain-outcome coverage. No uncertain operation replay. Keep the accepted contract fixed while
-extracting small PRs from parked #13546; fresh provisioning and dispatch regrouping remain separate.
+reviewing the extracted backend, client and automatic-wake PRs; fresh provisioning and dispatch regrouping remain separate.
 
-### `ENVIRONMENT_RESUME_API` — expose explicit resume and readiness
+### `ENVIRONMENT_RESUME_API` — expose explicit resume and discovery
 
-**Selected P0; blocked on `ENVIRONMENT_LIFECYCLE_BACKEND`.** Expose authenticated
-`EnvironmentLifecycle.ResumeEnvironment`. `GetEnvironment` returns the current descriptor
+**Selected P0; API and backend share [#13915](https://github.com/agentydragon/ducktape/pull/13915), 2026-11-02 UTC; acceptance requires `ENVIRONMENT_LIFECYCLE_BACKEND`.** Expose authenticated
+`EnvironmentService.ResumeEnvironment`. `GetEnvironment` returns the current descriptor
 immediately, including current eligibility and the generation-bound resume precondition.
 `WatchEnvironment` observes current-state changes for the exact target. Neither RPC waits for
 readiness; CLI and Action/MCP wait adapters over the watch remain follow-up work. Keep resume
@@ -1783,21 +1781,9 @@ operator authority.
 operator requested-stop override confined to the configured direct operator path. RPC/source
 support precedes new production settings and caller activation. Public suspend remains unselected.
 
-### `DISPATCH_WAKE_OBSERVATION` — retain typed queued-wake assessments
-
-**Selected P0; independent of the complete lifecycle backend.** Use migration 8's existing storage
-for protobuf-defined delivery-blocker/wake assessments. Carry
-them through Get/List/Watch and `sessions__observe_input` with independently authorized History
-evidence. Further stored-schema changes require a new migration; do not edit migration 8.
-
-**Exit:** not-evaluated, disabled, denied, rate-limited, requested, failed and unknown outcomes
-remain structured and timestamped. Transactional notification and watch comparison publish wake
-changes even when delivery state/reason is unchanged. Retained retry identities survive. Direct
-Runtime proxy calls do not create Dispatcher receipts. This slice does not change send admission.
-
 ### `DISPATCH_AUTHORIZED_WAKE` — use shared authority for automatic wake
 
-**Selected P0; blocked on `ENVIRONMENT_LIFECYCLE_BACKEND` and `DISPATCH_WAKE_OBSERVATION`.**
+**Selected P0; automatic integration extracted into [#13546](https://github.com/agentydragon/ducktape/pull/13546), 2026-11-02 UTC; requires `ENVIRONMENT_LIFECYCLE_BACKEND`.**
 Dispatcher first determines whether delivery needs the environment, then applies `wakeOnSend` and
 the original retained effective caller's current lifecycle authority. An enqueue-time eligibility
 boolean is not a permanent grant. Authorized input stays queued when wake is denied, disabled or
@@ -1809,7 +1795,7 @@ input that needs no environment does not wake one. Actor privileges never replac
 
 ### `ENVIRONMENT_RESUME_AGENT_TOOLS` — expose resume through CLI, Actions and MCP
 
-**Selected P0; blocked on `ENVIRONMENT_RESUME_API`.** Add the equivalent CLI command,
+**Selected P0; CLI [#13917](https://github.com/agentydragon/ducktape/pull/13917) and Action/MCP [#13918](https://github.com/agentydragon/ducktape/pull/13918) are under review, 2026-11-02 UTC; both require `ENVIRONMENT_RESUME_API`.** Add the equivalent CLI command,
 `environments/resume` Action/MCP adapter, exact `basic` auto-approval and progressive guidance.
 Use shared delegated authentication; Discovery supplies handles/tokens. No agent-selected generation
 or new provisioning is required. Keep production method scope and destination activation separate.

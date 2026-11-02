@@ -1,9 +1,10 @@
 # Explicit environment resume and message-wake authority
 
-Approved for implementation by the operator, 2026-11-02. The implementation is being extracted
-into small PRs; [draft #13546](https://github.com/agentydragon/ducktape/pull/13546) is a parked
-implementation reference. The policy decision is complete. Extraction status and remaining
-dependencies are in the DAG; this document does not dispatch additional implementation.
+Approved for implementation by the operator, 2026-11-02. The implementation is split into receipt,
+backend/API, CLI, Action/MCP and automatic-wake slices; the receipt foundation has landed. The DAG owns their current PRs and
+acceptance status; the CLI and Action adapters independently depend on the backend despite their
+linear native-stack review order. Caller activation remains separately deployment-held. The policy
+decision is complete; this document does not dispatch additional implementation.
 The [DAG](task_dag.md#environment_lifecycle_backend--own-resume-policy-and-guarded-state-changes)
 owns implementation status and the `EXEC_SUSPENDED_RESUME` acceptance outcome.
 
@@ -46,8 +47,9 @@ requests it automatically. Neither field authorizes editing policy.
 
 The optional `resumePolicy` Go/CRD schema, migration 8 and UID-scoped automatic-wake accounting
 have landed. Delivery consumes the persisted effective caller; the store rejects inconsistent
-attribution. The migration provides wake-assessment storage. The approved resume authorization,
-typed receipt delivery and client surfaces remain unfinished.
+attribution. Typed blocker/wake facts now round-trip through receipt storage, Get/List/Watch and
+`sessions__observe_input`; absent assessments read as not evaluated. Shared resume authorization,
+automatic-wake assessment production and the client resume surfaces remain unfinished.
 
 - [Discovery](../sandboxes/environments/service.go) describes the exact target, execution account,
   operating state and readiness. Its current `ResumeState` reflects send-wake eligibility; it is
@@ -70,7 +72,7 @@ typed receipt delivery and client surfaces remain unfinished.
   Neither the [Session Dispatcher proto](../runner_gateway/dispatcher/session_dispatcher.proto) nor
   the [Environment Runtime proto](../env/runtime/control/environment_runtime.proto) currently has
   public suspend/resume lifecycle RPCs. Runtime `Quiesce` is one teardown step, not an environment
-  suspend API. `EnvironmentLifecycle` below is the selected addition.
+  suspend API. `EnvironmentService.ResumeEnvironment` below is the selected addition.
 - The Gateway already has a [direct Runtime proxy](../runner_gateway/gateway/proxy.go), including
   `SubmitInput`, that bypasses the Dispatcher queue and performs no automatic wake. Its caller policy
   is separate from Dispatcher admission. This is not a selectable queue-free mode on today's
@@ -78,8 +80,8 @@ typed receipt delivery and client surfaces remain unfinished.
   separate, unselected proposal.
 
 Make lifecycle authorization and the guarded desired-state change one backend responsibility,
-initially a logical `EnvironmentLifecycle` service in the existing Gateway binary. Extract the
-shared mutation/policy machinery for Dispatcher wake and the operator resume path to use. This
+initially exposed through `EnvironmentService.ResumeEnvironment` in the existing Gateway binary.
+The shared lifecycle manager serves Dispatcher wake and explicit resume. This
 does not choose a new Deployment or the later Session/Environment dispatch grouping.
 
 ## Layering: admission, optional wake, lifecycle and execution

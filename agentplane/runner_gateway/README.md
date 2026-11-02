@@ -1,9 +1,9 @@
 # Runner Gateway
 
 The Runner Gateway combines durable Session Dispatcher admission and delivery, the
-`EnvironmentService` inventory and explicit-resume API, and a Sandbox-fenced Runner proxy. The
-explicit API uses the shared lifecycle manager; the existing `DeliveryWorker` remains on its
-catalog-backed automatic-wake path until its separate integration.
+`EnvironmentService` inventory and explicit-resume API, and a Sandbox-fenced Runner proxy. Explicit
+resume and Dispatcher automatic wake use the shared lifecycle manager. Automatic wake preserves the
+effective caller and applies the Sandbox's `wakeOnSend` setting and the configured `wake_callers` grant.
 EnvironmentService and Dispatcher share the Gateway listener and Dispatcher TokenReview audience.
 The Gateway dials each Runner's native gRPC
 server on private port `9090`. Its public `listen_address` serves Dispatcher and proxies for the

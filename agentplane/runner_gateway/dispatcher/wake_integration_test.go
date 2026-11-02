@@ -2,24 +2,48 @@ package dispatcher
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"testing"
 	"time"
 
+	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-type callbackWake struct{ calls int }
+type callbackWake struct {
+	store   *Store
+	calls   int
+	callers []lifecycle.ServiceAccount
+}
 
-func (w *callbackWake) WakeForSend(_ context.Context, _, _ string, beforeResume func(int64) error) (bool, error) {
+func (w *callbackWake) RequestWake(
+	ctx context.Context,
+	target lifecycle.Target,
+	caller lifecycle.ServiceAccount,
+) (*environmentpb.WakeAssessment, error) {
 	w.calls++
-	if err := beforeResume(41); err != nil {
-		return false, err
+	w.callers = append(w.callers, caller)
+	wait, err := w.store.ReserveWakeAttempt(ctx, ServiceAccountIdentity{
+		Account: Account{Namespace: caller.Namespace, Name: caller.Name}, UID: caller.UID,
+	}, target.UID, 41)
+	if err != nil {
+		return nil, err
 	}
-	return true, nil
+	assessment := &environmentpb.WakeAssessment{
+		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(41),
+	}
+	if wait > 0 {
+		assessment.State = environmentpb.WakeState_WAKE_STATE_RATE_LIMITED
+		assessment.Reason = environmentpb.WakeReason_WAKE_REASON_WAKE_BUDGET_EXHAUSTED
+		assessment.RetryAt = timestamppb.New(time.Now().Add(wait))
+		return assessment, nil
+	}
+	assessment.State = environmentpb.WakeState_WAKE_STATE_REQUESTED
+	return assessment, nil
 }
 
 type executionAccountCatalog struct {
@@ -59,7 +83,7 @@ func openWakeableSession(
 func TestMixedVersionWakeWritersShareCapAndGenerationDedup(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t, 3)
-	caller := ServiceAccountIdentity{Account: Account{Namespace: "mixed-writer", Name: "shared-cap"}, UID: "current-uid"}
+	caller := ServiceAccountIdentity{Account: Account{Namespace: "wake-budget-mixed-version", Name: "shared-cap"}, UID: "current-uid"}
 	const uid = "00000000-0000-4000-8000-000000000091"
 
 	for generation := int64(1); generation <= WakeLimit; generation++ {
@@ -95,69 +119,12 @@ func TestMixedVersionWakeWritersShareCapAndGenerationDedup(t *testing.T) {
 	}
 }
 
-// reserveWakeAttemptAsPreviousWriter models replicas that omit caller_uid and
-// read the whole namespace/name budget during the migration rollout.
-func reserveWakeAttemptAsPreviousWriter(
-	ctx context.Context,
-	store *Store,
-	caller ServiceAccountIdentity,
-	sandboxUID string,
-	generation int64,
-) (time.Duration, error) {
-	var retryAfter time.Duration
-	err := transaction(ctx, store.DB, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
-			"dispatcher-wake:"+caller.Namespace+":"+caller.Name); err != nil {
-			return err
-		}
-		var now time.Time
-		if err := tx.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&now); err != nil {
-			return err
-		}
-		windowStart := now.Add(-WakeWindow)
-		if _, err := tx.ExecContext(ctx, "DELETE FROM wake_attempt WHERE attempted_at <= $1", windowStart); err != nil {
-			return err
-		}
-		var exists bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM wake_attempt
-			WHERE caller_namespace=$1 AND caller_name=$2 AND sandbox_uid=$3 AND wake_generation=$4)`,
-			caller.Namespace, caller.Name, sandboxUID, generation).Scan(&exists); err != nil {
-			return err
-		}
-		if exists {
-			return nil
-		}
-		var count int
-		var oldest sql.NullTime
-		if err := tx.QueryRowContext(ctx, `SELECT count(*),min(attempted_at) FROM wake_attempt
-			WHERE caller_namespace=$1 AND caller_name=$2 AND attempted_at>$3`,
-			caller.Namespace, caller.Name, windowStart).Scan(&count, &oldest); err != nil {
-			return err
-		}
-		if count >= WakeLimit {
-			if !oldest.Valid {
-				return errors.New("wake budget full without attempt")
-			}
-			retryAfter = oldest.Time.Add(WakeWindow).Sub(now)
-			if retryAfter < time.Millisecond {
-				retryAfter = time.Millisecond
-			}
-			return nil
-		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO wake_attempt
-			(caller_namespace,caller_name,sandbox_uid,wake_generation,attempted_at)
-			VALUES ($1,$2,$3,$4,$5)`, caller.Namespace, caller.Name, sandboxUID, generation, now)
-		return err
-	})
-	return retryAfter, err
-}
-
 func TestDeliveryUsesRetainedEffectiveCallerUIDForWakeBudget(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t, 3)
 	actor := ServiceAccountIdentity{Account: Account{Namespace: "agentplane", Name: "actions"}, UID: "actions-uid"}
 	effective := ServiceAccountIdentity{Account: Account{Namespace: "agentplane", Name: "delegate"}, UID: "delegate-uid"}
-	wake := &callbackWake{}
+	wake := &callbackWake{store: store}
 	worker := &DeliveryWorker{Store: store, Wake: wake, Leases: testLease{store: store}}
 	worker.init()
 	defer worker.queue.ShutDown()
@@ -208,6 +175,11 @@ func TestDeliveryUsesRetainedEffectiveCallerUIDForWakeBudget(t *testing.T) {
 		if effectiveRows != 1 || actorRows != 0 {
 			t.Fatalf("%s wake budget used effective=%d actor=%d rows", kind, effectiveRows, actorRows)
 		}
+		if got := wake.callers[i]; got != (lifecycle.ServiceAccount{
+			Namespace: effective.Namespace, Name: effective.Name, UID: effective.UID,
+		}) {
+			t.Fatalf("%s lifecycle caller=%+v, want retained effective identity", kind, got)
+		}
 	}
 	if wake.calls != 2 {
 		t.Fatalf("wake service calls=%d, want both queued delivery paths", wake.calls)
@@ -228,7 +200,7 @@ func TestLegacyWakeCallerWithoutUIDDoesNotWake(t *testing.T) {
 	if err != nil || owner == nil {
 		t.Fatalf("claim owner: owner=%+v error=%v", owner, err)
 	}
-	wake := &callbackWake{}
+	wake := &callbackWake{store: store}
 	worker := &DeliveryWorker{Store: store, Wake: wake, Leases: testLease{store: store}}
 	worker.init()
 	defer worker.queue.ShutDown()
@@ -247,8 +219,11 @@ func TestLegacyWakeCallerWithoutUIDDoesNotWake(t *testing.T) {
 	if err := store.DB.QueryRowContext(ctx, "SELECT count(*) FROM wake_attempt WHERE sandbox_uid=$1", uid).Scan(&attempts); err != nil {
 		t.Fatal("count legacy wake attempts:", err)
 	}
-	if stored.Reason != "wake_caller_unknown" || wake.calls != 0 || attempts != 0 {
-		t.Fatalf("legacy row gained wake authority: reason=%q wake calls=%d attempts=%d", stored.Reason, wake.calls, attempts)
+	if stored.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_DENIED ||
+		stored.WakeAssessment.GetReason() != environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED ||
+		wake.calls != 0 || attempts != 0 {
+		t.Fatalf("legacy row gained wake authority: assessment=%+v wake calls=%d attempts=%d",
+			stored.WakeAssessment, wake.calls, attempts)
 	}
 }
 

@@ -249,10 +249,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	if err != nil {
 		return err
 	}
-	environmentService, err := environments.New(
-		c.Namespace, objects, c.RuntimeCatalog, lifecycleManager,
-		accountSet(c.WakeCallers), accountSet(c.EnvironmentReaders),
-	)
+	environmentService, err := environments.New(c.Namespace, objects, c.RuntimeCatalog, lifecycleManager, accountSet(c.EnvironmentReaders))
 	if err != nil {
 		return err
 	}
@@ -314,7 +311,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 
 	ready := make(chan struct{})
 	worker := &dispatcher.DeliveryWorker{
-		Store: store, Catalog: catalog, Wake: catalog,
+		Store: store, Catalog: catalog, Wake: lifecycleManager,
 		Leases: dispatcher.NewOwnershipLeases(kube.CoordinationV1().Leases(c.Namespace), store, c.Namespace),
 		Runner: runner, Hub: hub, Ready: ready,
 	}
@@ -327,7 +324,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		return ctx.Err()
 	}
 	service := &dispatcher.Service{
-		Store: store, DispatcherCallers: accountSet(c.DispatcherCallers), WakeCallers: accountSet(c.WakeCallers),
+		Store: store, DispatcherCallers: accountSet(c.DispatcherCallers),
 		Sandboxes: catalog, Runner: runner,
 		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}

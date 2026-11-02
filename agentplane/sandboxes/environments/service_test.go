@@ -67,14 +67,6 @@ func discoveryLifecycle(t *testing.T, objects client.WithWatch, wakeCallers []au
 	return manager
 }
 
-func discoveryWakeCallerSet(accounts []auth.Account) map[auth.Account]struct{} {
-	result := make(map[auth.Account]struct{}, len(accounts))
-	for _, account := range accounts {
-		result[account] = struct{}{}
-	}
-	return result
-}
-
 func (s tokenReviewStub) Create(_ context.Context, request *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
 	user, ok := s[request.Spec.Token]
 	if !ok {
@@ -131,7 +123,7 @@ func serveDiscoveryWithOptions(
 	wakeCallers []auth.Account,
 ) environmentpb.EnvironmentServiceClient {
 	t.Helper()
-	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeCallers), discoveryWakeCallerSet(wakeCallers), nil)
+	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeCallers), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -730,7 +722,7 @@ func TestEveryGeneratedRPCRequiresReviewedServiceAccountAdmission(t *testing.T) 
 	}
 	register := func(server *grpc.Server) {
 		objects := baseReader(t)
-		service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), nil, nil)
+		service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -770,7 +762,7 @@ func TestInventoryReaderListAndGetAreBroadButOrdinaryCallersStayScoped(t *testin
 	terminating.Status.OperatingMode = sandboxapi.OperatingModeSuspended
 	objects := readerWithObjects(t, sandboxObject(sandboxUID), executionAccountObject(sandboxUID), other, terminating)
 	reader := auth.Account{Namespace: discoveryNamespace, Name: "actions"}
-	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), nil, map[auth.Account]struct{}{reader: {}})
+	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), map[auth.Account]struct{}{reader: {}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -810,7 +802,7 @@ func TestDelegatedActorDoesNotLendInventoryReaderGrant(t *testing.T) {
 	other := sandboxObject("other-uid")
 	other.Name = "other"
 	objects := readerWithObjects(t, sandboxObject(sandboxUID), executionAccountObject(sandboxUID), other)
-	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), nil, map[auth.Account]struct{}{actor: {}})
+	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), map[auth.Account]struct{}{actor: {}})
 	if err != nil {
 		t.Fatal(err)
 	}

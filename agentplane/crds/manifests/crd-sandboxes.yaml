@@ -125,10 +125,14 @@ spec:
                 type: integer
               wakeOnSend:
                 default: false
-                description: 'WakeOnSend allows authenticated user and notification
-                  sends to resume a stopped Sandbox.
+                description: 'WakeOnSend allows queued delivery to request an automatic
+                  resume when it needs a suspended
 
-                  Omitted is false so older Sandbox manifests keep wake-on-send disabled.'
+                  Sandbox. Caller lifecycle authority is checked separately, and a
+                  requested stop stays sticky.
+
+                  Omitted is false so older Sandbox manifests keep automatic wake
+                  disabled.'
                 type: boolean
             required:
             - template
