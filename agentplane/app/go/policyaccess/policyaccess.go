@@ -14,7 +14,6 @@ import (
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"

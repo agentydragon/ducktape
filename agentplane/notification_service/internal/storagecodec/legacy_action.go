@@ -9,7 +9,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
 
 // Notification payloads store Action states as these legacy text values. Keep the mapping explicit: protobuf enum names

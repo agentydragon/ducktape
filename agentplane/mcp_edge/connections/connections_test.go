@@ -9,7 +9,6 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"

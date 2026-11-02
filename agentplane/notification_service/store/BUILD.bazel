@@ -34,7 +34,6 @@ go_library(
         "//agentplane/postgres",
         "//agentplane/postgres/lease",
         "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:sandboxes_go_proto",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
         "@org_golang_google_protobuf//proto",

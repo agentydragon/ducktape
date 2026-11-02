@@ -16,7 +16,6 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
 
 // tools serve Action calls and static guide reads. Action calls reach core with the verified caller's context;

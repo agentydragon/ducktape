@@ -12,7 +12,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"

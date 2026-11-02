@@ -38,7 +38,6 @@ go_test(
         "//agentplane/egress/history",
         "//agentplane/egress/policy",
         "//agentplane/proto:identity_go_proto",
-        "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/testing/grpcmethods",
         "//agentplane/testing/kubeapiserver",
         "//agentplane/watchhealth",

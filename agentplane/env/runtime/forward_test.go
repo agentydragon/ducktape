@@ -22,7 +22,6 @@ import (
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc"

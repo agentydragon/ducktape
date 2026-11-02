@@ -19,7 +19,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/session_instructions"
 	"github.com/google/uuid"

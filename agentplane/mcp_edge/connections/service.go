@@ -14,7 +14,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
-	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"

@@ -16,7 +16,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/danielgtaylor/huma/v2"
 )
 

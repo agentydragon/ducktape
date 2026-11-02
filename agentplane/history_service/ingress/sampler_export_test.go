@@ -20,7 +20,6 @@ import (
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"

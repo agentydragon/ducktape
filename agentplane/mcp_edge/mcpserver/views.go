@@ -14,7 +14,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
 
 // The views below are what the tools answer: the core's records under the tool schemas' snake_case names and

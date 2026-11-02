@@ -11,7 +11,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/policy"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/danielgtaylor/huma/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

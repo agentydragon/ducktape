@@ -7,7 +7,6 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
 
 func storedStateNames() []string {

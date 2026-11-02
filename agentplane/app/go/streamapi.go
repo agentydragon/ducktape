@@ -26,7 +26,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/google/uuid"

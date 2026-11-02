@@ -7,7 +7,6 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
 
 // The Action Service stores states as these SQL text values. Keep the mapping explicit: protobuf enum names

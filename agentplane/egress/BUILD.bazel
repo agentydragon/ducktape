@@ -167,7 +167,6 @@ proto_library(
     srcs = ["egress_admin.proto"],
     deps = [
         "//agentplane/proto:identity_proto",
-        "//agentplane/proto:sandboxes_proto",
         "@protobuf//:timestamp_proto",
     ],
 )
@@ -188,7 +187,6 @@ proto_library(
     srcs = ["egress_rules.proto"],
     deps = [
         "//agentplane/proto:identity_proto",
-        "//agentplane/proto:sandboxes_proto",
         "@googleapis//google/api:annotations_proto",
     ],
 )
@@ -201,10 +199,7 @@ go_proto_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb",
     proto = ":egress_admin_proto",
-    deps = [
-        "//agentplane/proto:identity_go_proto",
-        "//agentplane/proto:sandboxes_go_proto",
-    ],
+    deps = ["//agentplane/proto:identity_go_proto"],
 )
 
 go_proto_library(
@@ -218,7 +213,6 @@ go_proto_library(
     proto = ":egress_rules_proto",
     deps = [
         "//agentplane/proto:identity_go_proto",
-        "//agentplane/proto:sandboxes_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )

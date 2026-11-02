@@ -25,7 +25,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
 
 // Reader is who reads a view.

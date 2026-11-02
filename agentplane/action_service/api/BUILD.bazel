@@ -117,7 +117,6 @@ go_test(
         "//agentplane/policy/reader",
         "//agentplane/postgres/wakeups",
         "//agentplane/proto:identity_go_proto",
-        "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/testing/kubeapiserver",
         "//agentplane/testing/postgres",
         "//agentplane/workload_auth/auth",

@@ -20,7 +20,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"

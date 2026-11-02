@@ -16,7 +16,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"

@@ -11,7 +11,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
-	sandboxes "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
