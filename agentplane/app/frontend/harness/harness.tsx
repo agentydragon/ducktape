@@ -3499,6 +3499,8 @@ function drops(url: URL): boolean {
     return flags.has("inventoryStreamDropped") || flags.has("watchStale");
   if (/^\/sandboxes\/[^/]+\/notifications\/stream$/.test(url.pathname))
     return flags.has("notificationStatusUnavailable");
+  if (/^\/upstream\/notifications\/v1\/operator\/sandboxes\/[^/]+\/notifications:watch$/.test(url.pathname))
+    return flags.has("notificationStatusUnavailable");
   return false;
 }
 
@@ -3508,7 +3510,7 @@ const droppedStreams = new Set<string>();
 
 routes.unshift([
   "GET",
-  /^\/(live\/.+|upstream\/notifications\/v1\/operator\/notices:watch|sandboxes\/[^/]+\/(notifications|console)\/stream)$/,
+  /^\/(live\/.+|upstream\/notifications\/v1\/operator\/(notices:watch|sandboxes\/[^/]+\/notifications:watch)|sandboxes\/[^/]+\/(notifications|console)\/stream)$/,
   (match, query, signal) => {
     const url = new URL(`${match[0]}?${query.toString()}`, "http://harness");
     const key = `${url.pathname}${url.search}`;
@@ -3518,6 +3520,14 @@ routes.unshift([
     else droppedStreams.add(key);
     if (url.pathname === "/upstream/notifications/v1/operator/notices:watch") {
       const results = (): unknown[] => liveEvents(url).map(({ data }) => data);
+      return liveNdjsonWatch(url.pathname, results(), results, signal, drop);
+    }
+    const sandboxWatch = url.pathname.match(
+      /^\/upstream\/notifications\/v1\/operator\/sandboxes\/([^/]+)\/notifications:watch$/
+    );
+    if (sandboxWatch) {
+      const legacyUrl = new URL(`/sandboxes/${sandboxWatch[1]}/notifications/stream`, "http://harness");
+      const results = (): unknown[] => liveEvents(legacyUrl).map(({ data }) => ({ snapshot: data }));
       return liveNdjsonWatch(url.pathname, results(), results, signal, drop);
     }
     return liveEventStream(url.pathname, () => liveEvents(url), signal, drop);

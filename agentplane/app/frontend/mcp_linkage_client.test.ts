@@ -89,7 +89,9 @@ it("replays linkage snapshots and decodes upserts from the generated watch frame
   let opens = 0;
   stop = followMcpLinkages({
     onOpen: () => opens++,
-    onFrame: (frame) => frames.push(frame),
+    onFrame: (frame) => {
+      frames.push(frame);
+    },
     onConnection: (connection) => connections.push(connection),
   });
   await settle();

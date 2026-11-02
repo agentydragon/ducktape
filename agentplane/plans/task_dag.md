@@ -2173,6 +2173,8 @@ contract is [HTTP/JSON facades](../docs/grpc_services.md#httpjson-facades); what
 ```mermaid
 flowchart LR
     APP_API_GRPC_FACADE[Selected, unscheduled: uniform app gRPC APIs with generated HTTP facades]
+    SANDBOX_NOTIFICATION_SSE_RETIRE[Pending rollout: retire Sandbox notification SSE route]
+    SANDBOX_NOTIFICATION_VIEWMODEL[Follow-up: replace mirrored notification JSON display types]
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
     WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
 ```
@@ -2215,6 +2217,23 @@ replaced route/type-generation paths are removed, and remaining protocol-specifi
 listed with reasons. Focused API/browser tests cover ordinary calls, authorization denials,
 idempotency and ambiguous outcomes, and stream reconnects. Each migration records its rollout and
 rollback; update the app's contract documentation as behavior changes.
+
+### `SANDBOX_NOTIFICATION_SSE_RETIRE` — retire the cached-browser route
+
+**Pending rollout.** The generated Sandbox notification watch retains the old
+`/sandboxes/{name}/notifications/stream` SSE route for browser bundles cached during a rolling app
+deployment. Remove that route, its native gRPC relay and its route-specific tests after the new
+bundle is deployed, the cached-bundle and rollback windows close, and the new generated watch is
+confirmed through the app. During overlap, a new browser switches to the old SSE route if an old app
+replica returns 404 for the generated route; an old browser needs the SSE route on new replicas.
+
+### `SANDBOX_NOTIFICATION_VIEWMODEL` — replace mirrored notification JSON display types
+
+**Follow-up after the generated watch lands.** `app/frontend/notification_types.ts` still mirrors
+the JSON shape of `SandboxNotificationStatus`, and `notification_status.tsx` converts a generated
+message back to that shape for the existing display and visual harness. Move the display to generated
+message types with narrow presentation helpers, update the harness fixtures, then delete the mirrored
+field and enum contracts. Keep the oneof and timestamp behavior explicit in the display.
 
 ### `HISTORY_READS_FACADE` — History reads as a generated browser API
 

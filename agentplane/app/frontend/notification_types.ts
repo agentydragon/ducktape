@@ -4,7 +4,7 @@
  * names, int64 is a string, a Timestamp is RFC 3339, and a message or `optional` field the service did not set
  * has no key. A field is required here when the service always sets it.
  *
- * This is the app's UID-resolving Sandbox SSE projection; Thread notices use generated protobuf types.
+ * The watch frame is parsed with the generated protobuf schema before this display projection is used.
  */
 
 type Timestamp = string;

@@ -11,7 +11,9 @@ export interface WatchHandlers {
   /** A response was accepted: the frames that follow replay the watch's state from its start. */
   onOpen: () => void;
   /** The `result` of one message. Throwing ends the connection. */
-  onFrame: (result: unknown) => void;
+  onFrame: (result: unknown) => void | "reconnect";
+  /** Called when an old app replica does not yet serve this watch route. */
+  onNotFound?: () => void;
   /** Called with the opening `connecting` at once, then on every change. */
   onConnection: (connection: StreamConnection) => void;
   /** Bounds a watch that opens but never sends its initial snapshot. */
@@ -43,7 +45,7 @@ function results(): TransformStream<string, unknown> {
 /** Follows `url` until the returned function is called. */
 export function followWatch(
   url: string,
-  { onOpen, onFrame, onConnection, initialFrameTimeoutMs }: WatchHandlers
+  { onOpen, onFrame, onConnection, initialFrameTimeoutMs, onNotFound }: WatchHandlers
 ): () => void {
   return followResponse(url, {
     accept: "application/x-ndjson",
@@ -51,6 +53,7 @@ export function followWatch(
     onOpen,
     onFrame,
     onConnection,
+    onNotFound,
     initialFrameTimeoutMs,
   });
 }

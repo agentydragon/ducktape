@@ -1,9 +1,11 @@
 /** Read-only operator projection: curated entry summaries, no raw provider payloads or acknowledgement controls. */
 import { Accordion, Divider, Drawer, Group, Paper, ScrollArea, Select, Stack, Text } from "@mantine/core";
+import { fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 import { useEffect, useState, type JSX } from "react";
 
 import { clockTime, isoTime, timeAgo } from "./format_time";
 import { followStream } from "./live_stream";
+import { followWatch } from "./watch_stream";
 import { type StreamConnection } from "./stream_reader";
 import type {
   GitHubSubject,
@@ -12,6 +14,10 @@ import type {
   SourceObservation,
   SubscriptionStatus,
 } from "./notification_types";
+import {
+  SandboxNotificationStatusSchema,
+  WatchSandboxNotificationsResponseSchema,
+} from "../../notification_service/notifications_operator_pb";
 
 type SubscriptionState = "active" | "expired" | "cancelled";
 type SubscriptionFilter = "not-cancelled" | SubscriptionState | "all";
@@ -94,19 +100,59 @@ export function NotificationStatus({
     if (!opened) return;
     setData(null);
     setError(null);
-    return followStream(`/sandboxes/${encodeURIComponent(sandbox)}/notifications/stream`, {
-      events: {
-        snapshot: (message) => {
-          try {
+    let firstOpen = true;
+    let stop: () => void = () => {};
+    let usingLegacy = false;
+    const startLegacy = () => {
+      if (usingLegacy) return;
+      usingLegacy = true;
+      stop();
+      // A new bundle can hit an old replica during a rolling deployment.
+      stop = followStream(`/sandboxes/${encodeURIComponent(sandbox)}/notifications/stream`, {
+        events: {
+          snapshot: (message) => {
             setData(JSON.parse(message.data) as SandboxNotificationStatus);
             setError(null);
-          } catch {
+          },
+        },
+        onConnection: setConnection,
+      });
+    };
+    stop = followWatch(
+      `/upstream/notifications/v1/operator/sandboxes/${encodeURIComponent(sandbox)}/notifications:watch`,
+      {
+        initialFrameTimeoutMs: 5_000,
+        onNotFound: startLegacy,
+        onOpen: () => {
+          if (firstOpen) setData(null);
+          firstOpen = false;
+        },
+        onFrame: (json) => {
+          try {
+            const response = fromJson(WatchSandboxNotificationsResponseSchema, json as JsonValue);
+            if (response.frame.case === "snapshot") {
+              // Keep the display's JSON projection while the wire contract and frame validation
+              // come from the generated protobuf schema.
+              setData(
+                toJson(SandboxNotificationStatusSchema, response.frame.value, {
+                  alwaysEmitImplicit: true,
+                }) as unknown as SandboxNotificationStatus
+              );
+              setError(null);
+            } else if (response.frame.case === "reconnectRequired") {
+              return "reconnect";
+            } else {
+              throw new Error("Notification watch returned no frame");
+            }
+          } catch (reason) {
             setError("Invalid notification status snapshot");
+            throw reason;
           }
         },
-      },
-      onConnection: setConnection,
-    });
+        onConnection: setConnection,
+      }
+    );
+    return () => stop();
   }, [opened, sandbox]);
   const observedAt = data?.observedAt;
   const inboxes =

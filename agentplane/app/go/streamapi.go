@@ -113,6 +113,9 @@ func RegisterStreamingRoutes(server *HTTPServer, dependencies StreamingDependenc
 	server.RegisterRawRoute("GET /live/sandboxes/{name}/egress/decisions", http.HandlerFunc(routes.liveDecisions), false)
 	server.RegisterRawRoute("GET /threads/{thread_id}/events/stream", http.HandlerFunc(routes.threadEvents), false)
 	server.RegisterRawRoute("GET /upstream/notifications/v1/operator/notices:watch", http.HandlerFunc(routes.notificationFacade), true)
+	server.RegisterRawRoute("GET /upstream/notifications/v1/operator/sandboxes/{name}/notifications:watch", http.HandlerFunc(routes.sandboxNotificationFacade), true)
+	// Cached browser bundles still call this SSE route during the rolling migration.
+	// Retire it under SANDBOX_NOTIFICATION_SSE_RETIRE in plans/task_dag.md.
 	server.RegisterRawRoute("GET /sandboxes/{name}/notifications/stream", http.HandlerFunc(routes.sandboxNotifications), true)
 	server.RegisterRawRoute("GET /sandboxes/{name}/console/stream", http.HandlerFunc(routes.console), true)
 	for _, method := range []string{http.MethodGet, http.MethodPost} {
@@ -736,6 +739,32 @@ func (r *streamingRoutes) notificationFacade(w http.ResponseWriter, request *htt
 	forwarded := request.Clone(ctx)
 	forwarded.URL.RawQuery = query.Encode()
 	r.forwardFacade(w, forwarded, ctx, r.deps.NotificationHTTP, "v1/operator/notices:watch", "")
+}
+
+// The generated watch requires a UID. Resolve it here on every connection so the browser
+// cannot select a previous incarnation of a Sandbox by supplying its own UID.
+func (r *streamingRoutes) sandboxNotificationFacade(w http.ResponseWriter, request *http.Request) {
+	if r.deps.Sandboxes == nil || r.deps.NotificationHTTP == nil {
+		writeDetailError(w, http.StatusServiceUnavailable, "Notification Service is not configured")
+		return
+	}
+	ctx, cancel, err := r.operatorLifetime(request)
+	if err != nil {
+		writeDetailError(w, http.StatusForbidden, "operator login required")
+		return
+	}
+	defer cancel()
+	sandbox, err := r.deps.Sandboxes.Get(ctx, request.PathValue("name"))
+	if err != nil {
+		_ = sandboxHTTPErrorToRaw(w, err)
+		return
+	}
+	forwarded := request.Clone(ctx)
+	query := url.Values{}
+	query.Set("uid", sandbox.GetUid())
+	forwarded.URL.RawQuery = query.Encode()
+	path := "v1/operator/sandboxes/" + sandbox.GetNamespace() + "/" + sandbox.GetName() + "/notifications:watch"
+	r.forwardFacade(w, forwarded, ctx, r.deps.NotificationHTTP, path, "")
 }
 
 func (r *streamingRoutes) relayNotificationStream(w http.ResponseWriter, ctx context.Context, label string, recv func() (proto.Message, error), snapshot func(proto.Message) (proto.Message, bool), firstWait time.Duration) {

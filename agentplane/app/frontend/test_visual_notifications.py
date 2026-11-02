@@ -89,7 +89,7 @@ async def test_notification_drawer_updates_without_reopening(view: VisualPage, a
     page = view.page
     await page.get_by_role("button", name="Notifications", exact=True).click()
     await expect(page.get_by_text("Entries after acknowledgement · 5 not acknowledged")).to_be_visible()
-    await app.publish(Flag.NOTIFICATION_EXTRA_ENTRY, "/notifications/stream")
+    await app.publish(Flag.NOTIFICATION_EXTRA_ENTRY, "/notifications:watch")
     await expect(page.get_by_text("Entries after acknowledgement · 6 not acknowledged")).to_be_visible()
     await expect(page.get_by_text("GitHub workflow_run · completed")).to_be_visible()
 

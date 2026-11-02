@@ -28,7 +28,9 @@ function follow(): void {
   stop = followResponse("/test/stream", {
     accept: "text/plain",
     frames: (body) => body,
-    onFrame: (frame) => frames.push(frame),
+    onFrame: (frame) => {
+      frames.push(frame);
+    },
     onConnection: (connection) => connections.push(connection),
   });
 }
@@ -78,7 +80,9 @@ it("reconnects when a watch never sends its first frame, then leaves a live watc
     accept: "text/plain",
     frames: (body) => body,
     initialFrameTimeoutMs: 5_000,
-    onFrame: (frame) => frames.push(frame),
+    onFrame: (frame) => {
+      frames.push(frame);
+    },
     onConnection: (connection) => connections.push(connection),
   });
   await settle();
