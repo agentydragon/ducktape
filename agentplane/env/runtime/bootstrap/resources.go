@@ -20,6 +20,7 @@ const (
 	StatusType         = "BootstrapStatuses.agentplane"
 	OperationStateType = "BootstrapOperationStates.agentplane"
 	SelectionType      = "BootstrapSelections.agentplane"
+	EventType          = "BootstrapEvents.agentplane"
 	ControllerName     = "bootstrap-lifecycle"
 	ResourceID         = "bootstrap"
 	HostOwner          = "bootstrap-host"

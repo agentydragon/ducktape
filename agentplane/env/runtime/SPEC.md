@@ -11,9 +11,15 @@ owns Session records, journals and native harnesses under Runtime's environment 
 Runtime stores the exact selected bootstrap script (1–65536 bytes) as a durable
 `BootstrapSelections` COSI resource in `StateDir/runtime-resources.db`. It commits the
 selection before launching the script and runs those selected bytes. Subsequent requests must
-match byte for byte. `StateDir/initialization/events.jsonl` remains the authority for output and
-terminal result. A selection without a terminal event is interrupted on restart, including when
-the crash happened before process launch; Runtime never retries that uncertain attempt.
+match byte for byte. Each stdout or stderr chunk and the terminal result are separate durable
+protobuf `BootstrapEvents` COSI resources in the same database, keyed by their dense sequence.
+Replay orders by the sequence field and rejects gaps or events after the terminal event. The final
+result or interruption event is the authority for the attempt's outcome; live `BootstrapStatuses`
+are a projection of it. A selection without a terminal event is interrupted on restart, including
+when the crash happened before process launch; Runtime never retries that uncertain attempt.
+Output is retained in full without a byte limit or truncation. Runtime appends each script-runner
+chunk (up to 64 KiB) as one resource, so storage writes do not rewrite the existing output prefix.
+Resource count and restart memory remain proportional to output volume.
 `BootstrapRequests` admission and all process observations are live-only COSI resources.
 
 Runtime opens `StateDir/.agentplane-environment-runtime-owner` and holds it locked for its lifetime.

@@ -1,205 +1,206 @@
 package bootstrap
 
 import (
-	"bufio"
-	"bytes"
+	"context"
 	"errors"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
+	"sort"
 	"sync"
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"google.golang.org/protobuf/encoding/protojson"
+	"github.com/cosi-project/runtime/pkg/controller"
+	"github.com/cosi-project/runtime/pkg/safe"
+	"github.com/cosi-project/runtime/pkg/state"
 	"google.golang.org/protobuf/proto"
 )
 
-// Log is the append-only, newline-delimited protobuf JSON log for the
-// Sandbox's one bootstrap attempt.
+// Log is the durable, ordered event sequence for the Sandbox's one bootstrap attempt.
+// The writer only creates resources, so appending output never rewrites its prefix.
 type Log struct {
-	path   string
-	file   *os.File
-	mu     sync.Mutex
-	events []*sessionpb.InitializationEvent
+	state        state.State
+	mu           sync.Mutex
+	lastSequence uint64
+	ended        bool
+	poisoned     error
 }
 
-func OpenLog(path string) (*Log, error) {
-	log := &Log{path: path}
-	created := false
-	if _, err := os.Stat(path); err == nil {
-		if err := log.load(); err != nil {
-			return nil, err
-		}
-	} else {
-		if !errors.Is(err, os.ErrNotExist) {
-			return nil, err
-		}
-		created = true
-	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o666)
+func OpenLog(ctx context.Context, store state.State) (*Log, error) {
+	events, err := readEvents(ctx, store)
 	if err != nil {
 		return nil, err
 	}
-	if created {
-		directory, err := os.Open(filepath.Dir(path))
-		if err == nil {
-			err = directory.Sync()
-			err = errors.Join(err, directory.Close())
-		}
-		if err != nil {
-			return nil, errors.Join(err, file.Close())
-		}
+	log := &Log{state: store}
+	if len(events) > 0 {
+		log.lastSequence = events[len(events)-1].GetSequence()
+		log.ended = isTerminalEvent(events[len(events)-1])
 	}
-	log.file = file
 	return log, nil
-}
-
-func (l *Log) load() error {
-	data, err := os.ReadFile(l.path)
-	if err != nil {
-		return err
-	}
-	reader := bufio.NewReader(bytes.NewReader(data))
-	offset := 0
-	for {
-		raw, readErr := reader.ReadBytes('\n')
-		if len(raw) == 0 && errors.Is(readErr, io.EOF) {
-			return nil
-		}
-		line := bytes.TrimSpace(raw)
-		if len(line) > 0 {
-			event := &sessionpb.InitializationEvent{}
-			parseErr := protojson.UnmarshalOptions{}.Unmarshal(line, event)
-			if parseErr != nil {
-				incompleteTail := errors.Is(readErr, io.EOF) && len(raw) > 0 && raw[len(raw)-1] != '\n' && offset+len(raw) == len(data)
-				if !incompleteTail {
-					return fmt.Errorf("corrupt initialization log %s at byte %d: %w", l.path, offset, parseErr)
-				}
-				file, err := os.OpenFile(l.path, os.O_WRONLY, 0)
-				if err != nil {
-					return err
-				}
-				truncateErr := file.Truncate(int64(offset))
-				syncErr := file.Sync()
-				closeErr := file.Close()
-				return errors.Join(truncateErr, syncErr, closeErr)
-			}
-			l.events = append(l.events, event)
-		}
-		offset += len(raw)
-		if errors.Is(readErr, io.EOF) {
-			return nil
-		}
-		if readErr != nil {
-			return readErr
-		}
-	}
 }
 
 func (l *Log) LastSequence() uint64 {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if len(l.events) == 0 {
-		return 0
-	}
-	return l.events[len(l.events)-1].GetSequence()
+	return l.lastSequence
 }
 
 func (l *Log) Ended() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if len(l.events) == 0 {
-		return false
-	}
-	observation := l.events[len(l.events)-1].ProtoReflect().WhichOneof(
-		l.events[len(l.events)-1].ProtoReflect().Descriptor().Oneofs().ByName("observation"),
-	)
-	return observation != nil && (observation.Name() == "result" || observation.Name() == "interrupted")
+	return l.ended
 }
 
-func (l *Log) Since(afterSequence uint64) []*sessionpb.InitializationEvent {
+// Since returns the durable suffix after afterSequence in event sequence order.
+// COSI List order is unspecified, so ordering is derived from the persisted sequence field.
+func (l *Log) Since(ctx context.Context, afterSequence uint64) ([]*sessionpb.InitializationEvent, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if afterSequence >= uint64(len(l.events)) {
-		return []*sessionpb.InitializationEvent{}
+	if l.poisoned != nil {
+		return nil, fmt.Errorf("bootstrap event sequence is unavailable after uncertain write: %w", l.poisoned)
 	}
-	result := make([]*sessionpb.InitializationEvent, 0, len(l.events)-int(afterSequence))
-	for _, event := range l.events[afterSequence:] {
-		result = append(result, proto.Clone(event).(*sessionpb.InitializationEvent))
+	events, err := readEvents(ctx, l.state)
+	if err != nil {
+		return nil, err
 	}
-	return result
+	result := make([]*sessionpb.InitializationEvent, 0, len(events))
+	for _, event := range events {
+		if event.GetSequence() > afterSequence {
+			result = append(result, proto.Clone(event).(*sessionpb.InitializationEvent))
+		}
+	}
+	return result, nil
 }
 
-func (l *Log) AppendOutput(attempt uint32, stream sessionpb.InitializationStream, data []byte) error {
-	event := &sessionpb.InitializationEvent{
+func readEvents(ctx context.Context, reader controller.Reader) ([]*sessionpb.InitializationEvent, error) {
+	rows, err := safe.ReaderListAll[*EventResource](ctx, reader)
+	if err != nil {
+		return nil, err
+	}
+	events := make([]*sessionpb.InitializationEvent, 0, rows.Len())
+	var validationErr error
+	rows.ForEach(func(value *EventResource) {
+		if validationErr != nil {
+			return
+		}
+		if err := validateEventResource(value); err != nil {
+			validationErr = err
+			return
+		}
+		events = append(events, proto.Clone(value.TypedSpec().Value.Event).(*sessionpb.InitializationEvent))
+	})
+	if validationErr != nil {
+		return nil, validationErr
+	}
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].GetSequence() < events[j].GetSequence()
+	})
+	for i, event := range events {
+		want := uint64(i) + 1
+		if event.GetSequence() != want {
+			return nil, fmt.Errorf("bootstrap event sequence has a gap: got %d, want %d", event.GetSequence(), want)
+		}
+		if i < len(events)-1 && isTerminalEvent(event) {
+			return nil, fmt.Errorf("bootstrap event sequence continues after terminal event %d", event.GetSequence())
+		}
+	}
+	return events, nil
+}
+
+func (l *Log) AppendOutput(ctx context.Context, attempt uint32, stream sessionpb.InitializationStream, data []byte) error {
+	if len(data) == 0 {
+		return errors.New("bootstrap output event is empty")
+	}
+	if stream != sessionpb.InitializationStream_INITIALIZATION_STREAM_STDOUT && stream != sessionpb.InitializationStream_INITIALIZATION_STREAM_STDERR {
+		return fmt.Errorf("unknown bootstrap output stream %d", stream)
+	}
+	return l.append(ctx, attempt, &sessionpb.InitializationEvent{
 		Attempt: attempt,
 		Observation: &sessionpb.InitializationEvent_Output{Output: &sessionpb.InitializationOutput{
 			Stream: stream, Data: append([]byte(nil), data...),
 		}},
-	}
-	return l.append(event)
+	})
 }
 
-func (l *Log) AppendResult(attempt uint32, exitCode int32) (*sessionpb.InitializeResult, error) {
+func (l *Log) AppendResult(ctx context.Context, attempt uint32, exitCode int32) (*sessionpb.InitializeResult, error) {
 	result := &sessionpb.InitializeResult{Executed: true, ExitCode: exitCode}
 	event := &sessionpb.InitializationEvent{
 		Attempt:     attempt,
 		Observation: &sessionpb.InitializationEvent_Result{Result: proto.Clone(result).(*sessionpb.InitializeResult)},
 	}
-	if err := l.append(event); err != nil {
+	if err := l.append(ctx, attempt, event); err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
-func (l *Log) AppendInterrupted(attempt uint32) error {
-	return l.append(&sessionpb.InitializationEvent{
+func (l *Log) AppendInterrupted(ctx context.Context, attempt uint32) error {
+	return l.append(ctx, attempt, &sessionpb.InitializationEvent{
 		Attempt:     attempt,
 		Observation: &sessionpb.InitializationEvent_Interrupted{Interrupted: &sessionpb.InitializationInterrupted{}},
 	})
 }
 
-func (l *Log) append(event *sessionpb.InitializationEvent) error {
+func (l *Log) append(ctx context.Context, attempt uint32, event *sessionpb.InitializationEvent) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.file == nil {
-		return errors.New("initialization log is closed")
+	if l.ended {
+		return errors.New("bootstrap event sequence is terminal")
 	}
-	if len(l.events) > 0 {
-		event.Sequence = l.events[len(l.events)-1].GetSequence() + 1
-	} else {
-		event.Sequence = 1
+	if l.poisoned != nil {
+		return fmt.Errorf("bootstrap event sequence is unavailable after uncertain write: %w", l.poisoned)
 	}
-	data, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(event)
-	if err != nil {
+	if attempt != 1 {
+		return fmt.Errorf("bootstrap attempt is %d, want 1", attempt)
+	}
+	if l.lastSequence == ^uint64(0) {
+		return errors.New("bootstrap event sequence overflow")
+	}
+	event.Sequence = l.lastSequence + 1
+	if err := validateEventObservation(event); err != nil {
 		return err
 	}
-	data = append(data, '\n')
-	for len(data) > 0 {
-		written, err := l.file.Write(data)
-		if err != nil {
-			return err
-		}
-		if written == 0 {
-			return io.ErrShortWrite
-		}
-		data = data[written:]
-	}
-	if err := l.file.Sync(); err != nil {
+	target := EventResourceValue(event)
+	if err := l.state.Create(ctx, target, state.WithCreateOwner(HostOwner)); err != nil {
+		// COSI persists before publishing to its in-memory state. A failed Put can therefore
+		// have committed durably while remaining invisible to ReaderGet. Never write another
+		// event at this sequence until restart has reconstructed the durable log.
+		l.poisoned = err
 		return err
 	}
-	l.events = append(l.events, proto.Clone(event).(*sessionpb.InitializationEvent))
+	l.recordAppend(event)
 	return nil
 }
 
-func (l *Log) Close() error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.file == nil {
-		return nil
+func (l *Log) recordAppend(event *sessionpb.InitializationEvent) {
+	l.lastSequence = event.GetSequence()
+	l.ended = isTerminalEvent(event)
+}
+
+func validateEventObservation(event *sessionpb.InitializationEvent) error {
+	if event == nil || event.GetAttempt() != 1 {
+		return errors.New("bootstrap event must belong to attempt 1")
 	}
-	file := l.file
-	l.file = nil
-	return file.Close()
+	switch observation := event.GetObservation().(type) {
+	case *sessionpb.InitializationEvent_Output:
+		if observation.Output == nil || len(observation.Output.Data) == 0 {
+			return errors.New("bootstrap output event is empty")
+		}
+		if observation.Output.Stream != sessionpb.InitializationStream_INITIALIZATION_STREAM_STDOUT && observation.Output.Stream != sessionpb.InitializationStream_INITIALIZATION_STREAM_STDERR {
+			return fmt.Errorf("unknown bootstrap output stream %d", observation.Output.Stream)
+		}
+	case *sessionpb.InitializationEvent_Result:
+		if observation.Result == nil || !observation.Result.Executed {
+			return errors.New("bootstrap result event is incomplete")
+		}
+	case *sessionpb.InitializationEvent_Interrupted:
+		if observation.Interrupted == nil {
+			return errors.New("bootstrap interrupted event is incomplete")
+		}
+	default:
+		return errors.New("bootstrap event has no observation")
+	}
+	return nil
+}
+
+func isTerminalEvent(event *sessionpb.InitializationEvent) bool {
+	return event.GetResult() != nil || event.GetInterrupted() != nil
 }

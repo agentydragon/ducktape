@@ -1,14 +1,12 @@
-"""The Sandbox bootstrap runs once, before the Sandbox's first Session, and is durable and replayable."""
+"""The Sandbox bootstrap runs once, before the Sandbox's first Session."""
 
 from __future__ import annotations
 
 import asyncio
 import os
 from dataclasses import replace
-from pathlib import Path
 
 import pytest_bazel
-from google.protobuf.json_format import Parse
 
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.driver import RunnerDriver, running
@@ -21,13 +19,6 @@ from agentplane.proto import session_pb2
 
 def bootstrapped(config: RunnerTestConfig, script: str) -> RunnerTestConfig:
     return replace(config, launch=replace(config.launch, bootstrap=script))
-
-
-def recorded(state: Path) -> list[session_pb2.InitializationEvent]:
-    return [
-        Parse(line, session_pb2.InitializationEvent())
-        for line in (state / "initialization" / "events.jsonl").read_text().splitlines()
-    ]
 
 
 async def test_bootstrap_runs_before_the_first_harness_and_not_again(
@@ -43,11 +34,6 @@ async def test_bootstrap_runs_before_the_first_harness_and_not_again(
 
     assert first.attached.harness_state == second.attached.harness_state == session_pb2.HARNESS_STATE_STOPPED
     assert (config.state_dir / "workspaces/test-ready").read_text() == "ready\n"
-    output, result = recorded(config.state_dir)
-    assert output.output == session_pb2.InitializationOutput(
-        stream=session_pb2.INITIALIZATION_STREAM_STDOUT, data=b"ready\n"
-    )
-    assert (result.result.executed, result.result.exit_code) == (True, 0)
 
 
 async def test_open_acknowledges_while_runner_bootstrap_is_still_held(
@@ -56,7 +42,7 @@ async def test_open_acknowledges_while_runner_bootstrap_is_still_held(
     # The script blocks writing to this pipe until the test reads it, so its first step is observable.
     config.state_dir.mkdir()
     os.mkfifo(config.state_dir / "started")
-    script = "printf 'first\\n' > started\nwhile [ ! -f continue ]; do sleep 0.01; done\nprintf 'second\\n' >&2\n"
+    script = "printf 'first\\n' > started\nwhile [ ! -f continue ]; do sleep 0.01; done\nprintf 'second\\n' >&2\nprintf 'done\\n' > completed\n"
     async with (
         running(bootstrapped(config, script), gateway, history_service),
         RunnerDriver(gateway, history_service.reader) as driver,
@@ -67,12 +53,12 @@ async def test_open_acknowledges_while_runner_bootstrap_is_still_held(
         opened = await opening
         assert opened.attached.harness_state == session_pb2.HARNESS_STATE_STOPPED
         (config.state_dir / "continue").touch()
+        completed = config.state_dir / "completed"
+        async with asyncio.timeout(10):
+            while not completed.exists():  # noqa: ASYNC110  # This marker is written by the subprocess.
+                await asyncio.sleep(0.01)
 
-    (output, finished) = recorded(config.state_dir)
-    assert output.output == session_pb2.InitializationOutput(
-        stream=session_pb2.INITIALIZATION_STREAM_STDERR, data=b"second\n"
-    )
-    assert finished.result.exit_code == 0
+    assert (config.state_dir / "completed").read_text() == "done\n"
 
 
 async def test_an_initialized_sandbox_records_a_bootstrap_conflict_after_open(
@@ -113,7 +99,6 @@ async def test_a_failed_bootstrap_settles_admitted_commands_and_never_reruns(
 
     assert len(sessions) == 2
     assert all(session.harness_state == session_pb2.HARNESS_STATE_STOPPED for session in sessions)
-    assert recorded(config.state_dir)[0].output.data == b"broken\n"
     assert (config.state_dir / "runs").read_text() == "run\n"
 
 

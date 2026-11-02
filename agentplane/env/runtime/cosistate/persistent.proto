@@ -11,6 +11,11 @@ message BootstrapSelectionSpec {
   bytes script = 1;
 }
 
+message BootstrapEventSpec {
+  // One ordered output or terminal observation from the Sandbox's single bootstrap attempt.
+  .agentplane.proto.InitializationEvent event = 1;
+}
+
 message SessionRecordSpec {
   .agentplane.proto.Harness harness = 1;
   string cwd = 2;
