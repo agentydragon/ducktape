@@ -62,10 +62,6 @@ def _yahoo_frame(source: sources.EvidenceSource, *, minimum_samples: int = 36) -
     return loading.yahoo_adjusted_close_frame(_source_bytes(source), source, minimum_samples=minimum_samples)
 
 
-def _zillow_frame(source: sources.EvidenceSource, *, region_name: str, state: str) -> pl.DataFrame:
-    return loading.zillow_city_series_frame(_source_bytes(source), source, region_name=region_name, state=state)
-
-
 MONTHS_PER_YEAR = 12
 MIN_MONTHLY_LOG_MU_SIGMA = 0.005 / MONTHS_PER_YEAR
 MIN_MONTHLY_LOG_VOL_SIGMA = 0.01 / math.sqrt(MONTHS_PER_YEAR)
@@ -238,12 +234,18 @@ def load_exogenous_evidence() -> ExogenousEvidence:
     # Home-value and rent evidence stay keyed by LocationId (their role-natural key); the
     # flat series wire ids (HomeValueKey/RentKey .wire_id) are derived only at the matrix/JSON
     # boundaries below.
+    home_table = loading.zillow_city_table(_source_bytes(sources.ZILLOW_ZHVI), sources.ZILLOW_ZHVI)
+    rent_table = loading.zillow_city_table(_source_bytes(sources.ZILLOW_ZORI), sources.ZILLOW_ZORI)
     home_values = {
-        location_id: _zillow_frame(sources.ZILLOW_ZHVI, region_name=region_name, state=state)
+        location_id: loading.zillow_city_series_frame(
+            home_table, sources.ZILLOW_ZHVI, region_name=region_name, state=state
+        )
         for location_id, (region_name, state) in ZILLOW_HOME_VALUE_REGIONS.items()
     }
     rents = {
-        location_id: _zillow_frame(sources.ZILLOW_ZORI, region_name=region_name, state=state)
+        location_id: loading.zillow_city_series_frame(
+            rent_table, sources.ZILLOW_ZORI, region_name=region_name, state=state
+        )
         for location_id, (region_name, state) in ZILLOW_RENT_REGIONS.items()
     }
     home_series_key = {location_id: HomeValueKey(location_id=location_id) for location_id in home_values}

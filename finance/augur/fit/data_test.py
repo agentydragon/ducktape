@@ -70,5 +70,24 @@ def test_full_evidence_anchors_preserve_actual_source_units(synthetic_evidence_d
     assert evidence.metadata.return_sources
 
 
+def test_full_evidence_reads_each_zillow_table_once_for_all_cities(
+    monkeypatch: pytest.MonkeyPatch, synthetic_evidence_dir: Path
+) -> None:
+    original = evidence_data._source_bytes
+    reads: list[sources.EvidenceSource] = []
+
+    def track(source: sources.EvidenceSource) -> bytes:
+        reads.append(source)
+        return original(source)
+
+    monkeypatch.setattr(evidence_data, "_source_bytes", track)
+    _, evidence = load_evidence()
+    assert reads.count(sources.ZILLOW_ZHVI) == 1
+    assert reads.count(sources.ZILLOW_ZORI) == 1
+    home = [point.value for key, point in evidence.latest_observations.items() if isinstance(key, HomeValueKey)]
+    assert len(home) == 2
+    assert home[0] != home[1]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

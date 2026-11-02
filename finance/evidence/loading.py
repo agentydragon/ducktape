@@ -199,18 +199,29 @@ def evidence_series_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
                 return french_international_market_frame(data, source)
             raise ValueError(f"no evidence frame parser for French source {source.provenance_label}")
         case EvidenceKind.ZILLOW:
-            raise ValueError(f"{source.provenance_label}: Zillow needs city and state selection")
+            return zillow_city_table(data, source)
         case _ as unreachable:
             assert_never(unreachable)
 
 
-def zillow_city_series_frame(data: bytes, source: EvidenceSource, *, region_name: str, state: str) -> pl.DataFrame:
-    """One Zillow city's monthly `(month, value)` series.
+def zillow_city_table(data: bytes, source: EvidenceSource) -> pl.DataFrame:
+    """Parse Zillow's source-wide city table once, before choosing any city."""
+    frame = pl.read_csv(data, infer_schema=False)
+    required = {"RegionType", "RegionName", "State"}
+    missing = required - set(frame.columns)
+    if missing:
+        raise ValueError(f"{source.provenance_label} city table is missing columns: {sorted(missing)}")
+    return frame
+
+
+def zillow_city_series_frame(
+    frame: pl.DataFrame, source: EvidenceSource, *, region_name: str, state: str
+) -> pl.DataFrame:
+    """Select one Zillow city's monthly `(month, value)` series.
 
     The Zillow city CSV is wide (a row per region, a column per month named YYYY-MM-DD); take the one
     city row, unpivot its date columns into rows, truncate each to its month, and keep positive values.
     """
-    frame = pl.read_csv(data, infer_schema=False)
     date_columns = [c for c in frame.columns if len(c) == 10 and c[4] == "-" and c[7] == "-"]
     row = frame.filter(
         (pl.col("RegionType") == "city") & (pl.col("RegionName") == region_name) & (pl.col("State") == state)
