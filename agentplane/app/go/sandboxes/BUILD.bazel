@@ -8,7 +8,6 @@ go_library(
         "console.go",
         "errors.go",
         "inventory.go",
-        "views.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/app/go/sandboxes",
     deps = [
@@ -16,6 +15,7 @@ go_library(
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/sandboxreader",
+        "//agentplane/sandboxes/view",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
@@ -44,6 +44,7 @@ go_test(
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/sandboxes/api",
+        "//agentplane/sandboxes/view",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",

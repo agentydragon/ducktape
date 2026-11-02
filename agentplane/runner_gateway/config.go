@@ -40,6 +40,7 @@ type config struct {
 	RunnerControlTargetTemplate string                                 `mapstructure:"runner_control_target_template"`
 	DispatcherAudience          string                                 `mapstructure:"dispatcher_audience"`
 	GatewayAudience             string                                 `mapstructure:"gateway_audience"`
+	EnvironmentReaders          []auth.Account                         `mapstructure:"environment_readers"`
 	DispatcherCallers           []auth.Account                         `mapstructure:"dispatcher_callers"`
 	Delegation                  *delegationConfig                      `mapstructure:"delegation"`
 	GatewayCallers              []auth.Account                         `mapstructure:"gateway_callers"`
@@ -143,6 +144,11 @@ func (c *config) validate() error {
 	} {
 		if positive.value < 1 {
 			return fmt.Errorf("%s must be positive", positive.name)
+		}
+	}
+	for _, account := range c.EnvironmentReaders {
+		if account.Namespace == "" || account.Name == "" {
+			return errors.New("environment_readers requires namespace and name")
 		}
 	}
 	for _, account := range c.WakeCallers {

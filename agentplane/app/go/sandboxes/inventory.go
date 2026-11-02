@@ -14,6 +14,7 @@ import (
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
+	sandboxview "github.com/agentydragon/ducktape/agentplane/sandboxes/view"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -27,7 +28,7 @@ import (
 
 const (
 	CreateIntentAnnotation = "agentplane.allegedly.works/create-intent"
-	PresetLabel            = "agentplane.allegedly.works/preset"
+
 	maxBootstrapCharacters = 65_536
 	mutationAttempts       = 5
 )
@@ -92,7 +93,7 @@ func (a *Access) ListSandboxes(ctx context.Context) ([]*sandboxespb.Sandbox, err
 				pod = candidate
 			}
 		}
-		view, err := sandboxView(resource, pod)
+		view, err := sandboxview.View(resource, pod)
 		if err != nil {
 			return nil, fmt.Errorf("view Sandbox %q: %w", resource.Name, err)
 		}
@@ -133,7 +134,7 @@ func (a *Access) Get(ctx context.Context, name string) (*sandboxespb.Sandbox, er
 			pod = candidate
 		}
 	}
-	return sandboxView(resource, pod)
+	return sandboxview.View(resource, pod)
 }
 
 // Create validates and creates a running Sandbox, applying the process defaults and recording an
@@ -412,7 +413,7 @@ func sandboxForCreate(
 	annotations := map[string]string{CreateIntentAnnotation: intent}
 	labels := map[string]string{}
 	if request.Preset != nil {
-		labels[PresetLabel] = request.GetPreset()
+		labels[sandboxview.PresetLabel] = request.GetPreset()
 	}
 	inboxTags := uniqueSorted(request.GetInboxTags())
 	resource := &sandboxapi.Sandbox{

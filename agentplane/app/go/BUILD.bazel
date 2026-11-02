@@ -63,6 +63,7 @@ go_library(
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/runtimeconfig",
+        "//agentplane/sandboxes/view",
         "//agentplane/watchhealth",
         "//util/netlistener",
         "@com_github_danielgtaylor_huma_v2//:huma",

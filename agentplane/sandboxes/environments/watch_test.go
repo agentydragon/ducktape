@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
@@ -20,6 +21,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -49,6 +51,7 @@ type watchFixture struct {
 	target       *environmentpb.TargetHandle
 	ctx          context.Context
 	metadataRead <-chan struct{}
+	readerCtx    context.Context
 }
 
 func newWatchFixture(t *testing.T) watchFixture {
@@ -91,7 +94,11 @@ func newWatchFixture(t *testing.T) watchFixture {
 			return err
 		},
 	})
-	service, err := New(namespace, observedObjects, runtimeconfig.Catalog{}, nil)
+	readerAccount := auth.Account{Namespace: namespace, Name: "inventory-reader"}
+	if _, err := watchAPI.ServiceAccount(ctx, readerAccount); err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(namespace, observedObjects, runtimeconfig.Catalog{}, nil, map[auth.Account]struct{}{readerAccount: {}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,8 +113,13 @@ func newWatchFixture(t *testing.T) watchFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	readerToken, err := watchAPI.UnboundToken(ctx, readerAccount, dispatcherAudience)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return watchFixture{
-		objects: objects, rpc: environmentpb.NewEnvironmentServiceClient(connection),
+		readerCtx: metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken),
+		objects:   objects, rpc: environmentpb.NewEnvironmentServiceClient(connection),
 		target:       &environmentpb.TargetHandle{Namespace: namespace, Name: sandboxName, Uid: string(sandbox.UID)},
 		ctx:          metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token),
 		metadataRead: metadataRead,
@@ -339,5 +351,57 @@ func TestWatchEnvironmentClosesBothSourcesOnWatchLoss(t *testing.T) {
 				t.Fatal("first source was not stopped when watch ended")
 			}
 		})
+	}
+}
+
+func receiveCollection(t *testing.T, stream grpc.ServerStreamingClient[environmentpb.WatchEnvironmentsResponse]) []*sandboxespb.Sandbox {
+	t.Helper()
+	var found []*sandboxespb.Sandbox
+	for {
+		frame, err := stream.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch value := frame.Frame.(type) {
+		case *environmentpb.WatchEnvironmentsResponse_Snapshot:
+			found = append(found, value.Snapshot.Sandboxes...)
+		case *environmentpb.WatchEnvironmentsResponse_SnapshotComplete:
+			return found
+		default:
+			t.Fatalf("unexpected frame %v", frame)
+		}
+	}
+}
+
+func TestWatchEnvironmentsScopesAndIncludesSandboxesWithoutAccounts(t *testing.T) {
+	f := newWatchFixture(t)
+	other := sandboxObject("")
+	other.Namespace = f.target.Namespace
+	other.Name = "other"
+	if err := f.objects.Create(f.ctx, other); err != nil {
+		t.Fatal(err)
+	}
+	own, err := f.rpc.WatchEnvironments(f.ctx, &emptypb.Empty{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownRows := receiveCollection(t, own)
+	if len(ownRows) != 1 || ownRows[0].GetName() != sandboxName {
+		t.Fatalf("own snapshot = %v", ownRows)
+	}
+	all, err := f.rpc.WatchEnvironments(f.readerCtx, &emptypb.Empty{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allRows := receiveCollection(t, all)
+	if len(allRows) != 2 || allRows[0].GetName() != "other" || allRows[1].GetName() != sandboxName {
+		t.Fatalf("reader snapshot = %v", allRows)
+	}
+	if err := f.objects.Delete(f.ctx, other); err != nil {
+		t.Fatal(err)
+	}
+	after := receiveCollection(t, all)
+	if len(after) != 1 || after[0].GetName() != sandboxName {
+		t.Fatalf("after deletion = %v", after)
 	}
 }

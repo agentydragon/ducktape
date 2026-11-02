@@ -28,6 +28,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	sandboxview "github.com/agentydragon/ducktape/agentplane/sandboxes/view"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -312,7 +313,7 @@ func (r *streamingRoutes) produceSandboxDetail(ctx context.Context, key sandboxD
 		resource, pod := snapshotSandbox(snapshot, key.name)
 		var uid types.UID
 		if resource != nil {
-			projected, err := sandboxes.View(resource, pod)
+			projected, err := sandboxview.View(resource, pod)
 			if err != nil {
 				return err
 			}
@@ -400,7 +401,7 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 				continue
 			}
 		}
-		projected, err := sandboxes.View(resource, pod)
+		projected, err := sandboxview.View(resource, pod)
 		if err != nil {
 			return
 		}
@@ -557,7 +558,7 @@ func (r *streamingRoutes) sandboxViews(ctx context.Context) ([]SandboxView, watc
 		if incarnation := resource.Status.Incarnation; incarnation != nil {
 			pod = pods[resource.Namespace+"/"+incarnation.Name]
 		}
-		view, err := sandboxes.View(resource, pod)
+		view, err := sandboxview.View(resource, pod)
 		if err != nil {
 			return nil, watchHealthView{}, err
 		}

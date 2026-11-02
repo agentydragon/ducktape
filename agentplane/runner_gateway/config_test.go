@@ -151,7 +151,7 @@ runtime_catalog:
 		}},
 	}}
 	objects := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, executionAccount).Build()
-	service, err := environments.New("agentplane", objects, config.RuntimeCatalog, nil)
+	service, err := environments.New("agentplane", objects, config.RuntimeCatalog, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	sandboxview "github.com/agentydragon/ducktape/agentplane/sandboxes/view"
+
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -86,7 +88,7 @@ func TestListGetAndTemplatesUseCRDsAndOnlyJoinCurrentPodUID(t *testing.T) {
 		{Reason: sandboxapi.AutosuspendBlockerActiveTurn, SessionID: &activeSession},
 		{Reason: sandboxapi.AutosuspendBlockerBootstrap},
 	}
-	first.Labels = map[string]string{PresetLabel: "preset-a"}
+	first.Labels = map[string]string{sandboxview.PresetLabel: "preset-a"}
 	first.Status.Incarnation = &sandboxapi.Incarnation{Name: "alpha", UID: "pod-alpha"}
 	first.Status.Conditions = []metav1.Condition{{Type: sandboxapi.ConditionReady, Status: metav1.ConditionTrue, Reason: "PodReady"}}
 	missingPod := testSandbox("beta", "sandbox-beta", sandboxapi.OperatingModeRunning)
@@ -194,7 +196,7 @@ func TestCreateAppliesDefaultsAndCallerIntentAndIsIdempotent(t *testing.T) {
 		fmt.Sprint(stored.Spec.InboxTags) != "[team-a team-b]" || stored.Spec.IdleSuspendAfter.Duration != time.Minute {
 		t.Fatalf("stored create spec = %#v", stored.Spec)
 	}
-	if stored.Labels[PresetLabel] != preset || stored.Annotations[CreateIntentAnnotation] == "" {
+	if stored.Labels[sandboxview.PresetLabel] != preset || stored.Annotations[CreateIntentAnnotation] == "" {
 		t.Fatalf("stored metadata = %#v", stored.ObjectMeta)
 	}
 	wantIntent := `{"caller":{"name":"app","namespace":"test-sandboxes"},"request":{"bootstrap":"echo < start","idle_suspend_after":"60s","inbox_tags":["team-b","team-a","team-b"],"name":"created-sandbox","policy_sets":["extra-policy"],"preset":"selected-preset","template":"pod-template","wake_on_send":true}}`
@@ -432,7 +434,10 @@ func TestPythonJSONEscapingMatchesCreateIntentConvention(t *testing.T) {
 }
 
 func TestSandboxPodViewIncludesEmptyStatus(t *testing.T) {
-	view, err := sandboxPodView(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "empty", Namespace: namespace}})
+	resource := testSandbox("empty", "sandbox-uid", sandboxapi.OperatingModeRunning)
+	resource.Status.Incarnation = &sandboxapi.Incarnation{Name: "empty", UID: "pod-uid"}
+	snapshot, err := sandboxview.View(resource, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "empty", Namespace: namespace, UID: "pod-uid"}})
+	view := snapshot.GetPod()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -448,11 +453,11 @@ func TestViewUsesOnlyTheReportedPodIncarnation(t *testing.T) {
 	stale := current.DeepCopy()
 	stale.UID = "stale-pod"
 
-	view, err := View(resource, current)
+	view, err := sandboxview.View(resource, current)
 	if err != nil || view.GetPod() == nil || view.GetPod().GetUid() != "current-pod" {
 		t.Fatalf("View(current Pod) = %#v, %v", view, err)
 	}
-	view, err = View(resource, stale)
+	view, err = sandboxview.View(resource, stale)
 	if err != nil || view.GetPod() != nil {
 		t.Fatalf("View(stale Pod) = %#v, %v; stale incarnation must not be joined", view, err)
 	}
