@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 from datetime import date
 from itertools import pairwise
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -46,12 +44,6 @@ _PRIVATE_EQUITY_SP500_CORR_PRIOR = 0.35
 _PRIVATE_EQUITY_SP500_CORR_PRIOR_WEIGHT = 2.0
 
 
-@dataclass(frozen=True)
-class FittedPrivateEquityStateSpaceFactor:
-    factor: StateSpaceAdditionalFactor
-    coupling_diagnostics: dict[str, float | int]
-
-
 def fit_state_space_artifact(
     evidence: ExogenousEvidence,
     *,
@@ -73,9 +65,7 @@ def fit_state_space_artifact(
         monthly_log_returns=evidence.monthly_log_returns,
         monthly_return_months=evidence.monthly_return_months,
         latest_observations={key.wire_id: point for key, point in evidence.latest_observations.items()},
-        source_manifest=_source_manifest(evidence, private_factors),
-        prior_manifest=_prior_manifest(evidence, private_factors),
-        additional_factors=tuple(factor.factor for factor in private_factors),
+        additional_factors=private_factors,
     )
     conditioning = _conditioning_from_evidence(evidence, private_factors)
     return artifact, conditioning
@@ -115,20 +105,20 @@ def _validate_evidence_monthly_returns(evidence: ExogenousEvidence) -> None:
 
 
 def _conditioning_from_evidence(
-    evidence: ExogenousEvidence, private_factors: tuple[FittedPrivateEquityStateSpaceFactor, ...]
+    evidence: ExogenousEvidence, private_factors: tuple[StateSpaceAdditionalFactor, ...]
 ) -> ExogenousConditioningContext:
     observations: dict[str, tuple[ExogenousObservedPoint, ...]] = {
         key.wire_id: (evidence.latest_observations[key],) for key in evidence.series_names
     }
     for fitted in private_factors:
-        observations[fitted.factor.factor_name] = (fitted.factor.observation,)
+        observations[fitted.factor_name] = (fitted.observation,)
     start_at = max(point.observed_at for points in observations.values() for point in points)
     return ExogenousConditioningContext(start_at=start_at, observations=observations)
 
 
 def _fit_private_equity_factor(
     config_path: Path, historical: DatedHistoricalSeries | HistoricalSeries
-) -> FittedPrivateEquityStateSpaceFactor:
+) -> StateSpaceAdditionalFactor:
     config = load_training_config(config_path)
     observations_path = _resolve_path(config.observations_path, config_path.parent)
     observations = load_price_observations_jsonl(observations_path)
@@ -141,10 +131,10 @@ def _fit_private_equity_factor(
         observation for observation in issuer_observations if isinstance(observation, PriceObservation)
     ]
     mark = max((obs for obs in price_observations if obs.kind == "ppu_mark"), key=lambda obs: obs.observed_at)
-    coupling = _estimate_sp500_coupling(price_observations, historical)
+    rho_to_sp500 = _estimate_sp500_coupling(price_observations, historical)
     sp500_sigma = _monthly_sigma(historical, SP500_KEY.wire_id)
-    covariance_with_sp500 = coupling["rho_to_sp500"] * artifact.monthly_log_return_sigma * sp500_sigma
-    factor = StateSpaceAdditionalFactor(
+    covariance_with_sp500 = rho_to_sp500 * artifact.monthly_log_return_sigma * sp500_sigma
+    return StateSpaceAdditionalFactor(
         factor_name=PrivateEquityAssetKey(issuer_id=IssuerId(config.issuer_id)).wire_id,
         observation=ExogenousObservedPoint(
             value=artifact.current_mark_usd,
@@ -158,7 +148,6 @@ def _fit_private_equity_factor(
         monthly_log_return_mu=artifact.monthly_log_return_mu,
         monthly_log_return_sigma=artifact.monthly_log_return_sigma,
         covariance_with_factors={SP500_KEY.wire_id: covariance_with_sp500},
-        source_ids=tuple(sorted({obs.source_id for obs in issuer_observations})),
         private_equity_issuer_id=config.issuer_id,
         private_equity_event_prior=StateSpacePrivateEquityEventPrior(
             tender_interval_months_median=artifact.tender_interval_months_median,
@@ -167,12 +156,11 @@ def _fit_private_equity_factor(
         ),
         private_equity_scale_prior=artifact.scale_prior,
     )
-    return FittedPrivateEquityStateSpaceFactor(factor=factor, coupling_diagnostics=coupling)
 
 
 def _estimate_sp500_coupling(
     observations: list[PriceObservation], historical: DatedHistoricalSeries | HistoricalSeries
-) -> dict[str, float | int]:
+) -> float:
     rows: list[tuple[float, float]] = []
     for start, end in pairwise(sorted(observations, key=lambda obs: obs.observed_at)):
         duration = months_between(start.observed_at, end.observed_at)
@@ -188,24 +176,16 @@ def _estimate_sp500_coupling(
         points = np.asarray(rows, dtype=np.float64)
         sp500 = points[:, 0]
         pe = points[:, 1]
-        sp500_var = float(np.var(sp500, ddof=1))
-        if sp500_var > 0:
-            beta_hat = float(np.cov(sp500, pe, ddof=1)[0, 1] / sp500_var)
-            rho_hat = float(np.corrcoef(sp500, pe)[0, 1])
-            if not math.isfinite(rho_hat):
-                rho_hat = _PRIVATE_EQUITY_SP500_CORR_PRIOR
-        else:
-            beta_hat = 0.0
+        rho_hat = float(np.corrcoef(sp500, pe)[0, 1])
+        if not math.isfinite(rho_hat):
             rho_hat = _PRIVATE_EQUITY_SP500_CORR_PRIOR
     else:
-        beta_hat = 0.0
         rho_hat = _PRIVATE_EQUITY_SP500_CORR_PRIOR
 
     n = len(rows)
-    rho = (rho_hat * n + _PRIVATE_EQUITY_SP500_CORR_PRIOR * _PRIVATE_EQUITY_SP500_CORR_PRIOR_WEIGHT) / (
+    return (rho_hat * n + _PRIVATE_EQUITY_SP500_CORR_PRIOR * _PRIVATE_EQUITY_SP500_CORR_PRIOR_WEIGHT) / (
         n + _PRIVATE_EQUITY_SP500_CORR_PRIOR_WEIGHT
     )
-    return {"interval_count": n, "beta_to_sp500": beta_hat, "rho_to_sp500": rho}
 
 
 def _historical_cumulative_return(
@@ -249,57 +229,6 @@ def _monthly_sigma(historical: DatedHistoricalSeries | HistoricalSeries, factor_
         ]
     )
     return float(np.std(returns, ddof=1))
-
-
-def _source_manifest(
-    evidence: ExogenousEvidence, private_factors: tuple[FittedPrivateEquityStateSpaceFactor, ...]
-) -> dict[str, Any]:
-    return {
-        "public_factor_names": tuple(key.wire_id for key in evidence.series_names),
-        "monthly_return_months": {
-            "first": evidence.monthly_return_months[0],
-            "last": evidence.monthly_return_months[-1],
-            "count": len(evidence.monthly_return_months),
-            "observed": evidence.monthly_return_months,
-        },
-        "monthly_level_months": {
-            "first": evidence.monthly_level_months[0],
-            "last": evidence.monthly_level_months[-1],
-            "count": len(evidence.monthly_level_months),
-            "observed": evidence.monthly_level_months,
-        },
-        "evidence_metadata": evidence.metadata.model_dump(mode="json"),
-        "private_equity": {
-            fitted.factor.factor_name: {
-                "source_ids": fitted.factor.source_ids,
-                "coupling_diagnostics": fitted.coupling_diagnostics,
-                "has_scale_prior": fitted.factor.private_equity_scale_prior is not None,
-            }
-            for fitted in private_factors
-        },
-    }
-
-
-def _prior_manifest(
-    evidence: ExogenousEvidence, private_factors: tuple[FittedPrivateEquityStateSpaceFactor, ...]
-) -> dict[str, Any]:
-    return {
-        "kind": "empirical_block_shrunk_state_space_v1",
-        "covariance": {
-            "crypto_cross_block_correlation": 0.0,
-            "non_crypto_offdiag_shrinkage": 0.5,
-            "private_equity_couples_to": SP500_KEY.wire_id,
-        },
-        "series_path_prior_calibration": {
-            name: point.model_dump(mode="json")
-            for name, point in evidence.metadata.series_path_prior_calibration.items()
-        },
-        "private_equity_sp500_correlation_prior": {
-            "rho": _PRIVATE_EQUITY_SP500_CORR_PRIOR,
-            "interval_weight": _PRIVATE_EQUITY_SP500_CORR_PRIOR_WEIGHT,
-            "applies_to": [fitted.factor.factor_name for fitted in private_factors],
-        },
-    }
 
 
 def _resolve_path(path: str | Path, base_dir: Path) -> Path:

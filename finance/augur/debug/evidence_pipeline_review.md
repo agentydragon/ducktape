@@ -25,9 +25,9 @@ source specifications directly into a temporary directory. These are different a
 paths: the study snapshot has no repository history or scraper freshness policy.
 
 [`finance/evidence/loading.py`](../../evidence/loading.py) parses the sources into Polars
-frames. [`load_exogenous_evidence`](../fit/evidence_data.py) builds aligned return matrices,
-latest observations and evidence metadata. [`train.py`](../x/models/train.py) fits selected
-models and writes their artifacts. At runtime, providers instantiate configured samplers;
+frames. [`load_exogenous_evidence`](../fit/evidence_data.py) builds aligned return matrices and
+latest observations. [`train.py`](../x/models/train.py) fits selected models and writes their
+artifacts. At runtime, providers instantiate configured samplers;
 loading new evidence does not by itself refit their models. Historical replay loads and
 materializes dated windows separately. The calibration API reads market snapshots and derives
 macro anchors through separate paths.
@@ -117,13 +117,14 @@ operation-scoped in-memory cache; measure before adding persistence. A persisten
 must include the source-content identity and parser/version identity, including any
 selection-specific parameters.
 
-### F. Recording the input to a fit is the caller's responsibility
+### F. Fit inputs remain with the operator
 
-The training caller chooses the data supplied to a fit. If it needs a record of the exact
-input, it can save that information alongside its work; fitted artifacts do not need to embed
-source revisions or file hashes. The operation-scoped frame cache reads a source on first use
-and reuses its parsed frame. A caller that needs all files to come from a fixed checkout must
-arrange that itself; the cache does not pin Git or promise an atomic multi-file read.
+VECM and state-space artifacts retain their fitted numerical state and runtime anchor identity
+needed to sample, not training-source manifests. The caller chooses the data supplied to a fit;
+an operator who needs an exact-input record can save input notes alongside the run record. The
+scraper's [`EvidenceManifest`](../../scraper/fetch.py) records fetch times for the evidence
+repository, while the operation-scoped frame cache does not pin Git or promise an atomic
+multi-file read.
 
 ### G. Intermediate shapes repeatedly discard and rebuild structure
 

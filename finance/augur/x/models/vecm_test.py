@@ -16,7 +16,6 @@ import pytest_bazel
 from numpyro import distributions as dist
 
 from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment, ObservationUnits
-from finance.augur.model.evidence import EvidenceMetadata
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries
 from finance.augur.model.series import SP500_SYMBOL, HomeValueKey, InflationKey, LocationId, RentKey, SecurityKey
@@ -147,10 +146,7 @@ class TestVecmModel:
             for index, factor in enumerate(dated.series_names)
         }
         config = VecmProviderConfig(
-            trained_state=model.to_trained_state(),
-            latest_observations=anchors,
-            evidence_metadata=EvidenceMetadata(),
-            current_mortgage30_rate_pct=6.0,
+            trained_state=model.to_trained_state(), latest_observations=anchors, current_mortgage30_rate_pct=6.0
         )
         restored = config.realize_model()
         assert restored.as_of_month == dated.months[-1]
@@ -206,7 +202,7 @@ class TestVecmModel:
             "rent:san_francisco_ca": _observation(3000.0, ObservationUnits.USD_PER_MONTH),
             "inflation": _observation(320.0, ObservationUnits.INDEX_POINTS),
         }
-        model._compute_provenance(evidence_source_id="test")
+        model._compute_model_version_id()
 
         sampled = model.sample(
             ExogenousSamplingRequest(
@@ -232,6 +228,7 @@ class TestVecmModel:
         assert sampled.level_matrix(
             HomeValueKey(location_id=LocationId("san_francisco_ca")), rollout_count=2, horizon_months=12
         )[:, 0].tolist() == [1_000_000.0, 1_000_000.0]
+        assert str(sampled.provenance["model_version_id"]).startswith("model_version:")
         assert sampled.provenance["scenario_generator_id"] == "vecm_numpyro"
         # Note: VECM-rejects-PE was previously asserted by calling
         # `model.sample(required_level_series={"private_equity:..."})`. With the
@@ -256,7 +253,7 @@ class TestVecmModel:
             "security:SPY": _observation(5500.0, ObservationUnits.USD_PER_UNIT),
             "inflation": _observation(320.0, ObservationUnits.INDEX_POINTS),
         }
-        model._compute_provenance(evidence_source_id="test")
+        model._compute_model_version_id()
 
         cov = model._cov_np()
         assert cov[1, 1] == pytest.approx(0.005**2 * (1 + 0.9**2))

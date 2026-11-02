@@ -24,8 +24,7 @@ from finance.augur.fit.evidence_data import (
     _one_month_returns_from_aligned_levels,
     load_exogenous_evidence,
 )
-from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment, ObservationUnits
-from finance.augur.model.evidence import EvidenceMetadata, EvidenceMode
+from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationUnits
 from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries
 from finance.augur.model.series import SP500_KEY, HomeValueKey, InflationKey, LevelSeriesKey, LocationId, RentKey
 from finance.evidence.loading import evidence_dir_from_env, monthly_last, read_fred_series, require_positive_levels
@@ -37,8 +36,7 @@ def load_evidence(*, fred_only: bool = False) -> tuple[HistoricalSeries, Exogeno
 
     The default path loads the public Yahoo+Zillow+FRED exogenous evidence and
     lets unreadable source data raise. `fred_only=True` is an explicit
-    lower-fidelity fixture/degraded mode; its evidence metadata is labelled as
-    synthesized.
+    lower-fidelity fixture/degraded mode.
     """
     evidence = _evidence_fred_only() if fred_only else load_exogenous_evidence()
     return _historical_from_evidence(evidence), evidence
@@ -120,22 +118,6 @@ def _evidence_fred_only() -> ExogenousEvidence:
         ),
         InflationKey(): _monthly_latest(cpi, FRED_CPI, units=ObservationUnits.INDEX_POINTS),
     }
-    metadata = EvidenceMetadata(
-        auxiliary_observations={
-            "mortgage30": ExogenousObservedPoint(
-                observed_at=mortgage["date"].to_list()[-1],
-                value=float(mortgage["value"].to_list()[-1]),
-                units=ObservationUnits.PERCENT,
-                source_id=f"public:{FRED_MORTGAGE30.provenance_label}",
-                treatment=ObservationTreatment.INFORMATIVE,
-            )
-        },
-        mode=EvidenceMode(
-            mode="fred_only_synthesized",
-            explicit=True,
-            description="FRED-only synthesized evidence explicitly selected; Yahoo SPY and Zillow ZHVI were not loaded.",
-        ),
-    )
     return ExogenousEvidence(
         series_names=series_names,
         monthly_level_values=level_values,
@@ -144,7 +126,6 @@ def _evidence_fred_only() -> ExogenousEvidence:
         monthly_return_months=return_months,
         current_mortgage30_rate_pct=float(mortgage["value"].to_list()[-1]),
         latest_observations=latest_observations,
-        metadata=metadata,
     )
 
 

@@ -9,7 +9,6 @@ import yaml
 from pydantic import ValidationError
 
 from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment, ObservationUnits
-from finance.augur.model.evidence import EvidenceMetadata
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.path_models.scenarios import DatedHistoricalSeries
 from finance.augur.model.series import SP500_KEY, InflationKey
@@ -44,21 +43,9 @@ def configured() -> VecmProviderConfig:
             treatment=ObservationTreatment.HARD_START,
         ),
     }
-    metadata = EvidenceMetadata(
-        auxiliary_observations={
-            "sp500_price": ExogenousObservedPoint(
-                value=5_400.0,
-                units=ObservationUnits.INDEX_POINTS,
-                observed_at=date.fromisoformat(f"{months[-1]}-01"),
-                source_id="test:fred-sp500-price",
-                treatment=ObservationTreatment.INFORMATIVE,
-            )
-        }
-    )
     return VecmProviderConfig(
         trained_state=model.to_trained_state(),
         latest_observations=latest_observations,
-        evidence_metadata=metadata,
         current_mortgage30_rate_pct=6.23,
     )
 
@@ -74,8 +61,7 @@ def test_fitted_artifact_retains_dated_levels_anchors_and_units(configured: Vecm
     assert configured.trained_state.calendar_gaps[0].missing_months == ("2024-04",)
     assert configured.trained_state.training_segments[0].used_transition_count == 2
     assert configured.trained_state.training_segments[1].used_transition_count == 2
-    assert configured.evidence_metadata.auxiliary_observations["sp500_price"].units == ObservationUnits.INDEX_POINTS
-
+    assert "evidence_metadata" not in configured.model_dump(mode="json")
     model = configured.realize_model()
     request = ExogenousSamplingRequest(
         rollout_seeds=(71, 99), horizon_months=2, **level_series_request_channels(frozenset(model.factor_names))
@@ -105,11 +91,9 @@ def test_observations_reject_nonfinite_or_boolean_values(configured: VecmProvide
         ExogenousObservedPoint.model_validate(point)
 
 
-def test_auxiliary_evidence_never_supplies_a_missing_anchor(configured: VecmProviderConfig) -> None:
+def test_provider_config_rejects_a_missing_fitted_factor_anchor(configured: VecmProviderConfig) -> None:
     document = configured.model_dump(mode="json")
     del document["latest_observations"]["security:SPY"]
-    # An actual FRED equity-index observation still exists as auxiliary evidence.
-    assert document["evidence_metadata"]["auxiliary_observations"]["sp500_price"]
     with pytest.raises(ValidationError, match="observations must match the fitted factors exactly"):
         VecmProviderConfig.model_validate(document)
 

@@ -47,7 +47,6 @@ from numpyro.optim import Adam
 from pydantic import Field, model_validator
 
 from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment
-from finance.augur.model.evidence import EvidenceMetadata
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
 from finance.augur.model.float64 import LEVEL_DTYPE
 from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries, calendar_month_index
@@ -206,9 +205,8 @@ class VecmModel:
     2. Deployment-layer config (latest_observations): set by
        `VecmProviderConfig.realize_model` from YAML. Defines how
        multipliers scale to absolute levels.
-    3. Provenance ids (model_version_id, evidence_set_id,
-       calibration_artifact_id): set after fit or load via
-       `_compute_provenance`. Surface as bundle metadata.
+    3. Model identity (`model_version_id`): identifies the sampler implementation in bundle
+       metadata. The fit's evidence identity stays with the operator who ran training.
     """
 
     label: str = "vecm"
@@ -228,12 +226,9 @@ class VecmModel:
 
     # Deployment-layer config.
     latest_observations: dict[str, ExogenousObservedPoint] = field(default_factory=dict)
-    evidence_metadata: EvidenceMetadata = field(default_factory=EvidenceMetadata)
 
-    # Provenance.
+    # Model identity.
     model_version_id: str = ""
-    evidence_set_id: str = ""
-    calibration_artifact_id: str = ""
 
     # ──────────────────────── Fittable ────────────────────────
 
@@ -370,8 +365,6 @@ class VecmModel:
                 "model_version_id": self.model_version_id,
                 "scenario_generator_id": "vecm_numpyro",
                 "scenario_generator_version_id": "vecm_numpyro:v1",
-                "evidence_set_id": self.evidence_set_id,
-                "calibration_artifact_id": self.calibration_artifact_id,
                 "notes": ("sampled by VecmModel (NumPyro)",),
                 "exogenous_provider_label": self.label,
             },
@@ -405,12 +398,9 @@ class VecmModel:
         trained_state: VecmTrainedState,
         *,
         latest_observations: Mapping[str, ExogenousObservedPoint],
-        evidence_metadata: EvidenceMetadata,
-        evidence_source_id: str,
         config: VecmConfig | None = None,
     ) -> VecmModel:
-        """Rebuild post-fit state from `to_trained_state(...)`'s output, attach
-        deployment-layer config from the runtime YAML, and compute provenance ids."""
+        """Rebuild fit state from `to_trained_state(...)` and attach the runtime anchors."""
         factor_names = tuple(parse_level_series_key(name) for name in trained_state.factor_names)
         model = cls(
             config=config or VecmConfig(),
@@ -425,9 +415,8 @@ class VecmModel:
             training_segments=trained_state.training_segments,
             calendar_gaps=trained_state.calendar_gaps,
             latest_observations=dict(latest_observations),
-            evidence_metadata=evidence_metadata,
         )
-        model._compute_provenance(evidence_source_id)
+        model._compute_model_version_id()
         return model
 
     # ──────────────────────── Internal: forecast ────────────────────────
@@ -523,20 +512,9 @@ class VecmModel:
             raise ValueError(f"VECM factor {key.wire_id!r} requires a positive hard-start observation")
         return point.value
 
-    def _compute_provenance(self, evidence_source_id: str) -> None:
+    def _compute_model_version_id(self) -> None:
         self.model_version_id = "model_version:" + stable_identity_digest(
             {"label": self.label, "class": type(self).__qualname__}
-        )
-        self.evidence_set_id = "evidence_set:" + stable_identity_digest(
-            {
-                "evidence_source_id": evidence_source_id,
-                "factor_names": [factor.wire_id for factor in self.factor_names],
-                "latest_observations": self.latest_observations,
-                "evidence_metadata": self.evidence_metadata,
-            }
-        )
-        self.calibration_artifact_id = "calibration_artifact:" + stable_identity_digest(
-            {"model_version_id": self.model_version_id, "evidence_set_id": self.evidence_set_id}
         )
 
 
@@ -648,7 +626,6 @@ class VecmProviderConfig(FrozenModel):
     latest_observations: dict[str, ExogenousObservedPoint] = Field(
         description="Actual dated source observation for each fitted factor; no source-name fallback."
     )
-    evidence_metadata: EvidenceMetadata
     current_mortgage30_rate_pct: float
 
     @model_validator(mode="after")
@@ -674,10 +651,4 @@ class VecmProviderConfig(FrozenModel):
         return self
 
     def realize_model(self) -> VecmModel:
-        evidence_source_id = "vecm_trained_state:" + stable_identity_digest({"trained_state": self.trained_state})
-        return VecmModel.from_trained_state(
-            self.trained_state,
-            latest_observations=self.latest_observations,
-            evidence_metadata=self.evidence_metadata,
-            evidence_source_id=evidence_source_id,
-        )
+        return VecmModel.from_trained_state(self.trained_state, latest_observations=self.latest_observations)

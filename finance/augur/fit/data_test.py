@@ -32,7 +32,7 @@ def test_configured_evidence_source_errors_raise_by_default(
         load_evidence()
 
 
-def test_explicit_fred_only_evidence_is_synthesized_and_labeled(synthetic_evidence_dir: Path) -> None:
+def test_explicit_fred_only_evidence_uses_fred_anchors(synthetic_evidence_dir: Path) -> None:
     historical, evidence = load_evidence(fred_only=True)
 
     # Both sides carry the SAME typed keys — no wire-id round trip between them. This used to
@@ -40,12 +40,6 @@ def test_explicit_fred_only_evidence_is_synthesized_and_labeled(synthetic_eviden
     # is exactly the flatten-and-reparse the typing removed.
     assert historical.series_names == evidence.series_names
     assert evidence.monthly_log_returns.shape[0] == len(evidence.monthly_return_months)
-    assert evidence.metadata.mode is not None
-    assert evidence.metadata.mode.mode == "fred_only_synthesized"
-    assert evidence.metadata.mode.explicit
-    assert evidence.metadata.mode.description == (
-        "FRED-only synthesized evidence explicitly selected; Yahoo SPY and Zillow ZHVI were not loaded."
-    )
     assert set(evidence.latest_observations) == set(evidence.series_names)
     assert evidence.latest_observations[SP500_KEY].source_id == f"public:{sources.FRED_SP500.provenance_label}"
     assert all(point.units == ObservationUnits.INDEX_POINTS for point in evidence.latest_observations.values())
@@ -107,7 +101,6 @@ def test_fred_only_preserves_a_negative_latest_mortgage_rate(synthetic_evidence_
     _, evidence = load_evidence(fred_only=True)
 
     assert evidence.current_mortgage30_rate_pct == -0.25
-    assert evidence.metadata.auxiliary_observations["mortgage30"].value == -0.25
 
 
 @pytest.mark.parametrize("fred_only", [False, True])
@@ -136,9 +129,6 @@ def test_full_evidence_anchors_preserve_actual_source_units(synthetic_evidence_d
         if isinstance(factor, RentKey):
             assert point.units == ObservationUnits.USD_PER_MONTH
             assert point.source_id == f"public:{sources.ZILLOW_ZORI.provenance_label}"
-    assert evidence.metadata.auxiliary_observations["sp500_price"].units == ObservationUnits.INDEX_POINTS
-    assert evidence.metadata.auxiliary_observations["mortgage30"].units == ObservationUnits.PERCENT
-    assert evidence.metadata.return_sources
 
 
 def test_vecm_anchors_use_one_common_month_and_spy_adjusted_levels(synthetic_evidence_dir: Path) -> None:
@@ -151,10 +141,6 @@ def test_vecm_anchors_use_one_common_month_and_spy_adjusted_levels(synthetic_evi
     assert anchors[SP500_KEY].source_id == f"public:{sources.YAHOO_SPY.provenance_label}"
     assert anchors[SP500_KEY].units == ObservationUnits.USD_PER_UNIT
     assert anchors[SP500_KEY].value == pytest.approx(evidence.monthly_level_values[-1, sp500_index])
-    assert (
-        evidence.metadata.auxiliary_observations["sp500_price"].source_id
-        == f"public:{sources.FRED_SP500.provenance_label}"
-    )
 
 
 def test_full_evidence_reads_each_zillow_table_once_for_all_cities(

@@ -367,13 +367,3 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
-
-py_library(
-    name = "evidence",
-    srcs = ["evidence.py"],
-    deps = [
-        ":conditioning",
-        ":schemas",
-        "@pypi//pydantic",
-    ],
-)

@@ -99,7 +99,6 @@ def main(argv: list[str] | None = None) -> int:
         fitted = VecmProviderConfig(
             trained_state=model.to_trained_state(),
             latest_observations={key.wire_id: point for key, point in aligned_as_of_observations(evidence).items()},
-            evidence_metadata=evidence.metadata,
             current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
         )
     elif args.model == "state_space":

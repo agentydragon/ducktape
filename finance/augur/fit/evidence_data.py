@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from collections.abc import Collection
 from dataclasses import dataclass
 
@@ -8,7 +7,6 @@ import numpy as np
 import polars as pl
 
 from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment, ObservationUnits
-from finance.augur.model.evidence import EvidenceMetadata, FactorSeriesCalibration, ReturnEvidence
 from finance.augur.model.series import (
     SP500_KEY,
     HomeValueKey,
@@ -62,17 +60,6 @@ def _yahoo_frame(source: sources.EvidenceSource, *, minimum_samples: int = 36) -
     return loading.yahoo_adjusted_close_frame(_source_bytes(source), source, minimum_samples=minimum_samples)
 
 
-MONTHS_PER_YEAR = 12
-MIN_MONTHLY_LOG_MU_SIGMA = 0.005 / MONTHS_PER_YEAR
-MIN_MONTHLY_LOG_VOL_SIGMA = 0.01 / math.sqrt(MONTHS_PER_YEAR)
-
-
-@dataclass(frozen=True)
-class PeriodReturns:
-    log_returns: np.ndarray
-    duration_months: np.ndarray
-
-
 @dataclass(frozen=True)
 class ExogenousEvidence:
     """Observed monthly evidence, keyed by the typed series it describes.
@@ -90,106 +77,10 @@ class ExogenousEvidence:
     monthly_return_months: tuple[str, ...]
     current_mortgage30_rate_pct: float
     latest_observations: dict[LevelSeriesKey, ExogenousObservedPoint]
-    metadata: EvidenceMetadata
-
-
-def calibrate_series_path_priors(
-    series_names: tuple[LevelSeriesKey, ...], marginal_returns: dict[LevelSeriesKey, PeriodReturns]
-) -> dict[LevelSeriesKey, FactorSeriesCalibration]:
-    calibration: dict[LevelSeriesKey, FactorSeriesCalibration] = {}
-    for series_name in series_names:
-        if series_name not in marginal_returns:
-            raise ValueError(f"missing marginal returns for exogenous series {series_name.wire_id!r}")
-        returns = marginal_returns[series_name]
-        log_returns = np.asarray(returns.log_returns, dtype="float64")
-        duration_months = np.asarray(returns.duration_months, dtype="float64")
-        if log_returns.shape != duration_months.shape:
-            raise ValueError(f"{series_name.wire_id} marginal returns and durations have different shapes")
-        keep = np.isfinite(log_returns) & np.isfinite(duration_months) & (duration_months > 0)
-        log_returns = log_returns[keep]
-        duration_months = duration_months[keep]
-        if len(log_returns) == 0:
-            raise ValueError(f"{series_name.wire_id} has no finite marginal returns")
-
-        observed_months = float(np.sum(duration_months))
-        monthly_log_mu = float(np.sum(log_returns)) / observed_months
-        normalized_residuals = (log_returns - monthly_log_mu * duration_months) / np.sqrt(duration_months)
-        if len(normalized_residuals) > 1:
-            monthly_vol = float(np.std(normalized_residuals, ddof=1))
-        else:
-            monthly_vol = float(abs(normalized_residuals[0]))
-        monthly_log_vol_sigma = max(monthly_vol, MIN_MONTHLY_LOG_VOL_SIGMA)
-        monthly_log_mu_sigma = max(
-            monthly_log_vol_sigma / math.sqrt(max(observed_months, 1e-9)), MIN_MONTHLY_LOG_MU_SIGMA
-        )
-
-        calibration[series_name] = FactorSeriesCalibration(
-            monthly_log_mu=monthly_log_mu,
-            monthly_log_mu_sigma=monthly_log_mu_sigma,
-            monthly_log_vol_sigma=monthly_log_vol_sigma,
-            observed_months=observed_months,
-            observation_count=len(log_returns),
-        )
-    return calibration
 
 
 # Evidence series are carried as 2-column polars frames: raw series as `(date, value)`, and the
 # monthly resamplings/returns below as `(month, ...)` where `month` is the first day of the month.
-
-
-def _period_return_frame(series: pl.DataFrame) -> pl.DataFrame:
-    """Log-returns of a `(month, value)` frame, with month-gap durations, keyed by the later month."""
-    if series.is_empty():
-        raise ValueError("series needs at least two positive observations")
-    loading.require_positive_levels(series, series_name="log-return input")
-    series = series.sort("month")
-    if series.height < 2:
-        raise ValueError("series needs at least two positive observations")
-    month_number = pl.col("month").dt.year() * 12 + pl.col("month").dt.month()
-    return (
-        series.select(
-            pl.col("month"),
-            pl.col("value").log().diff().alias("log_return"),
-            month_number.diff().cast(pl.Float64).alias("duration_months"),
-        )
-        .drop_nulls()  # the first row has a null diff
-        .filter(pl.col("log_return").is_finite() & (pl.col("duration_months") > 0))
-    )
-
-
-def _returns(frame: pl.DataFrame) -> PeriodReturns:
-    frame = frame.filter(pl.col("log_return").is_finite() & pl.col("duration_months").is_finite())
-    if frame.is_empty():
-        raise ValueError("no observed returns were loaded")
-    return PeriodReturns(
-        log_returns=frame["log_return"].to_numpy().astype("float64"),
-        duration_months=frame["duration_months"].to_numpy().astype("float64"),
-    )
-
-
-def _return_frame_summary(
-    frame: pl.DataFrame,
-    *,
-    source: str,
-    used_as_marginal_evidence: bool,
-    factor: LevelSeriesKey | None = None,
-    region_name: str | None = None,
-    region_state: str | None = None,
-) -> ReturnEvidence:
-    months = frame["month"].to_list()
-    durations = frame["duration_months"].to_list()
-    return ReturnEvidence(
-        source_id=source,
-        factor=factor.wire_id if factor is not None else None,
-        region_name=region_name,
-        region_state=region_state,
-        used_as_marginal_evidence=used_as_marginal_evidence,
-        return_count=frame.height,
-        first_return_month=min(months),
-        last_return_month=max(months),
-        min_duration_months=float(min(durations)),
-        max_duration_months=float(max(durations)),
-    )
 
 
 def _align_inner(frames: dict[LevelSeriesKey, pl.DataFrame], value_column: str) -> pl.DataFrame:
@@ -241,14 +132,11 @@ def _monthly_latest(
 
 
 def load_exogenous_evidence() -> ExogenousEvidence:
-    sp500_price = loading.monthly_last(_fred_frame(sources.FRED_SP500))
     # SPY is daily; require thousands of rows to catch a truncated file.
     sp500_total_return = loading.monthly_last(_yahoo_frame(sources.YAHOO_SPY, minimum_samples=1000))
     btc_price = loading.monthly_last(_yahoo_frame(sources.YAHOO_BTC))
     eth_price = loading.monthly_last(_yahoo_frame(sources.YAHOO_ETH))
     cpi = loading.monthly_last(_fred_frame(sources.FRED_CPI))
-    case_shiller = loading.monthly_last(_fred_frame(sources.FRED_SFXRSA))
-    fhfa = loading.monthly_last(_fred_frame(sources.FRED_FHFA_SF))
     mortgage30 = _fred_frame(sources.FRED_MORTGAGE30)
     # Home-value and rent evidence stay keyed by LocationId (their role-natural key); the
     # flat series wire ids (HomeValueKey/RentKey .wire_id) are derived only at the matrix/JSON
@@ -296,24 +184,6 @@ def load_exogenous_evidence() -> ExogenousEvidence:
     if len(monthly_return_months) < MINIMUM_ALIGNED_MONTHS:
         raise ValueError(f"only {len(monthly_return_months)} aligned exogenous months were available")
 
-    sp500_returns = _period_return_frame(sp500_total_return)
-    btc_returns = _period_return_frame(btc_price)
-    eth_returns = _period_return_frame(eth_price)
-    home_value_returns = {loc: _period_return_frame(series) for loc, series in home_values.items()}
-    rent_returns = {loc: _period_return_frame(series) for loc, series in rents.items()}
-    case_shiller_returns = _period_return_frame(case_shiller)
-    fhfa_returns = _period_return_frame(fhfa)
-    cpi_returns = _period_return_frame(cpi)
-    marginal: dict[LevelSeriesKey, PeriodReturns] = {
-        SP500_KEY: _returns(sp500_returns),
-        BTC_KEY: _returns(btc_returns),
-        ETH_KEY: _returns(eth_returns),
-        **{home_series_key[loc]: _returns(returns) for loc, returns in home_value_returns.items()},
-        **{rent_series_key[loc]: _returns(returns) for loc, returns in rent_returns.items()},
-        InflationKey(): _returns(cpi_returns),
-    }
-    series_path_calibration = calibrate_series_path_priors(series_names, marginal)
-
     latest_observations: dict[LevelSeriesKey, ExogenousObservedPoint] = {
         SP500_KEY: _monthly_latest(sp500_total_return, sources.YAHOO_SPY, units=ObservationUnits.USD_PER_UNIT),
         BTC_KEY: _monthly_latest(btc_price, sources.YAHOO_BTC, units=ObservationUnits.USD_PER_UNIT),
@@ -340,52 +210,6 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         },
         InflationKey(): _monthly_latest(cpi, sources.FRED_CPI, units=ObservationUnits.INDEX_POINTS),
     }
-    metadata = EvidenceMetadata(
-        auxiliary_observations={
-            "sp500_price": _monthly_latest(sp500_price, sources.FRED_SP500, units=ObservationUnits.INDEX_POINTS),
-            "case_shiller_sf": _monthly_latest(case_shiller, sources.FRED_SFXRSA, units=ObservationUnits.INDEX_POINTS),
-            "mortgage30": ExogenousObservedPoint(
-                observed_at=mortgage30["date"].to_list()[-1],
-                value=float(mortgage30["value"].to_list()[-1]),
-                units=ObservationUnits.PERCENT,
-                source_id=f"public:{sources.FRED_MORTGAGE30.provenance_label}",
-                treatment=ObservationTreatment.INFORMATIVE,
-            ),
-        },
-        adjusted_close_return_count=len(marginal[SP500_KEY].log_returns),
-        return_sources=(
-            *(
-                _return_frame_summary(
-                    returns,
-                    source=sources.ZILLOW_ZHVI.provenance_label,
-                    used_as_marginal_evidence=True,
-                    factor=home_series_key[loc],
-                    region_name=ZILLOW_HOME_VALUE_REGIONS[loc][0],
-                    region_state=ZILLOW_HOME_VALUE_REGIONS[loc][1],
-                )
-                for loc, returns in home_value_returns.items()
-            ),
-            _return_frame_summary(
-                case_shiller_returns, source=sources.FRED_SFXRSA.provenance_label, used_as_marginal_evidence=False
-            ),
-            _return_frame_summary(
-                fhfa_returns, source=sources.FRED_FHFA_SF.provenance_label, used_as_marginal_evidence=False
-            ),
-            *(
-                _return_frame_summary(
-                    returns,
-                    source=sources.ZILLOW_ZORI.provenance_label,
-                    used_as_marginal_evidence=True,
-                    factor=rent_series_key[loc],
-                    region_name=ZILLOW_RENT_REGIONS[loc][0],
-                    region_state=ZILLOW_RENT_REGIONS[loc][1],
-                )
-                for loc, returns in rent_returns.items()
-            ),
-        ),
-        series_path_prior_calibration={name.wire_id: point for name, point in series_path_calibration.items()},
-    )
-
     return ExogenousEvidence(
         series_names=series_names,
         monthly_level_values=monthly_level_values,
@@ -394,7 +218,6 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         monthly_return_months=monthly_return_months,
         current_mortgage30_rate_pct=float(mortgage30["value"].to_list()[-1]),
         latest_observations=latest_observations,
-        metadata=metadata,
     )
 
 

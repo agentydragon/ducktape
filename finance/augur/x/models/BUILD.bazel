@@ -184,7 +184,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:conditioning",
-        "//finance/augur/model:evidence",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:series",
         "//finance/augur/model/path_models:scenarios",
@@ -207,7 +206,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:conditioning",
-        "//finance/augur/model:evidence",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:series",
         "//finance/augur/model/path_models:scenarios",
@@ -592,7 +590,6 @@ py_library(
     srcs = ["vecm.py"],
     deps = [
         "//finance/augur/model:conditioning",
-        "//finance/augur/model:evidence",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:float64",
         "//finance/augur/model:provenance",
