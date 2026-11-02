@@ -21,7 +21,7 @@ type sessionLifecycleController struct{ runtime *Runtime }
 func (*sessionLifecycleController) Name() string { return sessionLifecycleControllerName }
 func (*sessionLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{lifecycle.EnvironmentDesiredStateType, executionSignalType, lifecycle.AdmissionCountType, session.OwnerStatusType, session.InspectionStatusType, session.LifecycleStatusType, retained.IngressAckType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
+	for _, kind := range []string{lifecycle.EnvironmentDesiredStateType, executionSignalType, lifecycle.AdmissionCountType, session.OwnerStatusType, session.InspectionStatusType, session.LifecycleStatusType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
 		inputs = append(inputs, controller.Input{Namespace: lifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -334,21 +334,24 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 	}
 	current.Stage = lifecycle.Flushing
 	for _, s := range sessions {
-		status, sealFound, err := session.ReadLifecycleStatus(ctx, r, s.ID())
+		status, found, err := session.ReadLifecycleStatus(ctx, r, s.ID())
 		if err != nil {
 			return err
 		}
-		ack, ackFound, err := retained.ReadAcknowledgement(ctx, r, s.ID())
-		if err != nil {
-			return err
-		}
-		if !sealFound || status.EnvironmentGeneration != desiredState.Generation || !status.Sealed || status.SealUID != desiredState.SealUID || !ackFound || !ack.Sealed || ack.Cursor != status.SealCursor {
+		if !sessionDeliveryComplete(status, found, desiredState) {
+			currentGeneration := found && status.EnvironmentGeneration == desiredState.Generation
+			if !currentGeneration {
+				status = session.LifecycleStatus{}
+			}
 			current.Blocker = lifecycle.Blocker{
 				Kind: lifecycle.IngressAcknowledgementPending, ResourceType: retained.IngressAckType,
-				ResourceID: s.ID(), ResourcePresent: ackFound, JournalSealPresent: sealFound && status.Sealed,
-				JournalSealUID: status.SealUID, ExpectedJournalSealUID: desiredState.SealUID,
-				JournalSealCursor: status.SealCursor, AcknowledgementPresent: ackFound,
-				AcknowledgementSealed: ack.Sealed, AcknowledgementCursor: ack.Cursor,
+				ResourceID: s.ID(), ResourcePresent: currentGeneration && status.AcknowledgementPresent,
+				JournalSealPresent: currentGeneration && status.Sealed,
+				JournalSealUID:     status.SealUID, ExpectedJournalSealUID: desiredState.SealUID,
+				JournalSealCursor:      status.SealCursor,
+				AcknowledgementPresent: currentGeneration && status.AcknowledgementPresent,
+				AcknowledgementSealed:  currentGeneration && status.AcknowledgementSealed,
+				AcknowledgementCursor:  status.AcknowledgementCursor,
 			}
 			return write()
 		}
@@ -359,4 +362,9 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 	}
 	current.Blocker = lifecycle.Blocker{}
 	return write()
+}
+
+func sessionDeliveryComplete(status session.LifecycleStatus, found bool, desired lifecycle.EnvironmentDesired) bool {
+	return found && status.EnvironmentGeneration == desired.Generation && status.Sealed &&
+		status.SealUID == desired.SealUID && desired.SealUID != "" && status.Delivered
 }

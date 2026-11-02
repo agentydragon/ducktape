@@ -74,10 +74,14 @@ type LifecycleStatus struct {
 	ProcessStopped   bool
 	// Sealed is published only after the journal commit and the current
 	// generation's native and Execution fences have been observed.
-	Sealed     bool
-	SealUID    string
-	SealCursor uint64
-	Error      string
+	Sealed                 bool
+	SealUID                string
+	SealCursor             uint64
+	Delivered              bool
+	AcknowledgementPresent bool
+	AcknowledgementSealed  bool
+	AcknowledgementCursor  uint64
+	Error                  string
 }
 
 type componentSpec[T any] interface {
