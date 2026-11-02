@@ -561,6 +561,10 @@ function pullRequest(number: number): GitHubSubject {
   return { pullRequest: { number } };
 }
 
+function notificationEntry(cursor: number, ageMs: number, provider: "actions" | "github", summary: string) {
+  return { cursor: String(cursor), createdAt: ago(ageMs), provider, summary };
+}
+
 /** What the Notification Service reports for a Sandbox's inboxes: one with a notice awaiting confirmation and a
  * subscription in each state, one debouncing, one failing delivery. A suspended Sandbox has none. */
 function notificationStatus(sandbox: string): SandboxNotificationStatus {
@@ -646,31 +650,11 @@ function notificationStatus(sandbox: string): SandboxNotificationStatus {
             unannouncedCount: 2,
             pendingAcknowledgementCount: 5,
             pendingEntries: [
-              {
-                cursor: "5",
-                createdAt: ago(30000),
-                provider: "actions",
-                summary: `Action ${ACTION_REQUEST_ID} · event 5 · decision_pending`,
-              },
-              {
-                cursor: "6",
-                createdAt: ago(20000),
-                provider: "github",
-                summary: "GitHub check_run · completed · success",
-              },
-              { cursor: "7", createdAt: ago(10000), provider: "github", summary: "GitHub issue_comment · created" },
-              {
-                cursor: "8",
-                createdAt: ago(5000),
-                provider: "actions",
-                summary: `Action ${ACTION_REQUEST_ID} · event 8 · running`,
-              },
-              {
-                cursor: "9",
-                createdAt: ago(0),
-                provider: "actions",
-                summary: `Action ${ACTION_REQUEST_ID} · event 9 · succeeded`,
-              },
+              notificationEntry(5, 30000, "actions", `Action ${ACTION_REQUEST_ID} · event 5 · decision_pending`),
+              notificationEntry(6, 20000, "github", "GitHub check_run · completed · success"),
+              notificationEntry(7, 10000, "github", "GitHub issue_comment · created"),
+              notificationEntry(8, 5000, "actions", `Action ${ACTION_REQUEST_ID} · event 8 · running`),
+              notificationEntry(9, 0, "actions", `Action ${ACTION_REQUEST_ID} · event 9 · succeeded`),
             ],
             pendingEntriesMore: false,
             noticeWaitReason: "NOTICE_WAIT_REASON_AWAITING_CONFIRMATION",
@@ -690,13 +674,8 @@ function notificationStatus(sandbox: string): SandboxNotificationStatus {
             unannouncedCount: 2,
             pendingAcknowledgementCount: 2,
             pendingEntries: [
-              {
-                cursor: "2",
-                createdAt: ago(10000),
-                provider: "github",
-                summary: "GitHub check_run · completed · failure",
-              },
-              { cursor: "3", createdAt: ago(0), provider: "github", summary: "GitHub pull_request · synchronize" },
+              notificationEntry(2, 10000, "github", "GitHub check_run · completed · failure"),
+              notificationEntry(3, 0, "github", "GitHub pull_request · synchronize"),
             ],
             pendingEntriesMore: false,
             noticeDueAt: ago(-60000),
@@ -730,18 +709,8 @@ function notificationStatus(sandbox: string): SandboxNotificationStatus {
             unannouncedCount: 0,
             pendingAcknowledgementCount: 2,
             pendingEntries: [
-              {
-                cursor: "1",
-                createdAt: ago(10000),
-                provider: "actions",
-                summary: `Action ${ACTION_REQUEST_ID} · event 1 · decision_pending`,
-              },
-              {
-                cursor: "2",
-                createdAt: ago(0),
-                provider: "actions",
-                summary: `Action ${ACTION_REQUEST_ID} · event 2 · running`,
-              },
+              notificationEntry(1, 10000, "actions", `Action ${ACTION_REQUEST_ID} · event 1 · decision_pending`),
+              notificationEntry(2, 0, "actions", `Action ${ACTION_REQUEST_ID} · event 2 · running`),
             ],
             pendingEntriesMore: false,
             noticeWaitReason: "NOTICE_WAIT_REASON_DELIVERY_RETRY",
@@ -3491,12 +3460,7 @@ function liveEvents(url: URL): ServerSentEvent[] {
       first.inbox.lastCursor = "10";
       first.unannouncedCount += 1;
       first.pendingAcknowledgementCount += 1;
-      first.pendingEntries.push({
-        cursor: "10",
-        createdAt: ago(0),
-        provider: "github",
-        summary: "GitHub workflow_run · completed",
-      });
+      first.pendingEntries.push(notificationEntry(10, 0, "github", "GitHub workflow_run · completed"));
     }
     return [{ event: "snapshot", data: snapshot }];
   }
