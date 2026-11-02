@@ -409,17 +409,14 @@ export { anchor, SearchPopoverState };
     assert!(
         report.proposals.iter().any(|proposal| {
             proposal.binding_ids == vec!["SearchPopoverState".to_string()]
-                && proposal.source_unit_ids
-                    == vec!["unit:1", "unit:4", "unit:5", "unit:6", "unit:7"]
+                && proposal.source_unit_ids == vec!["unit:1", "unit:4", "unit:5", "unit:6"]
                 && proposal.anonymous_statement_source_unit_ids
-                    == vec!["unit:1", "unit:5", "unit:6", "unit:7"]
-                && !proposal.landable_today
-                && proposal
-                    .landability_notes
-                    .iter()
-                    .any(|note| note.contains("import/export"))
+                    == vec!["unit:1", "unit:5", "unit:6"]
+                && proposal.landable_today
+                && proposal.extends_module_id.as_deref() == Some("infra/decorators/observable")
+                && proposal.landability_notes.is_empty()
         }),
-        "the proposer must not claim an exact, landable class-plus-decorator extraction while the conservative heap frontier retains the surrounding chain: {report:#?}",
+        "the executable frontier closure must be landable without pulling export metadata: {report:#?}",
     );
     assert!(
         !report.proposals.iter().any(|proposal| {
@@ -438,15 +435,18 @@ export { anchor, SearchPopoverState };
                 "Ro",
                 MemberEffect::TypescriptDecorateHelper,
             ),
-            logical_module("infra/decorators/observable", &[Member::new("Z")]),
             logical_module_with_anon(
-                "features/search/popover_state",
-                &[Member::new("SearchPopoverState")],
-                &["Ro([Z], SearchPopoverState.prototype, \"visible\", 2);"],
+                "infra/decorators/observable",
+                &[Member::new("Z"), Member::new("SearchPopoverState")],
+                &[
+                    "console.log(\"boot\");",
+                    "Ro([Z], SearchPopoverState.prototype, \"visible\", 2);",
+                    "console.log(\"tail\");",
+                ],
             ),
         ],
     );
-    let _ = run_fixture(promoted_opts);
+    assert_preserved_entry_output(&run_fixture(promoted_opts), "boot\ntail\n");
 }
 
 #[test]

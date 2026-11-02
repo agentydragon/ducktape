@@ -1,7 +1,7 @@
 //! A narrowly selected native call can retain the existing call model while
 //! unknown receiver writes elsewhere in the provider remain visible.
 
-use analysis::DepKind;
+use analysis::{DepKind, StatementKind};
 use debundle_e2e_support::*;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -156,22 +156,28 @@ fn certified_fresh_sets_split_after_unrelated_constructor_heap_barrier() {
         }),
         "certified spread lost its source Set allocation dependency: {graph:#?}"
     );
-    let report = serde_json::to_value(&graph).unwrap();
-    let exports: Vec<_> = report["nodes"]
-        .as_array()
-        .unwrap()
+    let observation = graph
+        .nodes
         .iter()
-        .filter(|node| node["statement_kind"] == "export")
-        .collect();
+        .find(|node| node.statement_kind == StatementKind::SideEffect)
+        .expect("the following console observation");
     assert!(
         graph.edges.iter().any(|edge| {
-            exports
-                .iter()
-                .any(|node| node["id"].as_str() == Some(edge.source.as_str()))
+            edge.source == observation.id
                 && edge.target == seed
                 && edge.edge_kind == DepKind::Sequenced
         }),
-        "missing export-to-seed edge; exports={exports:#?}, graph={graph:#?}"
+        "the following observation lost the live Set frontier: {graph:#?}"
+    );
+    assert!(
+        !graph.edges.iter().any(|edge| {
+            graph
+                .nodes
+                .iter()
+                .any(|node| node.statement_kind == StatementKind::Export && node.id == edge.source)
+                && edge.edge_kind == DepKind::Sequenced
+        }),
+        "a local export list must not execute a heap event: {graph:#?}"
     );
 }
 
