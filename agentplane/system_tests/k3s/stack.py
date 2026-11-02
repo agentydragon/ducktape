@@ -364,12 +364,11 @@ class K3s:
                 ) from exc
 
     def import_images(self, images: dict[str, Path]) -> None:
-        """Import Bazel OCI layouts (`.rloc` files, keyed by the image reference each loads as) into
+        """Import Bazel OCI layouts, keyed by the image reference each loads as, into
         containerd one image at a time. Blob digests are preserved, and a blob containerd
         already holds (an earlier image's, or on a recycled runner the last stack's) is not streamed again."""
-        for image, rloc in images.items():
+        for image, layout in images.items():
             with tracer.start_as_current_span("system_test.image.import", attributes={"image": image}):
-                layout = get_required_path(rloc.read_text().strip())
                 index = json.loads((layout / "index.json").read_text())
                 for descriptor in index["manifests"]:
                     descriptor.setdefault("annotations", {})["org.opencontainers.image.ref.name"] = image
@@ -486,8 +485,10 @@ class McpFixtureAccess:
 class StackInputs:
     fixture: rendered_fixture.RenderedFixture
     binary: Path
-    image_layouts: tuple[Path, ...]
-    guest_image_layouts: tuple[Path, ...]
+    image_layouts: dict[str, Path]
+    pki_image_layouts: dict[str, Path]
+    vm_image_layouts: dict[str, Path]
+    guest_image_layouts: dict[str, Path]
 
 
 @dataclass(frozen=True)
@@ -550,13 +551,6 @@ def _resolve_on_node(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> Non
     hosts.write_text("\n".join(kept) + "\n")
 
 
-def _ci_image(rloc: Path) -> str:
-    """The reference fixture workloads use for a Bazel-built image, named by its layout's `.rloc`."""
-    name = rloc.stem.removesuffix("_layout")
-    repository = "environment-tools" if name == "environment_tools" else "agentplane-" + name.replace("_", "-")
-    return f"git.allegedly.works/ducktape-ci/{repository}:unset"
-
-
 def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
     return {
         container["image"]
@@ -565,7 +559,6 @@ def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
         for container in (
             doc["spec"]["template"]["spec"].get("initContainers", []) + doc["spec"]["template"]["spec"]["containers"]
         )
-        if container["image"].startswith("git.allegedly.works/ducktape-ci/")
     }
 
 
@@ -679,9 +672,8 @@ def _baseline_fingerprint(
         with path.open("rb") as source:
             digest.update(hashlib.file_digest(source, "sha256").digest())
     digest.update(json.dumps(baseline, sort_keys=True).encode())
-    for reference, rloc in sorted(images.items()):
+    for reference, layout in sorted(images.items()):
         digest.update(reference.encode())
-        layout = get_required_path(rloc.read_text().strip())
         # OCI index manifests bind the config and layer digests without hashing every layer tarball.
         digest.update((layout / "index.json").read_bytes())
     return digest.hexdigest()
@@ -912,13 +904,16 @@ def running_stack(
     crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
     fixture = inputs.fixture
     cert_manager, trust_manager = certificates.releases()
-    pki_images = certificates.images(cert_manager + trust_manager)
+    pki_images = inputs.pki_image_layouts
     releases = vm_sandboxes.releases() if fixture.vm_sandboxes else []
-    infrastructure_images = vm_sandboxes.images(releases) if releases else {}
-    fixture_images = {_ci_image(rloc): rloc for rloc in inputs.image_layouts}
-    guest_images = {_ci_image(rloc): rloc for rloc in inputs.guest_image_layouts}
+    infrastructure_images = inputs.vm_image_layouts
+    fixture_images = inputs.image_layouts
+    guest_images = inputs.guest_image_layouts
     if fixture.vm_sandboxes != bool(guest_images):
         raise ValueError("VM deployment and guest image inputs do not match")
+    for objects, images in [(cert_manager + trust_manager, pki_images), (releases, infrastructure_images)]:
+        if missing := _deployment_images(objects) - images.keys():
+            raise ValueError(f"Infrastructure workloads lack OCI layouts for: {sorted(missing)}")
 
     work = Path(tempfile.mkdtemp())
     k3s = K3s(work, inputs.binary)

@@ -3,6 +3,30 @@
 load("@aspect_bazel_lib//lib:paths.bzl", "to_rlocation_path")
 load("//devinfra/python:defs.bzl", "py_library")
 
+def _oci_image_manifest_impl(ctx):
+    out = ctx.actions.declare_file(ctx.label.name + ".json")
+    references = {}
+    runfiles = ctx.runfiles([out])
+    for image, reference in ctx.attr.images.items():
+        files = image[DefaultInfo].files.to_list()
+        if len(files) != 1:
+            fail("expected one OCI layout from %s, got %s" % (image.label, files))
+        if reference in references:
+            fail("duplicate image reference: " + reference)
+        references[reference] = to_rlocation_path(ctx, files[0])
+        runfiles = runfiles.merge(ctx.runfiles(transitive_files = image[DefaultInfo].files))
+        runfiles = runfiles.merge(image[DefaultInfo].default_runfiles)
+    ctx.actions.write(out, json.encode(references))
+    return [DefaultInfo(files = depset([out]), runfiles = runfiles)]
+
+oci_image_manifest = rule(
+    implementation = _oci_image_manifest_impl,
+    attrs = {
+        "images": attr.label_keyed_string_dict(mandatory = True, allow_files = True),
+    },
+    doc = "An image-reference to OCI-layout runfiles map, carrying the layouts in its runfiles.",
+)
+
 def _oci_layout_rloc_impl(ctx):
     """Write a one-line .rloc file with the OCI layout runfiles path."""
     out = ctx.actions.declare_file(ctx.label.name + ".rloc")

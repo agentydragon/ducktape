@@ -2,11 +2,12 @@
 # gazelle:resolve py cert_manager_clusterissuer_crds //cluster/cdk8s/providers/cert_manager:clusterissuer
 # gazelle:resolve py trust_manager_crds //cluster/cdk8s/providers/cert_manager:bundle
 
+load("@image_pins//:pins.bzl", "KUBEVIRT_VIRT_API_REFERENCE", "KUBEVIRT_VIRT_CONTROLLER_REFERENCE", "KUBEVIRT_VIRT_HANDLER_REFERENCE", "KUBEVIRT_VIRT_LAUNCHER_REFERENCE", "KUBEVIRT_VIRT_OPERATOR_REFERENCE", "KYVERNO_KYVERNOPRE_REFERENCE", "KYVERNO_KYVERNO_REFERENCE")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_EXEC_PROPERTIES", "K3S_PERSISTENCE_PROPERTIES", "K3S_SERVICE_IMAGES", "K3S_TAGS", "K3S_VM_IMAGES")
-load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_EXEC_PROPERTIES", "K3S_PERSISTENCE_PROPERTIES", "K3S_TAGS")
+load("//devinfra/oci:defs.bzl", "oci_image_manifest")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_testonly = True)
@@ -28,12 +29,12 @@ py_test(
     size = "enormous",
     srcs = ["test_pinned_images.py"],
     data = [
-        ":egress_sidecar_layout",
+        "//agentplane/egress:sidecar_image",
         K3S_BINARY,
     ],
     env = {
         "K3S_BINARY_RLOCATION": "$(rlocationpath " + K3S_BINARY + ")",
-        "K3S_TEST_IMAGE_RLOCATION": "$(rlocationpath :egress_sidecar_layout)",
+        "K3S_TEST_IMAGE_RLOCATION": "$(rlocationpath //agentplane/egress:sidecar_image)",
     },
     exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
         "test.runner-recycling-key": "k3s-pinned-image-probe-v1",
@@ -119,61 +120,56 @@ oci_image(
     user = "1000:1000",
 )
 
-# Pod suites share the runner layout containing both harnesses.
-oci_layout_rloc(
+oci_image_manifest(
     name = "harnesses/environment_tools_layout",
-    testonly = True,
-    image = ":environment_tools_harnesses_image",
+    images = {":environment_tools_harnesses_image": "git.allegedly.works/ducktape-ci/environment-tools:unset"},
     visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 
-# Bazel-built service images, loaded into k3s's containerd.
-
-# The MCP suite runs the central-sampler scenario.
-oci_layout_rloc(
-    name = "central_sampler_layout",
-    testonly = True,
-    image = "//agentplane/central_sampler/cmd:service_image",
+oci_image_manifest(
+    name = "service_images",
+    images = {
+        "//agentplane/action_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-action-service:unset",
+        "//agentplane/app:image": "git.allegedly.works/ducktape-ci/agentplane-app:unset",
+        "//agentplane/egress/cmd:image": "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset",
+        "//agentplane/egress:sidecar_image": "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset",
+        "//agentplane/history_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-history-service:unset",
+        "//agentplane/llm_ingress:image": "git.allegedly.works/ducktape-ci/agentplane-llm-ingress:unset",
+        "//agentplane/mcp_edge:service_image": "git.allegedly.works/ducktape-ci/agentplane-mcp-edge:unset",
+        "//agentplane/notification_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-notification-service:unset",
+        "//agentplane/policy_controller:image": "git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset",
+        "//agentplane/env/images:disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset",
+        "//agentplane/runner_gateway:image": "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset",
+        "//agentplane/sandbox_controller:image": "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset",
+        "@postgres_18_minimal_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
+    },
     visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 
-[
-    oci_layout_rloc(
-        name = name + "_layout",
-        testonly = True,
-        image = image,
-        visibility = ["//agentplane/system_tests:__subpackages__"],
-    )
-    for name, image in K3S_SERVICE_IMAGES.items()
-]
+oci_image_manifest(
+    name = "mcp_images",
+    images = {
+        "//agentplane/central_sampler/cmd:service_image": "git.allegedly.works/ducktape-ci/agentplane-central-sampler:unset",
+        "@dex_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-dex:unset",
+        "@mcp_everything_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-mcp-everything:unset",
+        "//agentplane/action_service/testing:oauth_mcp_server_image": "git.allegedly.works/ducktape-ci/agentplane-oauth-fixture:unset",
+    },
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+)
 
-# Dex and the MCP servers the MCP suites call, imported only by targets that run them
-# (`k3s_suite(stack = "mcp")`): kept separate from the common service image list.
-[
-    oci_layout_rloc(
-        name = "mcp_fixtures/" + name + "_layout",
-        testonly = True,
-        image = image,
-        visibility = ["//agentplane/system_tests:__subpackages__"],
-    )
-    for name, image in {
-        "dex": "@dex_linux_amd64",
-        "mcp_everything": "@mcp_everything_linux_amd64",
-        "oauth_fixture": "//agentplane/action_service/testing:oauth_mcp_server_image",
-    }.items()
-]
-
-# KubeVirt's and Kyverno's images, imported by targets that run VM Sandboxes
-# (`k3s_suite(stack = "vm")`): kept separate from the common service image list.
-[
-    oci_layout_rloc(
-        name = "vm_sandboxes/" + name + "_layout",
-        testonly = True,
-        image = image,
-        visibility = ["//agentplane/system_tests:__subpackages__"],
-    )
-    for name, image in K3S_VM_IMAGES.items()
-]
+oci_image_manifest(
+    name = "vm_images",
+    images = {
+        "@kubevirt_virt_api_linux_amd64": KUBEVIRT_VIRT_API_REFERENCE,
+        "@kubevirt_virt_controller_linux_amd64": KUBEVIRT_VIRT_CONTROLLER_REFERENCE,
+        "@kubevirt_virt_handler_linux_amd64": KUBEVIRT_VIRT_HANDLER_REFERENCE,
+        "@kubevirt_virt_launcher_linux_amd64": KUBEVIRT_VIRT_LAUNCHER_REFERENCE,
+        "@kubevirt_virt_operator_linux_amd64": KUBEVIRT_VIRT_OPERATOR_REFERENCE,
+        "@kyverno_kyverno_linux_amd64": KYVERNO_KYVERNO_REFERENCE,
+        "@kyverno_kyvernopre_linux_amd64": KYVERNO_KYVERNOPRE_REFERENCE,
+    },
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+)
 
 py_test(
     name = "test_render",
@@ -253,11 +249,6 @@ py_library(
     name = "stack",
     testonly = True,
     srcs = ["stack.py"],
-    data = [
-        "//agentplane/crds",
-        K3S_BINARY,
-        "//agentplane/system_tests/k3s/pki:all_image_layouts",
-    ] + [":" + name + "_layout" for name in K3S_SERVICE_IMAGES],
     visibility = ["//agentplane/system_tests:__subpackages__"],
     deps = [
         ":block_storage",

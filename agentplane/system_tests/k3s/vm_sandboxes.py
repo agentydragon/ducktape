@@ -8,7 +8,6 @@ import json
 import os
 import subprocess
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 import yaml
@@ -25,10 +24,6 @@ KUBEVIRT_NAMESPACE = "kubevirt"
 KYVERNO_NAMESPACE = "kyverno"
 _KYVERNO_ADMISSION = "kyverno-admission-controller"
 READY_SECONDS = 600
-# What virt-operator deploys, besides itself, at its own registry and version. Launcher Pods run
-# virt-launcher.
-_KUBEVIRT_COMPONENTS = ("virt-api", "virt-controller", "virt-handler", "virt-launcher")
-_LAYOUTS = "_main/agentplane/system_tests/k3s/vm_sandboxes"
 _PROFILE_ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root-profile:unset"
 
 
@@ -140,25 +135,6 @@ def _kyverno() -> list[dict[str, Any]]:
 def releases() -> list[dict[str, Any]]:
     """KubeVirt's operator and Kyverno's admission controller, as `install` applies them."""
     return _kubevirt_operator() + _kyverno()
-
-
-def images(objects: list[dict[str, Any]]) -> dict[str, Path]:
-    """The `.rloc` of each image the `releases` objects run, by the reference they run it by."""
-    references = {
-        container["image"]
-        for doc in objects
-        if doc["kind"] == "Deployment"
-        for container in doc["spec"]["template"]["spec"].get("initContainers", [])
-        + doc["spec"]["template"]["spec"]["containers"]
-    }
-    registry, version = one(image for image in references if "/virt-operator:" in image).split("/virt-operator:")
-    references |= {f"{registry}/{component}:{version}" for component in _KUBEVIRT_COMPONENTS}
-    return {
-        reference: get_required_path(
-            f"{_LAYOUTS}/{reference.rsplit('/', 1)[1].split(':')[0].replace('-', '_')}_layout.rloc"
-        )
-        for reference in references
-    }
 
 
 @tracer.start_as_current_span("system_test.virtualization.install")
