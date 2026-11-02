@@ -4,12 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -59,11 +56,10 @@ type Host struct {
 	onError         func(error)
 	onRuntimeChange func()
 
-	requestMu sync.Mutex
-	mu        sync.Mutex
-	operation *oneoff.Operation
-	logMu     sync.Mutex
-	log       *Log
+	requestMu          sync.Mutex
+	mu                 sync.Mutex
+	operation          *oneoff.Operation
+	eventWritePoisoned error
 }
 
 func NewHost(config Config, deps Dependencies) (*Host, error) {
@@ -244,23 +240,6 @@ func (h *Host) Status(ctx context.Context) (Status, bool, error) {
 	return ReadStatus(ctx, h.state)
 }
 
-func (h *Host) CloseLog() error {
-	h.logMu.Lock()
-	log := h.log
-	h.log = nil
-	h.logMu.Unlock()
-	if log == nil {
-		return nil
-	}
-	return log.Close()
-}
-
-func (h *Host) setLog(log *Log) {
-	h.logMu.Lock()
-	h.log = log
-	h.logMu.Unlock()
-}
-
 func (h *Host) startOperation(work func(context.Context) error) error {
 	h.mu.Lock()
 	if h.operation != nil {
@@ -333,6 +312,12 @@ func (h *Host) runtimeChanged(changed bool) {
 }
 
 func (h *Host) runBootstrap(ctx context.Context) error {
+	h.mu.Lock()
+	eventWritePoisoned := h.eventWritePoisoned
+	h.mu.Unlock()
+	if eventWritePoisoned != nil {
+		return errors.Join(ErrInterrupted, fmt.Errorf("bootstrap event writer is unavailable until restart: %w", eventWritePoisoned))
+	}
 	script := h.config.Script
 	if script == nil {
 		return errors.New("bootstrap is not configured")
@@ -340,8 +325,8 @@ func (h *Host) runBootstrap(ctx context.Context) error {
 	if err := validateScript(*script); err != nil {
 		return err
 	}
-	root := filepath.Join(h.config.StateDir, "initialization")
-	if err := retained.EnsureDirectory(root); err != nil {
+	log, err := OpenLog(ctx, h.state)
+	if err != nil {
 		return err
 	}
 	selected, found, err := ReadSelection(ctx, h.state)
@@ -350,10 +335,8 @@ func (h *Host) runBootstrap(ctx context.Context) error {
 	}
 	newSelection := !found
 	if !found {
-		if _, err := os.Stat(filepath.Join(root, "events.jsonl")); err == nil {
-			return errors.New("initialization events exist without a bootstrap selection")
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
+		if log.LastSequence() != 0 {
+			return errors.New("bootstrap events exist without a bootstrap selection")
 		}
 		if err := publishSelection(ctx, h.state, *script); err != nil {
 			return err
@@ -366,17 +349,13 @@ func (h *Host) runBootstrap(ctx context.Context) error {
 	if selected != *script {
 		return status.Error(codes.AlreadyExists, selectionConflict)
 	}
-	log, err := OpenLog(filepath.Join(root, "events.jsonl"))
-	if err != nil {
-		return err
-	}
-	h.setLog(log)
 	if log.Ended() {
-		return bootstrapErrorForLog(log)
+		return bootstrapErrorForLog(ctx, log)
 	}
 	if !newSelection || log.LastSequence() != 0 {
-		if err := log.AppendInterrupted(1); err != nil {
-			return err
+		if err := log.AppendInterrupted(context.WithoutCancel(ctx), 1); err != nil {
+			h.poisonEventWriter(err)
+			return errors.Join(ErrInterrupted, err)
 		}
 		return ErrInterrupted
 	}
@@ -384,26 +363,41 @@ func (h *Host) runBootstrap(ctx context.Context) error {
 	if cwd == "" {
 		cwd = h.config.StateDir
 	}
+	writeCtx := context.WithoutCancel(ctx)
 	code, err := h.scripts.Run(ctx, ControllerName, selected, cwd, func(stdout bool, data []byte) error {
 		stream := sessionpb.InitializationStream_INITIALIZATION_STREAM_STDERR
 		if stdout {
 			stream = sessionpb.InitializationStream_INITIALIZATION_STREAM_STDOUT
 		}
-		return log.AppendOutput(1, stream, data)
+		if err := log.AppendOutput(writeCtx, 1, stream, data); err != nil {
+			h.poisonEventWriter(err)
+			return err
+		}
+		return nil
 	})
 	if err != nil {
-		if appendErr := log.AppendInterrupted(1); appendErr != nil {
-			return errors.Join(err, appendErr)
+		if appendErr := log.AppendInterrupted(writeCtx, 1); appendErr != nil {
+			h.poisonEventWriter(appendErr)
+			return errors.Join(ErrInterrupted, err, appendErr)
 		}
 		return errors.Join(ErrInterrupted, err)
 	}
-	if _, err := log.AppendResult(1, int32(code)); err != nil {
-		return err
+	if _, err := log.AppendResult(writeCtx, 1, int32(code)); err != nil {
+		h.poisonEventWriter(err)
+		return errors.Join(ErrInterrupted, fmt.Errorf("persist bootstrap result: %w", err))
 	}
 	if code != 0 {
 		return errors.New(failedMessage)
 	}
 	return nil
+}
+
+func (h *Host) poisonEventWriter(err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.eventWritePoisoned == nil {
+		h.eventWritePoisoned = err
+	}
 }
 
 func validateScript(script string) error {
@@ -413,11 +407,14 @@ func validateScript(script string) error {
 	return nil
 }
 
-func bootstrapErrorForLog(log *Log) error {
+func bootstrapErrorForLog(ctx context.Context, log *Log) error {
 	if !log.Ended() {
 		return errors.New(operationHasNoOutcome)
 	}
-	last := log.Since(log.LastSequence() - 1)
+	last, err := log.Since(ctx, log.LastSequence()-1)
+	if err != nil {
+		return err
+	}
 	if len(last) != 1 {
 		return errors.New(operationHasNoOutcome)
 	}

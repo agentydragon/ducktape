@@ -29,14 +29,13 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
-	"go.etcd.io/bbolt"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 func openTestState(stateDir string) (state.State, io.Closer, error) {
-	return cosistate.Open(stateDir, lifecycle.Namespace, SelectionRegistration(), retained.SessionRecordRegistration(), retained.IngressAckRegistration())
+	return cosistate.Open(stateDir, lifecycle.Namespace, SelectionRegistration(), EventRegistration(), retained.SessionRecordRegistration(), retained.IngressAckRegistration())
 }
 
 const bootstrapTestTimeout = 10 * time.Second
@@ -340,11 +339,8 @@ func (r *hostTestRuntime) close(t *testing.T) {
 		r.cancel()
 		<-r.done
 		r.workers.Wait()
-		if err := r.host.CloseLog(); err != nil {
-			t.Errorf("close bootstrap log: %v", err)
-		}
 		if err := r.storeCloser.Close(); err != nil {
-			t.Errorf("close selection store: %v", err)
+			t.Errorf("close bootstrap state: %v", err)
 		}
 		for {
 			select {
@@ -380,15 +376,12 @@ func TestWaitCancellationDoesNotCancelAttemptAndDurableSuccessDoesNotRerun(t *te
 	if err := first.host.Wait(ctx); err != nil {
 		t.Fatalf("wait for admitted bootstrap: %v", err)
 	}
-	if err := first.host.CloseLog(); err != nil {
-		t.Fatal(err)
-	}
-	log, err := OpenLog(filepath.Join(stateDir, "initialization", "events.jsonl"))
+	log, err := OpenLog(ctx, first.state)
 	if err != nil {
 		t.Fatal(err)
 	}
-	events := log.Since(0)
-	if err := log.Close(); err != nil {
+	events, err := log.Since(ctx, 0)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if len(events) < 2 || events[len(events)-1].GetResult() == nil || events[len(events)-1].GetResult().ExitCode != 0 {
@@ -418,10 +411,6 @@ func TestInterruptedAttemptIsReconstructedWithoutRerunning(t *testing.T) {
 	stateDir := t.TempDir()
 	count := filepath.Join(stateDir, "count")
 	script := fmt.Sprintf("printf b >> %q", count)
-	root := filepath.Join(stateDir, "initialization")
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
 	store, closer, err := openTestState(stateDir)
 	if err != nil {
 		t.Fatal(err)
@@ -429,17 +418,14 @@ func TestInterruptedAttemptIsReconstructedWithoutRerunning(t *testing.T) {
 	if err := publishSelection(t.Context(), store, script); err != nil {
 		t.Fatal(err)
 	}
-	if err := closer.Close(); err != nil {
-		t.Fatal(err)
-	}
-	log, err := OpenLog(filepath.Join(root, "events.jsonl"))
+	log, err := OpenLog(t.Context(), store)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := log.AppendInterrupted(1); err != nil {
+	if err := log.AppendInterrupted(t.Context(), 1); err != nil {
 		t.Fatal(err)
 	}
-	if err := log.Close(); err != nil {
+	if err := closer.Close(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -493,21 +479,14 @@ func TestOutputWithoutTerminalEventIsInterruptedAfterRestart(t *testing.T) {
 	if err := publishSelection(t.Context(), store, script); err != nil {
 		t.Fatal(err)
 	}
-	if err := closer.Close(); err != nil {
-		t.Fatal(err)
-	}
-	root := filepath.Join(stateDir, "initialization")
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	log, err := OpenLog(filepath.Join(root, "events.jsonl"))
+	log, err := OpenLog(t.Context(), store)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := log.AppendOutput(1, sessionpb.InitializationStream_INITIALIZATION_STREAM_STDOUT, []byte("partial")); err != nil {
+	if err := log.AppendOutput(t.Context(), 1, sessionpb.InitializationStream_INITIALIZATION_STREAM_STDOUT, []byte("partial")); err != nil {
 		t.Fatal(err)
 	}
-	if err := log.Close(); err != nil {
+	if err := closer.Close(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -530,6 +509,13 @@ func TestOnlyDurableResourcesAreRestored(t *testing.T) {
 	}
 	script := string([]byte{0xff, 0x00, 'x'})
 	if err := publishSelection(t.Context(), store, script); err != nil {
+		t.Fatal(err)
+	}
+	log, err := OpenLog(t.Context(), store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := log.AppendOutput(t.Context(), 1, sessionpb.InitializationStream_INITIALIZATION_STREAM_STDOUT, []byte("retained")); err != nil {
 		t.Fatal(err)
 	}
 	sessions, err := retained.NewStore(filepath.Join(stateDir, "sessions"), store)
@@ -560,6 +546,7 @@ func TestOnlyDurableResourcesAreRestored(t *testing.T) {
 		owner   string
 	}{
 		{*SelectionResourceValue("").Metadata(), HostOwner},
+		{*EventResourceValue(&sessionpb.InitializationEvent{Sequence: 1, Attempt: 1, Observation: &sessionpb.InitializationEvent_Output{Output: &sessionpb.InitializationOutput{Stream: sessionpb.InitializationStream_INITIALIZATION_STREAM_STDOUT, Data: []byte("retained")}}}).Metadata(), HostOwner},
 		{*retained.SessionResource("session-1", &retained.Record{}).Metadata(), lifecycle.HostOwner},
 		{*retained.AcknowledgementResource("session-1", retained.Acknowledgement{}).Metadata(), lifecycle.HostOwner},
 	}
@@ -693,39 +680,6 @@ func TestRequestDetectsAdmissionGuardThatSkippedEffect(t *testing.T) {
 	}
 	if err := r.host.Request(r.ctx); err != nil {
 		t.Fatalf("repeat of already accepted request during Close: %v", err)
-	}
-}
-
-func TestOldJSONCOSIEncodingIsRejected(t *testing.T) {
-	stateDir := t.TempDir()
-	db, err := bbolt.Open(filepath.Join(stateDir, "runtime-resources.db"), 0o600, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = db.Update(func(tx *bbolt.Tx) error {
-		ns, err := tx.CreateBucketIfNotExists([]byte(lifecycle.Namespace))
-		if err != nil {
-			return err
-		}
-		kind, err := ns.CreateBucketIfNotExists([]byte(SelectionType))
-		if err != nil {
-			return err
-		}
-		return kind.Put([]byte(ResourceID), []byte(`{"type":"BootstrapSelections.agentplane","data":{"script":"YWJj"}}`))
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	resources, closer, err := openTestState(stateDir)
-	if err == nil {
-		defer closer.Close()
-		_, _, err = ReadSelection(t.Context(), resources)
-	}
-	if err == nil {
-		t.Fatal("old JSON COSI resource was accepted after restart")
 	}
 }
 

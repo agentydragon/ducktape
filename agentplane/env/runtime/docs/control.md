@@ -83,9 +83,10 @@ budget remains authoritative across all of its native services.
   no terminal event, records the attempt as interrupted and replays that: the script
   may have run any part of itself, and an unknown result does not permit a retry. A fresh
   initialization needs a new Sandbox.
-- Stdout, stderr, and the attempt's result or interruption are appended to a persistent event log with
-  dense Sandbox-scoped sequence numbers. An abandoned `OpenSession` does not stop the script or
-  recording.
+- Stdout, stderr, and the attempt's result or interruption are appended as persistent protobuf
+  `BootstrapEvents` COSI resources with dense Sandbox-scoped sequence numbers. Each output chunk is
+  retained in full; the final result or interruption event is the durable outcome authority. An
+  abandoned `OpenSession` does not stop the script or recording.
 - Environment Runtime takes the bootstrap only from its launch file, never over the control protocol.
 
 ## Environment Runtime control

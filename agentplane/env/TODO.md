@@ -47,21 +47,12 @@ disabled and a root shell when it is enabled.
   resources and joins a host worker barrier; those semantics are not automatically appropriate for
   the Runtime's coordinator-owned workers.
 
-## Store bootstrap events in COSI
+## Measure bootstrap output storage at large volumes
 
-Replace `initialization/events.jsonl` with persistent protobuf COSI resources for the bootstrap
-output and terminal result, alongside the existing persistent script selection. Consider one
-resource per ordered event rather than repeatedly rewriting the whole log. Preserve ordered replay,
-durable publication, and the rule that a selected attempt without a terminal result is interrupted
-on restart and never automatically rerun. Give the event sequence and terminal outcome one clear
-authority; test crashes at selection, output and completion boundaries. Make a hard cutover; do not
-read or import the old JSONL file.
-
-Script output is not bounded by the 64 KiB script-input limit. The current log already loads all
-events into memory, but COSI's in-memory backend adds resource metadata and copies. Measure expected
-and noisy output, startup time and memory, and decide retention and replay behavior before choosing
-the event representation; do not silently truncate output or substitute transient COSI watch history
-for durable replay.
+Bootstrap output now uses one persistent COSI resource per script-runner output chunk, with no
+retention limit or truncation. Measure representative and noisy output volumes, including cold
+restart time and Runtime memory, then decide whether proportional in-memory replay needs retention
+or paging. Preserve complete output and durable replay across any future change.
 
 ## Simplify ownership and process fencing with COSI lifecycle primitives
 

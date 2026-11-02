@@ -207,7 +207,7 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	lifecycleState := injectedState
 	var lifecycleStore io.Closer
 	if lifecycleState == nil {
-		lifecycleState, lifecycleStore, err = cosistate.Open(config.StateDir, lifecycle.Namespace, bootstrap.SelectionRegistration(), retained.SessionRecordRegistration(), retained.IngressAckRegistration(), cosistate.EnvironmentSealRegistration())
+		lifecycleState, lifecycleStore, err = cosistate.Open(config.StateDir, lifecycle.Namespace, bootstrap.SelectionRegistration(), bootstrap.EventRegistration(), retained.SessionRecordRegistration(), retained.IngressAckRegistration(), cosistate.EnvironmentSealRegistration())
 		if err != nil {
 			_ = owner.Close()
 			return nil, err
@@ -468,11 +468,6 @@ func (r *Runtime) joinClose() error {
 	if r.config.Supervision == "pid1" {
 		if err := r.supervisor.FenceNamespace(context.Background()); err != nil {
 			return fmt.Errorf("fence Pod PID namespace: %w", err)
-		}
-	}
-	if r.bootstrapHost != nil {
-		if err := r.bootstrapHost.CloseLog(); err != nil {
-			return err
 		}
 	}
 	if r.lifecycleStore != nil {

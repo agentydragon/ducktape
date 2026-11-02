@@ -1,9 +1,9 @@
 # Environment Runtime COSI map
 
 This is a map of the controllers and resources registered in the Runtime's **single COSI engine**
-and the single `environment-runtime` COSI namespace. Bootstrap selections, Session records, `IngressAcks`
-and `EnvironmentSeals` have a persistent backing store; the other resources are in memory. The namespace is not a process, cgroup, or
-Kubernetes namespace. Harness Host registers its controllers
+and the single `environment-runtime` COSI namespace. Bootstrap selections and events, Session records,
+`IngressAcks` and `EnvironmentSeals` have a persistent backing store; the other resources are in memory.
+The namespace is not a process, cgroup, or Kubernetes namespace. Harness Host registers its controllers
 into the same engine. The Execution controller exists only when Execution
 is configured; the Codex app-server controller exists only when Codex is configured.
 
@@ -40,6 +40,7 @@ flowchart LR
   BS["BootstrapSelections<br/>(persistent)"]
   BO["BootstrapOperationStates"]
   BR["BootstrapStatuses"]
+  BE["BootstrapEvents<br/>(persistent)"]
   PD["ProcessDesiredStates"]
   PI["ProcessObservations"]
   PS["ProcessStatuses"]
@@ -67,6 +68,7 @@ flowchart LR
   API -.->|request| BH
   BH <-->|read / write selected script| BS
   BH -->|publish| BI & BO
+  BH -->|append ordered output and outcome| BE
   BI & BO & BR -->|QPrimary / QMapped| BC
   BC -->|write| BR
   BC -.->|start operation| BH
@@ -95,13 +97,13 @@ its completion channel; the published transition or Close status is the observab
 a durable work queue. A blocking Host binding check stays in a worker so Close can preempt a
 transition. An uncertain effect retains ownership and is not automatically replayed.
 
-| Controller                         | Watched inputs                                                                                     | Controller output                                                                     | Other relevant work                                                                                                                   |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `environment-runtime-lifecycle`    | `EnvironmentRuntimeDesiredStates`, `EnvironmentRuntimeTransitionRequests` (weak)                   | `EnvironmentRuntimeCloseStatuses`, `EnvironmentRuntimeTransitionStatuses` (exclusive) | Close and adopt/quiesce are coordinated by this one controller; workers publish completion by waking its loop.                        |
-| `environment-host-report-observer` | `HostReports`, `HostIntentStatuses` (weak)                                                         | None                                                                                  | Wakes Runtime waiters and starts the Execution fence for an exact applied report.                                                     |
-| `bootstrap-lifecycle`              | `BootstrapRequests` (primary); `BootstrapStatuses`, `BootstrapOperationStates` (mapped)            | `BootstrapStatuses` (exclusive)                                                       | Host owns admitted one-off work and publishes its operation state. Runtime admission checks the environment generation.               |
-| `process-lifecycle`                | `ProcessDesiredStates` (primary), `ProcessObservations` (mapped)                                   | `ProcessStatuses` (exclusive)                                                         | Host owns launch callbacks, live handles and workers; systemd observations are published in `ProcessObservations`.                    |
-| `execution-lifecycle`              | `ExecutionLifecycleSignals` (primary), `ExecutionStatuses` (mapped), both in `environment-runtime` | `ExecutionStatuses` (exclusive)                                                       | Runtime host publishes desired UID/demand and generation-bound completion facts; the controller retains an unfenced owner on failure. |
+| Controller                         | Watched inputs                                                                                     | Controller output                                                                     | Other relevant work                                                                                                                                                   |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `environment-runtime-lifecycle`    | `EnvironmentRuntimeDesiredStates`, `EnvironmentRuntimeTransitionRequests` (weak)                   | `EnvironmentRuntimeCloseStatuses`, `EnvironmentRuntimeTransitionStatuses` (exclusive) | Close and adopt/quiesce are coordinated by this one controller; workers publish completion by waking its loop.                                                        |
+| `environment-host-report-observer` | `HostReports`, `HostIntentStatuses` (weak)                                                         | None                                                                                  | Wakes Runtime waiters and starts the Execution fence for an exact applied report.                                                                                     |
+| `bootstrap-lifecycle`              | `BootstrapRequests` (primary); `BootstrapStatuses`, `BootstrapOperationStates` (mapped)            | `BootstrapStatuses` (exclusive)                                                       | Host owns admitted one-off work and publishes its operation state. Runtime admission checks the environment generation; the worker appends durable `BootstrapEvents`. |
+| `process-lifecycle`                | `ProcessDesiredStates` (primary), `ProcessObservations` (mapped)                                   | `ProcessStatuses` (exclusive)                                                         | Host owns launch callbacks, live handles and workers; systemd observations are published in `ProcessObservations`.                                                    |
+| `execution-lifecycle`              | `ExecutionLifecycleSignals` (primary), `ExecutionStatuses` (mapped), both in `environment-runtime` | `ExecutionStatuses` (exclusive)                                                       | Runtime host publishes desired UID/demand and generation-bound completion facts; the controller retains an unfenced owner on failure.                                 |
 
 ## Harness Host
 
@@ -213,11 +215,15 @@ full intent. Runtime accepts a report only after that exact intent is applied, s
 Execution fence cannot validate an older report.
 
 `EnvironmentRuntimeDesiredStates`, `HostIntents`, statuses, reports and operation state records are
-in-memory coordination state. `BootstrapSelections`, `SessionRecords`, `IngressAcks` and
-`EnvironmentSeals` have a COSI backing store; `BootstrapRequests` is live-only. The bootstrap event log
-and journals have durable owners. The four backed resource specs use protobuf, including byte fields
-for selected bootstrap and Session setup scripts. COSI persists their complete metadata alongside the spec. An old JSON
-resource in `runtime-resources.db` fails reload; legacy Session and acknowledgement files are
+in-memory coordination state. `BootstrapSelections`, `BootstrapEvents`, `SessionRecords`, `IngressAcks`
+and `EnvironmentSeals` have a COSI backing store; `BootstrapRequests` is live-only. The incarnation
+seal and journals have durable owners. The five backed resource specs use protobuf, including byte
+fields for selected bootstrap scripts, output chunks and Session setup scripts. COSI persists their
+complete metadata alongside the spec. Bootstrap events use a fixed-width resource ID and their
+embedded sequence as the ordering authority; readers sort by the sequence and reject gaps or a
+terminal event followed by more output. The last event carries the result or interruption, so output
+and terminal outcome share one durable sequence. COSI list order is not part of the contract. An old
+JSON resource in `runtime-resources.db` fails reload; legacy Session and acknowledgement files are
 never imported.
 `IngressAcks` persists the Harness Host's last History cursor and seal bit; `EnvironmentSeals`
 persists the Runtime's sealed incarnation UID. The SQLite journal remains the event authority.
