@@ -35,13 +35,12 @@ disabled and a root shell when it is enabled.
 COSI runtime is pinned in `third_party/go.mod`; evaluate its APIs against the actual ownership and
 teardown contracts rather than treating every controller as a simple resource transform.
 
-- The Runtime Close and transition status writers in `lifecycle/contracts.go`, the three Host
-  intent-status writes in `harnesshost/intent_controller.go`, and the Process controller's
-  `writeResource` calls discard any change result. Consider calling `safe.WriterModify` directly:
+- The Runtime Close and transition status writers in `lifecycle/contracts.go` and the Process
+  controller's `writeResource` calls discard any change result. Consider calling `safe.WriterModify` directly:
   COSI suppresses equal updates and retries update conflicts. Its phase check still runs for a
   no-op, unlike the current early return. On an existing resource the direct path reads twice, so
   it saves a read on changed writes but loses the current one-read no-op fast path; measure before
-  claiming a performance improvement. Keep intent Applying-before-effect and process fence ordering.
+  claiming a performance improvement. Keep process fence ordering.
 - `PublishEnvironmentDesired`, `PublishRuntimeTransitionRequest` and `PublishDesired` in
   `lifecycle/contracts.go` repeat the same typed assignment and explicit owner handling as
   `env/cosi.Publish`. Their specs are comparable; they can share that helper without changing the

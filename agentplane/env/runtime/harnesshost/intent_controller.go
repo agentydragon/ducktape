@@ -60,7 +60,7 @@ func (c *hostIntentController) Run(ctx context.Context, engine controller.Runtim
 			continue
 		}
 		result := harnesshostlifecycle.HostIntentStatus{Intent: desired}
-		if _, err := cosi.Write(ctx, engine, harnesshostlifecycle.HostIntentStatusResource(result), result); err != nil {
+		if err := harnesshostlifecycle.WriteHostIntentStatus(ctx, engine, result); err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
@@ -68,7 +68,7 @@ func (c *hostIntentController) Run(ctx context.Context, engine controller.Runtim
 		}
 		if !c.eligible(desired) {
 			result.Error = "Host connection ended before intent application"
-			_, writeErr := cosi.Write(ctx, engine, harnesshostlifecycle.HostIntentStatusResource(result), result)
+			writeErr := harnesshostlifecycle.WriteHostIntentStatus(ctx, engine, result)
 			c.host.fail(fmt.Errorf("apply Host lifecycle intent: %w", errors.Join(errors.New(result.Error), writeErr)))
 			return nil
 		}
@@ -82,7 +82,7 @@ func (c *hostIntentController) Run(ctx context.Context, engine controller.Runtim
 		} else {
 			result.Applied = true
 		}
-		_, writeErr := cosi.Write(ctx, engine, harnesshostlifecycle.HostIntentStatusResource(result), result)
+		writeErr := harnesshostlifecycle.WriteHostIntentStatus(ctx, engine, result)
 		if applyErr != nil || writeErr != nil {
 			c.host.fail(fmt.Errorf("apply Host lifecycle intent: %w", errors.Join(applyErr, writeErr)))
 		}
