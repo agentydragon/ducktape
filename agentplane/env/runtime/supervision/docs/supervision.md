@@ -80,7 +80,7 @@ cleanup of that same identity. An uncertain launch never creates a second unit t
 Native effects remain subject to journal reconciliation.
 
 `PrepareForOwner` takes an explicit service unit, lifetime directory and scope ID. Runtime uses the
-legacy Runner scope ID. Native harnesses use `harness` and Execution uses `execution-service`; their
+`environment-runtime`. Native harnesses use `harness` and Execution uses `execution-service`; their
 native scopes remain independent. All three bind their native units to
 `agentplane-environment-runtime.service` and require its invocation marker under
 `/run/agentplane-environment-runtime-lifetime`.

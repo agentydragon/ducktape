@@ -139,7 +139,7 @@ func openSystemdConnection() (*systemd.Conn, context.CancelFunc, error) {
 	return conn, cancel, nil
 }
 
-// Prepare uses the environment Runtime's legacy native-process scope.
+// Prepare uses the environment Runtime's native-process scope.
 func (p *SystemdLauncher) Prepare(stateDir, sandboxUID string) (*Supervisor, error) {
 	return p.PrepareForOwner(stateDir, sandboxUID, SystemdOwner{
 		Unit: runtimeUnit, LifetimeDirectory: runtimeLifetimeDirectory, ScopeID: SystemdEnvironmentRuntimeScopeID,
@@ -211,11 +211,7 @@ func (p *SystemdLauncher) PrepareForOwner(stateDir, sandboxUID string, owner Sys
 }
 
 func systemdScopeIdentity(stateDir, sandboxUID string, owner SystemdOwner) string {
-	identity := stateDir + "\x00" + sandboxUID
-	if owner.ScopeID != SystemdEnvironmentRuntimeScopeID {
-		identity += "\x00" + string(owner.ScopeID)
-	}
-	return identity
+	return stateDir + "\x00" + sandboxUID + "\x00" + string(owner.ScopeID)
 }
 
 func (owner SystemdOwner) validate() error {

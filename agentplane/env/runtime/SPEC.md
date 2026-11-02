@@ -120,7 +120,8 @@ resource writers. The [public control contract](docs/control.md) describes calle
 Abnormal Pod Runtime exit requires the outer container fence. VM native units bind to
 `agentplane-environment-runtime.service` and `/run/agentplane-environment-runtime-lifetime` with its
 exact invocation. Runtime's management scope identity remains separate from harness/Execution scope
-IDs. The Runtime unit holds state/workspace mounts until native cleanup and accepted bootstrap
+IDs. Every scope identity includes the state directory, Sandbox UID and explicit scope ID.
+The Runtime unit holds state/workspace mounts until native cleanup and accepted bootstrap
 settle; its stop timeout is unlimited, while the lifecycle fence deadline is 150 seconds.
 
 Systemd supervision retains exact invocation IDs and cgroup paths until native fencing is proven.
