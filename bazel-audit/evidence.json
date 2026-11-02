@@ -7,38 +7,43 @@
       "id": "A",
       "priority": "High",
       "category": "Ownership",
-      "title": "Move Augur\u2019s deployed model contracts out of x/"
+      "title": "Move Augur’s deployed model contracts out of x/",
+      "refresh_status": "present_at_refresh"
     },
     {
       "id": "B",
       "priority": "High",
       "category": "Ownership",
-      "title": "Decouple Haku\u2019s schema build from an experimental service implementation",
+      "title": "Decouple Haku’s schema build from an experimental service implementation",
       "status": "deferred"
     },
     {
       "id": "D",
       "priority": "Medium",
       "category": "Dead target candidate",
-      "title": "Drop the unused Plaid migration wrapper, not the migrations"
+      "title": "Drop the unused Plaid migration wrapper, not the migrations",
+      "refresh_status": "present_at_refresh"
     },
     {
       "id": "F",
       "priority": "Medium",
       "category": "Dead target candidate",
-      "title": "Remove orphaned manifest and schema group wrappers"
+      "title": "Remove orphaned manifest and schema group wrappers",
+      "refresh_status": "present_at_refresh"
     },
     {
       "id": "J",
       "priority": "Medium",
       "category": "Lint wiring",
-      "title": "Untangle checker-only provider dependencies from runtime libraries"
+      "title": "Untangle checker-only provider dependencies from runtime libraries",
+      "refresh_status": "present_at_refresh"
     },
     {
       "id": "K",
       "priority": "Medium",
       "category": "Lint wiring",
-      "title": "Make whole-program ESLint inputs auditable across package boundaries"
+      "title": "Make whole-program ESLint inputs auditable across package boundaries",
+      "refresh_status": "present_at_refresh"
     },
     {
       "id": "L",
@@ -53,14 +58,33 @@
       "related_output_protocol_pull_request": 13720,
       "related_output_protocol_status": "merged",
       "related_output_cutover_pull_request": 13730,
-      "related_output_cutover_status": "open",
-      "related_output_cutover_head": "d4c8abb21461248b9ba92e85d90de44427b31782"
+      "related_output_cutover_status": "merged",
+      "related_output_cutover_head": "1d3bc0873ad04e9b790ebff2efa566fbd62ed75b",
+      "related_output_cutover_merge_commit": "f0843d4b632608daf52b76287a6318e18d6b7142",
+      "related_output_cutover_merged_at": "2026-11-02T08:04:08Z",
+      "visual_identity_guard_note": "Remains open; evaluate against the structured output cutover already merged in #13730."
     },
     {
       "id": "M",
       "priority": "Low",
       "category": "Dead target candidate",
-      "title": "Review the frozen benchmark filegroup as an entry point"
+      "title": "Review the frozen benchmark filegroup as an entry point",
+      "refresh_status": "present_at_refresh"
+    },
+    {
+      "id": "N",
+      "priority": "Low",
+      "category": "Browser script wiring",
+      "title": "Make browser-script runfiles and lint ownership consistent",
+      "status": "investigate",
+      "note": "Duplicate declarations and clock lint coverage need configured-action and runfiles verification."
+    },
+    {
+      "id": "O",
+      "priority": "Low",
+      "category": "Direct dependencies",
+      "title": "Declare the desktop daemon test’s direct OAuth dependency",
+      "status": "confirmed_present"
     }
   ],
   "filegroup_query": {
@@ -89,5 +113,34 @@
     "The original audit did not implement its recommendations; status fields record subsequent work"
   ],
   "burndown_updated_utc": "2026-11-02T06:43:45Z",
-  "dispatched_in_progress": []
+  "dispatched_in_progress": [],
+  "status_refresh": {
+    "source_commit": "2cbcf945b203c1260e10c8e32a6b6e26025f254d",
+    "checked_utc": "2026-11-02T11:05:00Z",
+    "scope": "Focused status update and selected new cases; not an exhaustive liveness audit.",
+    "filegroup_query": {
+      "expression": "kind(\"filegroup\", //...)",
+      "invocation_id": "5d39759f-cd41-4012-b4f5-5d877cf28a0e",
+      "status": "succeeded",
+      "returned_local_labels": 2266,
+      "note": "The regex includes pkg_filegroup and generated workspace labels."
+    },
+    "reverse_dependency_query": {
+      "expression": "rdeps(//..., kind(\"filegroup\", //...), 1)",
+      "invocation_id": "e16b8416-6828-4e26-8770-38681b2d8f5d",
+      "status": "succeeded"
+    },
+    "focused_wrapper_query": {
+      "expression": "rdeps(//..., set(//finance/plaid/db:migrations //cluster/schemas:schemas //haku/runtime/x/managed_agent/self_hosted:deploy_manifests //cluster/docs/inference/runs/2026-10-13_rugged_coding:frozen_humaneval_plus_inputs), 1)",
+      "invocation_id": "1c9cab47-c21d-4ca1-963f-27f17177b026",
+      "status": "succeeded",
+      "no_incoming_rule_edges": [
+        "//finance/plaid/db:migrations",
+        "//cluster/schemas:schemas",
+        "//haku/runtime/x/managed_agent/self_hosted:deploy_manifests",
+        "//cluster/docs/inference/runs/2026-10-13_rugged_coding:frozen_humaneval_plus_inputs"
+      ]
+    },
+    "note": "The original top-level source_commit and query evidence remain tied to the original snapshot."
+  }
 }
