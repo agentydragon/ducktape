@@ -159,14 +159,14 @@ func (h *Host) Request(ctx context.Context) error {
 	if found {
 		return requestRefusal(current.Mode)
 	}
-	return bootstrapStatus.Error(codes.Unavailable, "Runner desired state is not initialized")
+	return status.Error(codes.Unavailable, "Runner desired state is not initialized")
 }
 
 func requestRefusal(mode lifecycle.Mode) error {
 	if mode == lifecycle.Closing {
-		return bootstrapStatus.Error(codes.Unavailable, "runner is closing")
+		return status.Error(codes.Unavailable, "runner is closing")
 	}
-	return bootstrapStatus.Error(codes.Aborted, "this Sandbox is quiesced or bootstrap admission changed")
+	return status.Error(codes.Aborted, "this Sandbox is quiesced or bootstrap admission changed")
 }
 
 // Wait observes the admitted attempt. Canceling ctx only stops this wait; the
@@ -215,7 +215,7 @@ func (h *Host) Wait(ctx context.Context) error {
 		return ErrInterrupted
 	case Failed:
 		if bootstrapStatus.Error == selectionConflict {
-			return bootstrapStatus.Error(codes.AlreadyExists, bootstrapStatus.Error)
+			return status.Error(codes.AlreadyExists, bootstrapStatus.Error)
 		}
 		if bootstrapStatus.Error != "" {
 			return errors.New(bootstrapStatus.Error)
@@ -374,7 +374,7 @@ func (h *Host) runBootstrap(ctx context.Context) error {
 			return err
 		}
 		if previous.SHA != metadata.SHA {
-			return bootstrapStatus.Error(codes.AlreadyExists, selectionConflict)
+			return status.Error(codes.AlreadyExists, selectionConflict)
 		}
 	}
 	log, err := OpenLog(filepath.Join(root, "events.jsonl"))
