@@ -19,7 +19,7 @@ filegroup(
     srcs = glob(["*.json"]),
     visibility = [
         "//cluster/cdk8s/monitoring:__pkg__",
-        "//cluster/skills/grafana:__pkg__",
+        "//grafana/skill:__pkg__",
     ],
 )
 
