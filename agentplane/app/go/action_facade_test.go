@@ -19,12 +19,86 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	connectionpb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	notificationpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
+	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
+
+type generatedEnvironmentService struct {
+	environmentpb.UnimplementedEnvironmentServiceServer
+	authorization []string
+	created       *sandboxpb.CreateSandboxRequest
+	deleted       *environmentpb.TargetHandle
+}
+
+func (s *generatedEnvironmentService) CreateEnvironment(ctx context.Context, request *sandboxpb.CreateSandboxRequest) (*environmentpb.TargetHandle, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	s.authorization = append(s.authorization, md.Get("authorization")...)
+	s.created = request
+	return &environmentpb.TargetHandle{Namespace: "agentplane", Name: request.GetName(), Uid: "sandbox-uid"}, nil
+}
+
+func (s *generatedEnvironmentService) DeleteEnvironment(ctx context.Context, request *environmentpb.EnvironmentMutationRequest) (*emptypb.Empty, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	s.authorization = append(s.authorization, md.Get("authorization")...)
+	s.deleted = request.GetTarget()
+	return &emptypb.Empty{}, nil
+}
+
+func TestGeneratedEnvironmentFacadeRoutesManagementWithAppServiceToken(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &generatedEnvironmentService{}
+	server := grpc.NewServer()
+	environmentpb.RegisterEnvironmentServiceServer(server, service)
+	serveDone := make(chan struct{})
+	go func() {
+		defer close(serveDone)
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+		<-serveDone
+	})
+	handler, err := facade.NewHandler(t.Context(), listener.Addr().String(), 10*time.Second, environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokenFile := filepath.Join(t.TempDir(), "environment-token")
+	if err := os.WriteFile(tokenFile, []byte("app-pod-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	upstream := proxy.NewHandlerUpstream(handler, tokenFile)
+	for _, operation := range []struct{ method, url, body, path string }{
+		{http.MethodPost, "/upstream/environments/v1/environments", `{"name":"created","template":"pod"}`, "v1/environments"},
+		{http.MethodDelete, "/upstream/environments/v1/environments/agentplane/created?target.uid=sandbox-uid", "", "v1/environments/agentplane/created"},
+	} {
+		request := httptest.NewRequest(operation.method, operation.url, strings.NewReader(operation.body))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		if err := upstream.ForwardHTTP(response, request, request.Context(), operation.path, ""); err != nil {
+			t.Fatal(err)
+		}
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s %s = %d: %s", operation.method, operation.url, response.Code, response.Body.String())
+		}
+	}
+	if service.created.GetName() != "created" || service.created.GetTemplate() != "pod" ||
+		service.deleted.GetNamespace() != "agentplane" || service.deleted.GetName() != "created" || service.deleted.GetUid() != "sandbox-uid" {
+		t.Fatalf("generated facade requests: create=%+v delete=%+v", service.created, service.deleted)
+	}
+	if len(service.authorization) != 2 || service.authorization[0] != "Bearer app-pod-token" || service.authorization[1] != "Bearer app-pod-token" {
+		t.Fatalf("generated facade authorization = %v", service.authorization)
+	}
+}
 
 type generatedActionService struct {
 	actionpb.UnimplementedActionServiceServer

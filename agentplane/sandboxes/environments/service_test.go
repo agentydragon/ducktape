@@ -20,6 +20,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/emptypb"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -37,6 +39,7 @@ const (
 	foreignNamespace   = "other-envs"
 	dispatcherAudience = "session-dispatcher-test"
 	actionsToken       = "trusted-actions"
+	launcherToken      = "trusted-launcher"
 	untrustedToken     = "untrusted-actions"
 	sandboxName        = "workspace"
 	sandboxUID         = "sandbox-uid-current"
@@ -91,6 +94,13 @@ func testTokenReviews() tokenReviewStub {
 				"authentication.kubernetes.io/pod-uid":  {"actions-pod-uid"},
 			},
 		},
+		launcherToken: {
+			Username: "system:serviceaccount:" + discoveryNamespace + ":launcher", UID: "launcher-uid",
+			Extra: map[string]authenticationv1.ExtraValue{
+				"authentication.kubernetes.io/pod-name": {"launcher-pod"},
+				"authentication.kubernetes.io/pod-uid":  {"launcher-pod-uid"},
+			},
+		},
 		untrustedToken: {
 			Username: "system:serviceaccount:" + foreignNamespace + ":actions", UID: "other-actions-uid",
 			Extra: map[string]authenticationv1.ExtraValue{
@@ -123,7 +133,10 @@ func serveDiscoveryWithOptions(
 	wakeCallers []auth.Account,
 ) environmentpb.EnvironmentServiceClient {
 	t.Helper()
-	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeCallers), nil)
+	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeCallers), nil, ManagementOptions{
+		Managers:  map[auth.Account]struct{}{{Namespace: discoveryNamespace, Name: "actions"}: {}},
+		Launchers: map[auth.Account]struct{}{{Namespace: discoveryNamespace, Name: "launcher"}: {}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,6 +233,72 @@ func delegatedBearing(t *testing.T, token string, account auth.Account, uid stri
 		"authorization", "Agentplane-Delegated "+token,
 		auth.DelegationMetadataKey, string(encoded),
 	))
+}
+
+func TestManagementRequiresDirectGrantedPodAndFencesTarget(t *testing.T) {
+	objects := baseReader(t)
+	method := environmentpb.EnvironmentService_SetEnvironmentWakeOnSend_FullMethodName
+	rpc := serveDiscoveryWithDelegation(t, objects, runtimeconfig.Catalog{}, []string{method})
+	target := &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
+	request := &environmentpb.SetEnvironmentWakeOnSendRequest{Target: target, WakeOnSend: true}
+	if _, err := rpc.SetEnvironmentWakeOnSend(bearing(t, matchingToken), request); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("account-only caller: got %v", err)
+	}
+	actor := auth.Account{Namespace: discoveryNamespace, Name: sandboxName}
+	if _, err := rpc.SetEnvironmentWakeOnSend(delegatedBearing(t, actionsToken, actor, executionUID), request); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("delegated caller borrowed management grant: got %v", err)
+	}
+	stale := proto.Clone(request).(*environmentpb.SetEnvironmentWakeOnSendRequest)
+	stale.Target.Uid = "old-uid"
+	if _, err := rpc.SetEnvironmentWakeOnSend(bearing(t, actionsToken), stale); status.Code(err) != codes.NotFound {
+		t.Fatalf("stale target: got %v", err)
+	}
+	if _, err := rpc.SetEnvironmentWakeOnSend(bearing(t, actionsToken), request); err != nil {
+		t.Fatal(err)
+	}
+	stored := &sandboxapi.Sandbox{}
+	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, stored); err != nil {
+		t.Fatal(err)
+	}
+	if !stored.Spec.WakeOnSend {
+		t.Fatal("authorized mutation was not applied")
+	}
+}
+
+func TestActionLauncherGrantDoesNotConferGeneralManagement(t *testing.T) {
+	rpc := serveDiscovery(t, baseReader(t), runtimeconfig.Catalog{})
+	origin := &sandboxpb.SandboxLaunchOrigin{Caller: &sandboxpb.ServiceAccount{Namespace: discoveryNamespace, Name: sandboxName}, ActionGroup: "orchestration_v1"}
+	request := &sandboxpb.CreateSandboxRequest{Name: "created", Template: "test", LaunchOrigin: origin}
+	if _, err := rpc.CreateEnvironment(bearing(t, actionsToken), request); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("manager supplied broker origin: %v", err)
+	}
+	if _, err := rpc.CreateEnvironment(bearing(t, launcherToken), &sandboxpb.CreateSandboxRequest{Name: "created", Template: "test"}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("launcher omitted broker origin: %v", err)
+	}
+	if _, err := rpc.SuspendEnvironment(bearing(t, launcherToken), &environmentpb.EnvironmentMutationRequest{Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("launcher suspended environment: %v", err)
+	}
+}
+
+func TestManagementRejectsUnrepresentableDuration(t *testing.T) {
+	rpc := serveDiscovery(t, baseReader(t), runtimeconfig.Catalog{})
+	target := &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
+	tooLarge := &durationpb.Duration{Seconds: 315576000000}
+	_, err := rpc.SetEnvironmentIdleSuspend(bearing(t, actionsToken), &environmentpb.SetEnvironmentIdleSuspendRequest{Target: target, IdleSuspendAfter: tooLarge})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("unrepresentable duration: got %v", err)
+	}
+	_, err = rpc.CreateEnvironment(bearing(t, actionsToken), &sandboxpb.CreateSandboxRequest{Name: "overflow", Template: "runner-vm", IdleSuspendAfter: tooLarge})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("unrepresentable create duration: got %v", err)
+	}
+}
+
+func TestManagementTemplatesNeedManagerGrant(t *testing.T) {
+	rpc := serveDiscovery(t, baseReader(t), runtimeconfig.Catalog{})
+	if _, err := rpc.ListEnvironmentTemplates(bearing(t, launcherToken), &emptypb.Empty{}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("launcher listed templates: %v", err)
+	}
 }
 
 func TestListAndGetReturnTheExactExecutionAccountIdentity(t *testing.T) {
@@ -722,7 +801,7 @@ func TestEveryGeneratedRPCRequiresReviewedServiceAccountAdmission(t *testing.T) 
 	}
 	register := func(server *grpc.Server) {
 		objects := baseReader(t)
-		service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), nil)
+		service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), nil, ManagementOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -762,7 +841,7 @@ func TestInventoryReaderListAndGetAreBroadButOrdinaryCallersStayScoped(t *testin
 	terminating.Status.OperatingMode = sandboxapi.OperatingModeSuspended
 	objects := readerWithObjects(t, sandboxObject(sandboxUID), executionAccountObject(sandboxUID), other, terminating)
 	reader := auth.Account{Namespace: discoveryNamespace, Name: "actions"}
-	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), map[auth.Account]struct{}{reader: {}})
+	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), map[auth.Account]struct{}{reader: {}}, ManagementOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -802,7 +881,7 @@ func TestDelegatedActorDoesNotLendInventoryReaderGrant(t *testing.T) {
 	other := sandboxObject("other-uid")
 	other.Name = "other"
 	objects := readerWithObjects(t, sandboxObject(sandboxUID), executionAccountObject(sandboxUID), other)
-	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), map[auth.Account]struct{}{actor: {}})
+	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), map[auth.Account]struct{}{actor: {}}, ManagementOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

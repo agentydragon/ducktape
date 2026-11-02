@@ -2,7 +2,8 @@ import { Checkbox } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
 import { sandboxWakeOnSend, type SandboxStatusSource } from "../sandbox_status";
-import { api, displayableError } from "../client";
+import { displayableError } from "../client";
+import { sandboxTarget, setEnvironmentWakeOnSend } from "./client";
 
 /**
  * Whether a message to a suspended Sandbox resumes it, saved on each change to the incarnation shown. What
@@ -30,15 +31,10 @@ export function WakeOnSendCheckbox({
   async function save(wakeOnSend: boolean): Promise<void> {
     setRequested(wakeOnSend);
     setSaving(true);
-    const failure = await api
-      .PATCH("/sandboxes/{name}/wake-policy", {
-        params: { path: { name: sandbox.name } },
-        body: { uid: sandbox.uid, wake_on_send: wakeOnSend },
-      })
-      .then(
-        ({ error }) => error,
-        (reason: unknown) => reason
-      );
+    const failure = await setEnvironmentWakeOnSend(sandboxTarget(sandbox), wakeOnSend).then(
+      () => null,
+      (reason: unknown) => reason
+    );
     setSaving(false);
     if (failure) setRequested(null);
     onError(failure ? displayableError(failure) : null);

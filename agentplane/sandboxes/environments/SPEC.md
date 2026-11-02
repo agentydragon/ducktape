@@ -2,12 +2,11 @@
 
 ## Purpose
 
-Expose discovery and observation of existing Agentplane Sandbox targets, and independently
-authorized resume requests for existing targets. List/get/watch return facts needed to choose a
-target and prepare a Session request; `GetEnvironment` returns immediately and
-`WatchEnvironment` observes current-state changes. `ResumeEnvironment` delegates guarded mutation
-and current authorization checks to the shared lifecycle manager. None of these methods creates an
-environment, attaches a Session or grants authorization.
+Own Sandbox creation, templates, management mutations, discovery and observation in the existing
+Runner Gateway process. List/get/watch return facts needed to choose a target and prepare a Session
+request; their existing descriptor and watch contract remains unchanged. `ResumeEnvironment`
+delegates guarded mutation to the lifecycle manager. Creation and policy mutations use the shared
+Kubernetes inventory; no method attaches a Session or grants authorization.
 
 ## Caller and object authorization
 
@@ -27,6 +26,15 @@ environment, attaches a Session or grants authorization.
   Sandbox namespace. This grant does not confer mutation or wake authority, and does not pass through delegation.
 - Resume independently checks the exact target and execution account, `resumePolicy`, and direct
   operator authority through the lifecycle manager. Read permission alone does not authorize resume.
+- Management methods require a direct Pod-bound ServiceAccount explicitly listed as a manager.
+  The Action Service may be listed separately as a launcher, which permits only Create with a
+  complete Action caller and group origin. Delegation, a read grant, and a launcher grant never
+  confer general management. The service records both the authenticated broker and launch origin
+  in create intent, so an identical retry can recover the same Sandbox while a different caller or
+  request cannot adopt its name.
+- Suspend, delete, and policy changes require a complete namespace/name/UID handle and fence writes
+  on the live UID and Kubernetes resourceVersion. Delete requires reported suspension. Uncertain
+  outcomes stay uncertain; callers reconcile the same intent before deciding whether to retry.
 - Get and watch require the complete Sandbox namespace/name/UID handle. Missing, replaced, deleting, or foreign targets are hidden as `NOT_FOUND` for ordinary callers.
   Broad readers may see a deleting target and targets whose execution account is not yet present.
 - The page request/response remains compatible with bounded pagination. Current Sandbox-owned

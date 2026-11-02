@@ -18,6 +18,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
 	"github.com/google/uuid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"google.golang.org/grpc/codes"
@@ -41,6 +42,29 @@ func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 	}
 	if launched.Sandbox != (contract.SandboxRef{Name: "test-worker", UID: sandbox.UID}) {
 		t.Errorf("launch answered %v, want the Sandbox %s", launched.Sandbox, sandbox.UID)
+	}
+	var intent struct {
+		Caller struct {
+			Namespace string `json:"namespace"`
+			Name      string `json:"name"`
+		} `json:"caller"`
+		Request struct {
+			LaunchOrigin struct {
+				Caller struct {
+					Namespace string `json:"namespace"`
+					Name      string `json:"name"`
+				} `json:"caller"`
+				ActionGroup string `json:"action_group"`
+			} `json:"launch_origin"`
+		} `json:"request"`
+	}
+	if err := json.Unmarshal([]byte(sandbox.Annotations[inventory.CreateIntentAnnotation]), &intent); err != nil {
+		t.Fatal(err)
+	}
+	if intent.Caller.Namespace != f.namespace || intent.Caller.Name != "actions" ||
+		intent.Request.LaunchOrigin.Caller.Namespace != f.caller.Namespace ||
+		intent.Request.LaunchOrigin.Caller.Name != f.caller.Name || intent.Request.LaunchOrigin.ActionGroup != testGroup {
+		t.Errorf("launch attribution = %+v", intent)
 	}
 	if want := []string{"open_session", "read_turns", "send_message", "submit_input", "wait_for_turn"}; !slices.Equal(launched.LauncherGrants, want) {
 		t.Errorf("launch granted %q, want %q", launched.LauncherGrants, want)
@@ -250,6 +274,12 @@ func TestADispatcherRefusalFailsAndAnyOtherErrorLeavesTheOutcomeUnknown(t *testi
 	}
 }
 
+func TestEnvironmentCreateUnavailableLeavesLaunchOutcomeUnknown(t *testing.T) {
+	if err := launchError(status.Error(codes.Unavailable, "connection ended after create")); !errors.Is(err, worker.ErrOutcomeUnknown) {
+		t.Fatalf("uncertain create = %v, want outcome unknown", err)
+	}
+}
+
 // What list_launch_presets answers copies into launch_sandbox's and open_session's arguments as it is.
 func TestThePresetsFillTheirActionsArguments(t *testing.T) {
 	f := newFixture(t)
@@ -289,7 +319,7 @@ func TestAnExecutorRefusesAPresetThatCannotFillItsActions(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			binding := catalog.OrchestrationBinding{Description: "d", Namespace: "test", Presets: json.RawMessage(presets)}
-			if _, err := NewExecutor(testGroup, binding, kube, nil, nil, 30*time.Second); err == nil {
+			if _, err := NewExecutor(testGroup, binding, kube, nil, nil, nil, 30*time.Second); err == nil {
 				t.Error("NewExecutor() accepted the presets")
 			}
 		})

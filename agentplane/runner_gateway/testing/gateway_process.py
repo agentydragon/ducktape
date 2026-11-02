@@ -208,6 +208,8 @@ async def run_gateway(
     gateway_callers: Sequence[ServiceAccountRef],
     executor_callers: Sequence[ServiceAccountRef] = (),
     environment_readers: Sequence[ServiceAccountRef] = (),
+    environment_managers: Sequence[ServiceAccountRef] = (),
+    operator_callers: Sequence[ServiceAccountRef] = (),
     dispatcher_audience: str,
     gateway_audience: str,
     runner_proxy_token_file: Path,
@@ -262,6 +264,8 @@ async def run_gateway(
                 gateway_callers={f"{account.namespace}/{account.name}" for account in gateway_callers},
                 executor_callers={f"{account.namespace}/{account.name}" for account in executor_callers},
                 environment_readers={f"{account.namespace}/{account.name}" for account in environment_readers},
+                environment_managers={f"{account.namespace}/{account.name}" for account in environment_managers},
+                operator_callers={f"{account.namespace}/{account.name}" for account in operator_callers},
                 wake_callers=set(),
                 _cli_parse_args=[],
             )
@@ -277,6 +281,8 @@ async def run_gateway(
                 "gateway_callers",
                 "executor_callers",
                 "environment_readers",
+                "environment_managers",
+                "operator_callers",
                 "wake_callers",
             ):
                 settings[caller_list] = sorted(settings[caller_list])

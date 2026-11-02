@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Set
 from pathlib import Path
 
 from pydantic import AnyHttpUrl
@@ -134,7 +133,6 @@ def settings(
     connection_service_url: HttpEndpointUrl,
     action_federation: ActionFederationSettings,
     public_coder_policy_sets: list[str],
-    default_policy_sets: Set[str],
     frontend_config: FrontendConfig | None = None,
     central_sampler_enabled: bool = False,
 ) -> AppSettingsConfig:
@@ -147,7 +145,6 @@ def settings(
             if runtime_catalog is not None
             else model_catalog(models, central_sampler_enabled=central_sampler_enabled)
         ),
-        default_policy_sets=default_policy_sets,
         connection_service_url=connection_service_url,
         # App-owned launch-form presets. The browser expands one into editable concrete
         # template, policy, bootstrap, and SessionSpec fields; neither a Sandbox CR nor a

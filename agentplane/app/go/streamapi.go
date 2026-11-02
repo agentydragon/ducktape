@@ -88,6 +88,7 @@ type StreamingDependencies struct {
 	Federator        policyaccess.ActionFederator
 	ActionServiceURL string
 	DispatcherHTTP   streamingUpstream
+	EnvironmentHTTP  streamingUpstream
 	ActionHTTP       streamingUpstream
 	ConnectionHTTP   streamingUpstream
 	HistoryHTTP      streamingUpstream
@@ -105,7 +106,9 @@ type StreamingDependencies struct {
 // operator-facing HTTP facades. The server owns the shared auth/session middleware and drain gate.
 func RegisterStreamingRoutes(server *HTTPServer, dependencies StreamingDependencies) {
 	routes := newStreamingRoutes(server, dependencies)
-	server.RegisterRawRoute("GET /upstream/environments/v1/environments:watch", http.HandlerFunc(routes.environmentWatch), false)
+	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete} {
+		server.RegisterRawRoute(method+" /upstream/environments/{path...}", http.HandlerFunc(routes.environmentFacade), false)
+	}
 	server.RegisterRawRoute("GET /live/sandboxes/{name}", http.HandlerFunc(routes.liveSandbox), false)
 	server.RegisterRawRoute("GET /live/sandboxes/{name}/egress/decisions", http.HandlerFunc(routes.liveDecisions), false)
 	server.RegisterRawRoute("GET /threads/{thread_id}/events/stream", http.HandlerFunc(routes.threadEvents), false)
@@ -533,10 +536,15 @@ func (r *streamingRoutes) operatorLifetime(request *http.Request) (context.Conte
 	return ctx, cancel, nil
 }
 
-// environmentWatch allows either an authenticated app service caller or an operator session.
-// It forwards only the inventory watch, using the app's explicitly granted service identity.
-func (r *streamingRoutes) environmentWatch(w http.ResponseWriter, request *http.Request) {
-	if r.deps.DispatcherHTTP == nil {
+// environmentFacade forwards the generated EnvironmentService API with the app's Pod-bound
+// identity. Operator sessions stay tied to logout; service callers stay tied to the request.
+func (r *streamingRoutes) environmentFacade(w http.ResponseWriter, request *http.Request) {
+	path := request.PathValue("path")
+	if !proxy.GeneratedFacadeRouteAllowed(request.Method, path) {
+		writeDetailError(w, http.StatusNotFound, "unknown Environment Service facade route")
+		return
+	}
+	if r.deps.EnvironmentHTTP == nil {
 		writeDetailError(w, http.StatusServiceUnavailable, "Environment Service is not configured")
 		return
 	}
@@ -554,7 +562,7 @@ func (r *streamingRoutes) environmentWatch(w http.ResponseWriter, request *http.
 		ctx, cancel = r.requestLifetime(request)
 	}
 	defer cancel()
-	r.forwardFacade(w, request, ctx, r.deps.DispatcherHTTP, "v1/environments:watch", "")
+	r.forwardFacade(w, request, ctx, r.deps.EnvironmentHTTP, path, "")
 }
 
 func (r *streamingRoutes) dispatcher(w http.ResponseWriter, request *http.Request) {

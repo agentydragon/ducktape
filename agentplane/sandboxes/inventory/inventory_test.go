@@ -245,7 +245,10 @@ func TestSuspendAndPolicyUpdatesKeepUIDFenceAndWakeGeneration(t *testing.T) {
 	resource.Spec.WakeGeneration = 4
 	access, objects := newAccess(t, resource)
 
-	if err := access.Suspend(context.Background(), "paused"); err != nil {
+	if err := access.Suspend(context.Background(), "paused", "old-uid"); !isNotFound(err) {
+		t.Fatalf("stale suspend = %v, want NotFound", err)
+	}
+	if err := access.Suspend(context.Background(), "paused", "sandbox-uid"); err != nil {
 		t.Fatal(err)
 	}
 	stored := readSandbox(t, objects, "paused")
@@ -293,14 +296,17 @@ func TestDeleteRequiresReportedSuspensionAndUsesUIDFence(t *testing.T) {
 	paused := testSandbox("paused", "uid-paused", sandboxapi.OperatingModeSuspended)
 	access, objects := newAccess(t, running, unknown, paused)
 	var runningError *SandboxRunningError
-	if err := access.Delete(context.Background(), "running"); !errors.As(err, &runningError) {
+	if err := access.Delete(context.Background(), "running", "uid-running"); !errors.As(err, &runningError) {
 		t.Fatalf("delete running Sandbox = %v", err)
 	}
 	var modeError *SandboxModeUnknownError
-	if err := access.Delete(context.Background(), "unknown"); !errors.As(err, &modeError) {
+	if err := access.Delete(context.Background(), "unknown", "uid-unknown"); !errors.As(err, &modeError) {
 		t.Fatalf("delete unknown-mode Sandbox = %v", err)
 	}
-	if err := access.Delete(context.Background(), "paused"); err != nil {
+	if err := access.Delete(context.Background(), "paused", "old-uid"); !isNotFound(err) {
+		t.Fatalf("stale delete = %v, want NotFound", err)
+	}
+	if err := access.Delete(context.Background(), "paused", "uid-paused"); err != nil {
 		t.Fatal(err)
 	}
 	if err := objects.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: "paused"}, &sandboxapi.Sandbox{}); !apierrors.IsNotFound(err) {

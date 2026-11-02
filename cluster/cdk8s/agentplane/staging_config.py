@@ -31,7 +31,6 @@ from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, runt
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
-    DEFAULT_POLICIES,
     GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
@@ -107,7 +106,6 @@ def config(
             SANDBOX_SELF_SET,
             *agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS["public-coder"]),
         ],
-        default_policy_sets=set(DEFAULT_POLICIES),
         frontend_config=FrontendConfig(
             trace_search=TraceSearchSettings(
                 grafana_base_url=AnyHttpUrl(GRAFANA_BASE_URL),

@@ -37,10 +37,10 @@ def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]
     return one(doc for doc in docs if doc["kind"] == kind and doc["metadata"]["name"] == name)
 
 
-def _app_default_policies(docs: list[dict[str, Any]]) -> list[str]:
-    """The PolicySets the app grants to each Sandbox it creates."""
-    config = _by_name(docs, "ConfigMap", "app-config")
-    defaults: list[str] = yaml.safe_load(config["data"]["config.yaml"])["default_policy_sets"]
+def _environment_default_policies(docs: list[dict[str, Any]]) -> list[str]:
+    """The PolicySets EnvironmentService applies to each new Sandbox."""
+    config = _by_name(docs, "ConfigMap", "runner-gateway-settings")
+    defaults: list[str] = yaml.safe_load(config["data"]["settings.yaml"])["environment_default_policy_sets"]
     return defaults
 
 
@@ -73,8 +73,8 @@ def test_app_projects_egress_admin_audience(staging_manifests: list[dict[str, An
     ] == "/var/run/secrets/agentplane-egress-admin"
 
 
-def test_app_default_policy_sets_are_canonical(staging_manifests: list[dict[str, Any]]) -> None:
-    app_defaults = _app_default_policies(staging_manifests)
+def test_environment_default_policy_sets_are_canonical(staging_manifests: list[dict[str, Any]]) -> None:
+    app_defaults = _environment_default_policies(staging_manifests)
     assert app_defaults == sorted(DEFAULT_POLICIES)
     assert PUBLIC_INTERNET_POLICY not in app_defaults
 
@@ -104,7 +104,7 @@ def test_basic_policy_auto_approves_only_same_principal_session_actions(
 
     # `basic` is both a fleet default and explicitly held by the static MCP/workload principals;
     # ordinary preset choices can replace other policies but still include it.
-    assert BASIC_POLICY in _app_default_policies(staging_manifests)
+    assert BASIC_POLICY in _environment_default_policies(staging_manifests)
     for account in ("claude-ai", "haku-agent"):
         binding = _by_name(staging_manifests, "PolicyBinding", account)
         assert BASIC_POLICY in binding["spec"]["policySets"]
@@ -119,7 +119,7 @@ def test_public_internet_is_available_but_never_implicitly_granted(staging_manif
     assert public["spec"]["rules"] == [{"type": "egress", "hosts": ["*"]}]
     # Every preset, not just today's public-coder preset, and the defaults.
     assert PUBLIC_INTERNET_POLICY not in _by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"]
-    assert PUBLIC_INTERNET_POLICY not in _app_default_policies(staging_manifests)
+    assert PUBLIC_INTERNET_POLICY not in _environment_default_policies(staging_manifests)
     for doc in staging_manifests:
         if doc["kind"] == "PolicyBinding":
             if doc["metadata"]["name"] == "public-coder-openclaw":
@@ -175,7 +175,7 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(staging_mani
     assert source["projectedWorkloadToken"]["audience"] == KUBERNETES_AUDIENCE, source
 
     # And `basic` reaches a sandbox that picks nothing, which is the whole claim.
-    defaults = _app_default_policies(staging_manifests)
+    defaults = _environment_default_policies(staging_manifests)
     assert BASIC_POLICY in defaults, defaults
 
 
@@ -536,7 +536,7 @@ def test_external_delegation_binds_exactly_the_granted_roles(
 def test_inference_is_granted_separately_from_platform_operations(staging_manifests: list[dict[str, Any]]) -> None:
     granted = _by_name(staging_manifests, "PolicySet", INFERENCE_EXPERIMENTS_POLICY)
     basic = _by_name(staging_manifests, "PolicySet", BASIC_POLICY)
-    assert INFERENCE_EXPERIMENTS_POLICY in _app_default_policies(staging_manifests)
+    assert INFERENCE_EXPERIMENTS_POLICY in _environment_default_policies(staging_manifests)
     # Standing caller identities and static OpenClaw must receive the separate grant too.
     for binding in (doc for doc in staging_manifests if doc["kind"] == "PolicyBinding"):
         policies = binding["spec"]["policySets"]

@@ -1,7 +1,7 @@
 # Runner Gateway
 
 The Runner Gateway combines durable Session Dispatcher admission and delivery, the
-`EnvironmentService` inventory and explicit-resume API, and a Sandbox-fenced Runner proxy. Explicit
+`EnvironmentService` inventory, management and explicit-resume API, and a Sandbox-fenced Runner proxy. Explicit
 resume and Dispatcher automatic wake use the shared lifecycle manager. Automatic wake preserves the
 effective caller and applies the Sandbox's `wakeOnSend` setting and the configured `wake_callers` grant.
 EnvironmentService and Dispatcher share the Gateway listener and Dispatcher TokenReview audience.
@@ -41,13 +41,15 @@ conversation and from Runner admission.
 - `main.go`, `config.go`: process and listener wiring, and the settings (a YAML file named by
   `AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` plus `AGENTPLANE_RUNNER_GATEWAY_*` environment variables;
   [`settings.py`](settings.py) is the authoring schema), including the optional `http_listen_address`
-  for the Dispatcher's HTTP/JSON facade (none when unset). The independent `delegation` policy names
+  for the generated Dispatcher and EnvironmentService HTTP/JSON facades (none when unset). The independent `delegation` policy names
   an Actions actor, caller namespace scope, and exact full RPC methods; it can include the
   `EnvironmentService` list/get/watch methods and, when separately configured, `ResumeEnvironment`, without
   delegating other Gateway methods. `operator_callers` is optional and defaults empty; it is
   restricted to direct, Pod-bound callers and gives only its configured operator broker the
   requested-stop override. No deployment caller or delegated-method activation is part of this
-  backend slice.
+  backend slice. `environment_managers` grants direct Pod-bound accounts full Sandbox management;
+  `environment_launchers` grants Action brokers create-only authority with required caller origin.
+  The Gateway owns `environment_default_policy_sets` for both launch paths.
 - `gateway/`: Runner connections, authenticated proxy, Sandbox/Pod validation and connection ownership.
 - `dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.
 - `migrations/`: Goose migrations for the Dispatcher database.

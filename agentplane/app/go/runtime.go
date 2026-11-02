@@ -154,7 +154,7 @@ func run(ctx context.Context, config Config) error {
 		return err
 	}
 	threadStore := threads.NewStore(db)
-	inventory, err := sandboxinventory.New(config.SandboxNamespace, objects, config.DefaultPolicySets,
+	inventory, err := sandboxinventory.New(config.SandboxNamespace, objects, nil,
 		&sandboxespb.ServiceAccount{Namespace: config.SandboxNamespace, Name: "app"})
 	if err != nil {
 		return fmt.Errorf("configure Sandbox inventory: %w", err)
@@ -178,13 +178,6 @@ func run(ctx context.Context, config Config) error {
 	})
 	if err != nil {
 		return fmt.Errorf("configure Session Dispatcher: %w", err)
-	}
-	environmentClient, err := bridge.NewEnvironmentClient(bridge.EnvironmentConfig{
-		Target: config.SessionDispatcherTarget, TokenFile: config.SessionDispatcherTokenFile,
-		Timeout: time.Duration(config.SessionDispatcherRequestTimeoutSecs * float64(time.Second)),
-	})
-	if err != nil {
-		return fmt.Errorf("configure EnvironmentService: %w", err)
 	}
 	appBridge, err := bridge.New(inventory, runner, dispatcher)
 	if err != nil {
@@ -339,7 +332,7 @@ func run(ctx context.Context, config Config) error {
 	if err := RegisterCoreRoutes(server, config); err != nil {
 		return fmt.Errorf("register core routes: %w", err)
 	}
-	RegisterSandboxRoutes(server, config, inventory, environmentClient)
+	RegisterSandboxRoutes(server, inventory)
 	RegisterPolicyRoutes(server, config, inventory, policies)
 	if err := RegisterSessionRoutes(server, app); err != nil {
 		return fmt.Errorf("register Session opening facade: %w", err)
@@ -361,7 +354,8 @@ func run(ctx context.Context, config Config) error {
 		Live: liveIndex, Sandboxes: inventory, Threads: threadStore, History: history, HistoryFollower: historyReaderClient,
 		ActionPolicy: actionClient, Federator: federator,
 		ActionServiceURL: config.ActionFederation.ServiceURL,
-		DispatcherHTTP:   dispatcherGateway, ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
+		DispatcherHTTP:   dispatcherGateway, EnvironmentHTTP: dispatcherGateway,
+		ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
 		HistoryHTTP: historyGateway, NotificationHTTP: notificationGateway,
 		Notifications:    notifications_operatorpb.NewNotificationsOperatorClient(notificationConn),
 		NotificationWait: time.Duration(config.NotificationsRequestTimeoutSeconds * float64(time.Second)),

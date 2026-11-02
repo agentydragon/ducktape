@@ -7,11 +7,18 @@ option go_package = "github.com/agentydragon/ducktape/agentplane/sandboxes/envir
 import "agentplane/proto/environment_lifecycle.proto";
 import "agentplane/proto/sandboxes.proto";
 import "google/api/annotations.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
 // EnvironmentService discovers existing managed environments and authorizes explicit lifecycle changes.
 service EnvironmentService {
+  rpc ListEnvironmentTemplates(google.protobuf.Empty) returns (ListEnvironmentTemplatesResponse) {
+    option (google.api.http) = {get: "/v1/environment-templates"};
+  }
+  rpc CreateEnvironment(agentplane.proto.CreateSandboxRequest) returns (TargetHandle) {
+    option (google.api.http) = {post: "/v1/environments" body: "*"};
+  }
   rpc ListEnvironments(ListEnvironmentsRequest) returns (ListEnvironmentsResponse) {
     option (google.api.http) = {get: "/v1/environments"};
   }
@@ -27,7 +34,39 @@ service EnvironmentService {
   rpc WatchEnvironment(WatchEnvironmentRequest) returns (stream WatchEnvironmentResponse) {
     option (google.api.http) = {get: "/v1/environments/{target.namespace}/{target.name}:watch"};
   }
-  rpc ResumeEnvironment(ResumeEnvironmentRequest) returns (ResumeEnvironmentResponse);
+  rpc ResumeEnvironment(ResumeEnvironmentRequest) returns (ResumeEnvironmentResponse) {
+    option (google.api.http) = {post: "/v1/environments/{target.namespace}/{target.name}:resume" body: "*"};
+  }
+  rpc SuspendEnvironment(EnvironmentMutationRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {post: "/v1/environments/{target.namespace}/{target.name}:suspend" body: "*"};
+  }
+  rpc DeleteEnvironment(EnvironmentMutationRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/v1/environments/{target.namespace}/{target.name}"};
+  }
+  rpc SetEnvironmentWakeOnSend(SetEnvironmentWakeOnSendRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {patch: "/v1/environments/{target.namespace}/{target.name}:wake-policy" body: "*"};
+  }
+  rpc SetEnvironmentIdleSuspend(SetEnvironmentIdleSuspendRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {patch: "/v1/environments/{target.namespace}/{target.name}:idle-suspend" body: "*"};
+  }
+}
+
+message ListEnvironmentTemplatesResponse {
+  repeated string names = 1;
+}
+
+message EnvironmentMutationRequest {
+  TargetHandle target = 1;
+}
+
+message SetEnvironmentWakeOnSendRequest {
+  TargetHandle target = 1;
+  bool wake_on_send = 2;
+}
+
+message SetEnvironmentIdleSuspendRequest {
+  TargetHandle target = 1;
+  google.protobuf.Duration idle_suspend_after = 2;
 }
 
 message TargetHandle {

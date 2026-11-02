@@ -7,7 +7,6 @@ go_library(
     srcs = [
         "bridge.go",
         "dispatcher.go",
-        "environments.go",
         "errors.go",
         "runner.go",
     ],
@@ -21,7 +20,6 @@ go_library(
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/environmentruntimeclient",
-        "//agentplane/sandboxes/environments:environment_service_go_proto",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",

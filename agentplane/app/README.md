@@ -1,8 +1,9 @@
 # Agentplane integration app
 
 The human-facing API is a Go service built from `//agentplane/app/go:agentplane-app` and packaged as
-`//agentplane/app:image`. It manages Sandboxes through the Kubernetes API as the requesting
-operator, opens Sessions and submits commands through the Session Dispatcher, and uses the Runner
+`//agentplane/app:image`. It proxies Sandbox management through the Runner Gateway's
+`EnvironmentService` with its Pod-bound service token, opens Sessions and submits commands through
+the Session Dispatcher, and uses the Runner
 Gateway for UID-fenced live checks and read-only runner status diagnostics. It reads archived Session
 history and Threads (each Session's conversation projection) from the History Service and synchronizes
 selected rows and content to the browser through authenticated Electric endpoints. It also presents
@@ -30,10 +31,12 @@ protobuf payloads use standard ProtoJSON, with 64-bit integers encoded as decima
 
 ## Sandbox lifecycle ownership
 
-The app uses the shared `agentplane/sandboxes` inventory to submit lifecycle requests directly to
-Kubernetes as the requesting operator. The Sandbox Controller reconciles the requested `spec` and
-owns `status`. Required `default_policy_sets` come from the app ConfigMap, including when the set is
-empty. The former Sandbox Service Deployment, API and server source are retired.
+The Runner Gateway's `EnvironmentService` owns Sandbox creation, templates, suspend, delete, wake
+policy and idle suspend policy. The app authenticates the operator and forwards the generated HTTP
+facade with its projected Pod-bound service token. The service applies configured default policy
+sets and fences mutations on Sandbox UID and resourceVersion. The app still reads Sandbox inventory
+through its existing read routes and watch. The Sandbox Controller reconciles the requested `spec`
+and owns `status`. The former Sandbox Service Deployment, API and server source are retired.
 
 ## Dependency boundary
 
@@ -43,8 +46,8 @@ attachments, and app-only provisioning or prompt/bootstrap state, including in v
 [service dependency rule](../docs/service_boundaries.md).
 
 Backend responsibilities needed by another service move to an independent owner, not a temporary
-app endpoint. The shared `agentplane/sandboxes` library owns Sandbox request construction; the app uses
-it directly as the requesting operator. The [Session Dispatcher](../runner_gateway/dispatcher/README.md)
+app endpoint. The shared `agentplane/sandboxes/inventory` package implements Kubernetes access for
+the Gateway; the app calls its authenticated service facade. The [Session Dispatcher](../runner_gateway/dispatcher/README.md)
 owns opening and durable command delivery; the [Runner Gateway](../runner_gateway/README.md) owns the
 runner control stream and authorized live Runner proxy; the
 [History Service](../history_service/README.md) owns the Session Event archive and its Thread fold.
@@ -662,8 +665,9 @@ one. Which lists the service enforces is its contract
   it, and nothing brings that back. The rule lives in the API rather than in the browser, so it also
   binds the agent driving staging with a token; the two clicks it costs an operator are suspend and
   then delete. A running sandbox answers `DELETE` with 409 and a message saying to suspend it.
-- **Resume is owned by the Runner Gateway:** `POST /sandboxes/{name}/resume` reads the current
-  Sandbox UID and calls EnvironmentService with the app's Pod-bound operator credential. The
+- **Resume is owned by the Runner Gateway:** the browser calls the generated
+  `EnvironmentService.ResumeEnvironment` HTTP facade with the current Sandbox UID; the app
+  forwards it with its Pod-bound service token. The
   Gateway rechecks target state and operator authority before changing desired state; the app does
   not patch `running` or `wakeGeneration`. A response confirms acceptance only, not readiness.
   `wake_on_send` remains a separate setting for automatic wake caused by queued work.

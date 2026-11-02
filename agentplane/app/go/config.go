@@ -25,7 +25,6 @@ type Config struct {
 	Models                              runtimeconfig.ModelCatalog `mapstructure:"models"`
 	ThreadPresets                       map[string]ThreadPreset    `mapstructure:"thread_presets"`
 	SandboxPresets                      map[string]SandboxPreset   `mapstructure:"sandbox_presets"`
-	DefaultPolicySets                   []string                   `mapstructure:"default_policy_sets"`
 	NewSandboxDefaults                  NewSandboxDefaults         `mapstructure:"new_sandbox_defaults"`
 	EgressAdminURL                      string                     `mapstructure:"egress_admin_url"`
 	ConnectionServiceURL                string                     `mapstructure:"connection_service_url"`
@@ -241,7 +240,6 @@ func loadConfigWithArgs(args []string) (Config, error) {
 		key    string
 		target *[]string
 	}{
-		{key: "default_policy_sets", target: &c.DefaultPolicySets},
 		{key: "token_subjects", target: &c.TokenSubjects},
 	} {
 		name := "AGENTPLANE_" + strings.ToUpper(configured.key)
@@ -254,7 +252,7 @@ func loadConfigWithArgs(args []string) (Config, error) {
 	if c.LogLevels == nil {
 		c.LogLevels = map[string]string{}
 	}
-	for _, key := range []string{"models.models", "models.harnesses", "default_policy_sets"} {
+	for _, key := range []string{"models.models", "models.harnesses"} {
 		if !settings.IsSet(key) {
 			return Config{}, fmt.Errorf("%s is required", key)
 		}
@@ -482,9 +480,6 @@ func (c *Config) applyDefaults(raw map[string]any) {
 		if models == nil {
 			c.Models.Harnesses[harness] = []string{}
 		}
-	}
-	if c.DefaultPolicySets == nil {
-		c.DefaultPolicySets = []string{}
 	}
 	if c.TokenSubjects == nil {
 		c.TokenSubjects = []string{}

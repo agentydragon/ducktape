@@ -104,12 +104,12 @@ func TestAnOrchestrationGroupOffersItsActionsAndRunsThem(t *testing.T) {
 		"test-unknown-tool": {"title": "t", "description": "d", "direct_tools": ["test-unoffered"],
 			"executor": {"kind": "orchestration_v1", "description": "e", "namespace": "test-agentplane"}}
 	}`)
-	if _, err := orchestrationExecutors(groups, kube.Config, nil, nil, 30*time.Second); err == nil {
+	if _, err := orchestrationExecutors(groups, kube.Config, nil, nil, nil, 30*time.Second); err == nil {
 		t.Error("a group whose direct tools name an Action it does not offer was accepted")
 	}
 	groups = newCatalog(t, `{"test-orchestration": {"title": "t", "description": "d", "direct_tools": ["launch_sandbox"],
 		"executor": {"kind": "orchestration_v1", "description": "e", "namespace": "test-agentplane"}}}`)
-	byGroup, err := orchestrationExecutors(groups, kube.Config, nil, nil, 30*time.Second)
+	byGroup, err := orchestrationExecutors(groups, kube.Config, nil, nil, nil, 30*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

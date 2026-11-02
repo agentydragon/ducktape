@@ -7,7 +7,7 @@ import { displayableError } from "../client";
 import { getThread } from "./client";
 import { harnessBehavior } from "../harness_behavior";
 import { harnessLabel } from "../model_catalog";
-import { resumeSandbox } from "../sandboxes/client";
+import { resumeSandbox, sandboxTarget } from "../sandboxes/client";
 import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
 import { useRequiredThreadsLive } from "./live";
 import { ChronologicalDebugProvider } from "./chronological_debug";
@@ -176,8 +176,10 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
               canResumeSandbox={canResumeSandbox}
               composerPlaceholder={composerPlaceholder}
               onResumeSandbox={() => {
-                if (canResumeSandbox && thread) {
-                  void resumeSandbox(thread.sandbox).catch((reason: unknown) => setError(displayableError(reason)));
+                if (canResumeSandbox && sandbox) {
+                  void resumeSandbox(sandboxTarget(sandbox)).catch((reason: unknown) =>
+                    setError(displayableError(reason))
+                  );
                 }
               }}
               onStatusChange={setTabStatus}

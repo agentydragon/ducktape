@@ -15,8 +15,8 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
 - [Runner Gateway](runner_gateway/README.md): one process providing runner state observation,
   authorized live Runner proxy, [Session Dispatcher](runner_gateway/dispatcher/README.md) durable queue,
   and `EnvironmentService` inventory (`ListEnvironments`, `WatchEnvironments`, immediate
-  `GetEnvironment`, current-state `WatchEnvironment`) plus explicit resume through shared lifecycle
-  machinery.
+  `GetEnvironment`, current-state `WatchEnvironment`), Sandbox creation/templates/management,
+  and explicit resume through shared lifecycle machinery.
   New serving Pods run the queue migration before starting ([deployment](runner_gateway/README.md#deployment)).
 - [History Service](history_service/README.md): retained Session history, read by the
   integration app and the Notification service.

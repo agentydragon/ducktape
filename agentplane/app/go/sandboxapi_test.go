@@ -1,96 +1,17 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
-	"github.com/danielgtaylor/huma/v2"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func sandboxString(value string) *string { return &value }
-
-type resumeSandboxGetter struct{ sandbox *sandboxespb.Sandbox }
-
-func (g resumeSandboxGetter) Get(context.Context, string) (*sandboxespb.Sandbox, error) {
-	return g.sandbox, nil
-}
-
-type resumeSandboxClient struct {
-	request  *environmentpb.ResumeEnvironmentRequest
-	response *environmentpb.ResumeEnvironmentResponse
-	err      error
-}
-
-func (c *resumeSandboxClient) ResumeEnvironment(
-	_ context.Context,
-	request *environmentpb.ResumeEnvironmentRequest,
-) (*environmentpb.ResumeEnvironmentResponse, error) {
-	c.request = request
-	return c.response, c.err
-}
-
-func TestOperatorResumeUsesCurrentExactSandboxIdentityThroughLifecycle(t *testing.T) {
-	current := &sandboxespb.Sandbox{Namespace: "sandboxes", Name: "worker", Uid: "sandbox-uid"}
-	environmentClient := &resumeSandboxClient{response: &environmentpb.ResumeEnvironmentResponse{
-		Target:  &environmentpb.TargetHandle{Namespace: current.Namespace, Name: current.Name, Uid: current.Uid},
-		Outcome: environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED,
-	}}
-	if err := requestSandboxResume(context.Background(), "sandboxes", "worker", resumeSandboxGetter{sandbox: current}, environmentClient); err != nil {
-		t.Fatal(err)
-	}
-	if environmentClient.request.GetTarget().GetNamespace() != current.Namespace || environmentClient.request.GetTarget().GetName() != current.Name ||
-		environmentClient.request.GetTarget().GetUid() != current.Uid || environmentClient.request.GetResumeToken() != "" {
-		t.Fatalf("operator resume request = %v", environmentClient.request)
-	}
-}
-
-func TestOperatorResumeReportsChangedStateForRefresh(t *testing.T) {
-	current := &sandboxespb.Sandbox{Namespace: "sandboxes", Name: "worker", Uid: "sandbox-uid"}
-	environmentClient := &resumeSandboxClient{response: &environmentpb.ResumeEnvironmentResponse{
-		Target:  &environmentpb.TargetHandle{Namespace: current.Namespace, Name: current.Name, Uid: current.Uid},
-		Outcome: environmentpb.ResumeOutcome_RESUME_OUTCOME_STATE_CHANGED,
-	}}
-	err := requestSandboxResume(context.Background(), "sandboxes", "worker", resumeSandboxGetter{sandbox: current}, environmentClient)
-	if status.Code(err) != codes.Aborted {
-		t.Fatalf("state changed error = %v, want Aborted", err)
-	}
-}
-
-func TestNewSandboxAcceptsPythonDefaultFieldsOmitted(t *testing.T) {
-	server := NewHTTPServer(nil)
-	called := false
-	huma.Register[newSandboxInput, struct{}](server.API(), huma.Operation{
-		OperationID: "createSandboxInputTest", Method: http.MethodPost, Path: "/sandbox-input-test",
-	}, func(context.Context, *newSandboxInput) (*struct{}, error) {
-		called = true
-		return &struct{}{}, nil
-	})
-
-	request := httptest.NewRequest(http.MethodPost, "/sandbox-input-test", strings.NewReader(
-		`{"name":"systest-model-1","template":"runner","preset":null,"policy_sets":[],"inbox_tags":[],"bootstrap":""}`,
-	))
-	request.Header.Set("Content-Type", "application/json")
-	recorder := httptest.NewRecorder()
-	server.Handler(nil).ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusNoContent {
-		t.Fatalf("POST /sandbox-input-test status = %d; body: %s", recorder.Code, recorder.Body.String())
-	}
-	if !called {
-		t.Fatal("Huma rejected the Python-shaped Sandbox request before reaching the handler")
-	}
-}
 
 func TestSandboxViewKeepsBrowserFieldNamesAndDerivedValues(t *testing.T) {
 	sessionID := "session-a"
