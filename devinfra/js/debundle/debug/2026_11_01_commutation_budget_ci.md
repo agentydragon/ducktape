@@ -26,10 +26,11 @@ selectors only while filling the output limit. The added
 `resolved_logical_members` scan from #13617 runs when resolving an authored
 commuting premise during graph construction. This fixture supplies no such
 premise, and the timed command reads an already built graph. The F10 branch
-changes effect coverage and refusal diagnostics, not these candidate loops.
+adds refusal metadata to effect-coverage reports without changing effect
+coverage or these candidate loops.
 
-The failure's 169.23-second total includes about 106 seconds before the timed
-command returned. The prior passing run's 81.66-second total includes its
+The failure's 169.23-second total includes about 106 seconds outside the timed
+command interval. The prior passing run's 81.66-second total includes its
 entire command plus JSON checks. Both fixture generation and command execution
 can therefore contribute to the difference. Existing logs lack command phase
 durations, generated graph sizes, and worker load; they do not distinguish a
@@ -37,10 +38,12 @@ graph-shape change from a slower remote worker. A 63-second command is a real
 budget failure, but this evidence does not justify weakening the budget or
 changing the algorithm.
 
-## Next evidence boundary
+## F14: locate proposal-budget slowdowns from hosted evidence
 
 Use the normal hosted PR CI result after the diagnostic change is integrated.
 If this target fails again, compare the failing and passing runs' generated
 graph node/edge counts and remote execution worker metadata, then trace the
-specific changed phase using the project's documented profiler workflow.
-Keep the 30-second assertion until a repeatable cause is established.
+specific code path from those existing artifacts. Do not launch profiling,
+benchmark, standalone corpus or controlled-comparison jobs under the current
+no-measurement direction. Keep the 30-second assertion until a cause is
+established; an unexplained slow run is not proof of a flake.
