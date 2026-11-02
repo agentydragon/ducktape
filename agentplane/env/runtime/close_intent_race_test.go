@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
