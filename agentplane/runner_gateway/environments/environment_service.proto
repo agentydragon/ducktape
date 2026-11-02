@@ -148,11 +148,11 @@ enum OperatingMode {
   OPERATING_MODE_SUSPENDED = 2;
 }
 
-enum ResumeState {
-  RESUME_STATE_UNSPECIFIED = 0;
-  RESUME_STATE_AVAILABLE = 1;
-  RESUME_STATE_NOT_AVAILABLE = 2;
-  RESUME_STATE_NOT_REQUIRED = 3;
+enum AutomaticWakeState {
+  AUTOMATIC_WAKE_STATE_UNSPECIFIED = 0;
+  AUTOMATIC_WAKE_STATE_AVAILABLE = 1;
+  AUTOMATIC_WAKE_STATE_NOT_AVAILABLE = 2;
+  AUTOMATIC_WAKE_STATE_NOT_REQUIRED = 3;
 }
 
 message Readiness {
@@ -197,7 +197,8 @@ message EnvironmentDescriptor {
   OperatingMode operating_mode = 10;
   string stop_stage = 11;
   bool wake_on_send = 12;
-  ResumeState resume = 13;
+  // Availability of wake-on-send, distinct from permission to request an explicit resume.
+  AutomaticWakeState automatic_wake = 13;
   // The current Sandbox workload incarnation is not the Sandbox UID in target.
   string runtime_incarnation_uid = 14;
   // Caller-specific permission for an explicit resume request. Absent for deleting environments
@@ -240,7 +241,7 @@ message ResumeEnvironmentResponse {
   TargetHandle target = 1;
   ResumeOutcome outcome = 2;
   // Generation observed after the guarded request, when the target still exists.
-  optional uint64 wake_generation = 3;
+  optional int64 wake_generation = 3;
   agentplane.proto.ResumeEligibility eligibility = 4;
   agentplane.proto.WakeAssessment wake = 5;
 }

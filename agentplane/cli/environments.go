@@ -260,7 +260,7 @@ func environmentText(environment *environmentpb.EnvironmentDescriptor) string {
 	fmt.Fprintf(&output, "%s/%s uid=%s readiness=%s", target.GetNamespace(), target.GetName(), target.GetUid(), environment.GetReadiness().GetState())
 	account := environment.GetExecutionAccount()
 	fmt.Fprintf(&output, " account=%s/%s uid=%s", account.GetNamespace(), account.GetName(), account.GetUid())
-	fmt.Fprintf(&output, " mode=%s wake_on_send_resume=%s wake_on_send=%t", environment.GetOperatingMode(), environment.GetResume(), environment.GetWakeOnSend())
+	fmt.Fprintf(&output, " mode=%s automatic_wake=%s wake_on_send=%t", environment.GetOperatingMode(), environment.GetAutomaticWake(), environment.GetWakeOnSend())
 	eligibility := environment.GetResumeEligibility()
 	fmt.Fprintf(&output, " explicit_resume=%s reason=%s wake_generation=%d", eligibility.GetState(), eligibility.GetReason(), environment.GetWakeGeneration())
 	if environment.GetResumeToken() != "" {

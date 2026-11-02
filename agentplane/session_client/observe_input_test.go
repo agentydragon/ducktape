@@ -147,7 +147,7 @@ func TestObserveInputReturnsWakeDenialFromQueuedWatchUpdate(t *testing.T) {
 		WakeAssessment: &environmentlifecyclepb.WakeAssessment{
 			State:      environmentlifecyclepb.WakeState_WAKE_STATE_DENIED,
 			Reason:     environmentlifecyclepb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED,
-			ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(4),
+			ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(4),
 		},
 	}
 	dispatcher := &dispatcherStub{

@@ -419,8 +419,8 @@ func TestLegacyWakeOnSendAvailabilityIsSeparateFromExplicitResumeEligibility(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.GetResume() != environmentpb.ResumeState_RESUME_STATE_AVAILABLE {
-		t.Fatalf("automatic wake projection = %s, want broker-enabled availability", got.GetResume())
+	if got.GetAutomaticWake() != environmentpb.AutomaticWakeState_AUTOMATIC_WAKE_STATE_AVAILABLE {
+		t.Fatalf("automatic wake projection = %s, want broker-enabled availability", got.GetAutomaticWake())
 	}
 	if got.GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED ||
 		got.GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED ||
@@ -960,7 +960,7 @@ func TestInventoryReaderListAndGetAreBroadButOrdinaryCallersStayScoped(t *testin
 		if err != nil || got.GetTarget().GetName() != target.Name || got.ExecutionAccount != nil {
 			t.Fatalf("reader get = %v, %v", got, err)
 		}
-		if target.Name == "deleting" && (got.ResumeEligibility != nil || got.ResumeToken != "" || got.Resume != environmentpb.ResumeState_RESUME_STATE_NOT_AVAILABLE) {
+		if target.Name == "deleting" && (got.ResumeEligibility != nil || got.ResumeToken != "" || got.AutomaticWake != environmentpb.AutomaticWakeState_AUTOMATIC_WAKE_STATE_NOT_AVAILABLE) {
 			t.Fatalf("deleting environment advertises resume: %v", got)
 		}
 	}

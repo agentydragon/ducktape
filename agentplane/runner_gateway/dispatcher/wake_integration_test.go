@@ -34,7 +34,7 @@ func (w *callbackWake) RequestWake(
 		return nil, err
 	}
 	assessment := &environmentpb.WakeAssessment{
-		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(41),
+		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(41),
 	}
 	if wait > 0 {
 		assessment.State = environmentpb.WakeState_WAKE_STATE_RATE_LIMITED

@@ -468,7 +468,7 @@ func wakeReasonForEligibility(eligibility *environmentlifecyclepb.ResumeEligibil
 func assessment(state environmentlifecyclepb.WakeState, reason environmentlifecyclepb.WakeReason, generation *int64) *environmentlifecyclepb.WakeAssessment {
 	result := &environmentlifecyclepb.WakeAssessment{State: state, Reason: reason, ObservedAt: timestamppb.New(time.Now().UTC())}
 	if generation != nil && *generation >= 0 {
-		result.TargetGeneration = proto.Uint64(uint64(*generation))
+		result.TargetGeneration = proto.Int64(*generation)
 	}
 	return result
 }
@@ -547,13 +547,13 @@ func assessmentRPCError(assessment *environmentlifecyclepb.WakeAssessment) error
 
 func resumeResponse(
 	target Target,
-	generation uint64,
+	generation int64,
 	outcome environmentpb.ResumeOutcome,
 	eligibility *environmentlifecyclepb.ResumeEligibility,
 	wake *environmentlifecyclepb.WakeAssessment,
 ) *environmentpb.ResumeEnvironmentResponse {
 	return &environmentpb.ResumeEnvironmentResponse{
-		Target: targetProto(target), Outcome: outcome, WakeGeneration: proto.Uint64(generation), Eligibility: eligibility, Wake: wake,
+		Target: targetProto(target), Outcome: outcome, WakeGeneration: proto.Int64(generation), Eligibility: eligibility, Wake: wake,
 	}
 }
 
@@ -564,5 +564,5 @@ func stateChangedResponse(
 	reason environmentlifecyclepb.WakeReason,
 ) *environmentpb.ResumeEnvironmentResponse {
 	wake := assessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_NOT_EVALUATED, reason, view.Spec.WakeGeneration)
-	return resumeResponse(target, uint64(view.Spec.WakeGeneration), environmentpb.ResumeOutcome_RESUME_OUTCOME_STATE_CHANGED, eligibility, wake)
+	return resumeResponse(target, view.Spec.WakeGeneration, environmentpb.ResumeOutcome_RESUME_OUTCOME_STATE_CHANGED, eligibility, wake)
 }

@@ -79,7 +79,7 @@ message WakeAssessment {
   WakeReason reason = 2;
   google.protobuf.Timestamp observed_at = 3;
   // Present when the backend observed the Sandbox wake generation.
-  optional uint64 target_generation = 4;
+  optional int64 target_generation = 4;
   // Present only for a bounded retry decision such as a shared wake-budget limit.
   google.protobuf.Timestamp retry_at = 5;
   // Preserves structured gRPC status details when the wake attempt failed.
