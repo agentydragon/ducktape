@@ -111,17 +111,7 @@ One library per job. An unlisted job reuses what other Go services import before
 Gazelle owns Python `py_library`/`py_test` rules (<devinfra/docs/gazelle.md>).
 
 - One `py_library` per `.py` file, named its module stem; rules cover only own-package files.
-- `py_binary` is hand-written, named `<stem>_bin` (`<stem>_image_bin` if an aspect image twin holds `_bin`), with `main_module` and no `srcs`; the library holds all deps:
-
-  ```python
-  py_binary(
-      name = "session_start_bin",
-      main_module = "devinfra.claude.session_start",
-      imports = ["../.."],
-      deps = [":session_start"],
-  )
-  ```
-
+- `py_binary` is hand-written, named `<stem>_bin` (`<stem>_image_bin` if an aspect image twin holds `_bin`), with `main_module` and no `srcs`; the library holds all deps.
 - Test-only is per package: a test-support umbrella (`testing/`, `e2e/`, `agentplane/system_tests/`) uses `package(default_testonly = True)`; other packages hold production code plus `test_*.py`/`*_test.py` targets. Shared test libraries go in `conftest.py` or an umbrella.
 - `testing/` holds fakes, builders, fixtures, matchers — never tests of production code (those sit beside the code, or in `e2e/`/`system_tests/`). `testing/test_x.py` tests only `testing/x.py`.
 - `test_*.py`/`*_test.py` names are for test targets only; a non-test file whose name is an external contract gets `# gazelle:exclude`.
@@ -131,16 +121,7 @@ Gazelle owns Python `py_library`/`py_test` rules (<devinfra/docs/gazelle.md>).
 
 ### TypeScript
 
-Build `.ts`/`.tsx` with one `ts_library` (`//devinfra/js:ts_library.bzl`) per module, `tsconfig` naming the package tree's shared `ts_config`:
-
-```python
-ts_library(
-    name = "client",
-    srcs = ["client.ts"],
-    tsconfig = TSCONFIG,  # package-level constant
-    deps = [":operator_login", ":schema", "//:node_modules/openapi-fetch"],
-)
-```
+Build `.ts`/`.tsx` with one `ts_library` (`//devinfra/js:ts_library.bzl`) per module, `tsconfig` naming the package tree's shared `ts_config`.
 
 - Bundlers take emitted `.js` (entry `main.js`). Every spec is a `vitest_test` (`//devinfra/js:vitest.bzl`; per-frontend wrapper `<frontend>/vitest.bzl`) run alone like any test. One `vitest_config` per package generates the config — never hand-write `vitest.config.*`; end the BUILD with `check_vitest_specs()`.
 - Never `js_library` for `.ts`/`.tsx` and never a whole-project `tsc_test` (files slip through unchecked). `js_library` is for `.js`/`.mjs` and generated declarations.
