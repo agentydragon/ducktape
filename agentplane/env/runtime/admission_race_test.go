@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
@@ -21,14 +22,15 @@ type desiredPublicationState struct {
 	failure   error
 	commit    bool
 	once      sync.Once
+	armed     atomic.Bool
 }
 
-func (s *desiredPublicationState) Update(ctx context.Context, value resource.Resource, opts ...state.UpdateOption) error {
-	if value.Metadata().Type() != lifecycle.EnvironmentDesiredStateType {
-		return s.State.Update(ctx, value, opts...)
+func (s *desiredPublicationState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
+	if value.Metadata().Type() != lifecycle.EnvironmentDesiredStateType || !s.armed.Load() {
+		return s.State.Modify(ctx, value, update, opts...)
 	}
 	if s.commit {
-		if err := s.State.Update(ctx, value, opts...); err != nil {
+		if err := s.State.Modify(ctx, value, update, opts...); err != nil {
 			return err
 		}
 	}
@@ -44,7 +46,7 @@ func (s *desiredPublicationState) Update(ctx context.Context, value resource.Res
 		return s.failure
 	}
 	if !s.commit {
-		return s.State.Update(ctx, value, opts...)
+		return s.State.Modify(ctx, value, update, opts...)
 	}
 	return nil
 }
@@ -72,6 +74,7 @@ func TestDesiredPublicationFailureRevokesNativeAdmission(t *testing.T) {
 			cause := errors.New("desired publication failed")
 			store := &desiredPublicationState{State: state.WrapCore(namespaced.NewState(inmem.Build)), committed: make(chan struct{}), failure: cause, commit: committed}
 			r := admissionTestRuntime(t, store)
+			store.armed.Store(true)
 			old := r.desired
 			if _, err := r.publishDesired(t.Context(), lifecycle.Quiescing, old.IncarnationUID, ""); !errors.Is(err, cause) {
 				t.Fatalf("publish = %v", err)
@@ -96,6 +99,7 @@ func TestDesiredPublicationFailureRevokesNativeAdmission(t *testing.T) {
 func TestPublishedDesiredCannotAdmitPriorRevision(t *testing.T) {
 	store := &desiredPublicationState{State: state.WrapCore(namespaced.NewState(inmem.Build)), committed: make(chan struct{}), release: make(chan struct{}), commit: true}
 	r := admissionTestRuntime(t, store)
+	store.armed.Store(true)
 	old := r.desired
 	published := make(chan error, 1)
 	go func() {
