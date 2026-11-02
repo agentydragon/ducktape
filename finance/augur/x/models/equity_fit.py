@@ -16,7 +16,8 @@ from itertools import pairwise
 import numpy as np
 
 from finance.augur.x.models.structural_macro import MINIMUM_MONTHS
-from finance.evidence.loading import MonthlyLevel, is_next_calendar_month as is_next_month
+from finance.calendar_months import is_next_calendar_month as is_next_month
+from finance.evidence.loading import MonthlyLevel
 
 
 @dataclass(frozen=True)

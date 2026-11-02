@@ -21,6 +21,7 @@ from finance.augur.calibration.macro_anchors import resolve_anchors
 from finance.augur.calibration.platform import Direction
 from finance.augur.fit.evidence_data import load_absolute_monthly_levels
 from finance.augur.model.series import SP500_KEY, InflationKey
+from finance.evidence.loading import MonthlyLevel
 
 ANCHOR_DATE = date(2026, 5, 27)
 
@@ -112,6 +113,18 @@ def test_inflation_history_schema_requires_pre_anchor_month_starts() -> None:
         CatalogMetadata(as_of=ANCHOR_DATE, inflation_history={date(2026, 5, 1): 100.0})
     with pytest.raises(ValueError, match="Input should be a valid dictionary"):
         CatalogMetadata.model_validate({"as_of": ANCHOR_DATE, "inflation_history": [100.0, 101.0]})
+
+
+@pytest.mark.parametrize("value", [0.0, -1.0, float("inf"), float("nan")])
+def test_explicit_inflation_history_requires_positive_finite_levels(value: float) -> None:
+    with pytest.raises(ValueError, match="validation error"):
+        CatalogMetadata(as_of=ANCHOR_DATE, inflation_history={date(2025, 7, 1): value})
+
+
+@pytest.mark.parametrize("value", [0.0, -1.0, float("inf"), float("nan")])
+def test_derived_inflation_history_rejects_invalid_levels(value: float) -> None:
+    with pytest.raises(ValueError, match="invalid level"):
+        macro_anchors._dated_history([MonthlyLevel(month=date(2025, 7, 1), value=value)], date(2026, 5, 1))
 
 
 if __name__ == "__main__":

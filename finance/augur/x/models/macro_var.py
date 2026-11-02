@@ -20,11 +20,8 @@ from finance.augur.x.models.structural_macro import (
     MacroStateMatrix,
     MacroStateVector,
 )
-from finance.evidence.loading import (
-    MonthlyLevel,
-    is_next_calendar_month as is_next_month,
-    offset_calendar_month as offset_month,
-)
+from finance.calendar_months import is_next_calendar_month as is_next_month, offset_calendar_month as offset_month
+from finance.evidence.loading import MonthlyLevel
 
 MACRO_STATE_NAMES = ("short_rate", "term_spread", "inflation_rate")
 MACRO_STATE_DIM = len(MACRO_STATE_NAMES)

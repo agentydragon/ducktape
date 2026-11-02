@@ -21,7 +21,7 @@ from finance.augur.model.historical_windows import HistoricalWindowsModel, Macro
 from finance.augur.model.market_paths import MarketPaths
 from finance.augur.model.series import SecuritySymbol
 from finance.augur.x.models.stationary_bootstrap import StationaryBootstrapModel, _compounded_growth
-from finance.evidence.loading import is_next_calendar_month
+from finance.calendar_months import is_next_calendar_month
 
 RATE_STEP = 1e-4
 EQUITY_GROWTH = 0.004

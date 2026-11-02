@@ -136,6 +136,7 @@ py_test(
         ":historical_windows",
         ":series",
         "//:conftest",
+        "//finance:calendar_months",
         "//finance/augur:conftest",
         "//finance/evidence:loading",
         "//finance/evidence:sources",

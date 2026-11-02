@@ -405,6 +405,7 @@ py_library(
     srcs = ["equity_fit.py"],
     deps = [
         ":structural_macro",
+        "//finance:calendar_months",
         "//finance/evidence:loading",
         "@pypi//numpy",
     ],
@@ -425,6 +426,7 @@ py_library(
     srcs = ["macro_var.py"],
     deps = [
         ":structural_macro",
+        "//finance:calendar_months",
         "//finance/evidence:loading",
         "@pypi//numpy",
     ],
@@ -819,6 +821,7 @@ py_test(
         ":conftest",
         ":stationary_bootstrap",
         "//:conftest",
+        "//finance:calendar_months",
         "//finance/augur:conftest",
         "//finance/augur/model:bond_fund",
         "//finance/augur/model:equity",
@@ -826,7 +829,6 @@ py_test(
         "//finance/augur/model:historical_windows",
         "//finance/augur/model:market_paths",
         "//finance/augur/model:series",
-        "//finance/evidence:loading",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

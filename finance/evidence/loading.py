@@ -25,6 +25,7 @@ from typing import assert_never
 
 import polars as pl
 
+from finance.calendar_months import is_next_calendar_month as _is_next_calendar_month
 from finance.evidence import sources
 from finance.evidence.sources import EvidenceKind, EvidenceSource
 
@@ -43,20 +44,6 @@ def source_bytes(evidence_dir: Path, source: EvidenceSource) -> bytes:
     if not path.exists():
         raise RuntimeError(f"evidence not found in checkout: {path}")
     return path.read_bytes()
-
-
-def offset_calendar_month(month: date, offset: int) -> date:
-    """Move a first-of-month date by a calendar-month offset."""
-
-    absolute_month = month.year * 12 + month.month - 1 + offset
-    year, zero_based_month = divmod(absolute_month, 12)
-    return date(year, zero_based_month + 1, 1)
-
-
-def is_next_calendar_month(earlier: date, later: date) -> bool:
-    """Whether two monthly observations are exactly one calendar month apart."""
-
-    return offset_calendar_month(earlier, 1) == later
 
 
 class EvidenceFrameCache:
@@ -131,7 +118,7 @@ def contiguous_month_segments(months: Sequence[date]) -> tuple[tuple[int, int], 
     segments = []
     start = 0
     for index, (earlier, later) in enumerate(pairwise(months), start=1):
-        if not is_next_calendar_month(earlier, later):
+        if not _is_next_calendar_month(earlier, later):
             segments.append((start, index))
             start = index
     segments.append((start, len(months)))
