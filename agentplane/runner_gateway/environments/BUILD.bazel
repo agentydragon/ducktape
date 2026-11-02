@@ -76,7 +76,6 @@ go_library(
         ":environment_service_go_proto",
         "//agentplane/grpc/streaming",
         "//agentplane/policy",
-        "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
