@@ -73,8 +73,12 @@ def validate_fixture(dashboard: dict[str, Any], fixture: dict[str, Any]) -> None
             name = variable["name"]
             if name not in variables:
                 raise ValueError(f"missing recorded choices for dashboard variable {name}")
-            if variable_fingerprints.get(name) != variable_fingerprint(variable):
-                raise ValueError(f"stale or missing query-variable fingerprint for dashboard variable {name}")
+            expected = variable_fingerprint(variable)
+            if variable_fingerprints.get(name) != expected:
+                raise ValueError(
+                    f"stale or missing query-variable fingerprint for dashboard variable {name}; "
+                    f"review its recorded choices, then use {expected}"
+                )
     for panel in _panels(dashboard.get("panels", [])):
         panel_id = str(panel.get("id"))
         for target in panel.get("targets", []):
@@ -86,7 +90,10 @@ def validate_fixture(dashboard: dict[str, Any], fixture: dict[str, Any]) -> None
             key = f"{panel_id}/{ref}"
             expected = query_fingerprint(panel, target)
             if fingerprints.get(key) != expected:
-                raise ValueError(f"stale or missing query fingerprint for panel {panel_id}, query {ref}")
+                raise ValueError(
+                    f"stale or missing query fingerprint for panel {panel_id}, query {ref}; "
+                    f"review its recorded response, then use {expected}"
+                )
             result = panels[panel_id][ref]
             if "variants" in result:
                 variable = result["variant_variable"]

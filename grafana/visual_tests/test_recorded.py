@@ -96,8 +96,9 @@ def test_changed_query_variable_requires_fixture_review() -> None:
     }
     validate_fixture(dashboard, fixture)
     variable["query"] = "label_values(other_metric, instance)"
-    with pytest.raises(ValueError, match="stale or missing query-variable fingerprint"):
+    with pytest.raises(ValueError, match="stale or missing query-variable fingerprint") as error:
         validate_fixture(dashboard, fixture)
+    assert variable_fingerprint(variable) in str(error.value)
 
 
 def test_changed_query_requires_fixture_review_even_with_same_panel_and_ref() -> None:
@@ -109,8 +110,9 @@ def test_changed_query_requires_fixture_review_even_with_same_panel_and_ref() ->
     }
     validate_fixture(dashboard, fixture)
     panel["targets"][0]["expr"] = "rate(changed[5m])"
-    with pytest.raises(ValueError, match="stale or missing query fingerprint"):
+    with pytest.raises(ValueError, match="stale or missing query fingerprint") as error:
         validate_fixture(dashboard, fixture)
+    assert query_fingerprint(panel, panel["targets"][0]) in str(error.value)
     panel["targets"][0]["expr"] = "rate(original[5m])"
     panel["datasource"] = "Other Mimir"
     with pytest.raises(ValueError, match="stale or missing query fingerprint"):

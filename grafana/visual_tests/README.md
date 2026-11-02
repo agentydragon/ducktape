@@ -50,6 +50,11 @@ a query variable hashes its whole source declaration. Recompute a fingerprint
 only after reviewing whether the existing recorded response or variable choices
 still represent the changed query. Missing or stale fingerprints fail before
 Grafana starts, including for panels that load lazily.
+Run the dashboard's `grafana_dashboard_visual_test` Bazel target after an edit:
+the failure names the first stale `panel/ref` or variable and prints its expected
+digest. Review the source change against the recorded data, update that one
+fixture entry if it still applies (or recapture it), then rerun. This deliberately
+does not bulk-refresh fingerprints.
 
 An intentionally empty response also needs an `empty_reasons` entry keyed by
 `panel/ref` (or `panel/ref/variant` for repeated-panel variants), explaining
