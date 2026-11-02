@@ -341,11 +341,12 @@ async def test_external_connection_delegates_without_the_integration_app(
                 assert execution_account["namespace"] == account.namespace
                 assert execution_account["name"] == account.name
                 assert execution_account["uid"]
-                assert current["readiness"]["state"] == "READINESS_STATE_READY"
-                workspace = current["workspace"]
+                assert current["observed_state"]["readiness"]["state"] == "READINESS_STATE_READY"
+                configuration_group = current["configuration"]
+                workspace = configuration_group["workspace"]
                 assert isinstance(workspace, dict)
                 assert workspace["availability"] == "AVAILABILITY_CONFIGURED"
-                configurations = current.get("configurations")
+                configurations = configuration_group.get("configurations")
                 assert isinstance(configurations, list)
                 configuration = one(
                     choice

@@ -198,10 +198,10 @@ runtime_catalog:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(response.Items) != 1 || len(response.Items[0].Configurations) != 1 {
+	if len(response.Items) != 1 || len(response.Items[0].GetConfiguration().GetConfigurations()) != 1 {
 		t.Fatalf("discovery response = %+v", response)
 	}
-	harnessName := response.Items[0].Configurations[0].Harness
+	harnessName := response.Items[0].GetConfiguration().GetConfigurations()[0].GetHarness()
 	harnessValue, ok := sessionpb.Harness_value[harnessName]
 	if !ok {
 		t.Fatalf("discovery returned harness %q, which does not decode as SessionSpec.Harness", harnessName)

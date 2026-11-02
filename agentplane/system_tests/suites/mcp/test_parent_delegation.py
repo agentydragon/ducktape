@@ -250,10 +250,13 @@ async def test_parent_session_delegates_through_the_action_cli(
     assert execution_account["namespace"] == caller_namespace
     assert execution_account["name"] == caller_name
     assert execution_account["uid"] == caller_uid
-    assert current["readiness"]["state"] == "READINESS_STATE_READY"
-    workspace = current["workspace"]
+    assert current["observed_state"]["readiness"]["state"] == "READINESS_STATE_READY"
+    configuration_group = current["configuration"]
+    workspace = configuration_group["workspace"]
     assert workspace["availability"] == "AVAILABILITY_CONFIGURED"
-    configuration = one(choice for choice in current["configurations"] if choice["harness"] == "HARNESS_CODEX")
+    configuration = one(
+        choice for choice in configuration_group["configurations"] if choice["harness"] == "HARNESS_CODEX"
+    )
     reasoning_effort = next(effort for effort in configuration["reasoning_efforts"] if effort)
 
     session_id = str(uuid4())

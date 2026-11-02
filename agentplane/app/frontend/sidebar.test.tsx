@@ -4,7 +4,11 @@ import {
   SandboxPhase,
   EnvironmentDescriptorSchema,
   OperatingMode,
+  type EnvironmentActions,
+  type EnvironmentConfiguration,
   type EnvironmentDescriptor,
+  type EnvironmentObservedState,
+  type KubernetesDiagnostics,
 } from "../../runner_gateway/environments/environment_service_pb";
 
 import { readySandbox } from "./testing/sandbox";
@@ -51,9 +55,26 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-function sandbox(name: string, overrides: Partial<EnvironmentDescriptor> = {}): EnvironmentDescriptor {
+type SandboxChanges = Omit<
+  Partial<EnvironmentDescriptor>,
+  "configuration" | "observedState" | "actions" | "kubernetesDiagnostics"
+> & {
+  configuration?: Partial<EnvironmentConfiguration>;
+  observedState?: Partial<EnvironmentObservedState>;
+  actions?: Partial<EnvironmentActions>;
+  kubernetesDiagnostics?: Partial<KubernetesDiagnostics>;
+};
+
+function sandbox(name: string, overrides: SandboxChanges = {}): EnvironmentDescriptor {
   const uid = `00000000-0000-4000-8000-${name.padStart(12, "0").slice(-12)}`;
-  return Object.assign(readySandbox(name, uid), overrides);
+  const value = readySandbox(name, uid);
+  const { configuration, observedState, actions, kubernetesDiagnostics, ...topLevel } = overrides;
+  Object.assign(value, topLevel);
+  if (configuration) Object.assign(value.configuration!, configuration);
+  if (observedState) Object.assign(value.observedState!, observedState);
+  if (actions) Object.assign(value.actions!, actions);
+  if (kubernetesDiagnostics) Object.assign(value.kubernetesDiagnostics!, kubernetesDiagnostics);
+  return value;
 }
 
 function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sandbox">): ThreadView {
@@ -292,12 +313,10 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   await pushThreadChange(stream);
   await pushSandboxChanges(sandboxStream, [
     sandbox("test-sandbox", {
-      operatingMode: OperatingMode.SUSPENDED,
-      phase: SandboxPhase.SUSPENDED,
-      pod: undefined,
-      status: {},
+      observedState: { operatingMode: OperatingMode.SUSPENDED, phase: SandboxPhase.SUSPENDED },
+      kubernetesDiagnostics: { pod: undefined, sandboxStatus: {} },
     }),
-    sandbox("test-threadless", { pod: undefined }),
+    sandbox("test-threadless", { kubernetesDiagnostics: { pod: undefined } }),
   ]);
   expect(container.textContent).not.toContain("Before rename");
   expect(row(renamed.name).className).toContain("current");
@@ -379,9 +398,8 @@ it("groups threads by sandbox, showing each group's state, name and visible thre
     {
       "demo-a1b2": sandbox("demo-a1b2"),
       "prod-x7f2": sandbox("prod-x7f2", {
-        operatingMode: OperatingMode.SUSPENDED,
-        phase: SandboxPhase.SUSPENDED,
-        pod: undefined,
+        observedState: { operatingMode: OperatingMode.SUSPENDED, phase: SandboxPhase.SUSPENDED },
+        kubernetesDiagnostics: { pod: undefined },
       }),
     }
   );
@@ -419,11 +437,18 @@ it.each([
   ["a running Pod", {}, "ready"],
   [
     "a suspended Sandbox",
-    { operatingMode: OperatingMode.SUSPENDED, phase: SandboxPhase.SUSPENDED, pod: undefined },
+    {
+      observedState: { operatingMode: OperatingMode.SUSPENDED, phase: SandboxPhase.SUSPENDED },
+      kubernetesDiagnostics: { pod: undefined },
+    },
     "suspended",
   ],
-  ["a running Sandbox with no Pod yet", { phase: SandboxPhase.CREATING, pod: undefined }, "pending"],
-  ["a Sandbox being deleted", { phase: SandboxPhase.TEARING_DOWN }, "gone"],
+  [
+    "a running Sandbox with no Pod yet",
+    { observedState: { phase: SandboxPhase.CREATING }, kubernetesDiagnostics: { pod: undefined } },
+    "pending",
+  ],
+  ["a Sandbox being deleted", { observedState: { phase: SandboxPhase.TEARING_DOWN } }, "gone"],
 ] as const)("marks a group's Sandbox by its status: %s", async (_name, overrides, status) => {
   const box = sandbox("test-marked", overrides);
   await render([], { [box.target!.name]: box });
@@ -433,9 +458,8 @@ it.each([
 it("renders only a suspended Sandbox's name in its icon's gray, not the link blue", async () => {
   const running = sandbox("test-running");
   const suspended = sandbox("test-suspended", {
-    operatingMode: OperatingMode.SUSPENDED,
-    phase: SandboxPhase.SUSPENDED,
-    pod: undefined,
+    observedState: { operatingMode: OperatingMode.SUSPENDED, phase: SandboxPhase.SUSPENDED },
+    kubernetesDiagnostics: { pod: undefined },
   });
   await render([], { [running.target!.name]: running, [suspended.target!.name]: suspended });
   const link = (name: string): HTMLElement => {
@@ -465,7 +489,7 @@ it("dims only the rows of threads whose harness is stopped", async () => {
 });
 
 it("opens the details of a provisioning Sandbox with no Threads", async () => {
-  const pending = sandbox("test-provisioning", { pod: undefined });
+  const pending = sandbox("test-provisioning", { kubernetesDiagnostics: { pod: undefined } });
   await render([], { [pending.target!.name]: pending });
   expect(container.textContent).toContain("0 threads");
   expect(container.querySelector(".agentplane-thread-list-state-icon[data-status='pending']")).not.toBeNull();

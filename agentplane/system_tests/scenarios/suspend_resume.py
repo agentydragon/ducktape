@@ -252,11 +252,12 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
         environment["AGENTPLANE_SESSIONS_URL"] = f"http://{forwarded_target}"
         environment["AGENTPLANE_SESSIONS_CREDENTIAL"] = token
         descriptor = await _run_cli(environment, "environments", "get", target.namespace, target.name, target.uid)
-        eligibility = descriptor["resume_eligibility"]
+        actions = descriptor["actions"]
+        eligibility = actions["resume_eligibility"]
         assert isinstance(eligibility, dict), descriptor
         assert eligibility["state"] == "RESUME_ELIGIBILITY_STATE_AVAILABLE", descriptor
         assert descriptor["execution_account"] == MessageToDict(account, preserving_proto_field_name=True), descriptor
-        resume_token = descriptor["resume_token"]
+        resume_token = actions["resume_token"]
         assert isinstance(resume_token, str)
         assert resume_token
 
@@ -527,7 +528,7 @@ async def two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
     template, cwd = executor.template, executor.cwd
     run = await _ResumeRun.start(cluster, client, dispatcher, sandbox, template=template)
     markers = {harness: _marker(harness) for harness in (session_pb2.HARNESS_CLAUDE, session_pb2.HARNESS_CODEX)}
-    models = {harness: scripted.model(run.kubernetes_diagnostics.pod_name, harness) for harness in markers}
+    models = {harness: scripted.model(run.pod_name, harness) for harness in markers}
     for harness, marker in markers.items():
         agent = await run.open(harness, cwd=cwd)
         async with asyncio.TaskGroup() as turns:
@@ -538,7 +539,7 @@ async def two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
     await run.suspend_and_resume()
 
     # A VM's new launcher Pod has a name of its own.
-    models = {harness: scripted.model(run.kubernetes_diagnostics.pod_name, harness) for harness in markers}
+    models = {harness: scripted.model(run.pod_name, harness) for harness in markers}
     for harness, agent in run.agents.items():
         async with asyncio.TaskGroup() as turns:
             recall = turns.create_task(agent.run(RECALL_PROMPT))
@@ -563,7 +564,7 @@ async def codex_standing_instructions_after_suspend_and_compact(
     standing = "SESSION_STANDING_ORDER: consult Agentplane before declaring access unavailable."
     run = await _ResumeRun.start(cluster, client, dispatcher, sandbox, template=POD_TEMPLATE)
     agent = await run.open(session_pb2.HARNESS_CODEX, cwd=WORKING_DIRECTORY, instructions=standing)
-    model = scripted.model(run.kubernetes_diagnostics.pod_name, session_pb2.HARNESS_CODEX)
+    model = scripted.model(run.pod_name, session_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)
     async with asyncio.TaskGroup() as turns:
         seed = turns.create_task(agent.run("Remember SEEDED_CONTEXT_MARKER and reply ACK."))
@@ -574,7 +575,7 @@ async def codex_standing_instructions_after_suspend_and_compact(
     await run.seeded(session_pb2.HARNESS_CODEX, seed.result())
     await run.suspend_and_resume()
 
-    model = scripted.model(run.kubernetes_diagnostics.pod_name, session_pb2.HARNESS_CODEX)
+    model = scripted.model(run.pod_name, session_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)
     async with asyncio.TaskGroup() as turns:
         recall = turns.create_task(agent.run(RECALL_PROMPT))
