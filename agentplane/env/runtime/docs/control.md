@@ -74,13 +74,16 @@ budget remains authoritative across all of its native services.
   `/bin/sh -eu` from the configured `initialization_cwd` when Runtime starts; a Sandbox without a bootstrap runs
   nothing. `OpenSession` durably reserves a Session without waiting for the bootstrap. Host waits on Runtime's bound `WaitBootstrap` RPC and does not run session setup or start a native harness until the bootstrap succeeds. If it fails
   or is interrupted, admitted commands receive durable failure outcomes.
-- The first request durably selects the script digest at the fixed path
-  `<state_dir>/initialization/request.json`, before the script starts. The Environment Runtime thereafter refuses
+- The first request durably selects the exact script bytes in the `BootstrapSelections` COSI
+  resource at `<state_dir>/bootstrap-selections.db`, before the script starts. Environment Runtime thereafter refuses
   changed source, including after a failed attempt: two possibly incompatible initializations must
   never be combined in one Sandbox.
+- Before committing the selection, Runtime writes a rollback fence to the legacy
+  `<state_dir>/initialization/request.json` path. New Runtime ignores this file; older binaries
+  refuse its non-hex digest value and cannot replay a selected script.
 - The script runs at most once. An exact request after it ended, by a result of any exit code, only
   replays the record. An exact request that finds the script selected by an earlier Environment Runtime, with
-  no result and nothing running it, records the attempt as interrupted and replays that: the script
+  no terminal event, records the attempt as interrupted and replays that: the script
   may have run any part of itself, and an unknown result does not permit a retry. A fresh
   initialization needs a new Sandbox.
 - Stdout, stderr, and the attempt's result or interruption are appended to a persistent event log with
