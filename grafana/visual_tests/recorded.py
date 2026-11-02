@@ -99,7 +99,7 @@ def validate_fixture(dashboard: dict[str, Any], fixture: dict[str, Any]) -> None
                 variable = result["variant_variable"]
                 if variable not in variables or set(variables[variable]) - result["variants"].keys():
                     raise ValueError(f"missing recorded variants for panel {panel_id}, query {ref}")
-                results = ((f"{key}/{variant}", item) for variant, item in result["variants"].items())
+                results = [(f"{key}/{variant}", item) for variant, item in result["variants"].items()]
             else:
                 results = [(key, result)]
             for result_key, item in results:
