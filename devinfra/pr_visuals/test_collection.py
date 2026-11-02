@@ -235,8 +235,10 @@ def test_rejects_noncanonical_or_record_payload_paths(path: str, tmp_path: Path)
 
 
 def test_missing_payload_is_incomplete_and_cannot_borrow_another_attempt(tmp_path: Path) -> None:
-    first, blobs_a = _pair("same", "a", attempt=1, status="FAILED", attempt_count=2, total_run_count=2)
-    second, blobs_b = _pair("same", "b", attempt=2, attempt_count=2, total_run_count=2)
+    first, blobs_a = _pair(
+        "same", "a", path="files/shared.png", attempt=1, status="FAILED", attempt_count=2, total_run_count=2
+    )
+    second, blobs_b = _pair("same", "b", path="files/shared.png", attempt=2, attempt_count=2, total_run_count=2)
     second.pop()
     collected = collect_outputs(
         ["invocation"], "agentydragon/ducktape", tmp_path, run=_run(first + second, blobs_a | blobs_b, [])
@@ -244,6 +246,27 @@ def test_missing_payload_is_incomplete_and_cannot_borrow_another_attempt(tmp_pat
     assert not collected.complete
     assert len(collected.observations) == 1
     assert not collected.selected
+    assert any("absent from this exact result" in issue for issue in collected.issues)
+
+
+@pytest.mark.parametrize("reverse_listing", [False, True])
+def test_missing_payload_cannot_borrow_same_named_file_from_another_shard(
+    tmp_path: Path, reverse_listing: bool
+) -> None:
+    first, blobs_a = _pair("first", "a", path="files/shared.png", shard=1, shard_count=2)
+    second, blobs_b = _pair("second", "b", path="files/shared.png", shard=2, shard_count=2)
+    second.pop()
+    artifacts = first + second
+    if reverse_listing:
+        artifacts.reverse()
+
+    collected = collect_outputs(
+        ["invocation"], "agentydragon/ducktape", tmp_path, run=_run(artifacts, blobs_a | blobs_b, [])
+    )
+
+    assert not collected.complete
+    assert [(item.key.case_id, item.result.shard) for item in collected.observations] == [("first", 1)]
+    assert [(item.key.case_id, item.result.shard) for item in collected.selected] == [("first", 1)]
     assert any("absent from this exact result" in issue for issue in collected.issues)
 
 
