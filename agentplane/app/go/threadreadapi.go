@@ -8,10 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -29,10 +26,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -254,53 +250,32 @@ func registerThreadMetadataGateway(server *HTTPServer, store threadReadStore, up
 		// generated routes. The runtime always supplies a store.
 		return nil
 	}
-	socketDir, err := os.MkdirTemp("", "agentplane-thread-metadata-")
-	if err != nil {
-		return fmt.Errorf("create app Thread Metadata gRPC socket directory: %w", err)
-	}
-	socketPath := filepath.Join(socketDir, "grpc.sock")
-	listener, err := net.Listen("unix", socketPath)
-	if err != nil {
-		_ = os.RemoveAll(socketDir)
-		return fmt.Errorf("listen for app Thread Metadata gRPC: %w", err)
-	}
-	grpcServer := grpc.NewServer()
 	mux := gatewayruntime.NewServeMux()
 	service := &threadMetadataService{
 		store: store, updates: updates, updatesConnected: updatesConnected, drainDone: server.DrainDone(),
 	}
-	threadmetadatapb.RegisterThreadMetadataServiceServer(grpcServer, service)
-	go func() { _ = grpcServer.Serve(listener) }()
-	dialer := &net.Dialer{}
-	connection, err := grpc.NewClient(
-		"passthrough:///thread-metadata",
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-			return dialer.DialContext(ctx, "unix", socketPath)
-		}),
-	)
-	if err != nil {
-		grpcServer.Stop()
-		_ = os.RemoveAll(socketDir)
-		return fmt.Errorf("connect generated Thread Metadata gateway: %w", err)
-	}
-	if err := threadmetadatapb.RegisterThreadMetadataServiceHandlerClient(
-		context.Background(), mux, threadmetadatapb.NewThreadMetadataServiceClient(connection),
-	); err != nil {
-		_ = connection.Close()
-		grpcServer.Stop()
-		_ = os.RemoveAll(socketDir)
+	if err := threadmetadatapb.RegisterThreadMetadataServiceHandlerServer(context.Background(), mux, service); err != nil {
 		return fmt.Errorf("register generated Thread Metadata gateway: %w", err)
 	}
-	server.addCleanup(func() {
-		_ = connection.Close()
-		grpcServer.Stop()
-		_ = os.RemoveAll(socketDir)
-	})
 	gateway := http.StripPrefix("/upstream/app", mux)
 	server.RegisterRawRoute("GET /upstream/app/v1/threads", gateway, false)
 	server.RegisterRawRoute("GET /upstream/app/v1/threads/{thread_id}", gateway, false)
-	server.RegisterRawRoute("GET /upstream/app/v1/threads:watch", gateway, false)
+	// grpc-gateway's in-process registration supports unary calls only. Forward the same typed
+	// watch through its standard stream encoder, without a local gRPC listener or transport.
+	server.RegisterRawRoute("GET /upstream/app/v1/threads:watch", http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		ctx := gatewayruntime.NewServerMetadataContext(request.Context(), gatewayruntime.ServerMetadata{})
+		_, marshaler := gatewayruntime.MarshalerForRequest(mux, request)
+		watch, err := service.newThreadMetadataWatch(ctx)
+		if watch != nil {
+			defer watch.unsubscribe()
+		}
+		gatewayruntime.ForwardResponseStream(ctx, mux, marshaler, w, request, func() (proto.Message, error) {
+			if err != nil {
+				return nil, err
+			}
+			return watch.next()
+		})
+	}), false)
 	return nil
 }
 
@@ -360,39 +335,40 @@ func (s *threadMetadataService) ListThreadMetadata(ctx context.Context, request 
 	return response, nil
 }
 
-func (s *threadMetadataService) WatchThreadMetadata(
-	_ *threadmetadatapb.WatchThreadMetadataRequest,
-	stream grpc.ServerStreamingServer[threadmetadatapb.WatchThreadMetadataResponse],
-) error {
+type threadMetadataWatch struct {
+	ctx         context.Context
+	updates     <-chan struct{}
+	unsubscribe func()
+	service     *threadMetadataService
+	initial     bool
+}
+
+func (s *threadMetadataService) newThreadMetadataWatch(ctx context.Context) (*threadMetadataWatch, error) {
 	if s.updates == nil {
-		return status.Error(codes.Unavailable, "Thread metadata updates are unavailable")
+		return nil, status.Error(codes.Unavailable, "Thread metadata updates are unavailable")
 	}
 	updates, unsubscribe, err := s.updates.Subscribe(threads.UpdatesChannel)
 	if err != nil {
-		return status.Error(codes.Internal, "subscribe to Thread metadata updates")
+		return nil, status.Error(codes.Internal, "subscribe to Thread metadata updates")
 	}
-	defer unsubscribe()
-	sendChanged := func() error {
-		connected := s.updatesConnected != nil && s.updatesConnected()
-		return stream.Send(&threadmetadatapb.WatchThreadMetadataResponse{
-			Changed: &emptypb.Empty{}, UpdatesConnected: connected,
-		})
-	}
-	if err := sendChanged(); err != nil {
-		return err
-	}
-	for {
+	return &threadMetadataWatch{ctx: ctx, updates: updates, unsubscribe: unsubscribe, service: s, initial: true}, nil
+}
+
+func (w *threadMetadataWatch) next() (*threadmetadatapb.WatchThreadMetadataResponse, error) {
+	if !w.initial {
 		select {
-		case <-stream.Context().Done():
-			return status.FromContextError(stream.Context().Err()).Err()
-		case <-s.drainDone:
-			return nil
-		case <-updates:
-			if err := sendChanged(); err != nil {
-				return err
-			}
+		case <-w.ctx.Done():
+			return nil, status.FromContextError(w.ctx.Err()).Err()
+		case <-w.service.drainDone:
+			return nil, io.EOF
+		case <-w.updates:
 		}
 	}
+	w.initial = false
+	connected := w.service.updatesConnected != nil && w.service.updatesConnected()
+	return &threadmetadatapb.WatchThreadMetadataResponse{
+		Changed: &emptypb.Empty{}, UpdatesConnected: connected,
+	}, nil
 }
 
 func threadMetadataProto(thread threads.Thread) *threadmetadatapb.ThreadMetadata {
