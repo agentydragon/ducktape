@@ -19,7 +19,16 @@ const (
 	ControllerName   = "process-lifecycle"
 )
 
+// Domain identifies the lifecycle barrier responsible for an attempt.
+type Domain string
+
+const (
+	RuntimeDomain Domain = "environment-runtime"
+	HarnessDomain Domain = "harness-host"
+)
+
 type DesiredState struct {
+	Domain        Domain
 	Owner         string
 	Generation    uint64
 	StartDeadline time.Time

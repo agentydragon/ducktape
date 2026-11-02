@@ -2,6 +2,7 @@ package harnesshost
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
@@ -187,6 +188,20 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		return err
 	}
 	for _, process := range processes.Items {
+		desiredProcess, found, err := supervision.ReadDesiredState(ctx, r, runnerlifecycle.Namespace, process.Metadata().ID())
+		if err != nil {
+			return err
+		}
+		if !found {
+			continue
+		}
+		switch desiredProcess.Domain {
+		case supervision.RuntimeDomain:
+			continue
+		case supervision.HarnessDomain:
+		default:
+			return fmt.Errorf("process %q has unknown domain %q", process.Metadata().ID(), desiredProcess.Domain)
+		}
 		status, found, err := supervision.ReadStatus(ctx, r, runnerlifecycle.Namespace, process.Metadata().ID())
 		if err != nil {
 			return err

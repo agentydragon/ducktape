@@ -66,7 +66,7 @@ func TestNativeStartIsOwnedAndFencedByProcessController(t *testing.T) {
 	}
 	var workers sync.WaitGroup
 	const namespace resource.Namespace = "executor-test"
-	host := supervision.NewHost(ctx, store, namespace, &workers, func(err error) { t.Errorf("process host: %v", err) })
+	host := supervision.NewHost(ctx, store, namespace, supervision.RuntimeDomain, &workers, func(err error) { t.Errorf("process host: %v", err) })
 	if err := engine.RegisterQController(host.Controller()); err != nil {
 		t.Fatal(err)
 	}

@@ -33,11 +33,11 @@ func (v hostReport) DeepCopy() hostReport {
 type hostReportExtension struct{}
 
 func (hostReportExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
-	return spec.ResourceDefinitionSpec{Type: hostReportType, DefaultNamespace: lifecycle.EnvironmentNamespace}
+	return spec.ResourceDefinitionSpec{Type: hostReportType, DefaultNamespace: lifecycle.Namespace}
 }
 
 func hostReportResource(v hostReport) *typed.Resource[hostReport, hostReportExtension] {
-	return typed.NewResource[hostReport, hostReportExtension](resource.NewMetadata(lifecycle.EnvironmentNamespace, hostReportType, "host", resource.VersionUndefined), v)
+	return typed.NewResource[hostReport, hostReportExtension](resource.NewMetadata(lifecycle.Namespace, hostReportType, "host", resource.VersionUndefined), v)
 }
 
 type hostReportController struct{ runtime *Runtime }
@@ -45,8 +45,8 @@ type hostReportController struct{ runtime *Runtime }
 func (*hostReportController) Name() string { return "environment-host-report" }
 func (*hostReportController) Inputs() []controller.Input {
 	return []controller.Input{
-		{Namespace: lifecycle.EnvironmentNamespace, Type: hostIntentType, Kind: controller.InputWeak},
-		{Namespace: lifecycle.EnvironmentNamespace, Type: hostIntentStatusType, Kind: controller.InputWeak},
+		{Namespace: lifecycle.Namespace, Type: hostIntentType, Kind: controller.InputWeak},
+		{Namespace: lifecycle.Namespace, Type: hostIntentStatusType, Kind: controller.InputWeak},
 	}
 }
 

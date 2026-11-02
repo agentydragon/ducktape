@@ -18,7 +18,7 @@ type Controller struct {
 	host *Host
 }
 
-func (c *Controller) Name() string { return ControllerName + "-" + string(c.host.namespace) }
+func (c *Controller) Name() string { return ControllerName }
 
 func (c *Controller) Settings() controller.QSettings {
 	return controller.QSettings{
@@ -26,8 +26,7 @@ func (c *Controller) Settings() controller.QSettings {
 			{Namespace: c.host.namespace, Type: DesiredStateType, Kind: controller.InputQPrimary},
 			{Namespace: c.host.namespace, Type: inputType, Kind: controller.InputQMapped},
 		},
-		// Process controllers own disjoint namespaces in the shared Runtime engine.
-		Outputs:     []controller.Output{{Type: StatusType, Kind: controller.OutputShared}},
+		Outputs:     []controller.Output{{Type: StatusType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(1)),
 	}
 }

@@ -27,17 +27,17 @@ type lifecycle struct {
 	processes  *supervision.Host
 }
 
-func newLifecycle(r *Runner, store state.State, engine *cosiruntime.Runtime, engineDone <-chan struct{}) (*lifecycle, error) {
+func newLifecycle(r *Runner, store state.State, engine *cosiruntime.Runtime, engineDone <-chan struct{}, processes *supervision.Host) (*lifecycle, error) {
 	if err := r.config.resolveSessionReconcileConcurrency(); err != nil {
 		return nil, err
 	}
-	if store == nil || engine == nil || engineDone == nil {
+	if store == nil || engine == nil || engineDone == nil || processes == nil {
 		return nil, errors.New("embedded Host requires the Runtime engine completion signal")
 	}
 	// Completion is separate from Runner cancellation: workers are joined only after the engine exits.
 	done, finish := context.WithCancelCause(context.WithoutCancel(r.ctx))
 	l := &lifecycle{runner: r, state: store, engine: engine, engineDone: engineDone, done: done, finish: finish}
-	l.processes = supervision.NewHost(r.ctx, l.state, runnerlifecycle.Namespace, &l.workers, r.fail)
+	l.processes = processes.Scope(r.ctx, supervision.HarnessDomain, &l.workers, r.fail)
 	if r.config.Codex != nil {
 		appServer, err := codexappserver.NewHost(*r.config.Codex, codexappserver.Dependencies{
 			Context: r.ctx, State: l.state, Workers: &l.workers, Processes: l.processes,
@@ -72,7 +72,7 @@ func (l *lifecycle) registerControllers() error {
 	if err := l.engine.RegisterController(&runnerLifecycleController{l: l}); err != nil {
 		return err
 	}
-	controllers := []controller.QController{l.processes.Controller()}
+	var controllers []controller.QController
 	if l.runner.codexAppServer != nil {
 		controllers = append(controllers, l.runner.codexAppServer.Controller())
 	}

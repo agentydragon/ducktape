@@ -55,8 +55,8 @@ type Runner struct {
 
 // NewEmbedded registers Host controllers in the Runtime-owned engine and store.
 // Runtime retains responsibility for stopping and joining that engine.
-func NewEmbedded(config Config, lifecycleState state.State, engine *cosiruntime.Runtime, engineDone <-chan struct{}) (*Runner, error) {
-	if lifecycleState == nil || engine == nil || engineDone == nil {
+func NewEmbedded(config Config, lifecycleState state.State, engine *cosiruntime.Runtime, engineDone <-chan struct{}, processes *supervision.Host) (*Runner, error) {
+	if lifecycleState == nil || engine == nil || engineDone == nil || processes == nil {
 		return nil, errors.New("embedded Host requires Runtime state, engine and completion signal")
 	}
 	if err := config.resolveSessionReconcileConcurrency(); err != nil {
@@ -103,7 +103,7 @@ func NewEmbedded(config Config, lifecycleState state.State, engine *cosiruntime.
 		_ = owner.Close()
 		return nil, err
 	}
-	l, err := newLifecycle(r, lifecycleState, engine, engineDone)
+	l, err := newLifecycle(r, lifecycleState, engine, engineDone, processes)
 	if err != nil {
 		cancel()
 		_ = owner.Close()

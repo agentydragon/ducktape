@@ -30,7 +30,7 @@ const (
 	processTestTimeout                        = 10 * time.Second
 )
 
-func TestProcessControllersShareEngineWithDistinctNamespaceOwnership(t *testing.T) {
+func TestSharedProcessControllerKeepsOwnerLifetimesSeparate(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -39,15 +39,13 @@ func TestProcessControllersShareEngineWithDistinctNamespaceOwnership(t *testing.
 		if err != nil {
 			t.Fatal(err)
 		}
-		var workers sync.WaitGroup
-		const runtimeNamespace resource.Namespace = "environment-runtime"
-		const hostNamespace resource.Namespace = "runner"
-		runtimeHost := NewHost(ctx, store, runtimeNamespace, &workers, func(err error) { t.Errorf("Runtime process: %v", err) })
-		harnessHost := NewHost(ctx, store, hostNamespace, &workers, func(err error) { t.Errorf("Host process: %v", err) })
-		for _, host := range []*Host{runtimeHost, harnessHost} {
-			if err := engine.RegisterQController(host.Controller()); err != nil {
-				t.Fatal(err)
-			}
+		var runtimeWorkers, hostWorkers sync.WaitGroup
+		runtimeHost := NewHost(ctx, store, processTestNamespace, RuntimeDomain, &runtimeWorkers, func(err error) { t.Errorf("Runtime process: %v", err) })
+		harnessCtx, cancelHarness := context.WithCancel(ctx)
+		defer cancelHarness()
+		harnessHost := runtimeHost.Scope(harnessCtx, HarnessDomain, &hostWorkers, func(err error) { t.Errorf("Host process: %v", err) })
+		if err := engine.RegisterQController(runtimeHost.Controller()); err != nil {
+			t.Fatal(err)
 		}
 		engineDone := make(chan error, 1)
 		go func() { engineDone <- engine.Run(ctx) }()
@@ -56,28 +54,29 @@ func TestProcessControllersShareEngineWithDistinctNamespaceOwnership(t *testing.
 			if err := <-engineDone; err != nil {
 				t.Errorf("shared engine: %v", err)
 			}
-			workers.Wait()
+			runtimeWorkers.Wait()
+			hostWorkers.Wait()
 		}()
 		for _, pair := range []struct {
-			host  *Host
-			owner string
-		}{{runtimeHost, "environment-runtime"}, {harnessHost, "harness-host"}} {
+			host *Host
+			id   string
+		}{{runtimeHost, "runtime"}, {harnessHost, "harness"}} {
 			finished := make(chan error, 1)
 			var once sync.Once
-			if err := pair.host.requestNative(ctx, "same-id", DesiredState{Owner: pair.owner, StopTimeout: time.Second}, func(context.Context) (*Instance, error) {
+			if err := pair.host.requestNative(ctx, pair.id, DesiredState{Owner: pair.id, StopTimeout: time.Second}, func(context.Context) (*Instance, error) {
 				return &Instance{Done: finished, Stop: func(context.Context) error { once.Do(func() { close(finished) }); return nil }}, nil
 			}); err != nil {
 				t.Fatal(err)
 			}
 		}
 		for _, pair := range []struct {
-			host  *Host
-			owner string
-		}{{runtimeHost, "environment-runtime"}, {harnessHost, "harness-host"}} {
+			id     string
+			domain Domain
+		}{{"runtime", RuntimeDomain}, {"harness", HarnessDomain}} {
 			var current Status
 			for range 20 {
 				synctest.Wait()
-				current, _, err = ReadStatus(ctx, store, pair.host.namespace, "same-id")
+				current, _, err = ReadStatus(ctx, store, processTestNamespace, pair.id)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -85,16 +84,49 @@ func TestProcessControllersShareEngineWithDistinctNamespaceOwnership(t *testing.
 					break
 				}
 			}
-			if current.Phase != Running || current.Owner != pair.owner {
-				t.Fatalf("%s status = %+v", pair.host.namespace, current)
+			if current.Phase != Running || current.Owner != pair.id {
+				t.Fatalf("%s status = %+v", pair.id, current)
 			}
-			desired, err := store.Get(ctx, resourceFor(pair.host.namespace, "same-id", DesiredState{}).Metadata())
-			if err != nil || !desired.Metadata().Finalizers().Has(pair.host.Controller().Name()) {
-				t.Fatalf("%s finalizer missing: desired=%v err=%v", pair.host.namespace, desired, err)
+			desired, found, err := ReadDesiredState(ctx, store, processTestNamespace, pair.id)
+			if err != nil || !found || desired.Domain != pair.domain {
+				t.Fatalf("%s desired = %+v found=%t err=%v", pair.id, desired, found, err)
 			}
-			if err := pair.host.requestStop("same-id"); err != nil {
+			res, err := store.Get(ctx, resourceFor(processTestNamespace, pair.id, DesiredState{}).Metadata())
+			if err != nil || !res.Metadata().Finalizers().Has(runtimeHost.Controller().Name()) {
+				t.Fatalf("%s finalizer missing: desired=%v err=%v", pair.id, res, err)
+			}
+		}
+		if err := harnessHost.requestNative(ctx, "runtime", DesiredState{Owner: "runtime", StopTimeout: time.Second}, func(context.Context) (*Instance, error) {
+			t.Error("another scope launched the same attempt")
+			return nil, nil
+		}); err == nil {
+			t.Fatal("another scope registered an existing attempt")
+		}
+		if err := harnessHost.requestStop("harness"); err != nil {
+			t.Fatal(err)
+		}
+		var hostStatus Status
+		for range 20 {
+			synctest.Wait()
+			hostStatus, _, err = ReadStatus(ctx, store, processTestNamespace, "harness")
+			if err != nil {
 				t.Fatal(err)
 			}
+			if hostStatus.Phase == Exited {
+				break
+			}
+		}
+		if hostStatus.Phase != Exited {
+			t.Fatalf("Host process did not finish fencing: %+v", hostStatus)
+		}
+		cancelHarness()
+		hostWorkers.Wait()
+		status, _, err := ReadStatus(ctx, store, processTestNamespace, "runtime")
+		if err != nil || status.Phase != Running {
+			t.Fatalf("Runtime process after Host stop = %+v, %v", status, err)
+		}
+		if err := runtimeHost.requestStop("runtime"); err != nil {
+			t.Fatal(err)
 		}
 	})
 }
@@ -210,7 +242,7 @@ func newProcessControllerTestRuntime(t *testing.T) *processControllerTestRuntime
 		default:
 		}
 	}
-	host := NewHost(ctx, store, processTestNamespace, workers, reportFatal)
+	host := NewHost(ctx, store, processTestNamespace, RuntimeDomain, workers, reportFatal)
 	if err := engine.RegisterQController(host.Controller()); err != nil {
 		cancel()
 		t.Fatal(err)

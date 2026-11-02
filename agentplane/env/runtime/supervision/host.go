@@ -21,16 +21,22 @@ type Instance struct {
 
 type Launch func(context.Context) (*Instance, error)
 
+// Host is a process-owner view of the shared controller registry. Each view
+// supplies its own lifetime and worker barrier; attempt IDs are global.
 type Host struct {
-	ctx       context.Context
+	*hostRegistry
+	ctx     context.Context
+	workers *sync.WaitGroup
+	onError func(error)
+	domain  Domain
+}
+
+type hostRegistry struct {
 	state     state.State
 	namespace resource.Namespace
-	workers   *sync.WaitGroup
-	onError   func(error)
-
-	mu      sync.Mutex
-	entries map[string]*processHostEntry
-	retired map[string]struct{}
+	mu        sync.Mutex
+	entries   map[string]*processHostEntry
+	retired   map[string]struct{}
 }
 
 // Each slot's result is written once before its done channel closes. The live
@@ -62,6 +68,7 @@ type processStopSlot struct {
 }
 
 type processHostEntry struct {
+	host   *Host
 	id     string
 	spec   DesiredState
 	launch Launch
@@ -93,11 +100,18 @@ type processHostSnapshot struct {
 }
 
 // NewHost binds generic supervision to the caller's state, lifetime and worker barrier.
-func NewHost(ctx context.Context, store state.State, namespace resource.Namespace, workers *sync.WaitGroup, onError func(error)) *Host {
+func NewHost(ctx context.Context, store state.State, namespace resource.Namespace, domain Domain, workers *sync.WaitGroup, onError func(error)) *Host {
 	return &Host{
-		ctx: ctx, state: store, namespace: namespace, workers: workers, onError: onError,
-		entries: make(map[string]*processHostEntry), retired: make(map[string]struct{}),
+		hostRegistry: &hostRegistry{state: store, namespace: namespace,
+			entries: make(map[string]*processHostEntry), retired: make(map[string]struct{})},
+		ctx: ctx, domain: domain, workers: workers, onError: onError,
 	}
+}
+
+// Scope shares the controller and attempt registry while preserving the
+// component's context, worker join, error boundary and drain domain.
+func (h *Host) Scope(ctx context.Context, domain Domain, workers *sync.WaitGroup, onError func(error)) *Host {
+	return &Host{hostRegistry: h.hostRegistry, ctx: ctx, domain: domain, workers: workers, onError: onError}
 }
 
 // Controller is registered in the caller's existing COSI runtime.
@@ -109,6 +123,7 @@ func (h *Host) Request(ctx context.Context, r controller.QRuntime, id string, sp
 	if r == nil {
 		return errors.New("process desired-state writer is not configured")
 	}
+	spec.Domain = h.domain
 	return h.register(ctx, r, id, spec, launch, func() error {
 		_, err := writeResource(ctx, r, h.namespace, id, spec)
 		return err
@@ -118,6 +133,7 @@ func (h *Host) Request(ctx context.Context, r controller.QRuntime, id string, sp
 // Native protocol/setup workers publish their intent through the host boundary.
 // They wait for the same controller as callers which publish from reconciliation.
 func (h *Host) requestNative(ctx context.Context, id string, spec DesiredState, launch Launch) error {
+	spec.Domain = h.domain
 	return h.register(ctx, h.state, id, spec, launch, func() error {
 		return publishResource(ctx, h.state, h.namespace, id, spec)
 	})
@@ -133,6 +149,9 @@ func (h *Host) register(ctx context.Context, reader controller.Reader, id string
 	if spec.Owner == "" {
 		return errors.New("process owner is required")
 	}
+	if spec.Domain != RuntimeDomain && spec.Domain != HarnessDomain {
+		return fmt.Errorf("invalid process domain %q", spec.Domain)
+	}
 	if launch == nil {
 		return errors.New("process launch callback is required")
 	}
@@ -145,9 +164,9 @@ func (h *Host) register(ctx context.Context, reader controller.Reader, id string
 	entry := h.entries[id]
 	newEntry := entry == nil
 	if newEntry {
-		entry = &processHostEntry{id: id, spec: spec, launch: launch}
+		entry = &processHostEntry{host: h, id: id, spec: spec, launch: launch}
 		h.entries[id] = entry
-	} else if entry.spec != spec {
+	} else if entry.host != h || entry.spec != spec {
 		return fmt.Errorf("process %q desired state is immutable", id)
 	}
 
@@ -232,10 +251,11 @@ func (h *Host) start(id string) error {
 	}
 	start := &processStartSlot{done: make(chan struct{})}
 	entry.start = start
-	h.workers.Add(1)
+	owner := entry.host
+	owner.workers.Add(1)
 	h.mu.Unlock()
 
-	go h.runStart(entry, start)
+	go owner.runStart(entry, start)
 	return nil
 }
 
@@ -383,13 +403,14 @@ func (h *Host) requestStop(id string) error {
 	stop := &processStopSlot{done: make(chan struct{})}
 	entry.stop = stop
 	startCancel := start.cancel
-	h.workers.Add(1)
+	owner := entry.host
+	owner.workers.Add(1)
 	h.mu.Unlock()
 
 	if startCancel != nil {
 		startCancel()
 	}
-	go h.runStop(entry, start, stop)
+	go owner.runStop(entry, start, stop)
 	return nil
 }
 

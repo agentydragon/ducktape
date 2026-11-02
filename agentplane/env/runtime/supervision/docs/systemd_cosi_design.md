@@ -31,8 +31,8 @@ not as the number of types converted to COSI.
 ## Current ownership and scope
 
 The [existing supervision contract](supervision.md) is the authority for current behavior. Runtime,
-Host and Execution share a management process and COSI engine. Each uses a process-host namespace
-and its own lifecycle policy. Embedded VM Execution registers its exec-server with Runtime's process
+Host and Execution share a management process, COSI engine, namespace, and process controller.
+Each retains its own process domain and lifecycle policy. Embedded VM Execution registers its exec-server with Runtime's process
 controller; standalone Execution retains its own supervisor. The generic [process controller](../controller.go) owns
 `ProcessDesiredStates`, `ProcessStatuses` and a finalizer per attempt; [Host](../host.go) owns
 the in-memory launch callback, start/exit/stop slots and process handle. [`ManagedProcess`](../managed_process.go)
@@ -57,7 +57,7 @@ separate container and PID namespace.
 ## Proposed resource and handle boundary
 
 These are logical shapes to review, not an API or a promise to store every field in a COSI
-resource. Preserve the current namespace/owner boundaries and use the existing desired/status
+resource. Preserve the current process-domain and owner boundaries and use the existing desired/status
 resources unless an actual caller needs a different projection.
 
 | State            | Owner and contents                                                                                                                                                                                                                                                                                                                                                                                                  |

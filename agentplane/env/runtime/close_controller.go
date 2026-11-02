@@ -48,8 +48,8 @@ func (*runtimeCloseController) Name() string { return runtimeCloseControllerName
 
 func (*runtimeCloseController) Inputs() []controller.Input {
 	return []controller.Input{
-		{Namespace: lifecycle.EnvironmentNamespace, Type: lifecycle.EnvironmentDesiredStateType, Kind: controller.InputWeak},
-		{Namespace: lifecycle.EnvironmentNamespace, Type: lifecycle.RuntimeTransitionRequestType, Kind: controller.InputWeak},
+		{Namespace: lifecycle.Namespace, Type: lifecycle.EnvironmentDesiredStateType, Kind: controller.InputWeak},
+		{Namespace: lifecycle.Namespace, Type: lifecycle.RuntimeTransitionRequestType, Kind: controller.InputWeak},
 	}
 }
 

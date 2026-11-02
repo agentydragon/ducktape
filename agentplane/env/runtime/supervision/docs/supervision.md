@@ -2,8 +2,8 @@
 
 The reusable launchers, COSI process controller and process registry live in
 [`agentplane/env/runtime/supervision`](../). Environment Runtime, Harness Host and
-Execution Service each own their component lifetime and inject their own context, state, namespace,
-worker tracking and error callback. Native adapters and script workers publish
+Execution Service each own their component lifetime. One COSI process controller and registry
+serve scoped owner views with separate contexts, process domains, worker tracking and error callbacks. Native adapters and script workers publish
 `supervision.ProcessConfig` through `supervision.ManagedProcess`; owning controllers retain
 readiness, restart and journal decisions. A completed attempt never relaunches during reconciliation.
 
@@ -22,7 +22,9 @@ execution. Canceling startup tears down its intent and joins any late launch.
 COSI-managed launches use `ProcessDesiredStates`, `ProcessStatuses` and a finalizer per attempt.
 Launch callbacks and native handles stay in the registry. Teardown joins an in-flight start and
 fences any instance it returns before releasing the finalizer. Owners check remaining process
-intents before acknowledging cleanup; a reader observing leader exit cannot hide a failed fence.
+intents in their process domain before acknowledging cleanup; a reader observing leader exit cannot
+hide a failed fence. The Harness Host drain ignores Runtime-domain attempts, whose cleanup is owned
+by the Runtime's barriers.
 VM native-process status also carries the latest typed systemd observation for that attempt,
 including start-request acceptance or an unconfirmed reply, the expected and observed invocation IDs
 and captured cgroup. A lost start reply remains unconfirmed after later manager observations. The
