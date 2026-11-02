@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/lib/pq"
@@ -86,6 +87,8 @@ type Dispatch struct {
 	Command                 *commandpb.Command
 	State, Reason           string
 	Admission               *eventlogpb.EventEntry
+	DeliveryBlocker         *environmentpb.DeliveryBlocker
+	WakeAssessment          *environmentpb.WakeAssessment
 	Attribution             *AdmissionAttribution
 	Traceparent             string
 	CreatedAt, UpdatedAt    time.Time
@@ -108,6 +111,8 @@ type Opening struct {
 	Spec                 *sessionpb.SessionSpec
 	SetupScript          *string
 	State, Reason        string
+	DeliveryBlocker      *environmentpb.DeliveryBlocker
+	WakeAssessment       *environmentpb.WakeAssessment
 	Traceparent          string
 	CreatedAt, UpdatedAt time.Time
 }
@@ -233,19 +238,55 @@ func wire(message proto.Message) ([]byte, error) {
 	return proto.MarshalOptions{Deterministic: true}.Marshal(message)
 }
 
+func wireOptional(message proto.Message) ([]byte, error) {
+	if message == nil {
+		return nil, nil
+	}
+	return wire(message)
+}
+
+func unmarshalDeliveryBlocker(data []byte) (*environmentpb.DeliveryBlocker, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	result := &environmentpb.DeliveryBlocker{}
+	if err := proto.Unmarshal(data, result); err != nil {
+		return nil, fmt.Errorf("decode delivery blocker: %w", err)
+	}
+	return result, nil
+}
+
+func unmarshalWakeAssessment(data []byte) (*environmentpb.WakeAssessment, error) {
+	result := &environmentpb.WakeAssessment{}
+	if len(data) == 0 {
+		result.State = environmentpb.WakeState_WAKE_STATE_NOT_EVALUATED
+		return result, nil
+	}
+	if err := proto.Unmarshal(data, result); err != nil {
+		return nil, fmt.Errorf("decode wake assessment: %w", err)
+	}
+	return result, nil
+}
+
+func initialWakeAssessment() *environmentpb.WakeAssessment {
+	return &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_NOT_EVALUATED}
+}
+
 const dispatchColumns = `position, command_id, session_id, sandbox_name, sandbox_uid::text,
 	wake_eligible, wake_caller_namespace, wake_caller_name, wake_from_incarnation,
 	wake_requested_at, operation, command, state, reason, admission, traceparent,
 	actor_account_namespace, actor_account_name, actor_account_uid, actor_pod_name, actor_pod_uid,
 	effective_caller_account_namespace, effective_caller_account_name, effective_caller_account_uid,
-	action_request_id::text, action_execution_id::text, created_at, updated_at`
+	action_request_id::text, action_execution_id::text, created_at, updated_at,
+	delivery_blocker, wake_assessment`
 
 const qualifiedDispatchColumns = `d.position, d.command_id, d.session_id, d.sandbox_name, d.sandbox_uid::text,
 	d.wake_eligible, d.wake_caller_namespace, d.wake_caller_name, d.wake_from_incarnation,
 	d.wake_requested_at, d.operation, d.command, d.state, d.reason, d.admission, d.traceparent,
 	d.actor_account_namespace, d.actor_account_name, d.actor_account_uid, d.actor_pod_name, d.actor_pod_uid,
 	d.effective_caller_account_namespace, d.effective_caller_account_name, d.effective_caller_account_uid,
-	d.action_request_id::text, d.action_execution_id::text, d.created_at, d.updated_at`
+	d.action_request_id::text, d.action_execution_id::text, d.created_at, d.updated_at,
+	d.delivery_blocker, d.wake_assessment`
 
 func scanDispatch(row interface{ Scan(...any) error }) (*Dispatch, error) {
 	return scanDispatchColumns(row)
@@ -276,14 +317,14 @@ func scanDispatchColumns(row interface{ Scan(...any) error }, additional ...any)
 	var actorNS, actorName, actorUID, actorPodName, actorPodUID sql.NullString
 	var effectiveNS, effectiveName, effectiveUID, actionRequestID, actionExecutionID sql.NullString
 	var wakeAt sql.NullTime
-	var commandBytes, admissionBytes []byte
+	var commandBytes, admissionBytes, blockerBytes, wakeBytes []byte
 	columns := []any{
 		&d.Position, &d.CommandID, &d.SessionID, &d.SandboxName, &d.SandboxUID,
 		&d.WakeEligible, &callerNS, &callerName, &incarnation, &wakeAt, &d.Operation,
 		&commandBytes, &d.State, &reason, &admissionBytes, &d.Traceparent,
 		&actorNS, &actorName, &actorUID, &actorPodName, &actorPodUID,
 		&effectiveNS, &effectiveName, &effectiveUID, &actionRequestID, &actionExecutionID,
-		&d.CreatedAt, &d.UpdatedAt,
+		&d.CreatedAt, &d.UpdatedAt, &blockerBytes, &wakeBytes,
 	}
 	columns = append(columns, additional...)
 	err := row.Scan(columns...)
@@ -311,6 +352,14 @@ func scanDispatchColumns(row interface{ Scan(...any) error }, additional ...any)
 		if err := proto.Unmarshal(admissionBytes, d.Admission); err != nil {
 			return nil, err
 		}
+	}
+	d.DeliveryBlocker, err = unmarshalDeliveryBlocker(blockerBytes)
+	if err != nil {
+		return nil, err
+	}
+	d.WakeAssessment, err = unmarshalWakeAssessment(wakeBytes)
+	if err != nil {
+		return nil, err
 	}
 	actor, err := scanIdentity(actorNS, actorName, actorUID, "actor")
 	if err != nil {
@@ -354,6 +403,10 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		return nil, err
 	}
 	data, err := wire(command)
+	if err != nil {
+		return nil, err
+	}
+	wakeAssessment, err := wire(initialWakeAssessment())
 	if err != nil {
 		return nil, err
 	}
@@ -429,12 +482,13 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 			attribution = caller.Attribution
 		}
 		arguments = append(arguments, attributionValues(attribution)...)
+		arguments = append(arguments, nil, wakeAssessment)
 		result, err = scanDispatch(tx.QueryRowContext(ctx, `INSERT INTO dispatch
 			(command_id,session_id,sandbox_name,sandbox_uid,wake_eligible,wake_caller_namespace,wake_caller_name,
 			 operation,command,state,traceparent,actor_account_namespace,actor_account_name,actor_account_uid,actor_pod_name,actor_pod_uid,
 			 effective_caller_account_namespace,effective_caller_account_name,effective_caller_account_uid,action_request_id,action_execution_id,
-			 created_at,updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,now(),now()) RETURNING `+dispatchColumns,
+			 created_at,updated_at,delivery_blocker,wake_assessment)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,now(),now(),$22,$23) RETURNING `+dispatchColumns,
 			arguments...))
 		if err != nil {
 			return err
@@ -571,7 +625,8 @@ const openingColumns = `session_id, sandbox_name, sandbox_uid::text, execution_a
 	effective_caller_account_name, effective_caller_account_uid, creator_pod_name, creator_pod_uid,
 	action_request_id::text, action_execution_id::text, wake_eligible,
 	wake_caller_namespace, wake_caller_name, wake_from_incarnation, wake_requested_at,
-	spec, setup_script, state, reason, traceparent, created_at, updated_at`
+	spec, setup_script, state, reason, traceparent, created_at, updated_at,
+	delivery_blocker, wake_assessment`
 
 func scanOpening(row interface{ Scan(...any) error }) (*Opening, error) {
 	o := &Opening{}
@@ -580,12 +635,12 @@ func scanOpening(row interface{ Scan(...any) error }) (*Opening, error) {
 	var actionRequestID, actionExecutionID sql.NullString
 	var callerNS, callerName, incarnation, script, reason sql.NullString
 	var wakeAt sql.NullTime
-	var spec []byte
+	var spec, blockerBytes, wakeBytes []byte
 	err := row.Scan(&o.SessionID, &o.SandboxName, &o.SandboxUID, &ownerNS, &ownerName, &ownerUID,
 		&creatorNS, &creatorName, &creatorUID, &effectiveNS, &effectiveName, &effectiveUID, &creatorPodName, &creatorPodUID,
 		&actionRequestID, &actionExecutionID, &o.WakeEligible,
 		&callerNS, &callerName, &incarnation, &wakeAt, &spec, &script, &o.State,
-		&reason, &o.Traceparent, &o.CreatedAt, &o.UpdatedAt)
+		&reason, &o.Traceparent, &o.CreatedAt, &o.UpdatedAt, &blockerBytes, &wakeBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -625,6 +680,14 @@ func scanOpening(row interface{ Scan(...any) error }) (*Opening, error) {
 	if reason.Valid {
 		o.Reason = reason.String
 	}
+	o.DeliveryBlocker, err = unmarshalDeliveryBlocker(blockerBytes)
+	if err != nil {
+		return nil, err
+	}
+	o.WakeAssessment, err = unmarshalWakeAssessment(wakeBytes)
+	if err != nil {
+		return nil, err
+	}
 	o.Spec = &sessionpb.SessionSpec{}
 	if err := (proto.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(spec, o.Spec); err != nil {
 		return nil, err
@@ -658,6 +721,10 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 		return nil, errors.New("session_id, sandbox and spec are required")
 	}
 	data, err := wire(spec)
+	if err != nil {
+		return nil, err
+	}
+	wakeAssessment, err := wire(initialWakeAssessment())
 	if err != nil {
 		return nil, err
 	}
@@ -700,12 +767,12 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 			(session_id,sandbox_name,sandbox_uid,execution_account_namespace,execution_account_name,execution_account_uid,
 			 creator_account_namespace,creator_account_name,creator_account_uid,effective_caller_account_namespace,effective_caller_account_name,effective_caller_account_uid,
 			 creator_pod_name,creator_pod_uid,action_request_id,action_execution_id,wake_eligible,wake_caller_namespace,wake_caller_name,
-			 spec,setup_script,state,traceparent,created_at,updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,now(),now()) RETURNING `+openingColumns,
+			 spec,setup_script,state,traceparent,created_at,updated_at,delivery_blocker,wake_assessment)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,now(),now(),$24,$25) RETURNING `+openingColumns,
 			sessionID, sandboxName, sandboxUID, ownerNS, ownerName, ownerUID, creatorNS, creatorName, creatorUID,
 			attributionArgs[5], attributionArgs[6], attributionArgs[7], attributionArgs[3], attributionArgs[4], attributionArgs[8], attributionArgs[9],
 			wakeCaller != nil, ns, name, data, setupScript, QueueState,
-			observability.Traceparent(ctx)))
+			observability.Traceparent(ctx), nil, wakeAssessment))
 		if err != nil {
 			return err
 		}
@@ -1107,5 +1174,48 @@ func (s *Store) NoteOpeningWaiting(ctx context.Context, id string, owner Owner, 
 			return notify(ctx, tx)
 		}
 		return nil
+	})
+}
+
+// SetDeliveryAssessment stores the typed blocker and latest wake observation on a queued receipt.
+// The protobuf bytes and PostgreSQL notification commit together so every WatchDispatches replica
+// can reread the updated facts even when DeliveryState and reason are unchanged.
+func (s *Store) SetDeliveryAssessment(
+	ctx context.Context,
+	id string,
+	owner Owner,
+	opening bool,
+	blocker *environmentpb.DeliveryBlocker,
+	assessment *environmentpb.WakeAssessment,
+) error {
+	if assessment == nil {
+		return errors.New("wake assessment is required")
+	}
+	blockerBytes, err := wireOptional(blocker)
+	if err != nil {
+		return err
+	}
+	assessmentBytes, err := wire(assessment)
+	if err != nil {
+		return err
+	}
+	table, key := wakeTable(opening)
+	return transaction(ctx, s.DB, func(tx *sql.Tx) error {
+		current, err := ownerMatch(ctx, tx, owner)
+		if err != nil || !current {
+			return err
+		}
+		result, err := tx.ExecContext(ctx, `UPDATE `+table+` SET delivery_blocker=$3,wake_assessment=$4,updated_at=now()
+			WHERE `+key+`=$1 AND sandbox_uid=$2 AND state=$5
+			AND (delivery_blocker IS DISTINCT FROM $3 OR wake_assessment IS DISTINCT FROM $4)`,
+			id, owner.SandboxUID, blockerBytes, assessmentBytes, QueueState)
+		if err != nil {
+			return err
+		}
+		changed, err := result.RowsAffected()
+		if err != nil || changed == 0 {
+			return err
+		}
+		return notify(ctx, tx)
 	})
 }

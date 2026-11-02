@@ -12,6 +12,7 @@ import (
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"
@@ -228,10 +229,23 @@ func watchForAdmission(
 				return current, err
 			}
 			current = dispatch
-			if dispatch.GetAdmission() != nil || dispatchTerminal(dispatch) {
+			if dispatch.GetAdmission() != nil || dispatchTerminal(dispatch) || wakeBlocksDelivery(dispatch) {
 				return current, nil
 			}
 		}
+	}
+}
+
+func wakeBlocksDelivery(dispatch *dispatcherpb.Dispatch) bool {
+	switch dispatch.GetWakeAssessment().GetState() {
+	case environmentpb.WakeState_WAKE_STATE_AUTOMATIC_WAKE_DISABLED,
+		environmentpb.WakeState_WAKE_STATE_DENIED,
+		environmentpb.WakeState_WAKE_STATE_RATE_LIMITED,
+		environmentpb.WakeState_WAKE_STATE_FAILED,
+		environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN:
+		return true
+	default:
+		return false
 	}
 }
 

@@ -24,8 +24,10 @@ The manual queue, replica and wake probes are documented in the
   `POST /v1/dispatches/{command_id}:cancel`. Both transports use the same ServiceAccount TokenReview and
   per-Session owner checks; a browser reaches it through the app's authenticated command facade.
 - **Delivery states** say where a command is: `QUEUED_IN_DISPATCHER`, `DELIVERING_TO_RUNNER`,
-  `RUNNER_ADMITTED`, `HARNESS_CONFIRMED`, `NO_OP`, `FAILED`, `CANCELLED_IN_DISPATCHER`, `UNKNOWN` (a deleted Sandbox's). A
-  `Dispatch`'s `reason` says what a queued command waits for or where a terminal one ended.
+  `RUNNER_ADMITTED`, `HARNESS_CONFIRMED`, `NO_OP`, `FAILED`, `CANCELLED_IN_DISPATCHER`, `UNKNOWN` (a deleted Sandbox's).
+  The `reason` describes queue or terminal state; `delivery_blocker` and `wake_assessment` separately
+  expose the current environment blocker and latest typed wake observation. A denied or disabled wake
+  leaves delivery queued.
 - **Order**: first in, first out per Session. `InterruptTurn` is not queued: it goes to a Ready
   Sandbox at once, otherwise answers `NO_OP`. The runner rejects a stale target with
   `FAILED_PRECONDITION` before admission. It never interrupts a successor turn.
@@ -33,7 +35,7 @@ The manual queue, replica and wake probes are documented in the
   a same-name replacement with `FAILED_PRECONDITION` before storing anything. It stores the request keyed by the
   caller-minted `session_id` and answers with a `SessionOpening` in the same delivery states. A retry with the same
   Sandbox name, UID, spec and `setup_script` returns the stored record; anything else under that ID is
-  `ALREADY_EXISTS`. Once the Sandbox is `Ready` the runner's idempotent `OpenSession` is called before any of the Session's commands. A
+  `ALREADY_EXISTS`. Once the Sandbox is `Ready` the runner's idempotent `OpenSession` is called before any of the Session's commands; a central sampler Session bypasses executor readiness. A
   matching runner retry returns its durable Session reservation; native preparation waits for work.
   A reservation does not assert a running harness; `ALREADY_EXISTS` means a requested spec or
   setup conflicts, which the Dispatcher records as a failed opening.
@@ -73,24 +75,26 @@ The manual queue, replica and wake probes are documented in the
 - **Runner statuses**: `ABORTED` (quiescing) returns the command to the queue until the Sandbox has a new
   incarnation; `UNAVAILABLE` and deadline retry with backoff;
   anything else is `FAILED` with the runner's status. The runner deduplicates redelivery on `command_id`.
-- **Send wake**: only work from authenticated identities listed in `wake_caller_accounts` may request a
-  wake, and the Sandbox must also have `spec.wakeOnSend: true`. Both fields default off. The Dispatcher
-  stores the authenticated caller on eligible commands and openings, then reserves a wake budget in
-  PostgreSQL immediately before the shared guarded resume helper patches a suspended Sandbox. The
-  initial budget is 10 distinct wake generations per authenticated caller in a rolling 60-second
-  window, shared across replicas and restarts. The charge key is caller, Sandbox UID and target
-  `wakeGeneration`: messages for the same Sandbox resume share one charge, and retries of a target
-  generation reuse its charge while it remains in the window. A guarded patch reservation is charged
-  even if its response fails; after its minute expires, a later real patch attempt may consume another
-  slot. A denied attempt stays queued with `wake_rate_limited` and retries when the oldest charge
-  expires. A stored wake-eligible row without an authenticated caller fails closed as
-  `wake_caller_unknown`. The Dispatcher delivers only after a different incarnation becomes
-  `Ready`; `InterruptTurn` never wakes. A queued command or session opening
-  that remains unready for ten minutes after its budgeted wake request becomes `FAILED`, with the
-  Sandbox's current `Ready` condition reason and message recorded for the sender. The queue row is
-  retained, and quota wait time does not count toward the deadline. The budget does not grant wake
-  eligibility to other caller accounts. The initial limit is ten wake attempts per minute per authenticated caller; tuning
-  remains a follow-up.
+- **Automatic wake**: `wakeOnSend` opts a Sandbox into wake attempts; it is not a permission grant.
+  Before each automatic attempt, the shared lifecycle service checks the live target UID, current
+  execution ServiceAccount UID and `resumePolicy`, or the separately configured trusted wake broker
+  grant against the row's retained effective sender. Dispatcher actor identity and admission-time
+  eligibility do not grant wake authority. A `SuspendedBy=Requested` stop stays sticky for ordinary
+  sends and automatic wakes. `InterruptTurn` never wakes.
+
+  Each queued Dispatch and Session opening stores a typed `delivery_blocker` and `wake_assessment`.
+  The receipt remains `QUEUED_IN_DISPATCHER` through disabled, denied, rate-limited, failed and
+  uncertain wake outcomes; those observations never become command failures. `observed_at`, target
+  generation, optional retry time and structured status details describe the latest decision. A
+  rate-limited result is retried at its shared-budget `retry_at`. An uncertain patch response is not
+  repeated for the same observed generation; the worker reassesses after that generation changes.
+  The lifecycle service and PostgreSQL budget adapter share a limit of 10 distinct guarded wake
+  generations per effective ServiceAccount UID in a rolling 60-second window, scoped by target
+  Sandbox UID and generation. Retries of a generation reuse its reservation. After a successful wake
+  request, delivery waits for the Sandbox to become `Ready`; if it remains unready for ten minutes,
+  the existing queue deadline fails the work with the current Ready condition details. A central
+  sampler Session bypasses execution-Sandbox readiness and wake so its input remains deliverable
+  while the execution environment is suspended.
 
 Delivery wakes on a stored command (PostgreSQL `NOTIFY`), a Sandbox change (the `ListWatch` on
 Sandboxes) or a retry deadline. Every ten seconds each replica also renews its owned Leases and retries
