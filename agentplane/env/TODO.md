@@ -1,5 +1,12 @@
 # TODO — Agentplane environment
 
+## Prove VM guest boot and console autologin
+
+The current regression checks evaluate the NixOS mount table and rendered VM resources, but do not
+build and boot the guest image or prove Runtime readiness. Add VM guest coverage that waits for
+Runtime readiness and verifies the serial console shows a login prompt when `console_autologin` is
+disabled and a root shell when it is enabled.
+
 ## Make Environment Runtime COSI names describe their owners and state
 
 Use consistent domain names for desired state, observed status, operation state and controllers.
