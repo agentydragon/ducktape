@@ -188,9 +188,9 @@ func (r *Runtime) readSessionStatus(ctx context.Context) (lifecycle.Status, bool
 
 func (r *Runtime) waitSessionStage(ctx context.Context, minimum lifecycle.Stage) error {
 	return r.waitForLifecycle(ctx, func() (bool, error) {
+		current, found, err := r.readSessionStatus(ctx)
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		current, found, err := r.readSessionStatus(ctx)
 		if err != nil {
 			return false, err
 		}
@@ -212,12 +212,12 @@ func (r *Runtime) waitForNativeStopped(ctx context.Context, generation uint64) e
 
 func (r *Runtime) waitForNativeStop(ctx context.Context, generation uint64, closing bool) error {
 	return r.waitForLifecycle(ctx, func() (bool, error) {
+		current, found, err := r.readSessionStatus(ctx)
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		if r.desired.Generation != generation {
 			return false, status.Error(codes.Aborted, "native-stop generation was superseded")
 		}
-		current, found, err := r.readSessionStatus(ctx)
 		if err != nil {
 			return false, err
 		}
