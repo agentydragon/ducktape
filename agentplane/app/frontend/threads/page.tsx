@@ -72,7 +72,11 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
   const inventoryFresh = sandboxInventoryFresh(environment);
   // The top bar and the composer read the one Sandbox row, so they cannot disagree about it.
   const sandbox = environment.snapshot?.environments.find(
-    (candidate) => candidate.target?.name === thread?.sandbox && candidate.target.uid === thread?.sandbox_uid
+    (candidate) =>
+      thread !== null &&
+      candidate.target !== undefined &&
+      candidate.target.name === thread.sandbox &&
+      candidate.target.uid === thread.sandbox_uid
   );
   const topbarStatus = threadStatusFromSnapshot(snapshotThread, sandbox, snapshotFresh(threadsLive) && inventoryFresh);
   const [error, setError] = useState<string | null>(null);
