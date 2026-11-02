@@ -12,6 +12,15 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
+# The publisher consumes the framework-neutral record schema outside tests.
+py_library(
+    name = "output_records",
+    testonly = False,  # keep
+    srcs = ["output_records.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
 py_library(
     name = "pytest_logfile",
     testonly = True,
@@ -234,4 +243,24 @@ py_library(
         "@pypi//asyncpg",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_test(
+    name = "test_output_protocol",
+    srcs = ["test_output_protocol.py"],
+    deps = [
+        ":output_records",
+        ":output_writer",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "output_writer",
+    srcs = ["output_writer.py"],
+    visibility = ["//visibility:public"],
+    deps = [":output_records"],
 )
