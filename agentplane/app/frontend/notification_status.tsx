@@ -101,6 +101,7 @@ export function NotificationStatus({
     setData(null);
     setError(null);
     let firstOpen = true;
+    let sawSnapshot = false;
     let stop: () => void = () => {};
     let usingLegacy = false;
     const startLegacy = () => {
@@ -126,11 +127,13 @@ export function NotificationStatus({
         onOpen: () => {
           if (firstOpen) setData(null);
           firstOpen = false;
+          sawSnapshot = false;
         },
         onFrame: (json) => {
           try {
             const response = fromJson(WatchSandboxNotificationsResponseSchema, json as JsonValue);
             if (response.frame.case === "snapshot") {
+              sawSnapshot = true;
               // Keep the display's JSON projection while the wire contract and frame validation
               // come from the generated protobuf schema.
               setData(
@@ -140,6 +143,7 @@ export function NotificationStatus({
               );
               setError(null);
             } else if (response.frame.case === "reconnectRequired") {
+              if (!sawSnapshot) throw new Error("Notification watch renewed before its initial snapshot");
               return "reconnect";
             } else {
               throw new Error("Notification watch returned no frame");
