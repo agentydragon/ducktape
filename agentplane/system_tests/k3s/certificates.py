@@ -2,7 +2,6 @@
 
 import os
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 import yaml
@@ -15,7 +14,6 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 Kubectl = Callable[..., str]
 NAMESPACE = "cert-manager"
 READY_SECONDS = 180
-_LAYOUTS = "_main/agentplane/system_tests/k3s/pki"
 
 
 def _manifest(variable: str) -> list[dict[str, Any]]:
@@ -24,22 +22,6 @@ def _manifest(variable: str) -> list[dict[str, Any]]:
 
 def releases() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     return _manifest("CERT_MANAGER_INSTALL_RLOCATION"), _manifest("TRUST_MANAGER_INSTALL_RLOCATION")
-
-
-def images(objects: list[dict[str, Any]]) -> dict[str, Path]:
-    references = {
-        container["image"]
-        for doc in objects
-        if doc["kind"] == "Deployment"
-        for container in doc["spec"]["template"]["spec"].get("initContainers", [])
-        + doc["spec"]["template"]["spec"]["containers"]
-    }
-    return {
-        reference: get_required_path(
-            f"{_LAYOUTS}/{reference.rsplit('/', 1)[1].split(':')[0].replace('-', '_')}_layout.rloc"
-        )
-        for reference in references
-    }
 
 
 def _wait_for_api(kubectl: Kubectl, resource: dict[str, Any]) -> None:

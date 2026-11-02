@@ -2,7 +2,7 @@ load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/erofs:defs.bzl", "erofs_image")
-load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/oci:defs.bzl", "oci_image_manifest")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # The k3s fixture's VM guest: a Debian cloud kernel booted directly by KubeVirt with a busybox
@@ -363,25 +363,21 @@ oci_image(
     user = "107:107",
 )
 
-# The stack names each image after its layout: `agentplane-vm-guest-{boot,root}`.
-oci_layout_rloc(
+oci_image_manifest(
     name = "vm_guest_boot_layout",
-    testonly = True,
-    image = ":boot_image",
+    images = {":boot_image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot:unset"},
     visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 
-oci_layout_rloc(
+oci_image_manifest(
     name = "vm_guest_root_layout",
-    testonly = True,
-    image = ":root_image",
+    images = {":root_image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"},
     visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 
-oci_layout_rloc(
+oci_image_manifest(
     name = "vm_guest_root_profile_layout",
-    testonly = True,
-    image = ":root_profile_image",
+    images = {":root_profile_image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root-profile:unset"},
     visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 

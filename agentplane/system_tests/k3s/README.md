@@ -62,7 +62,7 @@ and the existing Go CPU/runtime profiles.
 
 A suite using the MCP fixture stack takes the `rendered/local-model-mcp-fixtures.json`
 rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture
-(`mcp_fixtures/*_layout`), with test-only Dex clients, operator, MCP server and Action groups. The
+(`:mcp_images`), with test-only Dex clients, operator, MCP server and Action groups. The
 standalone MCP edge serves its OAuth and MCP endpoints in this fixture; Actions keeps its separate
 OAuth client for the upstream fixture used by `mcp:test_actions`. Dex
 reads a config Secret holding the bcrypt hash of a fixed test-only operator password.
@@ -135,9 +135,10 @@ bootstrap failures include the last probe result and k3s log tail and stop the s
 The image list includes the serving binaries, which apply their embedded migrations at startup. A fast
 [`test_render`](BUILD.bazel) check validates this fixture composition and its endpoint/Service wiring
 without starting Kubernetes.
-The importer consumes the `oci_image` targets through `oci_layout_rloc`, combines their index
-descriptors with the rendered tags, and streams each distinct blob once. It does not materialize
-Docker-format `oci_load` tarballs.
+`oci_image_manifest` bundles explicit image references and OCI layout runfiles paths. The suite owns
+these artifacts; importing the stack library does not bring in service images or k3s. The importer
+combines index descriptors with those references and streams each distinct blob once, without
+materializing Docker-format `oci_load` tarballs.
 
 One background importer loads the next image group while startup applies and waits for the preceding
 group: PKI during KubeVirt installation, service images during PKI readiness, and guest images during

@@ -4,8 +4,10 @@ Suite fixtures expose the stack's explicit cluster, app URL, token, and MCP acce
 The process trust bundle also includes Dex's CA for HTTP clients used by MCP scenarios.
 """
 
+import json
 import os
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
@@ -25,12 +27,25 @@ def scripted_listener() -> Iterator[Listener]:
 
 
 def load_stack_inputs() -> StackInputs:
+    manifests = json.loads(os.environ["K3S_IMAGE_MANIFESTS"])
     return StackInputs(
         fixture=rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"])),
         binary=get_required_path(os.environ["K3S_BINARY_RLOCATION"]),
-        image_layouts=tuple(get_required_path(path) for path in os.environ["K3S_IMAGE_LAYOUTS"].split()),
-        guest_image_layouts=tuple(get_required_path(path) for path in os.environ["K3S_GUEST_IMAGE_LAYOUTS"].split()),
+        image_layouts=_image_layouts(manifests["fixture"]),
+        pki_image_layouts=_image_layouts(manifests["pki"]),
+        vm_image_layouts=_image_layouts(manifests["vm"]),
+        guest_image_layouts=_image_layouts(manifests["guest"]),
     )
+
+
+def _image_layouts(manifests: list[str]) -> dict[str, Path]:
+    images = {}
+    for manifest in manifests:
+        for reference, location in json.loads(get_required_path(manifest).read_text()).items():
+            if reference in images:
+                raise ValueError(f"duplicate image reference: {reference}")
+            images[reference] = get_required_path(location)
+    return images
 
 
 def _models(inputs: StackInputs, listener: Listener) -> rendered_fixture.Models:
