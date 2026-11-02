@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/dlclark/regexp2/v2"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -24,6 +26,34 @@ var annotatedFormats = []string{
 	"period", "relative-json-pointer", "semver", "time", "uri", "uri-reference", "uri-template", "uuid",
 }
 
+// patternTimeout bounds one `pattern` match, because the engine backtracks.
+const patternTimeout = time.Second
+
+// regexpEngine compiles a schema's `pattern` (and `patternProperties` key, and `regex` format) as ECMA 262, which is
+// what JSON Schema specifies. The library's default, Go's regexp (RE2), rejects lookaheads and backreferences, and one
+// such pattern in one tool's schema withdrew the whole MCP group (Tana's `search_nodes` email filter, 2026-11-01);
+// Python's re, which admission used before, accepts them. One engine means a pattern has one meaning, whatever it
+// uses. The cost is that matching can backtrack, so a match is bounded by patternTimeout.
+func regexpEngine(expr string) (jsonschema.Regexp, error) {
+	re, err := regexp2.Compile(expr, regexp2.ECMAScript)
+	if err != nil {
+		return nil, err
+	}
+	re.MatchTimeout = patternTimeout
+	return ecmaRegexp{re}, nil
+}
+
+// ecmaRegexp adapts regexp2, whose match can fail, to the library's Regexp. A match that times out or exceeds the
+// backtracking limit counts as no match, so arguments that cannot be checked are refused rather than admitted.
+type ecmaRegexp struct{ re *regexp2.Regexp }
+
+func (e ecmaRegexp) String() string { return e.re.String() }
+
+func (e ecmaRegexp) MatchString(s string) bool {
+	matched, err := e.re.MatchString(s)
+	return err == nil && matched
+}
+
 // CompileSchema compiles document, a JSON Schema of an Action's arguments decoded as jsonschema.UnmarshalJSON decodes
 // JSON, checking it against its draft's metaschema, so that it validates as Python's jsonschema.validate does. A
 // schema without `$schema` is read as draft 2020-12, and one that refers to any document but itself and the drafts'
@@ -32,6 +62,7 @@ func CompileSchema(document any) (*jsonschema.Schema, error) {
 	compiler := jsonschema.NewCompiler()
 	compiler.DefaultDraft(jsonschema.Draft2020)
 	compiler.UseLoader(noDocuments{})
+	compiler.UseRegexpEngine(regexpEngine)
 	for _, name := range annotatedFormats {
 		compiler.RegisterFormat(&jsonschema.Format{Name: name, Validate: func(any) error { return nil }})
 	}
