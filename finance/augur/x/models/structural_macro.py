@@ -162,6 +162,10 @@ class StructuralMacroFittedDefaults(FrozenModel):
     macro_state: MacroVarSpec
     macro_state_fit: FitWindowProvenance
 
+    # Older checked-in fits cannot recover their original input bytes; a new fit records them.
+    evidence_revision: str | None = None
+    evidence_source_sha256: dict[str, str] = Field(default_factory=dict)
+
     equity_monthly_log_return_mu: float
     equity_monthly_log_return_sigma: NonNegativeFloat
     equity_fit: FitWindowProvenance
