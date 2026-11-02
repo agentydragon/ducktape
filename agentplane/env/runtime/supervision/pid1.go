@@ -116,7 +116,9 @@ func namespaceWorkloadPIDs(uid int) ([]int, error) {
 			continue
 		}
 		status, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "status"))
-		if errors.Is(err, os.ErrNotExist) {
+		// procfs can return ESRCH as well as ENOENT when a process exits
+		// between listing /proc and opening its status file.
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ESRCH) {
 			continue
 		}
 		if err != nil {
