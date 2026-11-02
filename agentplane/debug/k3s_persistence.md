@@ -19,8 +19,9 @@ removes fixture namespaces and cluster resources, confirms no VM/VMI or owned PV
 provisioner's StorageClass, and detaches every owned loop device before certifying the baseline clean.
 Failures leave the marker dirty for a cold rebuild.
 
-The current snapshot family prefixes are `k3s-persistence-v7-{pod,vm}-`, followed by their
-authoritative infrastructure pin digests. Every application stack uses persistence automatically
+The current snapshot family prefix is `k3s-persistence-v7-`, followed by authoritative
+infrastructure pin digests; the additional KubeVirt and Kyverno pins distinguish VM families.
+Every application stack uses persistence automatically
 on BuildBuddy executors. Historical commands and commit-pinned links below retain the
 comparison-target names used when those measurements were collected.
 

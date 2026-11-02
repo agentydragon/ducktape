@@ -47,7 +47,7 @@ _VM_BASELINE_DIGESTS = [
 
 def k3s_recycling_key(vm):
     """Select the tmpfs or disk baseline from its authoritative infrastructure pin digests."""
-    return "k3s-persistence-v7-" + ("vm-" if vm else "pod-") + "-".join(
+    return "k3s-persistence-v7-" + "-".join(
         _COMMON_BASELINE_DIGESTS + (_VM_BASELINE_DIGESTS if vm else []),
     )
 
