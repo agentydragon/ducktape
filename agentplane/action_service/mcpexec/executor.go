@@ -232,10 +232,14 @@ func (e *Executor) refresh(ctx context.Context, s *session) {
 	e.publish()
 	e.mu.Unlock()
 	listing, cancel := context.WithTimeout(ctx, e.timing.Lifecycle)
-	tools, err := e.list(listing, s)
+	tools, skip, err := e.list(listing, s)
 	cancel()
 	if ctx.Err() != nil {
 		return
+	}
+	if len(skip) > 0 {
+		// Without this the operator would never learn that a tool is missing; only the group's tools are named.
+		slog.Warn("MCP tools skipped", "group", e.key, "detail", skip.String())
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -251,11 +255,11 @@ func (e *Executor) refresh(ctx context.Context, s *session) {
 	}
 }
 
-func (e *Executor) list(ctx context.Context, s *session) (map[string]tool, error) {
+func (e *Executor) list(ctx context.Context, s *session) (map[string]tool, skipped, error) {
 	var listed []*mcp.Tool
 	for tool, err := range s.client.Tools(ctx, nil) {
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		listed = append(listed, tool)
 	}
@@ -443,7 +447,7 @@ func (e *Executor) call(ctx context.Context, request store.ExecutionRequest, lea
 	name := request.Action.Name
 	started := time.Now()
 	listing, cancel := context.WithTimeout(ctx, e.timing.Lifecycle)
-	tools, err := e.list(listing, s)
+	tools, skip, err := e.list(listing, s)
 	cancel()
 	var invalid *invalidCatalogError
 	switch {
@@ -470,6 +474,11 @@ func (e *Executor) call(ctx context.Context, request store.ExecutionRequest, lea
 		slog.Warn("MCP execution schema check failed", "group", e.key, "diagnostics", diagnostics)
 		e.sessionFailed(s, err)
 		return unavailable(diagnostics), nil
+	}
+	if reason, bad := skip[name]; bad {
+		// The group stays offered: only this tool is unusable.
+		slog.Warn("MCP tool schema is invalid", "group", e.key, "tool", name, "detail", reason)
+		return worker.Failed("mcp_invalid_schema", "backend tool schema is invalid"), nil
 	}
 	tool, offered := tools[name]
 	if !offered {

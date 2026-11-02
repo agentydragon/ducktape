@@ -101,7 +101,7 @@ func TestToolsAreMirroredAsActions(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			tools, err := mirror(listed)
+			tools, _, err := mirror(listed)
 			if vector.Invalid {
 				if _, refused := err.(*invalidCatalogError); !refused {
 					t.Fatalf("mirror() = %v, %v; expected invalid catalog", tools, err)

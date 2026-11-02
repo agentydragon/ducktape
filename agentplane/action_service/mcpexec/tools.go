@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
@@ -23,53 +25,91 @@ type tool struct {
 	arguments *jsonschema.Schema
 }
 
-// invalidCatalogError is a tool list the group cannot offer: a tool whose input schema is not a JSON Schema, a
-// name listed twice, or a definition the catalog cannot hold.
+// invalidCatalogError is a tool list the group cannot offer: every tool in it is one the catalog cannot hold.
 type invalidCatalogError struct{ reason string }
 
 func (e *invalidCatalogError) Error() string { return e.reason }
 
-// mirror reads the server's tools as the group's Actions, as the Python service does. A tool whose name is not a key
-// is left out; any other tool the catalog cannot hold makes the whole list invalid.
-func mirror(listed []*mcp.Tool) (map[string]tool, error) {
+// skipped maps the name of each listed tool the catalog cannot hold to why: an input schema that is not a JSON
+// Schema, a name listed twice, or a definition the catalog cannot hold. Such a tool is left out; the others are
+// still offered.
+type skipped map[string]string
+
+func (s skipped) String() string {
+	names := make([]string, 0, len(s))
+	for name := range s {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	parts := make([]string, len(names))
+	for i, name := range names {
+		parts[i] = fmt.Sprintf("tool %q: %s", name, s[name])
+	}
+	return strings.Join(parts, "; ")
+}
+
+// mirror reads the server's tools as the group's Actions. A tool whose name is not a key is left out silently. A tool
+// the catalog cannot hold is left out and reported in skipped, so one bad tool does not take the others with it; the
+// list is invalid only when every tool in it is skipped.
+func mirror(listed []*mcp.Tool) (map[string]tool, skipped, error) {
 	tools := map[string]tool{}
+	skip := skipped{}
 	for _, listed := range listed {
 		if !catalog.IsKey(listed.Name) {
 			slog.Warn("MCP tool name does not fit the catalog key pattern; skipping")
 			continue
 		}
-		schema, err := json.Marshal(listed.InputSchema)
-		if err != nil {
-			return nil, &invalidCatalogError{fmt.Sprintf("tool %q input schema: %v", listed.Name, err)}
-		}
-		arguments, err := compileSchema(schema)
-		if err != nil {
-			return nil, &invalidCatalogError{fmt.Sprintf("tool %q input schema: %v", listed.Name, err)}
-		}
 		if _, listedTwice := tools[listed.Name]; listedTwice {
-			return nil, &invalidCatalogError{fmt.Sprintf("tool %q: duplicate MCP tool name", listed.Name)}
+			// Which of the two is meant is unknowable, so neither is offered.
+			delete(tools, listed.Name)
+			skip[listed.Name] = "duplicate MCP tool name"
+			continue
 		}
-		description := cmp.Or(listed.Description, "MCP tool "+listed.Name)
-		if utf8.RuneCountInString(description) > maxDescription {
-			return nil, &invalidCatalogError{fmt.Sprintf("tool %q: description is longer than %d characters", listed.Name, maxDescription)}
+		if _, dropped := skip[listed.Name]; dropped {
+			continue
 		}
-		definition := catalog.ActionDefinition{Description: description, InputSchema: schema}
-		title := listed.Title
-		if hints := listed.Annotations; hints != nil {
-			// `annotations.title` is the older spelling of the display name that `title` replaced.
-			title = cmp.Or(title, hints.Title)
-			definition.Annotations = &catalog.ToolAnnotations{
-				Title:           optional(hints.Title),
-				ReadOnlyHint:    optional(hints.ReadOnlyHint),
-				DestructiveHint: hints.DestructiveHint,
-				IdempotentHint:  optional(hints.IdempotentHint),
-				OpenWorldHint:   hints.OpenWorldHint,
-			}
+		definition, arguments, err := mirrorOne(listed)
+		if err != nil {
+			skip[listed.Name] = err.Error()
+			continue
 		}
-		definition.Title = optional(title)
 		tools[listed.Name] = tool{definition: definition, arguments: arguments}
 	}
-	return tools, nil
+	if len(tools) == 0 && len(skip) > 0 {
+		return nil, skip, &invalidCatalogError{skip.String()}
+	}
+	return tools, skip, nil
+}
+
+// mirrorOne is one listed tool as an ActionDefinition and its compiled input schema.
+func mirrorOne(listed *mcp.Tool) (catalog.ActionDefinition, *jsonschema.Schema, error) {
+	schema, err := json.Marshal(listed.InputSchema)
+	if err != nil {
+		return catalog.ActionDefinition{}, nil, fmt.Errorf("input schema: %w", err)
+	}
+	arguments, err := compileSchema(schema)
+	if err != nil {
+		return catalog.ActionDefinition{}, nil, fmt.Errorf("input schema: %w", err)
+	}
+	description := cmp.Or(listed.Description, "MCP tool "+listed.Name)
+	if utf8.RuneCountInString(description) > maxDescription {
+		return catalog.ActionDefinition{}, nil, fmt.Errorf("description is longer than %d characters", maxDescription)
+	}
+	definition := catalog.ActionDefinition{Description: description, InputSchema: schema}
+	title := listed.Title
+	if hints := listed.Annotations; hints != nil {
+		// `annotations.title` is the older spelling of the display name that `title` replaced.
+		title = cmp.Or(title, hints.Title)
+		definition.Annotations = &catalog.ToolAnnotations{
+			Title:           optional(hints.Title),
+			ReadOnlyHint:    optional(hints.ReadOnlyHint),
+			DestructiveHint: hints.DestructiveHint,
+			IdempotentHint:  optional(hints.IdempotentHint),
+			OpenWorldHint:   hints.OpenWorldHint,
+		}
+	}
+	definition.Title = optional(title)
+	return definition, arguments, nil
 }
 
 // optional is v, or nil for its zero value: go-sdk reads an absent title as "" and an absent read-only or idempotent
