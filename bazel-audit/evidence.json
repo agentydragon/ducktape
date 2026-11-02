@@ -71,15 +71,15 @@
     "External consumers and dynamically constructed labels not exhaustively known",
     "The original audit did not implement its recommendations; status fields record subsequent work"
   ],
-  "burndown_updated_utc": "2026-11-02T12:27:45Z",
+  "burndown_updated_utc": "2026-11-02T12:32:04Z",
   "dispatched_in_progress": [
     {
       "id": "N",
       "pull_requests": [
-        13871
+        13871,
+        13874
       ],
-      "status_at_update": "open",
-      "remaining_investigation": "Determine whether capture-script direct data entries are needed for runfile lookup."
+      "status_at_update": "open"
     }
   ],
   "status_refresh": {
