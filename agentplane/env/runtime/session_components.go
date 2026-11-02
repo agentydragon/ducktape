@@ -65,7 +65,7 @@ func (r *Runtime) initializeSessions() error {
 	if err != nil {
 		return err
 	}
-	r.sessions, err = session.NewManager(session.Config{
+	sessions, err := session.NewManager(session.Config{
 		Context: r.lifecycleContext, State: r.lifecycleState, Store: r.store,
 		WorkspaceRoot: r.config.WorkspaceRoot, Destination: r.config.Launch.Destination,
 		Claude: r.config.Claude, HarnessEnvironment: r.config.HarnessEnvironment,
@@ -83,6 +83,9 @@ func (r *Runtime) initializeSessions() error {
 	if err != nil {
 		return err
 	}
+	r.mu.Lock()
+ r.sessions = sessions
+ r.mu.Unlock()
 	if err := r.initializeSessionLifecycle(); err != nil {
 		return err
 	}
