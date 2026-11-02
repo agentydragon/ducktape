@@ -16,7 +16,7 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { IconDotsVertical, IconPlus, IconTrash } from "../icons";
-import { type JSX, useEffect, useEffectEvent, useRef, useState } from "react";
+import { type JSX, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { api, displayableError } from "../client";
@@ -24,7 +24,7 @@ import { findThread, getThread } from "../threads/client";
 import { getSessionOpening, openSession, sessionOpeningRejected, sessionOpeningNotVisible } from "./client";
 import { ActionPolicySection } from "../actions/policy";
 import { EgressLog } from "./egress";
-import { liveSandboxUrl, type SandboxSnapshot } from "./live";
+import { liveSandboxUrl, sandboxInventoryFresh, useRequiredSandboxesLive, type SandboxSnapshot } from "./live";
 import { MarkGlyph } from "../mark_glyph";
 import { ConfirmDelete, deletable, DELETE_NEEDS_SUSPENDED, SuspendResume } from "./lifecycle";
 import { useLive } from "../live";
@@ -36,6 +36,7 @@ import { SANDBOX_STATUS_MARKS } from "../status_mark";
 import { snapshotFresh } from "../threads/thread_status";
 import { NewThreadForm } from "../threads/new_thread_form";
 import { SandboxThreadsTable } from "../threads/sandbox_threads";
+import { useThreadsLive } from "../threads/live";
 import { beginSessionCreate, finishSessionCreate, withinSessionCreate } from "../tracing";
 import { langfuseSandboxTraceUrl } from "../langfuse_search";
 import { traceSearchUrl } from "../trace_search";
@@ -110,21 +111,34 @@ export function SandboxPage({
   const [launching, setLaunching] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [threadLimit, setThreadLimit] = useState(200);
 
-  const live = useLive<SandboxSnapshot>(liveSandboxUrl(name, includeArchived), `Sandbox ${name}`);
-  const sandbox: SandboxView | null = live.snapshot?.sandbox ?? null;
+  const inventory = useRequiredSandboxesLive();
+  const candidate = inventory.snapshot?.sandboxes.find((item) => item.name === name);
+  const currentUID = sandboxInventoryFresh(inventory) ? candidate?.uid : undefined;
+  const live = useLive<SandboxSnapshot>(currentUID ? liveSandboxUrl(name, currentUID) : null, `Sandbox ${name}`);
+  const threadRequest = useMemo(
+    () => (currentUID ? { sandboxUID: currentUID, limit: threadLimit, search: null, includeArchived } : null),
+    [currentUID, threadLimit, includeArchived]
+  );
+  const threadLive = useThreadsLive(threadRequest, null);
+  const sandbox: SandboxView | null =
+    currentUID && live.snapshot?.sandbox?.uid === currentUID && live.snapshot.sandbox.name === name
+      ? live.snapshot.sandbox
+      : null;
+  const detail = sandbox ? live.snapshot : null;
   const vmConsoleAvailable = hasVmConsole(sandbox);
   const tab: Tab =
     isTab(requestedTab) && (requestedTab !== "console" || vmConsoleAvailable) ? requestedTab : DEFAULT_TAB;
-  const threadListing = live.snapshot?.threads ?? [];
-  const threadsUnavailable = Array.isArray(threadListing) ? null : threadListing.code;
-  const threads = Array.isArray(threadListing) ? threadListing : [];
+  const currentThreads = currentUID && threadLive.snapshot?.sandbox_uid === currentUID ? threadLive.snapshot : null;
+  const threadsUnavailable = threadLive.stream.stalled;
+  const threads = currentThreads?.threads ?? [];
   const ready = sandboxReady(sandbox);
   const canWakeForThread = sandboxSuspended(sandbox) && sandbox?.wake_on_send === true;
   const threadUnavailableReason = pendingOpen
     ? "An earlier thread open attempt is unconfirmed. Check opening status before creating another thread."
     : !sandbox
-      ? live.snapshot === null
+      ? !sandboxInventoryFresh(inventory) || !inventory.snapshot
         ? "Waiting for Sandbox status to load."
         : "This Sandbox no longer exists."
       : !ready && !canWakeForThread
@@ -386,7 +400,7 @@ export function SandboxPage({
           {error}
         </Alert>
       )}
-      {live.snapshot !== null && sandbox === null && (
+      {sandboxInventoryFresh(inventory) && !candidate && (
         <Alert color="red" role="alert">
           There is no sandbox {name} any more.
         </Alert>
@@ -445,8 +459,8 @@ export function SandboxPage({
         </Tabs.Panel>
         <Tabs.Panel value="policy" pt="sm">
           <Stack gap="md">
-            <PolicyBindingsSection sandbox={name} bindings={live.snapshot?.bindings ?? null} />
-            <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />
+            <PolicyBindingsSection sandbox={name} bindings={detail?.bindings ?? null} />
+            <ActionPolicySection policy={detail?.action_policy ?? null} />
           </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="status" pt="sm">
@@ -491,17 +505,22 @@ export function SandboxPage({
                 onError={setError}
               />
             </div>
-            {live.snapshot !== null && visibleThreads.length === 0 && !threadsUnavailable ? (
+            {currentThreads !== null && visibleThreads.length === 0 && !threadsUnavailable ? (
               <Text c="dimmed">No threads yet.</Text>
             ) : (
               <SandboxThreadsTable
                 threads={visibleThreads}
                 sandbox={sandbox}
                 traceSearch={traceSearch}
-                fresh={snapshotFresh(live)}
+                fresh={snapshotFresh(threadLive) && sandboxInventoryFresh(inventory) && !!sandbox}
                 onOpen={(threadId) => void openThread(threadId)}
                 onArchive={(threadId, action) => void threadAct(threadId, action)}
               />
+            )}
+            {currentThreads?.more && (
+              <Button variant="subtle" onClick={() => setThreadLimit((limit) => limit + 200)}>
+                Load more threads
+              </Button>
             )}
           </Stack>
         </Tabs.Panel>

@@ -31,39 +31,49 @@ export interface Live<T> {
   health: WatchHealth | null;
   stream: StreamStatus;
 }
+const DISABLED_CONNECTION: StreamConnection = { phase: "live", since: 0 };
 /** The stream at `url`, which the connection indicator calls `name`. */
 export function useLive<T extends { watch: WatchHealth }>(
-  url: string,
+  url: string | null,
   name: string,
   /** Why the last snapshot's own content says its data is not moving, where it can. */
   stalledBy: (snapshot: T) => string | null = () => null
 ): Live<T> {
   const [state, setState] = useState<Pick<Live<T>, "snapshot" | "health">>({ snapshot: null, health: null });
   const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
-  // A different object starts blank; the same one under a different filter does not. Only the path
-  // says which this is, so a query-string-only change resets nothing.
-  const resource = new URL(url, window.location.origin).pathname;
-  useEffect(() => setState({ snapshot: null, health: null }), [resource]);
-  useEffect(
-    () =>
-      followStream(url, {
-        events: {
-          snapshot: (message) => {
-            const snapshot = JSON.parse(message.data) as T;
-            setState({ snapshot, health: snapshot.watch });
-          },
-          health: (message) => {
-            const health = JSON.parse(message.data) as WatchHealth;
-            setState((current) => ({ ...current, health }));
-          },
+  // A different object, including a same-name Sandbox with a new UID, starts blank.
+  const resource = url === null ? null : new URL(url, window.location.origin);
+  const identity =
+    resource === null ? null : `${resource.pathname}?sandbox_uid=${resource.searchParams.get("sandbox_uid") ?? ""}`;
+  useEffect(() => setState({ snapshot: null, health: null }), [identity]);
+  useEffect(() => {
+    if (url === null) return;
+    let active = true;
+    const stop = followStream(url, {
+      events: {
+        snapshot: (message) => {
+          if (!active) return;
+          const snapshot = JSON.parse(message.data) as T;
+          setState({ snapshot, health: snapshot.watch });
         },
-        onConnection: setConnection,
-      }),
-    [url]
-  );
+        health: (message) => {
+          if (!active) return;
+          const health = JSON.parse(message.data) as WatchHealth;
+          setState((current) => ({ ...current, health }));
+        },
+      },
+      onConnection: (next) => {
+        if (active) setConnection(next);
+      },
+    });
+    return () => {
+      active = false;
+      stop();
+    };
+  }, [url]);
   const stalled =
     state.health && !state.health.healthy ? unhealthy(state.health) : state.snapshot && stalledBy(state.snapshot);
-  const stream = useStreamStatus(name, connection, stalled);
+  const stream = useStreamStatus(name, url === null ? DISABLED_CONNECTION : connection, url === null ? null : stalled);
   return { ...state, stream };
 }
 /** Why the server's watch is not healthy, as it last reported: each failing kind, or not yet synced. */

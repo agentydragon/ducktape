@@ -281,10 +281,73 @@ func (s *appService) ListThreadMetadata(ctx context.Context, request *apppb.List
 		return nil, status.Errorf(codes.InvalidArgument, "limit must be between 1 and %d", threadMaxPageSize)
 	}
 	listing := threadListing{IncludeArchived: request.GetIncludeArchived()}
+	if request.GetSandboxUid() != "" {
+		uid, err := uuid.Parse(request.GetSandboxUid())
+		if err != nil || uid.String() != request.GetSandboxUid() {
+			return nil, status.Error(codes.InvalidArgument, "sandbox_uid must be a canonical UUID")
+		}
+		value := uid.String()
+		listing.SandboxUID = &value
+	}
 	var token *string
 	if request.GetPageToken() != "" {
 		value := request.GetPageToken()
 		token = &value
+	}
+	if listing.SandboxUID != nil {
+		if s.threadHistory == nil {
+			return nil, status.Error(codes.Unavailable, "Thread history is unavailable")
+		}
+		page, err := listThreadViews(ctx, s.threadReader, s.threadHistory, listing, limit, token)
+		if err != nil {
+			if errors.Is(err, errMalformedThreadPageToken) || errors.Is(err, errMismatchedThreadListing) {
+				return nil, status.Error(codes.InvalidArgument, err.Error())
+			}
+			return nil, status.Error(codes.Unavailable, "list Sandbox Threads")
+		}
+		response := &apppb.ListThreadMetadataResponse{Threads: make([]*apppb.ThreadMetadata, 0, len(page.Threads))}
+		for _, view := range page.Threads {
+			response.Threads = append(response.Threads, &apppb.ThreadMetadata{
+				ThreadId: view.ID.String(), CreatedAt: timestamppb.New(view.CreatedAt), Name: view.Name, Archived: view.Archived,
+			})
+		}
+		if page.NextPageToken != nil {
+			response.NextPageToken = *page.NextPageToken
+		}
+		matching, err := s.threadHistory.FindSessions(ctx, nil, nil, listing.SandboxUID)
+		if err != nil {
+			return nil, status.Error(codes.Unavailable, "count archived Sandbox Threads")
+		}
+		var cursor *threads.PageCursor
+		for {
+			countPage, err := s.threadReader.ListPage(ctx, threadMaxPageSize, cursor, true)
+			if err != nil {
+				return nil, status.Error(codes.Internal, "count archived Sandbox Threads")
+			}
+			ids := make([]uuid.UUID, 0, len(countPage.Threads))
+			for _, row := range countPage.Threads {
+				if _, belongs := matching[row.ID]; belongs && row.Archived {
+					ids = append(ids, row.ID)
+				}
+			}
+			summaries, err := s.threadHistory.BatchGetSummaries(ctx, ids)
+			if err != nil {
+				return nil, status.Error(codes.Unavailable, "count archived Sandbox Threads")
+			}
+			for _, id := range ids {
+				if summary, present := summaries[id]; present && summary.Present && summary.SandboxUID == *listing.SandboxUID {
+					response.ArchivedCount++
+				}
+			}
+			if countPage.Next == nil {
+				break
+			}
+			if cursor != nil && !cursorBefore(cursor, countPage.Next) {
+				return nil, status.Error(codes.Internal, "Thread metadata page cursor did not advance")
+			}
+			cursor = countPage.Next
+		}
+		return response, nil
 	}
 	after, err := decodeThreadPageToken(token, listing)
 	if err != nil {
@@ -400,7 +463,9 @@ func listThreadViews(ctx context.Context, store threadReadStore, history threadR
 		}
 		for _, thread := range stored.Threads {
 			summary, ok := summaries[thread.ID]
-			if !ok || !summary.Present || !threadMatches(thread, listing, sandboxMatches, sandboxUIDMatches, searchSandboxMatches) {
+			if !ok || !summary.Present ||
+				(listing.SandboxUID != nil && summary.SandboxUID != *listing.SandboxUID) ||
+				!threadMatches(thread, listing, sandboxMatches, sandboxUIDMatches, searchSandboxMatches) {
 				continue
 			}
 			view, err := makeThreadView(thread, summary)

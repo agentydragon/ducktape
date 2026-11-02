@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
@@ -36,7 +35,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 const (
@@ -151,12 +149,10 @@ type kindFailureView struct {
 }
 
 type liveSandboxFrame struct {
-	Sandbox          *SandboxView               `json:"sandbox"`
-	Bindings         []policyaccess.BindingView `json:"bindings"`
-	ActionPolicy     any                        `json:"action_policy"`
-	Threads          any                        `json:"threads"`
-	UpdatesConnected bool                       `json:"updates_connected"`
-	Watch            watchHealthView            `json:"watch"`
+	Sandbox      *SandboxView               `json:"sandbox"`
+	Bindings     []policyaccess.BindingView `json:"bindings"`
+	ActionPolicy any                        `json:"action_policy"`
+	Watch        watchHealthView            `json:"watch"`
 }
 
 type liveDecisionsFrame struct {
@@ -192,8 +188,8 @@ func (r *streamingRoutes) logger() *slog.Logger {
 // sandboxDetailKey is every input of a /live/sandboxes/{name} frame except its Action policy, which depends on the
 // viewer and is added per stream.
 type sandboxDetailKey struct {
-	name            string
-	includeArchived bool
+	name string
+	uid  string
 }
 
 // sandboxDetail is the viewer-independent part of a /live/sandboxes/{name} frame.
@@ -202,24 +198,23 @@ type sandboxDetail struct {
 	subject          *sandboxespb.ServiceAccount
 	bindings         []policyaccess.BindingView
 	policyGeneration uint64
-	threads          any
-	updatesConnected bool
 	watch            watchHealthView
 }
 
 func (r *streamingRoutes) liveSandbox(w http.ResponseWriter, request *http.Request) {
-	if r.deps.Live == nil || r.deps.Threads == nil || r.deps.History == nil {
+	if r.deps.Live == nil {
 		writeDetailError(w, http.StatusServiceUnavailable, "live sandbox view is unavailable")
 		return
 	}
-	includeArchived, err := parseOptionalBool(request.URL.Query(), "include_archived", false)
-	if err != nil {
-		writeDetailError(w, http.StatusUnprocessableEntity, "include_archived must be a boolean")
+	uid := request.URL.Query().Get("sandbox_uid")
+	parsedUID, err := uuid.Parse(uid)
+	if err != nil || parsedUID.String() != uid {
+		writeDetailError(w, http.StatusBadRequest, "sandbox_uid must be a canonical UUID")
 		return
 	}
 	ctx, cancel := r.requestLifetime(request)
 	defer cancel()
-	frames, unsubscribe := r.sandboxDetails.subscribe(sandboxDetailKey{name: request.PathValue("name"), includeArchived: includeArchived})
+	frames, unsubscribe := r.sandboxDetails.subscribe(sandboxDetailKey{name: request.PathValue("name"), uid: uid})
 	defer unsubscribe()
 	caller, _ := auth.CallerFromContext(request.Context())
 	session, _ := auth.SessionFromContext(request.Context())
@@ -247,24 +242,15 @@ func (r *streamingRoutes) liveSandbox(w http.ResponseWriter, request *http.Reque
 		}
 		return json.Marshal(liveSandboxFrame{
 			Sandbox: detail.sandbox, Bindings: nonNilBindingViews(detail.bindings), ActionPolicy: actionPolicy,
-			Threads: detail.threads, UpdatesConnected: detail.updatesConnected, Watch: detail.watch,
+			Watch: detail.watch,
 		})
 	})
 }
 
-// produceSandboxDetail re-reads the Sandbox's threads only on a thread update, when the name now belongs to another
-// Sandbox, or after the History Service could not list them.
+// produceSandboxDetail observes only the requested Sandbox incarnation.
 func (r *streamingRoutes) produceSandboxDetail(ctx context.Context, key sandboxDetailKey, publish func(sandboxDetail)) error {
 	liveChanges, stopLive := r.deps.Live.Subscribe()
 	defer stopLive()
-	updates, stopUpdates, err := r.subscribeThreadUpdates()
-	if err != nil {
-		return err
-	}
-	defer stopUpdates()
-	var threadsView any
-	var threadsUID types.UID
-	threadsStale := true
 	for {
 		snapshot, err := r.deps.Live.Snapshot(ctx)
 		if err != nil {
@@ -272,8 +258,7 @@ func (r *streamingRoutes) produceSandboxDetail(ctx context.Context, key sandboxD
 		}
 		detail := sandboxDetail{policyGeneration: snapshot.PolicyGeneration, watch: healthView(snapshot.Watch)}
 		resource, pod := snapshotSandbox(snapshot, key.name)
-		var uid types.UID
-		if resource != nil {
+		if resource != nil && string(resource.UID) == key.uid {
 			projected, err := sandboxview.View(resource, pod)
 			if err != nil {
 				return err
@@ -285,51 +270,14 @@ func (r *streamingRoutes) produceSandboxDetail(ctx context.Context, key sandboxD
 			if err != nil {
 				return err
 			}
-			uid = resource.UID
 		}
-		if _, listed := threadsView.([]threadView); threadsStale || !listed || uid != threadsUID {
-			if threadsView, err = r.sandboxThreads(ctx, resource, key.includeArchived); err != nil {
-				return err
-			}
-			threadsUID = uid
-		}
-		detail.threads = threadsView
-		detail.updatesConnected = r.updatesConnected()
 		publish(detail)
-		var ended bool
-		if threadsStale, ended = waitLiveChange(ctx, liveChanges, updates); ended {
+		select {
+		case <-ctx.Done():
 			return nil
+		case <-liveChanges:
 		}
 	}
-}
-
-func (r *streamingRoutes) subscribeThreadUpdates() (<-chan struct{}, func(), error) {
-	if r.deps.Updates == nil {
-		return nil, func() {}, nil
-	}
-	return r.deps.Updates.Subscribe(threads.UpdatesChannel)
-}
-
-func (r *streamingRoutes) updatesConnected() bool {
-	return r.deps.UpdatesConnected != nil && r.deps.UpdatesConnected()
-}
-
-// waitLiveChange waits for a Kubernetes change or a thread update, or for ctx to end. It reports whether a thread
-// update arrived, and whether ctx ended.
-func waitLiveChange(ctx context.Context, liveChanges, threadUpdates <-chan struct{}) (threadsChanged, ended bool) {
-	select {
-	case <-ctx.Done():
-		return false, true
-	case <-liveChanges:
-	case <-threadUpdates:
-		threadsChanged = true
-	}
-	select {
-	case <-threadUpdates:
-		threadsChanged = true
-	default:
-	}
-	return threadsChanged, false
 }
 
 func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Request) {
@@ -471,34 +419,6 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 		if !waitContext(ctx, time.Second) {
 			return
 		}
-	}
-}
-
-func (r *streamingRoutes) sandboxThreads(ctx context.Context, sandbox *sandboxapi.Sandbox, includeArchived bool) (any, error) {
-	if sandbox == nil || sandbox.UID == "" {
-		return []threadView{}, nil
-	}
-	sandboxUID := string(sandbox.UID)
-	listing := threadListing{SandboxUID: &sandboxUID, IncludeArchived: includeArchived}
-	var all []threadView
-	var token *string
-	for {
-		page, err := listThreadViews(ctx, r.deps.Threads, r.deps.History, listing, threadMaxPageSize, token)
-		if err != nil {
-			code := status.Code(err)
-			if code == codes.Unknown {
-				code = codes.Unavailable
-			}
-			return map[string]any{"kind": "unavailable", "code": strings.ToUpper(code.String())}, nil
-		}
-		all = append(all, page.Threads...)
-		if page.NextPageToken == nil {
-			if all == nil {
-				all = []threadView{}
-			}
-			return all, nil
-		}
-		token = page.NextPageToken
 	}
 }
 
