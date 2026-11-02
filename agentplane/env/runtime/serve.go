@@ -177,6 +177,7 @@ func (r *Runtime) waitForInitialHost(ctx context.Context) error {
 		}
 	}
 }
+
 func initialHostExit(host hostLifetime) error {
 	code, err := host.Wait(context.Background())
 	if err != nil {
