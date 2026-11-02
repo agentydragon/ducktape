@@ -101,9 +101,11 @@ export default [
     files: [
       "util/testing/frontend_visual/capture-diagnostics.js",
       "util/testing/frontend_visual/capture-diagnostics-fixture.js",
+      "util/testing/frontend_visual/frozen-clock.js",
     ],
     languageOptions: {
-      parserOptions: { ecmaVersion: "latest", sourceType: "script" },
+      sourceType: "script",
+      parserOptions: { ecmaVersion: "latest" },
       globals: browserGlobals,
     },
   },

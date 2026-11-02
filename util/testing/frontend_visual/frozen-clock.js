@@ -1,3 +1,4 @@
+/* exported frozenClock */
 // Raw source for freezing a page's wall clock. Never imported as a module:
 // frontend_visual.frozen_clock_script reads this file as text and injects it as
 // `(() => { <file contents> frozenClock(nowMs); })()` before any page script
