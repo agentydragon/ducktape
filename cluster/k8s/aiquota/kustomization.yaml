@@ -19,5 +19,9 @@ configMapGenerator:
         [codex]
         enabled = true
 
+        [openai_platform]
+        enabled = true
+        url = "http://openai-platform-session.openai-platform-session.svc:8080"
+
         [zai]
         enabled = false

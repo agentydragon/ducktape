@@ -152,6 +152,7 @@ spec:
         - matrix
         - monitoring
         - nix-cache
+        - openai-platform-session
         - plaid-mcp
         - props
         - public-coder-agent

@@ -146,6 +146,7 @@ def chart(app: App) -> Chart:
             "matrix",
             "monitoring",
             "nix-cache",
+            "openai-platform-session",  # gaffer-private; ESO lives in that repo's k8s/
             "plaid-mcp",
             "props",
             "public-coder-agent",
