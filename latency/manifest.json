@@ -1,15 +1,15 @@
 {
-  "source_devel_commit": "93928661222d1387273c296b7edba717d8d62ff9",
-  "window_start_utc": "2026-11-02T14:32:00Z",
-  "window_end_utc": "2026-11-02T21:04:50.528463+00:00",
-  "published_at_utc": "2026-11-02T21:09:49.220706+00:00",
+  "source_devel_commit": "3d60fc34d66c284d55dfe89eb78858ebc8aeeb87",
+  "window_start_utc": "2026-11-02T19:55:00Z",
+  "window_end_utc": "2026-11-02T22:54:15Z",
+  "published_at_utc": "2026-11-02T22:54:15.908253+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "a9a69d44adb82fe4af5434aa1cc4c8c7ec780a1c",
-  "report_html_sha256": "285b8d9d5b556996c1e40f330898247d794784b4b85e4427cbf0f0e05b477a02",
-  "evidence_sha256": "0d6cde3195b956d3408edd820be53bba4d9b4175bf1a0cb07d920e1952b6831b",
+  "previous_report_commit": "9a27a8fc9d",
+  "report_html_sha256": "9cbb5cc9817c78c9cbb14ad50095904d22d1678f565ae244ac4dcd3641007bd1",
+  "evidence_sha256": "1b885fea284000fac18e93b82c25e21143c47d1986ec056596690634934b509b",
   "visual_validation": {
-    "invocation": "102fa75b-68d7-485a-bb9c-8bada164fa0d",
-    "result": "passed",
+    "invocation": "0baf6e36-4d3b-44ad-a2e3-15471d39373f",
+    "result": "PASSED",
     "viewports": [
       {
         "name": "desktop",
@@ -22,24 +22,32 @@
         "height": 844
       }
     ],
-    "internal_links_checked": 30,
-    "interactive_budget_control_exercised": true,
-    "manual_review": "Desktop first screen, recommendations, graph, build experiment, runtime, resource costs, PR cases, continuity, methodology; mobile first screen, graph and experiment section",
-    "reviewed_html_sha256": "285b8d9d5b556996c1e40f330898247d794784b4b85e4427cbf0f0e05b477a02"
+    "internal_links_checked": 40,
+    "interactive_controls_exercised": [
+      "Speed up",
+      "Process reduction"
+    ],
+    "manual_review": "Desktop and mobile first screens; critical-path graph, controls and tables; experimental comparison; mobile shared-stack evidence; desktop continuity. Reviewed minor spacing changes on mobile graph/resources.",
+    "reviewed_html_sha256": "9cbb5cc9817c78c9cbb14ad50095904d22d1678f565ae244ac4dcd3641007bd1"
   },
   "analysis_scope": {
-    "completed_mainline_full_pattern_invocations": 42,
-    "all_seven_k3s_executed": 11,
-    "all_seven_k3s_passed": 8,
-    "explicit_PR_validation_cases_separate": 2,
-    "population_windows": "See evidence.json; fleet census and controlled experiments are separate",
+    "new_completed_mainline_context": 17,
+    "controlled_critical_set_sweeps": 3,
+    "targets_per_sweep": 10,
+    "physical_test_actions_per_sweep": 26,
+    "all_three_sweeps_passed": true,
+    "candidate_bazel_seconds": 415.2,
+    "control_bazel_seconds": [
+      466.089,
+      409.484
+    ],
+    "complete_sweep_gain_reproduced": false,
     "full_fleet_25_or_50_percent_speedup_established": false
   },
-  "experiments": {
-    "guest_fixture_dependency_split": "Measured 186.16s reduction in blocking-image readiness under the same input perturbation; final full VM, five render cases and root layout passed; no matched full-gate effect established",
-    "three_shard_distribution": "Rejected blanket deployment: forced action-execution regime, 1.6-2.4x selected worker cost and sequential OAuth coverage caveat",
-    "KVM_capable_RBE": "Recommended next large probe; no matched measurement or pool provisioned",
-    "manifest_loading": "cProfile result only; no full-gate saving established"
+  "source_prs": {
+    "14013": "OPEN; required checks success after retry on unchanged head",
+    "14014": "OPEN; required checks success",
+    "14015": "MERGED; required checks success"
   },
-  "deployment_state": "Report PR only; intervention source prototypes are isolated and undeployed"
+  "deployment_state": "Report PR only; Pages redeploys when merged. Source PR state captured separately."
 }
