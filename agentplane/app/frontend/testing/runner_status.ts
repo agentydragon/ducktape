@@ -49,7 +49,7 @@ export function acknowledgedQuiescingLifecycleFixture(
 
 export function runnerStatusFixture(status: MessageInitShape<typeof EnvironmentRuntimeStatusSchema>): JsonObject {
   return toJson(EnvironmentRuntimeStatusSchema, create(EnvironmentRuntimeStatusSchema, status), {
-    emitDefaultValues: true,
+    alwaysEmitImplicit: true,
     useProtoFieldName: true,
   }) as JsonObject;
 }
