@@ -14,9 +14,11 @@ pkgs.stdenvNoCC.mkDerivation {
   installPhase = ''
     runHook preInstall
     font_dir="$out/share/fonts/truetype/bebas-neue"
-    old_family='fonts/BebasNeue(2014)ByFontFabric'
-    new_family='fonts/BebasNeue(2018)ByDhamraType/ttf'
-    test -f "$new_family/BebasNeue-Regular.ttf"
+    # The 2018 family only has Regular; 2014 includes the other weights.
+    font_family='fonts/BebasNeue(2014)ByFontFabric'
+    for weight in Bold Book Light Regular Thin; do
+      test -f "$font_family/BebasNeue-$weight.ttf"
+    done
 
     install_font() {
       font="$1"
@@ -28,13 +30,9 @@ pkgs.stdenvNoCC.mkDerivation {
       install -Dm644 "$font" "$dest"
     }
 
-    # The 2018 family supplies Regular; retain the other 2014 weights.
-    for weight in Bold Book Light Thin; do
-      install_font "$old_family/BebasNeue-$weight.ttf"
-    done
     while IFS= read -r -d "" font; do
       install_font "$font"
-    done < <(find "$new_family" -type f -name '*.ttf' -print0)
+    done < <(find "$font_family" -type f -name '*.ttf' -print0)
     runHook postInstall
   '';
 
