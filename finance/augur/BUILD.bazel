@@ -123,7 +123,7 @@ py_test(
         "//util:playwright",
         "//util/bazel:runfiles",
         "//util/testing:asgi",
-        "//util/testing:undeclared_outputs",
+        "//util/testing:output_writer",
         "//util/testing/frontend_visual:capture",
         "//util/testing/frontend_visual:context",
         "//util/testing/frontend_visual:fixtures",

@@ -34,7 +34,7 @@ from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual.capture import VisualPage
 from util.testing.frontend_visual.context import deterministic_browser_context
 from util.testing.frontend_visual.page_capture import wait_for_stable
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from util.testing.output_writer import BoundTestOutputs
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
@@ -426,12 +426,12 @@ async def page(playwright: Playwright) -> AsyncIterator[Page]:
 
 
 @pytest.fixture
-async def view(page: Page, case_id: str) -> AsyncIterator[VisualPage]:
-    view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Augur pages", case_id=case_id)
+async def view(page: Page, test_outputs: BoundTestOutputs) -> AsyncIterator[VisualPage]:
+    view = VisualPage(page, outputs=test_outputs, title="Augur pages")
     try:
         yield view
     finally:
-        view.errors.assert_none(context=case_id)
+        view.errors.assert_none(context=test_outputs.case_id)
 
 
 @pytest.fixture

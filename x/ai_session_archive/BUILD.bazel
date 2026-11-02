@@ -500,6 +500,7 @@ py_test(
         ":web_settings",
         "//:conftest",
         "//util/testing:asgi",
+        "//util/testing:output_writer",
         "//util/testing:undeclared_outputs",
         "//util/testing/frontend_visual:capture",
         "//util/testing/frontend_visual:context",

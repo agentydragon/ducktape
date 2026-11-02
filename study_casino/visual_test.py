@@ -30,8 +30,8 @@ from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual.capture import VisualPage
 from util.testing.frontend_visual.context import deterministic_browser_context
+from util.testing.output_writer import BoundTestOutputs
 from util.testing.postgres import DatabaseNames, PostgresDatabaseTemplate
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
@@ -54,13 +54,13 @@ FROZEN_NOW_MS = 1_779_768_000_000  # 2026-05-15T12:00:00Z.
 
 @pytest.fixture
 async def view(
-    playwright: Playwright, casino_server: str, viewport: ViewportSize, query: str, case_id: str
+    playwright: Playwright, casino_server: str, viewport: ViewportSize, query: str, test_outputs: BoundTestOutputs
 ) -> AsyncIterator[VisualPage]:
     async with deterministic_browser_context(
         playwright, viewport=viewport, frozen_now_ms=FROZEN_NOW_MS, color_scheme="dark"
     ) as context:
         page = await context.new_page()
-        view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Study Casino views", case_id=case_id)
+        view = VisualPage(page, outputs=test_outputs, title="Study Casino views")
         await page.goto(f"{casino_server}/{query}", wait_until="domcontentloaded", timeout=30_000)
         try:
             yield view

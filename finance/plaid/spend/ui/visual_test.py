@@ -82,7 +82,7 @@ from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual.capture import VisualPage, playwright_trace
 from util.testing.frontend_visual.context import deterministic_browser_context
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from util.testing.output_writer import BoundTestOutputs
 
 # pytest_plugins loads util.playwright by name; Gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
@@ -96,30 +96,35 @@ _TRANSACTION_VIEWPORTS = [(1280, 960), (390, 844), (320, 720)]
 
 
 @pytest.fixture
-async def page(playwright: Playwright, case_id: str) -> AsyncIterator[Page]:
+async def page(playwright: Playwright, test_outputs: BoundTestOutputs) -> AsyncIterator[Page]:
     async with (
         deterministic_browser_context(
             playwright, viewport={"width": 1280, "height": 960}, frozen_now_ms=_FROZEN_NOW_MS
         ) as context,
-        playwright_trace(context, undeclared_outputs_dir(), case_id),
+        playwright_trace(context, test_outputs),
     ):
         yield await context.new_page()
 
 
 @pytest.fixture
-async def touch_page(playwright: Playwright, case_id: str) -> AsyncIterator[Page]:
+async def touch_page(playwright: Playwright, test_outputs: BoundTestOutputs) -> AsyncIterator[Page]:
     async with (
         deterministic_browser_context(
             playwright, viewport={"width": 390, "height": 844}, frozen_now_ms=_FROZEN_NOW_MS, has_touch=True
         ) as context,
-        playwright_trace(context, undeclared_outputs_dir(), case_id),
+        playwright_trace(context, test_outputs),
     ):
         yield await context.new_page()
 
 
 @pytest.fixture
-def view(page: Page, case_id: str) -> VisualPage:
-    return VisualPage(page, output_dir=undeclared_outputs_dir(), title="Spend", case_id=case_id)
+def view(page: Page, test_outputs: BoundTestOutputs) -> VisualPage:
+    return VisualPage(page, outputs=test_outputs, title="Spend")
+
+
+@pytest.fixture
+def touch_view(touch_page: Page, test_outputs: BoundTestOutputs) -> VisualPage:
+    return VisualPage(touch_page, outputs=test_outputs, title="Spend")
 
 
 async def _expand_accordion(control: Locator) -> None:
@@ -2010,9 +2015,9 @@ async def test_sustainability_history_survives_current_coverage_gap(
     )
 
 
-async def test_sustainability_scenario_marker_supports_touch(
-    touch_page: Page, dashboard_url: str, case_id: str
-) -> None:
+async def test_sustainability_scenario_marker_supports_touch(touch_view: VisualPage, dashboard_url: str) -> None:
+    touch_page = touch_view.page
+
     async def serve_ready(route: Route) -> None:
         await route.fulfill(json=_sustainability_dashboard(_example_sustainability()).model_dump(mode="json"))
 
@@ -2027,7 +2032,7 @@ async def test_sustainability_scenario_marker_supports_touch(
     await expect(tooltip).to_contain_text("Scenario 1: 3% draw rate")
     await expect(tooltip).to_contain_text("Supported monthly spending (USD/month):")
     await expect(tooltip).to_contain_text("After 12% modeled withdrawal tax.")
-    await VisualPage(touch_page, output_dir=undeclared_outputs_dir(), title="Spend", case_id=case_id).capture(
+    await touch_view.capture(
         "sustainability-scenario-touch-tooltip",
         label="Scenario details opened by tapping the 3% marker",
         full_page=True,

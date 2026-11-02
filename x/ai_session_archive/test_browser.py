@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session as DbSession
 from util.testing.asgi import serve_app
 from util.testing.frontend_visual.capture import VisualPage
 from util.testing.frontend_visual.context import deterministic_browser_context, disable_animations_script
+from util.testing.output_writer import BoundTestOutputs
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from x.ai_session_archive.database import (
     Base,
@@ -47,7 +48,7 @@ _PARSER_VERSION = "jsonl-v1"
 
 
 async def test_authenticated_browser_reads_archived_transcript(
-    playwright_driver: Playwright, tmp_path: Path, case_id: str
+    playwright_driver: Playwright, tmp_path: Path, test_outputs: BoundTestOutputs
 ) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'archive.sqlite'}")
     Base.metadata.create_all(engine)
@@ -95,12 +96,7 @@ async def test_authenticated_browser_reads_archived_transcript(
                     api_responses.append((response.url, response.status)) if "/api/" in response.url else None
                 ),
             )
-            visual = VisualPage(
-                page,
-                output_dir=undeclared_outputs_dir(),
-                title="Authenticated workstation session archive",
-                case_id=case_id,
-            )
+            visual = VisualPage(page, outputs=test_outputs, title="Authenticated workstation session archive")
             await page.goto(origin, wait_until="domcontentloaded")
             try:
                 await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()

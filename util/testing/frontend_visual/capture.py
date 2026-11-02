@@ -202,22 +202,27 @@ class VisualPage:
         self,
         page: Page,
         *,
-        output_dir: Path,
+        outputs: BoundTestOutputs,
         title: str,
         fence: RequestFence | None = None,
         devtools_viewport: DevtoolsViewport | None = None,
         expected_font_family: str | None = None,
-        case_id: str,
     ) -> None:
         self.page = page
         self.errors = PageErrors(page)
-        self.output_dir = output_dir
+        self.outputs = outputs
         self.title = title
         self.fence = fence
         self.devtools_viewport = devtools_viewport
         self.expected_font_family = expected_font_family
-        self.case_id = case_id
-        self.outputs = BoundTestOutputs(output_dir, case_id)
+
+    @property
+    def output_dir(self) -> Path:
+        return self.outputs.output_dir
+
+    @property
+    def case_id(self) -> str:
+        return self.outputs.case_id
 
     async def check(self, *, context: str) -> None:
         self.errors.assert_none(context=context)
@@ -350,12 +355,11 @@ class VisualHarness:
             )
             view = VisualPage(
                 page,
-                output_dir=self.output_dir,
+                outputs=BoundTestOutputs(self.output_dir, self.case_id),
                 title=config.title,
                 fence=fence,
                 devtools_viewport=devtools,
                 expected_font_family=config.expected_font_family,
-                case_id=self.case_id,
             )
             await fence.install(page)
             if config.inline_page is None:

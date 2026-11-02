@@ -22,13 +22,14 @@ from grafana.visual_tests.visual_harness import grafana_dashboard, record_stage
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual.capture import VisualPage
 from util.testing.frontend_visual.context import FROZEN_NOW_MS, deterministic_browser_context
+from util.testing.output_writer import BoundTestOutputs
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 pytest_plugins = ("util.testing.pytest_outputs",)
 
 
 @pytest.mark.asyncio
-async def test_dashboard_visual(tmp_path: Path, case_id: str) -> None:
+async def test_dashboard_visual(tmp_path: Path, test_outputs: BoundTestOutputs) -> None:
     dashboard_path = get_required_path(os.environ["GRAFANA_DASHBOARD_RLOCATION"])
     dashboard = json.loads(dashboard_path.read_text())
     fixture_path = os.environ["GRAFANA_FIXTURE_RLOCATION"]
@@ -48,7 +49,11 @@ async def test_dashboard_visual(tmp_path: Path, case_id: str) -> None:
                     "**/api/ds/query*", lambda route: replay_query(route, seen, fixture, dashboard, missing)
                 )
                 captures = tmp_path / "captures"
-                view = VisualPage(page, output_dir=captures, title=f"{dashboard['title']} (recorded)", case_id=case_id)
+                view = VisualPage(
+                    page,
+                    outputs=BoundTestOutputs(captures, test_outputs.case_id),
+                    title=f"{dashboard['title']} (recorded)",
+                )
                 start = FROZEN_NOW_MS - 24 * 60 * 60 * 1000
                 record_stage("loading dashboard with recorded query results")
                 await page.goto(
