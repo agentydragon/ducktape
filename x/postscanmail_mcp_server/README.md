@@ -86,5 +86,5 @@ curl -X POST http://localhost:8080/mcp \
 ## When PostScan Mail ships an OpenAPI spec
 
 No spec exists today (verified against the docs repo and the live API). If one ships, switch
-to `FastMCP.from_openapi` (the grocy_mcp pattern in <../grocy_mcp/server.py>) and delete the
+to `FastMCP.from_openapi` (the `grocy_mcp` pattern in <../../grocy_mcp/server.py>) and delete the
 hand-rolled tool wrappers and response models.

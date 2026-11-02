@@ -436,11 +436,14 @@ Tested with `cyankiwi/Qwen3-Coder-30B-A3B-Instruct-AWQ-4bit` on vLLM:
 - Prefill speed: 28-100K tokens/sec (higher when cached)
 - Needle-in-haystack recall: 100% accuracy at all tested lengths
 
-### Test Command
+### Probe source and run record
 
-The original `experimental/local-llm/test_long_context.py` helper is no longer in
-the repository. The reproducible 262K vLLM capacity and tool checks are in the
-[E1 run record](runs/2026-07-17_e1_qwen3coder_awq/README.md).
+The retained <../../../x/local_llm/demo_long_context.py> is a hand-run probe: it
+generates one prompt with a hidden key in the last section and sends it to a
+hard-coded local vLLM endpoint and model. The saved NIAH results above are
+historical; this note does not claim that the demo currently reproduces them.
+The [E1 run record](runs/2026-07-17_e1_qwen3coder_awq/README.md) documents the
+262K vLLM capacity and tool checks from that run, not current capacity.
 
 ## Ollama Quick Start
 

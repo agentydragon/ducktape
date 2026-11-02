@@ -71,15 +71,16 @@ See <runs/2026-04-28_initial/README.md#followup-cpu-offload-confirmed-for-gpt-os
 
 ### Long-context recall (NIAH)
 
-| Config         | 119K | 128K | 130K | Method                                                                                        |
-| -------------- | ---- | ---- | ---- | --------------------------------------------------------------------------------------------- |
-| `h-qwen3c-awq` | ✅   | ✅   | ✅   | <../../../x/local_llm/test_long_context.py> hardcoded-key recall, single depth (last section) |
-| all others     | —    | —    | —    | TODO                                                                                          |
+| Config         | 119K | 128K | 130K | Method                                                                                                 |
+| -------------- | ---- | ---- | ---- | ------------------------------------------------------------------------------------------------------ |
+| `h-qwen3c-awq` | ✅   | ✅   | ✅   | Historical one-depth result; hand-run <../../../x/local_llm/demo_long_context.py> probe (last section) |
+| all others     | —    | —    | —    | TODO                                                                                                   |
 
-Single-depth NIAH catches the worst case for many models (information at
-end of context recalled best when it's the recency bias). A full pyramid
-across depths × contexts would tell us where each model's recall actually
-fails — see "proposed benchmarks" below.
+The retained `demo_long_context.py` probe sends one generated prompt with the
+key at the last section to a hard-coded local endpoint and model. It is a
+hand-run demo, not a benchmark harness; the table is a historical result and
+does not assert a current rerun. A full pyramid across depths × contexts would
+require a runner that varies both — see "proposed benchmarks" below.
 
 ### Cold load time (model load + first token, off `lvm-proxmox-hdd`)
 
@@ -234,9 +235,10 @@ vllm bench serve --request-rate 8 --num-prompts 256 ...
 
 ### Suite 3: NIAH pyramid (~20 min/config)
 
-Recall accuracy across depths × contexts. Existing
-<../../../x/local_llm/test_long_context.py> covers one depth. Easy to
-extend: place the key at depth ∈ {10%, 50%, 90%, 99%} × context
+Recall accuracy across depths × contexts. The retained
+<../../../x/local_llm/demo_long_context.py> probe only places one key at the
+end of one generated prompt; it does not implement this matrix. A runner would
+need to place the key at depth ∈ {10%, 50%, 90%, 99%} × context
 ∈ {8K, 32K, 128K} = 12 trials per model. Pass/fail per trial.
 
 ### Suite 4: Reasoning quality, fast (~30 min for 30B, ~60 min for 120B)
@@ -321,4 +323,4 @@ numbers; add a row to <results.md> rather than editing these historical tables.
 - <backend_comparison.md> — engine choice and current state
 - <vllm_history.md> — what we learned configuring vLLM the first time
 - <qwen3_coder_vram_analysis.md> — VRAM math; throughput numbers came from here
-- <../../../x/local_llm/test_long_context.py> — existing NIAH script
+- <../../../x/local_llm/demo_long_context.py> — hand-run one-depth probe; the saved table is historical

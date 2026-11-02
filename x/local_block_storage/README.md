@@ -117,7 +117,7 @@ Repository sources:
 
 - [OVH disk ownership](../../cluster/terraform/main/ovh-nodes.tf)
 - [OptiPlex machine configuration](../../cluster/terraform/main/home-nodes.tf)
-- [Current local-path backing paths](../../cluster/cdk8s/local_path_provisioner.py)
+- [Last local-path provisioner source before retirement](https://github.com/agentydragon/ducktape/blob/2c8ccaac0d5e85e27294181e07eb68363c230ae9/cluster/cdk8s/local_path_provisioner.py)
 - [`wyrm2` mounts and LVM setup](../../nix/nixos/hosts/wyrm2/default.nix)
 - [`wyrm2` VM disks](../../cluster/terraform/main/proxmox-vms.tf) and
   [default datastore](../../cluster/terraform/main/variables.tf)
