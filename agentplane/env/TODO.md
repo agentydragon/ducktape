@@ -39,6 +39,28 @@ and ID strings can appear in lifecycle blocker diagnostics; update their consume
 in the same change. Keep native handles and durable journal/ACK authorities outside the in-memory
 COSI resource snapshots.
 
+## Simplify Environment Runtime reconciliation and coordination
+
+- Make the Codex app-server controller react to the shared Execution lifecycle status instead of
+  polling the in-process readiness callback once a second. Retain the dependency deadline and
+  verify the live Execution owner as needed; status alone must not admit a Session to a stale or
+  unfenced executor.
+- Review the in-process Runtime–Harness Host connection, intent, report and wakeup paths. The two
+  components now share one process and engine; identify which connection and notification state can
+  be removed while preserving synchronous admission revocation, exact binding and applied-intent
+  checks, and fail-closed handling of uncertain effects.
+- Consider publishing process start, exit, stop and systemd observations as typed facts instead of
+  publishing a revision only to wake the controller to read the process registry. Prototype one
+  observation first. Live handles and one-shot slots remain process-owned; preserve completion
+  ordering, teardown finalizers, fencing and no replay.
+- Map the Harness Host drain stages and their dependencies on Session and app-server state. Those
+  controllers also wait for the aggregate stage before advancing. Simplify one path at a time with
+  race coverage, retaining admission, native cleanup, Execution fencing, sealing and ACK barriers.
+- Measure Session reconcile fan-out and contention before optimizing: Host lifecycle updates map to
+  every Session, app-server updates map to every Codex Session, and snapshot publication uses a
+  manager-wide mutex. If significant, narrow subscriptions or locking without losing the separate
+  inspection-settlement signal needed by the drain barrier.
+
 ## Connect central Codex to environment execution in Pods and VMs
 
 Environment Runtime now manages the standalone Execution Service in Pods and VMs, with typed process
