@@ -359,9 +359,9 @@ async def test_review_rule_configuration_render(
     await expect(rule_notes.locator("summary")).to_be_visible()
     await rule_notes.locator("summary").click()
     await page.get_by_text("Unverified credit; inspect the earlier purchase before netting it.").wait_for()
-    await expect(page.get_by_text("Review", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("Review", exact=True)).to_have_count(2)
     await expect(page.get_by_text("Amount is negative AND (Transaction name starts with", exact=False)).to_have_count(1)
-    await expect(page.get_by_text("One-off", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("One-off", exact=True)).to_have_count(2)
     await page.get_by_text("example-funding-transfer", exact=True).wait_for()
     await expect(
         page.get_by_text("Own-account funding leg, confirmed by the owner 2026-10-04.", exact=True)
@@ -451,7 +451,9 @@ async def test_transaction_explanations_render(
     await page.get_by_text("Showing 2 of 13", exact=True).wait_for()
     await expect(rows.get_by_text("UPS", exact=True)).to_have_count(0)
     await expect(rows.get_by_text("EXAMPLE OWN ACCOUNT TRANSFER", exact=True)).to_have_count(0)
-    await expect(rows.get_by_text("Confirm the purchase before netting this refund.")).not_to_be_visible()
+    await expect(
+        rows.get_by_text("Unverified credit; inspect the earlier purchase before netting it.")
+    ).not_to_be_visible()
     view.errors.assert_none(context="Spend")
     review = f"transactions-review-{width}.png"
     await view.capture(

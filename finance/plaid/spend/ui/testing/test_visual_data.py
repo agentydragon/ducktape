@@ -1,6 +1,7 @@
 """The visual fixtures remain valid and describe the rows they display."""
 
 from collections import defaultdict
+from decimal import Decimal
 from typing import cast
 
 import pytest
@@ -12,6 +13,7 @@ from finance.plaid.spend.allowance import (
     PeriodId,
     TransactionPeriodId,
     daily_reference,
+    matching_rule,
     round_minor_units,
 )
 from finance.plaid.spend.models import StatementReason
@@ -49,6 +51,47 @@ def test_card_responses_describe_the_same_accounts_and_statement_spend() -> None
             row.statement_minor_units or 0 for row in statement_rows if not row.pending
         )
         assert card.spend_minor_units == card.pending_minor_units + card.posted_minor_units
+
+
+def test_transaction_classifications_follow_configured_first_match() -> None:
+    config = dashboard.configuration()
+    assert config.allowance is not None
+    policy = config.allowance
+    for row in transactions.view(PeriodId.ROLLING_30D).rows:
+        if not row.allowance_in_scope:
+            assert row.disposition is None
+            assert row.rule_number is None
+            assert row.rule is None
+            assert row.category is None
+            continue
+
+        matched = matching_rule(
+            {
+                "name": row.name,
+                "merchant_name": row.merchant_name,
+                "date": row.plaid_date or row.date,
+                "amount": Decimal(row.amount_minor_units) / 100,
+                "merchant_category_code": row.merchant_category_code,
+            },
+            policy.rules,
+        )
+        if row.disposition == Disposition.OTHER_CURRENCY:
+            assert matched is not None  # The transport decision suppresses its rule in the response.
+            assert row.rule is None
+            assert row.rule_number is None
+        else:
+            assert row.rule == matched
+            assert row.rule_number == (policy.rules.index(matched) + 1 if matched is not None else None)
+
+        category_id = row.rule.analysis_category if row.rule and row.rule.analysis_category else "unclassified"
+        category = policy.analysis_categories[category_id]
+        assert row.category is not None
+        assert (row.category.id, row.category.label, row.category.color) == (
+            category_id,
+            category.label,
+            category.color,
+        )
+        assert row.effective_kind == (Kind.EXCLUDED if row.reversal_pair else row.rule.kind if row.rule else None)
 
 
 @pytest.mark.parametrize("period", [PeriodId.CREDIT_CYCLE, PeriodId.ROLLING_7D, PeriodId.ROLLING_30D])

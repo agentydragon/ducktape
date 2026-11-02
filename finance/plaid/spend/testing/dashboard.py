@@ -41,6 +41,85 @@ from finance.plaid.spend.models import (
     StatementCycle,
 )
 
+# Ordered exactly as the allowance matcher reads them. Transaction fixtures reuse these
+# definitions so their reported classifications describe the configured policy.
+RULES = {
+    "funding": Rule(
+        condition=AllOf(
+            conditions=[
+                NameContains(field="name", substring="EXAMPLE FUNDING"),
+                DateRange(start=date(2026, 10, 3), end=date(2026, 10, 3)),
+            ]
+        ),
+        kind=Kind.EXCLUDED,
+        scope=RuleScope.ONE_OFF,
+        id="example-funding-transfer",
+        description="Own-account funding leg, confirmed by the owner 2026-10-04.",
+    ),
+    "reversed_original": Rule(
+        condition=AllOf(
+            conditions=[
+                NameContains(field="name", substring="EXAMPLE OWN ACCOUNT TRANSFER"),
+                DateRange(start=date(2026, 10, 11), end=date(2026, 10, 11)),
+            ]
+        ),
+        kind=Kind.EXCLUDED,
+        scope=RuleScope.ONE_OFF,
+        id="example-own-account-leg",
+        analysis_category="own_transfers",
+        description="Second leg of one own-account transfer, confirmed by the owner 2026-10-12.",
+    ),
+    "reversal": Rule(
+        condition=NamePrefix(field="name", prefix="EXAMPLE OWN ACCOUNT"),
+        kind=Kind.REVIEW,
+        analysis_category="own_transfers",
+        description="Synthetic rule classification retained as context for the reversal.",
+    ),
+    "own_transfer": Rule(
+        condition=NamePrefix(field="name", prefix="EXAMPLE OWN TRANSFER"),
+        kind=Kind.EXCLUDED,
+        analysis_category="own_transfers",
+        description="Synthetic own-account transfer excluded from the allowance.",
+    ),
+    "tax": Rule(
+        condition=NamePrefix(field="name", prefix="EXAMPLE TAX"),
+        kind=Kind.EXCLUDED,
+        analysis_category="taxes",
+        description="Synthetic tax payment accounted for separately.",
+    ),
+    "shipping": Rule(
+        condition=NamePrefix(field="name", prefix="UPS"),
+        kind=Kind.FIXED,
+        analysis_category="shipping",
+        description="Required document shipping for a synthetic example.",
+    ),
+    "travel": Rule(
+        condition=NamePrefix(field="name", prefix="EXAMPLE TRAVEL"),
+        kind=Kind.FLEXIBLE,
+        analysis_category="travel",
+        description="Synthetic discretionary trip purchase.",
+    ),
+    "groceries": Rule(condition=NamePrefix(field="name", prefix="EXAMPLE GROCERIES"), kind=Kind.FLEXIBLE),
+    "pre_activation": Rule(condition=NamePrefix(field="name", prefix="EXAMPLE PURCHASE"), kind=Kind.FLEXIBLE),
+    "refund_review": Rule(
+        condition=AllOf(
+            conditions=[
+                AmountSign(sign="negative"),
+                AnyOf(
+                    conditions=[
+                        NamePrefix(field="name", prefix="EXAMPLE"),
+                        FieldExact(field="merchant_category_code", value="5812"),
+                    ]
+                ),
+            ]
+        ),
+        kind=Kind.REVIEW,
+        analysis_category="refund_review",
+        description="Unverified credit; inspect the earlier purchase before netting it.",
+    ),
+}
+RULE_NUMBERS = {name: number for number, name in enumerate(RULES, 1)}
+
 
 def full_reversal_pair() -> ReversalPair:
     return ReversalPair(
@@ -209,41 +288,14 @@ def configuration() -> SpendConfigurationView:
             spending_account_count=2,
             max_sync_age_hours=72,
             forecast_basis_period_id=PeriodId.ROLLING_7D,
-            rules=[
-                Rule(
-                    condition=AllOf(
-                        conditions=[
-                            NameContains(field="name", substring="EXAMPLE FUNDING"),
-                            DateRange(start=date(2026, 10, 3), end=date(2026, 10, 3)),
-                        ]
-                    ),
-                    kind=Kind.EXCLUDED,
-                    scope=RuleScope.ONE_OFF,
-                    id="example-funding-transfer",
-                    description="Own-account funding leg, confirmed by the owner 2026-10-04.",
-                ),
-                Rule(
-                    condition=AllOf(
-                        conditions=[
-                            AmountSign(sign="negative"),
-                            AnyOf(
-                                conditions=[
-                                    NamePrefix(field="name", prefix="EXAMPLE"),
-                                    FieldExact(field="merchant_category_code", value="5812"),
-                                ]
-                            ),
-                        ]
-                    ),
-                    kind=Kind.REVIEW,
-                    analysis_category="refund_review",
-                    description="Unverified credit; inspect the earlier purchase before netting it.",
-                ),
-            ],
+            rules=list(RULES.values()),
             analysis_categories={
                 "unclassified": AnalysisCategory(label="Unclassified", color="#D97706"),
                 "refund_review": AnalysisCategory(label="Refund review", color="#B45309"),
                 "shipping": AnalysisCategory(label="Document shipping", color="#0F766E"),
                 "travel": AnalysisCategory(label="Holiday travel", color="#7C3AED"),
+                "own_transfers": AnalysisCategory(label="Own-account transfers", color="#64748B"),
+                "taxes": AnalysisCategory(label="Taxes", color="#B45309"),
             },
             reversal_pairs=[full_reversal_pair(), unresolved_reversal_pair()],
         ),
