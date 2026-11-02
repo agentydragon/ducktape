@@ -5,9 +5,9 @@ import pygit2
 import pytest
 import pytest_bazel
 
-from agentplane.indexing.conftest import Upstream
-from agentplane.indexing.settings import SnapshotLimits
-from agentplane.indexing.source import GitSource
+from agentplane.x.indexing.conftest import Upstream
+from agentplane.x.indexing.settings import SnapshotLimits
+from agentplane.x.indexing.source import GitSource
 
 NO_IGNORE = pathspec.GitIgnoreSpec.from_lines([])
 SUBMODULE_COMMIT = "1" * 40

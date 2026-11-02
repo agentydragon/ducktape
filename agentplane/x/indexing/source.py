@@ -12,7 +12,7 @@ import pathspec
 import pygit2
 from pygit2.enums import FetchPrune, FileMode
 
-from agentplane.indexing.settings import SnapshotLimits
+from agentplane.x.indexing.settings import SnapshotLimits
 
 
 @dataclass(frozen=True)

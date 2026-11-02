@@ -29,7 +29,7 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
   `PolicyBinding`, state PVC and Pods or a KubeVirt VM.
 - [LLM ingress](llm_ingress/README.md): authenticated hop in front of LiteLLM.
 - [Notification service](notification_service/README.md): subscriptions and session inboxes.
-- [Indexing](indexing/README.md): Git semantic search.
+- [Indexing](x/indexing/README.md): Git semantic search.
 - [Integration app](app/README.md): the human-facing frontend over the services above, and a
   client of them. Its static browser shell has a separate [frontend image](app/frontend/serving/README.md).
 
@@ -202,13 +202,13 @@ flowchart LR
     click egress href "egress/proxy/proxy.go" "Egress proxy"
     click llm href "llm_ingress/server.go" "LLM ingress"
     click electric href "../cluster/cdk8s/agentplane/electric.py" "Electric deployment"
-    click index href "indexing/app.py" "Git index API"
+    click index href "x/indexing/app.py" "Git index API"
 ```
 
 A VM guest runs Environment Runtime, Harness Host and Execution Service; its relay is in the separate KubeVirt launcher Pod. The Git index is
 standalone, with no dependency on the backend services or the app: it polls a configured Git remote,
 embeds files through an embedding endpoint and owns its own PostgreSQL database
-([indexing README](indexing/README.md)).
+([indexing README](x/indexing/README.md)).
 
 - **Sessions and Threads.** A Session is a runner's raw Event stream; a Thread is its conversation
   view, folded by the History Service. Runners push Events to the History Service, the only way into

@@ -14,12 +14,12 @@ from openai import AsyncOpenAI
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from agentplane.indexing.app import create_app
-from agentplane.indexing.maintenance import Maintenance
-from agentplane.indexing.openai_embedder import OpenAIEmbedder
-from agentplane.indexing.settings import Settings
-from agentplane.indexing.source import GitSource
-from agentplane.indexing.store import Store
+from agentplane.x.indexing.app import create_app
+from agentplane.x.indexing.maintenance import Maintenance
+from agentplane.x.indexing.openai_embedder import OpenAIEmbedder
+from agentplane.x.indexing.settings import Settings
+from agentplane.x.indexing.source import GitSource
+from agentplane.x.indexing.store import Store
 
 # SQLAlchemy imports asyncpg dynamically from the engine URL.
 # gazelle:include_dep @pypi//asyncpg

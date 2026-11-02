@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field, SecretStr
 
-from agentplane.indexing.embedder import Embedder
-from agentplane.indexing.maintenance import Maintenance
-from agentplane.indexing.store import Hit, Status, Store
+from agentplane.x.indexing.embedder import Embedder
+from agentplane.x.indexing.maintenance import Maintenance
+from agentplane.x.indexing.store import Hit, Status, Store
 
 
 class SearchRequest(BaseModel):
