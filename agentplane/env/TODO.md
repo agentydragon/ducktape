@@ -45,13 +45,6 @@ shell when it is enabled.
   every Session, app-server updates map to every Codex Session, and snapshot publication uses a
   manager-wide mutex. If significant, narrow subscriptions or locking without losing the separate
   inspection-settlement signal needed by the drain barrier.
-- Runtime Close and transition coordination each implement a private worker, completion channel and
-  cancellation/join path (`lifecycle_controller.go`, `transition_sequence.go`), while bootstrap,
-  Sessions and the app-server use `env/oneoff`. Compare the lifetimes before consolidating: Close
-  must preempt transitions, the event loop must stay responsive, and interrupted Execution starts
-  must settle their exact fence before another owner can start. `oneoff` publishes COSI completion
-  resources and joins a host worker barrier; those semantics are not automatically appropriate for
-  the Runtime's coordinator-owned workers.
 
 ## Simplify ownership and process fencing with COSI lifecycle primitives
 
