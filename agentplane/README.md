@@ -33,6 +33,11 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
 - [Integration app](app/README.md): the human-facing frontend over the services above, and a
   client of them. Its static browser shell has a separate [frontend image](app/frontend/serving/README.md).
 
+A future SSH proxy for access to machines could use [sshpiper](https://github.com/tg123/sshpiper)
+and its [Pipe CRD](https://github.com/tg123/sshpiper/blob/v1.6.1/plugin/kubernetes/crd.yaml).
+The cluster is configured to retain that CRD through a [non-pruning Flux Kustomization](../cluster/cdk8s/sshpiper_crds/flux_kustomizations.py);
+this does not imply an SSH proxy is currently deployed.
+
 The opt-in [central code-mode sampler](central_sampler/README.md) keeps sampling, JavaScript
 and continuation in a separate service and database; the Sandbox supplies only its executor.
 Wrapped Codex and Claude continue to sample and execute inside their Sandbox. Staging enables the
