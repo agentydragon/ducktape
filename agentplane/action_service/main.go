@@ -29,6 +29,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/docs"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/mcpexec"
@@ -337,14 +338,14 @@ func gate(c config, d deps, callers api.Callers) (*api.Gate, error) {
 // newRoutes is the listener's HTTP routes but the linkages': the HTTP form of the gRPC services under /v1/ (served by
 // httpFacade), the agent documentation, which needs neither the database nor a peer, and the metrics.
 func newRoutes(httpFacade http.Handler) (*http.ServeMux, error) {
-	docs, err := fs.Sub(agentDocs, "docs/agents")
+	agentGuides, err := fs.Sub(docs.Agents, "agents")
 	if err != nil {
 		return nil, err
 	}
 	routes := http.NewServeMux()
 	routes.Handle("/v1/", httpFacade)
 	routes.Handle("/metrics", promhttp.Handler())
-	facade.MountAgentDocs(routes, docs, openAPI)
+	facade.MountAgentDocs(routes, agentGuides, openAPI)
 	return routes, nil
 }
 

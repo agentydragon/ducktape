@@ -1,5 +1,36 @@
 [
  {
+  "name": "get_guide",
+  "title": "Read an Agentplane guide",
+  "description": "Read one Agentplane workflow guide without a shell, HTTP client, or execution environment. Start with name=\"index\", then fetch only the guide relevant to your task; use \"session_delegation\" for environment discovery, child Sessions, inputs, results and recovery. Returns the guide name and Markdown as structured content with the same JSON text fallback. This reads static documentation bundled with MCP Edge, performs no Action, and grants no access; discover current tools, schemas and policy separately. Follow a linked guide by its filename stem, such as get_guide(name=\"recovery\").",
+  "inputSchema": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "name": {
+     "type": "string",
+     "enum": [
+      "index",
+      "session_delegation",
+      "action_lifecycle",
+      "recovery",
+      "kubernetes"
+     ],
+     "description": "Read index to choose a workflow, then request that guide by name."
+    }
+   },
+   "required": [
+    "name"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "list_actions",
   "title": "List Actions",
   "description": "Discover available Action identifiers without loading their full schemas or descriptions.\nUse this before get_action when the group/name is unknown; this never submits an Action.\nOptionally filter by group, select input_schema/description, and resume with next_after.\nPages contain at most limit entries; backend addresses, credentials, and bindings are never returned.",

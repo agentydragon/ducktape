@@ -6,6 +6,7 @@ go_library(
         "bearer.go",
         "direct.go",
         "errors.go",
+        "guides.go",
         "results.go",
         "server.go",
         "tools.go",
@@ -17,6 +18,7 @@ go_library(
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service/docs",
         "//agentplane/proto:sandboxes_go_proto",
         "@com_github_google_uuid//:uuid",
         "@com_github_modelcontextprotocol_go_sdk//auth",
@@ -35,6 +37,7 @@ go_test(
     srcs = [
         "direct_test.go",
         "golden_test.go",
+        "guides_test.go",
         "handler_test.go",
         "harness_test.go",
     ],
@@ -42,6 +45,7 @@ go_test(
     embedsrcs = ["golden.json"],
     deps = [
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service/docs",
         "//agentplane/proto:sandboxes_go_proto",
         "@com_github_google_uuid//:uuid",
         "@com_github_modelcontextprotocol_go_sdk//auth",

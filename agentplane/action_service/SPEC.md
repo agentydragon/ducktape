@@ -9,6 +9,8 @@ never by another submission.
 The service publishes an agent overview at `/llms.txt`, linked Markdown workflow guides under
 `/docs/agents/`, and request/response schemas at `/openapi.json`. These static documentation
 surfaces do not require caller admission.
+The shared guide assets also supply MCP Edge's read-only `get_guide` tool. Documentation describes
+workflows; live Action schemas, policy and backend admission determine current capabilities and access.
 
 ## Durable storage
 

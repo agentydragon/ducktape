@@ -266,7 +266,7 @@ go_library(
         "docs.go",
         "main.go",
     ],
-    embedsrcs = glob(["docs/agents/**"]) + [":action_service_openapi"],
+    embedsrcs = [":action_service_openapi"],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service",
     deps = [
         ":action_service_go_proto",
@@ -274,6 +274,7 @@ go_library(
         ":web_push_service_go_proto",
         "//agentplane/action_service/api",
         "//agentplane/action_service/catalog",
+        "//agentplane/action_service/docs",
         "//agentplane/action_service/informer",
         "//agentplane/action_service/linkage",
         "//agentplane/action_service/mcpexec",

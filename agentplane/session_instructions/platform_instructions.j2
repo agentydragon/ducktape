@@ -61,6 +61,7 @@ task; you do not need to fetch every index at startup.
 | Establish expected auto-approval | `agentplane actions policy`: match the exact Action and intended arguments |
 | Submit, recover, cancel, or follow an Action | Actions `/llms.txt`: lifecycle and recovery guides |
 | Open or manage a Session | Check `agentplane --help`; if this image lists `sessions`, use `agentplane sessions --help` |
+| Delegate work to another Session | Actions `/llms.txt`: Session delegation guide; discover the target and runtime, then open and submit input separately |
 | Check Kubernetes access or request a temporary grant | `kubectl auth can-i`; Actions `/llms.txt`: Kubernetes and grants guide |
 | Subscribe to Actions or GitHub, or handle an inbox notice | `agentplane notifications --help`; Notifications `/llms.txt` |
 | Discover an existing environment (when `agentplane --help` lists `environments`) | `agentplane environments list`, then `agentplane environments get NAMESPACE NAME UID` for one exact target |

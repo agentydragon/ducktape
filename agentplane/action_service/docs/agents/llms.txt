@@ -10,6 +10,9 @@ Find operations with `agentplane actions list` and fetch the chosen Action's arg
 `agentplane actions show GROUP/ACTION`. Check `agentplane actions policy` for your current
 bindings, expiry, and exact argument constraints. A catalog entry alone grants nothing.
 `agentplane actions --help` lists every command.
+MCP clients can read this index with `get_guide(name="index")` and a linked guide with
+`get_guide(name="session_delegation")`, for example. A guide name is its filename without `.md`.
+Read current Action descriptions and schemas with `get_action`; documentation is not a live catalogue.
 
 Prefer your own Kubernetes access, allowed egress credentials, or matching auto-approved Actions
 before submitting a request that needs an operator click. A submitted request's decision and
@@ -17,6 +20,7 @@ execution result are authoritative; approval alone is not success.
 
 ## Workflows
 
+- [Session delegation](/docs/agents/session_delegation.md): Read before choosing an existing environment, opening a child Session, submitting its task, reading results or controlling it.
 - [Action lifecycle](/docs/agents/action_lifecycle.md): Read before submitting an Action or following its result.
 - [Recovery and cancellation](/docs/agents/recovery.md): Read after a lost response, timeout, uncertain execution, or before switching to an alternative.
 - [Kubernetes and temporary grants](/docs/agents/kubernetes.md): Read when checking Kubernetes permissions, using admin Actions, or requesting additional PolicySets.

@@ -17,8 +17,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
 
-// tools are the generic Action tools and the direct tools. Each reaches the core with the tool call's context, which
-// carries the caller's auth.TokenInfo; the core decides who the caller is.
+// tools serve Action calls and static guide reads. Action calls reach core with the verified caller's context;
+// guide reads use the edge's embedded documentation and create no Action.
 type tools struct {
 	core              pb.ActionServiceClient
 	maxWaitSeconds    float64
