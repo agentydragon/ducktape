@@ -39,7 +39,7 @@ flowchart LR
   BO["BootstrapOperationStates"]
   BR["BootstrapStatuses"]
   PD["ProcessDesiredStates"]
-  PI["ProcessInputs"]
+  PI["ProcessObservations"]
   PS["ProcessStatuses"]
   EI["ExecutionInputs"]
   ER["ExecutionStatuses"]
@@ -91,7 +91,7 @@ transition. An uncertain effect retains ownership and is not automatically repla
 | `environment-runtime-lifecycle`    | `EnvironmentRuntimeDesiredStates`, `EnvironmentRuntimeTransitionRequests` (weak)         | `EnvironmentRuntimeCloseStatuses`, `EnvironmentRuntimeTransitionStatuses` (exclusive) | Close and adopt/quiesce are coordinated by this one controller; workers publish completion by waking its loop.          |
 | `environment-host-report-observer` | `HostReports`, `HostIntentStatuses` (weak)                                               | None                                                                                  | Wakes Runtime waiters and starts the Execution fence for an exact applied report.                                       |
 | `bootstrap-lifecycle`              | `BootstrapRequests` (primary); `BootstrapStatuses`, `BootstrapOperationStates` (mapped)  | `BootstrapStatuses` (exclusive)                                                       | Host owns admitted one-off work and publishes its operation state. Runtime admission checks the environment generation. |
-| `process-lifecycle`                | `ProcessDesiredStates` (primary), `ProcessInputs` (mapped)                               | `ProcessStatuses` (exclusive)                                                         | Host owns launch callbacks, live handles and workers; systemd observations are published in `ProcessInputs`.            |
+| `process-lifecycle`                | `ProcessDesiredStates` (primary), `ProcessObservations` (mapped)                               | `ProcessStatuses` (exclusive)                                                         | Host owns launch callbacks, live handles and workers; systemd observations are published in `ProcessObservations`.            |
 | `execution-lifecycle`              | `ExecutionInputs` (primary), `ExecutionStatuses` (mapped), both in `environment-runtime` | `ExecutionStatuses` (exclusive)                                                       | Runtime host publishes typed completion facts; the controller retains an unfenced owner on failure.                     |
 
 ## Harness Host
@@ -127,7 +127,7 @@ flowchart LR
   J["JournalSeals"]
   ACK["IngressAcks"]
   PD["ProcessDesiredStates"]
-  PI["ProcessInputs"]
+  PI["ProcessObservations"]
   PS["ProcessStatuses"]
   Native[("Session / setup / app-server<br/>process domains")]
 
@@ -166,11 +166,11 @@ flowchart LR
 | `harness-host-lifecycle`     | `HarnessHostDesiredStates`, `HarnessHostAdmissionCounts`, `HostIntentStatuses`, `SessionInspectionStatuses`, `SessionLifecycleStatuses`, `JournalSeals`, `IngressAcks`, `CodexAppServerStatuses`, `ProcessDesiredStates`, `ProcessStatuses` (weak) | `HarnessHostLifecycleStatuses` (exclusive) | Aggregates the Host drain barrier; explicitly queues its next step after changing status.                                                     |
 | `session-lifecycle`          | `SessionInputs` (primary); `HarnessHostDesiredStates`, `HarnessHostLifecycleStatuses`, `CodexAppServerStatuses`, `SessionOperationStates` (mapped)                                                                                                 | `SessionLifecycleStatuses` (exclusive)     | Per Session. App-server updates map only to Codex Sessions; operation state records map to their Session.                                     |
 | `codex-app-server-lifecycle` | `CodexAppServerInputs` (primary); `HarnessHostDesiredStates`, `HarnessHostLifecycleStatuses`, `CodexAppServerOperationStates`, `ExecutionStatuses` (mapped)                                                                                        | `CodexAppServerStatuses` (exclusive)       | Per shared app-server; native effects run in host-owned one-off workers. Execution status changes wake a separate live-owner readiness check. |
-| `process-lifecycle`          | `ProcessDesiredStates` (primary), `ProcessInputs` (mapped)                                                                                                                                                                                         | `ProcessStatuses` (exclusive)              | The same single controller and registry shown above; per-domain contexts and worker barriers remain separate.                                 |
+| `process-lifecycle`          | `ProcessDesiredStates` (primary), `ProcessObservations` (mapped)                                                                                                                                                                                         | `ProcessStatuses` (exclusive)              | The same single controller and registry shown above; per-domain contexts and worker barriers remain separate.                                 |
 
 The process controller and its three resource types appear in both diagrams to show their callers;
 they are one controller and one set of resources. Each desired attempt records its process domain.
-The Host publishes systemd observations in `ProcessInputs`; its revision also wakes reconciliation
+The Host publishes systemd observations in `ProcessObservations`; its revision also wakes reconciliation
 for start, exit and stop slots whose live handles remain Host-owned. Observations do not prove fencing.
 Harness Host aggregation considers only the Host domain, while Environment Runtime attempts can continue
 until its own barriers settle. Each registered callback, live handle and worker remains bound to

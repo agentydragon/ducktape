@@ -315,9 +315,9 @@ func (h *Host) runStart(entry *processHostEntry, start *processStartSlot) {
 	}
 
 	// Closing the result slot while holding h.mu makes its result visible before
-	// the following input event can wake Reconcile.
+	// the following observation update can wake Reconcile.
 	close(start.done)
-	publishErr := h.publishInputLocked(entry)
+	publishErr := h.publishProcessChangeLocked(entry)
 	stopForUnusableStart := instance != nil && startErr != nil || launchContextErr != nil
 	instance = nil // the slot or observer now owns any live instance handle.
 	h.mu.Unlock()
@@ -337,10 +337,10 @@ func (h *Host) observeSystemd(id string, observation SystemdObservation) {
 		h.mu.Unlock()
 		return
 	}
-	err := h.modifyInputLocked(entry, func(input *inputSpec) {
-		if observation.Revision > input.Systemd.Revision {
-			input.Systemd = observation
-			input.Revision++
+	err := h.modifyObservationLocked(entry, func(facts *observationSpec) {
+		if observation.Revision > facts.Systemd.Revision {
+			facts.Systemd = observation
+			facts.Revision++
 		}
 	})
 	h.mu.Unlock()
@@ -374,7 +374,7 @@ func (h *Host) observe(ctx context.Context, entry *processHostEntry, instance *I
 	if h.entries[entry.id] == entry && entry.exit == exit && observed {
 		exit.observed = true
 		exit.err = exitErr
-		publishErr := h.publishInputLocked(entry)
+		publishErr := h.publishProcessChangeLocked(entry)
 		h.mu.Unlock()
 		h.notify(publishErr)
 		close(exit.done)
@@ -467,7 +467,7 @@ func (h *Host) runStop(entry *processHostEntry, start *processStartSlot, stop *p
 	stop.err = stopErr
 	// The finalizer may be released only after the completed fence is visible.
 	close(stop.done)
-	publishErr := h.publishInputLocked(entry)
+	publishErr := h.publishProcessChangeLocked(entry)
 	h.mu.Unlock()
 	h.notify(publishErr)
 }
@@ -523,15 +523,15 @@ func processSlotDone(done <-chan struct{}) bool {
 	}
 }
 
-func (h *Host) publishInputLocked(entry *processHostEntry) error {
-	return h.modifyInputLocked(entry, func(input *inputSpec) { input.Revision++ })
+func (h *Host) publishProcessChangeLocked(entry *processHostEntry) error {
+	return h.modifyObservationLocked(entry, func(facts *observationSpec) { facts.Revision++ })
 }
 
-func (h *Host) modifyInputLocked(entry *processHostEntry, update func(*inputSpec)) error {
+func (h *Host) modifyObservationLocked(entry *processHostEntry, update func(*observationSpec)) error {
 	if h.entries[entry.id] != entry {
 		return nil
 	}
-	return safe.StateModify(h.ctx, h.state, resourceFor(h.namespace, entry.id, inputSpec{}), func(current *typed.Resource[inputSpec, resourceExtension[inputSpec]]) error {
+	return safe.StateModify(h.ctx, h.state, resourceFor(h.namespace, entry.id, observationSpec{}), func(current *typed.Resource[observationSpec, resourceExtension[observationSpec]]) error {
 		update(current.TypedSpec())
 		return nil
 	}, state.WithUpdateOwner(hostOwner))
@@ -539,6 +539,6 @@ func (h *Host) modifyInputLocked(entry *processHostEntry, update func(*inputSpec
 
 func (h *Host) notify(err error) {
 	if err != nil && !errors.Is(err, context.Canceled) {
-		h.onError(fmt.Errorf("publish process lifecycle input: %w", err))
+		h.onError(fmt.Errorf("publish process observations: %w", err))
 	}
 }

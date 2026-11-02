@@ -7,21 +7,6 @@ build and boot the guest image or prove Runtime readiness. Add VM guest coverage
 Runtime readiness and verifies the serial console shows a login prompt when `console_autologin` is
 disabled and a root shell when it is enabled.
 
-## Make Environment Runtime COSI names describe their owners and state
-
-Use consistent domain names for desired state, observed status, operation state and controllers.
-COSI resources have metadata and an opaque spec; `Status` is a useful project convention, not a
-required COSI subresource or a reason to combine resources with different owners. The current
-[COSI map](runtime/docs/cosi.md) shows the resource and controller boundaries.
-
-- Name `ProcessInputs` for its typed systemd observations and completion revision. Preserve the
-  process finalizers and fencing barriers.
-
-Treat naming changes separately from changes to resource ownership or reconciliation. Resource type
-and ID strings can appear in lifecycle blocker diagnostics; update their consumers, tests and docs
-in the same change. Keep native handles and durable journal/ACK authorities outside the in-memory
-COSI resource snapshots.
-
 ## Simplify Environment Runtime reconciliation and coordination
 
 - Review the in-process Runtime–Harness Host connection, intent, report and wakeup paths. The two
