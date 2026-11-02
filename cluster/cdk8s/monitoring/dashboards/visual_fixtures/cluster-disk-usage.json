@@ -1,0 +1,10 @@
+{
+  "variables": {
+    "node": ["node-a", "node-b"]
+  },
+  "labels": {
+    "node": ["node-a", "node-b"],
+    "category": ["databases", "other"],
+    "device": ["sda", "sdb"]
+  }
+}

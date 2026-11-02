@@ -40,7 +40,12 @@ def _wait_ready(url: str) -> None:
 
 @contextmanager
 def grafana_dashboard(
-    tmp_path: Path, dashboard_path: Path, samples: str, *, render_fixture: bool = False
+    tmp_path: Path,
+    dashboard_path: Path,
+    samples: str,
+    *,
+    render_fixture: bool = False,
+    variables: dict[str, list[str]] | None = None,
 ) -> Iterator[str]:
     record_stage("loading isolated service images")
     with ThreadPoolExecutor(max_workers=3) as executor:
@@ -141,7 +146,7 @@ def grafana_dashboard(
                         .replace("${DS_LOKI}", "Mimir" if render_fixture else "Loki")
                     )
                     if render_fixture:
-                        _prepare_render_fixture(dashboard)
+                        _prepare_render_fixture(dashboard, variables or {})
                     response = http.post("/api/dashboards/db", json={"dashboard": dashboard, "overwrite": False})
                     response.raise_for_status()
                 record_stage("dashboard ready")
@@ -151,7 +156,7 @@ def grafana_dashboard(
         client.close()
 
 
-def _prepare_render_fixture(dashboard: dict) -> None:
+def _prepare_render_fixture(dashboard: dict, variables: dict[str, list[str]]) -> None:
     """Use the built-in Prometheus frontend for intercepted synthetic query results.
 
     ClickHouse is an external plugin, not present in the pinned Grafana image. This
@@ -175,12 +180,5 @@ def _prepare_render_fixture(dashboard: dict) -> None:
     for variable in dashboard.get("templating", {}).get("list", []):
         if variable.get("type") != "query":
             continue
-        values = {
-            "namespace": "example,system",
-            "node": "node-a,node-b",
-            "instance": "node-a,node-b",
-            "device": "eth0,eth1",
-            "bucket": "uploads,backups",
-            "pool_node": "node-a,node-b",
-        }.get(variable.get("name"), "example,other")
-        variable.update(type="custom", query=values, options=[], current={})
+        values = variables.get(variable.get("name"), ["example", "other"])
+        variable.update(type="custom", query=",".join(values), options=[], current={})

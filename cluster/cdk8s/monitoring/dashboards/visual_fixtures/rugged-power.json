@@ -1,0 +1,8 @@
+{
+  "variables": {
+    "instance": ["node-a", "node-b"]
+  },
+  "labels": {
+    "instance": ["node-a", "node-b"]
+  }
+}

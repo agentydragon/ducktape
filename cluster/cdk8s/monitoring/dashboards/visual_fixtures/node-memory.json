@@ -1,0 +1,13 @@
+{
+  "variables": {
+    "node": ["node-a", "node-b"],
+    "namespace": ["example", "system"]
+  },
+  "labels": {
+    "node": ["node-a", "node-b"],
+    "namespace": ["example", "system"],
+    "pod": ["app-a", "app-b"],
+    "pod_key": ["example/app-a", "system/app-b"],
+    "part": ["Pod working set", "Available"]
+  }
+}

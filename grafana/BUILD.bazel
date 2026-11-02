@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(
     default_testonly = True,
@@ -41,5 +41,17 @@ py_library(
         "@pypi//docker",
         "@pypi//httpx",
         "@pypi//testcontainers",
+    ],
+)
+
+py_test(
+    name = "test_synthetic",
+    srcs = ["test_synthetic.py"],
+    deps = [
+        ":synthetic",
+        ":visual_harness",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )

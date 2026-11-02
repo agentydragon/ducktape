@@ -24,7 +24,12 @@ async def synthetic_query(route: Route, seen: asyncio.Event, fixture: dict, log_
         ref = query["refId"]
         request_id = query.get("requestId", "")
         panel_id = request_id.removesuffix(ref)
-        panel = fixture.get(panel_id, {})
+        panel = fixture.get("panels", {}).get(panel_id, {})
+        label_context = query.get("expr", "") + " " + query.get("legendFormat", "")
+        labels = fixture.get("labels", {})
+        selected = {
+            key: values for key, values in labels.items() if re.search(r"\b" + re.escape(key) + r"\b", label_context)
+        }
         if panel_id in log_panels:
             results[ref] = {
                 "refId": ref,
@@ -65,19 +70,6 @@ async def synthetic_query(route: Route, seen: asyncio.Event, fixture: dict, log_
         if query.get("format") == "table":
             # Prometheus returns one instant-value frame per label set; its
             # frontend converts those frames to table rows before joins.
-            labels = {
-                "node": ["node-a", "node-b"],
-                "namespace": ["example", "system"],
-                "pod": ["app-a", "app-b"],
-                "pod_key": ["example/app-a", "system/app-b"],
-                "part": ["Pod working set", "Available"],
-                "category": ["databases", "other"],
-                "device": ["sda", "sdb"],
-                "storage_pool": ["hdd", "ssd"],
-                "persistentvolumeclaim": ["data-a", "data-b"],
-            }
-            expression = query.get("expr", "")
-            selected = {key: values for key, values in labels.items() if re.search(r"\b" + key + r"\b", expression)}
             frames = [
                 {
                     "schema": {
@@ -100,14 +92,17 @@ async def synthetic_query(route: Route, seen: asyncio.Event, fixture: dict, log_
             results[ref] = {"refId": ref, "frames": frames}
             continue
         frames = []
-        for index, node in enumerate(panel.get("series", ["node-a", "node-b"])):
+        for index, series in enumerate(panel.get("series", ["example-a", "example-b"])):
+            series_labels = {"series": series}
+            if "series" not in panel:
+                series_labels.update({key: values[index] for key, values in selected.items()})
             frames.append(
                 {
                     "schema": {
                         "refId": ref,
                         "fields": [
                             {"name": "Time", "type": "time", "typeInfo": {"frame": "time.Time"}},
-                            {"name": "Value", "type": "number", "labels": {"node": node}},
+                            {"name": "Value", "type": "number", "labels": series_labels},
                         ],
                     },
                     "data": {"values": [times, [20 + index * 15 + (i % 7) * 2 for i in range(25)]]},

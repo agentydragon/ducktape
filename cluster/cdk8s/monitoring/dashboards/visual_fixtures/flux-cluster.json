@@ -1,0 +1,8 @@
+{
+  "variables": {
+    "namespace": ["example", "system"]
+  },
+  "labels": {
+    "namespace": ["example", "system"]
+  }
+}

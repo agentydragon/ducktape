@@ -23,10 +23,24 @@ for queries to finish, then publishes one full-page screenshot via
 `visual-review.json`. For this appearance-only fixture it converts query
 variables to fixed choices, maps Loki and ClickHouse datasource references to
 the built-in Prometheus frontend, and intercepts datasource queries. By default
-it returns synthetic numeric series or bounded table rows with common label
-columns; `fixture_data` can supply panel-specific table columns or series labels,
-as the AIQuota dashboard demonstrates. The fixture JSON maps panel IDs to
-`series` names or `table` columns, each with `name`, `type` and `values`.
+it returns generic numeric series or bounded table rows. `fixture_data` can
+provide choices for query variables, pairs of label values for queries,
+and panel-specific table columns or series names. For example:
+
+```json
+{
+  "variables": { "node": ["node-a", "node-b"] },
+  "labels": { "node": ["node-a", "node-b"] },
+  "panels": {
+    "1": { "series": ["first", "second"] },
+    "2": { "table": [{ "name": "status", "type": "string", "values": ["ready", "pending"] }] }
+  }
+}
+```
+
+Labels are selected by their presence in the query expression or legend format.
+Each label supplies exactly two values, one per synthetic row or series. Panel IDs and
+their table columns belong to the dashboard's fixture; see AIQuota for an example.
 
 This scenario does **not** execute or validate PromQL, LogQL or SQL, datasource
 plugins, production substitutions, or dashboard-specific data shapes. Panels

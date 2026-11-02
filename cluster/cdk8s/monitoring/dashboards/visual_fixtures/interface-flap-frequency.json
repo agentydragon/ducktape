@@ -1,0 +1,12 @@
+{
+  "variables": {
+    "node": ["node-a", "node-b"],
+    "instance": ["node-a", "node-b"],
+    "device": ["eth0", "eth1"]
+  },
+  "labels": {
+    "node": ["node-a", "node-b"],
+    "instance": ["node-a", "node-b"],
+    "device": ["sda", "sdb"]
+  }
+}

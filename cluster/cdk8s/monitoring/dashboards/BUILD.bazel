@@ -34,16 +34,19 @@ grafana_dashboard_visual_test(
 grafana_dashboard_visual_test(
     name = "cluster_disk_usage_dashboard_visual_test",
     dashboard = ":cluster-disk-usage.json",
+    fixture_data = ":visual_fixtures/cluster-disk-usage.json",
 )
 
 grafana_dashboard_visual_test(
     name = "cluster_storage_io_dashboard_visual_test",
     dashboard = ":cluster-storage-io.json",
+    fixture_data = ":visual_fixtures/cluster-storage-io.json",
 )
 
 grafana_dashboard_visual_test(
     name = "flux_cluster_dashboard_visual_test",
     dashboard = ":flux-cluster.json",
+    fixture_data = ":visual_fixtures/flux-cluster.json",
 )
 
 grafana_dashboard_visual_test(
@@ -54,29 +57,35 @@ grafana_dashboard_visual_test(
 grafana_dashboard_visual_test(
     name = "interface_flap_frequency_dashboard_visual_test",
     dashboard = ":interface-flap-frequency.json",
+    fixture_data = ":visual_fixtures/interface-flap-frequency.json",
 )
 
 grafana_dashboard_visual_test(
     name = "io_pressure_dashboard_visual_test",
     dashboard = ":io-pressure.json",
+    fixture_data = ":visual_fixtures/io-pressure.json",
 )
 
 grafana_dashboard_visual_test(
     name = "node_memory_dashboard_visual_test",
     dashboard = ":node-memory.json",
+    fixture_data = ":visual_fixtures/node-memory.json",
 )
 
 grafana_dashboard_visual_test(
     name = "rugged_power_dashboard_visual_test",
     dashboard = ":rugged-power.json",
+    fixture_data = ":visual_fixtures/rugged-power.json",
 )
 
 grafana_dashboard_visual_test(
     name = "s3_operations_dashboard_visual_test",
     dashboard = ":s3-operations.json",
+    fixture_data = ":visual_fixtures/s3-operations.json",
 )
 
 grafana_dashboard_visual_test(
     name = "storage_service_details_dashboard_visual_test",
     dashboard = ":storage-service-details.json",
+    fixture_data = ":visual_fixtures/storage-service-details.json",
 )

@@ -33,7 +33,9 @@ async def test_dashboard_visual(tmp_path: Path) -> None:
     fixture_path = os.environ.get("GRAFANA_FIXTURE_RLOCATION")
     fixture = json.loads(get_required_path(fixture_path).read_text()) if fixture_path else {}
     samples = "# TYPE fixture gauge\nfixture 1 1704067200\n# EOF\n"
-    with grafana_dashboard(tmp_path, dashboard_path, samples, render_fixture=True) as base_url:
+    with grafana_dashboard(
+        tmp_path, dashboard_path, samples, render_fixture=True, variables=fixture.get("variables", {})
+    ) as base_url:
         async with async_playwright() as playwright:
             async with deterministic_browser_context(
                 playwright, viewport={"width": 1440, "height": 900}, frozen_now_ms=FROZEN_NOW_MS, color_scheme="dark"

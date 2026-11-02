@@ -1,0 +1,9 @@
+{
+  "variables": {
+    "bucket": ["uploads", "backups"]
+  },
+  "labels": {
+    "namespace": ["example", "system"],
+    "pod": ["app-a", "app-b"]
+  }
+}

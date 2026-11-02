@@ -1,0 +1,11 @@
+{
+  "variables": {
+    "node": ["node-a", "node-b"]
+  },
+  "labels": {
+    "node": ["node-a", "node-b"],
+    "namespace": ["example", "system"],
+    "pod": ["app-a", "app-b"],
+    "device": ["sda", "sdb"]
+  }
+}
