@@ -11,7 +11,7 @@ import type * as ThreadClientModule from "./client";
 import { listThreadWindow } from "./client";
 import { Home } from "./home";
 import { RoutedThreadsLiveProvider } from "./live";
-import { SandboxesLiveProvider, type SandboxesSnapshot } from "../sandboxes/live";
+import { SandboxesLiveProvider } from "../sandboxes/live";
 import { Sidebar } from "../sidebar";
 import { ServedWatch, serveEventStreams } from "../testing/watch";
 
@@ -92,8 +92,7 @@ async function render(): Promise<string[]> {
         return;
       }
       if (pathname === "/upstream/environments/v1/environments:watch") {
-        const inventory: SandboxesSnapshot = { sandboxes: [SANDBOX], watch: { healthy: true, failing: {} } };
-        stream.send({ snapshot: { sandboxes: inventory.sandboxes.map(sandboxProto) } });
+        stream.send({ snapshot: { sandboxes: [sandboxProto(SANDBOX)] } });
         stream.send({ snapshotComplete: {} });
         return;
       }

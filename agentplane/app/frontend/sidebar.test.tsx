@@ -10,7 +10,7 @@ import type { SandboxView, ThreadView } from "./schema";
 import type * as ThreadClientModule from "./threads/client";
 import { listThreadWindow } from "./threads/client";
 import { RoutedThreadsLiveProvider } from "./threads/live";
-import { SandboxesLiveProvider, type SandboxesSnapshot } from "./sandboxes/live";
+import { SandboxesLiveProvider } from "./sandboxes/live";
 import { Sidebar } from "./sidebar";
 import { threadViewRecorder } from "./threads/thread_view_recorder";
 import { ConnectionIndicator, DEGRADED_AFTER_MS } from "./stream_status";
@@ -106,8 +106,8 @@ function LocationProbe(): JSX.Element {
 }
 
 /** What the EnvironmentService inventory would report. */
-function inventory(sandboxes: Record<string, SandboxView>): SandboxesSnapshot {
-  return { sandboxes: Object.values(sandboxes), watch: { healthy: true, failing: {} } };
+function inventory(sandboxes: Record<string, SandboxView>): { sandboxes: SandboxView[] } {
+  return { sandboxes: Object.values(sandboxes) };
 }
 
 /** The server's end of the streams on one path: it writes down the latest connection. */
@@ -124,7 +124,7 @@ async function pushThreadChange(stream: ThreadWatchEnd, connected = true): Promi
 
 async function pushSandboxSnapshot(
   stream: { served: ServedWatch[]; pathname: string },
-  value: SandboxesSnapshot
+  value: { sandboxes: SandboxView[] }
 ): Promise<void> {
   await act(async () => {
     const watch = latestOn(stream.served, stream.pathname);
