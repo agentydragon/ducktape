@@ -44,10 +44,11 @@ not a saved-format compatibility layer.
 An existing private CI log repeatedly suggests `purity: pure` or
 `fluent_exports` for opaque initializers. `purity/purity_type.rs` emits this
 generic hint without establishing either contract's prerequisites. Incomplete
-interpreter support can produce the same visible symptom. Next: make the hint
-direct authors to the source-backed cause and synchronous precision loss first;
-offer an annotation only with the required independent audit. A diagnostic is
-not evidence that a contract applies.
+interpreter support can produce the same visible symptom. Call and constructor
+guidance now directs authors to the source and synchronous precision loss before
+choosing an audited contract. It names the assertion's limits: missing results,
+instance shape and heap identity require their own proof. A diagnostic is not
+evidence that a contract applies.
 
 ## Review and remaining work
 

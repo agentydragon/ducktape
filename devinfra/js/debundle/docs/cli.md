@@ -1217,10 +1217,11 @@ row ([SPEC](../SPEC.md#realizability-cut-explanations)). When a
 inert, the summary adds an `Inert:` count line and up to three of those edges
 with both endpoints, the premise's spec location and the retained cause; they
 are never in the cut ([SPEC](../SPEC.md#commuting-statements)).
-Unknown calls point to the member-level `purity` annotation;
-imported fluent chains point to `chunk_export_purity.<chunk>.fluent_exports`.
-Unknown imported constructors point to
-`chunk_export_purity.<defining chunk>.pure_new_exports`.
+Unknown calls and constructors direct authors to synchronous precision losses
+and the callee's source before choosing an audited initialization contract.
+Purity assertions supply no missing call result, instance shape or heap
+identity. Use the [contract chooser](../skills/shared/initialization_contracts.md#choose-the-contract-for-the-established-fact)
+after establishing the required source fact.
 The diagnostic does **not** auto-compute the minimal extra-moves completion
 — it names the source units and destinations so the author can read the
 completion off the printed atom membership.

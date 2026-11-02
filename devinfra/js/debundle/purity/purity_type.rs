@@ -494,10 +494,10 @@ impl PurityReason {
             cause: None,
             author_guidance: match rule {
                 PurityRule::UnknownCall => Some(
-                    "For a safe opaque call, use the member-level `purity: pure` annotation; for an imported fluent chain, declare `chunk_export_purity.<chunk>.fluent_exports`.".to_string(),
+                    "Inspect `synchronous_execution.precision_losses` and the callee's source before choosing an audited initialization contract. `purity: pure` supplies neither a missing call result nor heap identity.".to_string(),
                 ),
                 PurityRule::UnknownNew => Some(
-                    "For a safe opaque constructor, use the member-level `purity: pure_new` annotation or `chunk_export_purity.<defining chunk>.pure_new_exports` for an import.".to_string(),
+                    "Inspect `synchronous_execution.precision_losses` and the constructor's source before choosing an audited initialization contract. `purity: pure_new` supplies neither instance shape nor heap identity.".to_string(),
                 ),
                 _ => None,
             },
