@@ -1,19 +1,27 @@
 /** Read-only operator projection: curated entry summaries, no raw provider payloads or acknowledgement controls. */
 import { Accordion, Divider, Drawer, Group, Paper, ScrollArea, Select, Stack, Text } from "@mantine/core";
 import { useEffect, useState, type JSX } from "react";
+import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 
 import { clockTime, isoTime, timeAgo } from "./format_time";
 import { followStream } from "./live_stream";
 import { decodeNotificationWatchFrame } from "./notification_watch";
 import { followWatch } from "./watch_stream";
 import { type StreamConnection } from "./stream_reader";
-import type {
-  GitHubSubject,
-  SandboxNotificationStatus,
-  Source,
-  SourceObservation,
-  SubscriptionStatus,
-} from "./notification_types";
+import {
+  NoticeWaitReason,
+  SandboxNotificationStatusSchema,
+  type SandboxNotificationStatus,
+  type SubscriptionStatus,
+} from "../../notification_service/notifications_operator_pb";
+import {
+  SourceFailureKind,
+  type GitHubSubject,
+  type Source,
+  type GitHubAccessStatus,
+  type GitHubSubjectStatus,
+} from "../../notification_service/notifications_pb";
+import type { Timestamp } from "@bufbuild/protobuf/wkt";
 
 type SubscriptionState = "active" | "expired" | "cancelled";
 type SubscriptionFilter = "not-cancelled" | SubscriptionState | "all";
@@ -26,12 +34,18 @@ function enumWords(name: string, prefix: string): string {
   return name.slice(prefix.length).toLowerCase().replaceAll("_", " ");
 }
 
-/** int64 arrives as a string, which would compare as text. */
-function isAfter(cursor: string, other: string): boolean {
-  return BigInt(cursor) > BigInt(other);
+/** Protobuf int64 values are bigint. */
+function isAfter(cursor: bigint, other: bigint): boolean {
+  return cursor > other;
 }
 
-function SharedRefresh({ label, state }: { label: string; state: SourceObservation }): JSX.Element {
+function SharedRefresh({
+  label,
+  state,
+}: {
+  label: string;
+  state: GitHubAccessStatus | GitHubSubjectStatus;
+}): JSX.Element {
   return (
     <Text size="xs" c={state.error ? "red" : "dimmed"}>
       {label}:{" "}
@@ -44,37 +58,51 @@ function SharedRefresh({ label, state }: { label: string; state: SourceObservati
   );
 }
 
-function subscriptionState(sub: SubscriptionStatus, observedAt?: string): SubscriptionState {
+function subscriptionState(sub: SubscriptionStatus, observedAt?: Timestamp): SubscriptionState {
   if (sub.cancelled) return "cancelled";
-  return new Date(sub.expiresAt).getTime() <= new Date(observedAt ?? sub.expiresAt).getTime() ? "expired" : "active";
+  return date(sub.expiresAt).getTime() <= date(observedAt ?? sub.expiresAt).getTime() ? "expired" : "active";
 }
 
-function subscriptionLabel(sub: SubscriptionStatus, observedAt?: string): string {
+function subscriptionLabel(sub: SubscriptionStatus, observedAt?: Timestamp): string {
   const state = subscriptionState(sub, observedAt);
   if (state !== "active") return state;
   const errorKind =
-    sub.errorKind ?? sub.github?.access.find((access) => access.errorKind)?.errorKind ?? sub.github?.subject.errorKind;
-  if (errorKind) return enumWords(errorKind, SOURCE_FAILURE_KIND);
+    sub.errorKind ?? sub.github?.access.find((access) => access.errorKind)?.errorKind ?? sub.github?.subject?.errorKind;
+  if (errorKind) return enumWords(SourceFailureKind[errorKind], SOURCE_FAILURE_KIND);
   if (sub.github?.access.some((access) => !access.currentlyValid)) return "GitHub access not validated";
   return "no current source error";
 }
 
 function subjectLabel(subject: GitHubSubject | undefined): string {
-  if (subject === undefined) return "event";
-  if ("pullRequest" in subject) return `pull request ${subject.pullRequest.number}`;
-  if ("issue" in subject) return `issue ${subject.issue.number}`;
-  if ("branch" in subject) return `branch ${subject.branch.name}`;
-  return `commit ${subject.commit.sha}`;
+  switch (subject?.subject.case) {
+    case "pullRequest":
+      return `pull request ${subject.subject.value.number}`;
+    case "issue":
+      return `issue ${subject.subject.value.number}`;
+    case "branch":
+      return `branch ${subject.subject.value.name}`;
+    case "commit":
+      return `commit ${subject.subject.value.sha}`;
+    default:
+      return "event";
+  }
 }
 
-function sourceLabel(source: Source): string {
-  if ("actions" in source) return `Action ${source.actions.requestId}`;
-  return `${source.github.repository} · ${subjectLabel(source.github.subject)}`;
+function sourceLabel(source: Source | undefined): string {
+  if (source?.provider.case === "actions") return `Action ${source.provider.value.requestId}`;
+  if (source?.provider.case === "github")
+    return `${source.provider.value.repository} · ${subjectLabel(source.provider.value.subject)}`;
+  return "Source";
 }
 
 /** Plain text for the strings built from it; the ISO time stands where a tooltip cannot. */
-function timestamp(value: string): string {
-  return `${timeAgo(value)} (${isoTime(value)})`;
+function date(value: Timestamp | undefined): Date {
+  return new Date(Number(value?.seconds ?? 0n) * 1000 + Math.floor((value?.nanos ?? 0) / 1_000_000));
+}
+
+function timestamp(value: Timestamp | undefined): string {
+  const iso = date(value).toISOString();
+  return `${timeAgo(iso)} (${isoTime(iso)})`;
 }
 
 export function NotificationStatus({
@@ -108,7 +136,7 @@ export function NotificationStatus({
       stop = followStream(`/sandboxes/${encodeURIComponent(sandbox)}/notifications/stream`, {
         events: {
           snapshot: (message) => {
-            setData(JSON.parse(message.data) as SandboxNotificationStatus);
+            setData(fromJson(SandboxNotificationStatusSchema, JSON.parse(message.data) as JsonValue));
             setError(null);
           },
         },
@@ -148,9 +176,10 @@ export function NotificationStatus({
   const observedAt = data?.observedAt;
   const inboxes =
     data?.inboxes
-      .filter(({ inbox }) => !sessionId || inbox.sessionId === sessionId)
+      .filter(({ inbox }) => inbox && (!sessionId || inbox.sessionId === sessionId))
       .map((status) => ({
         ...status,
+        inbox: status.inbox!,
         subscriptions: status.subscriptions.filter((sub) => {
           const state = subscriptionState(sub, observedAt);
           return (
@@ -256,7 +285,7 @@ export function NotificationStatus({
                     )}
                     {noticeWaitReason && (
                       <Text size="sm">
-                        Notice: {enumWords(noticeWaitReason, NOTICE_WAIT_REASON)}
+                        Notice: {enumWords(NoticeWaitReason[noticeWaitReason], NOTICE_WAIT_REASON)}
                         {noticeDueAt ? ` · eligible ${timestamp(noticeDueAt)}` : ""}
                       </Text>
                     )}
@@ -273,7 +302,7 @@ export function NotificationStatus({
                         {pendingEntries.map((entry, index) => (
                           <Stack key={entry.cursor} gap={4}>
                             {isAfter(entry.cursor, inbox.covered) &&
-                              (index === 0 || !isAfter(pendingEntries[index - 1]?.cursor ?? "0", inbox.covered)) && (
+                              (index === 0 || !isAfter(pendingEntries[index - 1]?.cursor ?? 0n, inbox.covered)) && (
                                 <Divider
                                   label={`Notice covered through #${inbox.covered} · ${unannouncedCount} awaiting notice below`}
                                 />
@@ -286,12 +315,12 @@ export function NotificationStatus({
                                 {entry.summary}
                               </Text>
                               <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
-                                {clockTime(entry.createdAt)}
+                                {clockTime(date(entry.createdAt).toISOString())}
                               </Text>
                             </Group>
                           </Stack>
                         ))}
-                        {!pendingEntriesMore && !isAfter(pendingEntries.at(-1)?.cursor ?? "0", inbox.covered) && (
+                        {!pendingEntriesMore && !isAfter(pendingEntries.at(-1)?.cursor ?? 0n, inbox.covered) && (
                           <Divider
                             label={`Notice covered through #${inbox.covered} · ${unannouncedCount} awaiting notice`}
                           />
@@ -335,15 +364,17 @@ export function NotificationStatus({
                                 />
                                 <Text size="xs" c="dimmed">
                                   {access.currentlyValid
-                                    ? `Validated until ${timestamp(access.validUntil!)}`
+                                    ? `Validated until ${timestamp(access.validUntil)}`
                                     : "Access not currently validated"}
                                 </Text>
                               </Stack>
                             ))}
-                            <SharedRefresh
-                              label={`Shared GitHub subject · ${subjectLabel(sub.github.subject.subject)}`}
-                              state={sub.github.subject}
-                            />
+                            {sub.github.subject && (
+                              <SharedRefresh
+                                label={`Shared GitHub subject · ${subjectLabel(sub.github.subject.subject)}`}
+                                state={sub.github.subject}
+                              />
+                            )}
                           </Stack>
                         )}
                         {sub.error && (

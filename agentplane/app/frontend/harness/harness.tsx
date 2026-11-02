@@ -35,7 +35,7 @@ import { readySandbox, suspendedSandbox, testSandbox } from "../testing/sandbox"
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
 import "@mantine/core/styles.css";
 
-import { clone, create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
+import { clone, create, fromJson, toJson, type JsonValue, type MessageInitShape } from "@bufbuild/protobuf";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -63,7 +63,10 @@ import type { Connection } from "../connections/models";
 import { dispatchFromJson } from "../threads/client";
 import { ACTION_RENDERERS } from "../actions/rendering/index";
 import type { McpLinkageView } from "../mcp_linkage_client";
-import type { GitHubSubject, InboxStatus, SandboxNotificationStatus, SubscriptionStatus } from "../notification_types";
+import {
+  SandboxNotificationStatusSchema,
+  InboxEntrySummarySchema,
+} from "../../../notification_service/notifications_operator_pb";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
 import { CommandSchema } from "../../../proto/command_pb";
 import { EventEntrySchema } from "../../../proto/event_log_pb";
@@ -583,7 +586,7 @@ const DELIVERY_FAILED_THREAD = "5f1c4a2e-0000-4000-8000-000000000009";
 
 const ACTION_REQUEST_ID = "d49b85b5-849f-4e7d-a644-d4a8b8c16127";
 
-function pullRequest(number: number): GitHubSubject {
+function pullRequest(number: number) {
   return { pullRequest: { number } };
 }
 
@@ -593,9 +596,9 @@ function notificationEntry(cursor: number, ageMs: number, provider: "actions" | 
 
 /** What the Notification Service reports for a Sandbox's inboxes: one with a notice awaiting confirmation and a
  * subscription in each state, one debouncing, one failing delivery. A suspended Sandbox has none. */
-function notificationStatus(sandbox: string): SandboxNotificationStatus {
+function notificationStatus(sandbox: string) {
   const failures = ["SOURCE_FAILURE_KIND_RATE_LIMITED", "SOURCE_FAILURE_KIND_ACCESS_DENIED"] as const;
-  const inboxes: InboxStatus[] =
+  const inboxes =
     sandbox === "ready-sandbox"
       ? [
           {
@@ -638,7 +641,7 @@ function notificationStatus(sandbox: string): SandboxNotificationStatus {
                   subject: { repositoryId: "102", subject: pullRequest(42), lastSuccessAt: ago(60000) },
                 },
               },
-              ...failures.map((kind, index): SubscriptionStatus => ({
+              ...failures.map((kind, index) => ({
                 id: `subscription-failure-${index + 1}`,
                 source: { github: { repository: "owner/repo", subject: pullRequest(index + 1) } },
                 cancelled: false,
@@ -744,7 +747,7 @@ function notificationStatus(sandbox: string): SandboxNotificationStatus {
           },
         ]
       : [];
-  return { observedAt: ago(0), inboxes };
+  return fromJson(SandboxNotificationStatusSchema, { observedAt: ago(0), inboxes } as JsonValue);
 }
 
 /** The store's copy of the sessions: the idle one named, the stopped one not, so both renderings are on the page. */
@@ -3458,19 +3461,6 @@ function liveEvents(url: URL): ServerSentEvent[] {
     return [{ event: "snapshot", data: { snapshot: { observedAt: ago(0), inboxes } } }];
   }
   const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
-  const notification = url.pathname.match(/^\/sandboxes\/([^/]+)\/notifications\/stream$/);
-  if (notification) {
-    if (flags.has("notificationStatusUnavailable")) return [];
-    const snapshot = notificationStatus(notification[1]);
-    const first = snapshot.inboxes[0];
-    if (flags.has("notificationExtraEntry") && first) {
-      first.inbox.lastCursor = "10";
-      first.unannouncedCount += 1;
-      first.pendingAcknowledgementCount += 1;
-      first.pendingEntries.push(notificationEntry(10, 0, "github", "GitHub workflow_run · completed"));
-    }
-    return [{ event: "snapshot", data: snapshot }];
-  }
   if (/^\/sandboxes\/[^/]+\/console\/stream$/.test(url.pathname)) {
     return [{ event: "output", data: btoa("guest console output\r\n") }];
   }
@@ -3497,8 +3487,6 @@ function drops(url: URL): boolean {
     return flags.has("threadStreamDropped");
   if (url.pathname === "/upstream/environments/v1/environments:watch")
     return flags.has("inventoryStreamDropped") || flags.has("watchStale");
-  if (/^\/sandboxes\/[^/]+\/notifications\/stream$/.test(url.pathname))
-    return flags.has("notificationStatusUnavailable");
   if (/^\/upstream\/notifications\/v1\/operator\/sandboxes\/[^/]+\/notifications:watch$/.test(url.pathname))
     return flags.has("notificationStatusUnavailable");
   return false;
@@ -3510,7 +3498,7 @@ const droppedStreams = new Set<string>();
 
 routes.unshift([
   "GET",
-  /^\/(live\/.+|upstream\/notifications\/v1\/operator\/(notices:watch|sandboxes\/[^/]+\/notifications:watch)|sandboxes\/[^/]+\/(notifications|console)\/stream)$/,
+  /^\/(live\/.+|upstream\/notifications\/v1\/operator\/(notices:watch|sandboxes\/[^/]+\/notifications:watch)|sandboxes\/[^/]+\/console\/stream)$/,
   (match, query, signal) => {
     const url = new URL(`${match[0]}?${query.toString()}`, "http://harness");
     const key = `${url.pathname}${url.search}`;
@@ -3526,8 +3514,25 @@ routes.unshift([
       /^\/upstream\/notifications\/v1\/operator\/sandboxes\/([^/]+)\/notifications:watch$/
     );
     if (sandboxWatch) {
-      const legacyUrl = new URL(`/sandboxes/${sandboxWatch[1]}/notifications/stream`, "http://harness");
-      const results = (): unknown[] => liveEvents(legacyUrl).map(({ data }) => ({ snapshot: data }));
+      const results = (): unknown[] => {
+        if (flags.has("notificationStatusUnavailable")) return [];
+        const snapshot = notificationStatus(sandboxWatch[1]);
+        const first = snapshot.inboxes[0];
+        if (flags.has("notificationExtraEntry") && first?.inbox) {
+          first.inbox.lastCursor = 10n;
+          first.unannouncedCount += 1;
+          first.pendingAcknowledgementCount += 1;
+          first.pendingEntries.push(
+            fromJson(InboxEntrySummarySchema, {
+              cursor: "10",
+              createdAt: ago(0),
+              provider: "github",
+              summary: "GitHub workflow_run · completed",
+            })
+          );
+        }
+        return [{ snapshot: toJson(SandboxNotificationStatusSchema, snapshot, { alwaysEmitImplicit: true }) }];
+      };
       return liveNdjsonWatch(url.pathname, results(), results, signal, drop);
     }
     return liveEventStream(url.pathname, () => liveEvents(url), signal, drop);

@@ -716,17 +716,10 @@ agentplane_vitest_test(
 )
 
 ts_library(
-    name = "notification_types",
-    srcs = ["notification_types.ts"],
-    tsconfig = TSCONFIG,
-)
-
-ts_library(
     name = "notification_watch",
     srcs = ["notification_watch.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":notification_types",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/notification_service:notifications_operator_pb",
     ],
@@ -750,13 +743,15 @@ ts_library(
     deps = [
         ":format_time",
         ":live_stream",
-        ":notification_types",
         ":notification_watch",
         ":stream_reader",
         ":watch_stream",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/notification_service:notifications_operator_pb",
+        "//agentplane/notification_service:notifications_pb",
     ],
 )
 
@@ -914,7 +909,6 @@ ts_library(
         ":harness_network",
         ":live",
         ":mcp_linkage_client",
-        ":notification_types",
         ":schema",
         ":shell_command_view",
         ":stream_status",
@@ -941,6 +935,7 @@ ts_library(
         "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:local_commands",
+        "//agentplane/notification_service:notifications_operator_pb",
         "//agentplane/proto:sandboxes_pb",
         "//agentplane/proto:session_pb",
         "//util/frontend:clamped_block",

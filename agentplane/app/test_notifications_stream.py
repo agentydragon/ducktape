@@ -49,35 +49,6 @@ def app_config(peer: Peer) -> dict[str, object]:
     return {"notifications_url": peer.target, "notifications_token_file": str(peer.token)}
 
 
-async def test_sandbox_watch_is_pinned_to_the_current_uid_and_renews_its_token(
-    http: httpx.AsyncClient, sandbox: SandboxCluster, peer: Peer
-) -> None:
-    for token in ("test-notifications-token", "rotated-notifications-token"):
-        peer.token.write_text(token)
-        peer.service.sandbox_script.put_nowait(
-            notifications_operator_pb2.WatchSandboxNotificationsResponse(
-                snapshot=notifications_operator_pb2.SandboxNotificationStatus()
-            )
-        )
-        peer.service.sandbox_script.put_nowait(
-            notifications_operator_pb2.WatchSandboxNotificationsResponse(reconnect_required=Empty())
-        )
-        response = await http.get(f"/sandboxes/{sandbox.name}/notifications/stream")
-        assert response.status_code == 200, response.text
-        assert response.text.splitlines()[0] == "event: snapshot"
-        assert json.loads(response.text.splitlines()[1].removeprefix("data: ")) == {"inboxes": []}
-    assert (
-        peer.service.sandbox_requests
-        == [
-            notifications_operator_pb2.WatchSandboxNotificationsRequest(
-                namespace=sandbox.namespace, name=sandbox.name, uid=sandbox.uid
-            )
-        ]
-        * 2
-    )
-    assert peer.service.tokens == ["Bearer test-notifications-token", "Bearer rotated-notifications-token"]
-
-
 async def test_generated_sandbox_watch_resolves_identity_and_ignores_caller_uid(
     http: httpx.AsyncClient, sandbox: SandboxCluster, peer: Peer
 ) -> None:
