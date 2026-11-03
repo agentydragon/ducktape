@@ -284,8 +284,8 @@ pub(super) struct CrossModuleAnalysisOptions<'a> {
 /// Re-parse the entries stored as raw source so every chunk's body is
 /// analyzable by the cross-module pass. Parse failures only warn: the pass is
 /// an analysis refinement, and an unparseable chunk degrades to conservative
-/// behavior rather than failing the build. The caller keeps the parses, so an
-/// analysis artifact can number the hygiene contexts they introduce.
+/// behavior rather than failing the build. The caller keeps the parses until
+/// it has numbered the hygiene contexts they introduce in an analysis artifact.
 pub(super) fn reparse_unretained_entries(
     artifact: &ChunkBundle,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
