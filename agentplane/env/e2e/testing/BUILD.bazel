@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(
     default_testonly = True,
@@ -26,9 +26,23 @@ py_library(
     srcs = ["failure_journal.py"],
     deps = [
         ":process",
+        "//agentplane/proto:event_log_pb2",
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "failure_journal_test",
+    srcs = ["failure_journal_test.py"],
+    deps = [
+        ":failure_journal",
+        "//:conftest",
+        "//agentplane/env/e2e:conftest",
+        "//agentplane/proto:event_log_pb2",
+        "@pypi//protobuf",  # keep: generated EventEntry stubs use protobuf's own stub chain
+        "@pypi//pytest_bazel",
     ],
 )
 

@@ -795,7 +795,7 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
             session_dispatcher, ParseDict(seed_response.json()["dispatch"], session_dispatcher_pb2.Dispatch())
         )
         assert await event_logs.read_watermark(thread_id) == 0
-        await model.reply(await model.request(), Text("SEED_REPLY"))
+        await model.reply(await _next_model_request(model), Text("SEED_REPLY"))
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(20), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
         ):
@@ -826,7 +826,7 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
             session_dispatcher, ParseDict(receipt_response.json()["dispatch"], session_dispatcher_pb2.Dispatch())
         )
         assert receipt.admission.cursor > opened_cursor
-        await model.reply(await model.request(), Text("CONTINUED"))
+        await model.reply(await _next_model_request(model), Text("CONTINUED"))
         control_cursor = 0
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(20), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
