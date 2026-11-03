@@ -14,6 +14,15 @@ complete source-unit groups that must move together.
 `describe` defaults to 20 rows per section. Check its truncation metadata and use
 `--all` when deriving a complete assignment or dependency closure from its rows.
 
+For a `possible_getter` reason, inspect the lookup at `lookup.lexical_owner`
+and its byte span, then the body identified by `promotion.source_owner` when
+the promotion kind is `lazy_owner`. A promoted binding read does not imply
+that the binding itself is an accessor. `raw_callbacks` identifies no single
+body, and a retained witness does not enumerate every contributor. Check the
+other reasons and reciprocal paths between the same destinations before
+claiming that resolving this lookup would break a cycle. The witness format is
+specified in [binding-ordering effect provenance](wire_format.md#binding-ordering-effect-provenance).
+
 Choose the operation from the task chooser:
 
 - For residual extraction, follow [propose and claim residuals](spec_editing.md#workflow-proposing-new-modules).
