@@ -701,10 +701,6 @@ func threadReadHTTPError(err error) error {
 
 func classifyThreadReadError(err error) error {
 	switch {
-	case errors.Is(err, historydata.ErrScopeChanged):
-		return huma.Error410Gone("the thread fold projection epoch has changed")
-	case errors.Is(err, historydata.ErrEvidenceNotFound):
-		return huma.Error404NotFound("no selected thread entity")
 	case errors.Is(err, threads.ErrNotFound):
 		return huma.Error404NotFound(err.Error())
 	case errors.Is(err, errMalformedThreadPageToken), errors.Is(err, errMismatchedThreadListing):

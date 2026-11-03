@@ -100,6 +100,22 @@ it.each([
   }
 );
 
+it.each([
+  { label: "an uncovered gap", cursor: {}, lastCursor: "3", observations: [{ cursor: "1" }, { cursor: "3" }] },
+  { label: "an entry past the watermark", cursor: {}, lastCursor: "0", observations: [{ cursor: "1" }] },
+  { label: "missing entries", cursor: {}, lastCursor: "3", observations: [] },
+  { label: "a cursor past the watermark", cursor: { after: "1" }, lastCursor: "0", observations: [] },
+  {
+    label: "entries before the requested cursor",
+    cursor: { after: "2" },
+    lastCursor: "7",
+    observations: [{ cursor: "1" }, { cursor: "2" }],
+  },
+])("rejects an observation page with $label", async ({ cursor, lastCursor, observations }) => {
+  vi.stubGlobal("fetch", () => Promise.resolve(Response.json({ lastCursor, observations, settled: [] })));
+  await expect(threadObservations("test-thread", cursor)).rejects.toThrow();
+});
+
 it("reads one History event with generated requests and keeps the 64-bit cursor exact", async () => {
   const requests: Request[] = [];
   const cursor = "9007199254740993";

@@ -15,12 +15,6 @@ frontend; agent and service callers use native gRPC at the owning backend.
 
 ## Open
 
-- **History reads.** History has no facade; the app still mirrors `ReadEntityEvidenceResponse`,
-  `ReadNativeFramesResponse` and the observation pages in Go structs (`app/go/historydata/historydata.go`). `HISTORY_READS_FACADE` replaces them. A browser watch could use the implemented
-  [`FollowSession`](../history_service/README.md#read-and-follow-one-session); the browser currently stays on Electric.
-- **Thread checks on History reads.** `thread_observations` answers 404 for a Session no Thread links;
-  a proxied read answers for any Session the History Service holds. All operators are equal here, so
-  this is a behavior to keep or drop on purpose, not a hole.
 - **Remaining app contracts.** `APP_API_GRPC_FACADE` in the
   [task DAG](task_dag.md#app_api_grpc_facade--uniform-app-grpc-apis-with-generated-http-facades)
   covers the remaining app views, mutations and streams. Session opening uses the app-owned
@@ -70,9 +64,10 @@ only the proxy hop and the credential change. A service takes it only once these
   it on purpose, so an operator facade needs a separate route.
 - **Streams end at token expiry.** The browser reopens with a fresh token on `reconnect_required`,
   the frame `WatchSessionSummaries` already carries. Logout no longer ends a stream; expiry does.
-- **What the app supplies today moves or is dropped on purpose:** the Thread checks on History reads,
-  and the Dispatcher's wake budget, keyed on a service account now, which would need the operator's
-  identity to attribute a wake to them. CSRF stops applying, because the credential is not ambient.
+- **Authorization and attribution:** direct History reads need an operator read policy in place of
+  the app service account's authority. The Dispatcher's wake budget, keyed on a service account now,
+  would need the operator's identity to attribute a wake to them. CSRF stops applying, because the
+  credential is not ambient.
 
 Revisit when the proxy hop costs something measurable (a stream held open per tab, per-upstream
 settings), or when per-operator attribution is wanted.
