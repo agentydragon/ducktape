@@ -196,11 +196,13 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   requests that never authenticated. A lookup spans every workload that has run as that account.
 - `WatchDecisions` sends that list on subscribing and again whenever it differs; a commit by
   another subject sends nothing. It fails `UNAVAILABLE` when the proxy loses its database connection.
-- The `EgressAdmin` gRPC service, when enabled, serves `ListDecisions`, `WatchDecisions` and
-  `GetHealth`. Every call is admitted only for an allowed ServiceAccount proved by a bearer reviewed
-  for that call (an acceptance is reused for 30 s), and a watch ends after a bounded lease so a revoked caller stops reading. The
-  standard gRPC health service beside it reports readiness (the empty service) and liveness
-  (`livez`) to any caller.
+- The `EgressAdmin` gRPC service, when enabled, serves `ListDecisions`, `WatchDecisions`,
+  `WatchCredentials`, and `GetHealth`. Every call requires an allowed ServiceAccount bearer. Decision
+  watches have a bounded lease. Credential watches revalidate authorization without a forced lease,
+  send an initial snapshot followed by upserts and UID-fenced removals, and end when informer health is unavailable or the proxy
+  drains. Their protobuf contains only public descriptions, placeholders and presentation targets;
+  it never exposes sources or Secret values. The standard gRPC health service beside it reports
+  readiness (the empty service) and liveness (`livez`) to any caller.
 - Responses contain at most 200 recent records by default, ordered by decision time then event
   ID, oldest first within that window. This is not a global causal or insertion order.
 - Logging is diagnostic and best effort, not a mandatory lossless audit. A bounded asynchronous

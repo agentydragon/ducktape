@@ -24,6 +24,7 @@ import {
   WatchPolicyBindingsResponseSchema,
   WatchPolicySetsResponseSchema,
 } from "../../../policy/v1/policy_service_pb";
+import { WatchCredentialsResponseSchema } from "../../../egress/egress_admin_pb";
 import { GetActionPolicyResponseSchema } from "../../../action_service/action_service_pb";
 import type { Decision } from "../sandboxes/client";
 import { decisionFixture, type DecisionFixture } from "../sandboxes/decision_fixture";
@@ -3453,6 +3454,38 @@ routes.unshift([
 ]);
 
 routes.unshift(
+  [
+    "GET",
+    /^\/upstream\/egress\/v1\/credentials:watch$/,
+    (_match, _query, signal) =>
+      ndjsonWatch(
+        [
+          toJson(
+            WatchCredentialsResponseSchema,
+            create(WatchCredentialsResponseSchema, {
+              frame: {
+                case: "snapshot",
+                value: {
+                  credentials: [
+                    {
+                      name: "harness-github-pat",
+                      uid: "credential-uid",
+                      description: "GitHub API access",
+                      targets: [{ method: 2, header: "Authorization", scheme: "Bearer" }],
+                    },
+                  ],
+                },
+              },
+            })
+          ),
+          toJson(
+            WatchCredentialsResponseSchema,
+            create(WatchCredentialsResponseSchema, { frame: { case: "snapshotComplete", value: {} } })
+          ),
+        ],
+        signal
+      ),
+  ],
   [
     "GET",
     /^\/upstream\/policy\/v1\/policy-bindings:watch$/,

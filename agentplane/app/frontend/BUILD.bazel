@@ -922,6 +922,7 @@ ts_library(
         "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:local_commands",
+        "//agentplane/egress:egress_admin_pb",
         "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/policy/v1:policy_service_pb",
         "//agentplane/proto:environment_lifecycle_pb",

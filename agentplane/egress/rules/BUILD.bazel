@@ -14,6 +14,7 @@ go_library(
         "//agentplane/egress/decision",
         "//agentplane/egress/identity",
         "//agentplane/egress/policy",
+        "//agentplane/egress/resources",
         "//agentplane/grpc/facade",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/proto:identity_go_proto",

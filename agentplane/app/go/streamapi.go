@@ -90,6 +90,7 @@ type StreamingDependencies struct {
 	DispatcherHTTP   streamingUpstream
 	EnvironmentHTTP  streamingUpstream
 	PolicyHTTP       streamingUpstream
+	EgressHTTP       streamingUpstream
 	ActionHTTP       streamingUpstream
 	ConnectionHTTP   streamingUpstream
 	HistoryHTTP      streamingUpstream
@@ -111,6 +112,7 @@ func RegisterStreamingRoutes(server *HTTPServer, dependencies StreamingDependenc
 		server.RegisterRawRoute(method+" /upstream/environments/{path...}", http.HandlerFunc(routes.environmentFacade), false)
 	}
 	server.RegisterRawRoute("GET /upstream/policy/{path...}", http.HandlerFunc(routes.policyFacade), true)
+	server.RegisterRawRoute("GET /upstream/egress/{path...}", http.HandlerFunc(routes.egressFacade), true)
 	server.RegisterRawRoute("GET /live/sandboxes/{name}/egress/decisions", http.HandlerFunc(routes.liveDecisions), false)
 	server.RegisterRawRoute("GET /threads/{thread_id}/events/stream", http.HandlerFunc(routes.threadEvents), false)
 	server.RegisterRawRoute("GET /upstream/notifications/v1/operator/notices:watch", http.HandlerFunc(routes.notificationFacade), true)
@@ -454,15 +456,23 @@ func (r *streamingRoutes) actionFacade(w http.ResponseWriter, request *http.Requ
 	r.operatorFacade(w, request, r.deps.ActionHTTP, "Action facade")
 }
 
-// The app's scoped service token is the PolicyService caller; the browser session bounds the stream.
+// These backends admit the app's service account; the browser session bounds each stream.
 func (r *streamingRoutes) policyFacade(w http.ResponseWriter, request *http.Request) {
+	r.serviceAccountFacade(w, request, r.deps.PolicyHTTP, "Policy Service")
+}
+
+func (r *streamingRoutes) egressFacade(w http.ResponseWriter, request *http.Request) {
+	r.serviceAccountFacade(w, request, r.deps.EgressHTTP, "Egress Service")
+}
+
+func (r *streamingRoutes) serviceAccountFacade(w http.ResponseWriter, request *http.Request, upstream streamingUpstream, label string) {
 	path := request.PathValue("path")
 	if !proxy.GeneratedFacadeRouteAllowed(request.Method, path) {
-		writeDetailError(w, http.StatusNotFound, "unknown Policy Service facade route")
+		writeDetailError(w, http.StatusNotFound, "unknown "+label+" facade route")
 		return
 	}
-	if r.deps.PolicyHTTP == nil {
-		writeDetailError(w, http.StatusServiceUnavailable, "Policy Service is not configured")
+	if upstream == nil {
+		writeDetailError(w, http.StatusServiceUnavailable, label+" is not configured")
 		return
 	}
 	ctx, cancel, err := r.operatorLifetime(request)
@@ -471,7 +481,7 @@ func (r *streamingRoutes) policyFacade(w http.ResponseWriter, request *http.Requ
 		return
 	}
 	defer cancel()
-	r.forwardFacade(w, request, ctx, r.deps.PolicyHTTP, path, "")
+	r.forwardFacade(w, request, ctx, upstream, path, "")
 }
 
 func (r *streamingRoutes) connectionFacade(w http.ResponseWriter, request *http.Request) {

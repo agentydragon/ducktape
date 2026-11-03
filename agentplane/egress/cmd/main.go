@@ -259,7 +259,7 @@ func serve(ctx context.Context, c config, proxyListener, agentAPIListener, admin
 		return err
 	}
 	adminServer, err := newAdminServer(c, reviews.TokenReviews(), admin.ServiceOptions{
-		Decisions: store, Changes: changes, HistoryHealth: decisions, Index: index.Health,
+		Decisions: store, Changes: changes, HistoryHealth: decisions, Index: index.Health, Credentials: index,
 	})
 	if err != nil {
 		return err

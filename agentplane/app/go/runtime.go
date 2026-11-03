@@ -312,6 +312,12 @@ func run(ctx context.Context, config Config) error {
 		return fmt.Errorf("configure Egress Service gRPC client: %w", err)
 	}
 	defer egressConn.Close()
+	egressFacade, err := facade.NewHandler(facadeContext, egressTarget,
+		time.Duration(config.EgressAdminTimeoutSeconds*float64(time.Second)), egress_adminpb.RegisterEgressAdminHandlerFromEndpoint)
+	if err != nil {
+		return fmt.Errorf("configure generated Egress HTTP facade: %w", err)
+	}
+	egressGateway := proxy.NewHandlerUpstream(egressFacade, config.EgressAdminTokenFile)
 	consoleConnector, err := sandboxes.NewConsoleConnector(kubeConfig)
 	if err != nil {
 		return fmt.Errorf("configure Sandbox console client: %w", err)
@@ -354,7 +360,7 @@ func run(ctx context.Context, config Config) error {
 		Auth: appAuth, Updates: wakeupHub, UpdatesConnected: wakeupHub.Connected,
 		SandboxNamespace: config.SandboxNamespace, Live: liveIndex, Sandboxes: environments, Threads: threadStore, History: history, HistoryFollower: historyReaderClient,
 		Federator:      federator,
-		DispatcherHTTP: dispatcherGateway, EnvironmentHTTP: dispatcherGateway, PolicyHTTP: policyGateway,
+		DispatcherHTTP: dispatcherGateway, EnvironmentHTTP: dispatcherGateway, PolicyHTTP: policyGateway, EgressHTTP: egressGateway,
 		ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
 		HistoryHTTP: historyGateway, NotificationHTTP: notificationGateway,
 		Notifications:    notifications_operatorpb.NewNotificationsOperatorClient(notificationConn),

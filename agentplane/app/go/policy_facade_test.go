@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
+	egresspb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
+	rulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	"google.golang.org/grpc"
@@ -64,6 +66,50 @@ func TestGeneratedPolicyFacadeUsesAppTokenAndSubject(t *testing.T) {
 		t.Fatalf("request = %v", service.request)
 	}
 	if len(service.authorization) != 1 || service.authorization[0] != "Bearer policy-token" {
+		t.Fatalf("authorization = %v", service.authorization)
+	}
+}
+
+type egressFacadeService struct {
+	egresspb.UnimplementedEgressAdminServer
+	authorization []string
+}
+
+func (s *egressFacadeService) WatchCredentials(_ *egresspb.WatchCredentialsRequest, stream grpc.ServerStreamingServer[egresspb.WatchCredentialsResponse]) error {
+	md, _ := metadata.FromIncomingContext(stream.Context())
+	s.authorization = md.Get("authorization")
+	return stream.Send(&egresspb.WatchCredentialsResponse{Frame: &egresspb.WatchCredentialsResponse_Snapshot{Snapshot: &egresspb.CredentialSnapshot{Credentials: []*rulespb.Credential{{Name: "github", Uid: "uid", Description: "GitHub access"}}}}})
+}
+
+func TestGeneratedEgressFacadeUsesAppToken(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	service := &egressFacadeService{}
+	egresspb.RegisterEgressAdminServer(server, service)
+	done := make(chan struct{})
+	go func() { defer close(done); _ = server.Serve(listener) }()
+	t.Cleanup(func() { server.Stop(); listener.Close(); <-done })
+	handler, err := facade.NewHandler(t.Context(), listener.Addr().String(), time.Second, egresspb.RegisterEgressAdminHandlerFromEndpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(token, []byte("egress-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	upstream := proxy.NewHandlerUpstream(handler, token)
+	request := httptest.NewRequest(http.MethodGet, "/upstream/egress/v1/credentials:watch", nil)
+	response := httptest.NewRecorder()
+	if err := upstream.ForwardHTTP(response, request, context.Background(), "v1/credentials:watch", ""); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"description":"GitHub access"`) {
+		t.Fatalf("response = %d %s", response.Code, response.Body.String())
+	}
+	if len(service.authorization) != 1 || service.authorization[0] != "Bearer egress-token" {
 		t.Fatalf("authorization = %v", service.authorization)
 	}
 }

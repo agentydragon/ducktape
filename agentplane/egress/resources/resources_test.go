@@ -12,7 +12,7 @@ import (
 
 func credential(source egressapi.CredentialSource, targets ...egressapi.Target) *egressapi.EgressCredential {
 	return &egressapi.EgressCredential{
-		ObjectMeta: metav1.ObjectMeta{Name: "github-pat"},
+		ObjectMeta: metav1.ObjectMeta{Name: "github-pat", UID: "uid-github"},
 		Spec:       egressapi.EgressCredentialSpec{Description: "d", Source: source, Targets: targets},
 	}
 }
@@ -40,7 +40,7 @@ func TestCredentialFromAPISources(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.Source != tc.want || got.Placeholder() != "agentplane-credential-github-pat" {
+			if got.Source != tc.want || got.UID != "uid-github" || got.Placeholder() != "agentplane-credential-github-pat" {
 				t.Fatalf("got %#v", got)
 			}
 		})
