@@ -40,6 +40,7 @@ class Flag(StrEnum):
     PAGED_ACTION_HISTORY = "pagedActionHistory"
     ACTION_GROUPS_UNAVAILABLE = "actionGroupsUnavailable"
     NOTIFICATION_STATUS_UNAVAILABLE = "notificationStatusUnavailable"
+    NOTIFICATION_STREAM_DROPPED = "notificationStreamDropped"
     NOTIFICATION_EXTRA_ENTRY = "notificationExtraEntry"
     PUSH_BROWSER_ADDED = "pushBrowserAdded"
     CONNECTION_RENAMED = "connectionRenamed"

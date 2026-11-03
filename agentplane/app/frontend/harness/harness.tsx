@@ -2491,6 +2491,7 @@ type Flag =
   | "pagedActionHistory"
   | "actionGroupsUnavailable"
   | "notificationStatusUnavailable"
+  | "notificationStreamDropped"
   | "notificationExtraEntry"
   | "pushBrowserAdded"
   | "connectionRenamed"
@@ -3318,7 +3319,10 @@ function drops(url: URL): boolean {
   if (url.pathname === "/upstream/environments/v1/environments:watch")
     return flags.has("inventoryStreamDropped") || flags.has("watchStale");
   if (/^\/upstream\/notifications\/v1\/sessions\//.test(url.pathname))
-    return flags.has("notificationStatusUnavailable");
+    return (
+      flags.has("notificationStatusUnavailable") ||
+      (url.pathname.endsWith("/inbox:watch") && flags.has("notificationStreamDropped"))
+    );
   return false;
 }
 
@@ -3343,7 +3347,7 @@ routes.unshift([
       const session = decodeURIComponent(notice[1]);
       return liveNdjsonWatch(
         url.pathname,
-        drop ? [] : notificationFrames(session, notice[2], false),
+        flags.has("notificationStatusUnavailable") ? [] : notificationFrames(session, notice[2], false),
         () => notificationFrames(session, notice[2], true),
         signal,
         drop

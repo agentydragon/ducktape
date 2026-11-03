@@ -36,10 +36,10 @@ async def test_archived_thread_toggle(view: VisualPage, app: AgentplaneFixture) 
 
 
 async def expect_notice_badges(page: Page, *, stale: bool) -> None:
-    """The fixture's two unprocessed-count badges and one failed-delivery badge in the sidebar, all
+    """The fixture's unprocessed-count and failed-delivery badges in the sidebar, all
     painted, and faded exactly when the notice stream is down."""
     badges = page.get_by_role("navigation").locator(".agentplane-thread-list-row-notices")
-    for state, count in [("pending", 2), ("error", 1)]:
+    for state, count in [("pending", 4), ("error", 2)]:
         await expect(badges.and_(page.locator(f'[data-state="{state}"]'))).to_have_count(count)
     for badge in await badges.all():
         await expect(badge).to_be_visible()
@@ -244,6 +244,7 @@ async def test_mobile_navigation_drawer_threads_provisioning_phone(view: VisualP
 @MOBILE_ONLY
 async def test_mobile_navigation_drawer_threads_disconnected_phone(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.THREAD_STREAM_DROPPED)
+    await app.set_flag(Flag.NOTIFICATION_STREAM_DROPPED)
     await app.age_outage(10000)
     page = await open_phone_drawer(view, app)
     await expect(page.locator('[data-connection="degraded"]').first).to_be_visible()
