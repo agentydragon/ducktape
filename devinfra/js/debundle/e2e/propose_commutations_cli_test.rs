@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
+use analysis::SequencedCause;
 use debundle_e2e_support::*;
 use serde::Deserialize;
 use serde_json::Value;
@@ -38,6 +39,33 @@ fn opaque_split(pairs: Vec<CommutingStatementsContract>) -> FixtureOpts<'static>
         ],
     )
     .with_unassigned_mode(unassigned_mode_inline())
+    .with_commuting_statements("static/app", pairs)
+}
+
+const FRONTIER_SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst gamma = read();\nconst beta = noop?.();\nconst alpha = write();\nconst delta = alpha;\nconsole.log(gamma, beta, alpha, delta, store.length);\n";
+
+fn preserved_order_frontier_fixture(
+    pairs: Vec<CommutingStatementsContract>,
+) -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        FRONTIER_SOURCE,
+        vec![
+            logical_module(
+                "provider",
+                &[
+                    Member::new("store"),
+                    Member::new("read"),
+                    Member::new("write"),
+                    Member::new("noop"),
+                ],
+            ),
+            logical_module("observer", &[Member::new("gamma"), Member::new("delta")]),
+            logical_module("mutator", &[Member::new("beta"), Member::new("alpha")]),
+        ],
+    )
+    .with_unassigned_mode(unassigned_mode_inline())
+    .with_dataflow_aware_s_chain()
+    .with_trusted_dataflow_summaries()
     .with_commuting_statements("static/app", pairs)
 }
 
@@ -301,6 +329,67 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
     assert_eq!(scc["verdict"], "pairs_break", "{scc:#}");
     assert_eq!(array(scc, "modules").len(), 2, "{scc:#}");
     assert!(scc.get("residual_components").is_none(), "{scc:#}");
+}
+
+/// The proposer must account for the gate's preserved-order closure when it
+/// predicts whether a pair cuts an SCC. Removing beta/gamma's original edge
+/// preserves alpha/gamma's order, which leaves the cycle through delta's eager
+/// read of alpha in place.
+#[test]
+fn proposal_cut_prediction_includes_preserved_order_closure() {
+    let rejected = run_rejection_fixture(preserved_order_frontier_fixture(vec![]));
+    let report = propose_rejected(&rejected, &[]);
+    assert_eq!(array(&report, "proposals").len(), 1, "{report:#}");
+    let proposal = array(&report, "proposals")
+        .iter()
+        .find(|proposal| proposal_bindings(proposal) == ["beta", "gamma"])
+        .unwrap_or_else(|| panic!("beta/gamma proposal missing: {report:#}"));
+
+    assert_eq!(proposal["single_pair_cut"], false, "{report:#}");
+    assert_eq!(proposal["rank_reason"], "partial_cut", "{report:#}");
+    let scc = only_scc(&report);
+    assert_eq!(scc["verdict"], "pairs_cannot_break", "{report:#}");
+    let [residual] = array(scc, "residual_components") else {
+        panic!("one residual component: {scc:#}");
+    };
+    assert_eq!(
+        residual["modules"],
+        serde_json::json!(["mutator", "observer"]),
+        "{residual:#}"
+    );
+
+    let entry: CommutingStatementsContract =
+        serde_json::from_value(proposal["entry"].clone()).expect("entry is a contract");
+    let applied = run_rejection_fixture(preserved_order_frontier_fixture(vec![entry]));
+    let cycles = applied.cycles();
+    assert!(
+        cycles.iter().any(|cycle| {
+            ["mutator", "observer"].iter().all(|module| {
+                cycle["modules"]
+                    .as_array()
+                    .expect("SCC modules")
+                    .iter()
+                    .any(|candidate| candidate.as_str() == Some(module))
+            })
+        }),
+        "the applied pair must still be rejected by the normal gate: {cycles:#?}"
+    );
+
+    let graph = applied.dependency_graph();
+    let alpha = source_unit_for_binding(&graph, "alpha");
+    let gamma = source_unit_for_binding(&graph, "gamma");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == alpha
+                && edge.target == gamma
+                && edge.constrains_init_order
+                && matches!(
+                    edge.sequenced_cause,
+                    Some(SequencedCause::PreservedOrder { .. })
+                )
+        }),
+        "the gate must retain alpha -> gamma as preserved order: {graph:#?}"
+    );
 }
 
 /// `--limit` keeps the best-ranked proposals, `totals` counts every one, and
