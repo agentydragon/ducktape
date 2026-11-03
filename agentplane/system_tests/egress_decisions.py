@@ -11,9 +11,11 @@ from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.dispatcher_transport import Caller, bound_caller
 from agentplane.system_tests.port_forward import PortForward, async_port_forward
 
+# gazelle:include_dep @pypi//protobuf
+
 
 @asynccontextmanager
-async def watch_client(cluster: Cluster) -> AsyncIterator[tuple[rpc.EgressAdminStub, Caller]]:
+async def watch_client(cluster: Cluster) -> AsyncIterator[tuple[rpc.EgressAdminAsyncStub, Caller]]:
     # The app is an explicitly configured EgressAdmin reader; bind its test credential to its Pod.
     caller, _, _ = await bound_caller(cluster, "app", audience="agentplane-egress-admin")
     forward = PortForward(
@@ -24,18 +26,19 @@ async def watch_client(cluster: Cluster) -> AsyncIterator[tuple[rpc.EgressAdminS
         remote_port=8081,
     )
     async with async_port_forward(forward) as target, grpc.aio.insecure_channel(target) as channel:
-        yield rpc.EgressAdminStub(channel), caller
+        stub: rpc.EgressAdminAsyncStub = rpc.EgressAdminStub(channel)
+        yield stub, caller
 
 
 async def snapshot(
-    stub: rpc.EgressAdminStub, caller: Caller, subject: identity_pb2.ServiceAccount
+    stub: rpc.EgressAdminAsyncStub, caller: Caller, subject: identity_pb2.ServiceAccount
 ) -> list[pb.Decision]:
     stream = stub.WatchDecisions(
         pb.WatchDecisionsRequest(filter=pb.DecisionFilter(subject=subject)), metadata=caller.metadata
     )
     try:
         frame = await stream.read()
-        if frame is grpc.aio.EOF or frame.WhichOneof("frame") != "snapshot":
+        if not isinstance(frame, pb.WatchDecisionsResponse) or frame.WhichOneof("frame") != "snapshot":
             raise RuntimeError("Egress decision watch ended without an initial snapshot")
         return list(frame.snapshot.decisions)
     finally:

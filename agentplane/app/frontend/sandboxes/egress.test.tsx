@@ -36,14 +36,40 @@ it("reads generated snapshots, clears on disconnect, and cancels when the accoun
     fetch.served[0]?.send({
       snapshot: {
         decisions: [
-          { at: "2026-09-02T10:00:01Z", method: "GET", host: "first.example", port: 443, outcome: "OUTCOME_ALLOW" },
+          {
+            eventId: "first-id",
+            at: "2026-09-02T10:00:01Z",
+            method: "GET",
+            host: "first.example",
+            port: 443,
+            outcome: "OUTCOME_ALLOW",
+          },
         ],
       },
     })
   );
   expect(container.textContent).toContain("first.example");
-  await act(async () => fetch.served[0]?.drop());
+  await act(async () =>
+    fetch.served[0]?.send({
+      delta: {
+        removedEventIds: ["first-id"],
+        added: [
+          {
+            eventId: "second-id",
+            at: "2026-09-02T09:00:00Z",
+            method: "GET",
+            host: "late.example",
+            port: 443,
+            outcome: "OUTCOME_DENY",
+          },
+        ],
+      },
+    })
+  );
   expect(container.textContent).not.toContain("first.example");
+  expect(container.textContent).toContain("late.example");
+  await act(async () => fetch.served[0]?.drop());
+  expect(container.textContent).not.toContain("late.example");
   expect(container.textContent).toContain("unavailable");
   await act(async () => render("second"));
   expect(fetch.served[0]?.signal?.aborted).toBe(true);

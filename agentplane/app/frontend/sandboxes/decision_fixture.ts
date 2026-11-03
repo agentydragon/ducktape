@@ -13,6 +13,7 @@ export function decisionFixture({ at, ...fields }: DecisionFixture): Decision {
     outcome: Decision_Outcome.ALLOW,
     substituted: false,
     ...fields,
+    eventId: fields.eventId ?? `${at}/${fields.method ?? "GET"}/${fields.host}`,
     at: fromJson(TimestampSchema, at),
   });
 }

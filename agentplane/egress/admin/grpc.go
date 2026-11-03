@@ -134,7 +134,7 @@ func (s *Service) ListDecisions(ctx context.Context, request *egressadminpb.List
 	return &egressadminpb.ListDecisionsResponse{Decisions: decisionsOf(records)}, nil
 }
 
-// WatchDecisions sends a full recent window on subscription and each change. A quiet feed sends
+// WatchDecisions sends an initial recent window, then changes to it. A quiet feed sends
 // heartbeats only after the history read succeeds. No watch lease interrupts a healthy stream.
 func (s *Service) WatchDecisions(request *egressadminpb.WatchDecisionsRequest, stream grpc.ServerStreamingServer[egressadminpb.WatchDecisionsResponse]) error {
 	return s.watchDecisions(request, stream, auth.RevalidateStream)
@@ -199,8 +199,11 @@ func (s *Service) watchDecisions(request *egressadminpb.WatchDecisionsRequest, s
 			}
 			snapshot := &egressadminpb.DecisionSnapshot{Decisions: decisionsOf(update.records)}
 			var frame *egressadminpb.WatchDecisionsResponse
-			if previous == nil || !proto.Equal(previous, snapshot) {
+			if previous == nil {
 				frame = &egressadminpb.WatchDecisionsResponse{Frame: &egressadminpb.WatchDecisionsResponse_Snapshot{Snapshot: snapshot}}
+				previous = snapshot
+			} else if delta := decisionDelta(previous.GetDecisions(), snapshot.GetDecisions()); len(delta.Added) > 0 || len(delta.RemovedEventIds) > 0 {
+				frame = &egressadminpb.WatchDecisionsResponse{Frame: &egressadminpb.WatchDecisionsResponse_Delta{Delta: delta}}
 				previous = snapshot
 			} else if time.Since(lastSend) >= history.ChangesHeartbeat {
 				frame = &egressadminpb.WatchDecisionsResponse{Frame: &egressadminpb.WatchDecisionsResponse_Heartbeat{Heartbeat: &emptypb.Empty{}}}
@@ -224,6 +227,31 @@ func (s *Service) watchDecisions(request *egressadminpb.WatchDecisionsRequest, s
 	}
 }
 
+// decisionDelta compares bounded windows by their durable event identity. This also reports
+// late commits and expiry, which cannot safely be represented by an advancing timestamp cursor.
+func decisionDelta(previous, current []*egressadminpb.Decision) *egressadminpb.DecisionDelta {
+	old := make(map[string]bool, len(previous))
+	fresh := make(map[string]bool, len(current))
+	for _, item := range previous {
+		old[item.GetEventId()] = true
+	}
+	for _, item := range current {
+		fresh[item.GetEventId()] = true
+	}
+	delta := &egressadminpb.DecisionDelta{}
+	for _, item := range current {
+		if !old[item.GetEventId()] {
+			delta.Added = append(delta.Added, item)
+		}
+	}
+	for _, item := range previous {
+		if !fresh[item.GetEventId()] {
+			delta.RemovedEventIds = append(delta.RemovedEventIds, item.GetEventId())
+		}
+	}
+	return delta
+}
+
 // subjectOf is the decisions' subject the filter selects; nil selects the refusals that never
 // authenticated.
 func subjectOf(filter *egressadminpb.DecisionFilter) (*decision.Subject, error) {
@@ -244,7 +272,7 @@ func decisionsOf(records []decision.Record) []*egressadminpb.Decision {
 	decisions := make([]*egressadminpb.Decision, len(records))
 	for i, record := range records {
 		decisions[i] = &egressadminpb.Decision{
-			At: timestamppb.New(record.At), Method: record.Method, Host: record.Host, Port: int32(record.Port),
+			EventId: record.EventID.String(), At: timestamppb.New(record.At), Method: record.Method, Host: record.Host, Port: int32(record.Port),
 			Outcome: outcomeOf(record.Outcome), Binding: record.Binding, Policy: record.Policy,
 			Substituted: record.Substituted, Address: record.Address,
 		}

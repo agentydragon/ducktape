@@ -287,8 +287,9 @@ are still running. Archived Threads stay hidden unless the operator chooses **Sh
 
 The Egress log watches `/upstream/egress/v1/decisions:watch` through the generated Egress facade.
 The browser follows the exact Environment target and selects its execution ServiceAccount, clearing
-the displayed window when either observation becomes stale. Each Egress snapshot replaces the recent
-window for that account, which can include older Sandbox incarnations. The app's Egress system-status
+the displayed window when either observation becomes stale. An initial Egress snapshot and subsequent
+additions and removals maintain the recent window for that account, which can include older Sandbox
+incarnations. The app's Egress system-status
 probe uses gRPC health on the same admin endpoint. Runner availability affects operations that need a live Session and
 whether the page can open a new one; it does not determine whether a retained History Thread appears
 in the table. Session creation displays progress and prevents duplicate clicks while the request

@@ -1,5 +1,13 @@
 # TODO — Agentplane egress proxy
 
+## Incremental decision-history reads
+
+`WatchDecisions` sends incremental wire frames, but each database notification still triggers a
+bounded `Recent` query for every watcher, including watchers of other accounts. Replace that read
+amplification with a shared, subject-aware committed-change feed. Preserve late commits, bounded
+retention and eviction, subscribe/snapshot races, feed-loss detection, and authorization; a
+`decided_at` cursor alone is insufficient. Measure database and fan-out load under sustained traffic.
+
 ## Give agents scoped Authentik inspection through Agentplane
 
 - [ ] Decide whether agents need one or more narrowly scoped Authentik service accounts for

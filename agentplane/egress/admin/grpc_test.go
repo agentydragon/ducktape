@@ -183,12 +183,12 @@ func TestListDecisionsReadsTheSelectedSubject(t *testing.T) {
 	}
 	want := []*egressadminpb.Decision{
 		{
-			At: timestamppb.New(started), Method: "GET", Host: "example.test", Port: 443,
+			EventId: admitted.EventID.String(), At: timestamppb.New(started), Method: "GET", Host: "example.test", Port: 443,
 			Outcome: egressadminpb.Decision_OUTCOME_ALLOW, Binding: &binding, Policy: &policy,
 			Rule: proto.Int32(2), Address: &address, Substituted: true,
 		},
 		{
-			At: timestamppb.New(started), Method: "GET", Host: "example.test", Port: 443,
+			EventId: refused.EventID.String(), At: timestamppb.New(started), Method: "GET", Host: "example.test", Port: 443,
 			Outcome: egressadminpb.Decision_OUTCOME_DENY, Reason: proto.String("no-rule"),
 		},
 	}
@@ -258,26 +258,31 @@ func TestWatchSendsTheListOnSubscribingAndOnlyWhenItChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	receive := func() []*egressadminpb.Decision {
-		t.Helper()
-		response, err := stream.Recv()
-		if err != nil {
-			t.Fatal(err)
-		}
-		return response.GetSnapshot().GetDecisions()
-	}
-
-	if got := receive(); len(got) != 0 {
-		t.Fatalf("subscribing sent %v, want the empty list", got)
+	first, err := stream.Recv()
+	if err != nil || first.GetSnapshot() == nil || len(first.GetSnapshot().GetDecisions()) != 0 {
+		t.Fatalf("first frame = %v, %v; want empty snapshot", first, err)
 	}
 	<-settled
-	// A commit that adds nothing to this list: the next response must be the change, not a repeat.
+	// An unchanged read produces no delta.
 	ticks <- struct{}{}
 	<-settled
-	store.set(record(nil))
+	added := record(nil)
+	store.set(added)
 	ticks <- struct{}{}
-	if got := receive(); len(got) != 1 {
-		t.Fatalf("after a change sent %v, want the one decision", got)
+	frame, err := stream.Recv()
+	if err != nil || len(frame.GetDelta().GetAdded()) != 1 || frame.GetDelta().GetAdded()[0].GetEventId() != added.EventID.String() {
+		t.Fatalf("added frame = %v, %v", frame, err)
+	}
+	<-settled
+	// Eviction and late-arriving decisions are represented together, regardless of time order.
+	late := record(nil)
+	late.At = added.At.Add(-time.Second)
+	store.set(late)
+	ticks <- struct{}{}
+	frame, err = stream.Recv()
+	if err != nil || len(frame.GetDelta().GetAdded()) != 1 || frame.GetDelta().GetAdded()[0].GetEventId() != late.EventID.String() ||
+		len(frame.GetDelta().GetRemovedEventIds()) != 1 || frame.GetDelta().GetRemovedEventIds()[0] != added.EventID.String() {
+		t.Fatalf("replacement frame = %v, %v", frame, err)
 	}
 }
 

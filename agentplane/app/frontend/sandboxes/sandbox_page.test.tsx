@@ -102,7 +102,7 @@ readySandbox.configuration!.preset = "test-preset";
 const inventory = {
   snapshot: [readySandbox],
   health: { healthy: true, failing: {} },
-  stream: { standing: "current" },
+  stream: { standing: "current", connection: { phase: "live", since: 0 } },
 };
 vi.mock("./live", async (importOriginal) => ({
   ...(await importOriginal<typeof SandboxLiveModule>()),

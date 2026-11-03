@@ -194,8 +194,9 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 - Recent history is shared PostgreSQL state, not a per-replica ring. Replacing a proxy does not
   remove committed history. `ListDecisions` selects one subject (`at` is decision time) or the
   requests that never authenticated. A lookup spans every workload that has run as that account.
-- `WatchDecisions` sends a complete snapshot on subscribing and whenever the selected window changes.
-  A quiet, healthy history feed sends heartbeats; a lost feed or failed history read ends the stream
+- `WatchDecisions` sends a complete snapshot on subscribing, then added decisions and removed event
+  IDs as the bounded window changes. Records are immutable and ordered by decision time and event ID;
+  removals include expiry and capacity eviction. A quiet, healthy history feed sends heartbeats; a lost feed or failed history read ends the stream
   with `UNAVAILABLE`. A reconnect starts with a fresh snapshot, not a replay cursor.
 - The `EgressAdmin` gRPC service, when enabled, serves `ListDecisions`, `WatchDecisions`,
   `WatchCredentials`, and `GetHealth`. Every call requires an allowed ServiceAccount bearer. Decision

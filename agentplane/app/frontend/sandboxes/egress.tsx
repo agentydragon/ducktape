@@ -221,20 +221,49 @@ function useEgressDecisions(account: ServiceAccount): { decisions: Decision[] | 
   useEffect(() => {
     let active = true;
     let receivedSnapshot = false;
+    let current = new Map<string, Decision>();
+    const publish = (): void => {
+      setDecisions(
+        [...current.values()].sort((a, b) => {
+          const as = a.at?.seconds ?? 0n;
+          const bs = b.at?.seconds ?? 0n;
+          if (as !== bs) return as < bs ? -1 : 1;
+          const nanos = (a.at?.nanos ?? 0) - (b.at?.nanos ?? 0);
+          return nanos || a.eventId.localeCompare(b.eventId);
+        })
+      );
+    };
     const query = new URLSearchParams({ "filter.subject.namespace": namespace, "filter.subject.name": name });
     const stop = followWatch(`/upstream/egress/v1/decisions:watch?${query}`, {
       initialFrameTimeoutMs: 5000,
       idleTimeoutMs: 45_000,
       onOpen: () => {
         receivedSnapshot = false;
+        current = new Map();
         setDecisions(null);
       },
       onFrame: (value) => {
         if (!active) return;
         const frame = fromJson(WatchDecisionsResponseSchema, value as JsonValue).frame;
         if (frame.case === "snapshot") {
+          if (receivedSnapshot) throw new Error("Egress repeated its initial snapshot");
+          for (const decision of frame.value.decisions) {
+            if (!decision.eventId || current.has(decision.eventId))
+              throw new Error("Egress returned an invalid decision identity");
+            current.set(decision.eventId, decision);
+          }
           receivedSnapshot = true;
-          setDecisions(frame.value.decisions);
+          publish();
+        } else if (frame.case === "delta" && receivedSnapshot) {
+          for (const id of frame.value.removedEventIds) {
+            if (!current.delete(id)) throw new Error("Egress removed an unknown decision");
+          }
+          for (const decision of frame.value.added) {
+            if (!decision.eventId || current.has(decision.eventId))
+              throw new Error("Egress returned an invalid decision identity");
+            current.set(decision.eventId, decision);
+          }
+          publish();
         } else if (frame.case !== "heartbeat" || !receivedSnapshot) {
           throw new Error("Egress returned an invalid decision watch frame");
         }
@@ -265,7 +294,7 @@ export function EgressLog({ account, sandbox }: { account: ServiceAccount; sandb
       </Text>
       {connection.phase === "reconnecting" && (
         <Text size="sm" c="dimmed">
-          Egress decisions for {sandbox} are unavailable: {connection.lastError ?? "connection ended"}
+          Egress decisions for {sandbox} are unavailable. Reconnecting…
         </Text>
       )}
       {decisions !== null && <DecisionsTable decisions={decisions} />}

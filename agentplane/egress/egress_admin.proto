@@ -12,7 +12,7 @@ import "agentplane/proto/identity.proto";
 service EgressAdmin {
   // The decisions the proxy retains for the filter, oldest first, bounded by its history window.
   rpc ListDecisions(ListDecisionsRequest) returns (ListDecisionsResponse);
-  // A complete recent window on subscribing and each change; healthy quiet streams send heartbeats.
+  // The retained window on subscribing, then changes to that window; quiet streams send heartbeats.
   // Ends if the history feed or caller authorization fails, or the service drains.
   rpc WatchDecisions(WatchDecisionsRequest) returns (stream WatchDecisionsResponse) {
     option (google.api.http) = {get: "/v1/decisions:watch"};
@@ -63,6 +63,8 @@ message Decision {
   bool substituted = 10;
   // The address the host was pinned to, when admitted.
   optional string address = 11;
+  // Stable event identity, unique across proxy replicas.
+  string event_id = 12;
 }
 
 message ListDecisionsRequest {
@@ -81,11 +83,18 @@ message WatchDecisionsRequest {
 message DecisionSnapshot {
   repeated Decision decisions = 1;
 }
+// Changes relative to the preceding window. Decisions are immutable; removal also covers expiry
+// and eviction from the bounded window. Apply the whole delta before displaying it.
+message DecisionDelta {
+  repeated Decision added = 1;
+  repeated string removed_event_ids = 2;
+}
 message WatchDecisionsResponse {
   oneof frame {
     DecisionSnapshot snapshot = 1;
     // The history feed and read succeeded; this is not a claim that the writer lost no records.
     google.protobuf.Empty heartbeat = 2;
+    DecisionDelta delta = 3;
   }
 }
 

@@ -351,8 +351,10 @@ async def test_generated_egress_watch_streams_decisions_and_rotates_token(
         egress_admin.decisions[subject].append(decision("2026-09-02T10:00:02Z", "POST", "pypi.org", "deny"))
         egress_admin.notify()
         second = ParseDict(await anext(stream), egress_admin_pb2.WatchDecisionsResponse())
-        assert [d.host for d in second.snapshot.decisions] == ["api.github.com", "pypi.org"]
-        assert second.snapshot.decisions[1].outcome == egress_admin_pb2.Decision.OUTCOME_DENY
+        assert second.WhichOneof("frame") == "delta"
+        (refused,) = second.delta.added
+        assert refused.host == "pypi.org"
+        assert refused.outcome == egress_admin_pb2.Decision.OUTCOME_DENY
     assert egress_admin.tokens == ["Bearer fake-token"]
     await asyncio.to_thread(egress_token_file.write_text, "rotated-token")
     async with asyncio.timeout(10), http.stream("GET", path, params=params) as response:

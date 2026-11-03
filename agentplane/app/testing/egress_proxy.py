@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections.abc import AsyncIterator
 from typing import override
 
@@ -33,13 +34,21 @@ class FakeEgressAdmin(rpc.EgressAdminServicer):
         if not self.reachable:
             await context.abort(grpc.StatusCode.UNAVAILABLE, "egress proxy unavailable")
 
-        yield pb.WatchDecisionsResponse(snapshot=pb.DecisionSnapshot(decisions=self.decisions.get(subject, [])))
+        previous = {item.event_id: item for item in self.decisions.get(subject, [])}
+        yield pb.WatchDecisionsResponse(snapshot=pb.DecisionSnapshot(decisions=list(previous.values())))
         while True:
             await self.changed.wait()
             self.changed.clear()
             if not self.reachable:
                 await context.abort(grpc.StatusCode.UNAVAILABLE, "egress proxy unavailable")
-            yield pb.WatchDecisionsResponse(snapshot=pb.DecisionSnapshot(decisions=self.decisions.get(subject, [])))
+            current = {item.event_id: item for item in self.decisions.get(subject, [])}
+            delta = pb.DecisionDelta(
+                added=[item for key, item in current.items() if key not in previous],
+                removed_event_ids=[key for key in previous if key not in current],
+            )
+            previous = current
+            if delta.added or delta.removed_event_ids:
+                yield pb.WatchDecisionsResponse(delta=delta)
 
 
 def decision(
@@ -49,6 +58,7 @@ def decision(
     timestamp = Timestamp()
     timestamp.FromJsonString(at)
     row = pb.Decision(
+        event_id=str(uuid.uuid4()),
         at=timestamp,
         method=method,
         host=host,

@@ -624,5 +624,6 @@ py_library(
         "//agentplane/egress:egress_admin_pb2_grpc",
         "//agentplane/proto:identity_pb2",
         "@pypi//grpcio",
+        "@pypi//protobuf",
     ],
 )
