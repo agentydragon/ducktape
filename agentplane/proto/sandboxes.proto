@@ -4,37 +4,8 @@ syntax = "proto3";
 package agentplane.proto;
 
 import "agentplane/proto/identity.proto";
-import "google/protobuf/duration.proto";
 
 message SessionDestination {
   SandboxDestination sandbox = 1;
   string session_id = 2;
-}
-
-// The app resolves presets before sending this complete Sandbox request. The preset itself is only a label.
-message CreateSandboxRequest {
-  string name = 1;
-  string template = 2;
-  reserved 3, 4, 5, 6;
-  reserved "egress_policies", "action_policy_sets", "kubernetes_grants", "session_defaults";
-  string bootstrap = 7;
-  // PolicySet names to bind, beside the EnvironmentService defaults.
-  repeated string policy_sets = 8;
-  // The app's preset this Sandbox was made from, recorded as a label; the controller never resolves it.
-  optional string preset = 9;
-  // Whether an incoming message may resume this Sandbox after suspension.
-  bool wake_on_send = 10;
-  // How long its runner must stay idle before the controller suspends the Sandbox; absent, never.
-  google.protobuf.Duration idle_suspend_after = 11;
-  // The Sandbox's initial `spec.inboxTags`.
-  repeated string inbox_tags = 12;
-  // Present only for an authorized Action Service launch. Included in the create intent;
-  // the Action Service separately owns the launcher policy grants.
-  SandboxLaunchOrigin launch_origin = 13;
-}
-
-message SandboxLaunchOrigin {
-  ServiceAccount caller = 1;
-  string action_group = 2;
-  repeated string launcher_grants = 3;
 }

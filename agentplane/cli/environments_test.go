@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

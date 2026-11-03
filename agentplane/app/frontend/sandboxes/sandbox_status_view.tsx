@@ -9,7 +9,7 @@ import {
   OperatingMode,
   type EnvironmentDescriptor,
   SandboxPhase,
-} from "../../../runner_gateway/environments/environment_service_pb";
+} from "../../../environments/v1/environment_service_pb";
 
 import { displayableError } from "../client";
 import { getEnvironmentRuntimeStatus } from "./client";

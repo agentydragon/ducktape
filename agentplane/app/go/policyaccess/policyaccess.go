@@ -12,9 +12,9 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/policy"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

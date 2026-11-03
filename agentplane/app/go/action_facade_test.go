@@ -18,12 +18,11 @@ import (
 	operatoractionpb "github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	webpushpb "github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	connectionpb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	notificationpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
-	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -34,11 +33,11 @@ import (
 type generatedEnvironmentService struct {
 	environmentpb.UnimplementedEnvironmentServiceServer
 	authorization []string
-	created       *sandboxpb.CreateSandboxRequest
+	created       *environmentpb.CreateEnvironmentRequest
 	deleted       *identitypb.EnvironmentTarget
 }
 
-func (s *generatedEnvironmentService) CreateEnvironment(ctx context.Context, request *sandboxpb.CreateSandboxRequest) (*identitypb.EnvironmentTarget, error) {
+func (s *generatedEnvironmentService) CreateEnvironment(ctx context.Context, request *environmentpb.CreateEnvironmentRequest) (*identitypb.EnvironmentTarget, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	s.authorization = append(s.authorization, md.Get("authorization")...)
 	s.created = request

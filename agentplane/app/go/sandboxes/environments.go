@@ -6,7 +6,7 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
-	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"google.golang.org/grpc"
 )
 

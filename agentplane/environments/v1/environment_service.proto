@@ -1,12 +1,11 @@
 syntax = "proto3";
 
-package agentplane.sandboxes.environments;
+package agentplane.environments.v1;
 
-option go_package = "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb;environmentpb";
+option go_package = "github.com/agentydragon/ducktape/agentplane/environments/v1;environmentpb";
 
 import "agentplane/proto/environment_lifecycle.proto";
 import "agentplane/proto/identity.proto";
-import "agentplane/proto/sandboxes.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
@@ -18,7 +17,7 @@ service EnvironmentService {
   rpc ListEnvironmentTemplates(google.protobuf.Empty) returns (ListEnvironmentTemplatesResponse) {
     option (google.api.http) = {get: "/v1/environment-templates"};
   }
-  rpc CreateEnvironment(agentplane.proto.CreateSandboxRequest) returns (agentplane.proto.EnvironmentTarget) {
+  rpc CreateEnvironment(CreateEnvironmentRequest) returns (agentplane.proto.EnvironmentTarget) {
     option (google.api.http) = {post: "/v1/environments" body: "*"};
   }
   rpc ListEnvironments(ListEnvironmentsRequest) returns (ListEnvironmentsResponse) {
@@ -51,6 +50,34 @@ service EnvironmentService {
   rpc SetEnvironmentIdleSuspend(SetEnvironmentIdleSuspendRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {patch: "/v1/environments/{target.namespace}/{target.name}:idle-suspend" body: "*"};
   }
+}
+
+// The app resolves presets before sending this complete Environment request. The preset itself is only a label.
+message CreateEnvironmentRequest {
+  string name = 1;
+  string template = 2;
+  reserved 3, 4, 5, 6;
+  reserved "egress_policies", "action_policy_sets", "kubernetes_grants", "session_defaults";
+  string bootstrap = 7;
+  // PolicySet names to bind, beside the EnvironmentService defaults.
+  repeated string policy_sets = 8;
+  // The app's preset this Environment was made from, recorded as a label; the controller never resolves it.
+  optional string preset = 9;
+  // Whether an incoming message may resume this Environment after suspension.
+  bool wake_on_send = 10;
+  // How long its runner must stay idle before the controller suspends the Environment; absent, never.
+  google.protobuf.Duration idle_suspend_after = 11;
+  // The Environment's initial `spec.inboxTags`.
+  repeated string inbox_tags = 12;
+  // Present only for an authorized Action Service launch. Included in the create intent;
+  // the Action Service separately owns the launcher policy grants.
+  EnvironmentLaunchOrigin launch_origin = 13;
+}
+
+message EnvironmentLaunchOrigin {
+  agentplane.proto.ServiceAccount caller = 1;
+  string action_group = 2;
+  repeated string launcher_grants = 3;
 }
 
 message ListEnvironmentTemplatesResponse {

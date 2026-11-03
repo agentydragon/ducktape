@@ -5,8 +5,8 @@ import (
 	"errors"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient"
 )

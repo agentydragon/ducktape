@@ -4,7 +4,7 @@
  */
 import { ActionIcon, Button, Switch, Text, TextInput, Tooltip } from "@mantine/core";
 import type { ThreadView } from "../schema";
-import type { EnvironmentDescriptor } from "../../../runner_gateway/environments/environment_service_pb";
+import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { IconArchive, IconArchiveOff, IconSearch } from "../icons";
 import { type JSX, useState } from "react";
 import { Link, useMatch, useNavigate } from "react-router";

@@ -1,7 +1,7 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # gazelle:resolve py agentplane.central_sampler.sampler_pb2_grpc //agentplane/central_sampler:sampler_pb2_grpc
-# gazelle:resolve py agentplane.runner_gateway.environments.environment_service_pb2 //agentplane/runner_gateway/environments:environment_service_pb2
+# gazelle:resolve py agentplane.environments.v1.environment_service_pb2 //agentplane/environments/v1:environment_service_pb2
 
 package(
     default_testonly = True,
@@ -432,9 +432,8 @@ py_library(
         ":tracing",
         "//agentplane:crd_group",
         "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:identity_pb2",
-        "//agentplane/proto:sandboxes_pb2",
-        "//agentplane/runner_gateway/environments:environment_service_pb2",
         "//util/testing:undeclared_outputs",
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",
@@ -456,8 +455,8 @@ py_test(
         ":sandbox",
         "//:conftest",
         "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:identity_pb2",
-        "//agentplane/runner_gateway/environments:environment_service_pb2",
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",
@@ -547,9 +546,8 @@ py_test(
         ":scenario",
         "//:conftest",
         "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:identity_pb2",
-        "//agentplane/proto:sandboxes_pb2",
-        "//agentplane/runner_gateway/environments:environment_service_pb2",
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",

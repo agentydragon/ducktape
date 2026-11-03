@@ -1,4 +1,4 @@
-import type { EnvironmentDescriptor } from "../../../runner_gateway/environments/environment_service_pb";
+import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 /** One status decision for a Thread, shared by every page that lists Threads from a live snapshot. */
 import type { ThreadView } from "../schema";
 import type { Live } from "../live";

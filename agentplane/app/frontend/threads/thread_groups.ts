@@ -1,5 +1,5 @@
 import type { ThreadView } from "../schema";
-import type { EnvironmentDescriptor } from "../../../runner_gateway/environments/environment_service_pb";
+import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 
 /**
  * A flat newest-first Thread list folded into Sandbox groups, including Sandboxes without

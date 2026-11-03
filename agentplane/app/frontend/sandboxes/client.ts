@@ -3,9 +3,10 @@ import { DurationSchema, ValueSchema } from "@bufbuild/protobuf/wkt";
 
 import type { components } from "../schema";
 import { fetchWithLogin, HttpError } from "../client";
-import { CreateSandboxRequestSchema, type CreateSandboxRequest } from "../../../proto/sandboxes_pb";
 import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
 import {
+  CreateEnvironmentRequestSchema,
+  type CreateEnvironmentRequest,
   EnvironmentMutationRequestSchema,
   ListEnvironmentTemplatesResponseSchema,
   ResumeEnvironmentRequestSchema,
@@ -13,7 +14,7 @@ import {
   ResumeOutcome,
   SetEnvironmentIdleSuspendRequestSchema,
   SetEnvironmentWakeOnSendRequestSchema,
-} from "../../../runner_gateway/environments/environment_service_pb";
+} from "../../../environments/v1/environment_service_pb";
 import {
   EnvironmentRuntimeStatusSchema,
   SessionSpecSchema,
@@ -161,8 +162,8 @@ export async function listEnvironmentTemplates(): Promise<string[]> {
   ).names;
 }
 
-export async function createEnvironment(request: CreateSandboxRequest): Promise<EnvironmentTarget> {
-  const body = toJson(CreateSandboxRequestSchema, request) as JsonObject;
+export async function createEnvironment(request: CreateEnvironmentRequest): Promise<EnvironmentTarget> {
+  const body = toJson(CreateEnvironmentRequestSchema, request) as JsonObject;
   const target = fromJson(
     EnvironmentTargetSchema,
     await environmentJSON("/upstream/environments/v1/environments", environmentPost("POST", body))

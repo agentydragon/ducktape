@@ -17,8 +17,8 @@ from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags, Trace
 
 from agentplane.app.testing import client as client_module
 from agentplane.app.testing.client import Client, SessionStreamError
-from agentplane.proto import event_log_pb2, identity_pb2, sandboxes_pb2, session_pb2
-from agentplane.runner_gateway.environments import environment_service_pb2
+from agentplane.environments.v1 import environment_service_pb2
+from agentplane.proto import event_log_pb2, identity_pb2, session_pb2
 
 # A server answers one connection per call: `(after, writer)`. Raw sockets, because what is under
 # test is how the client reads a connection that dies, which an ASGI transport cannot produce.
@@ -481,7 +481,9 @@ async def test_create_sandbox_captures_the_exact_complete_ack_without_retrying()
         )
 
     async with _app(created, requests=observed) as (client, _):
-        target = await client.create_sandbox(sandboxes_pb2.CreateSandboxRequest(name="box", template="test-template"))
+        target = await client.create_sandbox(
+            environment_service_pb2.CreateEnvironmentRequest(name="box", template="test-template")
+        )
 
     assert target == identity_pb2.EnvironmentTarget(namespace="test-ns", name="box", uid=str(uid))
     assert client.opened_sandbox_uids == {uid}

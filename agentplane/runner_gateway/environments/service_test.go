@@ -9,10 +9,9 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
-	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
@@ -269,12 +268,12 @@ func TestManagementRequiresDirectGrantedPodAndFencesTarget(t *testing.T) {
 
 func TestActionLauncherGrantDoesNotConferGeneralManagement(t *testing.T) {
 	rpc := serveDiscovery(t, baseReader(t), runtimeconfig.Catalog{})
-	origin := &sandboxpb.SandboxLaunchOrigin{Caller: &identitypb.ServiceAccount{Namespace: discoveryNamespace, Name: sandboxName}, ActionGroup: "orchestration_v1"}
-	request := &sandboxpb.CreateSandboxRequest{Name: "created", Template: "test", LaunchOrigin: origin}
+	origin := &environmentpb.EnvironmentLaunchOrigin{Caller: &identitypb.ServiceAccount{Namespace: discoveryNamespace, Name: sandboxName}, ActionGroup: "orchestration_v1"}
+	request := &environmentpb.CreateEnvironmentRequest{Name: "created", Template: "test", LaunchOrigin: origin}
 	if _, err := rpc.CreateEnvironment(bearing(t, actionsToken), request); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("manager supplied broker origin: %v", err)
 	}
-	if _, err := rpc.CreateEnvironment(bearing(t, launcherToken), &sandboxpb.CreateSandboxRequest{Name: "created", Template: "test"}); status.Code(err) != codes.PermissionDenied {
+	if _, err := rpc.CreateEnvironment(bearing(t, launcherToken), &environmentpb.CreateEnvironmentRequest{Name: "created", Template: "test"}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("launcher omitted broker origin: %v", err)
 	}
 	if _, err := rpc.SuspendEnvironment(bearing(t, launcherToken), &environmentpb.EnvironmentMutationRequest{Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}}); status.Code(err) != codes.PermissionDenied {
@@ -290,7 +289,7 @@ func TestManagementRejectsUnrepresentableDuration(t *testing.T) {
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("unrepresentable duration: got %v", err)
 	}
-	_, err = rpc.CreateEnvironment(bearing(t, actionsToken), &sandboxpb.CreateSandboxRequest{Name: "overflow", Template: "runner-vm", IdleSuspendAfter: tooLarge})
+	_, err = rpc.CreateEnvironment(bearing(t, actionsToken), &environmentpb.CreateEnvironmentRequest{Name: "overflow", Template: "runner-vm", IdleSuspendAfter: tooLarge})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("unrepresentable create duration: got %v", err)
 	}

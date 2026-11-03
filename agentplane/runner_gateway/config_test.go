@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
@@ -93,7 +93,7 @@ func writeSettings(t *testing.T, contents string) string {
 }
 
 func TestCallerListsComeFromTheFileAndKeepAuthWakeAndOperatorPoliciesSeparate(t *testing.T) {
-	path := writeSettings(t, requiredFile+"wake_callers: [agentplane/notifications]\noperator_callers: [agentplane/app]\ndelegation:\n  actor: agentplane/actions\n  caller_namespaces: [agentplane]\n  methods:\n    - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput\n    - /agentplane.sandboxes.environments.EnvironmentService/ListEnvironments\n    - /agentplane.sandboxes.environments.EnvironmentService/GetEnvironment\n")
+	path := writeSettings(t, requiredFile+"wake_callers: [agentplane/notifications]\noperator_callers: [agentplane/app]\ndelegation:\n  actor: agentplane/actions\n  caller_namespaces: [agentplane]\n  methods:\n    - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput\n    - /agentplane.environments.v1.EnvironmentService/ListEnvironments\n    - /agentplane.environments.v1.EnvironmentService/GetEnvironment\n")
 	c, err := loadTestConfig(t, required(t,
 		settingPrefix+"CONFIG_FILE="+path, settingPrefix+"SANDBOX_CONTROLLER_ACCOUNT=agentplane/sandbox-controller"))
 	if err != nil {
@@ -108,8 +108,8 @@ func TestCallerListsComeFromTheFileAndKeepAuthWakeAndOperatorPoliciesSeparate(t 
 		!slices.Equal(c.Delegation.CallerNamespaces, []string{"agentplane"}) ||
 		!slices.Equal(c.Delegation.Methods, []string{
 			"/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
-			"/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments",
-			"/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment",
+			"/agentplane.environments.v1.EnvironmentService/ListEnvironments",
+			"/agentplane.environments.v1.EnvironmentService/GetEnvironment",
 		}) {
 		t.Fatalf("policy boundaries were merged: %+v", c)
 	}

@@ -9,8 +9,8 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"

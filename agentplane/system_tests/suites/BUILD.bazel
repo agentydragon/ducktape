@@ -193,8 +193,8 @@ py_library(
     srcs = ["pod_runners.py"],
     deps = [
         "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:session_pb2",
-        "//agentplane/runner_gateway/environments:environment_service_pb2",
         "//agentplane/system_tests:cluster",
         "//agentplane/system_tests:scenario",
         "//agentplane/system_tests:tracing",

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/observability"
@@ -25,7 +26,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/gateway"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/migrations"

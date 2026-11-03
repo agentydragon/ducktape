@@ -8,8 +8,8 @@ import (
 	"slices"
 	"time"
 
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/view"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"

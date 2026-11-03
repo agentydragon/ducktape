@@ -16,8 +16,8 @@ from agentplane.app.sandbox_models import NewSandboxDefaults
 from agentplane.app.testing.models import ThreadView
 from agentplane.app.testing.replication_process import AppProcess, spawn_go_app
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2
-from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from util.net import listen_tcp
 from util.testing.postgres import DatabaseNames, create_temporary_database

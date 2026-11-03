@@ -27,10 +27,10 @@ from agentplane.action_service.policies.resources import ACTION_RULE_TYPE, ACTIO
 from agentplane.app.testing.client import Client
 from agentplane.app.testing.models import ActionPolicyView, CallerGrantView
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.environments.v1 import environment_service_pb2
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.system_tests import mcp_servers
 from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, WORKING_DIRECTORY, Agent
 from agentplane.system_tests.cluster import Cluster

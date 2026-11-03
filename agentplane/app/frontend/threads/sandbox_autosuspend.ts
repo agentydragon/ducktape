@@ -1,5 +1,5 @@
 import type { AutosuspendBlocker } from "../../../proto/environment_lifecycle_pb";
-import { SandboxPhase, type EnvironmentDescriptor } from "../../../runner_gateway/environments/environment_service_pb";
+import { SandboxPhase, type EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 
 import { sandboxReady, sandboxStarting, sandboxSuspended } from "../sandbox_status";
 

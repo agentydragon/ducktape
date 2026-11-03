@@ -8,7 +8,7 @@ import {
   ReadinessSchema,
   ReadinessState,
   type EnvironmentDescriptor,
-} from "../../../runner_gateway/environments/environment_service_pb";
+} from "../../../environments/v1/environment_service_pb";
 
 /** A fresh Sandbox with a fixed creation time, identity, and execution account. */
 export function testSandbox(name: string, uid: string, namespace = "agentplane-test"): EnvironmentDescriptor {

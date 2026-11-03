@@ -16,10 +16,10 @@ from google.protobuf.json_format import ParseDict
 from more_itertools import one
 
 from agentplane.app.testing.client import Client
+from agentplane.environments.v1 import environment_service_pb2
 from agentplane.mcp_edge import connection_service_pb2
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL
-from agentplane.proto import sandboxes_pb2, session_pb2
-from agentplane.runner_gateway.environments import environment_service_pb2
+from agentplane.proto import session_pb2
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.k3s.stack import Stack
 from agentplane.system_tests.mcp_connection import ExternalMCPSession, connected_session
@@ -288,7 +288,9 @@ async def test_external_connection_delegates_without_the_integration_app(
 
     cluster = deployment.cluster
     name = "systest-delegation-caller"
-    created = await client.create_sandbox(sandboxes_pb2.CreateSandboxRequest(name=name, template=POD_TEMPLATE))
+    created = await client.create_sandbox(
+        environment_service_pb2.CreateEnvironmentRequest(name=name, template=POD_TEMPLATE)
+    )
     app_needs_restore = False
     boundary_evidence: dict[str, Any] | None = None
     try:

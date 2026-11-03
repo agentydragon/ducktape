@@ -5,7 +5,7 @@ import {
   WatchEnvironmentsResponseSchema,
   WatchEnvironmentResponseSchema,
   type EnvironmentDescriptor,
-} from "../../../runner_gateway/environments/environment_service_pb";
+} from "../../../environments/v1/environment_service_pb";
 import { followWatch } from "../watch_stream";
 import { type StreamConnection } from "../stream_reader";
 import { useStreamStatus } from "../stream_status";

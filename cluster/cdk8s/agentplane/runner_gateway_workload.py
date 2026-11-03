@@ -225,9 +225,9 @@ class RunnerGateway(Construct):
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/WatchDispatches",
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches",
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
-                    "/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments",
-                    "/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment",
-                    "/agentplane.sandboxes.environments.EnvironmentService/WatchEnvironment",
+                    "/agentplane.environments.v1.EnvironmentService/ListEnvironments",
+                    "/agentplane.environments.v1.EnvironmentService/GetEnvironment",
+                    "/agentplane.environments.v1.EnvironmentService/WatchEnvironment",
                     *extra_delegated_methods,
                 ],
             }

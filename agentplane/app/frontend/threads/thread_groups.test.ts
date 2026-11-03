@@ -5,7 +5,7 @@ import {
   SandboxPhase,
   OperatingMode,
   type EnvironmentDescriptor,
-} from "../../../runner_gateway/environments/environment_service_pb";
+} from "../../../environments/v1/environment_service_pb";
 
 import { testSandbox } from "../testing/sandbox";
 import { groupThreads } from "./thread_groups";

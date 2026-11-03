@@ -13,8 +13,8 @@ import pytest_bazel
 from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
+from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2
-from agentplane.runner_gateway.environments import environment_service_pb2
 
 # gazelle:include_dep @pypi//protobuf
 from agentplane.system_tests import sandbox

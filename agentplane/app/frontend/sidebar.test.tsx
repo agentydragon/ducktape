@@ -9,7 +9,7 @@ import {
   type EnvironmentDescriptor,
   type EnvironmentObservedState,
   type KubernetesDiagnostics,
-} from "../../runner_gateway/environments/environment_service_pb";
+} from "../../environments/v1/environment_service_pb";
 
 import { readySandbox } from "./testing/sandbox";
 import { MantineProvider } from "@mantine/core";

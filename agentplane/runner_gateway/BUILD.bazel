@@ -150,6 +150,7 @@ go_library(
     visibility = ["//agentplane/runner_gateway:__subpackages__"],
     deps = [
         "//agentplane/environment_runtime_transport",
+        "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/grpc/facade",
         "//agentplane/grpc/graceful",
         "//agentplane/observability",
@@ -159,7 +160,6 @@ go_library(
         "//agentplane/runner_gateway/dispatcher",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/runner_gateway/environments",
-        "//agentplane/runner_gateway/environments:environment_service_go_proto",
         "//agentplane/runner_gateway/environments/lifecycle",
         "//agentplane/runner_gateway/gateway",
         "//agentplane/runner_gateway/migrations",
@@ -207,9 +207,9 @@ go_test(
     ],
     embed = [":main_lib"],
     deps = [
+        "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/environments",
-        "//agentplane/runner_gateway/environments:environment_service_go_proto",
         "//agentplane/runner_gateway/environments/lifecycle",
         "//agentplane/sandboxes/api",
         "//agentplane/testing/grpcmethods",

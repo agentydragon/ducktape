@@ -4,7 +4,7 @@ import {
   OperatingMode,
   ReadinessState,
   type EnvironmentDescriptor,
-} from "../../runner_gateway/environments/environment_service_pb";
+} from "../../environments/v1/environment_service_pb";
 
 import { durationLabel } from "./format_time";
 import type { SandboxStatusKind } from "./status_mark";

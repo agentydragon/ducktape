@@ -1,4 +1,4 @@
-# gazelle:resolve py agentplane.runner_gateway.environments.environment_service_pb2 //agentplane/runner_gateway/environments:environment_service_pb2
+# gazelle:resolve py agentplane.environments.v1.environment_service_pb2 //agentplane/environments/v1:environment_service_pb2
 # gazelle:resolve py agentplane.app.app_service_pb2 //agentplane/app:app_service_pb2
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
@@ -195,12 +195,11 @@ py_library(
         ":models",
         "//agentplane/app:app_service_pb2",
         "//agentplane/egress:decisions",
+        "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:identity_pb2",
-        "//agentplane/proto:sandboxes_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
-        "//agentplane/runner_gateway/environments:environment_service_pb2",
         "//agentplane/sandboxes/runtimeconfig:model_catalog",
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
@@ -215,11 +214,10 @@ py_test(
         ":client",
         "//:conftest",
         "//agentplane/app:conftest",
+        "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:identity_pb2",
-        "//agentplane/proto:sandboxes_pb2",
         "//agentplane/proto:session_pb2",
-        "//agentplane/runner_gateway/environments:environment_service_pb2",
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",

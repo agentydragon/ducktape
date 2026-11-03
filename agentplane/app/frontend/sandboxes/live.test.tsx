@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { create, toJson } from "@bufbuild/protobuf";
 import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
-import { EnvironmentDescriptorSchema } from "../../../runner_gateway/environments/environment_service_pb";
+import { EnvironmentDescriptorSchema } from "../../../environments/v1/environment_service_pb";
 import { testSandbox } from "../testing/sandbox";
 import { act } from "react";
 import { createRoot } from "react-dom/client";

@@ -14,7 +14,7 @@ import {
   ReadinessSchema,
   ReadinessState,
   type EnvironmentDescriptor,
-} from "../../runner_gateway/environments/environment_service_pb";
+} from "../../environments/v1/environment_service_pb";
 
 import { testSandbox } from "./testing/sandbox";
 import {

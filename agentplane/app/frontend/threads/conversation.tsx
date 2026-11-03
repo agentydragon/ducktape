@@ -1,4 +1,4 @@
-import type { EnvironmentDescriptor } from "../../../runner_gateway/environments/environment_service_pb";
+import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { ActionIcon, Anchor, Button, Group, Menu, Popover, Select, Stack, Text, UnstyledButton } from "@mantine/core";
 import type { LangfuseSearchSettings, ThreadView, TraceSearchSettings } from "../schema";
 import { IconDotsVertical, IconHistory } from "../icons";

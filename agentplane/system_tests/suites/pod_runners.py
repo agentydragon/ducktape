@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from agentplane.app.testing.client import Client
+from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import session_pb2
-from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.scenario import open_resources
 from agentplane.system_tests.tracing import tracer

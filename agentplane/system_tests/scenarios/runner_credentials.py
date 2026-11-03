@@ -9,9 +9,9 @@ from uuid import uuid4
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
+from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.system_tests.agent import WORKING_DIRECTORY, Agent, scripted_turn_with_admission_and_history
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running

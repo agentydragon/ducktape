@@ -13,9 +13,9 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/policy"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/view"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
@@ -84,7 +84,7 @@ func (a *Access) ListTemplates(ctx context.Context) ([]string, error) {
 
 // Create validates and creates a running Sandbox, applying the process defaults and recording an
 // immutable caller/request intent so an identical retry is idempotent.
-func (a *Access) Create(ctx context.Context, request *sandboxespb.CreateSandboxRequest) (*identitypb.EnvironmentTarget, error) {
+func (a *Access) Create(ctx context.Context, request *environmentpb.CreateEnvironmentRequest) (*identitypb.EnvironmentTarget, error) {
 	if err := validateCreate(request); err != nil {
 		return nil, err
 	}
@@ -324,7 +324,7 @@ func (a *Access) patchSpec(ctx context.Context, resource *sandboxapi.Sandbox, sp
 }
 
 func sandboxForCreate(
-	request *sandboxespb.CreateSandboxRequest,
+	request *environmentpb.CreateEnvironmentRequest,
 	namespace string,
 	policySets []string,
 	intent string,
@@ -354,7 +354,7 @@ func sandboxForCreate(
 	return resource
 }
 
-func validateCreate(request *sandboxespb.CreateSandboxRequest) error {
+func validateCreate(request *environmentpb.CreateEnvironmentRequest) error {
 	if request == nil {
 		return &InvalidSandboxError{Reason: "valid name and template are required"}
 	}
@@ -428,7 +428,7 @@ func isAlphaNumeric(value byte) bool {
 	return value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value >= '0' && value <= '9'
 }
 
-func createIntent(request *sandboxespb.CreateSandboxRequest, caller *identitypb.ServiceAccount) (string, error) {
+func createIntent(request *environmentpb.CreateEnvironmentRequest, caller *identitypb.ServiceAccount) (string, error) {
 	requestJSON, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(request)
 	if err != nil {
 		return "", err

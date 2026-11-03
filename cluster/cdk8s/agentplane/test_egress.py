@@ -221,10 +221,10 @@ def test_session_dispatcher_egress_is_limited_to_the_delegation_rpc_surfaces(
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn",
     ]
     environment_service_paths = [
-        "/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments",
-        "/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment",
-        "/agentplane.sandboxes.environments.EnvironmentService/WatchEnvironment",
-        "/agentplane.sandboxes.environments.EnvironmentService/ResumeEnvironment",
+        "/agentplane.environments.v1.EnvironmentService/ListEnvironments",
+        "/agentplane.environments.v1.EnvironmentService/GetEnvironment",
+        "/agentplane.environments.v1.EnvironmentService/WatchEnvironment",
+        "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",
     ]
     expected_permissions = {
         (BASIC_POLICY, credential_name, destination, "POST", path, True)
