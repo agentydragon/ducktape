@@ -32,6 +32,18 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
+    name = "buildbuddy_executor",
+    srcs = ["buildbuddy_executor.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":flux",
+        ":manifest_roots",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
@@ -1597,6 +1609,7 @@ py_library(
         ":airlock",
         ":alloy_otlp_bearer",
         ":artifact_generators",
+        ":buildbuddy_executor",
         ":claude_sandbox_secrets",
         ":crossplane",
         ":crossplane_forgejo_agentydragon",
