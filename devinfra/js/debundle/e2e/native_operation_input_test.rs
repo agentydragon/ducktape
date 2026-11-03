@@ -1476,6 +1476,130 @@ fn encoder_input_rejects_unsupported_shape_and_identity() {
 }
 
 #[test]
+fn empty_collection_inputs_reject_arguments_wrappers_and_wrong_identity() {
+    for (initializer, operation) in [
+        ("new Map([])", NativeOperationKind::MapEmpty),
+        ("new Map(undefined)", NativeOperationKind::MapEmpty),
+        ("new Map(...[])", NativeOperationKind::MapEmpty),
+        ("new Set([])", NativeOperationKind::SetEmpty),
+        ("new Set(undefined)", NativeOperationKind::SetEmpty),
+        ("new Set(...[])", NativeOperationKind::SetEmpty),
+        ("new globalThis.Map()", NativeOperationKind::MapEmpty),
+        ("new globalThis.Set()", NativeOperationKind::SetEmpty),
+        ("new Alias()", NativeOperationKind::MapEmpty),
+        ("new (0, Map)()", NativeOperationKind::MapEmpty),
+        ("(sideEffect(), new Map())", NativeOperationKind::MapEmpty),
+        (
+            "(globalThis.result = new Set())",
+            NativeOperationKind::SetEmpty,
+        ),
+        ("new Map()", NativeOperationKind::SetEmpty),
+        ("new Set()", NativeOperationKind::MapEmpty),
+    ] {
+        let declaration = format!("const collection = {initializer};");
+        let source = format!("{declaration}\n");
+        expect_rejection_containing_all(
+            FixtureOpts::new(&source, vec![]).with_native_operation_inputs(
+                "static/app",
+                vec![selected_native_input(
+                    &source,
+                    &declaration,
+                    "collection",
+                    operation,
+                )],
+            ),
+            &["native_operation_inputs"],
+        );
+    }
+
+    for (source, operation, constructor) in [
+        (
+            "class Map {}\nconst collection = new Map();\n",
+            NativeOperationKind::MapEmpty,
+            "const collection = new Map();",
+        ),
+        (
+            "class Set {}\nconst collection = new Set();\n",
+            NativeOperationKind::SetEmpty,
+            "const collection = new Set();",
+        ),
+        (
+            "const Alias = Map;\nconst collection = new Alias();\n",
+            NativeOperationKind::MapEmpty,
+            "const collection = new Alias();",
+        ),
+        (
+            "const Alias = Set;\nconst collection = new Alias();\n",
+            NativeOperationKind::SetEmpty,
+            "const collection = new Alias();",
+        ),
+        (
+            "const collection = new Map();\neval('');\n",
+            NativeOperationKind::MapEmpty,
+            "const collection = new Map();",
+        ),
+        (
+            "const collection = new Set();\neval('');\n",
+            NativeOperationKind::SetEmpty,
+            "const collection = new Set();",
+        ),
+    ] {
+        expect_rejection_containing_all(
+            FixtureOpts::new(source, vec![]).with_native_operation_inputs(
+                "static/app",
+                vec![selected_native_input(
+                    source,
+                    constructor,
+                    "collection",
+                    operation,
+                )],
+            ),
+            &["native_operation_inputs"],
+        );
+    }
+
+    for (source, operation, constructor, write) in [
+        (
+            "const collection = new Map();\nMap = replacement;\n",
+            NativeOperationKind::MapEmpty,
+            "const collection = new Map();",
+            "Map",
+        ),
+        (
+            "const collection = new Set();\nSet = replacement;\n",
+            NativeOperationKind::SetEmpty,
+            "const collection = new Set();",
+            "Set",
+        ),
+        (
+            "const collection = new Map();\nglobalThis.Map = replacement;\n",
+            NativeOperationKind::MapEmpty,
+            "const collection = new Map();",
+            "Map",
+        ),
+        (
+            "const collection = new Set();\nglobalThis.Set = replacement;\n",
+            NativeOperationKind::SetEmpty,
+            "const collection = new Set();",
+            "Set",
+        ),
+    ] {
+        expect_rejection_containing_all(
+            FixtureOpts::new(source, vec![]).with_native_operation_inputs(
+                "static/app",
+                vec![selected_native_input(
+                    source,
+                    constructor,
+                    "collection",
+                    operation,
+                )],
+            ),
+            &[write, "contradicted"],
+        );
+    }
+}
+
+#[test]
 fn encoder_input_rejects_known_slot_writes_including_alias_and_sibling() {
     for mutation in [
         "TextEncoder = function replacement() {};",

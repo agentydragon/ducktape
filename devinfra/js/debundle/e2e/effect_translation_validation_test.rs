@@ -2,6 +2,53 @@
 
 use debundle_e2e_support::*;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
+
+fn native_constructor_input(
+    source: &str,
+    declaration: &str,
+    binding: &str,
+    operation: NativeOperationKind,
+) -> NativeOperationInputContract {
+    let audited_source_sha256 = Sha256::digest(source.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    NativeOperationInputContract {
+        selector: SourceUnitSelector::SourceMatch(
+            serde_yaml::from_str(&format!(
+                "match: {:?}\nbindings: [{binding}]\n",
+                declaration.trim()
+            ))
+            .expect("valid direct constructor source match"),
+        ),
+        operation,
+        audited_source_sha256,
+        note: Some("Neutral fixture audits one direct empty collection constructor.".to_string()),
+    }
+}
+
+fn empty_native_collection_inputs(
+    source: &str,
+    declaration_kind: &str,
+) -> Vec<NativeOperationInputContract> {
+    let map_declaration = format!("{declaration_kind} map = new Map();");
+    let set_declaration = format!("{declaration_kind} set = new Set();");
+    vec![
+        native_constructor_input(
+            source,
+            &map_declaration,
+            "map",
+            NativeOperationKind::MapEmpty,
+        ),
+        native_constructor_input(
+            source,
+            &set_declaration,
+            "set",
+            NativeOperationKind::SetEmpty,
+        ),
+    ]
+}
 
 #[test]
 fn composed_global_cells_keep_sites_dependencies_and_may_provenance() {
@@ -698,6 +745,131 @@ console.log(marker);\n";
         "only the console call remains outside the initializer subset: {report:#}"
     );
     assert_eq!(report["counts"]["havoc_pairs"], 0, "{report:#}");
+}
+
+#[test]
+fn empty_native_collections_cover_only_the_reordered_initializer_owner() {
+    const SOURCE: &str = "const earlierMap = (void globalThis.Map, 1);\n\
+var map = new Map();\n\
+const earlierSet = (void globalThis.Set, 2);\n\
+var set = new Set();\n\
+const later = map.size + set.size;\n\
+console.log(earlierMap, earlierSet, later);\n";
+    let inputs = empty_native_collection_inputs(SOURCE, "var");
+    let fixture = run_fixture_with_args(
+        FixtureOpts::new(
+            SOURCE,
+            vec![logical_module(
+                "collections",
+                &[Member::new("map"), Member::new("set")],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_native_operation_inputs("static/app", inputs),
+        &["--effect-conflicts-jsonl"],
+    );
+    assert_preserved_entry_output(&fixture, "1 2 0\n");
+
+    let entry = std::fs::read_to_string(&fixture.entry_path).expect("generated entry source");
+    let import = entry.find("import ").expect("collection module import");
+    let earlier = entry
+        .find("const earlierMap")
+        .expect("residual harmless read");
+    assert!(
+        import < earlier,
+        "the empty collection constructors must actually move before the residual reads:\n{entry}"
+    );
+    for property in ["Map", "Set"] {
+        assert!(
+            entry.contains(&format!("globalThis.{property}")),
+            "the residual GlobalProp({property}) read must remain in emitted code:\n{entry}"
+        );
+    }
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/collections.js",
+        &["var map = new Map();", "var set = new Set();"],
+        &[],
+    );
+
+    let report = fixture.effect_translation_validation();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 4,
+            "the two direct constructors alone are covered; sequence reads, later observations, and console remain opaque: {report:#}"
+        );
+    }
+    assert_eq!(
+        report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 3,
+        "the sequence and later property reads retain their own refusal: {report:#}"
+    );
+}
+
+#[test]
+fn empty_native_collection_owner_does_not_hide_prior_var_binding_reads() {
+    const SOURCE: &str = "const earlierMap = map;\n\
+var map = new Map();\n\
+const earlierSet = set;\n\
+var set = new Set();\n\
+console.log(earlierMap === undefined, earlierSet === undefined, map.size + set.size);\n";
+    let inputs = empty_native_collection_inputs(SOURCE, "var");
+    let colocated = run_fixture(
+        FixtureOpts::new(
+            SOURCE,
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("earlierMap"),
+                    Member::new("map"),
+                    Member::new("earlierSet"),
+                    Member::new("set"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_native_operation_inputs("static/app", inputs.clone()),
+    );
+    assert_preserved_entry_output(&colocated, "true true 0\n");
+
+    let reordered = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            SOURCE,
+            vec![logical_module(
+                "collections",
+                &[Member::new("map"), Member::new("set")],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_native_operation_inputs("static/app", inputs),
+        &["--effect-conflicts-jsonl"],
+        1,
+    );
+    let report = reordered.effect_translation_validation();
+    assert_eq!(report["legacy_gate_accepts"], false, "{report:#}");
+    let rows = read_jsonl(&reordered.report_path("effect_conflicts.jsonl"));
+    for binding in ["map", "set"] {
+        let pair = rows
+            .iter()
+            .find(|pair| {
+                pair["cells"].as_array().unwrap().iter().any(|cell| {
+                    cell["cell"]["kind"] == "binding" && cell["cell"]["binding"] == binding
+                })
+            })
+            .unwrap_or_else(|| panic!("reordered {binding} write/read pair: {rows:#?}"));
+        let cell = pair["cells"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|cell| cell["cell"]["kind"] == "binding" && cell["cell"]["binding"] == binding)
+            .unwrap();
+        assert_eq!(cell["first_write"]["kind"], "observed", "{cell:#}");
+        assert_eq!(cell["later_read"]["kind"], "observed", "{cell:#}");
+        assert_eq!(cell["observed_conflict"], true, "{cell:#}");
+        assert_eq!(
+            pair["first_opacity"]["unknown_coverage"],
+            serde_json::json!([])
+        );
+    }
 }
 
 #[test]

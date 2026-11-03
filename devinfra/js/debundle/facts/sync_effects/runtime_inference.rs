@@ -530,8 +530,18 @@ impl RuntimeRules<'_, '_> {
             } => {
                 let initialized_reads = source
                     .reads_are_initialized(|binding| executor.initialized_local_binding(binding));
-                let values = executor.evaluate_transfer(&expression, &environment, &captures);
-                let evaluated = source.evaluated(&expression, &values, initialized_reads);
+                let (values, native_constructor_transfer) = executor.evaluate_initializer_transfer(
+                    &source,
+                    &expression,
+                    &environment,
+                    &captures,
+                );
+                let evaluated = source.evaluated(
+                    &expression,
+                    &values,
+                    initialized_reads,
+                    native_constructor_transfer,
+                );
                 let refusal = evaluated
                     .is_none()
                     .then_some(OwnerInitializationCoverageRefusalReason::InitializerResultUnproved);

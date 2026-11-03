@@ -400,6 +400,23 @@ The owner certificate survives staged analysis; generic child results and
 invocation memos never propagate it. Binding/allocation cells, other opacity
 flags, purity and the authoritative legacy gates retain their existing rules.
 
+An original, non-exported simple variable declarator may also close those
+coverage domains for a direct bare `new Map()` or `new Set()` with exactly zero
+arguments. The original AST and lowered `New` site must identify the same
+constructor, and the dedicated root initializer transfer must actually select
+the matching native Construct/Fresh/Never row with no writes or invocations.
+Its exact identity premise comes from the existing intact intrinsic census or
+an accepted exact-site `map_empty` / `set_empty` input. The transfer result
+stays `Top`: it proves successful initialization of this owner, not a Map or
+Set identity, contents, prototype, or method behavior. The global constructor
+read and lexical binding write remain projected. The constructor's internal
+fresh allocation has no separately modeled effect cell; its identity becomes
+available only at the binding write, and later observations remain opaque or
+need their own existing proof. Existing direct-NewTarget and fixed-prototype
+boundaries still apply. Arguments (including `[]` and `undefined`), spread,
+aliases, qualified constructors, sequence/assignment wrappers, shadowed or
+replaced globals, and other constructor shapes remain uncovered.
+
 A command that combines a saved graph with current spec or source checks the
 recorded baseline before reading claims or writing edits. It refuses changed,
 added, deleted, or mismapped inputs and reports the mismatch with a regeneration
