@@ -20,6 +20,8 @@ This directory owns the tools and integration code specific to that service.
 - [`docs/`](docs/) explains [setup](docs/integration.md),
   [remote execution](docs/remote.md), and [RBE workflows](docs/rbe_workflows.md).
   [`debug/`](debug/) holds investigations; [`x/`](x/) holds experimental tools.
+- [Snapshot reuse plan](plans/snapshot-reuse/README.md) records checked BuildBuddy
+  defaults and an approval-gated validation proposal.
 
 Image pins and their shared updater remain in [`devinfra`](../image_pins.json).
 Workspace execution policy remains in [`devinfra/bazel/rbe.bazelrc`](../bazel/rbe.bazelrc).
