@@ -314,6 +314,7 @@ func TestOperatorStreamsAndProxyRoutesRejectWorkloadTokens(t *testing.T) {
 		"/upstream/dispatcher/v1/items",
 		"/upstream/actions/v1/items",
 		"/upstream/connections/v1/items",
+		"/upstream/egress/v1/credentials:watch",
 	} {
 		t.Run(path, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, path, nil)
