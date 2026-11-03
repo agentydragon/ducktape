@@ -45,7 +45,7 @@ import { testSandbox } from "../testing/sandbox";
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
 import "@mantine/core/styles.css";
 
-import { clone, create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
+import { clone, create, fromJson, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -336,10 +336,17 @@ const POLICY_SETS = [
     },
   }),
   ...["test-coder", "harness-reviews", "harness-push", "harness-edited"].map((name) =>
-    create(PolicySetSchema, {
+    fromJson(PolicySetSchema, {
       identity: { namespace: "agentplane-visual", name, uid: `set-${name}` },
-      generation: 1n,
-      spec: { rules: [{ type: "action_auto_approve", policy: { type: "exact_actions" } }] },
+      generation: "1",
+      spec: {
+        rules: [
+          {
+            type: "action_auto_approve",
+            policy: { type: "exact_actions", actions: { github: ["get_file_contents"] } },
+          },
+        ],
+      },
     })
   ),
 ];
