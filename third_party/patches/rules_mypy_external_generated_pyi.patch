@@ -1,7 +1,18 @@
 diff --git a/mypy/private/mypy.bzl b/mypy/private/mypy.bzl
 --- a/mypy/private/mypy.bzl
 +++ b/mypy/private/mypy.bzl
-@@ -128,8 +128,24 @@
+@@ -34,1 +34,9 @@
+-def _imports(target):
++def _is_mypy_action_runfile(file):
++    # External wheels may contain plugin code, native modules, and package data.
++    # First-party Python sources, stubs, and typed-package markers are sufficient
++    # for MYPYPATH; retain directory artifacts whose contents Bazel keeps opaque.
++    if not file.owner or file.owner.workspace_root.startswith("external/"):
++        return True
++    return file.is_directory or file.extension in ("py", "pyi") or file.basename == "py.typed"
++
++def _imports(target):
+@@ -128,8 +136,26 @@
      pyi_dirs = {}
      for dep in (ctx.rule.attr.deps + additional_types):
          if RulesPythonPyInfo in dep and hasattr(dep[RulesPythonPyInfo], "direct_pyi_files"):
@@ -24,6 +35,12 @@ diff --git a/mypy/private/mypy.bzl b/mypy/private/mypy.bzl
 +                for import_ in _imports(dep):
 +                    if import_.startswith(repository + "/"):
 +                        pyi_dirs[file.root.path + "/external/" + import_] = None
-         depsets.append(dep.default_runfiles.files)
+-        depsets.append(dep.default_runfiles.files)
++        dep_runfiles = dep.default_runfiles.files.to_list()
++        mypy_runfiles = [file for file in dep_runfiles if _is_mypy_action_runfile(file)]
++        depsets.append(depset(mypy_runfiles))
          if PyTypeLibraryInfo in dep:
              types.append(dep[PyTypeLibraryInfo].directory.path + "/site-packages")
+@@ -152,1 +178,1 @@
+-        for file in dep.default_runfiles.files.to_list():
++        for file in mypy_runfiles:

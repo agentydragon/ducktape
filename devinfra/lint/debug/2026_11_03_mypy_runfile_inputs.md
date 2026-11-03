@@ -1,0 +1,9 @@
+# Mypy runfile inputs
+
+`rules_mypy` originally added every dependency's `default_runfiles.files` to each mypy action and used those same files to discover generated import roots. That pulled runtime-only first-party test assets into type checks. A full Merkle comparison of the `//agentplane/app:test_live` action found one differing input: `agentplane/testing/envtest/server_/server`, a 38,539,529-byte executable.
+
+The local `rules_mypy` patch now keeps first-party `.py`, `.pyi`, `py.typed`, and opaque directory artifacts. It retains all external-owned and unowned runfiles, so external wheels, native modules, package data, and plugin dependencies remain available. The filtered file set also drives generated-root discovery; generated `direct_pyi_files` remain explicit action inputs. `mypy_cli` keeps its own tool runfiles, including the configured Pydantic and SQLAlchemy plugins.
+
+On `origin/devel` `ea07b9597c6f8194516520e18f8a9b62f51d4575`, `bbr aquery 'mnemonic("mypy", //agentplane/app:test_live)' --output=text` returned action key `2d8d9f58d4528c927e829bd62825c7de54d7c28e3ee1ad93e43701a0ef068e9b` in invocation `3ae1c192-b1e6-4c2f-8652-c9769794ea26`. Its input list omits the envtest server and includes generated protobuf stubs, the opaque `bazel-out/k8-fastbuild/bin/agentplane/app/frontend/serving/static_image` artifact, `pydantic/mypy.py`, and `sqlalchemy/ext/mypy/plugin.py`. The patch SHA-256 was `1ccd12a25dabdd60d62f900f584a2eda73389dbe2dce3bd982515c7ba7a88250`. The patched action built successfully in BuildBuddy invocation `ddbbf079-83c6-40bc-88d1-95ad93adb1d7` along with `//agentplane/env/e2e/testing:failure_journal`, a real `py_library`.
+
+A disposable `py_library` with `def negative_type_error() -> int: return "this must fail mypy"` failed with mypy's `return-value` error, confirming the aspect still reports type errors. The probe target and source were removed after the check.
