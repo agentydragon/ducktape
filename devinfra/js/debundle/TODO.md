@@ -74,10 +74,11 @@ to one exact source/spec pair and held to the interactive budget in
 2. **Selector-debt ranking improvements.** Extend `debundle spec selector-debt`
    with source-aware ranking for multi-statement windows and "stable literal by
    value" candidates. Prefer output that can feed the patch-plan dry-run.
-3. **Cross-module binding groups.** `source_matches[]` entries export every
-   binding of one matched context into one logical module. Design a form for
-   one matched context whose bindings land in different modules, without
-   repeating the selector body.
+3. **Cross-module binding groups.** All captures listed under one
+   `source_matches[]` entry's `bindings[]` list belong to the module containing
+   that selector. Declarations present only in its `match:` context are not part
+   of that ownership. Design a form for listed captures from one matched context
+   to land in different modules, without repeating the selector body.
 4. **Explain remaining relational contradictions.** Infeasible groups now
    report ownership witnesses from original candidate domains when available.
    For groups that need relational propagation to explain the failure, retain
