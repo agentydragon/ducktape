@@ -1,19 +1,19 @@
 {
-  "source_devel_commit": "25b59b0d02b16b50ecc1a56296881c1a117b977e",
-  "window_start_utc": "2026-11-03T05:08:21Z",
-  "window_end_utc": "2026-11-03T05:44:22Z",
-  "published_at_utc": "2026-11-03T06:41:36.986139+00:00",
+  "source_devel_commit": "8740e3eb668c8bc40822c7941f10d976ac677057",
+  "window_start_utc": "2026-11-03T05:44:23Z",
+  "window_end_utc": "2026-11-03T08:14:22Z",
+  "published_at_utc": "2026-11-03T08:49:05.040964+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "479e3ef0e09f16991a854e23ccb501861e9b34da",
-  "report_html_sha256": "16e234728d16908f6adc9e7f493dabe9d1a1a471cca4c6aff42477bd1a490b07",
-  "evidence_sha256": "551ccaa93ad4aa3ab1451a90b27a3c108fa58b25afe9ba56669fec2d79a336c6",
+  "previous_report_commit": "43d6a2c740008f7e26eecd971cd4f5d26b44e72a",
+  "report_html_sha256": "6a135178934f17197e2a5e760f3418cb62a49cd7110c9ce15c32ad66b4d8a92e",
+  "evidence_sha256": "971aebe983363efe7fe8bbaef98e216ae7a48c3b98326a832e40e7c961a40e32",
   "visual_validation": {
     "target": "//x/ci_report_preview:visual_test",
     "result": "PASSED",
-    "bazel_invocation_id": "56bfc5da-290f-4c66-96af-05b0cc756618",
-    "outer_remote_runner_invocation_id": "ae25869d-5ee5-4cd1-ab80-b7799132cd47",
-    "invocation_url": "https://app.buildbuddy.io/invocation/56bfc5da-290f-4c66-96af-05b0cc756618",
-    "reviewed_html_sha256": "16e234728d16908f6adc9e7f493dabe9d1a1a471cca4c6aff42477bd1a490b07",
+    "bazel_invocation_id": "b461cd3d-6953-4b72-a883-73c07b9ebd8f",
+    "outer_remote_runner_invocation_id": "7865da0a-11ce-43eb-acec-587e46e354cb",
+    "invocation_url": "https://app.buildbuddy.io/invocation/b461cd3d-6953-4b72-a883-73c07b9ebd8f",
+    "reviewed_html_sha256": "6a135178934f17197e2a5e760f3418cb62a49cd7110c9ce15c32ad66b4d8a92e",
     "viewports": [
       {
         "name": "desktop",
@@ -26,7 +26,6 @@
         "height": 844
       }
     ],
-    "internal_link_count": 90,
     "details_expanded": 8,
     "controls_exercised": ["select:Speed up", "select:Process reduction"],
     "horizontal_overflow": false,
@@ -55,7 +54,7 @@
       },
       {
         "wrapper_index": 2,
-        "label": "Bridge sharding experiment results",
+        "label": "Long retry evidence",
         "role": "region",
         "tab_index": 0,
         "wrapper_client_width": 324,
@@ -65,7 +64,7 @@
       },
       {
         "wrapper_index": 3,
-        "label": "Pod sharding experiment results",
+        "label": "Relay lifetime control and candidate",
         "role": "region",
         "tab_index": 0,
         "wrapper_client_width": 324,
@@ -75,6 +74,26 @@
       },
       {
         "wrapper_index": 4,
+        "label": "Bridge sharding experiment results",
+        "role": "region",
+        "tab_index": 0,
+        "wrapper_client_width": 324,
+        "wrapper_scroll_width": 720,
+        "table_scroll_width": 720,
+        "table_min_width": "720px"
+      },
+      {
+        "wrapper_index": 5,
+        "label": "Pod sharding experiment results",
+        "role": "region",
+        "tab_index": 0,
+        "wrapper_client_width": 324,
+        "wrapper_scroll_width": 720,
+        "table_scroll_width": 720,
+        "table_min_width": "720px"
+      },
+      {
+        "wrapper_index": 6,
         "label": "VM resource experiment results",
         "role": "region",
         "tab_index": 0,
@@ -84,31 +103,44 @@
         "table_min_width": "850px"
       }
     ],
-    "keyboard_scroll_test": "All4namedfocusableregionsscrolledwithArrowRightat390pxwithoutdocumentoverflow.",
+    "keyboard_scroll_test": "All six named focusable wide-table regions scrolled with ArrowRight at390px without document overflow.",
     "manual_review": {
-      "result": "Reviewed exact RBE desktop/mobile first screens at native viewport size and long goal-section overview captures; headline/cohort limits and cards are legible. Automated checks cover links, expanded details, chart controls and keyboard table scrolling. Tall section captures are overviews rather than a claim every text line was inspected at native size.",
+      "result": "Reviewed exact RBE desktop/mobile first screens and the two new evidence-table captures at native readable sizes. PR links no longer split across lines; the table scroll regions retain readable type. These are selected screenshot reviews, not a claim that every line of the long report was inspected visually. Narrative and timing boundaries were reviewed separately against source and retained artifacts.",
       "captures": [
         {
           "name": "40ba8f06ed9d83bf49f3af2d7a6540b47f2e5933e021ca2220cd024d69e61869.png",
-          "sha256": "65973183532a6efc2040b0c78526350e7187a900845711a007fb0762059a6119",
+          "sha256": "12ff9cf55681bf91d2ee6db623c0ee67fdfe87ba4a14541429ebf232b20921c7",
           "viewport": "desktop"
         },
         {
-          "name": "4c8d3e9b5c9a4700be9e8974d191a2886813696ef91737208b9f9741f94429cc.png",
-          "sha256": "007865d723c289a57f20d706ac1fcfae91bd6357d619cf9057b976e40e1ef7af",
+          "name": "ee793470b27361d55f74992537977c26c68335e3963df8144854abcdd3e1a2c4.png",
+          "sha256": "80896b174b962f0e2ea3ece9b12ce1371ab4a456182334ec1de6808393051915",
+          "viewport": "desktop"
+        },
+        {
+          "name": "29c4b897204568fa59553b84ce2e4ee00d709d1e6c5769c46123c9bf5b45240a.png",
+          "sha256": "a813f7aab1298bcc37563e31170746ec8d4ca6743d2dcbfa5fc820e1aa05ea4e",
           "viewport": "desktop"
         },
         {
           "name": "f006af65800ae92fe3da277595701ba20d5cbb6d50c0c85d968fae7bbd26b18f.png",
-          "sha256": "d6be068f4f5723d3680384e99c48e67a084d77908b2f8d6b231b243160c0a27c",
+          "sha256": "88929d2126f4fad91c589b70dbc0e9fe40136d5ec150e182540032361d3d8afb",
           "viewport": "mobile"
         },
         {
-          "name": "add623294f279a84c52f14a07e8785cf21d44e40028eb4daee87edc005da4e5e.png",
-          "sha256": "89e4155916e814a248088fbf448fe6198e831abb47614520018c8e8ae665bc23",
+          "name": "f9f0adaec93e2f98cc6165db9dbe5445f1cc5135deda0b0c3f6490b62c804980.png",
+          "sha256": "0b81542805cc3c79080e2d3e697fbd6a1384b56afd040e8ff36b870b3b129a61",
+          "viewport": "mobile"
+        },
+        {
+          "name": "e44c54b9e85c2519d79f602717da22f34a64f87974500cd34e884b0e40e0a5a0.png",
+          "sha256": "2c9a282472d6ae14286d851cd724957afba07543a01aeddb4924d20af66ccde8",
           "viewport": "mobile"
         }
       ]
-    }
+    },
+    "link_count": 107,
+    "internal_fragment_link_count": 13,
+    "link_audit_scope": "All107anchors enumerated;13same-document fragment references resolve. External links were not visited by the rendering test."
   }
 }
