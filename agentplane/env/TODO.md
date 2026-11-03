@@ -43,8 +43,8 @@ shell when it is enabled.
   teardown finalizers, fencing and no replay.
 - Measure Session reconcile fan-out and contention before optimizing: Environment lifecycle updates map to
   every Session, app-server updates map to every Codex Session, and snapshot publication uses a
-  manager-wide mutex. If significant, narrow subscriptions or locking without losing the separate
-  inspection-settlement signal needed by the drain barrier.
+  manager-wide mutex. If significant, narrow subscriptions or locking without losing the
+  pre-fence settlement status and wakeups needed by the drain barrier.
 
 ## Simplify ownership and process fencing with COSI lifecycle primitives
 

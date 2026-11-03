@@ -33,6 +33,7 @@ import (
 type aggregateProbeRuntime struct {
 	controller.Runtime
 	storage state.State
+	onList  func()
 }
 
 func (p aggregateProbeRuntime) Get(ctx context.Context, ptr resource.Pointer, opts ...state.GetOption) (resource.Resource, error) {
@@ -40,6 +41,9 @@ func (p aggregateProbeRuntime) Get(ctx context.Context, ptr resource.Pointer, op
 }
 
 func (p aggregateProbeRuntime) List(ctx context.Context, kind resource.Kind, opts ...state.ListOption) (resource.List, error) {
+	if p.onList != nil {
+		p.onList()
+	}
 	return p.storage.List(ctx, kind, opts...)
 }
 
@@ -158,6 +162,28 @@ func TestAggregateRequiresCurrentSessionPreFenceSettlement(t *testing.T) {
 			}
 		})
 	}
+	t.Run("settles during reconciliation", func(t *testing.T) {
+		setSessionStatus(7, false)
+		resetAggregate()
+		// Settle after the first status read. This pass must use its original
+		// observation; the LifecycleStatus update wakes the next pass.
+		probe.onList = func() { setSessionStatus(7, true) }
+		if err := controller.reconcile(ctx, probe); err != nil {
+			t.Fatal(err)
+		}
+		got, _, err := lifecycle.ReadStatus(ctx, r.lifecycleState)
+		if err != nil || got.NativeStopped || got.Blocker.Kind != lifecycle.SessionInspectionPending {
+			t.Fatalf("aggregate before next pass = %+v, err = %v", got, err)
+		}
+		probe.onList = nil
+		if err := controller.reconcile(ctx, probe); err != nil {
+			t.Fatal(err)
+		}
+		got, _, err = lifecycle.ReadStatus(ctx, r.lifecycleState)
+		if err != nil || !got.NativeStopped {
+			t.Fatalf("aggregate after next pass = %+v, err = %v", got, err)
+		}
+	})
 }
 
 type admissionStatusReadFailure struct {
