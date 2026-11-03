@@ -2146,9 +2146,13 @@ already accepted work. A UID is a fence, not authority; never infer one from a s
 
 Keep the current App/Notification trust and the documented orchestration exception until a reviewed
 replacement; general sender grants and queued-work revocation remain in
-`DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`. Decide denial and retry rules for owner changes,
-unknown Sessions, suspension, UID replacement and wake, including central Sessions with no
-environment. The [delivery note](../docs/runner_delivery_and_harness_design.md#destination-checks-and-authority)
+`DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`. The
+[Session command authority candidate](session_send_authority.md) inventories App, CLI, Actions,
+Notification, Dispatcher, Gateway and Runtime and recommends one transactional native admission
+boundary, persisted exact UID, rechecks before wake and forwarding, and no replay of an uncertain
+effect. Review its no-opening privileged path, deletion/owner fence and central-Session questions
+before calling this decision complete. The
+[older delivery note](../docs/runner_delivery_and_harness_design.md#destination-checks-and-authority)
 is historical where it requires callers to provide `(Sandbox UID, Session ID)`; its authority and
 fencing questions remain applicable. Exit: a reviewed authority and race contract for
 `DELIVERY_DESTINATION_CONTRACT`; no new principal model is selected by this node.
@@ -2164,7 +2168,9 @@ opening, and existing direct Runtime creation paths before requiring directory m
 
 Keep command IDs, no-replay recovery, sender/receiver and wake authorization, and explicit unknown,
 failed and suspended outcomes. Cover unavailable owners, same-name replacement, concurrent deletion,
-conflicting retries and callers with distinct privileges. Change call sites and contracts together;
+conflicting retries and callers with distinct privileges. Follow the reviewed
+[command authority](session_send_authority.md), including queue-acceptance versus Runtime-admission
+semantics and the direct proxy command bypass audit. Change call sites and contracts together;
 retain History and actual harness stores. This does not decide central attachment policy.
 [Address inventory](session_environment_model.md#session-address-inventory).
 
