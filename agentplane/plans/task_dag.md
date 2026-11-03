@@ -861,6 +861,8 @@ flowchart LR
     PLATFORM_SERVICE_ROUTING_DESIGN[Decision, unscheduled: direct platform access vs central egress]
     PLATFORM_SERVICE_NAMES_DESIGN -. related naming and transport choices .-> PLATFORM_SERVICE_ROUTING_DESIGN
     SESSION_RUNTIME_MODEL_DESIGN[Decision, unscheduled: Sessions, harness placement and execution attachments]
+    AGENT_PRINCIPAL_MODEL_DESIGN[Decision, unscheduled: Agentplane principals and external identities]
+    AGENT_PRINCIPAL_MODEL_DESIGN -. related identity choices .-> SESSION_RUNTIME_MODEL_DESIGN
     AGENT_AUTHORED_CONVERSATIONS_DESIGN[Decision, unscheduled: conversations agents act on through tools]
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
@@ -905,6 +907,40 @@ behavior; include matched same-image validation of the affected phase and first 
 phase dominates, or a naturally cold image state was unavailable, record that limit and stop without
 choosing an image/layout redesign. Keep reusable environments supported. `RUNNER_LAYERING_VM` remains
 paused and is not a prerequisite; `LOCAL_BAZEL` independently proves the VM-based coding workflow.
+
+### `AGENT_PRINCIPAL_MODEL_DESIGN` — Agentplane principals and external identities
+
+**Decision, unscheduled; operator discussion, 2026-11-02 PDT.** Evaluate making the agent's
+permission subject an Agentplane-owned principal, independent of a Kubernetes ServiceAccount.
+PolicyBindings could attach PolicySets to that principal; Kubernetes would be one external system
+where an adapter provisions an account and reconciles its RoleBindings, like another provider's
+account and roles. Compare this with retaining ServiceAccounts as the permission subject. Decide
+the relationships and lifetimes of principals, Sessions and environments, who may act as a
+principal, whether associations can change, and how a central Session keeps its identity without
+an environment.
+
+Today each Sandbox owns its own ServiceAccount and PolicyBinding so its permissions can be changed
+independently. Sharing an SA between environments combines their additive grants. The egress proxy
+substitutes the calling Pod's projected Kubernetes token and requires it to match the authenticated
+Pod; substituting another account would need a new credential source or broker. Policy subjects,
+workload authentication, Dispatcher, Environment Service, Actions, Notification, History and LLM
+ingress also use SA identity. See [egress identity and substitution](../egress/SPEC.md#identity),
+[PolicySets](../docs/adr_policy_sets.md), and [delegated authorization](../docs/delegated_authorization.md).
+
+**Recommendation for review:** evaluate a durable Agentplane principal and use verified workload
+identity and explicitly authorized delegation to resolve it; retain existing SAs as adapters where
+practical. Keep Session ID, principal, caller, workload and external account distinct. Preserve
+individual permission granularity, and treat Sessions sharing an unrestricted environment as one
+trust domain. Do not trust a caller-supplied principal, expose substituted credentials to the
+workload, or assume the proxy can distinguish co-resident Sessions. Choose how revocation, account
+replacement, UID fencing, queued work and historical attribution work across identity changes.
+
+**Exit:** compare the direct-SA and Agentplane-principal alternatives with one end-to-end
+Agentplane service call and one Kubernetes API call, including provisioning, policy reconciliation,
+denial and revocation, credential lifetime, recovery and a data-preserving transition. Identify
+which existing consumers and approved contracts change, and request an operator decision. This is
+related to `MULTIAGENT_MODEL` and `SESSION_RUNTIME_MODEL_DESIGN`, not a prerequisite for their
+already selected work; no identity service, broker or runtime migration is selected here.
 
 ### `SESSION_RUNTIME_MODEL_DESIGN` — Sessions, harness placement and execution attachments
 
