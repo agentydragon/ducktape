@@ -15,3 +15,11 @@
 - [ ] Investigate generated HTTP clients and reusable per-language reducers for protobuf watches.
       EnvironmentService clients repeat route spelling and snapshot, upsert and removal assembly;
       preserve authentication, cancellation, stream errors and reconnect behavior.
+
+## Session opening lookup
+
+- [ ] Address Session opening reads by the globally unique Session ID and use Session Dispatcher's
+      generated gRPC/HTTP API instead of the Sandbox-scoped AppService wrapper. Update browser and
+      test clients, preserve authorization and reconcile uncertain opens without replay. Follow the
+      [Session/environment model](../plans/session_environment_model.md#address); the general Session
+      directory and its authority are still planned, not implemented.
