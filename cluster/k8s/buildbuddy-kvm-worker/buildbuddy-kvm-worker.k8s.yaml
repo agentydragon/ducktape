@@ -24,6 +24,8 @@ data:
     install -Dm0644 "$config_dir/modules-load.conf" /etc/modules-load.d/buildbuddy-kvm-worker.conf
     install -Dm0644 "$config_dir/modprobe.conf" /etc/modprobe.d/buildbuddy-kvm-worker.conf
     install -Dm0644 "$config_dir/sysctl.conf" /etc/sysctl.d/90-buildbuddy-kvm-worker.conf
+    install -Dm0644 "$config_dir/k3s.yaml" /etc/rancher/k3s/config.yaml
+    install -Dm0644 "$config_dir/registries.yaml" /etc/rancher/k3s/registries.yaml
     install -Dm0755 "$config_dir/run-executor.sh" "$install_dir/run-executor"
     modprobe -a br_netfilter bridge ip6_tables ip6table_nat ip_tables iptable_nat \
       kvm_amd loop nf_conntrack nf_nat overlay tun vhost_net vhost_vsock vxlan
@@ -112,6 +114,9 @@ data:
       enable_oci: false
       enable_podman: false
       docker_inherit_user_ids: true
+      docker_volumes:
+        - /buildbuddy/k3s:/var/lib/k3s-env
+        - /etc/rancher/k3s:/etc/rancher/k3s:ro
       docker_devices:
         - path_on_host: /dev
           path_in_container: /dev
@@ -119,6 +124,8 @@ data:
       container_image_name_rewrites:
         - prefix: ghcr.io/
           replacement: oci-cache.oci-cache.svc.cluster.local:80/ghcr/
+  k3s.yaml: |
+    disable-default-registry-endpoint: true
   modprobe.conf: |
     options kvm_amd nested=1
     options loop max_loop=64
@@ -138,6 +145,33 @@ data:
     vhost_net
     vhost_vsock
     vxlan
+  registries.yaml: |
+    mirrors:
+      docker.io:
+        endpoint:
+          - http://oci-cache.oci-cache.svc.cluster.local
+        rewrite:
+          ^(.*)$: docker-hub/$1
+      ghcr.io:
+        endpoint:
+          - http://oci-cache.oci-cache.svc.cluster.local
+        rewrite:
+          ^(.*)$: ghcr/$1
+      quay.io:
+        endpoint:
+          - http://oci-cache.oci-cache.svc.cluster.local
+        rewrite:
+          ^(.*)$: quay/$1
+      registry.k8s.io:
+        endpoint:
+          - http://oci-cache.oci-cache.svc.cluster.local
+        rewrite:
+          ^(.*)$: k8s/$1
+      gcr.io:
+        endpoint:
+          - http://oci-cache.oci-cache.svc.cluster.local
+        rewrite:
+          ^(.*)$: gcr/$1
   run-executor.sh: |
     #!/usr/bin/env bash
     set -euo pipefail
@@ -185,6 +219,9 @@ data:
     net.bridge.bridge-nf-call-iptables = 1
     net.bridge.bridge-nf-call-ip6tables = 1
     net.ipv4.ip_forward = 1
+    vm.overcommit_memory = 1
+    kernel.panic = 10
+    kernel.panic_on_oops = 1
 ---
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine

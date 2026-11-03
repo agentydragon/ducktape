@@ -15,6 +15,9 @@ executor:
   enable_oci: false
   enable_podman: false
   docker_inherit_user_ids: true
+  docker_volumes:
+    - /buildbuddy/k3s:/var/lib/k3s-env
+    - /etc/rancher/k3s:/etc/rancher/k3s:ro
   docker_devices:
     - path_on_host: /dev
       path_in_container: /dev

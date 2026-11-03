@@ -120,7 +120,7 @@ def _reset_previous_stack(data_dir: Path) -> None:
     for target in reversed(targets):
         if target.startswith(("/var/lib/kubelet/", "/run/k3s/", "/run/netns/")):
             run("umount", "--lazy", target)
-    for entry in [*data_dir.iterdir(), *(data_dir / "agent").iterdir()]:
+    for entry in [*data_dir.iterdir(), *(data_dir / "agent").glob("*")]:
         if entry.name not in {"agent", "data", "containerd"}:
             shutil.rmtree(entry) if entry.is_dir() and not entry.is_symlink() else entry.unlink()
     for state in (
@@ -145,6 +145,31 @@ def _archive_json(archive: tarfile.TarFile, name: str, value: object) -> None:
     entry = tarfile.TarInfo(name)
     entry.size = len(encoded)
     archive.addfile(entry, io.BytesIO(encoded))
+
+
+def _prepare_docker_namespaces() -> None:
+    """Let nested K3s manage the action's private network and cgroup namespaces."""
+    if not Path("/.dockerenv").exists() or Path("/proc/self/cgroup").read_text().strip() != "0::/":
+        raise RuntimeError("expected a Docker action with private namespaces")
+    # kube-proxy and the CNI configure network sysctls. Keep the guest-wide /proc/sys
+    # read-only; these sysctls belong to the action's network namespace.
+    network_sysctls = "/proc/sys/net"
+    if os.statvfs(network_sysctls).f_flag & os.ST_RDONLY:
+        run("mount", "--bind", network_sysctls, network_sysctls)
+        run("mount", "-o", "remount,rw,bind", network_sysctls)
+    root = Path("/sys/fs/cgroup")
+    if not os.statvfs(root).f_flag & os.ST_RDONLY:
+        return
+    run("mount", "-o", "remount,rw", str(root))
+    # Like kind's entrypoint, move existing processes out before enabling child controllers.
+    # https://github.com/kubernetes-sigs/kind/blob/main/images/base/files/usr/local/bin/entrypoint
+    init = root / "init"
+    init.mkdir(exist_ok=True)
+    for pid in (root / "cgroup.procs").read_text().split():
+        with contextlib.suppress(ProcessLookupError):
+            (init / "cgroup.procs").write_text(pid)
+    controllers = (root / "cgroup.controllers").read_text().split()
+    (root / "cgroup.subtree_control").write_text(" ".join(f"+{controller}" for controller in controllers))
 
 
 def node_ip() -> str:
@@ -185,6 +210,8 @@ class K3s:
 
     @tracer.start_as_current_span("system_test.k3s.start")
     def start(self, *, layers_in_memory: bool, detached: bool = False) -> subprocess.Popen[bytes]:
+        if os.environ.get("AGENTPLANE_K3S_REQUIRE_KVM") == "1":
+            _prepare_docker_namespaces()
         _reset_previous_stack(self.data_dir)
         _shadow_kernel_sysctls()
         # Unpacking image layers is bound by writes to the executor's disk. The tmpfs default cap, half of
