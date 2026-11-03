@@ -70,34 +70,35 @@ func (s *Store) ReserveWakeAttempt(ctx context.Context, caller *ServiceAccountId
 
 // A null incarnation means no wake cycle; the empty string means a wake before
 // any incarnation existed. The distinction is retained from the Python schema.
-func (s *Store) NoteWaking(ctx context.Context, id string, owner Owner, incarnation *string, opening bool) (bool, error) {
+func (s *Store) NoteWaking(ctx context.Context, id string, owner Owner, incarnation *string, opening bool, assessment *environmentpb.WakeAssessment) (bool, error) {
 	table, key := wakeTable(opening)
 	value := ""
 	if incarnation != nil {
 		value = *incarnation
 	}
+	assessmentBytes, err := wire(assessment)
+	if err != nil {
+		return false, err
+	}
 	var stillQueued bool
-	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
+	err = transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		current, err := ownerMatch(ctx, tx, owner)
 		if err != nil || !current {
 			return err
 		}
-		result, err := tx.ExecContext(ctx, `UPDATE `+table+` SET wake_from_incarnation=$3,updated_at=now()
-			WHERE `+key+`=$1 AND sandbox_uid=$2 AND state=$4 AND wake_from_incarnation IS NULL`,
-			id, owner.SandboxUID, value, QueueState)
+		// Persist uncertainty before the external wake call; cancellation must retain it.
+		result, err := tx.ExecContext(ctx, `UPDATE `+table+` SET wake_from_incarnation=COALESCE(wake_from_incarnation,$3),
+			wake_assessment=$5,updated_at=now() WHERE `+key+`=$1 AND sandbox_uid=$2 AND state=$4`,
+			id, owner.SandboxUID, value, QueueState, assessmentBytes)
 		if err != nil {
 			return err
 		}
 		n, err := result.RowsAffected()
-		if err != nil {
+		if err != nil || n == 0 {
 			return err
 		}
-		if n > 0 {
-			stillQueued = true
-			return notify(ctx, tx)
-		}
-		return tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM `+table+` WHERE `+key+`=$1
-			AND sandbox_uid=$2 AND state=$3)`, id, owner.SandboxUID, QueueState).Scan(&stillQueued)
+		stillQueued = true
+		return notify(ctx, tx)
 	})
 	return stillQueued, err
 }

@@ -91,6 +91,13 @@ It scopes existing Sessions and existing environments; it does not create enviro
   requesting resume. The existing `wake_caller_accounts` setting is a separate trusted broker grant for automatic
   wake only; it does not grant explicit resume authority or override `SuspendedBy=Requested`. Dispatcher actors and
   admission-time eligibility are never substitutes for the effective caller's current authority.
+- A queued opening denied wake for its creator does not suppress an authorized queued input or unattended
+  notification. Dispatcher assesses downstream wake under each command's own retained effective identity,
+  without forwarding commands ahead of the opening. Only a proven caller-authorization denial permits trying
+  another command's wake authority. Requested and uncertain wake outcomes, and an unexpired rate limit,
+  block other downstream wake attempts while the opening remains queued, including after cancellation or
+  process restart. A wake call's uncertainty is persisted before calling lifecycle; cancellation retains it.
+  A later observed generation permits reassessing an uncertain wake under the existing generation rule.
 - `Dispatch` and `SessionOpening` keep delivery state separate from wake state. `delivery_blocker` and the typed
   `wake_assessment` are persisted with the receipt and published transactionally to active watches, including updates
   that leave delivery state and reason unchanged. Disabled, denied, rate-limited, failed and uncertain wake outcomes

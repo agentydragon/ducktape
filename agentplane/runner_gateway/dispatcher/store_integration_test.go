@@ -2672,3 +2672,192 @@ func TestInterruptRechecksSessionAfterLiveAuthorization(t *testing.T) {
 		t.Fatal("interrupt reached runner after Session deletion")
 	}
 }
+
+func TestQueuedOpeningAllowsNotificationWakeWithoutBorrowingCaller(t *testing.T) {
+	for _, attributedOpening := range []bool{false, true} {
+		t.Run(fmt.Sprint(attributedOpening), func(t *testing.T) {
+			ctx := t.Context()
+			wake := &scriptedWake{}
+			fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
+			if attributedOpening {
+				wake.assessments = append(wake.assessments, &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_DENIED, Reason: environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED})
+			} else {
+				if _, err := fixture.store.DB.ExecContext(ctx, "UPDATE session_opening SET creator_account_namespace=NULL,creator_account_name=NULL,creator_account_uid=NULL,effective_caller_account_namespace=NULL,effective_caller_account_name=NULL,effective_caller_account_uid=NULL WHERE session_id=$1", fixture.opening.SessionID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			notification := serviceAccountIdentityFor(Account{Namespace: "test-notifications", Name: "notification-service"}, "notification-uid")
+			if _, err := fixture.store.DB.ExecContext(ctx, "UPDATE dispatch SET actor_account_namespace=$2,actor_account_name=$3,actor_account_uid=$4,effective_caller_account_namespace=$2,effective_caller_account_name=$3,effective_caller_account_uid=$4 WHERE command_id=$1", fixture.dispatch.CommandID, notification.GetAccount().GetNamespace(), notification.GetAccount().GetName(), notification.GetUid()); err != nil {
+				t.Fatal(err)
+			}
+			wake.assessments = append(wake.assessments, &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_REQUESTED, ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(fixture.sandbox.WakeGeneration + 1)})
+			catalog := &executionAccountCatalog{growingCatalog: &growingCatalog{sandboxes: []SandboxSnapshot{fixture.sandbox}}, accountUID: fixture.caller.GetUid()}
+			runner := &acceptingRunner{calls: make(chan string, 2)}
+			worker := &DeliveryWorker{Store: fixture.store, Wake: wake, Catalog: catalog, Leases: testLease{store: fixture.store}, Runner: runner}
+			worker.init()
+			defer worker.queue.ShutDown()
+			if err := worker.reconcile(ctx, true); err != nil {
+				t.Fatal(err)
+			}
+			if err := worker.processSession(ctx, fixture.opening.SessionID); err != nil {
+				t.Fatal(err)
+			}
+			if len(wake.callers) == 0 || !sameServiceAccountIdentity(wake.callers[len(wake.callers)-1], notification) {
+				t.Fatalf("downstream wake used wrong caller: %+v", wake.callers)
+			}
+			row, err := fixture.store.GetDispatch(ctx, fixture.dispatch.CommandID)
+			if err != nil || row.State != QueueState || row.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_REQUESTED || len(runner.calls) != 0 {
+				t.Fatalf("wake changed delivery ordering: %+v %v", row, err)
+			}
+			catalog.growingCatalog.sandboxes[0].Blocker = ""
+			for range 2 {
+				if err := worker.processSession(ctx, fixture.opening.SessionID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if len(runner.calls) != 2 || <-runner.calls != "opening:"+fixture.opening.SessionID || <-runner.calls != fixture.dispatch.CommandID {
+				t.Fatal("command did not follow opening admission")
+			}
+		})
+	}
+}
+
+func TestOpeningWakeCannotBypassCancelledCommandAssessmentAfterRestart(t *testing.T) {
+	for _, state := range []environmentpb.WakeState{environmentpb.WakeState_WAKE_STATE_REQUESTED, environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN, environmentpb.WakeState_WAKE_STATE_RATE_LIMITED} {
+		t.Run(state.String(), func(t *testing.T) {
+			ctx := t.Context()
+			wake := &scriptedWake{}
+			fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
+			assessment := &environmentpb.WakeAssessment{State: state, TargetGeneration: proto.Int64(fixture.sandbox.WakeGeneration), ObservedAt: timestamppb.Now(), RetryAt: timestamppb.New(time.Now().Add(time.Hour))}
+			if queued, err := fixture.store.NoteWaking(ctx, fixture.dispatch.CommandID, fixture.owner, nil, false, assessment); err != nil || !queued {
+				t.Fatalf("record wake ownership: %v %v", queued, err)
+			}
+			if err := fixture.store.SetDeliveryAssessment(ctx, fixture.dispatch.CommandID, fixture.owner, false, nil, assessment); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := fixture.store.Cancel(ctx, fixture.dispatch.CommandID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := fixture.store.EnqueueForCaller(ctx, fixture.opening.SessionID, fixture.sandbox.Name, fixture.sandbox.UID, input(uuid.NewString(), "later authorized notice"), nil, CallerIdentity{ServiceAccountIdentity: fixture.caller, Attribution: fixture.dispatch.Attribution}); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				worker := &DeliveryWorker{Store: NewStore(fixture.store.DB, 3), Wake: wake, Leases: testLease{store: fixture.store}}
+				worker.init()
+				opening, err := worker.Store.GetOpening(ctx, fixture.opening.SessionID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if ready, err := worker.prepareOpening(ctx, opening, fixture.sandbox, fixture.owner); err != nil || ready {
+					t.Fatalf("pending wake bypassed: %v %v", ready, err)
+				}
+				worker.queue.ShutDown()
+			}
+			if len(wake.callers) != 0 {
+				t.Fatalf("replayed wake through another caller: %+v", wake.callers)
+			}
+		})
+	}
+}
+
+type cancelDuringWake struct {
+	store     *Store
+	commandID string
+	calls     int
+}
+
+func (w *cancelDuringWake) RequestWake(ctx context.Context, _ *lifecycle.Target, _ *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
+	w.calls++
+	if _, err := w.store.Cancel(ctx, w.commandID); err != nil {
+		return nil, err
+	}
+	return nil, status.Error(codes.Unavailable, "uncertain wake result")
+}
+
+func TestCancellationDuringWakeRetainsUncertaintyForOpening(t *testing.T) {
+	ctx := t.Context()
+	wake := &cancelDuringWake{}
+	fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
+	wake.store, wake.commandID = fixture.store, fixture.dispatch.CommandID
+	if ready, err := fixture.worker.prepareDispatch(ctx, fixture.dispatch, fixture.sandbox, fixture.owner); err != nil || ready {
+		t.Fatalf("cancel during wake: %v %v", ready, err)
+	}
+	row, err := fixture.store.GetDispatch(ctx, fixture.dispatch.CommandID)
+	if err != nil || row.State != CancelledState || row.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN || row.WakeAssessment.GetTargetGeneration() != fixture.sandbox.WakeGeneration {
+		t.Fatalf("lost in-flight wake marker: %+v %v", row, err)
+	}
+	if _, err := fixture.store.EnqueueForCaller(ctx, fixture.opening.SessionID, fixture.sandbox.Name, fixture.sandbox.UID, input(uuid.NewString(), "later notice"), nil, CallerIdentity{ServiceAccountIdentity: fixture.caller, Attribution: fixture.dispatch.Attribution}); err != nil {
+		t.Fatal(err)
+	}
+	worker := &DeliveryWorker{Store: NewStore(fixture.store.DB, 3), Wake: wake, Leases: testLease{store: fixture.store}}
+	worker.init()
+	defer worker.queue.ShutDown()
+	if ready, err := worker.prepareOpening(ctx, fixture.opening, fixture.sandbox, fixture.owner); err != nil || ready {
+		t.Fatalf("cancelled wake bypassed: %v %v", ready, err)
+	}
+	if wake.calls != 1 {
+		t.Fatalf("uncertain wake replayed %d times", wake.calls)
+	}
+}
+
+type changingWakeGrant struct {
+	cancelDuringWake
+	opener  *ServiceAccountIdentity
+	allowed bool
+	callers []*ServiceAccountIdentity
+}
+
+func (w *changingWakeGrant) RequestWake(ctx context.Context, target *lifecycle.Target, caller *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
+	w.callers = append(w.callers, caller)
+	if sameServiceAccountIdentity(caller, w.opener) {
+		if w.allowed {
+			return &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_REQUESTED}, nil
+		}
+		return &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_DENIED, Reason: environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED}, nil
+	}
+	w.allowed = true
+	return w.cancelDuringWake.RequestWake(ctx, target, caller)
+}
+
+func TestNewOpeningWakeGrantCannotBypassCancelledNotificationUncertainty(t *testing.T) {
+	ctx := t.Context()
+	wake := &changingWakeGrant{}
+	fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
+	wake.store, wake.commandID, wake.opener = fixture.store, fixture.dispatch.CommandID, fixture.caller
+	notification := serviceAccountIdentityFor(Account{Namespace: "test-notifications", Name: "notification-service"}, "notification-uid")
+	if _, err := fixture.store.DB.ExecContext(ctx, "UPDATE dispatch SET actor_account_namespace=$2,actor_account_name=$3,actor_account_uid=$4,effective_caller_account_namespace=$2,effective_caller_account_name=$3,effective_caller_account_uid=$4 WHERE command_id=$1", fixture.dispatch.CommandID, notification.GetAccount().GetNamespace(), notification.GetAccount().GetName(), notification.GetUid()); err != nil {
+		t.Fatal(err)
+	}
+	if ready, err := fixture.worker.prepareOpening(ctx, fixture.opening, fixture.sandbox, fixture.owner); err != nil || ready {
+		t.Fatalf("initial denied opening/notice wake: %v %v", ready, err)
+	}
+	if len(wake.callers) != 2 || !sameServiceAccountIdentity(wake.callers[0], fixture.caller) || !sameServiceAccountIdentity(wake.callers[1], notification) || !wake.allowed {
+		t.Fatalf("wake attribution/grant transition: %+v", wake.callers)
+	}
+	for range 2 {
+		worker := &DeliveryWorker{Store: NewStore(fixture.store.DB, 3), Wake: wake, Leases: testLease{store: fixture.store}}
+		worker.init()
+		opening, err := worker.Store.GetOpening(ctx, fixture.opening.SessionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ready, err := worker.prepareOpening(ctx, opening, fixture.sandbox, fixture.owner); err != nil || ready {
+			t.Fatalf("new opening grant bypassed uncertainty: %v %v", ready, err)
+		}
+		worker.queue.ShutDown()
+	}
+	if len(wake.callers) != 2 {
+		t.Fatalf("newly authorized opener replayed notice wake: %+v", wake.callers)
+	}
+	fixture.sandbox.WakeGeneration++
+	opening, err := fixture.store.GetOpening(ctx, fixture.opening.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ready, err := fixture.worker.prepareOpening(ctx, opening, fixture.sandbox, fixture.owner); err != nil || ready {
+		t.Fatalf("reassess after observed generation change: %v %v", ready, err)
+	}
+	if len(wake.callers) != 3 || !sameServiceAccountIdentity(wake.callers[2], fixture.caller) {
+		t.Fatalf("later generation did not reassess opening caller: %+v", wake.callers)
+	}
+}

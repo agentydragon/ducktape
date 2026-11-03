@@ -1002,6 +1002,26 @@ func (s *Store) SessionHead(ctx context.Context, sessionID string) (*Opening, *D
 	return nil, head, err
 }
 
+// WakeCommands includes cancelled work that can still have an external wake in flight.
+func (s *Store) WakeCommands(ctx context.Context, sessionID, sandboxName, sandboxUID string) ([]*Dispatch, error) {
+	rows, err := s.DB.QueryContext(ctx, "SELECT "+dispatchColumns+` FROM dispatch
+		WHERE session_id=$1 AND sandbox_name=$2 AND sandbox_uid=$3
+		AND (state=$4 OR wake_from_incarnation IS NOT NULL) ORDER BY position`, sessionID, sandboxName, sandboxUID, QueueState)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []*Dispatch
+	for rows.Next() {
+		row, err := scanDispatch(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
 func (s *Store) Heads(ctx context.Context) ([]*Dispatch, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT `+dispatchColumns+` FROM dispatch d WHERE d.state=$1
 		AND NOT EXISTS (SELECT 1 FROM dispatch earlier WHERE earlier.session_id=d.session_id
