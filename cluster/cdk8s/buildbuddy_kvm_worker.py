@@ -33,6 +33,8 @@ _IMAGE = "quay.io/containerdisks/ubuntu:24.04@sha256:ea164c514b308286bdc179b4032
 _HTTPS_HOSTS = ("remote.buildbuddy.io", "buildbuddy.bbcr.io", "archive.ubuntu.com", "security.ubuntu.com")
 _GUEST_FILES = (
     "bootstrap.sh",
+    "containerd-mounts.conf",
+    "containerd.toml",
     "run-executor.sh",
     "executor.yaml",
     "executor.service",
