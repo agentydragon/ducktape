@@ -150,16 +150,16 @@ Idle Sessions can be archived while their harness process remains live. The UI d
 observable active turns, setup, or a pending local launch; the server checks whether Session work is
 unfinished before accepting the archive request.
 The app's protobuf-defined `AppService` serves the generated HTTP facade at
-`POST /sandboxes/{name}/sessions`, `GET /sandboxes/{name}/sessions/{id}/opening`, and
-`GET /sandboxes/{name}/runner-status`. The status route returns the existing
-`EnvironmentRuntimeStatus` message and reads the current Runner over native gRPC.
+`POST /sandboxes/{name}/sessions` and `GET /sandboxes/{name}/runner-status`. The status route
+returns the existing `EnvironmentRuntimeStatus` message and reads the current Runner over native gRPC.
 It is an interface for the app's human frontend, not an API for in-cluster services. Backend callers
 use the [Session Dispatcher](../runner_gateway/dispatcher/README.md) directly with a complete
 `SessionSpec` and do not depend on app orchestration. The app interface resolves the Sandbox's
 configured preset, applies the caller's overrides, validates the current Sandbox UID, expands the
 Session ID in `cwd`, and creates app-owned Thread metadata before submitting the resolved spec to
-the Dispatcher. Dispatcher owns durable admission, delivery and opening status; the app's opening
-lookup reads that same Dispatcher record and checks its Sandbox name.
+the Dispatcher. Dispatcher owns durable admission, delivery and opening status. Opening reads use
+`GET /upstream/dispatcher/v1/sessions/{session_id}/opening`, which the app exposes only to an
+authenticated operator browser session and forwards with the app's Dispatcher service-account token.
 The partial `spec` is a `Struct` validated as strict `SessionSpec` ProtoJSON: absent keys retain
 preset defaults, while explicit empty, zero and null values clear them. An omitted `setup_script`
 uses the preset; null clears it; a string (including empty) replaces it. Request envelopes and
@@ -172,7 +172,7 @@ integration tests; it does not make this a backend service API. The app calls th
 A `SessionOpening` reports queued, delivering, runner-admitted, or failed state. The browser retains
 only its caller-minted Session ID on an uncertain response and reconciles that opening without
 replaying creation or setup. Admission does not mean History has projected a Thread yet.
-The HTTP paths, snake-case request names, direct response object and POST 201 status support
+The Open request keeps its snake-case body and direct opening response with POST 201 status for
 cached browser bundles and overlapping app replicas. Rollback reverts the app image and frontend
 bundle together; check that the retained opening still resolves by the same ID.
 
@@ -603,9 +603,10 @@ A new Thread's id is the public Session ID the browser mints and the opening API
 `{session_id}` in a cwd resolves server-side. The browser sends a fresh Session ID with the original
 overrides once and keeps only that ID in `sessionStorage`, never the spec or setup script, so it
 cannot retry the create. After a lost reply or a reload it never re-sends Open. **Check Open status**
-reads the Dispatcher opening and checks the app metadata and History summary endpoints for the projected Thread. A queued or
-runner-admitted opening is not presented as an existing Thread until History records it; the page
-keeps the status and reason visible while the projection catches up.
+reads the Dispatcher opening by its globally unique Session ID through the operator-authenticated
+facade, then checks the app metadata and History summary endpoints for the projected Thread. A
+queued or runner-admitted opening is not presented as an existing Thread until History records it;
+the page keeps the status and reason visible while the projection catches up.
 
 ## Policy bindings
 

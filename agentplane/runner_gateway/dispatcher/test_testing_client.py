@@ -70,6 +70,8 @@ async def test_native_submission_preserves_identity_and_rotates_service_credenti
         serving(server, "127.0.0.1:0", grace_s=0) as port,
         SessionDispatcherClient.connect(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=5) as client,
     ):
+        opening = await client.get_session_opening("session")
+        assert (opening.session_id, opening.sandbox, opening.sandbox_uid) == ("session", "original", "original-uid")
         sandbox, uid = await client.session_target("session")
         first = await client.submit_input("session", "same-command", sandbox, uid, "original input")
         token_file.write_text("rotated-service-token")
@@ -90,6 +92,7 @@ async def test_native_submission_preserves_identity_and_rotates_service_credenti
         * 2
     )
     assert backend.bearers == [
+        "Bearer first-service-token",
         "Bearer first-service-token",
         "Bearer first-service-token",
         "Bearer rotated-service-token",

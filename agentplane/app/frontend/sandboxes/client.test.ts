@@ -96,15 +96,32 @@ it("looks up the same Session identity without repeating an uncertain Open", asy
   const fetchMock = vi
     .fn()
     .mockResolvedValueOnce(Response.json({ code: 4, message: "uncertain", detail: "uncertain" }, { status: 504 }))
-    .mockResolvedValueOnce(Response.json({ sessionId: id, sandbox: "test", state: "DELIVERY_STATE_RUNNER_ADMITTED" }));
+    .mockResolvedValueOnce(
+      Response.json({
+        opening: { sessionId: id, sandbox: "test", state: "DELIVERY_STATE_RUNNER_ADMITTED" },
+      })
+    );
   vi.stubGlobal("fetch", fetchMock);
   await expect(openSession(target, id, create(SessionSpecSchema))).rejects.toMatchObject({ code: 4 });
-  const opening = await getSessionOpening("test", id);
+  const opening = await getSessionOpening(id);
   expect(opening.state).toBe(DeliveryState.RUNNER_ADMITTED);
   expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
     "/sandboxes/test/sessions",
-    `/sandboxes/test/sessions/${id}/opening`,
+    `/upstream/dispatcher/v1/sessions/${id}/opening`,
   ]);
+});
+
+it("rejects an opening for a different Session ID", async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValue(Response.json({ opening: { sessionId: "different-session", sandbox: "test" } }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(getSessionOpening(id)).rejects.toThrow(
+    `Dispatcher returned Session different-session for requested Session ${id}`
+  );
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(fetchMock.mock.calls[0]![0]).toBe(`/upstream/dispatcher/v1/sessions/${id}/opening`);
 });
 
 it("reads the AppService runner status as the existing generated EnvironmentRuntimeStatus", async () => {

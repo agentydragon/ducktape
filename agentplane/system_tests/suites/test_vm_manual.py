@@ -17,9 +17,13 @@ pytestmark = pytest.mark.vm_sandboxes
 
 
 async def test_fresh_workspace_storage_survives_replacement(
-    cluster: Cluster, client: Client, executor: Executor, storage_layout: storage.StorageLayout
+    cluster: Cluster,
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    executor: Executor,
+    storage_layout: storage.StorageLayout,
 ) -> None:
-    await storage.fresh_workspace_storage_survives_replacement(cluster, client, executor, storage_layout)
+    await storage.fresh_workspace_storage_survives_replacement(cluster, client, dispatcher, executor, storage_layout)
 
 
 @pytest.fixture
@@ -47,8 +51,10 @@ async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resu
 
 
 @pytest.mark.vm_sandboxes
-async def test_fresh_vm_session_workspace_is_created_for_harness_identity(client: Client, sandbox: Sandboxes) -> None:
-    await vm_workspace_ownership.fresh_vm_session_workspace_is_created_for_harness_identity(client, sandbox)
+async def test_fresh_vm_session_workspace_is_created_for_harness_identity(
+    client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes
+) -> None:
+    await vm_workspace_ownership.fresh_vm_session_workspace_is_created_for_harness_identity(client, dispatcher, sandbox)
 
 
 if __name__ == "__main__":

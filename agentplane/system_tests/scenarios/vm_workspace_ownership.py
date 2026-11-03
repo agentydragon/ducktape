@@ -11,6 +11,7 @@ from google.protobuf.json_format import MessageToDict
 from agentplane.app.testing.client import Client
 from agentplane.env.runtime.harness import Harness
 from agentplane.proto import session_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.sandbox import VM_TEMPLATE, Sandboxes
 from agentplane.system_tests.session_setup import run_setup
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -20,7 +21,9 @@ AGENT_UID = 107
 AGENT_GID = 107
 
 
-async def fresh_vm_session_workspace_is_created_for_harness_identity(client: Client, sandbox: Sandboxes) -> None:
+async def fresh_vm_session_workspace_is_created_for_harness_identity(
+    client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes
+) -> None:
     """Check absence before opening, then use the ordinary Session setup and Git paths."""
     view = await sandbox(f"systest-vm-workspace-{uuid4().hex[:10]}", template=VM_TEMPLATE)
     harness = session_pb2.HARNESS_CODEX
@@ -33,6 +36,7 @@ async def fresh_vm_session_workspace_is_created_for_harness_identity(client: Cli
     workspace = f"{WORKSPACE_ROOT}/{session_id}"
     absent, _ = await run_setup(
         client,
+        dispatcher,
         sandbox_name=view.target.name,
         sandbox_uid=view.target.uid,
         session_id=preflight_session_id,
@@ -75,6 +79,7 @@ async def fresh_vm_session_workspace_is_created_for_harness_identity(client: Cli
     )
     output, stderr = await run_setup(
         client,
+        dispatcher,
         sandbox_name=view.target.name,
         sandbox_uid=view.target.uid,
         session_id=session_id,

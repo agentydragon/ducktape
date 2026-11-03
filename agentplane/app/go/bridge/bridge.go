@@ -32,7 +32,6 @@ type SandboxGetter interface {
 // Dispatcher is the narrow unary surface used by the RunnerBridge.
 type Dispatcher interface {
 	OpenSession(context.Context, *dispatcherpb.OpenSessionRequest) (*dispatcherpb.OpenSessionResponse, error)
-	GetSessionOpening(context.Context, *dispatcherpb.GetSessionOpeningRequest) (*dispatcherpb.GetSessionOpeningResponse, error)
 }
 
 // RunnerProxy performs informational calls through the Sandbox's control
@@ -91,23 +90,6 @@ func (b *RunnerBridge) OpenSession(
 	opening := response.GetOpening()
 	if opening == nil || opening.GetSessionId() != sessionID.String() || opening.GetSandbox() != sandbox ||
 		opening.GetSandboxUid() != sandboxUID {
-		return nil, &SessionOpeningNotFoundError{SessionID: sessionID, Sandbox: sandbox}
-	}
-	return opening, nil
-}
-
-// SessionOpening looks up the durable opening and verifies both the returned
-// Session ID and its named Sandbox before exposing it to the caller.
-func (b *RunnerBridge) SessionOpening(ctx context.Context, sandbox string, sessionID uuid.UUID) (*dispatcherpb.SessionOpening, error) {
-	if sandbox == "" {
-		return nil, errors.New("Sandbox name is required")
-	}
-	response, err := b.dispatcher.GetSessionOpening(ctx, &dispatcherpb.GetSessionOpeningRequest{SessionId: sessionID.String()})
-	if err != nil {
-		return nil, err
-	}
-	opening := response.GetOpening()
-	if opening == nil || opening.GetSessionId() != sessionID.String() || opening.GetSandbox() != sandbox {
 		return nil, &SessionOpeningNotFoundError{SessionID: sessionID, Sandbox: sandbox}
 	}
 	return opening, nil

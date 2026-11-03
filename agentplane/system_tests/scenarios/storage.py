@@ -15,6 +15,7 @@ from kubernetes_asyncio import client as k8s
 
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
@@ -201,7 +202,15 @@ async def _volumes(cluster: Cluster, name: str, uid: str) -> dict:
     }
 
 
-async def _probe(client: Client, name: str, sandbox_uid: str, cwd: str, workspace_dir: str, marker: str) -> dict:
+async def _probe(
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    name: str,
+    sandbox_uid: str,
+    cwd: str,
+    workspace_dir: str,
+    marker: str,
+) -> dict:
     state = "/state/storage-systest-state"
     workspace = f"{workspace_dir}/storage-systest-workspace"
     source = f'set -eu\ntest "$(cat {state})" = {shlex.quote(marker)}\nsha256sum {state}\n'
@@ -216,6 +225,7 @@ async def _probe(client: Client, name: str, sandbox_uid: str, cwd: str, workspac
     await client.create_session(
         name,
         session,
+        dispatcher=dispatcher,
         sandbox_uid=sandbox_uid,
         overrides={
             "harness": "HARNESS_CODEX",
@@ -243,7 +253,11 @@ async def _probe(client: Client, name: str, sandbox_uid: str, cwd: str, workspac
 
 
 async def fresh_workspace_storage_survives_replacement(
-    cluster: Cluster, client: Client, executor: Executor, storage_layout: StorageLayout
+    cluster: Cluster,
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    executor: Executor,
+    storage_layout: StorageLayout,
 ) -> None:
     case = storage_layout.value
     controller = await _object(cluster, "deployment", "sandbox-controller")
@@ -406,7 +420,7 @@ async def fresh_workspace_storage_survives_replacement(
         with tracer.start_as_current_span(
             "system_test.storage.first_probe", attributes={"storage.case": case, "sandbox.name": name}
         ):
-            evidence["first_probe"] = await _probe(client, name, sandbox_uid, cwd, workspace_dir, marker)
+            evidence["first_probe"] = await _probe(client, dispatcher, name, sandbox_uid, cwd, workspace_dir, marker)
         if vm:
             assert "\next4 " in evidence["first_probe"]["stdout"]
         save()
@@ -480,7 +494,7 @@ async def fresh_workspace_storage_survives_replacement(
         with tracer.start_as_current_span(
             "system_test.storage.resumed_probe", attributes={"storage.case": case, "sandbox.name": name}
         ):
-            evidence["resumed_probe"] = await _probe(client, name, sandbox_uid, cwd, workspace_dir, marker)
+            evidence["resumed_probe"] = await _probe(client, dispatcher, name, sandbox_uid, cwd, workspace_dir, marker)
         save()
         if vm:
             await _suspend(cluster, name, uid)
@@ -510,7 +524,7 @@ async def fresh_workspace_storage_survives_replacement(
                 "workload_uid": replacement["metadata"]["uid"],
                 "incarnation": replacement_incarnation,
                 "volumes": replacement_volumes,
-                "probe": await _probe(client, name, sandbox_uid, cwd, workspace_dir, marker),
+                "probe": await _probe(client, dispatcher, name, sandbox_uid, cwd, workspace_dir, marker),
             }
         evidence["passed"] = True
         save()

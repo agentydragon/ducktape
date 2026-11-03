@@ -55,12 +55,6 @@ service AppService {
       response_body: "opening"
     };
   }
-  rpc GetSessionOpening(GetSessionOpeningRequest) returns (GetSessionOpeningResponse) {
-    option (google.api.http) = {
-      get: "/sandboxes/{name}/sessions/{session_id}/opening"
-      response_body: "opening"
-    };
-  }
 
   // Read the current live Runner status without waking the Sandbox.
   rpc GetEnvironmentRuntimeStatus(GetEnvironmentRuntimeStatusRequest)
@@ -160,20 +154,11 @@ message OpenSessionRequest {
   google.protobuf.Value setup_script = 5;
 }
 
-message GetSessionOpeningRequest {
-  string name = 1;
-  string session_id = 2;
-}
-
 message GetEnvironmentRuntimeStatusRequest {
   string name = 1;
   string sandbox_uid = 2;
 }
 
 message OpenSessionResponse {
-  agentplane.runner_gateway.dispatcher.SessionOpening opening = 1;
-}
-
-message GetSessionOpeningResponse {
   agentplane.runner_gateway.dispatcher.SessionOpening opening = 1;
 }
