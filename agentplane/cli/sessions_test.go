@@ -32,6 +32,15 @@ func TestObserveInputRejectsWaitOverBoundBeforeConnecting(t *testing.T) {
 	}
 }
 
+func TestOpenSessionRequiresCanonicalUUIDBeforeConnecting(t *testing.T) {
+	for _, sessionID := range []string{"not-a-uuid", "ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF", "abcdefabcdef4abcdefabcdefabcdef"} {
+		code, stdout, stderr := invoke(nil, "sessions", "open", sessionID, "--sandbox", "sandbox", "--sandbox-uid", "uid", "--spec", "{}")
+		if code != exitUsage || stdout != "" || !strings.Contains(stderr, "SESSION_ID must be a canonical UUID") {
+			t.Errorf("sessions open %q: exit %d, stdout %q, stderr %q; want canonical UUID usage error", sessionID, code, stdout, stderr)
+		}
+	}
+}
+
 func TestSessionGetAndReadTurnsExposeNeutralProjections(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

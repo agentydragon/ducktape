@@ -1951,7 +1951,7 @@ func TestCentralOpeningUsesConfiguredSampler(t *testing.T) {
 	ctx := admitted(t)
 	store := testStore(t, 3)
 	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: blockedSandbox{}, CentralTarget: &CentralTarget{Target: "configured", TokenFile: "configured"}}
-	request := &dispatcherpb.OpenSessionRequest{SessionId: "central-configured-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, Spec: &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test"}}
+	request := &dispatcherpb.OpenSessionRequest{SessionId: uuid.NewString(), Sandbox: "sandbox-api", SandboxUid: sandboxUID, Spec: &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test"}}
 	if _, err := service.OpenSession(ctx, request); err != nil {
 		t.Fatal(err)
 	}
@@ -1969,8 +1969,38 @@ func TestCentralOpeningUsesConfiguredSampler(t *testing.T) {
 		t.Fatalf("retry with retired metadata: %v", err)
 	}
 	service.CentralTarget = nil
-	request.SessionId = "central-disabled-session"
+	request.SessionId = uuid.NewString()
 	if _, err := service.OpenSession(ctx, request); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("disabled sampler accepted: %v", err)
+	}
+}
+
+func TestOpenSessionRejectsNonCanonicalUUIDBeforeRecording(t *testing.T) {
+	ctx := admitted(t)
+	store := testStore(t, 3)
+	service := &Service{Store: store}
+	canonical := "abcdefab-cdef-4abc-8def-abcdefabcdef"
+	for _, sessionID := range []string{
+		"not-a-uuid",
+		strings.ToUpper(canonical),
+		strings.ReplaceAll(canonical, "-", ""),
+		"{" + canonical + "}",
+		"urn:uuid:" + canonical,
+	} {
+		t.Run(sessionID, func(t *testing.T) {
+			_, err := service.OpenSession(ctx, &dispatcherpb.OpenSessionRequest{
+				SessionId: sessionID, Sandbox: "sandbox-api", SandboxUid: sandboxUID,
+			})
+			if status.Code(err) != codes.InvalidArgument || status.Convert(err).Message() != "session_id must be a canonical UUID" {
+				t.Fatalf("OpenSession(%q) = %v, want canonical UUID InvalidArgument", sessionID, err)
+			}
+			var recorded bool
+			if err := store.DB.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM session_opening WHERE session_id=$1)", sessionID).Scan(&recorded); err != nil {
+				t.Fatal(err)
+			}
+			if recorded {
+				t.Fatalf("OpenSession(%q) created a durable opening", sessionID)
+			}
+		})
 	}
 }

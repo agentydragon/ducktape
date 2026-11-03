@@ -33,8 +33,8 @@ The manual queue, replica and wake probes are documented in the
   `FAILED_PRECONDITION` before admission. It never interrupts a successor turn.
 - **Opening a Session**: `OpenSession` requires the expected `sandbox_uid`, reads the current Sandbox and refuses
   a same-name replacement with `FAILED_PRECONDITION` before storing anything. It stores the request keyed by the
-  caller-minted `session_id` and answers with a `SessionOpening` in the same delivery states. A retry with the same
-  Sandbox name, UID, spec and `setup_script` returns the stored record; anything else under that ID is
+  caller-minted canonical lowercase UUID `session_id` and answers with a `SessionOpening` in the same delivery states.
+  A retry with the same Sandbox name, UID, spec and `setup_script` returns the stored record; anything else under that ID is
   `ALREADY_EXISTS`. Once the Sandbox is `Ready` the runner's idempotent `OpenSession` is called before any of the Session's commands; a central sampler Session bypasses executor readiness. A
   matching runner retry returns its durable Session reservation; native preparation waits for work.
   A reservation does not assert a running harness; `ALREADY_EXISTS` means a requested spec or
