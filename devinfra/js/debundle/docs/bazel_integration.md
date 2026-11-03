@@ -122,6 +122,45 @@ validation checks selectors; full runs and audit baselines also resolve vendor
 and package inputs. For finer baseline phase markers, set
 `DUCKTAPE_DEBUNDLE_PROGRESS=1` on the standalone invocation.
 
+### Preserve the pipeline CLI from RBE
+
+For saved-graph queries, retain the exact full CLI built in the pipeline's
+execution configuration. Its completed compile action is available while
+Analyze is still running. Substitute the task's scratch directory for `/tmp/TASK`:
+
+```sh
+bbapi execution INVOCATION --json > /tmp/TASK/executions.json
+bb execution get EXECUTION_ID --output=json > /tmp/TASK/cli-action.json
+bbapi blob download --manifest /tmp/TASK/downloads.json
+```
+
+Use the pipeline's `DebundleProjectAnalysis` command to identify its full CLI
+tool path, then choose the completed `Rustc` execution with that exact
+`primaryOutputPath`, ending in `/devinfra/js/debundle/debundle`. This matters
+when the invocation builds several configurations. In its response,
+`result.outputFiles` gives the executable's path and
+`digest.hash` / `digest.sizeBytes`. Use those values
+in the download manifest:
+
+```json
+[
+  {
+    "uri": "bytestream://remote.buildbuddy.io/blobs/HASH/SIZE",
+    "destination": "/tmp/TASK/debundle-cli",
+    "invocation_id": "INVOCATION"
+  }
+]
+```
+
+Verify the downloaded size and SHA-256, then restore executable permission.
+Keep the binary, selected digest and invocation receipt with the matching
+analysis and complete graph-report tree, including the sibling program graph.
+Native queries still verify the graph's CLI and source/spec provenance. A
+local `bazel-bin` executable can belong to another configuration or earlier
+build; its presence alone establishes no match. Execution command snippets can
+be truncated; do not replay them as saved commands. Keep raw action responses
+and BEP data in scratch; record selected identities and results in Git.
+
 ## Solver build
 
 The debundler links OR-Tools' CP-SAT for selector assignment, so its binary is
