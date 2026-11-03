@@ -877,6 +877,16 @@ pub fn analyze_program(
         Some(&cross_module_chunk_closure),
         &reparsed,
     )?;
+    // Reparsed entries are no longer needed once cross-module analysis and
+    // context numbering are complete. Build the ordinal table now so those
+    // ASTs can be released before retaining every chunk's analysis facts.
+    let ordinals = context_ordinals(
+        &artifact,
+        &selected_chunk_ids,
+        spec.entry_file.as_deref(),
+        &reparsed,
+    )?;
+    drop(reparsed);
     let chunks = GLOBALS
         .with(|globals| {
             selected_chunk_ids
@@ -912,12 +922,6 @@ pub fn analyze_program(
             .collect(),
         chunks,
     };
-    let ordinals = context_ordinals(
-        &artifact,
-        &selected_chunk_ids,
-        spec.entry_file.as_deref(),
-        &reparsed,
-    )?;
     analysis_artifact::write_artifact(&header, &body, &ordinals)
 }
 
