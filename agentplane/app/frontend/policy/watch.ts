@@ -16,16 +16,15 @@ export type PolicyResources = { bindings: PolicyBinding[]; sets: PolicySet[] };
 type State = { key: string; resources: PolicyResources | null; error: string | null };
 
 export function usePolicyResources(
-  policyNamespace: string | undefined,
   subject: Pick<ServiceAccount, "namespace" | "name"> | undefined,
   fence: string | undefined
 ): { resources: PolicyResources | null; error: string | null } {
   const namespace = subject?.namespace;
   const name = subject?.name;
-  const key = policyNamespace && namespace && name ? `${policyNamespace}\0${namespace}\0${name}\0${fence ?? ""}` : null;
+  const key = namespace && name ? `${namespace}\0${name}\0${fence ?? ""}` : null;
   const [state, setState] = useState<State | null>(null);
   useEffect(() => {
-    if (!policyNamespace || !namespace || !name || key === null) return;
+    if (!namespace || !name || key === null) return;
     let active = true;
     let bindings = new Map<string, PolicyBinding>();
     let sets = new Map<string, PolicySet>();
@@ -44,7 +43,7 @@ export function usePolicyResources(
       });
     };
     publish();
-    const base = `/upstream/policy/v1/policy-namespaces/${encodeURIComponent(policyNamespace)}`;
+    const base = "/upstream/policy/v1";
     const query = new URLSearchParams({ "subject.namespace": namespace, "subject.name": name });
     const stopBindings = followWatch(`${base}/policy-bindings:watch?${query}`, {
       onOpen: () => {
@@ -147,6 +146,6 @@ export function usePolicyResources(
       stopBindings();
       stopSets();
     };
-  }, [policyNamespace, namespace, name, fence, key]);
+  }, [namespace, name, fence, key]);
   return state?.key === key ? state : { resources: null, error: null };
 }

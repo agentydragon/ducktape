@@ -58,10 +58,7 @@ func Methods(resolver *auth.Resolver) auth.Methods {
 	}
 }
 
-func (s *Service) caller(ctx context.Context, namespace string) (auth.Account, bool, error) {
-	if namespace != s.namespace {
-		return auth.Account{}, false, status.Error(codes.NotFound, "policy namespace not found")
-	}
+func (s *Service) caller(ctx context.Context) (auth.Account, bool, error) {
 	identity, err := auth.EffectiveCaller(ctx)
 	if err != nil {
 		return auth.Account{}, false, err
@@ -76,7 +73,7 @@ func (s *Service) caller(ctx context.Context, namespace string) (auth.Account, b
 
 func (s *Service) WatchPolicyBindings(request *policypb.WatchPolicyBindingsRequest, stream grpc.ServerStreamingServer[policypb.WatchPolicyBindingsResponse]) error {
 	ctx := stream.Context()
-	caller, broad, err := s.caller(ctx, request.GetPolicyNamespace())
+	caller, broad, err := s.caller(ctx)
 	if err != nil {
 		return err
 	}
@@ -130,9 +127,9 @@ func (s *Service) WatchPolicyBindings(request *policypb.WatchPolicyBindingsReque
 		func(item *policypb.PolicyBinding) *policypb.PolicyResourceIdentity { return item.GetIdentity() })
 }
 
-func (s *Service) WatchPolicySets(request *policypb.WatchPolicySetsRequest, stream grpc.ServerStreamingServer[policypb.WatchPolicySetsResponse]) error {
+func (s *Service) WatchPolicySets(_ *policypb.WatchPolicySetsRequest, stream grpc.ServerStreamingServer[policypb.WatchPolicySetsResponse]) error {
 	ctx := stream.Context()
-	caller, broad, err := s.caller(ctx, request.GetPolicyNamespace())
+	caller, broad, err := s.caller(ctx)
 	if err != nil {
 		return err
 	}

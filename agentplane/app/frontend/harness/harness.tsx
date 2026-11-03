@@ -2546,7 +2546,6 @@ routes.push(
     "GET",
     /^\/frontend-config$/,
     () => ({
-      policy_namespace: "agentplane-visual",
       trace_search: {
         grafana_base_url: "https://grafana.test.invalid",
         tempo_datasource_uid: "tempo-test",
@@ -3456,7 +3455,7 @@ routes.unshift([
 routes.unshift(
   [
     "GET",
-    /^\/upstream\/policy\/v1\/policy-namespaces\/([^/]+)\/policy-bindings:watch$/,
+    /^\/upstream\/policy\/v1\/policy-bindings:watch$/,
     (_match, query, signal) => {
       const subject = { namespace: query.get("subject.namespace") ?? "", name: query.get("subject.name") ?? "" };
       const bindings = BINDINGS.map((item) => clone(PolicyBindingSchema, item)).map((item) => {
@@ -3480,7 +3479,7 @@ routes.unshift(
   ],
   [
     "GET",
-    /^\/upstream\/policy\/v1\/policy-namespaces\/([^/]+)\/policy-sets:watch$/,
+    /^\/upstream\/policy\/v1\/policy-sets:watch$/,
     (_match, _query, signal) =>
       ndjsonWatch(
         [

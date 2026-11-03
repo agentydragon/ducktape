@@ -23,7 +23,7 @@ afterEach(async () => {
   watches.clear();
 });
 function Host({ subject, fence }: { subject: string; fence: string }) {
-  const result = usePolicyResources("policies", { namespace: "agents", name: subject }, fence);
+  const result = usePolicyResources({ namespace: "agents", name: subject }, fence);
   return (
     <output>
       {result.error ??
@@ -56,6 +56,10 @@ it("waits for both snapshots, fences removals, and clears stale data on reconnec
       </MantineProvider>
     )
   );
+  expect([...watches.keys()].sort()).toEqual([
+    "/upstream/policy/v1/policy-bindings:watch?subject.namespace=agents&subject.name=alice",
+    "/upstream/policy/v1/policy-sets:watch",
+  ]);
   await act(async () => {
     start();
     frame("policy-bindings", {

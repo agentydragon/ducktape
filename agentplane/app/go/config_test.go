@@ -29,6 +29,8 @@ func validTestConfig() Config {
 		SessionDispatcherTarget:             "session-dispatcher:9090",
 		RunnerGatewayControlTarget:          "{sandbox}-control.{namespace}.svc:8080",
 		HistoryServiceTarget:                "history:9090",
+		PolicyServiceTarget:                 "policy-controller:8082",
+		PolicyServiceTokenFile:              "/var/run/policy/token",
 		NotificationsURL:                    "http://notifications:9090",
 		NotificationsTokenFile:              "/var/run/notifications/token",
 		NotificationsRequestTimeoutSeconds:  5,
@@ -57,6 +59,24 @@ func stringPtr(value string) *string { return &value }
 func TestConfigValidateAcceptsExistingSettingsContract(t *testing.T) {
 	if err := validTestConfig().validate(); err != nil {
 		t.Fatalf("valid config rejected: %v", err)
+	}
+}
+
+func TestConfigRequiresPolicyService(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		clear func(*Config)
+	}{
+		{"policy_service_target", func(c *Config) { c.PolicyServiceTarget = "" }},
+		{"policy_service_token_file", func(c *Config) { c.PolicyServiceTokenFile = "" }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			config := validTestConfig()
+			test.clear(&config)
+			if err := config.validate(); err == nil || !strings.Contains(err.Error(), test.name) {
+				t.Fatalf("validation error = %v, want %s required", err, test.name)
+			}
+		})
 	}
 }
 

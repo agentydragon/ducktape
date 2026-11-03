@@ -145,7 +145,7 @@ export function SandboxPage({
   // Never combine policy or thread data from an old incarnation with its same-name replacement.
   const observation = useEnvironmentWatch(target);
   const sandbox = observation.stream.standing === "current" ? observation.environment : null;
-  const policy = usePolicyResources(target?.namespace, sandbox?.executionAccount?.account, target?.uid);
+  const policy = usePolicyResources(sandbox?.executionAccount?.account, target?.uid);
   const deleted = sandboxInventoryFresh(inventory) && !candidate;
   const vmConsoleAvailable = hasVmConsole(sandbox);
   const tab: Tab =

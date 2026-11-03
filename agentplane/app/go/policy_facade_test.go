@@ -52,15 +52,15 @@ func TestGeneratedPolicyFacadeUsesAppTokenAndSubject(t *testing.T) {
 		t.Fatal(err)
 	}
 	upstream := proxy.NewHandlerUpstream(handler, token)
-	request := httptest.NewRequest(http.MethodGet, "/upstream/policy/v1/policy-namespaces/policies/policy-bindings:watch?subject.namespace=agents&subject.name=alice", nil)
+	request := httptest.NewRequest(http.MethodGet, "/upstream/policy/v1/policy-bindings:watch?subject.namespace=agents&subject.name=alice", nil)
 	response := httptest.NewRecorder()
-	if err := upstream.ForwardHTTP(response, request, context.Background(), "v1/policy-namespaces/policies/policy-bindings:watch", ""); err != nil {
+	if err := upstream.ForwardHTTP(response, request, context.Background(), "v1/policy-bindings:watch", ""); err != nil {
 		t.Fatal(err)
 	}
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"snapshotComplete"`) {
 		t.Fatalf("response = %d %s", response.Code, response.Body.String())
 	}
-	if service.request.GetPolicyNamespace() != "policies" || service.request.GetSubject().GetNamespace() != "agents" || service.request.GetSubject().GetName() != "alice" {
+	if service.request.GetSubject().GetNamespace() != "agents" || service.request.GetSubject().GetName() != "alice" {
 		t.Fatalf("request = %v", service.request)
 	}
 	if len(service.authorization) != 1 || service.authorization[0] != "Bearer policy-token" {

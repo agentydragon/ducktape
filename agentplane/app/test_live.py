@@ -152,8 +152,8 @@ async def test_the_streams_need_a_caller(app: AppProcess) -> None:
         for route in (
             "/upstream/environments/v1/environments:watch",
             "/live/sandboxes/runner-1/egress/decisions",
-            "/upstream/policy/v1/policy-namespaces/test/policy-bindings:watch",
-            "/upstream/policy/v1/policy-namespaces/test/policy-sets:watch",
+            "/upstream/policy/v1/policy-bindings:watch",
+            "/upstream/policy/v1/policy-sets:watch",
             "/upstream/app/v1/threads",
             "/upstream/app/v1/threads:watch",
             "/upstream/history/v1/session-summaries:watch",

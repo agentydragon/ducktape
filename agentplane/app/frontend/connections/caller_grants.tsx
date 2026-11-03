@@ -3,15 +3,13 @@ import type { JSX } from "react";
 
 import { ActionPolicyWatch } from "../actions/policy";
 import { BINDING_GRANT_HELP, BindingsTable } from "../bindings/table";
-import { useFrontendConfig } from "../frontend_config";
 import { usePolicyResources } from "../policy/watch";
 import { type CallerServiceAccount, serviceAccountKey } from "./models";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
 /** Observe the policy resources naming this ServiceAccount. */
 export function CallerGrants({ account }: { account: CallerServiceAccount }): JSX.Element {
-  const config = useFrontendConfig();
-  const policy = usePolicyResources(config?.policy_namespace, account, undefined);
+  const policy = usePolicyResources(account, undefined);
   return (
     <Stack component="section" aria-label={`Grants for ${serviceAccountKey(account)}`} gap="sm" py="sm">
       <Title order={5}>Grants for {serviceAccountKey(account)}</Title>

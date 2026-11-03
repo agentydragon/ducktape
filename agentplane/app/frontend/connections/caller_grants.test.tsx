@@ -11,7 +11,6 @@ import { CallerGrants } from "./caller_grants";
 
 const watch = vi.hoisted(() => vi.fn());
 vi.mock("../actions/policy", () => ({ ActionPolicyWatch: () => null }));
-vi.mock("../frontend_config", () => ({ useFrontendConfig: () => ({ policy_namespace: "policies" }) }));
 vi.mock("../policy/watch", () => ({ usePolicyResources: watch }));
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
@@ -37,7 +36,7 @@ async function render(): Promise<void> {
 it("watches the selected subject and displays empty grants without mutation controls", async () => {
   watch.mockReturnValue({ resources: { bindings: [], sets: [] }, error: null });
   await render();
-  expect(watch).toHaveBeenCalledWith("policies", { namespace: "external", name: "caller" }, undefined);
+  expect(watch).toHaveBeenCalledWith({ namespace: "external", name: "caller" }, undefined);
   expect(container.textContent).toContain("No binding names this ServiceAccount");
   expect(container.textContent).not.toContain("Revoke");
 });

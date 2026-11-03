@@ -122,7 +122,7 @@ func TestGeneratedSpecPreservesCRDJSON(t *testing.T) {
 
 func TestRevokedCredentialEndsWatchBeforeAnotherFrame(t *testing.T) {
 	api, kube, reviews := fixture(t, binding("one", "alice", "base"))
-	stream, err := api.WatchPolicyBindings(tokenContext(t, "alice"), &policypb.WatchPolicyBindingsRequest{PolicyNamespace: "policies"})
+	stream, err := api.WatchPolicyBindings(tokenContext(t, "alice"), &policypb.WatchPolicyBindingsRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestRevokedCredentialEndsWatchBeforeAnotherFrame(t *testing.T) {
 
 func TestBindingWatchScopeAndChanges(t *testing.T) {
 	api, kube, _ := fixture(t, binding("one", "alice", "base"), binding("foreign", "bob", "private"))
-	stream, err := api.WatchPolicyBindings(tokenContext(t, "alice"), &policypb.WatchPolicyBindingsRequest{PolicyNamespace: "policies"})
+	stream, err := api.WatchPolicyBindings(tokenContext(t, "alice"), &policypb.WatchPolicyBindingsRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestBindingWatchScopeAndChanges(t *testing.T) {
 	if frame.GetRemoved().GetUid() != "uid-one" {
 		t.Fatalf("removed = %v", frame)
 	}
-	denied, err := api.WatchPolicyBindings(tokenContext(t, "alice"), &policypb.WatchPolicyBindingsRequest{PolicyNamespace: "policies", Subject: &identitypb.ServiceAccount{Namespace: "tools", Name: "bob"}})
+	denied, err := api.WatchPolicyBindings(tokenContext(t, "alice"), &policypb.WatchPolicyBindingsRequest{Subject: &identitypb.ServiceAccount{Namespace: "tools", Name: "bob"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestBindingWatchScopeAndChanges(t *testing.T) {
 
 func TestSetWatchRemovesSetsWhenBindingIsRevoked(t *testing.T) {
 	api, kube, _ := fixture(t, binding("one", "alice", "base"), policySet("base"), policySet("private"))
-	stream, err := api.WatchPolicySets(tokenContext(t, "alice"), &policypb.WatchPolicySetsRequest{PolicyNamespace: "policies"})
+	stream, err := api.WatchPolicySets(tokenContext(t, "alice"), &policypb.WatchPolicySetsRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}

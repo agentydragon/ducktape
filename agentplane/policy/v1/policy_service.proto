@@ -12,21 +12,18 @@ import "google/protobuf/empty.proto";
 // then reports resource changes; reconnecting starts a new snapshot.
 service PolicyService {
   rpc WatchPolicyBindings(WatchPolicyBindingsRequest) returns (stream WatchPolicyBindingsResponse) {
-    option (google.api.http) = {get: "/v1/policy-namespaces/{policy_namespace}/policy-bindings:watch"};
+    option (google.api.http) = {get: "/v1/policy-bindings:watch"};
   }
   rpc WatchPolicySets(WatchPolicySetsRequest) returns (stream WatchPolicySetsResponse) {
-    option (google.api.http) = {get: "/v1/policy-namespaces/{policy_namespace}/policy-sets:watch"};
+    option (google.api.http) = {get: "/v1/policy-sets:watch"};
   }
 }
 
 message WatchPolicyBindingsRequest {
-  string policy_namespace = 1;
   // Absent selects the authenticated caller. Broad readers may select another subject.
-  agentplane.proto.ServiceAccount subject = 2;
+  agentplane.proto.ServiceAccount subject = 1;
 }
-message WatchPolicySetsRequest {
-  string policy_namespace = 1;
-}
+message WatchPolicySetsRequest {}
 
 message PolicyResourceIdentity {
   string namespace = 1;
