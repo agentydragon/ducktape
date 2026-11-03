@@ -74,6 +74,25 @@ async def open_session(
     return await inspect(runner, str(session_id))
 
 
+async def rejected_opening(
+    dispatcher: SessionDispatcherClient, destination: SandboxDestination, spec: session_pb2.SessionSpec
+) -> None:
+    session_id = str(uuid4())
+    await dispatcher.unary(
+        dispatcher.stub.OpenSession,
+        session_dispatcher_pb2.OpenSessionRequest(
+            session_id=session_id, sandbox=destination.target.name, sandbox_uid=destination.target.uid, spec=spec
+        ),
+    )
+    # Native validation is a delivery outcome after durable Dispatcher admission.
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(30), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError), reraise=True
+    ):
+        with attempt:
+            opening = await dispatcher.get_session_opening(session_id)
+            assert opening.state == session_dispatcher_pb2.DELIVERY_STATE_FAILED, opening
+
+
 async def submit_input(
     dispatcher: SessionDispatcherClient, destination: SandboxDestination, session_id: str, command: command_pb2.Command
 ) -> event_log_pb2.EventEntry:
@@ -264,9 +283,8 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     invalid_spec = session_pb2.SessionSpec()
     invalid_spec.CopyFrom(launch_spec)
     invalid_spec.model = ""
-    with pytest.raises(ServiceError) as invalid:
-        await open_session(session_dispatcher, destination, session_id=uuid4(), spec=invalid_spec)
-    assert invalid.value.code == grpc.StatusCode.INVALID_ARGUMENT
+    await rejected_opening(session_dispatcher, sandbox.destination, invalid_spec)
+    assert [summary.session_id for summary in await destination.list_sessions()] == [session]
     assert bootstrap_marker.read_text() == "B"
     assert setup_marker.read_text() == "S"
 
@@ -326,9 +344,7 @@ async def test_invalid_launch_never_creates(
     runner = remote.runner(sandbox.destination)
     invalid_specs = [session_pb2.SessionSpec(), session_pb2.SessionSpec(harness=session_pb2.HARNESS_CODEX, model="m")]
     for invalid in invalid_specs:
-        with pytest.raises(ServiceError) as rejected:
-            await open_session(session_dispatcher, runner, session_id=uuid4(), spec=invalid)
-        assert rejected.value.code == grpc.StatusCode.INVALID_ARGUMENT
+        await rejected_opening(session_dispatcher, sandbox.destination, invalid)
     assert not await runner.list_sessions()
 
 
