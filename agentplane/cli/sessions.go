@@ -224,10 +224,14 @@ the caller must send it separately with submit-input. A setup script may execute
 is not model input. After an unknown outcome, use get-opening with the same SESSION_ID. The command
 prints the Dispatcher opening record; it does not wait for History.`,
 		Args: cobra.ExactArgs(1),
-		RunE: a.sessionCommand(func(ctx context.Context, client dispatcherpb.SessionDispatcherClient, args []string) error {
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			setupScriptSet = cmd.Flags().Changed("setup-script")
 			if id, err := uuid.Parse(args[0]); err != nil || id.String() != args[0] {
 				return usageFailure("SESSION_ID must be a canonical UUID")
 			}
+			return nil
+		},
+		RunE: a.sessionCommand(func(ctx context.Context, client dispatcherpb.SessionDispatcherClient, args []string) error {
 			if sandbox == "" || sandboxUID == "" || specSource == "" {
 				return usageFailure("--sandbox, --sandbox-uid and --spec are required")
 			}
@@ -261,9 +265,6 @@ prints the Dispatcher opening record; it does not wait for History.`,
 			}
 			return a.showOne(body, sessionOpeningLine)
 		}),
-	}
-	command.PreRun = func(cmd *cobra.Command, _ []string) {
-		setupScriptSet = cmd.Flags().Changed("setup-script")
 	}
 	command.Flags().StringVar(&sandbox, "sandbox", "", "name of the existing Sandbox")
 	command.Flags().StringVar(&sandboxUID, "sandbox-uid", "", "expected Kubernetes Sandbox UID")
