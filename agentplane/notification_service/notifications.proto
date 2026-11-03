@@ -4,15 +4,18 @@ syntax = "proto3";
 
 package agentplane.notification_service;
 
+import "agentplane/action_service/action_service.proto";
 import "agentplane/proto/identity.proto";
 import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
 // Callers are workloads. Every call acts for the caller's ServiceAccount, which its workloads share, and only on
 // what that account owns: a subscription or inbox that exists but belongs to another account answers `NOT_FOUND`,
-// as a missing one does. An agent reaches the HTTP routes through the egress proxy; `agentplane notifications`
-// wraps the subscription ones.
+// as a missing one does. The configured app account can also read Session inbox diagnostics across the namespace,
+// without authority to read entry payloads or mutate other accounts' inboxes. An agent reaches the HTTP routes
+// through the egress proxy; `agentplane notifications` wraps the subscription ones.
 //
 // An error carries the gRPC status code that names it. `INVALID_ARGUMENT` is a malformed or out-of-range request,
 // `NOT_FOUND` a missing or unowned resource, `PERMISSION_DENIED` a source the account may not follow or a Sandbox
@@ -63,6 +66,29 @@ service Notifications {
   // The caller's inboxes in `id` order: one per qualified Session, retired ones included until they are purged.
   rpc ListInboxes(ListInboxesRequest) returns (ListInboxesResponse) {
     option (google.api.http) = {get: "/v1/inboxes"};
+  }
+
+  // Read a Session's inbox state. A Session may not have an inbox until its first event or subscription.
+  rpc GetInbox(GetInboxRequest) returns (GetInboxResponse) {
+    option (google.api.http) = {get: "/v1/sessions/{session_id}/inbox"};
+  }
+
+  // Follow a Session's inbox, including its creation after the watch starts. The first frame is an inbox or
+  // no_inbox; subsequent frames replace that state. Heartbeats keep quiet streams live.
+  rpc WatchInbox(WatchInboxRequest) returns (stream WatchInboxResponse) {
+    option (google.api.http) = {get: "/v1/sessions/{session_id}/inbox:watch"};
+  }
+
+  // Follow the bounded oldest pending entry summaries. The first frame is a snapshot and subsequent frames are
+  // deltas or heartbeats. No message or provider payload is exposed.
+  rpc WatchInboxEntries(WatchInboxEntriesRequest) returns (stream WatchInboxEntriesResponse) {
+    option (google.api.http) = {get: "/v1/sessions/{session_id}/inbox/entries:watch"};
+  }
+
+  // Follow the Session's subscription status, including cancelled and expired subscriptions. The first frame
+  // is a snapshot and subsequent frames are deltas or heartbeats.
+  rpc WatchSubscriptions(WatchSubscriptionsRequest) returns (stream WatchSubscriptionsResponse) {
+    option (google.api.http) = {get: "/v1/sessions/{session_id}/subscriptions:watch"};
   }
 
   // Entries after `after_cursor`, oldest first, contiguous from the cursor, with the latest notice's delivery
@@ -180,6 +206,60 @@ message ListInboxesRequest {}
 
 message ListInboxesResponse {
   repeated Inbox inboxes = 1;
+}
+
+// Session IDs are unique across the namespace's inboxes; an inbox is created lazily.
+message GetInboxRequest { string session_id = 1; }
+message GetInboxResponse { Inbox inbox = 1; }
+message WatchInboxRequest { string session_id = 1; }
+message WatchInboxResponse {
+  oneof state {
+    Inbox inbox = 1;
+    google.protobuf.Empty no_inbox = 2;
+    google.protobuf.Empty heartbeat = 3;
+  }
+}
+
+message WatchInboxEntriesRequest { string session_id = 1; }
+message InboxEntrySummary {
+  int64 cursor = 1;
+  google.protobuf.Timestamp created_at = 2;
+  // Identifies the source without exposing the entry payload.
+  EventIdentity event = 3;
+  // Present only for Action entries with a known lifecycle state.
+  optional agentplane.action_service.ActionState action_state = 4;
+  // Present only for check-run or workflow-run entries with a known conclusion.
+  optional string github_conclusion = 5;
+}
+message InboxEntrySummarySnapshot {
+  repeated InboxEntrySummary entries = 1;
+  bool more = 2;
+}
+message InboxEntrySummaryDelta {
+  repeated InboxEntrySummary upserted = 1;
+  repeated int64 removed_cursors = 2;
+  bool more = 3;
+}
+message WatchInboxEntriesResponse {
+  oneof frame {
+    InboxEntrySummarySnapshot snapshot = 1;
+    InboxEntrySummaryDelta delta = 2;
+    google.protobuf.Empty heartbeat = 3;
+  }
+}
+
+message WatchSubscriptionsRequest { string session_id = 1; }
+message SubscriptionSnapshot { repeated Subscription subscriptions = 1; }
+message SubscriptionDelta {
+  repeated Subscription upserted = 1;
+  repeated string removed_ids = 2;
+}
+message WatchSubscriptionsResponse {
+  oneof frame {
+    SubscriptionSnapshot snapshot = 1;
+    SubscriptionDelta delta = 2;
+    google.protobuf.Empty heartbeat = 3;
+  }
 }
 
 message ReadInboxRequest {
@@ -383,9 +463,10 @@ message Subscription {
   // UUID of the inbox its events land in.
   string inbox_id = 2;
   Source source = 3;
-  string idempotency_key = 4;
+  // Only the owner may read the creation key and mutation version.
+  optional string idempotency_key = 4;
   // Changes whenever the subscription does; a renewal sends the one it read.
-  int64 version = 5;
+  optional int64 version = 5;
   bool cancelled = 6;
   google.protobuf.Timestamp expires_at = 7;
   // Of this subscription's own processing; absent before the first success. Neither it nor an absent error
@@ -404,6 +485,10 @@ message Subscription {
   google.protobuf.Timestamp retry_at = 13;
   // The GitHub access and subject observations the subscription shares with others; absent for Action sources.
   GitHubStatus github = 14;
+  // When the source is next reconciled; this is not a delivery deadline.
+  google.protobuf.Timestamp next_source_check_at = 15;
+  // Computed at the time of the read and updated when expiry passes.
+  bool expired = 16;
 }
 
 // Why a source could not be processed.
@@ -501,6 +586,29 @@ message Inbox {
   bool retired = 8;
   // Why the inbox's latest notice could not be delivered to the runner, while it is being retried.
   optional string delivery_error = 9;
+  // Current notice and delivery state; no entries or provider payloads.
+  Notice latest_notice = 10;
+  InboxDeliveryStatus delivery = 11;
+}
+
+message InboxDeliveryStatus {
+  int32 unannounced_count = 1;
+  int32 pending_acknowledgement_count = 2;
+  optional NoticeWaitReason wait_reason = 3;
+  google.protobuf.Timestamp notice_due_at = 4;
+  google.protobuf.Timestamp quiet_until = 5;
+  google.protobuf.Timestamp max_wait_at = 6;
+  google.protobuf.Timestamp next_work_at = 7;
+}
+
+enum NoticeWaitReason {
+  NOTICE_WAIT_REASON_UNSPECIFIED = 0;
+  NOTICE_WAIT_REASON_RETIRED = 1;
+  NOTICE_WAIT_REASON_NOTICE_ERROR = 2;
+  NOTICE_WAIT_REASON_DELIVERY_RETRY = 3;
+  NOTICE_WAIT_REASON_AWAITING_CONFIRMATION = 4;
+  NOTICE_WAIT_REASON_DEBOUNCING = 5;
+  NOTICE_WAIT_REASON_READY = 6;
 }
 
 // One event delivered to an inbox: a source's event, or a message.

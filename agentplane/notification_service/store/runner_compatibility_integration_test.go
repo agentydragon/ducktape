@@ -43,7 +43,7 @@ func goldenRunnerEntry(t *testing.T, name string) (*eventlogpb.EventEntry, []byt
 func (f fixture) insertPythonInbox(t *testing.T) (inboxID uuid.UUID, acknowledged, through int64, text string) {
 	t.Helper()
 	inboxID, acknowledged, through, text = goldenNotice(t, pythonNotice)
-	ref := body("first").DestinationRef
+	ref := f.body("first").DestinationRef
 	f.exec(t, `INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
 		destination_namespace, destination_name, destination_uid, session_id,
 		last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)

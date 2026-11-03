@@ -62,7 +62,7 @@ func TestWritesThatChangeWhatWorkersFollowWakeThemAndOthersDoNot(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	check := observeWakeups(t, f)
 
-	creation := body("first")
+	creation := f.body("first")
 	var subscription Subscription
 	check("creating a subscription", true, func() { subscription = f.subscribe(t, creation) })
 	check("replaying a creation", false, func() { f.subscribe(t, creation) })

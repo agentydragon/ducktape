@@ -135,8 +135,8 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
             <ThreadStatusIndicator
               kind={topbarStatus.kind}
               label={topbarStatus.label}
-              inboxes={notices.bySession?.get(thread.id) ?? []}
-              live={notices.live}
+              inbox={notices.bySession.get(thread.id)}
+              live={notices.live.has(thread.id)}
             />
           )}
           <Box className="agentplane-thread-heading">

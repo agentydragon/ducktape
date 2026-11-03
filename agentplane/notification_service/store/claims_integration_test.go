@@ -28,13 +28,6 @@ func newClaimFixture(t *testing.T) fixture {
 	return f
 }
 
-// sessionBody is a creation for a Session of its own, which makes an inbox of its own.
-func sessionBody(key, sessionID string) model.Subscribe {
-	creation := body(key)
-	creation.SessionID = sessionID
-	return creation
-}
-
 // addEvents commits events first through last of the subscription's Action request.
 func (f fixture) addEvents(t *testing.T, subscription Subscription, first, last int64) {
 	t.Helper()
@@ -135,15 +128,15 @@ func TestClaimTakesTheDueInboxThatHasWaitedLongest(t *testing.T) {
 
 func TestClaimHoldsTheInboxForTheLease(t *testing.T) {
 	f := newClaimFixture(t)
-	subscription := f.subscribe(t, body("first"))
+	subscription := f.subscribe(t, f.body("first"))
 
 	before := time.Now()
 	claim := f.claim(t)
 	after := time.Now()
 	requireEqual(t, claim.ID, subscription.InboxID)
 	requireEqual(t, claim.Owner, f.owner)
-	requireEqual(t, claim.DestinationRef, body("first").DestinationRef)
-	requireEqual(t, claim.SessionID, "test-session")
+	requireEqual(t, claim.DestinationRef, f.body("first").DestinationRef)
+	requireEqual(t, claim.SessionID, f.sessionID)
 
 	// Nothing else is due while the lease holds, and the next work is its expiry.
 	f.requireNoneDue(t)
@@ -196,7 +189,7 @@ func TestConcurrentClaimsNeverShareAnInbox(t *testing.T) {
 
 func TestAnExpiredLeaseIsClaimedAgainAndTheOldClaimLosesItsWrites(t *testing.T) {
 	f := newClaimFixture(t)
-	f.subscribe(t, body("first"))
+	f.subscribe(t, f.body("first"))
 	old := f.claim(t)
 	f.exec(t, `UPDATE inbox SET claim_until = now() - interval '1 second' WHERE id = $1`, old.ID)
 
@@ -228,7 +221,7 @@ func TestEveryWriteOfAClaimIsFencedByTheLease(t *testing.T) {
 	for name, lose := range losses {
 		t.Run(name, func(t *testing.T) {
 			f := newClaimFixture(t)
-			subscription := f.subscribe(t, body("first"))
+			subscription := f.subscribe(t, f.body("first"))
 			f.addEvents(t, subscription, 1, 1)
 			claim := f.claim(t)
 			notice := f.prepareNotice(t, claim)
@@ -266,7 +259,7 @@ func TestEveryWriteOfAClaimIsFencedByTheLease(t *testing.T) {
 func TestInboxesWithNothingToWatchAreNotWorkedAgain(t *testing.T) {
 	t.Run("retired", func(t *testing.T) {
 		f := newClaimFixture(t)
-		subscription := f.subscribe(t, body("first"))
+		subscription := f.subscribe(t, f.body("first"))
 		if err := f.Retire(t.Context(), f.incarnation(), subscription.InboxID); err != nil {
 			t.Fatal(err)
 		}
@@ -277,7 +270,7 @@ func TestInboxesWithNothingToWatchAreNotWorkedAgain(t *testing.T) {
 	})
 	t.Run("last subscription cancelled", func(t *testing.T) {
 		f := newClaimFixture(t)
-		subscription := f.subscribe(t, body("first"))
+		subscription := f.subscribe(t, f.body("first"))
 		claim := f.claim(t)
 		f.cancel(t, subscription.ID)
 		if err := f.Release(t.Context(), claim, nil, nil); err != nil {
@@ -326,7 +319,7 @@ func TestReleaseSchedulesTheNextWorkFromTheDurableState(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			f := newClaimFixture(t)
 			start := time.Now()
-			subscription := f.subscribe(t, body("first"))
+			subscription := f.subscribe(t, f.body("first"))
 			f.addEvents(t, subscription, 1, c.entries)
 			f.exec(t, `UPDATE subscription SET next_attempt = $2 WHERE id = $1`, subscription.ID, start.Add(c.subscription))
 			if c.staleCheck != nil {
@@ -367,7 +360,7 @@ func TestReleaseSchedulesTheNextWorkFromTheDurableState(t *testing.T) {
 
 func TestReleaseShowsItsDeliveryErrorUntilTheNextRelease(t *testing.T) {
 	f := newClaimFixture(t)
-	subscription := f.subscribe(t, body("first"))
+	subscription := f.subscribe(t, f.body("first"))
 	failure := "ServiceError"
 
 	claim := f.claim(t)
@@ -387,13 +380,13 @@ func TestReleaseShowsItsDeliveryErrorUntilTheNextRelease(t *testing.T) {
 
 func TestSourceIsTheDueSubscriptionThatHasWaitedLongest(t *testing.T) {
 	f := newClaimFixture(t)
-	newer := f.subscribe(t, body("newer"))
-	creation := body("older")
+	newer := f.subscribe(t, f.body("newer"))
+	creation := f.body("older")
 	creation.Source = model.ActionsSource{RequestID: uuid.New(), AfterSequence: 7}
 	older := f.subscribe(t, creation)
-	later := f.subscribe(t, body("later"))
-	cancelled := f.subscribe(t, body("cancelled"))
-	expired := f.subscribe(t, body("expired"))
+	later := f.subscribe(t, f.body("later"))
+	cancelled := f.subscribe(t, f.body("cancelled"))
+	expired := f.subscribe(t, f.body("expired"))
 	f.cancel(t, cancelled.ID)
 	f.exec(t, `UPDATE subscription SET expires_at = now() - interval '1 second' WHERE id = $1`, expired.ID)
 	for id, wait := range map[uuid.UUID]string{
@@ -433,7 +426,7 @@ func TestSourceIsTheDueSubscriptionThatHasWaitedLongest(t *testing.T) {
 
 func TestSourceFailureIsShownOnTheSubscriptionAndRetried(t *testing.T) {
 	f := newClaimFixture(t)
-	subscription := f.subscribe(t, body("first"))
+	subscription := f.subscribe(t, f.body("first"))
 	f.addEvents(t, subscription, 1, 2)
 	claim := f.claim(t)
 
@@ -487,8 +480,8 @@ func TestSourceFailureIsShownOnTheSubscriptionAndRetried(t *testing.T) {
 
 func TestSourceFailureHealthIsPerSubscription(t *testing.T) {
 	f := newClaimFixture(t)
-	failing := f.subscribe(t, body("failing"))
-	healthy := f.subscribe(t, body("healthy"))
+	failing := f.subscribe(t, f.body("failing"))
+	healthy := f.subscribe(t, f.body("healthy"))
 	f.exec(t, `UPDATE subscription SET next_attempt = now() - interval '1 minute' WHERE id = $1`, failing.ID)
 	claim := f.claim(t)
 
@@ -517,7 +510,7 @@ func TestAnOutcomeReportedAfterTheSubscriptionChangedIsIgnored(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := newClaimFixture(t)
-			created := f.subscribe(t, body("first"))
+			created := f.subscribe(t, f.body("first"))
 			claim := f.claim(t)
 			due := f.source(t, claim)
 			if due == nil {
@@ -543,7 +536,7 @@ func TestAnOutcomeReportedAfterTheSubscriptionChangedIsIgnored(t *testing.T) {
 
 func TestAFailureReportedAfterTheSubscriptionExpiredIsIgnored(t *testing.T) {
 	f := newClaimFixture(t)
-	created := f.subscribe(t, body("first"))
+	created := f.subscribe(t, f.body("first"))
 	claim := f.claim(t)
 	due := f.source(t, claim)
 	if due == nil {
@@ -559,7 +552,7 @@ func TestAFailureReportedAfterTheSubscriptionExpiredIsIgnored(t *testing.T) {
 
 func TestStaleDestinationRetiresTheInboxOnTheObservationAfterTheConfirmationWait(t *testing.T) {
 	f := newClaimFixture(t)
-	subscription := f.subscribe(t, body("first"))
+	subscription := f.subscribe(t, f.body("first"))
 	claim := f.claim(t)
 
 	before := time.Now()
@@ -606,7 +599,7 @@ func TestStaleDestinationRetiresTheInboxOnTheObservationAfterTheConfirmationWait
 
 func TestAFoundDestinationClearsThePendingRetirement(t *testing.T) {
 	f := newClaimFixture(t)
-	subscription := f.subscribe(t, body("first"))
+	subscription := f.subscribe(t, f.body("first"))
 	claim := f.claim(t)
 	if _, err := f.ObserveStale(t.Context(), claim, "not_found", time.Hour); err != nil {
 		t.Fatal(err)
@@ -633,7 +626,7 @@ func TestAFoundDestinationClearsThePendingRetirement(t *testing.T) {
 
 func TestPendingEntryTimesBoundTheEntriesNoNoticeCoversAndNoAgentAcknowledged(t *testing.T) {
 	f := newClaimFixture(t)
-	subscription := f.subscribe(t, body("first"))
+	subscription := f.subscribe(t, f.body("first"))
 	claim := f.claim(t)
 	times, err := f.PendingEntryTimes(t.Context(), claim)
 	if err != nil || times != nil {

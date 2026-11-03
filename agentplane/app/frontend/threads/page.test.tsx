@@ -184,8 +184,22 @@ beforeEach(() => {
     (stream) => {
       const { pathname, search } = stream.url;
       eventStreamUrls.push(`${pathname}${search}`);
-      if (pathname === "/upstream/notifications/v1/operator/notices:watch") {
-        stream.send({ snapshot: { observedAt: "2026-01-01T12:00:00Z", inboxes: noticeInboxes } });
+      if (/^\/upstream\/notifications\/v1\/sessions\/[^/]+\/inbox:watch$/.test(pathname)) {
+        const notice = noticeInboxes.find((item) => pathname.includes(encodeURIComponent(item.sessionId)));
+        stream.send(
+          notice
+            ? {
+                inbox: {
+                  id: notice.inboxId,
+                  sessionId: notice.sessionId,
+                  delivery: {
+                    unannouncedCount: notice.queued,
+                    pendingAcknowledgementCount: notice.queued + notice.unacknowledged,
+                  },
+                },
+              }
+            : { noInbox: {} }
+        );
         return;
       }
       if (sandboxes === null || reconnected(served, stream)) return;
@@ -197,7 +211,9 @@ beforeEach(() => {
       if (inventoryDrops) stream.drop();
     },
     undefined,
-    new Set(["/upstream/notifications/v1/operator/notices:watch", "/upstream/environments/v1/environments:watch"])
+    (path) =>
+      /^\/upstream\/notifications\/v1\/sessions\/[^/]+\/inbox:watch$/.test(path) ||
+      path === "/upstream/environments/v1/environments:watch"
   );
   const sandboxFetch = globalThis.fetch;
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {

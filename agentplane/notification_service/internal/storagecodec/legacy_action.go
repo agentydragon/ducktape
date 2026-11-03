@@ -28,7 +28,8 @@ var storedActionStates = [...]struct {
 	{action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN, "execution_unknown"},
 }
 
-func actionStateFromStored(text string) (action_servicepb.ActionState, bool) {
+// ActionStateFromStored decodes the stored lifecycle state into its canonical Action enum.
+func ActionStateFromStored(text string) (action_servicepb.ActionState, bool) {
 	for _, known := range storedActionStates {
 		if text == known.text {
 			return known.state, true

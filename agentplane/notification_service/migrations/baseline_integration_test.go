@@ -192,14 +192,14 @@ func TestUpAdoptsCompletedVersion9AndPreservesRowsAndBytes(t *testing.T) {
 	historyAfter := readHistoryRows(t, db)
 	var priorHistoryAfter []gooseVersionRow
 	for _, row := range historyAfter {
-		if row.versionID != 10 && row.versionID != 11 {
+		if row.versionID != 10 && row.versionID != 11 && row.versionID != 12 {
 			priorHistoryAfter = append(priorHistoryAfter, row)
 		}
 	}
 	if !reflect.DeepEqual(priorHistoryAfter, historyBefore) {
 		t.Fatalf("adoption changed prior Goose history: before %+v, after %+v", historyBefore, priorHistoryAfter)
 	}
-	assertAppliedVersions(t, db, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
+	assertAppliedVersions(t, db, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
 }
 
 func TestUpIsRepeatable(t *testing.T) {
@@ -291,7 +291,7 @@ func TestUpRetiresLegacyCITablesWithoutConflatingNativeEvents(t *testing.T) {
 	if err := migrations.Up(ctx, db); err != nil {
 		t.Fatal("retire populated version-10 schema:", err)
 	}
-	assertAppliedVersions(t, db, 10, 11)
+	assertAppliedVersions(t, db, 10, 11, 12)
 	for _, table := range []string{"github_ci_refresh", "github_ci_current", "github_ci_event", "github_ci_subscription_snapshot"} {
 		var exists bool
 		if err := db.QueryRowContext(ctx, `SELECT to_regclass($1) IS NOT NULL`, table).Scan(&exists); err != nil {
@@ -427,7 +427,7 @@ func TestConcurrentUpSerializesFreshBaselineCreation(t *testing.T) {
 			t.Fatal("concurrent migration Up:", err)
 		}
 	}
-	assertAppliedVersions(t, db, 10, 11)
+	assertAppliedVersions(t, db, 10, 11, 12)
 	var inboxExists bool
 	if err := db.QueryRowContext(t.Context(), `SELECT to_regclass('inbox') IS NOT NULL`).Scan(&inboxExists); err != nil {
 		t.Fatal(err)
@@ -645,5 +645,32 @@ func resetToFreshGooseHistory(t *testing.T, db *sql.DB) {
 	}
 	if _, err := db.ExecContext(t.Context(), `INSERT INTO notification_service_goose_version (version_id, is_applied) VALUES (0, true)`); err != nil {
 		t.Fatal("create Goose bootstrap version:", err)
+	}
+}
+
+func TestSessionIdentityMigrationRefusesCollisionsWithoutDiscardingInboxes(t *testing.T) {
+	db := cloneDatabase(t)
+	restoreVersion10Schema(t, db)
+	ctx := t.Context()
+	service := store.New(db, store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10000})
+	for _, account := range []string{"first", "second"} {
+		owner := model.ServiceAccount{Namespace: "notifications-test", Name: account}
+		creation := model.Subscribe{
+			DestinationRef: model.DestinationRef{Namespace: owner.Namespace, Name: owner.Name, UID: account + "-uid"},
+			SessionID:      "same-session", IdempotencyKey: "key", Source: model.ActionsSource{RequestID: uuid.New()}, LifetimeDays: 7,
+		}
+		if _, err := service.Subscribe(ctx, owner, creation, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := migrations.Up(ctx, db); err == nil {
+		t.Fatal("migration accepted colliding Session IDs")
+	}
+	var inboxes, subscriptions int
+	if err := db.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM inbox), (SELECT count(*) FROM subscription)`).Scan(&inboxes, &subscriptions); err != nil {
+		t.Fatal(err)
+	}
+	if inboxes != 2 || subscriptions != 2 {
+		t.Fatalf("migration changed existing data: %d inboxes, %d subscriptions", inboxes, subscriptions)
 	}
 }

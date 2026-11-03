@@ -10,6 +10,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 )
 
@@ -28,15 +29,26 @@ type Notifications struct {
 	// messageBodyLimit is in UTF-8 bytes.
 	messageBodyLimit int
 	timeout          time.Duration
+	wakeups          *wakeups.Hub
+	operatorReader   string
+	debounce         store.Debounce
+	draining         context.Context
+	drain            context.CancelFunc
 }
 
 func NewNotifications(options Options) *Notifications {
+	draining, drain := context.WithCancel(context.Background())
 	return &Notifications{
 		store: options.Store, namespace: options.Namespace, sandboxes: options.Sandboxes,
 		runner: options.Runner, actions: options.Actions, github: options.GitHub, policy: options.SendPolicy,
 		history: options.History, messageBodyLimit: options.MessageBodyLimit, timeout: options.RequestTimeout,
+		wakeups: options.Wakeups, operatorReader: options.OperatorReader, debounce: options.Debounce,
+		draining: draining, drain: drain,
 	}
 }
+
+// Drain ends ongoing watches before graceful server shutdown.
+func (s *Notifications) Drain() { s.drain() }
 
 // caller is the workload Methods admitted. Its ServiceAccount is who it acts for.
 func (s *Notifications) caller(ctx context.Context) (model.ServiceAccount, error) {

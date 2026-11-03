@@ -29,7 +29,7 @@ var nativeContentContractConstraints = []string{
 func TestFinalSchemaRetainsNativeContentAndBinarySnapshots(t *testing.T) {
 	db, ctx := newStorageIntegrationDatabase(t)
 	f := fixtureForDatabase(t, db, defaultQuotas())
-	subscription := f.subscribe(t, body("native-content-final-contract"))
+	subscription := f.subscribe(t, f.body("native-content-final-contract"))
 	payloads := appendNativeContentContractEntries(t, f, subscription)
 	_, runnerEntry := goldenRunnerEntry(t, "origin")
 	if _, err := db.ExecContext(ctx, `INSERT INTO notice

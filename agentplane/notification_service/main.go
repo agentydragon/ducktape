@@ -30,7 +30,6 @@ import (
 	githubclient "github.com/agentydragon/ducktape/agentplane/notification_service/github/client" // Distinguish GitHub transport from the Kubernetes client.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
-	operatorpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/webhook"
@@ -164,7 +163,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		return err
 	}
 	defer db.Close()
-	hub, err := wakeups.Listen(ctx, c.DatabaseURL, store.WorkChannel)
+	hub, err := wakeups.Listen(ctx, c.DatabaseURL, store.WorkChannel, store.InboxChannel)
 	if err != nil {
 		return fmt.Errorf("Notification Service PostgreSQL listener unavailable: %w", err)
 	}
@@ -239,17 +238,16 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		Actions: actionsSource, GitHub: githubAPI, SendPolicy: sendPolicy, History: history,
 		MessageBodyLimit: c.MessageBodyLimitBytes, OperatorReader: c.OperatorReaderAccount,
 		Debounce:       c.NoticeDebounce.Debounce(),
-		RequestTimeout: seconds(c.RequestTimeoutSeconds), WatchLease: seconds(c.WatchLeaseSeconds),
+		RequestTimeout: seconds(c.RequestTimeoutSeconds),
 	}
-	operator := api.NewNotificationsOperator(options)
 	// A worker that stops ends the process, so a ready replica's workers are running.
 	health := probes.New(db, hub)
 	methods := auth.HealthMethods()
 	// A watch carries no deadline of its own, so the request timeout bounds its admission.
 	maps.Copy(methods, api.Methods(options))
 	grpcServer := grpc.NewServer(append(methods.ServerOptions(options.RequestTimeout), observability.GRPCServerOption())...)
-	notificationspb.RegisterNotificationsServer(grpcServer, api.NewNotifications(options))
-	operatorpb.RegisterNotificationsOperatorServer(grpcServer, operator)
+	notifications := api.NewNotifications(options)
+	notificationspb.RegisterNotificationsServer(grpcServer, notifications)
 	healthpb.RegisterHealthServer(grpcServer, health)
 	// The facade is the gRPC listener's own client, so the servicers authenticate every request. It outlives the termination signal, so that calls admitted before it
 	// finish while draining.
@@ -300,8 +298,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		result = ctx.Err()
 	}
 	health.Drain()
-	// Open watches end with reconnect_required rather than holding the shutdown until their leases.
-	operator.Drain()
+	notifications.Drain()
 	stopped, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
 	defer cancel()
 	// The facade's calls are gRPC calls, so the HTTP listener stops first.

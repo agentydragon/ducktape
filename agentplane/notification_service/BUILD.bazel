@@ -45,21 +45,11 @@ proto_library(
     srcs = ["notifications.proto"],
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/action_service:action_service_proto",
         "//agentplane/proto:identity_proto",
         "@googleapis//google/api:annotations_proto",
-        "@protobuf//:struct_proto",
-        "@protobuf//:timestamp_proto",
-    ],
-)
-
-proto_library(
-    name = "notifications_operator_proto",
-    srcs = ["notifications_operator.proto"],
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        ":notifications_proto",
-        "@googleapis//google/api:annotations_proto",
         "@protobuf//:empty_proto",
+        "@protobuf//:struct_proto",
         "@protobuf//:timestamp_proto",
     ],
 )
@@ -76,19 +66,8 @@ ts_proto_library(
     proto = ":notifications_proto",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/proto:identity_pb",
-        "//google/api:annotations_pb",
-    ],
-)
-
-ts_proto_library(
-    name = "notifications_operator_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":notifications_operator_proto",
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        ":notifications_pb",
         "//google/api:annotations_pb",
     ],
 )
@@ -99,16 +78,10 @@ py_proto_library_with_mypy_stubs(
     deps = [":notifications_proto"],
 )
 
-py_proto_library_with_mypy_stubs(
-    name = "notifications_operator_pb2",
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [":notifications_operator_proto"],
-)
-
 py_grpc_service_library(
-    name = "notifications_operator_pb2_grpc",
-    proto = ":notifications_operator_proto",
-    py_proto = ":notifications_operator_pb2",
+    name = "notifications_pb2_grpc",
+    proto = ":notifications_proto",
+    py_proto = ":notifications_pb2",
     visibility = ["//agentplane:__subpackages__"],
 )
 
@@ -123,23 +96,8 @@ go_proto_library(
     proto = ":notifications_proto",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/action_service:action_service_go_proto",
         "//agentplane/proto:identity_go_proto",
-        "@org_golang_google_genproto_googleapis_api//annotations",
-    ],
-)
-
-go_proto_library(
-    name = "notifications_operator_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-        "//devinfra/go:grpc_gateway",
-    ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb",
-    proto = ":notifications_operator_proto",
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        ":notifications_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )
@@ -166,7 +124,6 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service",
     deps = [
         ":notifications_go_proto",
-        ":notifications_operator_go_proto",
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/grpc/bearer",
         "//agentplane/grpc/facade",

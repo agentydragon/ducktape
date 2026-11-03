@@ -29,10 +29,10 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.testing.http2_proxy import BrowserCertificate, browser_certificate
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
-from agentplane.app.testing.notifications_operator import FakeNotificationsOperator
+from agentplane.app.testing.notifications import FakeNotifications
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.notification_service import notifications_operator_pb2_grpc
+from agentplane.notification_service import notifications_pb2_grpc
 from util.bazel.runfiles import get_required_path
 from util.db_url import render_postgresql_url
 from util.net import Listener, listen_tcp
@@ -484,9 +484,7 @@ async def app_process(
         token = Path(directory) / "unused-token"
         token.write_text("test-unused-token")
         notices = grpc.aio.server()
-        notifications_operator_pb2_grpc.add_NotificationsOperatorServicer_to_server(
-            FakeNotificationsOperator(), notices
-        )
+        notifications_pb2_grpc.add_NotificationsServicer_to_server(FakeNotifications(), notices)
         async with (
             oidc_provider(Path(directory) / "tls", options=oidc_provider_options) as (issuer, ca),
             serving(notices, "127.0.0.1:0", grace_s=0) as notices_port,

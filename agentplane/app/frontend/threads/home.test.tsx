@@ -73,8 +73,8 @@ async function render(): Promise<string[]> {
   serveEventStreams(
     (stream) => {
       const { pathname, searchParams } = stream.url;
-      if (pathname === "/upstream/notifications/v1/operator/notices:watch") {
-        stream.send({ snapshot: { observedAt: "2026-01-01T00:00:00Z", inboxes: [] } });
+      if (/^\/upstream\/notifications\/v1\/sessions\/[^/]+\/inbox:watch$/.test(pathname)) {
+        stream.send({ noInbox: {} });
         return;
       }
       if (pathname === "/upstream/environments/v1/environments:watch") {
@@ -85,14 +85,20 @@ async function render(): Promise<string[]> {
       throw new Error(`Unexpected event stream route: ${pathname}${searchParams}`);
     },
     otherFetch,
-    new Set(["/upstream/notifications/v1/operator/notices:watch", "/upstream/environments/v1/environments:watch"])
+    (path) =>
+      /^\/upstream\/notifications\/v1\/sessions\/[^/]+\/inbox:watch$/.test(path) ||
+      path === "/upstream/environments/v1/environments:watch"
   );
   const eventFetch = globalThis.fetch;
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
     if (new Headers(init?.headers).get("Accept") === "application/x-ndjson") {
       const watch = new ServedWatch(String(input), init?.signal ?? undefined);
       const pathname = watch.url.pathname;
-      if (pathname === "/upstream/environments/v1/environments:watch") return eventFetch(input, init);
+      if (
+        pathname === "/upstream/environments/v1/environments:watch" ||
+        pathname.startsWith("/upstream/notifications/")
+      )
+        return eventFetch(input, init);
       if (
         pathname !== "/upstream/app/v1/threads:watch" &&
         pathname !== "/upstream/history/v1/session-summaries:watch"

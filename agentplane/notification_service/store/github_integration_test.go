@@ -58,7 +58,7 @@ func newGitHubFixtureWithStoreFixture(t *testing.T, f fixture) githubFixture {
 	ref := model.DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: testSandboxUID}
 	return githubFixture{
 		fixture: f, app: base, installation: base + 1, repository: base + 2, destination: ref,
-		inbox: f.insertInbox(t, model.DestinationKey(ref, "test-session"), ref, "test-session"),
+		inbox: f.insertInbox(t, model.DestinationKey(ref, f.sessionID), ref, f.sessionID),
 		state: NewGitHubState(f.Store, testFreshness),
 	}
 }
@@ -175,12 +175,20 @@ func (g githubFixture) followIn(t *testing.T, destination model.DestinationRef, 
 	}
 	access := g.access()
 	subscription, err := g.Subscribe(t.Context(), g.owner, model.Subscribe{
-		DestinationRef: destination, SessionID: "test-session", IdempotencyKey: key, Source: source, LifetimeDays: 7,
+		DestinationRef: destination, SessionID: g.sessionForDestination(destination), IdempotencyKey: key, Source: source, LifetimeDays: 7,
 	}, &access)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return githubSubscription{ID: subscription.ID, InboxID: subscription.InboxID, Source: source, Subject: subject}
+}
+
+// sessionForDestination uses a distinct Session identity for each destination.
+func (g githubFixture) sessionForDestination(destination model.DestinationRef) string {
+	if destination == g.destination {
+		return g.sessionID
+	}
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(g.sessionID+"/"+destination.Namespace+"/"+destination.Name+"/"+destination.UID)).String()
 }
 
 // claimInbox makes the inbox claimed by a worker, as a claim of the inbox does.

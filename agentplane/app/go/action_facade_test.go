@@ -21,7 +21,7 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	connectionpb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
-	notificationpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
+	notificationpb "github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -135,26 +135,26 @@ type generatedMetadataDispatcherService struct {
 }
 
 type generatedNotificationService struct {
-	notificationpb.UnimplementedNotificationsOperatorServer
-	sessionIDs    []string
+	notificationpb.UnimplementedNotificationsServer
+	sessionID     string
 	authorization []string
 }
 
-func (s *generatedNotificationService) WatchSessionNotices(request *notificationpb.WatchSessionNoticesRequest, stream grpc.ServerStreamingServer[notificationpb.WatchSessionNoticesResponse]) error {
-	s.sessionIDs = request.GetSessionIds()
+func (s *generatedNotificationService) WatchInbox(request *notificationpb.WatchInboxRequest, stream grpc.ServerStreamingServer[notificationpb.WatchInboxResponse]) error {
+	s.sessionID = request.GetSessionId()
 	md, _ := metadata.FromIncomingContext(stream.Context())
 	s.authorization = md.Get("authorization")
-	return stream.Send(&notificationpb.WatchSessionNoticesResponse{Frame: &notificationpb.WatchSessionNoticesResponse_Snapshot{Snapshot: &notificationpb.SessionNoticeStates{}}})
+	return stream.Send(&notificationpb.WatchInboxResponse{State: &notificationpb.WatchInboxResponse_Inbox{Inbox: &notificationpb.Inbox{SessionId: s.sessionID}}})
 }
 
-func TestGeneratedNotificationWatchBindsRepeatedSessionIDsAndServiceToken(t *testing.T) {
+func TestGeneratedNotificationWatchBindsSessionIDAndServiceToken(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	service := &generatedNotificationService{}
 	server := grpc.NewServer()
-	notificationpb.RegisterNotificationsOperatorServer(server, service)
+	notificationpb.RegisterNotificationsServer(server, service)
 	serveDone := make(chan struct{})
 	go func() {
 		defer close(serveDone)
@@ -165,7 +165,7 @@ func TestGeneratedNotificationWatchBindsRepeatedSessionIDsAndServiceToken(t *tes
 		_ = listener.Close()
 		<-serveDone
 	})
-	handler, err := facade.NewHandler(t.Context(), listener.Addr().String(), 10*time.Second, notificationpb.RegisterNotificationsOperatorHandlerFromEndpoint)
+	handler, err := facade.NewHandler(t.Context(), listener.Addr().String(), 10*time.Second, notificationpb.RegisterNotificationsHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,16 +173,16 @@ func TestGeneratedNotificationWatchBindsRepeatedSessionIDsAndServiceToken(t *tes
 	if err := os.WriteFile(tokenFile, []byte("service-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodGet, "/upstream/notifications/v1/operator/notices:watch?sessionIds=a&sessionIds=b", nil)
+	request := httptest.NewRequest(http.MethodGet, "/upstream/notifications/v1/sessions/a/inbox:watch", nil)
 	response := httptest.NewRecorder()
-	if err := proxy.NewHandlerUpstream(handler, tokenFile).ForwardHTTP(response, request, request.Context(), "v1/operator/notices:watch", ""); err != nil {
+	if err := proxy.NewHandlerUpstream(handler, tokenFile).ForwardHTTP(response, request, request.Context(), "v1/sessions/a/inbox:watch", ""); err != nil {
 		t.Fatal(err)
 	}
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"snapshot"`) {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"inbox"`) {
 		t.Fatalf("notification watch status=%d body=%s", response.Code, response.Body.String())
 	}
-	if len(service.sessionIDs) != 2 || service.sessionIDs[0] != "a" || service.sessionIDs[1] != "b" {
-		t.Fatalf("bound session IDs = %v", service.sessionIDs)
+	if service.sessionID != "a" {
+		t.Fatalf("bound session ID = %v", service.sessionID)
 	}
 	if len(service.authorization) != 1 || service.authorization[0] != "Bearer service-token" {
 		t.Fatalf("notification authorization = %v", service.authorization)

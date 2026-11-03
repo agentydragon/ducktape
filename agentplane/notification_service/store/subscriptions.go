@@ -57,6 +57,10 @@ type Subscription struct {
 	Failure       *SourceFailure
 	// RetryAt is when the service will retry the current failure of an active subscription.
 	RetryAt *time.Time
+	// NextSourceCheckAt is when the source is next reconciled, if scheduled.
+	NextSourceCheckAt *time.Time
+	// Expired is evaluated at the read's observation time.
+	Expired bool
 	// GitHub is the shared state behind a GitHub subscription, nil for any other.
 	GitHub *GitHubStatus
 }
@@ -86,6 +90,10 @@ func scanSubscription(row rowScanner, viewedAt time.Time, extra ...any) (Subscri
 	}
 	subscription.Source = body.Source
 	subscription.ExpiresAt = subscription.ExpiresAt.UTC()
+	subscription.Expired = !subscription.ExpiresAt.After(viewedAt)
+	if nextAttempt.Valid {
+		subscription.NextSourceCheckAt = utc(nextAttempt.Time)
+	}
 	if lastSuccess.Valid {
 		subscription.LastSuccessAt = utc(lastSuccess.Time)
 	}

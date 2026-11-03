@@ -51,7 +51,7 @@ async def test_thread_notifications(view: VisualPage, app: AgentplaneFixture) ->
     await expect(page.get_by_text("Inbox diagnostics")).to_be_visible()
     await expect(page.get_by_text("Cursors: latest", exact=False)).to_be_hidden()
     await expect(page.get_by_text("runner admitted; awaiting confirmation", exact=False)).to_be_visible()
-    await expect(page.get_by_text("Session s-2")).to_have_count(0)
+    await expect(page.get_by_text("Session 5f1c4a2e-0000-4000-8000-000000000000")).to_have_count(0)
     await view.capture()
     await page.get_by_text("Inbox diagnostics").click()
     await expect(page.get_by_text("Cursors: latest", exact=False)).to_be_visible()
@@ -89,7 +89,7 @@ async def test_notification_drawer_updates_without_reopening(view: VisualPage, a
     page = view.page
     await page.get_by_role("button", name="Notifications", exact=True).click()
     await expect(page.get_by_text("Entries after acknowledgement · 5 not acknowledged")).to_be_visible()
-    await app.publish(Flag.NOTIFICATION_EXTRA_ENTRY, "/notifications/stream")
+    await app.publish(Flag.NOTIFICATION_EXTRA_ENTRY, ":watch")
     await expect(page.get_by_text("Entries after acknowledgement · 6 not acknowledged")).to_be_visible()
     await expect(page.get_by_text("GitHub workflow_run · completed")).to_be_visible()
 
@@ -98,8 +98,8 @@ async def test_sandbox_notifications(view: VisualPage, app: AgentplaneFixture) -
     await app.mount_app("/sandboxes/ready-sandbox")
     page = view.page
     await page.get_by_role("button", name="Notifications", exact=True).click()
-    await expect(page.get_by_text("Session s-2")).to_be_visible()
-    await expect(page.get_by_text("Session s-3")).to_be_visible()
+    await expect(page.get_by_text("Session 5f1c4a2e-0000-4000-8000-000000000000")).to_be_visible()
+    await expect(page.get_by_text("Session 5f1c4a2e-0000-4000-8000-000000000002")).to_be_visible()
     await expect(page.get_by_text("GitHub pull_request · synchronize", exact=False)).to_be_visible()
     await expect(page.get_by_text("Notice covered through #1 · 2 awaiting notice below")).to_be_visible()
     await expect(page.get_by_text("runner unavailable", exact=False)).to_be_visible()
@@ -111,7 +111,7 @@ async def test_empty_notifications(view: VisualPage, app: AgentplaneFixture) -> 
     await app.mount_app("/sandboxes/suspended-sandbox")
     page = view.page
     await page.get_by_role("button", name="Notifications", exact=True).click()
-    await expect(page.get_by_text("No inbox for this Sandbox incarnation.")).to_be_visible()
+    await expect(page.get_by_text("No inbox for Session", exact=False)).to_be_visible()
     await view.capture()
 
 
@@ -153,7 +153,7 @@ async def test_sandbox_notifications_mobile_menu(view: VisualPage, app: Agentpla
     await expect(page.get_by_role("menuitem", name="Notifications")).to_be_visible()
     await view.capture(name="sandbox_notifications_mobile_menu")
     await page.get_by_role("menuitem", name="Notifications").click()
-    await expect(page.get_by_text("Session s-2")).to_be_visible()
+    await expect(page.get_by_text("Session 5f1c4a2e-0000-4000-8000-000000000000")).to_be_visible()
 
     await _hover_notification_drawer(page)
     await view.capture(name="sandbox_notifications_mobile_drawer")

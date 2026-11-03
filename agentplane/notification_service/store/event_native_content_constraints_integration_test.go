@@ -9,7 +9,7 @@ import (
 
 func TestFinalSchemaStoresNativeContentWithoutLegacyColumns(t *testing.T) {
 	f := newIsolatedFixture(t, defaultQuotas())
-	subscription := f.subscribe(t, body("native-content-final-schema"))
+	subscription := f.subscribe(t, f.body("native-content-final-schema"))
 	event := model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
 	for _, column := range []struct{ table, name string }{
