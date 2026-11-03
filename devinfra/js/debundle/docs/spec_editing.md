@@ -271,7 +271,10 @@ the two source units are order-independent during initialization.
    reject, the endpoints without a unique selector, and the `eager_use` edges
    that still need co-location. Its `sccs` rows say whether all proposals
    together break each SCC; when they cannot, the residual component member
-   paths and blocking edge counts show what co-location must still handle.
+   paths and blocking edge counts show a surviving constraint. Predictions
+   preserve third-statement order through the same closure as the gate.
+   `counts_are_lower_bounds` marks an analysis stopped after proving a cycle;
+   its reported cyclic groups and counts need not be the full inventory.
 2. **Audit.** For each proposal read both statements at the reported locations
    and establish the premise yourself: neither observes the other's effect.
    The explanation says only why the analysis could not prove the order

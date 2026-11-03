@@ -12,14 +12,17 @@
 //! own contradiction and unused checks validate it.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
 use ::gate::{BlockingSccEntry, CycleEdge};
-use analysis::graph::{EndpointView, assignment_endpoints};
+use analysis::graph::{
+    CommutationOrder, EndpointView, TemporalConstraint, TemporalEdge, assignment_endpoints,
+};
 use analysis::{
     DepKind, DependencyEdgeId, DependencyEdgeReport, DependencyGraph, DependencyGraphReport,
     EntryDestination, KnownConflict, ModuleAssignment, ModuleDestinationKind, ModuleId, ModuleKey,
-    PremiseVerdict, SequencedCause, SourceLocation, SourceUnitReport,
+    PremiseVerdict, SequencedCause, SourceLocation, SourceUnitId, SourceUnitReport,
 };
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
@@ -286,6 +289,9 @@ pub enum SccVerdict {
     /// Cycles survive every proposal of the SCC inerted together: pairs alone
     /// cannot break it.
     PairsCannotBreak {
+        /// Preservation stopped once a cycle was proved. Counts and cyclic
+        /// memberships are then lower bounds, not a complete final inventory.
+        counts_are_lower_bounds: bool,
         /// Modules still on a constraining cycle.
         residual_modules: usize,
         /// Remaining nontrivial cyclic components, ordered by their sorted
@@ -313,6 +319,8 @@ pub struct BlockingEdgeCount {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BlockingReason {
+    /// A third-statement ordering survives the proposed pair assertions.
+    PreservedOrder,
     /// A premise never inerts this kind (`eager_use` and the other
     /// non-`sequenced` kinds); the remedy is co-location.
     KindNotInertable,
@@ -456,6 +464,8 @@ struct Analysis<'a> {
     authored_modules: Option<&'a BTreeMap<ModulePath, String>>,
     graph: DependencyGraph,
     assignment: ModuleAssignment,
+    temporal_order: CommutationOrder,
+    existing_pairs: Vec<(SourceUnitId, SourceUnitId)>,
     /// Source-unit indices of every report edge's `(source, target)`.
     edge_nodes: Vec<(usize, usize)>,
     /// Module path of every source unit.
@@ -581,12 +591,51 @@ impl<'a> Analysis<'a> {
             .into_iter()
             .map(|index| index.map(|index| index.0))
             .collect();
+        let existing = graph.commuting_premises();
+        let existing_pairs = existing
+            .iter()
+            .map(|premise| (premise.a, premise.b))
+            .collect();
+        let temporal_order = CommutationOrder::new(
+            graph.num_nodes(),
+            graph.iter_edges().filter_map(|edge| {
+                if !matches!(edge.reason.kind, DepKind::EagerUse | DepKind::Sequenced) {
+                    return None;
+                }
+                let constraint = if let Some(reference) = edge.reason.commuting_premise() {
+                    TemporalConstraint::Commuting(
+                        existing
+                            .iter()
+                            .position(|premise| &premise.reference == reference)
+                            .expect("every inert edge has a retained premise"),
+                    )
+                } else if edge.reason.constrains_init_order() {
+                    if matches!(
+                        report.edges[edge.id.0].premise_verdict,
+                        Some(PremiseVerdict::Inertable)
+                    ) {
+                        TemporalConstraint::Inertable
+                    } else {
+                        TemporalConstraint::Fixed
+                    }
+                } else {
+                    return None;
+                };
+                Some(TemporalEdge {
+                    from: edge.from,
+                    to: edge.to,
+                    constraint,
+                })
+            }),
+        );
         Ok(Self {
             report,
             source,
             authored_modules,
             graph,
             assignment,
+            temporal_order,
+            existing_pairs,
             edge_nodes,
             node_modules,
             premise_edges,
@@ -885,6 +934,42 @@ impl<'a> Analysis<'a> {
         })
     }
 
+    fn cut_effect(&self, scc: &SccState, candidate: &Candidate) -> (bool, usize) {
+        let (raw_cut, original_left) = cut_effect(scc, candidate);
+        let mut projected = raw_cut.then(|| {
+            let inerted: HashSet<_> = candidate.inerted.iter().copied().collect();
+            module_graph(scc.constraining.iter().filter_map(|(pair, edges)| {
+                edges.iter().any(|id| !inerted.contains(id)).then_some(pair)
+            }))
+        });
+        let mut pairs = self.existing_pairs.clone();
+        pairs.push((SourceUnitId(candidate.a), SourceUnitId(candidate.b)));
+        let mut added_on_pair = 0;
+        self.temporal_order.preserve(&pairs, |edge| {
+            if edge.inerted_by.is_some() {
+                return ControlFlow::Continue(());
+            }
+            let pair = (self.assignment.of(edge.from), self.assignment.of(edge.to));
+            if pair == candidate.module_pair {
+                added_on_pair += 1;
+            }
+            if let Some(graph) = &mut projected
+                && pair.0 != pair.1
+                && scc.graph.contains_node(pair.0)
+                && scc.graph.contains_node(pair.1)
+            {
+                graph.add_edge(pair.0, pair.1, ());
+            }
+            ControlFlow::Continue(())
+        });
+        (
+            projected
+                .as_ref()
+                .is_some_and(|graph| !is_cyclic_directed(graph)),
+            original_left + added_on_pair,
+        )
+    }
+
     /// Every candidate once, with its effect in the SCC it ranks best in,
     /// best first: a single-pair cut, then one that empties its module-pair
     /// arc, then more inerted edges, then one the gate's cut names.
@@ -892,7 +977,7 @@ impl<'a> Analysis<'a> {
         let mut by_pair: HashMap<(usize, usize), Vec<RankedCandidate>> = HashMap::new();
         for candidate in std::mem::take(&mut self.candidates) {
             let (single_pair_cut, remaining_module_pair_edges) =
-                cut_effect(&self.sccs[&candidate.scc_id], &candidate);
+                self.cut_effect(&self.sccs[&candidate.scc_id], &candidate);
             by_pair
                 .entry((candidate.a, candidate.b))
                 .or_default()
@@ -1114,8 +1199,49 @@ impl<'a> Analysis<'a> {
                 })
                 .filter(|(_, left)| !left.is_empty())
                 .collect();
+            let mut projected = module_graph(remaining.keys());
+            let mut preserved: BTreeMap<(ModuleId, ModuleId), usize> = BTreeMap::new();
+            let complete = if scc.inerted.is_empty() {
+                true
+            } else if is_cyclic_directed(&projected) {
+                // A cycle of retained original edges already proves failure.
+                false
+            } else {
+                let proposed: BTreeSet<_> = scc
+                    .inerted
+                    .iter()
+                    .map(|id| {
+                        let (a, b) = self.edge_nodes[id.0];
+                        (SourceUnitId(a.min(b)), SourceUnitId(a.max(b)))
+                    })
+                    .collect();
+                let mut pairs = self.existing_pairs.clone();
+                pairs.extend(proposed);
+                self.temporal_order.preserve(&pairs, |edge| {
+                    if edge.inerted_by.is_some() {
+                        return ControlFlow::Continue(());
+                    }
+                    let pair = (self.assignment.of(edge.from), self.assignment.of(edge.to));
+                    if pair.0 == pair.1
+                        || !scc.graph.contains_node(pair.0)
+                        || !scc.graph.contains_node(pair.1)
+                    {
+                        return ControlFlow::Continue(());
+                    }
+                    *preserved.entry(pair).or_default() += 1;
+                    let new_arc = !projected.contains_edge(pair.0, pair.1);
+                    projected.add_edge(pair.0, pair.1, ());
+                    if new_arc && is_cyclic_directed(&projected) {
+                        // Enough evidence to reject; avoid expanding every
+                        // transitive pair of a long opaque ordering chain.
+                        ControlFlow::Break(())
+                    } else {
+                        ControlFlow::Continue(())
+                    }
+                })
+            };
             let mut residual_components: Vec<(Vec<ModuleId>, ResidualComponent)> =
-                tarjan_scc(&module_graph(remaining.keys()))
+                tarjan_scc(&projected)
                     .into_iter()
                     .filter(|component| component.len() > 1)
                     .map(|component| {
@@ -1151,6 +1277,15 @@ impl<'a> Analysis<'a> {
                             .or_default() += 1;
                     }
                 }
+                for ((from, to), count) in &preserved {
+                    if component_of.get(from).is_some()
+                        && component_of.get(from) == component_of.get(to)
+                    {
+                        *counts
+                            .entry((DepKind::Sequenced, BlockingReason::PreservedOrder))
+                            .or_default() += count;
+                    }
+                }
                 let mut blocking_edges: Vec<BlockingEdgeCount> = counts
                     .into_iter()
                     .map(|((kind, reason), count)| BlockingEdgeCount {
@@ -1166,6 +1301,7 @@ impl<'a> Analysis<'a> {
                     .map(|(_, component)| component)
                     .collect();
                 SccVerdict::PairsCannotBreak {
+                    counts_are_lower_bounds: !complete,
                     residual_modules,
                     residual_components,
                     blocking_edges,
@@ -1375,16 +1511,21 @@ fn render_text(report: &ProposeCommutationsReport, out: &mut String) {
                 scc.modules.len()
             )),
             SccVerdict::PairsCannotBreak {
+                counts_are_lower_bounds,
                 residual_components,
                 residual_modules,
                 blocking_edges,
             } => {
                 out.push_str(&format!(
-                    "  SCC {} ({} modules): pairs alone cannot break it; with every proposal inerted, cycles over {residual_modules} modules in {} component(s) remain, held by:\n",
+                    "  SCC {} ({} modules): pairs alone cannot break it; with every proposal inerted, cycles over {}{residual_modules} modules in {} component(s) remain, held by:\n",
                     scc.scc_id,
                     scc.modules.len(),
+                    if *counts_are_lower_bounds { "at least " } else { "" },
                     residual_components.len(),
                 ));
+                if *counts_are_lower_bounds {
+                    out.push_str("    Counts and cyclic memberships are lower bounds; preservation stopped after proving a cycle.\n");
+                }
                 for (index, component) in residual_components.iter().enumerate() {
                     let modules = component
                         .modules
@@ -1458,6 +1599,7 @@ fn render_text(report: &ProposeCommutationsReport, out: &mut String) {
 
 fn blocking_reason_text(reason: BlockingReason) -> &'static str {
     match reason {
+        BlockingReason::PreservedOrder => "third-statement ordering survives the proposed pairs",
         BlockingReason::KindNotInertable => "no premise inerts this kind; co-locate",
         BlockingReason::KnownConflict => "the pair's premise contradicts a source fact",
         BlockingReason::Summarized => "summarized effects; a premise inerts nothing",
