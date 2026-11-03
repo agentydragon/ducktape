@@ -11,9 +11,10 @@ flowchart TD
     W[wyrm2 Linux kernel]
     W --> N[Trusted K3s node container]
     N --> K[Inner API and SQLite]
-    N --> O[Trusted KubeVirt operators]
+    N --> O[Pinned KubeVirt, PKI and Kyverno operators]
     O --> V[Agentplane test guest VMs]
     W --> D[Isolated Bazel driver]
+    A[Trusted run allocator] -->|namespaces, quota, scoped identities and capacity Lease| K
     D -. restricted API access .-> K
 ```
 

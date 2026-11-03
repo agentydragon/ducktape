@@ -35,13 +35,15 @@ async def _finish_deletion(core: k8s.CoreV1Api, name: str) -> None:
 async def test_allocation_mints_scoped_credentials_and_holds_capacity_until_cleanup(tmp_path: Path) -> None:
     async with kubernetes_apiserver() as server:
         output = tmp_path / "credentials"
+        api_server = server.api.configuration.host
+        assert api_server is not None
         process = await asyncio.create_subprocess_exec(
             str(get_required_path(os.environ["LEASE_BINARY_RLOCATION"])),
             "--admin-kubeconfig",
             str(server.kubeconfig),
             "allocate",
             "--server",
-            server.api.configuration.host,
+            api_server,
             "--output",
             str(output),
             stdout=asyncio.subprocess.PIPE,
