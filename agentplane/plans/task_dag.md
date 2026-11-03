@@ -2053,7 +2053,6 @@ flowchart LR
     SESSION_DIRECTORY_NATIVE[Ready: Dispatcher Session directory for native placement]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: send authority and internal fencing]
     DELIVERY_DESTINATION_CONTRACT[Blocked: Session-ID command addressing]
-    SESSION_SUBSCRIPTION_ADDRESS[In flight: Session-only subscription creation]
     SESSION_NOTIFICATION_ADDRESS[Blocked: remaining Session notification addressing]
     SESSION_HISTORY_PRESENTATION[Blocked: Session history and environment presentation]
     SESSION_DIRECTORY_NATIVE --> DELIVERY_DESTINATION_CONTRACT
@@ -2183,25 +2182,13 @@ semantics and the direct proxy command bypass audit. Change call sites and contr
 retain History and actual harness stores. This does not decide central attachment policy.
 [Address inventory](session_environment_model.md#session-address-inventory).
 
-### `SESSION_SUBSCRIPTION_ADDRESS` — create subscriptions by Session ID
-
-**In flight: [#14103](https://github.com/agentydragon/ducktape/pull/14103), reported 2026-11-03 UTC.**
-Resolve the existing Dispatcher `GetSessionOpening(session_id)` response, then retain exact Sandbox
-UID, caller ownership, current Runtime membership and source authorization. This slice needs no new
-directory or command authority. Direct Runtime-only Sessions without openings cannot create or
-resubscribe through the new request; retain existing subscriptions, cursor state and notices.
-The CLI uses `--session ID` or extracts the Session ID from the existing destination metadata envelope;
-keep that envelope and retained central prompts intact. Message sends and worker delivery remain
-under their existing contracts. Exit: the wire/client cutover and denial, retry and retained-state
-tests land; coordinate the API and CLI rollout.
-
 ### `SESSION_NOTIFICATION_ADDRESS` — address inboxes and notices by Session ID
 
 **Remaining message and delivery cutover is blocked on `SESSION_DIRECTORY_NATIVE`, `DELIVERY_DESTINATION_CONTRACT`, and reviewed send authority.**
 [Session inbox diagnostics](../notification_service/docs/api.md#session-inbox-diagnostics) already
 read and watch by Session ID; inbox storage enforces one inbox per Session while retaining existing
-destination keys and state. Subscription creation is the independent slice above. Migrate remaining
-message sends, inbox operations, delivery worker, CLI, Action-facing guidance and
+destination keys and state. Migrate remaining message sends, inbox operations, delivery worker, CLI,
+Action-facing guidance and
 `AGENTPLANE_DESTINATION` to Session UUID addressing. Resolve an environment only when an actual
 placement, authorization or wake decision needs it. Preserve subscription and message idempotency,
 inbox cursors, actor attribution, cross-Session denial, authorized unattended wake, and exact UID
