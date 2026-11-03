@@ -22,7 +22,7 @@ func exportOpenAPI(writer io.Writer) error {
 	if err := RegisterThreadReadRoutes(server, "", nil, nil, nil, nil); err != nil {
 		return fmt.Errorf("register Thread routes: %w", err)
 	}
-	RegisterOperatorRoutes(server, nil, nil, nil, nil, "")
+	RegisterOperatorRoutes(server, nil, nil, "")
 	RegisterStatusRoutes(server, nil)
 
 	encoded, err := json.MarshalIndent(server.api.OpenAPI(), "", "  ")

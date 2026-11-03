@@ -268,7 +268,6 @@ it("distinguishes loading failures from an empty inventory", async () => {
 it("expands grants for the current caller even when its admission label is missing", async () => {
   const read = vi.fn<CallerGrantReader>(async () => ({
     bindings: [],
-    action_policy: { synced: true, auto_approve_if: [] },
   }));
   serve();
   const container = await render(read);

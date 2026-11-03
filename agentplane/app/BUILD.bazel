@@ -157,10 +157,8 @@ py_test(
         "//agentplane/action_service:action_service_pb2",
         "//agentplane/app/testing:fake_action_service",
         "//agentplane/app/testing:replication_process",
-        "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/history_service:client",
         "@pypi//httpx",
-        "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pyjwt",
         "@pypi//pytest",

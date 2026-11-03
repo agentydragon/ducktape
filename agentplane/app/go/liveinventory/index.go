@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"sync/atomic"
 
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -29,11 +28,10 @@ var (
 var watched = []struct {
 	object client.Object
 	kind   watchhealth.Kind
-	policy bool
 }{
-	{&policyapi.PolicyBinding{}, "policybindings", true},
-	{&policyapi.PolicySet{}, "policysets", true},
-	{&egressapi.EgressCredential{}, "egresscredentials", false},
+	{&policyapi.PolicyBinding{}, "policybindings"},
+	{&policyapi.PolicySet{}, "policysets"},
+	{&egressapi.EgressCredential{}, "egresscredentials"},
 }
 
 // Index is a namespace-scoped controller-runtime cache of the objects that feed the /live views.
@@ -50,8 +48,7 @@ type Index struct {
 	runDone  chan struct{}
 	runErr   error
 
-	policyGeneration atomic.Uint64
-	changes          changeHub
+	changes changeHub
 }
 
 // Snapshot is the read-only Kubernetes state consumed by live routes. Each object is copied from
@@ -60,7 +57,6 @@ type Snapshot struct {
 	PolicyBindings    []policyapi.PolicyBinding
 	PolicySets        []policyapi.PolicySet
 	EgressCredentials []egressapi.EgressCredential
-	PolicyGeneration  uint64
 	// Watch is the cache's health: whether it has synced and which kinds are failing to list or watch. It is reported
 	// beside the last complete snapshot rather than hiding it.
 	Watch watchhealth.Status
@@ -107,22 +103,22 @@ func New(config *rest.Config, namespace string) (*Index, error) {
 	}
 	index.cache = inventory
 	for _, w := range watched {
-		if err := index.registerInformer(context.Background(), w.object, w.policy); err != nil {
+		if err := index.registerInformer(context.Background(), w.object); err != nil {
 			return nil, err
 		}
 	}
 	return index, nil
 }
 
-func (i *Index) registerInformer(ctx context.Context, object client.Object, policy bool) error {
+func (i *Index) registerInformer(ctx context.Context, object client.Object) error {
 	informer, err := i.cache.GetInformer(ctx, object)
 	if err != nil {
 		return fmt.Errorf("get live inventory informer for %T: %w", object, err)
 	}
 	_, err = informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
-		AddFunc:    func(any) { i.changed(policy) },
-		UpdateFunc: func(any, any) { i.changed(policy) },
-		DeleteFunc: func(any) { i.changed(policy) },
+		AddFunc:    func(any) { i.changed() },
+		UpdateFunc: func(any, any) { i.changed() },
+		DeleteFunc: func(any) { i.changed() },
 	})
 	if err != nil {
 		return fmt.Errorf("register live inventory handler for %T: %w", object, err)
@@ -130,10 +126,7 @@ func (i *Index) registerInformer(ctx context.Context, object client.Object, poli
 	return nil
 }
 
-func (i *Index) changed(policy bool) {
-	if policy {
-		i.policyGeneration.Add(1)
-	}
+func (i *Index) changed() {
 	i.changes.notify()
 }
 
@@ -252,16 +245,12 @@ func (i *Index) Snapshot(ctx context.Context) (Snapshot, error) {
 	for n := range credentials.Items {
 		result.EgressCredentials[n] = *credentials.Items[n].DeepCopy()
 	}
-	result.PolicyGeneration = i.policyGeneration.Load()
 	result.Watch = i.health.Status()
 	return result, nil
 }
 
 // Health returns the cache's watch health, as Snapshot reports it.
 func (i *Index) Health() watchhealth.Status { return i.health.Status() }
-
-// PolicyGeneration returns the monotonic trigger changed by every PolicyBinding or PolicySet event.
-func (i *Index) PolicyGeneration() uint64 { return i.policyGeneration.Load() }
 
 // Subscribe adds an independent coalescing change channel. Unsubscribe is safe to call more than once.
 func (i *Index) Subscribe() (<-chan struct{}, func()) { return i.changes.subscribe() }

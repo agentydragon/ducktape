@@ -106,12 +106,6 @@ func TestIndexSnapshotsWatchesAndBroadcastsChanges(t *testing.T) {
 		snapshot, err = index.Snapshot(ctx)
 		return err == nil && len(snapshot.PolicyBindings) == 1 && len(snapshot.PolicySets) == 1 && len(snapshot.EgressCredentials) == 1
 	})
-	if snapshot.PolicyGeneration < 2 {
-		t.Fatalf("Policy generation = %d, want a binding and PolicySet event", snapshot.PolicyGeneration)
-	}
-	if index.PolicyGeneration() != snapshot.PolicyGeneration {
-		t.Fatalf("policy generation accessor = %d, snapshot = %d", index.PolicyGeneration(), snapshot.PolicyGeneration)
-	}
 	if !snapshot.Watch.Available {
 		t.Fatalf("watch health = %+v", snapshot.Watch)
 	}

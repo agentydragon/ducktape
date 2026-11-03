@@ -35,6 +35,8 @@ class FakeActionService(action_service_pb2_grpc.ActionServiceServicer):
         self.policy = action_service_pb2.GetActionPolicyResponse()
         self.policy_by_subject: dict[tuple[str, str], action_service_pb2.GetActionPolicyResponse] = {}
         self.policy_failures: list[grpc.StatusCode] = []
+        self.policy_watch_frames: asyncio.Queue[action_service_pb2.GetActionPolicyResponse] = asyncio.Queue()
+        self.policy_watch_cancelled = asyncio.Event()
         self.requests = action_service_pb2.ListActionRequestsResponse()
         self.groups = action_service_pb2.ListActionGroupsResponse()
         self.unary_gate: asyncio.Event | None = None
@@ -69,6 +71,22 @@ class FakeActionService(action_service_pb2_grpc.ActionServiceServicer):
             await context.abort(self.policy_failures.pop(0), "scripted Action Service failure")
         subject = request.subject
         return self.policy_by_subject.get((subject.namespace, subject.name), self.policy)
+
+    @override
+    async def WatchActionPolicy(
+        self, request: action_service_pb2.GetActionPolicyRequest, context: grpc.aio.ServicerContext
+    ) -> AsyncIterator[action_service_pb2.GetActionPolicyResponse]:
+        self._record("WatchActionPolicy", request, context)
+        initial = action_service_pb2.GetActionPolicyResponse()
+        initial.CopyFrom(self.policy_by_subject.get((request.subject.namespace, request.subject.name), self.policy))
+        initial.action_policy.subject.CopyFrom(request.subject)
+        try:
+            yield initial
+            while True:
+                yield await self.policy_watch_frames.get()
+        except asyncio.CancelledError:
+            self.policy_watch_cancelled.set()
+            raise
 
     @override
     async def ListActionRequests(

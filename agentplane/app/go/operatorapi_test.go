@@ -8,59 +8,19 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"reflect"
-	"strings"
 	"testing"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
-	"github.com/agentydragon/ducktape/agentplane/app/go/federation"
 	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/structpb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
-
-type operatorAPIFederator struct {
-	token string
-	err   error
-	row   federation.SessionLoginRow
-	calls int
-}
-
-func (f *operatorAPIFederator) Exchange(_ context.Context, row federation.SessionLoginRow) (string, error) {
-	f.row = row
-	f.calls++
-	return f.token, f.err
-}
-
-type operatorAPIActionClient struct {
-	response *action_servicepb.GetActionPolicyResponse
-	err      error
-	request  *action_servicepb.GetActionPolicyRequest
-	bearer   []string
-}
-
-func (c *operatorAPIActionClient) GetActionPolicy(
-	ctx context.Context,
-	request *action_servicepb.GetActionPolicyRequest,
-	_ ...grpc.CallOption,
-) (*action_servicepb.GetActionPolicyResponse, error) {
-	c.request = request
-	md, _ := metadata.FromOutgoingContext(ctx)
-	c.bearer = md.Get("authorization")
-	return c.response, c.err
-}
 
 type operatorAPICallback struct {
 	response *http.Response
@@ -99,114 +59,19 @@ func newOperatorPolicyAccess(t *testing.T, objects ...client.Object) *policyacce
 	return policyaccess.New("policy", objectsClient)
 }
 
-func TestCallerGrantsUsesFederatedGeneratedRPCAndReturnsSafeView(t *testing.T) {
+func TestCallerGrantsReadBindings(t *testing.T) {
 	subject := &identitypb.ServiceAccount{Namespace: "team-a", Name: "worker"}
 	access := newOperatorPolicyAccess(t, &policyapi.PolicyBinding{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "policy", Name: "binding-a", Generation: 2},
-		Spec: policyapi.PolicyBindingSpec{
-			Subject:    policyapi.ServiceAccountRef{Namespace: subject.GetNamespace(), Name: subject.GetName()},
-			PolicySets: []string{"read-only"},
-		},
+		ObjectMeta: metav1.ObjectMeta{Namespace: "policy", Name: "binding-a"},
+		Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.ServiceAccountRef{Namespace: subject.Namespace, Name: subject.Name}, PolicySets: []string{"read-only"}},
 	})
-	schema, err := structpb.NewStruct(map[string]any{"type": "object", "required": []any{"name"}})
-	if err != nil {
-		t.Fatal(err)
+	routes := &operatorRoutes{policies: access}
+	view, err := routes.readCallerGrants(t.Context(), auth.Caller{Kind: auth.CallerOperator}, subject.Namespace, subject.Name)
+	if err != nil || len(view.Bindings) != 1 || view.Bindings[0].Name != "binding-a" {
+		t.Fatalf("bindings = %v, %v", view, err)
 	}
-	policy := &action_servicepb.CallerActionPolicy{
-		Synced:         true,
-		Bindings:       []*action_servicepb.CallerBinding{{Name: "binding-a", Labels: map[string]string{"private": "diagnostic"}}},
-		AutoApprovable: []*action_servicepb.ActionIdentity{{Group: "test", Name: "private-diagnostic"}},
-		AutoApproveIf: []*action_servicepb.EffectivePolicy{{
-			Binding: "binding-a", PolicySet: "read-only", Source: action_servicepb.PolicySource_POLICY_SOURCE_RULES,
-			Policy: &action_servicepb.Policy{Kind: &action_servicepb.Policy_ArgumentSchema{ArgumentSchema: &action_servicepb.ArgumentSchemaPolicy{
-				Actions: map[string]*action_servicepb.StringList{"test": {Values: []string{"read"}}}, ArgumentSchema: schema,
-			}}},
-		}},
-	}
-	row := &auth.SessionRow{}
-	session := &auth.RequestSession{Login: &auth.OperatorSession{}, Row: row}
-	federator := &operatorAPIFederator{token: "request-bound-action-token"}
-	actions := &operatorAPIActionClient{response: &action_servicepb.GetActionPolicyResponse{ActionPolicy: policy}}
-	routes := &operatorRoutes{
-		policies: access, federator: federator, actions: actions,
-		actionServiceURL: "https://user:secret@actions.example.test/base?credential=hidden#fragment",
-	}
-
-	view, err := routes.readCallerGrants(t.Context(), auth.Caller{Kind: auth.CallerOperator}, session, subject.GetNamespace(), subject.GetName())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if federator.calls != 1 || federator.row != row {
-		t.Fatalf("federation calls/row = %d/%p, want 1/%p", federator.calls, federator.row, row)
-	}
-	if !reflect.DeepEqual(actions.bearer, []string{"Bearer request-bound-action-token"}) {
-		t.Fatalf("outgoing authorization metadata = %v", actions.bearer)
-	}
-	if actions.request == nil || actions.request.GetSubject().GetNamespace() != subject.GetNamespace() ||
-		actions.request.GetSubject().GetName() != subject.GetName() {
-		t.Fatalf("GetActionPolicy request = %#v", actions.request)
-	}
-	if len(view.Bindings) != 1 || view.Bindings[0].Name != "binding-a" {
-		t.Fatalf("bindings = %#v", view.Bindings)
-	}
-	actionView, ok := view.ActionPolicy.(*policyaccess.ActionPolicyView)
-	if !ok || !actionView.Synced || len(actionView.AutoApproveIf) != 1 ||
-		actionView.AutoApproveIf[0].Policy.Type != "argument_schema" ||
-		actionView.AutoApproveIf[0].Policy.ArgumentSchema["required"].([]any)[0] != "name" {
-		t.Fatalf("action policy = %#v", view.ActionPolicy)
-	}
-	encoded, err := json.Marshal(view)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(encoded), "private-diagnostic") || strings.Contains(string(encoded), "diagnostic") ||
-		strings.Contains(string(encoded), "auto_approvable") || !strings.Contains(string(encoded), `"action_policy"`) {
-		t.Fatalf("caller-grants leaked generated diagnostics or has wrong shape: %s", encoded)
-	}
-}
-
-func TestCallerGrantsOperatorGuardAndUnavailableActionFrame(t *testing.T) {
-	routes := &operatorRoutes{policies: newOperatorPolicyAccess(t)}
-	_, err := routes.readCallerGrants(t.Context(), auth.Caller{Kind: auth.CallerToken}, nil, "team", "worker")
-	var statusErr interface{ GetStatus() int }
-	if !errors.As(err, &statusErr) || statusErr.GetStatus() != http.StatusForbidden {
-		t.Fatalf("non-operator error = %v", err)
-	}
-
-	frame := routes.actionPolicyFrame(t.Context(), auth.Caller{Kind: auth.CallerOperator}, nil,
-		&identitypb.ServiceAccount{Namespace: "team", Name: "worker"})
-	unavailable, ok := frame.(*policyaccess.ActionPolicyUnavailable)
-	if !ok || unavailable.Code != "operator_federation_not_configured" {
-		t.Fatalf("missing federation frame = %#v", frame)
-	}
-
-	federator := &operatorAPIFederator{err: &federation.FederationError{Code: "operator_federation_not_configured", Status: http.StatusServiceUnavailable}}
-	routes.federator = federator
-	frame = routes.actionPolicyFrame(t.Context(), auth.Caller{Kind: auth.CallerOperator},
-		&auth.RequestSession{Login: &auth.OperatorSession{}, Row: &auth.SessionRow{}},
-		&identitypb.ServiceAccount{Namespace: "team", Name: "worker"})
-	unavailable, ok = frame.(*policyaccess.ActionPolicyUnavailable)
-	if !ok || unavailable.Code != "operator_federation_not_configured" {
-		t.Fatalf("federation refusal frame = %#v", frame)
-	}
-}
-
-func TestCallerGrantsMapsActionRPCFailuresWithoutLeakingConfiguredURL(t *testing.T) {
-	federator := &operatorAPIFederator{token: "federated"}
-	actions := &operatorAPIActionClient{err: status.Error(codes.PermissionDenied, "sensitive provider detail")}
-	routes := &operatorRoutes{
-		federator: federator, actions: actions,
-		actionServiceURL: "https://user:secret@actions.example.test/base?secret=hidden#fragment",
-	}
-	frame := routes.actionPolicyFrame(t.Context(), auth.Caller{Kind: auth.CallerOperator},
-		&auth.RequestSession{Login: &auth.OperatorSession{}, Row: &auth.SessionRow{}},
-		&identitypb.ServiceAccount{Namespace: "team", Name: "worker"})
-	unavailable, ok := frame.(*policyaccess.ActionPolicyUnavailable)
-	if !ok || unavailable.Code != "upstream_request_failed" || unavailable.Upstream == nil ||
-		unavailable.Upstream.UpstreamStatus == nil || *unavailable.Upstream.UpstreamStatus != http.StatusForbidden ||
-		unavailable.Upstream.URL != "https://actions.example.test/v1/action-policy" ||
-		unavailable.Upstream.ErrorType != "GRPCStatusError" {
-		t.Fatalf("RPC failure frame = %#v", frame)
+	if _, err := routes.readCallerGrants(t.Context(), auth.Caller{Kind: auth.CallerToken}, subject.Namespace, subject.Name); err == nil {
+		t.Fatal("non-operator read succeeded")
 	}
 }
 
@@ -214,7 +79,7 @@ func TestPublicMCPCallbackForwardsQueryAndRedirects(t *testing.T) {
 	body := &operatorAPICloseTracker{}
 	callback := &operatorAPICallback{response: &http.Response{StatusCode: http.StatusOK, Body: body}}
 	server := NewHTTPServer(nil)
-	RegisterOperatorRoutes(server, nil, nil, nil, callback, "https://actions.example.test")
+	RegisterOperatorRoutes(server, nil, callback, "https://actions.example.test")
 	values := url.Values{"state": {"state +&"}, "code": {"code/with?chars"}}
 	request := httptest.NewRequest(http.MethodGet, "/mcp-linkage/callback?"+values.Encode(), nil)
 	recorder := httptest.NewRecorder()
@@ -243,7 +108,7 @@ func TestPublicMCPCallbackRequiresStateAndCode(t *testing.T) {
 		{query: "code=two", want: []string{"state"}},
 	} {
 		server := NewHTTPServer(nil)
-		RegisterOperatorRoutes(server, nil, nil, nil, nil, "")
+		RegisterOperatorRoutes(server, nil, nil, "")
 		recorder := httptest.NewRecorder()
 		server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/mcp-linkage/callback?"+test.query, nil))
 		var response struct {
@@ -282,7 +147,7 @@ func TestPublicMCPCallbackPreservesPythonFailureStatuses(t *testing.T) {
 			body := &operatorAPICloseTracker{}
 			callback := &operatorAPICallback{response: &http.Response{StatusCode: test.status, Body: body}}
 			server := NewHTTPServer(nil)
-			RegisterOperatorRoutes(server, nil, nil, nil, callback, "https://actions.example.test")
+			RegisterOperatorRoutes(server, nil, callback, "https://actions.example.test")
 			recorder := httptest.NewRecorder()
 			server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
 				"/mcp-linkage/callback?state=one&code=two", nil))
@@ -300,7 +165,7 @@ func TestPublicMCPCallbackPreservesPythonFailureStatuses(t *testing.T) {
 func TestPublicMCPCallbackReportsConfigurationAndTransportFailureSafely(t *testing.T) {
 	t.Run("unconfigured", func(t *testing.T) {
 		server := NewHTTPServer(nil)
-		RegisterOperatorRoutes(server, nil, nil, nil, nil, "https://actions.example.test")
+		RegisterOperatorRoutes(server, nil, nil, "https://actions.example.test")
 		recorder := httptest.NewRecorder()
 		server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
 			"/mcp-linkage/callback?state=one&code=two", nil))
@@ -316,7 +181,7 @@ func TestPublicMCPCallbackReportsConfigurationAndTransportFailureSafely(t *testi
 	t.Run("transport error is credential free", func(t *testing.T) {
 		callback := &operatorAPICallback{err: errors.New("dial failed")}
 		server := NewHTTPServer(nil)
-		RegisterOperatorRoutes(server, nil, nil, nil, callback, "https://user:secret@actions.example.test/base?token=hidden")
+		RegisterOperatorRoutes(server, nil, callback, "https://user:secret@actions.example.test/base?token=hidden")
 		recorder := httptest.NewRecorder()
 		server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
 			"/mcp-linkage/callback?state=one&code=two", nil))

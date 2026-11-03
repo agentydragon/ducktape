@@ -38,11 +38,25 @@ type Health struct {
 	failing  map[Kind]Failure
 	synced   bool
 	draining bool
+	changed  chan struct{}
 }
 
 // New returns a Health that is unavailable until MarkSynced.
 func New() *Health {
-	return &Health{now: time.Now, failing: map[Kind]Failure{}}
+	return &Health{now: time.Now, failing: map[Kind]Failure{}, changed: make(chan struct{})}
+}
+
+// Changed closes after the next health transition. Obtain it before reading to avoid missing a change.
+func (h *Health) Changed() <-chan struct{} {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.changed
+}
+
+// notifyChanged is called with mu held.
+func (h *Health) notifyChanged() {
+	close(h.changed)
+	h.changed = make(chan struct{})
 }
 
 // Status is the facts Available rests on, read at one moment.
@@ -81,6 +95,9 @@ func (h *Health) Status() Status {
 func (h *Health) MarkSynced() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if !h.synced {
+		defer h.notifyChanged()
+	}
 	h.synced = true
 }
 
@@ -88,6 +105,9 @@ func (h *Health) MarkSynced() {
 func (h *Health) MarkDraining() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if !h.draining {
+		defer h.notifyChanged()
+	}
 	h.draining = true
 }
 
@@ -95,6 +115,9 @@ func (h *Health) MarkDraining() {
 func (h *Health) RecordSuccess(kind Kind) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if _, ok := h.failing[kind]; ok {
+		defer h.notifyChanged()
+	}
 	delete(h.failing, kind)
 }
 
@@ -103,6 +126,9 @@ func (h *Health) RecordFailure(kind Kind, err error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	failure, ok := h.failing[kind]
+	if !ok || failure.Error != err.Error() {
+		defer h.notifyChanged()
+	}
 	if !ok {
 		failure.Since = h.now()
 	}

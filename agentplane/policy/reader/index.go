@@ -34,6 +34,7 @@ type Index[R any] struct {
 	// refused holds each set with a rule of this type that does not parse, which grants nothing.
 	refused  map[string]Refusal
 	bindings map[string]policyapi.PolicyBinding
+	changed  chan struct{}
 }
 
 // NewIndex returns an empty Index of the rules whose type is ruleType, each read by parse.
@@ -44,7 +45,21 @@ func NewIndex[R any](ruleType string, parse func(policyapi.Rule) (R, error)) *In
 		sets:     map[string]PolicySet[R]{},
 		refused:  map[string]Refusal{},
 		bindings: map[string]policyapi.PolicyBinding{},
+		changed:  make(chan struct{}),
 	}
+}
+
+// Changed closes after the next index mutation. Obtain it before reading to avoid missing a change.
+func (i *Index[R]) Changed() <-chan struct{} {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	return i.changed
+}
+
+// notifyChanged is called with mu held.
+func (i *Index[R]) notifyChanged() {
+	close(i.changed)
+	i.changed = make(chan struct{})
 }
 
 // PutPolicySet adds or replaces a set. A set with a rule of this type that does not parse is
@@ -54,6 +69,7 @@ func (i *Index[R]) PutPolicySet(set *policyapi.PolicySet) {
 	parsed, err := i.parseSet(set)
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	defer i.notifyChanged()
 	if err != nil {
 		slog.Warn("PolicySet refused", "policySet", set.Name, "error", err)
 		delete(i.sets, set.Name)
@@ -67,6 +83,7 @@ func (i *Index[R]) PutPolicySet(set *policyapi.PolicySet) {
 func (i *Index[R]) DeletePolicySet(name string) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	defer i.notifyChanged()
 	delete(i.sets, name)
 	delete(i.refused, name)
 }
@@ -137,12 +154,14 @@ func (i *Index[R]) resolve(names []string) Resolution[R] {
 func (i *Index[R]) PutBinding(binding *policyapi.PolicyBinding) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	defer i.notifyChanged()
 	i.bindings[binding.Name] = *binding.DeepCopy()
 }
 
 func (i *Index[R]) DeleteBinding(name string) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	defer i.notifyChanged()
 	delete(i.bindings, name)
 }
 

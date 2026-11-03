@@ -72,6 +72,10 @@ type streamHistoryStore interface {
 
 // StreamingDependencies are the narrow runtime interfaces used by SSE and raw upstream routes.
 // All route authorization still goes through HTTPServer.RegisterRawRoute.
+type actionFederator interface {
+	Exchange(context.Context, federation.SessionLoginRow) (string, error)
+}
+
 type StreamingDependencies struct {
 	Auth             *auth.Auth
 	Updates          auth.ChangeSource
@@ -84,9 +88,7 @@ type StreamingDependencies struct {
 	HistoryFollower  interface {
 		FollowSession(context.Context, *historypb.FollowSessionRequest) (grpc.ServerStreamingClient[historypb.FollowSessionResponse], error)
 	}
-	ActionPolicy     policyaccess.ActionPolicyRPC
-	Federator        policyaccess.ActionFederator
-	ActionServiceURL string
+	Federator        actionFederator
 	DispatcherHTTP   streamingUpstream
 	EnvironmentHTTP  streamingUpstream
 	ActionHTTP       streamingUpstream
@@ -153,10 +155,9 @@ type kindFailureView struct {
 }
 
 type liveSandboxFrame struct {
-	SandboxUID   *string                    `json:"sandbox_uid"`
-	Bindings     []policyaccess.BindingView `json:"bindings"`
-	ActionPolicy any                        `json:"action_policy"`
-	Watch        watchHealthView            `json:"watch"`
+	SandboxUID *string                    `json:"sandbox_uid"`
+	Bindings   []policyaccess.BindingView `json:"bindings"`
+	Watch      watchHealthView            `json:"watch"`
 }
 
 type liveDecisionsFrame struct {
@@ -189,8 +190,7 @@ func (r *streamingRoutes) logger() *slog.Logger {
 	return slog.Default()
 }
 
-// sandboxDetailKey is every input of a /live/sandboxes/{name} frame except its Action policy, which depends on the
-// viewer and is added per stream.
+// sandboxDetailKey identifies the exact Environment incarnation for the binding view.
 type sandboxDetailKey struct {
 	name string
 	uid  string
@@ -198,11 +198,9 @@ type sandboxDetailKey struct {
 
 // sandboxDetail is the viewer-independent part of a /live/sandboxes/{name} frame.
 type sandboxDetail struct {
-	sandboxUID       *string
-	subject          *identitypb.ServiceAccount
-	bindings         []policyaccess.BindingView
-	policyGeneration uint64
-	watch            watchHealthView
+	sandboxUID *string
+	bindings   []policyaccess.BindingView
+	watch      watchHealthView
 }
 
 func (r *streamingRoutes) liveSandbox(w http.ResponseWriter, request *http.Request) {
@@ -219,33 +217,9 @@ func (r *streamingRoutes) liveSandbox(w http.ResponseWriter, request *http.Reque
 	defer cancel()
 	frames, unsubscribe := r.sandboxDetails.subscribe(sandboxDetailKey{name: request.PathValue("name"), uid: uid})
 	defer unsubscribe()
-	caller, _ := auth.CallerFromContext(request.Context())
-	session, _ := auth.SessionFromContext(request.Context())
-	api := operatorRoutes{federator: r.deps.Federator, actions: r.deps.ActionPolicy, actionServiceURL: r.deps.ActionServiceURL}
-	var cachedSubject *identitypb.ServiceAccount
-	var cachedGeneration uint64
-	var cachedPolicy any
-	hasCachedPolicy := false
 	streamLiveFrames(r, w, ctx, frames, func(detail sandboxDetail) ([]byte, error) {
-		var actionPolicy any
-		if detail.subject != nil {
-			if hasCachedPolicy && cachedGeneration == detail.policyGeneration && proto.Equal(cachedSubject, detail.subject) {
-				actionPolicy = cachedPolicy
-			} else {
-				actionPolicy = api.actionPolicyFrame(ctx, caller, session, detail.subject)
-				if _, unavailable := actionPolicy.(*policyaccess.ActionPolicyUnavailable); !unavailable {
-					cachedSubject = proto.Clone(detail.subject).(*identitypb.ServiceAccount)
-					cachedGeneration = detail.policyGeneration
-					cachedPolicy = actionPolicy
-					hasCachedPolicy = true
-				} else {
-					hasCachedPolicy = false
-				}
-			}
-		}
 		return json.Marshal(liveSandboxFrame{
-			SandboxUID: detail.sandboxUID, Bindings: nonNilBindingViews(detail.bindings), ActionPolicy: actionPolicy,
-			Watch: detail.watch,
+			SandboxUID: detail.sandboxUID, Bindings: nonNilBindingViews(detail.bindings), Watch: detail.watch,
 		})
 	})
 }
@@ -285,12 +259,12 @@ func (r *streamingRoutes) produceSandboxDetail(ctx context.Context, key sandboxD
 		if err != nil {
 			return err
 		}
-		detail := sandboxDetail{policyGeneration: snapshot.PolicyGeneration, watch: healthView(snapshot.Watch)}
+		detail := sandboxDetail{watch: healthView(snapshot.Watch)}
 		uid := descriptor.GetTarget().GetUid()
 		detail.sandboxUID = &uid
 		if account := descriptor.GetExecutionAccount(); account != nil {
-			detail.subject = &identitypb.ServiceAccount{Namespace: account.GetAccount().GetNamespace(), Name: account.GetAccount().GetName()}
-			detail.bindings, err = policyaccess.BindingsFromSnapshot(snapshot.PolicyBindings, snapshot.PolicySets, snapshot.EgressCredentials, detail.subject)
+			subject := &identitypb.ServiceAccount{Namespace: account.GetAccount().GetNamespace(), Name: account.GetAccount().GetName()}
+			detail.bindings, err = policyaccess.BindingsFromSnapshot(snapshot.PolicyBindings, snapshot.PolicySets, snapshot.EgressCredentials, subject)
 			if err != nil {
 				return err
 			}

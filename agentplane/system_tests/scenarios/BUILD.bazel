@@ -153,7 +153,6 @@ py_library(
         "//agentplane/action_service:operator_action_service_pb2",
         "//agentplane/action_service/policies:resources",
         "//agentplane/app/testing:client",
-        "//agentplane/app/testing:models",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:identity_pb2",
         "//agentplane/proto:session_pb2",

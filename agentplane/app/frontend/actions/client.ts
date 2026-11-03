@@ -51,24 +51,6 @@ import type {
 
 export type { ActionGroupView, ActionHistoryPage, ActionRequestView, ActionState, Verdict } from "./types";
 
-export type EffectivePolicyView = {
-  binding: string;
-  policy_set: string;
-  source: string;
-  index: number;
-  policy:
-    | { type: "exact_actions" | "github_public_repository"; actions: Record<string, string[]> }
-    | { type: "argument_schema"; actions: Record<string, string[]>; argument_schema: Record<string, unknown> }
-    | { type: "github_repository"; actions: Record<string, string[]>; owner: string; repository: string }
-    | { type: "home_assistant_entity_control"; actions: Record<string, string[]>; entities: Record<string, string[]> };
-};
-export type ActionPolicyView = { synced: boolean; auto_approve_if: EffectivePolicyView[] };
-export type ActionPolicyUnavailable = {
-  kind: "unavailable";
-  code: string;
-  upstream: { method: string; url: string; upstream_status: number | null; error_type: string } | null;
-};
-
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 const ACTIONS_PATH = "/upstream/actions";

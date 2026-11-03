@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
-	"sync"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
@@ -25,8 +24,6 @@ type callbackUpstream interface {
 
 type operatorRoutes struct {
 	policies         *policyaccess.Access
-	federator        policyaccess.ActionFederator
-	actions          policyaccess.ActionPolicyRPC
 	callback         callbackUpstream
 	actionServiceURL string
 }
@@ -45,8 +42,7 @@ type callerGrantsOutput struct {
 }
 
 type callerGrantsView struct {
-	Bindings     []policyaccess.BindingView `json:"bindings"`
-	ActionPolicy any                        `json:"action_policy"`
+	Bindings []policyaccess.BindingView `json:"bindings"`
 }
 
 // RegisterOperatorRoutes installs the caller-readable Action policy inventory, operator-only
@@ -55,13 +51,11 @@ type callerGrantsView struct {
 func RegisterOperatorRoutes(
 	server *HTTPServer,
 	policies *policyaccess.Access,
-	federator policyaccess.ActionFederator,
-	actions policyaccess.ActionPolicyRPC,
 	callback callbackUpstream,
 	actionServiceURL string,
 ) {
 	routes := &operatorRoutes{
-		policies: policies, federator: federator, actions: actions,
+		policies: policies,
 		callback: callback, actionServiceURL: actionServiceURL,
 	}
 	api := server.ProtectedAPI()
@@ -71,7 +65,7 @@ func RegisterOperatorRoutes(
 	}, routes.listActionPolicySets)
 	huma.Register[callerGrantsInput, callerGrantsOutput](api, huma.Operation{
 		OperationID: "getCallerGrants", Method: http.MethodGet, Path: "/caller-grants/{namespace}/{name}", Tags: []string{"operator"},
-		Summary: "Inspect policy bindings and effective Action policy for a ServiceAccount",
+		Summary: "Inspect policy bindings for a ServiceAccount",
 	}, routes.callerGrants)
 	// Keep the public OAuth callback as a raw route: Huma's normal JSON response machinery
 	// interprets Location/body fields as an API response and cannot preserve the redirect status
@@ -95,8 +89,7 @@ func (routes *operatorRoutes) callerGrants(ctx context.Context, input *callerGra
 	if !ok || caller.Kind != auth.CallerOperator {
 		return nil, huma.Error403Forbidden("Operator session required")
 	}
-	session, _ := auth.SessionFromContext(ctx)
-	view, err := routes.readCallerGrants(ctx, caller, session, input.Namespace, input.Name)
+	view, err := routes.readCallerGrants(ctx, caller, input.Namespace, input.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +99,6 @@ func (routes *operatorRoutes) callerGrants(ctx context.Context, input *callerGra
 func (routes *operatorRoutes) readCallerGrants(
 	ctx context.Context,
 	caller auth.Caller,
-	session *auth.RequestSession,
 	namespace string,
 	name string,
 ) (*callerGrantsView, error) {
@@ -120,49 +112,14 @@ func (routes *operatorRoutes) readCallerGrants(
 		return nil, huma.Error503ServiceUnavailable("Policy access is unavailable")
 	}
 	subject := &identitypb.ServiceAccount{Namespace: namespace, Name: name}
-	var bindings []policyaccess.BindingView
-	var actionPolicy any
-	var bindingsErr error
-	var group sync.WaitGroup
-	group.Add(2)
-	go func() {
-		defer group.Done()
-		bindings, bindingsErr = routes.policies.BindingsFor(ctx, subject)
-	}()
-	go func() {
-		defer group.Done()
-		actionPolicy = routes.actionPolicyFrame(ctx, caller, session, subject)
-	}()
-	group.Wait()
-	if bindingsErr != nil {
+	bindings, err := routes.policies.BindingsFor(ctx, subject)
+	if err != nil {
 		return nil, huma.Error503ServiceUnavailable("Policy access is unavailable")
 	}
 	if bindings == nil {
 		bindings = []policyaccess.BindingView{}
 	}
-	return &callerGrantsView{Bindings: bindings, ActionPolicy: actionPolicy}, nil
-}
-
-func (routes *operatorRoutes) actionPolicyFrame(
-	ctx context.Context,
-	caller auth.Caller,
-	session *auth.RequestSession,
-	subject *identitypb.ServiceAccount,
-) any {
-	reader, err := policyaccess.NewActionPolicyReader(routes.federator, routes.actions, routes.actionServiceURL)
-	if err != nil {
-		return actionPolicyUnavailable("action_facade_not_configured", nil)
-	}
-	view, unavailable, err := reader.ForSubject(ctx, caller, session, subject)
-	if unavailable != nil {
-		return unavailable
-	}
-	if err != nil {
-		return actionPolicyUnavailable("upstream_request_failed", &policyaccess.ActionUpstreamFailure{
-			Method: http.MethodGet, URL: routes.actionPolicyURL(), UpstreamStatus: intPointer(http.StatusBadGateway), ErrorType: "GRPCResponseError",
-		})
-	}
-	return view
+	return &callerGrantsView{Bindings: bindings}, nil
 }
 
 func (routes *operatorRoutes) completeMCPLinkage(w http.ResponseWriter, request *http.Request) {
@@ -233,10 +190,6 @@ func writeCallbackBody(w http.ResponseWriter, status int, contentType, location 
 	_, _ = w.Write(body)
 }
 
-func (routes *operatorRoutes) actionPolicyURL() string {
-	return sanitizedActionURL(routes.actionServiceURL, "/v1/action-policy")
-}
-
 func (routes *operatorRoutes) callbackURL() string {
 	return sanitizedActionURL(routes.actionServiceURL, "/v1/mcp-linkage/callback")
 }
@@ -253,12 +206,6 @@ func sanitizedActionURL(raw, path string) string {
 	parsed.Fragment = ""
 	return parsed.String()
 }
-
-func actionPolicyUnavailable(code string, upstream *policyaccess.ActionUpstreamFailure) *policyaccess.ActionPolicyUnavailable {
-	return &policyaccess.ActionPolicyUnavailable{Kind: "unavailable", Code: code, Upstream: upstream}
-}
-
-func intPointer(value int) *int { return &value }
 
 func safeOperatorErrorType(err error) string {
 	var networkError net.Error

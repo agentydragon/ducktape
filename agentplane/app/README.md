@@ -86,7 +86,7 @@ get their Threads once it does.
 - `go/threads/`: operator-owned Thread metadata. Generated Dispatcher HTTP routes own command submissions.
   History owns event storage, folding and evidence; `go/historydata/` reads it through gRPC.
 - `go/liveinventory/` and `go/policyaccess/`: Kubernetes list/watch snapshots and policy projections.
-  Policy watches invalidate cached Action policy reads; the Action Service owns their evaluation.
+  The Action Service independently streams its effective policy through its generated facade.
 - `go/proxy/`: authenticated Electric shape forwarding with pinned Thread/projection scope.
   Native service RPCs use generated app-side HTTP gateways with request-bound credentials.
 - `go/auth/` and `go/federation/`: PostgreSQL browser sessions, signed OIDC login and operator token
@@ -279,7 +279,7 @@ Staging runs two app replicas on separate nodes with `RollingUpdate` (`maxUnavai
 The shared Sandbox inventory uses the generated EnvironmentService watch through
 `/upstream/environments/v1/environments:watch`. Protobuf snapshot chunks replace the inventory
 when complete; subsequent upserts and UID-fenced removals update individual Sandboxes. `/live/sandboxes/{name}?sandbox_uid={uid}` is an authenticated SSE stream carrying a
-whole detail snapshot on change and a health frame through the quiet. It pushes one exact Sandbox incarnation's bindings with each reader's verdict and its Action policy list.
+whole detail snapshot on change and a health frame through the quiet. It pushes one exact Sandbox incarnation's bindings with each reader's verdict. The Action Service watch separately streams the execution account's effective Action policy.
 The Sandbox page reads UID-filtered app Thread metadata pages, joins History summaries, and uses them as its retained
 Session inventory; its harness and turn fields are last observed History values. Suspending or
 removing a runner Pod does not clear projected Threads, and the app does not claim their harnesses
@@ -295,8 +295,7 @@ in the table. Session creation displays progress and prevents duplicate clicks w
 runs.
 
 Each `/live/sandboxes/{name}` snapshot is computed once per change for every stream with the
-same parameters and sent to all of them; a stream skips a snapshot identical to its last one. Only the Action policy
-list, which depends on the viewer, is computed per stream.
+same parameters and sent to all of them; a stream skips a snapshot identical to its last one.
 
 A snapshot is not a delta, and there is no resumable id: a relist replaces a kind wholesale and a
 `resourceVersion` expires, so a reconnecting tab is served a fresh snapshot instead. Each detail-stream frame
@@ -635,19 +634,11 @@ Revoke deletes an operator's grant; a binding from git or the Sandbox's own refu
 applied again. **Grant policy sets** adds a binding naming the Sandbox and is, with revocation and the
 launch pick (drawn from `GET /sandboxes/form`, the namespace's PolicySet names), the only write the tab makes.
 
-Below the bindings, **Auto-approve if** is the Action Service's own answer for that account, read through
-the app's authenticated BFF (`/upstream/actions/v1/action-policy?subject.namespace=...&subject.name=...`, so an
-operator session is required as for the Actions page): the `action_auto_approve` policies in the order the service
-walks them, each entry naming the binding, set and index a Decision's evidence names, and `synced`, false
-while the service's watch has not synced and nothing auto-decides. It is the resolution an admission would
-use now, from the service that would use it, and says nothing about past Decisions; the Actions page holds
-those. The app's own watch of the two kinds is a trigger: an event on either re-asks the service for the
-next frame, and a binding lapsing while nothing changes leaves the page at the next frame. The two watches
-are independent, so a frame can briefly precede the service's informer seeing the same event and show the
-answer from just before it. Where the service cannot be asked -- no federation configured, a session to log
-in again, a failed exchange or request -- the frame says so in place of the list rather than showing an empty
-one. Which lists the service enforces is its contract
-([SPEC § Action policies](../action_service/SPEC.md#action-policies)).
+Below the bindings, **Auto-approve if** follows the Action Service's generated
+`/upstream/actions/v1/action-policy:watch` facade for the execution ServiceAccount. Each protobuf snapshot is
+Action Service's own effective policy, including whether its index is synced. The watch is independent of the
+binding inventory; a failure is shown rather than presented as an empty policy. Reconnection starts with a fresh
+snapshot, and changing the Environment incarnation or account discards the prior result.
 
 ## Decisions
 

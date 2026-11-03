@@ -136,6 +136,11 @@ refused contributes nothing and is simply absent from the caller's view; verdict
 reports and labels are shown only to the operator, who can read the same resolution for any
 named subject.
 
+`WatchActionPolicy` uses the same subject and viewer rules as `GetActionPolicy`. It sends the current
+policy followed by changed snapshots, including changes in the index's availability; intermediate
+states may be coalesced. Reconnection starts with a fresh snapshot. The service rechecks the bearer
+while the stream is idle and before each frame; it does not impose a fixed watch lifetime.
+
 ## External OAuth consent
 
 An enrollment names one validated OAuth authorization and expires within fifteen minutes. Its

@@ -291,7 +291,6 @@ py_library(
     deps = [
         "//agentplane:policy_sets",
         "//agentplane:subjects",
-        "//agentplane/action_service:policy_view",
         "//agentplane/egress:decisions",
         "//agentplane/egress:resources",
         "//agentplane/env/runtime:harness",

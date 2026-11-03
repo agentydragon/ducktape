@@ -8,6 +8,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { CallerGrants } from "./caller_grants";
 import type { CallerGrantReader, CallerGrantView } from "./models";
 
+vi.mock("../actions/policy", () => ({ ActionPolicyWatch: () => null }));
+
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
@@ -18,7 +20,6 @@ afterEach(async () => {
 const ACCOUNT = { namespace: "external", name: "caller" };
 const EMPTY: CallerGrantView = {
   bindings: [],
-  action_policy: { synced: true, auto_approve_if: [] },
 };
 async function render(read: CallerGrantReader): Promise<void> {
   container = document.createElement("div");
@@ -45,7 +46,6 @@ it("reads by account and renders honest empty policy without mutation controls",
   expect(read.mock.calls[0][0]).toEqual(ACCOUNT);
   expect(container.textContent).toContain("Grants for external/caller");
   expect(container.textContent).toContain("No binding names this ServiceAccount");
-  expect(container.textContent).toContain("every Action from this ServiceAccount waits for the operator");
   expect(container.textContent).not.toContain("Revoke");
   expect(container.textContent).not.toContain("Grant policy sets");
 });
@@ -63,23 +63,20 @@ it("preserves expired and missing policy set references even when Action policy 
         expires_at: "2000-01-01T00:00:00Z",
       },
     ],
-    action_policy: { kind: "unavailable", code: "operator_federation_not_configured", upstream: null },
   }));
   expect(container.textContent).toContain("external-grants");
   expect(container.textContent).toContain("removed-policy?");
   expect(container.querySelector("time")?.getAttribute("datetime")).toBe("2000-01-01T00:00:00.000Z");
-  expect(container.textContent).toContain("operator_federation_not_configured");
   await act(async () => button("Rules").click());
   expect(container.textContent).toContain("removed-policy: no such PolicySet");
 });
 it("shows unsynced policy separately from a request failure and supports refresh", async () => {
   const read = vi
     .fn<CallerGrantReader>()
-    .mockResolvedValueOnce({ ...EMPTY, action_policy: { synced: false, auto_approve_if: [] } })
+    .mockResolvedValueOnce(EMPTY)
     .mockRejectedValueOnce(new Error("read failed"))
     .mockResolvedValueOnce(EMPTY);
   await render(read);
-  expect(container.textContent).toContain("watch has not synced");
   await act(async () => button("Refresh grants").click());
   expect(container.textContent).toContain("Could not load grants: read failed");
   expect(container.textContent).not.toContain("No binding names");
@@ -104,6 +101,6 @@ it("aborts stale refreshes and ignores their late results", async () => {
   expect(container.textContent).toContain("Loading grants");
   await act(async () => button("Refresh grants").click());
   expect(read.mock.calls[0][1].aborted).toBe(true);
-  await act(async () => finish({ ...EMPTY, action_policy: { synced: false, auto_approve_if: [] } }));
+  await act(async () => finish(EMPTY));
   expect(container.textContent).not.toContain("watch has not synced");
 });

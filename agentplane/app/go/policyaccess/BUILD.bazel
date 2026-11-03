@@ -5,47 +5,33 @@ package(default_visibility = ["//agentplane/app:__subpackages__"])
 go_library(
     name = "policyaccess",
     srcs = [
-        "action_policy.go",
         "errors.go",
         "policyaccess.go",
         "views.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/app/go/policyaccess",
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/policies",
-        "//agentplane/app/go/auth",
-        "//agentplane/app/go/federation",
         "//agentplane/egress/api/v1alpha1",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/policy",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/sandboxes/api",
-        "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/types",
         "@io_k8s_sigs_controller_runtime//pkg/client",
-        "@org_golang_google_grpc//:grpc",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//metadata",
-        "@org_golang_google_grpc//status",
-        "@org_golang_google_protobuf//types/known/structpb",
     ],
 )
 
 go_test(
     name = "unit_test",
     srcs = [
-        "action_policy_test.go",
         "policyaccess_test.go",
     ],
     embed = [":policyaccess"],
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
-        "//agentplane/app/go/auth",
-        "//agentplane/app/go/federation",
         "//agentplane/egress/api/v1alpha1",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/policy",
@@ -58,10 +44,5 @@ go_test(
         "@io_k8s_apimachinery//pkg/types",
         "@io_k8s_sigs_controller_runtime//pkg/client",
         "@io_k8s_sigs_controller_runtime//pkg/client/fake",
-        "@org_golang_google_grpc//:grpc",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//metadata",
-        "@org_golang_google_grpc//status",
-        "@org_golang_google_protobuf//types/known/structpb",
     ],
 )
