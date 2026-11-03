@@ -106,6 +106,12 @@ changes and examples use neutral synthetic shapes.
 
 ### Combine forward and repair work
 
+Choose tactics for the current obstacle. An obvious selector or ownership fix
+can be handled directly. A difficult rejecting spec can be reduced to a passing
+subset; a mysterious engine behavior can be reduced to a small JavaScript
+regression case. Use these as composable heuristics without requiring every
+task to follow a fixed sequence or repeat already established baselines.
+
 In **forward work**, start with a JavaScript capture and a passing partial spec,
 then extract and name coherent modules incrementally. Infer responsibilities
 and architectural layers from behavior and call sites. Keep modules cohesive
@@ -146,11 +152,14 @@ cannot serve as the passing baseline.
 Use divide-and-conquer when a large spec rejects or the next semantic repair
 has an uncertain payoff. Work in a scratch spec, preserving the authored target:
 
-1. Start from the passing residual-only assignment. Restore meaningful groups
-   of module claims, including their anonymous statements and complete atomic
-   units, and run the normal gate on each candidate.
-2. Split a failing group and try each half against the same passing base. Keep
-   passing groups and continue on the rejected combinations. If both halves
+1. Reduce the rejecting spec by returning suspected groups of claims to
+   residual until a useful subset passes. That candidate is a known passing
+   lower bound. Alternatively start from an existing passing partial spec or
+   the residual-only baseline. Include anonymous statements and complete
+   atomic units in each group.
+2. Restore groups, run the normal gate, and split failing additions against
+   the same passing base. Keep passing groups and continue on rejected
+   combinations. If both halves
    pass separately but their union fails, isolate their interaction; there may
    be several independent conflicts and no single bad module.
 3. Retain the largest useful passing partial extraction found and a small

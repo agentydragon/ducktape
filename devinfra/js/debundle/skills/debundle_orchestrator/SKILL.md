@@ -19,8 +19,9 @@ is not the default prerequisite for progress.
 Combine [forward extraction and repair](references/skills/shared/workflow.md#combine-forward-and-repair-work)
 as needed within a task: extend a passing partial spec, reduce a failing spec
 or source case, and jointly repair the spec/tool while preserving useful
-reverse-engineered structure. Establish a passing residual-only baseline for each bundle. For a rejecting
-spec, use the shared workflow's
+reverse-engineered structure. These are composable tactics. Keep a reproducible
+passing residual-only baseline for each bundle. For a rejection without an
+obvious inexpensive repair, use the shared workflow's
 [divide-and-conquer strategy](references/skills/shared/workflow.md#start-from-passing-residual-output-and-isolate-failing-assignments)
 to retain useful passing extractions and isolate conflicting additions before
 committing to a long semantic repair.
