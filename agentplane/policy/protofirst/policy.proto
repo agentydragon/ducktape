@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package agentplane.policy.protofirst.v1;
+option go_package = "github.com/agentydragon/ducktape/agentplane/policy/protofirst;protofirstpb";
+
+import "google/protobuf/struct.proto";
+
+message PolicySet {
+  // +kubebuilder:validation:MinItems=1
+  // +kubebuilder:validation:MaxItems=256
+  repeated Rule rules = 1;
+}
+
+// +kubebuilder:validation:XValidation:message="Rule fields must match type.",rule="self.type == 'egress' ? has(self.hosts) && !has(self.policy) : self.type == 'action_auto_approve' && has(self.policy) && !has(self.hosts)"
+message Rule {
+  // +kubebuilder:validation:Enum=egress;action_auto_approve
+  string type = 1;
+  // +kubebuilder:validation:MinItems=1
+  repeated string hosts = 2;
+  ActionPolicy policy = 3;
+}
+
+message ActionPolicy {
+  // +kubebuilder:validation:Enum=exact_actions;argument_schema
+  string type = 1;
+  // +kubebuilder:validation:MinProperties=1
+  map<string, google.protobuf.ListValue> actions = 2;
+  google.protobuf.Struct schema = 3;
+}
+
+// An isolated egress-only CRD probes generation without replacing production resources.
+// +cue-gen:EgressPolicySet:groupName:protofirst.agentplane.allegedly.works
+// +cue-gen:EgressPolicySet:versions:v1alpha1
+// +cue-gen:EgressPolicySet:scope:Namespaced
+// +cue-gen:EgressPolicySet:spec:required
+// +cue-gen:EgressPolicySet:resource:kind=PolicySet,plural=policysets,singular=policyset,listKind=PolicySetList
+message EgressPolicySet {
+  // +kubebuilder:validation:MinItems=1
+  // +kubebuilder:validation:MaxItems=256
+  repeated EgressRule rules = 1;
+}
+
+// +kubebuilder:validation:XValidation:message="Egress hosts are required",rule="has(self.hosts)"
+message EgressRule {
+  // +kubebuilder:validation:Enum=egress
+  string type = 1;
+  // +kubebuilder:validation:MinItems=1
+  repeated string hosts = 2;
+}
+
+// A local-only probe for the Kubernetes-to-gRPC boundary; not a production API.
+service PolicyProbe {
+  rpc GetPolicySet(GetPolicySetRequest) returns (PolicySetResult);
+}
+message GetPolicySetRequest {
+  string namespace = 1;
+  string name = 2;
+}
+message PolicySetResult {
+  string namespace = 1;
+  string name = 2;
+  string uid = 3;
+  PolicySet spec = 4;
+}

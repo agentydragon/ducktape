@@ -1,0 +1,45 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "codec",
+    srcs = ["policy.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/policy/protofirst/codec",
+    deps = [
+        "//agentplane/policy/protofirst:policy_go_proto",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "codec_test",
+    srcs = [
+        "apiserver_test.go",
+        "policy_test.go",
+    ],
+    data = [
+        "//agentplane/policy/protofirst:listvalue_probe",
+        "//agentplane/policy/protofirst:policy_crd",
+    ],
+    embed = [":codec"],
+    deps = [
+        "//agentplane/policy/protofirst:policy_go_proto",
+        "//agentplane/testing/kubeapiserver",
+        "@io_bazel_rules_go//go/runfiles",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_client_go//dynamic",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@io_k8s_sigs_controller_runtime//pkg/envtest",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

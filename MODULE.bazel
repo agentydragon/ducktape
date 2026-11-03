@@ -3,6 +3,7 @@ module(
     version = "0.1.0",
 )
 
+bazel_dep(name = "cel-spec", version = "0.25.1", repo_name = "dev_cel_expr")
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "bazel_skylib", version = "1.9.2")
 bazel_dep(name = "rules_python", version = "2.4.3")
@@ -1843,6 +1844,37 @@ go_deps = use_extension(
 )
 go_deps.from_file(go_mod = "//third_party:go.mod")
 
+# Proto-first policy CRD generation experiment.
+go_deps.gazelle_override(
+    directives = ["gazelle:resolve go cel.dev/expr @@cel-spec+//:expr"],
+    path = "github.com/google/cel-go",
+)
+go_deps.module(
+    path = "cel.dev/expr",
+    sum = "h1:1KrZg61W6TWSxuNZ37Xy49ps13NUovb66QLprthtwi4=",
+    version = "v0.25.1",
+)
+go_deps.module(
+    path = "github.com/antlr4-go/antlr/v4",
+    sum = "h1:SqQKkuVZ+zWkMMNkjy5FZe5mr5WURWnlpmOuzYWrPrQ=",
+    version = "v4.13.1",
+)
+go_deps.module(
+    path = "github.com/google/cel-go",
+    sum = "h1:e7ih85+4qVrBuqQWTW4FKSqZYokVuc3HnhH5keboFTo=",
+    version = "v0.27.0",
+)
+go_deps.module(
+    path = "github.com/howardjohn/celpp",
+    sum = "h1:FrN60AmjI3X90HyhiG2P1OcR5QrfCW5MDqVaSxXifKg=",
+    version = "v0.1.0",
+)
+go_deps.module(
+    path = "istio.io/tools",
+    sum = "h1:Z22nJ6k5RJjwi0eMDrdK8/8dHR/VbcQGJDWvRyYEoZQ=",
+    version = "v0.0.0-20260928195158-7fc2b03dd59b",
+)
+
 # COSI Runtime's generated BUILD files import this transitive module directly.
 go_deps.module(
     path = "github.com/gertd/go-pluralize",
@@ -2291,6 +2323,7 @@ use_repo(
     "co_honnef_go_tools",
     "com_github_akhenakh_mgrs",
     "com_github_anthropics_anthropic_sdk_go",
+    "com_github_antlr4_go_antlr_v4",
     "com_github_beorn7_perks",
     "com_github_blacktop_go_dwarf",
     "com_github_blacktop_go_macho",
@@ -2319,6 +2352,7 @@ use_repo(
     "com_github_go_viper_mapstructure_v2",
     "com_github_gobuffalo_flect",
     "com_github_godbus_dbus_v5",
+    "com_github_google_cel_go",
     "com_github_google_go_github_v88",
     "com_github_google_uuid",
     "com_github_goretk_gore",
@@ -2326,6 +2360,7 @@ use_repo(
     "com_github_gorilla_securecookie",
     "com_github_grpc_ecosystem_grpc_gateway_v2",
     "com_github_hashicorp_golang_lru_v2",
+    "com_github_howardjohn_celpp",
     "com_github_invopop_jsonschema",
     "com_github_josharian_intern",
     "com_github_k8snetworkplumbingwg_network_attachment_definition_client",
@@ -2370,6 +2405,7 @@ use_repo(
     "in_gopkg_yaml_v3",
     "in_yaml_go_yaml_v4",
     "io_etcd_go_bbolt",
+    "io_istio_tools",
     "io_k8s_api",
     "io_k8s_apimachinery",
     "io_k8s_apiserver",
