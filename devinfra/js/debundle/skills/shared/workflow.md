@@ -104,6 +104,34 @@ Keep private inputs, concrete spec audits and project-specific progress in
 [gaffer-private](https://github.com/agentydragon/gaffer-private). Public engine
 changes and examples use neutral synthetic shapes.
 
+### Combine forward and repair work
+
+In **forward work**, start with a JavaScript capture and a passing partial spec,
+then extract and name coherent modules incrementally. Infer responsibilities
+and architectural layers from behavior and call sites. Keep modules cohesive
+and usefully sized; current paths and boundaries can change as understanding
+improves. Retain a passing candidate as coverage grows.
+
+In **repair work**, start with a rejected spec or a regression, including a
+previously accepted layout exposed by stricter validation. Identify what
+changed and classify the failure: invalid spec/selectors, a real unsafe split,
+analysis imprecision, an engine regression, or unsupported reconstruction.
+Compare matching source/spec/engine revisions and relevant assumptions. A
+historical pass is evidence to investigate; it does not establish correctness
+under the current contract or justify relaxing the validator. Preserve useful
+reverse-engineered structure while choosing spec edits, inference, recognition
+or annotations to repair the actual cause.
+
+These approaches can interleave within one task. While extending a passing
+partial spec, isolate a rejecting claim subset, minimize the relevant JavaScript
+into a neutral regression fixture, repair the engine or spec, and continue
+extraction. Use the [bug reproduction workflow](../../docs/bug_reproductions.md)
+for that source reduction. Residual-baseline and subset reduction support both
+approaches. Preserve useful reverse-engineered structure during repair, and
+describe each probe's intended result without imposing an exclusive session
+mode or global phase. Both approaches require correct, readable output and a
+cheap iteration loop.
+
 ### Start from passing residual output and isolate failing assignments
 
 Every configured bundle needs an empty extraction spec that passes the normal

@@ -16,7 +16,10 @@ routes, evidence and reconsideration criteria. A sound specific recognizer or
 an audited annotation can be the right lasting solution; general interpretation
 is not the default prerequisite for progress.
 
-Establish a passing residual-only baseline for each bundle. For a rejecting
+Combine [forward extraction and repair](references/skills/shared/workflow.md#combine-forward-and-repair-work)
+as needed within a task: extend a passing partial spec, reduce a failing spec
+or source case, and jointly repair the spec/tool while preserving useful
+reverse-engineered structure. Establish a passing residual-only baseline for each bundle. For a rejecting
 spec, use the shared workflow's
 [divide-and-conquer strategy](references/skills/shared/workflow.md#start-from-passing-residual-output-and-isolate-failing-assignments)
 to retain useful passing extractions and isolate conflicting additions before
