@@ -1,0 +1,148 @@
+{
+  "description": "Selected nonsecret observations from the disposable KVM proof; not complete logs.",
+  "probe_events": [
+    {
+      "connection_epoch": 1,
+      "pod_uid": "f652aa59-be0a-4fba-9998-6dd30231099e",
+      "runtime_boot_id": "cbcea396-2afc-4b89-8a31-9d334eff73c0",
+      "status": "passed"
+    },
+    {
+      "connection_epoch": 2,
+      "event": "execution_session_opened",
+      "execution_session_id": "3311c4f1-f621-469d-a993-adece39a7b6c",
+      "mode": "start",
+      "process_id": "ram-proof",
+      "runtime_boot_id": "cbcea396-2afc-4b89-8a31-9d334eff73c0"
+    },
+    {
+      "after_seq": 1,
+      "chunks": [
+        {
+          "seq": 1,
+          "stream": "stdout",
+          "data": "marker=425e1813-7d35-4b2e-8dfb-848e2a66d5c4 counter=0 main_pid=500 child_pid=501\n"
+        }
+      ],
+      "closed": false,
+      "connection_epoch": 2,
+      "event": "execution_probe_ready",
+      "execution_session_id": "3311c4f1-f621-469d-a993-adece39a7b6c",
+      "exited": false,
+      "next_seq": 2,
+      "process_id": "ram-proof",
+      "runtime_boot_id": "cbcea396-2afc-4b89-8a31-9d334eff73c0"
+    },
+    {
+      "connection_epoch": 3,
+      "event": "execution_session_opened",
+      "execution_session_id": "3311c4f1-f621-469d-a993-adece39a7b6c",
+      "mode": "resume",
+      "process_id": "ram-proof",
+      "runtime_boot_id": "cbcea396-2afc-4b89-8a31-9d334eff73c0"
+    },
+    {
+      "after_seq": 14,
+      "chunks": [
+        {
+          "seq": 14,
+          "stream": "stdout",
+          "data": "marker=425e1813-7d35-4b2e-8dfb-848e2a66d5c4 counter=13 main_pid=500 child_pid=501\n"
+        }
+      ],
+      "closed": false,
+      "connection_epoch": 3,
+      "event": "execution_probe_ready",
+      "execution_session_id": "3311c4f1-f621-469d-a993-adece39a7b6c",
+      "exited": false,
+      "next_seq": 15,
+      "process_id": "ram-proof",
+      "runtime_boot_id": "cbcea396-2afc-4b89-8a31-9d334eff73c0"
+    },
+    {
+      "connection_epoch": 4,
+      "event": "execution_session_opened",
+      "execution_session_id": "3311c4f1-f621-469d-a993-adece39a7b6c",
+      "mode": "resume",
+      "process_id": "ram-proof",
+      "runtime_boot_id": "cbcea396-2afc-4b89-8a31-9d334eff73c0"
+    },
+    {
+      "after_seq": 35,
+      "chunks": [
+        {
+          "seq": 35,
+          "stream": "stdout",
+          "data": "marker=425e1813-7d35-4b2e-8dfb-848e2a66d5c4 counter=34 main_pid=500 child_pid=501\n"
+        }
+      ],
+      "closed": false,
+      "connection_epoch": 4,
+      "event": "execution_probe_ready",
+      "execution_session_id": "3311c4f1-f621-469d-a993-adece39a7b6c",
+      "exited": false,
+      "next_seq": 36,
+      "process_id": "ram-proof",
+      "runtime_boot_id": "cbcea396-2afc-4b89-8a31-9d334eff73c0"
+    }
+  ],
+  "final_checkpoint_manifest": {
+    "pod_uid": "f652aa59-be0a-4fba-9998-6dd30231099e",
+    "sandbox_uid": "proof-sandbox",
+    "boot_id": "ace8a6c7-96f4-4b0a-81ba-d8dc8ffde14a",
+    "config_sha256": "73785f31e11dc47ee595c8fe76ab9c79205ce16d6437d161d39a6d556d23e37c",
+    "firecracker_sha256": "99ad0f5cd0514a88aad0e9ae8cfdb3cc3b4ab9d190e1194602406c786b5de7a5",
+    "generation": "checkpoint-a89ed3967c11417d8be31e0f3d38d484",
+    "files": {
+      "kernel": {
+        "size": 413271304,
+        "sha256": "217bdcfdb601cee68aa72b22fb7a51946f0e033746c2965b8c54ec419cd0a5a3"
+      },
+      "rootfs": {
+        "size": 9073442816,
+        "sha256": "c7c06e3f9f24c14df0d1ab961d42355d896ea906f961cf11e97d54e1fd66b420"
+      },
+      "runner": {
+        "size": 68497408,
+        "sha256": "df98b569fdcc3d32719df5c6eb16bc3fccfce9172ddddf954c6b6ef4d1459371"
+      },
+      "state": {
+        "size": 536870912,
+        "sha256": "6fccbd9bb8b88fbb899bda0eed10c8ca4f47e0182b50a753366d159d5d462e3d"
+      },
+      "workspace": {
+        "size": 1073741824,
+        "sha256": "ca043368c882559a2d7fb7e4ce14838e4d10e8d4aead09f8fbf617f440916918"
+      },
+      "config": {
+        "size": 385024,
+        "sha256": "7fda3dab585865a93354c30fa51f70bd16df7b3124906967132de84e9db17bdc"
+      },
+      "launch": {
+        "size": 376832,
+        "sha256": "c73d539f4e53b76cd31550042fcaab2d1b699520c5996296ac115f9105a9a836"
+      },
+      "trust": {
+        "size": 376832,
+        "sha256": "183e3c8618ed0e7c3c501fd5f4734d7f8009f99d1f237425f10e03395f4dfcdb"
+      },
+      "credentials": {
+        "size": 16777216,
+        "sha256": "15e75d4224dbc77cba9acc94c3cf0b5e79c9d438ef17c19481c2585aca7a6e87"
+      },
+      "memory": {
+        "size": 1073741824,
+        "sha256": "47a2fa1f55a6f6888056c9330f1c3f611aee29a5b211b772d5b7e388e543d960"
+      },
+      "vmstate": {
+        "size": 22733,
+        "sha256": "c5f7dc41320419368a0cd844e9e9022a90d39d3c3280d01684b88032c0cd3966"
+      }
+    }
+  },
+  "launcher_thaw_acknowledgements": [
+    "INFO:__main__:guest thaw acknowledged boot ID ace8a6c7-96f4-4b0a-81ba-d8dc8ffde14a",
+    "INFO:__main__:guest thaw acknowledged boot ID ace8a6c7-96f4-4b0a-81ba-d8dc8ffde14a",
+    "INFO:__main__:guest thaw acknowledged boot ID ace8a6c7-96f4-4b0a-81ba-d8dc8ffde14a"
+  ]
+}

@@ -89,6 +89,15 @@ exportable clone. Established external connections may expire while suspended; a
 reconnect. The guest thaw agent repairs wall time before traffic resumes; monotonic time and
 process state retain Firecracker's snapshot semantics.
 
+Native execution sessions still follow the existing transport lifecycle: a new Gateway connection
+epoch closes the old `Executor.OpenSession` stream and its native WebSocket. Codex's detached
+session has a 30-second reattachment grace while the guest is running. The sampler currently
+reattaches on its next operation, so RAM preservation alone does not guarantee that native child
+processes remain alive indefinitely after resume. Immediate reattachment can preserve the native
+session and its processes; a successful immediate-resume proof does not establish an execution
+lease across a prolonged control-plane outage. Supporting that requires explicit session parking
+and durable terminal release, rather than weakening epoch fencing or retaining orphaned sessions.
+
 ## Tokens and network boundaries
 
 The relay alone mounts projected ServiceAccount tokens. It reads kubelet-rotated token files for
