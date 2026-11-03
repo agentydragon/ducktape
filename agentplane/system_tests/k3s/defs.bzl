@@ -19,6 +19,14 @@ K3S_PERSISTENCE_PROPERTIES = {
     "test.snapshot-read-policy": "newest",
 }
 
+KVM_EXEC_PROPERTIES = {
+    "test.Pool": "wyrm2-kvm-vm",
+    "test.init-dockerd": "false",
+    "test.recycle-runner": "false",
+    "test.use-self-hosted-executors": "true",
+    "test.workload-isolation-type": "docker",
+}
+
 # Application, runner and guest images stay per-action inputs. Only pinned retained
 # infrastructure selects the snapshot family; the runtime fingerprint still verifies helpers,
 # CRDs, rendered releases, configuration and actual image layouts before attaching.
@@ -77,10 +85,12 @@ _STACKS = {
     "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, real_model = True, images = [_HARNESSES_LAYOUT]),
 }
 
-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, main = None):
-    """Run one suite with retained infrastructure and fresh per-action application state."""
+def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, require_kvm = False, main = None):
+    """Run one suite with fresh fixture state and the selected executor lifecycle."""
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
+    if require_kvm and stack != "vm":
+        fail("require_kvm requires the VM stack")
     if profile_guest and stack != "vm":
         fail("profile_guest requires the VM stack")
     if boot_evidence and stack != "vm":
@@ -117,6 +127,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         env |= {
             "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
             "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
+            "AGENTPLANE_K3S_REQUIRE_KVM": "1" if require_kvm else "0",
             "AGENTPLANE_VM_BOOT_EVIDENCE": "1" if boot_evidence else "0",
             "K3S_PROFILE_GUEST_ROOT": "1" if profile_guest else "0",
         }
@@ -131,10 +142,12 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         properties["test.env-secrets"] = "OPENAI_API_KEY"
         suite_tags.append("live_openai_api")
 
-    # VM layers stay on disk; Pod/MCP/real-model suites use a separate tmpfs baseline.
-    properties |= K3S_PERSISTENCE_PROPERTIES | {
-        "test.runner-recycling-key": k3s_recycling_key(vm = config.vm),
-    }
+    if require_kvm:
+        properties |= KVM_EXEC_PROPERTIES
+    else:
+        properties |= K3S_PERSISTENCE_PROPERTIES | {
+            "test.runner-recycling-key": k3s_recycling_key(vm = config.vm),
+        }
     py_test(
         name = name,
         size = "enormous",

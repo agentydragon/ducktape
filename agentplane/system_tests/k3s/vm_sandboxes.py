@@ -1,13 +1,15 @@
-"""What VM Sandboxes need on the k3s stack besides our own objects: KubeVirt, emulating the guest CPU
-(QEMU TCG; the RBE executor has no `/dev/kvm`), and Kyverno's admission controller, which adds the egress
-relay to each VM's launcher Pod (cluster/cdk8s/agentplane/launcher_relay.py). Both are the releases
-production runs, from their release manifests, with their images from Bazel-pulled layouts.
+"""What VM Sandboxes need on the k3s stack besides our own objects: KubeVirt and Kyverno's admission
+controller, which adds the egress relay to each VM's launcher Pod (cluster/cdk8s/agentplane/launcher_relay.py).
+Hosted RBE defaults to QEMU TCG; the manual KVM lane selects hardware acceleration after checking its device.
+Both are the releases production runs, from their release manifests, with images from Bazel-pulled layouts.
 """
 
+import fcntl
 import json
 import os
 import subprocess
 from collections.abc import Callable
+from contextlib import ExitStack
 from typing import Any
 
 import yaml
@@ -26,6 +28,47 @@ KYVERNO_NAMESPACE = "kyverno"
 _KYVERNO_ADMISSION = "kyverno-admission-controller"
 READY_SECONDS = 600
 _PROFILE_ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root-profile:unset"
+_KVM_MODE_ENV = "AGENTPLANE_K3S_REQUIRE_KVM"
+_KVM_GET_API_VERSION = 0xAE00
+_KVM_CREATE_VM = 0xAE01
+_KVM_CREATE_VCPU = 0xAE41
+_KVM_API_VERSION = 12
+
+
+def _kvm_requested() -> bool:
+    match os.environ.get(_KVM_MODE_ENV, "0"):
+        case "0":
+            return False
+        case "1":
+            return True
+        case value:
+            raise ValueError(f"{_KVM_MODE_ENV} must be '0' or '1', got {value!r}")
+
+
+def _assert_kvm_usable() -> None:
+    """Prove this action can open KVM and create the VM/vCPU KubeVirt will need."""
+    try:
+        kvm_fd = os.open("/dev/kvm", os.O_RDWR | os.O_CLOEXEC)
+    except OSError as error:
+        raise RuntimeError("KVM mode requires a usable /dev/kvm device") from error
+    with ExitStack() as descriptors:
+        descriptors.callback(os.close, kvm_fd)
+        try:
+            api_version = fcntl.ioctl(kvm_fd, _KVM_GET_API_VERSION, 0)
+        except OSError as error:
+            raise RuntimeError("KVM mode could not query the /dev/kvm API version") from error
+        if api_version != _KVM_API_VERSION:
+            raise RuntimeError(f"/dev/kvm API version is {api_version}, expected {_KVM_API_VERSION}")
+        try:
+            vm_fd = fcntl.ioctl(kvm_fd, _KVM_CREATE_VM, 0)
+        except OSError as error:
+            raise RuntimeError("KVM mode could not create a VM") from error
+        descriptors.callback(os.close, vm_fd)
+        try:
+            vcpu_fd = fcntl.ioctl(vm_fd, _KVM_CREATE_VCPU, 0)
+        except OSError as error:
+            raise RuntimeError("KVM mode could not create a vCPU") from error
+        descriptors.callback(os.close, vcpu_fd)
 
 
 def select_native_profile(objects: list[dict[str, Any]], *, enabled: bool, profile_root: bool) -> None:
@@ -81,7 +124,10 @@ def _kubevirt() -> dict[str, Any]:
             "infra": {"replicas": 1},
             "configuration": {
                 # The feature gate production's runner VMs need (cluster/cdk8s/kubevirt/app.py).
-                "developerConfiguration": {"useEmulation": True, "featureGates": ["EnableVirtioFsStorageVolumes"]}
+                "developerConfiguration": {
+                    "useEmulation": not _kvm_requested(),
+                    "featureGates": ["EnableVirtioFsStorageVolumes"],
+                }
             },
         },
     }
@@ -135,6 +181,8 @@ def _kyverno() -> list[dict[str, Any]]:
 
 def releases() -> list[dict[str, Any]]:
     """KubeVirt's operator and Kyverno's admission controller, as `install` applies them."""
+    if _kvm_requested():
+        _assert_kvm_usable()
     return _kubevirt_operator() + _kyverno()
 
 
