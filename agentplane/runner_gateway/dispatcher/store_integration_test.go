@@ -2258,3 +2258,261 @@ func TestCleanupConfirmsAbsenceAfterReadingStoredWork(t *testing.T) {
 		})
 	}
 }
+
+type openingOutcomeRunner struct {
+	acceptingRunner
+	err error
+}
+
+func (r *openingOutcomeRunner) OpenSession(_ context.Context, _ SandboxSnapshot, id string, _ *sessionpb.SessionSpec, _ *string, _ *identitypb.ServiceAccountIdentity) error {
+	r.calls <- "opening:" + id
+	return r.err
+}
+
+func TestNativeOpeningOutcomesFenceQueuedWork(t *testing.T) {
+	cases := []struct {
+		name         string
+		code         codes.Code
+		openingState string
+		commandState string
+	}{
+		{"invalid request", codes.InvalidArgument, FailedState, FailedState},
+		{"conflicting request", codes.AlreadyExists, FailedState, FailedState},
+		{"unknown response", codes.Unknown, UnknownState, QueueState},
+		{"internal response", codes.Internal, UnknownState, QueueState},
+		{"resource exhaustion", codes.ResourceExhausted, UnknownState, QueueState},
+		{"unproven precondition", codes.FailedPrecondition, UnknownState, QueueState},
+		{"unavailable reservation", codes.Unavailable, QueueState, QueueState},
+		{"lost reservation response", codes.DeadlineExceeded, QueueState, QueueState},
+		{"admitted", codes.OK, AdmittedState, AdmittedState},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := t.Context()
+			store := testStore(t, 3)
+			sessionID, uid, commandID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+			sandbox := SandboxSnapshot{Name: "test-materialization", Namespace: "test-namespace", UID: uid, Incarnation: "test-incarnation"}
+			spec := &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CODEX}
+			if _, err := store.OpenSession(ctx, sessionID, sandbox.Name, uid, spec, nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			command := input(commandID, "queued before owner response")
+			if _, err := store.Enqueue(ctx, sessionID, sandbox.Name, uid, command, nil); err != nil {
+				t.Fatal(err)
+			}
+			runner := &openingOutcomeRunner{acceptingRunner: acceptingRunner{calls: make(chan string, 3)}, err: status.Error(test.code, "test owner response")}
+			worker := &DeliveryWorker{Store: store, Catalog: testCatalog{sandbox: sandbox}, Leases: testLease{store: store}, Runner: runner}
+			worker.init()
+			defer worker.queue.ShutDown()
+			if err := worker.reconcile(ctx, true); err != nil {
+				t.Fatal(err)
+			}
+			if err := worker.processSession(ctx, sessionID); err != nil {
+				t.Fatal(err)
+			}
+			if len(runner.calls) != 1 || <-runner.calls != "opening:"+sessionID {
+				t.Fatal("opening did not reach owner exactly once")
+			}
+			if retry, err := store.OpenSession(ctx, sessionID, sandbox.Name, uid, spec, nil, nil); err != nil || retry.State != test.openingState {
+				t.Fatalf("opening receipt retry: %+v %v", retry, err)
+			}
+			if test.openingState == FailedState || test.openingState == UnknownState {
+				if _, err := store.Enqueue(ctx, sessionID, sandbox.Name, uid, input(uuid.NewString(), "after owner response"), nil); !errors.Is(err, ErrOpeningUnconfirmed) || status.Code(apiError(err)) != codes.FailedPrecondition {
+					t.Fatalf("new command accepted after terminal opening: %v", err)
+				}
+				owner, ok := worker.ownerFor(uid)
+				if !ok {
+					t.Fatal("worker lost owner")
+				}
+				if _, err := store.RecoverSandbox(ctx, owner); err != nil {
+					t.Fatal(err)
+				}
+				// A later suspended environment must not cause wake or redelivery.
+				sandbox.Blocker, sandbox.WakeOnSend = "sandbox_suspended", true
+				worker.Catalog = testCatalog{sandbox: sandbox}
+			}
+			wake := &scriptedWake{}
+			worker.Wake = wake
+			if err := worker.processSession(ctx, sessionID); err != nil {
+				t.Fatal(err)
+			}
+			row, err := store.GetDispatch(ctx, commandID)
+			if err != nil || row.State != test.commandState {
+				t.Fatalf("dependent command: %+v %v", row, err)
+			}
+			if retry, err := store.Enqueue(ctx, sessionID, sandbox.Name, uid, command, nil); err != nil || retry.State != row.State || retry.Position != row.Position {
+				t.Fatalf("existing command receipt retry: %+v %v", retry, err)
+			}
+			if test.commandState == FailedState && row.Reason != "session_opening_rejected" {
+				t.Fatalf("unsent rejection reason: %s", row.Reason)
+			}
+			if test.openingState == UnknownState && row.Reason != "session_opening_unconfirmed" {
+				t.Fatalf("uncertain opening blocker: %s", row.Reason)
+			}
+			if len(wake.targets) != 0 {
+				t.Fatal("unconfirmed opening attempted wake")
+			}
+			if test.commandState == AdmittedState {
+				if len(runner.calls) != 1 || <-runner.calls != commandID || row.Admission == nil {
+					t.Fatal("admitted opening did not release its command")
+				}
+			} else if len(runner.calls) != 0 || row.Admission != nil {
+				t.Fatal("unconfirmed opening delivered or replayed work")
+			}
+		})
+	}
+}
+
+func TestUnprovenOpeningFailureHoldsCommandsAndPreservesOtherPaths(t *testing.T) {
+	for _, kind := range []string{"native", "central", "no-opening"} {
+		t.Run(kind, func(t *testing.T) {
+			ctx := t.Context()
+			store := testStore(t, 3)
+			sessionID, uid, commandID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+			sandbox := SandboxSnapshot{Name: "test-unproven", Namespace: "test-namespace", UID: uid, Incarnation: "test-incarnation"}
+			if kind != "no-opening" {
+				harness := sessionpb.Harness_HARNESS_CODEX
+				if kind == "central" {
+					harness = sessionpb.Harness_HARNESS_CENTRAL_SAMPLER
+				}
+				if _, err := store.OpenSession(ctx, sessionID, sandbox.Name, uid, &sessionpb.SessionSpec{Harness: harness}, nil, nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := store.Enqueue(ctx, sessionID, sandbox.Name, uid, input(commandID, "pending"), nil); err != nil {
+				t.Fatal(err)
+			}
+			runner := &acceptingRunner{calls: make(chan string, 1)}
+			worker := &DeliveryWorker{Store: store, Catalog: testCatalog{sandbox: sandbox}, Leases: testLease{store: store}, Runner: runner}
+			worker.init()
+			defer worker.queue.ShutDown()
+			if err := worker.reconcile(ctx, true); err != nil {
+				t.Fatal(err)
+			}
+			owner, ok := worker.ownerFor(uid)
+			if !ok {
+				t.Fatal("worker has no owner")
+			}
+			if kind != "no-opening" {
+				if _, err := store.SettleOpening(ctx, sessionID, owner, []string{QueueState}, FailedState, "old unproven outcome"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := worker.processSession(ctx, sessionID); err != nil {
+				t.Fatal(err)
+			}
+			row, err := store.GetDispatch(ctx, commandID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if kind == "native" {
+				if row.State != QueueState || row.Reason != "session_opening_unconfirmed" || len(runner.calls) != 0 {
+					t.Fatalf("unproven failure did not hold work: %+v", row)
+				}
+				if _, err := store.Cancel(ctx, commandID); err != nil {
+					t.Fatalf("held command cannot be cancelled: %v", err)
+				}
+			} else if row.State != AdmittedState || len(runner.calls) != 1 || <-runner.calls != commandID {
+				t.Fatalf("existing %s delivery behavior changed: %+v", kind, row)
+			}
+		})
+	}
+}
+
+func TestOpeningRejectionSerializesWithAdmissionAndFencesOwners(t *testing.T) {
+	store, databaseURL := testStoreWithURL(t, 3)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	sessionID, uid, commandID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	if _, err := store.OpenSession(ctx, sessionID, "test-rejection-race", uid, &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CODEX}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	oldOwner, err := store.ClaimSandboxOwner(ctx, uid, "test-old-lease", 1, "test-old-owner", 0)
+	if err != nil || oldOwner == nil {
+		t.Fatalf("old owner: %+v %v", oldOwner, err)
+	}
+	owner, err := store.ClaimSandboxOwner(ctx, uid, "test-new-lease", 1, "test-new-owner", oldOwner.Generation)
+	if err != nil || owner == nil {
+		t.Fatalf("new owner: %+v %v", owner, err)
+	}
+	if row, err := store.RejectOpening(ctx, sessionID, *oldOwner, []string{QueueState}, "stale rejection"); err != nil || row != nil {
+		t.Fatalf("stale owner settled opening: %+v %v", row, err)
+	}
+	gate, err := store.DB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gate.Rollback()
+	if _, err := gate.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "command:"+commandID); err != nil {
+		t.Fatal(err)
+	}
+	var gatePID int
+	if err := gate.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&gatePID); err != nil {
+		t.Fatal(err)
+	}
+	connect := func() (*Store, int) {
+		db, err := sql.Open("postgres", databaseURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { db.Close() })
+		db.SetMaxOpenConns(1)
+		var pid int
+		if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
+			t.Fatal(err)
+		}
+		return NewStore(db, 3), pid
+	}
+	admitter, admitterPID := connect()
+	rejecter, rejecterPID := connect()
+	admitted := make(chan error, 1)
+	go func() {
+		_, err := admitter.Enqueue(ctx, sessionID, "test-rejection-race", uid, input(commandID, "concurrent command"), nil)
+		admitted <- err
+	}()
+	waitBlocked := func(waiter, blocker int) {
+		t.Helper()
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			var blocked bool
+			if err := store.DB.QueryRowContext(ctx, "SELECT $2 = ANY(pg_blocking_pids($1))", waiter, blocker).Scan(&blocked); err != nil {
+				t.Fatal(err)
+			}
+			if blocked {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			case <-ticker.C:
+			}
+		}
+	}
+	waitBlocked(admitterPID, gatePID)
+	rejected := make(chan error, 1)
+	go func() {
+		_, err := rejecter.RejectOpening(ctx, sessionID, *owner, []string{QueueState}, "proven rejection")
+		rejected <- err
+	}()
+	// Admission has the Session lock but has not inserted the command yet.
+	waitBlocked(rejecterPID, admitterPID)
+	if err := gate.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-admitted; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-rejected; err != nil {
+		t.Fatal(err)
+	}
+	if row, err := store.GetDispatch(ctx, commandID); err != nil || row.State != FailedState {
+		t.Fatalf("rejection missed concurrent admission: %+v %v", row, err)
+	}
+	if _, err := store.EndSandbox(ctx, uid); err != nil {
+		t.Fatal(err)
+	}
+	if row, err := store.RejectOpening(ctx, sessionID, *owner, []string{FailedState}, "late rejection"); err != nil || row != nil {
+		t.Fatalf("rejection resurrected cleaned state: %+v %v", row, err)
+	}
+}

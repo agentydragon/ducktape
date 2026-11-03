@@ -133,3 +133,31 @@ using stale inventory can still commit before cleanup observes its row. The next
 removes it and closes admission permanently. During a rolling upgrade, the fence applies only after
 all admitting/cleanup Gateway replicas use this protocol; the additive migration alone does not
 fence old writers.
+
+## Native opening outcomes and dependent commands
+
+The Dispatcher retains logical existence and the immutable creation request after a native owner
+rejects materialization. An exact opening retry reads that receipt; changing configuration requires
+a new Session UUID. Runtime admission reserves a Session, not a running native harness.
+
+A native `OpenSession` response of `INVALID_ARGUMENT` proves validation rejected the request before
+reservation; `ALREADY_EXISTS` reports a conflicting retained request. Dispatcher records these as
+`FAILED` and, in the same transaction, fails commands still `QUEUED_IN_DISPATCHER` with
+`session_opening_rejected`. It does not alter delivering or admitted commands. Admission and
+settlement serialize on the Session ID, and settlement checks the current owner generation.
+A command admitted first is included; a later new queued command is refused with
+`FAILED_PRECONDITION` without a stored receipt. Exact existing-command retries still return the
+original receipt after ordinary caller authorization.
+
+`ABORTED`, `UNAVAILABLE` and deadline responses keep the existing same-ID reservation reconciliation
+and backoff. Runtime recovers the durable reservation before native preparation; these retries are
+not permission to replay uncertain native harness effects. Other native opening errors, including
+`INTERNAL`, `UNKNOWN`, `RESOURCE_EXHAUSTED` and unproven preconditions, become `UNKNOWN`. Their
+pending commands remain queued with `session_opening_unconfirmed`; they do not wake the environment
+or reach Runtime. New queued commands are refused as above. Older `FAILED` openings lack proof of
+rejection and receive the same hold without rewriting their stored outcome. Held commands remain
+cancellable. Automatic resolution of those held openings is not provided.
+
+These rules apply to native openings after all Dispatcher replicas run this protocol. Central
+sampler admission and commands without a Dispatcher opening retain their existing behavior.
+Deletion cleanup, retained History and UUID reuse policy are unchanged.

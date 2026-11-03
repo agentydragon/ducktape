@@ -2120,10 +2120,14 @@ creation request and exact required environment UID separately from owner materi
 command delivery. Reuse existing native authorization; do not invent an environment-free central
 principal. The sampler remains subject to its current contract until separately changed.
 
-Specify and implement observed materialization rejection/unknown outcomes and deletion fencing for
-the native slice, including exact UUID/request retry, conflict, owner unavailable, crash, UID
-replacement and cleanup races; never automatically replay an uncertain native effect. Preserve
-authority and retained History across service-store boundaries. The caller can select an exact
+The [native opening outcome contract](../runner_gateway/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands)
+separates proven rejection from unconfirmed owner outcomes and fences dependent queued work.
+Exact receipt retry, logical-opening discovery and post-cleanup environment-UID admission fencing
+are implemented. Remaining: decide whether cleanup forgets Session identity or retains deduplication
+facts, what UUID reuse means for retained History, and how held unconfirmed openings are explicitly
+resolved. Do not infer those policies from the current opening table or add permanent retention
+without that decision. Preserve authority and retained History across service-store boundaries;
+never automatically replay an uncertain native effect. The caller can select an exact
 environment _at creation_; later Session addressing uses the UUID. Choose the minimum schema and
 read API as implementation details, and link its contract from the
 [Session/environment plan](session_environment_model.md#session-address-inventory).

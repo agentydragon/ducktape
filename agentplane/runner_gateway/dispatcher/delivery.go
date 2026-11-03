@@ -392,6 +392,10 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 			return err
 		}
 	}
+	if head != nil && principalOpening != nil && !centralSpec(principalOpening.Spec) &&
+		(principalOpening.State == FailedState || principalOpening.State == UnknownState) {
+		return w.Store.NoteWaiting(ctx, head.CommandID, owner, "session_opening_unconfirmed")
+	}
 	if principalOpening != nil && principalOpening.ExecutionPrincipal != nil {
 		account, found, err := w.executionAccount(ctx, sandbox)
 		if err != nil {
@@ -515,6 +519,27 @@ func (w *DeliveryWorker) deliveryFailure(sessionID, workID, uid, incarnation str
 		return QueueState, fmt.Sprintf("runner_unreachable: %s: %s", grpcStatus.Code(), grpcStatus.Message())
 	}
 	return FailedState, fmt.Sprintf("runner %s: %s", grpcStatus.Code(), grpcStatus.Message())
+}
+
+// Runtime validates arguments before reservation and reports AlreadyExists for a
+// conflicting retained request. Other terminal codes do not prove native rejection.
+func (w *DeliveryWorker) openingFailure(opening *Opening, sandbox SandboxSnapshot, err error) (string, string, *status.Status) {
+	key := "opening:" + opening.SessionID
+	if centralSpec(opening.Spec) {
+		state, reason := w.deliveryFailure(opening.SessionID, key, opening.SandboxUID, sandbox.Incarnation, err)
+		return state, reason, nil
+	}
+	switch status.Code(err) {
+	case codes.InvalidArgument, codes.AlreadyExists:
+		rejection := status.Convert(err)
+		return FailedState, fmt.Sprintf("runner %s: %s", rejection.Code(), rejection.Message()), rejection
+	case codes.Aborted, codes.Unavailable, codes.DeadlineExceeded:
+		// Reconcile the same Runtime reservation; native preparation waits for work.
+		state, reason := w.deliveryFailure(opening.SessionID, key, opening.SandboxUID, sandbox.Incarnation, err)
+		return state, reason, nil
+	default:
+		return UnknownState, "runner_opening_unconfirmed: " + err.Error(), nil
+	}
 }
 
 func (w *DeliveryWorker) retryStorage(ctx context.Context, fn func() error) {
@@ -642,10 +667,15 @@ func (w *DeliveryWorker) deliverOpening(ctx context.Context, opening *Opening, s
 		span.SetStatus(otelcodes.Error, "runner session opening failed")
 	}
 	state, reason := AdmittedState, ""
+	var rejection *status.Status
 	if callErr != nil {
-		state, reason = w.deliveryFailure(opening.SessionID, key, opening.SandboxUID, sandbox.Incarnation, callErr)
+		state, reason, rejection = w.openingFailure(opening, sandbox, callErr)
 	}
 	w.retryStorage(ctx, func() error {
+		if rejection != nil {
+			_, err := w.Store.RejectOpening(ctx, opening.SessionID, owner, []string{DeliveringState}, reason)
+			return err
+		}
 		_, err := w.Store.SettleOpening(ctx, opening.SessionID, owner, []string{DeliveringState}, state, reason)
 		return err
 	})

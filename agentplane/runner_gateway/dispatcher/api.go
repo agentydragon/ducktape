@@ -325,6 +325,8 @@ func apiError(err error) error {
 		return status.Error(codes.AlreadyExists, "session_id was opened with another request")
 	case errors.Is(err, ErrSandboxDeleted):
 		return status.Error(codes.FailedPrecondition, "sandbox was deleted")
+	case errors.Is(err, ErrOpeningUnconfirmed):
+		return status.Error(codes.FailedPrecondition, "Session opening is not confirmed")
 	case errors.Is(err, ErrQueueFull):
 		return status.Error(codes.ResourceExhausted, err.Error())
 	case errors.Is(err, ErrNotFound):

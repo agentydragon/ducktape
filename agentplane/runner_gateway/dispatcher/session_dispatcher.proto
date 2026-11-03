@@ -77,7 +77,7 @@ enum DeliveryState {
   DELIVERY_STATE_NO_OP = 5;                    // nothing to do; `reason` says where that was decided
   DELIVERY_STATE_FAILED = 6;                   // terminal; `reason` names where it failed
   DELIVERY_STATE_CANCELLED_IN_DISPATCHER = 7;  // cancelled before delivery began; `reason` says by whom
-  DELIVERY_STATE_UNKNOWN = 8;                  // the Sandbox was deleted; the outcome can no longer be read
+  DELIVERY_STATE_UNKNOWN = 8;                  // the owner outcome is unconfirmed, or deletion made it unreadable
 }
 
 enum Operation {
