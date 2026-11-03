@@ -20,7 +20,8 @@ runner erofs, persistent state, workspace, config, launch, egress trust and cred
 The launcher creates the state and workspace ext4 filesystems; the guest does not auto-format them.
 The read-only credential seed contains only `tls.crt`, `tls.key` and `ca-certificates.crt`. A root
 systemd thaw agent copies the seed into a root-only tmpfs directory, accepts host time and rotated
-Runtime credentials over vsock port 52, and acknowledges the stable kernel boot ID. Runtime keeps
+Runtime credentials through the typed `GuestManagement` gRPC service over privileged vsock
+port 52, and acknowledges the stable kernel boot ID. Runtime keeps
 its process and boot identity through resume and reloads these files for later TLS handshakes.
 `systemd-networkd` waits for the first thaw acknowledgement before configuring the fixed guest
 addresses.

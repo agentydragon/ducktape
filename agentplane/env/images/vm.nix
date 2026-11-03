@@ -483,8 +483,8 @@ in
       RestartSec = 1;
       User = "root";
       UMask = "0077";
-      CapabilityBoundingSet = "CAP_SYS_TIME";
-      AmbientCapabilities = "CAP_SYS_TIME";
+      CapabilityBoundingSet = "CAP_SYS_TIME CAP_NET_BIND_SERVICE";
+      AmbientCapabilities = "CAP_SYS_TIME CAP_NET_BIND_SERVICE";
       NoNewPrivileges = true;
       ProtectSystem = "strict";
       ProtectHome = "read-only";

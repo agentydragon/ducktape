@@ -31,8 +31,13 @@ The TAP uses `192.0.2.1/30` and `fd00:fc::1/64` at MTU `1280`. The guest can rea
 declared relay and platform route TCP listeners on the host. Forwarding allows established
 replies to inbound Runtime traffic on port `9090` and rejects guest-initiated off-Pod flows.
 Firewall changes install parent-chain reject guards before modifying private chains. Guest
-network admission follows an AF_VSOCK port `52` thaw acknowledgement containing the current
-clock, TLS certificate, key, CA bundle, and preserved boot ID.
+network admission follows the typed `GuestManagement.Synchronize` gRPC response over AF_VSOCK
+port `52`. The host first reads `GetStatus`, then sends the current clock, TLS certificate, key,
+CA bundle and expected boot ID; the guest rejects a mismatched identity before changing state.
+The host client retries transport establishment within a bounded deadline while the guest boots.
+The root guest service accepts only host CID `2` and holds `CAP_SYS_TIME` and
+`CAP_NET_BIND_SERVICE`. Keeping its listener below port `1024` prevents an unprivileged guest
+process from replacing the service and receiving Runtime private keys. It exposes no TCP listener.
 The launcher resolves Kubernetes Secret `..data` once per credential read so a projected
 generation change cannot pair a new certificate with an old key.
 

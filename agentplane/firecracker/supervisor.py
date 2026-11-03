@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import ClassVar
 
 from agentplane.firecracker.config import Config, load
-from agentplane.firecracker.credentials import read_credentials
 from agentplane.firecracker.firecracker_api import FirecrackerApi, process
+from agentplane.firecracker.guest_management import sync_guest
 from agentplane.firecracker.network import GUEST_V4, Network
 from agentplane.firecracker.storage import WORK, Manifest, Storage, owner_lock
 
@@ -63,43 +63,6 @@ def guest_reachable() -> bool:
         return False
 
 
-def sync_guest(path: Path, stopped: threading.Event) -> str:
-    deadline = time.monotonic() + 30
-    while True:
-        if stopped.is_set():
-            raise RuntimeError("launcher is stopping")
-        try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-                connection.settimeout(5)
-                connection.connect(str(path))
-                with connection.makefile("rwb") as stream:
-                    stream.write(b"CONNECT 52\n")
-                    stream.flush()
-                    if not stream.readline(128).startswith(b"OK "):
-                        raise RuntimeError("Firecracker vsock refused guest agent connection")
-                    credentials = read_credentials(Path("/run/agentplane/environment-runtime-tls"))
-                    payload = {
-                        "unix_nano": time.time_ns(),
-                        "tls_cert": credentials.tls_cert,
-                        "tls_key": credentials.tls_key,
-                        "ca_bundle": credentials.ca_bundle,
-                    }
-                    stream.write(json.dumps(payload).encode() + b"\n")
-                    stream.flush()
-                    response = json.loads(stream.readline(4096))
-                    if (
-                        not isinstance(response, dict)
-                        or not isinstance(response.get("boot_id"), str)
-                        or not response["boot_id"]
-                    ):
-                        raise ValueError("guest agent returned no boot ID")
-                    return response["boot_id"]
-        except FileNotFoundError, ConnectionRefusedError, TimeoutError:
-            if time.monotonic() >= deadline:
-                raise TimeoutError("guest thaw agent did not respond") from None
-            stopped.wait(min(0.1, deadline - time.monotonic()))
-
-
 class StatusHandler(BaseHTTPRequestHandler):
     supervisor: ClassVar[Supervisor]
 
@@ -108,7 +71,7 @@ class StatusHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         if self.path == "/state":
-            status = {"pod_uid": self.supervisor.config.pod_uid, "phase": self.supervisor.phase}
+            status: dict[str, object] = {"pod_uid": self.supervisor.config.pod_uid, "phase": self.supervisor.phase}
             if self.supervisor.error is not None:
                 status["error"] = self.supervisor.error
             self.respond(200, status)
@@ -252,7 +215,7 @@ class Supervisor:
                         "resume_vm": True,
                     },
                 )
-            boot_id = sync_guest(VSOCK_SOCKET, self.stopped)
+            boot_id = sync_guest(VSOCK_SOCKET, self.stopped, manifest.boot_id if manifest else "")
             if manifest is not None and boot_id != manifest.boot_id:
                 raise RuntimeError("restored guest boot ID differs from checkpoint")
             LOG.info("guest thaw acknowledged boot ID %s", boot_id)

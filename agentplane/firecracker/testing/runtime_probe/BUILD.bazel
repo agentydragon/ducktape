@@ -7,7 +7,9 @@ go_binary(
     deps = [
         "//agentplane/env/runtime/control",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/env/runtime/execution:executor_go_proto",
         "//agentplane/environment_runtime_transport",
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",

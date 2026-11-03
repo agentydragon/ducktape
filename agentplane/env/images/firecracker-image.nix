@@ -25,8 +25,21 @@ let
           while IFS= read -r store_path; do
             cp -a "$store_path" "$rootfs/nix/store/"
           done < ${closure}/store-paths
-          cp -a ${toplevel}/. "$rootfs/"
-          mkdir -p "$rootfs/run"
+          mkdir -m 0755 -p \
+            "$rootfs/etc" \
+            "$rootfs/bin" \
+            "$rootfs/sbin" \
+            "$rootfs/dev" \
+            "$rootfs/proc" \
+            "$rootfs/sys" \
+            "$rootfs/run" \
+            "$rootfs/tmp" \
+            "$rootfs/var" \
+            "$rootfs/root" \
+            "$rootfs/home" \
+            "$rootfs/nix/var/nix/profiles"
+          chmod 1777 "$rootfs/tmp"
+          ln -s ${toplevel} "$rootfs/nix/var/nix/profiles/system"
           ln -s ${toplevel} "$rootfs/run/current-system"
 
           image_bytes=$(du -s --block-size=1 "$rootfs" | cut -f1)
@@ -39,6 +52,12 @@ let
             -U 00000000-0000-0000-0000-000000000001 \
             -E lazy_itable_init=0,lazy_journal_init=0,root_owner=0:0 \
             -d "$rootfs" "$out/rootfs.ext4" "$blocks"
+          for path in etc bin sbin dev proc sys run var nix/var/nix/profiles; do
+            debugfs -R "stat /$path" "$out/rootfs.ext4" 2>/dev/null | grep -F "Type: directory" >/dev/null
+          done
+          for path in run/current-system nix/var/nix/profiles/system; do
+            debugfs -R "stat /$path" "$out/rootfs.ext4" 2>/dev/null | grep -F "Type: symlink" >/dev/null
+          done
         '
       '';
   kernel = guest.config.boot.kernelPackages.kernel;

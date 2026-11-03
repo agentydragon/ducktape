@@ -97,8 +97,11 @@ public CA bundle; no ServiceAccount token is copied into a disk or RAM snapshot.
 
 The host holds the Runtime TLS Secret. Initial credentials arrive on a private read-only seed disk;
 the root-only guest agent writes private tmpfs credentials. On each start/restore the supervisor
-sends the current certificate, key, CA and host wall time over vsock port 52, accepting only the
-host CID in the guest. Runtime reloads TLS files on a new handshake without restarting its process.
+sends the current certificate, key, CA and host wall time through the typed `GuestManagement`
+gRPC service over vsock port 52. The guest accepts only host CID 2 and checks the expected boot
+identity before applying changes. The root service binds a privileged port so an unprivileged
+guest process cannot impersonate it and receive private keys. Runtime reloads TLS files on a new
+handshake without restarting its process.
 The public egress CA disk and Runtime trust are distinct.
 
 The guest reaches the relay at `192.0.2.1:3128` or `[fd00:fc::1]:3128` and explicitly declared

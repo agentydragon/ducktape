@@ -72,7 +72,7 @@ def test_thaw_precedes_network_and_checkpoint_precedes_vmm_exit(
             events.append(route)
             return {}
 
-    def fake_sync_guest(path: Path, stopped: object) -> str:
+    def fake_sync_guest(path: Path, stopped: object, expected_boot_id: str) -> str:
         events.append("thaw")
         return "boot-1"
 
