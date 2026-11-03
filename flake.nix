@@ -586,6 +586,15 @@
           enableHomeManager = false;
         };
 
+        # Static BuildBuddy worker VM for nested KVM test actions.
+        buildbuddy-kvm-worker = mkNixos {
+          hostname = "buildbuddy-kvm-worker";
+          username = "buildbuddy";
+          hostModule = ./devinfra/buildbuddy/images/kvm_worker/nixos.nix;
+          hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
+          enableHomeManager = false;
+        };
+
         # NixOS guest used by the KubeVirt Agentplane execution environment.
         agentplane-environment-vm = mkNixos {
           hostname = "agentplane-environment-vm";
