@@ -1,6 +1,6 @@
 //! Whole-source-unit coverage for a small, non-invoking initializer subset.
 
-use super::value_model::{AbstractValue, ValueExpr, Values};
+use super::value_model::{AbstractValue, CallSite, ValueExpr, Values};
 use crate::facts::OwnerInitializationCoverageRefusalReason;
 use crate::facts::abstract_domain::value::{Kind, PrimKinds, Value};
 use crate::facts::item_views::{SplitDeclaratorProvenance, TopLevelItemView};
@@ -16,6 +16,11 @@ enum Leaf {
     Function(u32),
     Class(u32),
     Binding(Id),
+    NativeCollection {
+        callee: Id,
+        call_site: CallSite,
+        kind: Kind,
+    },
     Allocation {
         allocation: u32,
         reads: BTreeSet<Id>,
@@ -35,6 +40,50 @@ pub(super) struct OriginalInitializer {
 pub(super) struct EvaluatedInitializer {
     owner: SourceUnitOrdinal,
     initializer_span: Span,
+}
+
+/// A candidate exists only while one dedicated root initializer is evaluated.
+/// Its matching transfer is recorded by that root's native New dispatch.
+#[derive(Clone, Copy)]
+pub(super) struct NativeConstructorCandidate {
+    owner: SourceUnitOrdinal,
+    call_site: CallSite,
+    kind: Kind,
+}
+
+/// Evidence that the exact root New dispatch selected and applied the native
+/// empty collection row. This is not a value identity or a heap-shape fact.
+#[derive(Clone, Copy)]
+pub(super) struct NativeConstructorTransfer {
+    owner: SourceUnitOrdinal,
+    call_site: CallSite,
+    kind: Kind,
+}
+
+impl NativeConstructorTransfer {
+    pub(super) fn applied(candidate: NativeConstructorCandidate) -> Self {
+        Self {
+            owner: candidate.owner,
+            call_site: candidate.call_site,
+            kind: candidate.kind,
+        }
+    }
+
+    fn matches(self, candidate: NativeConstructorCandidate) -> bool {
+        self.owner == candidate.owner
+            && self.call_site == candidate.call_site
+            && self.kind == candidate.kind
+    }
+}
+
+impl NativeConstructorCandidate {
+    pub(super) fn kind(self) -> Kind {
+        self.kind
+    }
+
+    pub(super) fn matches_dispatch(self, call_site: CallSite, kind: Kind) -> bool {
+        self.call_site == call_site && self.kind == kind
+    }
 }
 
 /// Terminal evidence for this source owner only. Never composed through a
@@ -278,6 +327,29 @@ fn allocation_inputs(expression: &Expr, reads: &mut BTreeSet<Id>) -> Option<()> 
     Some(())
 }
 
+fn empty_native_collection(expression: &Expr) -> Option<(Id, CallSite, Kind)> {
+    let Expr::New(construction) = expression.unwrap_parens() else {
+        return None;
+    };
+    if construction.type_args.is_some()
+        || construction
+            .args
+            .as_ref()
+            .is_some_and(|arguments| !arguments.is_empty())
+    {
+        return None;
+    }
+    let Expr::Ident(callee) = construction.callee.unwrap_parens() else {
+        return None;
+    };
+    let kind = match callee.sym.as_ref() {
+        "Map" => Kind::Map,
+        "Set" => Kind::Set,
+        _ => return None,
+    };
+    Some((callee.to_id(), CallSite::from(construction.span), kind))
+}
+
 impl OriginalInitializer {
     pub(super) fn collect(
         item: &TopLevelItemView<'_>,
@@ -311,6 +383,16 @@ impl OriginalInitializer {
             return Err(OwnerInitializationCoverageRefusalReason::MissingInitializer);
         };
         let leaf = match initializer.unwrap_parens() {
+            Expr::New(_) => {
+                let Some((callee, call_site, kind)) = empty_native_collection(initializer) else {
+                    return Err(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer);
+                };
+                Leaf::NativeCollection {
+                    callee,
+                    call_site,
+                    kind,
+                }
+            }
             Expr::Ident(binding) => Leaf::Binding(binding.to_id()),
             Expr::Lit(Lit::Regex(regex)) => {
                 // ECMA-262 evaluates a validated literal through RegExpCreate
@@ -361,7 +443,9 @@ impl OriginalInitializer {
             {
                 Leaf::Function(expression.span.lo.0)
             }
-            _ => return Err(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer),
+            _ => {
+                return Err(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer);
+            }
         };
         Ok(Self {
             owner,
@@ -379,8 +463,42 @@ impl OriginalInitializer {
         match &self.leaf {
             Leaf::Binding(binding) => initialized(binding),
             Leaf::Allocation { reads, .. } => reads.iter().all(initialized),
-            Leaf::Primitive(_) | Leaf::Function(_) | Leaf::Class(_) => true,
+            Leaf::Primitive(_)
+            | Leaf::Function(_)
+            | Leaf::Class(_)
+            | Leaf::NativeCollection { .. } => true,
         }
+    }
+
+    pub(super) fn native_constructor_candidate(
+        &self,
+        expression: &ValueExpr,
+    ) -> Option<NativeConstructorCandidate> {
+        let Leaf::NativeCollection {
+            callee: expected_callee,
+            call_site,
+            kind,
+        } = &self.leaf
+        else {
+            return None;
+        };
+        let ValueExpr::New(callee, arguments, evaluated_site) = expression else {
+            return None;
+        };
+        if !matches!(kind, Kind::Map | Kind::Set) {
+            return None;
+        }
+        if *call_site != *evaluated_site
+            || !arguments.is_empty()
+            || !matches!(callee.as_ref(), ValueExpr::Binding(binding) if binding == expected_callee)
+        {
+            return None;
+        }
+        Some(NativeConstructorCandidate {
+            owner: self.owner,
+            call_site: *call_site,
+            kind: *kind,
+        })
     }
 
     /// The dedicated root Evaluate transfer must actually finish with its
@@ -392,6 +510,7 @@ impl OriginalInitializer {
         expression: &ValueExpr,
         values: &Values,
         initialized_reads: bool,
+        native_constructor_transfer: Option<NativeConstructorTransfer>,
     ) -> Option<EvaluatedInitializer> {
         if values.is_empty() || values.contains(&AbstractValue::Value(Value::Unavailable)) {
             return None;
@@ -400,6 +519,12 @@ impl OriginalInitializer {
             (Leaf::Binding(expected), ValueExpr::Binding(lowered), _) => {
                 expected == lowered && initialized_reads
             }
+            (Leaf::NativeCollection { .. }, _, AbstractValue::Value(Value::Top)) => self
+                .native_constructor_candidate(expression)
+                .zip(native_constructor_transfer)
+                .is_some_and(|(candidate, transfer)| {
+                    values.len() == 1 && transfer.matches(candidate)
+                }),
             (
                 Leaf::Allocation { allocation, .. },
                 ValueExpr::ObjectLiteral(lowered, _),

@@ -87,7 +87,11 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "effect_translation_validation_test",
-    deps = ["@crates//:serde_json"],
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:sha2",
+    ],
 )
 
 debundle_e2e_test(
