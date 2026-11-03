@@ -70,8 +70,8 @@ func openWakeableSession(
 	t.Helper()
 	attribution := wakeAttribution(actor, effective)
 	effectiveAccount := accountOfIdentity(effective)
-	if _, err := store.OpenSessionWithIdentity(context.Background(), sessionID, sandboxName, sandboxUID,
-		&sessionpb.SessionSpec{}, nil, &effectiveAccount, effective, actor, attribution); err != nil {
+	if _, err := store.OpenSessionForCaller(context.Background(), sessionID, sandboxName, sandboxUID,
+		&sessionpb.SessionSpec{}, nil, &effectiveAccount, effective, CallerIdentity{ServiceAccountIdentity: effective, Attribution: attribution}); err != nil {
 		t.Fatal("open wakeable Session:", err)
 	}
 	return attribution
@@ -260,8 +260,8 @@ func TestStoreRejectsMismatchedWakeCaller(t *testing.T) {
 			}
 			write := func(wakeCaller *Account) error {
 				if kind == "opening" {
-					_, err := store.OpenSessionWithIdentity(ctx, sessionID, "sandbox", sandboxUID,
-						&sessionpb.SessionSpec{}, nil, wakeCaller, effective, actor, attribution)
+					_, err := store.OpenSessionForCaller(ctx, sessionID, "sandbox", sandboxUID,
+						&sessionpb.SessionSpec{}, nil, wakeCaller, effective, CallerIdentity{ServiceAccountIdentity: effective, Attribution: attribution})
 					return err
 				}
 				_, err := store.EnqueueForCaller(ctx, sessionID, "sandbox", sandboxUID,

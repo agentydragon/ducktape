@@ -759,28 +759,52 @@ func scanOpening(row interface{ Scan(...any) error }) (*Opening, error) {
 }
 
 func (s *Store) OpenSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account) (*Opening, error) {
-	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, spec, setupScript, wakeCaller, nil, nil, nil)
+	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, spec, setupScript, wakeCaller, nil, nil)
 }
 
-// OpenSessionWithIdentity stores the immutable target execution account and the distinct caller
-// that created the opening. A nil execution UID is permitted only for a privileged open-before-ready
-// request; the worker can bind it only after verifying the managed ServiceAccount's owner reference.
-func (s *Store) OpenSessionWithIdentity(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal, creator *ServiceAccountIdentity, attribution *AdmissionAttribution) (*Opening, error) {
-	if executionPrincipal == nil || executionPrincipal.GetAccount() == nil || executionPrincipal.GetAccount().GetNamespace() == "" ||
-		executionPrincipal.GetAccount().GetName() == "" || creator == nil || creator.GetAccount() == nil ||
-		creator.GetAccount().GetNamespace() == "" || creator.GetAccount().GetName() == "" || creator.GetUid() == "" {
+// OpenSessionForCaller stores the immutable execution account separately from the verified
+// caller attribution. Retrying a concurrently inserted opening requires retained read authority.
+func (s *Store) OpenSessionForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal *ServiceAccountIdentity, caller CallerIdentity) (*Opening, error) {
+	if executionPrincipal == nil || executionPrincipal.GetAccount().GetNamespace() == "" ||
+		executionPrincipal.GetAccount().GetName() == "" || caller.Attribution == nil || caller.Attribution.Actor == nil ||
+		caller.Attribution.Actor.GetAccount().GetNamespace() == "" || caller.Attribution.Actor.GetAccount().GetName() == "" ||
+		caller.Attribution.Actor.GetUid() == "" {
 		return nil, errors.New("execution principal and creator identity are required")
 	}
-	if err := validateAttribution(attribution, wakeCaller); err != nil {
+	if err := validateAttribution(caller.Attribution, wakeCaller); err != nil {
 		return nil, err
 	}
-	if attribution != nil && !sameServiceAccountIdentity(attribution.Actor, creator) {
-		return nil, errors.New("opening creator does not match its actor attribution")
-	}
-	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, spec, setupScript, wakeCaller, executionPrincipal, creator, attribution)
+	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, spec, setupScript, wakeCaller, executionPrincipal, &caller)
 }
 
-func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal, creator *ServiceAccountIdentity, attribution *AdmissionAttribution) (*Opening, error) {
+// authorizeRetry uses retained read authority: a receipt retry performs no new execution.
+func (o *Opening) authorizeRetry(caller CallerIdentity) error {
+	if !caller.Privileged && (o.ExecutionPrincipal == nil || o.ExecutionPrincipal.GetUid() == "" ||
+		!sameServiceAccountIdentity(o.ExecutionPrincipal, caller.ServiceAccountIdentity)) {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (o *Opening) matchRequest(sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string) error {
+	if spec == nil {
+		return ErrOpeningConflict
+	}
+	oldBytes, err := wire(o.Spec)
+	if err != nil {
+		return err
+	}
+	data, err := wire(spec)
+	if err != nil {
+		return err
+	}
+	if o.SandboxName != sandboxName || o.SandboxUID != sandboxUID || !bytes.Equal(oldBytes, data) || !equalOptional(o.SetupScript, setupScript) {
+		return ErrOpeningConflict
+	}
+	return nil
+}
+
+func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal *ServiceAccountIdentity, caller *CallerIdentity) (*Opening, error) {
 	if sessionID == "" || sandboxName == "" || spec == nil {
 		return nil, errors.New("session_id, sandbox and spec are required")
 	}
@@ -802,12 +826,13 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 		}
 		existing, err := scanOpening(tx.QueryRowContext(ctx, "SELECT "+openingColumns+" FROM session_opening WHERE session_id=$1", sessionID))
 		if err == nil {
-			oldBytes, err := wire(existing.Spec)
-			if err != nil {
-				return err
+			if caller != nil {
+				if err := existing.authorizeRetry(*caller); err != nil {
+					return err
+				}
 			}
-			if existing.SandboxName != sandboxName || existing.SandboxUID != sandboxUID || !bytes.Equal(oldBytes, data) || !equalOptional(existing.SetupScript, setupScript) {
-				return ErrOpeningConflict
+			if err := existing.matchRequest(sandboxName, sandboxUID, spec, setupScript); err != nil {
+				return err
 			}
 			result = existing
 			return nil
@@ -826,7 +851,10 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 				ownerUID = executionPrincipal.GetUid()
 			}
 		}
-		if creator != nil {
+		var attribution *AdmissionAttribution
+		if caller != nil {
+			attribution = caller.Attribution
+			creator := attribution.Actor
 			creatorNS, creatorName, creatorUID = creator.GetAccount().GetNamespace(), creator.GetAccount().GetName(), creator.GetUid()
 		}
 		attributionArgs := attributionValues(attribution)

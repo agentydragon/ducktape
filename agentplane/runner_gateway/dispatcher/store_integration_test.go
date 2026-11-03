@@ -1188,8 +1188,8 @@ func newWakeWorkerFixture(t *testing.T, spec *sessionpb.SessionSpec, wake WakeRe
 	callerIdentity := proto.Clone(caller).(*ServiceAccountIdentity)
 	actorIdentity := proto.Clone(actor).(*ServiceAccountIdentity)
 	attribution := &AdmissionAttribution{Actor: actorIdentity, EffectiveCaller: callerIdentity}
-	opening, err := store.OpenSessionWithIdentity(ctx, sessionID, sandboxName, sandboxUID, spec, nil, nil,
-		callerIdentity, actorIdentity, attribution)
+	opening, err := store.OpenSessionForCaller(ctx, sessionID, sandboxName, sandboxUID, spec, nil, nil,
+		callerIdentity, CallerIdentity{ServiceAccountIdentity: callerIdentity, Attribution: attribution})
 	if err != nil {
 		t.Fatal(err)
 	}
