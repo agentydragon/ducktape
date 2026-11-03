@@ -40,7 +40,7 @@ images:
     newTag: devel-20261102224110-b1397ac # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   # Bootstrap only: the image workflow publishes on devel; wait for Flux to select a real tag before creating VM Sandboxes.
   - name: git.allegedly.works/ducktape-ci/agentplane-environment-vm
-    newTag: devel-20261103003307-3eb9a0e # {"$imagepolicy": "flux-system:agentplane-environment-vm:tag"}
+    newTag: devel-20261103005307-d4bd8b6 # {"$imagepolicy": "flux-system:agentplane-environment-vm:tag"}
   # The `agentplane` command disk beside the VM guest and as an image volume in the environment Pod.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-disk
     newTag: devel-20261103005027-dd90610 # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
