@@ -474,15 +474,17 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		if err := sessionLock(ctx, tx, sessionID); err != nil {
 			return err
 		}
-		opening, err := scanOpening(tx.QueryRowContext(ctx, "SELECT "+openingColumns+" FROM session_opening WHERE session_id=$1 FOR SHARE", sessionID))
+		query := "SELECT " + openingColumns + " FROM session_opening WHERE session_id=$1"
+		arguments := []any{sessionID}
+		if caller != nil {
+			query, arguments = openingForCallerQuery, openingCallerArguments(sessionID, *caller)
+		}
+		opening, err := scanOpening(tx.QueryRowContext(ctx, query+" FOR SHARE", arguments...))
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
 		if err != nil {
 			return err
-		}
-		if caller != nil && !canReadOpening(opening, *caller) {
-			return ErrNotFound
 		}
 		if opening.SandboxName != sandboxName || opening.SandboxUID != sandboxUID {
 			return ErrNotAuthorized
@@ -523,7 +525,7 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		if wakeEligible {
 			ns, name = wakeCaller.Namespace, wakeCaller.Name
 		}
-		arguments := []any{
+		arguments = []any{
 			command.GetCommandId(), sessionID, sandboxName, sandboxUID, wakeEligible, ns, name, op, data, QueueState,
 			observability.Traceparent(ctx),
 		}
@@ -882,22 +884,20 @@ func (s *Store) GetOpening(ctx context.Context, id string) (*Opening, error) {
 	return o, err
 }
 
-func canReadOpening(opening *Opening, caller CallerIdentity) bool {
-	return caller.Privileged || (opening.ExecutionPrincipal != nil &&
-		opening.ExecutionPrincipal.GetUid() != "" &&
-		opening.ExecutionPrincipal.GetUid() == uidOfIdentity(caller.ServiceAccountIdentity) &&
-		accountOfIdentity(opening.ExecutionPrincipal) == accountOfIdentity(caller.ServiceAccountIdentity))
+const openingForCallerQuery = "SELECT " + openingColumns + ` FROM session_opening WHERE session_id=$1 AND ($2 OR
+	(execution_account_namespace=$3 AND execution_account_name=$4 AND execution_account_uid=$5))`
+
+func openingCallerArguments(id string, caller CallerIdentity) []any {
+	account := accountOfIdentity(caller.ServiceAccountIdentity)
+	return []any{id, caller.Privileged, account.Namespace, account.Name, uidOfIdentity(caller.ServiceAccountIdentity)}
 }
 
 func (s *Store) GetOpeningForCaller(ctx context.Context, id string, caller CallerIdentity) (*Opening, error) {
-	opening, err := s.GetOpening(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if !canReadOpening(opening, caller) {
+	opening, err := scanOpening(s.DB.QueryRowContext(ctx, openingForCallerQuery, openingCallerArguments(id, caller)...))
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
-	return opening, nil
+	return opening, err
 }
 
 func (s *Store) ListOpeningsForCaller(ctx context.Context, after string, limit int, caller CallerIdentity) ([]*Opening, error) {
