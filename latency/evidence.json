@@ -1,25 +1,34 @@
 {
   "repository": "agentydragon/ducktape",
-  "source_devel_commit": "ac20030ffa144497702b1fe908fc04bd2effe7eb",
-  "objective": "25-50% complete feedback reduction with existing hosted software emulation; KVM unavailable for this session",
-  "previous_report_commit": "9a27a8fc9d",
+  "source_devel_commit": "dfb5e25546554024a4f4d4cdf2202da8d5961f63",
+  "objective": "reduce the mean from first workflow creation to all three required checks green below 300 seconds",
+  "previous_report_commit": "f198f3595420a9e8739d29ee46cac4503a2a854b",
   "population_windows": {
     "new_mainline": {
       "selection": "Completed CI/devel literal //... invocations created since19:55UTC and returned by update-time-bounded census through21:54UTC; non-atomic API capture",
-      "window_utc": ["2026-11-02T19:55:00Z", "2026-11-02T21:54:00Z"],
+      "window_utc": [
+        "2026-11-02T19:55:00Z",
+        "2026-11-02T21:54:00Z"
+      ],
       "completed": 17,
       "pass": 15,
       "failed": 2,
       "partial_at_capture": 1
     },
     "historical_actions": {
-      "window_utc": ["2026-11-02T18:30:00Z", "2026-11-02T19:55:00Z"],
+      "window_utc": [
+        "2026-11-02T18:30:00Z",
+        "2026-11-02T19:55:00Z"
+      ],
       "heads": 52,
       "green_proxy": 22,
       "canceled": 20,
       "failed": 9,
       "pending": 1,
-      "green_proxy_p50_p90_seconds": [527, 735],
+      "green_proxy_p50_p90_seconds": [
+        527,
+        735
+      ],
       "new_collection": false
     },
     "controlled_experiments": "Separate from fleet census; fixed local source tree, patches and exact attempts recorded below. Test-result cache bypassed; remote action cache accepted."
@@ -554,7 +563,7 @@
         "depth": 4
       },
       {
-        "self_seconds": 7.7e-5,
+        "self_seconds": 7.7e-05,
         "cumulative_seconds": 4.015091,
         "module": "kubernetes_asyncio.client.api.well_known_api",
         "depth": 5
@@ -605,7 +614,10 @@
     "conditions": {
       "ref_name": {
         "exclude": [],
-        "include": ["refs/heads/devel", "refs/heads/main"]
+        "include": [
+          "refs/heads/devel",
+          "refs/heads/main"
+        ]
       }
     },
     "rules": [
@@ -625,7 +637,11 @@
           "require_last_push_approval": false,
           "required_review_thread_resolution": false,
           "require_extra_approval_for_unattributed_changes": true,
-          "allowed_merge_methods": ["merge", "squash", "rebase"]
+          "allowed_merge_methods": [
+            "merge",
+            "squash",
+            "rebase"
+          ]
         }
       },
       {
@@ -863,9 +879,15 @@
       "75a2aeab-e7cb-4d85-804a-fc46715b4501",
       "74621d30-6051-4347-89ce-24a4d0ee3046"
     ],
-    "profile_only_seconds": [20.558, 1.242],
+    "profile_only_seconds": [
+      20.558,
+      1.242
+    ],
     "profile_limit": "cProfile overhead; not full runtime savings",
-    "pod_safe_parse_seconds": [0.693842, 0.032473],
+    "pod_safe_parse_seconds": [
+      0.693842,
+      0.032473
+    ],
     "failed_controls": [
       {
         "invocation": "ec9df627-ce6b-4e29-8d9d-8b9592015d11",
@@ -1341,7 +1363,9 @@
             "skipped": "0",
             "time": "371.231"
           },
-          "case_names": ["test_vm_scenarios"]
+          "case_names": [
+            "test_vm_scenarios"
+          ]
         },
         "agentplane_system_tests_suites_test_dispatcher": {
           "case_count": 3,
@@ -1393,7 +1417,9 @@
             "skipped": "0",
             "time": "120.856"
           },
-          "case_names": ["test_parent_session_delegates_through_the_action_cli"]
+          "case_names": [
+            "test_parent_session_delegates_through_the_action_cli"
+          ]
         },
         "agentplane_system_tests_suites_mcp_test_actions": {
           "case_count": 5,
@@ -1844,7 +1870,9 @@
             "skipped": "0",
             "time": "351.307"
           },
-          "case_names": ["test_vm_scenarios"]
+          "case_names": [
+            "test_vm_scenarios"
+          ]
         },
         "agentplane_system_tests_suites_test_dispatcher": {
           "case_count": 3,
@@ -1896,7 +1924,9 @@
             "skipped": "0",
             "time": "104.911"
           },
-          "case_names": ["test_parent_session_delegates_through_the_action_cli"]
+          "case_names": [
+            "test_parent_session_delegates_through_the_action_cli"
+          ]
         },
         "agentplane_system_tests_suites_mcp_test_actions": {
           "case_count": 5,
@@ -2347,7 +2377,9 @@
             "skipped": "0",
             "time": "352.818"
           },
-          "case_names": ["test_vm_scenarios"]
+          "case_names": [
+            "test_vm_scenarios"
+          ]
         },
         "agentplane_system_tests_suites_test_dispatcher": {
           "case_count": 3,
@@ -2399,7 +2431,9 @@
             "skipped": "0",
             "time": "149.198"
           },
-          "case_names": ["test_parent_session_delegates_through_the_action_cli"]
+          "case_names": [
+            "test_parent_session_delegates_through_the_action_cli"
+          ]
         },
         "agentplane_system_tests_suites_mcp_test_actions": {
           "case_count": 5,
@@ -2635,16 +2669,31 @@
   "full_ci_25_or_50_percent_reduction_established": false,
   "new_critical_path_conclusion": {
     "candidate_seconds": 415.2,
-    "control_seconds": [466.089, 409.484],
+    "control_seconds": [
+      466.089,
+      409.484
+    ],
     "replicated_complete_sweep_gain": false,
     "critical_target": "//agentplane/system_tests/suites:test_vm",
-    "pod_case_window_seconds": [233.132632, 179.869375, 238.191044],
+    "pod_case_window_seconds": [
+      233.132632,
+      179.869375,
+      238.191044
+    ],
     "pod_candidate_vs_repeat_reduction_fraction": 0.24485248488184141,
-    "vm_manifest_parse_seconds": [5.863669, 0.950502, 6.86265],
+    "vm_manifest_parse_seconds": [
+      5.863669,
+      0.950502,
+      6.86265
+    ],
     "vm_cold_attachment_all_three": true,
     "vm_previous_fingerprint_prefix": "2b3619f103",
     "vm_expected_fingerprint_prefix": "8e5387507b",
-    "old_marker_states": ["clean", "clean", "dirty"],
+    "old_marker_states": [
+      "clean",
+      "clean",
+      "dirty"
+    ],
     "snapshot_selection_cause": "unknown; mixed source versions sharing family is hypothesis only"
   },
   "startup_gap": {
@@ -2956,7 +3005,9 @@
             "skipped": "0",
             "time": "403.206"
           },
-          "case_names": ["test_vm_scenarios"]
+          "case_names": [
+            "test_vm_scenarios"
+          ]
         }
       }
     },
@@ -3178,7 +3229,9 @@
               "skipped": "0",
               "time": "374.711"
             },
-            "case_names": ["test_vm_scenarios"]
+            "case_names": [
+              "test_vm_scenarios"
+            ]
           }
         }
       },
@@ -3255,13 +3308,18 @@
         "supported_platform_property": "enable-vfs",
         "related_property": {
           "name": "vfs-prefetch-mode",
-          "allowed_values": ["all", "none"],
+          "allowed_values": [
+            "all",
+            "none"
+          ],
           "meaning": "changes prefetch policy only after VFS is enabled; does not select or disable the VFS workspace implementation",
           "persistence_effect": "when VFS is enabled, Firecracker FUSE remains non-recyclable; changed Command Platform changes the platform snapshot hash"
         },
         "upstream_parse_default": false,
         "repo_rbe_platform_sets_enable_vfs": false,
-        "observed_platform_overrides": ["use-oci-fetcher=true"],
+        "observed_platform_overrides": [
+          "use-oci-fetcher=true"
+        ],
         "platform_overrides_semantics": "remote-header overrides only; not the full Command.platform",
         "current_action_effective_enable_vfs": "51c1 launcher Action+Command omit enable-vfs; remote-header override is only use-oci-fetcher=true; pinned parser defaults false, so 51c1 uses ext4. The separate f915 profile Command was not included and remains to be verified before assigning its workspace branch.",
         "if_enabled_for_firecracker": "guest VFS/FUSE path; input layout is prepared during DownloadInputs, then host VFS server and guest Prepare RPC run inside Firecracker Exec after executionStart",
@@ -3279,7 +3337,9 @@
           "recycle-runner=true",
           "init-dockerd=true"
         ],
-        "observed_remote_header_overrides_51c1": ["use-oci-fetcher=true"],
+        "observed_remote_header_overrides_51c1": [
+          "use-oci-fetcher=true"
+        ],
         "profile_execution_vfs_status": "unverified from this artifact bundle; exact f915 Command.platform not included"
       },
       "invocation_51c1_auxiliary_evidence": {
@@ -3564,7 +3624,10 @@
         "ready_span_end": 123.22
       },
       "predicate": "Sandbox helper watches exact UID; Ready requires live Gateway Lease with current incarnation Pod UID and runtime boot ID/first state. WorkloadReady alone means Pod Ready.",
-      "other_concurrent_ready_spans_seconds": [96.437, 102.59],
+      "other_concurrent_ready_spans_seconds": [
+        96.437,
+        102.59
+      ],
       "scope": "Milestones from retained matching console/launcher logs and driver lifecycle transition events; not CPU time or additive cost.",
       "clock_limits": "Cross-emitter offsets approximate; some condition timestamps are rounded to whole seconds.",
       "missing_boundary": "Raw subsecond first-state/Lease timestamp; downloaded launcher records lack the full Pod-UID owner chain. CreateEnvironment process spans lack Sandbox identity and cannot be assigned per VM.",
@@ -3575,5 +3638,336 @@
       "trace_or_outer_vm_log_advertised": false,
       "scope": "GetExecutionDownloads advertises downloaded file records, not a complete input root or a guarantee no server-side traces exist. Executor trace remains a hosted-service visibility boundary."
     }
+  },
+  "historical_snapshot_metadata": {
+    "source_devel_commit": "ac20030ffa144497702b1fe908fc04bd2effe7eb",
+    "objective": "25-50% complete feedback reduction with existing hosted software emulation; KVM unavailable for this session",
+    "previous_report_commit": "9a27a8fc9d",
+    "note": "The pre-existing runtime, build and experiment evidence remains intact in this file and in the historical sections of index.html.",
+    "previous_manifest": {
+      "source_devel_commit": "ac20030ffa144497702b1fe908fc04bd2effe7eb",
+      "window_start_utc": "2026-11-02T19:55:00Z",
+      "window_end_utc": "2026-11-02T23:59:24Z",
+      "published_at_utc": "2026-11-03T00:00:13.062389+00:00",
+      "attribution": "not collected",
+      "previous_report_commit": "b4e746ab6331c1bbb440f5b7cae895a168a5ba06",
+      "report_html_sha256": "9e06310b083b987fff85078ef08caa7a2edac21c509564b72679de4a3f2bf23b",
+      "evidence_sha256": "71b68aa1a3dcd451b35f0882fab773fe8847f4c250335900cdd2c716d2b608dd",
+      "visual_validation": {
+        "invocation": "e87557bd-73ef-4ed0-9b6a-0505810c1610",
+        "result": "PASSED",
+        "viewports": [
+          {
+            "name": "desktop",
+            "width": 1280,
+            "height": 900
+          },
+          {
+            "name": "mobile",
+            "width": 390,
+            "height": 844
+          }
+        ],
+        "internal_links_checked": 45,
+        "interactive_controls_exercised": [
+          "select:Speed up",
+          "select:Process reduction"
+        ],
+        "reviewed_html_sha256": "9e06310b083b987fff85078ef08caa7a2edac21c509564b72679de4a3f2bf23b",
+        "manual_review": "Desktop and mobile first screens, decisions and full VM lifecycle section; comparison table, boot producer evidence, links and no horizontal overflow."
+      },
+      "analysis_scope": {
+        "post_merge_mainline_vm_samples": 1,
+        "full_vm_diagnostic_runs": 2,
+        "both_full_runs_passed": true,
+        "all_three_scenarios_boot_proofs_and_cleanup_retained": true,
+        "timed_child_command_seconds": 388.69,
+        "timed_rbe_execution_seconds": 422.07244,
+        "outside_command_bracket_seconds": 33.38244,
+        "full_fleet_25_or_50_percent_speedup_established": false
+      },
+      "source_prs": {
+        "14013": "MERGED",
+        "14014": "MERGED",
+        "14015": "MERGED"
+      },
+      "deployment_state": "Report PR only; Pages redeploys after merge. No production optimization patch from these diagnostics."
+    }
+  },
+  "current_goal": {
+    "status": "active; objective not yet achieved",
+    "measurement": {
+      "clock": "first observed workflow creation to latest successful completion of all 3 required job contexts for an exact head repository and SHA; retry waits included",
+      "baseline_seconds": 547.054794520548,
+      "baseline_green_heads": 73,
+      "baseline_window": [
+        "2026-11-02T18:55:00Z",
+        "2026-11-03T00:55:00Z"
+      ],
+      "exclude": [
+        "failed",
+        "canceled",
+        "pending",
+        "incomplete"
+      ],
+      "required_gates": [
+        "bazel-ci / Test & Build",
+        "Pre-commit checks",
+        "Build artifacts + imports check"
+      ],
+      "completion_requirement": "Fresh representative PR observations after landed changes must demonstrate mean <300s on the same clock; no benchmark-only or selected fast-head success claim",
+      "baseline_p50_seconds": 531,
+      "baseline_p90_seconds": 839
+    },
+    "outcomes": {
+      "all_three_green": 73,
+      "canceled": 82,
+      "failed": 25,
+      "incomplete": 1,
+      "pending": 2,
+      "excluded_from_latency_mean": [
+        "canceled",
+        "failed",
+        "incomplete",
+        "pending"
+      ]
+    },
+    "last_gate_counts": {
+      "bazel-ci / Test & Build": 71,
+      "Build artifacts + imports check": 2
+    },
+    "by_gate": {
+      "bazel-ci / Test & Build": {
+        "n": 73,
+        "mean": 547.0,
+        "p50": 531.0,
+        "p90": 839.0
+      },
+      "Pre-commit checks": {
+        "n": 73,
+        "mean": 93.41095890410959,
+        "p50": 76.0,
+        "p90": 158.0
+      },
+      "Build artifacts + imports check": {
+        "n": 73,
+        "mean": 122.58904109589041,
+        "p50": 104.0,
+        "p90": 195.0
+      }
+    },
+    "source_and_window": {
+      "inspected_devel_commit": "dfb5e25546554024a4f4d4cdf2202da8d5961f63",
+      "benchmark_base_commit": "b2b7e3128278a6073b21ac522b42f9e151d5913b",
+      "window_utc": [
+        "2026-11-02T18:55:00Z",
+        "2026-11-03T00:55:00Z"
+      ],
+      "kernel_release": "6.12.115-2 merged",
+      "pki_repair_pr": {
+        "number": 14035,
+        "state_at_snapshot": "Fixture repair pushed at head f90a353c8b; focused RBE test and changed-file hooks passed; two-incarnation real-renewal probe passed; full new-head CI pending at cutoff"
+      }
+    },
+    "pod_sharding_experiment": {
+      "target": "//agentplane/system_tests/suites:test_pod",
+      "configuration": "--config=ci --nocache_test_results; remote caches enabled",
+      "coverage": "All 14 parametrized cases and both harnesses preserved in the successful arms; storage-exclusive case remained on shard 2.",
+      "warm_receipts": "Every completed arm was warm with the same retained infrastructure fingerprint; no cold arm.",
+      "arms": [
+        {
+          "arm": "one stack, two case slots",
+          "invocation": "10595129-79f0-4e45-8e8e-1bd668501396",
+          "result": "pass 14/14",
+          "action_seconds": [
+            257.304
+          ],
+          "bazel_critical_path_seconds": 265.32,
+          "cpu_seconds": 680.7,
+          "peak_memory_gb": [
+            6.17
+          ]
+        },
+        {
+          "arm": "two shards, two case slots each",
+          "invocation": "a6c23f91-b59a-4154-ac51-01d688c246e5",
+          "result": "failed memory admission on message/acknowledgement case after 300s readiness deadline",
+          "action_seconds": [
+            226.389,
+            447.0
+          ],
+          "bazel_critical_path_seconds": 449.74,
+          "cpu_seconds": 1054.3,
+          "peak_memory_gb": [
+            5.72,
+            5.67
+          ],
+          "coverage_note": "14 distinct selected cases across shards; the message/acknowledgement case failed because 0/1 nodes were available from insufficient memory."
+        },
+        {
+          "arm": "two shards, one case slot each",
+          "invocation": "cb2df10e-1efb-49a1-bbd6-b097c8bc7783",
+          "result": "pass 14/14",
+          "action_seconds": [
+            201.1,
+            299.5
+          ],
+          "bazel_critical_path_seconds": 303.01,
+          "cpu_seconds": 969.9,
+          "peak_memory_gb": [
+            5.54,
+            5.68
+          ],
+          "setup_seconds_by_shard": [
+            64.81,
+            56.54
+          ]
+        }
+      ],
+      "interrupted_attempt": {
+        "invocation": "6badf3b1-1b2e-4838-8b52-82bbe32f51e0",
+        "result": "outer remote-runner invocation canceled before either shard received a worker; not a test execution"
+      },
+      "conclusion": "No latency win. The successful one-slot-per-shard arm had a 303.01s critical path versus 265.32s baseline and 42.5% more aggregate CPU; no PR candidate."
+    },
+    "outer_vm_units_experiment": {
+      "execution_environment": "Hosted BuildBuddy RBE using software emulation (QEMU TCG); no KVM hypothesis was selected or tested.",
+      "coverage": "All three scenarios, journals, shutdown and loop-device cleanup, and OOM assertions passed once per invocation; no physical TestRunner retry.",
+      "guest_cpus": 2,
+      "arms": [
+        {
+          "arm": "8-unit control",
+          "invocation": "450847f0-b539-495c-933c-a160c4232c6c",
+          "receipt": "warm",
+          "action_seconds": 323.628,
+          "setup_case_cleanup_seconds": [
+            70.32,
+            199.34,
+            25.8
+          ],
+          "bazel_critical_path_seconds": 330.83,
+          "cpu_seconds": 1342.248,
+          "units_times_action_wall_proxy": 2589.02
+        },
+        {
+          "arm": "16-unit seed",
+          "invocation": "7ef6829b-f28e-44c4-8875-80c4b2c009d5",
+          "receipt": "cold; same fingerprint",
+          "action_seconds": 501.329,
+          "setup_case_cleanup_seconds": [
+            230.41,
+            207.97,
+            30.98
+          ],
+          "bazel_critical_path_seconds": 505.11,
+          "cpu_seconds": 2294.386,
+          "units_times_action_wall_proxy": 8021.26
+        },
+        {
+          "arm": "16-unit repeat",
+          "invocation": "a344fba3-36b4-4c99-bee7-ce675cd3631a",
+          "receipt": "cold; same fingerprint",
+          "action_seconds": 342.775,
+          "setup_case_cleanup_seconds": [
+            130.18,
+            163.17,
+            24.68
+          ],
+          "bazel_critical_path_seconds": 383.07,
+          "cpu_seconds": 1372.024,
+          "units_times_action_wall_proxy": 5484.4
+        }
+      ],
+      "evidence_limit": "The 16-unit seed and repeat shared an outer runner VM but selected different inner TestRunner workers; inner snapshot IDs are unavailable. The repeat case window was 36.17s shorter, but setup was 59.86s longer. Receipts are cold despite the same fingerprint and are unmatched to the warm 8-unit control, so they do not support a causal benefit or mean-speed claim; units-times-wall is a resource proxy, not billed cost."
+    },
+    "threaded_identity_hashing": {
+      "sequential": {
+        "invocation": "28d8695e-e62d-4e73-9435-605d64bf41d4",
+        "action_seconds": 32.116,
+        "cpu_seconds": 23.932
+      },
+      "four_reader_threaded": {
+        "invocation": "1a149538-6c22-4533-9140-6210275b5005",
+        "action_seconds": 54.421,
+        "cpu_seconds": 63.657
+      },
+      "outputs_identical": true,
+      "output_sha256": "8c645108a7b9a56a003d0779dd6e2b738972c024c77874abf1bbab7243de8210",
+      "decision": "Rejected: wall time and CPU both regressed; this build-target comparison is not a full-CI latency claim.",
+      "instrumentation": "Both sequential and four-reader diagnostic variants ran with cProfile enabled; wall and CPU values include profiling instrumentation."
+    },
+    "pki_repair": {
+      "pr": 14035,
+      "first_ci_attempt": {
+        "github_run_id": 41561624392,
+        "result": "observer failure: bbremoteGetEventLog returned RST_STREAM INTERNAL_ERROR at 2026-11-03T01:46:55Z",
+        "outer_run": "canceled by CLI after the child Build Event Service connection disconnected",
+        "source_or_test_verdict": "none"
+      },
+      "rerun": "Attempt 2 failed in VM cleanup and Pod trust-bundle checks. Fixture repair head f90a353c8b passed focused test_render and changed-file hooks. A two-incarnation real-renewal probe passed at 2026-11-03T02:11:57Z; full new-head CI remained pending.",
+      "manual_certificate_renewal_physical_actions": "both passed but were cold",
+      "observer_recovery": {
+        "issue": 13270,
+        "state": "open at snapshot",
+        "pinned_cli": "5.0.498; already current",
+        "upstream": "same failure mode observed",
+        "repo_repair": "no small safe repository-side repair identified; custom CLI/upstream change would be needed"
+      },
+      "latency_attribution": "none; no causal all-gates mean change is claimed",
+      "second_ci_attempt": {
+        "github_run_id": 41561624392,
+        "github_attempt": 2,
+        "github_job_id": 125675997518,
+        "required_check": "bazel-ci / Test & Build",
+        "buildbuddy_invocation": "50de3cc2-b127-5c79-be37-02e332dbcc8d",
+        "vm_check": {
+          "result": "failed before test cases during cleanup",
+          "phase": "baseline_open / cleanup_stopped",
+          "details": "During baseline_open / cleanup_stopped, the stale baseline K3s marker PID was no longer live. Cleanup started containerd and crictl rmp --all --force; StopPodSandbox timed out after 60 seconds waiting to kill volumekernel-boot-volume in prior pod e1f\u2026.",
+          "source_or_test_verdict": "none from VM; its cases were not reached",
+          "snapshot_continuity": "The same Firecracker snapshot chain carried the dirty baseline forward.",
+          "evidence_limit": "Process/cgroup evidence is missing, so the exact kill-wait mechanism is unknown."
+        },
+        "pod_check": {
+          "result": "failed due trust-bundle mount regression",
+          "root_cause": "Fixture renamed the bundle and target ConfigMap, but the production Sandbox controller uses RunnerTrustBundleName=cluster-internal-ca-bundle; dynamic Sandbox Pods could not mount the missing ConfigMap.",
+          "first_case": "Exclusive-storage case waited 300 seconds.",
+          "suite_effect": "All 14 parametrized cases were reported failed as a cascade from the setup failure, not 14 independent failures.",
+          "repair_in_progress": "Keep the namespace-local trust-bundle name stable while CA, issuer and Secrets remain unique; use a fresh namespace per fixture to isolate the projected bundle.",
+          "controller_source": "agentplane/sandbox_controller/environment_runtime_credential.go at dfb5e25546554024a4f4d4cdf2202da8d5961f63",
+          "controller_constant": "RunnerTrustBundleName = cluster-internal-ca-bundle",
+          "failure_chain": "The exclusive-storage first case waited 300s; this setup failure caused all 14 parametrized cases to be reported failed, not 14 independent failures."
+        },
+        "other_full_suites": "pending at last query",
+        "github_attempt_url": "https://github.com/agentydragon/ducktape/actions/runs/41561624392/attempts/2#job-125675997518"
+      },
+      "repair_at_snapshot": {
+        "head": "f90a353c8b",
+        "commit_message": "Preserve stable sandbox trust bundle in PKI fixture",
+        "focused_target": "//agentplane/system_tests/k3s:test_render",
+        "focused_result": "passed",
+        "focused_action_seconds": 51.7,
+        "focused_buildbuddy_invocation": "11fd9486-b954-456c-a0fd-84bc12ff6d6c",
+        "changed_file_hooks": "passed after removing the temporary probe",
+        "full_new_head_ci": "pending at snapshot cutoff",
+        "temporary_probe": "passed; two real-renewal scenarios ran across two controller incarnations in one action",
+        "snapshot_cutoff_utc": "2026-11-03T02:11:57Z",
+        "separate_vm_cleanup_and_bad_snapshot_discard": "under investigation; no promoted fix",
+        "latency_attribution": "none",
+        "probe_evidence": {
+          "outer_invocation": "711a771f-a84f-4655-b4e4-8f1f8b017d91",
+          "test_runner_invocation": "34990344-709c-4267-868a-670f50f601b6",
+          "test_runner_action_seconds": 206.31,
+          "result": "passed; two real certificate-renewal scenarios, one per incarnation",
+          "receipts": "Both warm with same retained-infrastructure fingerprint d8068\u2026",
+          "reused_within_action": "same K3s boot/node/process and cert-manager, cainjector, webhook and trust-manager UIDs",
+          "fresh_per_incarnation": "namespace, root Certificate and root Secret UIDs",
+          "cleanup": "complete in both incarnations",
+          "validates": "controller reuse within one action",
+          "does_not_validate": "Firecracker snapshot restore"
+        }
+      }
+    },
+    "latency_claim": "The under-five-minute mean goal remains active and unachieved. No target-level experiment above is promoted to a causal fleet mean saving."
   }
 }

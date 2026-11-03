@@ -1,49 +1,53 @@
 {
-  "source_devel_commit": "ac20030ffa144497702b1fe908fc04bd2effe7eb",
-  "window_start_utc": "2026-11-02T19:55:00Z",
-  "window_end_utc": "2026-11-02T23:59:24Z",
-  "published_at_utc": "2026-11-03T00:00:13.062389+00:00",
+  "source_devel_commit": "dfb5e25546554024a4f4d4cdf2202da8d5961f63",
+  "window_start_utc": "2026-11-02T18:55:00+00:00",
+  "window_end_utc": "2026-11-03T00:55:00+00:00",
+  "published_at_utc": "2026-11-03T02:16:17.593918+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "b4e746ab6331c1bbb440f5b7cae895a168a5ba06",
-  "report_html_sha256": "9e06310b083b987fff85078ef08caa7a2edac21c509564b72679de4a3f2bf23b",
-  "evidence_sha256": "71b68aa1a3dcd451b35f0882fab773fe8847f4c250335900cdd2c716d2b608dd",
+  "previous_report_commit": "f198f3595420a9e8739d29ee46cac4503a2a854b",
+  "report_html_sha256": "ffe75108079351ec82f4384d1142e86b08138e457fb5f61c7bd8012c5911e7aa",
+  "evidence_sha256": "8cc5e0d1353c5a90b62cf4c3d236f1e6e06ac69154cf2ef5855ed4e8f3bbf32f",
   "visual_validation": {
-    "invocation": "e87557bd-73ef-4ed0-9b6a-0505810c1610",
+    "target": "//x/ci_report_preview:visual_test",
     "result": "PASSED",
+    "bazel_invocation_id": "c90fc0cc-873e-423e-96aa-28e72ff23561",
+    "outer_remote_runner_invocation_id": "a92e913f-b355-45b3-8aca-e5494885fe04",
+    "reviewed_html_sha256": "ffe75108079351ec82f4384d1142e86b08138e457fb5f61c7bd8012c5911e7aa",
     "viewports": [
       {
-        "name": "desktop",
         "width": 1280,
         "height": 900
       },
       {
-        "name": "mobile",
         "width": 390,
         "height": 844
       }
     ],
-    "internal_links_checked": 45,
-    "interactive_controls_exercised": [
+    "internal_link_count": 68,
+    "details_expanded": 8,
+    "controls_exercised": [
       "select:Speed up",
       "select:Process reduction"
     ],
-    "reviewed_html_sha256": "9e06310b083b987fff85078ef08caa7a2edac21c509564b72679de4a3f2bf23b",
-    "manual_review": "Desktop and mobile first screens, decisions and full VM lifecycle section; comparison table, boot producer evidence, links and no horizontal overflow."
-  },
-  "analysis_scope": {
-    "post_merge_mainline_vm_samples": 1,
-    "full_vm_diagnostic_runs": 2,
-    "both_full_runs_passed": true,
-    "all_three_scenarios_boot_proofs_and_cleanup_retained": true,
-    "timed_child_command_seconds": 388.69,
-    "timed_rbe_execution_seconds": 422.07244,
-    "outside_command_bracket_seconds": 33.38244,
-    "full_fleet_25_or_50_percent_speedup_established": false
-  },
-  "source_prs": {
-    "14013": "MERGED",
-    "14014": "MERGED",
-    "14015": "MERGED"
-  },
-  "deployment_state": "Report PR only; Pages redeploys after merge. No production optimization patch from these diagnostics."
+    "horizontal_overflow": false,
+    "mobile_wide_table_scroll_regions": [
+      {
+        "label": "All-gates and per-gate feedback metrics",
+        "client_width": 324,
+        "scroll_width": 720
+      },
+      {
+        "label": "Pod sharding experiment results",
+        "client_width": 324,
+        "scroll_width": 720
+      },
+      {
+        "label": "VM resource experiment results",
+        "client_width": 324,
+        "scroll_width": 850
+      }
+    ],
+    "keyboard_scroll_test": "All three named, focusable mobile table regions responded to ArrowRight; the document stayed at 390px width.",
+    "manual_review": "Reviewed desktop/mobile page-top and current-goal captures. Mobile screenshot begins at the page header. The wide summary tables remain readable by scrolling within their labeled, focusable regions; the page itself does not overflow."
+  }
 }
