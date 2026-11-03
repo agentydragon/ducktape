@@ -8,6 +8,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 
 from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.agentplane_test_cluster import security
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
@@ -56,34 +57,18 @@ kubelet-arg:
 # Every upstream enabled in the existing Zot pull-through cache is routed through
 # that in-cluster Service. The K3s default endpoint is disabled below, so containerd
 # cannot fall back to a public registry when a mirror pull fails.
-_REGISTRIES = f"""\
-mirrors:
-  docker.io:
-    endpoint:
-      - http://{zot.HTTP.fqdn}
-    rewrite:
-      "^(.*)$": "docker-hub/$1"
-  ghcr.io:
-    endpoint:
-      - http://{zot.HTTP.fqdn}
-    rewrite:
-      "^(.*)$": "ghcr/$1"
-  quay.io:
-    endpoint:
-      - http://{zot.HTTP.fqdn}
-    rewrite:
-      "^(.*)$": "quay/$1"
-  registry.k8s.io:
-    endpoint:
-      - http://{zot.HTTP.fqdn}
-    rewrite:
-      "^(.*)$": "k8s/$1"
-  gcr.io:
-    endpoint:
-      - http://{zot.HTTP.fqdn}
-    rewrite:
-      "^(.*)$": "gcr/$1"
-"""
+_REGISTRIES = {
+    "mirrors": {
+        registry: {"endpoint": [f"http://{zot.HTTP.fqdn}"], "rewrite": {"^(.*)$": f"{prefix}/$1"}}
+        for registry, prefix in {
+            "docker.io": "docker-hub",
+            "ghcr.io": "ghcr",
+            "quay.io": "quay",
+            "registry.k8s.io": "k8s",
+            "gcr.io": "gcr",
+        }.items()
+    }
+}
 
 
 def _config_map(chart: Chart) -> None:
@@ -99,7 +84,11 @@ def _config_map(chart: Chart) -> None:
             namespace=NAME,
             annotations={"description": "K3s server settings and its in-cluster OCI mirrors."},
         ),
-        data={"config.yaml": _K3S_CONFIG, "registries.yaml": _REGISTRIES, "00-shared-security.yaml": inner_security},
+        data={
+            "config.yaml": _K3S_CONFIG,
+            "registries.yaml": yaml_config(_REGISTRIES),
+            "00-shared-security.yaml": inner_security,
+        },
     )
 
 

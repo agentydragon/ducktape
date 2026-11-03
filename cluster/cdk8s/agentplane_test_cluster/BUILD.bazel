@@ -8,6 +8,7 @@ py_library(
     deps = [
         ":security",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
