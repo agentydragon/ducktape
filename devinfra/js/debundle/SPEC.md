@@ -346,6 +346,18 @@ Default examples retain twenty source operations per cell access, with exact
 counts and explicit truncation; full JSONL borrows and streams all retained
 operation provenance.
 
+An original, non-exported direct class declaration may close global-property,
+general-heap and host-effect coverage only for an inert class shape: no
+heritage, class or member decorators, computed names, static fields or blocks,
+accessors, auto-accessors, private members, or ambient declarations. Its
+members are plain methods, an ordinary constructor and public instance fields.
+Method and constructor bodies and instance field values remain lazy. The exact
+class evaluation must finish and initialize its binding before the certificate
+is sealed. The certificate covers class declaration evaluation only; later
+construction and property observations retain their ordinary effects and
+coverage requirements. The existing binding write and allocation facts remain
+projected.
+
 An original, non-exported simple variable declarator with an unannotated
 binding may close global-property, general-heap and host-effect coverage when
 its initializer is a primitive literal, checked ordinary
@@ -375,10 +387,11 @@ in source order. A dedicated interpreter request must produce its expected
 value without an unavailable alternative, and owner finalization must complete
 the binding initialization without fallback or precision loss before
 sealing the coverage certificate. Bodies remain lazy; this certifies no call.
-Sequences, assignments, templates, exports, destructuring, classes,
+Sequences, assignments, templates, exports, destructuring, class expressions,
 imported/global/uninitialized binding reads, decorated/type-annotated
-functions and unsupported parameters remain uncovered. Parentheses alone
-preserve admissibility.
+functions and unsupported parameters remain uncovered. For class declarations,
+all other shapes remain uncovered. Parentheses alone preserve admissibility for
+variable initializers.
 The owner certificate survives staged analysis; generic child results and
 invocation memos never propagate it. Binding/allocation cells, other opacity
 flags, purity and the authoritative legacy gates retain their existing rules.

@@ -14,6 +14,7 @@ use swc_ecma_ast::*;
 enum Leaf {
     Primitive(PrimKinds),
     Function(u32),
+    Class(u32),
     Binding(Id),
     Allocation {
         allocation: u32,
@@ -136,6 +137,71 @@ fn ordinary_parameter(parameter: &Pat) -> bool {
         if binding.type_ann.is_none() && !binding.id.optional)
 }
 
+fn plain_class_member(member: &ClassMember) -> bool {
+    match member {
+        ClassMember::Method(method) => {
+            method.kind == MethodKind::Method
+                && !matches!(method.key, PropName::Computed(_))
+                && method.function.decorators.is_empty()
+                && method.function.body.is_some()
+                && method.function.type_params.is_none()
+                && method.function.return_type.is_none()
+                && method.function.params.iter().all(|parameter| {
+                    parameter.decorators.is_empty() && ordinary_parameter(&parameter.pat)
+                })
+                && !method.is_abstract
+                && !method.is_optional
+                && !method.is_override
+        }
+        ClassMember::Constructor(constructor) => {
+            !matches!(constructor.key, PropName::Computed(_))
+                && constructor.body.is_some()
+                && constructor.accessibility.is_none()
+                && !constructor.is_optional
+                && constructor.params.iter().all(|parameter| match parameter {
+                    ParamOrTsParamProp::Param(parameter) => {
+                        parameter.decorators.is_empty() && ordinary_parameter(&parameter.pat)
+                    }
+                    ParamOrTsParamProp::TsParamProp(_) => false,
+                })
+        }
+        ClassMember::ClassProp(property) => {
+            !property.is_static
+                && !matches!(property.key, PropName::Computed(_))
+                && property.decorators.is_empty()
+                && property.type_ann.is_none()
+                && !property.is_abstract
+                && !property.is_optional
+                && !property.is_override
+                && !property.declare
+                && !property.definite
+        }
+        ClassMember::Empty(_) => true,
+        ClassMember::PrivateMethod(_)
+        | ClassMember::PrivateProp(_)
+        | ClassMember::TsIndexSignature(_)
+        | ClassMember::StaticBlock(_)
+        | ClassMember::AutoAccessor(_) => false,
+    }
+}
+
+/// This subset only creates a fresh constructor, prototype, and method
+/// functions, then publishes the class through its lexical binding. With no
+/// heritage, decorators, computed keys, or static initialization, class
+/// evaluation runs no user code and cannot expose those fresh objects before
+/// binding initialization. Method bodies and instance field values stay lazy.
+fn inert_class_declaration(declaration: &ClassDecl) -> bool {
+    let class = &declaration.class;
+    !declaration.declare
+        && class.decorators.is_empty()
+        && class.super_class.is_none()
+        && !class.is_abstract
+        && class.type_params.is_none()
+        && class.super_type_params.is_none()
+        && class.implements.is_empty()
+        && class.body.iter().all(plain_class_member)
+}
+
 /// Static data fields and dense array elements use CreateDataProperty, without
 /// invoking receiver accessors. Retain every declarative-cell read, including
 /// overwritten duplicate fields. No value-kind or heap-locality premise is needed.
@@ -190,6 +256,19 @@ impl OriginalInitializer {
         item: &TopLevelItemView<'_>,
         owner: SourceUnitOrdinal,
     ) -> Result<Self, OwnerInitializationCoverageRefusalReason> {
+        if let TopLevelItemView::Borrowed(ModuleItem::Stmt(Stmt::Decl(Decl::Class(declaration)))) =
+            item
+        {
+            if !inert_class_declaration(declaration) {
+                return Err(OwnerInitializationCoverageRefusalReason::UnsupportedOwnerKind);
+            }
+            return Ok(Self {
+                owner,
+                binding: declaration.ident.to_id(),
+                initializer_span: declaration.class.span,
+                leaf: Leaf::Class(declaration.class.span.lo.0),
+            });
+        }
         // For split views, recover only the exact original child named by the
         // canonical view's parent/index provenance. The child's own evaluation
         // remains one source-unit owner; sibling initializers are separate
@@ -264,7 +343,7 @@ impl OriginalInitializer {
         match &self.leaf {
             Leaf::Binding(binding) => initialized(binding),
             Leaf::Allocation { reads, .. } => reads.iter().all(initialized),
-            Leaf::Primitive(_) | Leaf::Function(_) => true,
+            Leaf::Primitive(_) | Leaf::Function(_) | Leaf::Class(_) => true,
         }
     }
 
@@ -293,6 +372,16 @@ impl OriginalInitializer {
                 values.len() == 1
                     && allocation == lowered
                     && allocation == evaluated
+                    && initialized_reads
+            }
+            (
+                Leaf::Class(expected),
+                ValueExpr::Alloc(Kind::Class, lowered),
+                AbstractValue::Value(Value::Alloc(Kind::Class, evaluated)),
+            ) => {
+                values.len() == 1
+                    && expected == lowered
+                    && expected == evaluated
                     && initialized_reads
             }
             (
