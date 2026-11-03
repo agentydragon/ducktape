@@ -2,7 +2,7 @@
 
 ## Evidence
 
-The completed public-engine Analyze invocation for `c7a6e4b1962bd84997995abc9a679c4a6300a06e` (#14092) reported a Claude peak of 8,125,001,728 bytes, above its inherited 7,500,000,000-byte budget. The same invocation reported 3,505,973,200 bytes for Tana. The temporary `EstimatedMemory` value remains 15,000,000,000 bytes. These are action-reported results from [invocation 2240e60a-39da-4ccc-b6b2-5324566b9fae](https://app.buildbuddy.io/invocation/2240e60a-39da-4ccc-b6b2-5324566b9fae); they do not attribute the peak to a particular retained object.
+A canonical Analyze action for public engine `c7a6e4b1962bd84997995abc9a679c4a6300a06e` (#14092) reported a peak of 8,125,001,728 bytes, above its inherited 7,500,000,000-byte budget. Its temporary `EstimatedMemory` value remains 15,000,000,000 bytes. These are action-reported results from [invocation 2240e60a-da39-4ccc-b6b2-5324566b9fae](https://app.buildbuddy.io/invocation/2240e60a-da39-4ccc-b6b2-5324566b9fae); they do not attribute the peak to a particular retained object. Capture-specific evidence belongs in [gaffer-private](https://github.com/agentydragon/gaffer-private).
 
 ## Source-grounded lifetime change
 
