@@ -13,7 +13,6 @@ from typing import Any
 import yaml
 from more_itertools import one
 
-from agentplane.system_tests import operator_releases
 from agentplane.system_tests.k3s.release_manifests import load_release_manifest
 from agentplane.system_tests.tracing import tracer
 from agentplane.system_tests.vm_configuration import OOM_TEMPLATE
@@ -65,12 +64,32 @@ def _manifest(variable: str) -> list[dict[str, Any]]:
 
 
 def _kubevirt_operator() -> list[dict[str, Any]]:
-    return operator_releases.kubevirt_operator(_manifest("KUBEVIRT_OPERATOR_RLOCATION"))
+    objects = _manifest("KUBEVIRT_OPERATOR_RLOCATION")
+    for doc in objects:
+        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "virt-operator":
+            doc["spec"]["replicas"] = 1
+    return objects
+
+
+def _kubevirt() -> dict[str, Any]:
+    return {
+        "apiVersion": "kubevirt.io/v1",
+        "kind": "KubeVirt",
+        "metadata": {"name": "kubevirt", "namespace": KUBEVIRT_NAMESPACE},
+        "spec": {
+            "imagePullPolicy": "IfNotPresent",
+            "infra": {"replicas": 1},
+            "configuration": {
+                # The feature gate production's runner VMs need (cluster/cdk8s/kubevirt/app.py).
+                "developerConfiguration": {"useEmulation": True, "featureGates": ["EnableVirtioFsStorageVolumes"]}
+            },
+        },
+    }
 
 
 def baseline_objects() -> list[dict[str, Any]]:
     """The KubeVirt configuration applied after installing the operator release."""
-    return [operator_releases.kubevirt(use_emulation=True)]
+    return [_kubevirt()]
 
 
 def baseline_identity(kubectl: Kubectl) -> dict[str, str]:
@@ -100,7 +119,18 @@ def baseline_identity(kubectl: Kubectl) -> dict[str, str]:
 def _kyverno() -> list[dict[str, Any]]:
     """The admission controller with the CRDs and RBAC it reads; the background, cleanup and reports
     controllers serve no VM Sandbox."""
-    return operator_releases.kyverno(_manifest("KYVERNO_INSTALL_RLOCATION"), cleanup=False)
+    objects = [
+        doc
+        for doc in _manifest("KYVERNO_INSTALL_RLOCATION")
+        if doc["kind"] != "Deployment" or doc["metadata"]["name"] == _KYVERNO_ADMISSION
+    ]
+    for doc in objects:
+        if doc["kind"] == "Deployment":
+            pod = doc["spec"]["template"]["spec"]
+            for container in pod.get("initContainers", []) + pod["containers"]:
+                # As production pulls them (cluster/cdk8s/kyverno/app.py): reg.kyverno.io is a proxy.
+                container["image"] = container["image"].replace("reg.kyverno.io/", "ghcr.io/", 1)
+    return objects
 
 
 def releases() -> list[dict[str, Any]]:
@@ -116,7 +146,7 @@ def install(kubectl: Kubectl, objects: list[dict[str, Any]]) -> None:
     # Server-side: Kyverno's CRDs exceed the client-side apply annotation limit.
     kubectl("apply", "--server-side", "-f", "-", input_text=yaml.safe_dump_all(objects))
     kubectl("wait", "--for=condition=Established", "crd/kubevirts.kubevirt.io", "--timeout=60s")
-    kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(baseline_objects()))
+    kubectl("apply", "-f", "-", input_text=yaml.safe_dump(_kubevirt()))
 
 
 @tracer.start_as_current_span("system_test.virtualization.apis")

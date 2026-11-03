@@ -1,18 +1,24 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
+package(default_testonly = True)
+
 py_library(
     name = "namespaces",
     srcs = ["namespaces.py"],
     visibility = [
-        "//agentplane/system_tests/shared_cluster:__subpackages__",
-        "//cluster/cdk8s/agentplane_test_cluster:__pkg__",
+        "//agentplane/system_tests/x/shared_cluster:__subpackages__",
     ],
+)
+
+py_library(
+    name = "operator_releases",
+    srcs = ["operator_releases.py"],
 )
 
 py_binary(
     name = "lease_bin",
-    main_module = "agentplane.system_tests.shared_cluster.lease",
+    main_module = "agentplane.system_tests.x.shared_cluster.lease",
     deps = [":lease"],
 )
 
@@ -20,14 +26,14 @@ py_library(
     name = "render_infrastructure",
     srcs = ["render_infrastructure.py"],
     deps = [
-        "//agentplane/system_tests:operator_releases",
+        ":operator_releases",
         "@pypi//pyyaml",
     ],
 )
 
 py_binary(
     name = "render_infrastructure_bin",
-    main_module = "agentplane.system_tests.shared_cluster.render_infrastructure",
+    main_module = "agentplane.system_tests.x.shared_cluster.render_infrastructure",
     deps = [":render_infrastructure"],
 )
 
@@ -69,7 +75,7 @@ pkg_tar(
         ":infrastructure_manifests",
     ],
     package_dir = "/opt/agentplane-test-cluster",
-    visibility = ["//agentplane/system_tests/shared_cluster:__subpackages__"],
+    visibility = ["//agentplane/system_tests/x/shared_cluster:__subpackages__"],
 )
 
 py_test(

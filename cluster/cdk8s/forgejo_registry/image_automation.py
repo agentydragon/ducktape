@@ -53,7 +53,6 @@ IMAGES = (
     "agentplane-sandbox",
     "agentplane-sandbox-build",
     "agentplane-sandbox-controller",
-    "agentplane-test-node",
     "ai-session-archive-importer",
     "ai-session-archive-migrator",
     "ai-session-archive-web",

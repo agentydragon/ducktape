@@ -183,12 +183,6 @@ and owner. The Runner starts and resumes its own harnesses.
 
 Status, open work and design gates: [`plans/`](../plans/README.md).
 
-The candidate [persistent KVM test cluster](../system_tests/shared_cluster/SPEC.md) runs
-K3s in a trusted container on wyrm2, with a separate Kubernetes API and infrastructure
-operators. Its Flux deployment is initially suspended. The intended test driver calls
-restricted APIs; KubeVirt launches the test guests beside it, without an enclosing
-worker VM. This test infrastructure does not change staging's service graph above.
-
 ## Focused diagrams
 
 Per-path detail for the [system overview above](#system-overview), using the same conventions:

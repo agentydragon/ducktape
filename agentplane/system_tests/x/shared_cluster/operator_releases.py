@@ -1,4 +1,4 @@
-"""Infrastructure shared by the disposable and persistent Agentplane test clusters."""
+"""Pinned release transforms retained with the parked persistent-cluster spike."""
 
 from typing import Any
 

@@ -16,7 +16,6 @@ oci_image_manifest(
 
 genrule(
     name = "trust_manager_install_yaml",
-    testonly = False,  # Shared by disposable tests and the persistent trusted-node image.
     srcs = [
         "trust-manager-values.yaml",
         "@trust_manager_chart_v0_25_0//:chart_files",

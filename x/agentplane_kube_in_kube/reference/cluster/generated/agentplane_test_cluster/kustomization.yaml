@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
   - agentplane-test-cluster.k8s.yaml
 components:
-  - ../../k8s/agentplane-test-cluster-image-pins
+  - ../../k8s/agentplane_test_cluster_image_pins

@@ -7,7 +7,7 @@ from kubernetes_asyncio import client as k8s
 from kubernetes_asyncio.client.models import RbacV1Subject
 
 from agentplane.subjects import ServiceAccountRef
-from agentplane.system_tests.shared_cluster import permissions
+from agentplane.system_tests.x.shared_cluster import permissions
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer, kubernetes_apiserver
 
 type _PermissionKey = tuple[str, str, str | None, str, str | None, str | None]

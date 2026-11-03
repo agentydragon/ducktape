@@ -6,7 +6,7 @@ from typing import Any
 
 import yaml
 
-from agentplane.system_tests import operator_releases
+from agentplane.system_tests.x.shared_cluster import operator_releases
 
 
 def _load(path: Path) -> list[dict[str, Any]]:

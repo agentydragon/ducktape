@@ -132,7 +132,6 @@ spec:
     - namespaces:
         - activitywatch
         - agentplane-staging
-        - agentplane-test-cluster
         - agents-infra
         - airlock
         - claude-session-sync

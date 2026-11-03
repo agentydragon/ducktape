@@ -8,7 +8,7 @@ from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.client.models import RbacV1Subject
 from pydantic import BaseModel, Field, model_validator
 
-from agentplane.system_tests.shared_cluster.namespaces import TENANT_LABEL, TENANT_VALUE, Namespaces
+from agentplane.system_tests.x.shared_cluster.namespaces import TENANT_LABEL, TENANT_VALUE, Namespaces
 
 CAPACITY_NAMESPACE = "kube-system"
 CAPACITY_LEASE = "agentplane-test-capacity"

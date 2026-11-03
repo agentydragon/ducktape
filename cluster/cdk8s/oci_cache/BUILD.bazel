@@ -18,10 +18,7 @@ py_library(
 py_library(
     name = "zot",
     srcs = ["zot.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/agentplane_test_cluster:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",

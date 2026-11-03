@@ -13,8 +13,8 @@ from kubernetes_asyncio import client as k8s
 from kubernetes_asyncio.client.exceptions import ApiException
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from agentplane.system_tests.shared_cluster import allocation, permissions
-from agentplane.system_tests.shared_cluster.namespaces import TENANT_LABEL, TENANT_VALUE, Namespaces
+from agentplane.system_tests.x.shared_cluster import allocation, permissions
+from agentplane.system_tests.x.shared_cluster.namespaces import TENANT_LABEL, TENANT_VALUE, Namespaces
 from agentplane.testing.kubernetes_apiserver import kubernetes_apiserver
 from util.bazel.runfiles import get_required_path
 

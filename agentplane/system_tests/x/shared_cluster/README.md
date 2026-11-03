@@ -1,15 +1,18 @@
-# Shared test cluster
+# Shared test cluster (parked)
 
-The [contract and rollout requirements](SPEC.md) describe the dedicated persistent K3s
-node, infrastructure ownership and remaining test integration. The candidate Flux
-deployment is suspended until its runtime and admission checks are complete.
+**Parked in favor of the static Ubuntu KVM worker and per-action K3s fixture.** This
+directory retains the former persistent K3s-in-a-container spike for review and possible
+future revival; its node image is no longer in the CI image roster and its chart is an
+inert reference under `x/agentplane_kube_in_kube/reference/`. See the
+[parking note](../../../../x/agentplane_kube_in_kube/README.md) and the archived
+[contract and rollout requirements](SPEC.md).
 
 ## Trusted per-run setup
 
 Run this outside the Bazel test action, with the inner cluster's admin kubeconfig:
 
 ```bash
-bb run //agentplane/system_tests/shared_cluster:lease_bin -- \
+bb run //agentplane/system_tests/x/shared_cluster:lease_bin -- \
   --admin-kubeconfig /path/to/inner-admin.kubeconfig allocate \
   --server https://api.agentplane-test-cluster.svc.cluster.local:6443 \
   --output /tmp/agents/YYYY_MM_DD/task/run
@@ -20,7 +23,7 @@ The new output directory is mode 0700; its files are mode 0600. Only
 `allocation.json` with trusted setup for cleanup:
 
 ```bash
-bb run //agentplane/system_tests/shared_cluster:lease_bin -- \
+bb run //agentplane/system_tests/x/shared_cluster:lease_bin -- \
   --admin-kubeconfig /path/to/inner-admin.kubeconfig cleanup \
   --allocation /tmp/agents/YYYY_MM_DD/task/run/allocation.json
 ```

@@ -1,5 +1,9 @@
 # Persistent KVM test cluster
 
+> **Parked:** this is the prior persistent K3s-in-a-container proposal. The active test
+> path uses the static Ubuntu KVM worker and a fresh disposable K3s fixture per action.
+> This specification remains as a reference if the shared-cluster design is reconsidered.
+
 Agentplane's shared test cluster is a dedicated single-node K3s cluster inside a trusted
 privileged Pod on wyrm2. Its API, datastore, CRDs, admission and infrastructure operators
 are separate from the outer cluster. K3s uses its default SQLite datastore. The node is

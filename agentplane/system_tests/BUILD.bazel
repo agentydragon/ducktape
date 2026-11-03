@@ -9,12 +9,6 @@ package(
 )
 
 py_library(
-    name = "operator_releases",
-    testonly = False,  # Also rendered into the trusted persistent test-node image.
-    srcs = ["operator_releases.py"],
-)
-
-py_library(
     name = "agent",
     testonly = True,
     srcs = ["agent.py"],

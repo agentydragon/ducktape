@@ -12,8 +12,8 @@ from urllib.parse import urlsplit
 from kubernetes_asyncio.config import new_client_from_config
 from tenacity import AsyncRetrying, retry_if_result, stop_after_delay, wait_fixed
 
-from agentplane.system_tests.shared_cluster import allocation
-from agentplane.system_tests.shared_cluster.namespaces import Namespaces
+from agentplane.system_tests.x.shared_cluster import allocation
+from agentplane.system_tests.x.shared_cluster.namespaces import Namespaces
 
 
 def _write(path: Path, text: str) -> None:
