@@ -45,6 +45,7 @@ Before starting a round, the project adapter should identify:
 - dependency graph, root/chunk reports, directory reports, and cycle report
   locations
 - gate, regen, uniqueness-check, and smoke-test commands
+- residual-only baseline config or reproducible derivation, and its normal gate command
 - project convention docs and taxonomy docs
 - architecture notes and module reorg paths
 - worktree policy, base branch, commit/push policy, and scratch paths
@@ -103,6 +104,55 @@ Keep private inputs, concrete spec audits and project-specific progress in
 [gaffer-private](https://github.com/agentydragon/gaffer-private). Public engine
 changes and examples use neutral synthetic shapes.
 
+### Start from passing residual output and isolate failing assignments
+
+Every configured bundle needs an empty extraction spec that passes the normal
+pipeline: retain the complete captured input/import context, assign no source
+units to named modules, and use `inline_in_entry` for every chunk. All source
+then stays residual in its original chunk and source order. Run and retain this
+baseline for the matching engine and inputs; do not infer acceptance from its
+trivial shape. If it fails, isolate the tool/input reconstruction defect before
+treating a requested module boundary as the cause. Rejected readable output
+cannot serve as the passing baseline.
+
+Use divide-and-conquer when a large spec rejects or the next semantic repair
+has an uncertain payoff. Work in a scratch spec, preserving the authored target:
+
+1. Start from the passing residual-only assignment. Restore meaningful groups
+   of module claims, including their anonymous statements and complete atomic
+   units, and run the normal gate on each candidate.
+2. Split a failing group and try each half against the same passing base. Keep
+   passing groups and continue on the rejected combinations. If both halves
+   pass separately but their union fails, isolate their interaction; there may
+   be several independent conflicts and no single bad module.
+3. Retain the largest useful passing partial extraction found and a small
+   failing addition that explains the next blocker. Use that addition to choose
+   inference, specific recognition, an audited annotation, or a different
+   coherent boundary. Report partial coverage and residual code explicitly.
+
+Removal can change module cycles and selector dependencies, so do not assume
+acceptance is monotone or prune untried subsets from one failing result. A
+branch-and-bound search needs an explicit objective and justified bounds; a
+budgeted reduction yields a locally reduced conflict and a best-known passing
+spec, not proof of a globally maximal extraction or minimum removal set.
+
+Hold source, package roots, engine, vendor substitutions and analysis policy
+fixed while isolating ownership. Keep author assertions fixed too: annotations
+and `resolved_member` selectors may depend on removed claims. Preserve their
+exact scope through supported spec operations, or classify the probe as invalid
+and report the missing capability. A truly empty spec with no optional author
+assertions is a separate baseline if removing them changes analysis inputs.
+Reuse cached analysis only when native projection/provenance checks accept it;
+never bypass those checks to make a subset cheap.
+
+Record each tried subset, exact input/spec/engine identity, actual gate result,
+failing reports and termination budget. A selector/configuration failure is not
+a semantic rejection. Bound the probes, reuse completed results and matching
+analysis, and record missing subset/baseline tooling instead of building a
+private graph reader or spending an open-ended round on manual edits. Gate and
+runtime evidence for a partial spec applies to that spec; the full authored
+spec remains a separate target.
+
 ### Select an observable capability
 
 Maintain a short ranked plan in the owning project's `plans/` directory. Repair
@@ -139,6 +189,9 @@ does not establish runtime identity or behavior. The
 retention, result and identity obligations; assert only the facts the audit
 supports. Document a new annotation's contract in `SPEC.md` and retain existing
 approved contracts unless a changed assertion is explicitly justified.
+
+Use standing user authorization for scoped model and annotation decisions;
+do not request fresh approval for each choice already within that authority.
 
 All routes feed the same typed facts, value/effect semantics and validator,
 retaining the distinction between source proof and author assumption. A

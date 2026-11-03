@@ -4,6 +4,13 @@ Use the project's [adapter inputs](../skills/shared/workflow.md#adapter-contract
 and the [task chooser](../README.md#choose-a-task) to scope the work. Planning
 and intake are read-only; each hands evidence to a worker who validates the edit.
 
+When a large assignment rejects, use the shared workflow's
+[passing residual baseline and divide-and-conquer strategy](../skills/shared/workflow.md#start-from-passing-residual-output-and-isolate-failing-assignments).
+Retain useful passing subsets and isolate conflicting additions before turning
+a broad rejection into a long interpreter worklist. An empty extraction spec
+keeps every source unit residual in its original chunk; failure of that normal
+baseline needs a tool/input investigation.
+
 ## Plan an assignment
 
 Use the adapter's current graph, matching modules tree, source, and reports.
