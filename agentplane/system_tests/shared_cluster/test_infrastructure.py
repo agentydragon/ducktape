@@ -2,6 +2,7 @@
 
 import os
 import tarfile
+from pathlib import PurePosixPath
 from typing import Any, cast
 
 import pytest
@@ -19,13 +20,14 @@ from util.bazel.runfiles import get_required_path
 def manifests() -> dict[str, list[dict[str, Any]]]:
     # Read the built layer, rather than rendering another copy disconnected from the image.
     with tarfile.open(get_required_path(os.environ["INFRASTRUCTURE_LAYER_RLOCATION"])) as layer:
-        root = "./opt/agentplane-test-cluster/"
+        root = PurePosixPath("opt/agentplane-test-cluster")
+        members = {PurePosixPath(member.name): member for member in layer}
         objects = {}
         for name in ("cert-manager", "trust-manager", "kubevirt-operator", "kubevirt", "kyverno", "agentplane-crds"):
-            source = layer.extractfile(f"{root}{name}.yaml")
+            source = layer.extractfile(members[root / f"{name}.yaml"])
             assert source is not None
             objects[name] = [doc for doc in yaml.safe_load_all(source) if doc]
-        assert layer.getmember(f"{root}bootstrap").isfile()
+        assert members[root / "bootstrap"].isfile()
         return objects
 
 
