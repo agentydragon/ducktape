@@ -8,6 +8,9 @@ import grpc
 
 from agentplane.notification_service import notifications_pb2 as pb, notifications_pb2_grpc as rpc
 
+# Generated messages use protobuf field-presence stubs.
+# gazelle:include_dep @pypi//protobuf
+
 
 class FakeNotifications(rpc.NotificationsServicer):
     def __init__(self) -> None:
