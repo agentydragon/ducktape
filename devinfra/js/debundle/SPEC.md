@@ -752,6 +752,37 @@ unprocessed importer leaves the old import form unchanged. Dynamic imports and
 namespace imports continue to use the original minified export names. Bindings
 without a spec-assigned name are not changed by this cross-chunk pass.
 
+## Initializer binding effects
+
+`annotations.<binding>.initializer_binding_effects: source_only` asserts that
+dynamic evaluation of that binding's direct top-level simple variable
+initializer reads or rebinds no top-level lexical binding of this chunk beyond the
+initializer's syntactic eager-read and rebind footprint. Calls, getters,
+setters, and coercions reached during evaluation are included in this audit.
+The assertion is available in logical-module `annotations:` and
+`chunk_renames.annotations:`; omission makes no assertion.
+
+Each comma-list declarator is a separate canonical source unit. The assertion
+applies only to the selected binding's initializer; sibling declarators and
+other statement work receive no assumption. The selected binding must have
+exactly one direct top-level simple initialized declaration. A source-backed
+lexical read or rebind outside the asserted footprint rejects the assertion.
+For the selected initializer, the assertion completes dynamic lexical
+read/rebind coverage while preserving its syntax-derived dependencies.
+
+The synchronous execution report identifies this author assertion and counts
+the assumed binding effects it narrowed. Observed contradictions are errors.
+Other execution precision losses remain reported; the assertion does not mint
+a whole-initialization certificate.
+
+This contract does not assert purity, freedom from throws, heap locality,
+result shape, or integrity of global-object or host state. Shared-heap effects,
+foreign registry or configuration access, global-object and host effects, and
+callbacks retained for future use remain subject to their ordinary analysis.
+`initializer_purity: pure` separately asserts that the initializer has no
+observable effects and cannot throw. Neither contract applies to later uses of
+its value.
+
 ## Static-import and host-loader queries
 
 `static-imports` is a read-only query over the original parsed source chunks.

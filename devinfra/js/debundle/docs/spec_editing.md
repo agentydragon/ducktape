@@ -464,7 +464,8 @@ debt rationale, provenance, source-unit IDs, and source-call trivia in non-emitt
 `note:` (or omit them). Both fields survive YAML rewrites; `#` YAML comments do
 not, because the rewriters re-emit the files without them. Per-binding metadata
 belongs under `annotations.<export_name>`, which also accepts `purity`, `effect`,
-`initializer_purity`, `pure_members`, and `no_sync_callback_members`.
+`initializer_purity`, `initializer_binding_effects`, `pure_members`, and
+`no_sync_callback_members`.
 
 On `modules merge`, non-empty source-module comments join the target comment
 with `--- from <source>:` dividers. The command adds `merged from: <sources>`

@@ -1772,6 +1772,10 @@ pub struct BindingAnnotation {
     /// variable initializer; it says nothing about later calls or construction.
     #[serde(default, skip_serializing_if = "is_default_initializer_purity")]
     pub initializer_purity: InitializerPurity,
+    /// Source-only lexical effect assertion for one selected top-level
+    /// variable initializer. Omission makes no assertion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initializer_binding_effects: Option<InitializerBindingEffects>,
     /// Spec-level local-effect annotation for the annotated binding.
     #[serde(default, skip_serializing_if = "is_default_member_effect")]
     pub effect: MemberEffect,
@@ -2593,6 +2597,16 @@ pub enum InitializerPurity {
     #[default]
     Default,
     Pure,
+}
+
+/// Lexical effects allowed while evaluating one selected top-level variable
+/// initializer.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum InitializerBindingEffects {
+    /// Evaluation reads and rebinds no top-level lexical bindings beyond the
+    /// initializer's syntactic eager-read and rebind footprint.
+    SourceOnly,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]

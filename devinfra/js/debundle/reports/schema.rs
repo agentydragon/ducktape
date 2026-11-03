@@ -601,6 +601,8 @@ pub struct PurityCompletionDisagreement {
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SynchronousExecutionReport {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initializer_binding_effects: Option<Box<InitializerBindingEffectsUse>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub purity_disagreement: Option<PurityCompletionDisagreement>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub inference_uses: Vec<InferenceUse>,
@@ -630,6 +632,24 @@ pub struct SynchronousExecutionReport {
     pub returned_record_uses: Vec<ReturnedRecordUseReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub author_host_contract_uses: Vec<ReentryFreeOperationUse>,
+}
+
+/// An exact initializer's author-supplied lexical effect bound. The enclosing
+/// source unit supplies its location; this does not certify other effect domains.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum InitializerBindingEffectsUse {
+    Applied {
+        binding: String,
+        narrowed_reads: usize,
+        narrowed_rebinds: usize,
+        narrowed_uninitialized_reads: usize,
+    },
+    Contradicted {
+        binding: String,
+        reads: BTreeSet<String>,
+        rebinds: BTreeSet<String>,
+    },
 }
 
 /// One exact call site that consumed a native-operation author premise.
