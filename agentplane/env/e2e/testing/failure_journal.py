@@ -10,7 +10,9 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import sqlite3
 from collections.abc import Generator
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,6 +20,7 @@ import pytest
 from google.protobuf.json_format import MessageToDict
 
 from agentplane.env.e2e.testing.process import RunningRunner
+from agentplane.proto import event_log_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
@@ -79,11 +82,27 @@ class FailureEvidence:
             sessions[directory.name] = [MessageToDict(entry, preserving_proto_field_name=True) for entry in entries]
         self.write_json("history-archive.json", sessions)
 
+    def capture_retained_journals(self, state_dir: Path) -> None:
+        """Keep each journal's last 512 committed events, even with History ingress fenced."""
+        sessions: dict[str, object] = {}
+        for path in (state_dir / "sessions").glob("*/journal.sqlite"):
+            with closing(sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True, timeout=1)) as connection:
+                rows = connection.execute("SELECT payload FROM event_entry ORDER BY cursor DESC LIMIT 512").fetchall()
+            sessions[path.parent.name] = [
+                MessageToDict(event_log_pb2.EventEntry.FromString(payload), preserving_proto_field_name=True)
+                for (payload,) in reversed(rows)
+            ]
+        self.write_json("retained-journals.json", sessions)
+
     async def preserve_runner(self, runner: RunningRunner) -> None:
-        """Keep the runner's native history files and its History Service archive snapshot.
+        """Keep native history, the local journal tail, and the History Service archive snapshot.
 
         Each capture is isolated, so a native history copy failure still leaves the archive snapshot.
         """
+        try:
+            self.capture_retained_journals(runner.state_dir)
+        except Exception:
+            logger.warning("retained journal capture into %s failed", self.directory, exc_info=True)
         try:
             self.copy_native_history(runner)
         except Exception:
