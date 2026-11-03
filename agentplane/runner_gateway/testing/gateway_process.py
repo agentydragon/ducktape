@@ -288,7 +288,7 @@ async def run_gateway(
                 **os.environ,
                 Settings.config_file_env: str(settings_path),
                 env_name(Settings, "dispatcher_database_url"): _wire_database_url(database_url),
-                env_name(Settings, "pod_name"): "runner-gateway-test",
+                env_name(Settings, "pod_name"): workload.name,
                 # Kubernetes rejects loopback EndpointSlice addresses. This advertised test address
                 # is not dialed: this single-replica fixture sends RPCs to its loopback listener.
                 env_name(Settings, "pod_ip"): "192.0.2.10",
