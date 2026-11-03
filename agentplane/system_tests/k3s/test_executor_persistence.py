@@ -180,6 +180,121 @@ def test_no_retention_without_executor_permission(
     assert not baseline.exists()
 
 
+def _action_workspace(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    workspace = tmp_path / "action-workspace"
+    test_tmpdir = workspace / "_tmp/test"
+    outputs_dir = workspace / "bazel-out/k8-fastbuild/testlogs/example/test.outputs"
+    test_setup = workspace / "external/bazel_tools/tools/test/test-setup.sh"
+    test_tmpdir.mkdir(parents=True)
+    outputs_dir.mkdir(parents=True)
+    test_setup.parent.mkdir(parents=True)
+    test_setup.touch()
+    monkeypatch.setenv("TEST_TMPDIR", str(test_tmpdir))
+    monkeypatch.setenv("TEST_UNDECLARED_OUTPUTS_DIR", str(outputs_dir))
+    return workspace
+
+
+def test_executor_workspace_requires_permission_and_declared_test_input(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    workspace = _action_workspace(monkeypatch, tmp_path)
+    monkeypatch.setenv("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE", "1")
+
+    assert stack._executor_action_workspace_root() == workspace
+
+    monkeypatch.setenv("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE", "0")
+    assert stack._executor_action_workspace_root() is None
+
+    monkeypatch.setenv("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE", "1")
+    (workspace / "external/bazel_tools/tools/test/test-setup.sh").unlink()
+    assert stack._executor_action_workspace_root() is None
+
+
+def test_snapshot_invalidation_marker_uses_action_workspace(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    workspace = _action_workspace(monkeypatch, tmp_path)
+    monkeypatch.setenv("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE", "1")
+    stack._write_executor_snapshot_invalidation_marker()
+    assert (workspace / stack._INVALIDATE_SNAPSHOT_MARKER).is_file()
+
+
+def test_persistent_stack_error_invalidates_snapshot_and_preserves_original_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    workspace = _action_workspace(monkeypatch, tmp_path)
+    monkeypatch.setenv("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE", "1")
+    lifecycle_error = RuntimeError("baseline cleanup failed")
+
+    with pytest.raises(RuntimeError) as caught, stack._invalidate_snapshot_on_action_error(enabled=True):
+        raise lifecycle_error
+
+    assert caught.value is lifecycle_error
+    assert (workspace / stack._INVALIDATE_SNAPSHOT_MARKER).is_file()
+
+
+def test_persistent_stack_success_does_not_invalidate_snapshot(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    workspace = _action_workspace(monkeypatch, tmp_path)
+    monkeypatch.setenv("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE", "1")
+    with stack._invalidate_snapshot_on_action_error(enabled=True):
+        pass
+    assert not (workspace / stack._INVALIDATE_SNAPSHOT_MARKER).exists()
+
+
+def test_nonpersistent_stack_error_does_not_invalidate_snapshot(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    workspace = _action_workspace(monkeypatch, tmp_path)
+    monkeypatch.setenv("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE", "1")
+    with (
+        pytest.raises(RuntimeError, match="ordinary stack failed"),
+        stack._invalidate_snapshot_on_action_error(enabled=False),
+    ):
+        raise RuntimeError("ordinary stack failed")
+    assert not (workspace / stack._INVALIDATE_SNAPSHOT_MARKER).exists()
+
+
+def test_persistent_stack_error_without_executor_permission_does_not_invalidate_snapshot(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    workspace = _action_workspace(monkeypatch, tmp_path)
+    monkeypatch.delenv("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE", raising=False)
+    with (
+        pytest.raises(RuntimeError, match="persistent stack failed"),
+        stack._invalidate_snapshot_on_action_error(enabled=True),
+    ):
+        raise RuntimeError("persistent stack failed")
+    assert not (workspace / stack._INVALIDATE_SNAPSHOT_MARKER).exists()
+
+
+def test_base_exception_invalidates_persistent_executor_snapshot(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    workspace = _action_workspace(monkeypatch, tmp_path)
+    monkeypatch.setenv("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE", "1")
+    abort = KeyboardInterrupt("interrupted stack setup")
+    with pytest.raises(KeyboardInterrupt) as caught, stack._invalidate_snapshot_on_action_error(enabled=True):
+        raise abort
+    assert caught.value is abort
+    assert (workspace / stack._INVALIDATE_SNAPSHOT_MARKER).is_file()
+
+
+def test_marker_write_failure_keeps_original_error_and_adds_note(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _action_workspace(monkeypatch, tmp_path)
+    monkeypatch.setenv("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE", "1")
+    lifecycle_error = RuntimeError("baseline teardown failed")
+
+    def fail_marker_write() -> None:
+        raise OSError("workspace marker is read-only")
+
+    monkeypatch.setattr(stack, "_write_executor_snapshot_invalidation_marker", fail_marker_write)
+    with pytest.raises(RuntimeError) as caught, stack._invalidate_snapshot_on_action_error(enabled=True):
+        raise lifecycle_error
+
+    assert caught.value is lifecycle_error
+    assert any("workspace marker is read-only" in note for note in lifecycle_error.__notes__)
+
+
 def test_retained_daemon_logs_are_bounded_and_survive_a_missing_log(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

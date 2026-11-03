@@ -637,6 +637,10 @@ def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
 _BASELINE_ROOT = Path("/var/lib/k3s-persistence-v7")
 _BASELINE_MARKER = _BASELINE_ROOT / "server.json"
 _RETAINED_LOG_LIMIT = 8 * 1024 * 1024
+# BuildBuddy reads this at the action workspace root to invalidate its snapshot family:
+# https://github.com/buildbuddy-io/buildbuddy/blob/798749e61eb83e2523ba06a48ff195b62b375198/enterprise/server/remote_execution/containers/firecracker/firecracker.go#L3550-L3557
+_INVALIDATE_SNAPSHOT_MARKER = ".BUILDBUDDY_INVALIDATE_SNAPSHOT"
+_BAZEL_TEST_SETUP_INPUT = Path("external/bazel_tools/tools/test/test-setup.sh")
 
 
 def _record_baseline_transition(stage: str, data_dir: Path) -> None:
@@ -789,6 +793,60 @@ def _baseline_stop_previous() -> None:
         retained = K3s(_BASELINE_ROOT, _BASELINE_ROOT / "k3s")
         _baseline_stop_owned(retained, json.loads(_BASELINE_MARKER.read_text()))
         _BASELINE_MARKER.unlink()
+
+
+def _executor_action_workspace_root() -> Path | None:
+    """Find the BuildBuddy action root using Bazel paths and a declared command input.
+
+    Pytest changes into the runfiles tree, so its cwd and TEST_SRCDIR are not the workspace root.
+    The test action's temp and output paths share the root; the declared test-setup input validates
+    that root against the action layout before writing a provider marker there.
+    """
+    if os.environ.get("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE") != "1":
+        return None
+    test_tmpdir_raw = os.environ.get("TEST_TMPDIR")
+    outputs_dir_raw = os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR")
+    if not test_tmpdir_raw or not outputs_dir_raw:
+        return None
+    try:
+        test_tmpdir = Path(test_tmpdir_raw).resolve(strict=True)
+        outputs_dir = Path(outputs_dir_raw).resolve(strict=True)
+        root = Path(os.path.commonpath((test_tmpdir, outputs_dir)))
+        test_tmpdir_relative = test_tmpdir.relative_to(root)
+        outputs_dir_relative = outputs_dir.relative_to(root)
+    except OSError, ValueError:
+        return None
+    if (
+        not test_tmpdir_relative.parts
+        or test_tmpdir_relative.parts[0] != "_tmp"
+        or not outputs_dir_relative.parts
+        or outputs_dir_relative.parts[0] != "bazel-out"
+        or not (root / _BAZEL_TEST_SETUP_INPUT).is_file()
+    ):
+        return None
+    return root
+
+
+def _write_executor_snapshot_invalidation_marker() -> None:
+    workspace_root = _executor_action_workspace_root()
+    if workspace_root is None:
+        raise RuntimeError("cannot identify authorized BuildBuddy action workspace for snapshot invalidation")
+    (workspace_root / _INVALIDATE_SNAPSHOT_MARKER).touch()
+
+
+@contextlib.contextmanager
+def _invalidate_snapshot_on_action_error(*, enabled: bool) -> Iterator[None]:
+    """Discard this executor's snapshot when a persistent stack lifecycle fails."""
+    try:
+        yield
+    except BaseException as original_error:
+        if enabled and os.environ.get("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE") == "1":
+            try:
+                _write_executor_snapshot_invalidation_marker()
+            except Exception as marker_error:
+                logger.exception("could not invalidate BuildBuddy snapshot after persistent stack failure")
+                original_error.add_note(f"BuildBuddy snapshot invalidation marker failed: {marker_error!r}")
+        raise
 
 
 def _baseline_open(source: Path, fingerprint: str, *, layers_in_memory: bool) -> tuple[K3s, dict[str, Any], bool]:
@@ -1034,6 +1092,7 @@ def running_stack(
     work = Path(tempfile.mkdtemp())
     k3s = K3s(work, inputs.binary)
     with (
+        _invalidate_snapshot_on_action_error(enabled=persist_infrastructure),
         contextlib.ExitStack() as trace_cleanup,
         contextlib.ExitStack() as block_cleanup,
         contextlib.ExitStack() as cleanup,
