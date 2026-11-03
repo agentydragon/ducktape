@@ -695,13 +695,19 @@ func (r *Runtime) fail(err error) {
 		return
 	}
 	r.mu.Lock()
+	r.failLocked(err)
+	r.mu.Unlock()
+}
+
+// failLocked revokes admission before reporting failure. Callers that already hold
+// the admission lock use it to fence uncertain durable writes atomically.
+func (r *Runtime) failLocked(err error) {
 	if r.failureErr == nil {
 		r.failureErr = err
 	}
 	r.failed = true
 	r.admissionOpen = false
 	r.changedLocked()
-	r.mu.Unlock()
 	select {
 	case r.fatal <- err:
 	default:

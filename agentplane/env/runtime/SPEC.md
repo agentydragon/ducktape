@@ -38,6 +38,10 @@ effective configuration checkpoint commit together. Native adapters read committ
 Dispatched commands without a committed outcome remain uncertain and are not replayed.
 
 Startup reconstructs retained records and journals before exposing schedulable Session state.
+An unsuccessful Session reservation write revokes admission and fails Runtime while holding the
+admission lock: the write may have reached durable storage even when COSI's in-memory view is stale.
+Only restart may reload that outcome; a retained reservation keeps its original event source and is
+recovered without replaying setup or other uncertain native work.
 Interrupted setup becomes a durable terminal outcome and is not rerun. Native recovery compares
 journal evidence with the harness's own continuation evidence, preserving unknown outcomes when
 that evidence is insufficient. See [retained state](docs/retained_state.md) and the

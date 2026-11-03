@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 
 	runtimecontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/control"
@@ -124,7 +125,14 @@ func (r *Runtime) OpenSession(ctx context.Context, request *environmentruntimepb
 			}
 			r.idleSince = nil
 			admitted = true
-			return r.store.Write(request.SessionId, record)
+			if err := r.store.Write(request.SessionId, record); err != nil {
+				// COSI can persist the record before reporting failure, leaving its
+				// in-memory view stale. Revoke admission while holding the same lock
+				// as the write; only a restart can reload the durable outcome.
+				r.failLocked(fmt.Errorf("reserve Session %s: %w", request.SessionId, err))
+				return err
+			}
+			return nil
 		})
 	})
 	if admitted {
