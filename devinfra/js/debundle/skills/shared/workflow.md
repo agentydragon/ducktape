@@ -179,6 +179,10 @@ recreate that selector anchor. When reducing ownership, retain source-match
 owners referenced by surviving selectors or rewrite those selectors using a
 supported equivalent. Validate selector resolution before running the gate.
 
+Configured `module_roots` still require their directories when they contain no
+selected YAML. A reduced config can omit unused root mappings instead of
+staging empty markers; check its native analysis projection before reuse.
+
 Hold source, package roots, engine, vendor substitutions and analysis policy
 fixed while isolating ownership. Keep author assertions fixed too: annotations
 and `resolved_member` selectors may depend on removed claims. Preserve their
@@ -257,7 +261,10 @@ or stale assertions without silently expanding the promised scope.
   For a collision, describe the current full owner path and select the intended
   exported-name row instead of taking the module report's first binding.
   For bulk recovery, prefer the matching native `modules.json` report's aligned
-  input/emitted-name arrays over thousands of individual descriptions.
+  input/emitted-name arrays over thousands of individual descriptions. A run
+  rejected before emission may not produce that report; resolve the required
+  endpoints through bounded native `describe` queries on the original authored
+  module and readable name.
 - Trace imported callees through the import slot, provider export/re-export
   and provider-local declaration. A raw provider binding with the same spelling
   as the imported export can be unrelated. Record the full chain before choosing
