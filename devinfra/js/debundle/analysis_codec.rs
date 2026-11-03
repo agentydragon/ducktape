@@ -106,14 +106,20 @@ pub fn encode<T: Serialize>(value: &T, ordinals: &ContextOrdinals) -> Result<Vec
 /// Inverse of [`encode`], given the ordinals of the same modules parsed in
 /// this process.
 pub fn decode<T: DeserializeOwned>(bytes: &[u8], ordinals: &ContextOrdinals) -> Result<T> {
-    let bytes = zstd::decode_all(bytes).context("decompress analysis output")?;
+    let mut reader = zstd::Decoder::new(bytes).context("decompress analysis output")?;
     let _scope = ArtifactScope::enter();
-    let mut deserializer = rmp_serde::Deserializer::from_read_ref(&bytes);
-    Ok(T::deserialize(Decoder {
-        inner: &mut deserializer,
-        ordinals,
-        context_slot: false,
-    })?)
+    let value = {
+        let mut deserializer = rmp_serde::Deserializer::new(&mut reader);
+        T::deserialize(Decoder {
+            inner: &mut deserializer,
+            ordinals,
+            context_slot: false,
+        })?
+    };
+    // Deserializing one value may stop before the compressed frame's checksum
+    // or a later frame. Consume the remainder so corruption still fails.
+    std::io::copy(&mut reader, &mut std::io::sink()).context("decompress analysis output")?;
+    Ok(value)
 }
 
 /// Shared values written or read so far by the running [`encode`] or
