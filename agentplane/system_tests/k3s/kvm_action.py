@@ -12,6 +12,9 @@ from agentplane.system_tests.k3s import vm_sandboxes
 from agentplane.system_tests.sandbox import Sandboxes
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
+# Generated EnvironmentDescriptor stubs import protobuf's well-known types.
+# gazelle:include_dep @pypi//protobuf
+
 
 def prepare() -> None:
     # Fail before starting k3s if the selected worker cannot provide KVM.
