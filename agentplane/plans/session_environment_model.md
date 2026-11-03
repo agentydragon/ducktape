@@ -47,7 +47,9 @@ exact Dispatcher/backend creation, ownership and idempotency protocol; attachmen
 revision and History publication; deletion and History handoff; and which component wakes a suspended
 environment under which authorization. In particular, an Agentplane principal and external identity
 provisioning are directions to evaluate, not a decision to use any particular identity provider or
-share a Kubernetes ServiceAccount.
+share a Kubernetes ServiceAccount. The related
+[Agentplane principal decision](task_dag.md#agent_principal_model_design--agentplane-principals-and-external-identities)
+covers identity provisioning and trust boundaries.
 
 A Session has one globally unique public ID. A resolver finds its responsible owner; that owner locates the harness continuation. Environment bindings describe where work can run.
 

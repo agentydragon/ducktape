@@ -917,7 +917,8 @@ where an adapter provisions an account and reconciles its RoleBindings, like ano
 account and roles. Compare this with retaining ServiceAccounts as the permission subject. Decide
 the relationships and lifetimes of principals, Sessions and environments, who may act as a
 principal, whether associations can change, and how a central Session keeps its identity without
-an environment.
+an environment. The [Session/environment model](session_environment_model.md) records the
+related lifecycle discussion and selected direction.
 
 Today each Sandbox owns its own ServiceAccount and PolicyBinding so its permissions can be changed
 independently. Sharing an SA between environments combines their additive grants. The egress proxy
