@@ -155,6 +155,13 @@ service ActionService {
   rpc GetActionPolicy(GetActionPolicyRequest) returns (GetActionPolicyResponse) {
     option (google.api.http) = {get: "/v1/action-policy"};
   }
+
+  // The same subject and viewer-specific policy as GetActionPolicy: the current snapshot followed by changed
+  // snapshots. Intermediate states may be coalesced; reconnecting starts with a fresh snapshot. The stream remains
+  // open while the caller is authorized and the service is running.
+  rpc WatchActionPolicy(GetActionPolicyRequest) returns (stream GetActionPolicyResponse) {
+    option (google.api.http) = {get: "/v1/action-policy:watch"};
+  }
 }
 
 message SubmitActionRequestRequest {
