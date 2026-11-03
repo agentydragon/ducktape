@@ -359,6 +359,14 @@ Graph queries accept `raw` or `readableValue`; spec operations accept
 an input-bundle name. After an edit, a saved graph still reflects its pre-edit
 names until regeneration.
 
+An imported name belongs to the provider's export namespace. Trace the
+importer's local binding through its import slot, any re-exports, and the
+provider's original export declaration before inspecting the provider's raw
+binding. For example, `export { factory as build }` makes an imported `build`
+refer to `factory`, even if the provider also declares an unrelated local
+`build`. `inspect-source --around-binding build` would inspect that unrelated
+local. Preserve the complete identity chain when auditing a callee's effects.
+
 Use `bindings list --modules <modules-dir>` to discover current editable
 identifiers; `--in <module-path>` limits the owner. Its `minified` field is the
 selector binding token for a member and the template-local token for a

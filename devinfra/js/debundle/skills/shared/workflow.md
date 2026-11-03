@@ -250,6 +250,11 @@ or stale assertions without silently expanding the promised scope.
   exported-name row instead of taking the module report's first binding.
   For bulk recovery, prefer the matching native `modules.json` report's aligned
   input/emitted-name arrays over thousands of individual descriptions.
+- Trace imported callees through the import slot, provider export/re-export
+  and provider-local declaration. A raw provider binding with the same spelling
+  as the imported export can be unrelated. Record the full chain before choosing
+  an effect summary, recognizer or annotation; a raw-name source excerpt alone
+  does not identify an imported function.
 - Reuse matching cached analysis for spec changes the staged pipeline excludes
   from its analysis inputs. Refresh expensive analysis when those inputs or
   the engine change. Request full graphs and evidence streams when the
