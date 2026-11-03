@@ -147,13 +147,19 @@ def _archive_json(archive: tarfile.TarFile, name: str, value: object) -> None:
     archive.addfile(entry, io.BytesIO(encoded))
 
 
-def _prepare_private_cgroups() -> None:
-    """Delegate the Docker action's own cgroup subtree to its nested kubelet."""
+def _prepare_docker_namespaces() -> None:
+    """Let nested K3s manage the action's private network and cgroup namespaces."""
+    if not Path("/.dockerenv").exists() or Path("/proc/self/cgroup").read_text().strip() != "0::/":
+        raise RuntimeError("expected a Docker action with private namespaces")
+    # kube-proxy and the CNI configure network sysctls. Keep the guest-wide /proc/sys
+    # read-only; these sysctls belong to the action's network namespace.
+    network_sysctls = "/proc/sys/net"
+    if os.statvfs(network_sysctls).f_flag & os.ST_RDONLY:
+        run("mount", "--bind", network_sysctls, network_sysctls)
+        run("mount", "-o", "remount,rw,bind", network_sysctls)
     root = Path("/sys/fs/cgroup")
     if not os.statvfs(root).f_flag & os.ST_RDONLY:
         return
-    if not Path("/.dockerenv").exists() or Path("/proc/self/cgroup").read_text().strip() != "0::/":
-        raise RuntimeError("refusing to remount cgroups outside a private Docker cgroup namespace")
     run("mount", "-o", "remount,rw", str(root))
     # Like kind's entrypoint, move existing processes out before enabling child controllers.
     # https://github.com/kubernetes-sigs/kind/blob/main/images/base/files/usr/local/bin/entrypoint
@@ -205,7 +211,7 @@ class K3s:
     @tracer.start_as_current_span("system_test.k3s.start")
     def start(self, *, layers_in_memory: bool, detached: bool = False) -> subprocess.Popen[bytes]:
         if os.environ.get("AGENTPLANE_K3S_REQUIRE_KVM") == "1":
-            _prepare_private_cgroups()
+            _prepare_docker_namespaces()
         _reset_previous_stack(self.data_dir)
         _shadow_kernel_sysctls()
         # Unpacking image layers is bound by writes to the executor's disk. The tmpfs default cap, half of
