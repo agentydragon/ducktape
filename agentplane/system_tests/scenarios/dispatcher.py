@@ -813,34 +813,32 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
             channel = dial(target)
             try:
                 stub: Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
-                opened, queued = await asyncio.gather(
-                    stub.OpenSession(
-                        pb.OpenSessionRequest(
-                            sandbox=sandbox,
-                            sandbox_uid=uid,
-                            session_id=session,
-                            spec=session_pb2.SessionSpec(
-                                harness=session_pb2.HARNESS_CODEX,
-                                model="chatgpt-sub/oai-responses/gpt-6-luna",
-                                cwd="/state/work",
-                                reasoning_effort="low",
-                                instructions=f"EARLY_DIAGNOSTIC_PAYLOAD_{sandbox}",
-                            ),
+                opened = await stub.OpenSession(
+                    pb.OpenSessionRequest(
+                        sandbox=sandbox,
+                        sandbox_uid=uid,
+                        session_id=session,
+                        spec=session_pb2.SessionSpec(
+                            harness=session_pb2.HARNESS_CODEX,
+                            model="chatgpt-sub/oai-responses/gpt-6-luna",
+                            cwd="/state/work",
+                            reasoning_effort="low",
+                            instructions=f"EARLY_DIAGNOSTIC_PAYLOAD_{sandbox}",
                         ),
-                        metadata=app_authentication.metadata,
-                        timeout=15,
                     ),
-                    stub.SubmitInput(
-                        pb.SubmitInputRequest(
-                            sandbox=sandbox,
-                            sandbox_uid=uid,
-                            session_id=session,
-                            command_id=command,
-                            text=f"LATE_DIAGNOSTIC_PAYLOAD_{sandbox} Reply with exactly OK and do not use tools.",
-                        ),
-                        metadata=notification_authentication.metadata,
-                        timeout=15,
+                    metadata=app_authentication.metadata,
+                    timeout=15,
+                )
+                queued = await stub.SubmitInput(
+                    pb.SubmitInputRequest(
+                        sandbox=sandbox,
+                        sandbox_uid=uid,
+                        session_id=session,
+                        command_id=command,
+                        text=f"LATE_DIAGNOSTIC_PAYLOAD_{sandbox} Reply with exactly OK and do not use tools.",
                     ),
+                    metadata=notification_authentication.metadata,
+                    timeout=15,
                 )
                 assert opened.opening.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
                 assert queued.dispatch.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
