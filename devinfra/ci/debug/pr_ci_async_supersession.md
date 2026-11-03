@@ -36,9 +36,10 @@ head/attempt guards: a rollback or manual rerun between the last GET and POST
 can still race cancellation. This is the residual API boundary, not an absolute
 promise that every live SHA or concurrent manual attempt is protected.
 
-The helper's selection/orchestration tests and workflow tests validate the
-identity boundary, pagination, re-fetches, stale/out-of-order callbacks, uncertain
-write outcomes, and token/checkout/admission wiring. Hosted controller execution
+The helper's behavior tests validate the identity boundary, pagination,
+re-fetches, stale/out-of-order callbacks, and uncertain write outcomes. The
+workflow's permissions, checkout, and admission configuration were reviewed directly.
+Hosted controller execution
 cannot be proven on a PR because `workflow_run` loads default-branch workflow
 code. It needs merge and naturally occurring PR updates to verify that a new
 job starts before its canceled predecessor becomes terminal, while only older
