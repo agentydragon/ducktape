@@ -1456,7 +1456,8 @@ debundle spec propose-commutations \
 - ranks the candidates by effect, each pair once in the SCC where it ranks
   best (`also_in_sccs` names nested SCCs it also lies in): a `single_pair_cut`
   (inerting this pair alone leaves the SCC's constraining subgraph acyclic,
-  every parallel unit edge counted), then one that empties its module-pair
+  every parallel unit edge counted and third-statement order preserved by
+  the same closure as graph construction), then one that empties its module-pair
   arc (`remaining_module_pair_edges` 0), then more inerted edges, then one the
   gate's cut names;
 - emits the best `--limit` (default 50; `--all` for every one) proposals,
@@ -1483,7 +1484,12 @@ debundle spec propose-commutations \
   counts), and `blocking_edges`, the constraining edges
   between them counted by `kind` and `reason` (`kind_not_inertable` for
   `eager_use` and the other kinds no premise inerts, else the rejection reason
-  of the edge's pair). Module paths in each residual component, and component
+  of the edge's pair, or `preserved_order` for an additional third-statement
+  constraint). Combined preservation stops once a remaining cycle is proved;
+  `counts_are_lower_bounds: true` then marks the counts and cyclic memberships
+  as proven lower bounds rather than the complete final inventory. This avoids
+  expanding every transitive relation of a long chain merely to prove failure.
+  A `pairs_break` result requires completed preservation. Module paths in each residual component, and component
   rows by their member paths, are sorted deterministically. The text report
   prints the same member paths. `pairs_break` has no `residual_components`
   field. An SCC with no proposal still gets its row.

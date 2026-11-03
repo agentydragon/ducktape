@@ -1,5 +1,5 @@
 use source_identity::SourceUnitOrdinal;
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 
 use petgraph::algo::tarjan_scc;
@@ -903,7 +903,7 @@ fn apply_commuting_statements(
         });
     }
     if !applied.is_empty() {
-        CommutingOrder::new(nodes, edges, &mut applied).preserve();
+        preserve_commuting_order(nodes, edges, &mut applied);
     }
     // An assertion can discharge an edge exposed by another assertion, in
     // either spec order. Only the completed closure decides whether it was used.
@@ -936,135 +936,76 @@ fn apply_commuting_statements(
     Ok(applied)
 }
 
-/// Preserve ordering paths that used a newly inert edge. Given `x -> a -> b`
-/// and a premise commuting `a` with `b`, retain `x -> b`; likewise retain
-/// `a -> y` from `a -> b -> y`. Repeat for added edges so overlapping premises
-/// cannot collectively lose an ordering between an unasserted pair.
-///
-/// Each added edge has an original ordering path as its witness. Saturation
-/// composes two edges only when one is inert; it does not compute the whole
-/// graph's transitive closure. Every new pair is inserted once. The remaining
-/// active edges preserve every original path whose endpoints were not an
-/// asserted commuting pair, independently of premise order.
-struct CommutingOrder<'a> {
-    nodes: &'a [SourceUnit],
-    edges: &'a mut Vec<DependencyEdge>,
-    applied: &'a mut [AppliedCommutingPremise],
-    premise_by_pair: HashMap<(SourceUnitId, SourceUnitId), usize>,
-    edge_by_pair: HashMap<(SourceUnitId, SourceUnitId), DependencyEdgeId>,
-    incoming: Vec<Vec<DependencyEdgeId>>,
-    outgoing: Vec<Vec<DependencyEdgeId>>,
-    pending: VecDeque<DependencyEdgeId>,
-}
+/// Preserve third-statement paths using the same closure as proposal queries.
+fn preserve_commuting_order(
+    nodes: &[SourceUnit],
+    edges: &mut Vec<DependencyEdge>,
+    applied: &mut [AppliedCommutingPremise],
+) {
+    use super::{CommutationOrder, TemporalConstraint, TemporalEdge};
+    use std::ops::ControlFlow;
 
-fn unordered_pair(a: SourceUnitId, b: SourceUnitId) -> (SourceUnitId, SourceUnitId) {
-    if a < b { (a, b) } else { (b, a) }
-}
-
-impl<'a> CommutingOrder<'a> {
-    fn new(
-        nodes: &'a [SourceUnit],
-        edges: &'a mut Vec<DependencyEdge>,
-        applied: &'a mut [AppliedCommutingPremise],
-    ) -> Self {
-        let mut edge_by_pair: HashMap<_, DependencyEdgeId> = HashMap::new();
-        for edge in edges.iter() {
-            // Co-declarations, rebinds and local effects require co-location;
-            // they do not order the two statements inside that destination.
+    let references: Vec<_> = applied
+        .iter()
+        .map(|premise| premise.reference.clone())
+        .collect();
+    let pairs: Vec<_> = applied
+        .iter()
+        .map(|premise| (premise.a, premise.b))
+        .collect();
+    let order = CommutationOrder::new(
+        nodes.len(),
+        edges.iter().filter_map(|edge| {
             if !matches!(edge.reason.kind, DepKind::EagerUse | DepKind::Sequenced) {
-                continue;
+                return None;
             }
-            if edge.reason.constrains_init_order() || edge.reason.commuting_premise().is_some() {
-                let id = edge_by_pair.entry((edge.from, edge.to)).or_insert(edge.id);
-                // A parallel eager-use or other active edge still orders the
-                // pair; prefer it to a redundant inert sequence reason.
-                if edge.reason.constrains_init_order() {
-                    *id = edge.id;
+            let constraint = if let Some(reference) = edge.reason.commuting_premise() {
+                TemporalConstraint::Commuting(
+                    references
+                        .iter()
+                        .position(|item| item == reference)
+                        .expect("every inert edge has an applied premise"),
+                )
+            } else if edge.reason.constrains_init_order() {
+                if matches!(
+                    edge.reason.premise_verdict(),
+                    Some(PremiseVerdict::Inertable)
+                ) {
+                    TemporalConstraint::Inertable
+                } else {
+                    TemporalConstraint::Fixed
                 }
-            }
-        }
-        let mut incoming = vec![Vec::new(); nodes.len()];
-        let mut outgoing = vec![Vec::new(); nodes.len()];
-        let mut pending = VecDeque::new();
-        // Original edge order makes the closure and its witnesses deterministic.
-        for edge in edges.iter() {
-            if edge_by_pair.get(&(edge.from, edge.to)) != Some(&edge.id) {
-                continue;
-            }
-            outgoing[edge.from.0].push(edge.id);
-            incoming[edge.to.0].push(edge.id);
-            if edge.reason.commuting_premise().is_some() {
-                pending.push_back(edge.id);
-            }
-        }
-        let premise_by_pair = applied
-            .iter()
-            .enumerate()
-            .map(|(index, premise)| (unordered_pair(premise.a, premise.b), index))
-            .collect();
-        Self {
-            nodes,
-            edges,
-            applied,
-            premise_by_pair,
-            edge_by_pair,
-            incoming,
-            outgoing,
-            pending,
-        }
-    }
-
-    fn preserve(mut self) {
-        while let Some(id) = self.pending.pop_front() {
-            let (from, to) = (self.edges[id.0].from, self.edges[id.0].to);
-            let incoming_count = self.incoming[from.0].len();
-            for index in 0..incoming_count {
-                self.compose(self.incoming[from.0][index], id);
-            }
-            let outgoing_count = self.outgoing[to.0].len();
-            for index in 0..outgoing_count {
-                self.compose(id, self.outgoing[to.0][index]);
-            }
-        }
-    }
-
-    fn compose(&mut self, first: DependencyEdgeId, second: DependencyEdgeId) {
-        let first = &self.edges[first.0];
-        let second = &self.edges[second.0];
-        let Some(reference) = first
-            .reason
-            .commuting_premise()
-            .or_else(|| second.reason.commuting_premise())
-        else {
-            return;
-        };
-        let (from, via, to) = (first.from, first.to, second.to);
-        if from == to || self.edge_by_pair.contains_key(&(from, to)) {
-            return;
-        }
+            } else {
+                return None;
+            };
+            Some(TemporalEdge {
+                from: edge.from,
+                to: edge.to,
+                constraint,
+            })
+        }),
+    );
+    order.preserve(&pairs, |preserved| {
+        let id = DependencyEdgeId(edges.len());
         let mut reason = EdgeReason::sequenced(
-            self.nodes[from.0].statement_ordinal,
+            nodes[preserved.from.0].statement_ordinal,
             SequencedCause::PreservedOrder {
-                via: self.nodes[via.0].statement_ordinal,
-                commuting_premise: reference.clone(),
+                via: nodes[preserved.via.0].statement_ordinal,
+                commuting_premise: references[preserved.by_premise].clone(),
             },
         );
-        let id = DependencyEdgeId(self.edges.len());
-        if let Some(&index) = self.premise_by_pair.get(&unordered_pair(from, to)) {
-            reason.inerted_by = Some(self.applied[index].reference.clone());
-            self.applied[index].inerted_edges.push(id);
+        if let Some(index) = preserved.inerted_by {
+            reason.inerted_by = Some(references[index].clone());
+            applied[index].inerted_edges.push(id);
         }
-        self.edges.push(DependencyEdge {
+        edges.push(DependencyEdge {
             id,
-            from,
-            to,
+            from: preserved.from,
+            to: preserved.to,
             reason,
         });
-        self.edge_by_pair.insert((from, to), id);
-        self.outgoing[from.0].push(id);
-        self.incoming[to.0].push(id);
-        self.pending.push_back(id);
-    }
+        ControlFlow::Continue(())
+    });
 }
 
 /// Preserve source-order observations of mutable array contents. Binding-cell

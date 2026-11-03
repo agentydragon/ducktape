@@ -600,6 +600,7 @@ rust_library(
         "facts/value_flow_tests.rs",
         "facts/value_set_tests.rs",
         "graph/build.rs",
+        "graph/commutation_order.rs",
         "graph/dependency_graph.rs",
         "graph/edge.rs",
         "graph/linker_order.rs",

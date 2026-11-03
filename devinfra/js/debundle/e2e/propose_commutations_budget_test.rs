@@ -81,4 +81,11 @@ fn many_pairs_beside_many_unrelated_edges_fit_the_budget() {
         "{}",
         report["totals"]
     );
+    let sccs = report["sccs"].as_array().expect("SCC outcomes");
+    assert!(
+        sccs.iter().any(|scc| {
+            scc["verdict"] == "pairs_cannot_break" && scc["counts_are_lower_bounds"] == true
+        }),
+        "long-chain preservation must stop with a cycle witness: {sccs:#?}"
+    );
 }
