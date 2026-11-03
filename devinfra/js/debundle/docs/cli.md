@@ -380,6 +380,14 @@ the binding's current full home-module path and find the row with the intended
 using its `binding` value. The first binding in a module report need not be
 the requested readable name.
 
+For bulk name recovery of module claims, use the matching per-chunk `modules.json` report:
+each `final_module_contents` row has positionally aligned `binding_names`
+(input names) and `member_names` (emitted names), sorted together by input
+name. Pair these arrays within the row's `path` instead of describing every
+binding separately. `source_unit_ids` is an aggregate set for the module and
+is not positionally aligned with those arrays. Use the report for the same
+source/spec/engine snapshot; it does not resolve later spec edits.
+
 `describe` and `inspect-source --id` take any ID kind and dispatch on shape:
 bindings (minified or readable), module paths (`runtime/plugins`) or
 unambiguous module filenames, module ids (`logical:7`), source-unit IDs

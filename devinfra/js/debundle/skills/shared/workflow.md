@@ -248,6 +248,8 @@ or stale assertions without silently expanding the promised scope.
   Check `query.kind`: a module basename takes precedence over a binding name.
   For a collision, describe the current full owner path and select the intended
   exported-name row instead of taking the module report's first binding.
+  For bulk recovery, prefer the matching native `modules.json` report's aligned
+  input/emitted-name arrays over thousands of individual descriptions.
 - Reuse matching cached analysis for spec changes the staged pipeline excludes
   from its analysis inputs. Refresh expensive analysis when those inputs or
   the engine change. Request full graphs and evidence streams when the
