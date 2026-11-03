@@ -721,6 +721,14 @@ func TestOpeningRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 	if _, err := client.OpenSession(authorityContext(t, "retry-owner"), request); status.Code(err) != codes.NotFound {
 		t.Fatalf("absent receipt and deleted environment: %v", err)
 	}
+	// With the merged deletion fence, even a stale live inventory cannot turn a
+	// purged receipt retry into a new admission for the deleted environment UID.
+	inventory.mu.Lock()
+	inventory.sandbox, inventory.account, inventory.accountFound = snapshot, owner, true
+	inventory.mu.Unlock()
+	if _, err := client.OpenSession(authorityContext(t, "retry-owner"), request); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("purged receipt with stale live inventory crossed deletion fence: %v", err)
+	}
 	if _, err := store.GetOpening(t.Context(), stored.SessionID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("retry recreated cleaned-up opening: %v", err)
 	}
