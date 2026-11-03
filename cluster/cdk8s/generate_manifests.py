@@ -1493,7 +1493,7 @@ def generate_manifests(root: Path) -> None:
     buildbuddy_kvm_worker_artifact = artifact(buildbuddy_kvm_worker.NAME, buildbuddy_kvm_worker.OUTPUT_DIR)
     buildbuddy_kvm_worker.buildbuddy_kvm_worker(
         flux_chart,
-        write_directory(root, buildbuddy_kvm_worker_artifact, buildbuddy_kvm_worker.chart, components=["./image-pins"]),
+        write_directory(root, buildbuddy_kvm_worker_artifact, buildbuddy_kvm_worker.chart),
         buildbuddy_executor_kustomization,
         kubevirt_kustomization,
     )
