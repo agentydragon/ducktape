@@ -260,40 +260,40 @@
     <main>
       <header>
         <div class="eyebrow">Ducktape · CI latency · 2 November 2026</div>
-        <h1>Runtime work still sets the pace.</h1>
+        <h1>Warm stacks work. The startup gap persists.</h1>
         <p class="lede">
-          The guest-root dependency split is merged. The new experiments test
-          scheduling inside retained stacks and reduce safe-manifest parsing
-          work. Pod case execution was about 25% shorter, but the 415 s
-          candidate did not beat the 409 s repeat control. VM remained the gate;
-          a 25–50% reduction in complete CI feedback has not been established.
+          The Pod scheduling, bounded MCP concurrency and safe YAML loader
+          changes are merged. A fresh mainline VM action reused its retained
+          stack and passed in 372 s. The full Python profile also passed, but it
+          does not explain the large interval before the first driver span. No
+          25–50% complete-CI speedup is established.
         </p>
         <p class="meta">
-          Hosted BuildBuddy, QEMU software emulation. KVM is unavailable for
-          this session. New mainline context: 19:55–21:54 UTC; controlled
-          experiments below have separate source and attempt records.
+          Hosted BuildBuddy, QEMU software emulation; KVM is unavailable for
+          this session. The earlier fleet census and controlled sweeps remain
+          below. New follow-up: source ac20030ffa, full VM profiling and
+          post-merge snapshot receipts on 2 November.
         </p>
         <div class="cards">
           <div class="card">
-            <span>Combined ten-target candidate</span><strong>415 s</strong
-            ><span
-              >All 26 physical tests passed. Controls 466 s and 409 s.
-              Cache/startup conditions varied; no repeated whole-sweep
-              gain.</span
+            <span>Fresh mainline VM action</span><strong>372 s</strong>
+            <span
+              >Warm attach; all three scenarios passed; cleanup complete. One
+              sample.</span
             >
           </div>
           <div class="card">
-            <span>New completed mainline context</span><strong>15 / 17</strong
-            ><span
-              >Passed. Two failures retained; one additional partial run at
-              capture. Many runs reused test results.</span
+            <span>Before first driver span</span><strong>45–96 s</strong>
+            <span
+              >Three warm actions; two instrumented. Different emitters, not a
+              latency distribution.</span
             >
           </div>
           <div class="card">
-            <span>Current decision</span><strong>Three narrow PRs</strong
-            ><span
-              >Keep case and shutdown guarantees. No doubled VM reservation
-              without performance evidence.</span
+            <span>Complete-CI target</span><strong>25–50%</strong>
+            <span
+              >Still unproven. The earlier combined ten-target candidate did not
+              beat its repeat control.</span
             >
           </div>
         </div>
@@ -310,44 +310,42 @@
         <h2>What changes the decision</h2>
         <ol>
           <li>
-            <strong>Prioritize the long tail inside the Pod batch.</strong>
-            Storage still runs exclusively first; idle/resume then starts first
-            among concurrent cases. The number of slots, cases and resource
-            reservations stay fixed.
+            <strong>Use the current VM chain as the next gate.</strong> The
+            three scheduling/parsing changes are merged. The earlier complete
+            sweep did not establish a repeated overall gain; current warm VM
+            evidence still includes substantial environment readiness, real
+            harness work and cleanup.
           </li>
           <li>
-            <strong>Keep bounded MCP case concurrency on one stack.</strong> The
-            three independent cases get separate resources and names. OAuth
-            cases remain sequential on the same deployment, preserving the
-            stateful coverage that the earlier three-stack split lost.
+            <strong
+              >Follow the executor boundary before changing Python
+              dependencies.</strong
+            >
+            The full profile locates about 18 s of inclusive import work. The
+            timed repeat establishes 33.4 s outside its launched command,
+            without assigning it all to restore or copying. Obtain the exact
+            hosted executor stage trace before changing snapshot policy or
+            runner topology.
           </li>
           <li>
-            <strong>Use the native safe YAML loader, with phase spans.</strong>
-            Equality on all four pinned releases and unsafe-tag rejection pass.
-            Profile-only parser acceleration is not a CI-runtime saving.
-          </li>
-          <li>
-            <strong>Keep VM evidence and reject unsupported shortcuts.</strong>
-            Full journal/shutdown receipts exposed a real stall. A
-            resource-capacity probe does not establish that twice the outer CPU
-            reservation would make CI faster.
+            <strong>Preserve reuse and the lifecycle proofs.</strong> Warm K3s
+            identity and cleanup are verified. Guest-root import can already be
+            a 0.423 s cache hit. A VFS toggle loses equivalent recycling
+            semantics in the inspected implementation; no new retention or
+            resource-budget patch is supported by these runs.
           </li>
         </ol>
         <p>
-          Verified at 22:46 UTC:
-          <a href="https://github.com/agentydragon/ducktape/pull/14015"
-            >MCP PR #14015 merged</a
-          >.
-          <a href="https://github.com/agentydragon/ducktape/pull/14014"
-            >Pod PR #14014</a
-          >
-          and
+          All three source PRs are now merged:
           <a href="https://github.com/agentydragon/ducktape/pull/14013"
-            >manifest PR #14013</a
-          >
-          are open; all three required checks are green on each exact head. The
-          manifest PR needed a failed-job retry; its original physical failures
-          remain in the evidence.
+            >safe loader #14013</a
+          >,
+          <a href="https://github.com/agentydragon/ducktape/pull/14014"
+            >Pod ordering #14014</a
+          >, and
+          <a href="https://github.com/agentydragon/ducktape/pull/14015"
+            >MCP concurrency #14015</a
+          >. Original failed attempts and retry evidence remain below.
         </p>
       </section>
       <section id="graph">
@@ -774,6 +772,167 @@
       </section>
       <section id="runtime">
         <h2>VM boot and teardown: the evidence boundary</h2>
+        <h3>Post-merge reuse is verified; startup is still unexplained</h3>
+        <p>
+          The
+          <a
+            href="https://app.buildbuddy.io/invocation/51c1c1e7-8678-5f40-9225-18074f229029"
+            >fresh mainline run</a
+          >
+          reused the exact K3s process, boot ID and cluster identity saved by
+          the previous VM action. BuildBuddy's snapshot metadata independently
+          names that preceding action. Application, database, certificate and
+          workspace identities were fresh; cleanup completed and all three loop
+          devices were released. This proves one warm attach, not a fleet hit
+          rate. The earlier cold sweeps encountered incompatible fingerprints,
+          with one also dirty, so no snapshot-key or safety-check change is
+          justified from them.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>VM boundary</th>
+                <th>Fresh mainline</th>
+                <th>Full cProfile</th>
+                <th>Timed repeat</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Physical TestRunner</td>
+                <td>372.4 s</td>
+                <td>501.6 s</td>
+                <td>422.1 s</td>
+              </tr>
+              <tr>
+                <td>Before first driver span</td>
+                <td>51.6 s</td>
+                <td>96.0 s</td>
+                <td>45.4 s</td>
+              </tr>
+              <tr>
+                <td>Stack setup</td>
+                <td>78.8 s, warm</td>
+                <td>110.3 s, warm</td>
+                <td>54.7 s, warm</td>
+              </tr>
+              <tr>
+                <td>Case envelope</td>
+                <td>204.1 s</td>
+                <td>250.6 s</td>
+                <td>279.9 s</td>
+              </tr>
+              <tr>
+                <td>Stack cleanup</td>
+                <td>28.1 s</td>
+                <td>32.1 s</td>
+                <td>29.0 s</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The
+          <a
+            href="https://app.buildbuddy.io/invocation/f915b65e-a483-4381-b9b5-2679bf06db90"
+            >full profiled action</a
+          >
+          passed the ordinary target on ac20030ffa plus the recorded temporary
+          cProfile harness. Its saved pstats reports 17.6 s in aggregate import
+          loading, 1.81 s in pytest configuration, 0.66 s in collection and
+          0.034 s reading stack inputs. These cumulative figures overlap; they
+          are profiler observations, not additive savings. Bytecode compilation
+          accounts for 8.02 s of self time. No Python hotspot supports the
+          complete startup-envelope hypothesis. The multi-threaded profile has
+          inconsistent cumulative teardown frames, so those frames and its
+          summed self time are not used to assign a launcher residual or cleanup
+          cost.
+        </p>
+        <p>
+          The
+          <a
+            href="https://app.buildbuddy.io/invocation/4b3a9238-d8dc-473d-aae1-4d6c48968090"
+            >timed repeat</a
+          >
+          passed all three scenarios with the same temporary profile harness.
+          Bash's built-in
+          <code>time -p</code> measured 388.69 s for the launched command within
+          a 422.072 s REAPI execution: 33.38 s outside the command, including
+          preparation and finalization. This uses elapsed durations rather than
+          subtracting guest UTC from executor UTC. It does not split restore,
+          workspace attachment or post-command handling. Eliminating that entire
+          envelope would be a 7.9% ceiling for this one action, before any next
+          CI gate, not a measured saving.
+        </p>
+        <p>
+          Both profiled actions reused K3s and released all three workspaces.
+          Their case and setup timings still varied. Guest-root import was 46.19
+          s in the first profile and 0.423 s in the repeat without a source
+          change; these were different content-cache conditions, not an
+          intervention. The ordinary generated launcher disables zip extraction,
+          runtime virtualenv creation and interpreter probing. The missing perf,
+          strace and external time binaries are recorded as failed capability
+          probes; the working Bash timing wrapper was preflighted on five
+          passing manifest tests. The failed external-time invocation also
+          needed a retried XML generation action after a VM connection timeout;
+          that is auxiliary work, not another VM-test attempt.
+        </p>
+        <h3>Follow the outer VM workspace boundary</h3>
+        <p>
+          The
+          <a
+            href="https://github.com/buildbuddy-io/buildbuddy/blob/59d036bac6b2a140c330186c1af43c8cdcc45d9a/enterprise/server/remote_execution/executor/executor.go"
+            >inspected BuildBuddy implementation</a
+          >
+          stamps execution start before the runner's Run call. Initial
+          Firecracker creation or snapshot restore, plus ext4 workspace
+          preparation and guest command setup, can occur inside that interval. A
+          paused runner taken from its in-memory pool restores earlier. Both
+          observed warm actions report task number 1 and prior snapshot
+          metadata, supporting the initial-runner restore path under the
+          inspected code. The hosted server revision is unknown, so this is
+          source-grounded attribution of possible work, not a per-stage latency
+          measurement.
+        </p>
+        <p>
+          The exact mainline Action and Command omit <code>enable-vfs</code>;
+          the inspected parser defaults it to false. Enabling VFS is not an
+          equivalent persistence experiment:
+          <a
+            href="https://github.com/buildbuddy-io/buildbuddy/blob/59d036bac6b2a140c330186c1af43c8cdcc45d9a/enterprise/server/remote_execution/containers/firecracker/firecracker.go"
+            >Firecracker plus FUSE is marked non-recyclable</a
+          >, and it changes snapshot compatibility. Keep this alternative's
+          tradeoff explicit rather than crediting avoided workspace copying
+          while assuming the current retained K3s stack. The next discriminating
+          evidence is the exact executor trace for Create/LoadSnapshot, ext4
+          workspace build/attach/mount and guest Exec; those hosted spans are
+          not exposed by the collected execution API response. The response's
+          vmexec dial metrics cover only 9.48 s in the first profile and 0.012 s
+          in the repeat.
+        </p>
+        <p>
+          The fresh mainline scenario chain is already concurrent. Claude's
+          203.3 s lane includes 123.2 s waiting for environment readiness, 19.7
+          s opening the session, 36.2 s for its turn, and 22.3 s of Sandbox
+          cleanup. The OOM lane finishes about four seconds earlier, so
+          improving Claude alone soon exposes another gate. Removing all 51.6 s
+          before the first span would be only 14% of this VM action, before
+          accounting for other CI targets. Reaching 25–50% requires another
+          independent reduction in the shared boot or setup path while retaining
+          fresh guests, OOM recovery, supervision and journal/shutdown proofs.
+        </p>
+        <p>
+          The current readiness wait is also supported by producer records:
+          approximately 23 s to Pod scheduling, 43 s to workload readiness, 47 s
+          to guest kernel output, 85 s to prepared workspace, 112 s to the
+          supervision pass marker and 123 s to runner-connected. These offsets
+          cross console and condition emitters and are approximate. The
+          readiness predicate requires a live Gateway Lease for the current Pod
+          and runtime boot identity; it is not just a subscription lifetime. The
+          raw first-state/Lease timestamp is missing, so the final roughly 11 s
+          after supervision cannot be claimed as removable polling time.
+        </p>
         <div class="grid">
           <div>
             <h3>The merged-source failure was at shutdown</h3>
@@ -811,19 +970,12 @@
               s. No safely removable polling interval was established.
             </p>
             <p>
-              Before the first traced manifest load, the combined controls
-              expose another blind interval: 77 s in control and 51 s in
-              candidate after physical action start. That 25.7 s change is much
-              larger than the 4.9 s parser difference. The prior plain
-              collect-only probe took 28.1 s, and Python importtime measured
-              9.65 s of import self time; those earlier probes do not explain
-              the full gap. REAPI and OTel timestamps come from different clock
-              emitters, with no offset bound captured. Profile the action
-              launcher, Python startup, collection and pre-span fixture-input
-              loading before calling this import cost or crediting it to the new
-              patches. The next probe should start stdlib cProfile before
-              importing test_vm, preserve the full suite and save pstats to
-              undeclared outputs; measure any launcher residual separately.
+              Earlier paired sweeps exposed 77 s and 51 s before the first
+              manifest span. Those intervals crossed REAPI and driver clocks and
+              did not establish a parser or import saving. The full-test
+              follow-up above profiles the ordinary VM target from before its
+              project and pytest imports, preserving all three scenarios and
+              boot evidence.
             </p>
           </div>
         </div>
@@ -1301,7 +1453,7 @@
                   <td>Earlier frozen fleet observations</td>
                   <td>
                     Retain concise Nov 2 08:34-14:32 baseline: 58 mainline
-                    invocations, 149 physical k3s attempts, 111 warm/25 cold/13
+                    invocations, 149 k3s TestRunner actions, 111 warm/25 cold/13
                     unknown, 133 pass/9 testfail/7 executorerror. Distinct
                     source/window from new cohort and experiments.
                   </td>
@@ -1425,7 +1577,7 @@
                   <td>
                     <a
                       href="https://github.com/agentydragon/ducktape/pull/14013"
-                      >Source PR #14013 open</a
+                      >Source PR #14013 merged</a
                     >
                   </td>
                   <td>
@@ -1503,7 +1655,7 @@
                   <td>2a7055db3c0e0d529160b73ccd0928b7561c8e5c</td>
                   <td>
                     Retain as its own historical population: 58 completed
-                    mainline invocations and 149 physical k3s attempts; do not
+                    mainline invocations and 149 k3s TestRunner actions; do not
                     merge with the later cohort or treat it as an intervention
                     estimate.
                   </td>

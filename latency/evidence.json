@@ -1,34 +1,25 @@
 {
   "repository": "agentydragon/ducktape",
-  "source_devel_commit": "3d60fc34d66c284d55dfe89eb78858ebc8aeeb87",
+  "source_devel_commit": "ac20030ffa144497702b1fe908fc04bd2effe7eb",
   "objective": "25-50% complete feedback reduction with existing hosted software emulation; KVM unavailable for this session",
   "previous_report_commit": "9a27a8fc9d",
   "population_windows": {
     "new_mainline": {
       "selection": "Completed CI/devel literal //... invocations created since19:55UTC and returned by update-time-bounded census through21:54UTC; non-atomic API capture",
-      "window_utc": [
-        "2026-11-02T19:55:00Z",
-        "2026-11-02T21:54:00Z"
-      ],
+      "window_utc": ["2026-11-02T19:55:00Z", "2026-11-02T21:54:00Z"],
       "completed": 17,
       "pass": 15,
       "failed": 2,
       "partial_at_capture": 1
     },
     "historical_actions": {
-      "window_utc": [
-        "2026-11-02T18:30:00Z",
-        "2026-11-02T19:55:00Z"
-      ],
+      "window_utc": ["2026-11-02T18:30:00Z", "2026-11-02T19:55:00Z"],
       "heads": 52,
       "green_proxy": 22,
       "canceled": 20,
       "failed": 9,
       "pending": 1,
-      "green_proxy_p50_p90_seconds": [
-        527,
-        735
-      ],
+      "green_proxy_p50_p90_seconds": [527, 735],
       "new_collection": false
     },
     "controlled_experiments": "Separate from fleet census; fixed local source tree, patches and exact attempts recorded below. Test-result cache bypassed; remote action cache accepted."
@@ -563,7 +554,7 @@
         "depth": 4
       },
       {
-        "self_seconds": 7.7e-05,
+        "self_seconds": 7.7e-5,
         "cumulative_seconds": 4.015091,
         "module": "kubernetes_asyncio.client.api.well_known_api",
         "depth": 5
@@ -614,10 +605,7 @@
     "conditions": {
       "ref_name": {
         "exclude": [],
-        "include": [
-          "refs/heads/devel",
-          "refs/heads/main"
-        ]
+        "include": ["refs/heads/devel", "refs/heads/main"]
       }
     },
     "rules": [
@@ -637,11 +625,7 @@
           "require_last_push_approval": false,
           "required_review_thread_resolution": false,
           "require_extra_approval_for_unattributed_changes": true,
-          "allowed_merge_methods": [
-            "merge",
-            "squash",
-            "rebase"
-          ]
+          "allowed_merge_methods": ["merge", "squash", "rebase"]
         }
       },
       {
@@ -879,15 +863,9 @@
       "75a2aeab-e7cb-4d85-804a-fc46715b4501",
       "74621d30-6051-4347-89ce-24a4d0ee3046"
     ],
-    "profile_only_seconds": [
-      20.558,
-      1.242
-    ],
+    "profile_only_seconds": [20.558, 1.242],
     "profile_limit": "cProfile overhead; not full runtime savings",
-    "pod_safe_parse_seconds": [
-      0.693842,
-      0.032473
-    ],
+    "pod_safe_parse_seconds": [0.693842, 0.032473],
     "failed_controls": [
       {
         "invocation": "ec9df627-ce6b-4e29-8d9d-8b9592015d11",
@@ -1037,7 +1015,8 @@
     "Matched fleet25or50percent saving",
     "Host CPU burst throttling",
     "Blocked journal-flush process stack",
-    "Gateway application crash log"
+    "Gateway application crash log",
+    "Per-stage hosted executor restore, ext4 workspace and command-finalization attribution"
   ],
   "combined_experiment": {
     "instrumented-control": {
@@ -1362,9 +1341,7 @@
             "skipped": "0",
             "time": "371.231"
           },
-          "case_names": [
-            "test_vm_scenarios"
-          ]
+          "case_names": ["test_vm_scenarios"]
         },
         "agentplane_system_tests_suites_test_dispatcher": {
           "case_count": 3,
@@ -1416,9 +1393,7 @@
             "skipped": "0",
             "time": "120.856"
           },
-          "case_names": [
-            "test_parent_session_delegates_through_the_action_cli"
-          ]
+          "case_names": ["test_parent_session_delegates_through_the_action_cli"]
         },
         "agentplane_system_tests_suites_mcp_test_actions": {
           "case_count": 5,
@@ -1869,9 +1844,7 @@
             "skipped": "0",
             "time": "351.307"
           },
-          "case_names": [
-            "test_vm_scenarios"
-          ]
+          "case_names": ["test_vm_scenarios"]
         },
         "agentplane_system_tests_suites_test_dispatcher": {
           "case_count": 3,
@@ -1923,9 +1896,7 @@
             "skipped": "0",
             "time": "104.911"
           },
-          "case_names": [
-            "test_parent_session_delegates_through_the_action_cli"
-          ]
+          "case_names": ["test_parent_session_delegates_through_the_action_cli"]
         },
         "agentplane_system_tests_suites_mcp_test_actions": {
           "case_count": 5,
@@ -2376,9 +2347,7 @@
             "skipped": "0",
             "time": "352.818"
           },
-          "case_names": [
-            "test_vm_scenarios"
-          ]
+          "case_names": ["test_vm_scenarios"]
         },
         "agentplane_system_tests_suites_test_dispatcher": {
           "case_count": 3,
@@ -2430,9 +2399,7 @@
             "skipped": "0",
             "time": "149.198"
           },
-          "case_names": [
-            "test_parent_session_delegates_through_the_action_cli"
-          ]
+          "case_names": ["test_parent_session_delegates_through_the_action_cli"]
         },
         "agentplane_system_tests_suites_mcp_test_actions": {
           "case_count": 5,
@@ -2668,31 +2635,16 @@
   "full_ci_25_or_50_percent_reduction_established": false,
   "new_critical_path_conclusion": {
     "candidate_seconds": 415.2,
-    "control_seconds": [
-      466.089,
-      409.484
-    ],
+    "control_seconds": [466.089, 409.484],
     "replicated_complete_sweep_gain": false,
     "critical_target": "//agentplane/system_tests/suites:test_vm",
-    "pod_case_window_seconds": [
-      233.132632,
-      179.869375,
-      238.191044
-    ],
+    "pod_case_window_seconds": [233.132632, 179.869375, 238.191044],
     "pod_candidate_vs_repeat_reduction_fraction": 0.24485248488184141,
-    "vm_manifest_parse_seconds": [
-      5.863669,
-      0.950502,
-      6.86265
-    ],
+    "vm_manifest_parse_seconds": [5.863669, 0.950502, 6.86265],
     "vm_cold_attachment_all_three": true,
     "vm_previous_fingerprint_prefix": "2b3619f103",
     "vm_expected_fingerprint_prefix": "8e5387507b",
-    "old_marker_states": [
-      "clean",
-      "clean",
-      "dirty"
-    ],
+    "old_marker_states": ["clean", "clean", "dirty"],
     "snapshot_selection_cause": "unknown; mixed source versions sharing family is hypothesis only"
   },
   "startup_gap": {
@@ -2731,9 +2683,13 @@
     },
     "clock_caveat": "REAPI execution metadata and driver OTel UTC stamps are separate emitters; clock synchronization is unmeasured.",
     "causal_attribution": "unknown",
-    "next_probe": "Manual py_test Python bootstrap using cProfile before test_vm import, normal full test and undeclared-output pstats; compare cumulative pre-first-manifest Python work with REAPI-to-span interval, leaving launcher residual explicit.",
-    "new_runs": 0,
-    "source_changes": 0
+    "next_probe": "Full profile and command timing completed; obtain exact hosted per-execution Create/LoadSnapshot and ext4 workspace stage spans to split the measured outside-command bracket.",
+    "new_runs": 2,
+    "source_changes": 0,
+    "followup": "Full-test profile now complete; see vm_driver_profile_followup. Historical comparison and clock limits retained.",
+    "next_probe_status": "Previous bootstrap probe completed in vm_driver_profile_followup; no source optimization proven",
+    "source_changes_scope": "Permanent production changes; the two diagnostic runs used one temporary cProfile harness.",
+    "temporary_source_harnesses": 1
   },
   "source_pr_validation": {
     "observed_at_utc": "2026-11-02T22:46:00Z",
@@ -2779,5 +2735,845 @@
       "fresh_worker_seconds": 25.085
     },
     "source_change_for_retry": false
+  },
+  "post_merge_vm_reuse": {
+    "scope": "read-only post-merge retained-baseline and VM scenario audit",
+    "merged_prs": [
+      {
+        "number": 14013,
+        "name": "SafeLoader",
+        "merge_commit": "3a227747a6a8c047791d1e09b69fb2b943c65756"
+      },
+      {
+        "number": 14015,
+        "name": "MCP",
+        "merge_commit": "d1b86e7b1bb6d6bb702edce264df71e6f0036aae"
+      },
+      {
+        "number": 14014,
+        "name": "Pod order",
+        "merge_commit": "ad2f39f80b73a0f3fafc4a18622e69738fbfe73e"
+      }
+    ],
+    "expected_fingerprint": "8e5387507bfd6c4839fea64e3889938519cdd03769e2be27a72f64deb20c7e31",
+    "invocation_id": "51c1c1e7-8678-5f40-9225-18074f229029",
+    "effective_source_commit": "ad2f39f80b73a0f3fafc4a18622e69738fbfe73e",
+    "snapshot_prior_invocation": "a763e549-173c-4b6b-800d-fdfd276591c1",
+    "snapshot_reused_k3s_identity_exact_match": true,
+    "same_identity_fields": [
+      "boot_id",
+      "pid",
+      "process_start_ticks",
+      "namespace_uid",
+      "node_uid",
+      "node_internal_ip"
+    ],
+    "receipt": {
+      "outcome": "warm",
+      "fingerprint": "8e5387507bfd6c4839fea64e3889938519cdd03769e2be27a72f64deb20c7e31",
+      "cleanup": "complete",
+      "workspace_loop_devices_released": 3
+    },
+    "fresh_application_database_certificate_and_workspace_identities_verified": true,
+    "reapi_timestamps": {
+      "queuedTimestamp": "2026-11-02T23:05:28.758760678Z",
+      "workerStartTimestamp": "2026-11-02T23:05:28.862271449Z",
+      "workerCompletedTimestamp": "2026-11-02T23:11:45.412077560Z",
+      "inputFetchStartTimestamp": "2026-11-02T23:05:28.969332058Z",
+      "inputFetchCompletedTimestamp": "2026-11-02T23:05:32.397279445Z",
+      "executionStartTimestamp": "2026-11-02T23:05:32.397279773Z",
+      "executionCompletedTimestamp": "2026-11-02T23:11:44.758330391Z",
+      "outputUploadStartTimestamp": "2026-11-02T23:11:44.758330787Z",
+      "outputUploadCompletedTimestamp": "2026-11-02T23:11:45.412077103Z"
+    },
+    "phase_envelopes_seconds": {
+      "stack_setup": 78.826,
+      "case": 204.067,
+      "outer_scenario": 203.361,
+      "longest_lane_claude": 203.256,
+      "max_sandbox_ready": 123.17,
+      "max_session_open": 21.416,
+      "max_turn": 36.209,
+      "max_oom_baseline": 40.919,
+      "max_oom_trigger_and_survival": 20.85,
+      "max_oom_recovery": 8.268,
+      "max_sandbox_cleanup": 25.126,
+      "stack_diagnostics": 3.095,
+      "stack_cleanup": 28.108
+    },
+    "start_gap": {
+      "execution_start": "2026-11-02T23:05:32.397279Z",
+      "earliest_driver_span_start": "2026-11-02T23:06:23.992313Z",
+      "seconds": 51.595034,
+      "scope": "cross-emitter; clock synchronization unmeasured"
+    },
+    "causal_boundary": {
+      "established": [
+        "first two cold fallbacks saw clean old-fingerprint markers",
+        "third cold fallback saw old-fingerprint dirty marker",
+        "51c1 reuses exact k3s identity from a763 pSuite",
+        "BuildBuddy metadata associates current Firecracker VM with a763 task/snapshot chain",
+        "three scenario sandbox waits begin together and overlap"
+      ],
+      "unknown": [
+        "exact fingerprint input that changed 2b3619f1 to 8e538750",
+        "named CPU family behind platform hash",
+        "Firecracker restore or Python startup subphase behind 51.595s",
+        "internal controller/guest/runner phase inside readiness waits",
+        "fleet-level warm hit rate from one post-merge sample"
+      ]
+    },
+    "recommendation": "No production patch to snapshot keys, fingerprint inputs, invalidation, resource sizing, test sharding, or teardown from this evidence. Preserve all three scenarios; use the separate full profile for startup, and decompose the 96-123 second readiness wait before proposing runtime changes.",
+    "limits": "Single post-merge warm hit, not a fleet reuse rate. Raw machine/namespace/process identities retained in source artifacts; public summary publishes equality conclusions only."
+  },
+  "vm_driver_profile_followup": {
+    "source_commit": "ac20030ffa144497702b1fe908fc04bd2effe7eb",
+    "full_profile_invocation": "f915b65e-a483-4381-b9b5-2679bf06db90",
+    "target": "//agentplane/system_tests/suites:test_vm",
+    "temporary_instrumentation": "cProfile enabled in __main__ before project/pytest imports, disabled and pstats dumped in finally; normal target, guest root, three scenarios, boot evidence and cleanup retained",
+    "summary": {
+      "invocation": "f915b65e-a483-4381-b9b5-2679bf06db90",
+      "outcome": "pass",
+      "status": "COMPLETE_INVOCATION_STATUS",
+      "reported_checkout_commit": "ac20030ffa144497702b1fe908fc04bd2effe7eb",
+      "bazel_elapsed_seconds": 512.022,
+      "critical_path_seconds": 509.45,
+      "physical_tests": [
+        {
+          "target": "//agentplane/system_tests/suites:test_vm",
+          "stage": "COMPLETED",
+          "status": {},
+          "exit_code": 0,
+          "process_seconds": 501.561189,
+          "queue_seconds": 0.065275,
+          "input_fetch_seconds": 4.445983,
+          "cpu_seconds": 1994.433685,
+          "peak_memory_bytes": 7097413632
+        }
+      ],
+      "targets": {
+        "agentplane_system_tests_suites_test_vm": {
+          "spans": [
+            {
+              "name": "system_test.release_manifest.load",
+              "start": "2026-11-02T23:20:56.006343Z",
+              "end": "2026-11-02T23:20:56.390011Z",
+              "seconds": 0.383668,
+              "attributes": {
+                "manifest.name": "CERT_MANAGER_INSTALL_RLOCATION",
+                "manifest.bytes": 1034400,
+                "manifest.documents": 47
+              },
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "name": "system_test.release_manifest.load",
+              "start": "2026-11-02T23:20:56.392696Z",
+              "end": "2026-11-02T23:20:56.414711Z",
+              "seconds": 0.022015,
+              "attributes": {
+                "manifest.name": "TRUST_MANAGER_INSTALL_RLOCATION",
+                "manifest.bytes": 39397,
+                "manifest.documents": 15
+              },
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "name": "system_test.release_manifest.load",
+              "start": "2026-11-02T23:20:56.417354Z",
+              "end": "2026-11-02T23:20:56.654438Z",
+              "seconds": 0.237084,
+              "attributes": {
+                "manifest.name": "KUBEVIRT_OPERATOR_RLOCATION",
+                "manifest.bytes": 490554,
+                "manifest.documents": 10
+              },
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "name": "system_test.release_manifest.load",
+              "start": "2026-11-02T23:20:56.663115Z",
+              "end": "2026-11-02T23:20:58.433625Z",
+              "seconds": 1.77051,
+              "attributes": {
+                "manifest.name": "KYVERNO_INSTALL_RLOCATION",
+                "manifest.bytes": 5848699,
+                "manifest.documents": 70
+              },
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "name": "system_test.stack.setup",
+              "start": "2026-11-02T23:20:58.435959Z",
+              "end": "2026-11-02T23:22:48.712576Z",
+              "seconds": 110.276617,
+              "attributes": {},
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "name": "system_test.case",
+              "start": "2026-11-02T23:22:52.102277Z",
+              "end": "2026-11-02T23:27:02.693503Z",
+              "seconds": 250.591226,
+              "attributes": {
+                "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios"
+              },
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "name": "system_test.stack.cleanup",
+              "start": "2026-11-02T23:27:06.304724Z",
+              "end": "2026-11-02T23:27:38.429467Z",
+              "seconds": 32.124743,
+              "attributes": {},
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "persistence": {
+            "outcome": "warm",
+            "fingerprint": "8e5387507bfd6c4839fea64e3889938519cdd03769e2be27a72f64deb20c7e31",
+            "cleanup": "complete",
+            "workspace_loop_devices_released": 3
+          },
+          "junit": {
+            "tests": "1",
+            "failures": "0",
+            "errors": "0",
+            "skipped": "0",
+            "time": "403.206"
+          },
+          "case_names": ["test_vm_scenarios"]
+        }
+      }
+    },
+    "startup_profile_observations_seconds": {
+      "aggregate_imports_inclusive": 17.634681906,
+      "pytest_prepareconfig_inclusive": 1.807388233,
+      "pytest_collection_inclusive": 0.657556773,
+      "stack_inputs_inclusive": 0.034376299,
+      "compile_self": 8.019014541
+    },
+    "before_first_driver_span_seconds": 95.950015,
+    "limits": [
+      "Inclusive figures overlap; do not add them as phase costs or savings.",
+      "Full threaded cProfile has inconsistent cumulative teardown frames; no cleanup cost or launcher residual is assigned from those frames or summed self time.",
+      "REAPI and driver UTC clocks have unmeasured offset; no profiling/control speedup is claimed.",
+      "First three harness builds failed lint and have no completed test result; retained in attempt ledger."
+    ],
+    "attempts": [
+      {
+        "invocation": "c7258578-5004-435d-91f1-691cdfb2145c",
+        "outcome": "lint failure in temporary harness; no completed test"
+      },
+      {
+        "invocation": "2d5cab99-22b3-4fde-91de-14e5f4c864d0",
+        "outcome": "lint failure in temporary harness; no completed test"
+      },
+      {
+        "invocation": "9cb4b841-3149-439e-a5b4-4040bcd8e2b1",
+        "outcome": "unused suppression in temporary harness; no completed test"
+      },
+      {
+        "invocation": "f915b65e-a483-4381-b9b5-2679bf06db90",
+        "outcome": "pass; physical test 501.561189s; warm retained baseline; 3 loop devices released; profiler artifact retrieved"
+      }
+    ],
+    "host_profiler_checks": [
+      {
+        "invocation": "5b64a30c-57f7-4324-860a-6444690eb91d",
+        "tool": "/usr/bin/perf",
+        "result": "missing executable; capability check failed, not a product regression"
+      },
+      {
+        "invocation": "f0ee45e9-8b68-4c97-a25d-7bb96b607be9",
+        "tool": "/usr/bin/strace",
+        "result": "missing executable; capability check failed, not a product regression"
+      }
+    ],
+    "source_pr_merges": [
+      {
+        "headRefOid": "5209e14dbcc408a0565781ca28e54ae108c27373",
+        "mergeCommit": {
+          "oid": "3a227747a6a8c047791d1e09b69fb2b943c65756"
+        },
+        "mergedAt": "2026-11-02T22:57:25Z",
+        "number": 14013,
+        "state": "MERGED",
+        "url": "https://github.com/agentydragon/ducktape/pull/14013"
+      },
+      {
+        "headRefOid": "71e9f5dcfa1174e55f78c4f88d8943fb43ad77a7",
+        "mergeCommit": {
+          "oid": "ad2f39f80b73a0f3fafc4a18622e69738fbfe73e"
+        },
+        "mergedAt": "2026-11-02T22:58:53Z",
+        "number": 14014,
+        "state": "MERGED",
+        "url": "https://github.com/agentydragon/ducktape/pull/14014"
+      },
+      {
+        "headRefOid": "0f107e771685c93ebe74b1c859e2f8190c405619",
+        "mergeCommit": {
+          "oid": "d1b86e7b1bb6d6bb702edce264df71e6f0036aae"
+        },
+        "mergedAt": "2026-11-02T22:34:59Z",
+        "number": 14015,
+        "state": "MERGED",
+        "url": "https://github.com/agentydragon/ducktape/pull/14015"
+      }
+    ],
+    "whole_ci_causal_saving_established": false,
+    "source_patch_sha256": "0037fa0f3f309b98c4ad0ade3b822ab4d6a5a1477fb2d9a1c1852b8cf572dcf9",
+    "source_file_artifact": {
+      "uri": "bytestream://remote.buildbuddy.io/blobs/302f27d7347e326d7229c1f8fb580185ceb77ad37d2e5a7822a414155dd506af/4397",
+      "sha256": "302f27d7347e326d7229c1f8fb580185ceb77ad37d2e5a7822a414155dd506af"
+    },
+    "timed_repeat": {
+      "invocation": "4b3a9238-d8dc-473d-aae1-4d6c48968090",
+      "same_source_patch_as_first_profile": true,
+      "command_clock": "Bash builtin time -p around the generated test executable, after passing five-case small-target preflight87771073-863f-4011-baa2-19e3206aa72f",
+      "command_elapsed_seconds": 388.69,
+      "command_user_seconds": 71.87,
+      "command_system_seconds": 52.74,
+      "physical_execution_seconds": 422.07244,
+      "outside_command_seconds": 33.38244,
+      "outside_command_fraction_ceiling": 0.07909173126774163,
+      "before_first_driver_span_seconds": 45.350595,
+      "summary": {
+        "invocation": "4b3a9238-d8dc-473d-aae1-4d6c48968090",
+        "outcome": "pass",
+        "status": "COMPLETE_INVOCATION_STATUS",
+        "reported_checkout_commit": "ac20030ffa144497702b1fe908fc04bd2effe7eb",
+        "bazel_elapsed_seconds": 430.037,
+        "critical_path_seconds": 425.22,
+        "physical_tests": [
+          {
+            "target": "//agentplane/system_tests/suites:test_vm",
+            "stage": "COMPLETED",
+            "status": {},
+            "exit_code": 0,
+            "process_seconds": 422.07244,
+            "queue_seconds": 0.062146,
+            "input_fetch_seconds": 0.251318,
+            "cpu_seconds": 1808.820863,
+            "peak_memory_bytes": 7073443840
+          }
+        ],
+        "targets": {
+          "agentplane_system_tests_suites_test_vm": {
+            "spans": [
+              {
+                "name": "system_test.release_manifest.load",
+                "start": "2026-11-02T23:38:23.468803Z",
+                "end": "2026-11-02T23:38:23.719475Z",
+                "seconds": 0.250672,
+                "attributes": {
+                  "manifest.name": "CERT_MANAGER_INSTALL_RLOCATION",
+                  "manifest.bytes": 1034400,
+                  "manifest.documents": 47
+                },
+                "status": {
+                  "status_code": "UNSET"
+                }
+              },
+              {
+                "name": "system_test.release_manifest.load",
+                "start": "2026-11-02T23:38:23.721388Z",
+                "end": "2026-11-02T23:38:23.737123Z",
+                "seconds": 0.015735,
+                "attributes": {
+                  "manifest.name": "TRUST_MANAGER_INSTALL_RLOCATION",
+                  "manifest.bytes": 39397,
+                  "manifest.documents": 15
+                },
+                "status": {
+                  "status_code": "UNSET"
+                }
+              },
+              {
+                "name": "system_test.release_manifest.load",
+                "start": "2026-11-02T23:38:23.740458Z",
+                "end": "2026-11-02T23:38:23.935624Z",
+                "seconds": 0.195166,
+                "attributes": {
+                  "manifest.name": "KUBEVIRT_OPERATOR_RLOCATION",
+                  "manifest.bytes": 490554,
+                  "manifest.documents": 10
+                },
+                "status": {
+                  "status_code": "UNSET"
+                }
+              },
+              {
+                "name": "system_test.release_manifest.load",
+                "start": "2026-11-02T23:38:23.937837Z",
+                "end": "2026-11-02T23:38:25.643413Z",
+                "seconds": 1.705576,
+                "attributes": {
+                  "manifest.name": "KYVERNO_INSTALL_RLOCATION",
+                  "manifest.bytes": 5848699,
+                  "manifest.documents": 70
+                },
+                "status": {
+                  "status_code": "UNSET"
+                }
+              },
+              {
+                "name": "system_test.stack.setup",
+                "start": "2026-11-02T23:38:25.650548Z",
+                "end": "2026-11-02T23:39:20.371869Z",
+                "seconds": 54.721321,
+                "attributes": {},
+                "status": {
+                  "status_code": "UNSET"
+                }
+              },
+              {
+                "name": "system_test.case",
+                "start": "2026-11-02T23:39:25.146789Z",
+                "end": "2026-11-02T23:44:05.039392Z",
+                "seconds": 279.892603,
+                "attributes": {
+                  "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios"
+                },
+                "status": {
+                  "status_code": "UNSET"
+                }
+              },
+              {
+                "name": "system_test.stack.cleanup",
+                "start": "2026-11-02T23:44:08.488738Z",
+                "end": "2026-11-02T23:44:37.456383Z",
+                "seconds": 28.967645,
+                "attributes": {},
+                "status": {
+                  "status_code": "UNSET"
+                }
+              }
+            ],
+            "persistence": {
+              "outcome": "warm",
+              "fingerprint": "8e5387507bfd6c4839fea64e3889938519cdd03769e2be27a72f64deb20c7e31",
+              "cleanup": "complete",
+              "workspace_loop_devices_released": 3
+            },
+            "junit": {
+              "tests": "1",
+              "failures": "0",
+              "errors": "0",
+              "skipped": "0",
+              "time": "374.711"
+            },
+            "case_names": ["test_vm_scenarios"]
+          }
+        }
+      },
+      "limit": "Instrumented repeat with different image-cache/worker conditions; no causal speedup comparison. Outside command includes preparation and finalization; not an exclusive restore timer.",
+      "cpu_scope": "Bash user/system times measure the waited command process tree, excluding retained daemons not descended from this command; whole-action RBE CPU is separately recorded in summary.physical_tests."
+    },
+    "guest_root_import_seconds": {
+      "first_profile": 46.185238,
+      "timed_repeat": 0.422533,
+      "interpretation": "Source unchanged; existing content cache/reuse can avoid the long import. Not an intervention effect."
+    },
+    "executor_boundary_audit": {
+      "schema_version": 1,
+      "audited_at": "2026-11-02",
+      "scope": "BuildBuddy REAPI execution timestamp ownership, Firecracker task workspace setup, and enable-vfs experiment safety",
+      "source_identity": {
+        "ducktape_source_sha": "ac20030ffa144497702b1fe908fc04bd2effe7eb",
+        "buildbuddy_upstream_ref": "master",
+        "buildbuddy_upstream_retrieved_at": "2026-11-02",
+        "buildbuddy_upstream_exact_sha": "59d036bac6b2a140c330186c1af43c8cdcc45d9a",
+        "buildbuddy_deployed_server_version": null,
+        "buildbuddy_cli_pin": {
+          "version": "5.0.466",
+          "sha": "d84e5dfd97439eeefbbf247681de47f3960adc11",
+          "note": "CLI pin does not establish the hosted executor/server version"
+        },
+        "source_version_note": "Official GitHub API resolved current master to this SHA on 2026-11-02; decisive files were fetched at the immutable ref. Hosted server revision remains unknown.",
+        "buildbuddy_upstream_sha_verified_against_current_master": true
+      },
+      "timestamp_order": [
+        {
+          "stamp": "workerStartTimestamp",
+          "order": 1,
+          "includes": "executor task handler entry; runner-pool acquisition, possible pooled Unpause/LoadSnapshot, PrepareForTask/image pull, and input fetch follow"
+        },
+        {
+          "stamp": "inputFetchStartTimestamp",
+          "order": 2,
+          "after": "runnerPool.Get and PrepareForTask",
+          "includes": "DownloadInputs begins"
+        },
+        {
+          "stamp": "inputFetchCompletedTimestamp",
+          "order": 3,
+          "includes": "DownloadInputs complete, including input tree/layout preparation and workspace input materialization"
+        },
+        {
+          "stamp": "executionStartTimestamp",
+          "order": 4,
+          "after": "inputFetchCompletedTimestamp",
+          "includes": "subsequent taskRunner.Run/Container.Create as needed, Firecracker Exec workspace setup and command RPC, shell test setup, launcher/interpreter, and test process"
+        },
+        {
+          "stamp": "executionCompletedTimestamp",
+          "order": 5,
+          "after": "r.Run returns and VM metadata is attached",
+          "before": "output upload"
+        },
+        {
+          "stamp": "workerCompletedTimestamp",
+          "order": 6,
+          "after": "output upload completion on the successful path"
+        }
+      ],
+      "firecracker_restore_branches": {
+        "paused_runner_pool_hit": "runnerPool.Get/takeWithRetry calls Container.Unpause/LoadSnapshot before PrepareForTask and before inputFetchStartTimestamp",
+        "new_container_restore_from_snapshot": "taskRunner.Run calls Container.Create after executionStartTimestamp; Firecracker Create calls Unpause/LoadSnapshot",
+        "fresh_vm": "Container.Create occurs after executionStartTimestamp",
+        "runner_task_number_semantics": "newRunner initializes task_number=1; successful ordinary runner-pool reuse increments it. Under pinned source, 1 supports a newly allocated taskRunner rather than a pooled taskRunner, but does not mean the VM is fresh. The execution_stats.proto comment says the counter is not currently populated for Firecracker; account for hosted-version uncertainty.",
+        "profile_vm_metadata_evidence": "f915 VMMetadata includes prior lastExecutedTask, snapshot ID/key/state, created timestamp 2026-11-02T06:27:40Z, saved snapshot version 78, and saved local/remote snapshot flags. Pinned source returns no lastExecutedTask from fresh getVMMetadata; loaded snapshot retains it. LoadSnapshot sets c.snapshot and per-run snapshot ID.",
+        "profile_restore_timing_inference": "f915 task_number=1 plus pinned source supports a newly allocated initial-state taskRunner: executor.executionStart is set before taskRunner.Run, and its initial branch calls Container.Create, which calls Unpause/LoadSnapshot for a snapshot-backed VM. VMMetadata lastExecutedTask proves snapshot ancestry. Thus restore is inferred inside executionStart, not in a prior pooled taskRunner. Inference is source-version conditional because hosted server revision is unknown."
+      },
+      "vfs": {
+        "supported_platform_property": "enable-vfs",
+        "related_property": {
+          "name": "vfs-prefetch-mode",
+          "allowed_values": ["all", "none"],
+          "meaning": "changes prefetch policy only after VFS is enabled; does not select or disable the VFS workspace implementation",
+          "persistence_effect": "when VFS is enabled, Firecracker FUSE remains non-recyclable; changed Command Platform changes the platform snapshot hash"
+        },
+        "upstream_parse_default": false,
+        "repo_rbe_platform_sets_enable_vfs": false,
+        "observed_platform_overrides": ["use-oci-fetcher=true"],
+        "platform_overrides_semantics": "remote-header overrides only; not the full Command.platform",
+        "current_action_effective_enable_vfs": "51c1 launcher Action+Command omit enable-vfs; remote-header override is only use-oci-fetcher=true; pinned parser defaults false, so 51c1 uses ext4. The separate f915 profile Command was not included and remains to be verified before assigning its workspace branch.",
+        "if_enabled_for_firecracker": "guest VFS/FUSE path; input layout is prepared during DownloadInputs, then host VFS server and guest Prepare RPC run inside Firecracker Exec after executionStart",
+        "if_disabled": "Firecracker Exec creates ext4 action workspace image, attaches workspace drive, and mounts workspace before sending the guest command RPC",
+        "benchmark_decision": "Do not run a property-controlled VFS A/B under the requirement to preserve runner persistence/snapshot/cache conditions",
+        "no_safe_per_action_isolator_found": "Neither enable-vfs nor vfs-prefetch-mode isolates workspace prep while keeping the current Firecracker runner/snapshot reuse semantics.",
+        "benchmark_reasons": [
+          "Firecracker Exec sets DoNotRecycle when a task filesystem layout is present; TryRecycle then removes rather than pools the runner",
+          "enable-vfs changes VMConfiguration.enable_vfs and Command Platform; snapshot keys hash both configuration and platform",
+          "a toggle can change whether the action receives a matching warm Firecracker snapshot"
+        ],
+        "k3s_disk_scope": "The repo fixture uses a separate raw-block ext4 workspace claim and a filesystem-mode state claim inside the test workload; BuildBuddy VFS is the outer RBE action workspace mechanism. No direct PVC storage-mode change is shown, but runner snapshot/reuse behavior changes.",
+        "observed_command_platform_properties_51c1": [
+          "workload-isolation-type=firecracker",
+          "recycle-runner=true",
+          "init-dockerd=true"
+        ],
+        "observed_remote_header_overrides_51c1": ["use-oci-fetcher=true"],
+        "profile_execution_vfs_status": "unverified from this artifact bundle; exact f915 Command.platform not included"
+      },
+      "invocation_51c1_auxiliary_evidence": {
+        "invocation": "51c1c1e7-8678-5f40-9225-18074f229029",
+        "purpose": "generated test_vm launcher artifact source action",
+        "vm_metrics": {
+          "vm_exec_dial_duration_usec": 4688692,
+          "vm_exec_transport_dial_duration_usec": 3688495,
+          "vm_exec_dial_attempts": 1,
+          "interpretation": "per-action guest vmexec dial interval; fresh-VM path includes boot to vmexec readiness, but these values alone do not identify fresh versus resumed VM"
+        },
+        "experiments": {
+          "executor.workspace_pool.enabled": false,
+          "executor.persistent_volumes": "",
+          "executor.userspace_networking": true,
+          "workspace_pool_semantics": "separate workspace-tree pooling; upstream eligibility excludes RecycleRunner and EnableVFS, so this false experiment flag does not disable Firecracker runner pooling",
+          "persistent_volumes_semantics": "BuildBuddy-managed cross-action persistent volumes; empty does not describe K3s test PVCs"
+        },
+        "io_stats": {
+          "file_download_count": 5826,
+          "file_download_size_bytes": 2930005352,
+          "file_download_duration_usec_aggregate": 375465769,
+          "reapi_input_fetch_wall_seconds": 3.428,
+          "note": "aggregate transfer duration is not wall time; InputFetchDetailedStats contained only a downloaded-file bitmap"
+        },
+        "vfs_inference": "none; these metrics and experiment fields do not establish enable-vfs",
+        "command_platform_properties": [
+          "workload-isolation-type=firecracker",
+          "recycle-runner=true",
+          "init-dockerd=true"
+        ],
+        "effective_vfs_inference": "Command omits enable-vfs, platformOverrides contains only use-oci-fetcher=true, and pinned source defaults enable-vfs=false; ext4 workspace path applies to 51c1."
+      },
+      "next_probe": {
+        "when": "if the parent full-action cProfile leaves a material pre-import residual",
+        "step_1": "If attribution is still needed for f915, decode that exact execution Action and Command with the documented bb download --type=Action/Command flow to confirm enable-vfs and effective platform properties; do not reuse the 51c1 Command by assumption.",
+        "step_2": "Correlate the same execution's executor trace and VM log with RunnerMetadata, VMMetadata (snapshot/current and previous task IDs), and VMMetrics.",
+        "request_spans": [
+          "runnerPool.Get/unpause",
+          "LoadSnapshot or Create",
+          "Firecracker Exec",
+          "VFS Prepare or ext4 workspace image/drive/mount",
+          "vmexec command RPC"
+        ],
+        "fallback": "If per-action executor spans are unavailable, no host perf/strace profiler was present on the sampled RBE worker; do not substitute aggregate stage histograms or infer a duration from uncalibrated timestamps.",
+        "action_download_command": "bb download <full-action-hash>/1889 --type=Action",
+        "command_download_command": "bb download <command_digest.hash>/<command_digest.size_bytes> --type=Command",
+        "command_syntax_source": "devinfra/buildbuddy/skill/buildbuddy_api/SKILL.md:28",
+        "command_retrieved": false,
+        "action_digest_note": "9cbe723e\u2026 is a prefix only; the command requires the full hash from the execution record."
+      },
+      "checks": {
+        "read_only": true,
+        "bazel_or_test_run": false,
+        "profile_run": false,
+        "source_edit": false,
+        "new_dependency": false,
+        "host_profiler_preflight_logs": [
+          "host-perf-test.log",
+          "host-strace-test.log"
+        ],
+        "source_commit_sha_verified": true,
+        "immutable_source_files_rechecked": [
+          "executor.go",
+          "runner.go",
+          "firecracker.go",
+          "platform.go",
+          "execution_stats.proto",
+          "firecracker.proto"
+        ],
+        "action_command_decoded_for_51c1": true,
+        "profile_command_decoded": false,
+        "parent_timed_test_log_reviewed": true,
+        "timing_values_from_parent_artifacts": true,
+        "no_new_api_calls_or_runs_for_reconciliation": true
+      },
+      "profile_execution_evidence": {
+        "execution": "f915 profile execution",
+        "runner_metadata": {
+          "task_number": 1,
+          "meaning": "new taskRunner allocation; not a cold-VM signal under Firecracker snapshot sharing"
+        },
+        "vm_metadata": {
+          "prior_last_executed_task_present": true,
+          "snapshot_state_present": true,
+          "created_timestamp": "2026-11-02T06:27:40.790259864Z",
+          "prior_task_completed_timestamp": "2026-11-02T22:33:49.437617442Z",
+          "saved_snapshot_version_number": 78,
+          "saved_local_snapshot": true,
+          "saved_remote_snapshot": true,
+          "interpretation": "supports resume from an existing snapshot; source getVMMetadata returns no lastExecutedTask for a fresh VM"
+        },
+        "vm_metrics": {
+          "vm_exec_dial_duration_usec": 9484024,
+          "vm_exec_transport_dial_duration_usec": 8483343,
+          "vm_exec_dial_attempts": 8,
+          "interpretation": "host-to-guest dial interval inside execution; not isolated snapshot restore or ext4 mount time"
+        },
+        "command_platform_status": "not independently fetched for f915; verify before applying 51c1 ext4 inference"
+      },
+      "shell_time_run_by_parent": {
+        "invocation": "4b3a9238-d8dc-473d-aae1-4d6c48968090",
+        "status": "passed",
+        "test_runner_execution_seconds": 422.07244,
+        "test_runner_execution_start": "2026-11-02T23:37:38.118208733Z",
+        "test_runner_execution_completed": "2026-11-02T23:44:40.190648275Z",
+        "time_p_real_seconds": 388.69,
+        "time_p_user_seconds": 71.87,
+        "time_p_sys_seconds": 52.74,
+        "outside_child_command_bracket_seconds": 33.38244,
+        "outside_bracket_interpretation": "combined pre-command setup and post-command finalization; not one startup stage and not all startup",
+        "vm_exec_dial_duration_usec": 11546,
+        "vm_exec_dial_attempts": 1,
+        "vm_exec_ready_signal_received": true,
+        "prior_snapshot_task_invocation": "cf3fb9d9-3df4-4d72-a08b-cf0f5e644317",
+        "saved_snapshot_version_number": 80,
+        "driver_first_span_after_reapi_execution_start_seconds": 45.350595,
+        "driver_stack_setup_span_seconds": 54.721321,
+        "driver_case_span_seconds": 279.892603,
+        "driver_stack_cleanup_span_seconds": 28.967645,
+        "driver_span_interpretation": "separate emitter measurements; do not sum/subtract to attribute outside-command bracket",
+        "run_condition": "warm receipt, three loops released; same 0037fa0\u2026 source instrumentation patch as first cProfile run, not an unprofiled control",
+        "interpretation": "Timer provides command wall time without host CPU profiling. Long vmexec dialing does not explain the outside-command bracket; snapshot restore and ext4 image/attach/mount lack separate per-action timers."
+      }
+    },
+    "effective_mainline_platform": {
+      "allow-remote-snapshots": "true",
+      "init-dockerd": "true",
+      "recycle-runner": "true",
+      "snapshot-read-policy": "newest",
+      "workload-isolation-type": "firecracker",
+      "enable-vfs": "absent; false in inspected upstream parser"
+    },
+    "external_time_capability_probe": {
+      "invocation": "cf3fb9d9-3df4-4d72-a08b-cf0f5e644317",
+      "result": "external /usr/bin/time absent; test executable never launched",
+      "physical_actions": [
+        {
+          "operation": "test-setup",
+          "exit_code": 127,
+          "status": {},
+          "execution_seconds": 30.344787
+        },
+        {
+          "operation": "xml-generation",
+          "exit_code": -2,
+          "status": {
+            "code": 14,
+            "summary": "VM connection deadline while syncing the XML-generation workspace; auxiliary action retry, not a test attempt"
+          },
+          "execution_seconds": 66.294964
+        },
+        {
+          "operation": "xml-generation",
+          "exit_code": 0,
+          "status": {},
+          "execution_seconds": 37.778881
+        }
+      ]
+    },
+    "missing_host_tools_not_product_regressions": true,
+    "mechanism_conclusion": "Python import/configuration/input loading does not account for the full cross-emitter startup envelope. Timed repeat establishes33.382s outside launched command. Inspected upstream permits snapshot restore and ext4 workspace staging there; exact hosted per-stage executor trace is unavailable, so no exclusive stage attribution or25-50percent saving is claimed.",
+    "guest_root_retention_audit": {
+      "question": "Can the current ordinary guest-root OCI image be retained in the warm VM baseline while superseded roots are removed, leaving app and runner disk images per-action?",
+      "decision": "no_production_change_for_latency",
+      "summary": "The existing retained containerd content store already produced a 0.423-second ordinary guest-root import in a fresh timed repeat. The previous warm-baseline sample took 22.437 seconds. The repeat's artifact bundle does not expose its root OCI index, so content-addressed reuse is the best-supported explanation, not a verified same-digest comparison. No VM-family disk-pressure evidence justifies a separate retention-policy experiment.",
+      "observations": [
+        {
+          "invocation": "51c1c1e7-8678-5f40-9225-18074f229029",
+          "reported_source": "merged mainline with all three PRs included",
+          "baseline": {
+            "outcome": "warm",
+            "fingerprint": "8e5387507bfd6c4839fea64e3889938519cdd03769e2be27a72f64deb20c7e31",
+            "layers_in_memory": false
+          },
+          "root_import": {
+            "image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset",
+            "start": "2026-11-02T23:07:06.322618Z",
+            "end": "2026-11-02T23:07:28.759988Z",
+            "seconds": 22.43737,
+            "index_sha256": "3aeac80c54964d8d014bebf325600bdcac6801c07b98d42e42522d6575487f41",
+            "layer_sha256": "199267b0aad5615934ab15289fbecaeb891060ea73772b0d269c8c3bce73472f",
+            "layer_bytes": 553850880
+          },
+          "setup_overlap": {
+            "certificate_issuance_end": "2026-11-02T23:07:14.503108Z",
+            "root_import_end": "2026-11-02T23:07:28.759988Z",
+            "root_import_after_issuance_seconds": 14.25688,
+            "final_prune_start": "2026-11-02T23:07:28.760545Z",
+            "final_prune_end": "2026-11-02T23:07:29.486873Z",
+            "deployment_readiness_start": "2026-11-02T23:07:29.487870Z",
+            "interpretation": "Direct root import's measured maximum setup-wait contribution in this run is 14.257 seconds; 0.726 seconds of final image pruning is separate. The full 22.437-second span is not a setup saving because work overlapped before issuance completed."
+          },
+          "source_evidence": "Downloaded OCI artifacts for 51c1 provide the image index and layer digests; test-spans provide wall times."
+        },
+        {
+          "invocation": "4b3a9238-d8dc-473d-aae1-4d6c48968090",
+          "reported_source_commit": "ac20030ffa144497702b1fe908fc04bd2effe7eb",
+          "target": "//agentplane/system_tests/suites:test_vm",
+          "outcome": "pass",
+          "baseline": {
+            "outcome": "warm",
+            "fingerprint": "8e5387507bfd6c4839fea64e3889938519cdd03769e2be27a72f64deb20c7e31",
+            "layers_in_memory": false,
+            "cleanup": "complete"
+          },
+          "root_import": {
+            "image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset",
+            "start": "2026-11-02T23:38:42.033708Z",
+            "end": "2026-11-02T23:38:42.456241Z",
+            "seconds": 0.422533,
+            "root_index_in_downloaded_artifacts": false
+          },
+          "import_and_setup_order": {
+            "final_prune_end": "2026-11-02T23:38:42.791977Z",
+            "certificate_issuance_end": "2026-11-02T23:38:54.349597Z",
+            "deployment_readiness_start": "2026-11-02T23:38:54.351775Z",
+            "interpretation": "The root import and final prune completed about 11.558 seconds before certificate issuance finished, so neither delayed this action's setup join."
+          },
+          "execution": {
+            "worker": "8f2cea81-7022-40a8-ab20-c1baf372b2cc",
+            "execution_start": "2026-11-02T23:37:38.118208Z",
+            "execution_end": "2026-11-02T23:44:40.190648Z",
+            "test_process_seconds": 422.07244,
+            "test_log": "1 passed in 374.70s"
+          },
+          "caveat": "The process/boot identity and worker differ from 51c1, and the artifact bundle omits the root index digest. This establishes a fast import in this action but does not prove it reused 51c1's exact layer or measure fleet hit rate."
+        }
+      ],
+      "mechanism": {
+        "owner": "agentplane/system_tests/k3s/stack.py",
+        "import": "K3s.import_images compares OCI layout blob paths with containerd content and streams only missing blobs; it always imports image metadata.",
+        "pruning": "prune_unused_images removes only untagged, unpinned, unused IDs; tagged, digest-named, pinned and in-use images are preserved.",
+        "baseline_fingerprint": "Includes infrastructure and PKI images, excludes per-action fixture and guest images. Keep this separation; guest-root changes should not force K3s/KubeVirt cold rebuilds.",
+        "current_storage_invariant": "No root-only allowlist exists. Existing cleanup bounds stale unreferenced aliases, but named/pinned app and runner images can remain in the retained containerd store."
+      },
+      "candidate_policy_if_storage_need_is_later_proven": {
+        "owner": "K3s image import/prune lifecycle and successful retained-stack teardown in agentplane/system_tests/k3s/stack.py",
+        "bounded_invariant": "Retain infrastructure plus at most the currently selected guest-root reference/digest. Keep the selected guest boot/kernel, app images and runner disk pinned until suite use ends; after successful cleanup, remove action-specific image refs and reclaim unreferenced blobs. On root change, keep the new root and remove superseded root data only once unused.",
+        "do_not_change": [
+          "Do not add guest root or app/runner images to the baseline fingerprint/snapshot-family key.",
+          "Do not remove images while pods, Sandboxes, VMIs, or guest processes can still reference them.",
+          "Do not retain both ordinary and profile roots under an asserted one-root limit; the selected variant must be explicit."
+        ],
+        "cache_implications": "Warm containerd can keep root content without storing VM runtime state. Per-action image metadata still imports; cache misses still transfer current blobs. Root source closure includes Claude and Codex guest harness binaries, so its digest can change with those dependencies.",
+        "coverage": "Preserves current app and runner disk inputs, a current kernel/boot image, fresh VMI/Sandbox creation, read-only EROFS root plus volatile guest overlay, guest journal/log capture, OOM/supervision scenarios, shutdown validation and workspace loop-device cleanup, provided image deletion runs only after existing cleanup checks succeed."
+      },
+      "pressure_evidence": {
+        "prior_incident_scope": "A prior controlled eviction reproduction was in the tmpfs-backed non-VM image store: cleanup-disabled reached 96.7% imagefs use with an eviction; cleanup-enabled reached 44.1% without eviction.",
+        "vm_store": "VM suites use disk-backed containerd layers; no VM-specific disk-pressure reproduction or current disk inventory was part of this audit.",
+        "implication": "The known tmpfs pressure incident does not establish a need for a VM-only latest-root retention policy."
+      },
+      "experiment": {
+        "justified_now": false,
+        "reason": "Latency mechanism already produced a 0.423-second root import in a passing warm-baseline repeat, and VM-family disk pressure is unmeasured.",
+        "future_trigger": "A VM-specific retained-store inventory demonstrating unbounded growth or pressure.",
+        "bounded_design": "One isolated allowlist experiment with before/after containerd bytes, CRI ref inventory, warm import evidence, and full cleanup/functional pass; no broad image retention."
+      },
+      "uncertainties": [
+        "4b3's downloaded artifact set does not include its root OCI index, so its layer digest cannot be compared directly with 51c1.",
+        "The 0.423-second import is consistent with a hit in the retained containerd content store; OTel span attributes do not report missing blob count or bytes.",
+        "No VM-family disk usage delta or fleet-level same-root hit rate was measured.",
+        "The root artifact includes guest harness binaries and can change whenever their dependency closure changes."
+      ],
+      "checks": {
+        "source": "Read-only source inspection at ac20030ffa144497702b1fe908fc04bd2effe7eb; only parent profiler change to test_vm.py was dirty.",
+        "artifacts": "Parsed existing local test-spans, persistence receipts, invocation/execution metadata, artifact lists, and prior image-store pressure debug note.",
+        "tests_or_provider_calls": "none"
+      }
+    },
+    "readiness_boundary": {
+      "invocation": "51c1c1e7-8678-5f40-9225-18074f229029",
+      "longest_ready_span_seconds": 123.16982,
+      "create_to_ready_end_seconds": 123.215294,
+      "approximate_offsets_from_create_start_seconds": {
+        "pod_scheduled": 22.65,
+        "workload_ready": 42.65,
+        "kernel_console": 46.54,
+        "workspace_prepared": 85.06,
+        "multi_user_target": 88.59,
+        "supervision_marker": 111.87,
+        "ready_span_end": 123.22
+      },
+      "predicate": "Sandbox helper watches exact UID; Ready requires live Gateway Lease with current incarnation Pod UID and runtime boot ID/first state. WorkloadReady alone means Pod Ready.",
+      "other_concurrent_ready_spans_seconds": [96.437, 102.59],
+      "scope": "Milestones from retained matching console/launcher logs and driver lifecycle transition events; not CPU time or additive cost.",
+      "clock_limits": "Cross-emitter offsets approximate; some condition timestamps are rounded to whole seconds.",
+      "missing_boundary": "Raw subsecond first-state/Lease timestamp; downloaded launcher records lack the full Pod-UID owner chain. CreateEnvironment process spans lack Sandbox identity and cannot be assigned per VM.",
+      "optimization_disposition": "No removable polling delay established. Preserve supervision, boot, live current-incarnation connection and OOM recovery proofs."
+    },
+    "executor_trace_availability_check": {
+      "execution_download_records_inspected": 185,
+      "trace_or_outer_vm_log_advertised": false,
+      "scope": "GetExecutionDownloads advertises downloaded file records, not a complete input root or a guarantee no server-side traces exist. Executor trace remains a hosted-service visibility boundary."
+    }
   }
 }
