@@ -4,6 +4,9 @@ syntax = "proto3";
 package agentplane.egress;
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "google/api/annotations.proto";
+import "agentplane/egress/egress_rules.proto";
 import "agentplane/proto/identity.proto";
 
 service EgressAdmin {
@@ -12,6 +15,11 @@ service EgressAdmin {
   // The `ListDecisions` list on subscribing, then again each time it changes. The proxy ends the
   // stream after its watch lease so the next call is admitted afresh; the caller reconnects.
   rpc WatchDecisions(WatchDecisionsRequest) returns (stream WatchDecisionsResponse);
+  // The current redacted credential inventory, then upserts and UID-fenced removals.
+  // Ends if the credential cache becomes unavailable or authorization expires.
+  rpc WatchCredentials(WatchCredentialsRequest) returns (stream WatchCredentialsResponse) {
+    option (google.api.http) = {get: "/v1/credentials:watch"};
+  }
   // The proxy's readiness with the facts it rests on, as `/healthz` reports them.
   rpc GetHealth(GetHealthRequest) returns (GetHealthResponse);
 }
@@ -109,4 +117,24 @@ message DecisionHistoryHealth {
   optional bool available = 9;
   int64 queued = 10;
   bool writer_running = 11;
+}
+
+message WatchCredentialsRequest {}
+
+message CredentialSnapshot {
+  repeated Credential credentials = 1;
+}
+message CredentialRemoval {
+  string name = 1;
+  string uid = 2;
+}
+// Snapshot chunks are committed on snapshot_complete, before any upserts or removals.
+// Frames contain no source or Secret value.
+message WatchCredentialsResponse {
+  oneof frame {
+    CredentialSnapshot snapshot = 1;
+    Credential upsert = 2;
+    CredentialRemoval removed = 3;
+    google.protobuf.Empty snapshot_complete = 4;
+  }
 }

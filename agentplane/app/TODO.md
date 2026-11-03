@@ -2,8 +2,6 @@
 
 - [ ] Consider loading the app config into protobuf messages and using a unified representation through config loading and the generated AppConfig API.
 
-- [ ] Expose public EgressCredential metadata from an Egress-owned read/watch API, so the policy
-      view can show credential descriptions and target methods without accessing Secret values.
 - [ ] Migrate the Sandbox egress Python test client from its joined BindingView response to
       PolicyService resources and Egress-owned credential metadata.
 - [ ] Move Kubernetes owner-reference metadata to a shared protobuf home; Environment and Policy

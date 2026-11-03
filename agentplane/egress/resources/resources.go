@@ -112,6 +112,7 @@ func (ProjectedWorkloadToken) isSource()     {}
 // Credential is a credential a sandbox may present without holding, named so that its
 // placeholder is unique.
 type Credential struct {
+	UID         string
 	Name        string
 	Description string
 	Source      Source
@@ -149,7 +150,7 @@ func CredentialFromAPI(credential *egressapi.EgressCredential) (Credential, erro
 	if err != nil {
 		return Credential{}, fmt.Errorf("EgressCredential %s: spec.source: %w", name, err)
 	}
-	parsed := Credential{Name: name, Description: credential.Spec.Description, Source: source}
+	parsed := Credential{UID: string(credential.UID), Name: name, Description: credential.Spec.Description, Source: source}
 	for i, target := range credential.Spec.Targets {
 		targeted, err := targetFromAPI(target)
 		if err != nil {

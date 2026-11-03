@@ -12,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
+	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -53,6 +54,7 @@ type Service struct {
 	changes       Changes
 	historyHealth HistoryHealth
 	index         Index
+	credentials   *policy.Index
 	lease         time.Duration
 	draining      context.Context
 	drain         context.CancelFunc
@@ -64,6 +66,7 @@ type ServiceOptions struct {
 	Changes       Changes
 	HistoryHealth HistoryHealth
 	Index         Index
+	Credentials   *policy.Index
 	// WatchLease ends each watch after this long: a stream is admitted once, so the lease bounds how
 	// long a revoked token keeps reading.
 	WatchLease time.Duration
@@ -73,9 +76,10 @@ type ServiceOptions struct {
 func Methods(resolver *auth.Resolver, callers []auth.Account) auth.Methods {
 	rule := auth.Accounts(resolver, callers)
 	return auth.Methods{
-		egressadminpb.EgressAdmin_ListDecisions_FullMethodName:  rule,
-		egressadminpb.EgressAdmin_WatchDecisions_FullMethodName: rule,
-		egressadminpb.EgressAdmin_GetHealth_FullMethodName:      rule,
+		egressadminpb.EgressAdmin_ListDecisions_FullMethodName:    rule,
+		egressadminpb.EgressAdmin_WatchDecisions_FullMethodName:   rule,
+		egressadminpb.EgressAdmin_GetHealth_FullMethodName:        rule,
+		egressadminpb.EgressAdmin_WatchCredentials_FullMethodName: rule,
 	}
 }
 
@@ -83,7 +87,7 @@ func NewService(options ServiceOptions) *Service {
 	draining, drain := context.WithCancel(context.Background())
 	return &Service{
 		decisions: options.Decisions, changes: options.Changes, historyHealth: options.HistoryHealth,
-		index: options.Index, lease: options.WatchLease, draining: draining, drain: drain,
+		index: options.Index, credentials: options.Credentials, lease: options.WatchLease, draining: draining, drain: drain,
 	}
 }
 

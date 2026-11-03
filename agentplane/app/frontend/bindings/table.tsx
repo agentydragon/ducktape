@@ -3,12 +3,14 @@ import { Badge, Box, Button, Group, Stack, Table, Text, Tooltip } from "@mantine
 import type { JSX } from "react";
 import { useSearchParams } from "react-router";
 
+import { TargetSchema, type Credential, type Target } from "../../../egress/egress_rules_pb";
 import { RuleSchema } from "../../../policy/api/v1alpha1/policy_types_pb";
 import type { PolicyBinding, PolicySet } from "../../../policy/v1/policy_service_pb";
 import { CodeBlock } from "../../../../util/frontend/code_block";
 import { MarkGlyph } from "../mark_glyph";
 import { BINDING_STATE_MARKS } from "../status_mark";
 import { TimeAgo } from "../time_ago";
+import { useCredentialMetadata } from "./credential_watch";
 import { bindingState } from "./state";
 
 export const BINDING_GRANT_HELP =
@@ -24,7 +26,28 @@ const NOT_REVOCABLE = {
   sandbox: "Kept equal to the Sandbox's policy sets by its controller, which would recreate it.",
 } as const;
 
-function PolicySetRules({ policySet }: { policySet: PolicySet }): JSX.Element {
+function targetLabel(target: Target): string {
+  const value = toJson(TargetSchema, target);
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return "unknown target";
+  const method =
+    typeof value.method === "string"
+      ? value.method
+          .replace(/^METHOD_/, "")
+          .toLowerCase()
+          .replaceAll("_", " ")
+      : "unknown method";
+  return [method, value.header, value.field, value.scheme]
+    .filter((part) => typeof part === "string" && part)
+    .join(" · ");
+}
+
+function PolicySetRules({
+  policySet,
+  credentials,
+}: {
+  policySet: PolicySet;
+  credentials: Map<string, Credential> | null;
+}): JSX.Element {
   return (
     <Stack gap={4}>
       <Text size="sm" fw={600}>
@@ -43,7 +66,12 @@ function PolicySetRules({ policySet }: { policySet: PolicySet }): JSX.Element {
               {rule.hosts.join(", ")} · {rule.methods.length ? rule.methods.join(" ") : "any method"} ·{" "}
               {rule.paths.length ? rule.paths.join(", ") : "any path"}
               {rule.credentialRef
-                ? ` · credential ${rule.credentialRef.name}: details unavailable`
+                ? (() => {
+                    const credential = credentials?.get(rule.credentialRef.name);
+                    return credential
+                      ? ` · credential ${credential.name}: ${credential.description} · ${credential.targets.map(targetLabel).join(", ")}`
+                      : ` · credential ${rule.credentialRef.name}: ${credentials ? "not found" : "details unavailable"}`;
+                  })()
                 : " · no credential"}
             </Text>
           ) : (
@@ -65,6 +93,7 @@ export function BindingsTable({
   onRevoke: ((name: string) => void) | null;
 }): JSX.Element {
   const [params, setParams] = useSearchParams();
+  const credentials = useCredentialMetadata();
   const expanded = new Set((params.get("rules") ?? "").split(",").filter(Boolean));
   const sets = new Map(policySets.map((set) => [set.identity?.name ?? "", set]));
   function toggle(name: string): void {
@@ -190,7 +219,7 @@ export function BindingsTable({
                     {references.map((reference) => {
                       const set = sets.get(reference);
                       return set ? (
-                        <PolicySetRules key={reference} policySet={set} />
+                        <PolicySetRules key={reference} policySet={set} credentials={credentials} />
                       ) : (
                         <Text key={reference} size="sm" c="red">
                           {reference}: not present in the current PolicySet view

@@ -54,6 +54,8 @@ message Credential {
   string placeholder = 3;
   // Every location the proxy substitutes at.
   repeated Target targets = 4;
+  // UID identifies this incarnation of the EgressCredential.
+  string uid = 5;
 }
 
 // One exact location a credential may be presented in. The method selects the fields a target

@@ -13,6 +13,7 @@ import (
 	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
+	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -105,18 +106,25 @@ func ruleOf(effective policy.EffectiveRule) (*egressrulespb.Rule, error) {
 		rule.Paths = stringListOf(patterns)
 	}
 	if credential := effective.Credential; credential != nil {
-		rule.Credential = &egressrulespb.Credential{
-			Name: credential.Name, Description: credential.Description, Placeholder: credential.Placeholder(),
-			Targets: make([]*egressrulespb.Target, len(credential.Targets)),
-		}
-		for i, target := range credential.Targets {
-			var err error
-			if rule.Credential.Targets[i], err = targetOf(target.ToAPI()); err != nil {
-				return nil, err
-			}
+		var err error
+		rule.Credential, err = CredentialOf(*credential)
+		if err != nil {
+			return nil, err
 		}
 	}
 	return rule, nil
+}
+
+// CredentialOf exposes only presentation metadata, never a credential source or value.
+func CredentialOf(credential resources.Credential) (*egressrulespb.Credential, error) {
+	out := &egressrulespb.Credential{Uid: credential.UID, Name: credential.Name, Description: credential.Description, Placeholder: credential.Placeholder(), Targets: make([]*egressrulespb.Target, len(credential.Targets))}
+	for i, target := range credential.Targets {
+		var err error
+		if out.Targets[i], err = targetOf(target.ToAPI()); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // stringListOf keeps a nil list absent, which the rules read as "any".

@@ -1160,6 +1160,8 @@ async def test_sandbox_form_test_coder_preset_layout(view: VisualPage, app: Agen
 @DESKTOP_AND_MOBILE
 async def test_sandbox_policy_grant_pick_updates_options(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox?tab=policy&rules=ready-sandbox-github-public")
+    await expect(view.page.get_by_text(re.compile("GitHub API access"))).to_be_visible()
+    await view.capture("credential", target=view.page.locator("#app"))
     await view.check(context="fixture ready")
     page = view.page
     await page.get_by_role("button", name="Grant policy sets", exact=True).click()

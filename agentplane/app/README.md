@@ -528,7 +528,8 @@ away commits, Escape restores, and a blank name keeps the stored one.
 Each current account has a **View grants** disclosure, reusing the Sandbox bindings list and Action-policy
 renderer. It watches PolicyBindings for the account and PolicySets through the app's generated
 PolicyService facade. The disclosure is read-only and does not calculate arbitrary Kubernetes RBAC.
-Egress credential metadata is unavailable until an Egress-owned read API is available.
+Egress credential descriptions and target methods come from the EgressAdmin credential watch through
+the generated app facade. The watch exposes presentation metadata, never credential sources or values.
 
 The browser reads and updates Connections through the app's authenticated BFF under
 `/upstream/connections/v1/operator/`: list, watch, rename, rebind, unbind, caller accounts, and consent.

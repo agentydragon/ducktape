@@ -4,6 +4,8 @@
 package policy
 
 import (
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
@@ -24,19 +26,21 @@ type Index struct {
 	// Health covers the rules, credentials and Secrets alike.
 	Health *watchhealth.Health
 
-	mu          sync.RWMutex
-	credentials map[string]resources.Credential
-	secrets     map[string]resources.Secret
+	mu                sync.RWMutex
+	credentials       map[string]resources.Credential
+	credentialChanged chan struct{}
+	secrets           map[string]resources.Secret
 }
 
 // NewIndex returns an empty Index that is unavailable until its informers sync, and while any of its
 // kinds fails to list or watch.
 func NewIndex() *Index {
 	return &Index{
-		Rules:       reader.NewIndex(resources.EgressRuleType, resources.ParseRule),
-		Health:      watchhealth.New(),
-		credentials: map[string]resources.Credential{},
-		secrets:     map[string]resources.Secret{},
+		Rules:             reader.NewIndex(resources.EgressRuleType, resources.ParseRule),
+		Health:            watchhealth.New(),
+		credentials:       map[string]resources.Credential{},
+		credentialChanged: make(chan struct{}),
+		secrets:           map[string]resources.Secret{},
 	}
 }
 
@@ -44,12 +48,16 @@ func (i *Index) PutCredential(credential resources.Credential) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	i.credentials[credential.Name] = credential
+	close(i.credentialChanged)
+	i.credentialChanged = make(chan struct{})
 }
 
 func (i *Index) DeleteCredential(name string) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	delete(i.credentials, name)
+	close(i.credentialChanged)
+	i.credentialChanged = make(chan struct{})
 }
 
 func (i *Index) PutSecret(secret resources.Secret) {
@@ -62,4 +70,23 @@ func (i *Index) DeleteSecret(name string) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	delete(i.secrets, name)
+}
+
+// CredentialsChanged closes after the next credential mutation. Obtain it before Credentials.
+func (i *Index) CredentialsChanged() <-chan struct{} {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	return i.credentialChanged
+}
+
+// Credentials returns the current credential inventory in stable name order.
+func (i *Index) Credentials() []resources.Credential {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	out := make([]resources.Credential, 0, len(i.credentials))
+	for _, credential := range i.credentials {
+		out = append(out, credential)
+	}
+	slices.SortFunc(out, func(a, b resources.Credential) int { return strings.Compare(a.Name, b.Name) })
+	return out
 }
