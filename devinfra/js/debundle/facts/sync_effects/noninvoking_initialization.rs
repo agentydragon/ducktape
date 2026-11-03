@@ -137,6 +137,33 @@ fn ordinary_parameter(parameter: &Pat) -> bool {
         if binding.type_ann.is_none() && !binding.id.optional)
 }
 
+fn javascript_parameter(parameter: &Pat) -> bool {
+    match parameter {
+        Pat::Ident(_) => ordinary_parameter(parameter),
+        Pat::Array(array) => {
+            array.type_ann.is_none()
+                && !array.optional
+                && array.elems.iter().flatten().all(javascript_parameter)
+        }
+        Pat::Object(object) => {
+            object.type_ann.is_none()
+                && !object.optional
+                && object.props.iter().all(|property| match property {
+                    ObjectPatProp::KeyValue(property) => javascript_parameter(&property.value),
+                    ObjectPatProp::Assign(property) => {
+                        property.key.type_ann.is_none() && !property.key.id.optional
+                    }
+                    ObjectPatProp::Rest(rest) => {
+                        rest.type_ann.is_none() && javascript_parameter(&rest.arg)
+                    }
+                })
+        }
+        Pat::Assign(assignment) => javascript_parameter(&assignment.left),
+        Pat::Rest(rest) => rest.type_ann.is_none() && javascript_parameter(&rest.arg),
+        Pat::Expr(_) | Pat::Invalid(_) => false,
+    }
+}
+
 fn plain_class_member(member: &ClassMember) -> bool {
     match member {
         ClassMember::Method(method) => {
@@ -305,23 +332,22 @@ impl OriginalInitializer {
                 }
             }),
             Expr::Fn(expression)
-                if !expression.function.is_async
-                    && !expression.function.is_generator
-                    && expression.function.body.is_some()
+                if expression.function.body.is_some()
                     && expression.function.type_params.is_none()
                     && expression.function.return_type.is_none()
                     && expression.function.decorators.is_empty()
                     && expression.function.params.iter().all(|parameter| {
-                        parameter.decorators.is_empty() && ordinary_parameter(&parameter.pat)
+                        parameter.decorators.is_empty() && javascript_parameter(&parameter.pat)
                     }) =>
             {
+                // Parameters, including defaults and destructuring, execute
+                // only on invocation. Async and generator bodies are lazy too.
                 Leaf::Function(expression.function.span.lo.0)
             }
             Expr::Arrow(expression)
-                if !expression.is_async
-                    && expression.type_params.is_none()
+                if expression.type_params.is_none()
                     && expression.return_type.is_none()
-                    && expression.params.iter().all(ordinary_parameter) =>
+                    && expression.params.iter().all(javascript_parameter) =>
             {
                 Leaf::Function(expression.span.lo.0)
             }

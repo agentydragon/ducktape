@@ -360,7 +360,7 @@ projected.
 
 An original, non-exported simple variable declarator with an unannotated
 binding may close global-property, general-heap and host-effect coverage when
-its initializer is a primitive literal, checked ordinary
+its initializer is a primitive literal, checked JavaScript
 function/arrow creation, a read of an initialized module-local binding, or a
 static ordinary record or dense array literal. Record values and array
 elements may be primitive literals, initialized module-local binding reads, or
@@ -386,10 +386,14 @@ view before expression erasure; every declarator remains its own effect owner
 in source order. A dedicated interpreter request must produce its expected
 value without an unavailable alternative, and owner finalization must complete
 the binding initialization without fallback or precision loss before
-sealing the coverage certificate. Bodies remain lazy; this certifies no call.
-Sequences, assignments, templates, exports, destructuring, class expressions,
+sealing the coverage certificate. Function and arrow parameters, including
+defaults, destructuring and rest, remain lazy together with the body. Async
+and generator function creation follow the same rule. This certifies no call:
+later parameter evaluation, iterator/getter access, bodies and scheduling
+retain their ordinary effects and coverage requirements.
+Sequences, assignments, templates, exports, destructured variable bindings, class expressions,
 imported/global/uninitialized binding reads, decorated/type-annotated
-functions and unsupported parameters remain uncovered. For class declarations,
+functions remain uncovered. For class declarations,
 all other shapes remain uncovered. Parentheses alone preserve admissibility for
 variable initializers.
 The owner certificate survives staged analysis; generic child results and
