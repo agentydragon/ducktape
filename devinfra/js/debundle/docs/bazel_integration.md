@@ -161,6 +161,19 @@ build; its presence alone establishes no match. Execution command snippets can
 be truncated; do not replay them as saved commands. Keep raw action responses
 and BEP data in scratch; record selected identities and results in Git.
 
+For complete arguments, take `actionDigest` from the execution listing and
+download it with `bb download HASH/SIZE --type=Action`. Its `commandDigest`
+identifies the `bb download HASH/SIZE --type=Command` record, whose `arguments`
+include any shell wrapper. Keep environment records in scratch.
+
+A live invocation's artifact index can omit completed action outputs, and local
+declared output directories can still be empty. To inspect one completed
+analysis before the invocation finishes, download its `result.outputFiles`
+artifact and reuse it with the matching CLI's `run --analysis ... --reports-only
+...`. Supply complete source and package inputs; preserve the mandatory identity
+checks. The local Bazel output directory's presence does not prove its inputs
+have been downloaded.
+
 ## Solver build
 
 The debundler links OR-Tools' CP-SAT for selector assignment, so its binary is
