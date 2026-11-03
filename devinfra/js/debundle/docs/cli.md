@@ -372,6 +372,14 @@ missing declaration. `bindings list` needs no saved graph. An ambiguous spec
 identifier is rejected with matching file/claim locations; choose an
 unambiguous identifier from that inventory.
 
+Graph queries resolve module paths and unambiguous module basenames before
+binding names. Check `query.kind` before interpreting a name lookup as a
+binding lookup. If a readable name collides with a module basename, describe
+the binding's current full home-module path and find the row with the intended
+`bindings[].export_name`; inspect the report's truncation metadata before
+using its `binding` value. The first binding in a module report need not be
+the requested readable name.
+
 `describe` and `inspect-source --id` take any ID kind and dispatch on shape:
 bindings (minified or readable), module paths (`runtime/plugins`) or
 unambiguous module filenames, module ids (`logical:7`), source-unit IDs
