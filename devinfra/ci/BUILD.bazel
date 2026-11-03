@@ -352,3 +352,23 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "cancel_obsolete_pr_runs",
+    srcs = ["cancel_obsolete_pr_runs.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":pr_mergeability"],
+)
+
+py_test(
+    name = "test_cancel_obsolete_pr_runs",
+    srcs = ["test_cancel_obsolete_pr_runs.py"],
+    data = ["//:pr_ci_supersession_workflows"],
+    deps = [
+        ":cancel_obsolete_pr_runs",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

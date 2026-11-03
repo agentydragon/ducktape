@@ -1,0 +1,210 @@
+"""Retire older ordinary PR CI runs without holding up admission of their replacement.
+
+Stdlib only: executed from the controller workflow's trusted default-branch SHA.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+from dataclasses import dataclass, replace
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+
+from devinfra.ci.pr_mergeability import GitHubApi
+
+WORKFLOW_PATH = ".github/workflows/ci.yml"
+ACTIVE_STATUSES = frozenset({"requested", "waiting", "pending", "queued", "in_progress"})
+
+
+def positive(value: Any) -> int:
+    if type(value) is not int or value <= 0:
+        raise ValueError(f"Expected a positive integer, received {value!r}")
+    return value
+
+
+def sha(value: Any) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{40}", value):
+        raise ValueError("Expected a full lowercase commit SHA")
+    return value
+
+
+@dataclass(frozen=True)
+class Association:
+    number: int
+    id: int
+    base_repository_id: int
+    head_repository_id: int
+
+
+@dataclass(frozen=True)
+class Run:
+    id: int
+    number: int
+    attempt: int
+    workflow_id: int
+    repository_id: int
+    repository_name: str
+    head_repository_id: int
+    head_sha: str
+    head_branch: str
+    event: str
+    path: str
+    status: str
+    pull: Association | None
+
+    @classmethod
+    def parse(cls, data: dict[str, Any]) -> Run:
+        pulls = data["pull_requests"]
+        pull = None
+        if len(pulls) == 1:
+            item = pulls[0]
+            pull = Association(
+                number=positive(item["number"]),
+                id=positive(item["id"]),
+                base_repository_id=positive(item["base"]["repo"]["id"]),
+                head_repository_id=positive(item["head"]["repo"]["id"]),
+            )
+        return cls(
+            id=positive(data["id"]),
+            number=positive(data["run_number"]),
+            attempt=positive(data["run_attempt"]),
+            workflow_id=positive(data["workflow_id"]),
+            repository_id=positive(data["repository"]["id"]),
+            repository_name=data["repository"]["full_name"],
+            head_repository_id=positive(data["head_repository"]["id"]),
+            head_sha=sha(data["head_sha"]),
+            head_branch=data["head_branch"],
+            event=data["event"],
+            path=data["path"],
+            status=data["status"],
+            pull=pull,
+        )
+
+    def ordinary_pr(self, *, repository_id: int, repository: str, workflow_id: int) -> bool:
+        return (
+            self.repository_id == repository_id
+            and self.repository_name == repository
+            and self.head_repository_id == repository_id
+            and self.workflow_id == workflow_id
+            and self.path == WORKFLOW_PATH
+            and self.event == "pull_request"
+            and self.attempt == 1
+            and self.pull is not None
+            and self.pull.base_repository_id == repository_id
+            and self.pull.head_repository_id == repository_id
+            and bool(self.head_branch)
+        )
+
+
+def obsolete(candidate: Run, trigger: Run) -> bool:
+    return (
+        candidate.ordinary_pr(
+            repository_id=trigger.repository_id, repository=trigger.repository_name, workflow_id=trigger.workflow_id
+        )
+        and candidate.pull == trigger.pull
+        and candidate.head_branch == trigger.head_branch
+        and candidate.id != trigger.id
+        and candidate.number < trigger.number
+        and candidate.head_sha != trigger.head_sha
+        and candidate.status in ACTIVE_STATUSES
+    )
+
+
+class CancellationApi(GitHubApi):
+    def cancel(self, run_id: int) -> None:
+        # Exactly one request. A transport failure may follow an accepted write;
+        # never retry it, force-cancel, or wait for the target's terminal state.
+        request = Request(
+            f"{self.api_url}/repos/{self.repository}/actions/runs/{run_id}/cancel",
+            method="POST",
+            headers={
+                "Accept": "application/vnd.github+json",
+                "Authorization": f"Bearer {self.token}",
+                "User-Agent": "ducktape-obsolete-pr-runs",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+        )
+        with urlopen(request, timeout=30) as response:
+            if response.status != 202:
+                raise RuntimeError(f"Unexpected cancellation response: HTTP {response.status}")
+        # HTTP errors, including 409 Conflict, propagate and stop processing.
+        # Conflict alone does not establish that the run has become terminal.
+
+
+def relevant_head(api: CancellationApi, trigger: Run) -> bool:
+    assert trigger.pull is not None
+    pull = api.get(f"pulls/{trigger.pull.number}")
+    return (
+        positive(pull["id"]) == trigger.pull.id
+        and positive(pull["number"]) == trigger.pull.number
+        and pull["state"] == "open"
+        and positive(pull["base"]["repo"]["id"]) == trigger.repository_id
+        and positive(pull["head"]["repo"]["id"]) == trigger.repository_id
+        and pull["head"]["ref"] == trigger.head_branch
+        and sha(pull["head"]["sha"]) == trigger.head_sha
+    )
+
+
+def cancel_obsolete(api: CancellationApi, event: dict[str, Any]) -> None:
+    if event["action"] != "requested":
+        return
+    repository_id = positive(event["repository"]["id"])
+    if event["repository"]["full_name"] != api.repository:
+        return
+    observed = Run.parse(event["workflow_run"])
+    if not observed.ordinary_pr(
+        repository_id=repository_id, repository=api.repository, workflow_id=observed.workflow_id
+    ):
+        return
+    trigger = Run.parse(api.get(f"actions/runs/{observed.id}"))
+    # Event identity is the immutable cutoff. A modified API identity is not a
+    # replacement cutoff, including an observed manual rerun of the trigger.
+    # Status may advance between event delivery and GET; other fields may not.
+    if trigger != replace(observed, status=trigger.status):
+        return
+    workflow = api.get(f"actions/workflows/{trigger.workflow_id}")
+    if positive(workflow["id"]) != trigger.workflow_id or workflow["path"] != WORKFLOW_PATH:
+        return
+    if not relevant_head(api, trigger):
+        return
+    assert trigger.pull is not None
+    page = 1
+    seen: set[int] = set()
+    while True:
+        query = urlencode({"event": "pull_request", "branch": trigger.head_branch, "per_page": 100, "page": page})
+        result = api.get(f"actions/workflows/{trigger.workflow_id}/runs?{query}")
+        runs = result["workflow_runs"]
+        for data in runs:
+            candidate = Run.parse(data)
+            if candidate.id in seen:
+                continue
+            seen.add(candidate.id)
+            if not obsolete(candidate, trigger):
+                continue
+            fresh = Run.parse(api.get(f"actions/runs/{candidate.id}"))
+            if fresh != replace(candidate, status=fresh.status):
+                continue
+            if not obsolete(fresh, trigger):
+                continue
+            # Stop a delayed controller once a newer head becomes current. This
+            # narrows the unavoidable head-read -> cancel-POST race (no API CAS).
+            if not relevant_head(api, trigger):
+                return
+            print(f"Requesting cancellation of obsolete run {fresh.id} for PR #{trigger.pull.number}")
+            api.cancel(fresh.id)
+        if len(runs) < 100:
+            return
+        page += 1
+
+
+def main() -> None:
+    api = CancellationApi(repository=os.environ["GITHUB_REPOSITORY"], token=os.environ["GITHUB_TOKEN"])
+    cancel_obsolete(api, json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text()))
+
+
+if __name__ == "__main__":
+    main()
