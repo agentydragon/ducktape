@@ -530,8 +530,30 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
         ("[1]", true),
         ("/pattern/", false),
         ("class {}", false),
-        ("function (parameter = 1) { return parameter; }", false),
-        ("async () => 0", false),
+        ("function (parameter = 1) { return parameter; }", true),
+        ("async () => 0", true),
+        (
+            "function ({value = globalThis.defaultValue} = globalThis.input, ...rest) { return value; }",
+            true,
+        ),
+        (
+            "({value, ...rest}) => globalThis.consume(value, rest)",
+            true,
+        ),
+        ("({[globalThis.key()]: value}) => value", true),
+        ("async (value = globalThis.read()) => value", true),
+        (
+            "async function (value = globalThis.read()) { return value; }",
+            true,
+        ),
+        (
+            "function* ([value] = globalThis.input) { yield value; }",
+            true,
+        ),
+        (
+            "async function* (...values) { yield globalThis.consume(values); }",
+            true,
+        ),
     ] {
         let source = format!("const value = {initializer};\nconsole.log('control');\n");
         let fixture = run_fixture(FixtureOpts::new(
@@ -569,6 +591,59 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
                 "{declaration}: {report:#}"
             );
         }
+    }
+}
+
+#[test]
+fn function_creation_with_lazy_parameters_can_cross_an_independent_initializer() {
+    let source = "const marker = 1;\n\
+const render = ({value = globalThis.readDefault(), ...props} = globalThis.input, ...tail) => {\n\
+  globalThis.consume(value, props, tail);\n\
+};\n\
+console.log(marker);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("render", &[Member::new("render")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "1\n");
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["swapped_pairs"], 1, "{report:#}");
+    assert_eq!(report["counts"]["havoc_pairs"], 0, "{report:#}");
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 1,
+            "{report:#}"
+        );
+    }
+}
+
+#[test]
+fn calling_a_function_with_lazy_parameters_retains_unknown_effects() {
+    let source = "const input = {get value() { globalThis.parameterReads = (globalThis.parameterReads || 0) + 1; return 7; }};\n\
+const select = ({value} = input) => value;\n\
+const selected = select();\n\
+console.log(selected, globalThis.parameterReads);\n";
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("input"),
+                Member::new("select"),
+                Member::new("selected"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "7 1\n");
+    let report = fixture.effect_translation_validation();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 3,
+            "{report:#}"
+        );
     }
 }
 
