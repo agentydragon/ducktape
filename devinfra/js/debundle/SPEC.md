@@ -328,6 +328,9 @@ and `effect_conflicts_chunks`; only its final run action receives these flags,
 and streams remain inside the existing reports tree.
 Full semantic precision remains incomplete; see
 <docs/wire_format.md#translation-validation>.
+The report's `full_semantic_precision: false` is a policy-level field, not a
+computed per-chunk completeness verdict. Interpret each chunk through its
+unknown-coverage and refusal counts and its actual conflict rows.
 
 `coverage.owner_coverage_refusals` counts typed reasons why an original
 owner's whole-initialization certificate was not sealed. Bounded examples
@@ -361,10 +364,11 @@ projected.
 An original, non-exported simple variable declarator with an unannotated
 binding may close global-property, general-heap and host-effect coverage when
 its initializer is a primitive literal, checked JavaScript
-function/arrow creation, a read of an initialized module-local binding, or a
-static ordinary record or dense array literal. Record values and array
-elements may be primitive literals, initialized module-local binding reads, or
-nested records and dense arrays in the same subset.
+function/arrow creation, a read of an initialized module-local binding, a
+regular-expression literal, or a static ordinary record or dense array literal.
+Record values and array elements may be primitive literals, initialized
+module-local binding reads, or nested records and dense arrays in the same
+subset.
 Identifier and string data keys and shorthand fields are supported; array
 holes, computed keys, spreads, accessors, methods, colon-form `__proto__`, and
 other value expressions remain uncovered. Creating these own data fields invokes no
@@ -374,6 +378,25 @@ binding read,
 including one in an overwritten duplicate field, must already be initialized
 before the root transfer. No additional heap privacy or native-slot premise
 is used. Allocation effects remain in the report.
+For a regular-expression literal, ECMA-262 §13.2.7 validates the pattern and
+flags as an early error and evaluates a valid literal through `RegExpCreate`
+with source-derived strings. That operation does not resolve or call a mutable
+global `RegExp` binding or execute user code. The certificate requires the
+dedicated transfer to return the exact root allocation and finalizes only
+after the declared binding is initialized. The abstract allocation identity
+does not establish RegExp internal slots, prototype/method integrity,
+`lastIndex` behavior, or effects of later property reads, getters or calls.
+`RegExp(...)` and `new RegExp(...)` remain unsupported because they evaluate a
+mutable constructor binding and can invoke user code. Under the existing
+[A6 input contract](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md) that the original chunk runs to
+completion, its literals satisfy ECMAScript's early-error rules and use the
+non-abrupt `RegExpCreate` completion. This does not assert that our input parser
+independently validates every regexp grammar or flag restriction.
+
+[ECMA-262 §13.2.7](https://tc39.es/ecma262/2026/multipage/ecmascript-language-expressions.html#sec-regexp-literals)
+and [§22.2.3.1](https://tc39.es/ecma262/2026/multipage/text-processing.html#sec-regexpcreate)
+specify the literal evaluation and creation operation.
+
 The binding read must resolve to a declared local cell, excluding imports and
 host globals, and the interpreter must check its initialization before the
 read. A normally completed read retains its binding effect regardless of the

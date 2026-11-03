@@ -528,7 +528,7 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
         ("`text`", false),
         ("({value: 1})", true),
         ("[1]", true),
-        ("/pattern/", false),
+        ("/pattern/", true),
         ("class {}", false),
         ("function (parameter = 1) { return parameter; }", true),
         ("async () => 0", true),
@@ -618,6 +618,186 @@ console.log(marker);\n";
             "{report:#}"
         );
     }
+}
+
+#[test]
+fn regexp_literal_creation_covers_only_its_exact_owner() {
+    let source = "const marker = 1;\n\
+const RegExp = () => { throw new Error('literal invoked RegExp'); };\n\
+const pattern = /^x$/;\n\
+const matched = pattern.test('x');\n\
+console.log(matched, marker);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "regex",
+                &[Member::new("RegExp"), Member::new("pattern")],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "true 1\n");
+
+    let entry = std::fs::read_to_string(&fixture.entry_path).expect("generated entry source");
+    assert!(
+        entry.find("import ").unwrap() < entry.find("const marker = 1").unwrap(),
+        "the regex module import must run before the residual marker:\n{entry}"
+    );
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["swapped_pairs"], 2, "{report:#}");
+    assert_eq!(report["counts"]["havoc_pairs"], 0, "{report:#}");
+    assert_eq!(
+        report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 1,
+        "the later pattern.test call remains outside creation coverage: {report:#}"
+    );
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 2,
+            "the later call and console owner remain uncovered: {report:#}"
+        );
+    }
+}
+
+#[test]
+fn regexp_literal_binding_read_write_conflict_remains_visible() {
+    let source = "const observed = pattern;\n\
+var pattern = /^x$/;\n\
+console.log(observed === observed, pattern.test('x'));\n";
+    let fixture = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("regex", &[Member::new("pattern")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--effect-conflicts-jsonl"],
+        1,
+    );
+    assert!(
+        fixture.stderr.contains("atomic-group conflict"),
+        "{}",
+        fixture.stderr
+    );
+
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["swapped_pairs"], 1, "{report:#}");
+    assert_eq!(report["counts"]["havoc_pairs"], 1, "{report:#}");
+    assert_eq!(report["legacy_gate_accepts"], false, "{report:#}");
+    let rows = read_jsonl(
+        &fixture
+            .report_root
+            .join(&fixture.chunk_id)
+            .join("effect_conflicts.jsonl"),
+    );
+    let creation_pair = rows
+        .iter()
+        .find(|pair| pair["runs_first"]["unit"] == 1 && pair["runs_later"]["unit"] == 0)
+        .unwrap_or_else(|| panic!("the binding conflict must remain visible: {rows:#?}"));
+    assert_eq!(creation_pair["havoc"], true, "{creation_pair:#}");
+    assert_eq!(
+        creation_pair["first_opacity"]["unknown_coverage"],
+        serde_json::json!([]),
+        "the RegExp creation endpoint itself remains covered: {creation_pair:#}"
+    );
+    assert_ne!(
+        creation_pair["later_opacity"]["unknown_coverage"],
+        serde_json::json!([]),
+        "the read-side refusal keeps its own Havoc: {creation_pair:#}"
+    );
+    let binding_cell = creation_pair["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|cell| cell["cell"]["kind"] == "binding" && cell["cell"]["binding"] == "pattern")
+        .unwrap_or_else(|| panic!("the creation binding write remains visible: {creation_pair:#}"));
+    assert_eq!(
+        binding_cell["first_write"]["kind"], "observed",
+        "{binding_cell:#}"
+    );
+    assert_eq!(
+        binding_cell["later_read"]["kind"], "observed",
+        "{binding_cell:#}"
+    );
+    assert_eq!(binding_cell["observed_conflict"], true, "{binding_cell:#}");
+}
+
+#[test]
+fn regexp_literal_creation_does_not_cover_later_prototype_getters() {
+    let source = "const marker = 1;\n\
+const pattern = /^x$/;\n\
+Object.defineProperty(RegExp.prototype, 'source', {\n\
+  configurable: true,\n\
+  get() { globalThis.regexGetterReads = (globalThis.regexGetterReads || 0) + 1; return 'overridden'; },\n\
+});\n\
+const sourceText = pattern.source;\n\
+console.log(sourceText, marker, globalThis.regexGetterReads);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("regex", &[Member::new("pattern")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "overridden 1 1\n");
+
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["swapped_pairs"], 1, "{report:#}");
+    assert_eq!(report["counts"]["havoc_pairs"], 0, "{report:#}");
+    assert_eq!(
+        report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 1,
+        "the getter-triggering member read remains outside creation coverage: {report:#}"
+    );
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert!(
+            report["coverage"]["unknown_coverage"][domain]
+                .as_u64()
+                .unwrap_or_default()
+                >= 1,
+            "later prototype mutation, getter read, or console effects stay opaque: {report:#}"
+        );
+    }
+}
+
+#[test]
+fn regexp_constructor_initialization_remains_opaque() {
+    let source = "const marker = 1;\n\
+const RegExp = function () { throw new Error('constructor invoked'); };\n\
+const pattern = new RegExp('^x$');\n\
+console.log(marker);\n";
+    let fixture = run_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "regex",
+                &[Member::new("RegExp"), Member::new("pattern")],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--effect-conflicts-jsonl"],
+    );
+    assert_preserved_entry_error(&fixture, "constructor invoked");
+
+    let report = fixture.effect_translation_validation();
+    assert_eq!(
+        report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 1,
+        "new RegExp remains outside the literal-only proof: {report:#}"
+    );
+    let rows = read_jsonl(
+        &fixture
+            .report_root
+            .join(&fixture.chunk_id)
+            .join("effect_conflicts.jsonl"),
+    );
+    let constructor_pair = rows
+        .iter()
+        .find(|pair| pair["runs_first"]["unit"] == 2 && pair["runs_later"]["unit"] == 0)
+        .unwrap_or_else(|| panic!("the constructor owner must cross the marker: {rows:#?}"));
+    assert_eq!(constructor_pair["havoc"], true, "{constructor_pair:#}");
+    assert_ne!(
+        constructor_pair["first_opacity"]["unknown_coverage"],
+        serde_json::json!([]),
+        "the constructor endpoint retains unknown coverage: {constructor_pair:#}"
+    );
 }
 
 #[test]
