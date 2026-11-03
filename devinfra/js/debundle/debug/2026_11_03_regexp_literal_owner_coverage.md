@@ -24,8 +24,9 @@ root regex literal. ECMA-262 §13.2.7 evaluates a validated literal through
 run source-defined code. The dedicated transfer must still produce the exact
 Object allocation, and the owner must finish initializing its binding.
 Creation coverage proves no RegExp internal slots, prototype integrity,
-method behavior, or later property/getter/call effects. It relies on the input
-parser rejecting invalid literal syntax.
+method behavior, or later property/getter/call effects. The existing A6 input
+contract requires the original chunk to run to completion, excluding invalid
+ECMAScript literals. No additional parser-validation capability is claimed.
 
 The report's `full_semantic_precision: false` is a fixed policy field; use
 per-chunk coverage/refusal counts and conflict rows to interpret these

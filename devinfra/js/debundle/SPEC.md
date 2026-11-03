@@ -387,10 +387,11 @@ after the declared binding is initialized. The abstract allocation identity
 does not establish RegExp internal slots, prototype/method integrity,
 `lastIndex` behavior, or effects of later property reads, getters or calls.
 `RegExp(...)` and `new RegExp(...)` remain unsupported because they evaluate a
-mutable constructor binding and can invoke user code. Invalid literal syntax
-is rejected before the owner runs; for a parser-accepted literal, the standard
-runtime semantics use the non-abrupt `RegExpCreate` completion. This relies on
-the input parser applying the ECMA-262 literal validation.
+mutable constructor binding and can invoke user code. Under the existing
+[A6 input contract](docs/design.md) that the original chunk runs to
+completion, its literals satisfy ECMAScript's early-error rules and use the
+non-abrupt `RegExpCreate` completion. This does not assert that our input parser
+independently validates every regexp grammar or flag restriction.
 
 [ECMA-262 §13.2.7](https://tc39.es/ecma262/2026/multipage/ecmascript-language-expressions.html#sec-regexp-literals)
 and [§22.2.3.1](https://tc39.es/ecma262/2026/multipage/text-processing.html#sec-regexpcreate)
