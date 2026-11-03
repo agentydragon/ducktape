@@ -45,6 +45,27 @@ py_library(
 )
 
 py_library(
+    name = "buildbuddy_kvm_worker",
+    srcs = ["buildbuddy_kvm_worker.py"],
+    data = ["//devinfra/buildbuddy/kvm/worker:config"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":cilium",
+        ":flux",
+        ":manifest_roots",
+        "//cluster/cdk8s/kubevirt:virtual_machine",
+        "//cluster/cdk8s/oci_cache:zot",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/kubevirt:virtualmachine",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
@@ -1611,6 +1632,7 @@ py_library(
         ":alloy_otlp_bearer",
         ":artifact_generators",
         ":buildbuddy_executor",
+        ":buildbuddy_kvm_worker",
         ":claude_sandbox_secrets",
         ":crossplane",
         ":crossplane_forgejo_agentydragon",

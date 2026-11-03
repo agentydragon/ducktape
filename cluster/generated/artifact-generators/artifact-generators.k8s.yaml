@@ -33,6 +33,11 @@ spec:
       name: buildbuddy-executor
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/k8s/buildbuddy-kvm-worker/**"
+          to: "@artifact/cluster/k8s/buildbuddy-kvm-worker/"
+      name: buildbuddy-kvm-worker
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/ntfy/**"
           to: "@artifact/cluster/k8s/ntfy/"
       name: ntfy

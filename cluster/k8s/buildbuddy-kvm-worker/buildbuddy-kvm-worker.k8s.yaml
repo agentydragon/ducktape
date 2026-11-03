@@ -1,0 +1,358 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: buildbuddy-kvm-worker
+  namespace: buildbuddy-executor
+data:
+  bootstrap.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    config_dir=/run/buildbuddy-config
+    install_dir=/usr/local/libexec/buildbuddy-kvm-worker
+    for path in /buildbuddy /run/buildbuddy-key "$config_dir"; do
+      mountpoint --quiet "$path"
+    done
+    test -s /run/buildbuddy-key/api-key
+    test "$(findmnt --noheadings --output FSTYPE --target /buildbuddy)" = ext4
+
+    install -Dm0644 "$config_dir/executor.yaml" /etc/buildbuddy/executor.yaml
+    install -Dm0644 "$config_dir/daemon.json" /etc/docker/daemon.json
+    install -Dm0644 "$config_dir/executor.service" /etc/systemd/system/buildbuddy-executor.service
+    install -Dm0644 "$config_dir/modules-load.conf" /etc/modules-load.d/buildbuddy-kvm-worker.conf
+    install -Dm0644 "$config_dir/modprobe.conf" /etc/modprobe.d/buildbuddy-kvm-worker.conf
+    install -Dm0644 "$config_dir/sysctl.conf" /etc/sysctl.d/90-buildbuddy-kvm-worker.conf
+    install -Dm0755 "$config_dir/run-executor.sh" "$install_dir/run-executor"
+    modprobe -a br_netfilter bridge ip6_tables ip6table_nat ip_tables iptable_nat \
+      kvm_amd loop nf_conntrack nf_nat overlay tun vhost_net vhost_vsock vxlan
+    udevadm settle
+    test -c /dev/kvm
+    test -c /dev/loop-control
+    test -b /dev/loop0
+    test -c /dev/net/tun
+    sysctl -p /etc/sysctl.d/90-buildbuddy-kvm-worker.conf
+
+    # Docker's default AppArmor profile denies the mounts K3s needs. This setting
+    # applies only to this dedicated guest. Cloud-init reboots after finishing setup.
+    install -d /etc/default/grub.d
+    cat >/etc/default/grub.d/90-buildbuddy-kvm-worker.cfg <<'GRUB'
+    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }apparmor=0 loop.max_loop=64"
+    GRUB
+    update-grub
+
+    # Administrative console access requires outer-cluster permissions; SSH stays off.
+    install -d /etc/systemd/system/serial-getty@ttyS0.service.d
+    cat >/etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf <<'UNIT'
+    [Service]
+    ExecStart=
+    ExecStart=-/sbin/agetty --autologin root --noclear %I 115200,38400,9600 vt102
+    UNIT
+    systemctl mask --now ssh.service ssh.socket
+    systemctl stop docker.service
+    systemctl enable docker.service
+    systemctl restart docker.service
+    systemctl daemon-reload
+    systemctl enable buildbuddy-executor.service
+    if grep --word-regexp --quiet 'apparmor=0' /proc/cmdline; then
+      systemctl start buildbuddy-executor.service
+    else
+      touch /run/reboot-required
+    fi
+  daemon.json: |
+    {
+      "data-root": "/buildbuddy/docker",
+      "insecure-registries": ["oci-cache.oci-cache.svc.cluster.local:80"]
+    }
+  executor.service: |
+    [Unit]
+    Description=BuildBuddy remote execution worker
+    Wants=network-online.target
+    After=network-online.target docker.service
+    Requires=docker.service
+    RequiresMountsFor=/buildbuddy /run/buildbuddy-key
+    ConditionKernelCommandLine=apparmor=0
+    ConditionPathExists=/etc/buildbuddy/executor.yaml
+
+    [Service]
+    Type=simple
+    ExecStart=/usr/local/libexec/buildbuddy-kvm-worker/run-executor
+    ExecStop=/usr/bin/docker stop --time 30 buildbuddy-kvm-worker-executor
+    ExecStopPost=/usr/bin/rm -f /run/buildbuddy-executor/environment
+    Restart=always
+    RestartSec=10
+    TimeoutStopSec=45
+
+    [Install]
+    WantedBy=multi-user.target
+  executor.yaml: |
+    docker_cap_add: SYS_ADMIN,NET_ADMIN,MKNOD
+    executor:
+      app_target: grpcs://remote.buildbuddy.io:443
+      api_key: "${BUILDBUDDY_API_KEY}"
+      millicpu: 8000
+      memory_bytes: 23622320128
+      max_concurrent_tasks: 1
+      root_directory: /buildbuddy/remotebuilds
+      local_cache_directory: /buildbuddy/filecache
+      local_cache_size_bytes: 40000000000
+      docker_socket: /var/run/docker.sock
+      default_isolation_type: docker
+      enable_bare_runner: false
+      enable_firecracker: false
+      enable_oci: false
+      enable_podman: false
+      docker_inherit_user_ids: true
+      docker_devices:
+        - path_on_host: /dev
+          path_in_container: /dev
+          cgroup_permissions: rwm
+      container_image_name_rewrites:
+        - prefix: ghcr.io/
+          replacement: oci-cache.oci-cache.svc.cluster.local:80/ghcr/
+  modprobe.conf: |
+    options kvm_amd nested=1
+    options loop max_loop=64
+  modules-load.conf: |
+    br_netfilter
+    bridge
+    ip6_tables
+    ip6table_nat
+    ip_tables
+    iptable_nat
+    kvm_amd
+    loop
+    nf_conntrack
+    nf_nat
+    overlay
+    tun
+    vhost_net
+    vhost_vsock
+    vxlan
+  run-executor.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    readonly key_file=/run/buildbuddy-key/api-key
+    readonly environment_dir=/run/buildbuddy-executor
+    readonly environment_file="$environment_dir/environment"
+    readonly executor_name=buildbuddy-kvm-worker-executor
+    readonly executor_image=buildbuddy.bbcr.io/public/buildbuddy-executor-enterprise@sha256:465d670159f7f2be756eb31815d7c6be54ce812de74a5cc49d3f6bda1fc7b078
+
+    if [[ ! -s "$key_file" ]]; then
+      echo "BuildBuddy API key is missing from the mounted bbkey disk" >&2
+      exit 1
+    fi
+
+    install -d -o root -g root -m 0700 "$environment_dir"
+    umask 077
+    api_key="$(/usr/bin/tr -d '\r\n' <"$key_file")"
+    if [[ -z "$api_key" ]]; then
+      echo "BuildBuddy API key is empty" >&2
+      exit 1
+    fi
+    printf 'BUILDBUDDY_API_KEY=%s\n' "$api_key" >"$environment_file"
+    unset api_key
+
+    if /usr/bin/docker container inspect "$executor_name" >/dev/null 2>&1; then
+      /usr/bin/docker container rm --force "$executor_name"
+    fi
+
+    exec /usr/bin/docker run \
+      --rm \
+      --name "$executor_name" \
+      --pull=missing \
+      --network host \
+      --env MY_HOSTNAME=buildbuddy-kvm-worker \
+      --env MY_POOL=wyrm2-kvm-vm \
+      --env-file "$environment_file" \
+      --volume /etc/buildbuddy/executor.yaml:/config.yaml:ro \
+      --volume /var/run/docker.sock:/var/run/docker.sock \
+      --volume /buildbuddy:/buildbuddy \
+      "$executor_image" \
+      --config_file=/config.yaml \
+      --server_type=buildbuddy-executor
+  sysctl.conf: |
+    net.bridge.bridge-nf-call-iptables = 1
+    net.bridge.bridge-nf-call-ip6tables = 1
+    net.ipv4.ip_forward = 1
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  annotations:
+    description: Static trusted-code BuildBuddy worker. Privileged Docker test actions run inside the guest; the guest has no outer Kubernetes token or host filesystem mounts.
+  labels:
+    app.kubernetes.io/name: buildbuddy-kvm-worker
+  name: buildbuddy-kvm-worker
+  namespace: buildbuddy-executor
+spec:
+  runStrategy: Always
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: buildbuddy-kvm-worker
+        kubevirt.io/domain: buildbuddy-kvm-worker
+    spec:
+      domain:
+        cpu:
+          cores: 8
+          features:
+            - name: svm
+              policy: require
+          model: host-passthrough
+        devices:
+          autoattachGraphicsDevice: false
+          disks:
+            - bootOrder: 1
+              disk:
+                bus: virtio
+              name: rootdisk
+            - disk:
+                bus: virtio
+              name: work
+              serial: work
+            - disk:
+                bus: virtio
+              name: buildbuddy-key
+              serial: bbkey
+            - disk:
+                bus: virtio
+              name: worker-config
+              serial: bbconfig
+            - disk:
+                bus: virtio
+              name: cloudinit
+              serial: cloudinit
+          interfaces:
+            - masquerade: {}
+              name: default
+              ports: []
+        firmware:
+          bootloader:
+            efi:
+              secureBoot: false
+        resources:
+          limits:
+            cpu: "8"
+            memory: 24Gi
+          requests:
+            cpu: "8"
+            memory: 24Gi
+      networks:
+        - name: default
+          pod: {}
+      nodeSelector:
+        kubernetes.io/hostname: wyrm2
+      volumes:
+        - containerDisk:
+            image: quay.io/containerdisks/ubuntu:24.04@sha256:ea164c514b308286bdc179b403298efd2d8ae549af518a82a029e1bbb027f3a4
+            imagePullPolicy: IfNotPresent
+          name: rootdisk
+        - emptyDisk:
+            capacity: 80Gi
+          name: work
+        - name: buildbuddy-key
+          secret:
+            secretName: buildbuddy-api-key
+        - configMap:
+            name: buildbuddy-kvm-worker
+          name: worker-config
+        - cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              apt:
+                primary:
+                - arches:
+                  - amd64
+                  uri: https://archive.ubuntu.com/ubuntu
+                security:
+                - arches:
+                  - amd64
+                  uri: https://security.ubuntu.com/ubuntu
+              package_update: true
+              packages:
+              - docker.io
+              fs_setup:
+              - device: /dev/disk/by-id/virtio-work
+                filesystem: ext4
+                overwrite: false
+              mounts:
+              - - /dev/disk/by-id/virtio-work
+                - /buildbuddy
+                - ext4
+                - defaults
+                - '0'
+                - '2'
+              - - /dev/disk/by-id/virtio-bbkey
+                - /run/buildbuddy-key
+                - iso9660
+                - ro
+                - '0'
+                - '0'
+              - - /dev/disk/by-id/virtio-bbconfig
+                - /run/buildbuddy-config
+                - iso9660
+                - ro
+                - '0'
+                - '0'
+              runcmd:
+              - - bash
+                - /run/buildbuddy-config/bootstrap.sh
+              power_state:
+                mode: reboot
+                delay: now
+                condition:
+                - test
+                - -f
+                - /var/run/reboot-required
+              ssh_pwauth: false
+              disable_root: true
+          name: cloudinit
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: buildbuddy-kvm-worker
+  namespace: buildbuddy-executor
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: remote.buildbuddy.io
+        - matchName: buildbuddy.bbcr.io
+        - matchName: archive.ubuntu.com
+        - matchName: security.ubuntu.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - remote.buildbuddy.io
+            - buildbuddy.bbcr.io
+            - archive.ubuntu.com
+            - security.ubuntu.com
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: zot
+            k8s:io.kubernetes.pod.namespace: oci-cache
+      toPorts:
+        - ports:
+            - port: "5000"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      kubevirt.io/domain: buildbuddy-kvm-worker
+  ingress:
+    - {}

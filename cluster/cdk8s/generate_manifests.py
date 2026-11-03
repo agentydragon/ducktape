@@ -18,6 +18,7 @@ from cluster.cdk8s import (
     airlock,
     alloy_otlp_bearer,
     buildbuddy_executor,
+    buildbuddy_kvm_worker,
     claude_sandbox_secrets,
     cnpg_operator,
     crossplane,
@@ -447,7 +448,7 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     buildbuddy_executor_artifact = artifact("buildbuddy-executor", buildbuddy_executor.OUTPUT_DIR)
-    buildbuddy_executor.buildbuddy_executor(
+    buildbuddy_executor_kustomization = buildbuddy_executor.buildbuddy_executor(
         flux_chart, buildbuddy_executor_artifact, kubevirt_kustomization, kyverno_kustomization
     )
     kyverno_policies_artifact = artifact("kyverno-policies", kyverno_policies.OUTPUT_DIR)
@@ -1489,6 +1490,13 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         kyverno_kustomization,
     )
+    buildbuddy_kvm_worker_artifact = artifact(buildbuddy_kvm_worker.NAME, buildbuddy_kvm_worker.OUTPUT_DIR)
+    buildbuddy_kvm_worker.buildbuddy_kvm_worker(
+        flux_chart,
+        write_directory(root, buildbuddy_kvm_worker_artifact, buildbuddy_kvm_worker.chart),
+        buildbuddy_executor_kustomization,
+        kubevirt_kustomization,
+    )
     cpap_sync_artifact = artifact("cpap-sync", cpap_sync_app.OUTPUT_DIR)
     cpap_sync_app.cpap_sync(
         flux_chart,
@@ -1956,6 +1964,7 @@ def generate_manifests(root: Path) -> None:
             agentplane_staging_db_backups_artifact,
             monitoring_stack_artifact,
             buildbuddy_executor_artifact,
+            buildbuddy_kvm_worker_artifact,
             ntfy_artifact,
             claude_rbac_artifact,
             authentik_artifact,

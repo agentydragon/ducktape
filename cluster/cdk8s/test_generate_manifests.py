@@ -68,6 +68,48 @@ def _generated_documents(generated: Path, parsed_yaml_documents: dict[Path, tupl
     ]
 
 
+def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    worker = next(
+        doc
+        for doc in documents
+        if doc["kind"] == "VirtualMachine" and doc["metadata"]["name"] == "buildbuddy-kvm-worker"
+    )
+    guest = worker["spec"]["template"]["spec"]
+    assert worker["spec"]["runStrategy"] == "Always"
+    assert guest["nodeSelector"] == {"kubernetes.io/hostname": "wyrm2"}
+    assert guest["domain"]["cpu"]["model"] == "host-passthrough"
+    assert {"name": "svm", "policy": "require"} in guest["domain"]["cpu"]["features"]
+    assert guest["domain"]["resources"]["limits"] == guest["domain"]["resources"]["requests"]
+    assert not guest["domain"]["devices"].get("hostDevices")
+    assert not guest["domain"]["devices"].get("gpus")
+    assert not any("hostDisk" in volume or "serviceAccount" in volume for volume in guest["volumes"])
+    # These serials are the guest's cloud-init mount/credential contract.
+    disks = {disk.get("serial"): disk["name"] for disk in guest["domain"]["devices"]["disks"]}
+    volumes = {volume["name"]: volume for volume in guest["volumes"]}
+    assert volumes[disks["bbkey"]]["secret"]["secretName"] == "buildbuddy-api-key"
+    assert "emptyDisk" in volumes[disks["work"]]
+    user_data = next(
+        volume["cloudInitNoCloud"]["userData"] for volume in guest["volumes"] if "cloudInitNoCloud" in volume
+    )
+    assert len(user_data.encode()) <= 2048  # KubeVirt's inline cloud-init admission limit.
+    cloud_init = yaml.safe_load(user_data)
+    mounted = {mount[0]: mount[1] for mount in cloud_init["mounts"]}
+    assert mounted["/dev/disk/by-id/virtio-bbkey"] == "/run/buildbuddy-key"
+    assert mounted["/dev/disk/by-id/virtio-work"] == "/buildbuddy"
+    assert volumes[disks["bbconfig"]]["configMap"]["name"] == worker["metadata"]["name"]
+    policy = next(
+        doc
+        for doc in documents
+        if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == worker["metadata"]["name"]
+    )["spec"]
+    assert policy["endpointSelector"]["matchLabels"].items() <= worker["spec"]["template"]["metadata"]["labels"].items()
+    assert policy["ingress"] == [{}]
+    assert all(not rule.get("toEntities") and not rule.get("toCIDR") for rule in policy["egress"])
+
+
 @pytest.fixture(scope="module")
 def checkout() -> Path:
     """The runfiles tree, which holds each committed file the data deps package at its repo path."""
