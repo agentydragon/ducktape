@@ -271,7 +271,7 @@ fn native_pure_initializer<'a>(
     };
     let input = match decl.init.as_deref()?.unwrap_parens() {
         Expr::Call(call) => native_facts.symbol_for_literal_proof(call)?,
-        Expr::New(construction) => native_facts.text_encoder_empty_proof(construction)?,
+        Expr::New(construction) => native_facts.empty_native_constructor_proof(construction)?,
         _ => return None,
     };
     (binding.id.to_id() == input.binding).then_some(input)

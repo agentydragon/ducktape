@@ -44,7 +44,16 @@ Callback and no-reentry keys below live under
 | A browser-global slot cannot expose its stored callback during synchronous initialization          | [Global publication](../../SPEC.md#deferred-browser-global-publication): `chunk_analysis_options.<chunk>.deferred_global_publications`; audit the host descriptor and all consumers                               |
 | A literal-key membership probe on a direct builtin global cannot reenter                           | [Host membership](../../SPEC.md#audited-builtin-global-membership-probes): `chunk_analysis_options.<chunk>.non_reentrant_global_membership`; audit exact keys, host identity, prototypes, aliases, and intrinsics |
 
-### Exact empty TextEncoder construction
+### Exact empty native construction
+
+Use `native_operation_inputs` with `operation: map_empty` or `operation: set_empty`
+for one selected direct zero-argument construction only after auditing the
+original standard global data binding through every admitted initialization
+schedule. Each comma declarator needs its own input. These assertions feed the
+existing empty-construction semantics; later methods, property reads,
+iteration, retention and mutation retain their ordinary checks. Arguments,
+spreads, aliases, shadowing, qualified callees, wrapper expressions and known
+global-slot contradictions are rejected.
 
 Choose `native_operation_inputs` with `operation: text_encoder_empty` only after
 auditing the original global `TextEncoder` data binding at one selected direct

@@ -576,6 +576,17 @@ pub enum NativeInputKind {
     CallIdentity(spec::NativeCallIdentityKind),
 }
 
+impl NativeInputKind {
+    pub fn empty_constructor_name(self) -> Option<&'static str> {
+        match self {
+            Self::Operation(spec::NativeOperationKind::TextEncoderEmpty) => Some("TextEncoder"),
+            Self::Operation(spec::NativeOperationKind::MapEmpty) => Some("Map"),
+            Self::Operation(spec::NativeOperationKind::SetEmpty) => Some("Set"),
+            _ => None,
+        }
+    }
+}
+
 /// Provenance retained for an author-certified native operation or call site.
 /// Spec-relative like [`ValueInputEvidence`].
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -924,14 +935,13 @@ impl ValidatedNativeOperationFacts {
 
     /// A validated direct zero-argument native constructor; its result has no
     /// ordinary-object or retained-callback certificate.
-    pub(crate) fn text_encoder_empty_proof(
+    pub(crate) fn empty_native_constructor_proof(
         &self,
         construction: &swc_ecma_ast::NewExpr,
     ) -> Option<&ResolvedNativeOperationInput> {
         self.inputs.iter().find(|input| {
             input.call_span == construction.span
-                && input.evidence.operation
-                    == NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty)
+                && input.evidence.operation.empty_constructor_name().is_some()
         })
     }
 

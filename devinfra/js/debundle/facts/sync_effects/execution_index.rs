@@ -1192,6 +1192,12 @@ fn native_operation_call_name(operation: NativeInputKind) -> &'static str {
         NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty) => {
             "direct zero-argument new TextEncoder() construction"
         }
+        NativeInputKind::Operation(spec::NativeOperationKind::MapEmpty) => {
+            "direct zero-argument new Map() construction"
+        }
+        NativeInputKind::Operation(spec::NativeOperationKind::SetEmpty) => {
+            "direct zero-argument new Set() construction"
+        }
         NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
             "direct Symbol(...) call (unsupported Symbol call shape)"
         }
@@ -1212,6 +1218,12 @@ fn native_operation_mutation_name(operation: NativeInputKind) -> &'static str {
         ) => "global Symbol replacement or accessor installation",
         NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty) => {
             "global TextEncoder replacement or accessor installation"
+        }
+        NativeInputKind::Operation(spec::NativeOperationKind::MapEmpty) => {
+            "global Map replacement or accessor installation"
+        }
+        NativeInputKind::Operation(spec::NativeOperationKind::SetEmpty) => {
+            "global Set replacement or accessor installation"
         }
         NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => {
             "global Promise replacement or Promise.resolve overwrite, accessor installation, or deletion"
@@ -6717,6 +6729,12 @@ impl ExecutionIndex {
                     NativeInputKind::Operation(Operation::TextEncoderEmpty) => {
                         (input.call_span, vec![Global(NativeIntrinsic::TextEncoder)])
                     }
+                    NativeInputKind::Operation(Operation::MapEmpty) => {
+                        (input.call_span, vec![Global(NativeIntrinsic::Map)])
+                    }
+                    NativeInputKind::Operation(Operation::SetEmpty) => {
+                        (input.call_span, vec![Global(Set)])
+                    }
                     // Purity, timing and heap ordering at the read; calling the
                     // read function keeps ordinary call analysis.
                     NativeInputKind::Operation(Operation::ObjectOwnDataFunctionRead) => {
@@ -7439,8 +7457,7 @@ impl ExecutionIndex {
                 ));
                 continue;
             };
-            if input.evidence.operation
-                == NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty)
+            if input.evidence.operation.empty_constructor_name().is_some()
                 && declaration.initializer_span != Some(call.span)
             {
                 self.native_operation_input_errors.push(format!("{request} must select the direct constructor initializer without a sequence or assignment wrapper"));
@@ -7677,8 +7694,7 @@ impl ExecutionIndex {
                 ));
                 continue;
             };
-            if input.evidence.operation
-                == NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty)
+            if input.evidence.operation.empty_constructor_name().is_some()
                 && declaration.initializer_span != Some(call.span)
             {
                 self.native_operation_input_errors.push(format!("{request} must select the direct constructor initializer without a sequence or assignment wrapper"));
@@ -7872,22 +7888,22 @@ impl ExecutionIndex {
         call_site: CallSite,
         call: &Call,
     ) -> Option<&'static str> {
-        if operation == NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty) {
+        if let Some(constructor) = operation.empty_constructor_name() {
             if call.kind != CallKind::New
                 || call.has_spread
                 || call.caller.is_some()
                 || !args.is_empty()
                 || !self.bare_constructor_sites.contains(&call_site)
             {
-                return Some(
-                    "must select direct zero-argument new TextEncoder() construction without spread",
-                );
+                return Some("must select direct zero-argument native construction without spread");
             }
             let ValueExpr::Binding(binding) = callee else {
-                return Some("must select the direct bare global TextEncoder constructor");
+                return Some("must select the direct bare global constructor");
             };
-            if binding.0.as_ref() != "TextEncoder" || self.declared_bindings().contains(binding) {
-                return Some("must select the original unshadowed global TextEncoder binding");
+            if binding.0.as_ref() != constructor || self.declared_bindings().contains(binding) {
+                return Some(
+                    "must select the original unshadowed global constructor binding matching the requested operation",
+                );
             }
             return None;
         }
@@ -7967,16 +7983,16 @@ impl ExecutionIndex {
         &self,
         operation: NativeInputKind,
     ) -> Option<SourceUnitOrdinal> {
+        if let Some(constructor) = operation.empty_constructor_name() {
+            return match self.source_slot_overlap(&NativeWriteSlot {
+                receiver: NativeReceiverPath::GlobalObject,
+                key: NativePropertyKey::String(constructor.to_owned()),
+            }) {
+                NativeSlotOverlap::Known(owner) => Some(owner),
+                NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
+            };
+        }
         match operation {
-            NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty) => {
-                match self.source_slot_overlap(&NativeWriteSlot {
-                    receiver: NativeReceiverPath::GlobalObject,
-                    key: NativePropertyKey::String("TextEncoder".to_owned()),
-                }) {
-                    NativeSlotOverlap::Known(owner) => Some(owner),
-                    NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
-                }
-            }
             NativeInputKind::Operation(
                 spec::NativeOperationKind::Symbol | spec::NativeOperationKind::SymbolFor,
             ) => self.known_global_symbol_mutation(),

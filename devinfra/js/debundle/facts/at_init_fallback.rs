@@ -567,7 +567,7 @@ impl Visit for OpaqueAtInitCallFinder<'_> {
                 Expr::New(construction)
                     if self
                         .native_facts
-                        .text_encoder_empty_proof(construction)
+                        .empty_native_constructor_proof(construction)
                         .is_some() =>
                 {
                     false
