@@ -4,7 +4,8 @@ use super::super::allocation_transfer::AllocationContext;
 use super::super::local_operations::{LocalBinding, LocalBody};
 use super::super::local_transfer::{self, EvaluatedCallee, LocalContext, LocalFrame};
 use super::super::noninvoking_initialization::{
-    NativeConstructorCandidate, NativeConstructorTransfer, OriginalInitializer,
+    NativeConstructorCandidate, NativeConstructorKind, NativeConstructorTransfer,
+    OriginalInitializer,
 };
 use super::super::value_model::{
     AbstractValue, ArrayIteration, CallSite, CaptureInterner, Captured, CapturedContext, Context,
@@ -2553,10 +2554,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return;
         };
         let kind = candidate.kind();
-        let expected_op = match kind {
-            Kind::Map => IntrinsicOp::Map,
-            Kind::Set => IntrinsicOp::Set,
-            _ => return,
+        let (expected_op, expected_allocation, expected_return) = match kind {
+            NativeConstructorKind::Map => (IntrinsicOp::Map, Some(Kind::Map), Return::Fresh),
+            NativeConstructorKind::Set => (IntrinsicOp::Set, Some(Kind::Set), Return::Fresh),
+            NativeConstructorKind::TextEncoder => (IntrinsicOp::TextEncoder, None, Return::Unknown),
         };
         // `resolution` comes from this New dispatch's resolve_native_call,
         // which already proves the exact unshadowed global identity through
@@ -2564,23 +2565,30 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // opaque in value flow, so its abstract value is not an identity test.
         let row = resolution.row;
         let names_expected_global = matches!(callee, ValueExpr::Binding(binding)
-            if binding.0.as_ref() == if kind == Kind::Map { "Map" } else { "Set" });
-        let no_present_coercions = row
-            .coerces
-            .iter()
-            .all(|(selector, _)| matches!(selector, ArgSel::Arg(_)));
+            if binding.0.as_ref() == kind.global_name());
+        // A zero-argument root call cannot run coercions of absent arguments.
+        // TextEncoder's host row has exact zero arity and no coercions.
+        let root_call_shape_matches = match kind {
+            NativeConstructorKind::Map | NativeConstructorKind::Set => {
+                row.arity.contains(&0)
+                    && row
+                        .coerces
+                        .iter()
+                        .all(|(selector, _)| matches!(selector, ArgSel::Arg(_)))
+            }
+            NativeConstructorKind::TextEncoder => row.arity == (0..=0) && row.coerces.is_empty(),
+        };
         if candidate.matches_dispatch(site, kind)
             && names_expected_global
             && expressions.is_empty()
             && !may_throw
             && row.op == expected_op
             && row.invocation == [Invocation::Construct]
-            && row.arity.contains(&0)
-            && no_present_coercions
+            && root_call_shape_matches
             && row.invokes.is_empty()
-            && row.allocates == Some(kind)
+            && row.allocates == expected_allocation
             && row.mutates.is_empty()
-            && row.returns == Return::Fresh
+            && row.returns == expected_return
             && row.throws == Throws::Never
         {
             self.native_initializer_transfer = Some(NativeConstructorTransfer::applied(candidate));
