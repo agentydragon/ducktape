@@ -17,6 +17,15 @@ pub(super) enum NativeConstructorKind {
     TextEncoder,
 }
 
+/// Source form whose exact dedicated New dispatch may complete this owner.
+/// The array identity is retained so the lowered operand must be the same
+/// direct source literal collected before syntax lowering.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum NativeConstructorForm {
+    Empty,
+    SetPrimitiveArray { array: u32 },
+}
+
 impl NativeConstructorKind {
     pub(super) fn global_name(self) -> &'static str {
         match self {
@@ -37,6 +46,7 @@ enum Leaf {
         callee: Id,
         call_site: CallSite,
         kind: NativeConstructorKind,
+        form: NativeConstructorForm,
     },
     Allocation {
         allocation: u32,
@@ -66,15 +76,18 @@ pub(super) struct NativeConstructorCandidate {
     owner: SourceUnitOrdinal,
     call_site: CallSite,
     kind: NativeConstructorKind,
+    form: NativeConstructorForm,
 }
 
 /// Evidence that the exact root New dispatch selected and applied the native
-/// no-argument constructor row. This is not a value identity or a heap-shape fact.
+/// constructor row for its collected source form. This is not a value identity
+/// or a heap-shape fact.
 #[derive(Clone, Copy)]
 pub(super) struct NativeConstructorTransfer {
     owner: SourceUnitOrdinal,
     call_site: CallSite,
     kind: NativeConstructorKind,
+    form: NativeConstructorForm,
 }
 
 impl NativeConstructorTransfer {
@@ -83,6 +96,7 @@ impl NativeConstructorTransfer {
             owner: candidate.owner,
             call_site: candidate.call_site,
             kind: candidate.kind,
+            form: candidate.form,
         }
     }
 
@@ -90,6 +104,7 @@ impl NativeConstructorTransfer {
         self.owner == candidate.owner
             && self.call_site == candidate.call_site
             && self.kind == candidate.kind
+            && self.form == candidate.form
     }
 }
 
@@ -98,8 +113,13 @@ impl NativeConstructorCandidate {
         self.kind
     }
 
-    pub(super) fn matches_dispatch(self, call_site: CallSite, kind: NativeConstructorKind) -> bool {
-        self.call_site == call_site && self.kind == kind
+    pub(super) fn matches_dispatch(
+        self,
+        call_site: CallSite,
+        kind: NativeConstructorKind,
+        form: NativeConstructorForm,
+    ) -> bool {
+        self.call_site == call_site && self.kind == kind && self.form == form
     }
 }
 
@@ -374,6 +394,53 @@ fn empty_native_constructor(expression: &Expr) -> Option<(Id, CallSite, NativeCo
     Some((callee.to_id(), CallSite::from(construction.span), kind))
 }
 
+fn primitive_literal(expression: &Expr) -> bool {
+    matches!(
+        expression,
+        Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_))
+    )
+}
+
+fn set_primitive_array_constructor(
+    expression: &Expr,
+) -> Option<(Id, CallSite, NativeConstructorForm)> {
+    let Expr::New(construction) = expression else {
+        return None;
+    };
+    if construction.type_args.is_some() {
+        return None;
+    }
+    let Expr::Ident(callee) = construction.callee.as_ref() else {
+        return None;
+    };
+    if callee.sym != "Set" {
+        return None;
+    }
+    let Some([argument]) = construction.args.as_deref() else {
+        return None;
+    };
+    if argument.spread.is_some() {
+        return None;
+    }
+    let Expr::Array(array) = argument.expr.as_ref() else {
+        return None;
+    };
+    if !array.elems.iter().all(|element| {
+        element
+            .as_ref()
+            .is_some_and(|element| element.spread.is_none() && primitive_literal(&element.expr))
+    }) {
+        return None;
+    }
+    Some((
+        callee.to_id(),
+        CallSite::from(construction.span),
+        NativeConstructorForm::SetPrimitiveArray {
+            array: array.span.lo.0,
+        },
+    ))
+}
+
 impl OriginalInitializer {
     pub(super) fn collect(
         item: &TopLevelItemView<'_>,
@@ -408,13 +475,24 @@ impl OriginalInitializer {
         };
         let leaf = match initializer.unwrap_parens() {
             Expr::New(_) => {
-                let Some((callee, call_site, kind)) = empty_native_constructor(initializer) else {
+                if let Some((callee, call_site, kind)) = empty_native_constructor(initializer) {
+                    Leaf::NativeConstructor {
+                        callee,
+                        call_site,
+                        kind,
+                        form: NativeConstructorForm::Empty,
+                    }
+                } else if let Some((callee, call_site, form)) =
+                    set_primitive_array_constructor(initializer)
+                {
+                    Leaf::NativeConstructor {
+                        callee,
+                        call_site,
+                        kind: NativeConstructorKind::Set,
+                        form,
+                    }
+                } else {
                     return Err(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer);
-                };
-                Leaf::NativeConstructor {
-                    callee,
-                    call_site,
-                    kind,
                 }
             }
             Expr::Ident(binding) => Leaf::Binding(binding.to_id()),
@@ -502,6 +580,7 @@ impl OriginalInitializer {
             callee: expected_callee,
             call_site,
             kind,
+            form,
         } = &self.leaf
         else {
             return None;
@@ -509,8 +588,15 @@ impl OriginalInitializer {
         let ValueExpr::New(callee, arguments, evaluated_site) = expression else {
             return None;
         };
+        let form_matches = match form {
+            NativeConstructorForm::Empty => arguments.is_empty(),
+            NativeConstructorForm::SetPrimitiveArray { array } => matches!(
+                arguments.as_ref(),
+                [ValueExpr::ObjectLiteral(lowered_array, _)] if lowered_array == array
+            ),
+        };
         if *call_site != *evaluated_site
-            || !arguments.is_empty()
+            || !form_matches
             || !matches!(callee.as_ref(), ValueExpr::Binding(binding) if binding == expected_callee)
         {
             return None;
@@ -519,6 +605,7 @@ impl OriginalInitializer {
             owner: self.owner,
             call_site: *call_site,
             kind: *kind,
+            form: *form,
         })
     }
 

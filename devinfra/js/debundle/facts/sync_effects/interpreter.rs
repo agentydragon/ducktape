@@ -4,8 +4,8 @@ use super::super::allocation_transfer::AllocationContext;
 use super::super::local_operations::{LocalBinding, LocalBody};
 use super::super::local_transfer::{self, EvaluatedCallee, LocalContext, LocalFrame};
 use super::super::noninvoking_initialization::{
-    NativeConstructorCandidate, NativeConstructorKind, NativeConstructorTransfer,
-    OriginalInitializer,
+    NativeConstructorCandidate, NativeConstructorForm, NativeConstructorKind,
+    NativeConstructorTransfer, OriginalInitializer,
 };
 use super::super::value_model::{
     AbstractValue, ArrayIteration, CallSite, CaptureInterner, Captured, CapturedContext, Context,
@@ -28,7 +28,7 @@ use crate::facts::StableArraySpreadShapes;
 use crate::facts::abstract_domain::builtins::{
     ARRAY_PROTOTYPE_SLOTS, ArgSel, IntrinsicOp, Invocation, IterationResult, Return, Row, Throws,
 };
-use crate::facts::abstract_domain::effect::CoerceOperand;
+use crate::facts::abstract_domain::effect::{CoerceOp, CoerceOperand};
 use crate::facts::abstract_domain::heap::Mutation;
 use crate::facts::abstract_domain::integrity::{Integrity, IntrinsicSlot};
 use crate::facts::abstract_domain::value::{Kind, PrimKinds, Value};
@@ -2317,6 +2317,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if !row.arity.contains(&args.len()) || !row.invokes.is_empty() {
             return None;
         }
+        let set_primitive_array_iteration =
+            self.admit_set_primitive_array_iteration(row, kind, callee, site, expressions, args);
         let native_call = match &source {
             NativeIdentitySource::Inferred { premise } => Some(premise.as_ref().clone()),
             NativeIdentitySource::AuthorInput { .. } => None,
@@ -2402,6 +2404,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let ArgSel::Arg(index) = selector else {
                 return None;
             };
+            if set_primitive_array_iteration && index == 0 && operation == CoerceOp::Iterate {
+                continue;
+            }
             if ordinary_operands.contains(&index) {
                 continue;
             }
@@ -2437,6 +2442,95 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             row,
             own_property_projection,
         })
+    }
+
+    /// The indexed SetIterableProof discharges the one Set constructor
+    /// iteration step only for a direct dense primitive-literal array at this
+    /// exact New site. ResolveNative runs in a child executor whose RuntimeKey
+    /// identifies only owner/path; this request payload carries the site,
+    /// source expression and evaluated operand. Admission must use those
+    /// request fields plus the indexed proof, never the parent's root-only
+    /// initializer candidate.
+    fn admit_set_primitive_array_iteration(
+        &self,
+        row: &'static Row,
+        kind: CallKind,
+        callee: &ValueExpr,
+        site: CallSite,
+        expressions: &[ValueExpr],
+        arguments: &[Values],
+    ) -> bool {
+        if kind != CallKind::New
+            || row.op != IntrinsicOp::Set
+            || row.invocation != [Invocation::Construct]
+            || row.arity != (1..=1)
+            || row.coerces != [(ArgSel::Arg(0), CoerceOp::Iterate)]
+            || row.allocates != Some(Kind::Set)
+            || !row.mutates.is_empty()
+            || row.returns != Return::Fresh
+            || row.throws != Throws::Never
+            || !matches!(callee, ValueExpr::Binding(binding) if binding.0.as_ref() == "Set")
+        {
+            return false;
+        }
+        let [ValueExpr::ObjectLiteral(array, elements)] = expressions else {
+            return false;
+        };
+        if self.inputs.index.dense_array_literals.get(array) != Some(&elements.len())
+            || !elements.iter().all(|(name, value)| {
+                name.is_none()
+                    && matches!(value, ValueExpr::NonCallable(kinds)
+                        if [PrimKinds::STRING, PrimKinds::NUMBER, PrimKinds::BOOLEAN,
+                            PrimKinds::NULL, PrimKinds::BIGINT]
+                            .contains(kinds))
+            })
+        {
+            return false;
+        }
+        let [values] = arguments else {
+            return false;
+        };
+        if !matches!(values.iter().collect::<Vec<_>>().as_slice(),
+            [AbstractValue::Value(Value::Alloc(Kind::Object, evaluated_array))]
+                if evaluated_array == array)
+        {
+            return false;
+        }
+
+        let source_span = site.source_span();
+        let Some(dependencies) = self
+            .inputs
+            .set_iterable_proof
+            .dependencies_for_constructor(source_span)
+        else {
+            return false;
+        };
+        if let Some(evidence) = self
+            .inputs
+            .set_iterable_proof
+            .author_input_for_constructor(source_span)
+            .cloned()
+        {
+            self.record_proof_dependencies(NativeIntegrityGuard::SetIterable, dependencies);
+            self.state.native_operation_input_uses.borrow_mut().insert(
+                (source_span.lo.0, source_span.hi.0),
+                crate::reports::schema::NativeOperationInputUse {
+                    evidence,
+                    source_location: None,
+                    span: source_span,
+                },
+            );
+            return true;
+        }
+        let Some(proof) = self
+            .inputs
+            .set_iterable_proof
+            .inference_use_for_constructor(source_span)
+        else {
+            return false;
+        };
+        self.record_inference_use(NativeIntegrityGuard::SetIterable, proof, dependencies);
+        true
     }
 
     /// Author-asserted timing for two exact operations in the pinned Bun host.
@@ -2546,6 +2640,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &mut self,
         callee: &ValueExpr,
         expressions: &[ValueExpr],
+        arguments: &[Values],
         may_throw: bool,
         site: CallSite,
         resolution: &NativeCallResolution,
@@ -2564,23 +2659,47 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // its census or exact-site input. The builtin binding itself stays
         // opaque in value flow, so its abstract value is not an identity test.
         let row = resolution.row;
+        let dispatch_form = match (kind, expressions) {
+            (
+                NativeConstructorKind::Map
+                | NativeConstructorKind::Set
+                | NativeConstructorKind::TextEncoder,
+                [],
+            ) => NativeConstructorForm::Empty,
+            (NativeConstructorKind::Set, [ValueExpr::ObjectLiteral(array, _)]) => {
+                NativeConstructorForm::SetPrimitiveArray { array: *array }
+            }
+            _ => return,
+        };
         let names_expected_global = matches!(callee, ValueExpr::Binding(binding)
             if binding.0.as_ref() == kind.global_name());
-        // A zero-argument root call cannot run coercions of absent arguments.
+        // Empty collection forms cannot run coercions of absent arguments.
         // TextEncoder's host row has exact zero arity and no coercions.
-        let root_call_shape_matches = match kind {
-            NativeConstructorKind::Map | NativeConstructorKind::Set => {
+        let root_call_shape_matches = match (kind, dispatch_form) {
+            (NativeConstructorKind::Map, NativeConstructorForm::Empty)
+            | (NativeConstructorKind::Set, NativeConstructorForm::Empty) => {
                 row.arity.contains(&0)
                     && row
                         .coerces
                         .iter()
                         .all(|(selector, _)| matches!(selector, ArgSel::Arg(_)))
             }
-            NativeConstructorKind::TextEncoder => row.arity == (0..=0) && row.coerces.is_empty(),
+            (NativeConstructorKind::TextEncoder, NativeConstructorForm::Empty) => {
+                row.arity == (0..=0) && row.coerces.is_empty()
+            }
+            (NativeConstructorKind::Set, NativeConstructorForm::SetPrimitiveArray { array }) => {
+                row.arity.contains(&1)
+                    && row.coerces == [(ArgSel::Arg(0), CoerceOp::Iterate)]
+                    && matches!(expressions, [ValueExpr::ObjectLiteral(lowered, _)] if *lowered == array)
+                    && matches!(arguments, [values]
+                        if matches!(values.iter().collect::<Vec<_>>().as_slice(),
+                            [AbstractValue::Value(Value::Alloc(Kind::Object, evaluated))]
+                                if *evaluated == array))
+            }
+            _ => false,
         };
-        if candidate.matches_dispatch(site, kind)
+        if candidate.matches_dispatch(site, kind, dispatch_form)
             && names_expected_global
-            && expressions.is_empty()
             && !may_throw
             && row.op == expected_op
             && row.invocation == [Invocation::Construct]
@@ -8193,23 +8312,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     }
                     return result;
                 }
-                if self
-                    .inputs
-                    .set_iterable_proof
-                    .author_input_for_constructor(span.source_span())
-                    .is_some()
-                {
-                    return Values::from([
-                        AbstractValue::Value(Value::Alloc(Kind::Set, span.allocation_id())),
-                        AbstractValue::Value(Value::Unavailable),
-                    ]);
-                }
                 if let Some(returns) =
                     self.resolve_native_call(CallKind::New, callee, *span, args, &successful_args)
                 {
                     self.record_native_initializer_transfer(
                         callee,
                         args,
+                        &successful_args,
                         args_may_throw,
                         *span,
                         &returns,
@@ -8220,6 +8329,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         args_may_throw,
                         *span,
                     );
+                }
+                // This authored path historically stopped before native-row
+                // resolution. Keep its conservative value if the exact
+                // request payload and indexed SetIterableProof did not admit
+                // the native New row above.
+                if self
+                    .inputs
+                    .set_iterable_proof
+                    .author_input_for_constructor(span.source_span())
+                    .is_some()
+                {
+                    return Values::from([
+                        AbstractValue::Value(Value::Alloc(Kind::Set, span.allocation_id())),
+                        AbstractValue::Value(Value::Unavailable),
+                    ]);
                 }
                 if self
                     .inputs

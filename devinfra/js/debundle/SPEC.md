@@ -449,6 +449,19 @@ input. The successful result remains `Top`; the certificate does not establish
 an ordinary-object shape, TextEncoder identity, methods, prototype behavior,
 or later property reads. The platform object's allocation has no separate
 effect cell, and its identity becomes available only at the binding write.
+
+It also admits a direct bare `new Set([primitive literals])` initializer only
+when the original source owner and lowered `New` operand identify the same
+dense, nonspread array literal. The exact request must apply the native Set
+Construct/Fresh/Never row, and the one `Iterate(arg0)` step must be discharged
+by the existing `SetIterableProof` at that call site. The proof use records its
+native-operation input or inference dependencies. Native global identity,
+lexical reads, array argument evaluation, throws, and owner initialization keep
+their normal checks. The successful result remains `Top`: it proves neither Set identity nor
+contents, prototype, or later method/iteration behavior. Array aliases,
+identifier elements, nested values, spreads, wrapped array arguments,
+call/sequence/assignment wrappers, and other iterables remain outside this
+initializer form and retain conservative fallback.
 Later observations remain opaque or need their own existing proof.
 
 Arguments (including `[]` and `undefined`), spread, aliases, qualified
