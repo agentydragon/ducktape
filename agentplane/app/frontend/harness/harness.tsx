@@ -31,8 +31,8 @@ import { decisionFixture, type DecisionFixture } from "../sandboxes/decision_fix
 import type { DecisionsSnapshot } from "../sandboxes/live";
 import { DurationSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { ServiceAccountIdentitySchema } from "../../../proto/identity_pb";
+import { OwnerReferenceSchema } from "../../../proto/kubernetes_pb";
 import {
-  OwnerReferenceSchema,
   SandboxPhase,
   EnvironmentDescriptorSchema,
   OperatingMode,

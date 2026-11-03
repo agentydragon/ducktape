@@ -37,6 +37,24 @@ func TestSandboxPodViewIncludesEmptyStatus(t *testing.T) {
 	}
 }
 
+func TestSandboxPodViewPreservesOwnerReferences(t *testing.T) {
+	controller := true
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{
+		{APIVersion: "v1", Kind: "Sandbox", Name: "worker", UID: "sandbox-uid", Controller: &controller},
+		{APIVersion: "batch/v1", Kind: "Job", Name: "cleanup", UID: "job-uid"},
+	}}}
+	view, err := sandboxPodView(pod)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owners := view.GetOwnerReferences()
+	if len(owners) != 2 || owners[0].GetApiVersion() != "v1" || owners[0].GetKind() != "Sandbox" ||
+		owners[0].GetName() != "worker" || owners[0].GetUid() != "sandbox-uid" || !owners[0].GetController() ||
+		owners[1].GetUid() != "job-uid" || owners[1].GetController() {
+		t.Fatalf("Pod owner references = %v", owners)
+	}
+}
+
 func TestViewUsesOnlyTheReportedPodIncarnation(t *testing.T) {
 	resource := testSandbox("worker", "sandbox-uid", sandboxapi.OperatingModeRunning)
 	resource.Status.Incarnation = &sandboxapi.Incarnation{Name: "worker", UID: "current-pod"}

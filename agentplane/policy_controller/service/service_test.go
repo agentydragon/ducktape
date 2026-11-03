@@ -87,6 +87,25 @@ func policySet(name string) *policyapi.PolicySet {
 	return &policyapi.PolicySet{ObjectMeta: metav1.ObjectMeta{Namespace: "policies", Name: name, UID: types.UID("uid-" + name), Generation: 1}, Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{{Type: "action_auto_approve", Policy: &policyapi.ActionPolicy{Type: "exact_actions", Actions: map[string]policyapi.ActionNames{"group": {"inspect", "write"}}}}}}}
 }
 
+func TestBindingMessagePreservesOwnerReferences(t *testing.T) {
+	controller := true
+	source := binding("worker", "worker", "base")
+	source.OwnerReferences = []metav1.OwnerReference{
+		{APIVersion: "v1", Kind: "Sandbox", Name: "worker", UID: "sandbox-uid", Controller: &controller},
+		{APIVersion: "batch/v1", Kind: "Job", Name: "cleanup", UID: "job-uid"},
+	}
+	message, err := bindingMessage(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owners := message.GetOwnerReferences()
+	if len(owners) != 2 || owners[0].GetApiVersion() != "v1" || owners[0].GetKind() != "Sandbox" ||
+		owners[0].GetName() != "worker" || owners[0].GetUid() != "sandbox-uid" || !owners[0].GetController() ||
+		owners[1].GetUid() != "job-uid" || owners[1].GetController() {
+		t.Fatalf("PolicyBinding owner references = %v", owners)
+	}
+}
+
 func TestGeneratedSpecPreservesCRDJSON(t *testing.T) {
 	source := policySet("base")
 	source.Spec.Rules = append(

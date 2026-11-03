@@ -6,6 +6,7 @@ option go_package = "github.com/agentydragon/ducktape/agentplane/environments/v1
 
 import "agentplane/proto/environment_lifecycle.proto";
 import "agentplane/proto/identity.proto";
+import "agentplane/proto/kubernetes.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
@@ -289,21 +290,12 @@ message SandboxBinding {
   string bootstrap = 2;
 }
 
-// Kubernetes names/status vocabulary is preserved, not recast as runner state.
-message OwnerReference {
-  string api_version = 1;
-  string kind = 2;
-  string name = 3;
-  string uid = 4;
-  bool controller = 5;
-}
-
 message SandboxPod {
   string name = 1;
   string namespace = 2;
   string uid = 3;
   bool deleting = 4;
-  repeated OwnerReference owner_references = 5;
+  repeated agentplane.proto.OwnerReference owner_references = 5;
   google.protobuf.Struct status = 6;
   optional string node_name = 7;
 }

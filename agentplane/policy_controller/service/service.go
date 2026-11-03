@@ -13,6 +13,7 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	kubernetespb "github.com/agentydragon/ducktape/agentplane/proto/kubernetes"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -203,7 +204,7 @@ func bindingMessage(obj *policyapi.PolicyBinding) (*policypb.PolicyBinding, erro
 	}
 	result := &policypb.PolicyBinding{Identity: identity(obj.ObjectMeta), Generation: obj.Generation, Labels: obj.Labels, Spec: spec, Status: state}
 	for _, owner := range obj.OwnerReferences {
-		result.OwnerReferences = append(result.OwnerReferences, &policypb.PolicyOwnerReference{ApiVersion: owner.APIVersion, Kind: owner.Kind, Name: owner.Name, Uid: string(owner.UID), Controller: owner.Controller != nil && *owner.Controller})
+		result.OwnerReferences = append(result.OwnerReferences, &kubernetespb.OwnerReference{ApiVersion: owner.APIVersion, Kind: owner.Kind, Name: owner.Name, Uid: string(owner.UID), Controller: owner.Controller != nil && *owner.Controller})
 	}
 	return result, nil
 }
