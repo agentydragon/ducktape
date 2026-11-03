@@ -94,6 +94,7 @@ py_library(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pyyaml",
+        "@pypi//tenacity",
     ],
 )
 
