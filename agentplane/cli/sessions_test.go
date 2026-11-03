@@ -12,6 +12,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestObserveInputRequiresItsOwnHistoryConfiguration(t *testing.T) {
@@ -118,4 +119,64 @@ func (sessionProjectionFixture) ReadSessionEvents(_ context.Context, request *hi
 		}
 	}
 	return response, nil
+}
+
+func TestSessionListDiscoversOpeningsWithoutHistoryConfiguration(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	fixture := &sessionListFixture{requests: make(chan *dispatcherpb.ListSessionOpeningsRequest, 1)}
+	dispatcherpb.RegisterSessionDispatcherServer(server, fixture)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+	env := map[string]string{
+		"AGENTPLANE_SESSIONS_URL":        "http://" + listener.Addr().String(),
+		"AGENTPLANE_SESSIONS_CREDENTIAL": testCredential,
+	}
+	for _, asJSON := range []bool{true, false} {
+		args := []string{"sessions", "list", "--limit", "1", "--after", "previous-page"}
+		if asJSON {
+			args = append([]string{"--json"}, args...)
+		}
+		code, stdout, stderr := invoke(env, args...)
+		if code != 0 {
+			t.Fatalf("sessions list: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+		}
+		request := <-fixture.requests
+		if request.GetLimit() != 1 || request.GetPageToken() != "previous-page" {
+			t.Fatalf("list request: %v", request)
+		}
+		if asJSON {
+			page := &dispatcherpb.ListSessionOpeningsResponse{}
+			if err := protojson.Unmarshal([]byte(stdout), page); err != nil {
+				t.Fatal(err)
+			}
+			if len(page.GetOpenings()) != 1 || page.GetOpenings()[0].GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || page.GetNextPageToken() != "next-page" || stderr != "" {
+				t.Fatalf("list JSON page: %v, stderr %q", page, stderr)
+			}
+		} else if !strings.Contains(stdout, "58cae82c-453d-4de7-ae5b-17a8f7596077") || !strings.Contains(stdout, "queued_in_dispatcher") || !strings.Contains(stderr, "--after next-page") {
+			t.Fatalf("list text: stdout %q, stderr %q", stdout, stderr)
+		}
+	}
+}
+
+type sessionListFixture struct {
+	dispatcherpb.UnimplementedSessionDispatcherServer
+	requests chan *dispatcherpb.ListSessionOpeningsRequest
+}
+
+func (f *sessionListFixture) ListSessionOpenings(_ context.Context, request *dispatcherpb.ListSessionOpeningsRequest) (*dispatcherpb.ListSessionOpeningsResponse, error) {
+	f.requests <- request
+	return &dispatcherpb.ListSessionOpeningsResponse{
+		Openings: []*dispatcherpb.SessionOpening{{
+			SessionId: "58cae82c-453d-4de7-ae5b-17a8f7596077", Sandbox: "queued-sandbox", SandboxUid: "queued-sandbox-uid",
+			State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+		}},
+		NextPageToken: "next-page",
+	}, nil
 }

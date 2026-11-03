@@ -620,3 +620,92 @@ func TestPendingExecutionUIDBindsOnceAndReplacementStopsRunnerDelivery(t *testin
 		t.Fatalf("conflicting UID bind = %v, want ErrNotAuthorized", err)
 	}
 }
+
+func TestOpeningDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
+	store := testStore(t, 3)
+	owner := serviceAccountIdentityFor(caller, "discovery-owner-uid")
+	foreignAccount := Account{Namespace: caller.Namespace, Name: "discovery-foreign"}
+	foreign := serviceAccountIdentityFor(foreignAccount, "discovery-foreign-uid")
+	uid := uuid.NewString()
+	const queuedID = "00000000-0000-4000-8000-000000000001"
+	const foreignID = "00000000-0000-4000-8000-000000000002"
+	const failedID = "00000000-0000-4000-8000-000000000003"
+	const pendingID = "00000000-0000-4000-8000-000000000004"
+	// Insert out of order; ordering is the immutable public ID, never delivery state.
+	for _, row := range []struct {
+		id        string
+		principal *ServiceAccountIdentity
+	}{
+		{failedID, owner},
+		{foreignID, foreign},
+		{queuedID, owner},
+		{pendingID, serviceAccountIdentityFor(caller, "")},
+	} {
+		if _, err := store.OpenSessionWithIdentity(t.Context(), row.id, "discovery-sandbox", uid,
+			&sessionpb.SessionSpec{}, nil, nil, row.principal, owner, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lease, err := store.ClaimSandboxOwner(t.Context(), uid, "discovery-lease", 1, "discovery-worker", 0)
+	if err != nil || lease == nil {
+		t.Fatalf("claim: %+v %v", lease, err)
+	}
+	if row, err := store.SettleOpening(t.Context(), failedID, *lease, []string{QueueState}, FailedState, "runner_rejected"); err != nil || row == nil {
+		t.Fatalf("reject opening: %+v %v", row, err)
+	}
+	inventory := &authorityInventory{sandboxErr: errors.New("owner environment unavailable")}
+	client := authorityClient(t, store, inventory, tokenReviewStub{
+		"discovery-owner":       {account: caller, uid: owner.GetUid()},
+		"discovery-replacement": {account: caller, uid: "replacement-account-uid"},
+		"discovery-foreign":     {account: foreignAccount, uid: foreign.GetUid()},
+		"discovery-backend":     {account: caller, uid: "backend-account-uid", pod: true},
+	}, nil)
+	first, err := client.ListSessionOpenings(authorityContext(t, "discovery-owner"), &dispatcherpb.ListSessionOpeningsRequest{Limit: 1})
+	if err != nil || len(first.GetOpenings()) != 1 || first.GetOpenings()[0].GetSessionId() != queuedID || first.GetNextPageToken() == "" {
+		t.Fatalf("owner first page: %v %v", first, err)
+	}
+	if first.GetOpenings()[0].GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || first.GetOpenings()[0].GetSandboxUid() != uid {
+		t.Fatalf("queued opening placement/state: %v", first)
+	}
+	// The last row of a page can disappear between requests without invalidating its cursor.
+	if _, err := store.DB.ExecContext(t.Context(), "DELETE FROM session_opening WHERE session_id=$1", queuedID); err != nil {
+		t.Fatal(err)
+	}
+	second, err := client.ListSessionOpenings(authorityContext(t, "discovery-owner"), &dispatcherpb.ListSessionOpeningsRequest{
+		Limit: 1, PageToken: first.GetNextPageToken(),
+	})
+	if err != nil || len(second.GetOpenings()) != 1 || second.GetOpenings()[0].GetSessionId() != failedID || second.GetNextPageToken() != "" ||
+		second.GetOpenings()[0].GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED {
+		t.Fatalf("owner second page: %v %v", second, err)
+	}
+	// A cursor carries position only; it never grants the original caller's authority.
+	for _, test := range []struct {
+		token string
+		want  []string
+	}{
+		{"discovery-replacement", nil},
+		{"discovery-foreign", []string{foreignID}},
+		{"discovery-backend", []string{foreignID, failedID, pendingID}},
+	} {
+		page, err := client.ListSessionOpenings(authorityContext(t, test.token), &dispatcherpb.ListSessionOpeningsRequest{
+			PageToken: first.GetNextPageToken(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ids []string
+		for _, opening := range page.GetOpenings() {
+			ids = append(ids, opening.GetSessionId())
+		}
+		if !slices.Equal(ids, test.want) || page.GetNextPageToken() != "" {
+			t.Fatalf("%s read scope: %v, next %q; want %v", test.token, ids, page.GetNextPageToken(), test.want)
+		}
+	}
+	for _, request := range []*dispatcherpb.ListSessionOpeningsRequest{
+		{Limit: 101}, {PageToken: "not-a-page-token"}, {PageToken: string(make([]byte, 129))},
+	} {
+		if _, err := client.ListSessionOpenings(authorityContext(t, "discovery-owner"), request); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("invalid page request %v: %v", request, err)
+		}
+	}
+}

@@ -875,6 +875,28 @@ func (s *Store) GetOpeningForCaller(ctx context.Context, id string, caller Calle
 	return o, err
 }
 
+func (s *Store) ListOpeningsForCaller(ctx context.Context, after string, limit int, caller CallerIdentity) ([]*Opening, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT `+openingColumns+` FROM session_opening
+		WHERE session_id > $1 AND ($2 OR
+		(execution_account_namespace=$3 AND execution_account_name=$4 AND execution_account_uid=$5))
+		ORDER BY session_id LIMIT $6`, after, caller.Privileged,
+		accountOfIdentity(caller.ServiceAccountIdentity).Namespace, accountOfIdentity(caller.ServiceAccountIdentity).Name,
+		uidOfIdentity(caller.ServiceAccountIdentity), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []*Opening
+	for rows.Next() {
+		row, err := scanOpening(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
 // BindExecutionPrincipal fixes the UID of a pending managed account exactly once. The expected
 // account name and Sandbox UID are part of the predicate, so reconciliation cannot adopt another
 // Sandbox's account or overwrite a prior binding.

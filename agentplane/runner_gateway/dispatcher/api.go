@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"slices"
@@ -210,6 +211,7 @@ func Methods(resolver *auth.Resolver) auth.Methods {
 		dispatcherpb.SessionDispatcher_InterruptTurn_FullMethodName:         rule,
 		dispatcherpb.SessionDispatcher_OpenSession_FullMethodName:           rule,
 		dispatcherpb.SessionDispatcher_GetSessionOpening_FullMethodName:     rule,
+		dispatcherpb.SessionDispatcher_ListSessionOpenings_FullMethodName:   rule,
 		dispatcherpb.SessionDispatcher_GetDispatch_FullMethodName:           rule,
 		dispatcherpb.SessionDispatcher_WatchDispatches_FullMethodName:       rule,
 		dispatcherpb.SessionDispatcher_ListDispatches_FullMethodName:        rule,
@@ -515,6 +517,48 @@ func (s *Service) GetSessionOpening(ctx context.Context, request *dispatcherpb.G
 		return nil, apiError(err)
 	}
 	return &dispatcherpb.GetSessionOpeningResponse{Opening: opening}, nil
+}
+
+func (s *Service) ListSessionOpenings(ctx context.Context, request *dispatcherpb.ListSessionOpeningsRequest) (*dispatcherpb.ListSessionOpeningsResponse, error) {
+	caller, err := s.caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	limit := request.GetLimit()
+	if limit == 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		return nil, status.Error(codes.InvalidArgument, "limit must be between 1 and 100")
+	}
+	var after string
+	if token := request.GetPageToken(); token != "" {
+		if len(token) > 128 {
+			return nil, status.Error(codes.InvalidArgument, "invalid opening page token")
+		}
+		decoded, err := base64.RawURLEncoding.DecodeString(token)
+		if err != nil || canonicalSessionID(string(decoded)) != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid opening page token")
+		}
+		after = string(decoded)
+	}
+	rows, err := s.Store.ListOpeningsForCaller(ctx, after, int(limit)+1, caller)
+	if err != nil {
+		return nil, apiError(err)
+	}
+	response := &dispatcherpb.ListSessionOpeningsResponse{}
+	if len(rows) > int(limit) {
+		rows = rows[:limit]
+		response.NextPageToken = base64.RawURLEncoding.EncodeToString([]byte(rows[len(rows)-1].SessionID))
+	}
+	for _, row := range rows {
+		opening, err := DescribeOpening(row)
+		if err != nil {
+			return nil, apiError(err)
+		}
+		response.Openings = append(response.Openings, opening)
+	}
+	return response, nil
 }
 
 func (s *Service) GetDispatch(ctx context.Context, request *dispatcherpb.GetDispatchRequest) (*dispatcherpb.GetDispatchResponse, error) {

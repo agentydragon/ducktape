@@ -47,6 +47,7 @@ group, so another service joins as one more group under them.
 | `actions cancel ID`                                                                                                                                | `CancelActionRequest`                                                   |
 | `sessions open SESSION_ID --sandbox NAME --sandbox-uid UID --spec JSON\|@FILE\|- [--setup-script TEXT\|@FILE\|-] [--additional-instructions TEXT]` | `SessionDispatcher.OpenSession`                                         |
 | `sessions submit-input SESSION_ID --sandbox NAME --sandbox-uid UID --command-id ID --text TEXT`                                                    | `SessionDispatcher.SubmitInput`                                         |
+| `sessions list [--limit N] [--after TOKEN]`                                                                                                        | `SessionDispatcher.ListSessionOpenings`                                 |
 | `sessions get-opening SESSION_ID`                                                                                                                  | `SessionDispatcher.GetSessionOpening`                                   |
 | `sessions get SESSION_ID`                                                                                                                          | `GetSessionOpening` and `HistoryService.GetSessionSummary`              |
 | `sessions read-turns SESSION_ID [--count N] [--page-cursor TOKEN]`                                                                                 | `HistoryService.ReadSessionEvents`, projected as retained turns         |
@@ -97,6 +98,15 @@ failed or the model turn ended. The structured result preserves source errors an
 ranges. A resume token is tied to its Session and command and confers no permission; the command rebuilds
 the observation from the retained admission cursor so it can restore command-to-turn correlation.
 
+`agentplane sessions list` discovers current Dispatcher opening records, including queued and failed
+materialization with no History yet. It requires only the Sessions credential and never contacts an
+environment. Results use retained owner authorization; the configured Pod-bound backend read scope
+also applies. `--limit` is 1-100 (default 50), and `--after` accepts the returned continuation token.
+Text output prints openings and a continuation hint; `--json` returns one page object with `openings`
+and `nextPageToken`. Ordering is ascending Session UUID, with current reads rather than a frozen
+snapshot. Deleted opening records remain absent even if History is retained. This does not discover
+environment-free central Sessions.
+
 `sessions get` reads the Dispatcher opening and History summary independently; its structured result
 keeps missing and unavailable sources distinct. It does not query a live environment. `sessions
 read-turns` reads retained History through the cursor captured on its first page, returns at most 100
@@ -129,7 +139,8 @@ Left out on purpose:
 ## Output
 
 - **`--json`** prints one value for a unary command and one value per line for a list, in the service's
-  order. `jq` reads either form, and `jq -s` collects the lines. It adds no envelope. Action and Session
+  order. `sessions list` returns the page object, including `nextPageToken`, so scripts can resume.
+  `jq` reads either form, and `jq -s` collects line-oriented lists. Action and Session
   commands print canonical ProtoJSON from the generated gRPC messages: protobuf field names are lowerCamelCase,
   enum values keep their protobuf names, and 64-bit integers such as `version` are strings. For example,
   ActionRequest fields `idempotency_key`, `created_at` and `updated_at` become `idempotencyKey`,
@@ -376,7 +387,8 @@ messages, so the key is not derived from it. `--from-session` defaults to the `s
 | `events`                   | `after_sequence` and `limit`, at most 128 a page | follows pages; `--after SEQUENCE` |
 | `subscriptions`            | `afterId`, 128 a page                            | follows pages; `--after ID`       |
 
-A list follows server pages until `--limit` items (default 50; `0` is unlimited). To resume, pass the
+`sessions list` reads one page of up to 100 openings (`--limit` defaults to 50); use its opaque
+`nextPageToken` with `--after`. The lists in the table follow server pages until `--limit` items (default 50; `0` is unlimited). To resume, pass the
 last printed item's `id` or `sequence` to `--after`; text mode prints that hint on stderr when the limit
 cut the list. A list prints only once complete, so a failure on a later page leaves stdout empty.
 

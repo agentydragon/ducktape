@@ -57,7 +57,7 @@ It scopes existing Sessions and existing environments; it does not create enviro
 - SubmitInput, ChangeModel, ChangeReasoningEffort, CancelDispatch and InterruptTurn require the caller to match
   the opening's execution account and Sandbox UID. Normal calls also compare the authenticated UID with the
   current controller-owned account UID. A changed or missing managed account cannot authorize a write.
-- GetSessionOpening, GetDispatch and ListDispatches filter retained rows by the recorded target account and UID.
+- GetSessionOpening, ListSessionOpenings, GetDispatch and ListDispatches filter retained rows by the recorded target account and UID.
   These reads do not require a live Sandbox or ServiceAccount. Old rows without a trustworthy owner are hidden
   from normal account callers but remain visible through existing privileged backend behavior.
 - WatchDispatches applies the same filter to durable snapshots and deletion terminal events. The terminal
