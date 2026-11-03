@@ -1,0 +1,23 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "permissions",
+    srcs = ["permissions.py"],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+    deps = ["@pypi//kubernetes_asyncio"],
+)
+
+py_test(
+    name = "test_permissions",
+    srcs = ["test_permissions.py"],
+    deps = [
+        ":permissions",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/testing:kubernetes_apiserver",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

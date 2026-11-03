@@ -81,6 +81,7 @@ from cluster.cdk8s.agentplane import (
     runner_gateway_workload,
     staging,
 )
+from cluster.cdk8s.agentplane_test_cluster import app as agentplane_test_cluster_app
 from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations, namespaces as agents_namespaces
 from cluster.cdk8s.artifact_generators import (
     artifact,
@@ -1527,6 +1528,26 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, flux_image_automation_forgejo_artifact, forgejo_image_automation.chart),
         flux_image_automation_ghcr_kustomization,
     )
+    agentplane_test_cluster_artifact = artifact(
+        "agentplane-test-cluster", agentplane_test_cluster_app.OUTPUT_DIR, agentplane_test_cluster_app.PINS_DIR
+    )
+    agentplane_test_cluster_directory = write_directory(
+        root,
+        agentplane_test_cluster_artifact,
+        lambda app: agentplane_test_cluster_app.chart(app, image=agentplane_test_cluster_app.IMAGE),
+        components=[posixpath.relpath(agentplane_test_cluster_app.PINS_DIR, agentplane_test_cluster_app.OUTPUT_DIR)],
+    )
+    agentplane_test_cluster_app.agentplane_test_cluster(
+        flux_chart,
+        agentplane_test_cluster_directory,
+        oci_cache=oci_cache_kustomization,
+        piraeus=piraeus_cluster_kustomization,
+        external_secrets_operator=external_secrets_operator_kustomization,
+        forgejo_images=forgejo_images_kustomization,
+        forgejo_image_automation=forgejo_image_automation_kustomization,
+        kubevirt=kubevirt_kustomization,
+        kyverno=kyverno_kustomization,
+    )
     session_archive_artifact = artifact(
         "ai-session-archive",
         session_archive.OUTPUT_DIR,
@@ -1956,6 +1977,7 @@ def generate_manifests(root: Path) -> None:
             agentplane_staging_db_backups_artifact,
             monitoring_stack_artifact,
             buildbuddy_executor_artifact,
+            agentplane_test_cluster_artifact,
             ntfy_artifact,
             claude_rbac_artifact,
             authentik_artifact,

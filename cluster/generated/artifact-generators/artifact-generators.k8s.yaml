@@ -33,6 +33,13 @@ spec:
       name: buildbuddy-executor
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/agentplane-test-cluster/**"
+          to: "@artifact/cluster/generated/agentplane-test-cluster/"
+        - from: "@repo/cluster/k8s/agentplane-test-cluster-image-pins/**"
+          to: "@artifact/cluster/k8s/agentplane-test-cluster-image-pins/"
+      name: agentplane-test-cluster
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/ntfy/**"
           to: "@artifact/cluster/k8s/ntfy/"
       name: ntfy
