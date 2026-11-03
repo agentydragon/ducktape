@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from agentplane.system_tests.k3s import guest_logs, rendered_fixture
+from agentplane.system_tests.k3s import guest_logs, rendered_fixture, vm_sandboxes
 from agentplane.system_tests.k3s.rendered_fixture import Backend, LocalModel, PublicLiteLLM
 from agentplane.system_tests.k3s.stack import Stack, StackInputs, node_ip, running_stack
 from util.bazel.runfiles import get_required_path
@@ -28,13 +28,16 @@ def scripted_listener() -> Iterator[Listener]:
 
 def load_stack_inputs() -> StackInputs:
     manifests = json.loads(os.environ["K3S_IMAGE_MANIFESTS"])
+    fixture = rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"]))
+    vm_accelerator = vm_sandboxes.Accelerator(os.environ.get("K3S_VM_ACCELERATOR", "tcg"))
     return StackInputs(
-        fixture=rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"])),
+        fixture=fixture,
         binary=get_required_path(os.environ["K3S_BINARY_RLOCATION"]),
         image_layouts=_image_layouts(manifests["fixture"]),
         pki_image_layouts=_image_layouts(manifests["pki"]),
         vm_image_layouts=_image_layouts(manifests["vm"]),
         guest_image_layouts=_image_layouts(manifests["guest"]),
+        vm_accelerator=vm_accelerator,
     )
 
 

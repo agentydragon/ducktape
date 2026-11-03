@@ -167,6 +167,25 @@ Probed 2026-10-21 with `bb execute` under the k3s target's isolation properties:
 (`CONFIG_KVM` unset, only `CONFIG_KVM_GUEST`) and no BPF JIT. So the stack runs no Cilium, KubeVirt only with
 software emulation, and kube-proxy with ClusterIP Services.
 
+The opt-in `test_vm.kvm` and `test_vm_manual.kvm` variants select the `wyrm2-kvm` pool
+with OCI isolation and require KVM. They disable KubeVirt emulation and remote runner
+recycling. Each verified guest must report QMP `query-kvm` with `present` and `enabled`
+both true; the responses are retained under `vm-artifacts/kvm/` in test outputs.
+
+The worker needs capacity for the suite's eight compute units (8 CPU and 20 GB RAM),
+plus executor overhead. Nested k3s requires `SYS_ADMIN` for its private mounts,
+`NET_ADMIN` for its network and `MKNOD` for dynamically allocated loop devices, with
+`/dev/kvm`, `/dev/loop-control` and `/dev/net/tun` exposed to the action. These capabilities
+apply to every OCI action in that opt-in pool.
+
+Start with the single-VM workspace case, then run the concurrent VM suite:
+
+```bash
+bbr test //agentplane/system_tests/suites:test_vm_manual.kvm \
+  --nocache_test_results --test_arg=-k=fresh_vm_session_workspace
+bbr test //agentplane/system_tests/suites:test_vm.kvm --nocache_test_results
+```
+
 The earlier RBE precompile failure no longer reproduces with `rules_python` 2.4.3: a target using
 `pyc_collection = "include_pyc"` passes and Python loads the generated `.pyc` files. The
 [current experiment](debug/pyc_precompilation.md) shows the large compile action graph and the

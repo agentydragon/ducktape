@@ -12,6 +12,8 @@ from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.cluster import Cluster
+from agentplane.system_tests.k3s import kvm_action
+from agentplane.system_tests.k3s.stack import Stack
 from agentplane.system_tests.k3s.vm_trace_contract import assert_vm_process_trace_contract
 from agentplane.system_tests.offered_models import models_offered_for
 from agentplane.system_tests.sandbox import VM_TEMPLATE
@@ -54,6 +56,7 @@ async def _wait_for_vm_process_trace_contract() -> None:
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
 async def test_vm_scenarios(
+    deployment: Stack,
     cluster: Cluster,
     client: Client,
     dispatcher: SessionDispatcherClient,
@@ -65,17 +68,23 @@ async def test_vm_scenarios(
 
     async def turn(harness: session_pb2.Harness, template: str) -> None:
         async with scenario_resources() as (owned_client, sandbox):
+            create_vm = kvm_action.verify_acceleration(
+                sandbox, deployment.k3s.kubectl, cluster.namespace, deployment.vm_accelerator
+            )
             await vm_sandbox.vm_sandbox_turn(
-                cluster, owned_client, dispatcher, sandbox, harness, models[harness], scripted, template
+                cluster, owned_client, dispatcher, create_vm, harness, models[harness], scripted, template
             )
 
     async def oom() -> None:
         async with scenario_resources() as (owned_client, sandbox):
+            create_vm = kvm_action.verify_acceleration(
+                sandbox, deployment.k3s.kubectl, cluster.namespace, deployment.vm_accelerator
+            )
             await vm_sandbox.codex_tool_oom(
                 cluster,
                 owned_client,
                 dispatcher,
-                sandbox,
+                create_vm,
                 models[session_pb2.HARNESS_CODEX],
                 scripted,
                 native_profile=os.environ.get("AGENTPLANE_VM_NATIVE_PROFILE") == "1",

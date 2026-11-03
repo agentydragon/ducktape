@@ -58,6 +58,10 @@ class _LoopDevice:
             for _ in range(_ATTACH_ATTEMPTS):
                 index = fcntl.ioctl(control_fd, _LOOP_CTL_GET_FREE)
                 path = Path(f"/dev/loop{index}")
+                # OCI actions have a private /dev; loop-control allocates a kernel
+                # minor without populating its device node in that namespace.
+                if not path.exists():
+                    os.mknod(path, stat.S_IFBLK | 0o600, os.makedev(7, index))
                 info = path.stat()
                 if not stat.S_ISBLK(info.st_mode) or os.major(info.st_rdev) != 7 or os.minor(info.st_rdev) != index:
                     raise RuntimeError(f"loop-control selected an unexpected device node: {path}")
