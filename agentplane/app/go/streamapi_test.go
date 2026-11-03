@@ -1158,7 +1158,7 @@ func TestLiveSandboxStreamsSharePolicyReadsAcrossViewers(t *testing.T) {
 			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &frame); err != nil {
 				t.Fatal(err)
 			}
-			if len(frame) != 4 || frame["sandbox_uid"] == nil || frame["bindings"] == nil || frame["action_policy"] == nil || frame["watch"] == nil {
+			if len(frame) != 3 || frame["sandbox_uid"] == nil || frame["bindings"] == nil || frame["watch"] == nil {
 				t.Fatalf("policy composition frame has unexpected fields: %s", line)
 			}
 		}
@@ -1225,7 +1225,7 @@ func TestSandboxPolicyWatchRejectsMismatchedTargetsAndTerminatesOnErrors(t *test
 				t.Fatalf("watch target = %v", watcher.target)
 			}
 			if test.wantMissing {
-				if len(frames) != 1 || frames[0].sandboxUID != nil || frames[0].subject != nil || !frames[0].watch.Healthy {
+				if len(frames) != 1 || frames[0].sandboxUID != nil || frames[0].bindings != nil || !frames[0].watch.Healthy {
 					t.Fatalf("missing Environment frames = %#v", frames)
 				}
 			} else if len(frames) != 0 {

@@ -32,7 +32,7 @@ import {
   sessionOpeningNotVisible,
   suspendEnvironment,
 } from "./client";
-import { ActionPolicySection } from "../actions/policy";
+import { ActionPolicyWatch } from "../actions/policy";
 import { EgressLog } from "./egress";
 import {
   liveSandboxUrl,
@@ -507,7 +507,7 @@ export function SandboxPage({
                 bindings={detail?.bindings ?? null}
               />
             )}
-            <ActionPolicySection policy={detail?.action_policy ?? null} />
+            <ActionPolicyWatch subject={sandbox?.executionAccount?.account} fence={target?.uid} />
           </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="status" pt="sm">

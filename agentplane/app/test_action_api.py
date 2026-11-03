@@ -2,7 +2,6 @@
 
 The retired ASGI-only checks moved to Go tests alongside the owning behavior:
 ``TestGeneratedActionFacadeUsesNativeRPCAndRequestBoundBearer``,
-``TestCallerGrantsUsesFederatedGeneratedRPCAndReturnsSafeView``,
 ``TestExchangePostsAssertionAndVerifiesTargetIdentity``,
 ``TestRefusedRefreshEndsSession``, ``TestOIDCCallbackAndTwoOperatorsWorkAcrossReplicas``, and
 ``TestConcurrentCrossReplicaCallbacksConsumePendingLoginOnce``.
@@ -13,7 +12,6 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -23,7 +21,6 @@ import jwt
 import pytest
 import pytest_bazel
 from google.protobuf.json_format import ParseDict
-from kubernetes_asyncio import client as k8s_client
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -36,7 +33,6 @@ from agentplane.app.testing.replication_process import (
     SandboxesAccess,
     app_process,
 )
-from agentplane.environments.v1 import environment_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
 
 ACTION_AUDIENCE = "test-actions"
@@ -119,78 +115,6 @@ async def _list_action_requests(review: FederationReview) -> httpx.Response:
         return await browser.get(
             ACTION_REQUESTS, params=[("state", "ACTION_STATE_DECISION_PENDING"), ("limit", "3"), ("afterId", "last-id")]
         )
-
-
-async def _read_sse_event(lines: Any) -> tuple[str, dict[str, Any]]:
-    event = "message"
-    data: list[str] = []
-    async for line in lines:
-        if line.startswith("event:"):
-            event = line.removeprefix("event:").strip()
-        elif line.startswith("data:"):
-            data.append(line.removeprefix("data:").lstrip())
-        elif not line and data:
-            value = json.loads("\n".join(data))
-            assert isinstance(value, dict), value
-            if event != "health":
-                return event, value
-            event = "message"
-            data.clear()
-    raise AssertionError("live sandbox stream ended before its next event")
-
-
-def _get_action_policy_calls(review: FederationReview) -> list[Any]:
-    return [call for call in review.service.calls if call.method == "GetActionPolicy"]
-
-
-@asynccontextmanager
-async def _live_sandbox_stream(browser: httpx.AsyncClient, name: str, uid: str) -> AsyncIterator[Any]:
-    async with browser.stream("GET", f"/live/sandboxes/{name}", params={"sandbox_uid": uid}, timeout=None) as response:
-        assert response.status_code == 200
-        yield response.aiter_lines()
-
-
-async def _get_environment(
-    browser: httpx.AsyncClient, namespace: str, name: str, uid: str
-) -> environment_service_pb2.EnvironmentDescriptor:
-    response = await browser.get(
-        f"/upstream/environments/v1/environments/{namespace}/{name}", params={"target.uid": uid}
-    )
-    assert response.status_code == 200, response.text
-    return ParseDict(response.json(), environment_service_pb2.EnvironmentDescriptor())
-
-
-@asynccontextmanager
-async def _environment_watch(browser: httpx.AsyncClient) -> AsyncIterator[Any]:
-    async with browser.stream(
-        "GET", "/upstream/environments/v1/environments:watch", headers={"Accept": "application/x-ndjson"}, timeout=None
-    ) as response:
-        assert response.status_code == 200
-        yield response.aiter_lines()
-
-
-async def _next_environment_frame(lines: Any) -> environment_service_pb2.WatchEnvironmentsResponse:
-    async for line in lines:
-        if line:
-            envelope = json.loads(line)
-            if "error" in envelope:
-                raise AssertionError(f"EnvironmentService watch failed: {envelope['error']}")
-            return ParseDict(envelope["result"], environment_service_pb2.WatchEnvironmentsResponse())
-    raise AssertionError("EnvironmentService watch ended before its next frame")
-
-
-def _action_policy_response(*, synced: bool) -> action_service_pb2.GetActionPolicyResponse:
-    return action_service_pb2.GetActionPolicyResponse(
-        action_policy=action_service_pb2.CallerActionPolicy(synced=synced)
-    )
-
-
-def _action_policy_subjects(review: FederationReview) -> list[tuple[str, str]]:
-    subjects = []
-    for call in _get_action_policy_calls(review):
-        request = cast(action_service_pb2.GetActionPolicyRequest, call.request)
-        subjects.append((request.subject.namespace, request.subject.name))
-    return subjects
 
 
 async def _expire_login_access_token(engine: AsyncEngine) -> None:
@@ -281,186 +205,35 @@ async def test_refused_refresh_requires_a_new_operator_login(
         assert (await browser.get("/auth/me")).status_code == 401
 
 
-async def test_live_action_policy_retries_failure_and_reuses_same_generation(
-    federation_review: FederationReview,
-) -> None:
+async def test_action_policy_watch_uses_generated_facade(federation_review: FederationReview) -> None:
     review = federation_review
-    review.service.policy = _action_policy_response(synced=True)
-    review.service.fail_next_policy_unavailable()
+    subject = {"subject.namespace": review.sandbox.namespace, "subject.name": review.sandbox.name}
+    review.service.policy.action_policy.synced = True
     async with (
         httpx.AsyncClient(base_url=review.app.url, cookies=review.app.cookies, timeout=None) as browser,
-        _live_sandbox_stream(browser, review.sandbox.name, review.sandbox.uid) as events,
+        browser.stream("GET", "/upstream/actions/v1/action-policy:watch", params=subject) as response,
     ):
-        event, failed = await _read_sse_event(events)
-        assert event == "snapshot"
-        assert failed["sandbox_uid"] == review.sandbox.uid
-        assert failed["action_policy"]["code"] == "upstream_request_failed"
-        assert len(_get_action_policy_calls(review)) == 1
-
-        # An Environment state change causes the app to retry an unavailable policy.
-        wake_on_send = not (await review.sandbox.sandbox())["spec"].get("wakeOnSend", False)
-        await review.sandbox.patch_sandbox({"spec": {"wakeOnSend": wake_on_send}})
+        assert response.status_code == 200
+        lines = response.aiter_lines()
+        initial = ParseDict(json.loads(await anext(lines))["result"], action_service_pb2.GetActionPolicyResponse())
+        assert initial.action_policy.synced
+        assert initial.action_policy.subject.namespace == review.sandbox.namespace
+        assert initial.action_policy.subject.name == review.sandbox.name
+        changed = action_service_pb2.GetActionPolicyResponse()
+        changed.action_policy.subject.CopyFrom(initial.action_policy.subject)
+        changed.action_policy.synced = False
+        await review.service.policy_watch_frames.put(changed)
         async with asyncio.timeout(10):
-            event, retried = await _read_sse_event(events)
-        assert event == "snapshot"
-        assert retried["action_policy"]["synced"] is True
-        assert len(_get_action_policy_calls(review)) == 2
-
-        # This descriptor-only change does not change the composite live frame; read its current facts
-        # directly and make sure it does not force another ActionPolicy generation.
-        wake_on_send = not (await review.sandbox.sandbox())["spec"].get("wakeOnSend", False)
-        async with _environment_watch(browser) as environment_events:
-            while (await _next_environment_frame(environment_events)).WhichOneof("frame") != "snapshot_complete":
-                pass
-            await review.sandbox.patch_sandbox({"spec": {"wakeOnSend": wake_on_send}})
-            async with asyncio.timeout(10):
-                while True:
-                    frame = await _next_environment_frame(environment_events)
-                    if frame.WhichOneof("frame") != "upsert":
-                        continue
-                    environment = frame.upsert
-                    if environment.target.uid == review.sandbox.uid:
-                        break
-
-            assert environment.target.uid == review.sandbox.uid
-            assert environment.configuration.wake_on_send is wake_on_send
-            environment = await _get_environment(
-                browser, review.sandbox.namespace, review.sandbox.name, review.sandbox.uid
-            )
-            assert environment.configuration.wake_on_send is wake_on_send
-            assert retried["action_policy"]["synced"] is True
-            assert len(_get_action_policy_calls(review)) == 2
-
-
-async def test_live_action_policy_invalidates_on_policy_set_and_binding_events(
-    federation_review: FederationReview,
-) -> None:
-    review = federation_review
-    review.service.policy = _action_policy_response(synced=True)
-    async with (
-        httpx.AsyncClient(base_url=review.app.url, cookies=review.app.cookies, timeout=None) as browser,
-        _live_sandbox_stream(browser, review.sandbox.name, review.sandbox.uid) as events,
-    ):
-        event, initial = await _read_sse_event(events)
-        assert event == "snapshot"
-        assert initial["action_policy"]["synced"] is True
-        assert len(_get_action_policy_calls(review)) == 1
-
-        # A stream skips a frame identical to its last one, so each re-read answers differently.
-        review.service.policy = _action_policy_response(synced=False)
-        sandbox = await review.sandbox.sandbox()
-        group, version = sandbox["apiVersion"].split("/", maxsplit=1)
-        await review.sandbox.custom_objects.create_namespaced_custom_object(
-            group,
-            version,
-            review.sandbox.namespace,
-            "policysets",
-            {
-                "apiVersion": sandbox["apiVersion"],
-                "kind": "PolicySet",
-                "metadata": {"name": "live-action-policy"},
-                "spec": {
-                    "rules": [
-                        {
-                            "type": "action_auto_approve",
-                            "policy": {"type": "exact_actions", "actions": {"test": ["read"]}},
-                        }
-                    ]
-                },
-            },
-        )
-        event, after_set = await _read_sse_event(events)
-        assert event == "snapshot"
-        assert after_set["action_policy"]["synced"] is False
-        assert len(_get_action_policy_calls(review)) == 2
-
-        review.service.policy = _action_policy_response(synced=True)
-
-        await review.sandbox.custom_objects.create_namespaced_custom_object(
-            group,
-            version,
-            review.sandbox.namespace,
-            "policybindings",
-            {
-                "apiVersion": sandbox["apiVersion"],
-                "kind": "PolicyBinding",
-                "metadata": {"name": "live-action-binding"},
-                "spec": {
-                    "subject": {"namespace": review.sandbox.namespace, "name": review.sandbox.name},
-                    "policySets": ["live-action-policy"],
-                },
-            },
-        )
-        event, after_binding = await _read_sse_event(events)
-        assert event == "snapshot"
-        assert after_binding["action_policy"]["synced"] is True
-        assert len(_get_action_policy_calls(review)) == 3
-
-
-async def test_live_action_policy_is_scoped_to_each_sandbox_service_account(
-    federation_review: FederationReview,
-) -> None:
-    review = federation_review
-    namespace = review.sandbox.namespace
-    first_name = review.sandbox.name
-    second_name = "other-runner"
-    review.service.policy = _action_policy_response(synced=True)
-    review.service.policy_by_subject[(namespace, second_name)] = _action_policy_response(synced=False)
-    sandbox = await review.sandbox.sandbox()
-    group, version = sandbox["apiVersion"].split("/", maxsplit=1)
-    second_sandbox = await review.sandbox.custom_objects.create_namespaced_custom_object(
-        group,
-        version,
-        namespace,
-        "sandboxes",
-        {
-            "apiVersion": sandbox["apiVersion"],
-            "kind": "Sandbox",
-            "metadata": {"name": second_name},
-            "spec": {"template": "test-template", "running": True},
-        },
-    )
-    await k8s_client.CoreV1Api(review.sandbox.server.api).create_namespaced_service_account(
-        namespace,
-        k8s_client.V1ServiceAccount(
-            metadata=k8s_client.V1ObjectMeta(
-                name=second_name,
-                owner_references=[
-                    k8s_client.V1OwnerReference(
-                        api_version=sandbox["apiVersion"],
-                        kind="Sandbox",
-                        name=second_name,
-                        uid=second_sandbox["metadata"]["uid"],
-                        controller=True,
-                    )
-                ],
-            )
-        ),
-    )
-
-    async with httpx.AsyncClient(base_url=review.app.url, cookies=review.app.cookies, timeout=None) as browser:
-        async with _live_sandbox_stream(browser, first_name, review.sandbox.uid) as events:
-            event, first = await _read_sse_event(events)
-            assert event == "snapshot"
-            first_environment = await _get_environment(browser, namespace, first_name, first["sandbox_uid"])
-            assert first_environment.execution_account.account.name == first_name
-            assert first_environment.execution_account.account.namespace == namespace
-            assert first_environment.execution_account.uid
-            assert first["action_policy"]["synced"] is True
-
-        async with _live_sandbox_stream(browser, second_name, second_sandbox["metadata"]["uid"]) as events:
-            while True:
-                event, second = await _read_sse_event(events)
-                assert event == "snapshot"
-                if second.get("sandbox_uid"):
-                    break
-            second_environment = await _get_environment(browser, namespace, second_name, second["sandbox_uid"])
-            assert second_environment.execution_account.account.name == second_name
-            assert second_environment.execution_account.account.namespace == namespace
-            assert second_environment.execution_account.uid
-            assert second["action_policy"]["synced"] is False
-
-    assert _action_policy_subjects(review) == [(namespace, first_name), (namespace, second_name)]
+            frame = ParseDict(json.loads(await anext(lines))["result"], action_service_pb2.GetActionPolicyResponse())
+        assert frame == changed
+        calls = [call for call in review.service.calls if call.method == "WatchActionPolicy"]
+        assert len(calls) == 1
+        assert calls[0].bearer_token
+        assert calls[0].bearer_token.startswith("Bearer ")
+        assert calls[0].request == action_service_pb2.GetActionPolicyRequest(subject=initial.action_policy.subject)
+        assert not any(call.method == "GetActionPolicy" for call in review.service.calls)
+    async with asyncio.timeout(10):
+        await review.service.policy_watch_cancelled.wait()
 
 
 if __name__ == "__main__":

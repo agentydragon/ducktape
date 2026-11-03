@@ -344,8 +344,8 @@ ts_library(
         "//agentplane/app/frontend:stream_reader",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:watch_stream",
-        "//agentplane/app/frontend/actions:action_client",
         "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/proto:identity_pb",
     ],
 )
 

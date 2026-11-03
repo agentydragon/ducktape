@@ -241,13 +241,6 @@ func run(ctx context.Context, config Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Action Service gRPC client: %w", err)
 	}
-	actionConn, err := grpc.NewClient(actionTarget,
-		observability.GRPCClientOption(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return fmt.Errorf("configure Action Service gRPC client: %w", err)
-	}
-	defer actionConn.Close()
-	actionClient := actionpb.NewActionServiceClient(actionConn)
 	facadeContext, stopFacades := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacades()
 	actionFacade, err := facade.NewHandler(
@@ -348,15 +341,14 @@ func run(ctx context.Context, config Config) error {
 	if err := RegisterThreadReadRoutes(server, config.SandboxNamespace, threadStore, history, environments, runner); err != nil {
 		return fmt.Errorf("register Thread routes: %w", err)
 	}
-	RegisterOperatorRoutes(server, policies, federator, actionClient, actionCallbackHTTP, config.ActionFederation.ServiceURL)
+	RegisterOperatorRoutes(server, policies, actionCallbackHTTP, config.ActionFederation.ServiceURL)
 	RegisterStatusRoutes(server, serviceStatus)
 	server.RegisterRawRoute("POST /telemetry/v1/traces", traceRelayHandler(), true)
 	RegisterStreamingRoutes(server, StreamingDependencies{
 		Auth: appAuth, Updates: wakeupHub, UpdatesConnected: wakeupHub.Connected,
 		SandboxNamespace: config.SandboxNamespace, Live: liveIndex, Sandboxes: environments, Threads: threadStore, History: history, HistoryFollower: historyReaderClient,
-		ActionPolicy: actionClient, Federator: federator,
-		ActionServiceURL: config.ActionFederation.ServiceURL,
-		DispatcherHTTP:   dispatcherGateway, EnvironmentHTTP: dispatcherGateway,
+		Federator:      federator,
+		DispatcherHTTP: dispatcherGateway, EnvironmentHTTP: dispatcherGateway,
 		ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
 		HistoryHTTP: historyGateway, NotificationHTTP: notificationGateway,
 		Notifications:    notifications_operatorpb.NewNotificationsOperatorClient(notificationConn),

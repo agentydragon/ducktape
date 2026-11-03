@@ -27,7 +27,6 @@ ts_library(
     deps = [
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:schema",
-        "//agentplane/app/frontend/actions:action_client",
     ],
 )
 

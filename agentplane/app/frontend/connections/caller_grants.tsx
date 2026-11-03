@@ -1,7 +1,7 @@
 import { Alert, Button, Group, Stack, Text, Title } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import { ActionPolicySection } from "../actions/policy";
+import { ActionPolicyWatch } from "../actions/policy";
 import { BINDING_GRANT_HELP, BindingsTable } from "../bindings/table";
 import { type CallerServiceAccount, serviceAccountKey, type CallerGrantReader, type CallerGrantView } from "./models";
 import { displayableError } from "../client";
@@ -60,9 +60,9 @@ export function CallerGrants({
             <HelpTooltip topic="Bindings" description={BINDING_GRANT_HELP} />
           </Group>
           <BindingsTable bindings={view.bindings} onRevoke={null} />
-          <ActionPolicySection policy={view.action_policy} />
         </>
       )}
+      <ActionPolicyWatch subject={account} />
     </Stack>
   );
 }

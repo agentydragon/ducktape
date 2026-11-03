@@ -25,7 +25,6 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.action_service import action_service_pb2, operator_action_service_pb2
 from agentplane.action_service.policies.resources import ACTION_RULE_TYPE, ACTIONS_READY_CONDITION
 from agentplane.app.testing.client import Client
-from agentplane.app.testing.models import ActionPolicyView, CallerGrantView
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
@@ -559,10 +558,15 @@ async def _wait_unbound(
             reraise=True,
         ):
             with attempt:
-                response = await operator_bff.get(f"/caller-grants/{account.namespace}/{account.name}")
+                response = await operator_bff.get(
+                    "/upstream/actions/v1/action-policy",
+                    params={"subject.namespace": account.namespace, "subject.name": account.name},
+                )
                 assert response.status_code == HTTPStatus.OK, response.text
-                policy = CallerGrantView.model_validate(response.json()).action_policy
-                if not isinstance(policy, ActionPolicyView) or not policy.synced:
+                policy = json_format.ParseDict(
+                    response.json(), action_service_pb2.GetActionPolicyResponse()
+                ).action_policy
+                if not policy.synced:
                     raise PolicyBindingPresentError(f"{account}: Action policy not synced: {policy}")
                 if binding_name in {effective.binding for effective in policy.auto_approve_if}:
                     raise PolicyBindingPresentError(f"{account} still resolves {binding_name}")

@@ -49,7 +49,6 @@ const live = vi.hoisted(
         thread_snapshot_uid: null as string | null,
         threads: [] as ThreadView[] | { kind: "unavailable"; code: string },
         bindings: [],
-        action_policy: null,
         updates_connected: true as boolean,
         watch: { healthy: true, failing: {} },
       },

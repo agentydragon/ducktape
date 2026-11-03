@@ -12,13 +12,11 @@ import { useStreamStatus } from "../stream_status";
 
 import { type Live, type WatchHealth } from "../live";
 
-import type { ActionPolicyUnavailable, ActionPolicyView } from "../actions/client";
 import type { BindingView, Decision } from "./client";
 
 export type SandboxPolicySnapshot = {
   sandbox_uid: string | null;
   bindings: BindingView[];
-  action_policy: ActionPolicyView | ActionPolicyUnavailable | null;
   watch: WatchHealth;
 };
 export type DecisionsSnapshot = { watching: boolean; decisions: Decision[] | { detail: string } };

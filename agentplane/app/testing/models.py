@@ -9,7 +9,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from agentplane.action_service.policy_view import EffectivePolicyView
 from agentplane.egress.decisions import Decision
 from agentplane.egress.resources import Target
 from agentplane.env.runtime.harness import Harness
@@ -193,32 +192,7 @@ class SubsetRequest(BaseModel):
     limit: int | None = None
 
 
-class ActionPolicyView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    synced: bool
-    auto_approve_if: list[EffectivePolicyView]
-
-
-class ActionUpstreamFailure(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    method: str
-    url: str
-    upstream_status: int | None
-    error_type: str
-
-
-class ActionPolicyUnavailable(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    kind: Literal["unavailable"]
-    code: str
-    upstream: ActionUpstreamFailure | None = None
-
-
 class CallerGrantView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     bindings: list[BindingView]
-    action_policy: ActionPolicyView | ActionPolicyUnavailable

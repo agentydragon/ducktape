@@ -17,7 +17,8 @@ import {
   UNANSWERED,
 } from "./network";
 import type { ThreadView } from "../schema";
-import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
+import type { ActionGroupView, ActionRequestView } from "../actions/client";
+import { GetActionPolicyResponseSchema } from "../../../action_service/action_service_pb";
 import type { BindingView, Decision, PolicySetView } from "../sandboxes/client";
 import { decisionFixture, type DecisionFixture } from "../sandboxes/decision_fixture";
 import type { DecisionsSnapshot, SandboxPolicySnapshot } from "../sandboxes/live";
@@ -497,50 +498,55 @@ const BINDINGS: BindingView[] = [
 ];
 
 /** What the Action Service auto-decides for ready-sandbox, from the sets those bindings name. */
-const ACTION_POLICY: ActionPolicyView = {
-  synced: true,
-  auto_approve_if: [
-    {
-      binding: "ready-sandbox-k2m9x",
-      policy_set: "test-coder",
-      source: "rules",
-      index: 0,
-      policy: { type: "exact_actions", actions: { github: ["get_file_contents", "list_commits", "search_code"] } },
-    },
-    {
-      binding: "ready-sandbox-k2m9x",
-      policy_set: "test-coder",
-      source: "rules",
-      index: 1,
-      policy: {
-        type: "argument_schema",
-        actions: { github: ["create_issue"] },
-        argument_schema: {
-          properties: { owner: { const: "harness-owner" }, repo: { const: "harness-repo" } },
-          required: ["owner", "repo"],
+function actionPolicy(namespace: string, name: string) {
+  const policy = (binding: string, policySet: string, index: number, actionNames: string[]) => ({
+    binding,
+    policySet,
+    index,
+    policy: { kind: { case: "exactActions" as const, value: { actions: { github: { values: actionNames } } } } },
+  });
+  return create(GetActionPolicyResponseSchema, {
+    actionPolicy: {
+      subject: { namespace, name },
+      synced: true,
+      autoApproveIf: [
+        policy("ready-sandbox-k2m9x", "test-coder", 0, ["get_file_contents", "list_commits", "search_code"]),
+        {
+          binding: "ready-sandbox-k2m9x",
+          policySet: "test-coder",
+          index: 1,
+          policy: {
+            kind: {
+              case: "argumentSchema",
+              value: {
+                actions: { github: { values: ["create_issue"] } },
+                argumentSchema: {
+                  properties: { owner: { const: "harness-owner" }, repo: { const: "harness-repo" } },
+                  required: ["owner", "repo"],
+                },
+              },
+            },
+          },
         },
-      },
+        policy("ready-sandbox-k2m9x", "harness-reviews", 0, ["pull_request_read", "list_pull_requests"]),
+        {
+          binding: "ready-sandbox-push-afternoon",
+          policySet: "harness-push",
+          index: 0,
+          policy: {
+            kind: {
+              case: "argumentSchema",
+              value: {
+                actions: { github: { values: ["push_files"] } },
+                argumentSchema: { properties: { branch: { pattern: "^harness/" } }, required: ["branch"] },
+              },
+            },
+          },
+        },
+      ],
     },
-    {
-      binding: "ready-sandbox-k2m9x",
-      policy_set: "harness-reviews",
-      source: "rules",
-      index: 0,
-      policy: { type: "exact_actions", actions: { github: ["pull_request_read", "list_pull_requests"] } },
-    },
-    {
-      binding: "ready-sandbox-push-afternoon",
-      policy_set: "harness-push",
-      source: "rules",
-      index: 0,
-      policy: {
-        type: "argument_schema",
-        actions: { github: ["push_files"] },
-        argument_schema: { properties: { branch: { pattern: "^harness/" } }, required: ["branch"] },
-      },
-    },
-  ],
-};
+  });
+}
 
 const GITHUB_ADMITTED = {
   host: "api.github.com",
@@ -2806,7 +2812,6 @@ routes.push(
         ...binding,
         subjects: [{ namespace: match[1], name: match[2] }],
       })),
-      action_policy: ACTION_POLICY,
     }),
   ],
   [
@@ -3492,7 +3497,6 @@ function liveEvents(url: URL): ServerSentEvent[] {
     const snapshot: SandboxPolicySnapshot = {
       sandbox_uid: SANDBOXES.find((row) => row.target?.name === decodeURIComponent(sandbox))?.target?.uid ?? null,
       bindings: BINDINGS,
-      action_policy: ACTION_POLICY,
       watch: watch(),
     };
     return [{ event: "snapshot", data: snapshot }];
@@ -3588,6 +3592,20 @@ routes.unshift([
 ]);
 
 routes.unshift(
+  [
+    "GET",
+    /^\/upstream\/actions\/v1\/action-policy:watch$/,
+    (_match, query, signal) =>
+      ndjsonWatch(
+        [
+          toJson(
+            GetActionPolicyResponseSchema,
+            actionPolicy(query.get("subject.namespace") ?? "", query.get("subject.name") ?? "")
+          ),
+        ],
+        signal
+      ),
+  ],
   [
     "GET",
     /^\/upstream\/app\/v1\/threads:watch$/,

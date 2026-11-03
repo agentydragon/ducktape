@@ -439,7 +439,7 @@ repository. A set has no deny form: no match leaves the request for a human. The
 
 The Go integration app reads PolicySet inventory from Kubernetes through its
 [`policyaccess` package](../app/go/policyaccess/policyaccess.go). Its effective action-policy view comes
-from the Action Service's `GetActionPolicy` response and is projected by the app in Go. The Python
+from the Action Service's generated `WatchActionPolicy` response. The Python
 `policies/resources` parser remains in cdk8s policy authoring and Python test support; Python Pydantic
 models are used by test clients, not by the app runtime. Policy resolution and admission remain in the
 Go informer and provider. Staging's network policy admits `api.github.com:443` for the Go provider's
