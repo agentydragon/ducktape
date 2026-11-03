@@ -427,18 +427,30 @@ An original, non-exported simple variable declarator may also close those
 coverage domains for a direct bare `new Map()` or `new Set()` with exactly zero
 arguments. The original AST and lowered `New` site must identify the same
 constructor, and the dedicated root initializer transfer must actually select
-the matching native Construct/Fresh/Never row with no writes or invocations.
-Its exact identity premise comes from the existing intact intrinsic census or
-an accepted exact-site `map_empty` / `set_empty` input. The transfer result
-stays `Top`: it proves successful initialization of this owner, not a Map or
-Set identity, contents, prototype, or method behavior. The global constructor
-read and lexical binding write remain projected. The constructor's internal
-fresh allocation has no separately modeled effect cell; its identity becomes
-available only at the binding write, and later observations remain opaque or
-need their own existing proof. Existing direct-NewTarget and fixed-prototype
-boundaries still apply. Arguments (including `[]` and `undefined`), spread,
-aliases, qualified constructors, sequence/assignment wrappers, shadowed or
-replaced globals, and other constructor shapes remain uncovered.
+the matching native Construct/Fresh/Never row with no present coercions,
+writes or invocations. Its exact identity premise comes from the existing intact
+intrinsic census or an accepted exact-site `map_empty` / `set_empty` input.
+The transfer result stays `Top`: it proves successful initialization of this
+owner, not a Map or Set identity, contents, prototype, or method behavior. The
+global constructor read and lexical binding write remain projected. The
+constructor's internal fresh allocation has no separately modeled effect cell;
+its identity becomes available only at the binding write, and later
+observations remain opaque or need their own existing proof. Existing direct-
+NewTarget and fixed-prototype boundaries still apply.
+
+The same root-owner certificate admits a direct zero-argument
+`new TextEncoder()` when its exact Construct/Unknown/Never row is selected with
+no coercions, writes, invocations, or mutations. Identity must come from the
+intact TextEncoder census or the accepted exact-site `text_encoder_empty`
+input. The successful result remains `Top`; the certificate does not establish
+an ordinary-object shape, TextEncoder identity, methods, prototype behavior,
+or later property reads. The platform object's allocation has no separate
+effect cell, and its identity becomes available only at the binding write.
+Later observations remain opaque or need their own existing proof.
+
+Arguments (including `[]` and `undefined`), spread, aliases, qualified
+constructors, sequence/assignment wrappers, shadowed or replaced globals, and
+other constructor shapes remain uncovered.
 
 A command that combines a saved graph with current spec or source checks the
 recorded baseline before reading claims or writing edits. It refuses changed,
