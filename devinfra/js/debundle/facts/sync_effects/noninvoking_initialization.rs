@@ -298,10 +298,16 @@ fn inert_class_declaration(declaration: &ClassDecl) -> bool {
 /// Static data fields and dense array elements use CreateDataProperty, without
 /// invoking receiver accessors. Retain every declarative-cell read, including
 /// overwritten duplicate fields. No value-kind or heap-locality premise is needed.
+/// `void` and logical-not are also safe around this same input subset: neither
+/// operation invokes user code while evaluating its operand. Their operands
+/// still contribute every lexical read and nested allocation to the proof.
 fn allocation_inputs(expression: &Expr, reads: &mut BTreeSet<Id>) -> Option<()> {
     match expression.unwrap_parens() {
         Expr::Ident(binding) => {
             reads.insert(binding.to_id());
+        }
+        Expr::Unary(unary) if matches!(unary.op, UnaryOp::Void | UnaryOp::Bang) => {
+            allocation_inputs(&unary.arg, reads)?;
         }
         Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_)) => {}
         Expr::Object(record) => {

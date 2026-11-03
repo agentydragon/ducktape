@@ -368,16 +368,19 @@ function/arrow creation, a read of an initialized module-local binding, a
 regular-expression literal, or a static ordinary record or dense array literal.
 Record values and array elements may be primitive literals, initialized
 module-local binding reads, or nested records and dense arrays in the same
-subset.
+subset; `void` and logical-not expressions may wrap those values recursively.
 Identifier and string data keys and shorthand fields are supported; array
 holes, computed keys, spreads, accessors, methods, colon-form `__proto__`, and
-other value expressions remain uncovered. Creating these own data fields invokes no
-receiver getter, setter, coercion or callable body. Array creation does not
-consult the global `Array` binding or iterate the element values. Every source
-binding read,
-including one in an overwritten duplicate field, must already be initialized
-before the root transfer. No additional heap privacy or native-slot premise
-is used. Allocation effects remain in the report.
+other value expressions remain uncovered. Creating these own data fields
+invokes no receiver getter, setter, user-defined coercion or callable body.
+The only admitted unary operators are non-invoking: `void` discards its
+evaluated operand, while `!` applies JavaScript's non-invoking `ToBoolean`.
+All operand binding reads remain subject to the initialized-local check. Array
+creation does not consult the global `Array` binding or iterate the element
+values. Every source binding read, including one in an overwritten duplicate
+field, must already be initialized before the root transfer. No additional
+heap privacy or native-slot premise is used. Allocation effects remain in the
+report.
 For a regular-expression literal, ECMA-262 §13.2.7 validates the pattern and
 flags as an early error and evaluates a valid literal through `RegExpCreate`
 with source-derived strings. That operation does not resolve or call a mutable
