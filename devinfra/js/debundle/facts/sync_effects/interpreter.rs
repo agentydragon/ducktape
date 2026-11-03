@@ -10925,7 +10925,10 @@ impl Executor<'_, '_> {
         };
         // Authoring admission requires one simple initialized declarator in
         // this canonical source unit, including split comma-list declarations.
-        if fact.kind != StatementKind::VarDecl || fact.declared.len() != 1 {
+        if fact.kind != StatementKind::VarDecl
+            || fact.declared.len() != 1
+            || (fact.var_declared.contains(binding) && !fact.var_initializers.contains(binding))
+        {
             return;
         }
         let observed_reads: BTreeSet<String> = effects
