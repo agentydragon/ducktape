@@ -147,6 +147,25 @@ def _archive_json(archive: tarfile.TarFile, name: str, value: object) -> None:
     archive.addfile(entry, io.BytesIO(encoded))
 
 
+def _prepare_private_cgroups() -> None:
+    """Delegate the Docker action's own cgroup subtree to its nested kubelet."""
+    root = Path("/sys/fs/cgroup")
+    if not os.statvfs(root).f_flag & os.ST_RDONLY:
+        return
+    if not Path("/.dockerenv").exists() or Path("/proc/self/cgroup").read_text().strip() != "0::/":
+        raise RuntimeError("refusing to remount cgroups outside a private Docker cgroup namespace")
+    run("mount", "-o", "remount,rw", str(root))
+    # Like kind's entrypoint, move existing processes out before enabling child controllers.
+    # https://github.com/kubernetes-sigs/kind/blob/main/images/base/files/usr/local/bin/entrypoint
+    init = root / "init"
+    init.mkdir(exist_ok=True)
+    for pid in (root / "cgroup.procs").read_text().split():
+        with contextlib.suppress(ProcessLookupError):
+            (init / "cgroup.procs").write_text(pid)
+    controllers = (root / "cgroup.controllers").read_text().split()
+    (root / "cgroup.subtree_control").write_text(" ".join(f"+{controller}" for controller in controllers))
+
+
 def node_ip() -> str:
     """The address Pods use to reach host-side processes: the apiserver, the cluster DNS, a test's
     scripted model."""
@@ -185,6 +204,8 @@ class K3s:
 
     @tracer.start_as_current_span("system_test.k3s.start")
     def start(self, *, layers_in_memory: bool, detached: bool = False) -> subprocess.Popen[bytes]:
+        if os.environ.get("AGENTPLANE_K3S_REQUIRE_KVM") == "1":
+            _prepare_private_cgroups()
         _reset_previous_stack(self.data_dir)
         _shadow_kernel_sysctls()
         # Unpacking image layers is bound by writes to the executor's disk. The tmpfs default cap, half of
