@@ -199,11 +199,26 @@ retained `SequencedCause` plus the endpoints' recorded effect summaries
 (`graph/build.rs::premise_verdict`): a cell relation, a shared `var`, a shared
 written cell, or a binding timeline, shared-`var` access or uninitialized
 observation between two observed effects contradicts the premise and fails the
-build; a pair with no inertable edge is unused and fails the build. The
+build; a pair with no inertable edge after preservation is unused and fails the build. The
 premise therefore covers only orderings the analysis emitted because an
 endpoint's effects were not summarizable (barrier relations of `cell_order`, a
 `strict_chain` edge with an opaque endpoint, a binding-ordering edge with an
-assumed effect) and never `eager_use`, rebind or co-location edges.
+assumed effect), or a preserved path through such an ordering, and never
+`eager_use`, rebind or co-location edges.
+
+Compacted timelines and the strict S-chain rely on transitive ordering. Merely
+deleting a pair's edge can lose an order between different endpoints. After
+marking the asserted pairs, graph build composes each inert edge with its
+incoming and outgoing ordering neighbors, retaining those endpoint pairs as
+`SequencedCause::PreservedOrder`. It repeats for new edges, marks a new edge
+inert only if its own endpoints have an assertion, and deduplicates ordered
+pairs. Thus every added edge has an original ordering path as a witness, and
+every original path between an unasserted pair remains an active path. The
+closure composes only through inert edges; it does not materialize the graph's
+whole transitive closure. Only `eager_use` and `sequenced` edges participate:
+rebind, local-effect and co-location edges require a shared destination but do
+not order statements inside that destination. All gates and saved-graph
+queries consume the same retained constraints and provenance.
 
 Binding-ordering causes carry each endpoint effect's `EffectProvenance`. In
 the interpreter a conservative path runs under `ExecutionState::assumption`

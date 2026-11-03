@@ -138,6 +138,13 @@ pub enum SequencedCause {
     /// order. Both endpoints are `Purity::NotPure`; the reasons live on
     /// the source-unit nodes.
     StrictChain,
+    /// An ordering path through `via` used an edge made inert by the named
+    /// premise. Preserve the path's other endpoint ordering: the premise
+    /// certifies only its selected pair, not a swap with a third statement.
+    PreservedOrder {
+        via: SourceUnitOrdinal,
+        commuting_premise: CommutingStatementsRef,
+    },
     /// Consecutive at-init accesses (initializer, eager read or eager
     /// rebind) of a binding declared at several `var` sites. The cell is
     /// hoisted, so the accesses keep source order even when every access
@@ -409,6 +416,14 @@ impl fmt::Display for SequencedCause {
             Self::StrictChain => {
                 f.write_str("strict S-chain: source is the next impure statement after target")
             }
+            Self::PreservedOrder {
+                via,
+                commuting_premise,
+            } => write!(
+                f,
+                "preserved ordering through source unit #{} after {}.commuting_statements[{}]",
+                via.0, commuting_premise.defining_chunk, commuting_premise.input_index
+            ),
             Self::SharedVarAccess {
                 binding,
                 source,

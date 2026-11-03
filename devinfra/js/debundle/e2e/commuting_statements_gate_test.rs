@@ -14,7 +14,7 @@
 //!   unused.
 
 use analysis::analysis_inputs::CommutingStatementsRef;
-use analysis::{DepKind, DependencyGraphReport};
+use analysis::{DepKind, DependencyGraphReport, SequencedCause};
 use debundle_e2e_support::*;
 
 /// `globalThis.record` is a callable the analysis cannot see into, so every
@@ -149,6 +149,124 @@ fn sequenced_only_cycle_is_cleared_by_the_asserted_pair() {
     assert_eq!(entry.a, beta);
     assert_eq!(entry.b, gamma);
     assert!(entry.spec_location.contains(ENTRY), "{entry:?}");
+}
+
+fn heap_frontier_split(
+    source: &'static str,
+    observer_members: &[&'static str],
+    mutator_members: &[&'static str],
+    pairs: Vec<CommutingStatementsContract>,
+) -> FixtureOpts<'static> {
+    let observer_members: Vec<_> = observer_members
+        .iter()
+        .map(|name| Member::new(name))
+        .collect();
+    let mutator_members: Vec<_> = mutator_members
+        .iter()
+        .map(|name| Member::new(name))
+        .collect();
+    FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "provider",
+                &[
+                    Member::new("store"),
+                    Member::new("read"),
+                    Member::new("write"),
+                    Member::new("noop"),
+                ],
+            ),
+            logical_module("observer", &observer_members),
+            logical_module("mutator", &mutator_members),
+        ],
+    )
+    .with_unassigned_mode(unassigned_mode_inline())
+    .with_dataflow_aware_s_chain()
+    .with_trusted_dataflow_summaries()
+    .with_commuting_statements("static/app", pairs)
+}
+
+/// Commuting an observer past a no-op must not move it past the later writer
+/// whose ordering was represented through the no-op's heap frontier.
+#[test]
+fn commuting_a_heap_frontier_preserves_third_statement_order() {
+    const SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst anchor = 0;\nconst gamma = read();\nconst beta = noop?.();\nconst alpha = write();\nconsole.log(gamma, beta, alpha, store.length);\n";
+    let fixture = run_fixture(heap_frontier_split(
+        SOURCE,
+        &["gamma"],
+        &["anchor", "beta", "alpha"],
+        vec![commuting_pair(
+            member_source_unit("mutator", "beta"),
+            member_source_unit("observer", "gamma"),
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "0 undefined undefined 1\n");
+    let graph = fixture.dependency_graph();
+    let alpha = source_unit_for_binding(&graph, "alpha");
+    let gamma = source_unit_for_binding(&graph, "gamma");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == alpha
+                && edge.target == gamma
+                && edge.constrains_init_order
+                && matches!(
+                    edge.sequenced_cause,
+                    Some(SequencedCause::PreservedOrder { .. })
+                )
+        }),
+        "{graph:#?}"
+    );
+}
+
+#[test]
+fn commuting_a_writer_past_a_frontier_preserves_the_earlier_observer() {
+    const SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst anchor = 0;\nconst gamma = read();\nconst beta = noop?.();\nconst alpha = write();\nconsole.log(gamma, beta, alpha, store.length);\n";
+    let fixture = run_fixture(heap_frontier_split(
+        SOURCE,
+        &["gamma", "beta"],
+        &["anchor", "alpha"],
+        vec![commuting_pair(
+            member_source_unit("mutator", "alpha"),
+            member_source_unit("observer", "beta"),
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "0 undefined undefined 1\n");
+}
+
+#[test]
+fn overlapping_heap_commutations_preserve_order_independently_of_spec_order() {
+    const SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst anchor = 0;\nconst gamma = read();\nconst beta = noop?.();\nconst delta = noop?.();\nconst alpha = write();\nconsole.log(gamma, beta, delta, alpha, store.length);\n";
+    let pairs = vec![
+        commuting_pair(
+            member_source_unit("mutator", "beta"),
+            member_source_unit("observer", "gamma"),
+        ),
+        commuting_pair(
+            member_source_unit("mutator", "delta"),
+            member_source_unit("mutator", "beta"),
+        ),
+        commuting_pair(
+            member_source_unit("mutator", "delta"),
+            member_source_unit("observer", "gamma"),
+        ),
+    ];
+    for pairs in [pairs.clone(), pairs.into_iter().rev().collect()] {
+        let fixture = run_fixture(heap_frontier_split(
+            SOURCE,
+            &["gamma"],
+            &["anchor", "beta", "delta", "alpha"],
+            pairs,
+        ));
+        assert_preserved_entry_output(&fixture, "0 undefined undefined undefined 1\n");
+        assert!(fixture.dependency_graph().edges.iter().any(|edge| {
+            edge.commuting_premise.is_some()
+                && matches!(
+                    edge.sequenced_cause,
+                    Some(SequencedCause::PreservedOrder { .. })
+                )
+        }));
+    }
 }
 
 /// Two summarized effects on disjoint cells under the strict S-chain are
