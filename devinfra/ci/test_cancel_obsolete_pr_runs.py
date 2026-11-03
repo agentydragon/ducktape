@@ -202,11 +202,9 @@ def test_transport_sends_one_post_without_polling(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr("devinfra.ci.cancel_obsolete_pr_runs.urlopen", fail)
     api = CancellationApi(repository=REPOSITORY, token="unused")
-    if code == 409:
+    with pytest.raises(HTTPError) as error:
         api.cancel(10)
-    else:
-        with pytest.raises(HTTPError):
-            api.cancel(10)
+    assert error.value.code == code
     assert len(calls) == 1
     assert calls[0].get_method() == "POST"
     assert calls[0].full_url == "https://api.github.com/repos/owner/repo/actions/runs/10/cancel"
@@ -266,6 +264,7 @@ def test_controller_uses_only_trusted_code_and_job_scoped_write_permission() -> 
     assert controller["permissions"] == {}
     job = controller["jobs"]["cancel-obsolete"]
     assert job["permissions"] == {"actions": "write", "contents": "read", "pull-requests": "read"}
+    assert job["timeout-minutes"] == "3"
     checkout, execute = job["steps"]
     assert checkout["uses"] == "actions/checkout@v7"
     assert checkout["with"] == {"ref": "${{ github.workflow_sha }}", "persist-credentials": "false"}

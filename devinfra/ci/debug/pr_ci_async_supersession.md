@@ -55,3 +55,19 @@ Validation of the initial candidate: changed-file pre-commit passed, and
 passed with the production library named explicitly for Ruff/mypy aspects
 ([invocation](https://app.buildbuddy.io/invocation/392d084f-c695-4db7-bd0b-fffea3d6d527)).
 This is source/test validation, not hosted controller or latency proof.
+
+Schema verification: the primary Octokit webhook
+[requested schema](https://github.com/octokit/webhooks/blob/aa80c24a3f55354465b8b1438d33dd5602956d0d/payload-schemas/api.github.com/workflow_run/requested.schema.json)
+uses the common
+[workflow-run schema](https://github.com/octokit/webhooks/blob/aa80c24a3f55354465b8b1438d33dd5602956d0d/payload-schemas/api.github.com/common/workflow-run.schema.json),
+which requires `path`, `repository`, `head_repository`, `run_attempt`, and
+`pull_requests`. Each associated PR requires head/base repository references.
+The primary requested example supplies these fields but has no associated PR;
+that case is intentionally ineligible. Empty/missing associations never authorize
+cancellation. A requested PR webhook from this repository remains a hosted proof
+boundary until the controller runs on the default branch.
+
+The controller job has a three-minute timeout. An HTTP 409 response to cancel is
+reported as Conflict and stops processing: the API does not establish from that
+status alone that a run finished. No cancellation POST is retried, including
+409 or an unknown transport outcome.

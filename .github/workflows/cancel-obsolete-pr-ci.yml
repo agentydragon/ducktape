@@ -14,6 +14,7 @@ jobs:
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.head_repository.id == github.event.repository.id
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     permissions:
       actions: write
       contents: read

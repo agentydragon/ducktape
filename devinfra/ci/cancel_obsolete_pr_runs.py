@@ -11,7 +11,6 @@ import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -129,15 +128,11 @@ class CancellationApi(GitHubApi):
                 "X-GitHub-Api-Version": "2022-11-28",
             },
         )
-        try:
-            with urlopen(request, timeout=30) as response:
-                if response.status != 202:
-                    raise RuntimeError(f"Unexpected cancellation response: HTTP {response.status}")
-        except HTTPError as error:
-            if error.code != 409:
-                raise
-            # An already-completed run can race our last status read.
-            print(f"Run {run_id} no longer accepts cancellation (HTTP 409)")
+        with urlopen(request, timeout=30) as response:
+            if response.status != 202:
+                raise RuntimeError(f"Unexpected cancellation response: HTTP {response.status}")
+        # HTTP errors, including 409 Conflict, propagate and stop processing.
+        # Conflict alone does not establish that the run has become terminal.
 
 
 def relevant_head(api: CancellationApi, trigger: Run) -> bool:
