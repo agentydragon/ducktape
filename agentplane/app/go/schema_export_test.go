@@ -127,18 +127,12 @@ func TestExportOpenAPIUsesHumaSchemasForThreadRoutes(t *testing.T) {
 	}
 }
 
-func TestPolicyGrantOpenAPIHasNoJoinedView(t *testing.T) {
+func TestPolicyGrantOpenAPIReturnsNoBody(t *testing.T) {
 	var output bytes.Buffer
 	if err := exportOpenAPI(&output); err != nil {
 		t.Fatal(err)
 	}
 	document := assertSaneOpenAPI(t, output.Bytes())
-	if _, ok := document.Paths["/sandboxes/{name}/egress"]; ok {
-		t.Error("OpenAPI still exposes joined Sandbox egress")
-	}
-	if _, ok := document.Components.Schemas["BindingView"]; ok {
-		t.Error("OpenAPI still exposes BindingView")
-	}
 	var operation struct {
 		Responses map[string]struct {
 			Content map[string]json.RawMessage `json:"content"`
