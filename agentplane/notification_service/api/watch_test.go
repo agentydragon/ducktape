@@ -1,14 +1,18 @@
 package api
 
 import (
+	"context"
 	"io"
 	"testing"
 	"time"
 
 	pb "github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 )
 
 type inboxWatch = grpc.ServerStreamingClient[pb.WatchInboxResponse]
@@ -156,4 +160,53 @@ func TestWorkloadWatchStopsWhenItsSandboxIsRecreated(t *testing.T) {
 	s.record(t, sub, 1)
 	_, err = stream.Recv()
 	requireCode(t, err, codes.NotFound)
+}
+
+type blockedSandboxLookup struct {
+	worker.Sandboxes
+	remaining int
+}
+
+func (r *blockedSandboxLookup) Get(ctx context.Context, name string) (sandboxreader.View, error) {
+	r.remaining--
+	if r.remaining == 0 {
+		<-ctx.Done()
+		return sandboxreader.View{}, ctx.Err()
+	}
+	return r.Sandboxes.Get(ctx, name)
+}
+
+func TestWorkloadWatchBoundsSandboxAuthorizationLookups(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		lookup    int
+		firstRead bool
+	}{
+		{name: "initial ownership", lookup: 1},
+		{name: "ownership recheck", lookup: 3, firstRead: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s := newServer(t, func(c *serverConfig) { c.requestTimeout = 100 * time.Millisecond })
+			sub := s.subscribe(t, "lookup-timeout")
+			s.notifications.sandboxes = &blockedSandboxLookup{Sandboxes: s.notifications.sandboxes, remaining: test.lookup}
+			// The client deadline bounds a broken service; a backend timeout must end the watch first.
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			defer cancel()
+			stream, err := s.client.WatchInbox(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+sandboxToken), &pb.WatchInboxRequest{SessionId: testSession})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.firstRead {
+				if first, err := stream.Recv(); err != nil || first.GetInbox() == nil {
+					t.Fatalf("initial = %v, %v", first, err)
+				}
+				s.record(t, sub, 1)
+			}
+			_, err = stream.Recv()
+			if ctx.Err() != nil {
+				t.Fatal("Sandbox authorization lookup outlived the backend timeout and reached the client deadline")
+			}
+			requireCode(t, err, codes.Unavailable)
+		})
+	}
 }
