@@ -150,6 +150,10 @@ Current behavior: [native Sessions](https://github.com/agentydragon/ducktape/blo
 
 Working direction: callers name a Session by one globally unique, unscoped public UUID. A durable Session directory resolves it to the current Session owner and a placement generation. The working direction is to back the directory and live Session records with the Dispatcher’s PostgreSQL database, separate from History’s database; the directory does not require a separate Deployment.
 
+The [app's Session opening lookup TODO](../app/TODO.md#session-opening-lookup) applies this direction:
+target the Session ID and use Session Dispatcher, rather than requiring a Sandbox-scoped app route.
+The existing Dispatcher opening lookup does not by itself implement the proposed Session directory.
+
 ```text
 public address:  session_id = UUID
 
