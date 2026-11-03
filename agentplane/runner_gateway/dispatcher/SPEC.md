@@ -103,3 +103,25 @@ when delivery state and reason are unchanged. An absent stored assessment reads 
 Automatic wake is assessed and requested through the shared lifecycle manager by the Gateway's
 in-process DeliveryWorker. The worker preserves the original effective caller and records the
 manager's typed assessment; see the lifecycle manager SPEC for its policy and mutation contract.
+
+## Deletion admission fence
+
+Once Dispatcher cleanup for an exact Sandbox UID commits, later `OpenSession` and queued-command
+admissions for that UID fail with `FAILED_PRECONDITION`, including privileged callers using an
+inventory snapshot read before cleanup. The durable UID tombstone survives removal of the opening,
+dispatch and ownership rows and process restart. An ownership claim cannot recreate the removed
+worker fence. A same-name environment with a different UID has independent admission.
+
+Admission transactions and cleanup serialize per Sandbox UID. Admission that commits first is
+included in cleanup; cleanup that commits first prevents admission. Existing terminal dispatch
+notifications remain in the cleanup transaction. This fence neither cancels already issued native
+effects nor replays them, and it does not delete native stores, sampler Sessions or retained History.
+
+Cleanup collects candidate UIDs from stored work absent from the synchronized inventory. It then
+confirms absence with a complete uncached Kubernetes API read, after fixing the candidate set: a
+new live environment omitted by the earlier snapshot cannot be permanently fenced. Failure to
+confirm absence aborts cleanup. This is not an atomic commit with Kubernetes deletion: if a removed environment has no stored work, a first admission
+using stale inventory can still commit before cleanup observes its row. The next reconciliation
+removes it and closes admission permanently. During a rolling upgrade, the fence applies only after
+all admitting/cleanup Gateway replicas use this protocol; the additive migration alone does not
+fence old writers.

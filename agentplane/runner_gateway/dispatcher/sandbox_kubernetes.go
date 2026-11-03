@@ -118,6 +118,23 @@ func (k *KubernetesSandboxes) ListSandboxes(ctx context.Context) ([]SandboxSnaps
 	return result, nil
 }
 
+// CurrentSandboxUIDs confirms cleanup candidates against the API server, never
+// the informer: an older list cannot justify a permanent deletion fence.
+func (k *KubernetesSandboxes) CurrentSandboxUIDs(ctx context.Context) (map[string]struct{}, error) {
+	var objects sandboxapi.SandboxList
+	if err := k.objects.List(ctx, &objects, client.InNamespace(k.namespace)); err != nil {
+		return nil, err
+	}
+	result := make(map[string]struct{}, len(objects.Items))
+	for _, object := range objects.Items {
+		if object.UID == "" {
+			return nil, errors.New("Sandbox has no UID")
+		}
+		result[string(object.UID)] = struct{}{}
+	}
+	return result, nil
+}
+
 func sandboxSnapshot(object *sandboxapi.Sandbox) (SandboxSnapshot, error) {
 	if object.Name == "" || object.UID == "" {
 		return SandboxSnapshot{}, errors.New("Sandbox has no name or UID")

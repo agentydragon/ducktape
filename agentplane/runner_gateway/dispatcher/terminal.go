@@ -66,10 +66,17 @@ func terminalPayloads(event TerminalEvent) ([]string, error) {
 
 // EndSandbox makes terminal snapshots visible to active Watch streams in the
 // same transaction that removes the deleted Sandbox rows. No queue row can be
-// retained as an address to a Sandbox UID that no longer exists.
+// retained as an address to a Sandbox UID that no longer exists. The tombstone
+// survives queue cleanup and prevents later admission against stale inventory.
 func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]TerminalEvent, error) {
 	var events []TerminalEvent
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "sandbox:"+sandboxUID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "INSERT INTO deleted_sandbox (sandbox_uid) VALUES ($1) ON CONFLICT DO NOTHING", sandboxUID); err != nil {
+			return err
+		}
 		// Match worker settlement's lock order: ownership row before delivery rows.
 		var generation int64
 		err := tx.QueryRowContext(ctx, `SELECT generation FROM sandbox_ownership WHERE sandbox_uid=$1 FOR UPDATE`, sandboxUID).Scan(&generation)

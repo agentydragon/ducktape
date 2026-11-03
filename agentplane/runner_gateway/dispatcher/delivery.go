@@ -34,6 +34,9 @@ type retryState struct {
 type SandboxCatalog interface {
 	SandboxReader
 	ListSandboxes(context.Context) ([]SandboxSnapshot, error)
+	// CurrentSandboxUIDs performs an uncached, complete API read. Call it after
+	// collecting stored deletion candidates; cached absence cannot authorize cleanup.
+	CurrentSandboxUIDs(context.Context) (map[string]struct{}, error)
 	Changes() <-chan struct{}
 	WaitSynced(context.Context) bool
 }
@@ -185,10 +188,24 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 	if err != nil {
 		return err
 	}
+	var candidates []string
 	for uid := range storedUID {
 		if _, live := liveUID[uid]; !live {
-			if _, err := w.Store.EndSandbox(ctx, uid); err != nil {
-				return err
+			candidates = append(candidates, uid)
+		}
+	}
+	if len(candidates) > 0 {
+		// A new environment can appear after the cached scan but before its opening
+		// reaches PostgreSQL. Confirm absence only after freezing that candidate set.
+		currentUIDs, err := w.Catalog.CurrentSandboxUIDs(ctx)
+		if err != nil {
+			return err
+		}
+		for _, uid := range candidates {
+			if _, live := currentUIDs[uid]; !live {
+				if _, err := w.Store.EndSandbox(ctx, uid); err != nil {
+					return err
+				}
 			}
 		}
 	}

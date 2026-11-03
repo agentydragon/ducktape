@@ -139,12 +139,19 @@ func (r *rejectingRunner) Deliver(_ context.Context, _ SandboxSnapshot, _ string
 
 func testStore(t *testing.T, cap int) *Store {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.URL)
+	store, _ := testStoreWithURL(t, cap)
+	return store
+}
+
+func testStoreWithURL(t *testing.T, cap int) (*Store, string) {
+	t.Helper()
+	databaseURL := integrationDatabase.Clone(t)
+	db, err := sql.Open("postgres", databaseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	return NewStore(db, cap)
+	return NewStore(db, cap), databaseURL
 }
 
 func input(id, value string) *commandpb.Command {
@@ -649,7 +656,7 @@ func TestOnlyRunnerAdmissionRecordsAdmission(t *testing.T) {
 
 func TestDeletedSandboxBroadcastsTerminalRowsBeforeDeletingThem(t *testing.T) {
 	ctx := context.Background()
-	store := testStore(t, 3)
+	store, databaseURL := testStoreWithURL(t, 3)
 	uid := "00000000-0000-4000-8000-000000000099"
 	if _, err := store.Enqueue(ctx, "session-deleted", "sandbox-deleted", uid, input("deleted-queued", "q"), nil); err != nil {
 		t.Fatal(err)
@@ -668,7 +675,7 @@ func TestDeletedSandboxBroadcastsTerminalRowsBeforeDeletingThem(t *testing.T) {
 	// the rows are deleted in the same transaction and cannot be read afterward.
 	subscribers := make([]*watchSubscription, 0, 2)
 	for replica := range 2 {
-		hub := NewWatchHub(integrationDatabase.URL)
+		hub := NewWatchHub(databaseURL)
 		listenContext, cancel := context.WithCancel(ctx)
 		ended := make(chan error, 1)
 		go func() { ended <- hub.Run(listenContext) }()
@@ -884,7 +891,7 @@ func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
 
 func TestWatchDispatchesPublishesWakeOnlyReceiptChanges(t *testing.T) {
 	base := admitted(t)
-	store := testStore(t, 3)
+	store, databaseURL := testStoreWithURL(t, 3)
 	uid := uuid.NewString()
 	dispatch, err := store.Enqueue(base, "watch-wake-session", "sandbox-wake-watch", uid,
 		input("watch-wake-command", "hello"), nil)
@@ -895,7 +902,7 @@ func TestWatchDispatchesPublishesWakeOnlyReceiptChanges(t *testing.T) {
 	if err != nil || owner == nil {
 		t.Fatalf("claim Sandbox owner: %+v %v", owner, err)
 	}
-	hub := NewWatchHub(integrationDatabase.URL)
+	hub := NewWatchHub(databaseURL)
 	listenerCtx, cancelListener := context.WithCancel(context.Background())
 	listenerDone := make(chan error, 1)
 	go func() { listenerDone <- hub.Run(listenerCtx) }()
@@ -978,12 +985,11 @@ func TestWatchDispatchesPublishesWakeOnlyReceiptChanges(t *testing.T) {
 func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
-		lease   time.Duration
 		cancel  bool
 		wantErr bool
 	}{
-		{name: "lease", lease: 30 * time.Millisecond},
-		{name: "caller cancellation", lease: time.Hour, cancel: true, wantErr: true},
+		{name: "lease"},
+		{name: "caller cancellation", cancel: true, wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			base := admitted(t)
@@ -993,15 +999,31 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 			stream := &blockedDispatchWatch{
 				ctx: ctx, started: make(chan struct{}), finished: make(chan struct{}), release: release,
 			}
-			service := &Service{
-				Store: testStore(t, 5), DispatcherCallers: configuredDispatcherCallers(), Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true},
-				WatchLease: tc.lease,
-			}
-			request := &dispatcherpb.WatchDispatchesRequest{Filter: &dispatcherpb.DispatchFilter{
-				Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: "blocked-watch-session"},
-			}}
 			done := make(chan error, 1)
-			go func() { done <- service.WatchDispatches(request, stream) }()
+			leaseCtx, endLease := context.WithCancel(ctx)
+			defer endLease()
+			if tc.cancel {
+				service := &Service{
+					Store: testStore(t, 5), DispatcherCallers: configuredDispatcherCallers(), Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true},
+					WatchLease: time.Hour,
+				}
+				request := &dispatcherpb.WatchDispatchesRequest{Filter: &dispatcherpb.DispatchFilter{
+					Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: "blocked-watch-session"},
+				}}
+				go func() { done <- service.WatchDispatches(request, stream) }()
+			} else {
+				// End the send's lease after Send starts, independent of how long a
+				// PostgreSQL connection or initial snapshot would take to acquire.
+				go func() {
+					ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
+						Frame: &dispatcherpb.WatchDispatchesResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}},
+					})
+					if !ended && err == nil {
+						err = errors.New("send did not end at its lease boundary")
+					}
+					done <- err
+				}()
+			}
 			select {
 			case <-stream.started:
 			case <-time.After(5 * time.Second):
@@ -1009,6 +1031,8 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 			}
 			if tc.cancel {
 				cancel()
+			} else {
+				endLease()
 			}
 			select {
 			case err := <-done:
@@ -1071,6 +1095,10 @@ func (c testCatalog) GetSandbox(_ context.Context, name string) (SandboxSnapshot
 func (c testCatalog) ListSandboxes(context.Context) ([]SandboxSnapshot, error) {
 	return []SandboxSnapshot{c.sandbox}, nil
 }
+
+func (c testCatalog) CurrentSandboxUIDs(context.Context) (map[string]struct{}, error) {
+	return map[string]struct{}{c.sandbox.UID: {}}, nil
+}
 func (testCatalog) Changes() <-chan struct{}        { return nil }
 func (testCatalog) WaitSynced(context.Context) bool { return true }
 
@@ -1087,6 +1115,14 @@ func (c *growingCatalog) GetSandbox(_ context.Context, name string) (SandboxSnap
 
 func (c *growingCatalog) ListSandboxes(context.Context) ([]SandboxSnapshot, error) {
 	return c.sandboxes, nil
+}
+
+func (c *growingCatalog) CurrentSandboxUIDs(context.Context) (map[string]struct{}, error) {
+	result := make(map[string]struct{}, len(c.sandboxes))
+	for _, sandbox := range c.sandboxes {
+		result[sandbox.UID] = struct{}{}
+	}
+	return result, nil
 }
 func (*growingCatalog) Changes() <-chan struct{}        { return nil }
 func (*growingCatalog) WaitSynced(context.Context) bool { return true }
@@ -2000,6 +2036,222 @@ func TestOpenSessionRejectsNonCanonicalUUIDBeforeRecording(t *testing.T) {
 			}
 			if recorded {
 				t.Fatalf("OpenSession(%q) created a durable opening", sessionID)
+			}
+		})
+	}
+}
+
+type deletedDuringLookup struct {
+	snapshot SandboxSnapshot
+	cleanup  func()
+}
+
+func (s deletedDuringLookup) GetSandbox(context.Context, string) (SandboxSnapshot, bool, error) {
+	// The inventory read preceded cleanup, but its caller resumes afterward.
+	s.cleanup()
+	return s.snapshot, true, nil
+}
+
+func (deletedDuringLookup) GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
+	return nil, false, nil
+}
+
+func TestSandboxCleanupFencesStaleAdmissionAcrossReplicas(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("existing=%t", existing), func(t *testing.T) {
+			store, databaseURL := testStoreWithURL(t, 3)
+			ctx := admitted(t)
+			uid, sessionID := uuid.NewString(), uuid.NewString()
+			if existing {
+				if _, err := store.OpenSession(ctx, sessionID, "sandbox-api", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// Independent connections and Store instances represent another replica or a restart.
+			db, err := sql.Open("postgres", databaseURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			restarted := NewStore(db, 3)
+			service := &Service{
+				Store: restarted, DispatcherCallers: configuredDispatcherCallers(),
+				Sandboxes: deletedDuringLookup{
+					snapshot: SandboxSnapshot{Name: "sandbox-api", Namespace: caller.Namespace, UID: uid},
+					cleanup: func() {
+						if _, err := store.EndSandbox(ctx, uid); err != nil {
+							t.Fatal(err)
+						}
+					},
+				},
+			}
+			_, err = service.OpenSession(ctx, &dispatcherpb.OpenSessionRequest{
+				SessionId: sessionID, Sandbox: "sandbox-api", SandboxUid: uid, Spec: &sessionpb.SessionSpec{},
+			})
+			if status.Code(err) != codes.FailedPrecondition {
+				t.Fatalf("opening after cleanup: %v", err)
+			}
+			_, err = service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
+				CommandId: uuid.NewString(), SessionId: sessionID, Sandbox: "sandbox-api", SandboxUid: uid, Text: "hello",
+			})
+			if status.Code(err) != codes.FailedPrecondition {
+				t.Fatalf("privileged command after cleanup: %v", err)
+			}
+			if owner, err := restarted.ClaimSandboxOwner(ctx, uid, "stale-lease", 1, "stale-replica", 0); !errors.Is(err, ErrSandboxDeleted) || owner != nil {
+				t.Fatalf("ownership after cleanup: %+v %v", owner, err)
+			}
+			if _, err := restarted.GetOpening(ctx, sessionID); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("opening resurrected: %v", err)
+			}
+			if uids, err := restarted.ListSandboxUIDs(ctx); err != nil || len(uids) != 0 {
+				t.Fatalf("live queue/ownership state resurrected: %v %v", uids, err)
+			}
+			// A new environment with the same name has an independent admission fence.
+			if _, err := restarted.OpenSession(ctx, uuid.NewString(), "sandbox-api", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
+				t.Fatalf("replacement environment rejected: %v", err)
+			}
+		})
+	}
+}
+
+func TestSandboxCleanupWaitsForInFlightOpening(t *testing.T) {
+	store, databaseURL := testStoreWithURL(t, 3)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	uid, sessionID := uuid.NewString(), uuid.NewString()
+	gate, err := store.DB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gate.Rollback()
+	if err := sessionLock(ctx, gate, sessionID); err != nil {
+		t.Fatal(err)
+	}
+	var gatePID int
+	if err := gate.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&gatePID); err != nil {
+		t.Fatal(err)
+	}
+	connect := func() (*Store, int) {
+		db, err := sql.Open("postgres", databaseURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { db.Close() })
+		db.SetMaxOpenConns(1)
+		var pid int
+		if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
+			t.Fatal(err)
+		}
+		return NewStore(db, 3), pid
+	}
+	openingStore, openingPID := connect()
+	cleanupStore, cleanupPID := connect()
+	opened := make(chan error, 1)
+	go func() {
+		_, err := openingStore.OpenSession(ctx, sessionID, "sandbox-race", uid, &sessionpb.SessionSpec{}, nil, nil)
+		opened <- err
+	}()
+	waitBlocked := func(waiter, blocker int) {
+		t.Helper()
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			var blocked bool
+			if err := store.DB.QueryRowContext(ctx, "SELECT $2 = ANY(pg_blocking_pids($1))", waiter, blocker).Scan(&blocked); err != nil {
+				t.Fatal(err)
+			}
+			if blocked {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			case <-ticker.C:
+			}
+		}
+	}
+	waitBlocked(openingPID, gatePID)
+	cleaned := make(chan error, 1)
+	go func() {
+		_, err := cleanupStore.EndSandbox(ctx, uid)
+		cleaned <- err
+	}()
+	// Cleanup must wait for the transaction whose opening has not yet been inserted.
+	waitBlocked(cleanupPID, openingPID)
+	if err := gate.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-opened; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-cleaned; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetOpening(ctx, sessionID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cleanup missed the in-flight opening: %v", err)
+	}
+}
+
+type deletionCheckCatalog struct {
+	growingCatalog
+	afterSnapshot func()
+	currentError  error
+}
+
+func (c *deletionCheckCatalog) ListSandboxes(context.Context) ([]SandboxSnapshot, error) {
+	before := slices.Clone(c.sandboxes)
+	c.afterSnapshot()
+	return before, nil
+}
+
+func (c *deletionCheckCatalog) CurrentSandboxUIDs(ctx context.Context) (map[string]struct{}, error) {
+	if c.currentError != nil {
+		return nil, c.currentError
+	}
+	return c.growingCatalog.CurrentSandboxUIDs(ctx)
+}
+
+func TestCleanupConfirmsAbsenceAfterReadingStoredWork(t *testing.T) {
+	for _, currentState := range []string{"live", "absent", "unavailable"} {
+		t.Run(currentState, func(t *testing.T) {
+			store := testStore(t, 3)
+			ctx := t.Context()
+			uid, sessionID := uuid.NewString(), uuid.NewString()
+			catalog := &deletionCheckCatalog{}
+			catalog.afterSnapshot = func() {
+				// A live environment and its opening appear after the worker's first
+				// inventory snapshot, before it enumerates the database's stored UIDs.
+				if currentState == "live" {
+					catalog.sandboxes = []SandboxSnapshot{{Name: "new-sandbox", UID: uid}}
+				}
+				if _, err := store.OpenSession(ctx, sessionID, "new-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if currentState == "unavailable" {
+				catalog.currentError = errors.New("inventory unavailable")
+			}
+			worker := &DeliveryWorker{Store: store, Catalog: catalog}
+			worker.init()
+			defer worker.queue.ShutDown()
+			err := worker.reconcile(ctx, false)
+			if !errors.Is(err, catalog.currentError) {
+				t.Fatalf("reconcile: got %v, want %v", err, catalog.currentError)
+			}
+			if currentState == "absent" {
+				if _, err := store.GetOpening(ctx, sessionID); !errors.Is(err, ErrNotFound) {
+					t.Fatalf("absent environment opening retained: %v", err)
+				}
+				if _, err := store.OpenSession(ctx, uuid.NewString(), "new-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil); !errors.Is(err, ErrSandboxDeleted) {
+					t.Fatalf("absent environment not fenced: %v", err)
+				}
+				return
+			}
+			if _, err := store.GetOpening(ctx, sessionID); err != nil {
+				t.Fatalf("live opening removed: %v", err)
+			}
+			if _, err := store.OpenSession(ctx, uuid.NewString(), "new-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+				t.Fatalf("live environment admission fenced: %v", err)
 			}
 		})
 	}
