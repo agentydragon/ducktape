@@ -43,6 +43,11 @@ service SessionDispatcher {
   rpc GetSessionOpening(GetSessionOpeningRequest) returns (GetSessionOpeningResponse) {
     option (google.api.http) = {get: "/v1/sessions/{session_id}/opening"};
   }
+  // Discovers current opening records, including queued and failed materialization.
+  // Uses retained owner authority and does not contact the environment or History.
+  rpc ListSessionOpenings(ListSessionOpeningsRequest) returns (ListSessionOpeningsResponse) {
+    option (google.api.http) = {get: "/v1/session-openings"};
+  }
   rpc GetDispatch(GetDispatchRequest) returns (GetDispatchResponse) {
     option (google.api.http) = {get: "/v1/dispatches/{command_id}"};
   }
@@ -238,4 +243,18 @@ message GetSessionOpeningRequest {
 
 message GetSessionOpeningResponse {
   SessionOpening opening = 1;
+}
+
+message ListSessionOpeningsRequest {
+  // Maximum returned openings, 1-100; zero selects 50.
+  uint32 limit = 1;
+  // Opaque continuation from a previous page. Carries no authority.
+  string page_token = 2;
+}
+
+message ListSessionOpeningsResponse {
+  // Ascending Session ID order. Pages read current records, not a frozen snapshot;
+  // concurrent changes can add/remove entries, but cannot reorder existing IDs.
+  repeated SessionOpening openings = 1;
+  string next_page_token = 2;
 }

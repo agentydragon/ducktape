@@ -139,12 +139,19 @@ func (r *rejectingRunner) Deliver(_ context.Context, _ SandboxSnapshot, _ string
 
 func testStore(t *testing.T, cap int) *Store {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.URL)
+	store, _ := testStoreWithURL(t, cap)
+	return store
+}
+
+func testStoreWithURL(t *testing.T, cap int) (*Store, string) {
+	t.Helper()
+	databaseURL := integrationDatabase.Clone(t)
+	db, err := sql.Open("postgres", databaseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	return NewStore(db, cap)
+	return NewStore(db, cap), databaseURL
 }
 
 func input(id, value string) *commandpb.Command {
@@ -649,7 +656,7 @@ func TestOnlyRunnerAdmissionRecordsAdmission(t *testing.T) {
 
 func TestDeletedSandboxBroadcastsTerminalRowsBeforeDeletingThem(t *testing.T) {
 	ctx := context.Background()
-	store := testStore(t, 3)
+	store, databaseURL := testStoreWithURL(t, 3)
 	uid := "00000000-0000-4000-8000-000000000099"
 	if _, err := store.Enqueue(ctx, "session-deleted", "sandbox-deleted", uid, input("deleted-queued", "q"), nil); err != nil {
 		t.Fatal(err)
@@ -668,7 +675,7 @@ func TestDeletedSandboxBroadcastsTerminalRowsBeforeDeletingThem(t *testing.T) {
 	// the rows are deleted in the same transaction and cannot be read afterward.
 	subscribers := make([]*watchSubscription, 0, 2)
 	for replica := range 2 {
-		hub := NewWatchHub(integrationDatabase.URL)
+		hub := NewWatchHub(databaseURL)
 		listenContext, cancel := context.WithCancel(ctx)
 		ended := make(chan error, 1)
 		go func() { ended <- hub.Run(listenContext) }()
@@ -884,7 +891,7 @@ func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
 
 func TestWatchDispatchesPublishesWakeOnlyReceiptChanges(t *testing.T) {
 	base := admitted(t)
-	store := testStore(t, 3)
+	store, databaseURL := testStoreWithURL(t, 3)
 	uid := uuid.NewString()
 	dispatch, err := store.Enqueue(base, "watch-wake-session", "sandbox-wake-watch", uid,
 		input("watch-wake-command", "hello"), nil)
@@ -895,7 +902,7 @@ func TestWatchDispatchesPublishesWakeOnlyReceiptChanges(t *testing.T) {
 	if err != nil || owner == nil {
 		t.Fatalf("claim Sandbox owner: %+v %v", owner, err)
 	}
-	hub := NewWatchHub(integrationDatabase.URL)
+	hub := NewWatchHub(databaseURL)
 	listenerCtx, cancelListener := context.WithCancel(context.Background())
 	listenerDone := make(chan error, 1)
 	go func() { listenerDone <- hub.Run(listenerCtx) }()

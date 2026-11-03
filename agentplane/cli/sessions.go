@@ -30,7 +30,7 @@ type sessionCall func(context.Context, dispatcherpb.SessionDispatcherClient, []s
 
 func (a *app) sessionsCommand() *cobra.Command {
 	return group("sessions", "Open and direct Sessions in an existing Sandbox", sessionsHelp,
-		a.openSessionCommand(), a.submitInputCommand(), a.getOpeningCommand(), a.getDispatchCommand(),
+		a.openSessionCommand(), a.listSessionOpeningsCommand(), a.submitInputCommand(), a.getOpeningCommand(), a.getDispatchCommand(),
 		a.cancelInputCommand(), a.interruptTurnCommand(), a.getSessionCommand(), a.readTurnsCommand(), a.observeInputCommand())
 }
 
@@ -313,6 +313,50 @@ runner received the input. After an unknown outcome, use get-dispatch with the s
 	for _, flag := range []string{"sandbox", "sandbox-uid", "command-id", "text"} {
 		_ = command.MarkFlagRequired(flag)
 	}
+	return command
+}
+
+func (a *app) listSessionOpeningsCommand() *cobra.Command {
+	var limit uint32
+	var pageToken string
+	command := &cobra.Command{
+		Use:   "list [--limit N] [--after TOKEN]",
+		Short: "Discover current Dispatcher Session openings",
+		Long: `Lists one bounded page in Session ID order, including queued and failed openings.
+This reads the Dispatcher only: the environment and History may be unavailable or have no record yet.
+The caller sees only records authorized by its retained owner identity or configured backend authority.
+This is not retained History or environment-free central Session discovery.`,
+		Args: cobra.NoArgs,
+		RunE: a.sessionCommand(func(ctx context.Context, client dispatcherpb.SessionDispatcherClient, _ []string) error {
+			if limit < 1 || limit > 100 {
+				return usageFailure("--limit must be between 1 and 100")
+			}
+			response, err := client.ListSessionOpenings(ctx, &dispatcherpb.ListSessionOpeningsRequest{Limit: limit, PageToken: pageToken})
+			if err != nil {
+				return grpcFailure(ctx, err)
+			}
+			if a.asJSON {
+				body, err := protoJSON(response)
+				if err != nil {
+					return err
+				}
+				return a.showOne(body, nil)
+			}
+			items, err := protoJSONList(response.GetOpenings())
+			if err != nil {
+				return err
+			}
+			if err := a.show(items, sessionOpeningLine); err != nil {
+				return err
+			}
+			if response.GetNextPageToken() != "" {
+				fmt.Fprintf(a.stderr, "more may follow: --after %s\n", response.GetNextPageToken())
+			}
+			return nil
+		}),
+	}
+	command.Flags().Uint32Var(&limit, "limit", 50, "maximum openings returned (1-100)")
+	command.Flags().StringVar(&pageToken, "after", "", "continue with the previous page's nextPageToken")
 	return command
 }
 

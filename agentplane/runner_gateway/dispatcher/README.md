@@ -12,7 +12,7 @@ The manual queue, replica and wake probes are documented in the
 ## Contract
 
 - **One RPC per command**: `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, `InterruptTurn`,
-  `OpenSession`, `GetSessionOpening`, plus `GetDispatch`, `ListDispatches`, `WatchDispatches` and `CancelDispatch`
+  `OpenSession`, `GetSessionOpening`, `ListSessionOpenings`, plus `GetDispatch`, `ListDispatches`, `WatchDispatches` and `CancelDispatch`
   ([proto](session_dispatcher.proto)). Callers name the Sandbox and the Session; `command_id` is
   the idempotency key across every command RPC.
 - **Watching**: `WatchDispatches` sends the Dispatches in scope, then one `CaughtUp` frame, then a Dispatch
@@ -40,6 +40,15 @@ The manual queue, replica and wake probes are documented in the
   A reservation does not assert a running harness; `ALREADY_EXISTS` means a requested spec or
   setup conflicts, which the Dispatcher records as a failed opening.
   Openings follow the rules of commands below for deleted Sandboxes, runner statuses and retention.
+- **Discovering openings**: `ListSessionOpenings` (`GET /v1/session-openings`) returns one bounded
+  page of the current Dispatcher opening records, including queued and failed materialization before
+  any Runtime or History record exists. It uses the same retained-owner read scope as
+  `GetSessionOpening`, without contacting a live environment or History. `limit` defaults to 50 and
+  is capped at 100; `page_token` continues in ascending Session UUID order. A cursor grants no
+  authority and remains usable if its last record was deleted. Pages are current reads, not a frozen
+  snapshot: concurrent creation before the cursor is seen on a fresh listing, and cleanup removes
+  records. This includes today's environment-bound central openings without defining environment-free
+  central Sessions. The CLI exposes it as `agentplane sessions list`.
 - **Wire rollout**: during mixed-version overlap, the old Dispatcher ignores the new protobuf field; an old caller
   reaching the required-UID Dispatcher is rejected with `INVALID_ARGUMENT` when it omits `sandbox_uid`. To roll back,
   restore the old Dispatcher before rolling back app and Action callers. Existing Session openings and running Sessions

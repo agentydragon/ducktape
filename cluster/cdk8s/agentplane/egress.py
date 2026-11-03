@@ -116,6 +116,7 @@ _SESSION_DISPATCHER_GRPC_PATHS = (
     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/OpenSession",
     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSessionOpening",
+    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListSessionOpenings",
     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch",
     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn",
