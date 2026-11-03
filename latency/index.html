@@ -141,6 +141,9 @@
       .table-scroll > table.wide-7 {
         min-width: 850px;
       }
+      #retry-tail-evidence th[scope="row"] {
+        white-space: nowrap;
+      }
       table {
         border-collapse: collapse;
         width: 100%;
@@ -271,33 +274,39 @@
     <main>
       <header>
         <div class="eyebrow">Ducktape · CI latency · 3 November 2026</div>
-        <h1>The five-minute mean remains unproven.</h1>
+        <h1>The post-queue cohort missed five minutes.</h1>
         <p class="lede">
-          The newest closed cohort has five green heads out of eight, with mean
-          feedback of 6m 12s, median 7m 17s and p90 9m 22s. It predates the new
-          queue-admission change. That change is merged, but its effect still
-          needs a representative fresh cohort.
+          The prespecified window reached 20 green heads after three 30-minute
+          extensions. Their all-three-gate success proxies average 371.7 seconds
+          (6m 11.7s), above the 300-second target. Across 25 heads, 3 were
+          canceled and 2 failed; retry waits remain in the clock. The objective
+          is still unmet.
         </p>
         <p class="meta">
-          Inspected devel:
-          <code>25b59b0d02b16b50ecc1a56296881c1a117b977e</code>. Window:
-          05:08:21–05:44:22 UTC; collected at 05:47:24 UTC. This is a small,
-          source-varying diagnostic cohort, not a causal comparison. Retry waits
-          remain in the all-three-checks clock. Implementation, overlap and
-          diagnostic evidence was checked through 06:30 UTC.
+          Source inspected for retry diagnosis and relay experiments:
+          <code>8740e3eb668c8bc40822c7941f10d976ac677057</code>. Fixed creation
+          window: 05:44:23–08:14:22 UTC; collected 08:15:24–08:15:43 UTC. The
+          Actions cohort is source-varying; it does not show that every head
+          included the same code or identify a causal saving. Ruleset 15894562
+          was checked at 05:49 UTC; full auto-merge eligibility is not
+          reconstructed. Later devel tip
+          <code>a431142b7f71261344b0a2fec1c31112be8a96a3</code> includes an
+          external KVM opt-in lane and static-worker configuration. The relay
+          experiments used regular non-KVM RBE; no KVM deployment or latest-tip
+          architecture audit was performed.
         </p>
         <div class="cards">
           <div class="card">
-            <span>Newest small cohort mean</span><strong>6m 12s</strong>
-            <span>5 green of 8 heads; 3 canceled.</span>
+            <span>All-three-gate green heads</span><strong>20 / 25</strong>
+            <span>3 canceled · 2 failed · 0 pending.</span>
           </div>
           <div class="card">
-            <span>90th percentile</span><strong>9m 22s</strong>
-            <span>Five green heads; nearest-rank p90.</span>
+            <span>Mean / p50 / p90</span><strong>6m 12s</strong>
+            <span>371.7 s · 167 s · 517 s; retries included.</span>
           </div>
           <div class="card">
             <span>Mean target</span><strong>&lt;300 s</strong>
-            <span>Active goal · not yet established.</span>
+            <span>Active goal · observed mean is 71.7 s above it.</span>
           </div>
         </div>
       </header>
@@ -314,19 +323,23 @@
       <section id="under-five" aria-labelledby="under-five-title">
         <h2 id="under-five-title">Current goal: mean below five minutes</h2>
         <p class="note">
-          <strong>Status: active; completion unproven.</strong> The latest
-          closed cohort averages 372 seconds across five green heads, above the
-          300-second objective and too small to establish a representative
-          service outcome. The independent queue-admission change merged after
-          this creation window. No saving is assigned to it yet.
+          <strong>Status: active; objective missed.</strong> The completed
+          post-queue window has 20 green heads out of 25 and a 371.7-second
+          mean, 71.7 seconds above the 300-second target. This is an observed,
+          source-varying cohort, not a causal estimate of the queue-admission
+          change or any other merge.
         </p>
         <p>
           The clock starts at the first observed PR workflow creation for an
           exact head repository and SHA, then ends at the latest visible
-          successful completion of all three required contexts. Retry waits are
-          included. Canceled, failed and pending heads remain in outcome counts,
-          outside the success-proxy mean. This does not reconstruct every past
-          check state or establish auto-merge eligibility.
+          successful completion of the three required contexts:
+          <strong>Build artifacts + imports check</strong>,
+          <strong>Pre-commit checks</strong>, and
+          <strong>bazel-ci / Test &amp; Build</strong>. Retry waits are
+          included. Canceled and failed heads remain in outcome counts but
+          outside the success-proxy mean. The checked ruleset requires zero
+          approving reviews, but this clock does not reconstruct every
+          historical check state or prove complete auto-merge eligibility.
         </p>
         <div
           class="table-scroll"
@@ -347,7 +360,15 @@
             </thead>
             <tbody>
               <tr>
-                <th scope="row">Newest · 05:08–05:44 UTC</th>
+                <th scope="row">Post-queue · 05:44–08:14 UTC</th>
+                <td>20 / 25</td>
+                <td>371.7 s</td>
+                <td>167 s</td>
+                <td>517 s</td>
+                <td>Bazel 18 · artifacts 2</td>
+              </tr>
+              <tr>
+                <th scope="row">Pre-queue · 05:08–05:44 UTC</th>
                 <td>5 / 8</td>
                 <td>372 s</td>
                 <td>437 s</td>
@@ -374,11 +395,11 @@
           </table>
         </div>
         <p class="muted">
-          These distinct creation windows differ in source inclusion, workload
-          mix and retries. Do not pool them or interpret their differences as
-          causal effects. The newest window lies between the mypy tree-input
-          merge and the queue change; creation time alone does not prove a head
-          contains either implementation.
+          These creation windows differ in source inclusion, workload mix and
+          retries. Do not pool them or interpret their differences as causal
+          effects. The post-queue window starts one second after PR #14066
+          merged, but creation time alone does not prove which implementation
+          each head contains.
         </p>
         <div class="table-scroll">
           <table>
@@ -391,19 +412,21 @@
             </thead>
             <tbody>
               <tr>
-                <th scope="row">All three latest attempts green</th>
-                <td>5</td>
+                <th scope="row">
+                  Latest visible attempts green on all three gates
+                </th>
+                <td>20</td>
                 <td>Included as success proxy</td>
               </tr>
               <tr>
                 <th scope="row">Canceled</th>
                 <td>3</td>
-                <td>Excluded</td>
+                <td>Reported; excluded from mean</td>
               </tr>
               <tr>
                 <th scope="row">Failed</th>
-                <td>0</td>
-                <td>None</td>
+                <td>2</td>
+                <td>Reported; excluded from mean</td>
               </tr>
               <tr>
                 <th scope="row">Pending or incomplete</th>
@@ -414,13 +437,15 @@
           </table>
         </div>
         <p>
-          The complete newest collection ran from 05:47:19 to 05:47:24 UTC: 136
-          workflow runs, 24 required PR workflow runs and 46 job attempts. All
-          five green heads ended with Bazel. Historical six-hour reference (2
-          November 18:55–3 November 00:55 UTC): 73 green heads, mean 547.1
-          seconds, p50 531 and p90 839. The older 02:59–04:25 cohort contained
-          four canceled and one failed head alongside twelve green; it remains
-          separate context.
+          Collection ran from 08:15:24 to 08:15:43 UTC: 481 workflow runs, 75
+          required PR workflow runs and 155 job attempts. Eighteen green heads
+          ended with Test &amp; Build and two with the build/import check. The
+          fixed one-hour window was extended three times by 30 minutes only
+          because it had fewer than 20 green heads; all 25 heads and all retry
+          waits were retained. The resulting mean missed the target, so this
+          window is complete. Do not extend it to dilute the mean. Historical
+          six-hour reference (2 November 18:55–3 November 00:55 UTC): 73 green
+          heads, mean 547.1 seconds, p50 531 and p90 839.
         </p>
         <p>
           Sanitized aggregates and limits are in
@@ -470,17 +495,257 @@
           pair. This proves the new admission/cancellation path ran as intended
           for one pair. The replacement was itself superseded and ended canceled
           at 05:59:46; it supplies no successful all-gate feedback observation.
-          The representative mean remains unmeasured. Do not translate the
-          earlier 54–80-second waits into measured end-to-end savings.
+          The completed post-queue cohort below averages 371.7 seconds and still
+          misses the target. Do not translate the earlier 54–80-second waits
+          into measured end-to-end savings.
         </p>
         <p class="callout">
-          The prespecified post-change creation window starts 05:44:23 UTC and
-          initially ends 06:44:22 UTC. Collect all outcomes and retry waits; if
-          fewer than 20 green heads exist, extend in 30-minute increments
-          without dropping earlier heads. Wait for pending work to mature. A
-          complete representative cohort must average below 300 seconds before
-          the goal is established. This window is still open at this report's
-          cutoff.
+          The prespecified window started at 05:44:23 UTC, initially ended at
+          06:44:22, and closed at 08:14:22 after three 30-minute extensions.
+          Extensions followed only the predeclared minimum of 20 green heads; no
+          earlier heads were dropped. The matured mean is 371.7 seconds, so the
+          objective remains unmet. Do not extend the completed window to dilute
+          the mean.
+        </p>
+        <h3>Two long retries dominate the observed green-feedback tail</h3>
+        <p>
+          The 20 green-head clocks sum to 7,434 seconds. PR
+          <a href="https://github.com/agentydragon/ducktape/pull/14070"
+            >#14070</a
+          >
+          took 2,985 seconds (49m 45s), and
+          <a href="https://github.com/agentydragon/ducktape/pull/14076"
+            >#14076</a
+          >
+          took 845 seconds (14m 05s). Together they account for 3,830 seconds,
+          or 51.5% of that sum. This is a descriptive share of green-head
+          feedback, not a measure of wasted or recoverable time.
+        </p>
+        <div
+          id="retry-tail-evidence"
+          class="table-scroll"
+          role="region"
+          aria-label="Long retry evidence"
+          tabindex="0"
+        >
+          <table class="wide-6">
+            <thead>
+              <tr>
+                <th>Head</th>
+                <th>All-gate clock</th>
+                <th>Observed path</th>
+                <th>Evidence boundary</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">
+                  <a href="https://github.com/agentydragon/ducktape/pull/14070"
+                    >PR #14070</a
+                  >
+                </th>
+                <td>2,985 s · 49m 45s · 40.2% of green sum</td>
+                <td>
+                  The guest's native command completed successfully, but the
+                  enclosing <code>test_vm</code> failed its expected
+                  <code>codex.tool.start</code> trace assertion. Native
+                  item-start evidence and sampled source show that
+                  <code>Start</code> ran; the missing span is downstream. The
+                  unchanged-head external retry passed at 07:17:36 UTC, and this
+                  exact head merged at 08:01:45 UTC.
+                </td>
+                <td>
+                  The launcher relay was an ordinary container that could stop
+                  concurrently with the VM guest and close the OTLP route. The
+                  relay's historical stop timestamp was not retained, so this
+                  mechanism is plausible for the missing span, not proven for
+                  this head.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  <a href="https://github.com/agentydragon/ducktape/pull/14076"
+                    >PR #14076</a
+                  >
+                </th>
+                <td>845 s · 14m 05s · 11.4% of green sum</td>
+                <td>
+                  Original test, build and outer action evidence completed
+                  successfully, but pinned-CLI <code>GetExecution</code>
+                  returned an empty result. The unchanged-head external retry
+                  passed at 06:58:26 UTC; the PR merged at 06:58:39 UTC.
+                </td>
+                <td>
+                  A later session-credential read found the completed action
+                  exit code 0. Whether the CI and session principals matched,
+                  and why the backend lookup was empty, remain unknown. Resolve
+                  the same execution read-only with the original CI identity; do
+                  not replay an uncertain run.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="muted">
+          At 07:09:42 UTC, pinned BuildBuddy CLI 5.0.498 was the latest official
+          release and current-master remote-Bazel source was byte-identical.
+          This does not point to an upgrade fix or justify changing recovery
+          policy. The two failed heads were separate source defects: an extra
+          BUILD blank line was removed in later green head
+          <a
+            href="https://github.com/agentydragon/ducktape/commit/8b50c0392af30aef568cef743baf7c49978f34a5"
+            ><code>8b50c03</code></a
+          >; a bad Kustomize <code>./image-pins</code> reference was removed in
+          later green head
+          <a
+            href="https://github.com/agentydragon/ducktape/commit/2f9b1969ef993dd734724767ca1ca1c35e4a648a"
+            ><code>2f9b196</code></a
+          >. The three cancellations remain reported outcomes, not green
+          evidence.
+        </p>
+        <h3>
+          A native relay sidecar removes VM shutdown warnings in a bounded test
+        </h3>
+        <p>
+          The local candidate keeps the telemetry relay as a native init sidecar
+          after the existing KubeVirt initializers. Kubernetes delays
+          native-sidecar termination until the main application container has
+          stopped, which preserves the relay route while the guest shuts down
+          (<a
+            href="https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/#sidecar-containers-and-pod-lifecycle"
+            >Kubernetes lifecycle documentation</a
+          >). This changes the timing boundary that could explain the missing
+          shutdown span; the exact stop event for PR #14070 was not captured.
+        </p>
+        <p>
+          The experiment source is local commit
+          <code>495bb2abd4c1b5298e61105d6542048ad57de9a7</code>, based on
+          inspected devel <code>8740e3eb668c8bc40822c7941f10d976ac677057</code>.
+          It preserves token isolation, compatibility for Pods with the old
+          regular relay, idempotence, and the existing VM command, journal,
+          shutdown, OOM and trace assertions. A structured Kyverno context
+          template and explicit Kustomize image field specification retain image
+          automation. The tested files are unchanged after rebase; effective RBE
+          source remains local commit
+          <code>495bb2abd4c1b5298e61105d6542048ad57de9a7</code> atop
+          <code>8740e3eb668c8bc40822c7941f10d976ac677057</code>. Follow-up PR
+          <a href="https://github.com/agentydragon/ducktape/pull/14087"
+            >#14087</a
+          >
+          merged at 08:36:58 UTC after all three required checks passed at
+          08:36:31 UTC. Its checked head is
+          <code>aeefae52a31303d385127af65adac5094c3d6c67</code>; the PR does not
+          change which source the bounded experiment tested.
+        </p>
+        <div
+          id="relay-lifetime-evidence"
+          class="table-scroll"
+          role="region"
+          aria-label="Relay lifetime control and candidate"
+          tabindex="0"
+        >
+          <table class="wide-6">
+            <thead>
+              <tr>
+                <th>Run</th>
+                <th>Test action wall</th>
+                <th>Shutdown trace warnings</th>
+                <th>Runtime spans (VM-1 / VM-2 / Codex OOM)</th>
+                <th>Runtime-unit stop interval (VM-1 / VM-2 / Codex OOM)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/c66c04be-90b9-4f8c-8c9d-a1fee527bbd6"
+                    >Fixed-base control</a
+                  >
+                </th>
+                <td>313.504 s</td>
+                <td>3 / 3</td>
+                <td>12 / 15 / 20</td>
+                <td>5.185318 / 4.851611 / 5.190707 s</td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/abd73499-bfb5-4491-8567-09067928377f"
+                    >Native-sidecar candidate</a
+                  >
+                </th>
+                <td>287.720 s</td>
+                <td>0 / 3</td>
+                <td>17 / 20 / 24</td>
+                <td>0.255851 / 0.492191 / 0.262561 s</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Both runs passed all three VM scenarios with complete 8 MiB guest
+          journals and poweroff consoles. Both retained the OOM assertions and,
+          per run, one regular Codex tool-start span plus three OOM tool-start
+          spans. Runtime spans include the late shutdown events. The table's
+          stop intervals measure systemd <code>Stopping</code> to
+          <code>Deactivated</code> from monotonic journal events, not log
+          arrival; relay-container stop times were not measured. Candidate
+          action wall was 25.784 seconds shorter, but setup differed: 99.990 s
+          in control versus 43.242 s in candidate; the clean-baseline intervals
+          were 22.683 s and 24.072 s. The control's enclosing Bazel invocation
+          took 321.029 s, a different clock from the candidate Test ACTION wall.
+          This pair shows the shutdown-warning failure disappearing while trace
+          coverage remains; it does not establish a causal suite or fleet
+          speedup or a flake-rate reduction.
+        </p>
+        <p class="muted">
+          The control's outer invocation is
+          <a
+            href="https://app.buildbuddy.io/invocation/a48b0afd-6ffb-4c68-aeb8-d94fbf60c27b"
+            >RBE evidence</a
+          >; the candidate's is
+          <a
+            href="https://app.buildbuddy.io/invocation/80e519ac-72ad-4ca5-997d-7b9ed1da1064"
+            >RBE evidence</a
+          >. Policy and Kustomize checks passed in
+          <a
+            href="https://app.buildbuddy.io/invocation/cbacb2be-be24-45c2-9513-4276bbb7b98e"
+            >this invocation</a
+          >; the image-manifest snapshot passed in
+          <a
+            href="https://app.buildbuddy.io/invocation/f94341dd-42be-42d1-81a7-6924fb2f6e76"
+            >this invocation</a
+          >, and the named library's Ruff/mypy check passed in
+          <a
+            href="https://app.buildbuddy.io/invocation/512ee544-86cd-44cd-8a47-605f47aa7110"
+            >this invocation</a
+          >. PR #14087 has merged; soak it, then collect a representative
+          all-gate cohort. Independently, resolve the empty BuildBuddy result
+          through a read-only same-run lookup using the original CI identity.
+        </p>
+        <p>
+          The rebased PR head's
+          <a
+            href="https://app.buildbuddy.io/invocation/f64ca131-d578-5607-931d-8e0d694d1f88"
+            >hosted test invocation</a
+          >
+          also passed. Its three full guest journals again had no shutdown trace
+          warning, with Runtime unit stops of 0.062–0.332 seconds, clean
+          poweroff consoles, 61 Runtime spans and all four required Codex
+          tool-start spans. Its regular VM action took 364.552 seconds with a
+          warm retained stack (61.044-second setup); first workflow creation to
+          all three checks green was 510 seconds. This implementation PR is
+          outside the closed cohort and precedes merge. It reinforces the
+          bounded shutdown result and supplies no post-merge fleet latency or
+          flake-rate estimate.
+        </p>
+        <p>
+          The authoritative merge is
+          <code>bb9ce18b9945bcd6390f5e39d06f4b83eaabdbde</code>. The next
+          creation window starts at 08:36:59 UTC and initially ends at 09:36:58
+          UTC, retaining every head and retry wait. Extend only in 30-minute
+          increments if fewer than 20 green heads exist, then let pending work
+          mature. No post-merge cohort result is claimed yet.
         </p>
         <h3>Fresh profiles separate graph analysis from VM startup</h3>
         <p>
@@ -519,14 +784,15 @@
           hashes is not justified by this trace. No KVM deployment or live
           database reuse is part of this work.
         </p>
-        <h3>The newest slow heads share a substantial selector budget</h3>
+        <h3>The pre-queue slow heads share a substantial selector budget</h3>
         <p>
-          The three slower green heads in the newest cohort finished in 437, 562
-          and 500 seconds. Their final test commands ran for 283.0, 397.4 and
-          321.8 seconds; the actual uncached critical-path test actions were VM
-          277.0 seconds, Pod 304.1 seconds, and VM 306.0 seconds. The Pod path
-          also contains about 52.8 seconds of prerequisite build work. Remote
-          action queue accounted for at most 0.19% of these critical paths.
+          The three slower green heads in the pre-queue 05:08–05:44 cohort
+          finished in 437, 562 and 500 seconds. Their final test commands ran
+          for 283.0, 397.4 and 321.8 seconds; the actual uncached critical-path
+          test actions were VM 277.0 seconds, Pod 304.1 seconds, and VM 306.0
+          seconds. The Pod path also contains about 52.8 seconds of prerequisite
+          build work. Remote action queue accounted for at most 0.19% of these
+          critical paths.
         </p>
         <p>
           Before those tests, target selection and setup inside the outer remote
@@ -633,7 +899,8 @@
           cleanup spans were 106.40, 170.87 and 25.82 seconds. It booted a new
           VM and completed cleanup with three loop devices. These are recovery
           checks, not a full-workflow latency win or a causal fleet-mean claim.
-          PR #14035 remained open at last query. Guard
+          PR #14035 was still open at 08:30 UTC at a head beginning f90a353c.
+          Guard
           <a href="https://github.com/agentydragon/ducktape/pull/14043"
             >PR #14043</a
           >
@@ -852,9 +1119,10 @@
           input-boundary behavior, not a measured whole-CI saving.
         </p>
         <p class="muted">
-          The newest five-head cohort has varying sources. It is not an effect
-          estimate for bridge sharding or either mypy change. The queued
-          admission change and the planned representative soak remain separate.
+          The pre-queue five-head cohort has varying sources. It is not an
+          effect estimate for bridge sharding, either mypy change, or the queue
+          change. The completed post-queue cohort is reported above and also
+          varies in source inclusion.
         </p>
         <h3>Two retained-stack Pod shards did not improve the gate</h3>
         <p>
@@ -1945,13 +2213,13 @@
           PR gate.
         </p>
         <p>
-          No fresh Actions cohort was collected in this experiment round. The
-          prior 18:30–19:55 UTC exact-head sample is retained as historical
-          context: 52 heads, 22 green proxies, 20 canceled, 9 failed and 1
-          pending. Among 22 green proxies, first observed workflow to
-          required-check completion was 527 s p50 /735 s p90; the 12
-          environment/runtime heads were 628 s /825 s. Canceled and failed heads
-          are not healthy-latency samples.
+          The fresh post-queue sample is summarized in the
+          <a href="#under-five">goal section</a>: 20 green heads out of 25, mean
+          371.7 s, p50 167 s and p90 517 s. The 18:30–19:55 UTC exact-head
+          sample remains earlier historical context: 52 heads, 22 green proxies,
+          20 canceled, 9 failed and 1 pending. Its p50/p90 were 527/735 s; the
+          12 environment/runtime heads were 628/825 s. Do not combine these
+          distinct populations.
         </p>
         <p>
           Actual push receipt, notification delivery, harness read and
@@ -2553,7 +2821,7 @@
         <ul>
           <li>
             <strong>Current source:</strong> inspected devel
-            <code>25b59b0d02b16b50ecc1a56296881c1a117b977e</code>. The
+            <code>8740e3eb668c8bc40822c7941f10d976ac677057</code>. The
             controlled VM and Pod experiments are separately frozen at
             <code>b2b7e3128278a6073b21ac522b42f9e151d5913b</code>. Historical
             source prototypes and their effective local trees remain recorded in
@@ -2561,11 +2829,11 @@
             metadata.
           </li>
           <li>
-            <strong>Mainline context:</strong> CI/devel literal
+            <strong>Historical mainline context:</strong> CI/devel literal
             <code>//...</code> invocations created since 19:55 UTC and returned
             by an update-time-bounded API query through 21:54 UTC. Non-atomic
-            capture: 17 completed, onepartial. This is not a complete moving
-            census of every possible recently updated run.
+            capture: 17 completed, one partial. The current PR feedback sample
+            is the fixed post-queue window documented above.
           </li>
           <li>
             <strong>Controlled execution:</strong> normal

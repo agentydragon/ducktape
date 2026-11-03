@@ -1,8 +1,8 @@
 {
   "repository": "agentydragon/ducktape",
-  "source_devel_commit": "25b59b0d02b16b50ecc1a56296881c1a117b977e",
+  "source_devel_commit": "8740e3eb668c8bc40822c7941f10d976ac677057",
   "objective": "reduce the mean from first workflow creation to all three required checks green below 300 seconds",
-  "previous_report_commit": "479e3ef0e09f16991a854e23ccb501861e9b34da",
+  "previous_report_commit": "43d6a2c740008f7e26eecd971cd4f5d26b44e72a",
   "population_windows": {
     "new_mainline": {
       "selection": "Completed CI/devel literal //... invocations created since19:55UTC and returned by update-time-bounded census through21:54UTC; non-atomic API capture",
@@ -23,45 +23,6 @@
       "new_collection": false
     },
     "controlled_experiments": "Separate from fleet census; fixed local source tree, patches and exact attempts recorded below. Test-result cache bypassed; remote action cache accepted.",
-    "latest_required_pr_gate_sample": {
-      "window_utc": ["2026-11-03T05:08:21Z", "2026-11-03T05:44:22Z"],
-      "collection_utc": [
-        "2026-11-03T05:47:19.036806+00:00",
-        "2026-11-03T05:47:24.432373+00:00"
-      ],
-      "collection_scope": {
-        "all_window_workflow_runs": 136,
-        "required_pr_workflow_runs": 24,
-        "job_attempts": 46,
-        "pagination_totals_checked": true
-      },
-      "heads_in_scope": 8,
-      "latest_attempt_all_three_success_proxy_heads": 5,
-      "outcomes": {
-        "green_proxy": 5,
-        "pending": 0,
-        "canceled": 3,
-        "failed": 0
-      },
-      "mean_seconds": 372.0,
-      "mean_display": "6m 12s",
-      "p50_seconds": 437.0,
-      "p90_seconds": 562.0,
-      "last_gate_counts": {
-        "bazel-ci / Test & Build": 5
-      },
-      "retry_waits_included": true,
-      "required_gates": [
-        "bazel-ci / Test & Build",
-        "Pre-commit checks",
-        "Build artifacts + imports check"
-      ],
-      "selection_and_claim_limit": "Complete closed creation-time diagnostic cohort between mypy tree-input and queue-admission merge times; source inclusion varies. Small sample, not causal and not post-all-changes goal proof.",
-      "post_merge_soak_sample": false,
-      "completion_requirement": "A representative fresh post-merge PR sample must demonstrate mean below 300 seconds on the same first-workflow-creation to last-required-success clock. A single fast head or selected subset does not satisfy the goal.",
-      "source_artifacts": "Sanitized aggregate from the complete closed05:08:21\u201305:44:22 required-workflow snapshot, feedback analysis, summary and collection metadata. Raw workflow/job API records remain private.",
-      "investigation_evidence_cutoff_utc": "2026-11-03T06:30:00Z"
-    },
     "previous_report_latest_required_pr_gate_sample": {
       "window_utc": ["2026-11-03T02:59:22Z", "2026-11-03T04:25:00Z"],
       "collection_utc": [
@@ -100,6 +61,90 @@
       "completion_requirement": "A representative fresh post-merge PR sample must demonstrate mean below 300 seconds on the same first-workflow-creation to last-required-success clock. A single fast head or selected subset does not satisfy the goal.",
       "source_artifacts": "Sanitized aggregate from the mature post-guard snapshot, analysis, summary and collection metadata; raw workflow/job API metadata remains private.",
       "investigation_evidence_cutoff_utc": "2026-11-03T04:36:27.826059Z"
+    },
+    "pre_queue_required_pr_gate_sample": {
+      "window_utc": ["2026-11-03T05:08:21Z", "2026-11-03T05:44:22Z"],
+      "collection_utc": [
+        "2026-11-03T05:47:19.036806+00:00",
+        "2026-11-03T05:47:24.432373+00:00"
+      ],
+      "collection_scope": {
+        "all_window_workflow_runs": 136,
+        "required_pr_workflow_runs": 24,
+        "job_attempts": 46,
+        "pagination_totals_checked": true
+      },
+      "heads_in_scope": 8,
+      "latest_attempt_all_three_success_proxy_heads": 5,
+      "outcomes": {
+        "green_proxy": 5,
+        "pending": 0,
+        "canceled": 3,
+        "failed": 0
+      },
+      "mean_seconds": 372.0,
+      "mean_display": "6m 12s",
+      "p50_seconds": 437.0,
+      "p90_seconds": 562.0,
+      "last_gate_counts": {
+        "bazel-ci / Test & Build": 5
+      },
+      "retry_waits_included": true,
+      "required_gates": [
+        "bazel-ci / Test & Build",
+        "Pre-commit checks",
+        "Build artifacts + imports check"
+      ],
+      "selection_and_claim_limit": "Complete closed creation-time diagnostic cohort between mypy tree-input and queue-admission merge times; source inclusion varies. Small sample, not causal and not post-all-changes goal proof.",
+      "post_merge_soak_sample": false,
+      "completion_requirement": "A representative fresh post-merge PR sample must demonstrate mean below 300 seconds on the same first-workflow-creation to last-required-success clock. A single fast head or selected subset does not satisfy the goal.",
+      "source_artifacts": "Sanitized aggregate from the complete closed05:08:21\u201305:44:22 required-workflow snapshot, feedback analysis, summary and collection metadata. Raw workflow/job API records remain private.",
+      "investigation_evidence_cutoff_utc": "2026-11-03T06:30:00Z"
+    },
+    "post_queue_required_pr_gate_sample": {
+      "window_utc": ["2026-11-03T05:44:23Z", "2026-11-03T08:14:22Z"],
+      "collection_utc": [
+        "2026-11-03T08:15:24.080917+00:00",
+        "2026-11-03T08:15:43.030630+00:00"
+      ],
+      "collection_scope": {
+        "all_window_workflow_runs": 481,
+        "required_pr_workflow_runs": 75,
+        "job_attempts": 155,
+        "pagination_totals_checked": true
+      },
+      "heads_in_scope": 25,
+      "latest_attempt_all_three_success_proxy_heads": 20,
+      "outcomes": {
+        "green_proxy": 20,
+        "canceled": 3,
+        "failed": 2,
+        "pending_or_incomplete": 0
+      },
+      "mean_seconds": 371.7,
+      "mean_display": "6m 11.7s",
+      "p50_seconds": 167.0,
+      "p90_seconds": 517.0,
+      "green_feedback_seconds_sorted": [
+        89.0, 90.0, 99.0, 100.0, 103.0, 113.0, 124.0, 147.0, 159.0, 166.0,
+        168.0, 170.0, 188.0, 259.0, 307.0, 350.0, 455.0, 517.0, 845.0, 2985.0
+      ],
+      "last_gate_counts": {
+        "bazel-ci / Test & Build": 18,
+        "Build artifacts + imports check": 2
+      },
+      "retry_waits_included": true,
+      "required_gates": [
+        "bazel-ci / Test & Build",
+        "Pre-commit checks",
+        "Build artifacts + imports check"
+      ],
+      "selection_and_claim_limit": "Prespecified post-queue creation window, extended in three 30-minute increments only because the initial window had fewer than 20 green heads; all heads retained. Source-varying cohort, not a causal estimate of queue admission or any other change.",
+      "post_merge_soak_sample": true,
+      "objective_met": false,
+      "completion_requirement": "Objective remains unmet. Do not extend this completed window to dilute the mean; after PR 14087 checks/review, land and soak the relay lifecycle repair, then measure a fresh representative all-gate cohort.",
+      "source_artifacts": "Sanitized aggregate from summary.json, feedback.json, collection.json and snapshot.json under the private post-queue-two-half-hour capture. Raw workflow/job API records remain private.",
+      "investigation_evidence_cutoff_utc": "2026-11-03T08:30:15Z"
     }
   },
   "mainline_context": [
@@ -3710,7 +3755,7 @@
     }
   },
   "current_goal": {
-    "status": "active; objective not yet achieved",
+    "status": "active; the completed 20-green post-queue cohort missed the 300-second objective",
     "pod_sharding_experiment": {
       "target": "//agentplane/system_tests/suites:test_pod",
       "configuration": "--config=ci --nocache_test_results; remote caches enabled",
@@ -3886,7 +3931,7 @@
         "pull_request_state": "open at last query"
       }
     },
-    "latency_claim": "Goal active and not established: complete small source-varying cohort has 5 green of8, mean372s,p50437,p90562; retry waits retained. It predates independent queue admission. No causal savings or representative post-change goal proof.",
+    "latency_claim": "The fixed post-queue window 2026-11-03T05:44:23Z\u20132026-11-03T08:14:22Z matured at 20 green of 25 heads, mean 371.7s, p50 167s, p90 517s. The objective remains unmet. Source inclusion varies; this is not a causal saving estimate.",
     "historical_six_hour_snapshot": {
       "measurement": {
         "clock": "first observed workflow creation to latest successful completion of all 3 required job contexts for an exact head repository and SHA; retry waits included",
@@ -3952,31 +3997,36 @@
       }
     },
     "measurement": {
-      "window_utc": ["2026-11-03T05:08:21Z", "2026-11-03T05:44:22Z"],
+      "window_utc": ["2026-11-03T05:44:23Z", "2026-11-03T08:14:22Z"],
       "collection_utc": [
-        "2026-11-03T05:47:19.036806+00:00",
-        "2026-11-03T05:47:24.432373+00:00"
+        "2026-11-03T08:15:24.080917+00:00",
+        "2026-11-03T08:15:43.030630+00:00"
       ],
       "collection_scope": {
-        "all_window_workflow_runs": 136,
-        "required_pr_workflow_runs": 24,
-        "job_attempts": 46,
+        "all_window_workflow_runs": 481,
+        "required_pr_workflow_runs": 75,
+        "job_attempts": 155,
         "pagination_totals_checked": true
       },
-      "heads_in_scope": 8,
-      "latest_attempt_all_three_success_proxy_heads": 5,
+      "heads_in_scope": 25,
+      "latest_attempt_all_three_success_proxy_heads": 20,
       "outcomes": {
-        "green_proxy": 5,
-        "pending": 0,
+        "green_proxy": 20,
         "canceled": 3,
-        "failed": 0
+        "failed": 2,
+        "pending_or_incomplete": 0
       },
-      "mean_seconds": 372.0,
-      "mean_display": "6m 12s",
-      "p50_seconds": 437.0,
-      "p90_seconds": 562.0,
+      "mean_seconds": 371.7,
+      "mean_display": "6m 11.7s",
+      "p50_seconds": 167.0,
+      "p90_seconds": 517.0,
+      "green_feedback_seconds_sorted": [
+        89.0, 90.0, 99.0, 100.0, 103.0, 113.0, 124.0, 147.0, 159.0, 166.0,
+        168.0, 170.0, 188.0, 259.0, 307.0, 350.0, 455.0, 517.0, 845.0, 2985.0
+      ],
       "last_gate_counts": {
-        "bazel-ci / Test & Build": 5
+        "bazel-ci / Test & Build": 18,
+        "Build artifacts + imports check": 2
       },
       "retry_waits_included": true,
       "required_gates": [
@@ -3984,19 +4034,20 @@
         "Pre-commit checks",
         "Build artifacts + imports check"
       ],
-      "selection_and_claim_limit": "Complete closed creation-time diagnostic cohort between mypy tree-input and queue-admission merge times; source inclusion varies. Small sample, not causal and not post-all-changes goal proof.",
-      "post_merge_soak_sample": false,
-      "completion_requirement": "A representative fresh post-merge PR sample must demonstrate mean below 300 seconds on the same first-workflow-creation to last-required-success clock. A single fast head or selected subset does not satisfy the goal.",
-      "source_artifacts": "Sanitized aggregate from the complete closed05:08:21\u201305:44:22 required-workflow snapshot, feedback analysis, summary and collection metadata. Raw workflow/job API records remain private.",
-      "investigation_evidence_cutoff_utc": "2026-11-03T06:02:00Z"
+      "selection_and_claim_limit": "Prespecified post-queue creation window, extended in three 30-minute increments only because the initial window had fewer than 20 green heads; all heads retained. Source-varying cohort, not a causal estimate of queue admission or any other change.",
+      "post_merge_soak_sample": true,
+      "objective_met": false,
+      "completion_requirement": "Objective remains unmet. Do not extend this completed window to dilute the mean; after PR 14087 checks/review, land and soak the relay lifecycle repair, then measure a fresh representative all-gate cohort.",
+      "source_artifacts": "Sanitized aggregate from summary.json, feedback.json, collection.json and snapshot.json under the private post-queue-two-half-hour capture. Raw workflow/job API records remain private.",
+      "investigation_evidence_cutoff_utc": "2026-11-03T08:30:15Z"
     },
     "outcomes": {
-      "all_three_latest_attempt_success_proxy": 5,
+      "all_three_latest_attempt_success_proxy": 20,
       "canceled": 3,
-      "failed": 0,
-      "pending": 0,
-      "heads_in_scope": 8,
-      "included_in_primary_mean": "5 successful latest-attempt proxies",
+      "failed": 2,
+      "pending_or_incomplete": 0,
+      "heads_in_scope": 25,
+      "included_in_primary_mean": "20 latest visible all-three-gate success proxies; retry waits included",
       "excluded_from_latency_mean": [
         "canceled",
         "failed",
@@ -4005,15 +4056,16 @@
       ]
     },
     "last_gate_counts": {
-      "bazel-ci / Test & Build": 5
+      "bazel-ci / Test & Build": 18,
+      "Build artifacts + imports check": 2
     },
     "collection_provenance": {
-      "window_runs": 136,
-      "required_pr_runs": 24,
-      "job_attempts": 46,
-      "started_at": "2026-11-03T05:47:19.036806+00:00",
-      "finished_at": "2026-11-03T05:47:24.432373+00:00",
-      "scope": "Complete closed workflow-creation window after mypy tree-input merge and before independent queue-admission merge; diagnostic source-varying cohort, not causal or post-all-changes goal proof"
+      "window_runs": 481,
+      "required_pr_runs": 75,
+      "job_attempts": 155,
+      "started_at": "2026-11-03T08:15:24.080917+00:00",
+      "finished_at": "2026-11-03T08:15:43.030630+00:00",
+      "scope": "Fixed post-queue PR workflow creation window; minimum reached after three prespecified 30-minute extensions; full retry waits and all non-green outcomes retained."
     },
     "first_attempt_green_subset": {
       "heads": 12,
@@ -4072,13 +4124,12 @@
       "retained_context_not_latest_population": true
     },
     "source_and_window": {
-      "inspected_devel_commit": "25b59b0d02b16b50ecc1a56296881c1a117b977e",
-      "controlled_experiment_source_commit": "b2b7e3128278a6073b21ac522b42f9e151d5913b",
-      "window_utc": ["2026-11-03T05:08:21Z", "2026-11-03T05:44:22Z"],
-      "collection_finished_at_utc": "2026-11-03T05:47:24.432373+00:00",
-      "kernel_release": "6.12.115-2 merged",
-      "publication_scope": "Sanitized aggregates and validation links only; raw head, workflow, job, runner and API records remain private.",
-      "collection_started_at_utc": "2026-11-03T05:47:19.036806+00:00"
+      "inspected_devel_commit": "8740e3eb668c8bc40822c7941f10d976ac677057",
+      "inspected_commit_scope": "Source inspected for retry diagnosis and the RBE VM lifecycle experiment only; the larger Actions cohort varies by head and is not asserted to use this exact source.",
+      "window_utc": ["2026-11-03T05:44:23Z", "2026-11-03T08:14:22Z"],
+      "collection_started_at_utc": "2026-11-03T08:15:24.080917+00:00",
+      "collection_finished_at_utc": "2026-11-03T08:15:43.030630+00:00",
+      "publication_scope": "Sanitized cohort aggregates, exact investigation links and validation invocations only; raw head/workflow/job/runner/API records remain private."
     },
     "current_investigations": {
       "retry_audit": {
@@ -4221,7 +4272,7 @@
       "source_change": "Adds immutable BuildBuddy source link for the guard diagnosis.",
       "scope_limit": "No source change to the underlying stuck-shim diagnosis; no KVM/cluster work or coverage relaxation."
     },
-    "investigation_evidence_cutoff_utc": "2026-11-03T06:30:00Z",
+    "investigation_evidence_cutoff_utc": "2026-11-03T08:46:49.026018+00:00",
     "previous_report_window": {
       "window_utc": ["2026-11-03T02:59:22Z", "2026-11-03T04:25:00Z"],
       "collection_utc": [
@@ -4405,17 +4456,6 @@
       },
       "unresolved": "The missing mypy result and terminal Bazel event prevent inferring that the original gate was complete or would pass when test summaries finished. Scheduler/worker lease evidence is unavailable. Log visibility delay alone does not explain the full-gate delay or establish a CLI fix."
     },
-    "state_at_cutoff": {
-      "pr_14035": "open; all three required checks passed",
-      "pr_14043": "merged as 5d050a313d6d7698495f3f2a6b5b79653b1125c0",
-      "pr_14045": "merged at 04:20:28 UTC as 5f4f1c4b53440c949eb6db6a0b35366c01d703a2",
-      "pr_14056": "merged at04:46:33 as f5042d84c7c9446122f3421ec6287920d5155cdc",
-      "pr_14057": "merged at 04:32:55 UTC as d24f6f09df178b476d6becf215e6be054bcdcc4a",
-      "goal": "active and unproven; post-last-performance-change creation window still open",
-      "pr_14061": "merged at05:08:20 as3ffa713904913397b83f8f58dbe88c1609238d92",
-      "pr_14066": "merged at05:44:22 as25b59b0d02b16b50ecc1a56296881c1a117b977e",
-      "pr_14067": "merged at05:58:34 as3d8a73c4860f167d801da3ba32affcf1ec731ba9"
-    },
     "post_mypy_pre_queue": {
       "window_utc": ["2026-11-03T05:08:21Z", "2026-11-03T05:44:22Z"],
       "collection_utc": [
@@ -4519,7 +4559,7 @@
       "start_utc": "2026-11-03T05:44:23Z",
       "initial_end_utc": "2026-11-03T06:44:22Z",
       "minimum_green_heads": 20,
-      "status": "Queue admission performance change merged. Reset by prespecified last-performance-merge rule; test-only cleanup will not reset. Initial creation window remains open; goal unproven.",
+      "status": "Completed after three 30-minute extensions because the initial fixed hour had fewer than 20 green heads; 20/25 are now green, mean 371.7s, so the <300s objective was missed.",
       "plan": {
         "objective": "get mean time to all 3 required checks green under 5 min",
         "clock": "first observed required PR workflow creation to latest successful completion of all three required job contexts for the same head repository and SHA; preserve all retry waits",
@@ -4531,7 +4571,53 @@
         "maturity": "Refetch exact run and job attempts after pending work resolves; distinguish the creation-window endpoint from collection time and do not claim an immature sample establishes the goal",
         "goal_evidence": "A complete representative fresh cohort with at least 20 green heads and observed mean below 300 seconds on this clock; report population and p50/p90 with all exclusions. This is an observed service outcome, not causal attribution or a guarantee for future PRs.",
         "limits": "A standalone target benchmark, one 257-second PR, a selected first-attempt subset, or exclusion of known retry waits cannot establish the objective. No KVM deployment or live PostgreSQL persistence."
-      }
+      },
+      "result": {
+        "window_utc": ["2026-11-03T05:44:23Z", "2026-11-03T08:14:22Z"],
+        "collection_utc": [
+          "2026-11-03T08:15:24.080917+00:00",
+          "2026-11-03T08:15:43.030630+00:00"
+        ],
+        "collection_scope": {
+          "all_window_workflow_runs": 481,
+          "required_pr_workflow_runs": 75,
+          "job_attempts": 155,
+          "pagination_totals_checked": true
+        },
+        "heads_in_scope": 25,
+        "latest_attempt_all_three_success_proxy_heads": 20,
+        "outcomes": {
+          "green_proxy": 20,
+          "canceled": 3,
+          "failed": 2,
+          "pending_or_incomplete": 0
+        },
+        "mean_seconds": 371.7,
+        "mean_display": "6m 11.7s",
+        "p50_seconds": 167.0,
+        "p90_seconds": 517.0,
+        "green_feedback_seconds_sorted": [
+          89.0, 90.0, 99.0, 100.0, 103.0, 113.0, 124.0, 147.0, 159.0, 166.0,
+          168.0, 170.0, 188.0, 259.0, 307.0, 350.0, 455.0, 517.0, 845.0, 2985.0
+        ],
+        "last_gate_counts": {
+          "bazel-ci / Test & Build": 18,
+          "Build artifacts + imports check": 2
+        },
+        "retry_waits_included": true,
+        "required_gates": [
+          "bazel-ci / Test & Build",
+          "Pre-commit checks",
+          "Build artifacts + imports check"
+        ],
+        "selection_and_claim_limit": "Prespecified post-queue creation window, extended in three 30-minute increments only because the initial window had fewer than 20 green heads; all heads retained. Source-varying cohort, not a causal estimate of queue admission or any other change.",
+        "post_merge_soak_sample": true,
+        "objective_met": false,
+        "completion_requirement": "Objective remains unmet. Do not extend this completed window to dilute the mean; after PR 14087 checks/review, land and soak the relay lifecycle repair, then measure a fresh representative all-gate cohort.",
+        "source_artifacts": "Sanitized aggregate from summary.json, feedback.json, collection.json and snapshot.json under the private post-queue-two-half-hour capture. Raw workflow/job API records remain private.",
+        "investigation_evidence_cutoff_utc": "2026-11-03T08:30:15Z"
+      },
+      "goal_outcome": "not achieved; do not extend the completed window to dilute the mean"
     },
     "fresh_profile_boundaries": {
       "full_graph": {
@@ -4559,31 +4645,6 @@
         "source_boundary": "Namespace fixture and guest images already excluded; shared controller inputs remain valid invalidators",
         "limit": "One run; no guest CPU/boot optimization or KVM deployment made."
       }
-    },
-    "newest_slow_heads": {
-      "selection": "All3slower green heads in the closed5-green/3-canceled cohort; no causal comparison",
-      "feedback_seconds": [437, 562, 500],
-      "github_job_queue_seconds": [48, 44, 59],
-      "remote_run_to_test_seconds": [44.153, 57.102, 67.073],
-      "query_seconds_total": [16.415, 26.307, 13.754],
-      "between_query_seconds": [16.937, 19.111, 24.511],
-      "test_command_elapsed_seconds": [283.005, 397.432, 321.77],
-      "critical_path_seconds": [277.52, 356.82, 307.3],
-      "uncached_critical_test_actions": [
-        {
-          "target": "//agentplane/system_tests/suites:test_vm",
-          "seconds": 277.01
-        },
-        {
-          "target": "//agentplane/system_tests/suites:test_pod",
-          "seconds": 304.06
-        },
-        {
-          "target": "//agentplane/system_tests/suites:test_vm",
-          "seconds": 306.04
-        }
-      ],
-      "query_profile_limit": "Historical18querychildrenhavenoattachedprofiles/cacheStats. SubsequentfixedmergecProfile/TRACE2/JFR completed:29.638sselector+query; historical44-67snotreproduced; nocachesavingpromoted."
     },
     "selector_standard_profile": {
       "invocation": "037bd5d4-d064-4d2c-af01-18d50ac69ab2",
@@ -4622,10 +4683,243 @@
           "phase": "beforewrapper: rawbase64transport"
         }
       ]
+    },
+    "latest_devel_tip_observed": {
+      "commit": "a431142b7f71261344b0a2fec1c31112be8a96a3",
+      "scope_note": "Later devel includes the external KVM opt-in lane and static KVM worker configuration. The cohort is source-varying; only the retry diagnosis and relay experiment are tied to inspected source 8740e3eb668c8bc40822c7941f10d976ac677057. No KVM deployment or latest-tip architecture audit was performed."
+    },
+    "state_at_previous_cutoff": {
+      "pr_14035": "open; all three required checks passed",
+      "pr_14043": "merged as 5d050a313d6d7698495f3f2a6b5b79653b1125c0",
+      "pr_14045": "merged at 04:20:28 UTC as 5f4f1c4b53440c949eb6db6a0b35366c01d703a2",
+      "pr_14056": "merged at04:46:33 as f5042d84c7c9446122f3421ec6287920d5155cdc",
+      "pr_14057": "merged at 04:32:55 UTC as d24f6f09df178b476d6becf215e6be054bcdcc4a",
+      "goal": "active and unproven; post-last-performance-change creation window still open",
+      "pr_14061": "merged at05:08:20 as3ffa713904913397b83f8f58dbe88c1609238d92",
+      "pr_14066": "merged at05:44:22 as25b59b0d02b16b50ecc1a56296881c1a117b977e",
+      "pr_14067": "merged at05:58:34 as3d8a73c4860f167d801da3ba32affcf1ec731ba9"
+    },
+    "state_at_report_cutoff": {
+      "reported_at_utc": "2026-11-03T08:46:49.026018+00:00",
+      "goal": "active; completed post-queue cohort has 20 green of 25 heads and a 371.7-second mean, above the 300-second target",
+      "queue_cohort": "closed at 2026-11-03T08:14:22Z after the prespecified three 30-minute extensions; do not extend to dilute the mean",
+      "pr_14076": "merged at 06:58:39 UTC after the unchanged-head external retry passed at 06:58:26 UTC",
+      "pr_14070": "merged at 08:01:45 UTC at exact head ed1996e0fcc7da4cfd9be6dde35c928eee81fb94 after the unchanged-head external retry passed at 07:17:36 UTC",
+      "pr_14080": "merged at 08:12:24 UTC at head e629aac0e9783079f2507aea32ec80e29c258dbc",
+      "pr_14035": "open at head beginning f90a353c",
+      "relay_candidate_pr": "PR14087MERGED08:36:58UTC asbb9ce18b9945bcd6390f5e39d06f4b83eaabdbde; all3requiredchecksPASSED08:36:31UTC on exacthead aeefae52a31303d385127af65adac5094c3d6c67",
+      "tested_relay_source": "RBE candidate commit 495bb2abd4c1b5298e61105d6542048ad57de9a7 atop inspected source 8740e3eb668c8bc40822c7941f10d976ac677057; tested files byte-identical after rebase"
+    },
+    "pre_queue_slow_heads": {
+      "selection": "All3slower green heads in the closed5-green/3-canceled cohort; no causal comparison",
+      "feedback_seconds": [437, 562, 500],
+      "github_job_queue_seconds": [48, 44, 59],
+      "remote_run_to_test_seconds": [44.153, 57.102, 67.073],
+      "query_seconds_total": [16.415, 26.307, 13.754],
+      "between_query_seconds": [16.937, 19.111, 24.511],
+      "test_command_elapsed_seconds": [283.005, 397.432, 321.77],
+      "critical_path_seconds": [277.52, 356.82, 307.3],
+      "uncached_critical_test_actions": [
+        {
+          "target": "//agentplane/system_tests/suites:test_vm",
+          "seconds": 277.01
+        },
+        {
+          "target": "//agentplane/system_tests/suites:test_pod",
+          "seconds": 304.06
+        },
+        {
+          "target": "//agentplane/system_tests/suites:test_vm",
+          "seconds": 306.04
+        }
+      ],
+      "query_profile_limit": "Historical18querychildrenhavenoattachedprofiles/cacheStats. SubsequentfixedmergecProfile/TRACE2/JFR completed:29.638sselector+query; historical44-67snotreproduced; nocachesavingpromoted."
+    },
+    "post_queue_retry_tail": {
+      "green_heads": 20,
+      "green_feedback_seconds_sum": 7434,
+      "largest_retry_heads": [
+        {
+          "pull_request": 14070,
+          "head_sha": "ed1996e0fcc7da4cfd9be6dde35c928eee81fb94",
+          "feedback_seconds": 2985,
+          "share_of_green_sum_percent": 40.2,
+          "original_evidence": {
+            "github_run_id": 41590035014,
+            "buildbuddy_invocation": "c15be13e-db1e-5498-9dbb-c7849d5e5d90",
+            "finding": "The guest native command completed successfully, but the enclosing test_vm failed its codex.tool.start trace assertion. Native item-start and exact-source evidence show Start ran and was sampled, so the missing span is downstream.",
+            "retry": "External unchanged-head attempt 2 passed at 2026-11-03T07:17:36Z."
+          },
+          "relay_diagnosis_limit": "Native launcher relay was an ordinary container that can stop concurrently with the guest; the actual historical relay stop timestamp was not retained, so this is not proven as the individual missing-span cause."
+        },
+        {
+          "pull_request": 14076,
+          "head_sha": "23afa4bcfd0d2896a0b7e73183cb9426e0f145aa",
+          "feedback_seconds": 845,
+          "share_of_green_sum_percent": 11.4,
+          "original_evidence": {
+            "github_run_id": 41591782789,
+            "github_job_id": 125769933920,
+            "outer_buildbuddy_invocation": "ed8fac62-fc7b-4c18-ba47-0ce78f194d54",
+            "original_action_result": "Test/build/outer action completed successfully; pinned CLI GetExecution returned empty.",
+            "later_read": "A later session-credential read found completed action exit code 0; whether the CI and session principals matched is unknown.",
+            "retry": "External unchanged-head retry passed at 2026-11-03T06:58:26Z; PR merged at 06:58:39Z.",
+            "cli": "At 2026-11-03T07:09:42Z, pinned CLI 5.0.498 was the latest official release and current-master remote-Bazel source was byte-identical."
+          },
+          "diagnosis_limit": "BuildBuddy backend cause and CI/session principal equality remain unknown; no recovery-policy/source change is supported. Resolve the same execution read-only with the original CI identity and do not replay an uncertain run."
+        }
+      ],
+      "combined_seconds": 3830,
+      "combined_share_of_green_sum_percent": 51.5,
+      "interpretation": "Descriptive share of successful green-head feedback clocks, not wasted time or a counterfactual saving.",
+      "failed_heads": [
+        {
+          "head_sha": "c9165fad0b18a93c96dcbb00c7ee935dca2bd984",
+          "defect": "Pre-commit found an extra BUILD blank line.",
+          "green_successor": "8b50c0392af30aef568cef743baf7c49978f34a5"
+        },
+        {
+          "head_sha": "f91f1009e74f24ae44bb20884a278b3ac4509219",
+          "defect": "A bad Kustomize ./image-pins reference was removed in the green successor.",
+          "green_successor": "2f9b1969ef993dd734724767ca1ca1c35e4a648a"
+        }
+      ]
+    },
+    "relay_lifecycle_candidate": {
+      "status": "MERGED08:36:58UTC; all3requiredchecksPASSED08:36:31UTC on finalhead; representativepost-mergecohortnotyetmeasured",
+      "candidate_source_commit": "495bb2abd4c1b5298e61105d6542048ad57de9a7",
+      "base_source_commit": "8740e3eb668c8bc40822c7941f10d976ac677057",
+      "follow_up_pr": {
+        "url": "https://github.com/agentydragon/ducktape/pull/14087",
+        "status_at_report_cutoff": "merged at2026-11-03T08:36:58Z; all3requiredchecks passed on finalhead",
+        "head_sha": "aeefae52a31303d385127af65adac5094c3d6c67",
+        "rebase_note": "The five tested implementation/generated files are byte-identical after rebase; effective tested source remains candidate commit 495bb2abd4c1b5298e61105d6542048ad57de9a7 atop 8740e3eb668c8bc40822c7941f10d976ac677057.",
+        "merge_commit": "bb9ce18b9945bcd6390f5e39d06f4b83eaabdbde",
+        "merged_at_utc": "2026-11-03T08:36:58Z"
+      },
+      "hypothesis": "An ordinary relay container may terminate concurrently with the VM guest and close the OTLP route before shutdown spans are exported. Historical stop time is absent, so this is a plausible mechanism rather than proven cause of PR 14070.",
+      "change": "Keep relay as a native init sidecar after existing KubeVirt initializers; retain token isolation, old regular-relay Pod UPDATE compatibility, idempotence, unchanged VM command/journal/shutdown/OOM/trace assertions, structured Kyverno context template and explicit Kustomize image field specification.",
+      "fixed_base_control": {
+        "test_invocation": "c66c04be-90b9-4f8c-8c9d-a1fee527bbd6",
+        "outer_invocation": "a48b0afd-6ffb-4c68-aeb8-d94fbf60c27b",
+        "result": "pass",
+        "test_action_seconds": 313.504,
+        "bazel_elapsed_seconds": 321.029,
+        "trace_shutdown_warnings": 3,
+        "runtime_spans_per_scenario": {
+          "vm_1_state": 12,
+          "vm_2_state": 15,
+          "vm_codex_oom_state": 20
+        },
+        "tool_start_spans_per_scenario": {
+          "vm_1_state": 0,
+          "vm_2_state": 1,
+          "vm_codex_oom_state": 3
+        },
+        "runtime_unit_stop_seconds": {
+          "vm_1_state": 5.185318,
+          "vm_2_state": 4.851611,
+          "vm_codex_oom_state": 5.190707
+        },
+        "oom_assertions": "passed"
+      },
+      "candidate": {
+        "test_invocation": "abd73499-bfb5-4491-8567-09067928377f",
+        "outer_invocation": "80e519ac-72ad-4ca5-997d-7b9ed1da1064",
+        "result": "pass",
+        "test_action_seconds": 287.72,
+        "trace_shutdown_warnings": 0,
+        "runtime_spans_per_scenario": {
+          "vm_1_state": 17,
+          "vm_2_state": 20,
+          "vm_codex_oom_state": 24
+        },
+        "tool_start_spans_per_scenario": {
+          "vm_1_state": 0,
+          "vm_2_state": 1,
+          "vm_codex_oom_state": 3
+        },
+        "runtime_unit_stop_seconds": {
+          "vm_1_state": 0.255851,
+          "vm_2_state": 0.492191,
+          "vm_codex_oom_state": 0.262561
+        },
+        "complete_guest_journals_mib": [8, 8, 8],
+        "poweroff_consoles": 3,
+        "regular_codex_tool_start_spans_per_run": 1,
+        "oom_tool_start_spans_per_run": 3,
+        "oom_assertions": "passed; unchanged between control and candidate"
+      },
+      "conditions": {
+        "control_setup_seconds": 99.990234,
+        "candidate_setup_seconds": 43.241639,
+        "control_clean_baseline_seconds": 22.682631,
+        "candidate_clean_baseline_seconds": 24.072422,
+        "stop_interval_clock": "Systemd runtime-unit Stopping to Deactivated from monotonic guest-journal events; not log arrival time. Relay-container stop time was not measured."
+      },
+      "additional_rbe_checks": {
+        "policy_and_kustomize": {
+          "invocation": "cbacb2be-be24-45c2-9513-4276bbb7b98e",
+          "result": "pass"
+        },
+        "image_manifest_snapshot": {
+          "invocation": "f94341dd-42be-42d1-81a7-6924fb2f6e76",
+          "result": "pass",
+          "seconds": 49
+        },
+        "named_library_ruff_mypy": {
+          "invocation": "512ee544-86cd-44cd-8a47-605f47aa7110",
+          "result": "pass"
+        }
+      },
+      "conclusion": "Observed shutdown warnings disappeared and trace coverage increased in this bounded pair. Setup and warmth differed; the action-wall delta is not a causal suite/fleet saving and no flake-rate reduction was measured. Recommend ship/soak, then evaluate with a new representative all-gate cohort.",
+      "final_head_ci": {
+        "head": "aeefae52a31303d385127af65adac5094c3d6c67",
+        "synthetic_merge": "a1de507717131afb1397592e943500017f9852a8",
+        "test_invocation": "f64ca131-d578-5607-931d-8e0d694d1f88",
+        "test_result": "SUCCESS",
+        "regular_vm_test_action_seconds": 364.552,
+        "github_bazel_job": "https://github.com/agentydragon/ducktape/actions/runs/41603483556/job/125807535158",
+        "required_checks_completed_at_utc": "2026-11-03T08:36:31Z",
+        "scope": "Separate implementation PR validation; outside closed cohort, before merge, not post-merge soak or a fleet performance claim.",
+        "runtime_unit_stop_seconds": {
+          "vm_1": 0.27843,
+          "vm_2": 0.061903,
+          "codex_oom": 0.331752
+        },
+        "trace_shutdown_warnings": 0,
+        "full_guest_journals": 3,
+        "clean_poweroff_consoles": 3,
+        "runtime_spans": 61,
+        "required_codex_tool_start_spans": 4,
+        "retained_stack_outcome": "warm",
+        "stack_setup_seconds": 61.04402,
+        "workflow_creation_to_all_three_green_seconds": 510
+      }
+    },
+    "post_relay_measurement_plan": {
+      "objective": "get mean time to all 3 required checks green under 5 min",
+      "clock": "first observed required PR workflow creation to latest successful completion of all three required job contexts for the same head repository and SHA; preserve all retry waits",
+      "selection": "all required pull_request workflow heads created in the fixed window, including failures and cancellations in outcome counts; calculate the success-proxy mean only for heads with all three gates green, matching the historical clock",
+      "start_rule": "merge time of the last CI performance code PR published in this implementation cycle, excluding report-only PRs; record actual source inclusion and do not move the start in response to observed durations",
+      "initial_window_seconds": 3600,
+      "minimum_green_heads": 20,
+      "extension_rule": "If the first fixed hour contains fewer than 20 green heads, extend the creation window in 30-minute increments. Retain all earlier heads and report failed, canceled, pending and incomplete heads. Do not choose only fast runs or first attempts.",
+      "maturity": "Refetch exact run and job attempts after pending work resolves; distinguish the creation-window endpoint from collection time and do not claim an immature sample establishes the goal",
+      "goal_evidence": "A complete representative fresh cohort with at least 20 green heads and observed mean below 300 seconds on this clock; report population and p50/p90 with all exclusions. This is an observed service outcome, not causal attribution or a guarantee for future PRs.",
+      "limits": "A standalone target benchmark, one 257-second PR, a selected first-attempt subset, or exclusion of known retry waits cannot establish the objective. No KVM deployment or live PostgreSQL persistence.",
+      "recorded_at_utc": "2026-11-03T08:45:25.977551+00:00",
+      "cycle": "After merged native launcher relay lifetime change; prior25-headcohort completed andretained",
+      "source_change": "bb9ce18b9945bcd6390f5e39d06f4b83eaabdbde",
+      "pull_request": 14087,
+      "merged_at_utc": "2026-11-03T08:36:58Z",
+      "start_utc": "2026-11-03T08:36:59Z",
+      "initial_end_utc": "2026-11-03T09:36:58Z",
+      "status": "Prespecified before inspecting any post-relay cohort outcomes; firstfixedhourstillopen; no goalproof"
     }
   },
   "required_rules_current_verification": {
-    "source": "GitHub ruleset15894562 default-branch-protection",
+    "source": "GitHub active ruleset 15894562 default-branch-protection",
     "verified_at_utc": "2026-11-03T05:49:00Z",
     "enforcement": "active",
     "refs": ["refs/heads/devel", "refs/heads/main"],
@@ -4636,6 +4930,8 @@
     ],
     "required_reviews": 0,
     "strict_status_checks": false,
-    "scope": "The goal measures these3CIgates; mergeability and fullauto-mergeeligibility are distinct."
-  }
+    "scope": "This cohort measures the three named required contexts; the capture does not prove complete auto-merge eligibility."
+  },
+  "source_devel_commit_scope": "Source inspected for retry diagnosis and the RBE VM lifecycle experiment only; the larger Actions cohort is source-varying and is not asserted to use this exact source.",
+  "historical_previous_report_commit": "479e3ef0e09f16991a854e23ccb501861e9b34da"
 }
