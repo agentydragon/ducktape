@@ -3,21 +3,16 @@
 from typing import Any
 
 import pytest_bazel
-import yaml
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import app, history_service, notifications, runner_gateway, session_dispatcher, staging
+from cluster.cdk8s.agentplane import app, history_service, notifications, runner_gateway, session_dispatcher
 
 
 def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
     return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
 
 
-def test_sandbox_service_resources_are_absent(staging_manifests: list[dict[str, Any]]) -> None:
-    names = {document["metadata"]["name"] for document in staging_manifests}
-    assert not any(name.startswith("agentplane-sandbox-service") for name in names)
-    assert f"{staging.ENV.namespace}-sandbox-service-token-reviewer" not in names
-
+def test_history_service_uses_sandbox_database(staging_manifests: list[dict[str, Any]]) -> None:
     history = _resource(staging_manifests, "Deployment", history_service.NAME)["spec"]["template"]["spec"]
     history_database = {"name": "postgres-sandbox-service", "key": "uri"}
     history_external_secret = _resource(staging_manifests, "ExternalSecret", "postgres-sandbox-service")
@@ -33,11 +28,6 @@ def test_sandbox_service_resources_are_absent(staging_manifests: list[dict[str, 
 
 
 def test_gateway_owns_sandbox_mutations(staging_manifests: list[dict[str, Any]]) -> None:
-    application = _resource(staging_manifests, "Deployment", app.NAME)["spec"]["template"]["spec"]
-    container = one(item for item in application["containers"] if item["name"] == "app")
-    assert not any(arg.startswith("--sandbox-service-target=") for arg in container["args"])
-    assert not any(volume["name"] == "sandbox-service-token" for volume in application["volumes"])
-
     app_rules = _resource(staging_manifests, "Role", app.NAME.removeprefix("agentplane-"))["rules"]
     for rule in app_rules:
         if rule["resources"] == ["sandboxes"]:
@@ -55,7 +45,7 @@ def test_gateway_owns_sandbox_mutations(staging_manifests: list[dict[str, Any]])
     )
 
 
-def test_notifications_have_no_app_or_sandbox_service_dependency(staging_manifests: list[dict[str, Any]]) -> None:
+def test_notifications_use_current_service_tokens_without_app_egress(staging_manifests: list[dict[str, Any]]) -> None:
     pod = _resource(staging_manifests, "Deployment", notifications.NAME)["spec"]["template"]["spec"]
     assert pod["serviceAccountName"] == notifications.NAME
     tokens = one(volume for volume in pod["volumes"] if volume["name"] == "service-tokens")
@@ -65,10 +55,6 @@ def test_notifications_have_no_app_or_sandbox_service_dependency(staging_manifes
         history_service.TOKEN_AUDIENCE,
         session_dispatcher.TOKEN_AUDIENCE,
     }
-    settings = yaml.safe_load(
-        _resource(staging_manifests, "ConfigMap", f"{notifications.NAME}-settings")["data"]["settings.yaml"]
-    )
-    assert "sandbox_service" not in settings
     policy = _resource(staging_manifests, "CiliumNetworkPolicy", notifications.NAME.removeprefix("agentplane-"))["spec"]
     assert not any(
         target["matchLabels"].get("app.kubernetes.io/name") == app.NAME

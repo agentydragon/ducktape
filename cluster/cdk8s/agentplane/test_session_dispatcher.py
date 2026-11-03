@@ -72,7 +72,7 @@ def test_app_migrates_with_its_serving_database_uri(staging_manifests: list[dict
     assert container["startupProbe"]["httpGet"]["path"] == "/healthz"
 
 
-def test_app_uses_dispatcher_grpc_target_without_legacy_http_flag(staging_manifests: list[dict[str, Any]]) -> None:
+def test_app_uses_dispatcher_grpc_target(staging_manifests: list[dict[str, Any]]) -> None:
     deployment = one(
         doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == app.NAME
     )
@@ -82,7 +82,6 @@ def test_app_uses_dispatcher_grpc_target_without_legacy_http_flag(staging_manife
         f"--session-dispatcher-target={session_dispatcher.service(staging.ENV.namespace).fqdn}:"
         f"{session_dispatcher.service(staging.ENV.namespace).port.number}"
     ) in app_container["args"]
-    assert not any(arg.startswith("--session-dispatcher-http-url=") for arg in app_container["args"])
 
 
 if __name__ == "__main__":

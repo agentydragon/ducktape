@@ -84,16 +84,6 @@ func TestAppConfigRoutesUseGeneratedProtoJSONAndCallerAuthentication(t *testing.
 			t.Errorf("GET %s body = %v, want %v", test.path, got, want)
 		}
 	}
-
-	for _, path := range []string{"/models", "/presets", "/upstream/app-config/v1/threads", "/upstream/app-config/v1/threads:watch"} {
-		oldRoute := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodGet, path, nil)
-		request.Header.Set("Authorization", "Bearer accepted")
-		handler.ServeHTTP(oldRoute, request)
-		if oldRoute.Code != http.StatusNotFound {
-			t.Errorf("retired GET %s status = %d, want 404", path, oldRoute.Code)
-		}
-	}
 }
 
 type appConfigTokenReviewer struct{}

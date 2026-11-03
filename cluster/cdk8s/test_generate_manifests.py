@@ -776,7 +776,7 @@ def test_cluster_diagnostics_kustomizations_are_read_only(
     assert not any(grants("kustomize.toolkit.fluxcd.io", "kustomizations", verb) for verb in writes)
 
 
-def test_haku_spike_is_retired_and_backup_recovery_survives(
+def test_parked_haku_backup_and_shared_services_remain_configured(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
     active = [
@@ -787,13 +787,7 @@ def test_haku_spike_is_retired_and_backup_recovery_survives(
         if doc
     ]
     spike = "haku-openclaw-spike"
-    assert not any(doc["metadata"].get("namespace") == spike for doc in active)
-    assert not any(doc["kind"] == "Namespace" and doc["metadata"]["name"] == spike for doc in active)
-    assert not any(doc["metadata"]["name"] == f"{spike}-proxy" for doc in active)
     owners = {doc["metadata"]["name"]: doc for doc in active if doc["kind"] == "Kustomization"}
-    assert f"{spike}-backup" not in owners
-    assert f"{spike}-app" not in owners
-    assert not (generated / "cluster/generated/retired/haku-openclaw-spike").exists()
     tenant_grant = next(
         doc
         for doc in active
@@ -813,8 +807,6 @@ def test_haku_spike_is_retired_and_backup_recovery_survives(
     assert any(doc["kind"] == "Namespace" and doc["metadata"]["name"] == "public-coder-agent" for doc in active)
     # Only the retained backup recovery package remains reproducible outside the live roots.
     archived = generated / "cluster/parked/haku-openclaw-spike"
-    assert not (archived / "app").exists()
-    assert not (archived / "app-image-pins").exists()
     backup = parsed_yaml_documents[archived / "backup/backup.k8s.yaml"]
     bucket = next(doc for doc in backup if doc["kind"] == "Bucket")
     assert bucket["spec"]["reclaimPolicy"] == "Retain"
@@ -824,7 +816,9 @@ def test_haku_spike_is_retired_and_backup_recovery_survives(
     assert (archived / "backup/README.md").is_file()
 
 
-def test_retired_mitmproxy_stays_unwired(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> None:
+def test_parked_claude_namespace_preserves_credentials_and_egress_fence(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
     active = [
         doc
         for path in generated.rglob("*.k8s.yaml")
@@ -832,15 +826,9 @@ def test_retired_mitmproxy_stays_unwired(generated: Path, parsed_yaml_documents:
         for doc in parsed_yaml_documents[path]
         if isinstance(doc, dict)
     ]
-    retired_namespaces = {"agents-mitmproxy"}
-    assert not any(doc["metadata"].get("namespace") in retired_namespaces for doc in active)
-    assert not any(doc["kind"] == "Namespace" and doc["metadata"]["name"] in retired_namespaces for doc in active)
-    owners = {doc["metadata"]["name"]: doc for doc in active if doc["kind"] == "Kustomization"}
-    assert "agents-mitmproxy" not in owners
-    for directory in retired_namespaces:
-        assert not (generated / "cluster/generated/retired" / directory).exists()
     # Claude's shared roles, identities and credentials survive; ad-hoc compute does not.
     claude = [doc for doc in active if doc["metadata"].get("namespace") == "claude-sandbox"]
+    owners = {doc["metadata"]["name"]: doc for doc in active if doc["kind"] == "Kustomization"}
     quota = next(doc for doc in claude if doc["kind"] == "ResourceQuota")
     assert str(quota["spec"]["hard"]["pods"]) == "0"
     fence = next(

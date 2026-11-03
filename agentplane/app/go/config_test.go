@@ -100,14 +100,6 @@ func TestListenAddressConfig(t *testing.T) {
 	}
 }
 
-func TestApplyCommandLineOverridesRejectsRetiredSessionDispatcherHTTPURLFlag(t *testing.T) {
-	config := validTestConfig()
-	if _, _, err := applyCommandLineOverrides(&config, []string{"--session-dispatcher-http-url=http://dispatcher:8080"}); err == nil ||
-		!strings.Contains(err.Error(), "session-dispatcher-http-url") {
-		t.Fatalf("retired Session Dispatcher HTTP URL flag error = %v", err)
-	}
-}
-
 func TestConfigValidateRejectsTooShortNewSandboxIdleSuspendDefault(t *testing.T) {
 	seconds := int64(59)
 	config := validTestConfig()

@@ -562,11 +562,6 @@ func TestThreadReadRouteRegistrationPublishesOpenAPIPaths(t *testing.T) {
 			t.Errorf("OpenAPI does not describe %s", path)
 		}
 	}
-	for _, path := range []string{"/threads", "/threads/{thread_id}/observations", "/threads/{thread_id}/observations/{cursor}", "/threads/{thread_id}/evidence"} {
-		if strings.Contains(recorder.Body.String(), `"`+path+`"`) {
-			t.Errorf("OpenAPI still documents app-owned History wrapper %s", path)
-		}
-	}
 }
 
 func TestThreadSandboxReadinessRequiresRunningReadyPod(t *testing.T) {

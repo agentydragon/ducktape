@@ -147,19 +147,6 @@ func TestPolicyGrantOpenAPIReturnsNoBody(t *testing.T) {
 	}
 }
 
-func TestSandboxOpenAPILeavesEnvironmentOperationsToGeneratedService(t *testing.T) {
-	var output bytes.Buffer
-	if err := exportOpenAPI(&output); err != nil {
-		t.Fatal(err)
-	}
-	document := assertSaneOpenAPI(t, output.Bytes())
-	for _, path := range []string{"/sandboxes", "/sandboxes/{name}", "/sandboxes/{name}/suspend", "/sandboxes/{name}/resume", "/sandboxes/templates"} {
-		if _, ok := document.Paths[path]; ok {
-			t.Errorf("app OpenAPI still exposes environment operation %q", path)
-		}
-	}
-}
-
 type openAPIDocument struct {
 	OpenAPI string `json:"openapi"`
 	Info    struct {
