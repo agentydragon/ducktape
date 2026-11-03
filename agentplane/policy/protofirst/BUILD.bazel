@@ -1,3 +1,4 @@
+# gazelle:resolve proto google/api/field_behavior.proto @googleapis//google/api:field_behavior_proto
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load(":crd.bzl", "proto_crd", "unsupported_listvalue_probe")
@@ -6,7 +7,10 @@ proto_library(
     name = "policy_proto",
     srcs = ["policy.proto"],
     visibility = ["//visibility:public"],
-    deps = ["@protobuf//:struct_proto"],
+    deps = [
+        "@googleapis//google/api:field_behavior_proto",
+        "@protobuf//:struct_proto",
+    ],
 )
 
 go_proto_library(
@@ -18,7 +22,10 @@ go_proto_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/policy/protofirst",
     proto = ":policy_proto",
     visibility = ["//agentplane/policy/protofirst:__subpackages__"],
-    deps = ["@org_golang_google_protobuf//types/known/structpb"],
+    deps = [
+        "@org_golang_google_genproto_googleapis_api//annotations",
+        "@org_golang_google_protobuf//types/known/structpb",
+    ],
 )
 
 proto_crd(

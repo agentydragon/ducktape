@@ -3,49 +3,143 @@ syntax = "proto3";
 package agentplane.policy.protofirst.v1;
 option go_package = "github.com/agentydragon/ducktape/agentplane/policy/protofirst;protofirstpb";
 
+import "google/api/field_behavior.proto";
 import "google/protobuf/struct.proto";
 
+// A reusable collection of policy rules.
+// +cue-gen:PolicySet:groupName:protofirst.agentplane.allegedly.works
+// +cue-gen:PolicySet:versions:v1alpha1
+// +cue-gen:PolicySet:scope:Namespaced
+// +cue-gen:PolicySet:spec:required
+// +cue-gen:PolicySet:resource:kind=PolicySet,plural=policysets,singular=policyset,listKind=PolicySetList
 message PolicySet {
+  // Rules are evaluated by the applicable policy consumers.
   // +kubebuilder:validation:MinItems=1
   // +kubebuilder:validation:MaxItems=256
-  repeated Rule rules = 1;
+  repeated Rule rules = 1 [(google.api.field_behavior) = REQUIRED];
 }
 
-// +kubebuilder:validation:XValidation:message="Rule fields must match type.",rule="self.type == 'egress' ? has(self.hosts) && !has(self.policy) : self.type == 'action_auto_approve' && has(self.policy) && !has(self.hosts)"
+// A rule grants a specific kind of access.
+// +kubebuilder:validation:XValidation:message="A blanket host rule cannot set clusterInternal or credentialRef.",rule="!has(self.hosts) || !self.hosts.exists(h, h == '*') || (!has(self.credentialRef) && (!has(self.clusterInternal) || !self.clusterInternal))"
+// +kubebuilder:validation:XValidation:message="Rule fields must match type.",rule="self.type == 'kubernetes_role_binding' ? (has(self.role) && has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.policy)) : self.type == 'kubernetes_cluster_role_binding' ? (has(self.clusterRole) && !has(self.role) && !has(self.namespaces) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.policy)) : self.type == 'egress' ? (has(self.hosts) && !has(self.role) && !has(self.namespaces) && !has(self.clusterRole) && !has(self.policy)) : self.type == 'session_inbox_access' ? (!has(self.role) && !has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.policy)) : has(self.policy) && !has(self.role) && !has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef)"
+// +kubebuilder:validation:XValidation:message="Rule fields must match type.",rule="self.type == 'session_inbox_access' ? (has(self.operations) && has(self.targets)) : (!has(self.operations) && !has(self.targets))"
 message Rule {
-  // +kubebuilder:validation:Enum=egress;action_auto_approve
-  string type = 1;
-  // +kubebuilder:validation:MinItems=1
-  repeated string hosts = 2;
-  ActionPolicy policy = 3;
-}
-
-message ActionPolicy {
-  // +kubebuilder:validation:Enum=exact_actions;argument_schema
-  string type = 1;
-  // +kubebuilder:validation:MinProperties=1
-  map<string, google.protobuf.ListValue> actions = 2;
-  google.protobuf.Struct schema = 3;
-}
-
-// An isolated egress-only CRD probes generation without replacing production resources.
-// +cue-gen:EgressPolicySet:groupName:protofirst.agentplane.allegedly.works
-// +cue-gen:EgressPolicySet:versions:v1alpha1
-// +cue-gen:EgressPolicySet:scope:Namespaced
-// +cue-gen:EgressPolicySet:spec:required
-// +cue-gen:EgressPolicySet:resource:kind=PolicySet,plural=policysets,singular=policyset,listKind=PolicySetList
-message EgressPolicySet {
+  // Type selects the policy consumer that handles this rule.
+  // +kubebuilder:validation:Enum=kubernetes_role_binding;kubernetes_cluster_role_binding;egress;action_auto_approve;session_inbox_access
+  string type = 1 [(google.api.field_behavior) = REQUIRED];
+  // Hosts lists allowed egress destinations.
   // +kubebuilder:validation:MinItems=1
   // +kubebuilder:validation:MaxItems=256
-  repeated EgressRule rules = 1;
+  // +protoc-gen-crd:list-value-validation:MaxLength=256
+	// +protoc-gen-crd:list-value-validation:Pattern=`^(\*|(\*\.)?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*)$`
+  repeated string hosts = 2;
+  // Policy configures the Action evaluator.
+  ActionPolicy policy = 3;
+  // Namespaces lists explicitly named target namespaces.
+  // +listType=set
+  // +kubebuilder:validation:MinItems=1
+  // +protoc-gen-crd:list-value-validation:MinLength=1
+  repeated string namespaces = 4;
+  // Targets selects Sandboxes for session access.
+  SandboxTargets targets = 5;
+  // Role names the Role or ClusterRole to bind.
+  RoleRef role = 6;
+  // ClusterRole names a cluster-wide role.
+  // +kubebuilder:validation:MinLength=1
+  string cluster_role = 7;
+  // Methods lists allowed HTTP methods.
+  // +kubebuilder:validation:MinItems=1
+  // +protoc-gen-crd:list-value-validation:Enum=GET;HEAD;POST;PUT;PATCH;DELETE;OPTIONS;CONNECT;TRACE
+  repeated string methods = 8;
+  // Paths lists allowed path patterns.
+  // +kubebuilder:validation:MinItems=1
+  // +protoc-gen-crd:list-value-validation:MinLength=1
+  repeated string paths = 9;
+  // CredentialRef names an EgressCredential.
+  CredentialRef credential_ref = 10;
+  // ClusterInternal admits private network addresses.
+  bool cluster_internal = 11;
+  // Operations lists allowed session inbox operations.
+  // +listType=set
+  // +kubebuilder:validation:MinItems=1
+  // +protoc-gen-crd:list-value-validation:Enum=send_message
+  repeated string operations = 12;
 }
 
-// +kubebuilder:validation:XValidation:message="Egress hosts are required",rule="has(self.hosts)"
-message EgressRule {
-  // +kubebuilder:validation:Enum=egress
-  string type = 1;
+// RoleRef names a Kubernetes role.
+message RoleRef {
+  // Kind is Role or ClusterRole.
+  // +kubebuilder:validation:Enum=Role;ClusterRole
+  string kind = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name identifies the role.
+  // +kubebuilder:validation:MinLength=1
+  string name = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// CredentialRef identifies an EgressCredential.
+message CredentialRef {
+  // Name identifies the credential.
+  // +kubebuilder:validation:MinLength=1
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// SandboxTargets selects Sandbox instances.
+// +kubebuilder:validation:XValidation:message="Name a Sandbox or an inbox tag, or set allSandboxes.",rule="has(self.sandboxes) || has(self.inboxTags) || (has(self.allSandboxes) && self.allSandboxes)"
+message SandboxTargets {
+  // Sandboxes identifies Sandbox targets by name.
+  // +listType=map
+  // +listMapKey=name
   // +kubebuilder:validation:MinItems=1
-  repeated string hosts = 2;
+  repeated SandboxTarget sandboxes = 1;
+  // AllSandboxes selects every Sandbox in the namespace.
+  bool all_sandboxes = 2;
+  // InboxTags selects Sandboxes by inbox tag.
+  // +listType=set
+  // +kubebuilder:validation:MinItems=1
+  // +protoc-gen-crd:list-value-validation:MinLength=1
+  // +protoc-gen-crd:list-value-validation:MaxLength=63
+  repeated string inbox_tags = 3;
+}
+
+// SandboxTarget identifies one Sandbox.
+message SandboxTarget {
+  // Name is the Sandbox name.
+  // +kubebuilder:validation:MinLength=1
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Uid optionally pins the Sandbox instance.
+  // +kubebuilder:validation:Format=uuid
+  string uid = 2;
+}
+
+// ActionPolicy selects an Action evaluator and its inputs.
+// +kubebuilder:validation:XValidation:message="Action policy fields must match type.",rule="self.type == 'exact_actions' ? (!has(self.schema) && !has(self.owner) && !has(self.repository) && !has(self.entities)) : self.type == 'argument_schema' ? (has(self.schema) && !has(self.owner) && !has(self.repository) && !has(self.entities)) : self.type == 'github_repository' ? (!has(self.schema) && has(self.owner) && has(self.repository) && !has(self.entities)) : self.type == 'github_public_repository' ? (!has(self.schema) && !has(self.owner) && !has(self.repository) && !has(self.entities)) : !has(self.schema) && !has(self.owner) && !has(self.repository) && has(self.entities)"
+message ActionPolicy {
+  // Type selects how to match an Action request.
+  // +kubebuilder:validation:Enum=exact_actions;argument_schema;github_repository;github_public_repository;home_assistant_entity_control
+  string type = 1 [(google.api.field_behavior) = REQUIRED];
+  // Actions lists allowed Action names by ActionGroup key.
+  // Each key names one ActionGroup.
+  // +kubebuilder:validation:MinProperties=1
+  map<string, ActionNames> actions = 2 [(google.api.field_behavior) = REQUIRED];
+  // Schema is a JSON Schema over the arguments.
+  google.protobuf.Struct schema = 3;
+  // Entities maps Home Assistant entity IDs to allowed services.
+  // +kubebuilder:validation:MinProperties=1
+  map<string, ActionNames> entities = 4;
+  // Owner is the GitHub repository owner.
+  // +kubebuilder:validation:MinLength=1
+  string owner = 5;
+  // Repository is the GitHub repository name.
+  // +kubebuilder:validation:MinLength=1
+  string repository = 6;
+}
+
+// ActionNames holds the Action names allowed in one group.
+message ActionNames {
+  // Names contains the allowed Action names for this group.
+  // +kubebuilder:validation:MinItems=1
+  // +protoc-gen-crd:list-value-validation:MinLength=1
+  repeated string names = 1 [(google.api.field_behavior) = REQUIRED];
 }
 
 // A local-only probe for the Kubernetes-to-gRPC boundary; not a production API.
