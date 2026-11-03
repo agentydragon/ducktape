@@ -1,42 +1,69 @@
 {
   "repository": "agentydragon/ducktape",
-  "source_devel_commit": "d24f6f09df178b476d6becf215e6be054bcdcc4a",
+  "source_devel_commit": "25b59b0d02b16b50ecc1a56296881c1a117b977e",
   "objective": "reduce the mean from first workflow creation to all three required checks green below 300 seconds",
-  "previous_report_commit": "adcc17872d7b2c2a92f7ad6f9b75c230caa8c3d7",
+  "previous_report_commit": "479e3ef0e09f16991a854e23ccb501861e9b34da",
   "population_windows": {
     "new_mainline": {
       "selection": "Completed CI/devel literal //... invocations created since19:55UTC and returned by update-time-bounded census through21:54UTC; non-atomic API capture",
-      "window_utc": [
-        "2026-11-02T19:55:00Z",
-        "2026-11-02T21:54:00Z"
-      ],
+      "window_utc": ["2026-11-02T19:55:00Z", "2026-11-02T21:54:00Z"],
       "completed": 17,
       "pass": 15,
       "failed": 2,
       "partial_at_capture": 1
     },
     "historical_actions": {
-      "window_utc": [
-        "2026-11-02T18:30:00Z",
-        "2026-11-02T19:55:00Z"
-      ],
+      "window_utc": ["2026-11-02T18:30:00Z", "2026-11-02T19:55:00Z"],
       "heads": 52,
       "green_proxy": 22,
       "canceled": 20,
       "failed": 9,
       "pending": 1,
-      "green_proxy_p50_p90_seconds": [
-        527,
-        735
-      ],
+      "green_proxy_p50_p90_seconds": [527, 735],
       "new_collection": false
     },
     "controlled_experiments": "Separate from fleet census; fixed local source tree, patches and exact attempts recorded below. Test-result cache bypassed; remote action cache accepted.",
     "latest_required_pr_gate_sample": {
-      "window_utc": [
-        "2026-11-03T02:59:22Z",
-        "2026-11-03T04:25:00Z"
+      "window_utc": ["2026-11-03T05:08:21Z", "2026-11-03T05:44:22Z"],
+      "collection_utc": [
+        "2026-11-03T05:47:19.036806+00:00",
+        "2026-11-03T05:47:24.432373+00:00"
       ],
+      "collection_scope": {
+        "all_window_workflow_runs": 136,
+        "required_pr_workflow_runs": 24,
+        "job_attempts": 46,
+        "pagination_totals_checked": true
+      },
+      "heads_in_scope": 8,
+      "latest_attempt_all_three_success_proxy_heads": 5,
+      "outcomes": {
+        "green_proxy": 5,
+        "pending": 0,
+        "canceled": 3,
+        "failed": 0
+      },
+      "mean_seconds": 372.0,
+      "mean_display": "6m 12s",
+      "p50_seconds": 437.0,
+      "p90_seconds": 562.0,
+      "last_gate_counts": {
+        "bazel-ci / Test & Build": 5
+      },
+      "retry_waits_included": true,
+      "required_gates": [
+        "bazel-ci / Test & Build",
+        "Pre-commit checks",
+        "Build artifacts + imports check"
+      ],
+      "selection_and_claim_limit": "Complete closed creation-time diagnostic cohort between mypy tree-input and queue-admission merge times; source inclusion varies. Small sample, not causal and not post-all-changes goal proof.",
+      "post_merge_soak_sample": false,
+      "completion_requirement": "A representative fresh post-merge PR sample must demonstrate mean below 300 seconds on the same first-workflow-creation to last-required-success clock. A single fast head or selected subset does not satisfy the goal.",
+      "source_artifacts": "Sanitized aggregate from the complete closed05:08:21\u201305:44:22 required-workflow snapshot, feedback analysis, summary and collection metadata. Raw workflow/job API records remain private.",
+      "investigation_evidence_cutoff_utc": "2026-11-03T06:30:00Z"
+    },
+    "previous_report_latest_required_pr_gate_sample": {
+      "window_utc": ["2026-11-03T02:59:22Z", "2026-11-03T04:25:00Z"],
       "collection_utc": [
         "2026-11-03T04:36:17.445686Z",
         "2026-11-03T04:36:27.826059Z"
@@ -73,29 +100,6 @@
       "completion_requirement": "A representative fresh post-merge PR sample must demonstrate mean below 300 seconds on the same first-workflow-creation to last-required-success clock. A single fast head or selected subset does not satisfy the goal.",
       "source_artifacts": "Sanitized aggregate from the mature post-guard snapshot, analysis, summary and collection metadata; raw workflow/job API metadata remains private.",
       "investigation_evidence_cutoff_utc": "2026-11-03T04:36:27.826059Z"
-    },
-    "previous_report_latest_required_pr_gate_sample": {
-      "window_utc": [
-        "2026-11-03T00:55:00Z",
-        "2026-11-03T03:00:00Z"
-      ],
-      "heads": 29,
-      "all_three_latest_attempt_success_proxy": 19,
-      "canceled": 6,
-      "failed": 4,
-      "mean_seconds": 798.8947368421053,
-      "p50_seconds": 502.0,
-      "p90_seconds": 2516.0,
-      "scope": "All 29 exact heads represented by required PR workflows created in window; latest attempts and retry waits. Not a post-merge soak sample.",
-      "collection_utc": [
-        "2026-11-03T03:04:50Z",
-        "2026-11-03T03:06:53.287430Z"
-      ],
-      "investigation_evidence_cutoff_utc": "2026-11-03T03:40:30Z",
-      "superseded_by_window_utc": [
-        "2026-11-03T02:59:22Z",
-        "2026-11-03T04:25:00Z"
-      ]
     }
   },
   "mainline_context": [
@@ -628,7 +632,7 @@
         "depth": 4
       },
       {
-        "self_seconds": 7.7e-05,
+        "self_seconds": 7.7e-5,
         "cumulative_seconds": 4.015091,
         "module": "kubernetes_asyncio.client.api.well_known_api",
         "depth": 5
@@ -679,10 +683,7 @@
     "conditions": {
       "ref_name": {
         "exclude": [],
-        "include": [
-          "refs/heads/devel",
-          "refs/heads/main"
-        ]
+        "include": ["refs/heads/devel", "refs/heads/main"]
       }
     },
     "rules": [
@@ -702,11 +703,7 @@
           "require_last_push_approval": false,
           "required_review_thread_resolution": false,
           "require_extra_approval_for_unattributed_changes": true,
-          "allowed_merge_methods": [
-            "merge",
-            "squash",
-            "rebase"
-          ]
+          "allowed_merge_methods": ["merge", "squash", "rebase"]
         }
       },
       {
@@ -944,15 +941,9 @@
       "75a2aeab-e7cb-4d85-804a-fc46715b4501",
       "74621d30-6051-4347-89ce-24a4d0ee3046"
     ],
-    "profile_only_seconds": [
-      20.558,
-      1.242
-    ],
+    "profile_only_seconds": [20.558, 1.242],
     "profile_limit": "cProfile overhead; not full runtime savings",
-    "pod_safe_parse_seconds": [
-      0.693842,
-      0.032473
-    ],
+    "pod_safe_parse_seconds": [0.693842, 0.032473],
     "failed_controls": [
       {
         "invocation": "ec9df627-ce6b-4e29-8d9d-8b9592015d11",
@@ -1428,9 +1419,7 @@
             "skipped": "0",
             "time": "371.231"
           },
-          "case_names": [
-            "test_vm_scenarios"
-          ]
+          "case_names": ["test_vm_scenarios"]
         },
         "agentplane_system_tests_suites_test_dispatcher": {
           "case_count": 3,
@@ -1482,9 +1471,7 @@
             "skipped": "0",
             "time": "120.856"
           },
-          "case_names": [
-            "test_parent_session_delegates_through_the_action_cli"
-          ]
+          "case_names": ["test_parent_session_delegates_through_the_action_cli"]
         },
         "agentplane_system_tests_suites_mcp_test_actions": {
           "case_count": 5,
@@ -1935,9 +1922,7 @@
             "skipped": "0",
             "time": "351.307"
           },
-          "case_names": [
-            "test_vm_scenarios"
-          ]
+          "case_names": ["test_vm_scenarios"]
         },
         "agentplane_system_tests_suites_test_dispatcher": {
           "case_count": 3,
@@ -1989,9 +1974,7 @@
             "skipped": "0",
             "time": "104.911"
           },
-          "case_names": [
-            "test_parent_session_delegates_through_the_action_cli"
-          ]
+          "case_names": ["test_parent_session_delegates_through_the_action_cli"]
         },
         "agentplane_system_tests_suites_mcp_test_actions": {
           "case_count": 5,
@@ -2442,9 +2425,7 @@
             "skipped": "0",
             "time": "352.818"
           },
-          "case_names": [
-            "test_vm_scenarios"
-          ]
+          "case_names": ["test_vm_scenarios"]
         },
         "agentplane_system_tests_suites_test_dispatcher": {
           "case_count": 3,
@@ -2496,9 +2477,7 @@
             "skipped": "0",
             "time": "149.198"
           },
-          "case_names": [
-            "test_parent_session_delegates_through_the_action_cli"
-          ]
+          "case_names": ["test_parent_session_delegates_through_the_action_cli"]
         },
         "agentplane_system_tests_suites_mcp_test_actions": {
           "case_count": 5,
@@ -2734,31 +2713,16 @@
   "full_ci_25_or_50_percent_reduction_established": false,
   "new_critical_path_conclusion": {
     "candidate_seconds": 415.2,
-    "control_seconds": [
-      466.089,
-      409.484
-    ],
+    "control_seconds": [466.089, 409.484],
     "replicated_complete_sweep_gain": false,
     "critical_target": "//agentplane/system_tests/suites:test_vm",
-    "pod_case_window_seconds": [
-      233.132632,
-      179.869375,
-      238.191044
-    ],
+    "pod_case_window_seconds": [233.132632, 179.869375, 238.191044],
     "pod_candidate_vs_repeat_reduction_fraction": 0.24485248488184141,
-    "vm_manifest_parse_seconds": [
-      5.863669,
-      0.950502,
-      6.86265
-    ],
+    "vm_manifest_parse_seconds": [5.863669, 0.950502, 6.86265],
     "vm_cold_attachment_all_three": true,
     "vm_previous_fingerprint_prefix": "2b3619f103",
     "vm_expected_fingerprint_prefix": "8e5387507b",
-    "old_marker_states": [
-      "clean",
-      "clean",
-      "dirty"
-    ],
+    "old_marker_states": ["clean", "clean", "dirty"],
     "snapshot_selection_cause": "unknown; mixed source versions sharing family is hypothesis only"
   },
   "startup_gap": {
@@ -3070,9 +3034,7 @@
             "skipped": "0",
             "time": "403.206"
           },
-          "case_names": [
-            "test_vm_scenarios"
-          ]
+          "case_names": ["test_vm_scenarios"]
         }
       }
     },
@@ -3294,9 +3256,7 @@
               "skipped": "0",
               "time": "374.711"
             },
-            "case_names": [
-              "test_vm_scenarios"
-            ]
+            "case_names": ["test_vm_scenarios"]
           }
         }
       },
@@ -3373,18 +3333,13 @@
         "supported_platform_property": "enable-vfs",
         "related_property": {
           "name": "vfs-prefetch-mode",
-          "allowed_values": [
-            "all",
-            "none"
-          ],
+          "allowed_values": ["all", "none"],
           "meaning": "changes prefetch policy only after VFS is enabled; does not select or disable the VFS workspace implementation",
           "persistence_effect": "when VFS is enabled, Firecracker FUSE remains non-recyclable; changed Command Platform changes the platform snapshot hash"
         },
         "upstream_parse_default": false,
         "repo_rbe_platform_sets_enable_vfs": false,
-        "observed_platform_overrides": [
-          "use-oci-fetcher=true"
-        ],
+        "observed_platform_overrides": ["use-oci-fetcher=true"],
         "platform_overrides_semantics": "remote-header overrides only; not the full Command.platform",
         "current_action_effective_enable_vfs": "51c1 launcher Action+Command omit enable-vfs; remote-header override is only use-oci-fetcher=true; pinned parser defaults false, so 51c1 uses ext4. The separate f915 profile Command was not included and remains to be verified before assigning its workspace branch.",
         "if_enabled_for_firecracker": "guest VFS/FUSE path; input layout is prepared during DownloadInputs, then host VFS server and guest Prepare RPC run inside Firecracker Exec after executionStart",
@@ -3402,9 +3357,7 @@
           "recycle-runner=true",
           "init-dockerd=true"
         ],
-        "observed_remote_header_overrides_51c1": [
-          "use-oci-fetcher=true"
-        ],
+        "observed_remote_header_overrides_51c1": ["use-oci-fetcher=true"],
         "profile_execution_vfs_status": "unverified from this artifact bundle; exact f915 Command.platform not included"
       },
       "invocation_51c1_auxiliary_evidence": {
@@ -3689,10 +3642,7 @@
         "ready_span_end": 123.22
       },
       "predicate": "Sandbox helper watches exact UID; Ready requires live Gateway Lease with current incarnation Pod UID and runtime boot ID/first state. WorkloadReady alone means Pod Ready.",
-      "other_concurrent_ready_spans_seconds": [
-        96.437,
-        102.59
-      ],
+      "other_concurrent_ready_spans_seconds": [96.437, 102.59],
       "scope": "Milestones from retained matching console/launcher logs and driver lifecycle transition events; not CPU time or additive cost.",
       "clock_limits": "Cross-emitter offsets approximate; some condition timestamps are rounded to whole seconds.",
       "missing_boundary": "Raw subsecond first-state/Lease timestamp; downloaded launcher records lack the full Pod-UID owner chain. CreateEnvironment process spans lack Sandbox identity and cannot be assigned per VM.",
@@ -3771,49 +3721,30 @@
           "arm": "one stack, two case slots",
           "invocation": "10595129-79f0-4e45-8e8e-1bd668501396",
           "result": "pass 14/14",
-          "action_seconds": [
-            257.304
-          ],
+          "action_seconds": [257.304],
           "bazel_critical_path_seconds": 265.32,
           "cpu_seconds": 680.7,
-          "peak_memory_gb": [
-            6.17
-          ]
+          "peak_memory_gb": [6.17]
         },
         {
           "arm": "two shards, two case slots each",
           "invocation": "a6c23f91-b59a-4154-ac51-01d688c246e5",
           "result": "failed memory admission on message/acknowledgement case after 300s readiness deadline",
-          "action_seconds": [
-            226.389,
-            447.0
-          ],
+          "action_seconds": [226.389, 447.0],
           "bazel_critical_path_seconds": 449.74,
           "cpu_seconds": 1054.3,
-          "peak_memory_gb": [
-            5.72,
-            5.67
-          ],
+          "peak_memory_gb": [5.72, 5.67],
           "coverage_note": "14 distinct selected cases across shards; the message/acknowledgement case failed because 0/1 nodes were available from insufficient memory."
         },
         {
           "arm": "two shards, one case slot each",
           "invocation": "cb2df10e-1efb-49a1-bbd6-b097c8bc7783",
           "result": "pass 14/14",
-          "action_seconds": [
-            201.1,
-            299.5
-          ],
+          "action_seconds": [201.1, 299.5],
           "bazel_critical_path_seconds": 303.01,
           "cpu_seconds": 969.9,
-          "peak_memory_gb": [
-            5.54,
-            5.68
-          ],
-          "setup_seconds_by_shard": [
-            64.81,
-            56.54
-          ]
+          "peak_memory_gb": [5.54, 5.68],
+          "setup_seconds_by_shard": [64.81, 56.54]
         }
       ],
       "interrupted_attempt": {
@@ -3832,11 +3763,7 @@
           "invocation": "450847f0-b539-495c-933c-a160c4232c6c",
           "receipt": "warm",
           "action_seconds": 323.628,
-          "setup_case_cleanup_seconds": [
-            70.32,
-            199.34,
-            25.8
-          ],
+          "setup_case_cleanup_seconds": [70.32, 199.34, 25.8],
           "bazel_critical_path_seconds": 330.83,
           "cpu_seconds": 1342.248,
           "units_times_action_wall_proxy": 2589.02
@@ -3846,11 +3773,7 @@
           "invocation": "7ef6829b-f28e-44c4-8875-80c4b2c009d5",
           "receipt": "cold; same fingerprint",
           "action_seconds": 501.329,
-          "setup_case_cleanup_seconds": [
-            230.41,
-            207.97,
-            30.98
-          ],
+          "setup_case_cleanup_seconds": [230.41, 207.97, 30.98],
           "bazel_critical_path_seconds": 505.11,
           "cpu_seconds": 2294.386,
           "units_times_action_wall_proxy": 8021.26
@@ -3860,11 +3783,7 @@
           "invocation": "a344fba3-36b4-4c99-bee7-ce675cd3631a",
           "receipt": "cold; same fingerprint",
           "action_seconds": 342.775,
-          "setup_case_cleanup_seconds": [
-            130.18,
-            163.17,
-            24.68
-          ],
+          "setup_case_cleanup_seconds": [130.18, 163.17, 24.68],
           "bazel_critical_path_seconds": 383.07,
           "cpu_seconds": 1372.024,
           "units_times_action_wall_proxy": 5484.4
@@ -3967,22 +3886,14 @@
         "pull_request_state": "open at last query"
       }
     },
-    "latency_claim": "The below-five-minute mean goal remains active and unmet. The mature post-guard 17-head latest-attempt success-proxy cohort has 12 green heads and a 404.583-second mean (p50 197.5, p90 443); all retry waits are included. Source inclusion varies, so this is not a causal effect estimate. PR #14056\u2019s separate 257-second exact-head result is one post-cutoff implementation-PR observation, not evidence of a representative mean below 300 seconds.",
+    "latency_claim": "Goal active and not established: complete small source-varying cohort has 5 green of8, mean372s,p50437,p90562; retry waits retained. It predates independent queue admission. No causal savings or representative post-change goal proof.",
     "historical_six_hour_snapshot": {
       "measurement": {
         "clock": "first observed workflow creation to latest successful completion of all 3 required job contexts for an exact head repository and SHA; retry waits included",
         "baseline_seconds": 547.054794520548,
         "baseline_green_heads": 73,
-        "baseline_window": [
-          "2026-11-02T18:55:00Z",
-          "2026-11-03T00:55:00Z"
-        ],
-        "exclude": [
-          "failed",
-          "canceled",
-          "pending",
-          "incomplete"
-        ],
+        "baseline_window": ["2026-11-02T18:55:00Z", "2026-11-03T00:55:00Z"],
+        "exclude": ["failed", "canceled", "pending", "incomplete"],
         "required_gates": [
           "bazel-ci / Test & Build",
           "Pre-commit checks",
@@ -4032,10 +3943,7 @@
       "source_and_window": {
         "inspected_devel_commit": "dfb5e25546554024a4f4d4cdf2202da8d5961f63",
         "benchmark_base_commit": "b2b7e3128278a6073b21ac522b42f9e151d5913b",
-        "window_utc": [
-          "2026-11-02T18:55:00Z",
-          "2026-11-03T00:55:00Z"
-        ],
+        "window_utc": ["2026-11-02T18:55:00Z", "2026-11-03T00:55:00Z"],
         "kernel_release": "6.12.115-2 merged",
         "pki_repair_pr": {
           "number": 14035,
@@ -4044,20 +3952,31 @@
       }
     },
     "measurement": {
-      "clock": "latest visible successful required-gate completion minus first observed PR workflow creation for the same head repository and SHA; retry waits included",
-      "window_utc": [
-        "2026-11-03T02:59:22Z",
-        "2026-11-03T04:25:00Z"
+      "window_utc": ["2026-11-03T05:08:21Z", "2026-11-03T05:44:22Z"],
+      "collection_utc": [
+        "2026-11-03T05:47:19.036806+00:00",
+        "2026-11-03T05:47:24.432373+00:00"
       ],
-      "collection_finished_at_utc": "2026-11-03T04:36:27.826059Z",
-      "heads_in_scope": 17,
-      "latest_attempt_all_three_success_proxy_heads": 12,
-      "mean_seconds": 404.5833333333333,
-      "mean_display": "6m 45s",
-      "p50_seconds": 197.5,
-      "p90_seconds": 443.0,
+      "collection_scope": {
+        "all_window_workflow_runs": 136,
+        "required_pr_workflow_runs": 24,
+        "job_attempts": 46,
+        "pagination_totals_checked": true
+      },
+      "heads_in_scope": 8,
+      "latest_attempt_all_three_success_proxy_heads": 5,
+      "outcomes": {
+        "green_proxy": 5,
+        "pending": 0,
+        "canceled": 3,
+        "failed": 0
+      },
+      "mean_seconds": 372.0,
+      "mean_display": "6m 12s",
+      "p50_seconds": 437.0,
+      "p90_seconds": 562.0,
       "last_gate_counts": {
-        "bazel-ci / Test & Build": 12
+        "bazel-ci / Test & Build": 5
       },
       "retry_waits_included": true,
       "required_gates": [
@@ -4065,44 +3984,44 @@
         "Pre-commit checks",
         "Build artifacts + imports check"
       ],
-      "selection_and_claim_limit": "Complete fixed required-PR workflow creation cohort after the snapshot guard merge; latest attempts and retry waits retained. Source inclusion varies and this is not a causal control; collected attempts do not reconstruct all historical GitHub check states or prove auto-merge eligibility.",
+      "selection_and_claim_limit": "Complete closed creation-time diagnostic cohort between mypy tree-input and queue-admission merge times; source inclusion varies. Small sample, not causal and not post-all-changes goal proof.",
       "post_merge_soak_sample": false,
-      "completion_requirement": "A representative fresh post-merge PR sample must demonstrate mean <300s on the same all-gates clock; a selected first-attempt-success subset does not satisfy it.",
-      "collection_started_at_utc": "2026-11-03T04:36:17.445686Z"
+      "completion_requirement": "A representative fresh post-merge PR sample must demonstrate mean below 300 seconds on the same first-workflow-creation to last-required-success clock. A single fast head or selected subset does not satisfy the goal.",
+      "source_artifacts": "Sanitized aggregate from the complete closed05:08:21\u201305:44:22 required-workflow snapshot, feedback analysis, summary and collection metadata. Raw workflow/job API records remain private.",
+      "investigation_evidence_cutoff_utc": "2026-11-03T06:02:00Z"
     },
     "outcomes": {
-      "all_three_latest_attempt_success_proxy": 12,
-      "canceled": 4,
-      "failed": 1,
-      "heads_in_scope": 17,
-      "included_in_primary_mean": "12 successful latest-attempt proxies",
+      "all_three_latest_attempt_success_proxy": 5,
+      "canceled": 3,
+      "failed": 0,
+      "pending": 0,
+      "heads_in_scope": 8,
+      "included_in_primary_mean": "5 successful latest-attempt proxies",
       "excluded_from_latency_mean": [
         "canceled",
-        "failed"
+        "failed",
+        "pending",
+        "incomplete"
       ]
     },
     "last_gate_counts": {
-      "bazel-ci / Test & Build": 12
+      "bazel-ci / Test & Build": 5
     },
     "collection_provenance": {
-      "window_workflow_enumeration_count": 258,
-      "selected_pr_required_workflow_run_count": 51,
-      "selected_job_attempt_count": 102,
-      "pagination_totals_checked": true,
-      "active_sweep": "Collection completed for the fixed required-PR workflow creation window; no old in-progress workflow census is claimed.",
-      "explicit_limits": [
-        "Latest workflow attempts do not reconstruct every historical required-check state or prove auto-merge eligibility",
-        "Source inclusion varies; this post-guard window is not a causal control"
-      ],
-      "source_artifacts": "Sanitized aggregates derived from the mature post-guard collection; raw workflow and job payloads remain private.",
-      "collection_started_at_utc": "2026-11-03T04:36:17.445686Z",
-      "collection_finished_at_utc": "2026-11-03T04:36:27.826059Z"
+      "window_runs": 136,
+      "required_pr_runs": 24,
+      "job_attempts": 46,
+      "started_at": "2026-11-03T05:47:19.036806+00:00",
+      "finished_at": "2026-11-03T05:47:24.432373+00:00",
+      "scope": "Complete closed workflow-creation window after mypy tree-input merge and before independent queue-admission merge; diagnostic source-varying cohort, not causal or post-all-changes goal proof"
     },
     "first_attempt_green_subset": {
       "heads": 12,
       "mean_seconds": 292.9166666666667,
       "label": "all three required contexts succeeded on first attempt",
-      "selection_limit": "Selected by first-attempt success; not a counterfactual for retry heads, not a causal repair estimate, and not the current primary mean."
+      "selection_limit": "Selected by first-attempt success; not a counterfactual for retry heads, not a causal repair estimate, and not the current primary mean.",
+      "historical_window_utc": ["2026-11-03T00:55:00Z", "2026-11-03T03:00:00Z"],
+      "retained_context_not_latest_population": true
     },
     "retry_paths": {
       "heads": 7,
@@ -4148,19 +4067,18 @@
       "share_of_pooled_feedback_seconds_descriptive": 0.768,
       "share_interpretation": "Descriptive decomposition of the pooled feedback sum; seven retry heads are selected and this is not a counterfactual estimate of retry savings.",
       "bridge_failure_detail": "The app:test_bridge [claude] case stalled in its second model-request await for 629.1667s; the target shard action lasted 839.6s. The cancellation stack at test_bridge.py:829 localizes the stalled second CONTINUED model request after harness kill/continuation; ClaudeModel.next_exchange is blocked in ModelEndpoint._pending.get while History ingress is fenced. Saved history was empty and native JSONL contained metadata but no events. Why the producer did not deliver the second request remains unproven.",
-      "observer_failure_boundary": "The pinned CLI propagates an unhandled RST_STREAM and cancels the accepted outer Run; reconnecting after CLI exit cannot recover the invocation or final verdict. No tested repository-side fix exists; see issue 13270."
+      "observer_failure_boundary": "The pinned CLI propagates an unhandled RST_STREAM and cancels the accepted outer Run; reconnecting after CLI exit cannot recover the invocation or final verdict. No tested repository-side fix exists; see issue 13270.",
+      "historical_window_utc": ["2026-11-03T00:55:00Z", "2026-11-03T03:00:00Z"],
+      "retained_context_not_latest_population": true
     },
     "source_and_window": {
-      "inspected_devel_commit": "d24f6f09df178b476d6becf215e6be054bcdcc4a",
+      "inspected_devel_commit": "25b59b0d02b16b50ecc1a56296881c1a117b977e",
       "controlled_experiment_source_commit": "b2b7e3128278a6073b21ac522b42f9e151d5913b",
-      "window_utc": [
-        "2026-11-03T02:59:22Z",
-        "2026-11-03T04:25:00Z"
-      ],
-      "collection_finished_at_utc": "2026-11-03T04:36:27.826059Z",
+      "window_utc": ["2026-11-03T05:08:21Z", "2026-11-03T05:44:22Z"],
+      "collection_finished_at_utc": "2026-11-03T05:47:24.432373+00:00",
       "kernel_release": "6.12.115-2 merged",
       "publication_scope": "Sanitized aggregates and validation links only; raw head, workflow, job, runner and API records remain private.",
-      "collection_started_at_utc": "2026-11-03T04:36:17.445686Z"
+      "collection_started_at_utc": "2026-11-03T05:47:19.036806+00:00"
     },
     "current_investigations": {
       "retry_audit": {
@@ -4224,11 +4142,7 @@
             "test_case": 168.895,
             "stack_cleanup": 26.29
           },
-          "overlapping_case_envelopes_seconds": [
-            146.05,
-            168.06,
-            168.24
-          ],
+          "overlapping_case_envelopes_seconds": [146.05, 168.06, 168.24],
           "worker_cpu_seconds": 1829.059,
           "cpu_clock_samples": 5838,
           "lost_samples": 0,
@@ -4277,11 +4191,7 @@
               {
                 "process": "awk",
                 "branch": "page fault chains",
-                "sample_weight_percent": [
-                  0.89,
-                  0.67,
-                  0.62
-                ]
+                "sample_weight_percent": [0.89, 0.67, 0.62]
               },
               {
                 "process": "khugepaged",
@@ -4296,10 +4206,7 @@
         "buildbuddy_invocation": "1c9c7065-b9eb-4a94-b7ac-a33c083a11a6",
         "repetitions": 3,
         "result": "all passed without reproducing the stall",
-        "action_seconds_range": [
-          55.9,
-          72.4
-        ],
+        "action_seconds_range": [55.9, 72.4],
         "mean_action_seconds": 65.2,
         "interpretation": "No root cause or repair established; the producer failure remains unresolved."
       }
@@ -4314,27 +4221,48 @@
       "source_change": "Adds immutable BuildBuddy source link for the guard diagnosis.",
       "scope_limit": "No source change to the underlying stuck-shim diagnosis; no KVM/cluster work or coverage relaxation."
     },
-    "investigation_evidence_cutoff_utc": "2026-11-03T04:36:27.826059Z",
+    "investigation_evidence_cutoff_utc": "2026-11-03T06:30:00Z",
     "previous_report_window": {
-      "window_utc": [
-        "2026-11-03T00:55:00Z",
-        "2026-11-03T03:00:00Z"
+      "window_utc": ["2026-11-03T02:59:22Z", "2026-11-03T04:25:00Z"],
+      "collection_utc": [
+        "2026-11-03T04:36:17.445686Z",
+        "2026-11-03T04:36:27.826059Z"
       ],
-      "heads": 29,
-      "green_proxy_heads": 19,
-      "mean_seconds": 798.8947368421053,
-      "p50_seconds": 502.0,
-      "p90_seconds": 2516.0,
-      "last_gate_counts": {
-        "bazel-ci / Test & Build": 19
+      "collection_scope": {
+        "all_window_workflow_runs": 258,
+        "required_pr_workflow_runs": 51,
+        "job_attempts": 102,
+        "pagination_totals_checked": true
       },
-      "note": "Preserved as the prior report snapshot; not pooled with the current cohort."
+      "heads_in_scope": 17,
+      "latest_attempt_all_three_success_proxy_heads": 12,
+      "outcomes": {
+        "green_proxy": 12,
+        "pending": 0,
+        "canceled": 4,
+        "failed": 1
+      },
+      "mean_seconds": 404.5833333333333,
+      "mean_display": "6m 45s",
+      "p50_seconds": 197.5,
+      "p90_seconds": 443.0,
+      "last_gate_counts": {
+        "bazel-ci / Test & Build": 12
+      },
+      "retry_waits_included": true,
+      "required_gates": [
+        "bazel-ci / Test & Build",
+        "Pre-commit checks",
+        "Build artifacts + imports check"
+      ],
+      "selection_and_claim_limit": "Latest successful attempts are a proxy for each required context; this does not reconstruct every historical check state or prove auto-merge eligibility. This is a complete mature required-PR workflow creation cohort after the guard merge, but source inclusion varies. It is not a causal control and does not prove every workflow exercised the guard.",
+      "post_merge_soak_sample": false,
+      "completion_requirement": "A representative fresh post-merge PR sample must demonstrate mean below 300 seconds on the same first-workflow-creation to last-required-success clock. A single fast head or selected subset does not satisfy the goal.",
+      "source_artifacts": "Sanitized aggregate from the mature post-guard snapshot, analysis, summary and collection metadata; raw workflow/job API metadata remains private.",
+      "investigation_evidence_cutoff_utc": "2026-11-03T04:36:27.826059Z"
     },
     "post_guard_cohort": {
-      "window_utc": [
-        "2026-11-03T02:59:22Z",
-        "2026-11-03T04:25:00Z"
-      ],
+      "window_utc": ["2026-11-03T02:59:22Z", "2026-11-03T04:25:00Z"],
       "guard_merge_utc": "2026-11-03T02:59:21Z",
       "collection_started_utc": "2026-11-03T04:36:17.445686Z",
       "collection_finished_utc": "2026-11-03T04:36:27.826059Z",
@@ -4360,7 +4288,7 @@
     "bridge_sharding": {
       "pr": 14056,
       "head": "ee41cf9a75c8a975800ffbff3d9c7d39a42745b4",
-      "state_at_cutoff": "open; all three required checks passed at 2026-11-03T04:30:52Z",
+      "state_at_cutoff": "merged 2026-11-03T04:46:33Z",
       "tested_source": "3c5cfdefc46251957aaeca18495841b3831e3fff",
       "target": "//agentplane/app:test_bridge",
       "configuration": "--config=ci --nocache_test_results; remote caches enabled",
@@ -4419,7 +4347,8 @@
         "bazel_critical_path_seconds": 137.09,
         "claim_limit": "One implementation-PR exact-head result after the primary cohort cutoff; not a representative all-gates mean and not a fleet effect estimate."
       },
-      "claim_limit": "Matched-source target-level comparison with variable worker/image warmth. It establishes a slower bridge action improvement in these runs, at increased CPU on the repeat; it does not establish fleet-wide or all-gates causality."
+      "claim_limit": "Matched-source target-level comparison with variable worker/image warmth. It establishes a slower bridge action improvement in these runs, at increased CPU on the repeat; it does not establish fleet-wide or all-gates causality.",
+      "merge_commit": "f5042d84c7c9446122f3421ec6287920d5155cdc"
     },
     "mypy_input_pruning": {
       "pr": 14057,
@@ -4480,9 +4409,233 @@
       "pr_14035": "open; all three required checks passed",
       "pr_14043": "merged as 5d050a313d6d7698495f3f2a6b5b79653b1125c0",
       "pr_14045": "merged at 04:20:28 UTC as 5f4f1c4b53440c949eb6db6a0b35366c01d703a2",
-      "pr_14056": "open; all three required checks passed at 04:30:52 UTC",
+      "pr_14056": "merged at04:46:33 as f5042d84c7c9446122f3421ec6287920d5155cdc",
       "pr_14057": "merged at 04:32:55 UTC as d24f6f09df178b476d6becf215e6be054bcdcc4a",
-      "goal": "active and unmet; no post-merge representative all-gates mean below 300 seconds"
+      "goal": "active and unproven; post-last-performance-change creation window still open",
+      "pr_14061": "merged at05:08:20 as3ffa713904913397b83f8f58dbe88c1609238d92",
+      "pr_14066": "merged at05:44:22 as25b59b0d02b16b50ecc1a56296881c1a117b977e",
+      "pr_14067": "merged at05:58:34 as3d8a73c4860f167d801da3ba32affcf1ec731ba9"
+    },
+    "post_mypy_pre_queue": {
+      "window_utc": ["2026-11-03T05:08:21Z", "2026-11-03T05:44:22Z"],
+      "collection_utc": [
+        "2026-11-03T05:47:19.036806+00:00",
+        "2026-11-03T05:47:24.432373+00:00"
+      ],
+      "collection_scope": {
+        "all_window_workflow_runs": 136,
+        "required_pr_workflow_runs": 24,
+        "job_attempts": 46,
+        "pagination_totals_checked": true
+      },
+      "heads_in_scope": 8,
+      "latest_attempt_all_three_success_proxy_heads": 5,
+      "outcomes": {
+        "green_proxy": 5,
+        "pending": 0,
+        "canceled": 3,
+        "failed": 0
+      },
+      "mean_seconds": 372.0,
+      "mean_display": "6m 12s",
+      "p50_seconds": 437.0,
+      "p90_seconds": 562.0,
+      "last_gate_counts": {
+        "bazel-ci / Test & Build": 5
+      },
+      "retry_waits_included": true,
+      "required_gates": [
+        "bazel-ci / Test & Build",
+        "Pre-commit checks",
+        "Build artifacts + imports check"
+      ],
+      "selection_and_claim_limit": "Complete closed creation-time diagnostic cohort between mypy tree-input and queue-admission merge times; source inclusion varies. Small sample, not causal and not post-all-changes goal proof.",
+      "post_merge_soak_sample": false,
+      "completion_requirement": "A representative fresh post-merge PR sample must demonstrate mean below 300 seconds on the same first-workflow-creation to last-required-success clock. A single fast head or selected subset does not satisfy the goal.",
+      "source_artifacts": "Sanitized aggregate from the complete closed05:08:21\u201305:44:22 required-workflow snapshot, feedback analysis, summary and collection metadata. Raw workflow/job API records remain private.",
+      "investigation_evidence_cutoff_utc": "2026-11-03T06:02:00Z",
+      "green_feedback_seconds": [137, 224, 437, 500, 562]
+    },
+    "mypy_tree_input_pruning": {
+      "pr": 14061,
+      "state": "merged",
+      "merged_at": "2026-11-03T05:08:20Z",
+      "merge_commit": "3ffa713904913397b83f8f58dbe88c1609238d92",
+      "change": "Drop runtime-only first-party OCI trees using populated original-source metadata; retain declared Python trees, empty/absent-metadata fallback, explicit type libraries and external/plugin inputs.",
+      "production_build": "1cdbf6a7-0f4d-4690-94bb-fc1cb92c2305",
+      "positive_probe": "1fe95321-b748-4aff-a61a-ab342a44e33f",
+      "negative_probe": "f3963cd4-ac65-467e-ab54-d22a1f56286f",
+      "latency_saving": "not measured"
+    },
+    "independent_pr_admission": {
+      "pr": 14066,
+      "state": "merged",
+      "merged_at": "2026-11-03T05:44:22Z",
+      "merge_commit": "25b59b0d02b16b50ecc1a56296881c1a117b977e",
+      "observed_prechange_group_wait_seconds": [54, 58, 80],
+      "wrapper_cancel_to_exit_seconds": [0.155, 0.27, 0.336],
+      "implementation": "Run-specific groups for ordinary same-repo PRs; separate trusted requested-event controller cancels eligible older runs, no new admission dependency.",
+      "preserved": [
+        "build-token permissions",
+        "fork policy",
+        "push publication queues",
+        "required check names",
+        "test coverage"
+      ],
+      "residual_race": "Cancel endpoint has no atomic head/attempt guard; observed identities are refetched and cancellation POST is sent once.",
+      "source_validation": "fe286dcb-502e-4107-837a-fe154c6c95a1",
+      "first_live_controller_run": 41585781604,
+      "first_live_controller_result": "First job success without predecessor; later natural replacement pair proves admission overlaps predecessor teardown.",
+      "measured_saving": null,
+      "trim_tests_pr": 14067,
+      "trim_tests_state": "merged at2026-11-03T05:58:34Z as3d8a73c4860f167d801da3ba32affcf1ec731ba9; all3required checks passed final11dc279c40",
+      "trim_behavior_validation": "6a325186-2c7e-4626-9340-29ba26ab20b5",
+      "natural_pair": {
+        "pr": 13787,
+        "older_run_id": 41586315647,
+        "older_head": "90893275bbce02c5843de75606bcbfb9d49eda5b",
+        "older_job_id": 125752526569,
+        "older_job_started": "2026-11-03T05:51:18Z",
+        "older_job_completed": "2026-11-03T05:52:37Z",
+        "older_result": "cancelled",
+        "replacement_run_id": 41586374543,
+        "replacement_head": "c9165fad0b18a93c96dcbb00c7ee935dca2bd984",
+        "replacement_job_id": 125752717587,
+        "replacement_created": "2026-11-03T05:51:53Z",
+        "replacement_job_started": "2026-11-03T05:51:56Z",
+        "replacement_state_at_capture": "completed/cancelled",
+        "replacement_wait_seconds": 3,
+        "replacement_started_before_old_terminal_seconds": 41,
+        "controller_run_id": 41586377422,
+        "controller_job_id": 125752726232,
+        "controller_cancel_message_timestamp": "2026-11-03T05:52:22.7576612Z",
+        "controller_result": "success",
+        "scope": "Natural PR update, no synthetic push/manual cancellation. One-pair admission and selected-old-run cancellation proof; no completed feedback or causal fleet savings claim.",
+        "replacement_job_completed": "2026-11-03T05:59:46Z",
+        "claim_limit": "Admission overlap and selected-old cancellation verified; replacement itself superseded and canceled, so no successful feedback observation."
+      }
+    },
+    "post_all_changes_soak": {
+      "start_utc": "2026-11-03T05:44:23Z",
+      "initial_end_utc": "2026-11-03T06:44:22Z",
+      "minimum_green_heads": 20,
+      "status": "Queue admission performance change merged. Reset by prespecified last-performance-merge rule; test-only cleanup will not reset. Initial creation window remains open; goal unproven.",
+      "plan": {
+        "objective": "get mean time to all 3 required checks green under 5 min",
+        "clock": "first observed required PR workflow creation to latest successful completion of all three required job contexts for the same head repository and SHA; preserve all retry waits",
+        "selection": "all required pull_request workflow heads created in the fixed window, including failures and cancellations in outcome counts; calculate the success-proxy mean only for heads with all three gates green, matching the historical clock",
+        "start_rule": "merge time of the last CI performance code PR published in this implementation cycle, excluding report-only PRs; record actual source inclusion and do not move the start in response to observed durations",
+        "initial_window_seconds": 3600,
+        "minimum_green_heads": 20,
+        "extension_rule": "If the first fixed hour contains fewer than 20 green heads, extend the creation window in 30-minute increments. Retain all earlier heads and report failed, canceled, pending and incomplete heads. Do not choose only fast runs or first attempts.",
+        "maturity": "Refetch exact run and job attempts after pending work resolves; distinguish the creation-window endpoint from collection time and do not claim an immature sample establishes the goal",
+        "goal_evidence": "A complete representative fresh cohort with at least 20 green heads and observed mean below 300 seconds on this clock; report population and p50/p90 with all exclusions. This is an observed service outcome, not causal attribution or a guarantee for future PRs.",
+        "limits": "A standalone target benchmark, one 257-second PR, a selected first-attempt subset, or exclusion of known retry waits cannot establish the objective. No KVM deployment or live PostgreSQL persistence."
+      }
+    },
+    "fresh_profile_boundaries": {
+      "full_graph": {
+        "invocation": "4c3dd65c-dd05-5abb-835a-ea12920a5511",
+        "bazel_seconds": 213.774,
+        "action_critical_path_seconds": 121.65,
+        "apt_extension_seconds": 67.79,
+        "apt_parser_seconds": 46.758,
+        "pre_large_action_seconds_approx": 84,
+        "prior_lockfile_end_to_end_seconds": [121, 116, 105],
+        "prior_lockfile_saving_seconds": 16,
+        "prior_lockfile_megabytes": 13.9,
+        "decision": "Not promoted as25-50percent intervention; existing measured net benefit modest and operational cost recorded."
+      },
+      "vm": {
+        "invocation": "d3786a45-7785-56f7-9d46-91bf2e7b2419",
+        "critical_path_seconds": 350.99,
+        "test_action_seconds": 349.38,
+        "setup_seconds": 112.44,
+        "case_window_seconds": 178.07,
+        "cleanup_seconds": 28.27,
+        "max_sandbox_ready_seconds": 102.76,
+        "serial_real_systemd_supervision_seconds": 23.22,
+        "baseline": "cold: fingerprint changed; exact field unknown because old input digests unavailable",
+        "source_boundary": "Namespace fixture and guest images already excluded; shared controller inputs remain valid invalidators",
+        "limit": "One run; no guest CPU/boot optimization or KVM deployment made."
+      }
+    },
+    "newest_slow_heads": {
+      "selection": "All3slower green heads in the closed5-green/3-canceled cohort; no causal comparison",
+      "feedback_seconds": [437, 562, 500],
+      "github_job_queue_seconds": [48, 44, 59],
+      "remote_run_to_test_seconds": [44.153, 57.102, 67.073],
+      "query_seconds_total": [16.415, 26.307, 13.754],
+      "between_query_seconds": [16.937, 19.111, 24.511],
+      "test_command_elapsed_seconds": [283.005, 397.432, 321.77],
+      "critical_path_seconds": [277.52, 356.82, 307.3],
+      "uncached_critical_test_actions": [
+        {
+          "target": "//agentplane/system_tests/suites:test_vm",
+          "seconds": 277.01
+        },
+        {
+          "target": "//agentplane/system_tests/suites:test_pod",
+          "seconds": 304.06
+        },
+        {
+          "target": "//agentplane/system_tests/suites:test_vm",
+          "seconds": 306.04
+        }
+      ],
+      "query_profile_limit": "Historical18querychildrenhavenoattachedprofiles/cacheStats. SubsequentfixedmergecProfile/TRACE2/JFR completed:29.638sselector+query; historical44-67snotreproduced; nocachesavingpromoted."
+    },
+    "selector_standard_profile": {
+      "invocation": "037bd5d4-d064-4d2c-af01-18d50ac69ab2",
+      "source_merge": "0aad8c7aaa65cb32118785cb53c59accab815229",
+      "base_parent": "f1b6c292a4a5f49cd37dca32a8840225d3ec9f96",
+      "head_parent": "be5c3e3f5b0feb0b5143914ac09052426e4c7e0e",
+      "bazel": "9.2.0",
+      "bazel_diff": "47.0.0",
+      "bazel_server_pid": 698,
+      "scope": "Unchanged selector plus finaltest query; standard cProfile,GitTRACE2,JFR. No build/test phase or timingcomparison treatment.",
+      "selector_seconds": 28.008,
+      "selector_and_final_query_seconds": 29.638,
+      "git_fetch_seconds": 0.856986,
+      "git_checkouts_seconds": [0.193622, 0.091034],
+      "affected_targets": 53,
+      "test_query_targets": 18,
+      "affected_set_sha256": "882aa9df72e01393c6ce73afb5ff9767175b785dae3520fc352bf5ead2fdf5ba",
+      "test_set_sha256": "56e3b351f64e0e982665fbd371de5dee57f25a76338280f708d61f5ffa471346",
+      "jfr_records": 3,
+      "jfr_duration_seconds": [13, 8, 2],
+      "jfr_process_start_commands": "Each generator starts bazel info output_base,mod graph,version,then failed/successfulqueries. Impacted-targetclient also starts info output_base andmod graph.",
+      "jfr_limit": "NativeMethodSample includes blockedprocessreapers/pipe reads, notselfCPU; do not classifyallreadBytes samples as hashing orCPU.",
+      "graph_probe_invocation": "abb36c47-9357-494b-a374-1c4c3ad5b1ee",
+      "graph_probe_result": "bazel mod graph exits2: unused/transitive rules_rust crate extension missinglockfile and envoy_api/googleapis importedrepo absent. Regularselectedqueries/tests hadpassed; introspectionfailure isdistinct.",
+      "counts_comparison": "53affected/18querytests matchoriginalworkflow log; originalfullsets unavailable, so no exacthistoricalsetidentityclaim. Sortednewsets retainedforfuturetreatment.",
+      "claim_limit": "One diagnostic on samefixedmerge/warmPID. Historical44-67s selector latency didnotreproduce; no all-gates orcache savingestablished.",
+      "failed_preflights": [
+        {
+          "invocation": "feb90af5-8dd4-43c7-a82b-67a487cf57cb",
+          "exit": 128,
+          "phase": "beforeselector: shallowparentpreflight"
+        },
+        {
+          "invocation": "2634b8d3-3d0c-4d92-a511-95556741e41d",
+          "exit": 127,
+          "phase": "beforewrapper: rawbase64transport"
+        }
+      ]
     }
+  },
+  "required_rules_current_verification": {
+    "source": "GitHub ruleset15894562 default-branch-protection",
+    "verified_at_utc": "2026-11-03T05:49:00Z",
+    "enforcement": "active",
+    "refs": ["refs/heads/devel", "refs/heads/main"],
+    "required_contexts": [
+      "Build artifacts + imports check",
+      "Pre-commit checks",
+      "bazel-ci / Test & Build"
+    ],
+    "required_reviews": 0,
+    "strict_status_checks": false,
+    "scope": "The goal measures these3CIgates; mergeability and fullauto-mergeeligibility are distinct."
   }
 }
