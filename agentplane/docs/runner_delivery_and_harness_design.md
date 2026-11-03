@@ -1,5 +1,11 @@
 # Runner delivery boundaries and harness identity
 
+> **Address decision updated, 2026-11-03:** callers will address a Session by its globally unique
+> Session ID, resolved by Dispatcher, superseding this note's earlier compound public destination.
+> The Sandbox UID remains an internal placement and execution fence. Current APIs still carry both.
+> See the [Session/environment model](../plans/session_environment_model.md#session-address-inventory)
+> and its linked work for the selected direction and remaining authority decisions.
+
 Status: **approved direction, implementation planning; harness lifecycle deployed and accepted.** This note records current code paths, approved direction, alternatives
 and remaining questions. The operator approved gRPC for internal APIs, a generated HTTP/JSON facade,
 and an ergonomic CLI, adopted incrementally by service and interface. The selected HTTP/JSON
@@ -119,7 +125,7 @@ resume now calls the Runner Gateway's `EnvironmentService`, which checks the ope
 Pod-bound authority and exact target before changing desired state. The Gateway Session wrappers,
 registry and separate database are retired.
 
-**Approved public destination (operator, 2026-10-15):** every submission names the exact
+**Previously approved public destination (operator, 2026-10-15; superseded above):** every submission names the exact
 `(Sandbox UID, Agentplane Session ID)`. Store, native-ID and process routing are runner-private;
 the caller does not choose a store. Queue and retry that full address, locate the exact Sandbox,
 and let queued delivery wake only that target. Once the runner is reachable, it is authoritative
@@ -130,19 +136,20 @@ than a central Session-to-Sandbox placement registry. The Kubernetes UID-to-live
 workload routing function remains separate from any session placement registry.
 
 Wake-on-send has a durable acceptance requirement: before reporting a request as queued or initiating
-wake, persist its complete destination tuple, command ID and payload. That record must survive caller
+wake, persist the Session ID, resolved exact placement fence, command ID and payload. That record must survive caller
 disconnect, Dispatcher process restart and the full Sandbox image-pull/boot delay. Dispatcher queue
 acceptance is a different outcome from Runner admission; name each stage explicitly, and do not
 present the queued receipt as proof that the runner admitted or the harness consumed the command.
 
-The API representation and resolver remain open: decide whether the request carries a Kubernetes
-namespace/name locator alongside UID or resolves by UID. Do not claim live Session membership can
+The Session API will resolve the UUID through the Dispatcher directory; the internal UID locator
+and authority boundaries remain to be specified. Do not claim live Session membership can
 be verified while the runner is unavailable. Authenticate
 and authorize the sender before waking; preserve the UID identity fence, command idempotency and
 outcome semantics. Direct admission, if selected, remains online-only and never wakes; only the
 queued mode owns wake-to-deliver.
 
-Review these alternatives without preselecting centralization:
+These historical alternatives still inform the authority review; references to callers carrying a
+Sandbox UID are superseded by the selected Session-ID address:
 
 1. Keep caller-side preflight checks at subscription time and make every execution boundary enforce
    its own complete destination and send policy. This gives early errors and preserves source-specific
@@ -364,7 +371,7 @@ discoverable or read-only do not establish that one process can host multiple in
 interactive Sessions. Use the separate Codex and Claude characterization evidence before evaluating
 either alternative. These are design options, not implementation authorization.
 
-**Approved public address and process boundary (operator, 2026-10-15):** process
+**Earlier public address and process boundary (operator, 2026-10-15; address superseded above):** process
 allocation and routing are internal to the runner. Neither a PID nor a process incarnation belongs
 in a durable public address, and there is no public `create Session on process` operation or refusal.
 The public destination is `(Sandbox UID, Agentplane Session ID)`, with store/native/process mapping

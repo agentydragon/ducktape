@@ -975,8 +975,8 @@ together for both a Session independent of environments and a harness running in
 what each operation acknowledges and how callers observe progress or failure, without assuming every
 harness supports the same placement or creation order.
 
-Recommendation for review: distinguish Session identity/continuation authority, harness placement
-and execution attachments without choosing their storage or forcing a global creation order. Prefer
+Selected: distinguish Session identity/continuation authority, harness placement and execution
+attachments; Dispatcher PostgreSQL owns the Session directory, with History stored separately. Prefer
 external placement when capabilities are otherwise equal, for isolation and independent lifetimes.
 Characterize complete per-feature placement; OpenClaw's historical partial remote support is a
 counterexample to equating remote shell forwarding with a fully separated harness.
@@ -1808,7 +1808,7 @@ general senders are admitted. Consider RBAC-backed permissions, but choose the a
 multiagent model; the operator prefers verb-over-target rules to shape-matched auto-approval and expects Session
 commands to be RBAC-checked in the Runner Gateway (2026-10-27,
 [orchestration](mcp_orchestration.md#shape-matched-approval-is-the-v1-expedient)). Include authorization before wake and any required execution-time recheck. The
-mandatory Sandbox UID fence is part of `DELIVERY_DESTINATION_CONTRACT`, independent of sender policy.
+resolved environment UID or placement-generation fence is part of `DELIVERY_DESTINATION_CONTRACT`, independent of sender policy.
 
 ### `RESUME_CREDENTIALS_VALID` — grants and tokens still valid after a long suspension
 
@@ -2050,8 +2050,18 @@ beyond the transport track nodes the operator dispatched.
 ```mermaid
 flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: delivery ownership and service topology]
-    DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: destination and send authority]
-    DELIVERY_DESTINATION_CONTRACT[Blocked: implement reviewed destination contract]
+    SESSION_DIRECTORY_NATIVE[Ready: Dispatcher Session directory for native placement]
+    SESSION_OPENING_LOOKUP[Ready: opening lookup by Session ID]
+    DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: send authority and internal fencing]
+    DELIVERY_DESTINATION_CONTRACT[Blocked: Session-ID command addressing]
+    SESSION_NOTIFICATION_ADDRESS[Blocked: Session-addressed inboxes and notices]
+    SESSION_HISTORY_PRESENTATION[Blocked: Session history and environment presentation]
+    SESSION_DIRECTORY_NATIVE --> DELIVERY_DESTINATION_CONTRACT
+    SESSION_DIRECTORY_NATIVE --> SESSION_NOTIFICATION_ADDRESS
+    DELIVERY_DESTINATION_AUTHORITY_DESIGN --> SESSION_NOTIFICATION_ADDRESS
+    DELIVERY_DESTINATION_CONTRACT --> SESSION_NOTIFICATION_ADDRESS
+    SESSION_RUNTIME_MODEL_DESIGN --> SESSION_HISTORY_PRESENTATION
+    AGENT_PRINCIPAL_MODEL_DESIGN --> SESSION_HISTORY_PRESENTATION
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
     RUNNER_STORE_SESSION_IDENTITY[Blocked: implement reviewed private mapping]
     RUNNER_IDENTITY_LEGACY_CLEANUP[Blocked: retire old identity assumptions]
@@ -2101,67 +2111,90 @@ The existing `agentplane/system_tests/k3s` suite already runs without the CNPG o
 against one plain PostgreSQL Deployment and the Runner Gateway; this node is about removing the PostgreSQL dependency
 itself. New sender grants remain a separate decision.
 
-### `DELIVERY_DESTINATION_AUTHORITY_DESIGN` — assign destination validation and send permission
+### `SESSION_OPENING_LOOKUP` — read an opening by Session ID
 
-**Candidate authority decision; public destination approved by operator, 2026-10-15.** Require
-submissions to carry the exact `(Sandbox UID, Agentplane Session ID)`; store/native/process mapping
-is runner-private and no public store field is needed. Persist the complete address, command ID and
-payload before reporting queued
-acceptance or initiating wake, then retain it across caller/Dispatcher restart and Sandbox boot. The
-durable queue receipt is distinct from later Runner admission. Queue that tuple, locate the exact
-Sandbox, and let queued delivery wake only that target. The reachable runner rejects an unknown
-Session as a terminal outcome;
-it must not search other Sandboxes, create a Session, or fall back to a same-name replacement. Offline
-queue admission does not claim to verify live Session membership and does not need a central
-Session-to-Sandbox placement registry. Keep Kubernetes UID-to-live-connection/workload routing
-separate from session placement. Direct admission, if selected, remains online-only and does not wake;
-the queue owns wake-to-deliver.
+**Ready; selected public address.** Replace the app's Sandbox-scoped opening-read wrapper and its
+browser/test consumers with the generated Session Dispatcher `GetSessionOpening(session_id)` API.
+The Dispatcher already provides this lookup and checks retained read authority. Preserve the app's
+actual authentication and authorization at the new facade, response/error semantics, and same-ID
+recovery after uncertain opening. This is opening lookup, not a claim that the complete live Session
+directory exists. [Inventory](session_environment_model.md#session-address-inventory) ·
+[App TODO](../app/TODO.md#session-opening-lookup).
 
-Still compare sender-side checks, one authoritative Dispatcher or Gateway execution boundary, and an
-intentional layered model. Keep source/subscription authorization separate from destination identity,
-owner/membership validation, send permission and the execution-time fence. Trace Notification
-subscriptions, all command senders, Dispatcher UID checks and Gateway proxy resolution. Preserve
-authentication and authorization before wake, command idempotency and outcome semantics. The exact
-locator representation remains open: namespace/name plus UID or UID-based Sandbox resolution.
-UID fences identity but does not authorize a caller.
-V0 may trust only App and Notification to authorize their users; general send grants and queued-work
-revocation are deferred to `DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`. Evaluate owner changes,
-TOCTOU/replacement, unavailable or suspended runners, reader
-subscriptions versus command submission, terminal unknown-target outcomes and narrow credentials.
+### `SESSION_DIRECTORY_NATIVE` — Dispatcher authority for environment-hosted Sessions
 
-**Recommendation for review:** implement no runtime change before the destination authority and
-locator are selected. Preserve existing checks until each layer's authority and denial semantics are approved; a source-read
-subscription must not silently grant sending or waking. Question: which boundary rejects stale or
-unauthorized destinations, what locator and authorization proof does it require, and which checks are
-early feedback versus execution authority? No centralization choice is made here.
+**Ready for a native-first implementation; public identity and database selected.** Evolve the
+existing `session_opening` row or its replacement into the single Dispatcher PostgreSQL authority
+for live Session ID and native placement; do not add a competing writable mapping. Opening with a
+new UUID durably establishes logical existence independent of owner readiness; retain the immutable
+creation request and exact required environment UID separately from owner materialization and
+command delivery. Reuse existing native authorization; do not invent an environment-free central
+principal. The sampler remains subject to its current contract until separately changed.
 
-The [delivery design note](../docs/runner_delivery_and_harness_design.md#destination-checks-and-authority)
-maps the current checks and candidate layered authority. Decide whether namespace/name accompanies
-mandatory UID or an authoritative UID resolver supplies it. Keep the authenticated v0 service
-identity separate from the caller-supplied destination and the execution-time UID/owner fence; do
-not treat one as proof of the other. Set explicit denial and retry rules for replacement, unavailable
-runners and unknown Sessions before implementation.
+Specify and implement observed materialization rejection/unknown outcomes and deletion fencing for
+the native slice, including exact UUID/request retry, conflict, owner unavailable, crash, UID
+replacement and cleanup races; never automatically replay an uncertain native effect. Preserve
+authority and retained History across service-store boundaries. The caller can select an exact
+environment _at creation_; later Session addressing uses the UUID. Choose the minimum schema and
+read API as implementation details, and link its contract from the
+[Session/environment plan](session_environment_model.md#session-address-inventory).
 
-### `DELIVERY_DESTINATION_CONTRACT` — carry and enforce the reviewed destination
+### `DELIVERY_DESTINATION_AUTHORITY_DESIGN` — assign Session send authority and internal fences
 
-**Blocked on `DELIVERY_DESTINATION_AUTHORITY_DESIGN`; the public destination is approved.** After
-the authority and locator are reviewed, migrate the app and Notification senders and the Dispatcher
-request/queue/retry shape to one caller-supplied full
-destination with exact Sandbox UID and public Session ID. Persist the exact destination, command ID
-and payload before a queued receipt or wake;
-do not reconstruct an expected UID from a Sandbox name. Make the chosen admission authority reject
-senders outside the v0 App/Notification trust boundary; only separately allowed callers may wake.
-Make the execution boundary fence the same UID and owner before forwarding. A reachable runner
-rejects unknown Session targets terminally; unavailable runners cannot prove membership at queue acceptance.
-Keep direct mode online-only with no wake and same-ID resolution after a lost reply. Validate
-replacement, owner change, wrong destination, suspension, duplicate retry, runner storage
-loss and staged caller/receiver rollout, including pinned images. A private runner store mapping
-can evolve independently. This node does not expose process placement or select one versus several
-harnesses per runner.
+**Decision: authorization and fencing remain open; Session ID is the selected public address.**
+Compare sender-side checks, a Dispatcher or Gateway execution boundary, and intentional layered
+authority. Distinguish Session read, send and wake grants, authenticated actor and effective caller,
+placement validation and execution-time fences; a source subscription does not grant sending.
+The Dispatcher resolves a Session ID to its authoritative placement. Persist a queued command's
+resolved exact environment UID or equivalent placement generation and payload before acceptance or
+wake, and fence it again at execution so replacement or a future placement change cannot redirect
+already accepted work. A UID is a fence, not authority; never infer one from a same-name replacement.
 
-This implementation can make a central Session-to-Sandbox placement lookup unnecessary for command
-delivery. Neither the destination design nor this node deletes retained History or the Kubernetes
-UID-to-connection locator.
+Keep the current App/Notification trust and the documented orchestration exception until a reviewed
+replacement; general sender grants and queued-work revocation remain in
+`DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`. Decide denial and retry rules for owner changes,
+unknown Sessions, suspension, UID replacement and wake, including central Sessions with no
+environment. The [delivery note](../docs/runner_delivery_and_harness_design.md#destination-checks-and-authority)
+is historical where it requires callers to provide `(Sandbox UID, Session ID)`; its authority and
+fencing questions remain applicable. Exit: a reviewed authority and race contract for
+`DELIVERY_DESTINATION_CONTRACT`; no new principal model is selected by this node.
+
+### `DELIVERY_DESTINATION_CONTRACT` — send commands to a Session ID
+
+**Blocked on `SESSION_DIRECTORY_NATIVE` and `DELIVERY_DESTINATION_AUTHORITY_DESIGN`.** Migrate
+Dispatcher submit/model/effort/interrupt APIs and their app, CLI, Action and other callers to name
+the Session by UUID. Resolve placement inside Dispatcher, retaining exact UID/generation fencing
+in accepted work, owner routing and execution; environment lifecycle and execution APIs still name
+their actual environment. Audit the current privileged path that accepts a command without an
+opening, and existing direct Runtime creation paths before requiring directory membership.
+
+Keep command IDs, no-replay recovery, sender/receiver and wake authorization, and explicit unknown,
+failed and suspended outcomes. Cover unavailable owners, same-name replacement, concurrent deletion,
+conflicting retries and callers with distinct privileges. Change call sites and contracts together;
+retain History and actual harness stores. This does not decide central attachment policy.
+[Address inventory](session_environment_model.md#session-address-inventory).
+
+### `SESSION_NOTIFICATION_ADDRESS` — address inboxes and notices by Session ID
+
+**Blocked on `SESSION_DIRECTORY_NATIVE`, `DELIVERY_DESTINATION_CONTRACT`, and reviewed send authority.** Migrate Notification
+subscriptions, messages, inbox identity/storage, delivery worker, CLI, Action-facing guidance and
+`AGENTPLANE_DESTINATION` to Session UUID addressing. Resolve an environment only when an actual
+placement, authorization or wake decision needs it. Preserve subscription and message idempotency,
+inbox cursors, actor attribution, cross-Session denial, authorized unattended wake, and exact UID
+fencing of accepted work. Account for central Sessions without an environment without assuming the
+unresolved principal model. Review state ownership and data preservation before any store cutover;
+no silent inbox or message loss. See the [inventory](session_environment_model.md#session-address-inventory).
+
+### `SESSION_HISTORY_PRESENTATION` — represent Sessions without a required Sandbox
+
+**Blocked on the central Session and principal/attachment contracts.** History's direct Session reads
+are already keyed by Session ID; retain exact environment references as provenance, filters and
+access-control evidence. Adapt single-Sandbox ingress, summary/projection, app Thread views, grouping,
+readiness controls and environment-filtered lists for central Sessions with zero or multiple
+attachments; do not make historical reads depend on a live directory. Record time-qualified
+attachment transitions as previously requested, with a recoverable History handoff and explicit
+read authority. Preserve retained history, UX visibility and exact UID attribution.
+[Address inventory](session_environment_model.md#session-address-inventory).
 
 ### Service API transport tracks
 
@@ -2229,9 +2262,9 @@ the MCP edge extraction leaves Web Push in Actions.
 
 ### `HARNESS_IDENTITY_DESIGN` — decide private Session-to-store and native mapping
 
-**Current destination and process boundary (operator direction updated 2026-11-02).** The current public address is
-`(Sandbox UID, Agentplane Session ID)` with no store field. The selected future direction uses a
-globally unique Session UUID and resolves placement; see the [Session/environment model](session_environment_model.md).
+**Current destination and process boundary (operator direction updated 2026-11-02).** The current API still carries
+`(Sandbox UID, Agentplane Session ID)` with no store field. The selected public address is a
+globally unique Session UUID; Dispatcher resolves placement; see the [Session/environment model](session_environment_model.md).
 The existing Runtime maps a public Session durably
 to its private store/native ID; selecting a default store by requested harness kind remains a
 candidate policy. Namespace/name may locate the Sandbox, but request syntax and UID resolver are
