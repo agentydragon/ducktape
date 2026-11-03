@@ -16,16 +16,6 @@ as already fenced even if a child survived. Fix this with an explicit failed-sta
 the COSI controller retains ownership on uncertain startup cleanup. Runtime death and replacement
 after loss of the in-memory controller also remain outside this backend-local fix.
 
-## Fence uncertain Session reservation writes
-
-`OpenSession` returns a retained `SessionRecords` write error without failing Runtime. COSI writes
-the backing store before updating its in-memory collection, so an error after a durable write can
-leave `Exists` reporting the Session absent. With an injected backing store that saves the first
-record then returns an error, a retry writes a different record under the same ID, including a new
-event source ID. The probe establishes this failure model, not that a particular bbolt error occurred
-in production. Define a fail-closed recovery boundary for uncertain reservations and test retry,
-restart, conflicting Session specs and event-source identity; do not infer absence from stale memory.
-
 ## Prove VM guest boot and console autologin
 
 The VM system suite boots a test guest using shared Runtime units, not the production NixOS guest.
