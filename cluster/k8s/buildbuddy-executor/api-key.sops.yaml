@@ -1,32 +1,32 @@
 apiVersion: v1
 kind: Secret
 metadata:
-  name: buildbuddy-api-key
-  namespace: buildbuddy-executor
+    name: buildbuddy-api-key
+    namespace: buildbuddy-executor
 type: Opaque
 stringData:
-  api-key: ENC[AES256_GCM,data:XxRpWEXDX4NH+CLg9OlN5Y1LTG8=,iv:Pefg32uLkuSOUPdvziPza30gZ+4MinXbY5HYb9BZZUk=,tag:vjlh7w1IdOyGLjch64eNdw==,type:str]
+    api-key: ENC[AES256_GCM,data:KIKnnl6Qa26A9f/Hv4K04/ToW0k=,iv:Lz18rQiU6iZcDydIcmQ9hUqJlkXSGNxtrcHpiEGu3pA=,tag:Xneuhww3F4nHFK5xhjKcJQ==,type:str]
 sops:
-  age:
-    - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
-      enc: |
-        -----BEGIN AGE ENCRYPTED FILE-----
-        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAxV1ZkZERWNXpvMi9kaHFI
-        QUR0elZmRndyWm8yanBpV0dqWGt0NzV6dVVJCm1VRHZMU0p6cmNsY0VaR0ZJT1FP
-        bVBPUE93bDF3b1ZScy94dytXbUhHZDgKLS0tIHF0WjJibGdMYUxvK2xaL0w5Tkd5
-        Q0ZLWVU4RU95b2lXeWg0WUFCWnZ4R3cKMfMaUPdy1TtZXszqpWoPgaxIbtppaaJW
-        cgChMAvtDzJmRC1XcYE7ABgyF9gYsdd9xfBmCS2c0VFcoNTliRtkrw==
-        -----END AGE ENCRYPTED FILE-----
-    - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
-      enc: |
-        -----BEGIN AGE ENCRYPTED FILE-----
-        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA3K0lXUC9la2MrNHRoQ2NK
-        QUMxcmFuR3RwSTZLVXBHcW1tKzNsWVJrVWlzCldlcnNYc2p4ZEQrdmxiTjY5eENO
-        K1VDbUVra3lldEE0NUdVOXpWN1oxYzQKLS0tIFh4dndjQ05iZWIvb0g1NU9IV0Fk
-        N0o1SFlYY25rSWJyZXhUN2FpTUlqUlEKy3VszvPHd7zfMQkD5JVDcq56jlkSLhVf
-        GKy8aXizmO0ZbQudXBO262Bz4kgE2jXoQ/wEbQPByZC1nU7o4rt/cg==
-        -----END AGE ENCRYPTED FILE-----
-  lastmodified: "2026-04-05T19:50:18Z"
-  mac: ENC[AES256_GCM,data:hy5UwTyRgao6GqvPXYl6/VCeKGdV3hMM2UHHX70SukuPrrnZcJYUZu4SvLcw0v+HsvBIykSWKIDuEiaIEKWni/kafNyXPKOKuUri3RLEXf2W5DO4JujmbS2GvKPoQP1a0LCjj0lVBOh1scub8pdtU7D59BrFWvdYg+QGoZb6qBw=,iv:Ya6py2/yQ5ralxHnsenltoZDtankMwqWgeklH3WFf1Q=,tag:5KoCFp0vxEekKdCxml4Nhg==,type:str]
-  encrypted_regex: ^(data|stringData)$
-  version: 3.12.1
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBuNmxCd0paMU5UZlFHNnRa
+            eHZRZ0hoMHM5TFNJNDlhVk55SzZoWTZEYjEwClVzMmpXSFQ3TFZIS09GdzExMDJH
+            T1NhZkRTZGFFRDlRQi9oSy9YK1hYV28KLS0tIFNaK01iMGhtUS83OGhTYmtwT3V6
+            RFo1dnA1dFhwbGxYalAzOGJFSFQ0ejgKc7ab1QZP5xBbcT5cEC+i6g3gUdBXAhxY
+            YgaEiuP+aqqe39jTPEFgOrMwxOp4rhSuueulV9dzjl1DhsdsevqoDQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBGOU91MG5wU0NuOWNNWUli
+            OVZ4Wm1OQjZrYU5XbDJjTUc0NmRkRGc5VVFJCmUzK2YzeWw3Y2luc3hsckp6VXV2
+            SXRMUmcrVzNURE1BbTEzcDA5U0tJWEUKLS0tIElsUVlTMy9vY25nNHBUSGU2ZUdO
+            SENaMk04dElKdmJ6YUJNZG9tRmloV2MKunYUjOG3+TQqh7H6b7tm/hhtUEkkFCc/
+            3Rpjxd5ZdWjzohl9p1AmzaNkUGoVvcmWxdIA1w936m1lFnFMckTo2w==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-11-03T01:52:02Z"
+    mac: ENC[AES256_GCM,data:QrZ60A1liKBBdVAB2HFPvgESpYks/4Aml51tazaqE5SfaW3tAe5X7pVkZ00yX5VIJ5p3UFihT71Voxu++8jddQ3VSf6VLZSU0UjYNZCLb/xedpXQ/CNvWIyOGtdwAnDuy0IPtzkHJb6TK+t5dkWZ00YMBIMpOE4Ef1+vWJw4CNU=,iv:JtyI2jdf1hwDGGTFajyo+MYZ+8IJyhnCopVYh3TTjYU=,tag:AOagwg7ehdaFsEASNcg1Xw==,type:str]
+    version: 3.13.3
