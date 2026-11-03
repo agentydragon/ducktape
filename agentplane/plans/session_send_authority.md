@@ -1,6 +1,6 @@
 # Session-addressed command authority
 
-Status: **candidate for operator review; no API or permission change is authorized by this note.**
+Status: **directory membership selected; remaining authority and fencing details need review.**
 The selected public command address is a globally unique Session UUID. The native Session directory
 in Dispatcher PostgreSQL is the authority for its placement. This note specifies the native send
 path that can follow [SESSION_DIRECTORY_NATIVE](task_dag.md#session_directory_native--dispatcher-authority-for-environment-hosted-sessions),
@@ -60,6 +60,15 @@ App, Notification and orchestration service exceptions at their current scopes w
 caller-facing checks are separately audited; no new service or direct agent becomes privileged by
 using a Session UUID. Retain actor, effective caller UID, and Action provenance on accepted work.
 Resolving the directory, reading a Session or subscribing to a source is not send permission.
+The operator selected a Dispatcher Session record as a prerequisite for every Session-targeted
+command, including those from privileged services. The current no-opening path is to be removed;
+service privilege does not create a Session or replace the required record. This applies to the
+immediate interrupt path as well as queued commands. A Session record is distinct from a per-command
+receipt; this decision does not itself change which operations are durably queued or journaled.
+Audit and migrate existing direct Runtime creators and no-opening callers before enforcing the
+requirement; do not introduce an exception for them. This is a target contract, not a claim that
+current admission already enforces it.
+
 General destination/operation grants and their revocation semantics remain in
 `DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`.
 
@@ -102,18 +111,13 @@ row. Preserve accepted work and the native store when handling deletion and serv
 
 The following choices need explicit review before `DELIVERY_DESTINATION_CONTRACT` starts:
 
-1. **Legacy privileged no-opening commands.** They currently pass Dispatcher admission. Recommended:
-   require a directory record for the new UUID-only public command path, and audit every actual
-   no-opening producer and direct Runtime creator before removing that compatibility behavior.
-   If one still needs it, specify a separately authenticated, narrowly scoped maintenance operation;
-   do not silently treat arbitrary UUIDs as placed Sessions or grandfather them into user sends.
-2. **Deletion fence and same-UID reuse.** Prove that a Session cannot move or be retired while an
+1. **Deletion fence and same-UID reuse.** Prove that a Session cannot move or be retired while an
    old owner can admit its command, or select an authoritative receiver-checked epoch. The former
    is the minimum native contract; the latter is required if live relocation is supported.
-3. **Queued sender revocation.** V0 retains current service trust and effective-caller checks.
+2. **Queued sender revocation.** V0 retains current service trust and effective-caller checks.
    Whether an accepted command is cancelled on a later user grant revocation is a separate
    generalized-policy decision; do not imply that a subscription is a lasting send grant.
-4. **Central Sessions.** A central scope with no environment has no UID or current native
+3. **Central Sessions.** A central scope with no environment has no UID or current native
    execution principal. Decide its principal, command permission and wake behavior in the central
    Session/agent-principal designs. Do not manufacture an environment or use a privileged service
    identity as the Session's principal merely to reuse this path.
@@ -122,7 +126,8 @@ Acceptance for the implementation: direct and delegated caller parity; denial fo
 caller despite a known UUID; actor privilege not leaking through delegation; current App,
 Notification and orchestration permissions unchanged; source-read grants unable to append, and
 inbox-append grants unable to submit arbitrary commands or bypass notice wake policy; exact same-ID
-and conflict behavior across restarts; queue/deletion and
+and conflict behavior across restarts; denial of commands to an absent Session for privileged and
+ordinary callers, including interrupts; queue/deletion and
 same-name replacement races; failed directory read before wake; suspended, unavailable and
 unknown Runtime outcomes; immediate interrupt denial and unknown-result reconciliation; and a
 proxy test showing an unauthorized direct command cannot bypass Dispatcher after its separate

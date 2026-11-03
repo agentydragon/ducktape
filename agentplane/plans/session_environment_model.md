@@ -157,6 +157,12 @@ Current behavior: [native Sessions](https://github.com/agentydragon/ducktape/blo
 
 Selected direction: callers name a Session by one globally unique, unscoped public UUID. A durable Session directory resolves it to the current Session owner and placement. Dispatcher PostgreSQL owns that directory and live Session records, separate from History’s database; the directory does not require a separate Deployment. Whether placement generations are needed and their precise representation remain implementation questions.
 
+Every Session-targeted command requires a Dispatcher Session record, including commands from
+privileged services and immediate interrupts. The record establishes the Session to address; it is
+not itself permission to send or wake. Current no-opening command admission and direct Runtime
+creation paths must be migrated before enforcement. Whether an individual operation also needs a
+durable command receipt is a separate contract question.
+
 Opening reads now target the Session ID through Dispatcher
 [`GET /v1/sessions/{session_id}/opening`](../runner_gateway/dispatcher/session_dispatcher.proto).
 The [browser adapter](../app/frontend/sandboxes/client.ts) calls that endpoint through the
@@ -896,6 +902,15 @@ policy. The proposal now compares complete forgetting, a minimal UUID marker and
 History. It distinguishes today's environment-UID fence from a Session-UUID marker, and records
 the effects on retained History, exact retries, globally unique UUIDs, concurrent admission and
 availability. No marker, retention lifetime or UUID-reuse policy is agreed by this clarification.
+
+**2026-11-03 · Commands require a Dispatcher Session record**
+
+The operator said that with a required Dispatcher database, commands should always have a
+Dispatcher record. In the context of the command-authority discussion, this selects an existing
+Dispatcher Session record as a prerequisite for Session-targeted commands, including privileged
+callers. It does not select Session deletion or UUID retention semantics, send/wake grants, or a
+requirement to queue every operation. The current privileged no-opening path and direct Runtime
+creation callers still need migration before the selected contract is enforced.
 
 **Still open**
 

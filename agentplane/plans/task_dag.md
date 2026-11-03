@@ -2150,8 +2150,11 @@ replacement; general sender grants and queued-work revocation remain in
 [Session command authority candidate](session_send_authority.md) inventories App, CLI, Actions,
 Notification, Dispatcher, Gateway and Runtime and recommends one transactional native admission
 boundary, persisted exact UID, rechecks before wake and forwarding, and no replay of an uncertain
-effect. Review its no-opening privileged path, deletion/owner fence and central-Session questions
-before calling this decision complete. The
+effect. The operator selected a Dispatcher Session record as a prerequisite for every
+Session-targeted command, including privileged calls and immediate interrupts. Audit and migrate
+existing no-opening producers and direct Runtime creators; remove the privileged no-opening path,
+not the requirement. Review the deletion/owner fence and central-Session questions before calling
+this decision complete. The
 [older delivery note](../docs/runner_delivery_and_harness_design.md#destination-checks-and-authority)
 is historical where it requires callers to provide `(Sandbox UID, Session ID)`; its authority and
 fencing questions remain applicable. Exit: a reviewed authority and race contract for
@@ -2163,8 +2166,9 @@ fencing questions remain applicable. Exit: a reviewed authority and race contrac
 Dispatcher submit/model/effort/interrupt APIs and their app, CLI, Action and other callers to name
 the Session by UUID. Resolve placement inside Dispatcher, retaining exact UID/generation fencing
 in accepted work, owner routing and execution; environment lifecycle and execution APIs still name
-their actual environment. Audit the current privileged path that accepts a command without an
-opening, and existing direct Runtime creation paths before requiring directory membership.
+their actual environment. Require the Dispatcher Session record for every Session command, including
+privileged calls and interrupts. Migrate the current no-opening callers and direct Runtime creators
+before removing those paths; the current implementation does not yet enforce the requirement.
 
 Keep command IDs, no-replay recovery, sender/receiver and wake authorization, and explicit unknown,
 failed and suspended outcomes. Cover unavailable owners, same-name replacement, concurrent deletion,
