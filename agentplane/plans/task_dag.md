@@ -2144,11 +2144,23 @@ resolved exact environment UID or equivalent placement generation and payload be
 wake, and fence it again at execution so replacement or a future placement change cannot redirect
 already accepted work. A UID is a fence, not authority; never infer one from a same-name replacement.
 
-Keep the current App/Notification trust and the documented orchestration exception until a reviewed
-replacement; general sender grants and queued-work revocation remain in
-`DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`. Decide denial and retry rules for owner changes,
-unknown Sessions, suspension, UID replacement and wake, including central Sessions with no
-environment. The [delivery note](../docs/runner_delivery_and_harness_design.md#destination-checks-and-authority)
+The operator selected the existing native caller and wake rules for the first cutover: direct
+callers match the Session's execution ServiceAccount, delegated calls use the effective caller,
+and App/Notification trust and the documented orchestration exception keep their current scope.
+Wake remains independently authorized, including unattended notices. General sender grants and
+queued-work revocation remain in
+`DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`. The
+[Session command authority candidate](session_send_authority.md) inventories App, CLI, Actions,
+Notification, Dispatcher, Gateway and Runtime and recommends one transactional native admission
+boundary, persisted exact UID, rechecks before wake and forwarding, and no replay of an uncertain
+effect. The operator selected a Dispatcher Session record as a prerequisite for every
+Session-targeted command, including privileged calls and immediate interrupts. Audit and migrate
+existing no-opening producers and direct Runtime creators; remove the privileged no-opening path,
+not the requirement. On deletion, fail commands known not to have left Dispatcher, report unknown
+when in-flight admission or effects cannot be established, and never redirect accepted work. The
+fence implementation and the location and lifetime of outcome evidence still need design and proof;
+central-Session authority remains separate. The
+[older delivery note](../docs/runner_delivery_and_harness_design.md#destination-checks-and-authority)
 is historical where it requires callers to provide `(Sandbox UID, Session ID)`; its authority and
 fencing questions remain applicable. Exit: a reviewed authority and race contract for
 `DELIVERY_DESTINATION_CONTRACT`; no new principal model is selected by this node.
@@ -2159,12 +2171,15 @@ fencing questions remain applicable. Exit: a reviewed authority and race contrac
 Dispatcher submit/model/effort/interrupt APIs and their app, CLI, Action and other callers to name
 the Session by UUID. Resolve placement inside Dispatcher, retaining exact UID/generation fencing
 in accepted work, owner routing and execution; environment lifecycle and execution APIs still name
-their actual environment. Audit the current privileged path that accepts a command without an
-opening, and existing direct Runtime creation paths before requiring directory membership.
+their actual environment. Require the Dispatcher Session record for every Session command, including
+privileged calls and interrupts. Migrate the current no-opening callers and direct Runtime creators
+before removing those paths; the current implementation does not yet enforce the requirement.
 
 Keep command IDs, no-replay recovery, sender/receiver and wake authorization, and explicit unknown,
 failed and suspended outcomes. Cover unavailable owners, same-name replacement, concurrent deletion,
-conflicting retries and callers with distinct privileges. Change call sites and contracts together;
+conflicting retries and callers with distinct privileges. Follow the reviewed
+[command authority](session_send_authority.md), including queue-acceptance versus Runtime-admission
+semantics and the direct proxy command bypass audit. Change call sites and contracts together;
 retain History and actual harness stores. This does not decide central attachment policy.
 [Address inventory](session_environment_model.md#session-address-inventory).
 
