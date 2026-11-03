@@ -18,6 +18,9 @@ read-only configuration supplied by the worker.
 The existing `buildbuddy-api-key` Secret is attached as a read-only ISO. No outer Kubernetes
 token or host filesystem is attached. Root in a test can compromise the persistent guest
 and its BuildBuddy key; this is a trusted-code worker.
+Actions receive all guest Linux capabilities: nested runc needs `SYS_RESOURCE` to set
+pod OOM scores, and KubeVirt's privileged node agents need the full capability set.
+Docker packages the action's filesystem; the VM provides isolation from the outer cluster.
 
 The Kustomization is enabled, so Flux deploys the VM when this configuration lands.
 First boot configures the dedicated guest for nested KVM and reboots once before the
