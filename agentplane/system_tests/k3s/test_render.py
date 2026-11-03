@@ -447,6 +447,10 @@ def test_retained_fixture_pki_names_are_scoped_to_stack_incarnation() -> None:
         ]
         assert len(bundles) == 1
         bundle = bundles[0]
+        assert bundle["metadata"]["name"] == "cluster-internal-ca-bundle"
+        assert bundle["spec"]["target"]["namespaceSelector"]["matchLabels"] == {
+            "kubernetes.io/metadata.name": fixture.namespace
+        }
 
         gateway = _resource(objects, "Deployment", "runner-gateway")["spec"]["template"]["spec"]
         projected_sources = [
@@ -476,7 +480,6 @@ def test_retained_fixture_pki_names_are_scoped_to_stack_incarnation() -> None:
             root_secret,
             bootstrap["metadata"]["name"],
             internal["metadata"]["name"],
-            bundle["metadata"]["name"],
             intermediate["metadata"]["name"],
             intermediate_secret,
             gateway_issuer["metadata"]["name"],

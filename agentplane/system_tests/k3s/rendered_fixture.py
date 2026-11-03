@@ -175,12 +175,12 @@ def fill(
             "test-runner-root",
             "test-runner-root-bootstrap",
             "cluster-internal-ca",
-            "cluster-internal-ca-bundle",
             "agentplane-runner-ca",
             "agentplane-runner-gateway-tls",
         )
         name_replacements = {name: f"{name}-{pki_incarnation}" for name in names}
-        name_pattern = re.compile("|".join(re.escape(name) for name in sorted(names, key=len, reverse=True)))
+        alternatives = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
+        name_pattern = re.compile(rf"(?<![a-z0-9.-])(?:{alternatives})(?![a-z0-9.-])")
         objects = _replace_names(objects, name_replacements, name_pattern)
 
     return fixture.model_copy(update={"objects": objects, "app_origin": _replace(fixture.app_origin, replacements)})
