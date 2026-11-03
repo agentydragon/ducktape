@@ -1278,7 +1278,7 @@ impl<'a> Analysis<'a> {
                     }
                 }
                 for ((from, to), count) in &preserved {
-                    if component_of.get(from).is_some()
+                    if component_of.contains_key(from)
                         && component_of.get(from) == component_of.get(to)
                     {
                         *counts
