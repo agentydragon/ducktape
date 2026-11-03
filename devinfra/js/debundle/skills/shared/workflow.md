@@ -177,7 +177,12 @@ A source-match capture can also be an anchor referenced by surviving typed
 selectors. Preserving its emitted name with a plain chunk rename does not
 recreate that selector anchor. When reducing ownership, retain source-match
 owners referenced by surviving selectors or rewrite those selectors using a
-supported equivalent. Validate selector resolution before running the gate.
+supported equivalent. If an adjacent declaration is needed only to identify a
+helper, keep it as unclaimed context in that helper's contiguous
+`source_matches[].match` and list only the helper in `bindings[]`; see [keeping an
+adjacent declaration as local selector context](../../docs/selectors.md#keep-an-adjacent-declaration-as-local-selector-context).
+That local context does not create an anchor entity for other selectors.
+Validate selector resolution before running the gate.
 
 Configured `module_roots` still require their directories when they contain no
 selected YAML. A reduced config can omit unused root mappings instead of
