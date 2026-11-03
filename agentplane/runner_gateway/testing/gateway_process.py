@@ -77,14 +77,9 @@ class GatewayProcess:
         cert_file, key_file = issue_workload_leaf(self.environment_runtime_ca, uri, directory)
         return TLS(cert_file=str(cert_file), key_file=str(key_file), ca_file=str(self.environment_runtime_ca_file))
 
-    def gateway_client(
-        self, token_file: Path, *, request_timeout_s: float = 20, lifecycle_timeout_s: float = 310
-    ) -> SandboxControlClient:
+    def gateway_client(self, token_file: Path, *, request_timeout_s: float = 20) -> SandboxControlClient:
         return SandboxControlClient(
-            control_target=self.target,
-            token_file=token_file,
-            request_timeout_s=request_timeout_s,
-            lifecycle_timeout_s=lifecycle_timeout_s,
+            control_target=self.target, token_file=token_file, request_timeout_s=request_timeout_s
         )
 
     async def _check_process(self) -> None:

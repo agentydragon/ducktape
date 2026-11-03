@@ -25,14 +25,11 @@ class SandboxControlClient:
     control Service, each on a connection dialed for that call alone: a replica that no longer holds
     it refuses with UNAVAILABLE, and the caller's retry resolves the control Service again."""
 
-    def __init__(
-        self, *, control_target: str, token_file: Path, request_timeout_s: float, lifecycle_timeout_s: float = 310
-    ) -> None:
+    def __init__(self, *, control_target: str, token_file: Path, request_timeout_s: float) -> None:
         # A template of `{sandbox}` and `{namespace}`: `{sandbox}-control.{namespace}.svc:8080`.
         self.control_target = control_target
         self.token_file = token_file
         self.request_timeout_s = request_timeout_s
-        self.lifecycle_timeout_s = lifecycle_timeout_s
 
     def runner(self, destination: SandboxDestination) -> SandboxRunner:
         return SandboxRunner(self, destination)
