@@ -96,9 +96,22 @@ func hint(t *testing.T, text string) noticeHint {
 // losingDispatcher stores every command it is sent, and tells the caller of the first that the call failed: the
 // command is committed and its response is lost.
 type losingDispatcher struct {
-	dispatcherpb.UnimplementedSessionDispatcherServer
+	openingDispatcher
 	mu        sync.Mutex
 	submitted []command
+}
+
+type openingDispatcher struct {
+	dispatcherpb.UnimplementedSessionDispatcherServer
+}
+
+func (openingDispatcher) GetSessionOpening(_ context.Context, request *dispatcherpb.GetSessionOpeningRequest) (*dispatcherpb.GetSessionOpeningResponse, error) {
+	if request.GetSessionId() != testSession {
+		return nil, status.Error(codes.NotFound, "opening not found")
+	}
+	return &dispatcherpb.GetSessionOpeningResponse{Opening: &dispatcherpb.SessionOpening{
+		SessionId: testSession, Sandbox: sandboxName, SandboxUid: sandboxUID,
+	}}, nil
 }
 
 func (d *losingDispatcher) SubmitInput(_ context.Context, in *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
@@ -264,7 +277,6 @@ func TestAnAgentIsNotifiedOfAnActionAndAcknowledgesItsEntriesAfterALostResponseA
 
 	subscribeTo := func(request string) map[string]any {
 		return map[string]any{
-			"destinationRef": map[string]any{"namespace": testNamespace, "name": sandboxName, "uid": sandboxUID},
 			"sessionId":      testSession,
 			"idempotencyKey": "listen",
 			"source":         map[string]any{"actions": map[string]any{"requestId": request}},

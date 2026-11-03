@@ -201,7 +201,6 @@ func TestGitHubCurrentFactsRecoverThroughServiceAfterRestartAndDeduplicateLateWe
 	service := start(t, tune)
 
 	code, created := agentCall(t, service, http.MethodPost, "/v1/subscriptions", sandboxToken, map[string]any{
-		"destinationRef": map[string]any{"namespace": testNamespace, "name": sandboxName, "uid": sandboxUID},
 		"sessionId":      testSession,
 		"idempotencyKey": "missed-github-updates",
 		"source": map[string]any{"github": map[string]any{

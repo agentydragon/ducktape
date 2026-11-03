@@ -23,6 +23,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
+	"github.com/agentydragon/ducktape/agentplane/session_instructions"
 )
 
 const notificationsHelp = `Calls the Notification Service (AGENTPLANE_NOTIFICATIONS_URL, AGENTPLANE_NOTIFICATIONS_CREDENTIAL).
@@ -269,29 +270,27 @@ func responseField(raw []byte, name string) (json.RawMessage, error) {
 	return value, nil
 }
 
-// destination reads the inbox: --destination wins over AGENTPLANE_DESTINATION. Both hold the
-// destination fields of a CreateSubscriptionRequest, `{"destination_ref": {...}, "session_id": "..."}`.
-func (a *app) destination(flag string) (*notificationspb.CreateSubscriptionRequest, error) {
-	source, text := "--destination", flag
+func (a *app) notificationSessionID(flag string) (string, error) {
+	if flag != "" {
+		return flag, nil
+	}
+	text := a.getenv("AGENTPLANE_DESTINATION")
 	if text == "" {
-		source, text = "AGENTPLANE_DESTINATION", a.getenv("AGENTPLANE_DESTINATION")
+		return "", usageFailure("no Session: set AGENTPLANE_DESTINATION or pass --session ID")
 	}
-	if text == "" {
-		return nil, usageFailure("no destination: set AGENTPLANE_DESTINATION or pass --destination JSON")
+	var parsed sessioninstructions.Destination
+	decoder := json.NewDecoder(strings.NewReader(text))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&parsed); err != nil {
+		return "", usageFailure("AGENTPLANE_DESTINATION: %v", err)
 	}
-	var parsed notificationspb.CreateSubscriptionRequest
-	if err := protojson.Unmarshal([]byte(text), &parsed); err != nil {
-		return nil, usageFailure("%s: %v", source, err)
+	if parsed.SessionID == "" || parsed.Sandbox.Namespace == "" || parsed.Sandbox.Name == "" || parsed.Sandbox.UID == "" {
+		return "", usageFailure("AGENTPLANE_DESTINATION needs destination_ref.namespace, name and uid, and session_id")
 	}
-	ref := parsed.GetDestinationRef()
-	if ref.GetNamespace() == "" || ref.GetName() == "" || ref.GetUid() == "" || parsed.GetSessionId() == "" {
-		return nil, usageFailure("%s needs destination_ref.namespace, name and uid, and session_id", source)
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return "", usageFailure("AGENTPLANE_DESTINATION must hold one JSON object")
 	}
-	destination := &notificationspb.CreateSubscriptionRequest{DestinationRef: ref, SessionId: parsed.GetSessionId()}
-	if !proto.Equal(&parsed, destination) {
-		return nil, usageFailure("%s holds only destination_ref and session_id", source)
-	}
-	return destination, nil
+	return parsed.SessionID, nil
 }
 
 // parseEvents reads NAME[:ACTION[,ACTION]] filters into their canonical order.
@@ -341,7 +340,7 @@ func (a *app) subscribePullRequestCommand() *cobra.Command {
 		Use:   "pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]...",
 		Short: "Follow a pull request",
 		Long: `POST /v1/subscriptions for a GitHub pull request, delivering to the inbox named by
-AGENTPLANE_DESTINATION ({"destination_ref": {...}, "session_id": "..."}) or --destination, which wins.
+AGENTPLANE_DESTINATION's session_id or --session ID, which wins.
 Subscribe first, then read the pull request's current state: this follows from creation, not from history.
 
 By default, pull-request subscriptions include mergeability_changed, which reports the initial
@@ -366,10 +365,11 @@ lifetime), and when the key belongs to a cancelled subscription (pass a new --ke
 			if err != nil {
 				return err
 			}
-			body, err := a.destination(destinationFlag)
+			sessionID, err := a.notificationSessionID(destinationFlag)
 			if err != nil {
 				return err
 			}
+			body := &notificationspb.CreateSubscriptionRequest{SessionId: sessionID}
 			repository := match[1] + "/" + match[2]
 			body.IdempotencyKey = key
 			if body.IdempotencyKey == "" {
@@ -401,7 +401,7 @@ lifetime), and when the key belongs to a cancelled subscription (pass a new --ke
 	command.Flags().StringArrayVar(&events, "event", nil, "NAME[:ACTION[,ACTION]]; replaces defaults; repeatable; mergeability_changed has no actions")
 	command.Flags().Var(&lifetime, "lifetime-days", "subscription lifetime in days (service default 7)")
 	command.Flags().StringVar(&key, "key", "", "idempotency key; derived from the source if absent")
-	command.Flags().StringVar(&destinationFlag, "destination", "", "the destination JSON, instead of AGENTPLANE_DESTINATION")
+	command.Flags().StringVar(&destinationFlag, "session", "", "Session ID, instead of AGENTPLANE_DESTINATION's session_id")
 	return command
 }
 
@@ -548,11 +548,11 @@ RESOURCE_EXHAUSTED (too many of your messages there await acknowledgement: wait,
 				message.Body = text
 			}
 			if fromSession == "" && a.getenv("AGENTPLANE_DESTINATION") != "" {
-				own, err := a.destination("")
+				own, err := a.notificationSessionID("")
 				if err != nil {
 					return err
 				}
-				fromSession = own.GetSessionId()
+				fromSession = own
 			}
 			if fromSession != "" {
 				message.FromSession = &fromSession

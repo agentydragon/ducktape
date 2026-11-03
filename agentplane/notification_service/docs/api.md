@@ -8,14 +8,20 @@ in the [service README](../README.md); internal delivery and storage design is i
 ## Agent API
 
 Workload calls require a Pod-bound Kubernetes ServiceAccount bearer token with the configured
-audience. Owner authority is the verified ServiceAccount, shared by its workloads. Every creation specifies `destination_ref`
-(namespace/name/UID) and `session_id`; inbox and subscription IDs identify subsequent operations.
+audience. Owner authority is the verified ServiceAccount, shared by its workloads. Subscription creation
+addresses a Session by `session_id`. The service resolves its existing Dispatcher opening, checks the exact
+Sandbox UID and caller ownership, and confirms current Runtime membership before source authorization.
+An absent opening is `NOT_FOUND`; an unavailable lookup is `UNAVAILABLE`. Direct Runtime-only Sessions
+cannot create subscriptions. Message sends still specify `destination_ref` and `session_id`.
+Inbox and subscription IDs identify subsequent operations.
 The caller's inboxes and subscriptions are those opened for the Sandbox that runs as its account now: a Sandbox
 recreated under a deleted one's name sees none of the deleted one's, and an account no Sandbox runs as has none.
 
 - `POST /v1/subscriptions`: immutable provider-owned source/filter and `idempotency_key`; identical retries return
   the same subscription, conflicting reuse returns 409. Actions replay defaults to sequence zero;
   GitHub starts after the latest committed webhook at creation.
+  Resolving the Session retains the existing internal destination and creation snapshot; persisted
+  subscriptions, inbox cursors and notices remain intact.
 - `GET /v1/subscriptions[?after_id=…]`: ordered pages of 128; continue after the last ID.
 - `GET`, `PATCH`, `DELETE /v1/subscriptions/{id}`: inspect, renew with an expected version,
   or idempotently cancel. Cancelling never cancels an Action or erases accepted entries.
@@ -42,7 +48,6 @@ accepts either spelling in requests ([`notifications.proto`](../notifications.pr
 
 ```json
 {
-  "destinationRef": { "namespace": "agentplane-staging", "name": "sandbox-name", "uid": "sandbox-uid" },
   "sessionId": "session-id",
   "idempotencyKey": "follow-action",
   "source": {

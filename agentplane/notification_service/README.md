@@ -7,9 +7,12 @@ from the Session's runner entries in the History Service. It authorizes messages
 rules of the PolicySets bound to the sender, which it watches. It does not depend on the integration app or
 connect directly to runners.
 
-Agents subscribe with an explicit destination/session and an idempotence key, then retrieve stored
+Agents subscribe with a Session ID and an idempotence key, then retrieve stored
 payloads when notified. Reads are non-destructive; acknowledgement explicitly advances the handled
 contiguous prefix. Unacknowledged entries do not cause repeated reminders.
+Creating a subscription resolves the existing Dispatcher opening and retains current Sandbox ownership,
+exact UID and live Runtime membership checks. Sessions opened only through Runtime have no Dispatcher
+opening and cannot create subscriptions. Persisted subscriptions, inbox cursors and notices remain intact.
 For UID-pinned destinations, workers retire an inbox only after two Sandbox lookups
 confirm that its managed Sandbox is missing or has a different UID, separated by the
 configured `stale_inbox_confirmation_s` grace period. Matching UIDs (including
@@ -43,6 +46,15 @@ PostgreSQL database, Actions, Runner Gateway, History Service and Session Dispat
 service-account tokens, Kubernetes read access to Sandboxes, PolicySets and PolicyBindings, and `patch` on
 PolicyBinding status. Preserve existing staging data. Verify an Action
 subscription through a newly opened harness after rollout. Existing sessions retain their original prompt.
+
+Subscription creation uses a Session-only request and requires a Dispatcher opening. Deploy the
+Notification API and CLI images together; creations can fail while old and new versions overlap.
+Once all serving replicas and client binaries agree, retry with the original idempotency key.
+The existing `AGENTPLANE_DESTINATION` metadata envelope still contains the Sandbox reference and
+Session ID; the CLI extracts only the Session ID for subscription creation. This preserves the
+default CLI invocation in retained central Session prompts without rewriting those prompts or History.
+Rollback rolls both API and CLI images back together. Existing subscriptions and their stored
+destination fences, entries, acknowledgements and notices are not converted or deleted.
 
 Schema changes are Goose migrations. `00010_final_schema.sql` creates the native schema directly for
 an empty database, or adopts a database that completed version 9. Its adoption step preserves Goose

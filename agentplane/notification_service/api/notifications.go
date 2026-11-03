@@ -26,6 +26,7 @@ type Notifications struct {
 	github    GitHub
 	policy    *inboxaccess.Policy
 	history   SessionHistory
+	openings  SessionOpenings
 	// messageBodyLimit is in UTF-8 bytes.
 	messageBodyLimit int
 	timeout          time.Duration
@@ -41,7 +42,7 @@ func NewNotifications(options Options) *Notifications {
 	return &Notifications{
 		store: options.Store, namespace: options.Namespace, sandboxes: options.Sandboxes,
 		runner: options.Runner, actions: options.Actions, github: options.GitHub, policy: options.SendPolicy,
-		history: options.History, messageBodyLimit: options.MessageBodyLimit, timeout: options.RequestTimeout,
+		history: options.History, openings: options.Openings, messageBodyLimit: options.MessageBodyLimit, timeout: options.RequestTimeout,
 		wakeups: options.Wakeups, operatorReader: options.OperatorReader, debounce: options.Debounce,
 		draining: draining, drain: drain,
 	}
@@ -105,7 +106,7 @@ func (s *Notifications) createSubscription(ctx context.Context, owner model.Serv
 	if err != nil {
 		return nil, err
 	}
-	if err := body.Validate(); err != nil {
+	if err := model.CheckText("session_id", body.SessionID, 1, 200); err != nil {
 		return nil, err
 	}
 	subscription, err := s.subscribe(ctx, owner, body)

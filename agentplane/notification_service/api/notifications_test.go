@@ -12,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -77,6 +78,38 @@ func TestCreateSubscriptionReplaysItsIdempotencyKey(t *testing.T) {
 	requireCode(t, err, codes.AlreadyExists)
 }
 
+func TestSessionAddressedCreationRetainsAnExistingSubscriptionAndInbox(t *testing.T) {
+	s := newServer(t)
+	request := createRequest("retained-subscription")
+	source, err := sourceBody(request.GetSource())
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous, err := s.store.Subscribe(t.Context(), model.ServiceAccount{Namespace: testNamespace, Name: sandboxName}, model.Subscribe{
+		DestinationRef: model.DestinationRef{Namespace: testNamespace, Name: sandboxName, UID: sandboxUID},
+		SessionID:      testSession, IdempotencyKey: request.GetIdempotencyKey(), Source: source, LifetimeDays: 7,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := subscriptionView(previous)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.record(t, stored, 2)
+	if _, err := s.client.AcknowledgeInbox(bearing(t, sandboxToken), &notificationspb.AcknowledgeInboxRequest{InboxId: stored.GetInboxId(), ThroughCursor: 1}); err != nil {
+		t.Fatal(err)
+	}
+	retried, err := s.client.CreateSubscription(bearing(t, sandboxToken), request)
+	if err != nil || retried.GetSubscription().GetId() != stored.GetId() || retried.GetSubscription().GetInboxId() != stored.GetInboxId() {
+		t.Fatalf("retained subscription = %v, %v", retried, err)
+	}
+	page, err := s.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{InboxId: stored.GetInboxId()})
+	if err != nil || page.GetInbox().GetAcknowledged() != 1 || page.GetInbox().GetLastCursor() != 2 || len(page.GetEntries()) != 2 {
+		t.Fatalf("retained inbox = %v, %v", page, err)
+	}
+}
+
 func TestCreateSubscriptionRefusesWhatTheCallerCannotFollowAndStoresNothing(t *testing.T) {
 	cases := []struct {
 		name string
@@ -86,13 +119,8 @@ func TestCreateSubscriptionRefusesWhatTheCallerCannotFollowAndStoresNothing(t *t
 		want       codes.Code
 		asksRunner bool
 	}{
-		{"destination in another namespace", "", func(r *notificationspb.CreateSubscriptionRequest) { r.DestinationRef.Namespace = "test-elsewhere" }, codes.NotFound, false},
-		{"destination Sandbox that does not exist", "", func(r *notificationspb.CreateSubscriptionRequest) { r.DestinationRef.Name = "no-such-sandbox" }, codes.NotFound, false},
-		{"destination Sandbox that was replaced", "", func(r *notificationspb.CreateSubscriptionRequest) { r.DestinationRef.Uid = "replaced-uid" }, codes.NotFound, false},
 		{"another account's Sandbox", otherSandboxToken, func(*notificationspb.CreateSubscriptionRequest) {}, codes.NotFound, false},
 		{"Session the runner does not hold", "", func(r *notificationspb.CreateSubscriptionRequest) { r.SessionId = "missing-session" }, codes.NotFound, true},
-		{"no destination", "", func(r *notificationspb.CreateSubscriptionRequest) { r.DestinationRef = nil }, codes.InvalidArgument, false},
-		{"destination without a UID", "", func(r *notificationspb.CreateSubscriptionRequest) { r.DestinationRef.Uid = "" }, codes.InvalidArgument, false},
 		{"no source", "", func(r *notificationspb.CreateSubscriptionRequest) { r.Source = nil }, codes.InvalidArgument, false},
 		{"Action request that is no UUID", "", func(r *notificationspb.CreateSubscriptionRequest) { r.Source.GetActions().RequestId = "request" }, codes.InvalidArgument, false},
 		{"negative sequence", "", func(r *notificationspb.CreateSubscriptionRequest) { r.Source.GetActions().AfterSequence = -1 }, codes.InvalidArgument, false},
@@ -136,6 +164,7 @@ func TestCreateSubscriptionAnswersAFaultOfACollaboratorWithoutItsText(t *testing
 		cause error
 		want  codes.Code
 	}{
+		{"opening lookup unreachable", func(s testServer, err error) { s.openings.err = err }, errors.New("dial dispatcher-secret-host"), codes.Unavailable},
 		{"runner unreachable", func(s testServer, err error) { s.runner.failWith(err) }, errors.New("dial runner-secret-host"), codes.Unavailable},
 		{"Action request of another account", func(s testServer, err error) { s.actions.failWith(err) }, store.ErrNotFound, codes.NotFound},
 		{"Action Service unreachable", func(s testServer, err error) { s.actions.failWith(err) }, errors.New("dial actions-secret-host"), codes.Unavailable},
@@ -152,6 +181,31 @@ func TestCreateSubscriptionAnswersAFaultOfACollaboratorWithoutItsText(t *testing
 			listed, err := server.client.ListSubscriptions(bearing(t, sandboxToken), &notificationspb.ListSubscriptionsRequest{})
 			if err != nil || len(listed.GetSubscriptions()) != 0 {
 				t.Errorf("listed %v, %v", listed, err)
+			}
+		})
+	}
+}
+
+func TestSubscriptionCreationResolvesAndFencesTheOpening(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		opening *dispatcherpb.SessionOpening
+		want    codes.Code
+	}{
+		{name: "no Dispatcher opening", want: codes.NotFound},
+		{name: "different Session", opening: &dispatcherpb.SessionOpening{SessionId: "another-session", Sandbox: sandboxName, SandboxUid: sandboxUID}, want: codes.Unavailable},
+		{name: "no UID", opening: &dispatcherpb.SessionOpening{SessionId: testSession, Sandbox: sandboxName}, want: codes.Unavailable},
+		{name: "deleted Sandbox", opening: &dispatcherpb.SessionOpening{SessionId: testSession, Sandbox: "deleted-sandbox", SandboxUid: sandboxUID}, want: codes.NotFound},
+		{name: "same-name replacement", opening: &dispatcherpb.SessionOpening{SessionId: testSession, Sandbox: sandboxName, SandboxUid: "previous-uid"}, want: codes.NotFound},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s := newServer(t)
+			s.openings.placements[testSession] = test.opening
+			_, err := s.client.CreateSubscription(bearing(t, sandboxToken), createRequest("fenced-opening"))
+			requireCode(t, err, test.want)
+			s.requireNoInbox(t)
+			if len(s.runner.questions()) != 0 || len(s.actions.asked()) != 0 {
+				t.Fatal("rejected placement reached Runtime or source authorization")
 			}
 		})
 	}
@@ -424,7 +478,6 @@ func TestASandboxRecreatedUnderTheNameSeesNoneOfItsPredecessorsInboxes(t *testin
 
 	// The successor cannot reuse its predecessor's globally unique Session identity.
 	request := createRequest("successor")
-	request.DestinationRef.Uid = successorUID
 	_, err = server.client.CreateSubscription(bearing(t, sandboxToken), request)
 	requireCode(t, err, codes.NotFound)
 	// A different Session opened by the successor has its own inbox.

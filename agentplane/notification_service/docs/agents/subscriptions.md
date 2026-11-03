@@ -14,15 +14,13 @@ The command does not create Action subscriptions yet: create one with `POST /v1/
 
 ```json
 {
-  "destinationRef": { "namespace": "YOUR_NAMESPACE", "name": "YOUR_SANDBOX", "uid": "YOUR_SANDBOX_UID" },
   "sessionId": "YOUR_SESSION_ID",
   "idempotencyKey": "follow-YOUR_ACTION_REQUEST_ID",
   "source": { "actions": { "requestId": "YOUR_ACTION_REQUEST_ID", "afterSequence": 0 } }
 }
 ```
 
-Replace the destination and Session values with the exact supplied values (`AGENTPLANE_DESTINATION`
-holds them as `destination_ref` and `session_id`) and the Action ID with the real returned ID. Start
+Use the supplied Session ID (`AGENTPLANE_DESTINATION` contains `session_id`) and the real returned Action ID. Start
 `afterSequence` at zero or the last Action event sequence you actually recorded; it is not an inbox
 cursor. Action history replay covers approval/completion between submission and subscription creation.
 
