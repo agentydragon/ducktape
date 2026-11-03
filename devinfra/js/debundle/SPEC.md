@@ -2089,8 +2089,17 @@ edges between its members as `inert_commuting_edges`. The premise never
 touches `eager_use` edges: an at-init read is a dataflow dependence whose
 reordering changes behavior, and the remedy there remains co-location.
 
-An entry is accepted only when at least one endpoint's effect on each edge is
-opaque to the analysis. It is rejected as contradicting a source fact when the
+The assertion certifies only its selected pair. The graph preserves ordering
+against third source units when a compacted ordering path used an inert edge.
+For example, removing `b -> a` from `c -> b -> a` retains `c -> a` unless that
+pair is separately certified. Added `sequenced` edges carry a `preserved_order`
+cause naming the intermediate source unit and the premise on the path. This
+preservation repeats across overlapping premises, independently of their order
+in the spec. An entry may discharge an edge exposed by another entry; unused
+assertions are checked after preservation finishes.
+
+An entry applies to ordering whose effect analysis is opaque at an endpoint
+or on the preserved path. It is rejected as contradicting a source fact when the
 analysis derived that the two source units definitely conflict, read from each
 `sequenced` edge's retained cause (§ Realizability cut explanations) and the
 two recorded effect summaries: a `cell_order` edge with a `read_after_write`,
