@@ -35,3 +35,29 @@ From the repository root, run it after the `wyrm2-kvm` executor is deployed:
 ```bash
 bbr test //devinfra/buildbuddy/kvm:kvm_test --nocache_test_results
 ```
+
+## Agentplane VM system-test lane
+
+The manual `kvm_vm_test` target runs the same `/dev/kvm` smoke check on pool
+`wyrm2-kvm-vm`, using Docker workload isolation. After that pool is deployed,
+`//agentplane/system_tests/suites:test_vm_kvm` runs the existing `test_vm.py`
+scenarios with KubeVirt hardware acceleration (`useEmulation: false`). Both
+targets inherit the repository's pinned Ubuntu RBE action image and set
+`init-dockerd=false`; the worker guest's Docker executor runs the action, while
+the K3s fixture uses its own containerd and needs no nested Docker daemon.
+Before starting K3s, the suite opens `/dev/kvm`, checks API version 12, and
+creates a temporary VM and vCPU.
+
+The KVM suite starts and removes its K3s stack inside each action. It does not
+opt into BuildBuddy's retained-baseline or remote-snapshot settings. The worker
+VM can persist between actions, with its executor limited to one concurrent
+task. This is a trusted-code lane: the privileged action can access `/dev/kvm`,
+and root in the test can control its guest. It does not provide isolation
+between mutually hostile jobs.
+
+Run the smoke check first, then the full VM system-test suite:
+
+```bash
+bbr test //devinfra/buildbuddy/kvm:kvm_vm_test --nocache_test_results
+bbr test //agentplane/system_tests/suites:test_vm_kvm --nocache_test_results
+```

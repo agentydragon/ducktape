@@ -416,6 +416,16 @@ def test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling() -> No
     ].endswith("/agentplane-vm-guest-root-profile:unset")
 
 
+def test_kubevirt_baseline_selects_emulation_from_the_explicit_kvm_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AGENTPLANE_K3S_REQUIRE_KVM", raising=False)
+    tcg = vm_sandboxes.baseline_objects()[0]["spec"]["configuration"]["developerConfiguration"]
+    assert tcg["useEmulation"] is True
+
+    monkeypatch.setenv("AGENTPLANE_K3S_REQUIRE_KVM", "1")
+    kvm = vm_sandboxes.baseline_objects()[0]["spec"]["configuration"]["developerConfiguration"]
+    assert kvm["useEmulation"] is False
+
+
 def test_vm_boot_evidence_selects_only_oom_guest_at_runtime() -> None:
     fixture = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
     selected = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)
