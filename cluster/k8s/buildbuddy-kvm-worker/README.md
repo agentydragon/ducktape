@@ -8,6 +8,8 @@ Cloud-init installs Ubuntu's Docker package and the native
 image build. Docker package installation uses the Ubuntu repositories at first boot.
 Both Docker's data root and containerd's image store use the work disk; Docker 29's
 containerd image store does not follow Docker's `data-root` setting.
+Actions also bind K3s's data directory from the ext4 work disk so its nested overlayfs
+snapshotter has a supported backing filesystem.
 
 The existing `buildbuddy-api-key` Secret is attached as a read-only ISO. No outer Kubernetes
 token or host filesystem is attached. Root in a test can compromise the persistent guest
