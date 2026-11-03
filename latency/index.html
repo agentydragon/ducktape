@@ -271,31 +271,33 @@
     <main>
       <header>
         <div class="eyebrow">Ducktape · CI latency · 3 November 2026</div>
-        <h1>The latest all-gate cohort averages 13m 19s.</h1>
+        <h1>The latest all-gate cohort averages 6m 45s.</h1>
         <p class="lede">
-          For 19 exact heads whose latest visible attempts succeeded on all
-          three required contexts, feedback averaged 798.9 seconds (13m 19s)
-          from first workflow creation through final required-check success,
-          including retry waits. This 00:55–03:00 UTC cohort has p50 8m 22s and
-          p90 41m 56s. The below-five-minute mean goal remains unmet.
+          For 12 exact heads whose latest visible attempts succeeded on all
+          three required contexts, feedback averaged 404.6 seconds (6m 45s) from
+          first workflow creation through final required-check success,
+          including retry waits. This 02:59–04:25 UTC post-guard cohort has p50
+          3m 18s and p90 7m 23s. The below-five-minute mean goal remains unmet.
         </p>
         <p class="meta">
-          Current inspected devel: 5d050a313d6d7698495f3f2a6b5b79653b1125c0;
-          controlled VM and Pod experiments remain frozen at
-          b2b7e3128278a6073b21ac522b42f9e151d5913b. PR #14035 has all three
-          required checks green after targeted cleanup and remains open at last
-          query. PR #14043 is merged. Neither recovery is credited with a causal
-          reduction in this feedback window.
+          Current devel at the report cutoff:
+          d24f6f09df178b476d6becf215e6be054bcdcc4a. Controlled VM and Pod
+          studies remain frozen at b2b7e3128278a6073b21ac522b42f9e151d5913b;
+          bridge sharding used matched source
+          3c5cfdefc46251957aaeca18495841b3831e3fff. PR #14057 merged without a
+          measured speedup; #14056 remains open with its required checks green.
+          PR #14035 remains open and green. The post-guard cohort is not a
+          causal comparison.
         </p>
         <div class="cards">
           <div class="card">
             <span>Latest all-gate success proxy mean</span
-            ><strong>13m 19s</strong>
-            <span>19 of 29 heads · retry waits included.</span>
+            ><strong>6m 45s</strong>
+            <span>12 of 17 heads · retry waits included.</span>
           </div>
           <div class="card">
-            <span>90th percentile</span><strong>41m 56s</strong>
-            <span>Median is 8m 22s; retries remain in both.</span>
+            <span>90th percentile</span><strong>7m 23s</strong>
+            <span>Median is 3m 18s; retries remain in both.</span>
           </div>
           <div class="card">
             <span>Mean target</span><strong>&lt;300 s</strong>
@@ -316,11 +318,11 @@
       <section id="under-five" aria-labelledby="under-five-title">
         <h2 id="under-five-title">Current goal: mean below five minutes</h2>
         <p class="note">
-          <strong>Status: active and not met.</strong> The current
-          latest-attempt success-proxy mean is 798.9 seconds (13m 19s). The
+          <strong>Status: active and not met.</strong> The latest post-guard
+          latest-attempt success-proxy mean is 404.6 seconds (6m 45s). The
           objective remains a representative post-merge mean below 300 seconds
-          on this same all-gates clock. A selected fast subset does not
-          establish that result.
+          on this same all-gates clock. The 12 green heads are still above that
+          threshold on average; one fast PR head does not establish the goal.
         </p>
         <p>
           The clock starts at the first observed PR workflow creation for an
@@ -349,28 +351,29 @@
             </thead>
             <tbody>
               <tr>
-                <th scope="row">Current · 00:55–03:00 UTC</th>
-                <td>19</td>
+                <th scope="row">Current · 02:59–04:25 UTC</th>
+                <td>12 / 17</td>
+                <td>404.6 s</td>
+                <td>197.5 s</td>
+                <td>443 s</td>
+                <td>Bazel 12</td>
+              </tr>
+              <tr>
+                <th scope="row">Prior report · 00:55–03:00 UTC</th>
+                <td>19 / 29</td>
                 <td>798.9 s</td>
                 <td>502 s</td>
                 <td>2,516 s</td>
                 <td>Bazel 19</td>
               </tr>
-              <tr>
-                <th scope="row">Prior six-hour snapshot · historical</th>
-                <td>73</td>
-                <td>547.1 s</td>
-                <td>531 s</td>
-                <td>839 s</td>
-                <td>Bazel 71 · artifacts 2</td>
-              </tr>
             </tbody>
           </table>
         </div>
         <p class="muted">
-          The latest cohort is 2h05m, not the previous six-hour population. Keep
-          the windows separate; neither their difference nor a selected
-          first-attempt subset estimates a causal change.
+          The 1h25m post-guard cohort replaces the prior report's 2h05m window;
+          the windows overlap at the guard merge but are not a matched
+          comparison. Source inclusion varies, so neither their difference nor
+          an outcome-selected subset estimates a causal change.
         </p>
         <div class="table-scroll">
           <table>
@@ -386,18 +389,23 @@
                 <th scope="row">
                   Latest attempts succeeded on all three contexts
                 </th>
-                <td>19</td>
+                <td>12</td>
                 <td>Included as success proxy</td>
               </tr>
               <tr>
                 <th scope="row">Canceled</th>
-                <td>6</td>
+                <td>4</td>
                 <td>Excluded</td>
               </tr>
               <tr>
                 <th scope="row">Failed</th>
-                <td>4</td>
+                <td>1</td>
                 <td>Excluded</td>
+              </tr>
+              <tr>
+                <th scope="row">Pending</th>
+                <td>0</td>
+                <td>None at mature collection cutoff</td>
               </tr>
             </tbody>
           </table>
@@ -413,30 +421,70 @@
         </p>
         <p>
           Window:
-          <time datetime="2026-11-03T00:55:00Z"
-            >3 November 2026, 00:55 UTC</time
+          <time datetime="2026-11-03T02:59:22Z"
+            >3 November 2026, 02:59:22 UTC</time
           >
-          to <time datetime="2026-11-03T03:00:00Z">03:00 UTC</time>. Collection
-          finished at 03:06:53 UTC. Retry and profile findings below were
-          checked through 03:40:30 UTC. The 19 included heads had Bazel as the
-          final required gate; the prior six-hour window had 71 Bazel and two
-          artifact completions last. Sanitized summary evidence and collection
-          limits are in <a href="evidence.json">evidence.json</a>; source and
-          window are recorded in <a href="manifest.json">manifest.json</a>.
+          to <time datetime="2026-11-03T04:25:00Z">04:25 UTC</time>. The
+          complete mature collection ran from 04:36:17 to 04:36:27 UTC: 258
+          workflow runs, 51 required PR workflow runs and 102 job attempts. The
+          12 green heads all had Bazel as the last required gate. Latest
+          attempts were 12 green, no pending, 4 canceled and 1 failed; non-green
+          heads are excluded from the success proxy, and retry waits remain
+          included. This window begins one second after guard #14043 merged, but
+          source inclusion varies and it is not a causal control. The earlier
+          00:55–03:00 snapshot is retained below as prior context; its window
+          and the six-hour baseline are not pooled with this cohort. The #14056
+          single-head completion came after this cutoff and is reported
+          separately. Investigation state was checked through 04:36:27 UTC.
+          Sanitized aggregates and collection limits are in
+          <a href="evidence.json">evidence.json</a>; the source and window are
+          recorded in <a href="manifest.json">manifest.json</a>.
         </p>
-        <h3>Retry waits remain part of the primary mean</h3>
+        <h3>The earlier-window retry audit remains descriptive</h3>
         <p>
-          Twelve heads that succeeded on every required context at their first
-          attempt had a selected-subset mean of 292.9 seconds (4m 53s). Seven
-          retry paths contributed 11,664 seconds (3h 14m 24s), or 76.8% of the
+          In the prior 00:55–03:00 report window, twelve heads that succeeded on
+          every required context at their first attempt had a selected-subset
+          mean of 292.9 seconds (4m 53s). That subset is selected by outcome and
+          does not establish the current mean or the goal. Seven retry paths
+          contributed 11,664 seconds (3h 14m 24s), or 76.8% of that window's
           pooled feedback total, as a descriptive decomposition only. They
-          included ten failed Test &amp; Build job attempts. Eight of the jobs
-          had explicit target failures (ten target failures total); two ended
-          after observer disconnects without a final target verdict. Retry waits
-          remain in the 798.9-second primary mean. The first-attempt subset is
-          selected by outcome, not a counterfactual or an estimate of savings;
-          the failure audit below reports mechanisms without attributing time
-          savings.
+          included ten failed Test &amp; Build job attempts. Eight jobs had
+          explicit target failures (ten target failures total); two ended after
+          observer disconnects without a final target verdict. Retry waits
+          remain part of both all-gate clocks; the historical failure audit
+          attributes no savings.
+        </p>
+        <h3>The long #14045 path is still not localized to gate completion</h3>
+        <p>
+          PR #14045's exact head is the 2,214-second maximum in this cohort
+          (first workflow creation 03:43:19 UTC; all three required checks
+          completed with Bazel last at 04:20:13). Its first attempt, GitHub run
+          <a
+            href="https://github.com/agentydragon/ducktape/actions/runs/41573873943/attempts/1"
+            >41573873943</a
+          >, was canceled after more than 25 minutes. The child test invocation
+          recorded 37 summaries and 56 passed shard/result events, with its last
+          test stop at 03:48:55.844; however, there was no terminal Bazel build
+          event and no recovered ActionResult for the original mypy action.
+          Those test summaries do not prove that the entire gate was complete or
+          would have passed then. The successful same-head retry started at
+          04:16:59 and finished at 04:20:13; its 194-second retry duration does
+          not replace the full 2,214-second head feedback clock. PR #14045
+          merged at 04:20:28 as
+          <code>5f4f1c4b53440c949eb6db6a0b35366c01d703a2</code>.
+        </p>
+        <p>
+          A read-only clock audit found that the displayed GitHub outer log
+          lagged the saved invocation: after the UI's 255-second remote line at
+          04:11:55, the saved log contained 23 more lines through a 1,592-second
+          remote age. The pinned CLI suppresses live log chunks when
+          noninteractive, and an upstream terminal-row buffer is a plausible
+          explanation for old progress lines appearing late. The hosted server
+          revision and original outer options were not verified, so this is not
+          a measured configuration or a full-gate cause. With the original mypy
+          ActionResult and terminal Bazel event missing, the remote action's
+          scheduler/worker lease boundary remains unresolved. The audit does not
+          establish an observer-only or CLI fix.
         </p>
         <h3>Recovery is not yet a latency result</h3>
         <p class="callout">
@@ -467,9 +515,13 @@
           for snapshot invalidation; the initiating shim failure remains
           unexplained.
         </p>
-        <h3>Retry causes are classified; clock-source cost remains unproven</h3>
+        <h3>
+          Earlier retry causes are classified; clock-source cost remains
+          unproven
+        </h3>
         <p>
-          The seven retry paths contain ten failed Test &amp; Build job
+          The retry classification below comes from the prior 00:55–03:00
+          window. Its seven retry paths contain ten failed Test &amp; Build job
           attempts. Eight have explicit target failures, ten in total: six stale
           K3s-baseline <code>_baseline_stop_owned</code>
           <code>StopPodSandbox</code> deadline/RST failures across five jobs, a
@@ -499,8 +551,9 @@
           <a href="https://github.com/agentydragon/ducktape/issues/13270"
             >issue #13270</a
           >. No PKI-signature failure appeared among the explicit target
-          failures. All retry waits remain in the main mean; no retry savings
-          are attributed to PR #14043.
+          failures. No retry savings are attributed to PR #14043. The current
+          02:59–04:25 window includes its own retry waits, but this older audit
+          is not a new failure-mechanism census.
         </p>
         <p>
           Three successful VM guest journals on kernel
@@ -540,6 +593,128 @@
           returned 7 entries against a reported total of 15 and was stopped;
           collection resumed only for the scoped PR workflow jobs. This report
           makes no complete old-active-run census or runner-occupancy claim.
+        </p>
+        <h3>Four bridge shards shorten the measured target path</h3>
+        <p>
+          PR
+          <a href="https://github.com/agentydragon/ducktape/pull/14056"
+            >#14056</a
+          >
+          spreads the 24 native bridge recovery cases across four shards instead
+          of two. A same-source control and two candidate RBE trials used source
+          <code>3c5cfdefc46251957aaeca18495841b3831e3fff</code>, normal
+          <code>--config=ci</code>, remote caches enabled and
+          <code>--nocache_test_results</code>. All three runs passed the same 24
+          unique cases exactly once, with no skips or duplicates. Each
+          four-shard worker ran six cases; each two-shard worker ran twelve.
+        </p>
+        <div
+          class="table-scroll"
+          role="region"
+          aria-label="Bridge sharding experiment results"
+          tabindex="0"
+        >
+          <table class="wide-6">
+            <thead>
+              <tr>
+                <th>Arm</th>
+                <th>RBE invocation</th>
+                <th>Slowest test action</th>
+                <th>Bazel elapsed</th>
+                <th>Test CPU</th>
+                <th>Image imports</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Two-shard control</th>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/e2d3d25a-85bd-4f8a-bc65-8e066af62642"
+                    >e2d3d25a…</a
+                  >
+                </td>
+                <td>202.4 s</td>
+                <td>206.6 s</td>
+                <td>431.9 CPU-s</td>
+                <td>1 cold, 1 warm</td>
+              </tr>
+              <tr>
+                <th scope="row">Four-shard first trial</th>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/a047be85-657c-45b3-a884-7aee5b280ad9"
+                    >a047be85…</a
+                  >
+                </td>
+                <td>158.4 s</td>
+                <td>186.6 s</td>
+                <td>739.2 CPU-s</td>
+                <td>3 cold, 1 warm</td>
+              </tr>
+              <tr>
+                <th scope="row">Four-shard repeat</th>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/0ad1a271-4bc2-4a11-9613-565fb234acae"
+                    >0ad1a271…</a
+                  >
+                </td>
+                <td>135.7 s</td>
+                <td>138.6 s</td>
+                <td>535.7 CPU-s</td>
+                <td>1 cold, 3 warm</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          In the repeat/control pair, the slowest action fell 33.0% and Bazel
+          elapsed fell 32.9%, while aggregate test CPU rose 24.0%. Worker and
+          image warmth varied across runs, so these are target-level
+          measurements and not a fleet or all-gates causal estimate. The
+          shard-count change preserves the successful-case assertions and
+          fixture boundaries.
+        </p>
+        <p class="callout">
+          PR #14056 remains open, but its head passed all three required checks:
+          first workflow creation at 04:26:35 UTC to Bazel success at 04:30:52
+          was 257 seconds for that exact head. This was after the cohort cutoff,
+          is a single implementation-PR observation, and does not establish a
+          representative mean below 300 seconds. Its
+          <a
+            href="https://app.buildbuddy.io/invocation/31aeb12a-fe88-5c01-ab23-cf82df33b256"
+            >current test_bridge invocation</a
+          >
+          passed four test actions with a 135.8-second maximum (96.7-second
+          minimum; 114.0-second average); Bazel elapsed 143.7 seconds with a
+          137.1-second critical path. One target improvement can still leave VM,
+          lint or a retry as the overall gate.
+        </p>
+        <h3>The merged mypy input cleanup has no measured speedup</h3>
+        <p>
+          PR
+          <a href="https://github.com/agentydragon/ducktape/pull/14057"
+            >#14057</a
+          >
+          is merged as
+          <code>d24f6f09df178b476d6becf215e6be054bcdcc4a</code> at 04:32:55 UTC.
+          It removes a runtime-only native binary from first-party mypy inputs
+          while retaining Python sources, stubs, <code>py.typed</code> markers,
+          opaque directory artifacts, external files and type-checker plugin
+          runfiles. A production target passed, the actual action query
+          confirmed the binary was absent while stubs/plugins remained, and a
+          disposable negative typing probe failed with the expected error.
+          However, the required Bazel CI selected only three lint targets with
+          one action. Neither those checks nor the graph-edge change measure a
+          whole-build or all-gates speedup.
+        </p>
+        <p class="muted">
+          The fresh all-gate window ends at 04:25 UTC, before either #14056's
+          exact-head check or #14057's merge. The 404.6-second mean is therefore
+          not an estimate of either optimization's effect. Next, measure a
+          representative post-merge PR cohort on the same first-workflow-to-last
+          required-check clock; keep retry delays and all three checks in scope.
         </p>
         <h3>Two retained-stack Pod shards did not improve the gate</h3>
         <p>

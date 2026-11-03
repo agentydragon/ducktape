@@ -1,18 +1,19 @@
 {
-  "source_devel_commit": "5d050a313d6d7698495f3f2a6b5b79653b1125c0",
-  "window_start_utc": "2026-11-03T00:55:00+00:00",
-  "window_end_utc": "2026-11-03T03:00:00+00:00",
-  "published_at_utc": "2026-11-03T03:42:50.012907+00:00",
+  "source_devel_commit": "d24f6f09df178b476d6becf215e6be054bcdcc4a",
+  "window_start_utc": "2026-11-03T02:59:22Z",
+  "window_end_utc": "2026-11-03T04:25:00Z",
+  "published_at_utc": "2026-11-03T04:40:17.837668+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "d0357a41285313c54bc114e5111043b5c7edd260",
-  "report_html_sha256": "26700d807b3dc470dd4fa403b81e0b32482fb5dd7fb0045b3651178592b77c3e",
-  "evidence_sha256": "08bf3ba16e667a3206cb67cc95937feb0b7d14b3d3e78d725846d53d8c8b20c0",
+  "previous_report_commit": "adcc17872d7b2c2a92f7ad6f9b75c230caa8c3d7",
+  "report_html_sha256": "f19e3ec5cebcc4b469f56efd7aac8259ca344db44a910736fbd158f6728479bf",
+  "evidence_sha256": "4a5ff15caa75c313d00124de8c4de9154a3b0a0c9595da89deb68c4b7c2a278f",
   "visual_validation": {
     "target": "//x/ci_report_preview:visual_test",
     "result": "PASSED",
-    "bazel_invocation_id": "ddeabd85-5a47-4a93-9917-e3669ea39ae7",
-    "outer_remote_runner_invocation_id": "6dd496bd-593f-4d41-93ad-2431c7674846",
-    "reviewed_html_sha256": "26700d807b3dc470dd4fa403b81e0b32482fb5dd7fb0045b3651178592b77c3e",
+    "bazel_invocation_id": "fdb806be-5c2b-4a8e-b126-5f454a344ab8",
+    "outer_remote_runner_invocation_id": "fa354015-db43-41d1-aa5e-ff144adf2c97",
+    "invocation_url": "https://app.buildbuddy.io/invocation/fdb806be-5c2b-4a8e-b126-5f454a344ab8",
+    "reviewed_html_sha256": "f19e3ec5cebcc4b469f56efd7aac8259ca344db44a910736fbd158f6728479bf",
     "viewports": [
       {
         "width": 1280,
@@ -23,28 +24,79 @@
         "height": 844
       }
     ],
-    "internal_link_count": 75,
+    "internal_link_count": 82,
     "details_expanded": 8,
     "controls_exercised": ["select:Speed up", "select:Process reduction"],
     "horizontal_overflow": false,
+    "document_dimensions_with_details_open": [
+      {
+        "viewport": "desktop",
+        "viewport_width": 1280,
+        "document_width": 1280,
+        "body_width": 1280
+      },
+      {
+        "viewport": "mobile",
+        "viewport_width": 390,
+        "document_width": 390,
+        "body_width": 390
+      }
+    ],
     "mobile_wide_table_scroll_regions": [
       {
         "label": "Current and previous all-gate feedback windows",
         "client_width": 324,
-        "scroll_width": 720
+        "scroll_width": 720,
+        "min_width": "720px"
+      },
+      {
+        "label": "Bridge sharding experiment results",
+        "client_width": 324,
+        "scroll_width": 720,
+        "min_width": "720px"
       },
       {
         "label": "Pod sharding experiment results",
         "client_width": 324,
-        "scroll_width": 720
+        "scroll_width": 720,
+        "min_width": "720px"
       },
       {
         "label": "VM resource experiment results",
         "client_width": 324,
-        "scroll_width": 850
+        "scroll_width": 850,
+        "min_width": "850px"
       }
     ],
-    "keyboard_scroll_test": "All three named, focusable mobile table regions responded to ArrowRight; the document stayed at 390px width.",
-    "manual_review": "Reviewed exact final RBE desktop/mobile page-top and current-goal captures. The page has no horizontal overflow; mobile summary tables stay in labeled, focusable horizontal-scroll regions."
+    "keyboard_scroll_test": "All four labeled, focusable mobile wide-table regions scrolled horizontally on ArrowRight; the document remained 390px wide.",
+    "manual_review": {
+      "result": "Reviewed exact RBE screenshots at both viewports, including the first screen and current-goal section. The summary text is legible, the mobile tables retain horizontal scroll, and the whole page has no horizontal overflow.",
+      "captures": [
+        {
+          "label": "desktop first screen",
+          "checkpoint": "latency-desktop-first-screen",
+          "artifact": "40ba8f06ed9d83bf49f3af2d7a6540b47f2e5933e021ca2220cd024d69e61869.png",
+          "sha256": "92b9101fa7dcb2a944ebd431657e04f301a2d38b1b0ac5c388081c50f4b9a617"
+        },
+        {
+          "label": "desktop current goal",
+          "checkpoint": "latency-desktop-under-five",
+          "artifact": "4c8d3e9b5c9a4700be9e8974d191a2886813696ef91737208b9f9741f94429cc.png",
+          "sha256": "a01890228889070f51ad8c12c8a562b7d93f3cc6f86295df574fd9551b043ff7"
+        },
+        {
+          "label": "mobile first screen",
+          "checkpoint": "latency-mobile-first-screen",
+          "artifact": "f006af65800ae92fe3da277595701ba20d5cbb6d50c0c85d968fae7bbd26b18f.png",
+          "sha256": "dd2f2d438238b27484adaec8ce8a7c9efccd6a40e9c804f8fc326532ba2ada60"
+        },
+        {
+          "label": "mobile current goal",
+          "checkpoint": "latency-mobile-under-five",
+          "artifact": "add623294f279a84c52f14a07e8785cf21d44e40028eb4daee87edc005da4e5e.png",
+          "sha256": "86561a55c960c3a09df36d4161de298e99221fa8b2d55b0c28da17785e296e9e"
+        }
+      ]
+    }
   }
 }
