@@ -239,7 +239,7 @@ py_test(
     },
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES | _BRIDGE_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
-    shard_count = 2,
+    shard_count = 4,
     target_compatible_with = [
         # keep: the pinned native harnesses are Linux/x86_64 only.
         "@platforms//cpu:x86_64",
