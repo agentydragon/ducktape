@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
@@ -24,9 +25,30 @@ func (f *fakeDecisions) Recent(_ context.Context, subject *decision.Subject) ([]
 	return f.records, f.err
 }
 
-type fakeChanges func(ctx context.Context, changed func() error) error
+func (f *fakeDecisions) ByEventIDs(_ context.Context, eventIDs []uuid.UUID) ([]decision.Record, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	var records []decision.Record
+	for _, record := range f.records {
+		if slices.Contains(eventIDs, record.EventID) {
+			records = append(records, record)
+		}
+	}
+	return records, nil
+}
 
-func (f fakeChanges) Follow(ctx context.Context, changed func() error) error { return f(ctx, changed) }
+func (f *fakeDecisions) Readable(context.Context) error { return f.err }
+
+func (*fakeDecisions) Window() history.Window {
+	return history.Window{Retention: 24 * time.Hour, Capacity: 200}
+}
+
+type fakeChanges func(ctx context.Context, subject *decision.Subject, changed func(history.Change) error) error
+
+func (f fakeChanges) Follow(ctx context.Context, subject *decision.Subject, changed func(history.Change) error) error {
+	return f(ctx, subject, changed)
+}
 
 type fakeHistory history.Health
 

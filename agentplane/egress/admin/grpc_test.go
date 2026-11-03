@@ -7,6 +7,7 @@ import (
 	"maps"
 	"net"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -16,9 +17,11 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
+	"github.com/agentydragon/ducktape/agentplane/egress/history"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -65,6 +68,24 @@ func (c *changingDecisions) Recent(context.Context, *decision.Subject) ([]decisi
 	return c.records, nil
 }
 
+func (c *changingDecisions) ByEventIDs(_ context.Context, eventIDs []uuid.UUID) ([]decision.Record, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var records []decision.Record
+	for _, record := range c.records {
+		if slices.Contains(eventIDs, record.EventID) {
+			records = append(records, record)
+		}
+	}
+	return records, nil
+}
+
+func (*changingDecisions) Readable(context.Context) error { return nil }
+
+func (*changingDecisions) Window() history.Window {
+	return history.Window{Retention: 24 * time.Hour, Capacity: 2}
+}
+
 func (c *changingDecisions) set(records ...decision.Record) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -73,16 +94,21 @@ func (c *changingDecisions) set(records ...decision.Record) {
 
 // followOnTicks follows as history.Changes does: it calls changed on subscribing and then once per
 // tick, and reports on settled after each call returns.
-func followOnTicks(ticks <-chan struct{}, settled chan<- struct{}) fakeChanges {
-	return func(ctx context.Context, changed func() error) error {
-		for {
-			err := changed()
+func followOnTicks(ticks <-chan []uuid.UUID, settled chan<- struct{}) fakeChanges {
+	return func(ctx context.Context, _ *decision.Subject, changed func(history.Change) error) error {
+		if err := changed(history.Initial{}); err != nil {
 			settled <- struct{}{}
-			if err != nil {
-				return err
-			}
+			return err
+		}
+		settled <- struct{}{}
+		for {
 			select {
-			case <-ticks:
+			case eventIDs := <-ticks:
+				if err := changed(history.Events{EventIDs: eventIDs}); err != nil {
+					settled <- struct{}{}
+					return err
+				}
+				settled <- struct{}{}
 			case <-ctx.Done():
 				return ctx.Err()
 			}
@@ -232,7 +258,7 @@ func TestFilterMustSelectAWholeSubjectOrTheUnauthenticated(t *testing.T) {
 
 func TestHistoryFailureIsExplicitAndPrivate(t *testing.T) {
 	store := &fakeDecisions{err: errors.New("test private exception must not escape")}
-	ticks, settled := make(chan struct{}), make(chan struct{}, 4)
+	ticks, settled := make(chan []uuid.UUID), make(chan struct{}, 4)
 	client, _ := serveGRPC(t, ServiceOptions{Decisions: store, Changes: followOnTicks(ticks, settled)})
 
 	_, listed := client.ListDecisions(bearing(readerToken), &egressadminpb.ListDecisionsRequest{Filter: unauthenticated})
@@ -249,45 +275,38 @@ func TestHistoryFailureIsExplicitAndPrivate(t *testing.T) {
 }
 
 func TestWatchSendsTheListOnSubscribingAndOnlyWhenItChanges(t *testing.T) {
-	store := &changingDecisions{}
-	ticks, settled := make(chan struct{}), make(chan struct{}, 4)
+	older, newer := record(nil), record(nil)
+	older.At, newer.At = time.Now().Add(-3*time.Minute), time.Now().Add(-time.Minute)
+	store := &changingDecisions{records: []decision.Record{older, newer}}
+	ticks, settled := make(chan []uuid.UUID), make(chan struct{}, 4)
 	client, _ := serveGRPC(t, ServiceOptions{Decisions: store, Changes: followOnTicks(ticks, settled)})
-	ctx, cancel := context.WithCancel(bearing(readerToken))
+	ctx, cancel := context.WithTimeout(bearing(readerToken), 10*time.Second)
 	defer cancel()
 	stream, err := client.WatchDecisions(ctx, &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
 	if err != nil {
 		t.Fatal(err)
 	}
 	first, err := stream.Recv()
-	if err != nil || first.GetSnapshot() == nil || len(first.GetSnapshot().GetDecisions()) != 0 {
-		t.Fatalf("first frame = %v, %v; want empty snapshot", first, err)
+	if err != nil || first.GetSnapshot() == nil || len(first.GetSnapshot().GetDecisions()) != 2 {
+		t.Fatalf("first frame = %v, %v; want the two-record snapshot", first, err)
 	}
 	<-settled
 	// An unchanged read produces no delta.
-	ticks <- struct{}{}
+	ticks <- nil
 	<-settled
-	added := record(nil)
-	store.set(added)
-	ticks <- struct{}{}
-	frame, err := stream.Recv()
-	if err != nil || len(frame.GetDelta().GetAdded()) != 1 || frame.GetDelta().GetAdded()[0].GetEventId() != added.EventID.String() {
-		t.Fatalf("added frame = %v, %v", frame, err)
-	}
-	<-settled
-	// Eviction and late-arriving decisions are represented together, regardless of time order.
 	late := record(nil)
-	late.At = added.At.Add(-time.Second)
-	store.set(late)
-	ticks <- struct{}{}
-	frame, err = stream.Recv()
+	late.At = older.At.Add(time.Minute)
+	store.set(older, newer, late)
+	ticks <- []uuid.UUID{late.EventID}
+	frame, err := stream.Recv()
 	if err != nil || len(frame.GetDelta().GetAdded()) != 1 || frame.GetDelta().GetAdded()[0].GetEventId() != late.EventID.String() ||
-		len(frame.GetDelta().GetRemovedEventIds()) != 1 || frame.GetDelta().GetRemovedEventIds()[0] != added.EventID.String() {
-		t.Fatalf("replacement frame = %v, %v", frame, err)
+		len(frame.GetDelta().GetRemovedEventIds()) != 1 || frame.GetDelta().GetRemovedEventIds()[0] != older.EventID.String() {
+		t.Fatalf("late commit and capacity eviction frame = %v, %v", frame, err)
 	}
 }
 
 func TestDrainEndsOpenWatches(t *testing.T) {
-	ticks, settled := make(chan struct{}), make(chan struct{}, 4)
+	ticks, settled := make(chan []uuid.UUID), make(chan struct{}, 4)
 	client, service := serveGRPC(t, ServiceOptions{Decisions: &changingDecisions{}, Changes: followOnTicks(ticks, settled)})
 	stream, err := client.WatchDecisions(bearing(readerToken), &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
 	if err != nil {
@@ -332,8 +351,8 @@ func TestWatchDecisionsEndsBlockedWriteOnDrainOrCancellation(t *testing.T) {
 		{name: "caller cancellation", end: "cancel", want: codes.Canceled},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			changes := fakeChanges(func(_ context.Context, changed func() error) error {
-				return changed()
+			changes := fakeChanges(func(_ context.Context, _ *decision.Subject, changed func(history.Change) error) error {
+				return changed(history.Initial{})
 			})
 			_, service := serveGRPC(t, ServiceOptions{Decisions: &changingDecisions{}, Changes: changes})
 			base := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+readerToken))
@@ -395,8 +414,8 @@ func (w *recordingDecisionsWatch) Send(frame *egressadminpb.WatchDecisionsRespon
 func TestWatchRevalidatesWhileFeedIsQuiet(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	changes := fakeChanges(func(ctx context.Context, changed func() error) error {
-		if err := changed(); err != nil {
+	changes := fakeChanges(func(ctx context.Context, _ *decision.Subject, changed func(history.Change) error) error {
+		if err := changed(history.Initial{}); err != nil {
 			return err
 		}
 		<-ctx.Done()
@@ -434,7 +453,9 @@ func TestWatchRevalidatesWhileFeedIsQuiet(t *testing.T) {
 }
 
 func TestWatchFailsWhenHistoryFeedEnds(t *testing.T) {
-	changes := fakeChanges(func(_ context.Context, changed func() error) error { return changed() })
+	changes := fakeChanges(func(_ context.Context, _ *decision.Subject, changed func(history.Change) error) error {
+		return changed(history.Initial{})
+	})
 	client, _ := serveGRPC(t, ServiceOptions{Decisions: &changingDecisions{}, Changes: changes})
 	stream, err := client.WatchDecisions(bearing(readerToken), &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
 	if err != nil {

@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -46,11 +47,21 @@ func (noDecisions) Recent(context.Context, *decision.Subject) ([]decision.Record
 	return []decision.Record{}, nil
 }
 
+func (noDecisions) ByEventIDs(context.Context, []uuid.UUID) ([]decision.Record, error) {
+	return []decision.Record{}, nil
+}
+
+func (noDecisions) Readable(context.Context) error { return nil }
+
+func (noDecisions) Window() history.Window {
+	return history.Window{Retention: 24 * time.Hour, Capacity: history.MaxCapacity}
+}
+
 // quietChanges reports once on subscribing and then nothing.
 type quietChanges struct{}
 
-func (quietChanges) Follow(ctx context.Context, changed func() error) error {
-	if err := changed(); err != nil {
+func (quietChanges) Follow(ctx context.Context, _ *decision.Subject, changed func(history.Change) error) error {
+	if err := changed(history.Initial{}); err != nil {
 		return err
 	}
 	<-ctx.Done()
