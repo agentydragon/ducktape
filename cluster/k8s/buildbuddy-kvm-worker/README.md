@@ -6,6 +6,8 @@ vCPUs, 24 GiB RAM and an 80 GiB `emptyDisk` for Docker layers, action workspaces
 Cloud-init installs Ubuntu's Docker package and the native
 [worker configuration](../../../devinfra/buildbuddy/kvm/worker/). There is no custom guest
 image build. Docker package installation uses the Ubuntu repositories at first boot.
+Both Docker's data root and containerd's image store use the work disk; Docker 29's
+containerd image store does not follow Docker's `data-root` setting.
 
 The existing `buildbuddy-api-key` Secret is attached as a read-only ISO. No outer Kubernetes
 token or host filesystem is attached. Root in a test can compromise the persistent guest

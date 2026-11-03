@@ -18,6 +18,8 @@ data:
 
     install -Dm0644 "$config_dir/executor.yaml" /etc/buildbuddy/executor.yaml
     install -Dm0644 "$config_dir/daemon.json" /etc/docker/daemon.json
+    install -Dm0644 "$config_dir/containerd.toml" /etc/containerd/config.toml
+    install -Dm0644 "$config_dir/containerd-mounts.conf" /etc/systemd/system/containerd.service.d/10-buildbuddy-work.conf
     install -Dm0644 "$config_dir/executor.service" /etc/systemd/system/buildbuddy-executor.service
     install -Dm0644 "$config_dir/modules-load.conf" /etc/modules-load.d/buildbuddy-kvm-worker.conf
     install -Dm0644 "$config_dir/modprobe.conf" /etc/modprobe.d/buildbuddy-kvm-worker.conf
@@ -48,16 +50,24 @@ data:
     ExecStart=-/sbin/agetty --autologin root --noclear %I 115200,38400,9600 vt102
     UNIT
     systemctl mask --now ssh.service ssh.socket
-    systemctl stop docker.service
+    systemctl stop docker.service docker.socket containerd.service
+    systemctl daemon-reload
+    systemctl restart containerd.service
     systemctl enable docker.service
     systemctl restart docker.service
-    systemctl daemon-reload
+    apt-get clean
     systemctl enable buildbuddy-executor.service
     if grep --word-regexp --quiet 'apparmor=0' /proc/cmdline; then
       systemctl start buildbuddy-executor.service
     else
       touch /run/reboot-required
     fi
+  containerd-mounts.conf: |
+    [Unit]
+    RequiresMountsFor=/buildbuddy
+  containerd.toml: |
+    version = 2
+    root = "/buildbuddy/containerd"
   daemon.json: |
     {
       "data-root": "/buildbuddy/docker",

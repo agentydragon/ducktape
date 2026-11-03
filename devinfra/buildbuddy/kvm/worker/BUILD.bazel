@@ -2,6 +2,8 @@ filegroup(
     name = "config",
     srcs = [
         "bootstrap.sh",
+        "containerd.toml",
+        "containerd-mounts.conf",
         "daemon.json",
         "executor.service",
         "executor.yaml",
