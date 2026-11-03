@@ -613,7 +613,6 @@ py_test(
         "//agentplane/app/testing:runner_gateway",
         "//agentplane/env/e2e/testing:launches",
         "//agentplane/env/e2e/testing:process",
-        "//agentplane/env/runtime/control:environment_runtime_pb2",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:history_service_pb2",
         "//agentplane/proto:command_pb2",
