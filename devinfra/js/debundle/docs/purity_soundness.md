@@ -1017,6 +1017,24 @@ are deferred or skip their ordering constraints. The materializer rejects this
 annotation for imports, functions, classes, destructuring declarations,
 declarations without an initializer, and ambiguous multiple initialized sites.
 
+`initializer_binding_effects: "source_only"` is an independent lexical-effect
+contract for one selected direct top-level simple variable initializer. During
+its dynamic evaluation, including calls, getters, setters, and coercions, the
+initializer may not read or rebind this chunk's top-level lexical bindings
+beyond its syntactic eager-read and rebind footprint. The assertion follows the
+canonical per-declarator source-unit split: a comma-list sibling initializer
+and other statement work are outside the selected binding's assertion. A
+source-backed read or rebind beyond the asserted footprint rejects it.
+For that initializer, the assertion completes dynamic lexical read/rebind
+coverage while preserving its syntax-derived dependencies.
+
+This does not assert purity or freedom from throws, and it does not complete
+coverage of shared-heap effects, foreign registry or configuration access,
+global-object or host effects, result shape, or callbacks retained for later
+use. Those effects remain subject to ordinary analysis. Omission makes no
+assertion. Logical-module `annotations:` and `chunk_renames.annotations:` use
+the same typed field.
+
 When the annotated binding is selected in an analyzed defining chunk and
 exported, the same author-trusted `pure_new` contract applies to each
 importer's local binding. The export mapping is resolved after structural

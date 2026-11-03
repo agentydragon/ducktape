@@ -58,7 +58,10 @@ use output_layout::{
     GATE_REJECTED_MARKER, SELECTOR_DIAGNOSTICS_REPORT, TRANSLATION_VALIDATION_REPORT,
 };
 use reconstruction::{ChunkGateRejection, GateVerdict};
-use spec::{ChunkRenames, InitializerPurity, LogicalModule, MemberPurity, UnassignedMode};
+use spec::{
+    ChunkRenames, InitializerBindingEffects, InitializerPurity, LogicalModule, MemberPurity,
+    UnassignedMode,
+};
 use spec_resolution::{
     LogicalRequest, MemberRequest, ProjectedChunk, ResolvedChunk, known_effect_from_member_effect,
     logical_requests_for_chunk, project_chunk,
@@ -1314,6 +1317,12 @@ fn collect_binding_annotation_hints(
             .declared_pure_initializers
             .insert(binding.to_string());
     }
+    if annotation.initializer_binding_effects == Some(InitializerBindingEffects::SourceOnly) {
+        validate_initializer_binding_effects_target(module, binding)?;
+        assumptions
+            .source_only_initializer_bindings
+            .insert(binding.to_string());
+    }
     if annotation.purity == MemberPurity::Pure {
         assumptions.declared_pure.insert(binding.to_string());
     }
@@ -1357,6 +1366,9 @@ fn collect_member_analysis_assumptions(
         if member.initializer_purity == InitializerPurity::Pure {
             validate_initializer_purity_target(module, &binding)?;
         }
+        if member.initializer_binding_effects == Some(InitializerBindingEffects::SourceOnly) {
+            validate_initializer_binding_effects_target(module, &binding)?;
+        }
         member.collect_assumptions_for_binding(assumptions, &binding);
         return Ok(());
     }
@@ -1372,11 +1384,29 @@ fn collect_member_analysis_assumptions(
 }
 
 fn validate_initializer_purity_target(module: &Module, binding: &str) -> Result<()> {
+    validate_initializer_target(module, binding, "initializer_purity", false)
+}
+
+fn validate_initializer_binding_effects_target(module: &Module, binding: &str) -> Result<()> {
+    validate_initializer_target(module, binding, "initializer_binding_effects", true)
+}
+
+fn validate_initializer_target(
+    module: &Module,
+    binding: &str,
+    contract: &str,
+    require_single_source_unit: bool,
+) -> Result<()> {
     let mut initialized_sites = 0usize;
     let mut unsupported_sites = 0usize;
     let mut bare_var_sites = 0usize;
 
-    for item in &module.body {
+    // Match the analyzer's canonical per-declarator source-unit view. A
+    // comma-list declaration therefore admits one binding's initializer at a
+    // time; its sibling declarators are separate source units and receive no
+    // assumption from this binding name.
+    for view in analysis::facts::top_level_item_views(&module.body) {
+        let item = view.as_module_item();
         let var = match item {
             ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => Some(var.as_ref()),
             ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
@@ -1392,7 +1422,9 @@ fn validate_initializer_purity_target(module: &Module, binding: &str) -> Result<
                 }
                 match &declarator.name {
                     Pat::Ident(ident) if ident.id.sym.as_ref() == binding => {
-                        if declarator.init.is_some() {
+                        if require_single_source_unit && var.decls.len() != 1 {
+                            unsupported_sites += 1;
+                        } else if declarator.init.is_some() {
                             initialized_sites += 1;
                         } else if var.kind == VarDeclKind::Var {
                             bare_var_sites += 1;
@@ -1431,7 +1463,7 @@ fn validate_initializer_purity_target(module: &Module, binding: &str) -> Result<
         "no simple initialized variable declaration"
     };
     bail!(
-        "initializer_purity for binding `{binding}` requires exactly one direct top-level simple variable initializer; found {detail}"
+        "{contract} for binding `{binding}` requires exactly one direct top-level simple variable initializer; found {detail}"
     )
 }
 
