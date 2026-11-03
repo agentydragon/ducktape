@@ -25,6 +25,8 @@ const sessionWatchHeartbeat = 15 * time.Second
 // current Sandbox incarnation. A missing inbox is visible only if History proves the Session belongs
 // to that incarnation; existing inboxes retain their established ownership even if History is down.
 func (s *Notifications) sessionOwner(ctx context.Context, sessionID string) (*store.Owner, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
 	if sessionID == "" || len([]rune(sessionID)) > 200 {
 		return nil, invalidRequest("session_id must contain between 1 and 200 characters")
 	}
@@ -170,7 +172,10 @@ func followSession[T any](ctx context.Context, s *Notifications, sessionID strin
 			return status.Error(codes.Unavailable, "notification change feed unavailable")
 		}
 		if owner != nil {
-			if _, err := s.sandbox(ctx, model.DestinationRef{Namespace: owner.Account.Namespace, Name: owner.Account.Name, UID: owner.SandboxUID}); err != nil {
+			checkCtx, cancel := context.WithTimeout(ctx, s.timeout)
+			_, err := s.sandbox(checkCtx, model.DestinationRef{Namespace: owner.Account.Namespace, Name: owner.Account.Name, UID: owner.SandboxUID})
+			cancel()
+			if err != nil {
 				return failure(ctx, err)
 			}
 		}
