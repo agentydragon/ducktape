@@ -152,7 +152,10 @@ def test_injects_relay_idempotently(tmp_path: Path, policy: dict) -> None:
     assert spec["automountServiceAccountToken"] is False
     assert spec["imagePullSecrets"] == [{"name": "relay-test-pull"}]
     assert [v["name"] for v in spec["volumes"]] == [TOKEN_VOLUME, SIDECAR_SETTINGS_VOLUME_NAME]
-    relay = one(c for c in spec["containers"] if c["name"] == "egress-sidecar")
+    assert not any(c["name"] == "egress-sidecar" for c in spec["containers"])
+    relay = one(c for c in spec["initContainers"] if c["name"] == "egress-sidecar")
+    assert relay["restartPolicy"] == "Always"
+    assert relay["image"] == "sidecar:test"
     assert {mount["name"] for mount in relay["volumeMounts"]} == {TOKEN_VOLUME, SIDECAR_SETTINGS_VOLUME_NAME}
     # The runner's settings listen on loopback; the guest dials the relay from outside it.
     assert one(v for v in spec["volumes"] if v["name"] == SIDECAR_SETTINGS_VOLUME_NAME)["configMap"] == {
@@ -161,6 +164,17 @@ def test_injects_relay_idempotently(tmp_path: Path, policy: dict) -> None:
     assert relay["securityContext"]["runAsNonRoot"] is True
     compute = one(c for c in spec["containers"] if c["name"] == "compute")
     assert not compute.get("volumeMounts")
+
+    update = apply(tmp_path, policy, deepcopy(mutated), operation="UPDATE")
+    assert update.ok, update.stdout
+
+    legacy = deepcopy(mutated)
+    legacy_relay = one(c for c in legacy["spec"]["initContainers"] if c["name"] == "egress-sidecar")
+    legacy_relay.pop("restartPolicy")
+    legacy["spec"]["initContainers"].remove(legacy_relay)
+    legacy["spec"]["containers"].append(legacy_relay)
+    legacy_update = apply(tmp_path, policy, legacy, operation="UPDATE")
+    assert legacy_update.ok, legacy_update.stdout
 
 
 @pytest.mark.parametrize("with_existing_init", [False, True])
@@ -215,7 +229,9 @@ def test_keeps_filesystem_daemons_until_compute_exits(tmp_path: Path, policy: di
     assert one(c for c in spec["containers"] if c["name"] == container_path["name"]) == container_path
     assert not any(c["name"] in {d["name"] for d in daemons} for c in spec["containers"])
     assert spec["initContainers"][: len(existing_init)] == existing_init
-    assert {c["name"]: c for c in spec["initContainers"][len(existing_init) :]} == {
+    relay = one(c for c in spec["initContainers"] if c["name"] == "egress-sidecar")
+    assert relay["restartPolicy"] == "Always"
+    assert {c["name"]: c for c in spec["initContainers"][len(existing_init) :] if c["name"] != relay["name"]} == {
         daemon["name"]: {**daemon, "restartPolicy": "Always"} for daemon in daemons
     }
 
@@ -243,6 +259,18 @@ def test_rejects_unproven_launcher(tmp_path: Path, policy: dict, forgery: dict) 
 def test_rejects_stale_vmi(tmp_path: Path, policy: dict) -> None:
     resource = launcher()
     resource["metadata"]["ownerReferences"][0]["uid"] = "replaced-vmi"
+    assert apply(tmp_path, policy, resource).failed > 0
+
+
+def test_rejects_relay_in_both_container_classes(tmp_path: Path, policy: dict) -> None:
+    resource = launcher()
+    resource["spec"]["containers"].append(
+        {
+            "name": "egress-sidecar",
+            "image": "sidecar:test",
+            "volumeMounts": [{"name": TOKEN_VOLUME, "mountPath": "/var/run/relay-test"}],
+        }
+    )
     assert apply(tmp_path, policy, resource).failed > 0
 
 

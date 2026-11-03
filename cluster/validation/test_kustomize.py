@@ -101,5 +101,45 @@ def test_environment_tools_image_pin_reaches_every_sandbox_template_container(tm
     assert images == [f"{environment_tools_image}:{environment_tools_pin['newTag']}"] * 2
 
 
+def test_egress_sidecar_image_pin_reaches_launcher_relay_template(tmp_path: Path) -> None:
+    image_pins = get_required_path("_main/cluster/k8s/agentplane-staging/image-pins")
+    shutil.copytree(image_pins, tmp_path / "image-pins")
+    pins = yaml.safe_load((tmp_path / "image-pins/kustomization.yaml").read_text())
+    sidecar_image = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"
+    sidecar_pin = next(image for image in pins["images"] if image["name"] == sidecar_image)
+    (tmp_path / "kustomization.yaml").write_text(
+        "apiVersion: kustomize.config.k8s.io/v1beta1\n"
+        "kind: Kustomization\n"
+        "resources: [relay-policy.yaml]\n"
+        "components: [image-pins]\n"
+    )
+    (tmp_path / "relay-policy.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "apiVersion": "kyverno.io/v1",
+                "kind": "ClusterPolicy",
+                "metadata": {"name": "test-launcher-relay"},
+                "spec": {
+                    "rules": [
+                        {
+                            "name": "inject-test-relay",
+                            "context": [{"name": "relay", "variable": {"value": {"image": f"{sidecar_image}:unset"}}}],
+                        }
+                    ]
+                },
+            }
+        )
+    )
+    result = subprocess.run(
+        [str(resolve_tool("kustomize", "multitool/tools/kustomize/kustomize")), "build", str(tmp_path)],
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr.decode()
+    [policy] = yaml.safe_load_all(result.stdout)
+    relay = policy["spec"]["rules"][0]["context"][0]["variable"]["value"]
+    assert relay["image"] == f"{sidecar_image}:{sidecar_pin['newTag']}"
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

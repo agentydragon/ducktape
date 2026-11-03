@@ -1,5 +1,5 @@
 # Kustomize transformer configuration, not a Kubernetes manifest: teaches `images:` where to find
-# image fields in our SandboxTemplate, which the transformer does not reach by default.
+# image fields in custom resources, which the transformer does not reach by default.
 images:
   - path: spec/pod/spec/containers[]/image
     kind: SandboxTemplate
@@ -7,3 +7,5 @@ images:
     kind: SandboxTemplate
   - path: spec/pod/spec/volumes[]/image/reference
     kind: SandboxTemplate
+  - path: spec/rules[]/context[]/variable/value/image
+    kind: ClusterPolicy

@@ -14,6 +14,9 @@ PolicyBinding grants. The policy admits a launcher only when KubeVirt's controll
 VMI of a live VirtualMachine controlled by one of our Sandboxes, and that same Sandbox controls the
 ServiceAccount.
 
+The relay is a native sidecar so the guest can flush telemetry until compute exits. It starts
+after KubeVirt's existing initializers, alongside the filesystem daemons below.
+
 PVC-, Secret- and ConfigMap-backed virtiofs daemons run as native sidecars, after KubeVirt's existing
 initializers. They stay alive until compute exits, allowing the guest to close journals and unmount
 state and credential volumes during shutdown. ContainerPath daemons remain ordinary containers
@@ -129,9 +132,6 @@ class LauncherRelayPolicy(ClusterPolicy):
     ) -> None:
         pod_spec = runner_pod["spec"]
         relay = dict(one(c for c in pod_spec["initContainers"] if c["name"] == sidecar_config.CONTAINER_NAME))
-        # The launcher mutation adds this as a regular container, whose per-container restart
-        # policy is not enabled on the pinned cluster. Its lifetime is owned by KubeVirt.
-        relay.pop("restartPolicy")
         token_volume = sandbox_pod.EGRESS_TOKEN_VOLUME_NAME
         # A deployment that pulls without credentials (the k3s fixture) has none to copy.
         pull_secrets = {"imagePullSecrets": pod_spec["imagePullSecrets"]} if "imagePullSecrets" in pod_spec else {}
@@ -159,7 +159,7 @@ class LauncherRelayPolicy(ClusterPolicy):
         )
         relay_only = [
             _mismatch(_token_mounts(f"request.object.spec.containers[?name!='{relay['name']}']", token_volume), 0),
-            _mismatch(_token_mounts("request.object.spec.initContainers", token_volume), 0),
+            _mismatch(_token_mounts(f"request.object.spec.initContainers[?name!='{relay['name']}']", token_volume), 0),
         ]
         # A Pod's volumes are immutable, so only a Pod created with the token volume can be updated to mount it.
         is_launcher = " && ".join(
@@ -237,7 +237,6 @@ class LauncherRelayPolicy(ClusterPolicy):
                                 "serviceAccountName": "{{account.metadata.name}}",
                                 "automountServiceAccountToken": False,
                                 **pull_secrets,
-                                "containers": [relay],
                                 # The subsequent daemon move appends without disturbing existing init order.
                                 "+(initContainers)": [],
                                 "volumes": [
@@ -249,6 +248,32 @@ class LauncherRelayPolicy(ClusterPolicy):
                                 ],
                             }
                         }
+                    ),
+                ),
+                ClusterPolicySpecRules(
+                    name="append-native-relay",
+                    match=launchers,
+                    # Keep the image structured for Kustomize's image-pins transformer.
+                    context=[
+                        ClusterPolicySpecRulesContext(
+                            name="relay", variable=ClusterPolicySpecRulesContextVariable(value=relay)
+                        )
+                    ],
+                    preconditions={
+                        "all": [
+                            {
+                                "key": (
+                                    "{{ (request.object.spec.initContainers || `[]`)"
+                                    f"[?name=='{relay['name']}'] | length(@)"
+                                    " }}"
+                                ),
+                                "operator": "Equals",
+                                "value": 0,
+                            }
+                        ]
+                    },
+                    mutate=ClusterPolicySpecRulesMutate(
+                        patches_json6902="- op: add\n  path: /spec/initContainers/-\n  value: {{ to_string(relay) }}\n"
                     ),
                 ),
                 ClusterPolicySpecRules(
@@ -299,12 +324,18 @@ class LauncherRelayPolicy(ClusterPolicy):
                     match=launchers,
                     context=_context(),
                     validate=Validate.deny(
-                        message="The launcher's relay identity must stay out of the compute and init containers.",
+                        message="The launcher must have exactly one native relay init sidecar.",
                         conditions={
                             "any": [
                                 _mismatch("request.object.spec.serviceAccountName", "{{account.metadata.name}}"),
                                 _mismatch("request.object.spec.automountServiceAccountToken", False),
-                                _mismatch(f"length(request.object.spec.containers[?name=='{relay['name']}'])", 1),
+                                _mismatch(f"length(request.object.spec.containers[?name=='{relay['name']}'])", 0),
+                                _mismatch(f"length(request.object.spec.initContainers[?name=='{relay['name']}'])", 1),
+                                _mismatch(
+                                    "length(request.object.spec.initContainers[?name=='"
+                                    f"{relay['name']}' && restartPolicy=='Always'])",
+                                    1,
+                                ),
                                 *relay_only,
                             ]
                         },
