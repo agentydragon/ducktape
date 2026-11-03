@@ -16,14 +16,14 @@ concrete autonomous workflow is a daily agent inspecting the previous 24 hours o
 opening useful fix PRs. Agentplane-level child Sessions are important; native harness children
 remain useful but do not provide independently addressable Agentplane Sessions.
 
-| Priority  | Outcome                                                                                                               | Work to select                                                                                                                                                                                                     |
-| --------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | Fix concrete reliability regressions as normal use exposes them; broad sampler-roll and JS/exec disruption exercises remain waived                                                                                 |
-| P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE_DESIGN` then `SCHEDULED_AGENT_WAKE`, followed by the `DAILY_CI_AGENT` milestone using the reviewed delegation tools; evaluate usability through normal use                                   |
-| Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                                                          |
-| Next      | Measure a production fresh VM start and provide a usable Bazel client inside a VM                                     | `VM_STARTUP_LATENCY`, `LOCAL_BAZEL`; select an image or layering change only if production measurements show it addresses startup or needed resource headroom                                                      |
-| Later     | Launching workers with different privileges, broader delegation and archive-read policy                               | `MULTIAGENT_MODEL`, `AGENT_LAUNCH_POLICY_DESIGN`, `AGENT_SANDBOX_LAUNCH`, broader create grants and held history-read work                                                                                         |
-| Later     | Broader runtime/conversation redesign and maintenance without a current workflow need                                 | Full `SESSION_RUNTIME_MODEL_DESIGN` and `AGENT_AUTHORED_CONVERSATIONS_DESIGN` implementations, renames, optional queue/database modes, broad protocol-parity research and speculative service/storage replacements |
+| Priority  | Outcome                                                                                                               | Work to select                                                                                                                                                                      |
+| --------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | Fix concrete reliability regressions as normal use exposes them; broad sampler-roll and JS/exec disruption exercises remain waived                                                  |
+| P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE_DESIGN` then `SCHEDULED_AGENT_WAKE`, followed by the `DAILY_CI_AGENT` milestone using the reviewed delegation tools; evaluate usability through normal use    |
+| Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                           |
+| Next      | Measure a production fresh VM start and provide a usable Bazel client inside a VM                                     | `VM_STARTUP_LATENCY`, `LOCAL_BAZEL`; select an image or layering change only if production measurements show it addresses startup or needed resource headroom                       |
+| Later     | Launching workers with different privileges, broader delegation and archive-read policy                               | `MULTIAGENT_MODEL`, `AGENT_LAUNCH_POLICY_DESIGN`, `AGENT_SANDBOX_LAUNCH`, broader create grants and held history-read work                                                          |
+| Later     | Broader runtime/conversation redesign and maintenance without a current workflow need                                 | Full `SESSION_RUNTIME_MODEL_DESIGN` and `AGENT_AUTHORED_CONVERSATIONS_DESIGN` implementations, renames, broad protocol-parity research and speculative service/storage replacements |
 
 Independent ready work may proceed alongside the main track; priority is not a new dependency edge.
 Preserve existing in-flight ownership and explicit holds. Nodes not selected above, component-plan
@@ -917,7 +917,8 @@ where an adapter provisions an account and reconciles its RoleBindings, like ano
 account and roles. Compare this with retaining ServiceAccounts as the permission subject. Decide
 the relationships and lifetimes of principals, Sessions and environments, who may act as a
 principal, whether associations can change, and how a central Session keeps its identity without
-an environment.
+an environment. The [Session/environment model](session_environment_model.md) records the
+related lifecycle discussion and selected direction.
 
 Today each Sandbox owns its own ServiceAccount and PolicyBinding so its permissions can be changed
 independently. Sharing an SA between environments combines their additive grants. The egress proxy
@@ -951,6 +952,9 @@ already selected work; no identity service, broker or runtime migration is selec
 ### `SESSION_RUNTIME_MODEL_DESIGN` — Sessions, harness placement and execution attachments
 
 **Decision, unscheduled; operator requested future design work, 2026-10-28 PDT.**
+The newer [Session/environment model and discussion](session_environment_model.md) records selected
+direction and remaining decisions; its [opening and recovery inventory](session_opening_recovery.md)
+traces current behavior. The earlier descriptions below are context where superseded by that direction.
 The [current component boundaries](session_runtime_model.md#role-boundaries-and-routing) inform this
 broader object/API decision without making it a prerequisite for selected execution or delegation work.
 Session/Environment dispatch roles are
@@ -2046,7 +2050,7 @@ beyond the transport track nodes the operator dispatched.
 
 ```mermaid
 flowchart LR
-    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: optional queue in one service, proposal awaiting review]
+    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: delivery ownership and service topology]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: destination and send authority]
     DELIVERY_DESTINATION_CONTRACT[Blocked: implement reviewed destination contract]
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
@@ -2060,54 +2064,28 @@ flowchart LR
     RUNNER_STORE_SESSION_IDENTITY --> RUNNER_IDENTITY_LEGACY_CLEANUP
     HARNESS_IDENTITY_DESIGN --> RUNNER_STORE_SESSION_IDENTITY
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
-    DISPATCHER_PERSISTENCE_MODEL_DESIGN -. reviewed execution contract .-> CNPG_FREE_K3S_INTEGRATION_TIER
-    DISPATCHER_PERSISTENCE_MODEL_DESIGN -.- DISPATCHER_QUEUE_OPTIONAL[Unscheduled: the combined service runs without its queue]
 ```
 
-### `DISPATCHER_PERSISTENCE_MODEL_DESIGN` — choose the queue's role: always on, or optional in one service
+### `DISPATCHER_PERSISTENCE_MODEL_DESIGN` — choose delivery ownership and service topology
 
-**Later decision; operator clarification, 2026-10-31 UTC.** Session dispatch and Environment
-dispatch are separate responsibilities, but may share a binary or use separate binaries. Leave this
-specific merge/reshuffle for later; the earlier combined-service write-up remains an unapproved
-option. This decision and the optional queue do not gate the Runner component candidates above.
+**Decision; queue and database direction selected by operator, 2026-11-02.** Dispatcher
+PostgreSQL and queue-backed admission remain mandatory; the database-free / queue-off mode is no
+longer a candidate. This does not require every Environment Service operation to enter the queue.
+Whether to offer an explicit immediate-or-fail send within the mandatory queue contract remains open.
+See the [Session/environment model](session_environment_model.md#where-should-live-control-live).
 
-**Proposal awaiting review.** Alternatives: keep the PostgreSQL queue as
-the only mode, add a separate online-only direct-admission contract, or merge the Dispatcher and the Gateway's proxy
-into one gRPC service whose queue is optional. The operator proposed the last (2026-10-20 07:13 UTC), and
-[Dispatcher and Gateway as one service](dispatcher_gateway_merge.md) recommends it: queue on stores, delivers and
-is the only mode that wakes; queue off delivers at once or refuses with the queue's own reasons. The plan covers
-every command state in both modes, per-Session ordering, cancellation, duplicate opens, sender and replica failure,
-retries and the database inventory, which shows queue off removes the Gateway's database and not CNPG. The
-operator chose that the replica holding a Sandbox's runner connection owns its delivery, retiring the
-`dispatcher-<uid>` Lease (2026-10-20 07:34 UTC); the rest awaits review.
-
-No implementation of this dispatch regrouping or persistence proposal starts before operator
-selection. `DISPATCHER_QUEUE_OPTIONAL` remains explicitly low priority; independent Runner
-restructuring is outside this hold. On approval `PROXY_START_METHODS_DISPATCHER_ONLY` finishes with
-the plan's steps; `DELIVERY_DESTINATION_AUTHORITY_DESIGN` stays independent of it.
-
-### `DISPATCHER_QUEUE_OPTIONAL` — the combined service runs without its queue
-
-**Unscheduled; operator, 2026-10-21 06:21 UTC: "maybe we can just prioritize this low and revisit it if I ever
-actually want this stateless mode".** Comes
-after the merge steps in [the plan](dispatcher_gateway_merge.md#order-of-work); operator, 2026-10-21 06:06 UTC: "No
-queue -> refuse whatever we cannot immediately confirm as having reached the runner". Make the PostgreSQL queue of the combined
-Dispatcher and Gateway service optional. With the queue off, the service accepts a command only once the runner
-holding the Sandbox's connection has confirmed receiving it, and refuses everything else (no connected runner, a
-suspended Sandbox, a delivery it cannot confirm) with the queue's own reasons; nothing is stored, and wake-on-send
-needs the queue. Image first: the database URL becomes optional and the immediate path lands; then a manifest
-renders the service without the queue database, Secret and migrator Job, and the K3s fixture drops the
-Gateway's PostgreSQL. Exit: tests of both modes over the same command states, and a queue-off deployment refusing
-a send to a suspended Sandbox. Each command request carries a caller-declared flag, deliver now or fail versus may queue, accepted in both modes
-(operator, 06:28 UTC), so the same request no longer means different things silently. With the queue on, deliver now
-or fail refuses instead of queuing and may queue queues. With the queue off, both deliver now when the runner can
-take the command; one that would need the queue is refused, and for a may-queue request the error says the queue
-is required and off.
+Session dispatch and Environment dispatch are distinct responsibilities; whether their services
+or binary boundaries should change remains a later decision. Decide delivery ownership, fencing,
+replica failure, ordering and recovery for the selected topology before changing existing guarantees.
+The former [Dispatcher/Gateway merge proposal](dispatcher_gateway_merge.md) is historical for its
+queue-off and holder-owned-delivery choices, not an implementation authorization. Independent
+Runtime restructuring does not wait for this decision. On a reviewed selection,
+`PROXY_START_METHODS_DISPATCHER_ONLY` can proceed under its own contract;
+`DELIVERY_DESTINATION_AUTHORITY_DESIGN` remains independent.
 
 ### `CNPG_FREE_K3S_INTEGRATION_TIER` — add a narrow database-independent integration tier
 
-**Blocked on the reviewed execution-persistence contract and actual removal of execution-database
-dependencies from the flows under test.** Add a K3s integration tier for
+**Blocked on scoping flows that actually have no execution-database dependency.** Add a K3s integration tier for
 independently usable, loosely coupled Agentplane components; it is not a full-stack parity
 environment or a replacement for CNPG. Exercise only flows that can run without the removed
 dependencies. The tier may omit Notifications, History, Electric, the CNPG operator and PostgreSQL,
@@ -2116,13 +2094,13 @@ is database-free.
 
 Cover Pod and VM runner flows, adding test ingress where a selected flow needs it; VM flows use the
 k3s stack's VM rendering (KubeVirt under emulation, the Bazel-built test guest). Keep this test target separate from runtime database removal;
-scope its included flows, omitted services and remaining state owners explicitly. A direct-admission
-contract, if selected, remains online-only and does not wake suspended Sandboxes; the durable-queue
-mode remains the owner of wake-to-deliver.
+scope its included flows, omitted services and remaining state owners explicitly. The mandatory
+Dispatcher database means the tier cannot exercise Dispatcher admission without PostgreSQL; select
+independently usable direct Runtime or other flows and retain their real authorization contracts.
 
 The existing `agentplane/system_tests/k3s` suite already runs without the CNPG operator, Cilium or cert-manager (and KubeVirt outside its VM rendering),
 against one plain PostgreSQL Deployment and the Runner Gateway; this node is about removing the PostgreSQL dependency
-itself. Direct admission and new sender grants remain separate decisions.
+itself. New sender grants remain a separate decision.
 
 ### `DELIVERY_DESTINATION_AUTHORITY_DESIGN` — assign destination validation and send permission
 
@@ -2260,8 +2238,10 @@ the MCP edge extraction leaves Web Push in Actions.
 
 ### `HARNESS_IDENTITY_DESIGN` — decide private Session-to-store and native mapping
 
-**Public destination and process boundary approved (operator, 2026-10-15).** The public address is
-`(Sandbox UID, Agentplane Session ID)` with no store field. The runner maps a public Session durably
+**Current destination and process boundary (operator direction updated 2026-11-02).** The current public address is
+`(Sandbox UID, Agentplane Session ID)` with no store field. The selected future direction uses a
+globally unique Session UUID and resolves placement; see the [Session/environment model](session_environment_model.md).
+The existing Runtime maps a public Session durably
 to its private store/native ID; selecting a default store by requested harness kind remains a
 candidate policy. Namespace/name may locate the Sandbox, but request syntax and UID resolver are
 undecided.
@@ -2270,11 +2250,10 @@ Process incarnations may be diagnostic objects, never durable addresses. Neither
 stores/processes per Runner, at-most-one process per store nor shared-store concurrent safety is
 selected.
 
-**Recommendation for review, not approved ID allocation:** retain client-chosen globally unique
-public IDs for client-created root Sessions, bound to one Sandbox UID, immutable creation spec and
-runner-private selected store. Reserve the public ID durably before native creation; map it durably
-to the harness-chosen native ID before
-reporting a completed opening. An identical retry resolves by public ID, while reuse against a
+**Remaining native mapping decision:** use the globally unique public Session UUID with an immutable
+required Sandbox placement for a native Session and a private selected harness store. Reserve the public ID durably before native creation. When native creation occurs, record the
+harness-chosen native ID before reporting native creation as complete; the earlier logical opening
+does not require native creation. An identical retry resolves by public ID, while reuse against a
 different destination/spec conflicts. A queued opening is not proof of native creation. If native
 creation succeeds but its ID is lost before mapping commits, inspect native store evidence or a
 proven harness idempotency mechanism; if identity cannot be proved, report unresolved creation and
@@ -2300,7 +2279,7 @@ one-versus-many store or shared-store safety decision is made here.
 
 Feed the reviewed process-diagnostic shape into
 [`RUNNER_HARNESS_OBJECTS_DESIGN`](#runner_harness_objects_design--decide-process-diagnostics-and-placement-policy).
-The approved public address lets destination migration proceed once its authority and locator are
+The current destination contract remains in force until its replacement, authority and locator are
 reviewed; private runner mapping can be implemented independently. Neither design node authorizes runtime changes.
 
 ### `RUNNER_STORE_SESSION_IDENTITY` — implement durable store and public Session mapping
@@ -2368,7 +2347,7 @@ accepted; `SAMPLER_JOURNAL_DIET` and `ACTION_SERVICE_PORT_SHARING` await the ope
 flowchart LR
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
     ACTION_SERVICE_PORT_SHARING[Decision: a simpler single Action Service address]
-    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: Dispatcher and Gateway merge] --> DISPATCHER_KEYED_DELIVERY[Blocked: keyed Dispatcher delivery]
+    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: delivery ownership and topology] --> DISPATCHER_KEYED_DELIVERY[Blocked: keyed Dispatcher delivery]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN --> DISPATCHER_WATCH_VERSIONS[Blocked: versioned dispatch watch]
 ```
 

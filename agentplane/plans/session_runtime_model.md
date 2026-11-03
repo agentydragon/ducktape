@@ -1,5 +1,8 @@
 # Sessions, harness placement and execution attachments
 
+See the [Session/environment model and discussion](session_environment_model.md) for more recent
+decisions, unresolved questions, and implementation readiness.
+
 Operator-requested future design, 2026-10-28 PDT; discussion directions updated 2026-10-30 PDT.
 The broader object model is a long-term north star; concrete object types, storage and protocols
 remain open. Current component names, source ownership and runnable entrypoints live in the
