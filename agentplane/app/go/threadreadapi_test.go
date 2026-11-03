@@ -367,22 +367,6 @@ func (f *threadReadHistoryFake) FindSessions(_ context.Context, sandboxName, san
 	return result, nil
 }
 
-func (*threadReadHistoryFake) Observations(context.Context, uuid.UUID, *uint64, *uint64, int) (historydata.ObservationPage, error) {
-	return historydata.ObservationPage{}, errors.New("unexpected observations call")
-}
-
-func (*threadReadHistoryFake) ObservationEntry(context.Context, uuid.UUID, uint64, uint64) (*historydata.ObservationEntry, error) {
-	return nil, errors.New("unexpected observation entry call")
-}
-
-func (*threadReadHistoryFake) Evidence(context.Context, uuid.UUID, string, string, string, uint64, int) (historydata.EvidencePage, error) {
-	return historydata.EvidencePage{}, errors.New("unexpected evidence call")
-}
-
-func (*threadReadHistoryFake) NativeFrames(context.Context, uuid.UUID, string, string, string, uint64, uint64, int) (historydata.NativeFramePage, error) {
-	return historydata.NativeFramePage{}, errors.New("unexpected native frame call")
-}
-
 func TestListThreadViewsFiltersHistoryAndContinuesFromLastReturnedThread(t *testing.T) {
 	ids := []uuid.UUID{
 		uuid.MustParse("00000000-0000-0000-0000-000000000004"),

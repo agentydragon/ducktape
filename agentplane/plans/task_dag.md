@@ -1984,7 +1984,6 @@ filter and optional live follow. The browser follows Threads through Electric
 
 ```mermaid
 flowchart TD
-    HISTORY_READS_FACADE[Candidate: History reads as a generated browser API, section 13]
     SESSION_ACTIVITY_STREAM[Unscheduled: deliver on a Session's idle time, section 7]
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history, section 2]
     THREAD_READ_POLICY[Blocked: scoped archive reads, section 3]
@@ -2175,7 +2174,6 @@ contract is [HTTP/JSON facades](../docs/grpc_services.md#httpjson-facades); what
 ```mermaid
 flowchart LR
     APP_API_GRPC_FACADE[Selected, unscheduled: uniform app gRPC APIs with generated HTTP facades]
-    HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
     WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
 ```
 
@@ -2201,7 +2199,7 @@ replica, cached-bundle and rollback windows close; and preserve status informati
 HTTP failures without treating uncertain openings as rejected. Details are in
 [generated HTTP facades](grpc_http_facade.md#open).
 
-**Prerequisites:** no dependency on the separate History-read facade track or a service rename.
+**Prerequisites:** no dependency on a service rename.
 Before each independently reviewable migration, identify the owning service and preserve the app's
 client-only boundary; backend responsibilities still in the app belong with their backend authority.
 The app serves the human frontend; agents and services call owning backends through native gRPC.
@@ -2217,13 +2215,6 @@ replaced route/type-generation paths are removed, and remaining protocol-specifi
 listed with reasons. Focused API/browser tests cover ordinary calls, authorization denials,
 idempotency and ambiguous outcomes, and stream reconnects. Each migration records its rollout and
 rollback; update the app's contract documentation as behavior changes.
-
-### `HISTORY_READS_FACADE` — History reads as a generated browser API
-
-**Candidate.** Annotate the browser's History
-reads and replace the app's mirror models (`app/go/historydata/historydata.go`) with the generic proxy. `WatchSessionSummaries` says only that something
-changed; a browser-facing watch could use `FollowSession` (section 11). Decide on purpose whether the app's Thread
-check on `thread_observations` (404 for a Session no Thread links) is kept or dropped.
 
 ### `WEB_PUSH_SERVICE` — Web Push as its own sender
 

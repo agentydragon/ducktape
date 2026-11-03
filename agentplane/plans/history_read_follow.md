@@ -2,7 +2,7 @@
 
 The implemented raw-entry API and its cursor, correction and renewal contract are in the
 [History Service README](../history_service/README.md#read-and-follow-one-session).
-The browser stays on Electric; a browser facade remains separate work.
+The browser reads snapshots through the generated History facade and follows its Thread view through Electric.
 
 ## Remaining consumers and decisions
 

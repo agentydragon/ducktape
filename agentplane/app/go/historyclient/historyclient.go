@@ -92,14 +92,6 @@ func (c *Client) grpcClient() (historypb.HistoryServiceClient, error) {
 	return historypb.NewHistoryServiceClient(conn), nil
 }
 
-func (c *Client) ReadSessionEvents(ctx context.Context, request *historypb.ReadSessionEventsRequest) (*historypb.ReadSessionEventsResponse, error) {
-	client, err := c.grpcClient()
-	if err != nil {
-		return nil, err
-	}
-	return client.ReadSessionEvents(ctx, request)
-}
-
 func (c *Client) FollowSession(ctx context.Context, request *historypb.FollowSessionRequest) (grpc.ServerStreamingClient[historypb.FollowSessionResponse], error) {
 	client, err := c.grpcClient()
 	if err != nil {
@@ -132,30 +124,6 @@ func (c *Client) BatchGetSessionSummaries(ctx context.Context, request *historyp
 	return client.BatchGetSessionSummaries(ctx, request)
 }
 
-func (c *Client) ReadThreadEntities(ctx context.Context, request *historypb.ReadThreadEntitiesRequest) (*historypb.ReadThreadEntitiesResponse, error) {
-	client, err := c.grpcClient()
-	if err != nil {
-		return nil, err
-	}
-	return client.ReadThreadEntities(ctx, request)
-}
-
-func (c *Client) ReadEntityEvidence(ctx context.Context, request *historypb.ReadEntityEvidenceRequest) (*historypb.ReadEntityEvidenceResponse, error) {
-	client, err := c.grpcClient()
-	if err != nil {
-		return nil, err
-	}
-	return client.ReadEntityEvidence(ctx, request)
-}
-
-func (c *Client) ReadNativeFrames(ctx context.Context, request *historypb.ReadNativeFramesRequest) (*historypb.ReadNativeFramesResponse, error) {
-	client, err := c.grpcClient()
-	if err != nil {
-		return nil, err
-	}
-	return client.ReadNativeFrames(ctx, request)
-}
-
 func (c *Client) FindSessions(ctx context.Context, request *historypb.FindSessionsRequest) (*historypb.FindSessionsResponse, error) {
 	client, err := c.grpcClient()
 	if err != nil {
@@ -185,13 +153,9 @@ func (c *Client) Close() error {
 }
 
 var _ interface {
-	ReadSessionEvents(context.Context, *historypb.ReadSessionEventsRequest) (*historypb.ReadSessionEventsResponse, error)
 	FollowSession(context.Context, *historypb.FollowSessionRequest) (grpc.ServerStreamingClient[historypb.FollowSessionResponse], error)
 	ReadSessionObservations(context.Context, *historypb.ReadSessionObservationsRequest) (*historypb.ReadSessionObservationsResponse, error)
 	GetSessionSummary(context.Context, *historypb.GetSessionSummaryRequest) (*historypb.SessionSummary, error)
-	ReadThreadEntities(context.Context, *historypb.ReadThreadEntitiesRequest) (*historypb.ReadThreadEntitiesResponse, error)
-	ReadEntityEvidence(context.Context, *historypb.ReadEntityEvidenceRequest) (*historypb.ReadEntityEvidenceResponse, error)
-	ReadNativeFrames(context.Context, *historypb.ReadNativeFramesRequest) (*historypb.ReadNativeFramesResponse, error)
 	WatchSessionSummaries(context.Context, *historypb.WatchSessionSummariesRequest) (historypb.HistoryService_WatchSessionSummariesClient, error)
 	Redial()
 } = (*Client)(nil)
