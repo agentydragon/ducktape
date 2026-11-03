@@ -3,10 +3,10 @@ import { create, toJson } from "@bufbuild/protobuf";
 import { type JSX, type ReactNode, useEffect, useMemo, useState } from "react";
 
 import type { ThreadView } from "../schema";
+import { EnvironmentTargetSchema } from "../../../proto/identity_pb";
 import {
   EnvironmentDescriptorSchema,
   OperatingMode,
-  TargetHandleSchema,
   type EnvironmentDescriptor,
   SandboxPhase,
 } from "../../../runner_gateway/environments/environment_service_pb";
@@ -263,8 +263,8 @@ function SandboxDetails({
           label="ServiceAccount"
           help="The subject its policy bindings name. Two sandboxes sharing an account share what they may do."
         >
-          {sandbox.executionAccount?.namespace ?? sandbox.target!.namespace}/
-          {sandbox.executionAccount?.name ?? sandbox.target!.name}
+          {sandbox.executionAccount?.account?.namespace ?? sandbox.target!.namespace}/
+          {sandbox.executionAccount?.account?.name ?? sandbox.target!.name}
         </Detail>
         <Detail label="Wake on message" help="A message to one of its Sessions resumes it while suspended.">
           <WakeOnSendCheckbox sandbox={sandbox} disabled={deleting(sandbox)} onError={onError} />
@@ -523,7 +523,7 @@ function EnvironmentRuntimeDiagnostics({
   const [refreshVersion, setRefreshVersion] = useState(0);
   const { namespace: sandboxNamespace, name: sandboxName, uid: sandboxUID } = sandbox.target!;
   const target = useMemo(
-    () => create(TargetHandleSchema, { namespace: sandboxNamespace, name: sandboxName, uid: sandboxUID }),
+    () => create(EnvironmentTargetSchema, { namespace: sandboxNamespace, name: sandboxName, uid: sandboxUID }),
     [sandboxNamespace, sandboxName, sandboxUID]
   );
   useEffect(() => {

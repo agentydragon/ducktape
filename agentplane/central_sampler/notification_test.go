@@ -9,12 +9,13 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
-	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 )
@@ -126,9 +127,9 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 				store := newTestStore(t)
 				request := &samplerpb.OpenSessionRequest{
 					SessionId: uuid.NewString(),
-					Executor: &sandboxpb.SandboxDestination{
-						Owner:   &sandboxpb.ServiceAccount{Namespace: "fixture", Name: "fixture-sandbox"},
-						Sandbox: "fixture-sandbox", SandboxUid: "sandbox-uid",
+					Executor: &identitypb.SandboxDestination{
+						Owner:  &identitypb.ServiceAccount{Namespace: "fixture", Name: "fixture-sandbox"},
+						Target: &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "fixture-sandbox", Uid: "sandbox-uid"},
 					},
 					ExpectedIncarnationUid: "original",
 					Spec:                   &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model"},

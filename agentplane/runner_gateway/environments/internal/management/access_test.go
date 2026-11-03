@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/policy"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/view"
 
@@ -57,7 +59,7 @@ func newAccess(t *testing.T, objects ...client.Object) (*Access, client.Client) 
 	t.Helper()
 	underlying := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(objects...).Build()
 	objectsClient := &assigningClient{Client: underlying}
-	access, err := New(namespace, objectsClient, []string{"default-policy"}, &sandboxespb.ServiceAccount{
+	access, err := New(namespace, objectsClient, []string{"default-policy"}, &identitypb.ServiceAccount{
 		Namespace: namespace, Name: "app",
 	})
 	if err != nil {
@@ -83,7 +85,7 @@ func TestCreateAppliesDefaultsAndCallerIntentAndIsIdempotent(t *testing.T) {
 		&policyapi.PolicySet{ObjectMeta: metav1.ObjectMeta{Name: "extra-policy", Namespace: namespace}},
 	).Build()
 	objects := &assigningClient{Client: base}
-	caller := &sandboxespb.ServiceAccount{Namespace: namespace, Name: "app"}
+	caller := &identitypb.ServiceAccount{Namespace: namespace, Name: "app"}
 	access, err := New(namespace, objects, []string{"default-policy", "default-policy"}, caller)
 	if err != nil {
 		t.Fatal(err)
@@ -121,7 +123,7 @@ func TestCreateAppliesDefaultsAndCallerIntentAndIsIdempotent(t *testing.T) {
 	if err != nil || retry.GetUid() != created.GetUid() {
 		t.Fatalf("same Create retry = %#v, %v", retry, err)
 	}
-	otherCaller, err := New(namespace, objects, nil, &sandboxespb.ServiceAccount{Namespace: namespace, Name: "other"})
+	otherCaller, err := New(namespace, objects, nil, &identitypb.ServiceAccount{Namespace: namespace, Name: "other"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +234,7 @@ func TestPatchConflictRetriesAndRechecksUID(t *testing.T) {
 	resource := testSandbox("replaceable", "old-uid", sandboxapi.OperatingModeRunning)
 	underlying := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(resource).Build()
 	conflicts := &conflictOnceClient{Client: underlying}
-	access, err := New(namespace, conflicts, nil, &sandboxespb.ServiceAccount{Namespace: namespace, Name: "app"})
+	access, err := New(namespace, conflicts, nil, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +247,7 @@ func TestPatchConflictRetriesAndRechecksUID(t *testing.T) {
 
 	underlying = clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(resource.DeepCopy()).Build()
 	replacing := &replaceBeforeRetryClient{Client: underlying}
-	access, err = New(namespace, replacing, nil, &sandboxespb.ServiceAccount{Namespace: namespace, Name: "app"})
+	access, err = New(namespace, replacing, nil, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,7 +392,7 @@ func TestCreateReturnsPersistedIdentityAcrossUncertainWritesAndReplacement(t *te
 				}
 				return nil
 			}
-			access, err := New(namespace, objects, nil, &sandboxespb.ServiceAccount{Namespace: namespace, Name: "app"})
+			access, err := New(namespace, objects, nil, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -426,7 +428,7 @@ func TestCreateDoesNotInferPersistenceFromAnUncertainWrite(t *testing.T) {
 		}
 		return context.DeadlineExceeded
 	}
-	access, err := New(namespace, objects, nil, &sandboxespb.ServiceAccount{Namespace: namespace, Name: "app"})
+	access, err := New(namespace, objects, nil, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
 	if err != nil {
 		t.Fatal(err)
 	}

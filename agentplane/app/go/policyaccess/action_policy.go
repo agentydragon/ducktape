@@ -12,10 +12,11 @@ import (
 	"strings"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/federation"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -146,7 +147,7 @@ func (r *ActionPolicyReader) ForSubject(
 	ctx context.Context,
 	caller auth.Caller,
 	session *auth.RequestSession,
-	subject *sandboxespb.ServiceAccount,
+	subject *identitypb.ServiceAccount,
 ) (*ActionPolicyView, *ActionPolicyUnavailable, error) {
 	if subject == nil || subject.GetNamespace() == "" || subject.GetName() == "" {
 		return nil, nil, errors.New("subject must set both namespace and name")

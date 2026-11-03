@@ -10,11 +10,12 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -101,9 +102,8 @@ func (h *directExecutionTestClient) open(ctx context.Context, sessionID, request
 
 func (h *directExecutionTestClient) scope(sessionID string) *executorpb.ExecutionScope {
 	return &executorpb.ExecutionScope{
-		Destination: &sandboxespb.SandboxDestination{
-			Sandbox: h.identity.Name, SandboxUid: h.identity.UID,
-			Owner: &sandboxespb.ServiceAccount{Namespace: h.identity.Namespace, Name: h.identity.Name},
+		Destination: &identitypb.SandboxDestination{
+			Target: &identitypb.EnvironmentTarget{Namespace: h.identity.Namespace, Name: h.identity.Name, Uid: h.identity.UID}, Owner: &identitypb.ServiceAccount{Namespace: h.identity.Namespace, Name: h.identity.Name},
 		},
 		ExpectedIncarnationUid: h.incarnation,
 		SessionId:              sessionID,
@@ -335,7 +335,7 @@ func TestStaleExecutionIncarnationReportsVerifiedIdentity(t *testing.T) {
 		code   codes.Code
 	}{
 		{name: "incomplete scope", mutate: func(scope *executorpb.ExecutionScope) { scope.ExpectedIncarnationUid = "" }, code: codes.InvalidArgument},
-		{name: "foreign Sandbox", mutate: func(scope *executorpb.ExecutionScope) { scope.Destination.SandboxUid = "another-sandbox" }, code: codes.PermissionDenied},
+		{name: "foreign Sandbox", mutate: func(scope *executorpb.ExecutionScope) { scope.Destination.Target.Uid = "another-sandbox" }, code: codes.PermissionDenied},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			scope := client.scope("sampler-session")

@@ -5,6 +5,7 @@ package agentplane.sandboxes.environments;
 option go_package = "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb;environmentpb";
 
 import "agentplane/proto/environment_lifecycle.proto";
+import "agentplane/proto/identity.proto";
 import "agentplane/proto/sandboxes.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/duration.proto";
@@ -17,7 +18,7 @@ service EnvironmentService {
   rpc ListEnvironmentTemplates(google.protobuf.Empty) returns (ListEnvironmentTemplatesResponse) {
     option (google.api.http) = {get: "/v1/environment-templates"};
   }
-  rpc CreateEnvironment(agentplane.proto.CreateSandboxRequest) returns (TargetHandle) {
+  rpc CreateEnvironment(agentplane.proto.CreateSandboxRequest) returns (agentplane.proto.EnvironmentTarget) {
     option (google.api.http) = {post: "/v1/environments" body: "*"};
   }
   rpc ListEnvironments(ListEnvironmentsRequest) returns (ListEnvironmentsResponse) {
@@ -57,29 +58,17 @@ message ListEnvironmentTemplatesResponse {
 }
 
 message EnvironmentMutationRequest {
-  TargetHandle target = 1;
+  agentplane.proto.EnvironmentTarget target = 1;
 }
 
 message SetEnvironmentWakeOnSendRequest {
-  TargetHandle target = 1;
+  agentplane.proto.EnvironmentTarget target = 1;
   bool wake_on_send = 2;
 }
 
 message SetEnvironmentIdleSuspendRequest {
-  TargetHandle target = 1;
+  agentplane.proto.EnvironmentTarget target = 1;
   google.protobuf.Duration idle_suspend_after = 2;
-}
-
-message TargetHandle {
-  string namespace = 1;
-  string name = 2;
-  string uid = 3;
-}
-
-message AccountHandle {
-  string namespace = 1;
-  string name = 2;
-  string uid = 3;
 }
 
 message ListEnvironmentsRequest {
@@ -102,7 +91,7 @@ message WatchEnvironmentsResponse {
     google.protobuf.Empty snapshot_complete = 2;
     EnvironmentDescriptor upsert = 3;
     // Deleted or no longer visible; the UID fences same-name replacement.
-    TargetHandle removed = 4;
+    agentplane.proto.EnvironmentTarget removed = 4;
   }
 }
 
@@ -112,12 +101,12 @@ message EnvironmentChunk {
 
 message GetEnvironmentRequest {
   // All three fields are required. A same-name replacement is not the requested target.
-  TargetHandle target = 1;
+  agentplane.proto.EnvironmentTarget target = 1;
 }
 
 message WatchEnvironmentRequest {
   // All three fields are required. A same-name replacement is not the requested target.
-  TargetHandle target = 1;
+  agentplane.proto.EnvironmentTarget target = 1;
 }
 
 message WatchEnvironmentResponse {
@@ -228,8 +217,8 @@ message KubernetesDiagnostics {
 }
 
 message EnvironmentDescriptor {
-  TargetHandle target = 1;
-  AccountHandle execution_account = 2;
+  agentplane.proto.EnvironmentTarget target = 1;
+  agentplane.proto.ServiceAccountIdentity execution_account = 2;
   reserved 3 to 27;
   reserved
       "readiness", "workspace", "instructions", "configurations", "configurations_availability", "observed_at",
@@ -244,7 +233,7 @@ message EnvironmentDescriptor {
 
 message ResumeEnvironmentRequest {
   // All three fields identify one Sandbox; a replacement is not the requested target.
-  TargetHandle target = 1;
+  agentplane.proto.EnvironmentTarget target = 1;
   // Opaque precondition for the target UID and wake generation observed by Discovery. Required
   // for ordinary callers. A trusted direct Pod-bound operator broker may omit it to express a new
   // operator intent; delegated actor authority never enables that path.
@@ -259,7 +248,7 @@ enum ResumeOutcome {
 }
 
 message ResumeEnvironmentResponse {
-  TargetHandle target = 1;
+  agentplane.proto.EnvironmentTarget target = 1;
   ResumeOutcome outcome = 2;
   // Generation observed after the guarded request, when the target still exists.
   optional int64 wake_generation = 3;

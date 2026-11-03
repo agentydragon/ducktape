@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/view",
     deps = [
         "//agentplane/proto:environment_lifecycle_go_proto",
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/runner_gateway/environments:environment_service_go_proto",
         "//agentplane/sandboxes/api",
         "@io_k8s_api//core/v1:core",

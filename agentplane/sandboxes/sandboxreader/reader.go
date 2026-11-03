@@ -6,7 +6,8 @@ import (
 	"context"
 	"fmt"
 
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -18,24 +19,16 @@ import (
 
 // Identity is the exact Sandbox incarnation named by an authenticated runner or proxy
 // request. Namespace/name alone are not sufficient because Kubernetes permits name reuse.
-type Identity struct {
-	Namespace string
-	Name      string
-	UID       string
-}
+type Identity = identitypb.EnvironmentTarget
 
 // View is a Sandbox as read, with the identity that was checked complete.
 type View struct {
-	Identity Identity
+	Identity *Identity
 	Resource *sandboxapi.Sandbox
 }
 
 // ServiceAccountIdentity is the controller-owned execution account for one Sandbox incarnation.
-type ServiceAccountIdentity struct {
-	Namespace string
-	Name      string
-	UID       string
-}
+type ServiceAccountIdentity = identitypb.ServiceAccountIdentity
 
 // Reader reads the Sandboxes of one namespace.
 type Reader struct {
@@ -64,26 +57,26 @@ func (r *Reader) Get(ctx context.Context, name string) (View, error) {
 		return View{}, status.Error(codes.Unavailable, "Sandbox identity is incomplete")
 	}
 	return View{
-		Identity: Identity{Namespace: resource.Namespace, Name: resource.Name, UID: string(resource.UID)},
+		Identity: &Identity{Namespace: resource.Namespace, Name: resource.Name, Uid: string(resource.UID)},
 		Resource: &resource,
 	}, nil
 }
 
 // Incarnation reads the Sandbox a destination names, only if it is still that incarnation (`NotFound` otherwise)
 // and runs as that owner: a Sandbox runs as the ServiceAccount of its own name.
-func (r *Reader) Incarnation(ctx context.Context, destination *sandboxespb.SandboxDestination) (View, error) {
-	if destination == nil || destination.Sandbox == "" || destination.SandboxUid == "" || destination.Owner == nil ||
+func (r *Reader) Incarnation(ctx context.Context, destination *identitypb.SandboxDestination) (View, error) {
+	if destination == nil || destination.Target == nil || destination.Target.Namespace == "" || destination.Target.Name == "" || destination.Target.Uid == "" || destination.Owner == nil ||
 		destination.Owner.Namespace == "" || destination.Owner.Name == "" {
 		return View{}, status.Error(codes.InvalidArgument, "Sandbox name, UID, and owner are required")
 	}
-	if destination.Owner.Namespace != r.namespace || destination.Owner.Name != destination.Sandbox {
+	if destination.Target.Namespace != destination.Owner.Namespace || destination.Owner.Namespace != r.namespace || destination.Owner.Name != destination.Target.Name {
 		return View{}, status.Error(codes.NotFound, "sandbox incarnation not found")
 	}
-	view, err := r.Get(ctx, destination.Sandbox)
+	view, err := r.Get(ctx, destination.Target.Name)
 	if err != nil {
 		return View{}, err
 	}
-	if view.Identity.UID != destination.SandboxUid {
+	if view.Identity.Uid != destination.Target.Uid {
 		return View{}, status.Error(codes.NotFound, "sandbox incarnation not found")
 	}
 	return view, nil
@@ -92,25 +85,28 @@ func (r *Reader) Incarnation(ctx context.Context, destination *sandboxespb.Sandb
 // ExecutionAccount reads the live controller-owned ServiceAccount for an exact Sandbox
 // incarnation. Reader must be backed by an uncached API reader for this authorization check.
 // Missing or replaced Sandboxes/accounts return found=false; API errors fail closed.
-func (r *Reader) ExecutionAccount(ctx context.Context, sandbox Identity) (ServiceAccountIdentity, bool, error) {
-	if sandbox.Namespace != r.namespace || sandbox.Name == "" || sandbox.UID == "" {
-		return ServiceAccountIdentity{}, false, fmt.Errorf("exact Sandbox identity in namespace %q is required", r.namespace)
+func (r *Reader) ExecutionAccount(ctx context.Context, sandbox *Identity) (*ServiceAccountIdentity, bool, error) {
+	if sandbox == nil {
+		return nil, false, fmt.Errorf("exact Sandbox identity in namespace %q is required", r.namespace)
+	}
+	if sandbox.Namespace != r.namespace || sandbox.Name == "" || sandbox.Uid == "" {
+		return nil, false, fmt.Errorf("exact Sandbox identity in namespace %q is required", r.namespace)
 	}
 	key := types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name}
 	var current sandboxapi.Sandbox
 	if err := r.objects.Get(ctx, key, &current); apierrors.IsNotFound(err) {
-		return ServiceAccountIdentity{}, false, nil
+		return nil, false, nil
 	} else if err != nil {
-		return ServiceAccountIdentity{}, false, fmt.Errorf("read Sandbox execution owner: %w", err)
+		return nil, false, fmt.Errorf("read Sandbox execution owner: %w", err)
 	}
-	if current.Name != sandbox.Name || current.Namespace != sandbox.Namespace || string(current.UID) != sandbox.UID || current.DeletionTimestamp != nil {
-		return ServiceAccountIdentity{}, false, nil
+	if current.Name != sandbox.Name || current.Namespace != sandbox.Namespace || string(current.UID) != sandbox.Uid || current.DeletionTimestamp != nil {
+		return nil, false, nil
 	}
 	var account corev1.ServiceAccount
 	if err := r.objects.Get(ctx, key, &account); apierrors.IsNotFound(err) {
-		return ServiceAccountIdentity{}, false, nil
+		return nil, false, nil
 	} else if err != nil {
-		return ServiceAccountIdentity{}, false, fmt.Errorf("read Sandbox execution ServiceAccount: %w", err)
+		return nil, false, fmt.Errorf("read Sandbox execution ServiceAccount: %w", err)
 	}
 	controlled := false
 	for _, owner := range account.OwnerReferences {
@@ -121,7 +117,7 @@ func (r *Reader) ExecutionAccount(ctx context.Context, sandbox Identity) (Servic
 		}
 	}
 	if !controlled || account.Name != sandbox.Name || account.Namespace != sandbox.Namespace || account.UID == "" || account.DeletionTimestamp != nil {
-		return ServiceAccountIdentity{}, false, nil
+		return nil, false, nil
 	}
-	return ServiceAccountIdentity{Namespace: account.Namespace, Name: account.Name, UID: string(account.UID)}, true, nil
+	return &ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: account.Namespace, Name: account.Name}, Uid: string(account.UID)}, true, nil
 }

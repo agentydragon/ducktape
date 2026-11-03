@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"google.golang.org/grpc"
@@ -122,9 +123,8 @@ func TestUnauthorizedExecutorCallerCannotReadEnvironmentFailureState(t *testing.
 	})
 	stream, err := executorpb.NewExecutorClient(connection).OpenSession(bearing(t, ""), &executorpb.OpenSessionRequest{
 		Scope: &executorpb.ExecutionScope{
-			Destination: &sandboxespb.SandboxDestination{
-				Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
-				Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+			Destination: &identitypb.SandboxDestination{
+				Target: &identitypb.EnvironmentTarget{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)}, Owner: &identitypb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
 			},
 			ExpectedIncarnationUid: string(f.pod.UID), SessionId: "sampler-session",
 		},

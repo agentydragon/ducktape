@@ -30,7 +30,7 @@ go_test(
     race = "on",
     deps = [
         "//agentplane/env/runtime/execution:executor_go_proto",
-        "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/proto:identity_go_proto",
         "@com_github_coder_websocket//:websocket",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",

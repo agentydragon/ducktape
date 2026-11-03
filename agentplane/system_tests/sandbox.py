@@ -18,7 +18,7 @@ from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP
-from agentplane.proto import sandboxes_pb2
+from agentplane.proto import identity_pb2, sandboxes_pb2
 from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.tracing import tracer
@@ -161,12 +161,12 @@ class SandboxNotReadyError(Exception):
 
 
 async def wait_until_running(
-    client: Client, target: environment_service_pb2.TargetHandle
+    client: Client, target: identity_pb2.EnvironmentTarget
 ) -> environment_service_pb2.EnvironmentDescriptor:
     """Wait for the named Sandbox incarnation to report its own Ready condition."""
     if not target.namespace or not target.name or not target.uid:
         raise ValueError("complete EnvironmentService target handle is required")
-    requested_target = environment_service_pb2.TargetHandle()
+    requested_target = identity_pb2.EnvironmentTarget()
     requested_target.CopyFrom(target)
     name, expected_uid = requested_target.name, requested_target.uid
     with tracer.start_as_current_span(
@@ -216,7 +216,7 @@ async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: s
     with tracer.start_as_current_span(
         "system_test.sandbox.cleanup", attributes={"sandbox.name": name, "sandbox.uid": uid}
     ) as cleanup:
-        target = environment_service_pb2.TargetHandle(namespace=cluster.namespace, name=name, uid=uid)
+        target = identity_pb2.EnvironmentTarget(namespace=cluster.namespace, name=name, uid=uid)
         await client.suspend_sandbox(target)
         cleanup.add_event("suspend.accepted")
         # Deletion admission reads effective mode, which the controller publishes after the spec write.

@@ -5,11 +5,11 @@ syntax = "proto3";
 
 package agentplane.action_service;
 
-import "agentplane/proto/sandboxes.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
+import "agentplane/proto/identity.proto";
 
 // Callers are workloads and operators, and the bearer says which. A workload's bearer is a Kubernetes token of a
 // ServiceAccount that carries the `agentplane.allegedly.works/use-action-service` label; a Pod binding is optional.

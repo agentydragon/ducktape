@@ -13,13 +13,14 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -46,7 +47,7 @@ func (a ownedActions) GetActionRequest(_ context.Context, request *actionpb.GetA
 		return nil, status.Error(codes.NotFound, "test-action-not-found")
 	}
 	return &actionpb.GetActionRequestResponse{ActionRequest: &actionpb.ActionRequest{
-		Caller: &sandboxespb.ServiceAccount{Namespace: testNamespace, Name: owner},
+		Caller: &identitypb.ServiceAccount{Namespace: testNamespace, Name: owner},
 	}}, nil
 }
 

@@ -5,17 +5,18 @@ import (
 	"errors"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
-	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 // CentralTarget is deployment-owned. The Dispatcher selects the service for new sessions.
@@ -24,14 +25,11 @@ type CentralTarget struct {
 	TokenFile string `mapstructure:"token_file"`
 }
 
-func openingExecutionPrincipal(identity *ServiceAccountIdentity) *delegationpb.ServiceAccountIdentity {
+func openingExecutionPrincipal(identity *ServiceAccountIdentity) *identitypb.ServiceAccountIdentity {
 	if identity == nil {
 		return nil
 	}
-	return &delegationpb.ServiceAccountIdentity{
-		Account: &sandboxpb.ServiceAccount{Namespace: identity.Account.Namespace, Name: identity.Account.Name},
-		Uid:     identity.UID,
-	}
+	return proto.Clone(identity).(*identitypb.ServiceAccountIdentity)
 }
 
 type openingReader interface {
@@ -95,7 +93,7 @@ func (r *RoutingRunner) withClient(ctx context.Context, call func(context.Contex
 	return call(metadata.NewOutgoingContext(ctx, metadata.MD{}), samplerpb.NewSamplerClient(conn))
 }
 
-func (r *RoutingRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot, id string, spec *sessionpb.SessionSpec, setup *string, executionPrincipal *delegationpb.ServiceAccountIdentity) error {
+func (r *RoutingRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot, id string, spec *sessionpb.SessionSpec, setup *string, executionPrincipal *identitypb.ServiceAccountIdentity) error {
 	if err := ValidateRuntime(spec, setup, r.Target); err != nil {
 		return err
 	}
@@ -109,7 +107,7 @@ func (r *RoutingRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot
 		_, err := client.OpenSession(ctx, &samplerpb.OpenSessionRequest{
 			SessionId: id, Spec: spec, ExpectedIncarnationUid: sandbox.Incarnation, SetupScript: setup,
 			ExecutionPrincipal: executionPrincipal,
-			Executor:           &sandboxpb.SandboxDestination{Owner: &sandboxpb.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}, Sandbox: sandbox.Name, SandboxUid: sandbox.UID},
+			Executor:           &identitypb.SandboxDestination{Owner: &identitypb.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}, Target: &identitypb.EnvironmentTarget{Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: sandbox.UID}},
 		})
 		return err
 	})

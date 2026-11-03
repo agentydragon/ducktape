@@ -22,7 +22,7 @@ from mcp.shared.auth import AuthorizationCodeResult, OAuthClientMetadata
 from pydantic import AnyUrl
 
 from agentplane.mcp_edge import connection_service_pb2
-from agentplane.proto import sandboxes_pb2
+from agentplane.proto import identity_pb2
 from agentplane.system_tests.operator_login import LoginBlockedError, OperatorCredentials, follow_dex_authorization
 
 REDIRECT_URI = "http://127.0.0.1:49152/test-mcp-callback"
@@ -76,7 +76,7 @@ async def _authorize(
     server: str,
     operator: httpx.AsyncClient,
     credentials: OperatorCredentials,
-    account: sandboxes_pb2.ServiceAccount,
+    account: identity_pb2.ServiceAccount,
     browser: httpx.AsyncClient,
     dex_browser: httpx.AsyncClient,
 ) -> AuthorizationCodeResult:
@@ -132,7 +132,7 @@ async def connected_session(
     server: str,
     operator: httpx.AsyncClient,
     credentials: OperatorCredentials,
-    account: sandboxes_pb2.ServiceAccount,
+    account: identity_pb2.ServiceAccount,
     ca_bundle: Path,
 ) -> AsyncIterator[ExternalMCPSession]:
     """Complete a fresh Connection grant, then yield its authenticated SDK Session.

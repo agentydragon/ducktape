@@ -13,6 +13,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"google.golang.org/grpc"
 
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
@@ -655,7 +657,7 @@ func ensureThreadArchivable(ctx context.Context, namespace string, thread thread
 	if summary.SandboxUID == "" {
 		return errors.New("Thread has no Sandbox UID; its Environment cannot be identified")
 	}
-	sandbox, err := inventory.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &environmentpb.TargetHandle{Namespace: namespace, Name: summary.Sandbox, Uid: summary.SandboxUID}})
+	sandbox, err := inventory.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &identitypb.EnvironmentTarget{Namespace: namespace, Name: summary.Sandbox, Uid: summary.SandboxUID}})
 	if status.Code(err) == codes.NotFound {
 		return nil // This exact Environment is gone, so it cannot have a running harness.
 	}

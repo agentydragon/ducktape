@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"go.opentelemetry.io/otel/attribute"
@@ -41,12 +41,12 @@ type SandboxCatalog interface {
 // WakeRequester shares the lifecycle owner's live authorization, guarded mutation and budget
 // path with explicit resume. Dispatcher supplies only the retained effective sender identity.
 type WakeRequester interface {
-	RequestWake(context.Context, lifecycle.Target, lifecycle.ServiceAccount) (*environmentpb.WakeAssessment, error)
+	RequestWake(context.Context, *lifecycle.Target, *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error)
 }
 
 type DeliveryRunner interface {
 	RunnerCommands
-	OpenSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, *delegationpb.ServiceAccountIdentity) error
+	OpenSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, *identitypb.ServiceAccountIdentity) error
 }
 
 type LeaseOwner interface {
@@ -381,22 +381,23 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 			return err
 		}
 		expected := principalOpening.ExecutionPrincipal
-		if !found && expected.UID == "" && head == nil {
+		if !found && expected.GetUid() == "" && head == nil {
 			return w.Store.NoteOpeningWaiting(ctx, principalOpening.SessionID, owner, "execution_identity_pending")
 		}
-		if !found || account.Account != expected.Account || expected.Account != (Account{Namespace: sandbox.Namespace, Name: sandbox.Name}) {
+		if !found || account == nil || accountOfIdentity(account) != accountOfIdentity(expected) ||
+			accountOfIdentity(expected) != (Account{Namespace: sandbox.Namespace, Name: sandbox.Name}) {
 			return w.failExecutionIdentity(ctx, principalOpening, head, owner)
 		}
-		if expected.UID == "" && head == nil {
+		if expected.GetUid() == "" && head == nil {
 			principalOpening, err = w.Store.BindExecutionPrincipal(ctx, principalOpening.SessionID, principalOpening.SandboxUID,
-				expected.Account.Namespace, expected.Account.Name, account.UID)
+				accountOfIdentity(expected).Namespace, accountOfIdentity(expected).Name, account.GetUid())
 			if err != nil {
 				return err
 			}
 			expected = principalOpening.ExecutionPrincipal
 			queuedOpening = principalOpening
 		}
-		if account.UID != expected.UID || expected.UID == "" {
+		if account.GetUid() != expected.GetUid() || expected.GetUid() == "" {
 			return w.failExecutionIdentity(ctx, principalOpening, head, owner)
 		}
 	}
@@ -420,10 +421,10 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 	return nil
 }
 
-func (w *DeliveryWorker) executionAccount(ctx context.Context, sandbox SandboxSnapshot) (ServiceAccountIdentity, bool, error) {
+func (w *DeliveryWorker) executionAccount(ctx context.Context, sandbox SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
 	reader, ok := w.Catalog.(ExecutionAccountReader)
 	if !ok {
-		return ServiceAccountIdentity{}, false, errors.New("Sandbox execution account reader unavailable")
+		return nil, false, errors.New("Sandbox execution account reader unavailable")
 	}
 	return reader.GetExecutionAccount(ctx, sandbox)
 }
@@ -550,7 +551,8 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 			w.backoff(head.SessionID, head.CommandID)
 			return true
 		}
-		if !found || account.Account != opening.ExecutionPrincipal.Account || account.UID != opening.ExecutionPrincipal.UID {
+		if !found || account == nil || accountOfIdentity(account) != accountOfIdentity(opening.ExecutionPrincipal) ||
+			account.GetUid() != opening.ExecutionPrincipal.GetUid() {
 			w.retryStorage(ctx, func() error {
 				_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{DeliveringState}, FailedState, "execution_identity_changed", nil)
 				return err
@@ -607,8 +609,8 @@ func (w *DeliveryWorker) deliverOpening(ctx context.Context, opening *Opening, s
 			w.backoff(opening.SessionID, key)
 			return true
 		}
-		if !found || account.Account != opening.ExecutionPrincipal.Account || opening.ExecutionPrincipal.UID == "" ||
-			account.UID != opening.ExecutionPrincipal.UID {
+		if !found || account == nil || accountOfIdentity(account) != accountOfIdentity(opening.ExecutionPrincipal) ||
+			opening.ExecutionPrincipal.GetUid() == "" || account.GetUid() != opening.ExecutionPrincipal.GetUid() {
 			w.retryStorage(ctx, func() error {
 				_, err := w.Store.SettleOpening(ctx, opening.SessionID, owner, []string{DeliveringState}, FailedState, "execution_identity_changed")
 				return err

@@ -170,7 +170,7 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 			return fence
 		}
 		scope := e.scopeSnapshot()
-		if err := e.store.RebindExecutorIncarnation(ctx, e.owner, scope.GetDestination().GetSandboxUid(), scope.GetExpectedIncarnationUid(), fence.currentIncarnationUID, ""); err != nil {
+		if err := e.store.RebindExecutorIncarnation(ctx, e.owner, scope.GetDestination().GetTarget().GetUid(), scope.GetExpectedIncarnationUid(), fence.currentIncarnationUID, ""); err != nil {
 			return fmt.Errorf("record execution Sandbox incarnation change: %w", err)
 		}
 		scope.ExpectedIncarnationUid = fence.currentIncarnationUID
@@ -192,9 +192,9 @@ func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error
 	handshakeCtx, cancelHandshake := context.WithTimeout(ctx, e.initializeTimeout)
 	defer cancelHandshake()
 	intentRequest := map[string]any{"method": executorMethodInitialize, "resume_session_id": resume}
-	if scope.GetDestination().GetSandboxUid() != "" {
+	if scope.GetDestination().GetTarget().GetUid() != "" {
 		intentRequest["execution_scope"] = map[string]any{
-			"sandbox_uid": scope.GetDestination().GetSandboxUid(), "expected_incarnation_uid": scope.GetExpectedIncarnationUid(),
+			"sandbox_uid": scope.GetDestination().GetTarget().GetUid(), "expected_incarnation_uid": scope.GetExpectedIncarnationUid(),
 		}
 	}
 	if rebind, ok := incarnationRebindFromContext(ctx); ok {
@@ -322,7 +322,7 @@ func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error
 			return fmt.Errorf("stop old execution session after verified incarnation change: %w", err)
 		}
 		if err := e.store.RebindExecutorIncarnationWithSession(ctx, e.owner,
-			scope.GetDestination().GetSandboxUid(), rebind.previousUID, scope.GetExpectedIncarnationUid(),
+			scope.GetDestination().GetTarget().GetUid(), rebind.previousUID, scope.GetExpectedIncarnationUid(),
 			opened.ExecutionSessionId, shellName); err != nil {
 			cancel()
 			return fmt.Errorf("record verified execution Sandbox incarnation change: %w", err)
@@ -465,7 +465,7 @@ func (e *Executor) ensureSessionLocked(ctx context.Context, method executionMeth
 	if expectedUID, explicit := expectedIncarnationUIDFromContext(ctx); explicit {
 		currentScope := e.scopeSnapshot()
 		if expectedUID != currentScope.GetExpectedIncarnationUid() {
-			if currentScope.GetExpectedIncarnationUid() == "" || currentScope.GetDestination().GetSandboxUid() == "" {
+			if currentScope.GetExpectedIncarnationUid() == "" || currentScope.GetDestination().GetTarget().GetUid() == "" {
 				return &toolError{"cannot fence execution because the retained scope has no incarnation or Sandbox UID"}
 			}
 			candidateScope := proto.Clone(currentScope).(*executorpb.ExecutionScope)

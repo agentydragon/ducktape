@@ -3,8 +3,8 @@ syntax = "proto3";
 
 package agentplane.egress;
 
-import "agentplane/proto/sandboxes.proto";
 import "google/protobuf/timestamp.proto";
+import "agentplane/proto/identity.proto";
 
 service EgressAdmin {
   // The decisions the proxy retains for the filter, oldest first, bounded by its history window.

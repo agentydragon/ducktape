@@ -18,6 +18,7 @@ const (
 	ConditionQuiesced                    = "Quiesced"
 
 	RunnerProxySandboxMetadataKey               = "x-agentplane-sandbox"
+	RunnerProxySandboxNamespaceMetadataKey      = "x-agentplane-sandbox-namespace"
 	RunnerProxySandboxUIDMetadataKey            = "x-agentplane-sandbox-uid"
 	RunnerProxySandboxOwnerNamespaceMetadataKey = "x-agentplane-sandbox-owner-namespace"
 	RunnerProxySandboxOwnerNameMetadataKey      = "x-agentplane-sandbox-owner-name"

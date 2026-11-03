@@ -8,9 +8,10 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
-	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -90,7 +91,7 @@ func TestAReceiptCarriesItsPolicyDecisionAndItsExecutionsOutcome(t *testing.T) {
 		Id: submitted.ID.String(), IdempotencyKey: "test-voted",
 		Action:    &action_servicepb.ActionIdentity{Group: "test-group", Name: "test-action"},
 		Arguments: structOf(t, map[string]any{"test": []any{"argument", 1}}), Title: "test title", Description: &description,
-		Caller:    &sandboxes.ServiceAccount{Namespace: testNamespace, Name: "test-caller"},
+		Caller:    &identitypb.ServiceAccount{Namespace: testNamespace, Name: "test-caller"},
 		CallerUid: proto.String("test-uid-test-caller"),
 		State:     action_servicepb.ActionState_ACTION_STATE_FAILED, Version: stored.Version,
 		CreatedAt: timestamppb.New(stored.CreatedAt), UpdatedAt: timestamppb.New(stored.UpdatedAt),
@@ -148,7 +149,7 @@ func TestAnOperatorsDecisionAndACallersCancellationNameWhoActed(t *testing.T) {
 		{
 			Sequence: 2, State: action_servicepb.ActionState_ACTION_STATE_CANCELLED, At: timestamppb.New(stored[1].At),
 			Actor: &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{
-				Caller: &sandboxes.ServiceAccount{Namespace: testNamespace, Name: "test-caller"},
+				Caller: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "test-caller"},
 			}, CallerUid: proto.String("test-uid-test-caller")},
 		},
 	}

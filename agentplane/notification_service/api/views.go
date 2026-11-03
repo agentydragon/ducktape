@@ -9,6 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -337,7 +338,7 @@ func eventIdentityView(event model.EventIdentity) (*notificationspb.EventIdentit
 	case model.MessageEvent:
 		return &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_Message{Message: &notificationspb.MessageEvent{
 			MessageId: event.MessageID.String(),
-			Sender:    &notificationspb.ServiceAccount{Namespace: event.Sender.Namespace, Name: event.Sender.Name},
+			Sender:    &identitypb.ServiceAccount{Namespace: event.Sender.Namespace, Name: event.Sender.Name},
 		}}}, nil
 	default:
 		return nil, fmt.Errorf("stored event identity %T is unknown", event)

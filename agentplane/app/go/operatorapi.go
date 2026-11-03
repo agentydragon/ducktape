@@ -12,9 +12,10 @@ import (
 	"strings"
 	"sync"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/danielgtaylor/huma/v2"
 )
 
@@ -118,7 +119,7 @@ func (routes *operatorRoutes) readCallerGrants(
 	if routes.policies == nil {
 		return nil, huma.Error503ServiceUnavailable("Policy access is unavailable")
 	}
-	subject := &sandboxespb.ServiceAccount{Namespace: namespace, Name: name}
+	subject := &identitypb.ServiceAccount{Namespace: namespace, Name: name}
 	var bindings []policyaccess.BindingView
 	var actionPolicy any
 	var bindingsErr error
@@ -146,7 +147,7 @@ func (routes *operatorRoutes) actionPolicyFrame(
 	ctx context.Context,
 	caller auth.Caller,
 	session *auth.RequestSession,
-	subject *sandboxespb.ServiceAccount,
+	subject *identitypb.ServiceAccount,
 ) any {
 	reader, err := policyaccess.NewActionPolicyReader(routes.federator, routes.actions, routes.actionServiceURL)
 	if err != nil {

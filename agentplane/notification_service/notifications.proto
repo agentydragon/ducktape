@@ -4,6 +4,7 @@ syntax = "proto3";
 
 package agentplane.notification_service;
 
+import "agentplane/proto/identity.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
@@ -574,12 +575,7 @@ message MessageEvent {
   string message_id = 1;
   // Who sent it, as the service authenticated the caller: a Sandbox's own ServiceAccount, or the one an OAuth
   // client acts as. Never taken from the message.
-  ServiceAccount sender = 2;
-}
-
-message ServiceAccount {
-  string namespace = 1;
-  string name = 2;
+  agentplane.proto.ServiceAccount sender = 2;
 }
 
 // A notice: the message sent to the Session's runner naming the entries that await the agent.

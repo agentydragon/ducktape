@@ -17,7 +17,7 @@ from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags, Trace
 
 from agentplane.app.testing import client as client_module
 from agentplane.app.testing.client import Client, SessionStreamError
-from agentplane.proto import event_log_pb2, sandboxes_pb2, session_pb2
+from agentplane.proto import event_log_pb2, identity_pb2, sandboxes_pb2, session_pb2
 from agentplane.runner_gateway.environments import environment_service_pb2
 
 # A server answers one connection per call: `(after, writer)`. Raw sockets, because what is under
@@ -459,7 +459,7 @@ async def test_get_environment_uses_the_exact_generated_route_and_uid_query() ->
         )
 
     async with _app(descriptor, requests=observed) as (client, _):
-        target = environment_service_pb2.TargetHandle(namespace="test-ns", name="box", uid="target-uid")
+        target = identity_pb2.EnvironmentTarget(namespace="test-ns", name="box", uid="target-uid")
         environment = await client.get_environment(target)
 
     assert environment.target == target
@@ -483,7 +483,7 @@ async def test_create_sandbox_captures_the_exact_complete_ack_without_retrying()
     async with _app(created, requests=observed) as (client, _):
         target = await client.create_sandbox(sandboxes_pb2.CreateSandboxRequest(name="box", template="test-template"))
 
-    assert target == environment_service_pb2.TargetHandle(namespace="test-ns", name="box", uid=str(uid))
+    assert target == identity_pb2.EnvironmentTarget(namespace="test-ns", name="box", uid=str(uid))
     assert client.opened_sandbox_uids == {uid}
     assert len(observed) == 1
     assert "POST /upstream/environments/v1/environments HTTP/1.1" in observed[0]
@@ -503,7 +503,7 @@ async def test_sandbox_mutations_carry_the_expected_uid() -> None:
     observed: list[str] = []
     uid = str(uuid4())
 
-    target = environment_service_pb2.TargetHandle(namespace="test-ns", name="box", uid=uid)
+    target = identity_pb2.EnvironmentTarget(namespace="test-ns", name="box", uid=uid)
 
     async def accepted(_after: int, writer: asyncio.StreamWriter) -> None:
         await _respond(writer, "200 OK", b"{}", "application/json")

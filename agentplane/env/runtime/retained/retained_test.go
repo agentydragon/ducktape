@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
-	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
-	sandboxes "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
@@ -27,7 +27,7 @@ func TestSessionRecordsUseCOSIState(t *testing.T) {
 	budget := int64(32768)
 	native := "native-session"
 	wantScript := []byte("printf 'exact \\t'\n")
-	record := &Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", InitialModel: "route/model", TotalContextBudgetTokens: &budget, SetupScript: bytes.Clone(wantScript), EventSourceId: "source", NativeSessionId: &native, ExecutionPrincipal: &delegationpb.ServiceAccountIdentity{Account: &sandboxes.ServiceAccount{Namespace: "ns", Name: "account"}, Uid: "uid"}}
+	record := &Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", InitialModel: "route/model", TotalContextBudgetTokens: &budget, SetupScript: bytes.Clone(wantScript), EventSourceId: "source", NativeSessionId: &native, ExecutionPrincipal: &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "ns", Name: "account"}, Uid: "uid"}}
 	if err := store.Write("session-1", record); err != nil {
 		t.Fatal(err)
 	}

@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/federation"
 	"github.com/agentydragon/ducktape/agentplane/app/go/liveinventory"
@@ -24,7 +26,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/google/uuid"
@@ -61,7 +62,7 @@ type streamLiveInventory interface {
 
 type streamSandboxInventory interface {
 	GetEnvironment(context.Context, *environmentpb.GetEnvironmentRequest, ...grpc.CallOption) (*environmentpb.EnvironmentDescriptor, error)
-	Watch(context.Context, *environmentpb.TargetHandle) <-chan sandboxes.EnvironmentObservation
+	Watch(context.Context, *identitypb.EnvironmentTarget) <-chan sandboxes.EnvironmentObservation
 }
 
 type streamHistoryStore interface {
@@ -198,7 +199,7 @@ type sandboxDetailKey struct {
 // sandboxDetail is the viewer-independent part of a /live/sandboxes/{name} frame.
 type sandboxDetail struct {
 	sandboxUID       *string
-	subject          *sandboxespb.ServiceAccount
+	subject          *identitypb.ServiceAccount
 	bindings         []policyaccess.BindingView
 	policyGeneration uint64
 	watch            watchHealthView
@@ -221,7 +222,7 @@ func (r *streamingRoutes) liveSandbox(w http.ResponseWriter, request *http.Reque
 	caller, _ := auth.CallerFromContext(request.Context())
 	session, _ := auth.SessionFromContext(request.Context())
 	api := operatorRoutes{federator: r.deps.Federator, actions: r.deps.ActionPolicy, actionServiceURL: r.deps.ActionServiceURL}
-	var cachedSubject *sandboxespb.ServiceAccount
+	var cachedSubject *identitypb.ServiceAccount
 	var cachedGeneration uint64
 	var cachedPolicy any
 	hasCachedPolicy := false
@@ -233,7 +234,7 @@ func (r *streamingRoutes) liveSandbox(w http.ResponseWriter, request *http.Reque
 			} else {
 				actionPolicy = api.actionPolicyFrame(ctx, caller, session, detail.subject)
 				if _, unavailable := actionPolicy.(*policyaccess.ActionPolicyUnavailable); !unavailable {
-					cachedSubject = proto.Clone(detail.subject).(*sandboxespb.ServiceAccount)
+					cachedSubject = proto.Clone(detail.subject).(*identitypb.ServiceAccount)
 					cachedGeneration = detail.policyGeneration
 					cachedPolicy = actionPolicy
 					hasCachedPolicy = true
@@ -253,7 +254,7 @@ func (r *streamingRoutes) liveSandbox(w http.ResponseWriter, request *http.Reque
 func (r *streamingRoutes) produceSandboxDetail(ctx context.Context, key sandboxDetailKey, publish func(sandboxDetail)) error {
 	liveChanges, stopLive := r.deps.Live.Subscribe()
 	defer stopLive()
-	target := &environmentpb.TargetHandle{Namespace: r.deps.SandboxNamespace, Name: key.name, Uid: key.uid}
+	target := &identitypb.EnvironmentTarget{Namespace: r.deps.SandboxNamespace, Name: key.name, Uid: key.uid}
 	observations := r.deps.Sandboxes.Watch(ctx, target)
 	var descriptor *environmentpb.EnvironmentDescriptor
 	for {
@@ -288,7 +289,7 @@ func (r *streamingRoutes) produceSandboxDetail(ctx context.Context, key sandboxD
 		uid := descriptor.GetTarget().GetUid()
 		detail.sandboxUID = &uid
 		if account := descriptor.GetExecutionAccount(); account != nil {
-			detail.subject = &sandboxespb.ServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}
+			detail.subject = &identitypb.ServiceAccount{Namespace: account.GetAccount().GetNamespace(), Name: account.GetAccount().GetName()}
 			detail.bindings, err = policyaccess.BindingsFromSnapshot(snapshot.PolicyBindings, snapshot.PolicySets, snapshot.EgressCredentials, detail.subject)
 			if err != nil {
 				return err
@@ -313,7 +314,7 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 	changes, unsubscribe := r.deps.Live.Subscribe()
 	defer unsubscribe()
 	name := request.PathValue("name")
-	target := &environmentpb.TargetHandle{Namespace: r.deps.SandboxNamespace, Name: name, Uid: uid}
+	target := &identitypb.EnvironmentTarget{Namespace: r.deps.SandboxNamespace, Name: name, Uid: uid}
 	observations := r.deps.Sandboxes.Watch(ctx, target)
 	var descriptor *environmentpb.EnvironmentDescriptor
 	if err := startSSE(w); err != nil {
@@ -371,7 +372,7 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 			}
 		}
 		watchCtx, stopWatch := context.WithCancel(ctx)
-		stream, err := r.deps.Egress.WatchDecisions(watchCtx, decisionsRequest(&sandboxespb.ServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}))
+		stream, err := r.deps.Egress.WatchDecisions(watchCtx, decisionsRequest(&identitypb.ServiceAccount{Namespace: account.GetAccount().GetNamespace(), Name: account.GetAccount().GetName()}))
 		if err != nil {
 			stopWatch()
 			if writeSSE(w, "snapshot", liveDecisionsFrame{Watching: false, Decisions: decisionsUnavailable{Detail: grpcFailure(err)}}, nil) != nil {
@@ -739,7 +740,7 @@ func (r *streamingRoutes) sandboxNotifications(w http.ResponseWriter, request *h
 		return
 	}
 	defer cancel()
-	target := &environmentpb.TargetHandle{Namespace: r.deps.SandboxNamespace, Name: request.PathValue("name"), Uid: uid}
+	target := &identitypb.EnvironmentTarget{Namespace: r.deps.SandboxNamespace, Name: request.PathValue("name"), Uid: uid}
 	sandbox, err := r.deps.Sandboxes.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: target})
 	if err != nil {
 		_ = sandboxHTTPErrorToRaw(w, err)
@@ -876,7 +877,7 @@ func (r *streamingRoutes) console(w http.ResponseWriter, request *http.Request) 
 		return
 	}
 	defer cancel()
-	target := &environmentpb.TargetHandle{Namespace: r.deps.SandboxNamespace, Name: request.PathValue("name"), Uid: uid}
+	target := &identitypb.EnvironmentTarget{Namespace: r.deps.SandboxNamespace, Name: request.PathValue("name"), Uid: uid}
 	sandbox, err := r.deps.Sandboxes.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: target})
 	if err != nil {
 		_ = sandboxHTTPErrorToRaw(w, err)
@@ -1191,7 +1192,7 @@ func (r *streamingRoutes) threadEvents(w http.ResponseWriter, request *http.Requ
 	}
 }
 
-func decisionsRequest(subject *sandboxespb.ServiceAccount) *egress_adminpb.WatchDecisionsRequest {
+func decisionsRequest(subject *identitypb.ServiceAccount) *egress_adminpb.WatchDecisionsRequest {
 	return &egress_adminpb.WatchDecisionsRequest{Filter: &egress_adminpb.DecisionFilter{Scope: &egress_adminpb.DecisionFilter_Subject{Subject: subject}}}
 }
 

@@ -1,7 +1,6 @@
 import { Badge, Button, SegmentedControl, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
-import type { TargetHandle } from "../../../runner_gateway/environments/environment_service_pb";
 
 import type { Decision } from "./client";
 import { liveEgressDecisionsUrl, type DecisionsSnapshot } from "./live";
@@ -10,6 +9,7 @@ import { type DecisionGroup, groupDecisions } from "./decision_groups";
 import { followStream } from "../live_stream";
 import { type StreamConnection } from "../stream_reader";
 import { useStreamStatus } from "../stream_status";
+import type { EnvironmentTarget } from "../../../proto/identity_pb";
 
 /** The groups whose requests are listed, comma-separated; a group key has no comma in it. */
 const GROUPS_PARAM = "decision_groups";
@@ -198,7 +198,7 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
 }
 
 /** The sandbox's decisions as the proxy reports them: a snapshot per change, none while it is quiet. */
-function useEgressDecisions(target: TargetHandle): { snapshot: DecisionsSnapshot | null } {
+function useEgressDecisions(target: EnvironmentTarget): { snapshot: DecisionsSnapshot | null } {
   const { namespace, name } = target;
   const url = liveEgressDecisionsUrl(target);
   const [snapshot, setSnapshot] = useState<DecisionsSnapshot | null>(null);
@@ -219,7 +219,7 @@ function useEgressDecisions(target: TargetHandle): { snapshot: DecisionsSnapshot
 }
 
 /** What recently left the sandbox, or was refused, as the egress proxy reports it. */
-export function EgressLog({ target }: { target: TargetHandle }): JSX.Element {
+export function EgressLog({ target }: { target: EnvironmentTarget }): JSX.Element {
   const decisions = useEgressDecisions(target);
   return (
     <Stack gap="xs">

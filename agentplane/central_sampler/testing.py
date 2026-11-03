@@ -18,7 +18,7 @@ from sqlalchemy.engine import make_url
 from agentplane.central_sampler import sampler_pb2, sampler_pb2_grpc
 from agentplane.central_sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig, Settings
 from agentplane.native.testing.model_endpoint import ModelEndpoint, ModelExchange
-from agentplane.proto import sandboxes_pb2, session_pb2
+from agentplane.proto import identity_pb2, session_pb2
 from agentplane.testing.go_process import go_process
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import listen_tcp
@@ -162,10 +162,9 @@ def open_request(cwd: Path) -> sampler_pb2.OpenSessionRequest:
     return sampler_pb2.OpenSessionRequest(
         session_id="079bd706-77b3-4b71-8c7e-605a7e19324c",
         spec=session_pb2.SessionSpec(harness=session_pb2.HARNESS_CENTRAL_SAMPLER, cwd=str(cwd), model="test-model"),
-        executor=sandboxes_pb2.SandboxDestination(
-            owner=sandboxes_pb2.ServiceAccount(namespace="test", name="executor"),
-            sandbox="test-sandbox",
-            sandbox_uid="test-sandbox-uid",
+        executor=identity_pb2.SandboxDestination(
+            owner=identity_pb2.ServiceAccount(namespace="test", name="executor"),
+            target=identity_pb2.EnvironmentTarget(namespace="test", name="test-sandbox", uid="test-sandbox-uid"),
         ),
         expected_incarnation_uid="test-pod-uid",
     )

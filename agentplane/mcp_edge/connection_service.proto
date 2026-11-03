@@ -5,10 +5,10 @@ syntax = "proto3";
 package agentplane.mcp_edge;
 
 import "agentplane/action_service/action_service.proto";
-import "agentplane/proto/sandboxes.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
+import "agentplane/proto/identity.proto";
 
 // The caller is the integration app acting for an operator, with the operator's OIDC bearer as for
 // `agentplane.action_service.OperatorActionService`. A Connection's active grant lets its OAuth client call the MCP

@@ -3,8 +3,8 @@ package session
 import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
-	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/protobuf/proto"
 )
@@ -27,7 +27,7 @@ type Observation struct {
 	failure            *uint64
 	processID          string
 	processState       sessionpb.ProcessState
-	executionPrincipal *delegationpb.ServiceAccountIdentity
+	executionPrincipal *identitypb.ServiceAccountIdentity
 	pid                *int64
 	shared             bool
 	ready              bool
@@ -59,7 +59,7 @@ func (s *Session) Observe() Observation {
 		executionPrincipal: nil,
 	}
 	if s.record.ExecutionPrincipal != nil {
-		result.executionPrincipal = proto.Clone(s.record.ExecutionPrincipal).(*delegationpb.ServiceAccountIdentity)
+		result.executionPrincipal = proto.Clone(s.record.ExecutionPrincipal).(*identitypb.ServiceAccountIdentity)
 	}
 	if live {
 		pid := int64(s.process.PID())

@@ -163,7 +163,7 @@ proto_library(
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/proto:event_log_proto",
-        "//agentplane/proto:sandboxes_proto",
+        "//agentplane/proto:identity_proto",
         "//agentplane/proto:session_proto",
     ],
 )
@@ -219,7 +219,7 @@ go_proto_library(
     visibility = ["//visibility:public"],
     deps = [
         "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
     ],
 )

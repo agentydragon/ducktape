@@ -13,7 +13,7 @@ py_library(
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
         "//agentplane:subjects",
-        "//agentplane/proto:sandboxes_pb2",
+        "//agentplane/proto:identity_pb2",
         "//agentplane/sandboxes:launch",
         "//agentplane/testing:kubernetes_apiserver",
         "//agentplane/testing:tls",

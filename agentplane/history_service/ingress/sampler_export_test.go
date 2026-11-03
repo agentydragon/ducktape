@@ -12,13 +12,14 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	centralsampler "github.com/agentydragon/ducktape/agentplane/central_sampler"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
@@ -211,10 +212,8 @@ func (f samplerExportFixture) openSession(t *testing.T) *centralsampler.Session 
 			Model:   "test-model-initial",
 			Cwd:     "/test-workspace",
 		},
-		Executor: &sandboxespb.SandboxDestination{
-			Sandbox:    "test-execution-sandbox",
-			SandboxUid: uuid.NewString(),
-			Owner:      &sandboxespb.ServiceAccount{Namespace: testNamespace, Name: "test-execution-sandbox"},
+		Executor: &identitypb.SandboxDestination{
+			Target: &identitypb.EnvironmentTarget{Namespace: testNamespace, Name: "test-execution-sandbox", Uid: uuid.NewString()}, Owner: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "test-execution-sandbox"},
 		},
 		ExpectedIncarnationUid: uuid.NewString(),
 	}, samplerOwnerUID, protocol.APIStyleResponses, &platformInstructions)

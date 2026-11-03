@@ -11,10 +11,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/policy"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/view"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
@@ -40,7 +41,7 @@ type Access struct {
 	objects          client.Client
 	reader           *sandboxreader.Reader
 	defaultPolicySet map[string]struct{}
-	caller           *sandboxespb.ServiceAccount
+	caller           *identitypb.ServiceAccount
 }
 
 // New creates access over one Sandbox namespace and caller identity.
@@ -48,7 +49,7 @@ func New(
 	namespace string,
 	objects client.Client,
 	defaultPolicySets []string,
-	caller *sandboxespb.ServiceAccount,
+	caller *identitypb.ServiceAccount,
 ) (*Access, error) {
 	if namespace == "" || objects == nil || caller == nil || caller.Namespace == "" || caller.Name == "" {
 		return nil, errors.New("Sandbox namespace, Kubernetes client, and caller ServiceAccount are required")
@@ -63,7 +64,7 @@ func New(
 	}
 	return &Access{
 		namespace: namespace, objects: objects, reader: reader,
-		defaultPolicySet: defaults, caller: &sandboxespb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name},
+		defaultPolicySet: defaults, caller: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name},
 	}, nil
 }
 
@@ -83,7 +84,7 @@ func (a *Access) ListTemplates(ctx context.Context) ([]string, error) {
 
 // Create validates and creates a running Sandbox, applying the process defaults and recording an
 // immutable caller/request intent so an identical retry is idempotent.
-func (a *Access) Create(ctx context.Context, request *sandboxespb.CreateSandboxRequest) (*environmentpb.TargetHandle, error) {
+func (a *Access) Create(ctx context.Context, request *sandboxespb.CreateSandboxRequest) (*identitypb.EnvironmentTarget, error) {
 	if err := validateCreate(request); err != nil {
 		return nil, err
 	}
@@ -94,7 +95,7 @@ func (a *Access) Create(ctx context.Context, request *sandboxespb.CreateSandboxR
 	if existing, err := a.retry(ctx, request.GetName(), intent); err != nil {
 		return nil, err
 	} else if existing != nil {
-		return &environmentpb.TargetHandle{Namespace: existing.Namespace, Name: existing.Name, Uid: string(existing.UID)}, nil
+		return &identitypb.EnvironmentTarget{Namespace: existing.Namespace, Name: existing.Name, Uid: string(existing.UID)}, nil
 	}
 
 	policySets := make(map[string]struct{}, len(a.defaultPolicySet)+len(request.GetPolicySets()))
@@ -120,7 +121,7 @@ func (a *Access) Create(ctx context.Context, request *sandboxespb.CreateSandboxR
 		}
 		resource = existing
 	}
-	return &environmentpb.TargetHandle{Namespace: resource.Namespace, Name: resource.Name, Uid: string(resource.UID)}, nil
+	return &identitypb.EnvironmentTarget{Namespace: resource.Namespace, Name: resource.Name, Uid: string(resource.UID)}, nil
 }
 
 // Suspend requests that the exact current Sandbox stop. It does not wait for controller status.
@@ -427,7 +428,7 @@ func isAlphaNumeric(value byte) bool {
 	return value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value >= '0' && value <= '9'
 }
 
-func createIntent(request *sandboxespb.CreateSandboxRequest, caller *sandboxespb.ServiceAccount) (string, error) {
+func createIntent(request *sandboxespb.CreateSandboxRequest, caller *identitypb.ServiceAccount) (string, error) {
 	requestJSON, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(request)
 	if err != nil {
 		return "", err

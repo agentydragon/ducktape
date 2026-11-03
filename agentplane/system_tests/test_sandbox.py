@@ -13,6 +13,7 @@ import pytest_bazel
 from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
+from agentplane.proto import identity_pb2
 from agentplane.runner_gateway.environments import environment_service_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -25,8 +26,10 @@ def _environment(
     name: str, uid: str, *, ready: bool, operating_mode: str = "OPERATING_MODE_RUNNING", namespace: str = "test"
 ) -> environment_service_pb2.EnvironmentDescriptor:
     return environment_service_pb2.EnvironmentDescriptor(
-        target=environment_service_pb2.TargetHandle(namespace=namespace, name=name, uid=uid),
-        execution_account=environment_service_pb2.AccountHandle(namespace="test", name="runner"),
+        target=identity_pb2.EnvironmentTarget(namespace=namespace, name=name, uid=uid),
+        execution_account=identity_pb2.ServiceAccountIdentity(
+            account=identity_pb2.ServiceAccount(namespace="test", name="runner")
+        ),
         observed_state=environment_service_pb2.EnvironmentObservedState(
             operating_mode=operating_mode,
             readiness=environment_service_pb2.Readiness(
@@ -44,11 +47,11 @@ def _snapshot(
     return list(environments)
 
 
-def _target(name: str, uid: str) -> environment_service_pb2.TargetHandle:
-    return environment_service_pb2.TargetHandle(namespace="test", name=name, uid=uid)
+def _target(name: str, uid: str) -> identity_pb2.EnvironmentTarget:
+    return identity_pb2.EnvironmentTarget(namespace="test", name=name, uid=uid)
 
 
-def _create_targets(client: Client, names: tuple[str, ...]) -> dict[str, environment_service_pb2.TargetHandle]:
+def _create_targets(client: Client, names: tuple[str, ...]) -> dict[str, identity_pb2.EnvironmentTarget]:
     created = {name: _target(name, str(uuid4())) for name in names}
     cast(AsyncMock, client.create_sandbox).side_effect = list(created.values())
     return created
@@ -118,7 +121,7 @@ async def test_readiness_rejects_a_replaced_sandbox_incarnation() -> None:
     client = create_autospec(Client, instance=True)
     expected_uid = str(uuid4())
     replacement = _environment("readiness-test", str(uuid4()), ready=True)
-    expected = environment_service_pb2.TargetHandle(namespace="test", name="readiness-test", uid=expected_uid)
+    expected = identity_pb2.EnvironmentTarget(namespace="test", name="readiness-test", uid=expected_uid)
 
     async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
         yield _snapshot(replacement)
@@ -184,7 +187,7 @@ async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluste
                 client.delete_sandbox.assert_not_awaited()
                 yield [_environment(name, uid, ready=False, operating_mode=mode, namespace=namespace)]
             client.delete_sandbox.assert_awaited_once_with(
-                environment_service_pb2.TargetHandle(namespace=cluster.namespace, name="owned-test-sandbox", uid=uid)
+                identity_pb2.EnvironmentTarget(namespace=cluster.namespace, name="owned-test-sandbox", uid=uid)
             )
             deletion_observed = True
             yield []
@@ -200,11 +203,11 @@ async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluste
 
     assert client.mock_calls == [
         call.suspend_sandbox(
-            environment_service_pb2.TargetHandle(namespace=cluster.namespace, name="owned-test-sandbox", uid=uid)
+            identity_pb2.EnvironmentTarget(namespace=cluster.namespace, name="owned-test-sandbox", uid=uid)
         ),
         call.sandbox_snapshots(),
         call.delete_sandbox(
-            environment_service_pb2.TargetHandle(namespace=cluster.namespace, name="owned-test-sandbox", uid=uid)
+            identity_pb2.EnvironmentTarget(namespace=cluster.namespace, name="owned-test-sandbox", uid=uid)
         ),
     ]
     assert closed
@@ -283,7 +286,7 @@ async def test_scope_releases_owned_sandboxes_concurrently(cluster: Cluster, mon
     views = _create_targets(client, ("owned-0", "owned-1"))
 
     async def ready(
-        _client: Client, target: environment_service_pb2.TargetHandle
+        _client: Client, target: identity_pb2.EnvironmentTarget
     ) -> environment_service_pb2.EnvironmentDescriptor:
         assert target == views[target.name]
         return _environment(target.name, target.uid, ready=True)
@@ -328,7 +331,7 @@ async def test_scope_drains_other_owners_when_one_cleanup_fails(
     views = _create_targets(client, ("owned-0", "owned-1"))
 
     async def ready(
-        _client: Client, target: environment_service_pb2.TargetHandle
+        _client: Client, target: identity_pb2.EnvironmentTarget
     ) -> environment_service_pb2.EnvironmentDescriptor:
         assert target == views[target.name]
         return _environment(target.name, target.uid, ready=True)
@@ -377,7 +380,7 @@ async def test_scope_preserves_multiple_cleanup_failures(cluster: Cluster, monke
     views = _create_targets(client, ("owned-0", "owned-1"))
 
     async def ready(
-        _client: Client, target: environment_service_pb2.TargetHandle
+        _client: Client, target: identity_pb2.EnvironmentTarget
     ) -> environment_service_pb2.EnvironmentDescriptor:
         assert target == views[target.name]
         return _environment(target.name, target.uid, ready=True)
@@ -431,7 +434,7 @@ async def test_scope_cleans_failed_boot_and_preserves_its_error(
     cleanup: list[tuple[str, object]] = []
 
     async def not_ready(
-        _client: Client, target: environment_service_pb2.TargetHandle
+        _client: Client, target: identity_pb2.EnvironmentTarget
     ) -> environment_service_pb2.EnvironmentDescriptor:
         assert target == created
         raise RuntimeError("boot did not become ready")
@@ -458,7 +461,7 @@ async def test_scope_body_cancellation_waits_for_cleanup_and_keeps_failures(
     views = _create_targets(client, ("owned-0", "owned-1"))
 
     async def ready(
-        _client: Client, target: environment_service_pb2.TargetHandle
+        _client: Client, target: identity_pb2.EnvironmentTarget
     ) -> environment_service_pb2.EnvironmentDescriptor:
         assert target == views[target.name]
         return _environment(target.name, target.uid, ready=True)
@@ -520,7 +523,7 @@ async def test_scope_cancellation_during_cleanup_waits_for_every_owner(
     views = _create_targets(client, ("owned-0", "owned-1"))
 
     async def ready(
-        _client: Client, target: environment_service_pb2.TargetHandle
+        _client: Client, target: identity_pb2.EnvironmentTarget
     ) -> environment_service_pb2.EnvironmentDescriptor:
         assert target == views[target.name]
         return _environment(target.name, target.uid, ready=True)

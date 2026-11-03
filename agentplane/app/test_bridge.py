@@ -289,13 +289,13 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
         base_url=app.url, timeout=60, cookies=app.cookies, headers={"Origin": app.url}
     ) as http:
         thread_id = await _open_thread_with_seed(
-            http, model, spec, sandbox_runner.destination.sandbox_uid, seed_prompt=seed_prompt, seed_answer=seed_answer
+            http, model, spec, sandbox_runner.destination.target.uid, seed_prompt=seed_prompt, seed_answer=seed_answer
         )
         accepted = await http.post(
             f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
             json={
                 "sandbox": SANDBOX,
-                "sandboxUid": sandbox_runner.destination.sandbox_uid,
+                "sandboxUid": sandbox_runner.destination.target.uid,
                 "commandId": "streaming-input",
                 "text": "Start a long answer",
             },
@@ -315,7 +315,7 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
             f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
             json={
                 "sandbox": SANDBOX,
-                "sandboxUid": sandbox_runner.destination.sandbox_uid,
+                "sandboxUid": sandbox_runner.destination.target.uid,
                 "commandId": "stream-recovery-input",
                 "text": "Continue after recovery",
             },
@@ -363,7 +363,7 @@ async def _interrupt_and_recover(
             f"/upstream/dispatcher/v1/sessions/{thread_id}:interruptTurn",
             json={
                 "sandbox": SANDBOX,
-                "sandboxUid": sandbox_runner.destination.sandbox_uid,
+                "sandboxUid": sandbox_runner.destination.target.uid,
                 "commandId": "interrupt-for-recovery",
                 "turnId": turn_id,
             },
@@ -458,13 +458,13 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
         base_url=app.url, timeout=60, cookies=app.cookies, headers={"Origin": app.url}
     ) as http:
         thread_id = await _open_thread_with_seed(
-            http, model, spec, sandbox_runner.destination.sandbox_uid, seed_prompt=seed_prompt, seed_answer=seed_answer
+            http, model, spec, sandbox_runner.destination.target.uid, seed_prompt=seed_prompt, seed_answer=seed_answer
         )
         accepted = await http.post(
             f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
             json={
                 "sandbox": SANDBOX,
-                "sandboxUid": sandbox_runner.destination.sandbox_uid,
+                "sandboxUid": sandbox_runner.destination.target.uid,
                 "commandId": "tool-input",
                 "text": "Run the blocking side effect once",
             },
@@ -500,7 +500,7 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
             f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
             json={
                 "sandbox": SANDBOX,
-                "sandboxUid": sandbox_runner.destination.sandbox_uid,
+                "sandboxUid": sandbox_runner.destination.target.uid,
                 "commandId": "tool-recovery-input",
                 "text": recovery_prompt,
             },
@@ -566,13 +566,13 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
         base_url=app.url, timeout=60, cookies=app.cookies, headers={"Origin": app.url}
     ) as http:
         thread_id = await _open_thread_with_seed(
-            http, model, spec, sandbox_runner.destination.sandbox_uid, seed_prompt=seed_prompt, seed_answer=seed_answer
+            http, model, spec, sandbox_runner.destination.target.uid, seed_prompt=seed_prompt, seed_answer=seed_answer
         )
         accepted = await http.post(
             f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
             json={
                 "sandbox": SANDBOX,
-                "sandboxUid": sandbox_runner.destination.sandbox_uid,
+                "sandboxUid": sandbox_runner.destination.target.uid,
                 "commandId": "completed-tool-input",
                 "text": "Run one completed tool",
             },
@@ -622,7 +622,7 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
             f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
             json={
                 "sandbox": SANDBOX,
-                "sandboxUid": sandbox_runner.destination.sandbox_uid,
+                "sandboxUid": sandbox_runner.destination.target.uid,
                 "commandId": "completed-tool-recovery-input",
                 "text": recovery_prompt,
             },
@@ -785,7 +785,7 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
             f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
             json={
                 "sandbox": SANDBOX,
-                "sandboxUid": sandbox_runner.destination.sandbox_uid,
+                "sandboxUid": sandbox_runner.destination.target.uid,
                 "commandId": "seed-before-archive",
                 "text": "SEED",
             },
@@ -816,7 +816,7 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
             f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
             json={
                 "sandbox": SANDBOX,
-                "sandboxUid": sandbox_runner.destination.sandbox_uid,
+                "sandboxUid": sandbox_runner.destination.target.uid,
                 "commandId": "after-archive-lag",
                 "text": "CONTINUE",
             },

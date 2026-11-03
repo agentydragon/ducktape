@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/projection"
 	"github.com/agentydragon/ducktape/agentplane/history_service/reads"
@@ -21,7 +23,6 @@ import (
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -193,8 +194,8 @@ func (s testServer) recordFor(t *testing.T, principal storage.ExecutionPrincipal
 func delegated(t *testing.T, token string, caller auth.Account, uid string) context.Context {
 	t.Helper()
 	envelope := &delegationpb.Delegation{
-		Caller: &delegationpb.ServiceAccountIdentity{
-			Account: &sandboxpb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}, Uid: uid,
+		Caller: &identitypb.ServiceAccountIdentity{
+			Account: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}, Uid: uid,
 		},
 		ActionRequestId: uuid.NewString(), ActionExecutionId: uuid.NewString(),
 	}

@@ -26,6 +26,7 @@ go_library(
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/notification_service:notifications_go_proto",
         "//agentplane/proto:environment_lifecycle_go_proto",
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/runner_gateway/environments:environment_service_go_proto",

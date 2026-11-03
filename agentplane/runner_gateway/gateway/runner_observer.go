@@ -119,7 +119,7 @@ func (g *Gateway) reconcileObserver(ctx context.Context, name string, active map
 		select {
 		case <-current.done:
 		default:
-			if wanted != nil && current.destination == *wanted {
+			if wanted != nil && current.destination.equal(*wanted) {
 				return nil
 			}
 			current.cancel()
@@ -214,7 +214,7 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 		return err
 	}
 	watch, err := environmentruntimepb.NewEnvironmentRuntimeClient(conn).WatchState(ctx, &environmentruntimepb.WatchStateRequest{
-		SandboxUid: destination.identity.UID, IncarnationUid: destination.podUID, ConnectionEpoch: epoch,
+		SandboxUid: destination.identity.Uid, IncarnationUid: destination.podUID, ConnectionEpoch: epoch,
 	})
 	if err != nil {
 		return err
@@ -222,7 +222,7 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 	span := trace.SpanFromContext(watch.Context())
 	span.SetAttributes(
 		attribute.String("sandbox.name", destination.identity.Name),
-		attribute.String("sandbox.uid", destination.identity.UID),
+		attribute.String("sandbox.uid", destination.identity.Uid),
 	)
 	responses := make(chan observedState, 1)
 	go func() {
@@ -264,7 +264,7 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 			if err := g.config.RunnerSecurity.AuthorizePeer(watch.Context(), destination.peerURI); err != nil {
 				return status.Error(codes.Unauthenticated, "runner certificate is no longer valid")
 			}
-			if response.GetEnvironmentRuntimeBootId() == "" || response.GetSandboxUid() != destination.identity.UID || response.GetIncarnationUid() != destination.podUID || response.GetConnectionEpoch() != epoch || response.GetFacts() == nil {
+			if response.GetEnvironmentRuntimeBootId() == "" || response.GetSandboxUid() != destination.identity.Uid || response.GetIncarnationUid() != destination.podUID || response.GetConnectionEpoch() != epoch || response.GetFacts() == nil {
 				return status.Error(codes.InvalidArgument, "runner state has invalid identity or facts")
 			}
 			if connection != nil && connection.bootID != response.EnvironmentRuntimeBootId {
@@ -314,7 +314,7 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 					bootID: response.EnvironmentRuntimeBootId, ended: make(chan struct{}), closeDirect: cancel,
 				}
 				connection.direct = &fencedRunnerConn{conn: conn, connection: connection, identity: metadata.Pairs(
-					"agentplane-sandbox-uid", destination.identity.UID,
+					"agentplane-sandbox-uid", destination.identity.Uid,
 					"agentplane-incarnation-uid", destination.podUID,
 					"agentplane-environment-runtime-boot-id", response.EnvironmentRuntimeBootId,
 					"agentplane-connection-epoch", strconv.FormatUint(epoch, 10),
@@ -348,11 +348,11 @@ func quiesceStageName(stage sandboxlease.QuiesceStage) (string, bool) {
 	}
 }
 
-func recordRunnerQuiesceStage(ctx context.Context, spanName string, identity sandboxreader.Identity, stage string) {
+func recordRunnerQuiesceStage(ctx context.Context, spanName string, identity *sandboxreader.Identity, stage string) {
 	_, span := observability.Start(ctx, spanName)
 	span.SetAttributes(
 		attribute.String("sandbox.name", identity.Name),
-		attribute.String("sandbox.uid", identity.UID),
+		attribute.String("sandbox.uid", identity.Uid),
 		attribute.String("agentplane.environment_runtime.quiesce.stage", stage),
 	)
 	span.End()

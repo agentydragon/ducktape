@@ -142,13 +142,13 @@ func sameAdmission(a, b Admission) bool {
 	switch first := a.(type) {
 	case DirectAdmission:
 		second, ok := b.(DirectAdmission)
-		if !ok || first.Caller != second.Caller || (first.Pod == nil) != (second.Pod == nil) {
+		if !ok || !sameServiceAccountIdentity(first.Caller, second.Caller) || (first.Pod == nil) != (second.Pod == nil) {
 			return false
 		}
 		return first.Pod == nil || *first.Pod == *second.Pod
 	case DelegatedAdmission:
 		second, ok := b.(DelegatedAdmission)
-		return ok && first.Actor == second.Actor && first.EffectiveCaller == second.EffectiveCaller &&
+		return ok && first.Actor == second.Actor && sameServiceAccountIdentity(first.EffectiveCaller, second.EffectiveCaller) &&
 			proto.Equal(first.Provenance, second.Provenance)
 	default:
 		return false
@@ -255,7 +255,7 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 	if err != nil {
 		return nil, err
 	}
-	caller := ServiceAccountPrincipal{Account: principal.Account, ServiceAccountUID: principal.ServiceAccountUID}
+	caller := serviceAccountPrincipal(principal.Account, principal.ServiceAccountUID)
 	callerContext := withAdmission(ctx, DirectAdmission{Caller: caller, Pod: &principal})
 	return WithCaller(callerContext, principal), nil
 }

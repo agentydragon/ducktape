@@ -16,6 +16,7 @@ from agentplane.app.sandbox_models import NewSandboxDefaults
 from agentplane.app.testing.models import ThreadView
 from agentplane.app.testing.replication_process import AppProcess, spawn_go_app
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.proto import identity_pb2
 from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from util.net import listen_tcp
@@ -89,7 +90,7 @@ async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(
     assert response.status_code == 200, response.text
     assert response.json()["name"] == "created"
     assert response.json()["uid"]
-    target = ParseDict(response.json(), environment_service_pb2.TargetHandle())
+    target = ParseDict(response.json(), identity_pb2.EnvironmentTarget())
     route = f"/upstream/environments/v1/environments/{target.namespace}/{target.name}"
     params = {"target.uid": target.uid}
     created_response = await http.get(route, params=params)

@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
@@ -20,7 +22,6 @@ import (
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc"
@@ -149,9 +150,8 @@ func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.S
 		callContext("pod-uid-1", first.GetEnvironmentRuntimeBootId(), 1),
 		&executorpb.OpenSessionRequest{
 			Scope: &executorpb.ExecutionScope{
-				Destination: &sandboxespb.SandboxDestination{
-					Sandbox: "sandbox", SandboxUid: "sandbox-uid",
-					Owner: &sandboxespb.ServiceAccount{Namespace: "test", Name: "sandbox"},
+				Destination: &identitypb.SandboxDestination{
+					Target: &identitypb.EnvironmentTarget{Namespace: "test", Name: "sandbox", Uid: "sandbox-uid"}, Owner: &identitypb.ServiceAccount{Namespace: "test", Name: "sandbox"},
 				},
 				ExpectedIncarnationUid: "pod-uid-2", SessionId: "sampler-session",
 			},
@@ -366,9 +366,8 @@ func TestForwardRunnerRejectsUnconfiguredExecutionSession(t *testing.T) {
 	executorClient := executorpb.NewExecutorClient(conn)
 	refused, err := executorClient.OpenSession(callContext, &executorpb.OpenSessionRequest{
 		Scope: &executorpb.ExecutionScope{
-			Destination: &sandboxespb.SandboxDestination{
-				Sandbox: "sandbox", SandboxUid: "sandbox-uid",
-				Owner: &sandboxespb.ServiceAccount{Namespace: "test", Name: "sandbox"},
+			Destination: &identitypb.SandboxDestination{
+				Target: &identitypb.EnvironmentTarget{Namespace: "test", Name: "sandbox", Uid: "sandbox-uid"}, Owner: &identitypb.ServiceAccount{Namespace: "test", Name: "sandbox"},
 			},
 			ExpectedIncarnationUid: "pod-uid", SessionId: "session-1",
 		},

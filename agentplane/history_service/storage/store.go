@@ -11,11 +11,11 @@ import (
 	"math"
 	"slices"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
-	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -565,16 +565,16 @@ func (s *Store) RecordFeedState(ctx context.Context, sessionID uuid.UUID, feed *
 	})
 }
 
-func wireExecutionPrincipal(principal *ExecutionPrincipal) *delegationpb.ServiceAccountIdentity {
+func wireExecutionPrincipal(principal *ExecutionPrincipal) *identitypb.ServiceAccountIdentity {
 	if principal == nil {
 		return nil
 	}
-	return &delegationpb.ServiceAccountIdentity{
-		Account: &sandboxpb.ServiceAccount{Namespace: principal.Namespace, Name: principal.Name}, Uid: principal.UID,
+	return &identitypb.ServiceAccountIdentity{
+		Account: &identitypb.ServiceAccount{Namespace: principal.Namespace, Name: principal.Name}, Uid: principal.UID,
 	}
 }
 
-func matchesExecutionPrincipal(identity *delegationpb.ServiceAccountIdentity, principal ExecutionPrincipal) bool {
+func matchesExecutionPrincipal(identity *identitypb.ServiceAccountIdentity, principal ExecutionPrincipal) bool {
 	return identity.GetAccount().GetNamespace() == principal.Namespace &&
 		identity.GetAccount().GetName() == principal.Name && identity.GetUid() == principal.UID
 }

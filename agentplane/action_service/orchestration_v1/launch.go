@@ -9,6 +9,8 @@ import (
 	"slices"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -54,7 +56,7 @@ func (e *Executor) launch(ctx context.Context, caller store.ServiceAccount, args
 		Name: args.Name, Template: args.Template, PolicySets: args.PolicySets, InboxTags: args.InboxTags,
 		Bootstrap: args.Bootstrap, WakeOnSend: args.WakeOnSend,
 		LaunchOrigin: &sandboxespb.SandboxLaunchOrigin{
-			Caller:      &sandboxespb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name},
+			Caller:      &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name},
 			ActionGroup: e.group, LauncherGrants: args.LauncherGrants,
 		},
 	}

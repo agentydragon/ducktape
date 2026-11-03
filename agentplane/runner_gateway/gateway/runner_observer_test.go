@@ -7,15 +7,17 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
@@ -151,9 +153,8 @@ func testRunnerObserver(t *testing.T, mode environment_runtime_transport.Securit
 	defer stopExec()
 	exec, err := executorpb.NewExecutorClient(publicConn).OpenSession(execCtx, &executorpb.OpenSessionRequest{
 		Scope: &executorpb.ExecutionScope{
-			Destination: &sandboxespb.SandboxDestination{
-				Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
-				Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+			Destination: &identitypb.SandboxDestination{
+				Target: &identitypb.EnvironmentTarget{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)}, Owner: &identitypb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
 			},
 			ExpectedIncarnationUid: string(f.pod.UID), SessionId: "test-runner-exec-session",
 		},
@@ -177,9 +178,8 @@ func testRunnerObserver(t *testing.T, mode environment_runtime_transport.Securit
 	}
 	started, err := executorpb.NewExecutorClient(publicConn).StartProcess(execCtx, &executorpb.StartProcessRequest{
 		Scope: &executorpb.ExecutionScope{
-			Destination: &sandboxespb.SandboxDestination{
-				Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
-				Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+			Destination: &identitypb.SandboxDestination{
+				Target: &identitypb.EnvironmentTarget{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)}, Owner: &identitypb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
 			},
 			ExpectedIncarnationUid: string(f.pod.UID), SessionId: "test-runner-exec-session",
 		},
@@ -216,15 +216,14 @@ func TestExecutionConnectionOnlySignalsVerifiedIncarnationChanges(t *testing.T) 
 	g := f.newGateway(t, "test-runner-gateway", "192.0.2.30", executorAccount)
 	server := &executorServer{gateway: g}
 	scope := &executorpb.ExecutionScope{
-		Destination: &sandboxespb.SandboxDestination{
-			Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
-			Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+		Destination: &identitypb.SandboxDestination{
+			Target: &identitypb.EnvironmentTarget{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)}, Owner: &identitypb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
 		},
 		ExpectedIncarnationUid: "previous-incarnation", SessionId: "sampler-session",
 	}
 	setConnection := func(podUID string) {
 		g.connections.accept(&runnerConnection{
-			identity: sandboxreader.Identity{Namespace: f.namespace, Name: f.sandbox.Name, UID: string(f.sandbox.UID)},
+			identity: &sandboxreader.Identity{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)},
 			podUID:   podUID, ended: make(chan struct{}),
 		})
 	}
@@ -262,9 +261,8 @@ func TestExecutionConnectionOnlySignalsVerifiedIncarnationChanges(t *testing.T) 
 	}{
 		{name: "invalid scope", scope: &executorpb.ExecutionScope{Destination: scope.Destination, SessionId: scope.SessionId}, code: codes.InvalidArgument},
 		{name: "foreign Sandbox", scope: &executorpb.ExecutionScope{
-			Destination: &sandboxespb.SandboxDestination{
-				Sandbox: f.sandbox.Name, SandboxUid: "another-sandbox",
-				Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+			Destination: &identitypb.SandboxDestination{
+				Target: &identitypb.EnvironmentTarget{Namespace: f.namespace, Name: f.sandbox.Name, Uid: "another-sandbox"}, Owner: &identitypb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
 			},
 			ExpectedIncarnationUid: scope.ExpectedIncarnationUid, SessionId: scope.SessionId,
 		}, code: codes.NotFound},
@@ -357,9 +355,8 @@ func TestExecutionConnectionReportsVerifiedEnvironmentFailures(t *testing.T) {
 			g := f.newGateway(t, "test-runner-gateway", "192.0.2.30", executorAccount)
 			server := &executorServer{gateway: g}
 			scope := &executorpb.ExecutionScope{
-				Destination: &sandboxespb.SandboxDestination{
-					Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
-					Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+				Destination: &identitypb.SandboxDestination{
+					Target: &identitypb.EnvironmentTarget{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)}, Owner: &identitypb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
 				},
 				ExpectedIncarnationUid: string(f.pod.UID), SessionId: "sampler-session",
 			}
@@ -537,6 +534,37 @@ func TestRunnerObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing.
 	stale := &fencedRunnerConn{conn: second.direct.conn, identity: first.direct.identity, connection: first}
 	if _, err := environmentruntimepb.NewEnvironmentRuntimeClient(stale).GetStatus(ctx, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("old boot remained usable after reconnect: %v", err)
+	}
+}
+
+func TestRunnerObserverKeepsUnchangedDestinationOnSandboxUpdate(t *testing.T) {
+	f := newSandboxFixture(t)
+	g := f.newGateway(t, "test-stable-gateway", "192.0.2.30")
+	destination, err := g.runnerDestination(t.Context(), f.sandbox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A status update causes another read of the same identity into a new protobuf value.
+	updated := f.sandbox.DeepCopy()
+	updated.Status.OperatingMode = sandboxapi.OperatingModeSuspended
+	updated.Status.StopStage = sandboxapi.StopStageQuiescing
+	if err := f.objects.Status().Update(t.Context(), updated); err != nil {
+		t.Fatal(err)
+	}
+	oldDone := make(chan struct{})
+	cancelled := false
+	active := map[string]runnerObserver{
+		f.sandbox.Name: {destination: destination, cancel: func() { cancelled = true }, done: oldDone},
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	var workers sync.WaitGroup
+	defer workers.Wait()
+	defer cancel()
+	if err := g.reconcileObserver(ctx, f.sandbox.Name, active, &workers); err != nil {
+		t.Fatal(err)
+	}
+	if cancelled || active[f.sandbox.Name].done != oldDone {
+		t.Fatal("an unchanged destination replaced the live runner observer")
 	}
 }
 

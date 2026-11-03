@@ -64,7 +64,7 @@ func TestStaleDestinationRetiresTheInboxAfterThePersistedRecheck(t *testing.T) {
 					h.sandboxes.fail(status.Error(codes.NotFound, "sandbox not found"))
 				} else {
 					replacement := matchingSandbox()
-					replacement.Identity.UID = "replacement-uid"
+					replacement.Identity.Uid = "replacement-uid"
 					h.sandboxes.serve(replacement)
 				}
 

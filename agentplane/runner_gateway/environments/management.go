@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log/slog"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/policy"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
@@ -36,24 +38,25 @@ func (s *Service) managementAccess(ctx context.Context, origin *sandboxespb.Sand
 	if !ok || direct.Pod == nil || !direct.Pod.IsPodBound() {
 		return nil, status.Error(codes.PermissionDenied, "environment management requires a direct Pod-bound caller")
 	}
+	account := serviceAccountReference(identity)
 	if origin == nil {
-		if _, ok := s.managers[identity.Account]; !ok {
+		if _, ok := s.managers[account]; !ok {
 			return nil, status.Error(codes.PermissionDenied, "caller cannot manage environments")
 		}
 	} else {
-		if _, ok := s.launchers[identity.Account]; !ok {
+		if _, ok := s.launchers[account]; !ok {
 			return nil, status.Error(codes.PermissionDenied, "caller cannot launch environments on behalf of an Action caller")
 		}
 		if origin.GetCaller().GetNamespace() == "" || origin.GetCaller().GetName() == "" || origin.GetActionGroup() == "" {
 			return nil, status.Error(codes.InvalidArgument, "launch origin requires caller and Action group")
 		}
 	}
-	return management.New(s.namespace, s.objects, s.defaultPolicySets, &sandboxespb.ServiceAccount{
-		Namespace: identity.Account.Namespace, Name: identity.Account.Name,
+	return management.New(s.namespace, s.objects, s.defaultPolicySets, &identitypb.ServiceAccount{
+		Namespace: account.Namespace, Name: account.Name,
 	})
 }
 
-func (s *Service) mutationTarget(target *environmentpb.TargetHandle) (string, string, error) {
+func (s *Service) mutationTarget(target *identitypb.EnvironmentTarget) (string, string, error) {
 	if target == nil || target.GetNamespace() == "" || target.GetName() == "" || target.GetUid() == "" {
 		return "", "", status.Error(codes.InvalidArgument, "complete target handle is required")
 	}
@@ -75,7 +78,7 @@ func (s *Service) ListEnvironmentTemplates(ctx context.Context, _ *emptypb.Empty
 	return &environmentpb.ListEnvironmentTemplatesResponse{Names: names}, nil
 }
 
-func (s *Service) CreateEnvironment(ctx context.Context, request *sandboxespb.CreateSandboxRequest) (*environmentpb.TargetHandle, error) {
+func (s *Service) CreateEnvironment(ctx context.Context, request *sandboxespb.CreateSandboxRequest) (*identitypb.EnvironmentTarget, error) {
 	access, err := s.managementAccess(ctx, request.GetLaunchOrigin())
 	if err != nil {
 		return nil, err

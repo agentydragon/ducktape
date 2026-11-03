@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 type executorServer struct {
@@ -40,18 +41,18 @@ func (s *executorServer) executionConnection(
 	if view.incarnation == nil {
 		return nil, nil, nil, status.Error(codes.FailedPrecondition, "Sandbox incarnation changed")
 	}
-	connection, connectionErr := g.connections.holder(view.identity.UID)
+	connection, connectionErr := g.connections.holder(view.identity.Uid)
 	if scope.GetExpectedIncarnationUid() != view.incarnation.UID {
-		if connectionErr == nil && connection.identity == view.identity && connection.podUID == view.incarnation.UID &&
-			view.identity.UID != "" && view.incarnation.UID != "" {
-			return nil, nil, nil, incarnationChanged(view.identity.UID, view.incarnation.UID)
+		if connectionErr == nil && proto.Equal(connection.identity, view.identity) && connection.podUID == view.incarnation.UID &&
+			view.identity.Uid != "" && view.incarnation.UID != "" {
+			return nil, nil, nil, incarnationChanged(view.identity.Uid, view.incarnation.UID)
 		}
 		return nil, nil, nil, status.Error(codes.FailedPrecondition, "Sandbox incarnation changed")
 	}
 	if connectionErr != nil {
 		return nil, nil, nil, executionEnvironmentStatus(environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE))
 	}
-	if connection.identity != view.identity || connection.podUID != scope.GetExpectedIncarnationUid() {
+	if !proto.Equal(connection.identity, view.identity) || connection.podUID != scope.GetExpectedIncarnationUid() {
 		return nil, nil, nil, executionEnvironmentStatus(environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE))
 	}
 	callCtx, stop := context.WithCancel(ctx)

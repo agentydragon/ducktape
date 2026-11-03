@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 	_ "github.com/lib/pq"
@@ -30,7 +32,6 @@ import (
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/migrations"
-	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	workloadauth "github.com/agentydragon/ducktape/agentplane/workload_auth/auth" // its name, auth, is go-sdk's
 )
@@ -483,7 +484,7 @@ const consentPrefix = testConsentURL + "/#/connection-enrollments/"
 // newConnection allows a new Connection bound to the account.
 func newConnection(account workloadauth.Account) *pb.EnrollmentAllow {
 	return &pb.EnrollmentAllow{
-		ServiceAccount: &sandboxes.ServiceAccount{Namespace: account.Namespace, Name: account.Name},
+		ServiceAccount: &identitypb.ServiceAccount{Namespace: account.Namespace, Name: account.Name},
 		Connection: &pb.EnrollmentAllow_NewConnection{
 			NewConnection: &pb.NewConnection{DisplayName: "test-connection"},
 		},

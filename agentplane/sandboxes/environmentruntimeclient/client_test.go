@@ -86,6 +86,7 @@ func TestServerSeesTheCurrentTokenAndSandboxIdentity(t *testing.T) {
 		}
 		for key, want := range map[string]string{
 			sandboxapi.RunnerProxySandboxMetadataKey:               "test-sandbox",
+			sandboxapi.RunnerProxySandboxNamespaceMetadataKey:      "test-namespace",
 			sandboxapi.RunnerProxySandboxUIDMetadataKey:            "test-sandbox-uid",
 			sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey: "test-namespace",
 			sandboxapi.RunnerProxySandboxOwnerNameMetadataKey:      "test-sandbox",

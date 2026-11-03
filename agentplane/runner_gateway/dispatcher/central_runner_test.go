@@ -11,8 +11,8 @@ import (
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
-	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -31,7 +31,7 @@ func (s openingFixture) GetOpening(context.Context, string) (*Opening, error) {
 
 type nativeFixture struct{ calls int }
 
-func (r *nativeFixture) OpenSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, *delegationpb.ServiceAccountIdentity) error {
+func (r *nativeFixture) OpenSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, *identitypb.ServiceAccountIdentity) error {
 	r.calls++
 	return nil
 }
@@ -82,7 +82,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 	if err := runner.OpenSession(context.Background(), sandbox, "session", spec, &setup, nil); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.opened.GetExpectedIncarnationUid() != "pod-uid" || fixture.opened.GetExecutor().GetSandboxUid() != "sandbox-uid" || fixture.opened.GetSetupScript() != setup || fixture.token != "Bearer projected" {
+	if fixture.opened.GetExpectedIncarnationUid() != "pod-uid" || fixture.opened.GetExecutor().GetTarget().GetUid() != "sandbox-uid" || fixture.opened.GetSetupScript() != setup || fixture.token != "Bearer projected" {
 		t.Fatalf("unexpected opening: %v token %q", fixture.opened, fixture.token)
 	}
 	admission, err := runner.Deliver(context.Background(), sandbox, "session", &commandpb.Command{CommandId: "interrupt", Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "turn"}}})

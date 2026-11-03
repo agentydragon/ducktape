@@ -2,7 +2,7 @@ syntax = "proto3";
 // The published wire identity is stable across source/package relocation.
 package agentplane.executor;
 
-import "agentplane/proto/sandboxes.proto";
+import "agentplane/proto/identity.proto";
 
 // The Gateway authorizes and resolves this scope; the execution owner checks its current incarnation.
 message ExecutionScope {

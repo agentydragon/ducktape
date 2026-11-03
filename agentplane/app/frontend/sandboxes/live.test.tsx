@@ -1,10 +1,7 @@
 // @vitest-environment happy-dom
 import { create, toJson } from "@bufbuild/protobuf";
-import {
-  EnvironmentDescriptorSchema,
-  TargetHandleSchema,
-  type TargetHandle,
-} from "../../../runner_gateway/environments/environment_service_pb";
+import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
+import { EnvironmentDescriptorSchema } from "../../../runner_gateway/environments/environment_service_pb";
 import { testSandbox } from "../testing/sandbox";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -119,7 +116,7 @@ it("retains the previous inventory until a reconnect snapshot is complete", asyn
   await act(async () => root.unmount());
 });
 
-function Detail({ target }: { target: TargetHandle | undefined }) {
+function Detail({ target }: { target: EnvironmentTarget | undefined }) {
   const { environment } = useEnvironmentWatch(target);
   return <span>{environment?.target?.uid ?? "waiting"}</span>;
 }
@@ -136,7 +133,7 @@ it("does not connect or repeatedly report a disabled environment watch", async (
 
 it("watches exact target identity and clears the old descriptor before observing a replacement", async () => {
   const { served } = stubWatchFetch();
-  const target = create(TargetHandleSchema, { namespace: "test-namespace", name: "test-box", uid: "old" });
+  const target = create(EnvironmentTargetSchema, { namespace: "test-namespace", name: "test-box", uid: "old" });
   const container = document.createElement("div");
   const root = createRoot(container);
   await act(async () => root.render(<Detail target={target} />));
@@ -148,7 +145,7 @@ it("watches exact target identity and clears the old descriptor before observing
     });
   });
   expect(container.textContent).toBe("old");
-  const replacement = create(TargetHandleSchema, { ...target, uid: "new" });
+  const replacement = create(EnvironmentTargetSchema, { ...target, uid: "new" });
   await act(async () => root.render(<Detail target={replacement} />));
   expect(served[0]?.signal?.aborted).toBe(true);
   expect(container.textContent).toBe("waiting");
@@ -164,7 +161,7 @@ it("watches exact target identity and clears the old descriptor before observing
 
 it("rejects a generated detail frame for a different target", async () => {
   const { served } = stubWatchFetch();
-  const target = create(TargetHandleSchema, { namespace: "test-namespace", name: "test-box", uid: "expected" });
+  const target = create(EnvironmentTargetSchema, { namespace: "test-namespace", name: "test-box", uid: "expected" });
   const container = document.createElement("div");
   const root = createRoot(container);
   await act(async () => root.render(<Detail target={target} />));

@@ -12,9 +12,10 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -121,7 +122,7 @@ func bearing(token string) context.Context {
 
 func ofSubject(namespace, name string) *egressadminpb.DecisionFilter {
 	return &egressadminpb.DecisionFilter{Scope: &egressadminpb.DecisionFilter_Subject{
-		Subject: &sandboxespb.ServiceAccount{Namespace: namespace, Name: name},
+		Subject: &identitypb.ServiceAccount{Namespace: namespace, Name: name},
 	}}
 }
 

@@ -28,7 +28,7 @@ import (
 
 // Runner lists the Sessions a Sandbox's runner holds.
 type Runner interface {
-	ListSessions(ctx context.Context, sandbox sandboxreader.Identity) ([]string, error)
+	ListSessions(ctx context.Context, sandbox *sandboxreader.Identity) ([]string, error)
 }
 
 // Actions reads the next page of an Action request's events after a sequence, if the account submitted the

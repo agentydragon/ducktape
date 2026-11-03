@@ -17,7 +17,7 @@ from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP
 from agentplane.env.runtime.harness import Harness
 from agentplane.native.codex.testing import responses_sse
-from agentplane.proto import event_log_pb2, event_pb2, session_pb2
+from agentplane.proto import event_log_pb2, event_pb2, identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.system_tests.agent import (
@@ -93,7 +93,7 @@ def _assert_prefix(before: list[event_log_pb2.EventEntry], after: list[event_log
     ], "archived events, cursors or origins changed across suspension"
 
 
-async def _wait_until_suspended_without_pod(client: Client, target: environment_service_pb2.TargetHandle) -> None:
+async def _wait_until_suspended_without_pod(client: Client, target: identity_pb2.EnvironmentTarget) -> None:
     """Wait for the old Pod to disappear before the same Sandbox is resumed."""
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(POD_TRANSITION_SECONDS),
@@ -112,7 +112,7 @@ async def _wait_until_suspended_without_pod(client: Client, target: environment_
 
 
 async def _wait_until_idle_suspended_without_pod(
-    client: Client, target: environment_service_pb2.TargetHandle
+    client: Client, target: identity_pb2.EnvironmentTarget
 ) -> environment_service_pb2.EnvironmentDescriptor:
     """Wait for the controller's idle suspension, distinguishing it from an operator stop."""
     async for attempt in AsyncRetrying(
@@ -180,7 +180,7 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
     old_pod = view.kubernetes_diagnostics.pod
     target = view.target
     account = view.execution_account
-    assert account.namespace == target.namespace
+    assert account.account.namespace == target.namespace
 
     # The app API intentionally does not expose lifecycle policy edits. Set the opt-in only on this
     # test-owned Sandbox, fencing the JSON Patch by the immutable Sandbox UID.
@@ -238,13 +238,21 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
     assert suspended.target.uid == target.uid
 
     service_account = json.loads(
-        await cluster.kubectl("get", "serviceaccounts", account.name, "-n", account.namespace, "-o", "json")
+        await cluster.kubectl(
+            "get", "serviceaccounts", account.account.name, "-n", account.account.namespace, "-o", "json"
+        )
     )
     account_meta = service_account["metadata"]
-    assert account_meta["namespace"] == account.namespace
+    assert account_meta["namespace"] == account.account.namespace
     assert account_meta["uid"] == account.uid
     token = await cluster.kubectl(
-        "create", "token", account.name, "-n", account.namespace, f"--audience={TOKEN_AUDIENCE}", "--duration=600s"
+        "create",
+        "token",
+        account.account.name,
+        "-n",
+        account.account.namespace,
+        f"--audience={TOKEN_AUDIENCE}",
+        "--duration=600s",
     )
 
     async with forward(cluster) as forwarded_target:

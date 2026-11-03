@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
@@ -49,7 +51,7 @@ func TestMain(m *testing.M) {
 type watchFixture struct {
 	objects      client.WithWatch
 	rpc          environmentpb.EnvironmentServiceClient
-	target       *environmentpb.TargetHandle
+	target       *identitypb.EnvironmentTarget
 	ctx          context.Context
 	metadataRead <-chan struct{}
 	readerCtx    context.Context
@@ -95,7 +97,7 @@ func TestWatchEnvironmentDoesNotReadForUnrelatedPods(t *testing.T) {
 	ctx, cancel := context.WithCancel(bearing(t, matchingToken))
 	defer cancel()
 	stream, err := rpc.WatchEnvironment(ctx, &environmentpb.WatchEnvironmentRequest{
-		Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -201,7 +203,7 @@ func newWatchFixture(t *testing.T) watchFixture {
 		reviews:   reviews,
 		readerCtx: metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken),
 		objects:   objects, rpc: environmentpb.NewEnvironmentServiceClient(connection),
-		target:       &environmentpb.TargetHandle{Namespace: namespace, Name: sandboxName, Uid: string(sandbox.UID)},
+		target:       &identitypb.EnvironmentTarget{Namespace: namespace, Name: sandboxName, Uid: string(sandbox.UID)},
 		ctx:          metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token),
 		metadataRead: metadataRead,
 	}
@@ -391,7 +393,7 @@ func TestWatchEnvironmentDelegationUsesTheEffectiveCaller(t *testing.T) {
 	ctx, cancel := context.WithTimeout(delegatedBearing(t, actionsToken, effective, executionUID), 5*time.Second)
 	defer cancel()
 	stream, err := rpc.WatchEnvironment(ctx, &environmentpb.WatchEnvironmentRequest{
-		Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -411,7 +413,7 @@ func TestWatchEnvironmentDelegationUsesTheEffectiveCaller(t *testing.T) {
 			ctx, cancel := context.WithTimeout(delegatedBearing(t, denied.token, effective, denied.uid), 5*time.Second)
 			defer cancel()
 			refused, err := rpc.WatchEnvironment(ctx, &environmentpb.WatchEnvironmentRequest{
-				Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+				Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
 			})
 			if err == nil {
 				_, err = refused.Recv()
@@ -441,7 +443,7 @@ func TestWatchEnvironmentClosesAllSourcesOnWatchLoss(t *testing.T) {
 			ctx, cancel := context.WithTimeout(bearing(t, matchingToken), 5*time.Second)
 			defer cancel()
 			stream, err := rpc.WatchEnvironment(ctx, &environmentpb.WatchEnvironmentRequest{
-				Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+				Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
 			})
 			if err != nil {
 				t.Fatal(err)

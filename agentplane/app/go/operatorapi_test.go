@@ -12,13 +12,14 @@ import (
 	"strings"
 	"testing"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/federation"
 	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -99,7 +100,7 @@ func newOperatorPolicyAccess(t *testing.T, objects ...client.Object) *policyacce
 }
 
 func TestCallerGrantsUsesFederatedGeneratedRPCAndReturnsSafeView(t *testing.T) {
-	subject := &sandboxespb.ServiceAccount{Namespace: "team-a", Name: "worker"}
+	subject := &identitypb.ServiceAccount{Namespace: "team-a", Name: "worker"}
 	access := newOperatorPolicyAccess(t, &policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "policy", Name: "binding-a", Generation: 2},
 		Spec: policyapi.PolicyBindingSpec{
@@ -173,7 +174,7 @@ func TestCallerGrantsOperatorGuardAndUnavailableActionFrame(t *testing.T) {
 	}
 
 	frame := routes.actionPolicyFrame(t.Context(), auth.Caller{Kind: auth.CallerOperator}, nil,
-		&sandboxespb.ServiceAccount{Namespace: "team", Name: "worker"})
+		&identitypb.ServiceAccount{Namespace: "team", Name: "worker"})
 	unavailable, ok := frame.(*policyaccess.ActionPolicyUnavailable)
 	if !ok || unavailable.Code != "operator_federation_not_configured" {
 		t.Fatalf("missing federation frame = %#v", frame)
@@ -183,7 +184,7 @@ func TestCallerGrantsOperatorGuardAndUnavailableActionFrame(t *testing.T) {
 	routes.federator = federator
 	frame = routes.actionPolicyFrame(t.Context(), auth.Caller{Kind: auth.CallerOperator},
 		&auth.RequestSession{Login: &auth.OperatorSession{}, Row: &auth.SessionRow{}},
-		&sandboxespb.ServiceAccount{Namespace: "team", Name: "worker"})
+		&identitypb.ServiceAccount{Namespace: "team", Name: "worker"})
 	unavailable, ok = frame.(*policyaccess.ActionPolicyUnavailable)
 	if !ok || unavailable.Code != "operator_federation_not_configured" {
 		t.Fatalf("federation refusal frame = %#v", frame)
@@ -199,7 +200,7 @@ func TestCallerGrantsMapsActionRPCFailuresWithoutLeakingConfiguredURL(t *testing
 	}
 	frame := routes.actionPolicyFrame(t.Context(), auth.Caller{Kind: auth.CallerOperator},
 		&auth.RequestSession{Login: &auth.OperatorSession{}, Row: &auth.SessionRow{}},
-		&sandboxespb.ServiceAccount{Namespace: "team", Name: "worker"})
+		&identitypb.ServiceAccount{Namespace: "team", Name: "worker"})
 	unavailable, ok := frame.(*policyaccess.ActionPolicyUnavailable)
 	if !ok || unavailable.Code != "upstream_request_failed" || unavailable.Upstream == nil ||
 		unavailable.Upstream.UpstreamStatus == nil || *unavailable.Upstream.UpstreamStatus != http.StatusForbidden ||

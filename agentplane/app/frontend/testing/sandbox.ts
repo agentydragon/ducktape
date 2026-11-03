@@ -14,7 +14,7 @@ import {
 export function testSandbox(name: string, uid: string, namespace = "agentplane-test"): EnvironmentDescriptor {
   return create(EnvironmentDescriptorSchema, {
     target: { name, uid, namespace },
-    executionAccount: { namespace, name, uid: `${uid}-account` },
+    executionAccount: { account: { namespace, name }, uid: `${uid}-account` },
     configuration: {},
     observedState: {
       createdAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),

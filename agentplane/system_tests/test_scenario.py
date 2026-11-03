@@ -11,7 +11,7 @@ import pytest_bazel
 from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
-from agentplane.proto import sandboxes_pb2
+from agentplane.proto import identity_pb2, sandboxes_pb2
 from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.system_tests import native_artifacts, sandbox, scenario
 from agentplane.system_tests.cluster import Cluster
@@ -27,10 +27,12 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
         client.__aenter__.return_value = client
         client.opened_sandbox_uids = set()
 
-        async def create(spec: sandboxes_pb2.CreateSandboxRequest) -> environment_service_pb2.TargetHandle:
+        async def create(spec: sandboxes_pb2.CreateSandboxRequest) -> identity_pb2.EnvironmentTarget:
             view = views[spec.name] = environment_service_pb2.EnvironmentDescriptor(
-                target=environment_service_pb2.TargetHandle(namespace="test", name=spec.name, uid=str(uuid4())),
-                execution_account=environment_service_pb2.AccountHandle(namespace="test", name="runner"),
+                target=identity_pb2.EnvironmentTarget(namespace="test", name=spec.name, uid=str(uuid4())),
+                execution_account=identity_pb2.ServiceAccountIdentity(
+                    account=identity_pb2.ServiceAccount(namespace="test", name="runner")
+                ),
             )
             client.opened_sandbox_uids.add(view.target.uid)
             return view.target
@@ -49,7 +51,7 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
         return cast(Client, client)
 
     async def ready(
-        client: Client, target: environment_service_pb2.TargetHandle
+        client: Client, target: identity_pb2.EnvironmentTarget
     ) -> environment_service_pb2.EnvironmentDescriptor:
         assert target == views[target.name].target
         return views[target.name]
@@ -115,7 +117,7 @@ async def test_failure_still_releases_every_created_guest_and_closes_client(
         original_ready = sandbox.wait_until_running
 
         async def ready(
-            client: Client, target: environment_service_pb2.TargetHandle
+            client: Client, target: identity_pb2.EnvironmentTarget
         ) -> environment_service_pb2.EnvironmentDescriptor:
             if target.name == "second":
                 raise RuntimeError("readiness")

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -27,7 +29,7 @@ func sandboxView(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*environmentpb.
 	}
 	diagnostics := &environmentpb.KubernetesDiagnostics{}
 	view := &environmentpb.EnvironmentDescriptor{
-		Target:        &environmentpb.TargetHandle{Namespace: resource.Namespace, Name: resource.Name, Uid: string(resource.UID)},
+		Target:        &identitypb.EnvironmentTarget{Namespace: resource.Namespace, Name: resource.Name, Uid: string(resource.UID)},
 		Configuration: configuration, ObservedState: observedState, KubernetesDiagnostics: diagnostics,
 	}
 	observedState.Readiness = &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_NOT_READY}

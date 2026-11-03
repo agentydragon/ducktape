@@ -103,14 +103,11 @@ type lifecycleWakeBudget struct {
 
 func (b lifecycleWakeBudget) ReserveWakeAttempt(
 	ctx context.Context,
-	caller lifecycle.ServiceAccount,
+	caller *lifecycle.ServiceAccountIdentity,
 	sandboxUID string,
 	generation int64,
 ) (time.Duration, error) {
-	return b.store.ReserveWakeAttempt(ctx, dispatcher.ServiceAccountIdentity{
-		Account: dispatcher.Account{Namespace: caller.Namespace, Name: caller.Name},
-		UID:     caller.UID,
-	}, sandboxUID, generation)
+	return b.store.ReserveWakeAttempt(ctx, caller, sandboxUID, generation)
 }
 
 func waitForListener(ctx context.Context, hub *dispatcher.WatchHub, failed <-chan error) error {

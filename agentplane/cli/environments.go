@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/spf13/cobra"
@@ -95,7 +97,7 @@ request. This command never retries the mutation or replays an earlier command.`
 			defer connected.connection.Close()
 			ctx, cancel := a.deadline()
 			defer cancel()
-			target := &environmentpb.TargetHandle{Namespace: args[0], Name: args[1], Uid: args[2]}
+			target := &identitypb.EnvironmentTarget{Namespace: args[0], Name: args[1], Uid: args[2]}
 			response, err := connected.client.ResumeEnvironment(ctx, &environmentpb.ResumeEnvironmentRequest{
 				Target:      target,
 				ResumeToken: resumeToken,
@@ -208,7 +210,7 @@ func (a *app) getEnvironmentCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(3),
 		RunE: a.environmentCommand(func(ctx context.Context, client environmentpb.EnvironmentServiceClient, args []string) error {
 			response, err := client.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{
-				Target: &environmentpb.TargetHandle{Namespace: args[0], Name: args[1], Uid: args[2]},
+				Target: &identitypb.EnvironmentTarget{Namespace: args[0], Name: args[1], Uid: args[2]},
 			})
 			if err != nil {
 				return grpcFailure(ctx, err)
@@ -262,7 +264,7 @@ func environmentText(environment *environmentpb.EnvironmentDescriptor) string {
 	actions := environment.GetActions()
 	fmt.Fprintf(&output, "%s/%s uid=%s readiness=%s", target.GetNamespace(), target.GetName(), target.GetUid(), state.GetReadiness().GetState())
 	account := environment.GetExecutionAccount()
-	fmt.Fprintf(&output, " account=%s/%s uid=%s", account.GetNamespace(), account.GetName(), account.GetUid())
+	fmt.Fprintf(&output, " account=%s/%s uid=%s", account.GetAccount().GetNamespace(), account.GetAccount().GetName(), account.GetUid())
 	fmt.Fprintf(&output, " mode=%s automatic_wake=%s wake_on_send=%t", state.GetOperatingMode(), actions.GetAutomaticWake(), configuration.GetWakeOnSend())
 	eligibility := actions.GetResumeEligibility()
 	fmt.Fprintf(&output, " explicit_resume=%s reason=%s wake_generation=%d", eligibility.GetState(), eligibility.GetReason(), actions.GetWakeGeneration())

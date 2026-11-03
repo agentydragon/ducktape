@@ -15,7 +15,9 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
 )
@@ -42,12 +44,42 @@ var (
 	ErrNotAuthorized   = errors.New("caller does not own the Session")
 )
 
-type Account struct{ Namespace, Name string }
+type Account = auth.Account
 
-// ServiceAccountIdentity is a TokenReview-proven ServiceAccount plus its immutable UID.
-type ServiceAccountIdentity struct {
-	Account
-	UID string
+type ServiceAccountIdentity = identitypb.ServiceAccountIdentity
+
+func serviceAccountIdentityFor(account Account, uid string) *ServiceAccountIdentity {
+	return &ServiceAccountIdentity{
+		Account: &identitypb.ServiceAccount{Namespace: account.Namespace, Name: account.Name}, Uid: uid,
+	}
+}
+
+func accountOfIdentity(identity *ServiceAccountIdentity) Account {
+	if identity == nil || identity.GetAccount() == nil {
+		return Account{}
+	}
+	return Account{Namespace: identity.GetAccount().GetNamespace(), Name: identity.GetAccount().GetName()}
+}
+
+func uidOfIdentity(identity *ServiceAccountIdentity) string {
+	if identity == nil {
+		return ""
+	}
+	return identity.GetUid()
+}
+
+func sameServiceAccountIdentity(left, right *ServiceAccountIdentity) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return sameServiceAccount(left.GetAccount(), right.GetAccount()) && left.GetUid() == right.GetUid()
+}
+
+func sameServiceAccount(left, right *identitypb.ServiceAccount) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return left.GetNamespace() == right.GetNamespace() && left.GetName() == right.GetName()
 }
 
 type PodIdentity struct {
@@ -61,18 +93,18 @@ type ActionCorrelation struct {
 // AdmissionAttribution records the verified RPC actor separately from the effective caller.
 // Action IDs are audit correlation only and never participate in authorization or idempotency.
 type AdmissionAttribution struct {
-	Actor           ServiceAccountIdentity
+	Actor           *ServiceAccountIdentity
 	ActorPod        *PodIdentity
-	EffectiveCaller ServiceAccountIdentity
+	EffectiveCaller *ServiceAccountIdentity
 	Action          *ActionCorrelation
 }
 
 // CallerIdentity distinguishes the caller's actual ServiceAccount from the explicit, Pod-bound
 // backend path that retains the existing app/notification/Actions authority.
 type CallerIdentity struct {
-	ServiceAccountIdentity
-	Privileged  bool
-	Attribution *AdmissionAttribution
+	ServiceAccountIdentity *ServiceAccountIdentity
+	Privileged             bool
+	Attribution            *AdmissionAttribution
 }
 
 type Dispatch struct {
@@ -134,12 +166,13 @@ func validateAttribution(attribution *AdmissionAttribution, wakeCaller *Account)
 	if attribution == nil {
 		return nil
 	}
-	for _, identity := range []ServiceAccountIdentity{attribution.Actor, attribution.EffectiveCaller} {
-		if identity.Namespace == "" || identity.Name == "" || identity.UID == "" {
+	for _, identity := range []*ServiceAccountIdentity{attribution.Actor, attribution.EffectiveCaller} {
+		if identity == nil || identity.GetAccount() == nil || identity.GetAccount().GetNamespace() == "" ||
+			identity.GetAccount().GetName() == "" || identity.GetUid() == "" {
 			return errors.New("admission attribution requires complete ServiceAccount identities")
 		}
 	}
-	if wakeCaller != nil && *wakeCaller != attribution.EffectiveCaller.Account {
+	if wakeCaller != nil && *wakeCaller != accountOfIdentity(attribution.EffectiveCaller) {
 		return errors.New("wake caller does not match admission effective caller")
 	}
 	if attribution.ActorPod != nil && (attribution.ActorPod.Name == "" || attribution.ActorPod.UID == "") {
@@ -163,9 +196,9 @@ func attributionValues(attribution *AdmissionAttribution) []any {
 		requestID, executionID = attribution.Action.RequestID, attribution.Action.ExecutionID
 	}
 	return []any{
-		attribution.Actor.Namespace, attribution.Actor.Name, attribution.Actor.UID,
+		attribution.Actor.GetAccount().GetNamespace(), attribution.Actor.GetAccount().GetName(), attribution.Actor.GetUid(),
 		actorPodName, actorPodUID,
-		attribution.EffectiveCaller.Namespace, attribution.EffectiveCaller.Name, attribution.EffectiveCaller.UID,
+		attribution.EffectiveCaller.GetAccount().GetNamespace(), attribution.EffectiveCaller.GetAccount().GetName(), attribution.EffectiveCaller.GetUid(),
 		requestID, executionID,
 	}
 }
@@ -177,7 +210,7 @@ func scanIdentity(namespace, name, uid sql.NullString, field string) (*ServiceAc
 	if !namespace.Valid {
 		return nil, nil
 	}
-	return &ServiceAccountIdentity{Account: Account{Namespace: namespace.String, Name: name.String}, UID: uid.String}, nil
+	return serviceAccountIdentityFor(Account{Namespace: namespace.String, Name: name.String}, uid.String), nil
 }
 
 func scanAdmissionAttribution(
@@ -197,7 +230,7 @@ func scanAdmissionAttribution(
 	if actor == nil || effectiveCaller == nil {
 		return nil, errors.New("admission attribution identities are incomplete")
 	}
-	attribution := &AdmissionAttribution{Actor: *actor, EffectiveCaller: *effectiveCaller}
+	attribution := &AdmissionAttribution{Actor: actor, EffectiveCaller: effectiveCaller}
 	if actorPodName.Valid {
 		attribution.ActorPod = &PodIdentity{Name: actorPodName.String, UID: actorPodUID.String}
 	}
@@ -307,9 +340,9 @@ func scanDispatchWithOwner(row interface{ Scan(...any) error }) (*Dispatch, *Ser
 	}
 	var owner *ServiceAccountIdentity
 	if ownerNS.Valid {
-		owner = &ServiceAccountIdentity{Account: Account{ownerNS.String, ownerName.String}}
+		owner = serviceAccountIdentityFor(Account{Namespace: ownerNS.String, Name: ownerName.String}, "")
 		if ownerUID.Valid {
-			owner.UID = ownerUID.String
+			owner.Uid = ownerUID.String
 		}
 	}
 	return dispatch, owner, nil
@@ -437,9 +470,10 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 				if targetName != sandboxName || targetUID != sandboxUID {
 					return ErrNotAuthorized
 				}
-				if !caller.Privileged && (!principalUID.Valid || principalUID.String != caller.UID ||
+				if !caller.Privileged && (!principalUID.Valid || principalUID.String != uidOfIdentity(caller.ServiceAccountIdentity) ||
 					!principalNS.Valid || !principalName.Valid ||
-					principalNS.String != caller.Account.Namespace || principalName.String != caller.Account.Name) {
+					principalNS.String != accountOfIdentity(caller.ServiceAccountIdentity).Namespace ||
+					principalName.String != accountOfIdentity(caller.ServiceAccountIdentity).Name) {
 					return ErrNotAuthorized
 				}
 			}
@@ -516,7 +550,8 @@ func (s *Store) GetDispatchForCaller(ctx context.Context, id string, caller Call
 		WHERE d.command_id=$1 AND ($2 OR (o.execution_account_namespace=$3 AND
 			o.execution_account_name=$4 AND o.execution_account_uid=$5))`
 	d, err := scanDispatch(s.DB.QueryRowContext(ctx, query, id, caller.Privileged,
-		caller.Account.Namespace, caller.Account.Name, caller.UID))
+		accountOfIdentity(caller.ServiceAccountIdentity).Namespace, accountOfIdentity(caller.ServiceAccountIdentity).Name,
+		uidOfIdentity(caller.ServiceAccountIdentity)))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -556,7 +591,8 @@ func (s *Store) listDispatches(ctx context.Context, sessionID, sandboxName strin
 	if caller != nil {
 		query += fmt.Sprintf(" AND ($%d OR (o.execution_account_namespace=$%d AND o.execution_account_name=$%d AND o.execution_account_uid=$%d))",
 			len(arguments)+1, len(arguments)+2, len(arguments)+3, len(arguments)+4)
-		arguments = append(arguments, caller.Privileged, caller.Account.Namespace, caller.Account.Name, caller.UID)
+		account := accountOfIdentity(caller.ServiceAccountIdentity)
+		arguments = append(arguments, caller.Privileged, account.Namespace, account.Name, uidOfIdentity(caller.ServiceAccountIdentity))
 	}
 	rows, err := s.DB.QueryContext(ctx, query+" ORDER BY d.position", arguments...)
 	if err != nil {
@@ -595,7 +631,9 @@ func (s *Store) cancel(ctx context.Context, id string, caller *CallerIdentity) (
 					SELECT 1 FROM session_opening o WHERE o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
 					AND o.execution_account_namespace=$5 AND o.execution_account_name=$6 AND o.execution_account_uid=$7))
 				RETURNING `+qualifiedDispatchColumns,
-				CancelledState, id, QueueState, caller.Privileged, caller.Account.Namespace, caller.Account.Name, caller.UID))
+				CancelledState, id, QueueState, caller.Privileged,
+				accountOfIdentity(caller.ServiceAccountIdentity).Namespace, accountOfIdentity(caller.ServiceAccountIdentity).Name,
+				uidOfIdentity(caller.ServiceAccountIdentity)))
 		}
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
@@ -653,13 +691,13 @@ func scanOpening(row interface{ Scan(...any) error }) (*Opening, error) {
 		return nil, errors.New("Session principal association is incomplete")
 	}
 	if ownerNS.Valid {
-		o.ExecutionPrincipal = &ServiceAccountIdentity{Account: Account{ownerNS.String, ownerName.String}}
+		o.ExecutionPrincipal = serviceAccountIdentityFor(Account{Namespace: ownerNS.String, Name: ownerName.String}, "")
 		if ownerUID.Valid {
-			o.ExecutionPrincipal.UID = ownerUID.String
+			o.ExecutionPrincipal.Uid = ownerUID.String
 		}
 	}
 	if creatorNS.Valid {
-		o.Creator = &ServiceAccountIdentity{Account: Account{creatorNS.String, creatorName.String}, UID: creatorUID.String}
+		o.Creator = serviceAccountIdentityFor(Account{Namespace: creatorNS.String, Name: creatorName.String}, creatorUID.String)
 	}
 	effectiveCaller, err := scanIdentity(effectiveNS, effectiveName, effectiveUID, "effective caller")
 	if err != nil {
@@ -707,14 +745,15 @@ func (s *Store) OpenSession(ctx context.Context, sessionID, sandboxName, sandbox
 // that created the opening. A nil execution UID is permitted only for a privileged open-before-ready
 // request; the worker can bind it only after verifying the managed ServiceAccount's owner reference.
 func (s *Store) OpenSessionWithIdentity(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal, creator *ServiceAccountIdentity, attribution *AdmissionAttribution) (*Opening, error) {
-	if executionPrincipal == nil || creator == nil || executionPrincipal.Account.Namespace == "" ||
-		executionPrincipal.Account.Name == "" || creator.Account.Namespace == "" || creator.Account.Name == "" || creator.UID == "" {
+	if executionPrincipal == nil || executionPrincipal.GetAccount() == nil || executionPrincipal.GetAccount().GetNamespace() == "" ||
+		executionPrincipal.GetAccount().GetName() == "" || creator == nil || creator.GetAccount() == nil ||
+		creator.GetAccount().GetNamespace() == "" || creator.GetAccount().GetName() == "" || creator.GetUid() == "" {
 		return nil, errors.New("execution principal and creator identity are required")
 	}
 	if err := validateAttribution(attribution, wakeCaller); err != nil {
 		return nil, err
 	}
-	if attribution != nil && attribution.Actor != *creator {
+	if attribution != nil && !sameServiceAccountIdentity(attribution.Actor, creator) {
 		return nil, errors.New("opening creator does not match its actor attribution")
 	}
 	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, spec, setupScript, wakeCaller, executionPrincipal, creator, attribution)
@@ -758,13 +797,13 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 		}
 		var ownerNS, ownerName, ownerUID, creatorNS, creatorName, creatorUID any
 		if executionPrincipal != nil {
-			ownerNS, ownerName = executionPrincipal.Account.Namespace, executionPrincipal.Account.Name
-			if executionPrincipal.UID != "" {
-				ownerUID = executionPrincipal.UID
+			ownerNS, ownerName = executionPrincipal.GetAccount().GetNamespace(), executionPrincipal.GetAccount().GetName()
+			if executionPrincipal.GetUid() != "" {
+				ownerUID = executionPrincipal.GetUid()
 			}
 		}
 		if creator != nil {
-			creatorNS, creatorName, creatorUID = creator.Account.Namespace, creator.Account.Name, creator.UID
+			creatorNS, creatorName, creatorUID = creator.GetAccount().GetNamespace(), creator.GetAccount().GetName(), creator.GetUid()
 		}
 		attributionArgs := attributionValues(attribution)
 		result, err = scanOpening(tx.QueryRowContext(ctx, `INSERT INTO session_opening
@@ -804,7 +843,8 @@ func (s *Store) GetOpeningForCaller(ctx context.Context, id string, caller Calle
 	query := `SELECT ` + openingColumns + ` FROM session_opening WHERE session_id=$1 AND ($2 OR
 		(execution_account_namespace=$3 AND execution_account_name=$4 AND execution_account_uid=$5))`
 	o, err := scanOpening(s.DB.QueryRowContext(ctx, query, id, caller.Privileged,
-		caller.Account.Namespace, caller.Account.Name, caller.UID))
+		accountOfIdentity(caller.ServiceAccountIdentity).Namespace, accountOfIdentity(caller.ServiceAccountIdentity).Name,
+		uidOfIdentity(caller.ServiceAccountIdentity)))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -863,8 +903,9 @@ func (s *Store) AuthorizeTarget(ctx context.Context, sessionID, sandboxName, san
 	if caller.Privileged {
 		return nil
 	}
-	if !principalNS.Valid || !principalName.Valid || !principalUID.Valid || principalNS.String != caller.Account.Namespace ||
-		principalName.String != caller.Account.Name || principalUID.String != caller.UID {
+	callerAccount := accountOfIdentity(caller.ServiceAccountIdentity)
+	if !principalNS.Valid || !principalName.Valid || !principalUID.Valid || principalNS.String != callerAccount.Namespace ||
+		principalName.String != callerAccount.Name || principalUID.String != uidOfIdentity(caller.ServiceAccountIdentity) {
 		return ErrNotAuthorized
 	}
 	return nil

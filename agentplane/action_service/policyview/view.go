@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"slices"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,7 +25,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
 
 // Reader is who reads a view.
@@ -42,7 +43,7 @@ const (
 func View(index *informer.Index, subject policyapi.ServiceAccountRef, viewer Reader) *action_servicepb.CallerActionPolicy {
 	resolved, synced := index.Resolve(subject)
 	view := &action_servicepb.CallerActionPolicy{
-		Subject: &sandboxespb.ServiceAccount{Namespace: subject.Namespace, Name: subject.Name},
+		Subject: &identitypb.ServiceAccount{Namespace: subject.Namespace, Name: subject.Name},
 		Synced:  synced,
 	}
 	approvable := sets.New[store.ActionIdentity]()

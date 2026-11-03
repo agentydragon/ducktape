@@ -10,6 +10,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -92,7 +93,7 @@ func TestAGrantedSenderMessagesASessionThatReadsItFromItsInbox(t *testing.T) {
 	}
 	entry := read.GetEntries()[0]
 	want := &notificationspb.MessageEvent{
-		MessageId: sent.GetId(), Sender: &notificationspb.ServiceAccount{Namespace: testNamespace, Name: otherSandboxName},
+		MessageId: sent.GetId(), Sender: &identitypb.ServiceAccount{Namespace: testNamespace, Name: otherSandboxName},
 	}
 	if !proto.Equal(entry.GetEvent().GetMessage(), want) || len(entry.GetSubscriptionIds()) != 0 {
 		t.Errorf("entry = %v", entry)

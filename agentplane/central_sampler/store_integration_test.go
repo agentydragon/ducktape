@@ -11,13 +11,14 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/session_instructions"
 	"github.com/google/uuid"
@@ -29,9 +30,9 @@ const fixturePlatformInstructions = "Fixture Agentplane platform guidance."
 func openStoreSession(t *testing.T, store *Store, request *samplerpb.OpenSessionRequest, ownerUID string, api protocol.APIStyle) (*Session, error) {
 	t.Helper()
 	if request.GetExecutor() == nil {
-		request.Executor = &sandboxespb.SandboxDestination{
-			Owner:   &sandboxespb.ServiceAccount{Namespace: "fixture", Name: "executor"},
-			Sandbox: "fixture-sandbox", SandboxUid: "fixture-sandbox-uid",
+		request.Executor = &identitypb.SandboxDestination{
+			Owner:  &identitypb.ServiceAccount{Namespace: "fixture", Name: "executor"},
+			Target: &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "fixture-sandbox", Uid: "fixture-sandbox-uid"},
 		}
 	}
 	platformInstructions := fixturePlatformInstructions
@@ -63,9 +64,9 @@ func TestStoreOpeningFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 		Spec: &sessionpb.SessionSpec{
 			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model", Instructions: briefing,
 		},
-		Executor: &sandboxespb.SandboxDestination{
-			Owner:   &sandboxespb.ServiceAccount{Namespace: "fixture-executor-namespace", Name: "fixture-execution-account"},
-			Sandbox: "fixture-executor", SandboxUid: "fixture-executor-uid",
+		Executor: &identitypb.SandboxDestination{
+			Owner:  &identitypb.ServiceAccount{Namespace: "fixture-executor-namespace", Name: "fixture-execution-account"},
+			Target: &identitypb.EnvironmentTarget{Namespace: "fixture-executor-namespace", Name: "fixture-executor", Uid: "fixture-executor-uid"},
 		},
 	}
 	checkDestination := func(prompt, sessionID string) {
@@ -78,8 +79,8 @@ func TestStoreOpeningFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 		if err := json.NewDecoder(strings.NewReader(prompt[start:])).Decode(&destination); err != nil {
 			t.Fatal(err)
 		}
-		if destination.SessionID != sessionID || destination.Sandbox.Namespace != request.Executor.Owner.Namespace ||
-			destination.Sandbox.Name != request.Executor.Sandbox || destination.Sandbox.UID != request.Executor.SandboxUid {
+		if destination.SessionID != sessionID || destination.Sandbox.Namespace != request.Executor.Target.Namespace ||
+			destination.Sandbox.Name != request.Executor.Target.Name || destination.Sandbox.UID != request.Executor.Target.Uid {
 			t.Fatalf("notification destination=%+v, want executor=%v child=%q", destination, request.Executor, sessionID)
 		}
 	}
@@ -164,9 +165,9 @@ func TestStoreOpeningWithoutPlatformGuidanceKeepsCallerPromptAcrossActivation(t 
 		Spec: &sessionpb.SessionSpec{
 			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model", Instructions: "\n  Fixture raw caller prompt.\n",
 		},
-		Executor: &sandboxespb.SandboxDestination{
-			Owner:   &sandboxespb.ServiceAccount{Namespace: "fixture", Name: "fixture-executor"},
-			Sandbox: "fixture-executor", SandboxUid: "fixture-executor-uid",
+		Executor: &identitypb.SandboxDestination{
+			Owner:  &identitypb.ServiceAccount{Namespace: "fixture", Name: "fixture-executor"},
+			Target: &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "fixture-executor", Uid: "fixture-executor-uid"},
 		},
 	}
 	opened, err := store.OpenSession(t.Context(), request, "fixture-caller-uid", protocol.APIStyleResponses, nil)
@@ -272,9 +273,9 @@ func TestStoreIntentJournalBlocksReplayAndPersistsKnownRejection(t *testing.T) {
 
 func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	store := newTestStore(t)
-	executor := &sandboxespb.SandboxDestination{
-		Owner:   &sandboxespb.ServiceAccount{Namespace: "fixture", Name: "executor"},
-		Sandbox: "fixture-sandbox", SandboxUid: "fixture-sandbox-uid",
+	executor := &identitypb.SandboxDestination{
+		Owner:  &identitypb.ServiceAccount{Namespace: "fixture", Name: "executor"},
+		Target: &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "fixture-sandbox", Uid: "fixture-sandbox-uid"},
 	}
 	const previousIncarnationUID = "fixture-previous-incarnation"
 	const replacementIncarnationUID = "fixture-replacement-incarnation"
@@ -1665,9 +1666,9 @@ func TestDescribePreservesSessionConfigurationAndUpdatesModel(t *testing.T) {
 		Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
 		ReasoningEffort: "high", Instructions: "stored instructions",
 	}
-	executor := &sandboxespb.SandboxDestination{
-		Owner:   &sandboxespb.ServiceAccount{Namespace: "fixture", Name: "executor"},
-		Sandbox: "fixture-sandbox", SandboxUid: "fixture-sandbox-uid",
+	executor := &identitypb.SandboxDestination{
+		Owner:  &identitypb.ServiceAccount{Namespace: "fixture", Name: "executor"},
+		Target: &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "fixture-sandbox", Uid: "fixture-sandbox-uid"},
 	}
 	session, err := openStoreSession(t, store, &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(), Spec: spec, Executor: executor, ExpectedIncarnationUid: "fixture-incarnation-uid",

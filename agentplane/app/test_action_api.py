@@ -443,8 +443,8 @@ async def test_live_action_policy_is_scoped_to_each_sandbox_service_account(
             event, first = await _read_sse_event(events)
             assert event == "snapshot"
             first_environment = await _get_environment(browser, namespace, first_name, first["sandbox_uid"])
-            assert first_environment.execution_account.name == first_name
-            assert first_environment.execution_account.namespace == namespace
+            assert first_environment.execution_account.account.name == first_name
+            assert first_environment.execution_account.account.namespace == namespace
             assert first_environment.execution_account.uid
             assert first["action_policy"]["synced"] is True
 
@@ -455,8 +455,8 @@ async def test_live_action_policy_is_scoped_to_each_sandbox_service_account(
                 if second.get("sandbox_uid"):
                     break
             second_environment = await _get_environment(browser, namespace, second_name, second["sandbox_uid"])
-            assert second_environment.execution_account.name == second_name
-            assert second_environment.execution_account.namespace == namespace
+            assert second_environment.execution_account.account.name == second_name
+            assert second_environment.execution_account.account.namespace == namespace
             assert second_environment.execution_account.uid
             assert second["action_policy"]["synced"] is False
 

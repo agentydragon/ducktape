@@ -11,14 +11,17 @@ import (
 
 // ReserveWakeAttempt counts distinct guarded wake generations per authenticated
 // caller across replicas. A retry of the same generation spends no new budget.
-func (s *Store) ReserveWakeAttempt(ctx context.Context, caller ServiceAccountIdentity, sandboxUID string, generation int64) (time.Duration, error) {
-	if caller.Namespace == "" || caller.Name == "" || caller.UID == "" {
+func (s *Store) ReserveWakeAttempt(ctx context.Context, caller *ServiceAccountIdentity, sandboxUID string, generation int64) (time.Duration, error) {
+	if caller == nil || caller.GetAccount() == nil || caller.GetAccount().GetNamespace() == "" ||
+		caller.GetAccount().GetName() == "" || caller.GetUid() == "" {
 		return 0, errors.New("wake caller namespace, name and UID are required")
 	}
+	account := caller.GetAccount()
+	namespace, name, uid := account.GetNamespace(), account.GetName(), caller.GetUid()
 	var retryAfter time.Duration
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,
-			"dispatcher-wake:"+caller.Namespace+":"+caller.Name)
+			"dispatcher-wake:"+namespace+":"+name)
 		if err != nil {
 			return err
 		}
@@ -34,7 +37,7 @@ func (s *Store) ReserveWakeAttempt(ctx context.Context, caller ServiceAccountIde
 		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM wake_attempt
 			WHERE caller_namespace=$1 AND caller_name=$2 AND (caller_uid=$3 OR caller_uid='')
 			AND sandbox_uid=$4 AND wake_generation=$5)`,
-			caller.Namespace, caller.Name, caller.UID, sandboxUID, generation).Scan(&exists); err != nil {
+			namespace, name, uid, sandboxUID, generation).Scan(&exists); err != nil {
 			return err
 		}
 		if exists {
@@ -44,7 +47,7 @@ func (s *Store) ReserveWakeAttempt(ctx context.Context, caller ServiceAccountIde
 		var oldest sql.NullTime
 		if err := tx.QueryRowContext(ctx, `SELECT count(*),min(attempted_at) FROM wake_attempt
 			WHERE caller_namespace=$1 AND caller_name=$2 AND (caller_uid=$3 OR caller_uid='') AND attempted_at>$4`,
-			caller.Namespace, caller.Name, caller.UID, windowStart).Scan(&count, &oldest); err != nil {
+			namespace, name, uid, windowStart).Scan(&count, &oldest); err != nil {
 			return err
 		}
 		if count >= WakeLimit {
@@ -59,7 +62,7 @@ func (s *Store) ReserveWakeAttempt(ctx context.Context, caller ServiceAccountIde
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO wake_attempt
 			(caller_namespace,caller_name,caller_uid,sandbox_uid,wake_generation,attempted_at)
-			VALUES ($1,$2,$3,$4,$5,$6)`, caller.Namespace, caller.Name, caller.UID, sandboxUID, generation, now)
+			VALUES ($1,$2,$3,$4,$5,$6)`, namespace, name, uid, sandboxUID, generation, now)
 		return err
 	})
 	return retryAfter, err

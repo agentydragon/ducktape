@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
@@ -16,7 +18,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -74,12 +75,12 @@ func refusedSchema() policyapi.Rule {
 }
 
 // accountView is the account as a request or a view names it.
-func accountView(account auth.Account) *sandboxes.ServiceAccount {
+func accountView(account auth.Account) *identitypb.ServiceAccount {
 	return store.ServiceAccount(account).Proto()
 }
 
 // readPolicy is the policy the bearer is shown of the subject, its own when subject is nil.
-func (s *served) readPolicy(t *testing.T, token string, subject *sandboxes.ServiceAccount) (*action_servicepb.CallerActionPolicy, error) {
+func (s *served) readPolicy(t *testing.T, token string, subject *identitypb.ServiceAccount) (*action_servicepb.CallerActionPolicy, error) {
 	t.Helper()
 	got, err := s.client.GetActionPolicy(as(t, token), &action_servicepb.GetActionPolicyRequest{Subject: subject})
 	return got.GetActionPolicy(), err
@@ -135,7 +136,7 @@ func TestEachPrincipalReadsThePolicyOfTheAccountsItMayName(t *testing.T) {
 		"an operator's own, which it has none of":          {token: s.operatorToken, code: codes.InvalidArgument},
 		"an account outside the caller namespaces, as own": {token: outsiderToken, code: codes.Unauthenticated},
 	} {
-		var subject *sandboxes.ServiceAccount
+		var subject *identitypb.ServiceAccount
 		if tc.subject != nil {
 			subject = accountView(*tc.subject)
 		}
@@ -161,7 +162,7 @@ func TestEachPrincipalReadsThePolicyOfTheAccountsItMayName(t *testing.T) {
 
 func TestASubjectMustNameBothItsNamespaceAndName(t *testing.T) {
 	s := serve(t)
-	for name, subject := range map[string]*sandboxes.ServiceAccount{
+	for name, subject := range map[string]*identitypb.ServiceAccount{
 		"no name":      {Namespace: testNamespace},
 		"no namespace": {Name: callerAccount.Name},
 		"neither":      {},
@@ -231,7 +232,7 @@ func TestOnlyAnOperatorIsShownTheBindingDiagnostics(t *testing.T) {
 	subject := accountView(callerAccount)
 	for name, tc := range map[string]struct {
 		token   string
-		subject *sandboxes.ServiceAccount
+		subject *identitypb.ServiceAccount
 		want    *action_servicepb.CallerActionPolicy
 	}{
 		"the subject itself":                {callerToken, nil, workloadView},
@@ -274,7 +275,7 @@ func TestAPolicyIndexWhoseWatchFailsShowsNothingAutoDecided(t *testing.T) {
 	unsynced := &action_servicepb.CallerActionPolicy{Subject: accountView(callerAccount)}
 	for name, tc := range map[string]struct {
 		token   string
-		subject *sandboxes.ServiceAccount
+		subject *identitypb.ServiceAccount
 	}{
 		"the caller's own":             {callerToken, nil},
 		"the caller's, to an operator": {s.operatorToken, accountView(callerAccount)},
@@ -295,7 +296,7 @@ func TestTheHTTPFacadeAnswersActionPolicyAsTheRPC(t *testing.T) {
 	named := fmt.Sprintf("?subject.namespace=%s&subject.name=%s", otherAccount.Namespace, otherAccount.Name)
 	for name, tc := range map[string]struct {
 		token, query string
-		subject      *sandboxes.ServiceAccount
+		subject      *identitypb.ServiceAccount
 	}{
 		"a caller's own":                 {callerToken, "", nil},
 		"another account's, by a caller": {callerToken, named, accountView(otherAccount)},

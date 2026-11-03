@@ -14,8 +14,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
-	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -114,7 +114,7 @@ func (r *Runtime) OpenSession(ctx context.Context, request *environmentruntimepb
 		return nil, rpcError(err)
 	}
 	if request.GetExecutionPrincipal() != nil {
-		record.ExecutionPrincipal = proto.Clone(request.GetExecutionPrincipal()).(*delegationpb.ServiceAccountIdentity)
+		record.ExecutionPrincipal = proto.Clone(request.GetExecutionPrincipal()).(*identitypb.ServiceAccountIdentity)
 	}
 	admitted := false
 	s, err := r.sessions.ReserveFresh(r.lifecycleContext, request.SessionId, func() error {
@@ -137,7 +137,7 @@ func (r *Runtime) OpenSession(ctx context.Context, request *environmentruntimepb
 	return &environmentruntimepb.OpenSessionResponse{Attached: s.Attached()}, nil
 }
 
-func validateExecutionPrincipal(principal *delegationpb.ServiceAccountIdentity) error {
+func validateExecutionPrincipal(principal *identitypb.ServiceAccountIdentity) error {
 	if principal == nil {
 		return nil
 	}
@@ -149,7 +149,7 @@ func validateExecutionPrincipal(principal *delegationpb.ServiceAccountIdentity) 
 
 // A retry may omit a principal after it was durably recorded, but it may not replace one or assign
 // an identity to an older unassociated record.
-func compatibleExecutionPrincipal(retained, incoming *delegationpb.ServiceAccountIdentity) bool {
+func compatibleExecutionPrincipal(retained, incoming *identitypb.ServiceAccountIdentity) bool {
 	if retained == nil {
 		return incoming == nil
 	}

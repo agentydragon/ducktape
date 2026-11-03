@@ -5,10 +5,12 @@ import (
 	"errors"
 	"testing"
 
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -60,8 +62,10 @@ func TestExecutionAccountRequiresTheExactLiveControllerOwnedAccount(t *testing.T
 		sandbox(testNamespace, "sandbox-a", "uid-a"),
 		executionAccount("account-uid", valid),
 	)
-	identity, found, err := reader.ExecutionAccount(context.Background(), Identity{Namespace: testNamespace, Name: "sandbox-a", UID: "uid-a"})
-	if err != nil || !found || identity != (ServiceAccountIdentity{Namespace: testNamespace, Name: "sandbox-a", UID: "account-uid"}) {
+	identity, found, err := reader.ExecutionAccount(context.Background(), &Identity{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-a"})
+	if err != nil || !found || !proto.Equal(identity, &ServiceAccountIdentity{
+		Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "sandbox-a"}, Uid: "account-uid",
+	}) {
 		t.Fatalf("ExecutionAccount() = %#v, %v, %v", identity, found, err)
 	}
 
@@ -79,8 +83,8 @@ func TestExecutionAccountRequiresTheExactLiveControllerOwnedAccount(t *testing.T
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			reader := newReader(t, sandbox(testNamespace, "sandbox-a", "uid-a"), executionAccount("account-uid", tc.owner))
-			got, found, err := reader.ExecutionAccount(context.Background(), Identity{Namespace: testNamespace, Name: "sandbox-a", UID: "uid-a"})
-			if err != nil || found || got != (ServiceAccountIdentity{}) {
+			got, found, err := reader.ExecutionAccount(context.Background(), &Identity{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-a"})
+			if err != nil || found || got != nil {
 				t.Fatalf("ExecutionAccount() = %#v, %v, %v; want no usable identity", got, found, err)
 			}
 		})
@@ -93,19 +97,19 @@ func TestExecutionAccountFailsClosedForMissingOrReplacedResources(t *testing.T) 
 	cases := []struct {
 		name    string
 		objects []client.Object
-		sandbox Identity
+		sandbox *Identity
 	}{
 		{
 			name: "replaced Sandbox UID",
 			objects: []client.Object{
 				sandbox(testNamespace, "sandbox-a", "uid-current"), executionAccount("account-uid", owner),
 			},
-			sandbox: Identity{Namespace: testNamespace, Name: "sandbox-a", UID: "uid-old"},
+			sandbox: &Identity{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-old"},
 		},
 		{
 			name:    "missing ServiceAccount",
 			objects: []client.Object{sandbox(testNamespace, "sandbox-a", "uid-current")},
-			sandbox: Identity{Namespace: testNamespace, Name: "sandbox-a", UID: "uid-current"},
+			sandbox: &Identity{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-current"},
 		},
 		{
 			name: "deleting ServiceAccount",
@@ -113,14 +117,14 @@ func TestExecutionAccountFailsClosedForMissingOrReplacedResources(t *testing.T) 
 				sandbox(testNamespace, "sandbox-a", "uid-current"),
 				deletingAccount("account-uid", owner),
 			},
-			sandbox: Identity{Namespace: testNamespace, Name: "sandbox-a", UID: "uid-current"},
+			sandbox: &Identity{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-current"},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			reader := newReader(t, tc.objects...)
 			got, found, err := reader.ExecutionAccount(context.Background(), tc.sandbox)
-			if err != nil || found || got != (ServiceAccountIdentity{}) {
+			if err != nil || found || got != nil {
 				t.Fatalf("ExecutionAccount() = %#v, %v, %v; want no usable identity", got, found, err)
 			}
 		})
@@ -173,8 +177,8 @@ func TestExecutionAccountPropagatesKubernetesReadErrorsWithoutIdentity(t *testin
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, found, err := reader.ExecutionAccount(context.Background(), Identity{Namespace: testNamespace, Name: "sandbox-a", UID: "uid-a"})
-			if err == nil || found || got != (ServiceAccountIdentity{}) {
+			got, found, err := reader.ExecutionAccount(context.Background(), &Identity{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-a"})
+			if err == nil || found || got != nil {
 				t.Fatalf("ExecutionAccount() = %#v, %v, %v; want error and no usable identity", got, found, err)
 			}
 		})
@@ -197,10 +201,9 @@ func sandbox(namespace, name string, uid types.UID) *sandboxapi.Sandbox {
 	return &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name, UID: uid}}
 }
 
-func destination(sandbox, uid, ownerNamespace, ownerName string) *sandboxespb.SandboxDestination {
-	return &sandboxespb.SandboxDestination{
-		Sandbox: sandbox, SandboxUid: uid,
-		Owner: &sandboxespb.ServiceAccount{Namespace: ownerNamespace, Name: ownerName},
+func destination(sandbox, uid, targetNamespace, ownerNamespace, ownerName string) *identitypb.SandboxDestination {
+	return &identitypb.SandboxDestination{
+		Target: &identitypb.EnvironmentTarget{Namespace: targetNamespace, Name: sandbox, Uid: uid}, Owner: &identitypb.ServiceAccount{Namespace: ownerNamespace, Name: ownerName},
 	}
 }
 
@@ -210,7 +213,7 @@ func TestGetReadsTheSandboxAndItsIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.Identity != (Identity{Namespace: testNamespace, Name: "sandbox-a", UID: "uid-a"}) || view.Resource.Name != "sandbox-a" {
+	if !proto.Equal(view.Identity, &identitypb.EnvironmentTarget{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-a"}) || view.Resource.Name != "sandbox-a" {
 		t.Fatalf("view = %#v", view)
 	}
 }
@@ -228,18 +231,19 @@ func TestIncarnationHoldsARequestToTheSandboxItNames(t *testing.T) {
 	reader := newReader(t, sandbox(testNamespace, "sandbox-a", "uid-a"), sandbox(testNamespace, "sandbox-b", "uid-b"))
 	cases := []struct {
 		name        string
-		destination *sandboxespb.SandboxDestination
+		destination *identitypb.SandboxDestination
 		want        codes.Code
 	}{
-		{"named incarnation", destination("sandbox-a", "uid-a", testNamespace, "sandbox-a"), codes.OK},
+		{"named incarnation", destination("sandbox-a", "uid-a", testNamespace, testNamespace, "sandbox-a"), codes.OK},
 		{"no destination", nil, codes.InvalidArgument},
-		{"no UID", destination("sandbox-a", "", testNamespace, "sandbox-a"), codes.InvalidArgument},
-		{"no owner", &sandboxespb.SandboxDestination{Sandbox: "sandbox-a", SandboxUid: "uid-a"}, codes.InvalidArgument},
-		{"replaced incarnation", destination("sandbox-a", "uid-old", testNamespace, "sandbox-a"), codes.NotFound},
-		{"another Sandbox's UID", destination("sandbox-a", "uid-b", testNamespace, "sandbox-a"), codes.NotFound},
-		{"owner is another Sandbox's account", destination("sandbox-a", "uid-a", testNamespace, "sandbox-b"), codes.NotFound},
-		{"owner is in another namespace", destination("sandbox-a", "uid-a", "elsewhere", "sandbox-a"), codes.NotFound},
-		{"no such Sandbox", destination("sandbox-c", "uid-c", testNamespace, "sandbox-c"), codes.NotFound},
+		{"no UID", destination("sandbox-a", "", testNamespace, testNamespace, "sandbox-a"), codes.InvalidArgument},
+		{"no owner", &identitypb.SandboxDestination{Target: &identitypb.EnvironmentTarget{Namespace: testNamespace, Name: "sandbox-a", Uid: "uid-a"}}, codes.InvalidArgument},
+		{"target namespace differs from owner", destination("sandbox-a", "uid-a", "elsewhere", testNamespace, "sandbox-a"), codes.NotFound},
+		{"replaced incarnation", destination("sandbox-a", "uid-old", testNamespace, testNamespace, "sandbox-a"), codes.NotFound},
+		{"another Sandbox's UID", destination("sandbox-a", "uid-b", testNamespace, testNamespace, "sandbox-a"), codes.NotFound},
+		{"owner is another Sandbox's account", destination("sandbox-a", "uid-a", testNamespace, testNamespace, "sandbox-b"), codes.NotFound},
+		{"owner is in another namespace", destination("sandbox-a", "uid-a", "elsewhere", "elsewhere", "sandbox-a"), codes.NotFound},
+		{"no such Sandbox", destination("sandbox-c", "uid-c", testNamespace, testNamespace, "sandbox-c"), codes.NotFound},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -247,7 +251,7 @@ func TestIncarnationHoldsARequestToTheSandboxItNames(t *testing.T) {
 			if status.Code(err) != c.want {
 				t.Fatalf("code = %v (%v), want %v", status.Code(err), err, c.want)
 			}
-			if c.want == codes.OK && view.Identity.UID != "uid-a" {
+			if c.want == codes.OK && view.Identity.Uid != "uid-a" {
 				t.Fatalf("view = %#v", view)
 			}
 		})

@@ -14,8 +14,9 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -174,7 +175,7 @@ func fixture(t *testing.T, p *peer) (*Adapter, executorpb.ExecutorClient) {
 }
 
 func testScope() *executorpb.ExecutionScope {
-	return &executorpb.ExecutionScope{Destination: &sandboxespb.SandboxDestination{Sandbox: "sandbox", SandboxUid: "sandbox-uid", Owner: &sandboxespb.ServiceAccount{Namespace: "agents", Name: "sampler"}}, ExpectedIncarnationUid: "incarnation", SessionId: "sampler-session"}
+	return &executorpb.ExecutionScope{Destination: &identitypb.SandboxDestination{Target: &identitypb.EnvironmentTarget{Namespace: "agents", Name: "sandbox", Uid: "sandbox-uid"}, Owner: &identitypb.ServiceAccount{Namespace: "agents", Name: "sampler"}}, ExpectedIncarnationUid: "incarnation", SessionId: "sampler-session"}
 }
 
 func open(t *testing.T, client executorpb.ExecutorClient, scope *executorpb.ExecutionScope, resume *string) (*executorpb.OpenSessionResponse, context.CancelFunc) {

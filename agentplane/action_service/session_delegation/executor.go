@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/session_delegation/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -15,7 +17,6 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
-	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
@@ -102,8 +103,8 @@ func (e *Executor) delegatedContext(ctx context.Context, request store.Execution
 		return nil, errors.New("the admitted caller or Action correlation identity is incomplete")
 	}
 	envelope := &delegationpb.Delegation{
-		Caller: &delegationpb.ServiceAccountIdentity{
-			Account: &sandboxpb.ServiceAccount{Namespace: request.Caller.Namespace, Name: request.Caller.Name},
+		Caller: &identitypb.ServiceAccountIdentity{
+			Account: &identitypb.ServiceAccount{Namespace: request.Caller.Namespace, Name: request.Caller.Name},
 			Uid:     *request.CallerUID,
 		},
 		ActionRequestId:   request.RequestID.String(),
@@ -137,7 +138,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 			return nil, err
 		}
 		response, err := e.environment.ResumeEnvironment(ctx, &environmentpb.ResumeEnvironmentRequest{
-			Target: &environmentpb.TargetHandle{
+			Target: &identitypb.EnvironmentTarget{
 				Namespace: args.Target.Namespace,
 				Name:      args.Target.Name,
 				Uid:       args.Target.UID,
@@ -299,7 +300,7 @@ func (e *Executor) getEnvironment(ctx context.Context, request store.ExecutionRe
 	if err := validateTargetNamespace(request.Caller.Namespace, args.Target); err != nil {
 		return nil, err
 	}
-	getRequest := &environmentpb.GetEnvironmentRequest{Target: &environmentpb.TargetHandle{
+	getRequest := &environmentpb.GetEnvironmentRequest{Target: &identitypb.EnvironmentTarget{
 		Namespace: args.Target.Namespace, Name: args.Target.Name, Uid: args.Target.UID,
 	}}
 	response, err := e.environment.GetEnvironment(ctx, getRequest)

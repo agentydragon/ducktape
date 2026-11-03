@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -62,17 +63,32 @@ type Principal struct {
 // destinations that preserve an explicit Pod-bound backend caller path.
 func (p Principal) IsPodBound() bool { return p.PodName != "" && p.PodUID != "" }
 
-// ServiceAccountPrincipal proves an account without claiming a Pod binding.
-type ServiceAccountPrincipal struct {
-	Account           Account
-	ServiceAccountUID string
+// ServiceAccountPrincipal is the canonical exact ServiceAccount identity without Pod proof.
+type ServiceAccountPrincipal = identitypb.ServiceAccountIdentity
+
+func serviceAccountPrincipal(account Account, uid string) *ServiceAccountPrincipal {
+	return &ServiceAccountPrincipal{
+		Account: &identitypb.ServiceAccount{Namespace: account.Namespace, Name: account.Name},
+		Uid:     uid,
+	}
+}
+
+func sameServiceAccountIdentity(left, right *ServiceAccountPrincipal) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	leftAccount, rightAccount := left.GetAccount(), right.GetAccount()
+	if leftAccount == nil || rightAccount == nil {
+		return leftAccount == rightAccount && left.GetUid() == right.GetUid()
+	}
+	return leftAccount.GetNamespace() == rightAccount.GetNamespace() && leftAccount.GetName() == rightAccount.GetName() && left.GetUid() == right.GetUid()
 }
 
 // ReviewedCaller carries a reviewed ServiceAccount identity and, when TokenReview proves it, a
 // separate Pod-bound Principal. The account identity is useful to account-scoped APIs; the Pod
 // proof remains explicit so those APIs cannot accidentally weaken Principal's existing contract.
 type ReviewedCaller struct {
-	ServiceAccount ServiceAccountPrincipal
+	ServiceAccount *ServiceAccountPrincipal
 	Pod            *Principal
 }
 
@@ -237,8 +253,9 @@ func (r *Resolver) ResolveToken(ctx context.Context, token string) (Principal, e
 	if !okName || !okUID {
 		return Principal{}, ErrInvalidBearer
 	}
+	identityAccount := account.GetAccount()
 	return Principal{
-		Account: account.Account, ServiceAccountUID: account.ServiceAccountUID,
+		Account: Account{Namespace: identityAccount.GetNamespace(), Name: identityAccount.GetName()}, ServiceAccountUID: account.GetUid(),
 		PodName: podName, PodUID: podUID,
 	}, nil
 }
@@ -260,8 +277,9 @@ func (r *Resolver) ResolveReviewedCallerToken(ctx context.Context, token string)
 	if !okName || !okUID {
 		return ReviewedCaller{}, ErrInvalidBearer
 	}
+	identityAccount := account.GetAccount()
 	pod := Principal{
-		Account: account.Account, ServiceAccountUID: account.ServiceAccountUID,
+		Account: Account{Namespace: identityAccount.GetNamespace(), Name: identityAccount.GetName()}, ServiceAccountUID: account.GetUid(),
 		PodName: podName, PodUID: podUID,
 	}
 	return ReviewedCaller{ServiceAccount: account, Pod: &pod}, nil
@@ -269,10 +287,10 @@ func (r *Resolver) ResolveReviewedCallerToken(ctx context.Context, token string)
 
 // ResolveServiceAccountToken requires the reviewed audience, namespace and ServiceAccount UID, without requiring
 // a Pod binding. It is for destinations whose authority is the account alone; it does not prove a Pod identity.
-func (r *Resolver) ResolveServiceAccountToken(ctx context.Context, token string) (ServiceAccountPrincipal, error) {
+func (r *Resolver) ResolveServiceAccountToken(ctx context.Context, token string) (*ServiceAccountPrincipal, error) {
 	account, extra, err := r.resolveServiceAccountToken(ctx, token)
 	if err != nil {
-		return ServiceAccountPrincipal{}, err
+		return nil, err
 	}
 	_, hasName := extra[podNameClaim]
 	_, hasUID := extra[podUIDClaim]
@@ -280,31 +298,28 @@ func (r *Resolver) ResolveServiceAccountToken(ctx context.Context, token string)
 		_, validName := oneClaim(extra[podNameClaim])
 		_, validUID := oneClaim(extra[podUIDClaim])
 		if !validName || !validUID {
-			return ServiceAccountPrincipal{}, ErrInvalidBearer
+			return nil, ErrInvalidBearer
 		}
 	}
 	return account, nil
 }
 
-func (r *Resolver) resolveServiceAccountToken(ctx context.Context, token string) (ServiceAccountPrincipal, map[string][]string, error) {
+func (r *Resolver) resolveServiceAccountToken(ctx context.Context, token string) (*ServiceAccountPrincipal, map[string][]string, error) {
 	response, authenticated, err := r.verdicts.AuthenticateToken(ctx, token)
 	if err != nil {
-		return ServiceAccountPrincipal{}, nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
+		return nil, nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
 	if !authenticated {
-		return ServiceAccountPrincipal{}, nil, ErrInvalidBearer
+		return nil, nil, ErrInvalidBearer
 	}
 	parts := strings.Split(response.User.GetName(), ":")
 	if len(parts) != 4 || parts[0]+":"+parts[1]+":" != accountPrefix || parts[2] == "" || parts[3] == "" || response.User.GetUID() == "" {
-		return ServiceAccountPrincipal{}, nil, ErrInvalidBearer
+		return nil, nil, ErrInvalidBearer
 	}
 	if _, ok := r.namespaces[parts[2]]; !ok {
-		return ServiceAccountPrincipal{}, nil, ErrInvalidBearer
+		return nil, nil, ErrInvalidBearer
 	}
-	return ServiceAccountPrincipal{
-		Account:           Account{Namespace: parts[2], Name: parts[3]},
-		ServiceAccountUID: response.User.GetUID(),
-	}, response.User.GetExtra(), nil
+	return serviceAccountPrincipal(Account{Namespace: parts[2], Name: parts[3]}, response.User.GetUID()), response.User.GetExtra(), nil
 }
 
 // RequireAccount applies an API/method-specific allowlist after token validation. It does not

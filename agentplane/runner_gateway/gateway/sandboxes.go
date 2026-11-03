@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
@@ -30,7 +31,7 @@ const (
 )
 
 type sandboxView struct {
-	identity    sandboxreader.Identity
+	identity    *sandboxreader.Identity
 	phase       string
 	incarnation *sandboxapi.Incarnation
 }
@@ -133,7 +134,7 @@ func sandboxPhase(resource *sandboxapi.Sandbox) string {
 	return phaseSuspend
 }
 
-func (r *sandboxResolver) destination(ctx context.Context, destination *sandboxespb.SandboxDestination, writes, allowSuspending bool) (sandboxView, error) {
+func (r *sandboxResolver) destination(ctx context.Context, destination *identitypb.SandboxDestination, writes, allowSuspending bool) (sandboxView, error) {
 	if !r.health.Available() {
 		return sandboxView{}, status.Error(codes.Unavailable, "Sandbox inventory is not synchronized")
 	}
@@ -190,7 +191,7 @@ func podIsReadyForSandbox(pod *corev1.Pod, sandbox sandboxView) bool {
 		return false
 	}
 	if owner.APIVersion == sandboxapi.GroupVersion.String() && owner.Kind == sandboxapi.SandboxKind {
-		return owner.Name == sandbox.identity.Name && string(owner.UID) == sandbox.identity.UID
+		return owner.Name == sandbox.identity.Name && string(owner.UID) == sandbox.identity.Uid
 	}
 	return owner.APIVersion == sandboxVMIAPIVer && owner.Kind == sandboxVMIKind &&
 		pod.Labels[sandboxapi.SandboxLabel] == sandbox.identity.Name

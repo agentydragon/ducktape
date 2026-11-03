@@ -107,7 +107,7 @@ func newConnectionRecords(
 	return &connectionRecords{coordination: coordination, discovery: discovery, namespace: namespace, holder: holder, now: time.Now}, nil
 }
 
-func (r *connectionRecords) claim(ctx context.Context, sandbox sandboxreader.Identity, podUID string) (uint64, error) {
+func (r *connectionRecords) claim(ctx context.Context, sandbox *sandboxreader.Identity, podUID string) (uint64, error) {
 	leaseName := sandbox.Name + sandboxlease.EnvironmentRuntimeLeaseSuffix
 	var epoch uint64
 	var leaseUID types.UID
@@ -188,7 +188,7 @@ func (r *connectionRecords) claim(ctx context.Context, sandbox sandboxreader.Ide
 	return epoch, nil
 }
 
-func (r *connectionRecords) recordBootID(ctx context.Context, sandbox sandboxreader.Identity, epoch uint64, bootID string) error {
+func (r *connectionRecords) recordBootID(ctx context.Context, sandbox *sandboxreader.Identity, epoch uint64, bootID string) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		lease, err := r.coordination.Leases(r.namespace).Get(ctx, sandbox.Name+sandboxlease.EnvironmentRuntimeLeaseSuffix, metav1.GetOptions{})
 		if err != nil {
@@ -210,7 +210,7 @@ func (r *connectionRecords) recordBootID(ctx context.Context, sandbox sandboxrea
 
 func (r *connectionRecords) renew(
 	ctx context.Context,
-	sandbox sandboxreader.Identity,
+	sandbox *sandboxreader.Identity,
 	epoch uint64,
 	seenAt time.Time,
 	facts *sandboxlease.EnvironmentRuntimeFacts,
@@ -257,7 +257,7 @@ func (r *connectionRecords) renew(
 	return nil
 }
 
-func (r *connectionRecords) controlRouteEpoch(ctx context.Context, sandbox sandboxreader.Identity) (uint64, error) {
+func (r *connectionRecords) controlRouteEpoch(ctx context.Context, sandbox *sandboxreader.Identity) (uint64, error) {
 	name := sandbox.Name + sandboxapi.ControlServiceSuffix
 	current, err := r.discovery.EndpointSlices(r.namespace).Get(ctx, name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
@@ -279,7 +279,7 @@ func (r *connectionRecords) controlRouteEpoch(ctx context.Context, sandbox sandb
 	return routeEpoch, nil
 }
 
-func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox sandboxreader.Identity, leaseUID types.UID, epoch uint64) error {
+func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox *sandboxreader.Identity, leaseUID types.UID, epoch uint64) error {
 	name := sandbox.Name + sandboxapi.ControlServiceSuffix
 	leaseName := sandbox.Name + sandboxlease.EnvironmentRuntimeLeaseSuffix
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -358,18 +358,18 @@ func parseControlRouteEpoch(slice *discoveryv1.EndpointSlice) (uint64, error) {
 	return strconv.ParseUint(annotation, 10, 64)
 }
 
-func sandboxOwnerReference(sandbox sandboxreader.Identity) metav1.OwnerReference {
+func sandboxOwnerReference(sandbox *sandboxreader.Identity) metav1.OwnerReference {
 	controller, blockOwnerDeletion := false, false
 	return metav1.OwnerReference{
-		APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: sandbox.Name, UID: types.UID(sandbox.UID),
+		APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: sandbox.Name, UID: types.UID(sandbox.Uid),
 		Controller: &controller, BlockOwnerDeletion: &blockOwnerDeletion,
 	}
 }
 
-func ownsSandbox(references []metav1.OwnerReference, sandbox sandboxreader.Identity) bool {
+func ownsSandbox(references []metav1.OwnerReference, sandbox *sandboxreader.Identity) bool {
 	return len(references) == 1 && references[0].APIVersion == sandboxapi.GroupVersion.String() &&
 		references[0].Kind == sandboxapi.SandboxKind && references[0].Name == sandbox.Name &&
-		string(references[0].UID) == sandbox.UID
+		string(references[0].UID) == sandbox.Uid
 }
 
 func stringPointer(value string) *string                     { return &value }

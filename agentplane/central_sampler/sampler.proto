@@ -3,10 +3,9 @@ syntax = "proto3";
 package agentplane.x.central_sampler;
 
 import "agentplane/proto/event_log.proto";
-import "agentplane/proto/delegation.proto";
 import "agentplane/proto/session.proto";
-import "agentplane/proto/sandboxes.proto";
 import "agentplane/env/runtime/control/environment_runtime.proto";
+import "agentplane/proto/identity.proto";
 
 service Sampler {
   rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);

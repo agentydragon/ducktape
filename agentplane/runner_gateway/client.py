@@ -9,9 +9,10 @@ from google.protobuf.message import Message
 from agentplane.env.runtime.control import environment_runtime_pb2, environment_runtime_pb2_grpc
 from agentplane.grpc.calls import call_unary, dial
 from agentplane.proto import session_pb2
-from agentplane.proto.sandboxes_pb2 import SandboxDestination
+from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.runner_gateway.api import (
     SANDBOX_HEADER,
+    SANDBOX_NAMESPACE_HEADER,
     SANDBOX_OWNER_NAME_HEADER,
     SANDBOX_OWNER_NAMESPACE_HEADER,
     SANDBOX_UID_HEADER,
@@ -47,7 +48,7 @@ class SandboxControlClient:
     ) -> T:
         """Call a Runner RPC through its control Service, fenced to the expected Sandbox identity."""
         async with dial(
-            self.control_target.format(sandbox=destination.sandbox, namespace=destination.owner.namespace)
+            self.control_target.format(sandbox=destination.target.name, namespace=destination.target.namespace)
         ) as channel:
             runner: environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub = (
                 environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel)
@@ -58,8 +59,9 @@ class SandboxControlClient:
                 token_file=self.token_file,
                 timeout_s=timeout_s or self.request_timeout_s,
                 extra_metadata=(
-                    (SANDBOX_HEADER, destination.sandbox),
-                    (SANDBOX_UID_HEADER, destination.sandbox_uid),
+                    (SANDBOX_HEADER, destination.target.name),
+                    (SANDBOX_NAMESPACE_HEADER, destination.target.namespace),
+                    (SANDBOX_UID_HEADER, destination.target.uid),
                     (SANDBOX_OWNER_NAMESPACE_HEADER, destination.owner.namespace),
                     (SANDBOX_OWNER_NAME_HEADER, destination.owner.name),
                 ),

@@ -7,8 +7,8 @@ import (
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
-	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient"
@@ -48,7 +48,7 @@ func (r *ProxyRunner) withClient(ctx context.Context, sandbox SandboxSnapshot, c
 	}, call)
 }
 
-func (r *ProxyRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot, sessionID string, spec *sessionpb.SessionSpec, setupScript *string, executionPrincipal *delegationpb.ServiceAccountIdentity) error {
+func (r *ProxyRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot, sessionID string, spec *sessionpb.SessionSpec, setupScript *string, executionPrincipal *identitypb.ServiceAccountIdentity) error {
 	return r.withClient(ctx, sandbox, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
 		_, err := client.OpenSession(ctx, &environmentruntimepb.OpenSessionRequest{
 			SessionId: sessionID, Spec: spec, SetupScript: setupScript, ExecutionPrincipal: executionPrincipal,

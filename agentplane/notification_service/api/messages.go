@@ -48,7 +48,7 @@ func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAcc
 		return nil, errSendDenied
 	}
 	sandbox := view.Identity
-	message.DestinationRef.UID = sandbox.UID
+	message.DestinationRef.UID = sandbox.Uid
 	// A Sandbox runs as the ServiceAccount of its own name.
 	message.Recipient = model.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}
 	sent, err := s.store.Send(ctx, message)
@@ -70,7 +70,7 @@ func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAcc
 // confirmSession checks that the History Service recorded the Session as written by the Sandbox, so that a sender
 // cannot spend the recipient's inbox quota on Session IDs it made up. History records the Sandbox by name, so a
 // Session of a deleted Sandbox of the same name also passes.
-func (s *Notifications) confirmSession(ctx context.Context, sandbox sandboxreader.Identity, sessionID string) error {
+func (s *Notifications) confirmSession(ctx context.Context, sandbox *sandboxreader.Identity, sessionID string) error {
 	summary, err := s.history.GetSessionSummary(ctx, &historypb.GetSessionSummaryRequest{SessionId: sessionID})
 	switch status.Code(err) {
 	case codes.OK:

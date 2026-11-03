@@ -9,6 +9,8 @@ import (
 	"math"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
@@ -16,7 +18,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -98,7 +99,7 @@ func (s *Source) Reconcile(ctx context.Context, claim store.Claim, due store.Due
 	return err
 }
 
-func serviceAccount(account *sandboxespb.ServiceAccount) (model.ServiceAccount, error) {
+func serviceAccount(account *identitypb.ServiceAccount) (model.ServiceAccount, error) {
 	if account == nil || account.GetNamespace() == "" || account.GetName() == "" {
 		return model.ServiceAccount{}, validationFailure()
 	}

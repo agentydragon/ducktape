@@ -229,7 +229,10 @@ async def _kubectl_create_binding(
             ],
         },
         "spec": {
-            "subject": {"namespace": sandbox.execution_account.namespace, "name": sandbox.execution_account.name},
+            "subject": {
+                "namespace": sandbox.execution_account.account.namespace,
+                "name": sandbox.execution_account.account.name,
+            },
             "policySets": [policy_set],
         },
     }

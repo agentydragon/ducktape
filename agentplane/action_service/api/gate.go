@@ -113,15 +113,20 @@ func (g *Gate) authenticate(ctx context.Context) (admission, error) {
 	case err != nil:
 		return admission{}, failure(ctx, err)
 	}
-	account := store.ServiceAccount{Namespace: workload.Account.Namespace, Name: workload.Account.Name}
-	if _, reader := g.readers[workload.Account]; reader {
+	identityAccount := workload.GetAccount()
+	if identityAccount == nil || identityAccount.GetNamespace() == "" || identityAccount.GetName() == "" || workload.GetUid() == "" {
+		return admission{}, unauthenticated
+	}
+	accountRef := auth.Account{Namespace: identityAccount.GetNamespace(), Name: identityAccount.GetName()}
+	account := store.ServiceAccount{Namespace: accountRef.Namespace, Name: accountRef.Name}
+	if _, reader := g.readers[accountRef]; reader {
 		return admission{principal: store.ServiceReaderPrincipal{Account: account}}, nil
 	}
-	if !g.callers.Admits(workload.Account) {
+	if !g.callers.Admits(accountRef) {
 		return admission{}, unauthenticated
 	}
 	return admission{principal: store.CallerPrincipal{
-		Account: account, ServiceAccountUID: workload.ServiceAccountUID,
+		Account: account, ServiceAccountUID: workload.GetUid(),
 	}}, nil
 }
 

@@ -19,7 +19,7 @@ from grpc_health.v1 import health_pb2, health_pb2_grpc
 
 from agentplane.environment_runtime_transport.config import MTLS, TLS
 from agentplane.grpc.calls import ServiceError, dial
-from agentplane.proto.sandboxes_pb2 import SandboxDestination
+from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.settings import Settings
 from agentplane.subjects import ServiceAccountRef
@@ -108,7 +108,7 @@ class GatewayProcess:
                     raise
             remaining = deadline - asyncio.get_running_loop().time()
             if remaining <= 0:
-                raise TimeoutError(f"Runner proxy did not connect to Sandbox {destination.sandbox}")
+                raise TimeoutError(f"Runner proxy did not connect to Sandbox {destination.target.name}")
             await asyncio.sleep(min(0.05, remaining))
 
     async def stop(self) -> None:

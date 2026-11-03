@@ -453,8 +453,8 @@ function ConversationBody({
                       llmTraceScope === "session"
                         ? langfuseSessionTraceUrl(langfuseSearch, thread.id)
                         : langfuseSandboxTraceUrl(langfuseSearch, {
-                            namespace: sandbox!.executionAccount?.namespace ?? "",
-                            serviceAccount: sandbox!.executionAccount?.name ?? "",
+                            namespace: sandbox!.executionAccount?.account?.namespace ?? "",
+                            serviceAccount: sandbox!.executionAccount?.account?.name ?? "",
                           })
                     }
                     target="_blank"

@@ -36,7 +36,7 @@ func (queueCatalog) WaitSynced(context.Context) bool { return true }
 
 type queueWake struct{}
 
-func (queueWake) RequestWake(context.Context, lifecycle.Target, lifecycle.ServiceAccount) (*environmentpb.WakeAssessment, error) {
+func (queueWake) RequestWake(context.Context, *lifecycle.Target, *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
 	return &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_NOT_NEEDED}, nil
 }
 

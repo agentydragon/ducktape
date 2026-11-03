@@ -6,9 +6,9 @@ syntax = "proto3";
 package agentplane.env.runtime.control;
 
 import "agentplane/proto/event_log.proto";
-import "agentplane/proto/delegation.proto";
 import "agentplane/proto/session.proto";
 import "agentplane/proto/environment_runtime_state.proto";
+import "agentplane/proto/identity.proto";
 
 // Served by Environment Runtime over its configured control transport. Sessions are durable;
 // process startup, native readiness and reconciliation are owned by the environment services.

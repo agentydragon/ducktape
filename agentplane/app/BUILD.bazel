@@ -182,6 +182,7 @@ py_test(
         "//agentplane:sandbox_resource",
         "//agentplane/app/testing:models",
         "//agentplane/app/testing:replication_process",
+        "//agentplane/proto:identity_pb2",
         "//agentplane/runner_gateway/environments:environment_service_pb2",
         "//agentplane/sandboxes/testing:kubernetes",
         "//util:net",

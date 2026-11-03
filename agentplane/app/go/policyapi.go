@@ -6,10 +6,11 @@ import (
 	"net/http"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/policy"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/danielgtaylor/huma/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -69,15 +70,17 @@ func RegisterPolicyRoutes(server *HTTPServer, config Config, environments *sandb
 		OperationID: "listSandboxEgress", Method: http.MethodGet, Path: "/sandboxes/{name}/egress", Tags: []string{"sandboxes"},
 		Summary: "List policy bindings for a Sandbox's ServiceAccount",
 	}, func(ctx context.Context, input *sandboxEgressInput) (*sandboxEgressOutput, error) {
-		sandbox, err := environments.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &environmentpb.TargetHandle{Namespace: config.SandboxNamespace, Name: input.Name, Uid: input.UID}})
+		sandbox, err := environments.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &identitypb.EnvironmentTarget{Namespace: config.SandboxNamespace, Name: input.Name, Uid: input.UID}})
 		if err != nil {
 			return nil, sandboxHTTPError(err)
 		}
 		account := sandbox.GetExecutionAccount()
-		if account == nil {
+		if account == nil || account.GetAccount() == nil || account.GetAccount().GetNamespace() == "" || account.GetAccount().GetName() == "" {
 			return nil, policyHTTPError(errors.New("Environment has no execution account"))
 		}
-		bindings, err := policies.BindingsFor(ctx, &sandboxespb.ServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()})
+		bindings, err := policies.BindingsFor(ctx, &identitypb.ServiceAccount{
+			Namespace: account.GetAccount().GetNamespace(), Name: account.GetAccount().GetName(),
+		})
 		if err != nil {
 			return nil, policyHTTPError(err)
 		}
@@ -88,7 +91,7 @@ func RegisterPolicyRoutes(server *HTTPServer, config Config, environments *sandb
 		OperationID: "grantSandboxPolicySets", Method: http.MethodPost, Path: "/sandboxes/{name}/policy-bindings", Tags: []string{"sandboxes"},
 		Summary: "Grant policy sets to a running Sandbox", DefaultStatus: http.StatusCreated,
 	}, func(ctx context.Context, input *sandboxPolicyGrantInput) (*policyBindingOutput, error) {
-		sandbox, err := environments.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &environmentpb.TargetHandle{Namespace: config.SandboxNamespace, Name: input.Name, Uid: input.Body.UID}})
+		sandbox, err := environments.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &identitypb.EnvironmentTarget{Namespace: config.SandboxNamespace, Name: input.Name, Uid: input.Body.UID}})
 		if err != nil {
 			return nil, sandboxHTTPError(err)
 		}

@@ -149,7 +149,7 @@ func (e *Executor) stopCurrentSessionStream(ctx context.Context) error {
 }
 
 func sandboxIncarnationChanged(err error, scope *executorpb.ExecutionScope) (*executorpb.SandboxIncarnationChanged, bool) {
-	if err == nil || scope == nil || scope.GetDestination() == nil || scope.GetDestination().GetSandboxUid() == "" || scope.GetExpectedIncarnationUid() == "" {
+	if err == nil || scope == nil || scope.GetDestination() == nil || scope.GetDestination().GetTarget().GetUid() == "" || scope.GetExpectedIncarnationUid() == "" {
 		return nil, false
 	}
 	for current := err; current != nil; current = errors.Unwrap(current) {
@@ -159,7 +159,7 @@ func sandboxIncarnationChanged(err error, scope *executorpb.ExecutionScope) (*ex
 		}
 		for _, detail := range statusValue.Details() {
 			changed, ok := detail.(*executorpb.SandboxIncarnationChanged)
-			if !ok || changed.GetSandboxUid() != scope.GetDestination().GetSandboxUid() || changed.GetIncarnationUid() == "" || changed.GetIncarnationUid() == scope.GetExpectedIncarnationUid() {
+			if !ok || changed.GetSandboxUid() != scope.GetDestination().GetTarget().GetUid() || changed.GetIncarnationUid() == "" || changed.GetIncarnationUid() == scope.GetExpectedIncarnationUid() {
 				continue
 			}
 			return changed, true

@@ -90,7 +90,7 @@ func testVMRunnerOwnership(t *testing.T, mode environment_runtime_transport.Secu
 				uri = ""
 			}
 			err = g.validateRunnerDestination(t.Context(), runnerDestination{
-				identity: sandboxreader.Identity{Namespace: sandbox.Namespace, Name: sandbox.Name, UID: string(sandbox.UID)},
+				identity: &sandboxreader.Identity{Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: string(sandbox.UID)},
 				podUID:   "launcher-uid", peerURI: uri,
 			})
 			if name != "current" && !(mode == environment_runtime_transport.Insecure && (name == "stale credential" || name == "missing credential")) {

@@ -178,6 +178,7 @@ func (f *sandboxFixture) callerContext(token string) context.Context {
 	return metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
 		"authorization", "Bearer "+token,
 		sandboxapi.RunnerProxySandboxMetadataKey, testSandbox,
+		sandboxapi.RunnerProxySandboxNamespaceMetadataKey, f.namespace,
 		sandboxapi.RunnerProxySandboxUIDMetadataKey, string(f.sandbox.UID),
 		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, f.namespace,
 		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey, testSandbox,
