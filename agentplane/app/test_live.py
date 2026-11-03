@@ -28,6 +28,7 @@ from agentplane.history_service.testing.history import History
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
+from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
 
@@ -92,14 +93,16 @@ async def app_config(
 async def gateway_service(
     namespace: SandboxNamespace, api_server: KubernetesApiServer, dispatcher_database_url: str, tmp_path: Path
 ) -> AsyncIterator[GatewayProcess]:
+    workload = ServiceAccountRef(namespace=namespace.name, name=GATEWAY.name)
     gateway_token_file = tmp_path / "runner-gateway-token"
-    gateway_token_file.write_text(await api_server.workload_token(GATEWAY, [GATEWAY_AUDIENCE]))
+    gateway_token_file.write_text(await api_server.workload_token(workload, [GATEWAY_AUDIENCE]))
     async with run_gateway(
         api_server.kubeconfig,
         database_url=dispatcher_database_url,
         namespace=namespace.name,
         dispatcher_callers=(APP,),
-        gateway_callers=(APP, GATEWAY),
+        gateway_callers=(APP, workload),
+        workload=workload,
         environment_readers=(APP,),
         dispatcher_audience=DISPATCHER_AUDIENCE,
         gateway_audience=GATEWAY_AUDIENCE,

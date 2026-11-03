@@ -25,7 +25,6 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
-from agentplane.app.testing.runner_gateway import admitted, delivered_opening
 from agentplane.env.e2e.testing.failure_journal import FailureEvidence
 from agentplane.env.e2e.testing.process import RunningRunner, kill_harness
 from agentplane.history_service.client import HistoryServiceClient
@@ -34,7 +33,7 @@ from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, admitted, delivered_opening
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
@@ -740,15 +739,20 @@ async def test_replica_commands_and_database_stream_survive_owner_replica_exit(
 
 async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
     sandbox: SandboxCluster,
-    sandbox_control: SandboxControlClient,
+    session_dispatcher: SessionDispatcherClient,
     runner: RunningRunner,
     http: httpx.AsyncClient,
     spec: session_pb2.SessionSpec,
 ) -> None:
     # No app HTTP request opened this Thread; History's Session opening creates its row.
     session_id = uuid4()
-    # This seeds a runner-owned Session without going through Dispatcher admission or app open.
-    await sandbox_control.runner(sandbox.destination).open_session(session_id=session_id, spec=spec)
+    await session_dispatcher.unary(
+        session_dispatcher.stub.OpenSession,
+        session_dispatcher_pb2.OpenSessionRequest(
+            session_id=str(session_id), sandbox=SANDBOX, sandbox_uid=sandbox.destination.target.uid, spec=spec
+        ),
+    )
+    await delivered_opening(session_dispatcher, session_id)
     # The app's production History watcher creates the Thread row; no command or SSE request ran.
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)

@@ -7,10 +7,8 @@ from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
-from uuid import UUID
 
 import pytest
-from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.env.config import Endpoint, EnvironmentRuntimeControl
 from agentplane.env.e2e.testing.config import RunnerTestConfig
@@ -18,18 +16,15 @@ from agentplane.env.e2e.testing.failure_journal import FailureEvidence
 from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.environment_runtime_transport.config import MTLS
-from agentplane.grpc.calls import bearer, dial
+from agentplane.grpc.calls import dial
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
 from agentplane.runner_gateway.client import SandboxControlClient
-from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from util.testing.postgres import DatabaseNames, create_temporary_database
-
-# gazelle:include_dep @pypi//protobuf
 
 DISPATCHER_AUDIENCE = "test-dispatcher"
 GATEWAY_AUDIENCE = "test-gateway"
@@ -60,14 +55,16 @@ def dispatcher_database_url(postgres_admin_url: str, database_names: DatabaseNam
 async def gateway_service(
     api_server: KubernetesApiServer, sandbox: SandboxCluster, dispatcher_database_url: str, tmp_path: Path
 ) -> AsyncIterator[GatewayProcess]:
+    workload = ServiceAccountRef(namespace=sandbox.namespace, name=GATEWAY.name)
     token_file = tmp_path / "runner-gateway-token"
-    await asyncio.to_thread(token_file.write_text, await api_server.workload_token(GATEWAY, [GATEWAY_AUDIENCE]))
+    await asyncio.to_thread(token_file.write_text, await api_server.workload_token(workload, [GATEWAY_AUDIENCE]))
     async with run_gateway(
         api_server.kubeconfig,
         database_url=dispatcher_database_url,
         namespace=sandbox.namespace,
         dispatcher_callers=(APP,),
-        gateway_callers=(APP, GATEWAY),
+        gateway_callers=(APP, workload),
+        workload=workload,
         environment_readers=(APP,),
         environment_managers=(APP,),
         operator_callers=(APP,),
@@ -147,48 +144,3 @@ async def runner(
         yield started
         if (evidence := FailureEvidence.for_failed_call(request)) is not None:
             await evidence.preserve_runner(started)
-
-
-async def delivered_opening(dispatcher: SessionDispatcherClient, session_id: UUID) -> None:
-    """Return once the Dispatcher has delivered the Session's opening to its runner."""
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(30), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
-    ):
-        with attempt:
-            response = await dispatcher.unary(
-                dispatcher.stub.GetSessionOpening,
-                session_dispatcher_pb2.GetSessionOpeningRequest(session_id=str(session_id)),
-            )
-            assert response.opening.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED, response.opening
-
-
-async def admitted(
-    dispatcher: SessionDispatcherClient, dispatch: session_dispatcher_pb2.Dispatch
-) -> session_dispatcher_pb2.Dispatch:
-    """`dispatch` once its runner admitted it, as the Dispatcher's watch reports it."""
-    stream = dispatcher.stub.WatchDispatches(
-        session_dispatcher_pb2.WatchDispatchesRequest(
-            filter=session_dispatcher_pb2.DispatchFilter(
-                session_id=dispatch.session_id, command_ids=[dispatch.command_id]
-            )
-        ),
-        metadata=await bearer(dispatcher.token_file),
-        timeout=30,
-    )
-    try:
-        async for response in stream:
-            if not response.HasField("dispatch"):
-                continue
-            row: session_dispatcher_pb2.Dispatch = response.dispatch
-            assert row.state not in {
-                session_dispatcher_pb2.DELIVERY_STATE_FAILED,
-                session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN,
-            }, row
-            if row.state in {
-                session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED,
-                session_dispatcher_pb2.DELIVERY_STATE_HARNESS_CONFIRMED,
-            }:
-                return row
-    finally:
-        stream.cancel()
-    raise AssertionError("the Dispatch watch ended before the runner admitted it")

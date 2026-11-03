@@ -5,6 +5,7 @@ import base64
 import io
 import json
 import os
+from collections.abc import AsyncIterator
 from dataclasses import replace
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -33,7 +34,7 @@ from agentplane.history_service.testing.go_service import WRITER_AUDIENCE, go_hi
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, response_stream
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.runner_gateway.testing.gateway_process import run_gateway
-from agentplane.sandboxes.testing.kubernetes import sandbox_cluster
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.electric_role import ensure_electric_role
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
@@ -42,7 +43,14 @@ from util.testing.sqlalchemy_engines import postgres_async_engine
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
+@pytest.fixture
+async def sandbox(api_server: KubernetesApiServer) -> AsyncIterator[SandboxCluster]:
+    async with sandbox_cluster(api_server) as sandbox:
+        yield sandbox
+
+
 async def test_gateway_shell_patch_and_history_survive_executor_loss(
+    sandbox: SandboxCluster,
     database_url: str,
     postgres_admin_url: str,
     api_server: KubernetesApiServer,
@@ -51,7 +59,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
     tmp_path: Path,
 ) -> None:
     sampler = ServiceAccountRef(namespace="test-central", name="sampler")
-    gateway_account = ServiceAccountRef(namespace="test-central", name="gateway")
+    gateway_account = ServiceAccountRef(namespace=sandbox.namespace, name="gateway")
     gateway_audience = "test-central-gateway"
     gateway_token = tmp_path / "gateway-token"
     gateway_token.write_text(await api_server.workload_token(gateway_account, [gateway_audience]))
@@ -68,7 +76,6 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
         async with (
             postgres_async_engine(database_url) as engine,
             Endpoint() as endpoint,
-            sandbox_cluster(api_server) as sandbox,
             serve_gateway() as runner_gateway,
             run_gateway(
                 api_server.kubeconfig,
@@ -76,6 +83,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 namespace=sandbox.namespace,
                 dispatcher_callers=(gateway_account,),
                 gateway_callers=(gateway_account,),
+                workload=gateway_account,
                 executor_callers=(sampler,),
                 dispatcher_audience="test-central-dispatcher",
                 gateway_audience=gateway_audience,

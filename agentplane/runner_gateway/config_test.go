@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -393,5 +394,74 @@ func TestOptionalCentralSamplerTarget(t *testing.T) {
 	c.CentralSampler.TokenFile = ""
 	if err := c.validate(); err == nil {
 		t.Fatal("accepted target without token file")
+	}
+}
+
+// dispatcherReviews is the external TokenReview response used by the startup identity check.
+type dispatcherReviews struct {
+	t         *testing.T
+	principal auth.Principal
+	fail      bool
+}
+
+func (r dispatcherReviews) Create(_ context.Context, request *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
+	if len(request.Spec.Audiences) != 1 || request.Spec.Audiences[0] != "gateway-audience" {
+		r.t.Fatalf("startup TokenReview used audiences %v", request.Spec.Audiences)
+	}
+	if r.fail {
+		return nil, errors.New("TokenReview unavailable")
+	}
+	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
+		Authenticated: true, Audiences: request.Spec.Audiences,
+		User: authenticationv1.UserInfo{
+			Username: "system:serviceaccount:" + r.principal.Account.Namespace + ":" + r.principal.Account.Name,
+			UID:      "gateway-account-uid",
+			Extra: map[string]authenticationv1.ExtraValue{
+				"authentication.kubernetes.io/pod-name": {r.principal.PodName},
+				"authentication.kubernetes.io/pod-uid":  {r.principal.PodUID},
+			},
+		},
+	}}, nil
+}
+
+func TestDispatcherCredentialProvesTheCurrentWorkloadAtStartup(t *testing.T) {
+	account := auth.Account{Namespace: "agentplane", Name: "gateway"}
+	for _, test := range []struct {
+		name        string
+		principal   auth.Principal
+		podAccount  string
+		reviewFails bool
+		valid       bool
+	}{
+		{name: "current Pod", principal: auth.Principal{Account: account, PodName: "gateway-pod", PodUID: "current-pod-uid"}, podAccount: "gateway", valid: true},
+		{name: "another namespace", principal: auth.Principal{Account: auth.Account{Namespace: "foreign", Name: "gateway"}, PodName: "gateway-pod", PodUID: "current-pod-uid"}, podAccount: "gateway"},
+		{name: "another Pod", principal: auth.Principal{Account: account, PodName: "other-pod", PodUID: "current-pod-uid"}, podAccount: "gateway"},
+		{name: "replaced Pod", principal: auth.Principal{Account: account, PodName: "gateway-pod", PodUID: "old-pod-uid"}, podAccount: "gateway"},
+		{name: "no Pod binding", principal: auth.Principal{Account: account}, podAccount: "gateway"},
+		{name: "Pod account mismatch", principal: auth.Principal{Account: account, PodName: "gateway-pod", PodUID: "current-pod-uid"}, podAccount: "app"},
+		{name: "unlisted account", principal: auth.Principal{Account: auth.Account{Namespace: "agentplane", Name: "app"}, PodName: "gateway-pod", PodUID: "current-pod-uid"}, podAccount: "app"},
+		{name: "review unavailable", reviewFails: true, podAccount: "gateway"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := config{Namespace: "agentplane", PodName: "gateway-pod", RunnerTokenFile: writeSettings(t, "test-workload-token"), GatewayCallers: []auth.Account{account, {Namespace: "foreign", Name: "gateway"}}}
+			resolver, err := auth.NewResolver(dispatcherReviews{t: t, principal: test.principal, fail: test.reviewFails}, "gateway-audience", []string{"agentplane", "foreign"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			scheme := runtime.NewScheme()
+			if err := corev1.AddToScheme(scheme); err != nil {
+				t.Fatal(err)
+			}
+			pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "agentplane", Name: "gateway-pod", UID: "current-pod-uid"}, Spec: corev1.PodSpec{ServiceAccountName: test.podAccount}}
+			objects := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(pod).Build()
+			got, err := dispatcherAccount(t.Context(), c, resolver, objects)
+			if test.valid {
+				if err != nil || got != account {
+					t.Fatalf("startup account=%v, error=%v", got, err)
+				}
+			} else if err == nil {
+				t.Fatalf("startup admitted account %v", got)
+			}
+		})
 	}
 }

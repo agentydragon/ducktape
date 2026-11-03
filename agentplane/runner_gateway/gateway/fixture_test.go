@@ -32,6 +32,7 @@ var (
 	api        *kubeapiserver.Server
 	namespaces atomic.Int32
 
+	dispatcherAccount = auth.Account{Namespace: "test-dispatchers", Name: "test-dispatcher"}
 	appAccount        = auth.Account{Namespace: "test-apps", Name: "test-app"}
 	executorAccount   = auth.Account{Namespace: "test-samplers", Name: "test-sampler"}
 	controllerAccount = auth.Account{Namespace: "test-system", Name: "test-sandbox-controller"}
@@ -50,6 +51,7 @@ type sandboxFixture struct {
 	pod                                                   *corev1.Pod
 	objects                                               client.Client
 	runnerToken, appToken, executorToken, controllerToken string
+	dispatcherToken, unboundDispatcherToken               string
 	callerAuth                                            *auth.Resolver
 	ca                                                    *tlstest.CA
 	gatewayTLS, runnerTLS                                 environment_runtime_transport.Config
@@ -117,6 +119,12 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 	if f.runnerToken, err = api.PodToken(ctx, f.pod, testAudience); err != nil {
 		t.Fatal(err)
 	}
+	if f.dispatcherToken, err = api.WorkloadToken(ctx, dispatcherAccount, testAudience); err != nil {
+		t.Fatal(err)
+	}
+	if f.unboundDispatcherToken, err = api.UnboundToken(ctx, dispatcherAccount, testAudience); err != nil {
+		t.Fatal(err)
+	}
 	if f.appToken, err = api.WorkloadToken(ctx, appAccount, testAudience); err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +135,7 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 		t.Fatal(err)
 	}
 	if f.callerAuth, err = auth.NewResolver(api.TokenReviews(), testAudience,
-		[]string{appAccount.Namespace, controllerAccount.Namespace, executorAccount.Namespace}); err != nil {
+		[]string{dispatcherAccount.Namespace, appAccount.Namespace, controllerAccount.Namespace, executorAccount.Namespace}); err != nil {
 		t.Fatal(err)
 	}
 	f.ca = tlstest.NewCA(t)
@@ -159,6 +167,7 @@ func (f *sandboxFixture) newGatewayReading(
 		Namespace:                f.namespace,
 		RunnerSecurity:           environment_runtime_transport.Security{Mode: environment_runtime_transport.MutualTLS, TLS: &f.gatewayTLS},
 		CallerAccounts:           []auth.Account{appAccount},
+		DispatcherAccount:        dispatcherAccount,
 		ExecutorCallers:          executorCallers,
 		SandboxControllerAccount: &controllerAccount,
 		HolderName:               holderName, HolderIP: holderIP, ProxyPort: sandboxapi.ControlServicePort,

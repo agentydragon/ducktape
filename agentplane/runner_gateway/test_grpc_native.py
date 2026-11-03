@@ -5,7 +5,7 @@ import shlex
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import grpc
 import pytest
@@ -22,6 +22,8 @@ from agentplane.history_service.testing.go_service import wait_for_history_sessi
 from agentplane.proto import command_pb2, event_log_pb2, session_pb2
 from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, admitted, delivered_opening
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.testing.scripted_model import ScriptedModel, Text
@@ -50,23 +52,40 @@ async def inspect(runner: SandboxRunner, session_id: str) -> session_pb2.Session
     return one(summary for summary in await runner.list_sessions() if summary.session_id == session_id)
 
 
+async def open_session(
+    dispatcher: SessionDispatcherClient,
+    runner: SandboxRunner,
+    *,
+    session_id: UUID,
+    spec: session_pb2.SessionSpec,
+    setup_script: str | None = None,
+) -> session_pb2.SessionSummary:
+    await dispatcher.unary(
+        dispatcher.stub.OpenSession,
+        session_dispatcher_pb2.OpenSessionRequest(
+            session_id=str(session_id),
+            sandbox=runner.destination.target.name,
+            sandbox_uid=runner.destination.target.uid,
+            spec=spec,
+            setup_script=setup_script,
+        ),
+    )
+    await delivered_opening(dispatcher, session_id)
+    return await inspect(runner, str(session_id))
+
+
 async def submit_input(
-    remote: SandboxControlClient, destination: SandboxDestination, session_id: str, command: command_pb2.Command
+    dispatcher: SessionDispatcherClient, destination: SandboxDestination, session_id: str, command: command_pb2.Command
 ) -> event_log_pb2.EventEntry:
     assert command.WhichOneof("operation") == "submit_input"
-    response: environment_runtime_pb2.SubmitInputResponse = await remote.runner_unary(
-        destination,
-        lambda stub: stub.SubmitInput,
-        environment_runtime_pb2.SubmitInputRequest(
-            session_id=session_id, command_id=command.command_id, text=command.submit_input.text
-        ),
-        timeout_s=remote.request_timeout_s,
+    dispatch = await dispatcher.submit_input(
+        session_id, command.command_id, destination.target.name, destination.target.uid, command.submit_input.text
     )
-    return response.admission
+    return (await admitted(dispatcher, dispatch)).admission
 
 
 async def complete_turn(
-    remote: SandboxControlClient,
+    dispatcher: SessionDispatcherClient,
     local: RunningRunner,
     destination: SandboxDestination,
     model: ScriptedModel,
@@ -74,12 +93,12 @@ async def complete_turn(
     command_id: str,
 ) -> list[event_log_pb2.EventEntry]:
     command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text="Reply: GRPC_OK"))
-    receipt = await submit_input(remote, destination, session_id, command)
+    receipt = await submit_input(dispatcher, destination, session_id, command)
     assert receipt.event.command_admitted.command == command
     assert receipt.origin.source_id
     assert receipt.origin.sequence > 0
     # Neither admission nor exact receipt replay waits for model completion.
-    assert await submit_input(remote, destination, session_id, command) == receipt
+    assert await submit_input(dispatcher, destination, session_id, command) == receipt
     request = await model.request()
     assert launches.PLATFORM_INSTRUCTIONS in request.system_text
     assert "Test task guidance." in request.system_text
@@ -143,6 +162,7 @@ async def wait_for_entries(
 
 async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     remote: SandboxControlClient,
+    session_dispatcher: SessionDispatcherClient,
     sandbox: SandboxCluster,
     gateway_service: GatewayProcess,
     model: ScriptedModel,
@@ -164,7 +184,9 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     )
     destination = remote.runner(sandbox.destination)
     requested = uuid4()
-    created = await destination.open_session(session_id=requested, spec=launch_spec, setup_script=setup_script)
+    created = await open_session(
+        session_dispatcher, destination, session_id=requested, spec=launch_spec, setup_script=setup_script
+    )
     session = created.session_id
     assert not (await destination.status()).processes
     async for attempt in AsyncRetrying(
@@ -188,24 +210,27 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     assert opened.setup_state == session_pb2.SETUP_STATE_SUCCEEDED
     assert session in opened.spec.instructions
     assert (
-        await destination.open_session(session_id=requested, spec=launch_spec, setup_script=setup_script)
+        await open_session(
+            session_dispatcher, destination, session_id=requested, spec=launch_spec, setup_script=setup_script
+        )
     ).spec == opened.spec
     assert (await destination.list_sessions())[0].spec == opened.spec
-    # The runner refuses a retry whose spec differs from the one it recorded.
+    # Dispatcher refuses a retry whose spec differs from the recorded opening.
     different_spec = session_pb2.SessionSpec()
     different_spec.CopyFrom(launch_spec)
     different_spec.instructions = "Different task"
     with pytest.raises(ServiceError) as refused:
-        await destination.open_session(session_id=requested, spec=different_spec, setup_script=setup_script)
+        await open_session(
+            session_dispatcher, destination, session_id=requested, spec=different_spec, setup_script=setup_script
+        )
     assert refused.value.code == grpc.StatusCode.ALREADY_EXISTS
-    assert str(refused.value) == f"ALREADY_EXISTS: session {session} exists with a different spec"
     assert bootstrap_marker.read_text() == "B"
     assert setup_marker.read_text() == "S"
     status = await destination.status()
     assert not status.processes
     (dormant,) = [row for row in status.sessions if row.session_id == session]
     assert dormant.execution_state == session_pb2.SESSION_EXECUTION_STATE_DORMANT
-    entries = await complete_turn(remote, runner, sandbox.destination, model, session, "grpc-notice")
+    entries = await complete_turn(session_dispatcher, runner, sandbox.destination, model, session, "grpc-notice")
     (started,) = events.of_kind(entries, "harness_started")
     assert not started.event.harness_started.resumed
     active = await destination.status()
@@ -224,7 +249,9 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     (stopped_session,) = [row for row in stopped.sessions if row.session_id == session]
     assert stopped_session.native_session_id == native_session_id
     assert stopped_session.execution_state == session_pb2.SESSION_EXECUTION_STATE_DORMANT
-    resumed_entries = await complete_turn(remote, runner, sandbox.destination, model, session, "grpc-resumed")
+    resumed_entries = await complete_turn(
+        session_dispatcher, runner, sandbox.destination, model, session, "grpc-resumed"
+    )
     destination = remote.runner(sandbox.destination)
     resumed_starts = events.of_kind(resumed_entries, "harness_started")
     assert len(resumed_starts) == 1
@@ -238,33 +265,36 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     invalid_spec.CopyFrom(launch_spec)
     invalid_spec.model = ""
     with pytest.raises(ServiceError) as invalid:
-        await destination.open_session(session_id=uuid4(), spec=invalid_spec)
+        await open_session(session_dispatcher, destination, session_id=uuid4(), spec=invalid_spec)
     assert invalid.value.code == grpc.StatusCode.INVALID_ARGUMENT
     assert bootstrap_marker.read_text() == "B"
     assert setup_marker.read_text() == "S"
 
 
-async def test_runner_command_does_not_create_unknown_session(
+async def test_direct_gateway_command_cannot_create_a_session(
     remote: SandboxControlClient, sandbox: SandboxCluster
 ) -> None:
-    runner = remote.runner(sandbox.destination)
-    unknown = str(uuid4())
     with pytest.raises(ServiceError) as commanded:
-        await submit_input(
-            remote,
+        await remote.runner_unary(
             sandbox.destination,
-            unknown,
-            command_pb2.Command(command_id="unknown-notice", submit_input=command_pb2.SubmitInput(text="no creation")),
+            lambda stub: stub.SubmitInput,
+            environment_runtime_pb2.SubmitInputRequest(
+                session_id=str(uuid4()), command_id="unknown-notice", text="no creation"
+            ),
         )
-    assert commanded.value.code == grpc.StatusCode.NOT_FOUND
-    assert not await runner.list_sessions()
+    assert commanded.value.code == grpc.StatusCode.PERMISSION_DENIED
+    assert not await remote.list_sessions(sandbox.destination)
 
 
 async def test_failed_setup_reports_command_failure(
-    remote: SandboxControlClient, sandbox: SandboxCluster, runner: RunningRunner, spec: session_pb2.SessionSpec
+    remote: SandboxControlClient,
+    sandbox: SandboxCluster,
+    runner: RunningRunner,
+    spec: session_pb2.SessionSpec,
+    session_dispatcher: SessionDispatcherClient,
 ) -> None:
     destination = remote.runner(sandbox.destination)
-    created = await destination.open_session(session_id=uuid4(), spec=spec, setup_script="exit 42")
+    created = await open_session(session_dispatcher, destination, session_id=uuid4(), spec=spec, setup_script="exit 42")
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(15), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError), reraise=True
     ):
@@ -273,7 +303,7 @@ async def test_failed_setup_reports_command_failure(
             assert opened.setup_state != session_pb2.SETUP_STATE_RUNNING
     assert opened.setup_state == session_pb2.SETUP_STATE_FAILED
     receipt = await submit_input(
-        remote,
+        session_dispatcher,
         sandbox.destination,
         created.session_id,
         command_pb2.Command(command_id="after-failed-setup", submit_input=command_pb2.SubmitInput(text="not run")),
@@ -290,29 +320,35 @@ async def test_failed_setup_reports_command_failure(
     assert "setup" in failure.event.command_failed.reason
 
 
-async def test_invalid_launch_never_creates(remote: SandboxControlClient, sandbox: SandboxCluster) -> None:
+async def test_invalid_launch_never_creates(
+    remote: SandboxControlClient, sandbox: SandboxCluster, session_dispatcher: SessionDispatcherClient
+) -> None:
     runner = remote.runner(sandbox.destination)
     invalid_specs = [session_pb2.SessionSpec(), session_pb2.SessionSpec(harness=session_pb2.HARNESS_CODEX, model="m")]
     for invalid in invalid_specs:
         with pytest.raises(ServiceError) as rejected:
-            await runner.open_session(session_id=uuid4(), spec=invalid)
+            await open_session(session_dispatcher, runner, session_id=uuid4(), spec=invalid)
         assert rejected.value.code == grpc.StatusCode.INVALID_ARGUMENT
     assert not await runner.list_sessions()
 
 
 @pytest.mark.parametrize("bootstrap", ["exit 42"])
 async def test_failed_bootstrap_reports_failure_when_input_arrives(
-    remote: SandboxControlClient, sandbox: SandboxCluster, runner: RunningRunner, spec: session_pb2.SessionSpec
+    remote: SandboxControlClient,
+    sandbox: SandboxCluster,
+    runner: RunningRunner,
+    spec: session_pb2.SessionSpec,
+    session_dispatcher: SessionDispatcherClient,
 ) -> None:
     destination = remote.runner(sandbox.destination)
-    opened = await destination.open_session(session_id=uuid4(), spec=spec)
+    opened = await open_session(session_dispatcher, destination, session_id=uuid4(), spec=spec)
     status = await destination.status()
     assert not status.processes
     (session,) = [row for row in status.sessions if row.session_id == opened.session_id]
     assert session.execution_state == session_pb2.SESSION_EXECUTION_STATE_DORMANT
 
     admission = await submit_input(
-        remote,
+        session_dispatcher,
         sandbox.destination,
         opened.session_id,
         command_pb2.Command(command_id="after-failed-bootstrap", submit_input=command_pb2.SubmitInput(text="not run")),

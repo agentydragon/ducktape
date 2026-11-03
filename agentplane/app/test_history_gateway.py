@@ -9,7 +9,6 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.history import SessionHistory
-from agentplane.app.testing.runner_gateway import admitted, delivered_opening
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.env.runtime.control import environment_runtime_pb2
@@ -18,7 +17,7 @@ from agentplane.history_service import history_service_pb2
 from agentplane.proto import command_pb2, session_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, admitted, delivered_opening
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 from agentplane.testing.scripted_model import ScriptedModel, Text

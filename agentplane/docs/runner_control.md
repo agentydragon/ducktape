@@ -57,8 +57,11 @@ unary calls over the runner gRPC connection and returns the runner's status and 
   `x-agentplane-sandbox-owner-namespace` and `x-agentplane-sandbox-owner-name` exactly once.
   The proxy checks them against the current Sandbox and ready runner Pod before resolving its
   connection. A stale UID or owner returns `NOT_FOUND`; an unavailable runner returns `UNAVAILABLE`.
-- **Authorization.** The bearer is a `token_audience` token. The `caller_accounts` may call every
-  method but `Quiesce`, which only `sandbox_controller_account` may; unset, nobody may.
+- **Authorization.** A Pod-bound `gateway_audience` bearer proves the caller. `gateway_callers`
+  grants only `ListSessions` and `GetStatus`. Runtime Session creation and commands admit only the
+  verified combined Gateway/Dispatcher workload; clients use SessionDispatcher with their existing
+  direct or delegated authority. Only `sandbox_controller_account` may `Quiesce`; unset, nobody may.
+  Executor permissions stay separate. See the [proxy contract](../runner_gateway/gateway/SPEC.md).
 - **Holder.** A replica that does not hold the Sandbox's current connection answers `UNAVAILABLE`
   before acting, and the caller dials the control Service again.
 - **Deadline.** The proxy propagates the caller's remaining gRPC deadline; a call without one waits until
@@ -73,8 +76,8 @@ runner.
 
 The runner pushes each Session's journal to one **ingress**, the endpoint its Sandbox names, and
 nothing else reads its journals. The History Service is the ingress when history is kept. A client
-that keeps no history implements the ingress itself and sends commands and lifecycle calls through
-the Runner Gateway like any other client. Fan-out to further readers is the ingress's concern, or
+that keeps no history implements the ingress itself and sends Session commands through
+the Session Dispatcher and lifecycle requests through EnvironmentService like any other client. Fan-out to further readers is the ingress's concern, or
 a service's behind it, never a second destination on the runner.
 
 Rejected: following runners through the Sandbox Service, which made it fan out a journal it does

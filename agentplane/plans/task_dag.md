@@ -1441,7 +1441,6 @@ flowchart TD
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
-    PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
     RESUME_CREDENTIALS_VALID[Decision: optional grants versus resume prerequisites]
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
@@ -1998,28 +1997,10 @@ which other consumers may move to it. Automatic titles remain deferred under
 The Gateway observes state and proxies the runner's
 `Runner` service with per-method authorization; commands use Dispatcher and typed Runner RPCs.
 
-```mermaid
-flowchart TD
-    PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization]
-```
-
 The [service-boundary contract](../docs/service_boundaries.md) and [Runner Gateway README](../runner_gateway/README.md)
 describe the current proxy. Live `Runner.ListSessions` remains part of the app and Notification
 service caller contract. The separate destination-authority decision
 `DELIVERY_DESTINATION_AUTHORITY_DESIGN` (section 13) remains open.
-
-### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
-
-**Candidate; the [lifecycle contract](../docs/runner_delivery_and_harness_design.md#harness-host-lifecycle) is implemented and `ResumeSession` is gone from the proxy.** The runner proxy
-(`runner_gateway/gateway/proxy.go`) currently lets configured caller accounts invoke allowed Runner
-methods, except `Quiesce` (controller only). Review per-method policy for `OpenSession`,
-`SubmitInput`, model/effort changes and `InterruptTurn` against the Dispatcher-only command boundary.
-Manual app resume changes Sandbox lifecycle state through Kubernetes; native state recovery belongs
-to the Runner. Read-only diagnostics do not grant command or wake authority. This node does not
-select generalized send grants or broaden caller permissions.
-
-The proposed [merge into one service](dispatcher_gateway_merge.md) removes the command methods from the
-caller-visible proxy in its third step, which would finish this node.
 
 ## Scope and retirement of stale gates
 
@@ -2066,7 +2047,6 @@ flowchart LR
     RUNNER_STORE_SESSION_IDENTITY[Blocked: implement reviewed private mapping]
     RUNNER_IDENTITY_LEGACY_CLEANUP[Blocked: retire old identity assumptions]
     IDLE_SUSPEND_UI_DRIVE[Operator: remaining VM idle-suspend/send-to-wake UI drive, section 7]
-    PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement, section 3]
     CNPG_FREE_K3S_INTEGRATION_TIER[Blocked: add a PostgreSQL-free K3s tier]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
@@ -2088,8 +2068,7 @@ or binary boundaries should change remains a later decision. Decide delivery own
 replica failure, ordering and recovery for the selected topology before changing existing guarantees.
 The former [Dispatcher/Gateway merge proposal](dispatcher_gateway_merge.md) is historical for its
 queue-off and holder-owned-delivery choices, not an implementation authorization. Independent
-Runtime restructuring does not wait for this decision. On a reviewed selection,
-`PROXY_START_METHODS_DISPATCHER_ONLY` can proceed under its own contract;
+Runtime restructuring does not wait for this decision.
 `DELIVERY_DESTINATION_AUTHORITY_DESIGN` remains independent.
 
 ### `CNPG_FREE_K3S_INTEGRATION_TIER` — add a narrow database-independent integration tier

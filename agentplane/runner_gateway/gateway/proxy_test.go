@@ -107,7 +107,7 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	if _, err := client.GetStatus(f.callerContext(f.appToken), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("GetStatus in held suspend = %v, want Unavailable", err)
 	}
-	if _, err := client.SubmitInput(f.callerContext(f.appToken), &environmentruntimepb.SubmitInputRequest{}); status.Code(err) != codes.Unavailable {
+	if _, err := client.SubmitInput(f.callerContext(f.dispatcherToken), &environmentruntimepb.SubmitInputRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("SubmitInput in held suspend = %v, want Unavailable", err)
 	}
 	if _, err := client.Quiesce(f.callerContext(f.controllerToken), &sessionpb.QuiesceRequest{}); err != nil {

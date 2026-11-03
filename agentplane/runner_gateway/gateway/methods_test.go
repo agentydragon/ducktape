@@ -40,6 +40,7 @@ func TestEveryRPCAdmitsOnlyItsCallers(t *testing.T) {
 	withoutController := f.newGateway(t, "test-runner-gateway", "192.0.2.30", executorAccount)
 	withoutController.config.SandboxControllerAccount = nil
 	tokens := map[string]string{
+		"dispatcher": f.dispatcherToken, "unbound dispatcher": f.unboundDispatcherToken,
 		"app": f.appToken, "executor caller": f.executorToken, "controller": f.controllerToken,
 		// The runner's namespace is not one the callers' resolver serves.
 		"runner": f.runnerToken,
@@ -68,6 +69,14 @@ func TestEveryRPCAdmitsOnlyItsCallers(t *testing.T) {
 					admitted, special := test.admitted[method.Name]
 					if !special {
 						admitted = desc.caller
+						switch method.Name {
+						case environmentruntimepb.EnvironmentRuntime_OpenSession_FullMethodName,
+							environmentruntimepb.EnvironmentRuntime_SubmitInput_FullMethodName,
+							environmentruntimepb.EnvironmentRuntime_ChangeModel_FullMethodName,
+							environmentruntimepb.EnvironmentRuntime_ChangeReasoningEffort_FullMethodName,
+							environmentruntimepb.EnvironmentRuntime_InterruptTurn_FullMethodName:
+							admitted = "dispatcher"
+						}
 					}
 					t.Run(method.Name, func(t *testing.T) {
 						if method.Name == environmentruntimepb.EnvironmentRuntime_WatchState_FullMethodName {
@@ -85,7 +94,7 @@ func TestEveryRPCAdmitsOnlyItsCallers(t *testing.T) {
 						for name, token := range tokens {
 							want := codes.PermissionDenied
 							switch {
-							case name == "runner":
+							case name == "runner" || name == "unbound dispatcher":
 								want = codes.Unauthenticated
 							case name == admitted:
 								want = codes.Unimplemented

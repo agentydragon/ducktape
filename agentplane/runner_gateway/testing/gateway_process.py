@@ -206,6 +206,7 @@ async def run_gateway(
     namespace: str,
     dispatcher_callers: Sequence[ServiceAccountRef],
     gateway_callers: Sequence[ServiceAccountRef],
+    workload: ServiceAccountRef,
     executor_callers: Sequence[ServiceAccountRef] = (),
     environment_readers: Sequence[ServiceAccountRef] = (),
     environment_managers: Sequence[ServiceAccountRef] = (),
@@ -249,7 +250,7 @@ async def run_gateway(
             effective_settings = Settings(
                 sandbox_namespace=namespace,
                 dispatcher_database_url=database_url,
-                pod_name="runner-gateway-test",
+                pod_name=workload.name,
                 pod_ip="192.0.2.10",
                 runner_token_file=runner_proxy_token_file,
                 kubeconfig=kubeconfig,

@@ -41,7 +41,6 @@ py_library(
     srcs = ["client.py"],
     deps = [
         ":api",
-        "//agentplane/env/runtime/control:environment_runtime_pb2",
         "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
         "//agentplane/grpc:calls",
         "//agentplane/proto:identity_pb2",
@@ -128,6 +127,8 @@ py_test(
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:identity_pb2",
         "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/runner_gateway/testing:gateway_process",
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:scripted_model",
@@ -189,6 +190,7 @@ go_library(
         "@org_golang_google_grpc//health",
         "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_google_grpc//keepalive",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 
