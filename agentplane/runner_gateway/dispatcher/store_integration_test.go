@@ -2063,7 +2063,9 @@ func TestSandboxCleanupFencesStaleAdmissionAcrossReplicas(t *testing.T) {
 			ctx := admitted(t)
 			uid, sessionID := uuid.NewString(), uuid.NewString()
 			if existing {
-				if _, err := store.OpenSession(ctx, sessionID, "sandbox-api", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+				// Keep existing work distinct from this fresh admission. An exact
+				// retained retry does not consult inventory or trigger its cleanup hook.
+				if _, err := store.OpenSession(ctx, uuid.NewString(), "sandbox-api", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 					t.Fatal(err)
 				}
 			}
