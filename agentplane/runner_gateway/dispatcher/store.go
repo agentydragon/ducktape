@@ -42,6 +42,7 @@ var (
 	ErrNotFound        = errors.New("dispatch not found")
 	ErrNotCancellable  = errors.New("delivery already began")
 	ErrNotAuthorized   = errors.New("caller does not own the Session")
+	ErrSandboxDeleted  = errors.New("sandbox was deleted")
 )
 
 type Account = auth.Account
@@ -258,6 +259,23 @@ func sessionLock(ctx context.Context, tx *sql.Tx, sessionID string) error {
 	return err
 }
 
+// lockLiveSandbox holds admission open until commit. EndSandbox takes the exclusive
+// lock before recording a durable tombstone, so stale inventory cannot resurrect work.
+// Acquire this before Session, command and ownership locks.
+func lockLiveSandbox(ctx context.Context, tx *sql.Tx, sandboxUID string) error {
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock_shared(hashtextextended($1, 0))", "sandbox:"+sandboxUID); err != nil {
+		return err
+	}
+	var deleted bool
+	if err := tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM deleted_sandbox WHERE sandbox_uid=$1)", sandboxUID).Scan(&deleted); err != nil {
+		return err
+	}
+	if deleted {
+		return ErrSandboxDeleted
+	}
+	return nil
+}
+
 func operation(command *commandpb.Command) (string, error) {
 	switch command.GetOperation().(type) {
 	case *commandpb.Command_SubmitInput:
@@ -449,6 +467,9 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 	}
 	var result *Dispatch
 	err = transaction(ctx, s.DB, func(tx *sql.Tx) error {
+		if err := lockLiveSandbox(ctx, tx, sandboxUID); err != nil {
+			return err
+		}
 		if err := sessionLock(ctx, tx, sessionID); err != nil {
 			return err
 		}
@@ -773,6 +794,9 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 	}
 	var result *Opening
 	err = transaction(ctx, s.DB, func(tx *sql.Tx) error {
+		if err := lockLiveSandbox(ctx, tx, sandboxUID); err != nil {
+			return err
+		}
 		if err := sessionLock(ctx, tx, sessionID); err != nil {
 			return err
 		}
@@ -1039,6 +1063,9 @@ func (s *Store) IsCurrentOwner(ctx context.Context, owner Owner) (bool, error) {
 func (s *Store) ClaimSandboxOwner(ctx context.Context, sandboxUID, leaseUID string, leaseTransitions int, holder string, expectedGeneration int64) (*Owner, error) {
 	var result *Owner
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
+		if err := lockLiveSandbox(ctx, tx, sandboxUID); err != nil {
+			return err
+		}
 		var generation int64
 		var oldLease, oldHolder string
 		var oldTransitions int

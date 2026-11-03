@@ -65,6 +65,11 @@ The manual queue, replica and wake probes are documented in the
   so active `WatchDispatches` streams on any connected replica receive them. A listener disconnect, reconnect
   gap or incomplete event fails active streams with `UNAVAILABLE`; terminal events have no durable replay,
   so a later read or watch is `NOT_FOUND`/empty.
+- **Deletion admission fence**: cleanup retains an exact-UID tombstone in Dispatcher PostgreSQL.
+  Later openings, queued commands and ownership claims cannot recreate deleted state, even from
+  another replica's stale inventory. Admissions that commit before cleanup are included in cleanup.
+  This starts at Dispatcher cleanup, not the Kubernetes deletion instant; see
+  [the deletion contract](SPEC.md#deletion-admission-fence).
 - **Retention**: a Sandbox's Dispatches are kept as long as it exists. Other policies may come later.
 - **Replica ownership**: a per-Sandbox Lease assigns delivery scheduling ownership while the Sandbox
   has a `QUEUED_IN_DISPATCHER` or `DELIVERING_TO_RUNNER` Dispatch or Session opening. Its PostgreSQL

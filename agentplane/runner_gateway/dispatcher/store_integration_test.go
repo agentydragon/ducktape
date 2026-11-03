@@ -139,12 +139,19 @@ func (r *rejectingRunner) Deliver(_ context.Context, _ SandboxSnapshot, _ string
 
 func testStore(t *testing.T, cap int) *Store {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.URL)
+	store, _ := testStoreWithURL(t, cap)
+	return store
+}
+
+func testStoreWithURL(t *testing.T, cap int) (*Store, string) {
+	t.Helper()
+	databaseURL := integrationDatabase.Clone(t)
+	db, err := sql.Open("postgres", databaseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	return NewStore(db, cap)
+	return NewStore(db, cap), databaseURL
 }
 
 func input(id, value string) *commandpb.Command {
@@ -649,7 +656,7 @@ func TestOnlyRunnerAdmissionRecordsAdmission(t *testing.T) {
 
 func TestDeletedSandboxBroadcastsTerminalRowsBeforeDeletingThem(t *testing.T) {
 	ctx := context.Background()
-	store := testStore(t, 3)
+	store, databaseURL := testStoreWithURL(t, 3)
 	uid := "00000000-0000-4000-8000-000000000099"
 	if _, err := store.Enqueue(ctx, "session-deleted", "sandbox-deleted", uid, input("deleted-queued", "q"), nil); err != nil {
 		t.Fatal(err)
@@ -668,7 +675,7 @@ func TestDeletedSandboxBroadcastsTerminalRowsBeforeDeletingThem(t *testing.T) {
 	// the rows are deleted in the same transaction and cannot be read afterward.
 	subscribers := make([]*watchSubscription, 0, 2)
 	for replica := range 2 {
-		hub := NewWatchHub(integrationDatabase.URL)
+		hub := NewWatchHub(databaseURL)
 		listenContext, cancel := context.WithCancel(ctx)
 		ended := make(chan error, 1)
 		go func() { ended <- hub.Run(listenContext) }()
@@ -884,7 +891,7 @@ func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
 
 func TestWatchDispatchesPublishesWakeOnlyReceiptChanges(t *testing.T) {
 	base := admitted(t)
-	store := testStore(t, 3)
+	store, databaseURL := testStoreWithURL(t, 3)
 	uid := uuid.NewString()
 	dispatch, err := store.Enqueue(base, "watch-wake-session", "sandbox-wake-watch", uid,
 		input("watch-wake-command", "hello"), nil)
@@ -895,7 +902,7 @@ func TestWatchDispatchesPublishesWakeOnlyReceiptChanges(t *testing.T) {
 	if err != nil || owner == nil {
 		t.Fatalf("claim Sandbox owner: %+v %v", owner, err)
 	}
-	hub := NewWatchHub(integrationDatabase.URL)
+	hub := NewWatchHub(databaseURL)
 	listenerCtx, cancelListener := context.WithCancel(context.Background())
 	listenerDone := make(chan error, 1)
 	go func() { listenerDone <- hub.Run(listenerCtx) }()
@@ -2002,5 +2009,156 @@ func TestOpenSessionRejectsNonCanonicalUUIDBeforeRecording(t *testing.T) {
 				t.Fatalf("OpenSession(%q) created a durable opening", sessionID)
 			}
 		})
+	}
+}
+
+type deletedDuringLookup struct {
+	snapshot SandboxSnapshot
+	cleanup  func()
+}
+
+func (s deletedDuringLookup) GetSandbox(context.Context, string) (SandboxSnapshot, bool, error) {
+	// The inventory read preceded cleanup, but its caller resumes afterward.
+	s.cleanup()
+	return s.snapshot, true, nil
+}
+
+func (deletedDuringLookup) GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
+	return nil, false, nil
+}
+
+func TestSandboxCleanupFencesStaleAdmissionAcrossReplicas(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("existing=%t", existing), func(t *testing.T) {
+			store, databaseURL := testStoreWithURL(t, 3)
+			ctx := admitted(t)
+			uid, sessionID := uuid.NewString(), uuid.NewString()
+			if existing {
+				if _, err := store.OpenSession(ctx, sessionID, "sandbox-api", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// Independent connections and Store instances represent another replica or a restart.
+			db, err := sql.Open("postgres", databaseURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			restarted := NewStore(db, 3)
+			service := &Service{
+				Store: restarted, DispatcherCallers: configuredDispatcherCallers(),
+				Sandboxes: deletedDuringLookup{
+					snapshot: SandboxSnapshot{Name: "sandbox-api", Namespace: caller.Namespace, UID: uid},
+					cleanup: func() {
+						if _, err := store.EndSandbox(ctx, uid); err != nil {
+							t.Fatal(err)
+						}
+					},
+				},
+			}
+			_, err = service.OpenSession(ctx, &dispatcherpb.OpenSessionRequest{
+				SessionId: sessionID, Sandbox: "sandbox-api", SandboxUid: uid, Spec: &sessionpb.SessionSpec{},
+			})
+			if status.Code(err) != codes.FailedPrecondition {
+				t.Fatalf("opening after cleanup: %v", err)
+			}
+			_, err = service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
+				CommandId: uuid.NewString(), SessionId: sessionID, Sandbox: "sandbox-api", SandboxUid: uid, Text: "hello",
+			})
+			if status.Code(err) != codes.FailedPrecondition {
+				t.Fatalf("privileged command after cleanup: %v", err)
+			}
+			if owner, err := restarted.ClaimSandboxOwner(ctx, uid, "stale-lease", 1, "stale-replica", 0); !errors.Is(err, ErrSandboxDeleted) || owner != nil {
+				t.Fatalf("ownership after cleanup: %+v %v", owner, err)
+			}
+			if _, err := restarted.GetOpening(ctx, sessionID); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("opening resurrected: %v", err)
+			}
+			if uids, err := restarted.ListSandboxUIDs(ctx); err != nil || len(uids) != 0 {
+				t.Fatalf("live queue/ownership state resurrected: %v %v", uids, err)
+			}
+			// A new environment with the same name has an independent admission fence.
+			if _, err := restarted.OpenSession(ctx, uuid.NewString(), "sandbox-api", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
+				t.Fatalf("replacement environment rejected: %v", err)
+			}
+		})
+	}
+}
+
+func TestSandboxCleanupWaitsForInFlightOpening(t *testing.T) {
+	store, databaseURL := testStoreWithURL(t, 3)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	uid, sessionID := uuid.NewString(), uuid.NewString()
+	gate, err := store.DB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gate.Rollback()
+	if err := sessionLock(ctx, gate, sessionID); err != nil {
+		t.Fatal(err)
+	}
+	var gatePID int
+	if err := gate.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&gatePID); err != nil {
+		t.Fatal(err)
+	}
+	connect := func() (*Store, int) {
+		db, err := sql.Open("postgres", databaseURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { db.Close() })
+		db.SetMaxOpenConns(1)
+		var pid int
+		if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
+			t.Fatal(err)
+		}
+		return NewStore(db, 3), pid
+	}
+	openingStore, openingPID := connect()
+	cleanupStore, cleanupPID := connect()
+	opened := make(chan error, 1)
+	go func() {
+		_, err := openingStore.OpenSession(ctx, sessionID, "sandbox-race", uid, &sessionpb.SessionSpec{}, nil, nil)
+		opened <- err
+	}()
+	waitBlocked := func(waiter, blocker int) {
+		t.Helper()
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			var blocked bool
+			if err := store.DB.QueryRowContext(ctx, "SELECT $2 = ANY(pg_blocking_pids($1))", waiter, blocker).Scan(&blocked); err != nil {
+				t.Fatal(err)
+			}
+			if blocked {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			case <-ticker.C:
+			}
+		}
+	}
+	waitBlocked(openingPID, gatePID)
+	cleaned := make(chan error, 1)
+	go func() {
+		_, err := cleanupStore.EndSandbox(ctx, uid)
+		cleaned <- err
+	}()
+	// Cleanup must wait for the transaction whose opening has not yet been inserted.
+	waitBlocked(cleanupPID, openingPID)
+	if err := gate.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-opened; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-cleaned; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetOpening(ctx, sessionID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cleanup missed the in-flight opening: %v", err)
 	}
 }
