@@ -98,6 +98,16 @@ async def _open_agent(
 
 async def cert_manager_reissues_a_deleted_tls_secret(cluster: Cluster) -> None:
     name = f"test-reissue-{uuid4().hex[:8]}"
+    issuers = json.loads(await cluster.kubectl("get", "issuers", "-o", "json"))["items"]
+    runner_issuers = [
+        issuer
+        for issuer in issuers
+        if issuer.get("metadata", {}).get("name", "").startswith("agentplane-runner-ca-")
+        and issuer.get("spec", {}).get("ca", {}).get("secretName", "").startswith("agentplane-runner-ca-")
+    ]
+    if len(runner_issuers) != 1:
+        raise RuntimeError(f"expected one current fixture runner Issuer, found {len(runner_issuers)}")
+    issuer_name = runner_issuers[0]["metadata"]["name"]
     await cluster.kubectl(
         "apply",
         "-f",
@@ -108,7 +118,7 @@ async def cert_manager_reissues_a_deleted_tls_secret(cluster: Cluster) -> None:
             "metadata": {"name": name},
             "spec": {
                 "secretName": name,
-                "issuerRef": {"name": "agentplane-runner-ca", "kind": "Issuer"},
+                "issuerRef": {"name": issuer_name, "kind": "Issuer"},
                 "uris": [f"spiffe://agentplane/test-reissue/{name}"],
                 "privateKey": {"algorithm": "ECDSA", "size": 256, "rotationPolicy": "Always"},
                 "usages": ["digital signature", "server auth"],

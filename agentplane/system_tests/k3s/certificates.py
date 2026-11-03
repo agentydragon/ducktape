@@ -51,7 +51,9 @@ def _install(kubectl: Kubectl, objects: list[dict[str, Any]], probe: dict[str, A
 
 
 @tracer.start_as_current_span("system_test.pki.controllers")
-def install(kubectl: Kubectl, cert_manager: list[dict[str, Any]], trust_manager: list[dict[str, Any]]) -> None:
+def install(
+    kubectl: Kubectl, cert_manager: list[dict[str, Any]], trust_manager: list[dict[str, Any]], *, root_secret: str
+) -> None:
     _install(
         kubectl,
         cert_manager,
@@ -70,7 +72,7 @@ def install(kubectl: Kubectl, cert_manager: list[dict[str, Any]], trust_manager:
             "kind": "Bundle",
             "metadata": {"name": "test-trust-manager-admission"},
             "spec": {
-                "sources": [{"secret": {"name": "test-runner-root", "key": "ca.crt"}}],
+                "sources": [{"secret": {"name": root_secret, "key": "ca.crt"}}],
                 "target": {"configMap": {"key": "ca-certificates.crt"}},
             },
         },
@@ -92,9 +94,11 @@ def report(kubectl: Kubectl, objects: list[dict[str, Any]]) -> None:
 
 
 @tracer.start_as_current_span("system_test.pki.issuance")
-def wait_for_issuance(kubectl: Kubectl, namespace: str, bundle: str) -> None:
+def wait_for_issuance(
+    kubectl: Kubectl, namespace: str, bundle: str, *, ca_certificate: str, gateway_certificate: str
+) -> None:
     kubectl(
-        "-n", namespace, "wait", "--for=condition=Ready", "certificate/agentplane-runner-ca",
-        "certificate/agentplane-runner-gateway", f"--timeout={READY_SECONDS}s",
+        "-n", namespace, "wait", "--for=condition=Ready", f"certificate/{ca_certificate}",
+        f"certificate/{gateway_certificate}", f"--timeout={READY_SECONDS}s",
     )  # fmt: skip
     kubectl("wait", "--for=condition=Synced", f"bundle/{bundle}", f"--timeout={READY_SECONDS}s")
