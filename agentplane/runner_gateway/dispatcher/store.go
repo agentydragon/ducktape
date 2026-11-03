@@ -432,9 +432,8 @@ func scanDispatchColumns(row interface{ Scan(...any) error }, additional ...any)
 	return d, nil
 }
 
-// Enqueue commits the complete command and NOTIFY in one transaction. Repeated
-// command IDs return the original row even after a Sandbox was recreated under
-// the same name, matching the Python store's exact retry contract.
+// Enqueue commits the complete command and NOTIFY in one transaction. Exact retries
+// return the original row after verifying the retained Session and exact Sandbox UID.
 func (s *Store) Enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID string, command *commandpb.Command, wakeCaller *Account) (*Dispatch, error) {
 	return s.enqueue(ctx, sessionID, sandboxName, sandboxUID, command, wakeCaller, nil)
 }

@@ -289,8 +289,8 @@ func (s *Service) executionAccount(ctx context.Context, sandbox SandboxSnapshot)
 	return reader.GetExecutionAccount(ctx, sandbox)
 }
 
-// requireLiveExecution proves that a normal caller is still the exact ServiceAccount recorded for
-// the target Sandbox. Privileged backend callers retain their explicit compatibility path.
+// requireLiveExecution checks the recorded target before applying scoped backend trust or
+// proving that a normal caller still matches its current and retained execution account.
 func (s *Service) requireLiveExecution(ctx context.Context, opening *Opening, sandbox SandboxSnapshot, caller CallerIdentity) error {
 	if opening == nil || opening.SandboxName != sandbox.Name || opening.SandboxUID != sandbox.UID {
 		return status.Error(codes.PermissionDenied, "Session target does not match")
