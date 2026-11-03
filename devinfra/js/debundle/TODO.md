@@ -96,6 +96,16 @@ to one exact source/spec pair and held to the interactive budget in
 
 ### Encountered tooling friction
 
+- **Simulate preserved order in commutation proposals.** Source audit found
+  that `cli/propose_commutations.rs` computes `single_pair_cut`,
+  `remaining_module_pair_edges` and `pairs_break` by deleting candidate edge
+  IDs, without applying the graph builder's preserved-order closure. Those
+  deletion results can overstate the gate payoff of an assertion. Reproduce
+  with the heap-frontier CLI fixture plus an eager-use edge back across the
+  two modules, then share the preservation logic with the proposer. Until
+  repaired, check the applied candidate with the normal gate; a proposal's
+  cut prediction is insufficient. This consumer mismatch is source-audited;
+  its executable regression remains to be run.
 - **F1 — Explain redundant commuting premises by authored identity.** An
   engine improvement removed a native-read heap frontier, and the next run
   rejected a formerly needed pair as `unused` / `no_sequenced_edge`. The
