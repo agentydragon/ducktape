@@ -20,6 +20,6 @@
 
 - [ ] Address Session opening reads by the globally unique Session ID and use Session Dispatcher's
       generated gRPC/HTTP API instead of the Sandbox-scoped AppService wrapper. Update browser and
-      test clients, preserve authorization and reconcile uncertain opens without replay. Follow the
-      [Session/environment model](../plans/session_environment_model.md#address); the general Session
-      directory and its authority are still planned, not implemented.
+      test clients, preserve authorization and reconcile uncertain opens without replay. The
+      [task DAG](../plans/task_dag.md#session_opening_lookup--read-an-opening-by-session-id) owns this
+      work; the general Session directory and its authority are still planned, not implemented.
