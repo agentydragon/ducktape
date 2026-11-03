@@ -2,6 +2,7 @@ package sandboxcontroller
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"time"
 
@@ -90,6 +91,25 @@ func (r *Reconciler) suspendIfIdle(ctx context.Context, sandbox *sandboxapi.Sand
 	if err != nil {
 		return idleCheck{}, err
 	}
+	if isFirecrackerPod(w.pod) {
+		// The restored guest can report running before the Gateway has reconnected. A Lease
+		// from before checkpoint must never trigger immediate re-suspension on stale idle facts.
+		before, err := strconv.ParseInt(w.pod.Annotations[FirecrackerSuspendEpochAnnotation], 10, 32)
+		if w.pod.Annotations[FirecrackerRunningAnnotation] != "true" ||
+			(w.pod.Annotations[FirecrackerSuspendEpochAnnotation] != "" && (err != nil || leaseTransitions(&lease) <= int32(before))) {
+			r.idle.forget(key)
+			return idleCheck{}, nil
+		}
+		if r.FirecrackerStatus == nil {
+			r.idle.forget(key)
+			return idleCheck{}, nil
+		}
+		state, err := r.FirecrackerStatus.Read(ctx, w.pod)
+		if err != nil || state.PodUID != string(w.pod.UID) || state.Phase != "running" {
+			r.idle.forget(key)
+			return idleCheck{}, nil
+		}
+	}
 	facts, err := sandboxlease.DecodeFacts(lease.Name, lease.Annotations, string(pod.UID))
 	if err != nil {
 		return idleCheck{}, err
@@ -112,6 +132,17 @@ func (r *Reconciler) suspendIfIdle(ctx context.Context, sandbox *sandboxapi.Sand
 	if remaining := due.Sub(now); remaining > 0 {
 		deadline := idleSuspendStatusTime(due)
 		return idleCheck{recheck: remaining, suspendAt: &deadline}, nil
+	}
+	if isFirecrackerPod(w.pod) {
+		// The host freezes guest RAM. Quiesce would seal Sessions and kill the preserved
+		// execution. Commit the gateway's dispatch fence before changing launcher intent.
+		idle, generation := sandboxapi.SuspendedByIdle, sandbox.Spec.WakeGeneration
+		sandbox.Status.SuspendedBy, sandbox.Status.SuspendedAtWakeGeneration = &idle, &generation
+		sandbox.Status.OperatingMode = sandboxapi.OperatingModeSuspended
+		if err := r.Status().Update(ctx, sandbox); err != nil {
+			return idleCheck{}, err
+		}
+		return idleCheck{}, nil
 	}
 	logger := ctrl.LoggerFrom(ctx)
 	result, err := r.Quiescer.Quiesce(ctx, sandbox, facts.IdleSince)

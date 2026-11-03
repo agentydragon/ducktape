@@ -13,6 +13,7 @@ go_library(
         "control_service.go",
         "controller.go",
         "environment_runtime_credential.go",
+        "firecracker.go",
         "identity.go",
         "idle.go",
         "launch.go",
@@ -50,6 +51,7 @@ go_library(
         "@io_k8s_apimachinery//pkg/types",
         "@io_k8s_client_go//applyconfigurations/core/v1:core",
         "@io_k8s_client_go//applyconfigurations/meta/v1:meta",
+        "@io_k8s_client_go//kubernetes",
         "@io_k8s_sigs_controller_runtime//:controller-runtime",
         "@io_k8s_sigs_controller_runtime//pkg/builder",
         "@io_k8s_sigs_controller_runtime//pkg/cache",
@@ -73,6 +75,7 @@ go_test(
     srcs = [
         "controller_test.go",
         "environment_runtime_credential_test.go",
+        "firecracker_test.go",
         "identity_test.go",
         "idle_test.go",
         "launch_test.go",

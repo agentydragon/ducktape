@@ -18,7 +18,7 @@ type StateVolume struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Type=object
 	Claim corev1.PersistentVolumeClaimSpec `json:"claim"`
-	// +kubebuilder:validation:XValidation:rule="self.type == 'DirectoryTree' && !has(self.filesystem)",message="state volume requires DirectoryTree without a filesystem"
+	// +kubebuilder:validation:XValidation:rule="self.type == 'DirectoryTree' || self.type == 'RawDiskImage'",message="state volume requires DirectoryTree or RawDiskImage"
 	Layout VolumeLayout `json:"layout"`
 }
 
@@ -49,9 +49,30 @@ type WorkspaceVolume struct {
 	Layout VolumeLayout                     `json:"layout"`
 }
 
-// SandboxTemplateSpec sets the Sandbox's kind: exactly one of Pod and VM.
-// +kubebuilder:validation:ExactlyOneOf=pod;vm
+// FirecrackerTemplate describes a launcher Pod and the two immutable images it mounts.
+type FirecrackerTemplate struct {
+	// +kubebuilder:validation:Schemaless
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
+	Pod corev1.PodTemplateSpec `json:"pod"`
+	// +kubebuilder:validation:MinLength=1
+	BootImage string `json:"bootImage"`
+	// +kubebuilder:validation:MinLength=1
+	RunnerImage string `json:"runnerImage"`
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=32
+	VCPUCount int32 `json:"vcpuCount"`
+	// +kubebuilder:validation:Minimum=128
+	MemoryMiB int64 `json:"memoryMiB"`
+}
+
+// SandboxTemplateSpec sets the Sandbox's kind: exactly one of Pod, VM and Firecracker.
+// +kubebuilder:validation:ExactlyOneOf=pod;vm;firecracker
 // +kubebuilder:validation:XValidation:rule="!has(self.workspaceVolume) || !has(self.pod) || self.workspaceVolume.layout.type == 'DirectoryTree'",message="Pod workspaces require DirectoryTree layout"
+// +kubebuilder:validation:XValidation:rule="!has(self.firecracker) || (self.stateVolume.layout.type == 'RawDiskImage' && self.stateVolume.layout.filesystem == 'ext4')",message="Firecracker state requires an ext4 RawDiskImage"
+// +kubebuilder:validation:XValidation:rule="has(self.firecracker) || (self.stateVolume.layout.type == 'DirectoryTree' && !has(self.stateVolume.layout.filesystem))",message="Pod and VM state require DirectoryTree without a filesystem"
+// +kubebuilder:validation:XValidation:rule="!has(self.firecracker) || !has(self.workspaceVolume) || (self.workspaceVolume.layout.type != 'DirectoryTree' && self.workspaceVolume.layout.filesystem == 'ext4')",message="Firecracker workspace requires an ext4 disk layout"
+// +kubebuilder:validation:XValidation:rule="!has(self.firecracker) || has(self.workspaceVolume)",message="Firecracker requires a workspace volume"
 type SandboxTemplateSpec struct {
 	// +kubebuilder:validation:Schemaless
 	// +kubebuilder:pruning:PreserveUnknownFields
@@ -62,6 +83,7 @@ type SandboxTemplateSpec struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Type=object
 	VM              *kubevirtv1.VirtualMachineSpec `json:"vm,omitempty"`
+	Firecracker     *FirecrackerTemplate           `json:"firecracker,omitempty"`
 	StateVolume     StateVolume                    `json:"stateVolume"`
 	WorkspaceVolume *WorkspaceVolume               `json:"workspaceVolume,omitempty"`
 }

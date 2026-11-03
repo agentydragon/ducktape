@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "firecracker",
+    srcs = [
+        "thaw.go",
+        "vsock_linux.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/firecracker",
+    deps = ["@org_golang_x_sys//unix"],
+)
+
+go_test(
+    name = "firecracker_test",
+    srcs = ["thaw_test.go"],
+    embed = [":firecracker"],
+)

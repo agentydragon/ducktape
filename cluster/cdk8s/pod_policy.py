@@ -37,7 +37,7 @@ def workload_kind(manifest: dict[str, Any]) -> tuple[str, str]:
 
 def embeds_pod(manifest: dict[str, Any]) -> bool:
     """Whether a rendered object carries a pod spec at its `POD_SPEC_PATHS` path. Our SandboxTemplate
-    holds a Pod or a KubeVirt VM, whose launcher Pod KubeVirt builds."""
+    holds a Pod, a Firecracker launcher Pod, or a KubeVirt VM whose launcher KubeVirt builds."""
     kind = workload_kind(manifest)
     return kind in POD_SPEC_PATHS and not (
         kind == ("agentplane.allegedly.works", "SandboxTemplate") and "vm" in manifest["spec"]
@@ -47,15 +47,24 @@ def embeds_pod(manifest: dict[str, Any]) -> bool:
 def pod_spec(manifest: dict[str, Any]) -> dict[str, Any]:
     """The pod spec inside a rendered workload; `KeyError` for a kind `POD_SPEC_PATHS` lacks."""
     spec = manifest
-    for key in POD_SPEC_PATHS[workload_kind(manifest)].split("/")[1:]:
+    for key in _pod_spec_path(manifest).split("/")[1:]:
         spec = spec[key]
     return spec
+
+
+def _pod_spec_path(manifest: dict[str, Any]) -> str:
+    if (
+        workload_kind(manifest) == ("agentplane.allegedly.works", "SandboxTemplate")
+        and "firecracker" in manifest["spec"]
+    ):
+        return "/spec/firecracker/pod/spec"
+    return POD_SPEC_PATHS[workload_kind(manifest)]
 
 
 def _workload(workload: Construct) -> tuple[ApiObject, str, dict[str, Any]]:
     obj = ApiObject.of(workload)
     manifest = obj.to_json()
-    return obj, POD_SPEC_PATHS[workload_kind(manifest)], pod_spec(manifest)
+    return obj, _pod_spec_path(manifest), pod_spec(manifest)
 
 
 def harden(workload: Construct) -> None:

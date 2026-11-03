@@ -150,3 +150,13 @@ func TestUnauthorizedExecutorCallerCannotReadEnvironmentFailureState(t *testing.
 		}
 	}
 }
+
+func TestCheckpointedLauncherWithIncarnationRoutesAsSuspended(t *testing.T) {
+	sandbox := &sandboxapi.Sandbox{}
+	sandbox.Status.OperatingMode = sandboxapi.OperatingModeSuspended
+	sandbox.Status.StopStage = sandboxapi.StopStageStopped
+	sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: "launcher", UID: "pod-uid"}
+	if phase := sandboxPhase(sandbox); phase != modeSuspended {
+		t.Fatalf("checkpointed launcher phase = %s, want Suspended", phase)
+	}
+}

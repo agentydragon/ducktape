@@ -125,7 +125,7 @@ func sandboxPhase(resource *sandboxapi.Sandbox) string {
 	if resource.Status.OperatingMode != sandboxapi.OperatingModeSuspended {
 		return ""
 	}
-	if !incarnated {
+	if !incarnated || stage == sandboxapi.StopStageStopped {
 		return modeSuspended
 	}
 	if stage == sandboxapi.StopStageQuiescing {

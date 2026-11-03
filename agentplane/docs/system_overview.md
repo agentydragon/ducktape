@@ -146,6 +146,11 @@ flowchart LR
     click index href "../x/indexing/app.py" "Git index API"
 ```
 
+Firecracker Sandboxes use a controller-owned launcher Pod, a separate token-holding relay and a
+NixOS guest. Their supervisor checkpoints RAM and all disks, then restores the same Runtime and
+processes in the same Pod. See [Firecracker Sandboxes](firecracker_sandboxes.md) for the control,
+credential and network boundaries.
+
 A VM guest runs Environment Runtime with Session components and Execution; its relay is in the separate KubeVirt launcher Pod. The Git index is
 standalone, with no dependency on the backend services or the app: it polls a configured Git remote,
 embeds files through an embedding endpoint and owns its own PostgreSQL database

@@ -1,0 +1,151 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "credentials",
+    srcs = ["credentials.py"],
+)
+
+py_library(
+    name = "firecracker_api",
+    srcs = ["firecracker_api.py"],
+)
+
+py_library(
+    name = "network",
+    srcs = ["network.py"],
+)
+
+py_library(
+    name = "storage",
+    srcs = ["storage.py"],
+    deps = [
+        ":config",
+        ":credentials",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "supervisor",
+    srcs = ["supervisor.py"],
+    deps = [
+        ":config",
+        ":credentials",
+        ":firecracker_api",
+        ":network",
+        ":storage",
+    ],
+)
+
+py_binary(
+    name = "supervisor_bin",
+    main_module = "agentplane.firecracker.supervisor",
+    deps = [":supervisor"],
+)
+
+aspect_py_binary(
+    name = "launcher_image_bin",
+    main = "supervisor.py",
+    deps = [":supervisor"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":launcher_image_bin",
+)
+
+pkg_tar(
+    name = "firecracker_layer",
+    srcs = ["@firecracker_agentplane_release//:release-v1.17.0-x86_64/firecracker-v1.17.0-x86_64"],
+    mode = "0755",
+    package_dir = "/usr/local/bin",
+    remap_paths = {"release-v1.17.0-x86_64/firecracker-v1.17.0-x86_64": "firecracker"},
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("launcher_image_bin"),
+    env = py_image_env(binary_name = "launcher_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        "@trixie_agentplane_firecracker//:flat",
+        ":layers",
+        ":firecracker_layer",
+    ],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["agentplane-firecracker-launcher:proof"],
+)
+
+filegroup(
+    name = "load_tarball",
+    srcs = [":load"],
+    output_group = "tarball",
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_credentials",
+    srcs = ["test_credentials.py"],
+    deps = [
+        ":credentials",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_network",
+    srcs = ["test_network.py"],
+    deps = [
+        ":network",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_storage",
+    srcs = ["test_storage.py"],
+    deps = [
+        ":config",
+        ":storage",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_supervisor",
+    srcs = ["test_supervisor.py"],
+    deps = [
+        ":config",
+        ":network",
+        ":storage",
+        ":supervisor",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

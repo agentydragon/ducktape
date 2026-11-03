@@ -93,9 +93,19 @@ spec:
       name: agentplane-egress-sidecar
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-environment-firecracker'
+      kind: ImageRepository
+      name: agentplane-environment-firecracker
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-environment-vm'
       kind: ImageRepository
       name: agentplane-environment-vm
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-firecracker-launcher'
+      kind: ImageRepository
+      name: agentplane-firecracker-launcher
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-frontend'

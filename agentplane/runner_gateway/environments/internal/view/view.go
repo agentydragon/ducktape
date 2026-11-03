@@ -158,7 +158,7 @@ func sandboxPhase(resource *sandboxapi.Sandbox) environmentpb.SandboxPhase {
 		}
 		return environmentpb.SandboxPhase_SANDBOX_PHASE_CREATING
 	case sandboxapi.OperatingModeSuspended:
-		if !incarnated {
+		if !incarnated || resource.Status.StopStage == sandboxapi.StopStageStopped {
 			return environmentpb.SandboxPhase_SANDBOX_PHASE_SUSPENDED
 		}
 		if resource.Status.StopStage == sandboxapi.StopStageQuiescing {

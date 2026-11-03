@@ -160,6 +160,14 @@ class IngressRule:
         )
 
     @staticmethod
+    def from_entities(*entities: Entity, ports: Sequence[int]) -> CiliumNetworkPolicySpecIngress:
+        """TCP ports from Cilium reserved identities."""
+        return CiliumNetworkPolicySpecIngress(
+            from_entities=[CiliumNetworkPolicySpecIngressFromEntities[entity.value.name] for entity in entities],
+            to_ports=[_ingress_ports(ports)],
+        )
+
+    @staticmethod
     def from_gateway(*ports: int) -> CiliumNetworkPolicySpecIngress:
         """TCP `ports` from the reserved `ingress` identity: any Cilium Gateway API/Ingress
         implementation running its Envoy with hostNetwork gives its egress to a backend Pod this

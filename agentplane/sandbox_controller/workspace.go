@@ -37,6 +37,9 @@ func claimMode(spec corev1.PersistentVolumeClaimSpec) corev1.PersistentVolumeMod
 func validateWorkspace(template *sandboxapi.SandboxTemplate) *unready {
 	w := template.Spec.WorkspaceVolume
 	if w == nil {
+		if template.Spec.Firecracker != nil {
+			return layoutMismatch("Firecracker requires a workspace volume")
+		}
 		return nil
 	}
 	if w.Name == "" || w.Name == template.Spec.StateVolume.Name {
@@ -44,6 +47,9 @@ func validateWorkspace(template *sandboxapi.SandboxTemplate) *unready {
 	}
 	switch w.Layout.Type {
 	case sandboxapi.DirectoryTree:
+		if template.Spec.Firecracker != nil {
+			return layoutMismatch("Firecracker workspaces cannot use DirectoryTree")
+		}
 		if w.Layout.Filesystem != "" || claimMode(w.Claim) != corev1.PersistentVolumeFilesystem {
 			return layoutMismatch("DirectoryTree requires a Filesystem claim and no filesystem field")
 		}
@@ -74,6 +80,19 @@ func validateWorkspace(template *sandboxapi.SandboxTemplate) *unready {
 		}
 		if !mounted {
 			return layoutMismatch("Pod workspace has no volume mount of its declared name")
+		}
+		return nil
+	}
+	if template.Spec.Firecracker != nil {
+		pod := &template.Spec.Firecracker.Pod.Spec
+		if slices.ContainsFunc(pod.Volumes, func(v corev1.Volume) bool { return v.Name == w.Name }) {
+			return layoutMismatch("Firecracker template defines the managed workspace volume itself")
+		}
+		for _, container := range append(slices.Clone(pod.Containers), pod.InitContainers...) {
+			if slices.ContainsFunc(container.VolumeMounts, func(v corev1.VolumeMount) bool { return v.Name == w.Name }) ||
+				slices.ContainsFunc(container.VolumeDevices, func(v corev1.VolumeDevice) bool { return v.Name == w.Name }) {
+				return layoutMismatch("Firecracker template defines the managed workspace attachment itself")
+			}
 		}
 		return nil
 	}

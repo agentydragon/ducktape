@@ -130,6 +130,12 @@ ducktapePkgs
   agentplane-environment-vm-container-disk = import ../../agentplane/env/images/container-disk.nix {
     inherit pkgs self;
   };
+  # Firecracker's static guest kernel, raw ext4 root filesystem and init store path.
+  agentplane-environment-firecracker-image =
+    import ../../agentplane/env/images/firecracker-image.nix
+      {
+        inherit pkgs self;
+      };
   # Parked Codex pod image experiment (plain Docker, no NixOS/systemd). Flake
   # output retained; see x/codex_pod_image/deploy/README.md for status.
   # Build: nix build .#codex-pod-image (currently fails at evaluation; see deployment README)

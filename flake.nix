@@ -592,7 +592,23 @@
           username = "runner";
           hostModule = ./agentplane/env/images/vm.nix;
           # Keep the guest's repository tooling identical to the Pod runner's.
-          extraSpecialArgs = { inherit preCommitPackages; };
+          extraSpecialArgs = {
+            inherit preCommitPackages;
+            firecrackerGuest = false;
+          };
+          enableHomeManager = false;
+        };
+
+        # Firecracker guest shares the environment runtime and tools with KubeVirt, using ordered
+        # virtio-mmio drives and a host thaw handshake for time and per-environment credentials.
+        agentplane-environment-firecracker = mkNixos {
+          hostname = "agentplane-environment-firecracker";
+          username = "runner";
+          hostModule = ./agentplane/env/images/firecracker.nix;
+          extraSpecialArgs = {
+            inherit preCommitPackages;
+            firecrackerGuest = true;
+          };
           enableHomeManager = false;
         };
 

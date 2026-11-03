@@ -470,6 +470,23 @@ apt.install(
     ],
 )
 
+# Firecracker Sandbox launcher builds ISO and ext4 seed disks and owns a pod-local TAP fence.
+apt.install(
+    dependency_set = "trixie_agentplane_firecracker",
+    packages = [
+        "coreutils",
+        "e2fsprogs",
+        "iproute2",
+        "iptables",
+        "util-linux",
+        "xorriso",
+    ],
+    suites = [
+        "trixie",
+        "trixie-security",
+    ],
+)
+
 # Minimal Codex `exec_command` environment for the Agentplane runner-layering spike. Keep this
 # separate from the harness and boot artifacts so a shell update does not rebuild either one.
 apt.install(
@@ -630,7 +647,7 @@ apt.install(
         "trixie-updates",
     ],
 )
-use_repo(apt, "gnome_shell_test", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_erofs_utils", "trixie_fc_vm_pod", "trixie_runner_tools", "trixie_vm_guest", "trixie_vm_perf", "trixie_wayback_cache", "wt_shell_test")
+use_repo(apt, "gnome_shell_test", "trixie_agentplane_firecracker", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_erofs_utils", "trixie_fc_vm_pod", "trixie_runner_tools", "trixie_vm_guest", "trixie_vm_perf", "trixie_wayback_cache", "wt_shell_test")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
@@ -1757,6 +1774,15 @@ http_archive(
     build_file_content = 'exports_files(["release-v1.12.1-x86_64/firecracker-v1.12.1-x86_64"])',
     sha256 = "0a75e67ef6e4c540a2cf248b06822b0be9820cbba9fe19f9e0321200fe76ff6b",
     urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.12.1/firecracker-v1.12.1-x86_64.tgz"],
+)
+
+# Agentplane's checkpoint format is pinned to the VMM that writes it. Keep this separate from
+# the parked v1.12.1 dev VM consumer.
+http_archive(
+    name = "firecracker_agentplane_release",
+    build_file_content = 'exports_files(["release-v1.17.0-x86_64/firecracker-v1.17.0-x86_64", "release-v1.17.0-x86_64/jailer-v1.17.0-x86_64"])',
+    sha256 = "06094a1108ae9e82aa4c23a775aa92758f53f1175d422270d9d6162cb9ade558",
+    urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.17.0/firecracker-v1.17.0-x86_64.tgz"],
 )
 
 # The Debian trixie stable-security cloud kernel of the k3s fixture's VM test guest

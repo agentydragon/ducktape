@@ -20,6 +20,11 @@ current-incarnation Pod projection, including the raw Pod status consumed by the
 conditions and container diagnostics. Raw Kubernetes status supplements `observed_state`; it does
 not replace its canonical fields.
 
+A Firecracker Sandbox retains its launcher Pod and incarnation UID while RAM is checkpointed.
+`stopStage: Stopped` therefore projects `Suspended` even with an incarnation; `Suspending`
+applies only until that checkpoint is reported. The same Pod projection remains available for
+diagnostics while suspended.
+
 ## Caller and object authorization
 
 - Methods admit a direct TokenReview-verified ServiceAccount or an explicitly configured
