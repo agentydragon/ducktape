@@ -2,7 +2,7 @@
 
 **Status: parked.** The persistent K3s-in-a-trusted-container design is retained as a reference while Agentplane uses the static Ubuntu KVM worker and a fresh disposable K3s fixture per action. The active worker and test lane landed in #14072 and #14070; #14094 is a separate follow-up. The earlier spike PRs #14050, #14059, and #14065 remain draft and unmerged.
 
-The spike's runtime code and tests are in [`agentplane/system_tests/x/shared_cluster`](../../agentplane/system_tests/x/shared_cluster/README.md). Their Bazel targets are manual reference targets; the CI image roster no longer publishes the node image.
+The spike's runtime code and tests are in [`agentplane/system_tests/x/shared_cluster`](../../agentplane/system_tests/x/shared_cluster/README.md). Its Bazel targets are test-only and remain available for inspection or revival; the CI image roster no longer publishes the node image.
 
 `reference/cluster/` keeps the rendered chart, image pin component, and original Flux Kustomization as inert snapshots. They sit outside every cluster manifest root and are no longer generated, packaged as a Flux artifact, or applied by Flux. Archived directory names use the repository's underscore convention; the chart's component reference follows that archived layout. `reference/source/cluster/cdk8s/agentplane_test_cluster/` keeps the original builder, tests, and BUILD file as `.txt` references. They are non-executable because that generator imported `cluster/` from under `x/`; restoring them requires moving them back to `cluster/cdk8s/` and deliberately reconnecting the generator, artifact, Flux and image publishing paths.
 
