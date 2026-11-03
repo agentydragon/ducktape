@@ -97,7 +97,8 @@ data:
     [Install]
     WantedBy=multi-user.target
   executor.yaml: |
-    docker_cap_add: SYS_ADMIN,NET_ADMIN,MKNOD
+    # Nested KubeVirt runs privileged node agents; the dedicated VM is the trust boundary.
+    docker_cap_add: ALL
     executor:
       app_target: grpcs://remote.buildbuddy.io:443
       api_key: "${BUILDBUDDY_API_KEY}"
