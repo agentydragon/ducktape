@@ -637,6 +637,8 @@ def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
 _BASELINE_ROOT = Path("/var/lib/k3s-persistence-v7")
 _BASELINE_MARKER = _BASELINE_ROOT / "server.json"
 _RETAINED_LOG_LIMIT = 8 * 1024 * 1024
+# BuildBuddy reads this at the action workspace root to invalidate its snapshot family:
+# https://github.com/buildbuddy-io/buildbuddy/blob/798749e61eb83e2523ba06a48ff195b62b375198/enterprise/server/remote_execution/containers/firecracker/firecracker.go#L3550-L3557
 _INVALIDATE_SNAPSHOT_MARKER = ".BUILDBUDDY_INVALIDATE_SNAPSHOT"
 _BAZEL_TEST_SETUP_INPUT = Path("external/bazel_tools/tools/test/test-setup.sh")
 
