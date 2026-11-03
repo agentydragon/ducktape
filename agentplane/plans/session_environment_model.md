@@ -27,7 +27,7 @@ implement all of this.
 1. The [task DAG](task_dag.md) now records that Dispatcher PostgreSQL and queue-backed admission
    are mandatory and retires the proposed queue-off mode. Delivery, fencing and the independently
    scoped database-free integration tier remain open.
-2. [Fix the uncertain Session reservation write](https://github.com/agentydragon/ducktape/pull/14026):
+2. [Address the uncertain Session reservation write](https://github.com/agentydragon/ducktape/pull/14026):
    fail closed when the COSI backing-store outcome is uncertain, and recover without replacing the
    event source or replaying an uncertain native effect. Test retry, restart and conflicting requests.
    This repairs today's Runtime contract independently of the new directory.

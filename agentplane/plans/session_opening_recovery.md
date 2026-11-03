@@ -4,8 +4,7 @@ Source inventory checked against `devel` `b7e59c22e9` on 2026-11-02. This descri
 implementation at that revision, not the proposed future contract. The desired model and unresolved
 decisions are in [Sessions and environments](session_environment_model.md); the corresponding
 [task DAG decision](task_dag.md#session_runtime_model_design--sessions-harness-placement-and-execution-attachments)
-tracks the work. The uncertain native reservation write identified below has a separate fix in
-progress. Recheck the linked code when using this inventory after changes land.
+tracks the work. The uncertain native reservation write identified below is addressed by a separate fix linked below. Recheck the linked code when using this inventory after changes land.
 
 ```mermaid
 flowchart LR
@@ -73,7 +72,7 @@ starting the harness: demand drives preparation in the [Session controller](../e
 [Native handshake](../env/runtime/session/native.go) records the harness-returned native Session ID
 and emits the harness-started observation. A public Session ID is not that native ID.
 
-**Known gap:** an underlying COSI store write can commit and then report an error before the in-memory
+**Gap at the inventoried revision:** an underlying COSI store write can commit and then report an error before the in-memory
 collection reflects it. Today's admission may consequently see an absent Session on retry and create
 a different event-source ID. The [separate Runtime fix](https://github.com/agentydragon/ducktape/pull/14026)
 addresses the injected failure model with fail-closed recovery. The Dispatcher retry protocol
