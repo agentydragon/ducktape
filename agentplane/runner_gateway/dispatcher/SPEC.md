@@ -39,9 +39,17 @@ It scopes existing Sessions and existing environments; it does not create enviro
 
 - `OpenSession` requires `session_id` to be a canonical lowercase UUID before reading Sandbox state or recording an
   opening. Read RPCs remain unchanged and can still address retained rows by their stored IDs.
-- A normal `OpenSession` can target only the current Sandbox-owned ServiceAccount whose namespace, name and UID
+- A new normal `OpenSession` can target only the current Sandbox-owned ServiceAccount whose namespace, name and UID
   equal the authenticated caller's reviewed ServiceAccount. The Sandbox and account are read from Kubernetes;
   callers cannot choose a different principal by supplying strings.
+- An existing `OpenSession` request is a read-only receipt retry. Before comparing its immutable request,
+  Dispatcher checks the same retained owner UID or configured Pod-bound backend authority as receipt reads;
+  an unauthorized caller gets `NOT_FOUND` without conflict details. The comparison is shared with
+  transactional creation and includes exact environment name/UID, deterministic spec bytes, and optional
+  setup bytes. Matching retries do not consult live environment inventory or change materialization,
+  attribution, pending principal binding or wake state. Delegated calls still pass middleware's current
+  effective-identity validation and never inherit their actor's privilege. An absent row still requires
+  normal fresh admission; this path provides no historical deletion registry.
 - Every new opening retains the target execution ServiceAccount as its immutable logical principal and stores
   the authenticated caller separately as creator. A normal caller can read that opening only while its
   authenticated account and UID equal the retained target principal.

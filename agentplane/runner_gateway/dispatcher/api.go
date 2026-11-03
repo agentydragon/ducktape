@@ -444,6 +444,29 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 	if err := canonicalSessionID(request.GetSessionId()); err != nil {
 		return nil, err
 	}
+	caller, err := s.caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Recover an accepted request without consulting current owner availability. This
+	// path only reads the receipt; it never queues, wakes, binds or materializes work.
+	row, err := s.Store.GetOpening(ctx, request.GetSessionId())
+	if err == nil {
+		if err := row.authorizeRetry(caller); err != nil {
+			return nil, apiError(err)
+		}
+		if err := row.matchRequest(request.GetSandbox(), request.GetSandboxUid(), request.GetSpec(), request.SetupScript); err != nil {
+			return nil, apiError(err)
+		}
+		opening, err := DescribeOpening(row)
+		if err != nil {
+			return nil, apiError(err)
+		}
+		return &dispatcherpb.OpenSessionResponse{Opening: opening}, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return nil, apiError(err)
+	}
 	current, err := s.sandbox(ctx, request.GetSandbox())
 	if err != nil {
 		return nil, err
@@ -452,10 +475,6 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 		return nil, status.Error(codes.FailedPrecondition, "sandbox identity changed")
 	}
 	if err := ValidateRuntime(request.GetSpec(), request.SetupScript, s.CentralTarget); err != nil {
-		return nil, err
-	}
-	caller, err := s.caller(ctx)
-	if err != nil {
 		return nil, err
 	}
 	execution := &ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: current.Namespace, Name: current.Name}}
@@ -477,8 +496,8 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 		}
 		execution = account
 	}
-	row, err := s.Store.OpenSessionWithIdentity(ctx, request.GetSessionId(), request.GetSandbox(), current.UID,
-		request.GetSpec(), request.SetupScript, nil, execution, caller.Attribution.Actor, caller.Attribution)
+	row, err = s.Store.OpenSessionForCaller(ctx, request.GetSessionId(), request.GetSandbox(), current.UID,
+		request.GetSpec(), request.SetupScript, nil, execution, caller)
 	if err != nil {
 		return nil, apiError(err)
 	}
