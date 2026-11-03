@@ -3,6 +3,9 @@
 use super::super::allocation_transfer::AllocationContext;
 use super::super::local_operations::{LocalBinding, LocalBody};
 use super::super::local_transfer::{self, EvaluatedCallee, LocalContext, LocalFrame};
+use super::super::noninvoking_initialization::{
+    NativeConstructorCandidate, NativeConstructorTransfer, OriginalInitializer,
+};
 use super::super::value_model::{
     AbstractValue, ArrayIteration, CallSite, CaptureInterner, Captured, CapturedContext, Context,
     DenseArray, FrozenNamespaceProof, LexicalCaptures, LexicalCellId, MemberKey, OwnPropertyShape,
@@ -22,7 +25,7 @@ use crate::analysis_inputs::{AnalysisInputs, NativeInputKind, ProofDependencies}
 use crate::facts::ExportReentryPolicy;
 use crate::facts::StableArraySpreadShapes;
 use crate::facts::abstract_domain::builtins::{
-    ARRAY_PROTOTYPE_SLOTS, ArgSel, IntrinsicOp, IterationResult, Return, Row,
+    ARRAY_PROTOTYPE_SLOTS, ArgSel, IntrinsicOp, Invocation, IterationResult, Return, Row, Throws,
 };
 use crate::facts::abstract_domain::effect::CoerceOperand;
 use crate::facts::abstract_domain::heap::Mutation;
@@ -1060,6 +1063,8 @@ pub(super) struct Executor<'source, 'rule> {
     queries: RuntimeQueries<'source, 'rule>,
     allocation_judgment: super::super::allocation_transfer::AllocationJudgment,
     evaluation_effects: EvaluationEffects,
+    native_initializer_candidate: Option<NativeConstructorCandidate>,
+    native_initializer_transfer: Option<NativeConstructorTransfer>,
 }
 
 /// A suspended transfer has handed its state to its child. Keep the remaining
@@ -1533,6 +1538,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // Creating an executor establishes no whole-source coverage.
             allocation_judgment: super::super::allocation_transfer::AllocationJudgment::Opaque,
             evaluation_effects: EvaluationEffects::default(),
+            native_initializer_candidate: None,
+            native_initializer_transfer: None,
         }
     }
 
@@ -2532,6 +2539,52 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             values.insert(AbstractValue::Value(Value::Unavailable));
         }
         values
+    }
+
+    fn record_native_initializer_transfer(
+        &mut self,
+        callee: &ValueExpr,
+        expressions: &[ValueExpr],
+        may_throw: bool,
+        site: CallSite,
+        resolution: &NativeCallResolution,
+    ) {
+        let Some(candidate) = self.native_initializer_candidate else {
+            return;
+        };
+        let kind = candidate.kind();
+        let expected_op = match kind {
+            Kind::Map => IntrinsicOp::Map,
+            Kind::Set => IntrinsicOp::Set,
+            _ => return,
+        };
+        // `resolution` comes from this New dispatch's resolve_native_call,
+        // which already proves the exact unshadowed global identity through
+        // its census or exact-site input. The builtin binding itself stays
+        // opaque in value flow, so its abstract value is not an identity test.
+        let row = resolution.row;
+        let names_expected_global = matches!(callee, ValueExpr::Binding(binding)
+            if binding.0.as_ref() == if kind == Kind::Map { "Map" } else { "Set" });
+        let no_present_coercions = row
+            .coerces
+            .iter()
+            .all(|(selector, _)| matches!(selector, ArgSel::Arg(_)));
+        if candidate.matches_dispatch(site, kind)
+            && names_expected_global
+            && expressions.is_empty()
+            && !may_throw
+            && row.op == expected_op
+            && row.invocation == [Invocation::Construct]
+            && row.arity.contains(&0)
+            && no_present_coercions
+            && row.invokes.is_empty()
+            && row.allocates == Some(kind)
+            && row.mutates.is_empty()
+            && row.returns == Return::Fresh
+            && row.throws == Throws::Never
+        {
+            self.native_initializer_transfer = Some(NativeConstructorTransfer::applied(candidate));
+        }
     }
 
     /// The fresh allocation's value: its contents are the row's writes to
@@ -8146,6 +8199,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 if let Some(returns) =
                     self.resolve_native_call(CallKind::New, callee, *span, args, &successful_args)
                 {
+                    self.record_native_initializer_transfer(
+                        callee,
+                        args,
+                        args_may_throw,
+                        *span,
+                        &returns,
+                    );
                     return self.native_return_values(
                         returns,
                         &successful_args,
@@ -8303,6 +8363,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             ValueExpr::Unknown => unknown(),
         }
+    }
+
+    /// Run one dedicated owner initializer while retaining evidence only for
+    /// the exact root native New dispatch, if that dispatch actually applies.
+    pub(super) fn evaluate_initializer_transfer(
+        &mut self,
+        source: &OriginalInitializer,
+        expression: &ValueExpr,
+        env: &Context,
+        captures: &Context,
+    ) -> (Values, Option<NativeConstructorTransfer>) {
+        self.native_initializer_candidate = source.native_constructor_candidate(expression);
+        self.native_initializer_transfer = None;
+        let values = self.evaluate_transfer(expression, env, captures);
+        let transfer = self.native_initializer_transfer.take();
+        self.native_initializer_candidate = None;
+        (values, transfer)
     }
 
     /// Stop the frame without replaying its earlier operations. An unproved
