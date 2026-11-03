@@ -11,10 +11,9 @@ The existing `buildbuddy-api-key` Secret is attached as a read-only ISO. No oute
 token or host filesystem is attached. Root in a test can compromise the persistent guest
 and its BuildBuddy key; this is a trusted-code worker.
 
-The Kustomization starts suspended. Change `suspend` in
-[`buildbuddy_kvm_worker.py`](../../cdk8s/buildbuddy_kvm_worker.py), regenerate, and review
-activation through Git. First boot configures the dedicated guest for nested KVM and reboots
-once before the executor starts. Verify guest boot, the outer network fence and these manual checks:
+The Kustomization is enabled, so Flux deploys the VM when this configuration lands.
+First boot configures the dedicated guest for nested KVM and reboots once before the
+executor starts. Verify guest boot, the outer network fence and these manual checks:
 
 ```bash
 bbr test //devinfra/buildbuddy/kvm:kvm_vm_test --nocache_test_results

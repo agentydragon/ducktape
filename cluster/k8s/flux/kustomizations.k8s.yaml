@@ -3550,7 +3550,7 @@ spec:
     kind: ExternalArtifact
     name: buildbuddy-kvm-worker
     namespace: ducktape-flux
-  suspend: true
+  suspend: false
   timeout: 15m
   wait: true
 ---

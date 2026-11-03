@@ -151,7 +151,6 @@ def buildbuddy_kvm_worker(
         NAME,
         directory,
         timeout="15m",
-        # Guest boot, first-boot package installation and nested KVM need live verification.
-        suspend=True,
+        suspend=False,
         depends_on=flux_kustomization_depends_on_many(executor, kubevirt),
     )
