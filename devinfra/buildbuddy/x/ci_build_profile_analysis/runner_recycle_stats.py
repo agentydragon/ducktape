@@ -2,8 +2,8 @@
 """Estimate how often bbr/CI runners see a warm vs cold workspace.
 
 Each `bbr`/CI run dispatches a ci_runner Firecracker VM (the `HOSTED_BAZEL`
-"remote ..." invocation, configured in .bbrc with recycle-runner,
-remote-snapshot-save-policy=always, snapshot-read-policy=newest). The runner's
+"remote ..." invocation, configured in .bbrc with recycle-runner and
+snapshot-read-policy=newest). The runner's
 first console lines reveal which workspace setup path `bb remote` took:
 
   warm workspace: "Syncing existing repo..." -> shallow git fetch + git clean +

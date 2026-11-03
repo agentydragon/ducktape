@@ -6,6 +6,6 @@ remote --runner_exec_properties=EstimatedComputeUnits=8
 remote --runner_exec_properties=workload-isolation-type=firecracker
 remote --runner_exec_properties=init-dockerd=true
 remote --runner_exec_properties=recycle-runner=true
-remote --runner_exec_properties=remote-snapshot-save-policy=always
+# Leave remote-snapshot-save-policy unset: aggressive saves overload BuildBuddy's snapshot infrastructure.
 remote --runner_exec_properties=snapshot-read-policy=newest
 remote "--runner_exec_properties=run-under=/bin/bash -c 'printf \"kvm-clock\\n\" | sudo -n tee /sys/devices/system/clocksource/clocksource0/current_clocksource >/dev/null && exec \"$@\"' --"
