@@ -18,6 +18,7 @@
 //!   and its linker / source-import orderings.
 
 mod build;
+mod commutation_order;
 mod dependency_graph;
 mod edge;
 mod linker_order;
@@ -30,6 +31,7 @@ pub use build::{
     CommutingStatementsDiagnostic, DependencyGraphBuildError, DuplicateTopLevelDeclaration,
     GraphOptions, KnownConflict, PremiseVerdict, build_dependency_graph_with,
 };
+pub use commutation_order::{CommutationOrder, PreservedOrder, TemporalConstraint, TemporalEdge};
 pub use dependency_graph::{
     AppliedCommutingPremise, DependencyGraph, SourceUnit, SourceUnitClass, SourceUnitId,
     UnresolvedDependencyEdgeEndpoint,

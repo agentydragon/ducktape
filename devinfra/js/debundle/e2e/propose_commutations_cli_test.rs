@@ -227,7 +227,8 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
     assert_eq!(third["rank_reason"], "partial_cut");
     assert_eq!(third["single_pair_cut"], false);
     assert_eq!(third["cut_edges"], serde_json::json!([0]));
-    assert_eq!(third["remaining_module_pair_edges"], 3);
+    // beta must still follow the record installation through alpha.
+    assert_eq!(third["remaining_module_pair_edges"], 4);
 
     // Rank 2 is only a candidate to inert the callback's possible `trace`
     // observation. The two eager-use edges remain co-location requirements;
@@ -347,8 +348,11 @@ fn proposal_cut_prediction_includes_preserved_order_closure() {
 
     assert_eq!(proposal["single_pair_cut"], false, "{report:#}");
     assert_eq!(proposal["rank_reason"], "partial_cut", "{report:#}");
+    assert_eq!(proposal["remaining_module_pair_edges"], 1, "{report:#}");
     let scc = only_scc(&report);
     assert_eq!(scc["verdict"], "pairs_cannot_break", "{report:#}");
+    assert_eq!(scc["counts_are_lower_bounds"], true, "{report:#}");
+    assert!(blocking_rows(scc).contains(&("sequenced".to_owned(), "preserved_order".to_owned())));
     let [residual] = array(scc, "residual_components") else {
         panic!("one residual component: {scc:#}");
     };

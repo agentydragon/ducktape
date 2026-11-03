@@ -2150,6 +2150,12 @@ preservation repeats across overlapping premises, independently of their order
 in the spec. An entry may discharge an edge exposed by another entry; unused
 assertions are checked after preservation finishes.
 
+`spec propose-commutations` uses the same preservation closure for its
+single-pair cut predictions. Its combined-proposal analysis may stop after
+proving a surviving cycle; `counts_are_lower_bounds` then marks the reported
+counts and cyclic memberships as incomplete. An acyclic prediction requires
+completed preservation. These predictions do not certify an author's assertion.
+
 An entry applies to ordering whose effect analysis is opaque at an endpoint
 or on the preserved path. It is rejected as contradicting a source fact when the
 analysis derived that the two source units definitely conflict, read from each
