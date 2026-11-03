@@ -118,10 +118,13 @@ func TestAGrantedSenderMessagesASessionThatReadsItFromItsInbox(t *testing.T) {
 		t.Errorf("after the acknowledgement: %v", followed)
 	}
 
-	// History confirmed the Session once, when its inbox opened.
+	// The History check establishes the new inbox. Later sends to this UID-keyed inbox do not repeat it.
+	server.history.sandboxes[testSession] = &historypb.SandboxRef{
+		Namespace: testNamespace, Name: sandboxName, Uid: proto.String("test-former-sandbox-uid"),
+	}
 	server.send(t, sendRequest("second"))
 	if asked := server.history.questions(); len(asked) != 1 || asked[0] != testSession {
-		t.Errorf("History asked about %v, want the Session once", asked)
+		t.Errorf("History asked about %v, want only the check that opened the inbox", asked)
 	}
 }
 
@@ -208,13 +211,23 @@ func TestAMessageToNoSuchSandboxIsNotFound(t *testing.T) {
 	server.requireNoInbox(t)
 }
 
-func TestAMessageOpensAnInboxOnlyForASessionHistoryRecordedForTheSandbox(t *testing.T) {
+func TestAMessageOpensAnInboxOnlyForSessionHistoryOfTheExactSandbox(t *testing.T) {
 	server := newServer(t)
 	server.grantSend(otherSandboxName, toSandbox)
-	server.history.sandboxes["test-other-sandbox-session"] = &historypb.SandboxRef{Namespace: testNamespace, Name: otherSandboxName}
+	server.history.sandboxes["test-other-sandbox-session"] = &historypb.SandboxRef{
+		Namespace: testNamespace, Name: otherSandboxName, Uid: proto.String(otherSandboxUID),
+	}
+	server.history.sandboxes["test-former-sandbox-session"] = &historypb.SandboxRef{
+		Namespace: testNamespace, Name: sandboxName, Uid: proto.String("test-former-sandbox-uid"),
+	}
+	server.history.sandboxes["test-session-without-history-uid"] = &historypb.SandboxRef{
+		Namespace: testNamespace, Name: sandboxName,
+	}
 	for name, session := range map[string]string{
-		"unrecorded Session":        "test-unrecorded-session",
-		"another Sandbox's Session": "test-other-sandbox-session",
+		"unrecorded Session":          "test-unrecorded-session",
+		"another Sandbox's Session":   "test-other-sandbox-session",
+		"same-name predecessor":       "test-former-sandbox-session",
+		"History Session without UID": "test-session-without-history-uid",
 	} {
 		t.Run(name, func(t *testing.T) {
 			request := sendRequest("unrecorded")
@@ -227,6 +240,16 @@ func TestAMessageOpensAnInboxOnlyForASessionHistoryRecordedForTheSandbox(t *test
 	_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("outage"))
 	requireCode(t, err, codes.Unavailable)
 	server.requireNoInbox(t)
+}
+
+func TestConfirmSessionRequiresLiveSandboxUID(t *testing.T) {
+	server := newServer(t)
+	err := server.notifications.confirmSession(t.Context(), &identitypb.EnvironmentTarget{
+		Namespace: testNamespace, Name: sandboxName,
+	}, testSession)
+	if !errors.Is(err, errSessionUnrecorded) {
+		t.Fatalf("confirmSession error = %v, want %v", err, errSessionUnrecorded)
+	}
 }
 
 func TestAMessageMustFitTheConfiguredLimit(t *testing.T) {

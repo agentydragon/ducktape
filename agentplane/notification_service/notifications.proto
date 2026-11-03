@@ -98,7 +98,8 @@ service Notifications {
   // Sandbox accepts messages.
   //
   // The inbox belongs to the Sandbox's ServiceAccount. Without one yet for the Session, it is created only once
-  // the History Service has recorded the Session as written by that Sandbox, else `NOT_FOUND`.
+  // the History Service has recorded it with this Sandbox's namespace, name and non-empty UID, else `NOT_FOUND`.
+  // Sends to an existing UID-keyed inbox do not check History again.
   //
   // A message is identified by `idempotency_key` within the caller's messages to the inbox: an identical retry
   // answers with the same message, and the key reused for another body or `from_session` fails `ALREADY_EXISTS`.

@@ -67,9 +67,9 @@ func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAcc
 	return &notificationspb.SendMessageResponse{Message: sentMessageView(sent)}, nil
 }
 
-// confirmSession checks that the History Service recorded the Session as written by the Sandbox, so that a sender
-// cannot spend the recipient's inbox quota on Session IDs it made up. History records the Sandbox by name, so a
-// Session of a deleted Sandbox of the same name also passes.
+// confirmSession checks that History recorded the Session against this exact Sandbox incarnation, so a sender
+// cannot spend the recipient's inbox quota on a Session ID it made up or one written by a deleted Sandbox with
+// the same name. Both sides need a UID: History records without one cannot establish this association.
 func (s *Notifications) confirmSession(ctx context.Context, sandbox *sandboxreader.Identity, sessionID string) error {
 	summary, err := s.history.GetSessionSummary(ctx, &historypb.GetSessionSummaryRequest{SessionId: sessionID})
 	switch status.Code(err) {
@@ -80,7 +80,10 @@ func (s *Notifications) confirmSession(ctx context.Context, sandbox *sandboxread
 	default:
 		return unavailable("history", err)
 	}
-	if recorded := summary.GetSandbox(); recorded.GetNamespace() != sandbox.Namespace || recorded.GetName() != sandbox.Name {
+	recorded := summary.GetSandbox()
+	if sandbox.GetUid() == "" || recorded.GetUid() == "" ||
+		recorded.GetNamespace() != sandbox.GetNamespace() || recorded.GetName() != sandbox.GetName() ||
+		recorded.GetUid() != sandbox.GetUid() {
 		return errSessionUnrecorded
 	}
 	return nil

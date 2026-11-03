@@ -29,6 +29,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
@@ -289,7 +290,7 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 		github:  &fakeGitHub{access: store.GitHubAccessKey{AppID: 11, InstallationID: 22, RepositoryID: 33}},
 		policy:  inboxaccess.NewPolicy(),
 		history: &fakeHistory{sandboxes: map[string]*historypb.SandboxRef{
-			testSession: {Namespace: testNamespace, Name: sandboxName},
+			testSession: {Namespace: testNamespace, Name: sandboxName, Uid: proto.String(sandboxUID)},
 		}},
 		kube: kube,
 	}
