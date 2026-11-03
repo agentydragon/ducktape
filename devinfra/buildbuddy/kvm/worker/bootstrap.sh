@@ -17,6 +17,8 @@ install -Dm0644 "$config_dir/executor.service" /etc/systemd/system/buildbuddy-ex
 install -Dm0644 "$config_dir/modules-load.conf" /etc/modules-load.d/buildbuddy-kvm-worker.conf
 install -Dm0644 "$config_dir/modprobe.conf" /etc/modprobe.d/buildbuddy-kvm-worker.conf
 install -Dm0644 "$config_dir/sysctl.conf" /etc/sysctl.d/90-buildbuddy-kvm-worker.conf
+install -Dm0644 "$config_dir/k3s.yaml" /etc/rancher/k3s/config.yaml
+install -Dm0644 "$config_dir/registries.yaml" /etc/rancher/k3s/registries.yaml
 install -Dm0755 "$config_dir/run-executor.sh" "$install_dir/run-executor"
 modprobe -a br_netfilter bridge ip6_tables ip6table_nat ip_tables iptable_nat \
   kvm_amd loop nf_conntrack nf_nat overlay tun vhost_net vhost_vsock vxlan

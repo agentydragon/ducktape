@@ -10,6 +10,10 @@ Both Docker's data root and containerd's image store use the work disk; Docker 2
 containerd image store does not follow Docker's `data-root` setting.
 Actions also bind K3s's data directory from the ext4 work disk so its nested overlayfs
 snapshotter has a supported backing filesystem.
+The guest sets kubelet's kernel defaults at boot. The KVM fixture prepares its private
+Docker cgroup and network namespaces; guest-wide sysctls remain read-only in the action.
+K3s pulls its bundled images through Zot, with public registry fallback disabled, using
+read-only configuration supplied by the worker.
 
 The existing `buildbuddy-api-key` Secret is attached as a read-only ISO. No outer Kubernetes
 token or host filesystem is attached. Root in a test can compromise the persistent guest

@@ -18,6 +18,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
 )
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_labels
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -76,8 +77,25 @@ def chart(app: App) -> Chart:
         "guest-config",
         metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
         data={
-            name: get_required_path(own_repo_rlocation(f"devinfra/buildbuddy/kvm/worker/{name}")).read_text()
-            for name in _GUEST_FILES
+            **{
+                name: get_required_path(own_repo_rlocation(f"devinfra/buildbuddy/kvm/worker/{name}")).read_text()
+                for name in _GUEST_FILES
+            },
+            "k3s.yaml": yaml_config({"disable-default-registry-endpoint": True}),
+            "registries.yaml": yaml_config(
+                {
+                    "mirrors": {
+                        registry: {"endpoint": [f"http://{zot.HTTP.fqdn}"], "rewrite": {"^(.*)$": f"{prefix}/$1"}}
+                        for registry, prefix in (
+                            ("docker.io", "docker-hub"),
+                            ("ghcr.io", "ghcr"),
+                            ("quay.io", "quay"),
+                            ("registry.k8s.io", "k8s"),
+                            ("gcr.io", "gcr"),
+                        )
+                    }
+                }
+            ),
         },
     )
     container_disk_vm(
