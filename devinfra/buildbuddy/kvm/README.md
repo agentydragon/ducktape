@@ -20,6 +20,10 @@ limit bounds all processes;
 `executor.oci.enable_cgroup_memory_limit` also enables the memory controller
 used by task cgroups, but the OCI-specific per-task `memory.max` limit does not
 apply to Firecracker guests.
+The Flux owner's health check covers the active OCI release while the new driver
+is suspended. Add the driver's HelmRelease to that check when activating it.
+The driver's cache is capped at 8 GB; its 30 GiB ephemeral-storage limit is a
+kubelet eviction threshold, rather than a filesystem quota.
 
 This smoke test checks that the selected executor can open `/dev/kvm`, reports
 KVM API version 12, and creates a VM and vCPU. It logs `CapEff` from

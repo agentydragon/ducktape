@@ -38,6 +38,7 @@ py_library(
     deps = [
         ":flux",
         ":manifest_roots",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],

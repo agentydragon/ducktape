@@ -132,10 +132,12 @@ spec:
       requests:
         cpu: 4
         memory: 8Gi
+        ephemeral-storage: 10Gi
         devices.kubevirt.io/kvm: "1"
       limits:
         cpu: 4
         memory: 8Gi
+        ephemeral-storage: 30Gi
         devices.kubevirt.io/kvm: "1"
     nodeSelector:
       kubernetes.io/hostname: wyrm2
@@ -149,5 +151,6 @@ spec:
         child_cgroups_enabled: true
         child_cgroups_move_tini: true
         max_concurrent_tasks: 1
+        local_cache_size_bytes: 8000000000
         oci:
           enable_cgroup_memory_limit: true
