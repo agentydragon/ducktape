@@ -350,6 +350,7 @@ Binding names are resolved in the command's input view:
 | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | Graph queries: `describe`, `inspect-source --id`, `cluster`, `scc --binding` | The saved graph's input binding or exported/readable name.                                                        |
 | Spec operations: `bindings rename`, `assign`, `unassign`, `comment`          | The current member's `selector.binding.name`, or source-match binding's `local`, or its explicit readable `name`. |
+| Raw source lookup: `inspect-source --around-binding`                         | The original input declaration's name, without spec-name resolution.                                              |
 
 These names can differ. A source-match template may call a declaration
 `templateToken`, match the input binding `raw`, and export `readableValue`.
@@ -361,7 +362,13 @@ names until regeneration.
 Use `bindings list --modules <modules-dir>` to discover current editable
 identifiers; `--in <module-path>` limits the owner. Its `minified` field is the
 selector binding token for a member and the template-local token for a
-source-match binding. This command needs no saved graph. An ambiguous spec
+source-match binding. It is empty for other structural member selectors and
+need not be the input binding's name. To recover the input identity, use
+`describe <readable-name> --graph <matching-graph> --modules <modules-dir>` and
+read `source_unit_ids` and `bindings[].binding`, or inspect it directly with
+`inspect-source --id <readable-name>` and the same graph/spec context. A blank
+`minified` field or a failed raw-name lookup does not establish an ambiguous or
+missing declaration. `bindings list` needs no saved graph. An ambiguous spec
 identifier is rejected with matching file/claim locations; choose an
 unambiguous identifier from that inventory.
 
@@ -713,8 +720,10 @@ debundle inspect-source --id runtime/plugins --view raw --context-statements 1
 `--statements` accepts one zero-based index or an inclusive `START..END`
 range. With no selector it starts at the first item and prints up to the
 configured statement limit. `--around-binding NAME` locates
-the unique top-level item that declares that name and includes two neighboring
+the unique top-level item that declares that raw input name and includes two neighboring
 items on each side by default; set `--context-statements` to change that count.
+For a readable spec name, use `--id NAME` with a matching graph and modules;
+see [name and identifier resolution](#name-and-identifier-resolution).
 The range, binding, and ID options are mutually exclusive. A missing or
 repeated top-level declaration is an error. `--id` accepts the same IDs as
 `describe` and requires `--graph` and `--modules` (or their environment

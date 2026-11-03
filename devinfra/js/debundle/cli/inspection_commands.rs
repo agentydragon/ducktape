@@ -123,7 +123,8 @@ pub(super) struct InspectSourceArgs {
     #[arg(long, conflicts_with = "around_binding")]
     pub statements: Option<StatementRange>,
 
-    /// Select the unique top-level item declaring this binding.
+    /// Select the unique top-level item declaring this raw input binding.
+    /// Resolve readable spec names with --id instead.
     #[arg(long)]
     pub around_binding: Option<String>,
 
@@ -585,14 +586,21 @@ pub(super) fn run_inspect_source(
             args.chunk.as_deref(),
         )?;
         let source = PreparedSource::load(&source_file)?;
-        let range =
-            match args.around_binding.as_deref() {
-                Some(binding) => Some(source.statement_range_around_binding(
-                    binding,
-                    args.context_statements.unwrap_or(2),
-                )?),
-                None => args.statements,
-            };
+        let range = match args.around_binding.as_deref() {
+            Some(binding) => Some(
+                source
+                    .statement_range_around_binding(binding, args.context_statements.unwrap_or(2))
+                    .with_context(|| {
+                        format!(
+                            "--around-binding {binding:?} searches raw input names; \
+                                 for a readable spec name, use `inspect-source --id <name>` \
+                                 with matching --graph and --modules, or `describe <name>` \
+                                 to find its input binding"
+                        )
+                    })?,
+            ),
+            None => args.statements,
+        };
         let (start, end) = match range {
             Some(range) => {
                 range.validate(source.statement_count())?;
