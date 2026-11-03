@@ -60,7 +60,10 @@ def _debundle_pipeline_impl(ctx):
         tool = ctx.executable.analyzer,
     )
 
-    output_groups = {"analysis": depset([projection, analysis])}
+    output_groups = {
+        "analysis": depset([projection, analysis]),
+        "debundler": depset([ctx.executable.debundler]),
+    }
     _run_debundler(
         ctx,
         inputs = depset([analysis], transitive = [plan.inputs]),

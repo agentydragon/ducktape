@@ -91,6 +91,17 @@ retain their `GATE_REJECTED` marker and exit-3 contract. Without an exported
 graph their diagnostics explain how to request one instead of naming a
 nonexistent graph file.
 
+To materialize the rule's selected execution-configuration CLI with its
+analysis artifacts:
+
+```sh
+bazelisk build //path/to:debundle --output_groups=analysis,debundler
+```
+
+The `debundler` group contains the exact executable selected by the rule's
+`debundler` attribute or label flag. This request does not run emission or
+request the `dependency_graphs` group.
+
 ## Integration boundary
 
 Corpus integrations use `pipeline.bzl`'s `debundle_pipeline`, the public
