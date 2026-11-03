@@ -24,7 +24,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         "//agentplane/app/frontend:status_mark",
-        "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/policy/v1:policy_service_pb",
     ],
 )
 
@@ -33,8 +33,9 @@ agentplane_vitest_test(
     srcs = ["state.test.ts"],
     deps = [
         ":state",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/policy/v1:policy_service_pb",
     ],
 )
 
@@ -44,6 +45,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":state",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -51,7 +53,8 @@ ts_library(
         "//agentplane/app/frontend:mark_glyph",
         "//agentplane/app/frontend:status_mark",
         "//agentplane/app/frontend:time_ago",
-        "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/policy/api/v1alpha1:policy_types_pb",
+        "//agentplane/policy/v1:policy_service_pb",
         "//util/frontend:code_block",
     ],
 )

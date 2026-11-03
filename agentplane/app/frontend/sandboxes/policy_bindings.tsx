@@ -1,7 +1,7 @@
 import { Button, Group, MultiSelect, Select, Stack, Text, Title } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import type { BindingView } from "./client";
+import type { PolicyResources } from "../policy/watch";
 import { BINDING_GRANT_HELP, BindingsTable } from "../bindings/table";
 import { api, displayableError } from "../client";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
@@ -61,10 +61,10 @@ function GrantPolicySets({
 /** The bindings that name the sandbox's ServiceAccount, where an operator adds one or revokes one. */
 export function PolicyBindingsSection({
   target,
-  bindings,
+  resources,
 }: {
   target: EnvironmentTarget;
-  bindings: BindingView[] | null;
+  resources: PolicyResources | null;
 }): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   // The namespace's policy sets of any rule type, the ones picked to grant this sandbox next, and for how long.
@@ -135,7 +135,13 @@ export function PolicyBindingsSection({
           onGrant={() => void grant()}
         />
       )}
-      {bindings && <BindingsTable bindings={bindings} onRevoke={(binding) => void revoke(binding)} />}
+      {resources && (
+        <BindingsTable
+          bindings={resources.bindings}
+          policySets={resources.sets}
+          onRevoke={(binding) => void revoke(binding)}
+        />
+      )}
     </Stack>
   );
 }

@@ -34,16 +34,10 @@ import {
 } from "./client";
 import { ActionPolicyWatch } from "../actions/policy";
 import { EgressLog } from "./egress";
-import {
-  liveSandboxUrl,
-  useEnvironmentWatch,
-  sandboxInventoryFresh,
-  useRequiredSandboxesLive,
-  type SandboxPolicySnapshot,
-} from "./live";
+import { useEnvironmentWatch, sandboxInventoryFresh, useRequiredSandboxesLive } from "./live";
 import { MarkGlyph } from "../mark_glyph";
 import { ConfirmDelete, deletable, DELETE_NEEDS_SUSPENDED, SuspendResume } from "./lifecycle";
-import { useLive } from "../live";
+import { usePolicyResources } from "../policy/watch";
 import { PolicyBindingsSection } from "./policy_bindings";
 import { SandboxConsole } from "./sandbox_console";
 import { StatusView } from "./sandbox_status_view";
@@ -143,18 +137,16 @@ export function SandboxPage({
   }, [name, sandboxNamespace, sandboxUID]);
   // History remains available after the resource disappears; do not use a prior route's UID.
   const threadUID = sandboxUID ?? (lastTarget?.name === name ? lastTarget.uid : undefined);
-  const live = useLive<SandboxPolicySnapshot>(target ? liveSandboxUrl(target) : null, `Sandbox ${name}`);
   const threadRequest = useMemo(
     () => (threadUID ? { sandboxUID: threadUID, limit: threadLimit, search: null, includeArchived } : null),
     [threadUID, threadLimit, includeArchived]
   );
   const threadLive = useThreadsLive(threadRequest, null);
   // Never combine policy or thread data from an old incarnation with its same-name replacement.
-  const matches = !!target && target.uid === live.snapshot?.sandbox_uid;
   const observation = useEnvironmentWatch(target);
   const sandbox = observation.stream.standing === "current" ? observation.environment : null;
+  const policy = usePolicyResources(target?.namespace, sandbox?.executionAccount?.account, target?.uid);
   const deleted = sandboxInventoryFresh(inventory) && !candidate;
-  const detail = matches ? live.snapshot : null;
   const vmConsoleAvailable = hasVmConsole(sandbox);
   const tab: Tab =
     isTab(requestedTab) && (requestedTab !== "console" || vmConsoleAvailable) ? requestedTab : DEFAULT_TAB;
@@ -504,9 +496,15 @@ export function SandboxPage({
               <PolicyBindingsSection
                 key={`${target.namespace}/${target.name}/${target.uid}`}
                 target={target}
-                bindings={detail?.bindings ?? null}
+                resources={policy.resources}
               />
             )}
+            {policy.error && (
+              <Alert color="red" role="alert">
+                Policy resources unavailable: {policy.error}
+              </Alert>
+            )}
+            {target && !policy.resources && !policy.error && <Text role="status">Waiting for policy resources…</Text>}
             <ActionPolicyWatch subject={sandbox?.executionAccount?.account} fence={target?.uid} />
           </Stack>
         </Tabs.Panel>

@@ -41,6 +41,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	dbmigrate "github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
@@ -268,6 +269,11 @@ func run(ctx context.Context, config Config) error {
 		return fmt.Errorf("configure generated Session Dispatcher HTTP facade: %w", err)
 	}
 	dispatcherGateway := proxy.NewHandlerUpstream(dispatcherFacade, config.SessionDispatcherTokenFile)
+	policyFacade, err := facade.NewHandler(facadeContext, config.PolicyServiceTarget, 10*time.Second, policypb.RegisterPolicyServiceHandlerFromEndpoint)
+	if err != nil {
+		return fmt.Errorf("configure generated Policy Service HTTP facade: %w", err)
+	}
+	policyGateway := proxy.NewHandlerUpstream(policyFacade, config.PolicyServiceTokenFile)
 	historyFacade, err := facade.NewHandler(
 		facadeContext, config.HistoryServiceTarget,
 		time.Duration(config.HistoryServiceRequestTimeoutSeconds*float64(time.Second)),
@@ -348,7 +354,7 @@ func run(ctx context.Context, config Config) error {
 		Auth: appAuth, Updates: wakeupHub, UpdatesConnected: wakeupHub.Connected,
 		SandboxNamespace: config.SandboxNamespace, Live: liveIndex, Sandboxes: environments, Threads: threadStore, History: history, HistoryFollower: historyReaderClient,
 		Federator:      federator,
-		DispatcherHTTP: dispatcherGateway, EnvironmentHTTP: dispatcherGateway,
+		DispatcherHTTP: dispatcherGateway, EnvironmentHTTP: dispatcherGateway, PolicyHTTP: policyGateway,
 		ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
 		HistoryHTTP: historyGateway, NotificationHTTP: notificationGateway,
 		Notifications:    notifications_operatorpb.NewNotificationsOperatorClient(notificationConn),

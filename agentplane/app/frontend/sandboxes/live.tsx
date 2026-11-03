@@ -10,23 +10,14 @@ import { followWatch } from "../watch_stream";
 import { type StreamConnection } from "../stream_reader";
 import { useStreamStatus } from "../stream_status";
 
-import { type Live, type WatchHealth } from "../live";
+import { type Live } from "../live";
 
-import type { BindingView, Decision } from "./client";
+import type { Decision } from "./client";
 
-export type SandboxPolicySnapshot = {
-  sandbox_uid: string | null;
-  bindings: BindingView[];
-  watch: WatchHealth;
-};
 export type DecisionsSnapshot = { watching: boolean; decisions: Decision[] | { detail: string } };
 
 export function liveSandboxesUrl(): string {
   return "/upstream/environments/v1/environments:watch";
-}
-
-export function liveSandboxUrl(target: EnvironmentTarget): string {
-  return `/live/sandboxes/${encodeURIComponent(target.name)}?sandbox_uid=${encodeURIComponent(target.uid)}`;
 }
 
 export function liveEgressDecisionsUrl(target: EnvironmentTarget): string {

@@ -9,8 +9,9 @@ import (
 
 // FrontendConfig is the browser-safe subset of deployment settings.
 type FrontendConfig struct {
-	TraceSearch    *TraceSearchSettings    `mapstructure:"trace_search" json:"trace_search"`
-	LangfuseSearch *LangfuseSearchSettings `mapstructure:"langfuse_search" json:"langfuse_search"`
+	PolicyNamespace string                  `mapstructure:"-" json:"policy_namespace"`
+	TraceSearch     *TraceSearchSettings    `mapstructure:"trace_search" json:"trace_search"`
+	LangfuseSearch  *LangfuseSearchSettings `mapstructure:"langfuse_search" json:"langfuse_search"`
 }
 
 // Huma's nullable tag only supports inline types. These object references need an explicit

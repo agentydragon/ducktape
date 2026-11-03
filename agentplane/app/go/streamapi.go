@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -19,7 +18,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/federation"
 	"github.com/agentydragon/ducktape/agentplane/app/go/liveinventory"
-	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
 	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
@@ -91,6 +89,7 @@ type StreamingDependencies struct {
 	Federator        actionFederator
 	DispatcherHTTP   streamingUpstream
 	EnvironmentHTTP  streamingUpstream
+	PolicyHTTP       streamingUpstream
 	ActionHTTP       streamingUpstream
 	ConnectionHTTP   streamingUpstream
 	HistoryHTTP      streamingUpstream
@@ -111,7 +110,7 @@ func RegisterStreamingRoutes(server *HTTPServer, dependencies StreamingDependenc
 	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete} {
 		server.RegisterRawRoute(method+" /upstream/environments/{path...}", http.HandlerFunc(routes.environmentFacade), false)
 	}
-	server.RegisterRawRoute("GET /live/sandboxes/{name}", http.HandlerFunc(routes.liveSandbox), false)
+	server.RegisterRawRoute("GET /upstream/policy/{path...}", http.HandlerFunc(routes.policyFacade), true)
 	server.RegisterRawRoute("GET /live/sandboxes/{name}/egress/decisions", http.HandlerFunc(routes.liveDecisions), false)
 	server.RegisterRawRoute("GET /threads/{thread_id}/events/stream", http.HandlerFunc(routes.threadEvents), false)
 	server.RegisterRawRoute("GET /upstream/notifications/v1/operator/notices:watch", http.HandlerFunc(routes.notificationFacade), true)
@@ -132,32 +131,10 @@ func RegisterStreamingRoutes(server *HTTPServer, dependencies StreamingDependenc
 type streamingRoutes struct {
 	server *HTTPServer
 	deps   StreamingDependencies
-
-	sandboxDetails *frameTopics[sandboxDetailKey, sandboxDetail]
 }
 
 func newStreamingRoutes(server *HTTPServer, deps StreamingDependencies) *streamingRoutes {
-	r := &streamingRoutes{server: server, deps: deps}
-	r.sandboxDetails = newFrameTopics(r.logger, r.produceSandboxDetail)
-	return r
-}
-
-// watchHealthView is the live inventory's health: healthy once its informers have synced and while no watched kind
-// fails to list or watch, and each failing kind with its error and since when.
-type watchHealthView struct {
-	Healthy bool                       `json:"healthy"`
-	Failing map[string]kindFailureView `json:"failing"`
-}
-
-type kindFailureView struct {
-	Error string    `json:"error"`
-	Since time.Time `json:"since"`
-}
-
-type liveSandboxFrame struct {
-	SandboxUID *string                    `json:"sandbox_uid"`
-	Bindings   []policyaccess.BindingView `json:"bindings"`
-	Watch      watchHealthView            `json:"watch"`
+	return &streamingRoutes{server: server, deps: deps}
 }
 
 type liveDecisionsFrame struct {
@@ -188,89 +165,6 @@ func (r *streamingRoutes) logger() *slog.Logger {
 		return r.deps.Logger
 	}
 	return slog.Default()
-}
-
-// sandboxDetailKey identifies the exact Environment incarnation for the binding view.
-type sandboxDetailKey struct {
-	name string
-	uid  string
-}
-
-// sandboxDetail is the viewer-independent part of a /live/sandboxes/{name} frame.
-type sandboxDetail struct {
-	sandboxUID *string
-	bindings   []policyaccess.BindingView
-	watch      watchHealthView
-}
-
-func (r *streamingRoutes) liveSandbox(w http.ResponseWriter, request *http.Request) {
-	if r.deps.Live == nil || r.deps.Sandboxes == nil {
-		writeDetailError(w, http.StatusServiceUnavailable, "live sandbox view is unavailable")
-		return
-	}
-	uid := request.URL.Query().Get("sandbox_uid")
-	if uid == "" {
-		writeDetailError(w, http.StatusBadRequest, "sandbox_uid is required")
-		return
-	}
-	ctx, cancel := r.requestLifetime(request)
-	defer cancel()
-	frames, unsubscribe := r.sandboxDetails.subscribe(sandboxDetailKey{name: request.PathValue("name"), uid: uid})
-	defer unsubscribe()
-	streamLiveFrames(r, w, ctx, frames, func(detail sandboxDetail) ([]byte, error) {
-		return json.Marshal(liveSandboxFrame{
-			SandboxUID: detail.sandboxUID, Bindings: nonNilBindingViews(detail.bindings), Watch: detail.watch,
-		})
-	})
-}
-
-// produceSandboxDetail observes policy data for the requested Environment incarnation.
-func (r *streamingRoutes) produceSandboxDetail(ctx context.Context, key sandboxDetailKey, publish func(sandboxDetail)) error {
-	liveChanges, stopLive := r.deps.Live.Subscribe()
-	defer stopLive()
-	target := &identitypb.EnvironmentTarget{Namespace: r.deps.SandboxNamespace, Name: key.name, Uid: key.uid}
-	observations := r.deps.Sandboxes.Watch(ctx, target)
-	var descriptor *environmentpb.EnvironmentDescriptor
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case observation, ok := <-observations:
-			if !ok {
-				return nil
-			}
-			if observation.Err != nil {
-				if status.Code(observation.Err) == codes.NotFound {
-					publish(sandboxDetail{watch: healthView(r.deps.Live.Health())})
-					return nil
-				}
-				return observation.Err
-			}
-			descriptor = observation.Descriptor
-			if descriptor == nil || !proto.Equal(descriptor.GetTarget(), target) {
-				return fmt.Errorf("Environment %q has incomplete or mismatched identity", key.name)
-			}
-		case <-liveChanges:
-			if descriptor == nil {
-				continue
-			}
-		}
-		snapshot, err := r.deps.Live.Snapshot(ctx)
-		if err != nil {
-			return err
-		}
-		detail := sandboxDetail{watch: healthView(snapshot.Watch)}
-		uid := descriptor.GetTarget().GetUid()
-		detail.sandboxUID = &uid
-		if account := descriptor.GetExecutionAccount(); account != nil {
-			subject := &identitypb.ServiceAccount{Namespace: account.GetAccount().GetNamespace(), Name: account.GetAccount().GetName()}
-			detail.bindings, err = policyaccess.BindingsFromSnapshot(snapshot.PolicyBindings, snapshot.PolicySets, snapshot.EgressCredentials, subject)
-			if err != nil {
-				return err
-			}
-		}
-		publish(detail)
-	}
 }
 
 func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Request) {
@@ -477,62 +371,6 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 	}
 }
 
-func healthView(health watchhealth.Status) watchHealthView {
-	failing := make(map[string]kindFailureView, len(health.Failing))
-	for kind, failure := range health.Failing {
-		failing[string(kind)] = kindFailureView{Error: failure.Error, Since: failure.Since}
-	}
-	return watchHealthView{Healthy: health.Available, Failing: failing}
-}
-
-func nonNilBindingViews(values []policyaccess.BindingView) []policyaccess.BindingView {
-	if values == nil {
-		return []policyaccess.BindingView{}
-	}
-	return values
-}
-
-// streamLiveFrames writes each frame that differs from the last one it wrote, and the inventory's watch health
-// whenever no snapshot was written for liveHealthInterval. It returns when ctx ends or the frames' producer stops.
-func streamLiveFrames[V any](r *streamingRoutes, w http.ResponseWriter, ctx context.Context, frames <-chan V, encode func(V) ([]byte, error)) {
-	if err := startSSE(w); err != nil {
-		return
-	}
-	timer := time.NewTimer(liveHealthInterval)
-	defer timer.Stop()
-	var last []byte
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timer.C:
-			if writeSSE(w, "health", healthView(r.deps.Live.Health()), nil) != nil {
-				return
-			}
-			timer.Reset(liveHealthInterval)
-		case frame, open := <-frames:
-			if !open {
-				return
-			}
-			data, err := encode(frame)
-			if err != nil {
-				r.logger().WarnContext(ctx, "encode live stream snapshot", "error", err)
-				return
-			}
-			if bytes.Equal(data, last) {
-				continue
-			}
-			timer.Reset(liveHealthInterval)
-			if writeSSEData(w, "snapshot", data, nil) != nil {
-				return
-			}
-			last = data
-		}
-	}
-}
-
-func encodedFrame(frame []byte) ([]byte, error) { return frame, nil }
-
 func (r *streamingRoutes) requestLifetime(request *http.Request) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(request.Context())
 	drain := r.server.DrainDone()
@@ -614,6 +452,26 @@ func (r *streamingRoutes) forwardDispatcher(w http.ResponseWriter, request *http
 
 func (r *streamingRoutes) actionFacade(w http.ResponseWriter, request *http.Request) {
 	r.operatorFacade(w, request, r.deps.ActionHTTP, "Action facade")
+}
+
+// The app's scoped service token is the PolicyService caller; the browser session bounds the stream.
+func (r *streamingRoutes) policyFacade(w http.ResponseWriter, request *http.Request) {
+	path := request.PathValue("path")
+	if !proxy.GeneratedFacadeRouteAllowed(request.Method, path) {
+		writeDetailError(w, http.StatusNotFound, "unknown Policy Service facade route")
+		return
+	}
+	if r.deps.PolicyHTTP == nil {
+		writeDetailError(w, http.StatusServiceUnavailable, "Policy Service is not configured")
+		return
+	}
+	ctx, cancel, err := r.operatorLifetime(request)
+	if err != nil {
+		writeDetailError(w, http.StatusForbidden, "operator login required")
+		return
+	}
+	defer cancel()
+	r.forwardFacade(w, request, ctx, r.deps.PolicyHTTP, path, "")
 }
 
 func (r *streamingRoutes) connectionFacade(w http.ResponseWriter, request *http.Request) {

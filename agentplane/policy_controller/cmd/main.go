@@ -4,13 +4,17 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net"
 	"os"
+	"slices"
 
 	"github.com/go-logr/logr"
+	"google.golang.org/grpc"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -20,7 +24,10 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
+	policyservice "github.com/agentydragon/ducktape/agentplane/policy_controller/service"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 )
 
 func main() {
@@ -83,6 +90,44 @@ func run(c config) error {
 	if err != nil {
 		return err
 	}
+	readers := make([]auth.Account, 0, len(c.ReaderAccounts))
+	namespaces := slices.Clone(c.SubjectNamespaces)
+	for _, name := range c.ReaderAccounts {
+		var account auth.Account
+		if err := account.UnmarshalText([]byte(name)); err != nil {
+			return err
+		}
+		readers = append(readers, account)
+		if !slices.Contains(namespaces, account.Namespace) {
+			namespaces = append(namespaces, account.Namespace)
+		}
+	}
+	kube, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return err
+	}
+	resolver, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.GRPCAudience, namespaces)
+	if err != nil {
+		return err
+	}
+	objects, err := client.NewWithWatch(config, client.Options{Scheme: scheme})
+	if err != nil {
+		return err
+	}
+	api, err := policyservice.New(c.PolicyNamespace, objects, readers)
+	if err != nil {
+		return err
+	}
+	server := grpc.NewServer(policyservice.Methods(resolver).ServerOptions(0)...)
+	policypb.RegisterPolicyServiceServer(server, api)
+	listener, err := net.Listen("tcp", c.GRPCBindAddress)
+	if err != nil {
+		return err
+	}
+	if err := mgr.Add(policyListener{server: server, listener: listener}); err != nil {
+		listener.Close()
+		return err
+	}
 	reconciler := &policycontroller.Reconciler{
 		Client:            mgr.GetClient(),
 		APIReader:         mgr.GetAPIReader(),
@@ -99,4 +144,20 @@ func run(c config) error {
 		return err
 	}
 	return mgr.Start(ctrl.SetupSignalHandler())
+}
+
+// Read watches run on every replica; only the reconciler participates in leader election.
+type policyListener struct {
+	server   *grpc.Server
+	listener net.Listener
+}
+
+func (policyListener) NeedLeaderElection() bool { return false }
+func (p policyListener) Start(ctx context.Context) error {
+	go func() { <-ctx.Done(); p.server.Stop() }()
+	err := p.server.Serve(p.listener)
+	if ctx.Err() != nil {
+		return nil
+	}
+	return err
 }

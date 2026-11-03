@@ -50,3 +50,7 @@ Lease in the policy namespace.
   the CRD YAML in `agentplane/crds` is the schema both follow.
 - Most tests drive `Reconcile` directly, against controller-runtime's fake client or a real API
   server; only role creation is tested through the controller's watches.
+
+The same binary also serves `PolicyService` gRPC on `:8082` using TokenReview with the
+`agentplane-policy` audience. Its read watches run on every replica independently of reconciliation
+leader election; see the [watch contract](SPEC.md#policy-resource-watches).

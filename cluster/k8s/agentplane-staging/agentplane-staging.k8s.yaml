@@ -4081,6 +4081,7 @@ spec:
             - --runner-gateway-token-file=/var/run/secrets/agentplane-runner-gateway/token
             - --history-service-target=history-service.agentplane-staging.svc.cluster.local:8080
             - --session-dispatcher-target=session-dispatcher.agentplane-staging.svc.cluster.local:8080
+            - --policy-service-target=policy-controller.agentplane-staging.svc.cluster.local:8082
             - --notifications-url=http://notifications.agentplane-staging.svc.cluster.local:8080
             - --notifications-token-file=/var/run/secrets/agentplane-notifications/token
             - --listen-address=0.0.0.0:8080
@@ -4199,6 +4200,9 @@ spec:
             - mountPath: /var/run/secrets/agentplane-notifications
               name: notifications-token
               readOnly: true
+            - mountPath: /var/run/secrets/agentplane-policy
+              name: policy-token
+              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -4255,6 +4259,13 @@ spec:
             sources:
               - serviceAccountToken:
                   audience: agentplane-notifications
+                  expirationSeconds: 3600
+                  path: token
+        - name: policy-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-policy
                   expirationSeconds: 3600
                   path: token
 ---
@@ -4518,6 +4529,14 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: policy-controller
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8082"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
@@ -8976,8 +8995,14 @@ spec:
               value: :8080
             - name: AGENTPLANE_POLICY_CONTROLLER_HEALTH_PROBE_BIND_ADDRESS
               value: :8081
+            - name: AGENTPLANE_POLICY_CONTROLLER_GRPC_BIND_ADDRESS
+              value: :8082
+            - name: AGENTPLANE_POLICY_CONTROLLER_GRPC_AUDIENCE
+              value: agentplane-policy
             - name: AGENTPLANE_POLICY_CONTROLLER_SUBJECT_NAMESPACES
               value: agentplane-staging
+            - name: AGENTPLANE_POLICY_CONTROLLER_READER_ACCOUNTS
+              value: agentplane-staging/app
             - name: OTEL_SERVICE_NAME
               value: policy-controller
             - name: OTEL_RESOURCE_ATTRIBUTES
@@ -9004,6 +9029,9 @@ spec:
           ports:
             - containerPort: 8080
               name: metrics
+              protocol: TCP
+            - containerPort: 8082
+              name: grpc
               protocol: TCP
             - containerPort: 8081
               name: health
@@ -9064,6 +9092,10 @@ spec:
       port: 8080
       protocol: TCP
       targetPort: 8080
+    - name: grpc
+      port: 8082
+      protocol: TCP
+      targetPort: 8082
   selector:
     cdk8s.io/metadata.addr: agentplane-policy-controller-deployment-c883d3e9
   type: ClusterIP
@@ -9078,6 +9110,32 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: policy-controller
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-staging-policy-controller-token-reviewer
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-staging-policy-controller-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-staging-policy-controller-token-reviewer
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: policy-controller
+    namespace: agentplane-staging
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -9108,6 +9166,13 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8082"
               protocol: TCP
 ---
 apiVersion: monitoring.coreos.com/v1

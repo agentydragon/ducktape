@@ -33,6 +33,8 @@ type Config struct {
 	SandboxNamespace                    string                     `mapstructure:"sandbox_namespace"`
 	RunnerGatewayTarget                 string                     `mapstructure:"runner_gateway_target"`
 	SessionDispatcherTarget             string                     `mapstructure:"session_dispatcher_target"`
+	PolicyServiceTarget                 string                     `mapstructure:"policy_service_target"`
+	PolicyServiceTokenFile              string                     `mapstructure:"policy_service_token_file"`
 	RunnerGatewayControlTarget          string                     `mapstructure:"runner_gateway_control_target"`
 	HistoryServiceTarget                string                     `mapstructure:"history_service_target"`
 	NotificationsURL                    string                     `mapstructure:"notifications_url"`
@@ -178,6 +180,8 @@ func defaultConfig() Config {
 		NotificationsRequestTimeoutSeconds:  5,
 		RunnerGatewayTokenFile:              "/var/run/secrets/agentplane-runner-gateway/token",
 		SessionDispatcherTokenFile:          "/var/run/secrets/agentplane-session-dispatcher/token",
+		PolicyServiceTarget:                 "policy-controller:8082",
+		PolicyServiceTokenFile:              "/var/run/secrets/agentplane-policy/token",
 		SessionDispatcherRequestTimeoutSecs: 20,
 		HistoryServiceTokenFile:             "/var/run/secrets/agentplane-history-service/token",
 		HistoryServiceRequestTimeoutSeconds: 20,
@@ -514,6 +518,8 @@ func (c Config) validate() error {
 		"sandbox_namespace":                 c.SandboxNamespace,
 		"runner_gateway_target":             c.RunnerGatewayTarget,
 		"session_dispatcher_target":         c.SessionDispatcherTarget,
+		"policy_service_target":             c.PolicyServiceTarget,
+		"policy_service_token_file":         c.PolicyServiceTokenFile,
 		"runner_gateway_control_target":     c.RunnerGatewayControlTarget,
 		"history_service_target":            c.HistoryServiceTarget,
 		"notifications_url":                 c.NotificationsURL,

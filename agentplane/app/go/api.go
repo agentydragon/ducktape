@@ -19,7 +19,9 @@ func RegisterCoreRoutes(server *HTTPServer, config Config) error {
 		OperationID: "getFrontendConfig", Method: http.MethodGet, Path: "/frontend-config", Tags: []string{"frontend config"},
 		Summary: "Read browser-safe deployment settings",
 	}, func(context.Context, *struct{}) (*frontendConfigOutput, error) {
-		return &frontendConfigOutput{Body: config.FrontendConfig}, nil
+		result := config.FrontendConfig
+		result.PolicyNamespace = config.SandboxNamespace
+		return &frontendConfigOutput{Body: result}, nil
 	})
 	return nil
 }

@@ -31,16 +31,6 @@ ts_library(
 )
 
 ts_library(
-    name = "caller_grants_client",
-    srcs = ["caller_grants_client.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":models",
-        "//agentplane/app/frontend:client",
-    ],
-)
-
-ts_library(
     name = "connection_service_client",
     srcs = ["connection_service_client.ts"],
     tsconfig = TSCONFIG,
@@ -89,14 +79,15 @@ ts_library(
     srcs = ["caller_grants.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":caller_grants_client",
         ":models",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:frontend_config",
         "//agentplane/app/frontend/actions:policy",
         "//agentplane/app/frontend/bindings:table",
+        "//agentplane/app/frontend/policy:watch",
         "//util/frontend:help_tooltip",
     ],
 )
@@ -107,6 +98,7 @@ agentplane_vitest_test(
     deps = [
         ":caller_grants",
         ":models",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -114,6 +106,9 @@ agentplane_vitest_test(
         "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend:frontend_config",
+        "//agentplane/app/frontend/policy:watch",
+        "//agentplane/policy/v1:policy_service_pb",
     ],
 )
 
@@ -128,7 +123,6 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":caller_grants",
-        ":caller_grants_client",
         ":connection_service_client",
         ":management_css",
         ":models",

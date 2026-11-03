@@ -1,5 +1,3 @@
-import type { components } from "../schema";
-
 export interface CallerServiceAccount {
   namespace: string;
   name: string;
@@ -38,9 +36,3 @@ export type Connection = {
   grants: ConnectionGrant[];
   bound_caller: CallerServiceAccount | null;
 };
-
-export type CallerGrantView = Omit<components["schemas"]["CallerGrantsView"], "bindings"> & {
-  bindings: NonNullable<components["schemas"]["CallerGrantsView"]["bindings"]>;
-};
-
-export type CallerGrantReader = (account: CallerServiceAccount, signal: AbortSignal) => Promise<CallerGrantView>;

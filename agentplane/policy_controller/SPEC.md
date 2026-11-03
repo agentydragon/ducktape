@@ -54,3 +54,24 @@ message naming what is wrong. Reasons are informational. With it the controller 
 `status.missingRoles`: each Role (with its namespace) or ClusterRole the binding's rules name that does
 not exist. It is checked once the subject resolves and holds even when applying the rest fails
 (`ApplyFailed`). The CRD schemas reject malformed sets and bindings.
+
+## Policy resource watches
+
+`PolicyService` serves the policy namespace on every controller replica. `WatchPolicyBindings`
+observes bindings for one ServiceAccount; `WatchPolicySets` observes PolicySets. A directly
+configured reader may select another subject and see every set; other authenticated ServiceAccounts
+may read their own bindings and only sets named by those bindings. Losing a binding removes a set
+from that caller's view when no other binding names it. The server reviews the PolicyService-audience
+bearer at admission, before writes, and while idle; a changed or refused identity ends the stream.
+
+Each stream sends snapshot chunks, `snapshot_complete`, then coalesced resource upserts and
+UID-fenced removals. It opens Kubernetes watches before reading the snapshot, so an intervening
+change is revisited. A closed or failed Kubernetes watch ends the RPC; a client must mark the data
+stale and reconnect for a fresh snapshot. The two watches do not provide an atomic cross-kind view.
+No fixed timer forces healthy clients to reconnect.
+
+The Kubernetes Go resource types and their validation markers remain authoritative. Explicit `proto`
+field numbers on those types generate the resource protobuf messages at build time. Do not renumber
+or reuse a field number. Kubernetes metadata carried by the public policy resource envelope is a
+projection; policy specs and status come from the generated schema. PolicySet rules name credential
+references; this API neither exposes credential values nor resolves EgressCredential metadata.

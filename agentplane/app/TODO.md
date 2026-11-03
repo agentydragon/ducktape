@@ -2,9 +2,14 @@
 
 - [ ] Consider loading the app config into protobuf messages and using a unified representation through config loading and the generated AppConfig API.
 
-- [ ] Replace the handwritten Sandbox binding watch JSON/SSE contract (`liveSandboxFrame` and the
-      frontend `SandboxPolicySnapshot`) with backend-owned PolicyBinding and PolicySet watches.
-      Use the Environment execution account as the subject without duplicating the Environment descriptor.
+- [ ] Expose public EgressCredential metadata from an Egress-owned read/watch API, so the policy
+      view can show credential descriptions and target methods without accessing Secret values.
+- [ ] Retire the app’s legacy caller-grants response and its bespoke binding views after remaining
+      Python clients migrate to PolicyService resource watches.
+- [ ] Move Kubernetes owner-reference metadata to a shared protobuf home; Environment and Policy
+      currently define the same fields separately.
+- [ ] Share and incrementally maintain PolicyService’s Kubernetes watches: each RPC currently opens
+      its own watches and relists resources on changes. Preserve authorization and stale-data fencing.
 - [ ] Decide whether Sandbox presets are durable Environment metadata or app-owned creation and
       Session configuration. The Environment service stores the preset label and the app resolves Session
       defaults from it; preserve that behavior until the ownership and replacement data flow are settled.

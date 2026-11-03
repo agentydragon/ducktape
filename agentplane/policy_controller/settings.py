@@ -22,3 +22,8 @@ class Settings(BaseSettings):
     health_probe_bind_address: str = Field(
         default=":8081", min_length=1, description="Where /healthz and /readyz are served."
     )
+    grpc_bind_address: str = Field(default=":8082", min_length=1, description="PolicyService gRPC listener.")
+    grpc_audience: str = Field(default="agentplane-policy", min_length=1, description="PolicyService token audience.")
+    reader_accounts: Set[str] = Field(
+        default_factory=frozenset, description="Accounts allowed to read all policy resources."
+    )

@@ -18,11 +18,16 @@ import {
 } from "./network";
 import type { ThreadView } from "../schema";
 import type { ActionGroupView, ActionRequestView } from "../actions/client";
+import {
+  PolicyBindingSchema,
+  PolicySetSchema,
+  WatchPolicyBindingsResponseSchema,
+  WatchPolicySetsResponseSchema,
+} from "../../../policy/v1/policy_service_pb";
 import { GetActionPolicyResponseSchema } from "../../../action_service/action_service_pb";
-import type { BindingView, Decision, PolicySetView } from "../sandboxes/client";
+import type { Decision } from "../sandboxes/client";
 import { decisionFixture, type DecisionFixture } from "../sandboxes/decision_fixture";
-import type { DecisionsSnapshot, SandboxPolicySnapshot } from "../sandboxes/live";
-import type { WatchHealth } from "../live";
+import type { DecisionsSnapshot } from "../sandboxes/live";
 import { DurationSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { ServiceAccountIdentitySchema } from "../../../proto/identity_pb";
 import {
@@ -306,196 +311,86 @@ const TEST_CODER_POLICY_SETS = [
   "test-pr-failed-jobs",
 ];
 
-const POLICY_SETS: PolicySetView[] = [
-  {
-    name: "github-public",
-    generation: 1,
-    refused: null,
-    rules: [
-      {
-        kind: "egress",
-        number: 0,
-        hosts: ["api.github.com", "github.com", "*.githubusercontent.com"],
-        methods: ["GET", "POST"],
-        paths: null,
-        credential: {
-          name: "harness-github-pat",
-          description: "A token for the demo bot account; requests carrying it act as that account.",
-          placeholder: "agentplane-credential-harness-github-pat",
-          secret: "harness-github-pat",
-          key: "token",
-          targets: [{ header: "Authorization", method: "schemeToken", scheme: "Bearer" }],
+const POLICY_SETS = [
+  create(PolicySetSchema, {
+    identity: { namespace: "agentplane-visual", name: "github-public", uid: "set-github" },
+    generation: 1n,
+    spec: {
+      rules: [
+        {
+          type: "egress",
+          hosts: ["api.github.com", "github.com"],
+          methods: ["GET", "POST"],
+          credentialRef: { name: "harness-github-pat" },
         },
-        missing_credential: null,
-      },
-    ],
-  },
-  {
-    name: "pypi",
-    generation: 1,
-    refused: null,
-    rules: [
-      {
-        kind: "egress",
-        number: 0,
-        hosts: ["pypi.org", "files.pythonhosted.org"],
-        methods: ["GET"],
-        paths: ["/simple/**"],
-        credential: null,
-        missing_credential: null,
-      },
-    ],
-  },
-  {
-    name: "test-coder",
-    generation: 2,
-    refused: null,
-    rules: [
-      {
-        kind: "other",
-        number: 0,
-        type: "action_auto_approve",
-        fields: {
-          policy: { type: "exact_actions", actions: { github: ["get_file_contents", "list_commits", "search_code"] } },
-        },
-      },
-      {
-        kind: "other",
-        number: 1,
-        type: "action_auto_approve",
-        fields: {
-          policy: {
-            type: "argument_schema",
-            actions: { github: ["create_issue"] },
-            argument_schema: {
-              properties: { owner: { const: "harness-owner" }, repo: { const: "harness-repo" } },
-              required: ["owner", "repo"],
-            },
-          },
-        },
-      },
-    ],
-  },
-  {
-    name: "harness-reviews",
-    generation: 1,
-    refused: null,
-    rules: [
-      {
-        kind: "other",
-        number: 0,
-        type: "action_auto_approve",
-        fields: { policy: { type: "exact_actions", actions: { github: ["pull_request_read", "list_pull_requests"] } } },
-      },
-    ],
-  },
-  {
-    name: "harness-push",
-    generation: 3,
-    refused: null,
-    rules: [
-      {
-        kind: "other",
-        number: 0,
-        type: "action_auto_approve",
-        fields: {
-          policy: {
-            type: "argument_schema",
-            actions: { github: ["push_files"] },
-            argument_schema: { properties: { branch: { pattern: "^harness/" } }, required: ["branch"] },
-          },
-        },
-      },
-    ],
-  },
-  {
-    name: "harness-edited",
-    generation: 1,
-    refused: "rules[0]: hosts: List should have at least 1 item after validation, not 0",
-    rules: [],
-  },
+      ],
+    },
+  }),
+  create(PolicySetSchema, {
+    identity: { namespace: "agentplane-visual", name: "pypi", uid: "set-pypi" },
+    generation: 1n,
+    spec: {
+      rules: [
+        { type: "egress", hosts: ["pypi.org", "files.pythonhosted.org"], methods: ["GET"], paths: ["/simple/**"] },
+      ],
+    },
+  }),
+  ...["test-coder", "harness-reviews", "harness-push", "harness-edited"].map((name) =>
+    create(PolicySetSchema, {
+      identity: { namespace: "agentplane-visual", name, uid: `set-${name}` },
+      generation: 1n,
+      spec: { rules: [{ type: "action_auto_approve", policy: { type: "exact_actions" } }] },
+    })
+  ),
 ];
 
-function policySet(name: string): PolicySetView {
-  const found = POLICY_SETS.find((candidate) => candidate.name === name);
-  if (!found) throw new Error(`No harness PolicySet ${name}`);
-  return found;
-}
-
-/** A reader's condition on a binding, written at the generation it judged. */
-function verdict(
-  type: string,
-  status: "True" | "False",
-  message: string,
-  observedGeneration: number
-): BindingView["conditions"][number] {
-  return {
-    type,
-    status,
-    reason: status === "True" ? "Valid" : "PolicySetUnavailable",
-    message,
-    observed_generation: observedGeneration,
-  };
-}
-
-/**
- * ready-sandbox's bindings, one of every state a binding mark shows: the Sandbox's own and two others
- * that every reader accepts (one from git, one an operator grant that has since expired), one an operator
- * grant no reader has judged yet, and one a reader refuses for the sets it names.
- */
-const BINDINGS: BindingView[] = [
-  {
-    name: "ready-sandbox-k2m9x",
-    provenance: "sandbox",
-    generation: 1,
-    subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
-    expires_at: null,
-    conditions: [verdict("ActionsReady", "True", "spec accepted", 1)],
-    // The preset names test-coder alone; harness-reviews was picked at launch.
-    policy_sets: [policySet("test-coder"), policySet("harness-reviews")],
-    missing_policy_sets: [],
-  },
-  {
-    name: "ready-sandbox-github-public",
-    provenance: "git",
-    generation: 1,
-    subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
-    expires_at: null,
-    conditions: [verdict("EgressReady", "True", "egress rules enforced", 1)],
-    policy_sets: [policySet("github-public")],
-    missing_policy_sets: [],
-  },
-  {
-    name: "ready-sandbox-7q4xk",
-    provenance: "operator",
-    generation: 1,
-    subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
-    expires_at: ago(2 * HOUR),
-    conditions: [verdict("EgressReady", "True", "egress rules enforced", 1)],
-    policy_sets: [policySet("pypi")],
-    missing_policy_sets: [],
-  },
+const BINDINGS = [
+  { name: "ready-sandbox-k2m9x", source: "sandbox", sets: ["test-coder", "harness-reviews"], state: "True" },
+  { name: "ready-sandbox-github-public", source: "git", sets: ["github-public"], state: "True" },
+  { name: "ready-sandbox-7q4xk", source: "operator", sets: ["pypi"], state: "True", expires: ago(2 * HOUR) },
   {
     name: "ready-sandbox-unjudged-grant",
-    provenance: "operator",
-    generation: 1,
-    subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
-    expires_at: new Date(NOW + HOUR).toISOString(),
-    conditions: [],
-    policy_sets: [policySet("harness-reviews")],
-    missing_policy_sets: [],
+    source: "operator",
+    sets: ["harness-reviews"],
+    state: null,
+    expires: ago(-HOUR),
   },
   {
     name: "ready-sandbox-push-afternoon",
-    provenance: "operator",
-    generation: 2,
-    subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
-    expires_at: new Date(NOW + 3 * HOUR).toISOString(),
-    conditions: [verdict("ActionsReady", "False", "missing PolicySets: harness-release", 2)],
-    policy_sets: [policySet("harness-push"), policySet("harness-edited")],
-    missing_policy_sets: ["harness-release"],
+    source: "operator",
+    sets: ["harness-push", "harness-edited", "harness-release"],
+    state: "False",
+    expires: ago(-3 * HOUR),
   },
-];
+].map(({ name, source, sets, state, expires }) =>
+  create(PolicyBindingSchema, {
+    identity: { namespace: "agentplane-visual", name, uid: `binding-${name}` },
+    generation: 1n,
+    labels: source === "git" ? { "kustomize.toolkit.fluxcd.io/name": "harness" } : {},
+    ownerReferences:
+      source === "sandbox"
+        ? [
+            {
+              apiVersion: "agentplane.allegedly.works/v1alpha1",
+              kind: "Sandbox",
+              name: "ready-sandbox",
+              uid: "sandbox-uid",
+              controller: true,
+            },
+          ]
+        : [],
+    spec: {
+      subject: { namespace: "agentplane-visual", name: "ready-sandbox" },
+      policySets: sets,
+      ...(expires ? { expiresAt: timestampFromDate(new Date(expires)) } : {}),
+    },
+    status: {
+      conditions: state
+        ? [{ type: "ActionsReady", status: state, reason: "Valid", message: "spec accepted", observedGeneration: 1n }]
+        : [],
+    },
+  })
+);
 
 /** What the Action Service auto-decides for ready-sandbox, from the sets those bindings name. */
 function actionPolicy(namespace: string, name: string) {
@@ -2644,6 +2539,7 @@ routes.push(
     "GET",
     /^\/frontend-config$/,
     () => ({
+      policy_namespace: "agentplane-visual",
       trace_search: {
         grafana_base_url: "https://grafana.test.invalid",
         tempo_datasource_uid: "tempo-test",
@@ -2803,16 +2699,6 @@ routes.push(
     "GET",
     /^\/upstream\/connections\/v1\/operator\/connections$/,
     () => ({ connections: [sampleConnection(), ...retiredConnectionRows()].map(connectionJson) }),
-  ],
-  [
-    "GET",
-    /^\/caller-grants\/([^/]+)\/([^/]+)$/,
-    (match) => ({
-      bindings: BINDINGS.map((binding) => ({
-        ...binding,
-        subjects: [{ namespace: match[1], name: match[2] }],
-      })),
-    }),
   ],
   [
     "GET",
@@ -3358,8 +3244,6 @@ routes.push(
   ]
 );
 
-const HEALTHY: WatchHealth = { healthy: true, failing: {} };
-
 function threadMetadataProtoJson(thread: ThreadView): Record<string, unknown> {
   return {
     threadId: thread.id,
@@ -3417,26 +3301,6 @@ function historySummaryProtoJson(thread: ThreadView): Record<string, unknown> {
   };
 }
 
-/** A watch whose requests are failing: what the `_stale` scenarios have to show rather than hide. */
-const FAILING: WatchHealth = {
-  healthy: false,
-  failing: {
-    sandboxes: {
-      error:
-        'Get "https://kubernetes.default.svc/apis/agentplane.allegedly.works/v1alpha1/namespaces/agentplane/sandboxes": dial tcp: connection refused',
-      since: "2026-10-30T11:20:00Z",
-    },
-    pods: {
-      error: 'Get "https://kubernetes.default.svc/api/v1/namespaces/agentplane/pods": dial tcp: connection refused',
-      since: "2026-10-30T11:20:00Z",
-    },
-  },
-};
-
-function watch(): WatchHealth {
-  return flags.has("watchStale") ? FAILING : HEALTHY;
-}
-
 /** What the live stream at `url` sends, when it opens and whenever a fixture publishes it again. */
 function liveEvents(url: URL): ServerSentEvent[] {
   if (/^\/live\/sandboxes\/[^/]+\/egress\/decisions$/.test(url.pathname)) {
@@ -3476,7 +3340,6 @@ function liveEvents(url: URL): ServerSentEvent[] {
       }));
     return [{ event: "snapshot", data: { snapshot: { observedAt: ago(0), inboxes } } }];
   }
-  const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
   const notification = url.pathname.match(/^\/sandboxes\/([^/]+)\/notifications\/stream$/);
   if (notification) {
     if (flags.has("notificationStatusUnavailable")) return [];
@@ -3492,14 +3355,6 @@ function liveEvents(url: URL): ServerSentEvent[] {
   }
   if (/^\/sandboxes\/[^/]+\/console\/stream$/.test(url.pathname)) {
     return [{ event: "output", data: btoa("guest console output\r\n") }];
-  }
-  if (sandbox !== null) {
-    const snapshot: SandboxPolicySnapshot = {
-      sandbox_uid: SANDBOXES.find((row) => row.target?.name === decodeURIComponent(sandbox))?.target?.uid ?? null,
-      bindings: BINDINGS,
-      watch: watch(),
-    };
-    return [{ event: "snapshot", data: snapshot }];
   }
   throw new Error(`Unexpected event stream route: ${url.pathname}`);
 }
@@ -3594,6 +3449,51 @@ routes.unshift([
 routes.unshift(
   [
     "GET",
+    /^\/upstream\/policy\/v1\/policy-namespaces\/([^/]+)\/policy-bindings:watch$/,
+    (_match, query, signal) => {
+      const subject = { namespace: query.get("subject.namespace") ?? "", name: query.get("subject.name") ?? "" };
+      const bindings = BINDINGS.map((item) => clone(PolicyBindingSchema, item)).map((item) => {
+        item.spec!.subject = create(ServiceAccountIdentitySchema, { account: subject }).account;
+        return item;
+      });
+      return ndjsonWatch(
+        [
+          toJson(
+            WatchPolicyBindingsResponseSchema,
+            create(WatchPolicyBindingsResponseSchema, { frame: { case: "snapshot", value: { bindings } } })
+          ),
+          toJson(
+            WatchPolicyBindingsResponseSchema,
+            create(WatchPolicyBindingsResponseSchema, { frame: { case: "snapshotComplete", value: {} } })
+          ),
+        ],
+        signal
+      );
+    },
+  ],
+  [
+    "GET",
+    /^\/upstream\/policy\/v1\/policy-namespaces\/([^/]+)\/policy-sets:watch$/,
+    (_match, _query, signal) =>
+      ndjsonWatch(
+        [
+          toJson(
+            WatchPolicySetsResponseSchema,
+            create(WatchPolicySetsResponseSchema, { frame: { case: "snapshot", value: { policySets: POLICY_SETS } } })
+          ),
+          toJson(
+            WatchPolicySetsResponseSchema,
+            create(WatchPolicySetsResponseSchema, { frame: { case: "snapshotComplete", value: {} } })
+          ),
+        ],
+        signal
+      ),
+  ]
+);
+
+routes.unshift(
+  [
+    "GET",
     /^\/upstream\/actions\/v1\/action-policy:watch$/,
     (_match, query, signal) =>
       ndjsonWatch(
@@ -3654,7 +3554,6 @@ function projectQueuedSession(): void {
   };
   THREADS.push(projected);
   THREADS_WITH_SANDBOXES.push(projected);
-  publishStreams("/live/sandboxes/ready-sandbox");
   publishStreams("/upstream/app/v1/threads:watch");
   publishStreams("/upstream/history/v1/session-summaries:watch");
 }

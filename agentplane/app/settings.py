@@ -119,6 +119,8 @@ class Settings(AppSettingsConfig):
         min_length=1,
         description="Runner Gateway gRPC host:port for Session Dispatcher commands and app-brokered resume requests.",
     )
+    policy_service_target: str = Field(default="policy-controller:8082", min_length=1)
+    policy_service_token_file: Path = Path("/var/run/secrets/agentplane-policy/token")
     runner_gateway_control_target: str = Field(
         min_length=1,
         description="Each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as "
