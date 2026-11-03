@@ -80,6 +80,15 @@ unassigned_mode:
   cli: { kind: inline_in_entry }
   print: { kind: inline_in_entry }
   structuredIO: { kind: inline_in_entry }
+
+chunk_renames:
+  print:
+    members:
+      - name: helper
+        selector:
+          binding:
+            name: a
+            kind: function_declaration
 ```
 
 - Each `js-files.txt` line names one `.js` file below `inputs.root`, or
@@ -89,8 +98,24 @@ unassigned_mode:
 - Roots are normalized relative paths and may not overlap. Trees scoped to one chunk
   share it: no duplicate module paths, and their selectors resolve jointly.
 - Compiled flat-spec module paths are relative to their tree root;
-  `logical_modules` is keyed by chunk ID. `binding_patches.yaml` applies to
-  `main_chunk_id` only.
+  `logical_modules` is keyed by chunk ID.
+- `chunk_renames` uses the canonical flat-spec shape, keyed by input chunk ID.
+  It applies in-place readable names to bindings left in that chunk's entry
+  (residual) body; it creates no module and does not change ownership. Each key
+  must have an `unassigned_mode`, as required by flat-spec validation.
+- The main chunk's renames may come from the existing `binding_patches.yaml`,
+  which applies to `main_chunk_id` only, or from `chunk_renames`. A main-chunk
+  entry in `chunk_renames` combined with a nonempty `binding_patches.yaml` is
+  rejected. `chunk_renames` entries for other chunks can coexist with the
+  existing file.
+- Graph queries derive module scope and binding homes from `module_roots` and
+  module YAML. They report source bindings and module ownership, so
+  `chunk_renames` does not add a graph owner. The `bindings` listing and editing
+  commands operate on module YAML; edit tree `chunk_renames` in the config and
+  use full tree `spec validate` to exercise selectors and lowering, including
+  the rename ledger. Its source-only mode checks module selectors against source
+  without reading tree config. Use `run` for ordinary final reconstruction and
+  emission checks.
 
 ## Where behavior lives
 

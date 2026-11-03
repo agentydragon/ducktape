@@ -69,6 +69,11 @@ struct AuthoringConfig {
     /// `TransformSpec::chunk_export_purity`.
     #[serde(default)]
     chunk_export_purity: BTreeMap<String, ChunkExportPurity>,
+    /// Canonical per-chunk in-place renames from `TransformSpec`.
+    /// Entries may target any configured input chunk. The main chunk may
+    /// instead use the existing spec-root `binding_patches.yaml` source.
+    #[serde(default)]
+    chunk_renames: BTreeMap<String, ChunkRenames>,
 }
 
 /// The authored YAML subtrees that belong to one graph chunk. A graph-backed
@@ -257,10 +262,12 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
         &config.main_chunk_id,
         &config.module_roots,
     )?;
-    let binding_patch_members = load_binding_patch_members(&options.modules_root)?
-        .into_iter()
-        .filter(|member| !is_trivial_binding_patch(member))
-        .collect();
+    let binding_patch_members = load_binding_patch_members(&options.modules_root)?;
+    let chunk_renames = tree_chunk_renames_map(
+        &config.main_chunk_id,
+        config.chunk_renames,
+        binding_patch_members,
+    )?;
 
     Ok(TransformSpec {
         host_behavior: config.host_behavior,
@@ -275,7 +282,7 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
             source_root,
         )?,
         logical_modules: logical_modules_map(module_sources)?,
-        chunk_renames: chunk_renames_map(&config.main_chunk_id, binding_patch_members),
+        chunk_renames,
         unassigned_mode: config.unassigned_mode,
         chunk_analysis_options: config.chunk_analysis_options,
         chunk_export_purity: config.chunk_export_purity,
@@ -718,6 +725,25 @@ fn chunk_renames_map(
             annotations: BTreeMap::new(),
         },
     )])
+}
+
+fn tree_chunk_renames_map(
+    main_chunk_id: &str,
+    mut chunk_renames: BTreeMap<String, ChunkRenames>,
+    binding_patch_members: Vec<Member>,
+) -> Result<BTreeMap<String, ChunkRenames>> {
+    if chunk_renames.contains_key(main_chunk_id) && !binding_patch_members.is_empty() {
+        bail!(
+            "tree config `chunk_renames` entry for main_chunk_id {main_chunk_id:?} conflicts with nonempty spec-root `binding_patches.yaml`; author the main chunk in one source"
+        );
+    }
+
+    let binding_patch_members = binding_patch_members
+        .into_iter()
+        .filter(|member| !is_trivial_binding_patch(member))
+        .collect();
+    chunk_renames.extend(chunk_renames_map(main_chunk_id, binding_patch_members));
+    Ok(chunk_renames)
 }
 
 #[cfg(test)]
