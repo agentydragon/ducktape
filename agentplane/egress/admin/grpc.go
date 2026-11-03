@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -31,11 +32,14 @@ const watchWriteTimeout = 5 * time.Second
 // authenticated.
 type Decisions interface {
 	Recent(ctx context.Context, subject *decision.Subject) ([]decision.Record, error)
+	ByEventIDs(ctx context.Context, eventIDs []uuid.UUID) ([]decision.Record, error)
+	Readable(ctx context.Context) error
+	Window() history.Window
 }
 
 // Changes follows decision commits; see history.Changes.Follow.
 type Changes interface {
-	Follow(ctx context.Context, changed func() error) error
+	Follow(ctx context.Context, subject *decision.Subject, changed func(history.Change) error) error
 }
 
 // HistoryHealth reports the decision writer's counters.
@@ -53,6 +57,7 @@ type Service struct {
 	egressadminpb.UnimplementedEgressAdminServer
 	decisions     Decisions
 	changes       Changes
+	windows       *decisionWindows
 	historyHealth HistoryHealth
 	index         Index
 	credentials   *policy.Index
@@ -82,9 +87,14 @@ func Methods(resolver *auth.Resolver, callers []auth.Account) auth.Methods {
 
 func NewService(options ServiceOptions) *Service {
 	draining, drain := context.WithCancel(context.Background())
+	var windows *decisionWindows
+	if options.Decisions != nil && options.Changes != nil {
+		windows = newDecisionWindows(options.Decisions, options.Changes)
+	}
 	return &Service{
 		decisions: options.Decisions, changes: options.Changes, historyHealth: options.HistoryHealth,
 		index: options.Index, credentials: options.Credentials, draining: draining, drain: drain,
+		windows: windows,
 	}
 }
 
@@ -149,34 +159,33 @@ func (s *Service) watchDecisions(request *egressadminpb.WatchDecisionsRequest, s
 	watchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer context.AfterFunc(s.draining, cancel)()
-	type result struct {
-		records []decision.Record
-		err     error
-		done    bool
+	if s.windows == nil {
+		return historyFailure(errors.New("decision history feed is unavailable"))
 	}
-	updates := make(chan result)
-	go func() {
-		err := s.changes.Follow(watchCtx, func() error {
-			records, err := s.decisions.Recent(watchCtx, subject)
-			if err != nil {
-				return err
-			}
-			select {
-			case updates <- result{records: records}:
-				return nil
-			case <-watchCtx.Done():
-				return watchCtx.Err()
-			}
-		})
-		select {
-		case updates <- result{err: err, done: true}:
-		case <-watchCtx.Done():
+	subscription, snapshot, err := s.windows.subscribe(watchCtx, subject)
+	if err != nil {
+		if ctx.Err() != nil {
+			return status.FromContextError(ctx.Err()).Err()
 		}
-	}()
+		if s.draining.Err() != nil {
+			return nil
+		}
+		return historyFailure(err)
+	}
+	defer s.windows.unsubscribe(subject, subscription)
+	if err := revalidate(ctx); err != nil {
+		return err
+	}
+	if err := streaming.SendWithin(
+		watchCtx, watchWriteTimeout, stream.Send,
+		&egressadminpb.WatchDecisionsResponse{Frame: &egressadminpb.WatchDecisionsResponse_Snapshot{
+			Snapshot: &egressadminpb.DecisionSnapshot{Decisions: snapshot},
+		}},
+	); err != nil {
+		return watchWriteError(ctx, s.draining, err)
+	}
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
-	var previous *egressadminpb.DecisionSnapshot
-	var lastSend time.Time
 	for {
 		select {
 		case <-ctx.Done():
@@ -187,44 +196,41 @@ func (s *Service) watchDecisions(request *egressadminpb.WatchDecisionsRequest, s
 			if err := revalidate(ctx); err != nil {
 				return err
 			}
-		case update := <-updates:
-			if update.done {
-				if update.err == nil {
-					update.err = errors.New("decision history change feed ended")
-				}
-				return historyFailure(update.err)
+		case <-subscription.done:
+			if subscription.err == nil {
+				subscription.err = errors.New("decision history feed ended")
 			}
+			return historyFailure(subscription.err)
+		case update := <-subscription.updates:
 			if err := revalidate(ctx); err != nil {
 				return err
 			}
-			snapshot := &egressadminpb.DecisionSnapshot{Decisions: decisionsOf(update.records)}
 			var frame *egressadminpb.WatchDecisionsResponse
-			if previous == nil {
-				frame = &egressadminpb.WatchDecisionsResponse{Frame: &egressadminpb.WatchDecisionsResponse_Snapshot{Snapshot: snapshot}}
-				previous = snapshot
-			} else if delta := decisionDelta(previous.GetDecisions(), snapshot.GetDecisions()); len(delta.Added) > 0 || len(delta.RemovedEventIds) > 0 {
-				frame = &egressadminpb.WatchDecisionsResponse{Frame: &egressadminpb.WatchDecisionsResponse_Delta{Delta: delta}}
-				previous = snapshot
-			} else if time.Since(lastSend) >= history.ChangesHeartbeat {
+			if update.delta != nil {
+				frame = &egressadminpb.WatchDecisionsResponse{Frame: &egressadminpb.WatchDecisionsResponse_Delta{Delta: update.delta}}
+			} else if update.heartbeat {
 				frame = &egressadminpb.WatchDecisionsResponse{Frame: &egressadminpb.WatchDecisionsResponse_Heartbeat{Heartbeat: &emptypb.Empty{}}}
 			} else {
 				continue
 			}
 			if err := streaming.SendWithin(watchCtx, watchWriteTimeout, stream.Send, frame); err != nil {
-				if ctx.Err() != nil {
-					return status.FromContextError(ctx.Err()).Err()
-				}
-				if s.draining.Err() != nil {
-					return nil
-				}
-				if errors.Is(err, streaming.ErrSendTimeout) {
-					return status.Error(codes.DeadlineExceeded, "decision watch write deadline expired")
-				}
-				return err
+				return watchWriteError(ctx, s.draining, err)
 			}
-			lastSend = time.Now()
 		}
 	}
+}
+
+func watchWriteError(ctx, draining context.Context, err error) error {
+	if ctx.Err() != nil {
+		return status.FromContextError(ctx.Err()).Err()
+	}
+	if draining.Err() != nil {
+		return nil
+	}
+	if errors.Is(err, streaming.ErrSendTimeout) {
+		return status.Error(codes.DeadlineExceeded, "decision watch write deadline expired")
+	}
+	return err
 }
 
 // decisionDelta compares bounded windows by their durable event identity. This also reports

@@ -16,6 +16,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
+	"github.com/google/uuid"
 )
 
 // decisionsChannel is notified with every committed batch, to every replica listening.
@@ -87,6 +88,12 @@ type Store struct {
 	capacity  int
 }
 
+// Window is the per-subject visible history bound used by Recent and decision watches.
+type Window struct {
+	Retention time.Duration
+	Capacity  int
+}
+
 // NewStore reads and keeps decisions for `retention`, returning at most `capacity` per read.
 func NewStore(db *sql.DB, retention time.Duration, capacity int) (*Store, error) {
 	if retention <= 0 || capacity < 1 || capacity > MaxCapacity {
@@ -95,8 +102,14 @@ func NewStore(db *sql.DB, retention time.Duration, capacity int) (*Store, error)
 	return &Store{db: db, retention: retention, capacity: capacity}, nil
 }
 
+// Window reports the retention and capacity the store applies to every subject read.
+func (s *Store) Window() Window { return Window{Retention: s.retention, Capacity: s.capacity} }
+
 // Append stores the records and notifies listening replicas, in one transaction.
 func (s *Store) Append(ctx context.Context, records []decision.Record) error {
+	if len(records) == 0 {
+		return nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, operationTimeout)
 	defer cancel()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -110,8 +123,10 @@ func (s *Store) Append(ctx context.Context, records []decision.Record) error {
 			return err
 		}
 	}
-	if err := postgres.Notify(ctx, tx, decisionsChannel, ""); err != nil {
-		return err
+	for _, payload := range notificationPayloads(records) {
+		if err := postgres.Notify(ctx, tx, decisionsChannel, payload); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
@@ -181,6 +196,60 @@ func (s *Store) Recent(ctx context.Context, subject *decision.Subject) ([]decisi
 	}
 	slices.Reverse(records)
 	return records, nil
+}
+
+// ByEventIDs reads only the decisions named by committed change notifications. The returned order
+// is not meaningful; callers merge records by event identity and decision time.
+func (s *Store) ByEventIDs(ctx context.Context, eventIDs []uuid.UUID) ([]decision.Record, error) {
+	if len(eventIDs) == 0 {
+		return []decision.Record{}, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, operationTimeout)
+	defer cancel()
+	args := make([]any, len(eventIDs))
+	placeholders := make([]string, len(eventIDs))
+	for i, eventID := range eventIDs {
+		args[i] = eventID
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+	}
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(
+		"SELECT %s FROM egress_decision WHERE event_id IN (%s)", columns, strings.Join(placeholders, ","),
+	), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	records := make([]decision.Record, 0, len(eventIDs))
+	for rows.Next() {
+		var record decision.Record
+		var namespace, name sql.NullString
+		if err := rows.Scan(&record.EventID, &record.At, &record.ProducerID, &namespace, &name, &record.SourcePodUID,
+			&record.ConnectionID, &record.Phase, &record.Method, &record.Host, &record.Port, &record.Outcome,
+			&record.Reason, &record.Binding, &record.Policy, &record.Rule, &record.Substituted, &record.Address); err != nil {
+			return nil, err
+		}
+		if namespace.Valid && name.Valid {
+			record.Subject = &decision.Subject{Namespace: namespace.String, Name: name.String}
+		}
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+// Readable checks that the history table can be queried without loading a subject window. Watch
+// heartbeats use it to retain their history-read health contract at a bounded, shared cost.
+func (s *Store) Readable(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, operationTimeout)
+	defer cancel()
+	var exists bool
+	return s.db.QueryRowContext(
+		ctx,
+		"SELECT EXISTS (SELECT 1 FROM egress_decision WHERE decided_at >= $1 LIMIT 1)",
+		time.Now().Add(-s.retention),
+	).Scan(&exists)
 }
 
 // Cleanup deletes one batch of expired decisions. Fixed-size, SKIP LOCKED batches keep concurrent
