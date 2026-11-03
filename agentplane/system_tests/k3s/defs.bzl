@@ -77,7 +77,7 @@ _STACKS = {
     "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, real_model = True, images = [_HARNESSES_LAYOUT]),
 }
 
-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, main = None):
+def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, main = None, kvm_variant = False):
     """Run one suite with retained infrastructure and fresh per-action application state."""
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
@@ -85,6 +85,8 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         fail("profile_guest requires the VM stack")
     if boot_evidence and stack != "vm":
         fail("boot_evidence requires the VM stack")
+    if kvm_variant and stack != "vm":
+        fail("kvm_variant requires the VM stack")
     config = _STACKS[stack]
     images = {
         "fixture": [
@@ -131,20 +133,30 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         properties["test.env-secrets"] = "OPENAI_API_KEY"
         suite_tags.append("live_openai_api")
 
-    # VM layers stay on disk; Pod/MCP/real-model suites use a separate tmpfs baseline.
-    properties |= K3S_PERSISTENCE_PROPERTIES | {
-        "test.runner-recycling-key": k3s_recycling_key(vm = config.vm),
-    }
-    py_test(
-        name = name,
-        size = "enormous",
-        srcs = srcs,
-        main = main,
-        data = data,
-        env = env,
-        exec_properties = K3S_EXEC_PROPERTIES | properties,
-        tags = suite_tags,
-        deps = deps + [
-            "//agentplane/system_tests/k3s:system_test_target",
-        ],
-    )
+    for kvm in [False, True] if kvm_variant else [False]:
+        if kvm:
+            isolation = {
+                "test.Pool": "wyrm2-kvm",
+                "test.use-self-hosted-executors": "true",
+                "test.workload-isolation-type": "oci",
+                "test.init-dockerd": "false",
+                "test.recycle-runner": "false",
+            }
+        else:
+            # Retained infrastructure snapshots belong to the hosted Firecracker runner.
+            isolation = K3S_PERSISTENCE_PROPERTIES | {
+                "test.runner-recycling-key": k3s_recycling_key(vm = config.vm),
+            }
+        py_test(
+            name = name + ".kvm" if kvm else name,
+            size = "enormous",
+            srcs = srcs,
+            main = main or name + ".py",
+            data = data,
+            env = env | {"K3S_VM_ACCELERATOR": "kvm" if kvm else "tcg"},
+            exec_properties = K3S_EXEC_PROPERTIES | properties | isolation,
+            tags = suite_tags + (["manual"] if kvm and "manual" not in suite_tags else []),
+            deps = deps + [
+                "//agentplane/system_tests/k3s:system_test_target",
+            ],
+        )

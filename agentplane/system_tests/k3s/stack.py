@@ -43,6 +43,7 @@ from agentplane.system_tests.k3s import (
     certificates,
     guest_logs,
     iptables_rule,
+    kvm_action,
     process_traces,
     rendered_fixture,
     vm_sandboxes,
@@ -561,6 +562,7 @@ class StackInputs:
     pki_image_layouts: dict[str, Path]
     vm_image_layouts: dict[str, Path]
     guest_image_layouts: dict[str, Path]
+    vm_accelerator: vm_sandboxes.Accelerator
 
 
 @dataclass(frozen=True)
@@ -570,6 +572,7 @@ class Stack:
     base_url: str
     token: str
     mcp_fixtures: McpFixtureAccess | None
+    vm_accelerator: vm_sandboxes.Accelerator
 
 
 def _mcp_inputs(work: Path, dex_host: str) -> rendered_fixture.McpInputs:
@@ -1017,8 +1020,12 @@ def running_stack(
     persist_infrastructure: bool,
 ) -> Iterator[Stack]:
     """Create fresh fixtures; retain infrastructure only with the executor's lifecycle permission."""
-    crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
     fixture = inputs.fixture
+    if not fixture.vm_sandboxes and inputs.vm_accelerator is vm_sandboxes.Accelerator.KVM:
+        raise ValueError("K3S_VM_ACCELERATOR=kvm requires a VM Sandbox fixture")
+    if inputs.vm_accelerator is vm_sandboxes.Accelerator.KVM:
+        kvm_action.prepare()
+    crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
     cert_manager, trust_manager = certificates.releases()
     pki_images = inputs.pki_image_layouts
     releases = vm_sandboxes.releases() if fixture.vm_sandboxes else []
@@ -1056,7 +1063,11 @@ def running_stack(
                         cert_manager
                         + trust_manager
                         + releases
-                        + (vm_sandboxes.baseline_objects() if fixture.vm_sandboxes else []),
+                        + (
+                            vm_sandboxes.baseline_objects(accelerator=inputs.vm_accelerator)
+                            if fixture.vm_sandboxes
+                            else []
+                        ),
                         pki_images | infrastructure_images,
                         layers_in_memory=not fixture.vm_sandboxes,
                     ),
@@ -1132,7 +1143,7 @@ def running_stack(
                     else None
                 )
                 if fixture.vm_sandboxes and install_baseline:
-                    vm_sandboxes.install(k3s.kubectl, releases)
+                    vm_sandboxes.install(k3s.kubectl, releases, accelerator=inputs.vm_accelerator)
                     setup.add_event("KubeVirt and Kyverno applied")
                 # Applying a workload before its image is imported would pull it from the registry.
                 if pki_import is not None:
@@ -1255,7 +1266,14 @@ def running_stack(
                 k3s, fixture, models, cert_manager + trust_manager, baseline_marker, baseline_warm
             )
             persistence_output.write_text(json.dumps(persistence_evidence))
-        yield Stack(k3s=k3s, cluster=cluster, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
+        yield Stack(
+            k3s=k3s,
+            cluster=cluster,
+            base_url=fixture.app_origin,
+            token=token,
+            mcp_fixtures=access,
+            vm_accelerator=inputs.vm_accelerator,
+        )
         with tracer.start_as_current_span("system_test.stack.diagnostics"):
             print(k3s.report(fixture.namespace))
             if fixture.vm_sandboxes:

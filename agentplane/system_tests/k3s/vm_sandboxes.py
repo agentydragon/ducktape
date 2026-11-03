@@ -1,13 +1,14 @@
-"""What VM Sandboxes need on the k3s stack besides our own objects: KubeVirt, emulating the guest CPU
-(QEMU TCG; the RBE executor has no `/dev/kvm`), and Kyverno's admission controller, which adds the egress
-relay to each VM's launcher Pod (cluster/cdk8s/agentplane/launcher_relay.py). Both are the releases
-production runs, from their release manifests, with their images from Bazel-pulled layouts.
+"""What VM Sandboxes need on the k3s stack besides our own objects: KubeVirt, with TCG or KVM guest
+acceleration selected explicitly, and Kyverno's admission controller, which adds the egress relay to
+each VM's launcher Pod (cluster/cdk8s/agentplane/launcher_relay.py). Both are the releases production
+runs, from their release manifests, with their images from Bazel-pulled layouts.
 """
 
 import json
 import os
 import subprocess
 from collections.abc import Callable
+from enum import StrEnum
 from typing import Any
 
 import yaml
@@ -26,6 +27,11 @@ KYVERNO_NAMESPACE = "kyverno"
 _KYVERNO_ADMISSION = "kyverno-admission-controller"
 READY_SECONDS = 600
 _PROFILE_ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root-profile:unset"
+
+
+class Accelerator(StrEnum):
+    TCG = "tcg"
+    KVM = "kvm"
 
 
 def select_native_profile(objects: list[dict[str, Any]], *, enabled: bool, profile_root: bool) -> None:
@@ -71,7 +77,7 @@ def _kubevirt_operator() -> list[dict[str, Any]]:
     return objects
 
 
-def _kubevirt() -> dict[str, Any]:
+def _kubevirt(*, accelerator: Accelerator) -> dict[str, Any]:
     return {
         "apiVersion": "kubevirt.io/v1",
         "kind": "KubeVirt",
@@ -81,15 +87,18 @@ def _kubevirt() -> dict[str, Any]:
             "infra": {"replicas": 1},
             "configuration": {
                 # The feature gate production's runner VMs need (cluster/cdk8s/kubevirt/app.py).
-                "developerConfiguration": {"useEmulation": True, "featureGates": ["EnableVirtioFsStorageVolumes"]}
+                "developerConfiguration": {
+                    "useEmulation": accelerator is Accelerator.TCG,
+                    "featureGates": ["EnableVirtioFsStorageVolumes"],
+                }
             },
         },
     }
 
 
-def baseline_objects() -> list[dict[str, Any]]:
+def baseline_objects(*, accelerator: Accelerator) -> list[dict[str, Any]]:
     """The KubeVirt configuration applied after installing the operator release."""
-    return [_kubevirt()]
+    return [_kubevirt(accelerator=accelerator)]
 
 
 def baseline_identity(kubectl: Kubectl) -> dict[str, str]:
@@ -139,14 +148,14 @@ def releases() -> list[dict[str, Any]]:
 
 
 @tracer.start_as_current_span("system_test.virtualization.install")
-def install(kubectl: Kubectl, objects: list[dict[str, Any]]) -> None:
+def install(kubectl: Kubectl, objects: list[dict[str, Any]], *, accelerator: Accelerator) -> None:
     """Start installing the `releases` objects, once their `images` are in containerd."""
     # virt-handler mounts the kubelet's Pod directory Bidirectional, which needs a shared root mount.
     subprocess.run(["mount", "--make-rshared", "/"], check=True)
     # Server-side: Kyverno's CRDs exceed the client-side apply annotation limit.
     kubectl("apply", "--server-side", "-f", "-", input_text=yaml.safe_dump_all(objects))
     kubectl("wait", "--for=condition=Established", "crd/kubevirts.kubevirt.io", "--timeout=60s")
-    kubectl("apply", "-f", "-", input_text=yaml.safe_dump(_kubevirt()))
+    kubectl("apply", "-f", "-", input_text=yaml.safe_dump(_kubevirt(accelerator=accelerator)))
 
 
 @tracer.start_as_current_span("system_test.virtualization.apis")
@@ -179,6 +188,84 @@ def wait_until_ready(kubectl: Kubectl) -> None:
         f"--timeout={READY_SECONDS}s",
     )  # fmt: skip
     kubectl("wait", "--for=condition=Ready", "clusterpolicy", "--all", f"--timeout={READY_SECONDS}s")
+
+
+def assert_kvm(kubectl: Kubectl, namespace: str, *, vmi_name: str | None = None) -> list[dict[str, Any]]:
+    """Require each selected VMI's QEMU domain to report enabled KVM acceleration."""
+    command = ["get", "vmi", "-n", namespace]
+    if vmi_name is not None:
+        command.append(vmi_name)
+    command.extend(["-o", "json"])
+    response = json.loads(kubectl(*command, stdout_only=True))
+    vmis = [response] if vmi_name is not None else response["items"]
+    if not vmis:
+        selected = f"VMI {vmi_name!r}" if vmi_name is not None else f"VMIs in namespace {namespace!r}"
+        raise AssertionError(f"no {selected} found")
+
+    evidence: list[dict[str, Any]] = []
+    for vmi in vmis:
+        vmi_metadata = vmi["metadata"]
+        vmi_name = vmi_metadata["name"]
+        vmi_uid = vmi_metadata["uid"]
+        pods = json.loads(
+            kubectl(
+                "get",
+                "pods",
+                "-n",
+                namespace,
+                "-l",
+                f"kubevirt.io=virt-launcher,kubevirt.io/domain={vmi_name}",
+                "-o",
+                "json",
+                stdout_only=True,
+            )
+        )["items"]
+        launchers = [
+            pod["metadata"]["name"]
+            for pod in pods
+            if any(
+                owner.get("kind") == "VirtualMachineInstance" and owner.get("uid") == vmi_uid
+                for owner in pod["metadata"].get("ownerReferences", [])
+            )
+        ]
+        if len(launchers) != 1:
+            raise AssertionError(f"VMI {vmi_name!r} has {len(launchers)} owned launcher Pods; expected one: {pods!r}")
+        pod = launchers[0]
+        domains = kubectl(
+            "exec", "-n", namespace, f"pod/{pod}", "-c", "compute", "--", "virsh", "list", "--name", stdout_only=True
+        ).splitlines()
+        active_domains = [domain.strip() for domain in domains if domain.strip()]
+        if not active_domains:
+            raise AssertionError(f"launcher Pod {pod!r} for VMI {vmi_name!r} has no active QEMU domain")
+
+        for domain in active_domains:
+            response = json.loads(
+                kubectl(
+                    "exec",
+                    "-n",
+                    namespace,
+                    f"pod/{pod}",
+                    "-c",
+                    "compute",
+                    "--",
+                    "virsh",
+                    "qemu-monitor-command",
+                    domain,
+                    '{"execute":"query-kvm"}',
+                    stdout_only=True,
+                )
+            )
+            if not isinstance(response, dict):
+                raise AssertionError(
+                    f"QEMU domain {domain!r} in launcher Pod {pod!r} returned invalid QMP: {response!r}"
+                )
+            result = response.get("return")
+            if not isinstance(result, dict) or result.get("present") is not True or result.get("enabled") is not True:
+                raise AssertionError(
+                    f"QEMU domain {domain!r} in launcher Pod {pod!r} does not report active KVM: {response!r}"
+                )
+            evidence.append({"pod": pod, "domain": domain, "qmp": response})
+    return evidence
 
 
 def report(kubectl: Kubectl, namespace: str) -> str:

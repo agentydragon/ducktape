@@ -48,6 +48,15 @@ def _resource(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any
     return matches[0]
 
 
+def test_kubevirt_accelerator_is_explicit() -> None:
+    tcg = _resource(vm_sandboxes.baseline_objects(accelerator=vm_sandboxes.Accelerator.TCG), "KubeVirt", "kubevirt")
+    kvm = _resource(vm_sandboxes.baseline_objects(accelerator=vm_sandboxes.Accelerator.KVM), "KubeVirt", "kubevirt")
+    tcg_config = tcg["spec"]["configuration"]["developerConfiguration"]
+    kvm_config = kvm["spec"]["configuration"]["developerConfiguration"]
+    assert tcg_config["useEmulation"] is True
+    assert kvm_config["useEmulation"] is False
+
+
 def _filled_fixture() -> rendered_fixture.RenderedFixture:
     cached = rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"]))
     return rendered_fixture.fill(

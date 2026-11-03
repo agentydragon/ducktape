@@ -313,6 +313,7 @@ py_library(
         ":guest_logs",
         ":rendered_fixture",
         ":stack",
+        ":vm_sandboxes",
         "//util:net",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
@@ -351,6 +352,7 @@ py_library(
         ":certificates",
         ":guest_logs",
         ":iptables_rule",
+        ":kvm_action",
         ":process_traces",
         ":rendered_fixture",
         ":vm_sandboxes",
@@ -776,5 +778,18 @@ py_test(
         "@pypi//opentelemetry_proto",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "kvm_action",
+    srcs = ["kvm_action.py"],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+    deps = [
+        ":vm_sandboxes",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/system_tests:sandbox",
+        "//util/testing:undeclared_outputs",
+        "@pypi//protobuf",
     ],
 )

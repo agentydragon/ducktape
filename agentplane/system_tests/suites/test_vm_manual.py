@@ -9,6 +9,8 @@ from agentplane.app.testing.client import Client
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
+from agentplane.system_tests.k3s import kvm_action
+from agentplane.system_tests.k3s.stack import Stack
 from agentplane.system_tests.sandbox import Sandboxes
 from agentplane.system_tests.scenarios import storage, suspend_resume, vm_workspace_ownership
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
@@ -47,7 +49,12 @@ async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resu
 
 
 @pytest.mark.vm_sandboxes
-async def test_fresh_vm_session_workspace_is_created_for_harness_identity(client: Client, sandbox: Sandboxes) -> None:
+async def test_fresh_vm_session_workspace_is_created_for_harness_identity(
+    deployment: Stack, cluster: Cluster, client: Client, sandbox: Sandboxes
+) -> None:
+    sandbox = kvm_action.verify_acceleration(
+        sandbox, deployment.k3s.kubectl, cluster.namespace, deployment.vm_accelerator
+    )
     await vm_workspace_ownership.fresh_vm_session_workspace_is_created_for_harness_identity(client, sandbox)
 
 
