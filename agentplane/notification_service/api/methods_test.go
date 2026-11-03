@@ -4,7 +4,6 @@ import (
 	"maps"
 	"testing"
 
-	operatorpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -16,7 +15,6 @@ import (
 // registerStandIns registers servicers that answer Unimplemented to every call the policy admitted.
 func registerStandIns(server *grpc.Server) {
 	notificationspb.RegisterNotificationsServer(server, notificationspb.UnimplementedNotificationsServer{})
-	operatorpb.RegisterNotificationsOperatorServer(server, operatorpb.UnimplementedNotificationsOperatorServer{})
 }
 
 func TestEveryRPCAdmitsOnlyItsCallers(t *testing.T) {
@@ -29,12 +27,6 @@ func TestEveryRPCAdmitsOnlyItsCallers(t *testing.T) {
 		"": codes.Unauthenticated, "test-token-unknown": codes.Unauthenticated, outsiderToken: codes.Unauthenticated,
 		sandboxToken: codes.Unimplemented, otherSandboxToken: codes.Unimplemented, operatorToken: codes.Unimplemented,
 	}
-	operator := map[string]codes.Code{
-		"": codes.Unauthenticated, "test-token-unknown": codes.Unauthenticated, outsiderToken: codes.Unauthenticated,
-		sandboxToken: codes.PermissionDenied, otherSandboxToken: codes.PermissionDenied, operatorToken: codes.Unimplemented,
-	}
-	noOperator := maps.Clone(operator)
-	noOperator[operatorToken] = codes.PermissionDenied
 	for _, test := range []struct {
 		name     string
 		reader   string
@@ -42,8 +34,6 @@ func TestEveryRPCAdmitsOnlyItsCallers(t *testing.T) {
 		expected map[string]codes.Code
 	}{
 		{"Notifications", operatorName, notificationspb.Notifications_ServiceDesc, workloads},
-		{"NotificationsOperator", operatorName, operatorpb.NotificationsOperator_ServiceDesc, operator},
-		{"NotificationsOperator without an operator", "", operatorpb.NotificationsOperator_ServiceDesc, noOperator},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			methods := Methods(Options{Resolver: resolver, Namespace: testNamespace, OperatorReader: test.reader})

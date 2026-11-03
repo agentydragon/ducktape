@@ -94,7 +94,7 @@ type noticeFixture struct {
 func newNoticeFixture(t *testing.T, events int64) noticeFixture {
 	t.Helper()
 	f := newClaimFixture(t)
-	subscription := f.subscribe(t, body("first"))
+	subscription := f.subscribe(t, f.body("first"))
 	f.addEvents(t, subscription, 1, events)
 	claim := f.claim(t)
 	return noticeFixture{fixture: f, subscription: subscription, held: claim, notice: f.prepareNotice(t, claim)}
@@ -102,7 +102,7 @@ func newNoticeFixture(t *testing.T, events int64) noticeFixture {
 
 func TestPrepareNoticeNamesEveryEntryOnceAndRepeatsAsTheSameCommand(t *testing.T) {
 	f := newClaimFixture(t)
-	subscription := f.subscribe(t, body("first"))
+	subscription := f.subscribe(t, f.body("first"))
 	claim := f.claim(t)
 	if notice, err := f.PrepareNotice(t.Context(), claim); err != nil || notice != nil {
 		t.Fatalf("PrepareNotice of an empty inbox = %+v, %v", notice, err)
@@ -179,7 +179,7 @@ func TestNoNoticeIsPreparedForEntriesNobodyNeedsToBeTold(t *testing.T) {
 	for _, how := range []string{"acknowledged", "expired"} {
 		t.Run(how, func(t *testing.T) {
 			f := newClaimFixture(t)
-			subscription := f.subscribe(t, body("first"))
+			subscription := f.subscribe(t, f.body("first"))
 			f.addEvents(t, subscription, 1, 2)
 			claim := f.claim(t)
 			f.settle(t, subscription.InboxID, how, 2)

@@ -23,12 +23,13 @@ type Hub struct {
 	mu        sync.Mutex
 	// subscribers holds each listened channel's subscribers' signals.
 	subscribers map[string]map[chan struct{}]struct{}
+	keyed       map[string]map[string]map[chan struct{}]struct{}
 }
 
 // Listen opens the LISTEN connection to dsn and returns once it listens to every channel, or fails when ctx
 // ends first. It reconnects by itself after that; Close ends it.
 func Listen(ctx context.Context, dsn string, channels ...string) (*Hub, error) {
-	hub := &Hub{subscribers: make(map[string]map[chan struct{}]struct{}, len(channels))}
+	hub := &Hub{subscribers: make(map[string]map[chan struct{}]struct{}, len(channels)), keyed: make(map[string]map[string]map[chan struct{}]struct{}, len(channels))}
 	for _, channel := range channels {
 		hub.subscribers[channel] = map[chan struct{}]struct{}{}
 	}
@@ -62,6 +63,32 @@ func Listen(ctx context.Context, dsn string, channels ...string) (*Hub, error) {
 	}
 	go hub.fanOut()
 	return hub, nil
+}
+
+// SubscribeKey receives notifications whose payload is exactly key. On listener loss or reconnect
+// it is also woken so the reader can discard stale state and establish a fresh snapshot.
+func (h *Hub) SubscribeKey(channel, key string) (<-chan struct{}, func(), error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, ok := h.subscribers[channel]; !ok {
+		return nil, nil, fmt.Errorf("not listening to channel %q", channel)
+	}
+	if h.keyed[channel] == nil {
+		h.keyed[channel] = make(map[string]map[chan struct{}]struct{})
+	}
+	if h.keyed[channel][key] == nil {
+		h.keyed[channel][key] = make(map[chan struct{}]struct{})
+	}
+	signal := make(chan struct{}, 1)
+	h.keyed[channel][key][signal] = struct{}{}
+	return signal, func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		delete(h.keyed[channel][key], signal)
+		if len(h.keyed[channel][key]) == 0 {
+			delete(h.keyed[channel], key)
+		}
+	}, nil
 }
 
 func (h *Hub) observeConnectionEvent(event pq.ListenerEventType) {
@@ -126,6 +153,18 @@ func (h *Hub) fanOut() {
 			continue
 		}
 		h.wake(notification.Channel)
+		h.wakeKey(notification.Channel, notification.Extra)
+	}
+}
+
+func (h *Hub) wakeKey(channel, key string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for signal := range h.keyed[channel][key] {
+		select {
+		case signal <- struct{}{}:
+		default:
+		}
 	}
 }
 
@@ -147,6 +186,16 @@ func (h *Hub) wakeAll() {
 	channels := make([]string, 0, len(h.subscribers))
 	for channel := range h.subscribers {
 		channels = append(channels, channel)
+	}
+	for _, byKey := range h.keyed {
+		for _, subscribers := range byKey {
+			for signal := range subscribers {
+				select {
+				case signal <- struct{}{}:
+				default:
+				}
+			}
+		}
 	}
 	h.mu.Unlock()
 	h.wake(channels...)

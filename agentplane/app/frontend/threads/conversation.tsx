@@ -413,8 +413,7 @@ function ConversationBody({
             </Button>
             <NotificationStatus
               sandbox={thread.sandbox}
-              target={currentSandbox?.target?.uid === thread.sandbox_uid ? currentSandbox.target : null}
-              sessionId={thread.id}
+              sessionIds={[thread.id]}
               opened={notificationsOpen}
               onClose={() => setNotificationsOpen(false)}
             />

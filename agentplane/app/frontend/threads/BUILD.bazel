@@ -674,6 +674,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:mark_glyph",
         "//agentplane/app/frontend:status_mark",
+        "//agentplane/notification_service:notifications_pb",
     ],
 )
 
@@ -812,9 +813,8 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:format_time",
-        "//agentplane/app/frontend:stream_reader",
         "//agentplane/app/frontend:watch_stream",
-        "//agentplane/notification_service:notifications_operator_pb",
+        "//agentplane/notification_service:notifications_pb",
     ],
 )
 

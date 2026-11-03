@@ -134,7 +134,7 @@ func serveNotifications(t *testing.T, servicer *notificationsServer) string {
 
 func pullRequestSubscription(version int64, cancelled bool) *notificationspb.Subscription {
 	return &notificationspb.Subscription{
-		Id: subscriptionID, InboxId: "00000000-0000-0000-0000-0000000000b2", IdempotencyKey: "k", Version: version,
+		Id: subscriptionID, InboxId: "00000000-0000-0000-0000-0000000000b2", IdempotencyKey: proto.String("k"), Version: proto.Int64(version),
 		Cancelled: cancelled, ExpiresAt: timestamppb.New(time.Date(2026, 1, 8, 0, 0, 0, 0, time.UTC)),
 		Source: &notificationspb.Source{Provider: &notificationspb.Source_Github{Github: &notificationspb.GitHubSource{
 			Repository: "owner/repo",

@@ -35,8 +35,7 @@ type config struct {
 	// Namespace holds the Sandboxes that destinations may name and the callers the service admits.
 	Namespace     string `mapstructure:"namespace"`
 	TokenAudience string `mapstructure:"token_audience"`
-	// OperatorReaderAccount is the name, in Namespace, of the ServiceAccount that may call NotificationsOperator.
-	// Empty admits nobody.
+	// OperatorReaderAccount is the ServiceAccount allowed to inspect Session diagnostics across the namespace.
 	OperatorReaderAccount string       `mapstructure:"operator_reader_account"`
 	Quotas                store.Quotas `mapstructure:"quotas"`
 	worker.Settings       `mapstructure:",squash"`
@@ -48,8 +47,6 @@ type config struct {
 	GitHub settings.Settings `mapstructure:"github"`
 	// RequestTimeoutSeconds bounds a call's backend work and each write to a watch stream.
 	RequestTimeoutSeconds float64 `mapstructure:"request_timeout_s"`
-	// WatchLeaseSeconds is how long a watch stream lasts before planned renewal.
-	WatchLeaseSeconds float64 `mapstructure:"watch_lease_s"`
 	// MessageBodyLimitBytes is the most UTF-8 bytes a message body may hold, at most store.MessageBodyCeiling.
 	MessageBodyLimitBytes int    `mapstructure:"message_body_limit_bytes"`
 	Host                  string `mapstructure:"host"`
@@ -134,7 +131,7 @@ func defaultConfig() config {
 		HistoryService:        peer{RequestTimeoutSeconds: 20},
 		SessionDispatcher:     peer{RequestTimeoutSeconds: 15},
 		GitHub:                settings.DefaultSettings(),
-		RequestTimeoutSeconds: 15, WatchLeaseSeconds: 300,
+		RequestTimeoutSeconds: 15,
 		MessageBodyLimitBytes: 32 * 1024,
 		Host:                  "0.0.0.0",
 		Port:                  8080,
@@ -235,7 +232,6 @@ func (c *config) validate() error {
 		{"history_service.request_timeout_s", c.HistoryService.RequestTimeoutSeconds},
 		{"session_dispatcher.request_timeout_s", c.SessionDispatcher.RequestTimeoutSeconds},
 		{"request_timeout_s", c.RequestTimeoutSeconds},
-		{"watch_lease_s", c.WatchLeaseSeconds},
 	} {
 		if !(timeout.value > 0) || math.IsInf(timeout.value, 0) {
 			return fmt.Errorf("%s must be a finite number above 0", timeout.name)

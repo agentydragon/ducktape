@@ -20,12 +20,12 @@ func requireConstraint(t *testing.T, err error, code pq.ErrorCode, constraint st
 }
 
 func (g githubFixture) creation(source model.GitHubSource, key string) model.Subscribe {
-	return model.Subscribe{DestinationRef: g.destination, SessionID: "test-session", IdempotencyKey: key, Source: source, LifetimeDays: 7}
+	return model.Subscribe{DestinationRef: g.destination, SessionID: g.sessionID, IdempotencyKey: key, Source: source, LifetimeDays: 7}
 }
 
 func TestAGitHubSubscriptionIsBoundToTheAccessItWasAuthorizedUnder(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	github := body("github")
+	github := f.body("github")
 	github.Source = model.GitHubSource{Repository: "owner/repository", Subject: model.PullRequestSubject{Number: 1}}
 	access := GitHubAccessKey{AppID: 1, InstallationID: 2, RepositoryID: 3}
 	invalidAccess := []GitHubAccessKey{{InstallationID: 2, RepositoryID: 3}, {AppID: 1, RepositoryID: 3}, {AppID: 1, InstallationID: 2}}
@@ -37,7 +37,7 @@ func TestAGitHubSubscriptionIsBoundToTheAccessItWasAuthorizedUnder(t *testing.T)
 	if _, err := f.Subscribe(t.Context(), f.owner, github, nil); err == nil {
 		t.Error("a GitHub subscription was created without the access it was authorized under")
 	}
-	if _, err := f.Subscribe(t.Context(), f.owner, body("actions"), &access); err == nil {
+	if _, err := f.Subscribe(t.Context(), f.owner, f.body("actions"), &access); err == nil {
 		t.Error("an Actions subscription was created bound to GitHub access")
 	}
 	inboxes, err := f.ListInboxes(t.Context(), f.incarnation())
@@ -199,7 +199,7 @@ func TestADueSubscriptionCarriesTheGitHubAccessItWasAuthorizedUnder(t *testing.T
 		t.Fatalf("model.Source after ingress = %+v, %v; want generation 1", due, err)
 	}
 
-	actions := g.subscribe(t, body("actions"))
+	actions := g.subscribe(t, g.body("actions"))
 	requireEqual(t, actions.InboxID != uuid.Nil, true)
 	g.exec(t, `UPDATE subscription SET cancelled = true WHERE id = $1`, subscription.ID)
 	actionsClaim := g.claimInbox(t, actions.InboxID)

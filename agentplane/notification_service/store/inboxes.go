@@ -151,6 +151,11 @@ func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner model.Service
 	inbox, err := scanInbox(tx.QueryRowContext(ctx,
 		`SELECT `+inboxColumns+` FROM inbox WHERE owner_namespace = $1 AND owner_name = $2 AND destination_key = $3 FOR UPDATE`,
 		owner.Namespace, owner.Name, key))
+	// A different destination or owner may already have this globally unique Session ID.
+	// Do not disclose that inbox or treat a conflicting creation as its owner.
+	if errors.Is(err, sql.ErrNoRows) {
+		return Inbox{}, ErrNotFound
+	}
 	if err != nil {
 		return Inbox{}, err
 	}

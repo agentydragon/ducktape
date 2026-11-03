@@ -181,3 +181,40 @@ func TestListeningFailsWhenTheDatabaseCannotBeReached(t *testing.T) {
 		t.Fatal("listening succeeded without a database")
 	}
 }
+
+func TestKeyedSubscribersReceiveOnlyTheirCommittedKeys(t *testing.T) {
+	db, hub := openDB(t), listen(t, "test-keyed-wakeups", "test_keyed", "test_keyed_barrier")
+	a, stopA, err := hub.SubscribeKey("test_keyed", "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stopA()
+	b, stopB, err := hub.SubscribeKey("test_keyed", "b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stopB()
+	barrier, _ := subscribe(t, hub, "test_keyed_barrier")
+	tx, err := db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.ExecContext(t.Context(), `SELECT pg_notify('test_keyed', 'b')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `SELECT pg_notify('test_keyed', 'a')`); err != nil {
+		t.Fatal(err)
+	}
+	notify(t, db, "test_keyed_barrier")
+	awaitWakeup(t, barrier)
+	awaitWakeup(t, a)
+	assertQuiet(t, b)
+	if _, err := db.ExecContext(t.Context(), `SELECT pg_notify('test_keyed', 'b')`); err != nil {
+		t.Fatal(err)
+	}
+	awaitWakeup(t, b)
+	assertQuiet(t, a)
+}

@@ -9,7 +9,7 @@ import (
 
 func TestFinalEventIdentityHasValidatedRelationalKeys(t *testing.T) {
 	f := newIsolatedFixture(t, defaultQuotas())
-	subscription := f.subscribe(t, body("event-identity-final-schema"))
+	subscription := f.subscribe(t, f.body("event-identity-final-schema"))
 	event := model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
 

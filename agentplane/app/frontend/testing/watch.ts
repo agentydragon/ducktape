@@ -95,14 +95,19 @@ function accepts(init: RequestInit | undefined, type: string): boolean {
 export function serveEventStreams(
   open: (stream: ServedWatch) => void,
   other: typeof fetch = globalThis.fetch,
-  ndjsonPaths: ReadonlySet<string> = new Set()
+  ndjsonPaths: ReadonlySet<string> | ((pathname: string) => boolean) = new Set()
 ): ServedWatch[] {
   const served: ServedWatch[] = [];
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
     if (
       typeof input !== "string" ||
       (!accepts(init, "text/event-stream") &&
-        !(accepts(init, "application/x-ndjson") && ndjsonPaths.has(new URL(input, "http://test").pathname)))
+        !(
+          accepts(init, "application/x-ndjson") &&
+          (typeof ndjsonPaths === "function"
+            ? ndjsonPaths(new URL(input, "http://test").pathname)
+            : ndjsonPaths.has(new URL(input, "http://test").pathname))
+        ))
     )
       return other(input, init);
     const stream = new ServedWatch(input, init?.signal ?? undefined);

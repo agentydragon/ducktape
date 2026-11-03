@@ -65,7 +65,7 @@ func (e *ActionEvent) UnmarshalJSON(data []byte) error {
 	); err != nil {
 		return err
 	}
-	state, known := actionStateFromStored(*wire.State)
+	state, known := ActionStateFromStored(*wire.State)
 	if !known {
 		return fmt.Errorf("unknown Action state %q", *wire.State)
 	}

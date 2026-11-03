@@ -19,7 +19,7 @@ func messageQuotas() Quotas {
 
 // message is a message from sender to the fixture owner's Sandbox, for the Session body names.
 func (f fixture) message(sender model.ServiceAccount, key, text string) Message {
-	creation := body(key)
+	creation := f.body(key)
 	return Message{
 		Sender: sender, Recipient: f.owner, DestinationRef: creation.DestinationRef, SessionID: creation.SessionID,
 		IdempotencyKey: key, Body: text,
@@ -28,7 +28,7 @@ func (f fixture) message(sender model.ServiceAccount, key, text string) Message 
 
 func (f fixture) openInbox(t *testing.T) {
 	t.Helper()
-	creation := body("unused")
+	creation := f.body("unused")
 	if err := f.OpenInbox(t.Context(), f.owner, creation.DestinationRef, creation.SessionID); err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestMessagesDoNotCountTowardsTheInboxsEntryLimit(t *testing.T) {
 	quotas := messageQuotas()
 	quotas.EntriesPerInbox = 1
 	f := newFixture(t, quotas)
-	subscription := f.subscribe(t, body("subscription"))
+	subscription := f.subscribe(t, f.body("subscription"))
 	sender := newOwner()
 	f.send(t, f.message(sender, "first", "test body"))
 	f.send(t, f.message(sender, "second", "test body"))

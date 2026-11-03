@@ -14,7 +14,6 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	operatorpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -208,26 +207,24 @@ func (h *fakeHistory) questions() []string {
 }
 
 type serverConfig struct {
-	lease, requestTimeout time.Duration
-	debounce              store.Debounce
-	githubDisabled        bool
-	// operatorReader is the account that may call NotificationsOperator, none when empty.
+	requestTimeout time.Duration
+	debounce       store.Debounce
+	githubDisabled bool
+	// operatorReader is the account allowed to inspect namespace Session diagnostics.
 	operatorReader string
 	// messageBodyLimit is in UTF-8 bytes.
 	messageBodyLimit int
 }
 
 type testServer struct {
-	notifications   *Notifications
-	operatorService *NotificationsOperator
-	client          notificationspb.NotificationsClient
-	operator        operatorpb.NotificationsOperatorClient
-	store           *store.Store
-	hub             *wakeups.Hub
-	db              *sql.DB
-	runner          *fakeRunner
-	actions         *fakeActions
-	github          *fakeGitHub
+	notifications *Notifications
+	client        notificationspb.NotificationsClient
+	store         *store.Store
+	hub           *wakeups.Hub
+	db            *sql.DB
+	runner        *fakeRunner
+	actions       *fakeActions
+	github        *fakeGitHub
 	// policy is current and grants nothing until a test grants.
 	policy  *inboxaccess.Policy
 	history *fakeHistory
@@ -236,12 +233,12 @@ type testServer struct {
 	config serverConfig
 }
 
-// newServer serves both APIs over the shared database, emptied of earlier tests' inboxes, with a hub listening to
+// newServer serves the API over the shared database, emptied of earlier tests' inboxes, with a hub listening to
 // the channel the watches follow. Sandboxes are read through the real reader over a fake Kubernetes client.
 func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	t.Helper()
 	config := serverConfig{
-		lease: time.Hour, requestTimeout: callDeadline,
+		requestTimeout: callDeadline,
 		debounce:       store.Debounce{Quiet: time.Minute, MaxWait: 2 * time.Minute},
 		operatorReader: operatorName, messageBodyLimit: 64,
 	}
@@ -256,7 +253,7 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	if _, err := db.ExecContext(t.Context(), `TRUNCATE inbox CASCADE`); err != nil {
 		t.Fatal(err)
 	}
-	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, store.WorkChannel)
+	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, store.WorkChannel, store.InboxChannel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,20 +296,18 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 		Store: server.store, Wakeups: hub, Resolver: resolver, Namespace: testNamespace, Sandboxes: sandboxes,
 		Runner: server.runner, Actions: server.actions, OperatorReader: config.operatorReader,
 		SendPolicy: server.policy, History: server.history, MessageBodyLimit: config.messageBodyLimit,
-		Debounce: config.debounce, RequestTimeout: config.requestTimeout, WatchLease: config.lease,
+		Debounce: config.debounce, RequestTimeout: config.requestTimeout,
 	}
 	if !config.githubDisabled {
 		options.GitHub = server.github
 	}
 	server.notifications = NewNotifications(options)
-	server.operatorService = NewNotificationsOperator(options)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	grpcServer := grpc.NewServer(Methods(options).ServerOptions(config.requestTimeout)...)
 	notificationspb.RegisterNotificationsServer(grpcServer, server.notifications)
-	operatorpb.RegisterNotificationsOperatorServer(grpcServer, server.operatorService)
 	go func() { _ = grpcServer.Serve(listener) }()
 	t.Cleanup(grpcServer.Stop)
 	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -321,7 +316,6 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	}
 	t.Cleanup(func() { connection.Close() })
 	server.client = notificationspb.NewNotificationsClient(connection)
-	server.operator = operatorpb.NewNotificationsOperatorClient(connection)
 	return server
 }
 

@@ -1,6 +1,4 @@
-// Package api serves the Notification Service's gRPC APIs: `Notifications`, which workloads call for their own
-// subscriptions and inboxes, and `NotificationsOperator`, which the integration app calls to show an operator
-// what a Sandbox's notifications are doing.
+// Package api serves the Notification Service's gRPC API.
 //
 // Methods admits every RPC's caller before it runs, by a bearer reviewed on that call
 // (agentplane/docs/grpc_services.md). A workload acts for its own ServiceAccount and only on what that account owns.
@@ -15,7 +13,6 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	operatorpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
@@ -51,7 +48,7 @@ type GitHub interface {
 // Options are what the servicers read and whom they admit.
 type Options struct {
 	Store *store.Store
-	// Wakeups must listen to store.WorkChannel, which the operator's watches follow.
+	// Wakeups must listen to store.InboxChannel, which the Session watches follow.
 	Wakeups *wakeups.Hub
 	// Resolver reviews a caller's bearer for Methods; it admits only the namespaces the Sandboxes run in.
 	Resolver *auth.Resolver
@@ -68,40 +65,32 @@ type Options struct {
 	History SessionHistory
 	// MessageBodyLimit is the most UTF-8 bytes a message body may hold, at most store.MessageBodyCeiling.
 	MessageBodyLimit int
-	// OperatorReader is the name, in Namespace, of the ServiceAccount that may call NotificationsOperator. Empty
-	// refuses every caller.
+	// OperatorReader is the name, in Namespace, of the ServiceAccount that can read Session diagnostics for the namespace.
 	OperatorReader string
 	// Debounce is what the worker waits before it announces entries; the operator's reads report it.
 	Debounce store.Debounce
 	// RequestTimeout bounds a call's backend work and each write to a watch stream.
 	RequestTimeout time.Duration
-	// WatchLease ends each watch after this long: a stream is admitted once, so the lease bounds how long a
-	// revoked token keeps reading.
-	WatchLease time.Duration
 }
 
-// Methods admits any workload Options.Resolver accepts to Notifications, and only the OperatorReader to
-// NotificationsOperator.
+// Methods admits authenticated workloads; individual RPCs enforce resource ownership.
 func Methods(options Options) auth.Methods {
 	workloads := auth.AnyAccount(options.Resolver)
-	var operators []auth.Account
-	if options.OperatorReader != "" {
-		operators = []auth.Account{{Namespace: options.Namespace, Name: options.OperatorReader}}
-	}
-	operator := auth.Accounts(options.Resolver, operators)
 	return auth.Methods{
-		notificationspb.Notifications_CreateSubscription_FullMethodName:           workloads,
-		notificationspb.Notifications_ListSubscriptions_FullMethodName:            workloads,
-		notificationspb.Notifications_GetSubscription_FullMethodName:              workloads,
-		notificationspb.Notifications_RenewSubscription_FullMethodName:            workloads,
-		notificationspb.Notifications_CancelSubscription_FullMethodName:           workloads,
-		notificationspb.Notifications_ListInboxes_FullMethodName:                  workloads,
-		notificationspb.Notifications_ReadInbox_FullMethodName:                    workloads,
-		notificationspb.Notifications_AcknowledgeInbox_FullMethodName:             workloads,
-		notificationspb.Notifications_RetireInbox_FullMethodName:                  workloads,
-		notificationspb.Notifications_SendMessage_FullMethodName:                  workloads,
-		notificationspb.Notifications_GetMessage_FullMethodName:                   workloads,
-		operatorpb.NotificationsOperator_WatchSandboxNotifications_FullMethodName: operator,
-		operatorpb.NotificationsOperator_WatchSessionNotices_FullMethodName:       operator,
+		notificationspb.Notifications_CreateSubscription_FullMethodName: workloads,
+		notificationspb.Notifications_ListSubscriptions_FullMethodName:  workloads,
+		notificationspb.Notifications_GetSubscription_FullMethodName:    workloads,
+		notificationspb.Notifications_RenewSubscription_FullMethodName:  workloads,
+		notificationspb.Notifications_CancelSubscription_FullMethodName: workloads,
+		notificationspb.Notifications_ListInboxes_FullMethodName:        workloads,
+		notificationspb.Notifications_GetInbox_FullMethodName:           workloads,
+		notificationspb.Notifications_WatchInbox_FullMethodName:         workloads,
+		notificationspb.Notifications_WatchInboxEntries_FullMethodName:  workloads,
+		notificationspb.Notifications_WatchSubscriptions_FullMethodName: workloads,
+		notificationspb.Notifications_ReadInbox_FullMethodName:          workloads,
+		notificationspb.Notifications_AcknowledgeInbox_FullMethodName:   workloads,
+		notificationspb.Notifications_RetireInbox_FullMethodName:        workloads,
+		notificationspb.Notifications_SendMessage_FullMethodName:        workloads,
+		notificationspb.Notifications_GetMessage_FullMethodName:         workloads,
 	}
 }

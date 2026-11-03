@@ -720,24 +720,19 @@ agentplane_vitest_test(
 )
 
 ts_library(
-    name = "notification_types",
-    srcs = ["notification_types.ts"],
-    tsconfig = TSCONFIG,
-)
-
-ts_library(
     name = "notification_status",
     srcs = ["notification_status.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":format_time",
-        ":live_stream",
-        ":notification_types",
-        ":stream_reader",
+        ":watch_stream",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/action_service:action_service_pb",
+        "//agentplane/app/frontend/threads:thread_notices",
+        "//agentplane/notification_service:notifications_pb",
     ],
 )
 
@@ -895,7 +890,6 @@ ts_library(
         ":harness_network",
         ":live",
         ":mcp_linkage_client",
-        ":notification_types",
         ":schema",
         ":shell_command_view",
         ":stream_status",
@@ -925,6 +919,7 @@ ts_library(
         "//agentplane/app/frontend/threads:local_commands",
         "//agentplane/egress:egress_admin_pb",
         "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/notification_service:notifications_pb",
         "//agentplane/policy/v1:policy_service_pb",
         "//agentplane/proto:environment_lifecycle_pb",
         "//agentplane/proto:kubernetes_pb",

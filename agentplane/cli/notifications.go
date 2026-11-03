@@ -652,7 +652,7 @@ func subscriptionLine(raw json.RawMessage) (string, error) {
 	if err := decodeMessage(raw, &subscription); err != nil {
 		return "", err
 	}
-	line := fields(subscription.Id, sourceLabel(subscription.Source), "v"+strconv.FormatInt(subscription.Version, 10))
+	line := fields(subscription.Id, sourceLabel(subscription.Source), "v"+strconv.FormatInt(subscription.GetVersion(), 10))
 	if subscription.ExpiresAt != nil {
 		line = fields(line, "expires "+subscription.ExpiresAt.AsTime().UTC().Format(time.RFC3339))
 	}

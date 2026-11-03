@@ -422,9 +422,13 @@ func TestASandboxRecreatedUnderTheNameSeesNoneOfItsPredecessorsInboxes(t *testin
 		t.Run(name, func(t *testing.T) { requireCode(t, call(bearing(t, sandboxToken)), codes.NotFound) })
 	}
 
-	// What the successor opens is its own.
+	// The successor cannot reuse its predecessor's globally unique Session identity.
 	request := createRequest("successor")
 	request.DestinationRef.Uid = successorUID
+	_, err = server.client.CreateSubscription(bearing(t, sandboxToken), request)
+	requireCode(t, err, codes.NotFound)
+	// A different Session opened by the successor has its own inbox.
+	request.SessionId = "another-session"
 	created, err := server.client.CreateSubscription(bearing(t, sandboxToken), request)
 	if err != nil {
 		t.Fatal(err)

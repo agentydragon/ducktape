@@ -80,7 +80,7 @@ func (f fixture) actionsAfterSequence(t *testing.T, id uuid.UUID) int64 {
 
 func TestRecordActionEventsAppendsTheNewEventsAndMovesTheSubscriptionOn(t *testing.T) {
 	f := newClaimFixture(t)
-	subscription := f.subscribe(t, body("first"))
+	subscription := f.subscribe(t, f.body("first"))
 	request := subscription.Source.(model.ActionsSource).RequestID
 	claim := f.claim(t)
 	due := f.source(t, claim)
@@ -124,7 +124,7 @@ func TestRecordActionEventsAppendsTheNewEventsAndMovesTheSubscriptionOn(t *testi
 
 func TestRecordActionEventsRecordsEachEventOnce(t *testing.T) {
 	f := newClaimFixture(t)
-	subscription := f.subscribe(t, body("first"))
+	subscription := f.subscribe(t, f.body("first"))
 	request := subscription.Source.(model.ActionsSource).RequestID
 	claim := f.claim(t)
 
@@ -141,7 +141,7 @@ func TestRecordActionEventsRecordsEachEventOnce(t *testing.T) {
 
 func TestRecordActionEventsRefusesAGapAndRecordsNothingOfTheRead(t *testing.T) {
 	f := newClaimFixture(t)
-	subscription := f.subscribe(t, body("first"))
+	subscription := f.subscribe(t, f.body("first"))
 	request := subscription.Source.(model.ActionsSource).RequestID
 	claim := f.claim(t)
 	f.mustRecord(t, claim, subscription, eventsThrough(1, 2))
@@ -179,7 +179,7 @@ func TestRecordActionEventsLeavesASubscriptionThatChangedSinceItWasRead(t *testi
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newClaimFixture(t)
-			subscription := f.subscribe(t, body("first"))
+			subscription := f.subscribe(t, f.body("first"))
 			claim := f.claim(t)
 			change(f, t, subscription)
 			f.exec(t, `UPDATE subscription SET next_attempt = now() - interval '1 minute' WHERE id = $1`, subscription.ID)
@@ -211,7 +211,7 @@ func TestRecordActionEventsIsFencedOnTheClaim(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newClaimFixture(t)
-			subscription := f.subscribe(t, body("first"))
+			subscription := f.subscribe(t, f.body("first"))
 			claim := f.claim(t)
 			lose(f, t, subscription)
 
@@ -229,7 +229,7 @@ func TestRecordActionEventsNeedsNoCapacityToReplayAndStopsAtTheEntryQuota(t *tes
 	quotas.EntriesPerInbox = 2
 	f := newFixture(t, quotas)
 	f.exec(t, `TRUNCATE inbox CASCADE`)
-	subscription := f.subscribe(t, body("first"))
+	subscription := f.subscribe(t, f.body("first"))
 	request := subscription.Source.(model.ActionsSource).RequestID
 	claim := f.claim(t)
 
@@ -243,8 +243,8 @@ func TestRecordActionEventsNeedsNoCapacityToReplayAndStopsAtTheEntryQuota(t *tes
 
 func TestRecordActionEventsClearsTheFailureOfItsSubscriptionAlone(t *testing.T) {
 	f := newClaimFixture(t)
-	first := f.subscribe(t, body("first"))
-	second := f.subscribe(t, body("second"))
+	first := f.subscribe(t, f.body("first"))
+	second := f.subscribe(t, f.body("second"))
 	claim := f.claim(t)
 	for _, subscription := range []Subscription{first, second} {
 		if err := f.SourceFailed(t.Context(), claim, subscription, FailureRateLimited, "HTTP 429", time.Minute); err != nil {
@@ -267,8 +267,8 @@ func TestRecordActionEventsClearsTheFailureOfItsSubscriptionAlone(t *testing.T) 
 
 func TestOverlappingSubscriptionsOfARequestShareItsEntries(t *testing.T) {
 	f := newClaimFixture(t)
-	first := f.subscribe(t, body("first"))
-	overlapping := body("overlapping")
+	first := f.subscribe(t, f.body("first"))
+	overlapping := f.body("overlapping")
 	overlapping.Source = first.Source
 	second := f.subscribe(t, overlapping)
 	claim := f.claim(t)
@@ -287,8 +287,8 @@ func TestOverlappingSubscriptionsOfARequestShareItsEntries(t *testing.T) {
 
 func TestConcurrentSourcesOfAnInboxCommitOnePrefix(t *testing.T) {
 	f := newClaimFixture(t)
-	first := f.subscribe(t, body("first"))
-	second := f.subscribe(t, body("second"))
+	first := f.subscribe(t, f.body("first"))
+	second := f.subscribe(t, f.body("second"))
 	claim := f.claim(t)
 
 	var wg sync.WaitGroup

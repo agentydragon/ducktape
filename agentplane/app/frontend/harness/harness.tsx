@@ -77,7 +77,11 @@ import type { Connection } from "../connections/models";
 import { dispatchFromJson } from "../threads/client";
 import { ACTION_RENDERERS } from "../actions/rendering/index";
 import type { McpLinkageView } from "../mcp_linkage_client";
-import type { GitHubSubject, InboxStatus, SandboxNotificationStatus, SubscriptionStatus } from "../notification_types";
+import {
+  WatchInboxResponseSchema,
+  WatchInboxEntriesResponseSchema,
+  WatchSubscriptionsResponseSchema,
+} from "../../../notification_service/notifications_pb";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
 import { CommandSchema } from "../../../proto/command_pb";
 import { EventEntrySchema } from "../../../proto/event_log_pb";
@@ -497,168 +501,165 @@ const DELIVERY_FAILED_THREAD = "5f1c4a2e-0000-4000-8000-000000000009";
 
 const ACTION_REQUEST_ID = "d49b85b5-849f-4e7d-a644-d4a8b8c16127";
 
-function pullRequest(number: number): GitHubSubject {
-  return { pullRequest: { number } };
-}
-
-function notificationEntry(cursor: number, ageMs: number, provider: "actions" | "github", summary: string) {
-  return { cursor: String(cursor), createdAt: ago(ageMs), provider, summary };
-}
-
-/** What the Notification Service reports for a Sandbox's inboxes: one with a notice awaiting confirmation and a
- * subscription in each state, one debouncing, one failing delivery. A suspended Sandbox has none. */
-function notificationStatus(sandbox: string): SandboxNotificationStatus {
-  const failures = ["SOURCE_FAILURE_KIND_RATE_LIMITED", "SOURCE_FAILURE_KIND_ACCESS_DENIED"] as const;
-  const inboxes: InboxStatus[] =
-    sandbox === "ready-sandbox"
-      ? [
-          {
-            inbox: {
-              id: "inbox-one",
-              sessionId: IDLE_THREAD,
-              lastCursor: "9",
-              acknowledged: "4",
-              covered: "7",
-              expiredThrough: "0",
-              retired: false,
-            },
-            subscriptions: [
-              {
-                id: "subscription-one",
-                source: { actions: { requestId: ACTION_REQUEST_ID } },
-                cancelled: false,
-                expiresAt: ago(-HOUR),
-                lastSuccessAt: ago(60000),
-                nextSourceCheckAt: ago(-30000),
-              },
-              {
-                id: "subscription-two",
-                source: { github: { repository: "agentydragon/ducktape", subject: pullRequest(42) } },
-                cancelled: true,
-                expiresAt: ago(HOUR),
-                lastSuccessAt: ago(60000),
-                github: {
-                  access: [
-                    {
-                      appId: "42",
-                      installationId: "11",
-                      repositoryId: "102",
-                      checkedAt: ago(60000),
-                      validUntil: ago(30000),
-                      currentlyValid: false,
-                      lastSuccessAt: ago(60000),
-                    },
-                  ],
-                  subject: { repositoryId: "102", subject: pullRequest(42), lastSuccessAt: ago(60000) },
-                },
-              },
-              ...failures.map((kind, index): SubscriptionStatus => ({
-                id: `subscription-failure-${index + 1}`,
-                source: { github: { repository: "owner/repo", subject: pullRequest(index + 1) } },
-                cancelled: false,
-                expiresAt: ago(-HOUR),
-                lastSuccessAt: ago(60000),
-                github: {
-                  access: [
-                    {
-                      appId: "42",
-                      installationId: "11",
-                      repositoryId: String(100 + index),
-                      checkedAt: ago(10000),
-                      currentlyValid: false,
-                      lastSuccessAt: ago(60000),
-                      errorKind: kind,
-                      errorSince: ago(30000),
-                      errorObservedAt: ago(10000),
-                      error:
-                        kind === "SOURCE_FAILURE_KIND_RATE_LIMITED"
-                          ? "GitHub rate limited (HTTP 429)"
-                          : "GitHub App access unavailable (HTTP 403)",
-                      retryAt: ago(-60000),
-                    },
-                  ],
-                  subject: {
-                    repositoryId: String(100 + index),
-                    subject: pullRequest(index + 1),
-                    lastSuccessAt: ago(60000),
-                  },
-                },
-                nextSourceCheckAt: ago(-60000),
-              })),
-            ],
-            notice: { throughCursor: "7", attempted: true, admitted: true, confirmed: false },
-            unannouncedCount: 2,
-            pendingAcknowledgementCount: 5,
-            pendingEntries: [
-              notificationEntry(5, 30000, "actions", `Action ${ACTION_REQUEST_ID} · event 5 · decision_pending`),
-              notificationEntry(6, 20000, "github", "GitHub check_run · completed · success"),
-              notificationEntry(7, 10000, "github", "GitHub issue_comment · created"),
-              notificationEntry(8, 5000, "actions", `Action ${ACTION_REQUEST_ID} · event 8 · running`),
-              notificationEntry(9, 0, "actions", `Action ${ACTION_REQUEST_ID} · event 9 · succeeded`),
-            ],
-            pendingEntriesMore: false,
-            noticeWaitReason: "NOTICE_WAIT_REASON_AWAITING_CONFIRMATION",
+// Each fake watch emits the actual generated resource and watch messages.
+function notificationFrames(session: string, kind: string, delta: boolean): unknown[] {
+  const extra = flags.has("notificationExtraEntry") && session === IDLE_THREAD;
+  const badge =
+    session === THREE_UNPROCESSED_THREAD
+      ? { unannouncedCount: 2, pendingAcknowledgementCount: 3 }
+      : session === ONE_UNPROCESSED_THREAD
+        ? { pendingAcknowledgementCount: 1 }
+        : session === DELIVERY_FAILED_THREAD
+          ? { unannouncedCount: 1, pendingAcknowledgementCount: 1 }
+          : undefined;
+  const first = session === IDLE_THREAD;
+  const second = session === UNNAMED_STOPPED_THREAD;
+  const third = session === RUNNING_THREAD;
+  if (kind === "inbox:watch") {
+    const inbox = first
+      ? {
+          id: "inbox-one",
+          sessionId: session,
+          lastCursor: extra ? "10" : "9",
+          acknowledged: "4",
+          covered: "7",
+          latestNotice: { throughCursor: "7", attempted: true, admitted: true },
+          delivery: {
+            unannouncedCount: extra ? 3 : 2,
+            pendingAcknowledgementCount: extra ? 6 : 5,
+            waitReason: "NOTICE_WAIT_REASON_AWAITING_CONFIRMATION",
             nextWorkAt: ago(-5000),
           },
-          {
-            inbox: {
-              id: "inbox-two",
-              sessionId: "s-2",
-              lastCursor: "3",
-              acknowledged: "1",
-              covered: "1",
-              expiredThrough: "0",
-              retired: false,
+        }
+      : second
+        ? {
+            id: "inbox-two",
+            sessionId: session,
+            lastCursor: "3",
+            acknowledged: "1",
+            covered: "1",
+            delivery: {
+              unannouncedCount: 2,
+              pendingAcknowledgementCount: 2,
+              waitReason: "NOTICE_WAIT_REASON_DEBOUNCING",
+              noticeDueAt: ago(-60000),
+              quietUntil: ago(-60000),
+              maxWaitAt: ago(-120000),
             },
-            subscriptions: [],
-            unannouncedCount: 2,
-            pendingAcknowledgementCount: 2,
-            pendingEntries: [
-              notificationEntry(2, 10000, "github", "GitHub check_run · completed · failure"),
-              notificationEntry(3, 0, "github", "GitHub pull_request · synchronize"),
-            ],
-            pendingEntriesMore: false,
-            noticeDueAt: ago(-60000),
-            quietUntil: ago(-60000),
-            maxWaitAt: ago(-120000),
-            noticeWaitReason: "NOTICE_WAIT_REASON_DEBOUNCING",
-            nextWorkAt: ago(-60000),
-          },
-          {
-            inbox: {
+          }
+        : third
+          ? {
               id: "inbox-three",
-              sessionId: "s-3",
+              sessionId: session,
               lastCursor: "2",
-              acknowledged: "0",
               covered: "2",
-              expiredThrough: "0",
-              retired: false,
               deliveryError: "runner unavailable",
-            },
-            subscriptions: [
-              {
-                id: "subscription-three",
-                source: { actions: { requestId: ACTION_REQUEST_ID } },
-                cancelled: false,
-                expiresAt: ago(HOUR),
-                error: "source unavailable",
-                nextSourceCheckAt: ago(-60000),
-              },
-            ],
-            notice: { throughCursor: "2", attempted: true, admitted: false, confirmed: false },
-            unannouncedCount: 0,
-            pendingAcknowledgementCount: 2,
-            pendingEntries: [
-              notificationEntry(1, 10000, "actions", `Action ${ACTION_REQUEST_ID} · event 1 · decision_pending`),
-              notificationEntry(2, 0, "actions", `Action ${ACTION_REQUEST_ID} · event 2 · running`),
-            ],
-            pendingEntriesMore: false,
-            noticeWaitReason: "NOTICE_WAIT_REASON_DELIVERY_RETRY",
-            nextWorkAt: ago(-5000),
-          },
+              latestNotice: { throughCursor: "2", attempted: true },
+              delivery: { pendingAcknowledgementCount: 2, waitReason: "NOTICE_WAIT_REASON_DELIVERY_RETRY" },
+            }
+          : badge
+            ? {
+                id: `inbox-${session}`,
+                sessionId: session,
+                delivery: badge,
+                ...(session === DELIVERY_FAILED_THREAD
+                  ? { deliveryError: "runner unreachable" }
+                  : { latestNotice: { confirmed: true } }),
+              }
+            : undefined;
+    return [
+      toJson(
+        WatchInboxResponseSchema,
+        fromJson(WatchInboxResponseSchema, JSON.parse(JSON.stringify(inbox ? { inbox } : { noInbox: {} })))
+      ),
+    ];
+  }
+  if (kind === "inbox/entries:watch") {
+    const action = (cursor: number, state: string) => ({
+      cursor: String(cursor),
+      createdAt: ago(0),
+      event: { actions: { requestId: ACTION_REQUEST_ID, sequence: cursor } },
+      actionState: `ACTION_STATE_${state}`,
+    });
+    const github = (cursor: number, event: string, actionName: string, conclusion?: string) => ({
+      cursor: String(cursor),
+      createdAt: ago(0),
+      event: { github: { event: `GITHUB_EVENT_NAME_${event}`, action: actionName } },
+      githubConclusion: conclusion,
+    });
+    const entries = first
+      ? [
+          action(5, "DECISION_PENDING"),
+          github(6, "CHECK_RUN", "completed", "success"),
+          github(7, "ISSUE_COMMENT", "created"),
+          action(8, "RUNNING"),
+          action(9, "SUCCEEDED"),
+          ...(extra ? [github(10, "WORKFLOW_RUN", "completed")] : []),
         ]
-      : [];
-  return { observedAt: ago(0), inboxes };
+      : second
+        ? [github(2, "CHECK_RUN", "completed", "failure"), github(3, "PULL_REQUEST", "synchronize")]
+        : third
+          ? [action(1, "DECISION_PENDING"), action(2, "RUNNING")]
+          : [];
+    const frame = delta ? { delta: { upserted: entries } } : { snapshot: { entries } };
+    return [
+      toJson(
+        WatchInboxEntriesResponseSchema,
+        fromJson(WatchInboxEntriesResponseSchema, JSON.parse(JSON.stringify(frame)))
+      ),
+    ];
+  }
+  const githubSubscription = (id: string, repository: string, number: number, kind?: string, cancelled = false) => ({
+    id,
+    source: { github: { repository, subject: { pullRequest: { number } } } },
+    cancelled,
+    expiresAt: ago(cancelled ? HOUR : -HOUR),
+    lastSuccessAt: ago(60000),
+    github: {
+      access: [
+        {
+          appId: "42",
+          installationId: "11",
+          repositoryId: "102",
+          lastSuccessAt: ago(60000),
+          ...(kind
+            ? {
+                errorKind: `SOURCE_FAILURE_KIND_${kind}`,
+                error:
+                  kind === "RATE_LIMITED"
+                    ? "GitHub rate limited (HTTP 429)"
+                    : "GitHub App access unavailable (HTTP 403)",
+                errorSince: ago(30000),
+                errorObservedAt: ago(10000),
+                retryAt: ago(-60000),
+              }
+            : {}),
+        },
+      ],
+      subject: { repositoryId: "102", subject: { pullRequest: { number } }, lastSuccessAt: ago(60000) },
+    },
+  });
+  const subscriptions = first
+    ? [
+        {
+          id: "subscription-one",
+          source: { actions: { requestId: ACTION_REQUEST_ID } },
+          expiresAt: ago(-HOUR),
+          lastSuccessAt: ago(60000),
+          nextSourceCheckAt: ago(-30000),
+        },
+        githubSubscription("subscription-two", "agentydragon/ducktape", 42, undefined, true),
+        githubSubscription("subscription-failure-1", "owner/repo", 1, "RATE_LIMITED"),
+        githubSubscription("subscription-failure-2", "owner/repo", 2, "ACCESS_DENIED"),
+      ]
+    : [];
+  const frame = delta ? { delta: { upserted: subscriptions } } : { snapshot: { subscriptions } };
+  return [
+    toJson(
+      WatchSubscriptionsResponseSchema,
+      fromJson(WatchSubscriptionsResponseSchema, JSON.parse(JSON.stringify(frame)))
+    ),
+  ];
 }
 
 /** The store's copy of the sessions: the idle one named, the stopped one not, so both renderings are on the page. */
@@ -2490,6 +2491,7 @@ type Flag =
   | "pagedActionHistory"
   | "actionGroupsUnavailable"
   | "notificationStatusUnavailable"
+  | "notificationStreamDropped"
   | "notificationExtraEntry"
   | "pushBrowserAdded"
   | "connectionRenamed"
@@ -3305,53 +3307,6 @@ function historySummaryProtoJson(thread: ThreadView): Record<string, unknown> {
 
 /** What the live stream at `url` sends, when it opens and whenever a fixture publishes it again. */
 function liveEvents(url: URL): ServerSentEvent[] {
-  if (url.pathname === "/upstream/notifications/v1/operator/notices:watch") {
-    const states: Record<
-      string,
-      {
-        queued?: number;
-        unacknowledged?: number;
-        notice?: string;
-        noticeWaitReason?: string;
-        eligibleAt?: string;
-        error?: string;
-      }
-    > = {
-      [THREE_UNPROCESSED_THREAD]: {
-        queued: 2,
-        unacknowledged: 1,
-        notice: "NOTICE_PROGRESS_CONFIRMED",
-        noticeWaitReason: "NOTICE_WAIT_REASON_DEBOUNCING",
-        eligibleAt: ago(-90_000),
-      },
-      [ONE_UNPROCESSED_THREAD]: { unacknowledged: 1, notice: "NOTICE_PROGRESS_CONFIRMED" },
-      [DELIVERY_FAILED_THREAD]: { queued: 1, notice: "NOTICE_PROGRESS_ATTEMPTED", error: "runner unreachable" },
-    };
-    const inboxes = url.searchParams
-      .getAll("sessionIds")
-      .filter((session) => session in states)
-      .map((session) => ({
-        inboxId: `inbox-${session}`,
-        sessionId: session,
-        queued: 0,
-        unacknowledged: 0,
-        ...states[session],
-      }));
-    return [{ event: "snapshot", data: { snapshot: { observedAt: ago(0), inboxes } } }];
-  }
-  const notification = url.pathname.match(/^\/sandboxes\/([^/]+)\/notifications\/stream$/);
-  if (notification) {
-    if (flags.has("notificationStatusUnavailable")) return [];
-    const snapshot = notificationStatus(notification[1]);
-    const first = snapshot.inboxes[0];
-    if (flags.has("notificationExtraEntry") && first) {
-      first.inbox.lastCursor = "10";
-      first.unannouncedCount += 1;
-      first.pendingAcknowledgementCount += 1;
-      first.pendingEntries.push(notificationEntry(10, 0, "github", "GitHub workflow_run · completed"));
-    }
-    return [{ event: "snapshot", data: snapshot }];
-  }
   if (/^\/sandboxes\/[^/]+\/console\/stream$/.test(url.pathname)) {
     return [{ event: "output", data: btoa("guest console output\r\n") }];
   }
@@ -3360,12 +3315,14 @@ function liveEvents(url: URL): ServerSentEvent[] {
 
 /** Whether the stream at `url` drops once it has sent its events. */
 function drops(url: URL): boolean {
-  if (url.pathname === "/live/threads" || url.pathname === "/upstream/notifications/v1/operator/notices:watch")
-    return flags.has("threadStreamDropped");
+  if (url.pathname === "/live/threads") return flags.has("threadStreamDropped");
   if (url.pathname === "/upstream/environments/v1/environments:watch")
     return flags.has("inventoryStreamDropped") || flags.has("watchStale");
-  if (/^\/sandboxes\/[^/]+\/notifications\/stream$/.test(url.pathname))
-    return flags.has("notificationStatusUnavailable");
+  if (/^\/upstream\/notifications\/v1\/sessions\//.test(url.pathname))
+    return (
+      flags.has("notificationStatusUnavailable") ||
+      (url.pathname.endsWith("/inbox:watch") && flags.has("notificationStreamDropped"))
+    );
   return false;
 }
 
@@ -3375,7 +3332,7 @@ const droppedStreams = new Set<string>();
 
 routes.unshift([
   "GET",
-  /^\/(live\/.+|upstream\/notifications\/v1\/operator\/notices:watch|sandboxes\/[^/]+\/(notifications|console)\/stream)$/,
+  /^\/(live\/.+|upstream\/notifications\/v1\/sessions\/[^/]+\/(?:inbox:watch|inbox\/entries:watch|subscriptions:watch)|sandboxes\/[^/]+\/console\/stream)$/,
   (match, query, signal) => {
     const url = new URL(`${match[0]}?${query.toString()}`, "http://harness");
     const key = `${url.pathname}${url.search}`;
@@ -3383,9 +3340,18 @@ routes.unshift([
     if (!drop) droppedStreams.delete(key);
     else if (droppedStreams.has(key)) return UNANSWERED;
     else droppedStreams.add(key);
-    if (url.pathname === "/upstream/notifications/v1/operator/notices:watch") {
-      const results = (): unknown[] => liveEvents(url).map(({ data }) => data);
-      return liveNdjsonWatch(url.pathname, results(), results, signal, drop);
+    const notice = url.pathname.match(
+      /^\/upstream\/notifications\/v1\/sessions\/([^/]+)\/(inbox:watch|inbox\/entries:watch|subscriptions:watch)$/
+    );
+    if (notice) {
+      const session = decodeURIComponent(notice[1]);
+      return liveNdjsonWatch(
+        url.pathname,
+        flags.has("notificationStatusUnavailable") ? [] : notificationFrames(session, notice[2], false),
+        () => notificationFrames(session, notice[2], true),
+        signal,
+        drop
+      );
     }
     return liveEventStream(url.pathname, () => liveEvents(url), signal, drop);
   },

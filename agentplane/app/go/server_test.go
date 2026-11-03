@@ -156,7 +156,7 @@ func TestNonUUIDIDSegmentMatchesNoRoute(t *testing.T) {
 	for _, request := range []struct{ method, path string }{
 		{http.MethodPatch, "/threads/00000000-0000-0000-0000-000000000000"},
 		{http.MethodGet, "/threads/00000000-0000-0000-0000-000000000000/sync/scope"},
-		{http.MethodGet, "/upstream/notifications/v1/operator/notices:watch"},
+		{http.MethodGet, "/upstream/notifications/v1/sessions/example/inbox:watch"},
 	} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(request.method, request.path, nil))

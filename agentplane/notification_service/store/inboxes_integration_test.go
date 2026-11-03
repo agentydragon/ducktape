@@ -27,7 +27,7 @@ func payloadOf(event model.ActionsEvent) string {
 
 func TestOverlappingSubscriptionsCommitOnePrefixAndReadDoesNotAcknowledge(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	first := body("first")
+	first := f.body("first")
 	overlap := first
 	overlap.IdempotencyKey = "overlap"
 	a, b := f.subscribe(t, first), f.subscribe(t, overlap)
@@ -78,7 +78,7 @@ func TestOverlappingSubscriptionsCommitOnePrefixAndReadDoesNotAcknowledge(t *tes
 
 func TestReadReconstructsTypedPayloadsAndKeepsGitHubJSONNative(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	subscription := f.subscribe(t, body("typed-content-reader"))
+	subscription := f.subscribe(t, f.body("typed-content-reader"))
 	requestID := uuid.New()
 	events := []model.EventIdentity{
 		model.ActionsEvent{RequestID: requestID, Sequence: 1},
@@ -108,7 +108,7 @@ func TestReadReconstructsTypedPayloadsAndKeepsGitHubJSONNative(t *testing.T) {
 
 func TestReadRejectsMissingNativeContentInsteadOfFallingBackToJSON(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	subscription := f.subscribe(t, body("missing-typed-content"))
+	subscription := f.subscribe(t, f.body("missing-typed-content"))
 	event := model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
 	f.exec(t, `UPDATE entry SET action_state = NULL, action_at = NULL, action_actor_kind = NULL,
@@ -122,7 +122,7 @@ func TestReadRejectsMissingNativeContentInsteadOfFallingBackToJSON(t *testing.T)
 
 func TestReadIsBoundedAndOwned(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	subscription := f.subscribe(t, body("first"))
+	subscription := f.subscribe(t, f.body("first"))
 	for _, limit := range []int{0, 129} {
 		if _, err := f.Read(t.Context(), f.incarnation(), subscription.InboxID, 0, limit); !errors.Is(err, model.ErrInvalid) {
 			t.Fatalf("limit %d: error = %v, want model.ErrInvalid", limit, err)
@@ -145,7 +145,7 @@ func TestReadIsBoundedAndOwned(t *testing.T) {
 
 func TestReadReturnsTheInboxsLatestNotice(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	subscription := f.subscribe(t, body("first"))
+	subscription := f.subscribe(t, f.body("first"))
 	command := uuid.New()
 	f.exec(t, `
 		INSERT INTO notice (inbox_id, command_id, through_cursor, text, attempted, admitted, confirmed, error, runner_cursor)
@@ -160,8 +160,8 @@ func TestReadReturnsTheInboxsLatestNotice(t *testing.T) {
 
 func TestConcurrentSourcesAllocateOneCommittedPrefix(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	first := f.subscribe(t, body("first"))
-	second := f.subscribe(t, body("another-action"))
+	first := f.subscribe(t, f.body("first"))
+	second := f.subscribe(t, f.body("another-action"))
 	requests := []uuid.UUID{first.Source.(model.ActionsSource).RequestID, second.Source.(model.ActionsSource).RequestID}
 
 	var wg sync.WaitGroup
@@ -191,7 +191,7 @@ func TestConcurrentSourcesAllocateOneCommittedPrefix(t *testing.T) {
 
 func TestRetirementStopsWorkWithoutErasingEntries(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	creation := body("first")
+	creation := f.body("first")
 	subscription := f.subscribe(t, creation)
 	event := model.ActionsEvent{RequestID: creation.Source.(model.ActionsSource).RequestID, Sequence: 1}
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
@@ -238,12 +238,12 @@ func TestRetirementStopsWorkWithoutErasingEntries(t *testing.T) {
 func TestInboxesAreListedForTheirOwnerOnly(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	other := newFixture(t, defaultQuotas())
-	first := body("first")
+	first := f.body("first")
 	second := first
 	second.SessionID = "second-session"
 	f.subscribe(t, first)
 	f.subscribe(t, second)
-	other.subscribe(t, first)
+	other.subscribe(t, other.body("first"))
 
 	inboxes, err := f.ListInboxes(t.Context(), f.incarnation())
 	if err != nil {
@@ -254,13 +254,15 @@ func TestInboxesAreListedForTheirOwnerOnly(t *testing.T) {
 	}
 	sessions := []string{inboxes[0].SessionID, inboxes[1].SessionID}
 	slices.Sort(sessions)
-	requireEqual(t, sessions, []string{"second-session", "test-session"})
+	wantSessions := []string{"second-session", f.sessionID}
+	slices.Sort(wantSessions)
+	requireEqual(t, sessions, wantSessions)
 	requireEqual(t, inboxes[0].DestinationRef, first.DestinationRef)
 }
 
 func TestRetentionGapIsVisibleAndReplayKeepsTheTombstone(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	creation := body("first")
+	creation := f.body("first")
 	subscription := f.subscribe(t, creation)
 	events := actionsEvents(creation.Source.(model.ActionsSource).RequestID, 3)
 	for _, event := range events {
@@ -296,7 +298,7 @@ func TestRetentionGapIsVisibleAndReplayKeepsTheTombstone(t *testing.T) {
 
 func TestPayloadsExpireOnlyUpToTheFirstEntryYoungerThanThirtyDays(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	creation := body("first")
+	creation := f.body("first")
 	subscription := f.subscribe(t, creation)
 	events := actionsEvents(creation.Source.(model.ActionsSource).RequestID, 4)
 	for _, event := range events {
@@ -317,7 +319,7 @@ func TestPayloadsExpireOnlyUpToTheFirstEntryYoungerThanThirtyDays(t *testing.T) 
 
 func TestInboxesRetiredLongAgoAreDeletedWithTheirRows(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	creation := body("first")
+	creation := f.body("first")
 	subscription := f.subscribe(t, creation)
 	event := model.ActionsEvent{RequestID: creation.Source.(model.ActionsSource).RequestID, Sequence: 1}
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
@@ -349,7 +351,7 @@ func TestASandboxRecreatedUnderTheNameOwnsNoneOfItsPredecessorsInboxes(t *testin
 	quotas := defaultQuotas()
 	quotas.InboxesPerAccount = 1
 	f := newFixture(t, quotas)
-	predecessor := f.subscribe(t, body("predecessor"))
+	predecessor := f.subscribe(t, f.body("predecessor"))
 	successor := Owner{Account: f.owner, SandboxUID: "test-successor-uid"}
 
 	if inboxes, err := f.ListInboxes(t.Context(), successor); err != nil || len(inboxes) != 0 {
@@ -372,8 +374,9 @@ func TestASandboxRecreatedUnderTheNameOwnsNoneOfItsPredecessorsInboxes(t *testin
 	}
 
 	// The predecessor's inbox takes none of the successor's quota.
-	creation := body("successor")
+	creation := f.body("successor")
 	creation.DestinationRef.UID = successor.SandboxUID
+	creation.SessionID = uuid.NewString()
 	subscription := f.subscribe(t, creation)
 	if inboxes, err := f.ListInboxes(t.Context(), successor); err != nil || len(inboxes) != 1 || inboxes[0].ID != subscription.InboxID {
 		t.Fatalf("listed %+v, %v; want only the successor's inbox", inboxes, err)

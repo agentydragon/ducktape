@@ -19,7 +19,7 @@ func TestSubscriptionCreationUsesTypedStorageAndEnforcesConstraints(t *testing.T
 	assertColumnNullability(t, g.db, "subscription", "source_provider", false)
 	assertCreationContractConstraints(t, g.db)
 
-	creation := body("typed-creation-final-schema")
+	creation := g.body("typed-creation-final-schema")
 	subscription := g.subscribe(t, creation)
 	var protoBytes []byte
 	var provider string

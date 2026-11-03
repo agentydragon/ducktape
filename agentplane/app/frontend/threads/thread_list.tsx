@@ -95,8 +95,8 @@ function ThreadRow({
       <ThreadStatusIndicator
         kind={status.kind}
         label={status.label}
-        inboxes={notices.bySession?.get(thread.id) ?? []}
-        live={notices.live}
+        inbox={notices.bySession.get(thread.id)}
+        live={notices.live.has(thread.id)}
       />
       <span className="agentplane-thread-list-row-text">
         <span className="agentplane-thread-list-row-name">{label}</span>

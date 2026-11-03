@@ -81,6 +81,7 @@ type fixture struct {
 	db         *sql.DB
 	owner      model.ServiceAccount
 	sandboxUID string
+	sessionID  string
 }
 
 func newFixture(t *testing.T, quotas Quotas) fixture {
@@ -105,7 +106,7 @@ func newIsolatedFixture(t *testing.T, quotas Quotas) fixture {
 
 func fixtureForDatabase(t *testing.T, db *sql.DB, quotas Quotas) fixture {
 	t.Helper()
-	return fixture{Store: New(db, quotas), db: db, owner: newOwner(), sandboxUID: testSandboxUID}
+	return fixture{Store: New(db, quotas), db: db, owner: newOwner(), sandboxUID: testSandboxUID, sessionID: uuid.NewString()}
 }
 
 func newOwner() model.ServiceAccount {
@@ -179,10 +180,15 @@ func (f fixture) incarnation() Owner {
 
 // body is a creation following one Action request, for the fixture's one Session. Copies keep the request and
 // change what they set.
-func body(key string) model.Subscribe {
+func (f fixture) body(key string) model.Subscribe {
+	return sessionBody(key, f.sessionID)
+}
+
+// sessionBody is a creation for the given Session.
+func sessionBody(key, sessionID string) model.Subscribe {
 	return model.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: testSandboxUID},
-		SessionID:      "test-session",
+		SessionID:      sessionID,
 		IdempotencyKey: key,
 		Source:         model.ActionsSource{RequestID: uuid.New()},
 		LifetimeDays:   7,

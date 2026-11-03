@@ -59,36 +59,6 @@ func TestWriteSSEPreservesEventIDAndJSONData(t *testing.T) {
 	}
 }
 
-func TestNotificationRelaySendsSnapshotAndStopsForReconnect(t *testing.T) {
-	response := newStreamingRecorder()
-	routes := &streamingRoutes{}
-	messages := []proto.Message{&emptypb.Empty{}, &emptypb.Empty{}}
-	index := 0
-	done := make(chan struct{})
-	go func() {
-		routes.relayNotificationStream(response, context.Background(), "Notification", func() (proto.Message, error) {
-			message := messages[index]
-			index++
-			return message, nil
-		}, func(proto.Message) (proto.Message, bool) {
-			if index == 1 {
-				return &emptypb.Empty{}, false
-			}
-			return nil, true
-		}, time.Second)
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("notification relay did not stop after planned reconnect")
-	}
-	body := response.String()
-	if strings.Count(body, "event: snapshot") != 1 || strings.Contains(body, "reconnect") {
-		t.Fatalf("notification reconnect stream = %s", body)
-	}
-}
-
 type acceptedTokenReviewer struct{}
 
 func (acceptedTokenReviewer) Create(_ context.Context, review *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
@@ -117,8 +87,7 @@ func TestOperatorStreamsAndProxyRoutesRejectWorkloadTokens(t *testing.T) {
 	RegisterStreamingRoutes(server, StreamingDependencies{})
 	ids := uuid.NewString()
 	for _, path := range []string{
-		"/upstream/notifications/v1/operator/notices:watch?sessionIds=" + ids,
-		"/sandboxes/demo/notifications/stream",
+		"/upstream/notifications/v1/sessions/" + ids + "/inbox:watch",
 		"/sandboxes/demo/console/stream",
 		"/upstream/dispatcher/v1/items",
 		"/upstream/actions/v1/items",

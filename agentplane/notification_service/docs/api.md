@@ -1,8 +1,7 @@
 # Notification Service API
 
-The workload API is defined by [`notifications.proto`](../notifications.proto); its HTTP form is
-served at `/openapi.json`. The operator API is defined separately by
-[`notifications_operator.proto`](../notifications_operator.proto). Setup and configuration belong
+The API is defined by [`notifications.proto`](../notifications.proto); its HTTP form is
+served at `/openapi.json`. Setup and configuration belong
 in the [service README](../README.md); internal delivery and storage design is in
 [architecture](architecture.md).
 
@@ -259,29 +258,23 @@ after restart, and clear the error on success. No client-side resubscription or 
 needed for this recovery. Webhook deliveries GitHub never successfully submitted are outside that
 guarantee. A changed installation/repository identity requires explicit subscription recreation.
 
-## Operator notification diagnostics
+## Session inbox diagnostics
 
-`NotificationsOperator` is a gRPC-only, read-only API for the configured
-`operator_reader_account` in the service's namespace, using a Pod-bound token with the service's
-audience. The service exposes no HTTP routes for this API. It returns no provider
-payloads, idempotency keys or notice text and grants no agent inbox authority.
+`GetInbox` and `WatchInbox` identify the inbox by Session ID and report its notice and delivery
+state. `WatchInboxEntries` reports at most 100 retained, unacknowledged entry identities and safe
+lifecycle fields; it never returns provider payloads. `WatchSubscriptions` reports subscription
+state. Each watch starts with current state; entry and subscription watches then send changes.
+A missing inbox is a state, since inboxes are created lazily. Reconnecting starts from fresh state.
+Watches send heartbeats and revalidate authorization; they do not end on a fixed lease. Reading
+never acknowledges entries. Workloads can read their own Sandbox incarnation's inbox; the
+configured `operator_reader_account` can inspect Session diagnostics in the namespace but cannot
+read full inbox payloads or mutate another account's inbox.
 
-- `WatchSandboxNotifications` takes namespace, Sandbox name and current UID. It reports inboxes
-  (including retired ones), subscriptions, source failures, entry counts and latest notice state.
-- `WatchSessionNotices` takes at most 200 Session IDs. It reports non-retired inboxes in the
-  caller's namespace: `queued` entries not yet covered by a notice, `unacknowledged` covered
-  entries, latest notice progress/error, wait reason and estimated `eligible_at` while debouncing.
-
-Streams open with a snapshot and send another when displayed state changes, including changes
-at debounce or subscription-expiry deadlines. A snapshot differing only in `observed_at` is not
-sent. Reconnecting starts from a fresh snapshot; streams do not replay historical updates.
-Reading acknowledges nothing. Planned renewal emits `reconnect_required`; bare EOF is a failure.
-
-Sandbox snapshots expose `unannounced_count` beyond covered, acknowledged and expired cursors;
-`pending_acknowledgement_count` includes covered entries still awaiting acknowledgement.
-`notice_due_at`, `quiet_until` and `max_wait_at` apply while waiting on debounce. Awaiting
-confirmation or retrying a delivery instead exposes that wait reason. `next_work_at` and
-`next_source_check_at` are scheduling observations, not promises of notice delivery.
+A Session has at most one inbox. The database migration refuses existing collisions rather than
+choosing or discarding records; reconcile any collisions before admitting writes with the new schema.
+`unannounced_count` excludes covered, acknowledged and expired entries; `pending_acknowledgement_count`
+includes covered entries still awaiting acknowledgement. Debounce deadlines and next scheduled work
+are observations, not promises of notice delivery.
 
 PR observations retain GitHub's lifecycle states `OPEN`, `CLOSED` (without merging), and `MERGED`
 separately from mergeability states `MERGEABLE`, `CONFLICTING`, and `UNKNOWN`. Only open PRs generate
@@ -297,7 +290,7 @@ a positive result also needs a test-commit request, in addition to the PR reques
 
 ## Current source-processing observations
 
-Subscription reads and operator snapshots expose `last_success_at`, `error_kind`, `error`,
+Subscription reads and Session watches expose `last_success_at`, `error_kind`, `error`,
 `error_since`, and `error_observed_at`. Failure kinds are `rate_limited`, `unavailable`,
 `access_denied`, `source_changed`, and `processing_error`. Success clears the failure fields and
 advances `last_success_at`, which is null before the first successful processing pass.

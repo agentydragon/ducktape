@@ -37,7 +37,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
@@ -282,16 +282,10 @@ func run(ctx context.Context, config Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Notification Service gRPC client: %w", err)
 	}
-	notificationConn, err := bearer.Dial(notificationTarget, config.NotificationsTokenFile,
-		time.Duration(config.NotificationsRequestTimeoutSeconds*float64(time.Second)))
-	if err != nil {
-		return fmt.Errorf("configure Notification Service gRPC client: %w", err)
-	}
-	defer notificationConn.Close()
 	notificationFacade, err := facade.NewHandler(
 		facadeContext, notificationTarget,
 		time.Duration(config.NotificationsRequestTimeoutSeconds*float64(time.Second)),
-		notifications_operatorpb.RegisterNotificationsOperatorHandlerFromEndpoint,
+		notificationspb.RegisterNotificationsHandlerFromEndpoint,
 	)
 	if err != nil {
 		return fmt.Errorf("configure generated Notification Service HTTP facade: %w", err)
@@ -352,9 +346,7 @@ func run(ctx context.Context, config Config) error {
 		DispatcherHTTP: dispatcherGateway, EnvironmentHTTP: dispatcherGateway, PolicyHTTP: policyGateway, EgressHTTP: egressGateway,
 		ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
 		HistoryHTTP: historyGateway, NotificationHTTP: notificationGateway,
-		Notifications:    notifications_operatorpb.NewNotificationsOperatorClient(notificationConn),
-		NotificationWait: time.Duration(config.NotificationsRequestTimeoutSeconds * float64(time.Second)),
-		Console:          consoleConnector, Logger: logger,
+		Console: consoleConnector, Logger: logger,
 	})
 	if config.ElectricURL != "" {
 		electric, electricErr := proxy.NewElectricProxy(baseClient, config.ElectricURL,

@@ -15,7 +15,7 @@ import (
 
 func TestNativeEntryContentRejectsIncompleteAndWrongSourceRows(t *testing.T) {
 	f := newIsolatedFixture(t, defaultQuotas())
-	subscription := f.subscribe(t, body("native-content-shape"))
+	subscription := f.subscribe(t, f.body("native-content-shape"))
 	action := model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}
 	mergeability := model.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 1}
 	message := model.MessageEvent{MessageID: uuid.New(), Sender: model.ServiceAccount{Namespace: "sender", Name: "account"}}
@@ -53,7 +53,7 @@ func TestNativeEntryContentRejectsIncompleteAndWrongSourceRows(t *testing.T) {
 
 func TestAppendEventWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	subscription := f.subscribe(t, body("identity-columns"))
+	subscription := f.subscribe(t, f.body("identity-columns"))
 	requestID := uuid.New()
 	deliveryID := uuid.New()
 	messageID := uuid.New()
@@ -172,7 +172,7 @@ func TestAppendEventWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *te
 
 func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
 	f := newIsolatedFixture(t, defaultQuotas())
-	subscription := f.subscribe(t, body("identity-runtime"))
+	subscription := f.subscribe(t, f.body("identity-runtime"))
 	requestID := uuid.New()
 	deliveryID := uuid.New()
 	messageID := uuid.New()
@@ -226,7 +226,7 @@ func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(summaries) != len(events)-1 || summaries[0].Summary != "Action "+requestID.String()+" · event 18 · decision_pending" {
+	if len(summaries) != len(events)-1 || summaries[0].Event != (model.ActionsEvent{RequestID: requestID, Sequence: 18}) || summaries[0].ActionState == nil || *summaries[0].ActionState != "decision_pending" {
 		t.Fatalf("pending summaries from relational identity = %+v", summaries)
 	}
 }

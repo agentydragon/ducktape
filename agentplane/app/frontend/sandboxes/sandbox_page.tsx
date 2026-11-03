@@ -366,7 +366,7 @@ export function SandboxPage({
           </Button>
           <NotificationStatus
             sandbox={name}
-            target={target ?? null}
+            sessionIds={visibleThreads.map((thread) => thread.id)}
             opened={notificationsOpen}
             onClose={() => setNotificationsOpen(false)}
           />

@@ -19,6 +19,9 @@ import (
 // WorkChannel is the NOTIFY channel that tells workers inbox work was committed.
 const WorkChannel = "agentplane_notification_work"
 
+// InboxChannel carries the Session ID of inbox state changed by a committed transaction.
+const InboxChannel = "agentplane_notification_inbox"
+
 // Quotas bound what one owner, inbox or subscription set may hold. The service's config holds them under its
 // `quotas` key, named by the mapstructure tags.
 type Quotas struct {
