@@ -1,8 +1,9 @@
 # K3s persistent snapshot invalidation on lifecycle failure
 
 The persistent k3s stack writes a dirty marker before it uses the retained daemon and changes the
-marker to clean only after fixture cleanup, loop-device release, and trace closure succeed. A failed
-setup or teardown can therefore leave executor state that should not be restored as a clean baseline.
+marker to clean after fixture cleanup and loop-device release succeed. Trace closure follows; its
+failure also escapes the stack lifecycle. A failed setup or teardown can therefore leave executor
+state that should not be restored as a clean baseline.
 The `running_stack` context now wraps its `ExitStack`s in an outer guard: an exception escaping a
 persistent stack lifecycle requests snapshot invalidation, then preserves and re-raises the original
 error. Successful cleanup does not create the invalidation marker. The guard requires the existing
@@ -39,6 +40,9 @@ provider snapshot persistence beyond those observations.
 
 Recent PR CI attempts failed during persistent baseline cleanup before any VM scenario ran. The
 teardown evidence records `StopPodSandbox` waiting 60 seconds for an old container to stop. The
+same sandbox and container recur in the [earlier attempt](https://app.buildbuddy.io/invocation/50de3cc2-b127-5c79-be37-02e332dbcc8d)
+and [current PKI head](https://app.buildbuddy.io/invocation/1a2b63ff-126e-591e-aed6-a95bd28fc2a0).
+The
 recurring symptom alone does not establish whether the original state was a paused shim, a process
 wedge, or a provider/guest issue. The guard addresses the state-safety boundary after a stack
 lifecycle error; it does not diagnose that cleanup stall or claim that snapshot reuse caused it.
