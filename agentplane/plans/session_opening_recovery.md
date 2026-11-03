@@ -75,8 +75,8 @@ and emits the harness-started observation. A public Session ID is not that nativ
 
 **Known gap:** an underlying COSI store write can commit and then report an error before the in-memory
 collection reflects it. Today's admission may consequently see an absent Session on retry and create
-a different event-source ID. The [Runtime TODO](../env/TODO.md#fence-uncertain-session-reservation-writes)
-records the injected failure model and required fail-closed recovery. The Dispatcher retry protocol
+a different event-source ID. The [separate Runtime fix](https://github.com/agentydragon/ducktape/pull/14026)
+addresses the injected failure model with fail-closed recovery. The Dispatcher retry protocol
 alone cannot fix it. Separately, a successful native creation whose native ID is lost before its
 mapping is durable needs evidence-based reconciliation; do not infer that retrying native creation
 is safe from the fact that the public opening ID is stable.
