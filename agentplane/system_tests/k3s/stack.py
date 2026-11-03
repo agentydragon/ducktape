@@ -120,7 +120,7 @@ def _reset_previous_stack(data_dir: Path) -> None:
     for target in reversed(targets):
         if target.startswith(("/var/lib/kubelet/", "/run/k3s/", "/run/netns/")):
             run("umount", "--lazy", target)
-    for entry in [*data_dir.iterdir(), *(data_dir / "agent").iterdir()]:
+    for entry in [*data_dir.iterdir(), *(data_dir / "agent").glob("*")]:
         if entry.name not in {"agent", "data", "containerd"}:
             shutil.rmtree(entry) if entry.is_dir() and not entry.is_symlink() else entry.unlink()
     for state in (
