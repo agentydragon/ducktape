@@ -985,12 +985,11 @@ func TestWatchDispatchesPublishesWakeOnlyReceiptChanges(t *testing.T) {
 func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
-		lease   time.Duration
 		cancel  bool
 		wantErr bool
 	}{
-		{name: "lease", lease: 30 * time.Millisecond},
-		{name: "caller cancellation", lease: time.Hour, cancel: true, wantErr: true},
+		{name: "lease"},
+		{name: "caller cancellation", cancel: true, wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			base := admitted(t)
@@ -1000,15 +999,31 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 			stream := &blockedDispatchWatch{
 				ctx: ctx, started: make(chan struct{}), finished: make(chan struct{}), release: release,
 			}
-			service := &Service{
-				Store: testStore(t, 5), DispatcherCallers: configuredDispatcherCallers(), Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true},
-				WatchLease: tc.lease,
-			}
-			request := &dispatcherpb.WatchDispatchesRequest{Filter: &dispatcherpb.DispatchFilter{
-				Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: "blocked-watch-session"},
-			}}
 			done := make(chan error, 1)
-			go func() { done <- service.WatchDispatches(request, stream) }()
+			leaseCtx, endLease := context.WithCancel(ctx)
+			defer endLease()
+			if tc.cancel {
+				service := &Service{
+					Store: testStore(t, 5), DispatcherCallers: configuredDispatcherCallers(), Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true},
+					WatchLease: time.Hour,
+				}
+				request := &dispatcherpb.WatchDispatchesRequest{Filter: &dispatcherpb.DispatchFilter{
+					Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: "blocked-watch-session"},
+				}}
+				go func() { done <- service.WatchDispatches(request, stream) }()
+			} else {
+				// End the send's lease after Send starts, independent of how long a
+				// PostgreSQL connection or initial snapshot would take to acquire.
+				go func() {
+					ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
+						Frame: &dispatcherpb.WatchDispatchesResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}},
+					})
+					if !ended && err == nil {
+						err = errors.New("send did not end at its lease boundary")
+					}
+					done <- err
+				}()
+			}
 			select {
 			case <-stream.started:
 			case <-time.After(5 * time.Second):
@@ -1016,6 +1031,8 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 			}
 			if tc.cancel {
 				cancel()
+			} else {
+				endLease()
 			}
 			select {
 			case err := <-done:
