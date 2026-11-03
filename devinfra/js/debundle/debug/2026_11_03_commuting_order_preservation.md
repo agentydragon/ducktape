@@ -53,7 +53,15 @@ promise. Full downstream acceptance and runtime proof remain separate checks.
   later succeeded. Reconnecting the same outer invocation with `bb view`
   recovered the completed result; a stream failure alone is not a test result.
 
-For downstream graph changes, recover the matching analysis through the
-pipeline's `analysis` output group and compare the unchanged and corrected
-graph builders against it. Keep other fact changes out of that comparison;
-the normal CLI is the `:debundle` binary, distinct from `:debundle_analyze`.
+Recover a baseline's matching analysis through the pipeline's `analysis`
+output group. A graph-only engine edit still changes the current compiled
+`:pipeline` identity, so the corrected engine refuses the old artifact; a
+separate CLI build configuration can also change that identity. Use the normal
+pipeline to refresh it, keeping other fact changes out of the comparison. The
+normal CLI is the `:debundle` binary, distinct from `:debundle_analyze`.
+
+Iteration follow-up: separating graph construction from the analyzer's
+compiled closure could make graph-only fixes reuse analysis. Establish that
+crate dependency boundary and test its invalidation rules before narrowing
+the identity; a source-level claim that facts did not change cannot bypass
+the existing artifact guard.
