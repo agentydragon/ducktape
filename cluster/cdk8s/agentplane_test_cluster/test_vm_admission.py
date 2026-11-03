@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, cast
+from uuid import UUID
 
 import cdk8s
 import pytest_bazel
@@ -17,19 +18,21 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client.exceptions import ApiException
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
+from agentplane.system_tests.shared_cluster.namespaces import TENANT_LABEL, TENANT_VALUE, Namespaces
 from agentplane.testing.kubernetes_apiserver import kubernetes_apiserver
-from cluster.cdk8s.agentplane_test_cluster import security, vm_admission
+from cluster.cdk8s.agentplane_test_cluster import vm_admission
 from util.bazel.runfiles import get_required_path
 
 _GROUP = "kubevirt.io"
 _VERSION = "v1"
 _DENIAL_MESSAGE = "Tenant VM specifications may not use host devices, guest service accounts, or KubeVirt hooks."
 _HOOK_ANNOTATION = "hooks.kubevirt.io/hookSidecars"
+_TENANT = Namespaces(UUID("0123456789abcdef0123456789abcdef"))
 
 
 def _objects(app: App) -> list[dict[str, Any]]:
     chart = Chart(app, "vm-admission")
-    vm_admission.add_vm_admission(chart, namespaces=security.TENANT_NAMESPACES)
+    vm_admission.add_vm_admission(chart)
     return cast(list[dict[str, Any]], cdk8s.Testing.synth(chart))
 
 
@@ -57,9 +60,6 @@ def test_vm_admission_is_fail_closed_and_tenant_scoped(scratch_app: App) -> None
         binding = bindings[name]
         assert binding["spec"]["policyName"] == name
         assert binding["spec"]["validationActions"] == ["Deny"]
-        assert binding["spec"]["matchResources"]["namespaceSelector"]["matchExpressions"] == [
-            {"key": "kubernetes.io/metadata.name", "operator": "In", "values": list(security.TENANT_NAMESPACES)}
-        ]
 
 
 def _vm(name: str, namespace: str) -> dict[str, Any]:
@@ -186,12 +186,13 @@ async def test_vm_and_vmi_policies_reject_host_access_and_hooks_on_create_and_pa
 
     async with kubernetes_apiserver() as server:
         core = k8s_client.CoreV1Api(server.api)
-        for namespace in security.TENANT_NAMESPACES:
+        for namespace in _TENANT.all:
             await core.create_namespace(
                 k8s_client.V1Namespace(
-                    metadata=k8s_client.V1ObjectMeta(name=namespace, labels={"kubernetes.io/metadata.name": namespace})
+                    metadata=k8s_client.V1ObjectMeta(name=namespace, labels={TENANT_LABEL: TENANT_VALUE})
                 )
             )
+        await core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name="unprotected")))
         await _install_crds(k8s_client.ApiextensionsV1Api(server.api))
 
         admission = k8s_client.AdmissionregistrationV1Api(server.api)
@@ -201,7 +202,12 @@ async def test_vm_and_vmi_policies_reject_host_access_and_hooks_on_create_and_pa
             await admission.create_validating_admission_policy_binding(cast(Any, binding))
 
         custom = k8s_client.CustomObjectsApi(server.api)
-        namespace = security.TENANT_NAMESPACES[0]
+        namespace = _TENANT.application
+
+        outside_attack = _vm("vm-admission-outside-label", "unprotected")
+        _merge(outside_attack, _attacks("virtualmachines")[0][1])
+        await custom.create_namespaced_custom_object(_GROUP, _VERSION, "unprotected", "virtualmachines", outside_attack)
+
         first_resource = "virtualmachines"
         first_name = "vm-admission-create-host-disk"
         first_attack = _vm(first_name, namespace)

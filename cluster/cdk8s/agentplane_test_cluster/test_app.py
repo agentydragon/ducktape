@@ -145,14 +145,8 @@ def test_inner_security_seed_is_config_data_not_an_outer_resource(objects: list[
     config_map = _one(objects, "ConfigMap")
     seed = list(yaml.safe_load_all(config_map["data"]["00-shared-security.yaml"]))
 
-    assert {obj["kind"] for obj in seed} == {
-        "Namespace",
-        "ValidatingAdmissionPolicy",
-        "ValidatingAdmissionPolicyBinding",
-    }
-    assert {obj["metadata"]["name"] for obj in seed if obj["kind"] == "Namespace"} == set(
-        test_cluster.security.TENANT_NAMESPACES
-    )
+    assert seed
+    assert all(obj["kind"] != "Namespace" for obj in seed)
     seed_identities = {(obj["kind"], obj["metadata"]["name"], obj["metadata"].get("namespace")) for obj in seed}
     outer_identities = {(obj["kind"], obj["metadata"]["name"], obj["metadata"].get("namespace")) for obj in objects}
     assert seed_identities.isdisjoint(outer_identities)

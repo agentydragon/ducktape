@@ -26,7 +26,7 @@ def main() -> None:
         "cert-manager": _load(args.cert_manager),
         "trust-manager": _load(args.trust_manager),
         "kubevirt-operator": operator_releases.kubevirt_operator(_load(args.kubevirt_operator)),
-        "kyverno": operator_releases.kyverno_admission(_load(args.kyverno)),
+        "kyverno": operator_releases.kyverno(_load(args.kyverno), cleanup=True),
         "agentplane-crds": [doc for path in args.crd for doc in _load(path)],
         "kubevirt": [operator_releases.kubevirt(use_emulation=False)],
         # Server dry-runs exercise the webhooks without persisting probe resources.

@@ -18,58 +18,16 @@ metadata:
   namespace: agentplane-test-cluster
 data:
   00-shared-security.yaml: |
-    apiVersion: v1
-    kind: Namespace
-    metadata:
-      labels:
-        app.kubernetes.io/managed-by: agentplane-test-cluster
-        app.kubernetes.io/part-of: agentplane-test-cluster
-        pod-security.kubernetes.io/audit: baseline
-        pod-security.kubernetes.io/audit-version: v1.34
-        pod-security.kubernetes.io/enforce: baseline
-        pod-security.kubernetes.io/enforce-version: v1.34
-        pod-security.kubernetes.io/warn: baseline
-        pod-security.kubernetes.io/warn-version: v1.34
-      name: systest
-    ---
-    apiVersion: v1
-    kind: Namespace
-    metadata:
-      labels:
-        app.kubernetes.io/managed-by: agentplane-test-cluster
-        app.kubernetes.io/part-of: agentplane-test-cluster
-        pod-security.kubernetes.io/audit: baseline
-        pod-security.kubernetes.io/audit-version: v1.34
-        pod-security.kubernetes.io/enforce: baseline
-        pod-security.kubernetes.io/enforce-version: v1.34
-        pod-security.kubernetes.io/warn: baseline
-        pod-security.kubernetes.io/warn-version: v1.34
-      name: systest-egress-credentials
-    ---
-    apiVersion: v1
-    kind: Namespace
-    metadata:
-      labels:
-        app.kubernetes.io/managed-by: agentplane-test-cluster
-        app.kubernetes.io/part-of: agentplane-test-cluster
-        pod-security.kubernetes.io/audit: baseline
-        pod-security.kubernetes.io/audit-version: v1.34
-        pod-security.kubernetes.io/enforce: baseline
-        pod-security.kubernetes.io/enforce-version: v1.34
-        pod-security.kubernetes.io/warn: baseline
-        pod-security.kubernetes.io/warn-version: v1.34
-      name: monitoring
-    ---
     apiVersion: admissionregistration.k8s.io/v1
     kind: ValidatingAdmissionPolicy
     metadata:
       annotations:
-        description: Restricts tenant ServiceAccounts to namespaced writes in the fixed inner test namespaces.
+        description: Restricts per-run tenant ServiceAccounts to namespaced writes in their three allocated namespaces.
       name: agentplane-test-cluster-inner-security-tenant-namespace-fence
     spec:
       failurePolicy: Fail
       matchConditions:
-        - expression: request.userInfo.username.startsWith('system:serviceaccount:systest:') || request.userInfo.username.startsWith('system:serviceaccount:systest-egress-credentials:') || request.userInfo.username.startsWith('system:serviceaccount:monitoring:')
+        - expression: request.userInfo.username.startsWith('system:serviceaccount:ap-test-')
           name: tenant-service-account
       matchConstraints:
         excludeResourceRules:
@@ -110,7 +68,7 @@ data:
               - "*/*"
             scope: "*"
       validations:
-        - expression: has(request.namespace) && request.namespace in ["systest", "systest-egress-credentials", "monitoring"] && !(request.resource.group == '' && request.resource.resource == 'namespaces')
+        - expression: request.userInfo.username.matches('^system:serviceaccount:ap-test-[0-9a-f]{32}(-credentials|-monitoring)?:[^:]+$') && has(request.namespace) && request.namespace in [request.userInfo.username.split(':')[2].substring(0, 40), request.userInfo.username.split(':')[2].substring(0, 40) + '-credentials', request.userInfo.username.split(':')[2].substring(0, 40) + '-monitoring'] && !(request.resource.group == '' && request.resource.resource == 'namespaces')
           message: Tenant ServiceAccounts may only write namespaced resources in their tenant namespaces.
     ---
     apiVersion: admissionregistration.k8s.io/v1
@@ -121,6 +79,34 @@ data:
       policyName: agentplane-test-cluster-inner-security-tenant-namespace-fence
       validationActions:
         - Deny
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: agentplane-test-namespace-cleanup
+    rules:
+      - apiGroups:
+          - ""
+        resources:
+          - namespaces
+        verbs:
+          - get
+          - list
+          - watch
+          - delete
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: agentplane-test-namespace-cleanup
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: agentplane-test-namespace-cleanup
+    subjects:
+      - kind: ServiceAccount
+        name: kyverno-cleanup-controller
+        namespace: kyverno
     ---
     apiVersion: admissionregistration.k8s.io/v1
     kind: ValidatingAdmissionPolicy
@@ -152,13 +138,8 @@ data:
     spec:
       matchResources:
         namespaceSelector:
-          matchExpressions:
-            - key: kubernetes.io/metadata.name
-              operator: In
-              values:
-                - systest
-                - systest-egress-credentials
-                - monitoring
+          matchLabels:
+            agentplane-test-cluster.allegedly.works/tenant: "true"
       policyName: agentplane-test-cluster-tenant-vm-fence-virtualmachines
       validationActions:
         - Deny
@@ -193,13 +174,8 @@ data:
     spec:
       matchResources:
         namespaceSelector:
-          matchExpressions:
-            - key: kubernetes.io/metadata.name
-              operator: In
-              values:
-                - systest
-                - systest-egress-credentials
-                - monitoring
+          matchLabels:
+            agentplane-test-cluster.allegedly.works/tenant: "true"
       policyName: agentplane-test-cluster-tenant-vm-fence-virtualmachineinstances
       validationActions:
         - Deny

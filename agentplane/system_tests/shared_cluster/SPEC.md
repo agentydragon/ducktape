@@ -51,7 +51,8 @@ still required; network access does not grant Kubernetes permissions.
 
 The node image packages the same pinned KubeVirt, Kyverno admission controller,
 cert-manager and trust-manager releases used by the disposable K3s tests, plus the
-Agentplane CRDs. The persistent KubeVirt configuration disables emulation: missing KVM
+Agentplane CRDs. It additionally enables Kyverno's cleanup controller for namespace TTLs.
+The persistent KubeVirt configuration disables emulation: missing KVM
 must fail rather than silently select software emulation. Operator manifests are image
 files, outside the persistent data directory, so upgrades use the new image's bundle
 without copying large releases into ConfigMaps or retaining old manifest files on the PVC.
@@ -65,16 +66,19 @@ field manager and never deletes or recreates the existing infrastructure. Change
 conflict with another manager fail instead of forcing ownership. This is startup
 readiness; the existing readiness probe checks the API, not ongoing operator health.
 
-Tenant namespaces and admission rules still come from the separately generated security
-seed. The infrastructure bundle does not deploy the application, grant a test an admin
+Admission rules and the cleanup controller's namespace deletion grant come from the
+separately generated security seed. The infrastructure bundle does not deploy the application, grant a test an admin
 credential, or create a test driver. The outer Flux owner remains suspended pending live
 runtime verification.
 
 ## Tenant access
 
-Infrastructure owns the inner system namespaces and admission configuration. The fixed
-tenant namespaces initially match the existing fixture. Baseline Pod Security applies
-there, and admission constrains tenant service accounts' namespaced and cluster-scoped
+Infrastructure owns the inner system namespaces and admission configuration. Each run
+gets `ap-test-<uuid>`, `ap-test-<uuid>-credentials` and `ap-test-<uuid>-monitoring`.
+The trusted allocator applies the tenant label and Baseline Pod Security. Admission
+matches all ServiceAccount usernames with the reserved prefix, rejects malformed run
+identities and constrains namespaced writes to that identity's three namespaces. It also
+constrains cluster-scoped
 writes, including the policy controller's ClusterRoleBinding operations. The fence
 excludes only CREATE requests for Kubernetes TokenReview and SelfSubjectReview, plus
 SubjectAccessReview, LocalSubjectAccessReview, SelfSubjectAccessReview and
@@ -100,6 +104,35 @@ Shared infrastructure has a pinned version. Tests that change infrastructure CRD
 operators or admission need an isolated cluster lane. Per-run application deployment,
 image delivery, cleanup and capacity leasing must be trusted infrastructure operations;
 PR-provided controllers do not get cluster administration as a shortcut.
+
+## Run allocation and cleanup
+
+The trusted `lease_bin` CLI takes an explicit **inner** admin kubeconfig. It never runs
+inside the untrusted test action. Allocation acquires the single Kubernetes capacity
+Lease in `kube-system`, creates the three namespaces with object/storage quotas and
+absolute `cleanup.kyverno.io/ttl` labels, then requests separate short-lived application
+and observer tokens. The lifetime is bounded to 10–60 minutes; it is not renewed.
+Quotas bound object counts and requested storage. Aggregate CPU and memory containment
+still comes from the outer node container's cgroup.
+
+The private handoff directory contains allocation metadata, an `agentplane`-audience
+application token and an observer kubeconfig. The kubeconfig contains only the cluster
+CA and observer token, never the administrator's client identity. The observer can get
+its namespace's Sandbox and VMI objects and Pod logs, without the writes or sensitive
+reads covered by `check_permissions`. The application ServiceAccount has no Kubernetes
+Role; its application authorization is a separate deployment concern.
+
+Cleanup requests deletion with each recorded namespace UID as a precondition. The CLI
+waits for namespace deletion before releasing capacity, and never strips finalizers or
+deletes cluster-scoped volumes. If a run or allocator crashes, Kyverno's TTL controller
+requests namespace cleanup. A later allocation may reclaim an expired capacity Lease
+only after all of its namespaces are absent; terminating namespaces continue to hold
+capacity. Partial or ambiguous allocation failures are not automatically retried.
+
+These are trusted setup primitives. The application deployment adapter, image delivery,
+storage reclamation proof and credential transport into the Firecracker driver remain
+integration work. Live TTL deletion and the actual VM runtime still need verification
+before the suspended cluster is activated.
 
 ## Rollout acceptance
 

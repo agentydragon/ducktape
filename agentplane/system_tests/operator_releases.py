@@ -28,13 +28,12 @@ def kubevirt(*, use_emulation: bool) -> dict[str, Any]:
     }
 
 
-def kyverno_admission(objects: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Keep the admission controller; its upstream image proxy is outside our registry mirrors."""
-    objects = [
-        doc
-        for doc in objects
-        if doc["kind"] != "Deployment" or doc["metadata"]["name"] == "kyverno-admission-controller"
-    ]
+def kyverno(objects: list[dict[str, Any]], *, cleanup: bool) -> list[dict[str, Any]]:
+    """Keep the selected controllers; the upstream image proxy is outside our registry mirrors."""
+    controllers = {"kyverno-admission-controller"}
+    if cleanup:
+        controllers.add("kyverno-cleanup-controller")
+    objects = [doc for doc in objects if doc["kind"] != "Deployment" or doc["metadata"]["name"] in controllers]
     for doc in objects:
         if doc["kind"] == "Deployment":
             pod = doc["spec"]["template"]["spec"]

@@ -2,41 +2,30 @@
 
 from __future__ import annotations
 
-import json
-
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
+from agentplane.system_tests.shared_cluster.namespaces import PREFIX
 from cluster.cdk8s.agentplane_test_cluster.vm_admission import add_vm_admission
 
 NAME = "agentplane-test-cluster-inner-security"
-TENANT_NAMESPACES = ("systest", "systest-egress-credentials", "monitoring")
 
 _POLICY_NAME = f"{NAME}-tenant-namespace-fence"
-_TENANT_SERVICE_ACCOUNT = " || ".join(
-    f"request.userInfo.username.startsWith('system:serviceaccount:{namespace}:')" for namespace in TENANT_NAMESPACES
+_TENANT_SERVICE_ACCOUNT_PREFIX = f"system:serviceaccount:{PREFIX}"
+_TENANT_SERVICE_ACCOUNT = f"request.userInfo.username.startsWith('{_TENANT_SERVICE_ACCOUNT_PREFIX}')"
+_TENANT_SERVICE_ACCOUNT_FORMAT = (
+    "request.userInfo.username.matches('^system:serviceaccount:"
+    f"{PREFIX}[0-9a-f]{{32}}(-credentials|-monitoring)?:[^:]+$')"
 )
+_TENANT_ACTOR_NAMESPACE = "request.userInfo.username.split(':')[2]"
+_TENANT_RUN_NAMESPACE = f"{_TENANT_ACTOR_NAMESPACE}.substring(0, {len(PREFIX) + 32})"
 _TENANT_NAMESPACE = (
-    f"has(request.namespace) && request.namespace in {json.dumps(TENANT_NAMESPACES)}"
-    " && !(request.resource.group == '' && request.resource.resource == 'namespaces')"
+    f"{_TENANT_SERVICE_ACCOUNT_FORMAT} && has(request.namespace) && "
+    f"request.namespace in [{_TENANT_RUN_NAMESPACE}, "
+    f"{_TENANT_RUN_NAMESPACE} + '-credentials', {_TENANT_RUN_NAMESPACE} + '-monitoring'] && "
+    "!(request.resource.group == '' && request.resource.resource == 'namespaces')"
 )
 _DENIAL_MESSAGE = "Tenant ServiceAccounts may only write namespaced resources in their tenant namespaces."
-
-
-def _namespace(chart: Chart, name: str) -> None:
-    # These labels and the PSA policy are owned by the inner cluster administrator. The VAP below
-    # denies namespace writes from tenant ServiceAccounts, including attempts to change these labels.
-    labels = {
-        "app.kubernetes.io/managed-by": "agentplane-test-cluster",
-        "app.kubernetes.io/part-of": "agentplane-test-cluster",
-        "pod-security.kubernetes.io/enforce": "baseline",
-        "pod-security.kubernetes.io/enforce-version": "v1.34",
-        "pod-security.kubernetes.io/audit": "baseline",
-        "pod-security.kubernetes.io/audit-version": "v1.34",
-        "pod-security.kubernetes.io/warn": "baseline",
-        "pod-security.kubernetes.io/warn-version": "v1.34",
-    }
-    k8s.KubeNamespace(chart, f"namespace-{name}", metadata=k8s.ObjectMeta(name=name, labels=labels))
 
 
 def _tenant_namespace_fence(chart: Chart) -> None:
@@ -47,7 +36,7 @@ def _tenant_namespace_fence(chart: Chart) -> None:
             name=_POLICY_NAME,
             annotations={
                 "description": (
-                    "Restricts tenant ServiceAccounts to namespaced writes in the fixed inner test namespaces."
+                    "Restricts per-run tenant ServiceAccounts to namespaced writes in their three allocated namespaces."
                 )
             },
         ),
@@ -100,11 +89,27 @@ def _tenant_namespace_fence(chart: Chart) -> None:
     )
 
 
+def _namespace_cleanup_rbac(chart: Chart) -> None:
+    name = "agentplane-test-namespace-cleanup"
+    k8s.KubeClusterRole(
+        chart,
+        "namespace-cleanup-role",
+        metadata=k8s.ObjectMeta(name=name),
+        rules=[k8s.PolicyRule(api_groups=[""], resources=["namespaces"], verbs=["get", "list", "watch", "delete"])],
+    )
+    k8s.KubeClusterRoleBinding(
+        chart,
+        "namespace-cleanup-binding",
+        metadata=k8s.ObjectMeta(name=name),
+        role_ref=k8s.RoleRef(kind="ClusterRole", name=name, api_group="rbac.authorization.k8s.io"),
+        subjects=[k8s.Subject(kind="ServiceAccount", name="kyverno-cleanup-controller", namespace="kyverno")],
+    )
+
+
 def chart(app: App) -> Chart:
-    """Build inner-cluster namespaces and admission policy, independently of outer resources."""
+    """Build inner-cluster admission policies, independently of outer resources."""
     result = Chart(app, NAME, disable_resource_name_hashes=True)
-    for namespace in TENANT_NAMESPACES:
-        _namespace(result, namespace)
     _tenant_namespace_fence(result)
-    add_vm_admission(result, namespaces=TENANT_NAMESPACES)
+    _namespace_cleanup_rbac(result)
+    add_vm_admission(result)
     return result

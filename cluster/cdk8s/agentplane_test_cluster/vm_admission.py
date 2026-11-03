@@ -1,28 +1,19 @@
 """Bound tenant VM specifications in the inner test cluster.
 
-This policy is scoped to the fixed tenant namespaces. It does not protect operator or other
-infrastructure namespaces; the inner cluster's RBAC must keep tenant identities out of those namespaces.
-It also complements rather than replaces KubeVirt's validating webhook.
+The namespace label is applied by trusted infrastructure and protected by the tenant namespace fence.
+These policies complement rather than replace KubeVirt's validating webhook.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 from cdk8s_plus_34 import k8s
 from constructs import Construct
+
+from agentplane.system_tests.shared_cluster.namespaces import TENANT_LABEL, TENANT_VALUE
 
 _NAME = "agentplane-test-cluster-tenant-vm-fence"
 _DENIAL_MESSAGE = "Tenant VM specifications may not use host devices, guest service accounts, or KubeVirt hooks."
 _HOOK_PREFIX = "hooks.kubevirt.io/"
-
-
-def _tenant_selector(namespaces: Sequence[str]) -> k8s.LabelSelector:
-    return k8s.LabelSelector(
-        match_expressions=[
-            k8s.LabelSelectorRequirement(key="kubernetes.io/metadata.name", operator="In", values=list(namespaces))
-        ]
-    )
 
 
 def _annotations_are_safe(path: str) -> str:
@@ -42,9 +33,7 @@ def _spec_is_safe(spec: str) -> str:
     )
 
 
-def _validating_policy(
-    scope: Construct, *, resource: str, spec: str, template: bool, namespaces: Sequence[str]
-) -> None:
+def _validating_policy(scope: Construct, *, resource: str, spec: str, template: bool) -> None:
     name = f"{_NAME}-{resource}"
     safe = [_annotations_are_safe("object.metadata.annotations"), _spec_is_safe(spec)]
     if template:
@@ -78,23 +67,19 @@ def _validating_policy(
         spec=k8s.ValidatingAdmissionPolicyBindingSpec(
             policy_name=name,
             validation_actions=["Deny"],
-            match_resources=k8s.MatchResources(namespace_selector=_tenant_selector(namespaces)),
+            match_resources=k8s.MatchResources(
+                namespace_selector=k8s.LabelSelector(match_labels={TENANT_LABEL: TENANT_VALUE})
+            ),
         ),
     )
 
 
-def add_vm_admission(scope: Construct, *, namespaces: Sequence[str]) -> None:
+def add_vm_admission(scope: Construct) -> None:
     """Deny tenant VM/VMI specs that can expose host devices, guest tokens, or KubeVirt hooks.
 
     Separate policies keep each expression type-checked against the pinned KubeVirt schema for
     its resource. `disableHotplug` remains available: it disables disk hotplug and does not grant
     access to host resources.
     """
-    if not namespaces:
-        raise ValueError("VM admission requires at least one tenant namespace")
-    _validating_policy(
-        scope, resource="virtualmachines", spec="object.spec.template.spec", template=True, namespaces=namespaces
-    )
-    _validating_policy(
-        scope, resource="virtualmachineinstances", spec="object.spec", template=False, namespaces=namespaces
-    )
+    _validating_policy(scope, resource="virtualmachines", spec="object.spec.template.spec", template=True)
+    _validating_policy(scope, resource="virtualmachineinstances", spec="object.spec", template=False)

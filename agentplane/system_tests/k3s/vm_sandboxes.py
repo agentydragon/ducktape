@@ -100,7 +100,7 @@ def baseline_identity(kubectl: Kubectl) -> dict[str, str]:
 def _kyverno() -> list[dict[str, Any]]:
     """The admission controller with the CRDs and RBAC it reads; the background, cleanup and reports
     controllers serve no VM Sandbox."""
-    return operator_releases.kyverno_admission(_manifest("KYVERNO_INSTALL_RLOCATION"))
+    return operator_releases.kyverno(_manifest("KYVERNO_INSTALL_RLOCATION"), cleanup=False)
 
 
 def releases() -> list[dict[str, Any]]:

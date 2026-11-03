@@ -4,6 +4,31 @@ The [contract and rollout requirements](SPEC.md) describe the dedicated persiste
 node, infrastructure ownership and remaining test integration. The candidate Flux
 deployment is suspended until its runtime and admission checks are complete.
 
+## Trusted per-run setup
+
+Run this outside the Bazel test action, with the inner cluster's admin kubeconfig:
+
+```bash
+bb run //agentplane/system_tests/shared_cluster:lease_bin -- \
+  --admin-kubeconfig /path/to/inner-admin.kubeconfig allocate \
+  --server https://api.agentplane-test-cluster.svc.cluster.local:6443 \
+  --output /tmp/agents/YYYY_MM_DD/task/run
+```
+
+The new output directory is mode 0700; its files are mode 0600. Only
+`application-token` and `observer.kubeconfig` go to the test driver. Keep
+`allocation.json` with trusted setup for cleanup:
+
+```bash
+bb run //agentplane/system_tests/shared_cluster:lease_bin -- \
+  --admin-kubeconfig /path/to/inner-admin.kubeconfig cleanup \
+  --allocation /tmp/agents/YYYY_MM_DD/task/run/allocation.json
+```
+
+Cleanup waits for the namespace controller and retains capacity if deletion is stuck.
+The default one-hour expiry also lets the trusted Kyverno cleanup controller reap an
+abandoned run. The test application deployment and driver handoff are not wired yet.
+
 ## Observer permission checks
 
 `check_permissions(api_client=..., namespace=...)` reviews the supplied client's authorization using

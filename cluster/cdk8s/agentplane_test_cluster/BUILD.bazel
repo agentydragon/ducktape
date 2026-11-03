@@ -26,6 +26,7 @@ py_library(
     srcs = ["security.py"],
     deps = [
         ":vm_admission",
+        "//agentplane/system_tests/shared_cluster:namespaces",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -35,6 +36,7 @@ py_library(
     name = "vm_admission",
     srcs = ["vm_admission.py"],
     deps = [
+        "//agentplane/system_tests/shared_cluster:namespaces",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
@@ -88,9 +90,9 @@ py_test(
         "VIRTUALMACHINEINSTANCE_CRD_RLOCATION": "$(rlocationpath :virtualmachineinstance_crd)",
     },
     deps = [
-        ":security",
         ":vm_admission",
         "//:conftest",
+        "//agentplane/system_tests/shared_cluster:namespaces",
         "//agentplane/testing:kubernetes_apiserver",
         "//cluster/cdk8s:conftest",
         "//util/bazel:runfiles",
@@ -110,6 +112,7 @@ py_test(
     deps = [
         ":security",
         "//:conftest",
+        "//agentplane/system_tests/shared_cluster:namespaces",
         "//agentplane/testing:kubernetes_apiserver",
         "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
