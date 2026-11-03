@@ -53,7 +53,8 @@ search History or a runner; return a stable refusal or a defined unavailable out
 directory or live identity state fails closed without wake. A queued receipt means only durable
 Dispatcher acceptance.
 
-For a normal direct or delegated caller, preserve the existing exact execution ServiceAccount
+**Selected for the first native cutover:** preserve the existing caller and wake rules. For a
+normal direct or delegated caller, preserve the existing exact execution ServiceAccount
 namespace, name and UID check against the opening and live environment. A delegated actor's
 privileged allowlist membership never applies to its effective caller. Keep the existing named
 App, Notification and orchestration service exceptions at their current scopes while their
@@ -69,8 +70,9 @@ Audit and migrate existing direct Runtime creators and no-opening callers before
 requirement; do not introduce an exception for them. This is a target contract, not a claim that
 current admission already enforces it.
 
-General destination/operation grants and their revocation semantics remain in
-`DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`.
+General destination/operation grants and revocation of previously accepted queued work remain in
+`DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`; retaining the existing rules does not select a new
+revocation policy.
 
 Before any wake, the delivery worker rechecks the queued row against the current directory and
 live environment: Session still assigned to the **same UID**, execution account unchanged, and
@@ -83,6 +85,13 @@ If an environment is unavailable or suspended, leave authorized queued work queu
 existing retry/wake policy. A missing/replaced UID or changed execution principal fails that row
 without retargeting it. Do not send behind an unresolved opening. After an opening is settled,
 a reachable Runtime's unknown Session is terminal for the command.
+
+**Selected deletion-race outcomes:** once deletion closes admission, do not wake or deliver new
+work to the deleted environment. Fail accepted commands proven not to have left Dispatcher; if
+delivery may have reached Runtime and admission or effects cannot be established, make the outcome
+observable as unknown rather than claiming failure or replaying it. Preserve any outcome established
+by durable evidence, and never redirect accepted work to a replacement environment. Where the
+outcome is exposed and for how long remains part of the open Dispatcher/History retention decision.
 
 There remains a narrow race between Dispatcher's directory recheck and Runtime admission. For the
 first native slice, directory assignment is immutable for the lifetime of the exact environment
@@ -109,18 +118,19 @@ Runtime journal or History evidence settles it; do not automatically replay an u
 or redirect it to a new owner. A same-name replacement gets a different UID and cannot adopt the
 row. Preserve accepted work and the native store when handling deletion and service-store races.
 
-The following choices need explicit review before `DELIVERY_DESTINATION_CONTRACT` starts:
+The outcome and initial caller/wake rules above are selected. Remaining design and verification:
 
-1. **Deletion fence and same-UID reuse.** Prove that a Session cannot move or be retired while an
-   old owner can admit its command, or select an authoritative receiver-checked epoch. The former
-   is the minimum native contract; the latter is required if live relocation is supported.
-2. **Queued sender revocation.** V0 retains current service trust and effective-caller checks.
-   Whether an accepted command is cancelled on a later user grant revocation is a separate
-   generalized-policy decision; do not imply that a subscription is a lasting send grant.
+1. **Enforce the deletion fence.** Prove the old Runtime cannot admit a command after
+   the selected deletion boundary, or select an authoritative receiver-checked epoch. Identify
+   what enforces that boundary and where outcomes remain observable. Session movement and UUID
+   reuse after deletion remain separate decisions; a local cached generation alone is not a fence.
+2. **Queued sender revocation.** The first cutover retains current service trust and effective-caller
+   checks. Whether an accepted command is cancelled on a later user grant revocation remains a
+   separate generalized-policy decision; a subscription is not a lasting send grant.
 3. **Central Sessions.** A central scope with no environment has no UID or current native
    execution principal. Decide its principal, command permission and wake behavior in the central
-   Session/agent-principal designs. Do not manufacture an environment or use a privileged service
-   identity as the Session's principal merely to reuse this path.
+   Session/agent-principal designs; do not invent an environment or use a privileged service
+   identity as its principal. This need not block the environment-hosted slice.
 
 Acceptance for the implementation: direct and delegated caller parity; denial for an unrelated
 caller despite a known UUID; actor privilege not leaking through delegation; current App,

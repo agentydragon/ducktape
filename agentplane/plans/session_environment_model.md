@@ -163,6 +163,12 @@ not itself permission to send or wake. Current no-opening command admission and 
 creation paths must be migrated before enforcement. Whether an individual operation also needs a
 durable command receipt is a separate contract question.
 
+For the first environment-hosted command cutover, keep the existing direct and delegated caller
+checks and scoped service trust; wake remains separately authorized. When deletion races accepted
+work, fail commands proven not to have left Dispatcher, report unresolved in-flight outcomes as
+unknown, and never redirect work to a replacement environment. The deletion fence and the location
+and lifetime of outcome evidence still need design; this does not choose UUID-retention policy.
+
 Opening reads now target the Session ID through Dispatcher
 [`GET /v1/sessions/{session_id}/opening`](../runner_gateway/dispatcher/session_dispatcher.proto).
 The [browser adapter](../app/frontend/sandboxes/client.ts) calls that endpoint through the
@@ -911,6 +917,16 @@ Dispatcher Session record as a prerequisite for Session-targeted commands, inclu
 callers. It does not select Session deletion or UUID retention semantics, send/wake grants, or a
 requirement to queue every operation. The current privileged no-opening path and direct Runtime
 creation callers still need migration before the selected contract is enforced.
+
+**2026-11-03 · Deletion races and initial send authority**
+
+The operator agreed to fail commands known not to have left Dispatcher when the environment is
+deleted, report an in-flight outcome as unknown when Runtime admission or effects cannot be
+established, and never redirect accepted work to a replacement. They also agreed that the first
+environment-hosted cutover should preserve current direct and delegated caller checks, scoped
+App/Notification/orchestration trust, and separate wake checks including unattended notices.
+The concrete deletion fence, where outcomes remain observable, queued-grant revocation, central
+Session identity and deletion/UUID-retention policy remain open.
 
 **Still open**
 

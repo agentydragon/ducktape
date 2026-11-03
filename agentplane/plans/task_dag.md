@@ -2144,8 +2144,11 @@ resolved exact environment UID or equivalent placement generation and payload be
 wake, and fence it again at execution so replacement or a future placement change cannot redirect
 already accepted work. A UID is a fence, not authority; never infer one from a same-name replacement.
 
-Keep the current App/Notification trust and the documented orchestration exception until a reviewed
-replacement; general sender grants and queued-work revocation remain in
+The operator selected the existing native caller and wake rules for the first cutover: direct
+callers match the Session's execution ServiceAccount, delegated calls use the effective caller,
+and App/Notification trust and the documented orchestration exception keep their current scope.
+Wake remains independently authorized, including unattended notices. General sender grants and
+queued-work revocation remain in
 `DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`. The
 [Session command authority candidate](session_send_authority.md) inventories App, CLI, Actions,
 Notification, Dispatcher, Gateway and Runtime and recommends one transactional native admission
@@ -2153,8 +2156,10 @@ boundary, persisted exact UID, rechecks before wake and forwarding, and no repla
 effect. The operator selected a Dispatcher Session record as a prerequisite for every
 Session-targeted command, including privileged calls and immediate interrupts. Audit and migrate
 existing no-opening producers and direct Runtime creators; remove the privileged no-opening path,
-not the requirement. Review the deletion/owner fence and central-Session questions before calling
-this decision complete. The
+not the requirement. On deletion, fail commands known not to have left Dispatcher, report unknown
+when in-flight admission or effects cannot be established, and never redirect accepted work. The
+fence implementation and the location and lifetime of outcome evidence still need design and proof;
+central-Session authority remains separate. The
 [older delivery note](../docs/runner_delivery_and_harness_design.md#destination-checks-and-authority)
 is historical where it requires callers to provide `(Sandbox UID, Session ID)`; its authority and
 fencing questions remain applicable. Exit: a reviewed authority and race contract for
