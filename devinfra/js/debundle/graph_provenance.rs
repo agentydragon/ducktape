@@ -256,11 +256,16 @@ impl GraphMismatch {
 
 impl fmt::Display for GraphMismatch {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "graph compatibility mismatch: {:?}; regenerate with ",
-            self.reason
-        )?;
+        match &self.reason {
+            GraphMismatchReason::Engine { expected, actual } => write!(
+                formatter,
+                "graph compatibility mismatch: saved graph engine digest is {expected}, running engine digest is {actual}; use the matching saved engine or regenerate with the running engine using: "
+            )?,
+            reason => write!(
+                formatter,
+                "graph compatibility mismatch: {reason:?}; regenerate with "
+            )?,
+        }
         if let Some(cwd) = &self.regenerate_cwd {
             write!(formatter, "cd {} && ", shell_quote(&cwd.to_string_lossy()))?;
         }
