@@ -86,11 +86,20 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     assert not guest["domain"]["devices"].get("hostDevices")
     assert not guest["domain"]["devices"].get("gpus")
     assert not any("hostDisk" in volume or "serviceAccount" in volume for volume in guest["volumes"])
-    # These serials and this Secret key are the NixOS guest's mount/credential contract.
+    # These serials are the guest's cloud-init mount/credential contract.
     disks = {disk.get("serial"): disk["name"] for disk in guest["domain"]["devices"]["disks"]}
     volumes = {volume["name"]: volume for volume in guest["volumes"]}
     assert volumes[disks["bbkey"]]["secret"]["secretName"] == "buildbuddy-api-key"
     assert "emptyDisk" in volumes[disks["work"]]
+    user_data = next(
+        volume["cloudInitNoCloud"]["userData"] for volume in guest["volumes"] if "cloudInitNoCloud" in volume
+    )
+    assert len(user_data.encode()) <= 2048  # KubeVirt's inline cloud-init admission limit.
+    cloud_init = yaml.safe_load(user_data)
+    mounted = {mount[0]: mount[1] for mount in cloud_init["mounts"]}
+    assert mounted["/dev/disk/by-id/virtio-bbkey"] == "/run/buildbuddy-key"
+    assert mounted["/dev/disk/by-id/virtio-work"] == "/buildbuddy"
+    assert volumes[disks["bbconfig"]]["configMap"]["name"] == worker["metadata"]["name"]
     policy = next(
         doc
         for doc in documents

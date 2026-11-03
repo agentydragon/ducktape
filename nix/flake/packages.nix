@@ -173,10 +173,4 @@ ducktapePkgs
   cpap-gateway-container-disk = import ../../cpap/gateway/container-disk.nix {
     inherit pkgs self;
   };
-  # Persistent KubeVirt BuildBuddy KVM worker.
-  buildbuddy-kvm-worker-container-disk =
-    import ../../devinfra/buildbuddy/images/kvm_worker/container-disk.nix
-      {
-        inherit pkgs self;
-      };
 }

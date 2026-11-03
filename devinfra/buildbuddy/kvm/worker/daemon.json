@@ -1,0 +1,4 @@
+{
+  "data-root": "/buildbuddy/docker",
+  "insecure-registries": ["oci-cache.oci-cache.svc.cluster.local:80"]
+}

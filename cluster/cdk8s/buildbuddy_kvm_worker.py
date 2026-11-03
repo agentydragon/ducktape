@@ -1,5 +1,6 @@
 """The static, VM-isolated BuildBuddy worker for opt-in KVM tests."""
 
+import yaml
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from kubevirt_virtualmachine_crds.io.kubevirt import (
@@ -9,6 +10,8 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecDomainResourcesLimits,
     VirtualMachineSpecTemplateSpecDomainResourcesRequests,
     VirtualMachineSpecTemplateSpecVolumes,
+    VirtualMachineSpecTemplateSpecVolumesCloudInitNoCloud,
+    VirtualMachineSpecTemplateSpecVolumesConfigMap,
     VirtualMachineSpecTemplateSpecVolumesEmptyDisk,
     VirtualMachineSpecTemplateSpecVolumesEmptyDiskCapacity,
     VirtualMachineSpecTemplateSpecVolumesSecret,
@@ -16,28 +19,64 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_labels
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.oci_cache import zot
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy, isolate_ingress
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "buildbuddy-kvm-worker"
 NAMESPACE = "buildbuddy-executor"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
-_IMAGE = "git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker:unset"
-_HTTPS_HOSTS = ("remote.buildbuddy.io", "buildbuddy.bbcr.io")
+# KubeVirt's curated Ubuntu 24.04 cloud image, mirrored from Canonical with checksum verification.
+_IMAGE = "quay.io/containerdisks/ubuntu:24.04@sha256:ea164c514b308286bdc179b403298efd2d8ae549af518a82a029e1bbb027f3a4"
+_HTTPS_HOSTS = ("remote.buildbuddy.io", "buildbuddy.bbcr.io", "archive.ubuntu.com", "security.ubuntu.com")
+_GUEST_FILES = (
+    "bootstrap.sh",
+    "run-executor.sh",
+    "executor.yaml",
+    "executor.service",
+    "daemon.json",
+    "modules-load.conf",
+    "modprobe.conf",
+    "sysctl.conf",
+)
+
+
+def _cloud_init() -> str:
+    return "#cloud-config\n" + yaml.safe_dump(
+        {
+            "apt": {
+                "primary": [{"arches": ["amd64"], "uri": "https://archive.ubuntu.com/ubuntu"}],
+                "security": [{"arches": ["amd64"], "uri": "https://security.ubuntu.com/ubuntu"}],
+            },
+            "package_update": True,
+            "packages": ["docker.io"],
+            "fs_setup": [{"device": "/dev/disk/by-id/virtio-work", "filesystem": "ext4", "overwrite": False}],
+            "mounts": [
+                ["/dev/disk/by-id/virtio-work", "/buildbuddy", "ext4", "defaults", "0", "2"],
+                ["/dev/disk/by-id/virtio-bbkey", "/run/buildbuddy-key", "iso9660", "ro", "0", "0"],
+                ["/dev/disk/by-id/virtio-bbconfig", "/run/buildbuddy-config", "iso9660", "ro", "0", "0"],
+            ],
+            "runcmd": [["bash", "/run/buildbuddy-config/bootstrap.sh"]],
+            "power_state": {"mode": "reboot", "delay": "now", "condition": ["test", "-f", "/var/run/reboot-required"]},
+            "ssh_pwauth": False,
+            "disable_root": True,
+        },
+        sort_keys=False,
+    )
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    pull_credentials.forgejo_images_creds_external_secret(chart, "pull-credentials", namespace=NAMESPACE)
-    k8s.KubeServiceAccount(
+    k8s.KubeConfigMap(
         chart,
-        "default-service-account",
-        metadata=k8s.ObjectMeta(name="default", namespace=NAMESPACE),
-        automount_service_account_token=False,
-        image_pull_secrets=[k8s.LocalObjectReference(name=pull_credentials.SECRET_NAME)],
+        "guest-config",
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
+        data={
+            name: get_required_path(own_repo_rlocation(f"devinfra/buildbuddy/kvm/worker/{name}")).read_text()
+            for name in _GUEST_FILES
+        },
     )
     container_disk_vm(
         chart,
@@ -73,6 +112,13 @@ def chart(app: App) -> Chart:
                 name="buildbuddy-key",
                 secret=VirtualMachineSpecTemplateSpecVolumesSecret(secret_name="buildbuddy-api-key"),
             ),
+            "bbconfig": VirtualMachineSpecTemplateSpecVolumes(
+                name="worker-config", config_map=VirtualMachineSpecTemplateSpecVolumesConfigMap(name=NAME)
+            ),
+            "cloudinit": VirtualMachineSpecTemplateSpecVolumes(
+                name="cloudinit",
+                cloud_init_no_cloud=VirtualMachineSpecTemplateSpecVolumesCloudInitNoCloud(user_data=_cloud_init()),
+            ),
         },
         autoattach_graphics_device=False,
         annotations={
@@ -98,18 +144,14 @@ def chart(app: App) -> Chart:
 
 
 def buildbuddy_kvm_worker(
-    chart: Chart,
-    directory: RenderedDirectory,
-    executor: Kustomization,
-    kubevirt: Kustomization,
-    external_secrets: Kustomization,
+    chart: Chart, directory: RenderedDirectory, executor: Kustomization, kubevirt: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
         directory,
         timeout="15m",
-        # Select the first published worker image before resuming through Git.
+        # Guest boot, first-boot package installation and nested KVM need live verification.
         suspend=True,
-        depends_on=flux_kustomization_depends_on_many(executor, kubevirt, external_secrets),
+        depends_on=flux_kustomization_depends_on_many(executor, kubevirt),
     )

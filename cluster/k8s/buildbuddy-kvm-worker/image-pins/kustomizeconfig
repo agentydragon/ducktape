@@ -1,3 +1,0 @@
-images:
-  - path: spec/template/spec/volumes[]/containerDisk/image
-    kind: VirtualMachine

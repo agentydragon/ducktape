@@ -1496,7 +1496,6 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, buildbuddy_kvm_worker_artifact, buildbuddy_kvm_worker.chart, components=["./image-pins"]),
         buildbuddy_executor_kustomization,
         kubevirt_kustomization,
-        external_secrets_operator_kustomization,
     )
     cpap_sync_artifact = artifact("cpap-sync", cpap_sync_app.OUTPUT_DIR)
     cpap_sync_app.cpap_sync(

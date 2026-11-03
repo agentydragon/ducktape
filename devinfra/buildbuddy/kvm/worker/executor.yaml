@@ -1,0 +1,24 @@
+docker_cap_add: SYS_ADMIN,NET_ADMIN,MKNOD
+executor:
+  app_target: grpcs://remote.buildbuddy.io:443
+  api_key: "${BUILDBUDDY_API_KEY}"
+  millicpu: 8000
+  memory_bytes: 23622320128
+  max_concurrent_tasks: 1
+  root_directory: /buildbuddy/remotebuilds
+  local_cache_directory: /buildbuddy/filecache
+  local_cache_size_bytes: 40000000000
+  docker_socket: /var/run/docker.sock
+  default_isolation_type: docker
+  enable_bare_runner: false
+  enable_firecracker: false
+  enable_oci: false
+  enable_podman: false
+  docker_inherit_user_ids: true
+  docker_devices:
+    - path_on_host: /dev
+      path_in_container: /dev
+      cgroup_permissions: rwm
+  container_image_name_rewrites:
+    - prefix: ghcr.io/
+      replacement: oci-cache.oci-cache.svc.cluster.local:80/ghcr/

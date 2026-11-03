@@ -62,7 +62,6 @@ IMAGES = (
     "attic-jwt-rotation",
     "authentik-jwt-rotation",
     "aw-server",
-    "buildbuddy-kvm-worker",
     "claude-session-sync",
     "cli-proxy-api",
     "cpap-gateway",

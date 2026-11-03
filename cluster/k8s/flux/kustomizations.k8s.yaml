@@ -3542,8 +3542,6 @@ spec:
       namespace: ducktape-flux
     - name: kubevirt
       namespace: ducktape-flux
-    - name: external-secrets-operator
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/buildbuddy-kvm-worker
   prune: true
