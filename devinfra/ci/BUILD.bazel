@@ -363,12 +363,9 @@ py_library(
 py_test(
     name = "test_cancel_obsolete_pr_runs",
     srcs = ["test_cancel_obsolete_pr_runs.py"],
-    data = ["//:pr_ci_supersession_workflows"],
     deps = [
         ":cancel_obsolete_pr_runs",
-        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )

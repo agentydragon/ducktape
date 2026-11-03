@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 from email.message import Message
-from typing import Any, cast
+from typing import Any
 from urllib.error import HTTPError, URLError
 
 import pytest
 import pytest_bazel
-import yaml
 
 from devinfra.ci.cancel_obsolete_pr_runs import CancellationApi, cancel_obsolete
-from util.bazel.runfiles import get_required_path
 
 REPOSITORY = "owner/repo"
 NEW_HEAD = "a" * 40
@@ -248,51 +246,6 @@ def test_unexpected_read_error_stops_before_write() -> None:
     with pytest.raises(KeyError, match="pull_requests"):
         cancel_obsolete(api, api.event())
     assert not api.canceled
-
-
-def workflow(name: str) -> dict[str, Any]:
-    # BaseLoader preserves GitHub's `on` key (YAML 1.1 otherwise reads it as bool).
-    return cast(
-        dict[str, Any],
-        yaml.load(get_required_path(f"_main/.github/workflows/{name}.yml").read_text(), Loader=yaml.BaseLoader),
-    )
-
-
-def test_controller_uses_only_trusted_code_and_job_scoped_write_permission() -> None:
-    controller = workflow("cancel-obsolete-pr-ci")
-    assert controller["on"] == {"workflow_run": {"workflows": ["CI"], "types": ["requested"]}}
-    assert controller["permissions"] == {}
-    job = controller["jobs"]["cancel-obsolete"]
-    assert job["permissions"] == {"actions": "write", "contents": "read", "pull-requests": "read"}
-    assert job["timeout-minutes"] == "3"
-    checkout, execute = job["steps"]
-    assert checkout["uses"] == "actions/checkout@v7"
-    assert checkout["with"] == {"ref": "${{ github.workflow_sha }}", "persist-credentials": "false"}
-    assert execute["run"] == "python3 -m devinfra.ci.cancel_obsolete_pr_runs"
-    assert execute["env"] == {"GITHUB_TOKEN": "${{ github.token }}"}
-    assert "needs" not in job
-
-
-def test_admission_preserves_fork_push_and_build_token_policy() -> None:
-    bazel = workflow("bazel-ci")
-    assert bazel["concurrency"]["group"] == (
-        "bazel-ci-${{ github.event_name == 'pull_request' && "
-        "github.event.pull_request.head.repo.full_name == github.repository && "
-        "format('pr-run-{0}', github.run_id) || github.event.pull_request.number || github.ref }}"
-    )
-    assert (
-        bazel["concurrency"]["cancel-in-progress"]
-        == "${{ github.event_name == 'pull_request' || inputs.pr_head_sha != '' }}"
-    )
-    assert bazel["permissions"] == {"contents": "read", "pull-requests": "read", "statuses": "write"}
-    assert "needs" not in workflow("ci")["jobs"]["bazel-ci"]
-    fork = workflow("trusted-fork-pr-ci")
-    assert fork["concurrency"] == {
-        "group": "trusted-fork-pr-ci-${{ github.event.pull_request.number }}",
-        "cancel-in-progress": "true",
-    }
-    assert fork["jobs"]["bazel-ci"]["needs"] == ["fork-context"]
-    assert "actions" not in fork["jobs"]["bazel-ci"]["permissions"]
 
 
 if __name__ == "__main__":

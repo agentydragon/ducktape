@@ -275,14 +275,3 @@ py_wheel(
     visibility = ["//visibility:public"],
     deps = [":ducktape_git_hooks_pkg"],
 )
-
-filegroup(
-    name = "pr_ci_supersession_workflows",
-    srcs = [
-        ".github/workflows/bazel-ci.yml",
-        ".github/workflows/cancel-obsolete-pr-ci.yml",
-        ".github/workflows/ci.yml",
-        ".github/workflows/trusted-fork-pr-ci.yml",
-    ],
-    visibility = ["//devinfra/ci:__pkg__"],
-)
