@@ -242,6 +242,20 @@ func TestAMessageOpensAnInboxOnlyForSessionHistoryOfTheExactSandbox(t *testing.T
 	server.requireNoInbox(t)
 }
 
+func TestMessageToSameNameReplacementDoesNotReuseFormerSandboxInbox(t *testing.T) {
+	server := newServer(t)
+	server.grantSend(otherSandboxName, toSandbox)
+	first := server.send(t, sendRequest("before-recreate"))
+
+	server.recreateSandbox(t)
+	_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("after-recreate"))
+	requireCode(t, err, codes.NotFound)
+	server.requireNoInbox(t)
+	if _, err := server.sentMessage(t, otherSandboxToken, first.GetId()); err != nil {
+		t.Fatalf("the earlier message after Sandbox replacement: %v", err)
+	}
+}
+
 func TestConfirmSessionRequiresLiveSandboxUID(t *testing.T) {
 	server := newServer(t)
 	err := server.notifications.confirmSession(t.Context(), &identitypb.EnvironmentTarget{
