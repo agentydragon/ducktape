@@ -203,6 +203,9 @@ pub struct CallbackFactoryWriteWitness {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct SynchronousCalls {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initializer_binding_effects:
+        Option<Box<crate::reports::schema::InitializerBindingEffectsUse>>,
     /// Whole-original-owner coverage, sealed after its checked root evaluation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) completed_initialization:
@@ -270,6 +273,16 @@ pub(crate) struct FallbackOnlyEffects {
 }
 
 impl SynchronousCalls {
+    /// Coverage of this summary's lexical component, independent of heap,
+    /// host, value and whole-initialization coverage.
+    pub(crate) fn binding_effects_complete(&self) -> bool {
+        self.complete
+            || matches!(
+                self.initializer_binding_effects.as_deref(),
+                Some(crate::reports::schema::InitializerBindingEffectsUse::Applied { .. })
+            )
+    }
+
     /// The assumed path when only a conservative path contributed the read
     /// of `binding`; `None` when it was observed.
     pub(crate) fn fallback_read(&self, binding: &Id) -> Option<&AssumedEffectReason> {
@@ -479,6 +492,47 @@ pub struct ChunkFactAnalysis {
     /// `Array`). Surfaced for the same trust-surface-shrinking
     /// reason as `redundant_purity_hints`.
     pub redundant_pure_member_hints: Vec<RedundantPureMemberHint>,
+}
+
+impl ChunkFactAnalysis {
+    pub fn validate_initializer_binding_effects(
+        &self,
+        source_only_bindings: &BTreeSet<String>,
+    ) -> anyhow::Result<()> {
+        use crate::reports::schema::InitializerBindingEffectsUse;
+
+        let mut consumed = BTreeSet::new();
+        for fact in &self.facts {
+            let Some(effect_use) = fact
+                .synchronous_calls
+                .as_ref()
+                .and_then(|calls| calls.initializer_binding_effects.as_deref())
+            else {
+                continue;
+            };
+            match effect_use {
+                InitializerBindingEffectsUse::Applied { binding, .. } => {
+                    anyhow::ensure!(
+                        consumed.insert(binding.clone()),
+                        "initializer_binding_effects for `{binding}` was applied to multiple source units"
+                    );
+                }
+                InitializerBindingEffectsUse::Contradicted {
+                    binding,
+                    reads,
+                    rebinds,
+                } => anyhow::bail!(
+                    "initializer_binding_effects: source_only for `{binding}` contradicts observed lexical effects at source unit {}: reads {reads:?}, rebinds {rebinds:?}",
+                    fact.ordinal.0
+                ),
+            }
+        }
+        anyhow::ensure!(
+            &consumed == source_only_bindings,
+            "initializer_binding_effects consumption mismatch: configured {source_only_bindings:?}, applied {consumed:?}"
+        );
+        Ok(())
+    }
 }
 
 #[derive(

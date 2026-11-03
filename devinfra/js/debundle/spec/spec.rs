@@ -1328,10 +1328,6 @@ fn is_default_initializer_purity(purity: &InitializerPurity) -> bool {
     matches!(purity, InitializerPurity::Default)
 }
 
-fn is_none_initializer_binding_effects(effects: &Option<InitializerBindingEffects>) -> bool {
-    effects.is_none()
-}
-
 fn is_default_member_effect(effect: &MemberEffect) -> bool {
     matches!(effect, MemberEffect::Default)
 }
@@ -1778,7 +1774,7 @@ pub struct BindingAnnotation {
     pub initializer_purity: InitializerPurity,
     /// Source-only lexical effect assertion for one selected top-level
     /// variable initializer. Omission makes no assertion.
-    #[serde(default, skip_serializing_if = "is_none_initializer_binding_effects")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initializer_binding_effects: Option<InitializerBindingEffects>,
     /// Spec-level local-effect annotation for the annotated binding.
     #[serde(default, skip_serializing_if = "is_default_member_effect")]

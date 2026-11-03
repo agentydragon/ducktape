@@ -756,7 +756,7 @@ without a spec-assigned name are not changed by this cross-chunk pass.
 
 `annotations.<binding>.initializer_binding_effects: source_only` asserts that
 dynamic evaluation of that binding's direct top-level simple variable
-initializer reads or rebinds no top-level lexical binding beyond the
+initializer reads or rebinds no top-level lexical binding of this chunk beyond the
 initializer's syntactic eager-read and rebind footprint. Calls, getters,
 setters, and coercions reached during evaluation are included in this audit.
 The assertion is available in logical-module `annotations:` and
@@ -769,6 +769,11 @@ exactly one direct top-level simple initialized declaration. A source-backed
 lexical read or rebind outside the asserted footprint rejects the assertion.
 For the selected initializer, the assertion completes dynamic lexical
 read/rebind coverage while preserving its syntax-derived dependencies.
+
+The synchronous execution report identifies this author assertion and counts
+the assumed binding effects it narrowed. Observed contradictions are errors.
+Other execution precision losses remain reported; the assertion does not mint
+a whole-initialization certificate.
 
 This contract does not assert purity, freedom from throws, heap locality,
 result shape, or integrity of global-object or host state. Shared-heap effects,

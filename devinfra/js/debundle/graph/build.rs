@@ -353,6 +353,7 @@ pub fn build_dependency_graph_with(
             heap_native_integrity_uses: stmt.heap_native_integrity_uses.clone(),
             synchronous_execution: stmt.synchronous_calls.as_ref().map(|calls| {
                 crate::reports::schema::SynchronousExecutionReport {
+                    initializer_binding_effects: calls.initializer_binding_effects.clone(),
                     purity_disagreement: calls.purity_disagreement.clone(),
                     local_record_factory_uses: calls.local_record_factory_uses.clone(),
                     local_record_factory_rejections: calls.local_record_factory_rejections.clone(),
@@ -1994,7 +1995,7 @@ fn promote_at_init_calls(
                         .promoted_at_init(callee_source_unit),
                 ));
             }
-            if synchronous.complete {
+            if synchronous.binding_effects_complete() {
                 continue;
             }
         }
