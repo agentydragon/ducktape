@@ -144,6 +144,45 @@ async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(
     assert invalid.status_code == 400
 
 
+async def test_policy_grant_returns_empty_created_and_creates_independent_bindings(
+    http: httpx.AsyncClient, sandbox: SandboxCluster
+) -> None:
+    await sandbox.custom_objects.create_namespaced_custom_object(
+        GROUP,
+        VERSION,
+        sandbox.namespace,
+        "policysets",
+        {
+            "apiVersion": f"{GROUP}/{VERSION}",
+            "kind": "PolicySet",
+            "metadata": {"name": "example"},
+            "spec": {"rules": [{"type": "egress", "hosts": ["example.test"]}]},
+        },
+    )
+    route = f"/sandboxes/{sandbox.name}/policy-bindings"
+    request = {"uid": sandbox.uid, "policy_sets": ["example"]}
+    for _ in range(2):
+        response = await http.post(route, json=request)
+        assert response.status_code == 201, response.text
+        assert response.content == b""
+
+    bindings = await sandbox.custom_objects.list_namespaced_custom_object(
+        GROUP, VERSION, sandbox.namespace, "policybindings"
+    )
+    items = bindings["items"]
+    assert len(items) == 2
+    assert len({binding["metadata"]["name"] for binding in items}) == 2
+    for binding in items:
+        assert binding["spec"]["subject"] == {"namespace": sandbox.namespace, "name": sandbox.name}
+        assert binding["spec"]["policySets"] == ["example"]
+        assert binding["metadata"]["ownerReferences"][0]["uid"] == sandbox.uid
+
+    missing = await http.post(route, json={"uid": sandbox.uid, "policy_sets": ["missing"]})
+    assert missing.status_code == 422, missing.text
+    stale = await http.post(route, json={"uid": "stale-uid", "policy_sets": ["example"]})
+    assert stale.status_code == 404, stale.text
+
+
 async def test_go_openapi_tracks_selected_python_http_contract_fields(http: httpx.AsyncClient) -> None:
     response = await http.get("/openapi.json")
     assert response.status_code == 200, response.text
