@@ -15,6 +15,7 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	_ "github.com/lib/pq"
@@ -110,6 +111,12 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 	}}
 	f := newSandboxFixture(t)
 	sandboxUID := string(f.sandbox.UID)
+	if _, err := store.OpenSession(ctx, "session-queue", testSandbox, sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "UPDATE session_opening SET state=$2 WHERE session_id=$1", "session-queue", dispatcher.AdmittedState); err != nil {
+		t.Fatal(err)
+	}
 	queued, err := store.Enqueue(ctx, "session-queue", testSandbox, sandboxUID, command, nil)
 	if err != nil || queued.State != dispatcher.QueueState {
 		t.Fatalf("queue receipt: %+v %v", queued, err)

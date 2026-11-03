@@ -183,6 +183,20 @@ func authorityClientWithDelegation(
 	return dispatcherpb.NewSessionDispatcherClient(connection)
 }
 
+func requireMissingSessionCommands(t *testing.T, client dispatcherpb.SessionDispatcherClient, ctx context.Context, sessionID, sandboxName, sandboxUID string) {
+	t.Helper()
+	if _, err := client.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
+		SessionId: sessionID, Sandbox: sandboxName, SandboxUid: sandboxUID, CommandId: uuid.NewString(), Text: "unregistered",
+	}); status.Code(err) != codes.NotFound {
+		t.Fatalf("unregistered Session input: %v", err)
+	}
+	if _, err := client.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
+		SessionId: sessionID, Sandbox: sandboxName, SandboxUid: sandboxUID, CommandId: uuid.NewString(), TurnId: "unregistered-turn",
+	}); status.Code(err) != codes.NotFound {
+		t.Fatalf("unregistered Session interrupt: %v", err)
+	}
+}
+
 func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t, 10)
@@ -198,6 +212,10 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 		"owner-replaced":  {account: caller, uid: "replacement-uid"},
 		"foreign-account": {account: auth.Account{Namespace: caller.Namespace, Name: "test-stranger"}, uid: "foreign-uid"},
 	}, hub)
+
+	for _, token := range []string{"owner-account", "owner-pod", "foreign-account"} {
+		requireMissingSessionCommands(t, client, authorityContext(t, token), uuid.NewString(), caller.Name, authoritySandboxUID)
+	}
 
 	sessionID := uuid.NewString()
 	opened, err := client.OpenSession(authorityContext(t, "owner-account"), &dispatcherpb.OpenSessionRequest{
@@ -220,6 +238,8 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 	if _, err := client.GetDispatch(authorityContext(t, "owner-account"), &dispatcherpb.GetDispatchRequest{CommandId: "authority-owned-input"}); err != nil {
 		t.Fatalf("same-owner GetDispatch: %v", err)
 	}
+
+	requireMissingSessionCommands(t, client, authorityContext(t, "foreign-account"), sessionID, caller.Name, authoritySandboxUID)
 
 	foreign := authorityContext(t, "foreign-account")
 	if _, err := client.GetSessionOpening(foreign, &dispatcherpb.GetSessionOpeningRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
@@ -298,8 +318,8 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 	}
 	if _, err := client.SubmitInput(replacement, &dispatcherpb.SubmitInputRequest{
 		CommandId: "authority-replacement-input", SessionId: sessionID, Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Text: "replacement",
-	}); status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("replacement principal write into old Session = %v, want FailedPrecondition", err)
+	}); status.Code(err) != codes.NotFound {
+		t.Fatalf("replacement principal write into old Session = %v, want NotFound", err)
 	}
 
 	watchCtx, stopWatch := context.WithCancel(authorityContext(t, "owner-account"))
@@ -359,6 +379,8 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	delegated := func() context.Context {
 		return delegatedAuthorityContext(t, "actions-token", effective, effectiveUID, requestID, executionID)
 	}
+
+	requireMissingSessionCommands(t, client, delegated(), uuid.NewString(), snapshot.Name, snapshot.UID)
 
 	sessionID := uuid.NewString()
 	spec := &sessionpb.SessionSpec{}
@@ -437,7 +459,7 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	if err != nil {
 		t.Fatal("seed actor-only legacy opening:", err)
 	}
-	actorLegacyDispatch, err := store.Enqueue(ctx, actorLegacy.SessionID, snapshot.Name, snapshot.UID,
+	actorLegacyDispatch, err := enqueueWithSession(t, store, ctx, actorLegacy.SessionID, snapshot.Name, snapshot.UID,
 		input("delegated-actor-legacy-command", "actor-only legacy command"), nil)
 	if err != nil {
 		t.Fatal("seed actor-only legacy dispatch:", err)
@@ -504,7 +526,7 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	if _, err := client.InterruptTurn(delegated(), &dispatcherpb.InterruptTurnRequest{
 		CommandId: "delegated-foreign-interrupt", SessionId: foreignID, Sandbox: snapshot.Name,
 		SandboxUid: snapshot.UID, TurnId: "foreign-turn",
-	}); status.Code(err) != codes.PermissionDenied {
+	}); status.Code(err) != codes.NotFound {
 		t.Errorf("privileged actor's backend membership leaked interrupt authority: %v", err)
 	}
 	if _, err := client.ChangeModel(delegated(), &dispatcherpb.ChangeModelRequest{

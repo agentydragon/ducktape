@@ -62,7 +62,11 @@ It scopes existing Sessions and existing environments; it does not create enviro
 
 ## Method scope
 
-- SubmitInput, ChangeModel, ChangeReasoningEffort, CancelDispatch and InterruptTurn require the caller to match
+- SubmitInput, ChangeModel, ChangeReasoningEffort and InterruptTurn require an existing Dispatcher Session
+  record for every caller, including configured Pod-bound backends. The supplied Sandbox name and UID must
+  match that record. Missing records and records hidden from the caller return `NOT_FOUND`, before command
+  conflict details. No Session record is reconstructed from Runtime journals or History.
+- Normal Session commands and CancelDispatch require the caller to match
   the opening's execution account and Sandbox UID. Normal calls also compare the authenticated UID with the
   current controller-owned account UID. A changed or missing managed account cannot authorize a write.
 - GetSessionOpening, ListSessionOpenings, GetDispatch and ListDispatches filter retained rows by the recorded target account and UID.
@@ -71,8 +75,15 @@ It scopes existing Sessions and existing environments; it does not create enviro
 - WatchDispatches applies the same filter to durable snapshots and deletion terminal events. The terminal
   event's owner association is carried through bounded PostgreSQL notification parts so a row deleted from
   storage cannot bypass the read filter.
-- Store-level writes recheck caller, Session and target Sandbox binding in the same PostgreSQL transaction that
-  appends or cancels work. The worker checks the live managed account before binding a pending owner and again
+- Queued-command admissions recheck caller, Session existence and target Sandbox binding in the same
+  PostgreSQL transaction that appends work, including internal admissions and privileged backends. A row lock
+  prevents Session deletion or owner changes from committing between that check and admission. Exact command
+  retries still return the original receipt after authorization, including terminal opening outcomes.
+  Cancellation keeps its existing retained-receipt authority, including privileged backend access.
+  Immediate interrupts recheck the retained Session and target immediately before forwarding, without holding
+  database locks across the Runtime RPC. A deletion after that check can race forwarding; this is not an
+  atomic deletion fence or proof of native effects.
+- The worker checks the live managed account before binding a pending owner and again
   immediately before Runner delivery. Source errors fail closed; missing pending accounts remain queued, while
   a changed bound account fails queued work instead of delivering it under the replacement identity.
 - Automatic wake is attempted only when the live Sandbox has `spec.wakeOnSend: true`. The shared lifecycle service
@@ -159,5 +170,5 @@ rejection and receive the same hold without rewriting their stored outcome. Held
 cancellable. Automatic resolution of those held openings is not provided.
 
 These rules apply to native openings after all Dispatcher replicas run this protocol. Central
-sampler admission and commands without a Dispatcher opening retain their existing behavior.
+sampler admission retains its existing behavior; new commands require a Dispatcher Session record.
 Deletion cleanup, retained History and UUID reuse policy are unchanged.

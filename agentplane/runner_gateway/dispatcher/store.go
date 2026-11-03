@@ -440,7 +440,7 @@ func (s *Store) Enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 }
 
 // EnqueueForCaller applies the Session's retained owner and target binding in the same transaction
-// that appends a normal caller's command. Pod-bound privileged backends retain their explicit path.
+// that appends a command, including for Pod-bound privileged backends.
 func (s *Store) EnqueueForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, command *commandpb.Command, wakeCaller *Account, caller CallerIdentity) (*Dispatch, error) {
 	return s.enqueue(ctx, sessionID, sandboxName, sandboxUID, command, wakeCaller, &caller)
 }
@@ -474,31 +474,18 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		if err := sessionLock(ctx, tx, sessionID); err != nil {
 			return err
 		}
-		if caller != nil {
-			var targetName, targetUID string
-			var principalNS, principalName, principalUID sql.NullString
-			err := tx.QueryRowContext(ctx, `SELECT sandbox_name,sandbox_uid::text,
-				execution_account_namespace,execution_account_name,execution_account_uid::text
-				FROM session_opening WHERE session_id=$1`, sessionID).Scan(
-				&targetName, &targetUID, &principalNS, &principalName, &principalUID,
-			)
-			if errors.Is(err, sql.ErrNoRows) {
-				if !caller.Privileged {
-					return ErrNotFound
-				}
-			} else if err != nil {
-				return err
-			} else {
-				if targetName != sandboxName || targetUID != sandboxUID {
-					return ErrNotAuthorized
-				}
-				if !caller.Privileged && (!principalUID.Valid || principalUID.String != uidOfIdentity(caller.ServiceAccountIdentity) ||
-					!principalNS.Valid || !principalName.Valid ||
-					principalNS.String != accountOfIdentity(caller.ServiceAccountIdentity).Namespace ||
-					principalName.String != accountOfIdentity(caller.ServiceAccountIdentity).Name) {
-					return ErrNotAuthorized
-				}
-			}
+		opening, err := scanOpening(tx.QueryRowContext(ctx, "SELECT "+openingColumns+" FROM session_opening WHERE session_id=$1 FOR SHARE", sessionID))
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if caller != nil && !canReadOpening(opening, *caller) {
+			return ErrNotFound
+		}
+		if opening.SandboxName != sandboxName || opening.SandboxUID != sandboxUID {
+			return ErrNotAuthorized
 		}
 		// A command ID is global, even when two senders race through different
 		// Session locks.
@@ -520,11 +507,7 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		opening, err := scanOpening(tx.QueryRowContext(ctx, "SELECT "+openingColumns+" FROM session_opening WHERE session_id=$1", sessionID))
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		if opening != nil && !centralSpec(opening.Spec) && (opening.State == FailedState || opening.State == UnknownState) {
+		if !centralSpec(opening.Spec) && (opening.State == FailedState || opening.State == UnknownState) {
 			return ErrOpeningUnconfirmed
 		}
 		var count int
@@ -899,16 +882,22 @@ func (s *Store) GetOpening(ctx context.Context, id string) (*Opening, error) {
 	return o, err
 }
 
+func canReadOpening(opening *Opening, caller CallerIdentity) bool {
+	return caller.Privileged || (opening.ExecutionPrincipal != nil &&
+		opening.ExecutionPrincipal.GetUid() != "" &&
+		opening.ExecutionPrincipal.GetUid() == uidOfIdentity(caller.ServiceAccountIdentity) &&
+		accountOfIdentity(opening.ExecutionPrincipal) == accountOfIdentity(caller.ServiceAccountIdentity))
+}
+
 func (s *Store) GetOpeningForCaller(ctx context.Context, id string, caller CallerIdentity) (*Opening, error) {
-	query := `SELECT ` + openingColumns + ` FROM session_opening WHERE session_id=$1 AND ($2 OR
-		(execution_account_namespace=$3 AND execution_account_name=$4 AND execution_account_uid=$5))`
-	o, err := scanOpening(s.DB.QueryRowContext(ctx, query, id, caller.Privileged,
-		accountOfIdentity(caller.ServiceAccountIdentity).Namespace, accountOfIdentity(caller.ServiceAccountIdentity).Name,
-		uidOfIdentity(caller.ServiceAccountIdentity)))
-	if errors.Is(err, sql.ErrNoRows) {
+	opening, err := s.GetOpening(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !canReadOpening(opening, caller) {
 		return nil, ErrNotFound
 	}
-	return o, err
+	return opening, nil
 }
 
 func (s *Store) ListOpeningsForCaller(ctx context.Context, after string, limit int, caller CallerIdentity) ([]*Opening, error) {
@@ -965,29 +954,11 @@ func (s *Store) BindExecutionPrincipal(ctx context.Context, sessionID, sandboxUI
 }
 
 func (s *Store) AuthorizeTarget(ctx context.Context, sessionID, sandboxName, sandboxUID string, caller CallerIdentity) error {
-	var targetName, targetUID string
-	var principalNS, principalName, principalUID sql.NullString
-	err := s.DB.QueryRowContext(ctx, `SELECT sandbox_name,sandbox_uid::text,execution_account_namespace,
-		execution_account_name,execution_account_uid::text FROM session_opening WHERE session_id=$1`, sessionID).
-		Scan(&targetName, &targetUID, &principalNS, &principalName, &principalUID)
-	if errors.Is(err, sql.ErrNoRows) {
-		if caller.Privileged {
-			return nil
-		}
-		return ErrNotFound
-	}
+	opening, err := s.GetOpeningForCaller(ctx, sessionID, caller)
 	if err != nil {
 		return err
 	}
-	if targetName != sandboxName || targetUID != sandboxUID {
-		return ErrNotAuthorized
-	}
-	if caller.Privileged {
-		return nil
-	}
-	callerAccount := accountOfIdentity(caller.ServiceAccountIdentity)
-	if !principalNS.Valid || !principalName.Valid || !principalUID.Valid || principalNS.String != callerAccount.Namespace ||
-		principalName.String != callerAccount.Name || principalUID.String != uidOfIdentity(caller.ServiceAccountIdentity) {
+	if opening.SandboxName != sandboxName || opening.SandboxUID != sandboxUID {
 		return ErrNotAuthorized
 	}
 	return nil

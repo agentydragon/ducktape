@@ -292,11 +292,13 @@ func (s *Service) executionAccount(ctx context.Context, sandbox SandboxSnapshot)
 // requireLiveExecution proves that a normal caller is still the exact ServiceAccount recorded for
 // the target Sandbox. Privileged backend callers retain their explicit compatibility path.
 func (s *Service) requireLiveExecution(ctx context.Context, opening *Opening, sandbox SandboxSnapshot, caller CallerIdentity) error {
+	if opening == nil || opening.SandboxName != sandbox.Name || opening.SandboxUID != sandbox.UID {
+		return status.Error(codes.PermissionDenied, "Session target does not match")
+	}
 	if caller.Privileged {
 		return nil
 	}
-	if opening == nil || opening.ExecutionPrincipal == nil || opening.ExecutionPrincipal.GetUid() == "" ||
-		opening.SandboxName != sandbox.Name || opening.SandboxUID != sandbox.UID {
+	if opening.ExecutionPrincipal == nil || opening.ExecutionPrincipal.GetUid() == "" {
 		return status.Error(codes.PermissionDenied, "caller does not own the Session")
 	}
 	account, found, err := s.executionAccount(ctx, sandbox)
@@ -380,16 +382,12 @@ func (s *Service) enqueue(ctx context.Context, commandID, sessionID, sandbox, sa
 	if current.UID != sandboxUID {
 		return nil, status.Error(codes.FailedPrecondition, "sandbox identity changed")
 	}
-	opening, openingErr := s.Store.GetOpening(ctx, sessionID)
-	if openingErr != nil && !errors.Is(openingErr, ErrNotFound) {
-		return nil, apiError(openingErr)
+	opening, err := s.Store.GetOpeningForCaller(ctx, sessionID, caller)
+	if err != nil {
+		return nil, apiError(err)
 	}
-	if openingErr == nil {
-		if err := s.requireLiveExecution(ctx, opening, current, caller); err != nil {
-			return nil, err
-		}
-	} else if !caller.Privileged {
-		return nil, status.Error(codes.NotFound, "dispatch not found")
+	if err := s.requireLiveExecution(ctx, opening, current, caller); err != nil {
+		return nil, err
 	}
 	row, err := s.Store.EnqueueForCaller(ctx, sessionID, sandbox, current.UID, command, nil, caller)
 	if err != nil {
@@ -695,27 +693,27 @@ func (s *Service) InterruptTurn(ctx context.Context, request *dispatcherpb.Inter
 	if err != nil {
 		return nil, err
 	}
-	if err := s.Store.AuthorizeTarget(ctx, request.GetSessionId(), current.Name, current.UID, caller); err != nil {
+	opening, err := s.Store.GetOpeningForCaller(ctx, request.GetSessionId(), caller)
+	if err != nil {
 		return nil, apiError(err)
 	}
-	opening, openingErr := s.Store.GetOpening(ctx, request.GetSessionId())
-	if openingErr != nil && !errors.Is(openingErr, ErrNotFound) {
-		return nil, apiError(openingErr)
+	if err := s.requireLiveExecution(ctx, opening, current, caller); err != nil {
+		return nil, err
 	}
-	if openingErr == nil {
-		if err := s.requireLiveExecution(ctx, opening, current, caller); err != nil {
+	requiresReady := sessionRequiresReadyExecutor(opening.Spec)
+	if !requiresReady {
+		if err := validateOpeningExecutor(opening, current); err != nil {
 			return nil, err
 		}
-	}
-	requiresReady, err := s.requiresReadyExecutor(ctx, request.GetSessionId(), current)
-	if err != nil {
-		return nil, err
 	}
 	if current.Blocker != "" && requiresReady {
 		return &dispatcherpb.InterruptTurnResponse{State: dispatcherpb.DeliveryState_DELIVERY_STATE_NO_OP, Reason: &current.Blocker}, nil
 	}
 	if s.Runner == nil {
 		return nil, status.Error(codes.Unavailable, "runner proxy unavailable")
+	}
+	if err := s.Store.AuthorizeTarget(ctx, request.GetSessionId(), current.Name, current.UID, caller); err != nil {
+		return nil, apiError(err)
 	}
 	admission, err := s.Runner.Deliver(ctx, current, request.GetSessionId(),
 		&commandpb.Command{CommandId: request.GetCommandId(), Operation: &commandpb.Command_InterruptTurn{
@@ -725,22 +723,4 @@ func (s *Service) InterruptTurn(ctx context.Context, request *dispatcherpb.Inter
 		return nil, status.Error(status.Code(err), fmt.Sprintf("runner: %s", status.Convert(err).Message()))
 	}
 	return &dispatcherpb.InterruptTurnResponse{State: dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED, Admission: admission}, nil
-}
-
-// Delivery behavior comes from admitted Session configuration, never a command claim.
-func (s *Service) requiresReadyExecutor(ctx context.Context, id string, sandbox SandboxSnapshot) (bool, error) {
-	opening, err := s.Store.GetOpening(ctx, id)
-	if errors.Is(err, ErrNotFound) {
-		return true, nil
-	}
-	if err != nil {
-		return false, apiError(err)
-	}
-	if sessionRequiresReadyExecutor(opening.Spec) {
-		return true, nil
-	}
-	if err := validateOpeningExecutor(opening, sandbox); err != nil {
-		return false, err
-	}
-	return false, nil
 }

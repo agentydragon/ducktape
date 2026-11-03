@@ -187,7 +187,7 @@ func TestLegacyWakeCallerWithoutUIDDoesNotWake(t *testing.T) {
 	store := testStore(t, 3)
 	const uid = "00000000-0000-4000-8000-000000000092"
 	wakeCaller := Account{Namespace: "agentplane", Name: "legacy-wake-caller"}
-	row, err := store.Enqueue(ctx, "legacy-wake-session", "legacy-wake-sandbox", uid,
+	row, err := enqueueWithSession(t, store, ctx, "legacy-wake-session", "legacy-wake-sandbox", uid,
 		input("legacy-wake-command", "hello"), &wakeCaller)
 	if err != nil {
 		t.Fatal("enqueue legacy row:", err)
