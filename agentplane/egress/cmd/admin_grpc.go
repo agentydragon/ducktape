@@ -6,7 +6,6 @@ import (
 	"maps"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/admin"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
@@ -16,10 +15,6 @@ import (
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
-
-// adminWatchLease is how long a decision watch runs before the caller subscribes again. The bearer is
-// reviewed when a watch opens, so this bounds how long a revoked token keeps reading.
-const adminWatchLease = 10 * time.Minute
 
 // adminGRPCEnabled is whether the admin listener serves the EgressAdmin API; the standard health service
 // is served either way.
@@ -76,7 +71,6 @@ func newAdminServer(c config, reviews auth.TokenReviews, options admin.ServiceOp
 			return adminServer{}, err
 		}
 		maps.Copy(methods, admin.Methods(resolver, callers))
-		options.WatchLease = adminWatchLease
 		service = admin.NewService(options)
 	}
 	grpcServer := grpc.NewServer(append(methods.ServerOptions(0), observability.GRPCServerOption())...)

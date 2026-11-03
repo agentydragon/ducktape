@@ -22,14 +22,7 @@ from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from agentplane.app import app_service_pb2
-from agentplane.app.testing.models import (
-    DecisionsSnapshot,
-    DecisionsUnavailable,
-    ThreadMetadata,
-    ThreadView,
-    thread_view_from_proto_json,
-)
-from agentplane.egress.decisions import Decision
+from agentplane.app.testing.models import ThreadMetadata, ThreadView, thread_view_from_proto_json
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import event_log_pb2, identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
@@ -235,26 +228,6 @@ class Client:
         return (
             f"/upstream/environments/v1/environments/{quote(target.namespace, safe='')}/{quote(target.name, safe='')}"
         )
-
-    async def decisions(self, name: str, uid: str) -> list[Decision]:
-        """The first frame of the sandbox's egress decision stream, oldest first."""
-        async with self._http.stream(
-            "GET",
-            f"/live/sandboxes/{name}/egress/decisions",
-            params={"sandbox_uid": uid},
-            headers={"Accept": "text/event-stream"},
-        ) as response:
-            response.raise_for_status()
-            kind = None
-            async for line in response.aiter_lines():
-                if line.startswith("event:"):
-                    kind = line.removeprefix("event:").strip()
-                elif line.startswith("data:") and kind == "snapshot":
-                    snapshot = DecisionsSnapshot.model_validate_json(line.removeprefix("data:"))
-                    if isinstance(snapshot.decisions, DecisionsUnavailable):
-                        raise RuntimeError(f"egress decisions of {name} unavailable: {snapshot.decisions.detail}")
-                    return snapshot.decisions
-        raise RuntimeError(f"the egress decision stream of {name} ended without a snapshot")
 
     async def create_session(
         self,

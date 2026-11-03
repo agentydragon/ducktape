@@ -12,9 +12,11 @@ import "agentplane/proto/identity.proto";
 service EgressAdmin {
   // The decisions the proxy retains for the filter, oldest first, bounded by its history window.
   rpc ListDecisions(ListDecisionsRequest) returns (ListDecisionsResponse);
-  // The `ListDecisions` list on subscribing, then again each time it changes. The proxy ends the
-  // stream after its watch lease so the next call is admitted afresh; the caller reconnects.
-  rpc WatchDecisions(WatchDecisionsRequest) returns (stream WatchDecisionsResponse);
+  // A complete recent window on subscribing and each change; healthy quiet streams send heartbeats.
+  // Ends if the history feed or caller authorization fails, or the service drains.
+  rpc WatchDecisions(WatchDecisionsRequest) returns (stream WatchDecisionsResponse) {
+    option (google.api.http) = {get: "/v1/decisions:watch"};
+  }
   // The current redacted credential inventory, then upserts and UID-fenced removals.
   // Ends if the credential cache becomes unavailable or authorization expires.
   rpc WatchCredentials(WatchCredentialsRequest) returns (stream WatchCredentialsResponse) {
@@ -75,9 +77,16 @@ message WatchDecisionsRequest {
   DecisionFilter filter = 1;
 }
 
-// The whole list as `ListDecisions` returns it, not the change since the last response.
-message WatchDecisionsResponse {
+// The whole retained window as `ListDecisions` returns it, not a change since the last response.
+message DecisionSnapshot {
   repeated Decision decisions = 1;
+}
+message WatchDecisionsResponse {
+  oneof frame {
+    DecisionSnapshot snapshot = 1;
+    // The history feed and read succeeded; this is not a claim that the writer lost no records.
+    google.protobuf.Empty heartbeat = 2;
+  }
 }
 
 message GetHealthRequest {}

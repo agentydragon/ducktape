@@ -8,7 +8,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentplane.egress.decisions import Decision
 from agentplane.env.runtime.harness import Harness
 
 SUBSET_ROW_LIMIT = 200
@@ -86,19 +85,6 @@ def thread_view_from_proto_json(metadata: dict[str, object], summary: dict[str, 
             "last_turn_status": summary.get("lastTurnStatus"),
         }
     )
-
-
-class DecisionsUnavailable(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    detail: str
-
-
-class DecisionsSnapshot(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    watching: bool
-    decisions: list[Decision] | DecisionsUnavailable
 
 
 class ThreadScopeResponse(BaseModel):

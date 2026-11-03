@@ -85,7 +85,7 @@ get their Threads once it does.
   frontend API comes from `//agentplane/app/go:export_schema_bin`.
 - `go/threads/`: operator-owned Thread metadata. Generated Dispatcher HTTP routes own command submissions.
   History owns event storage, folding and evidence; `go/historydata/` reads it through gRPC.
-- `go/liveinventory/` and `go/policyaccess/`: Kubernetes list/watch snapshots and policy projections.
+- `go/policyaccess/`: Kubernetes policy projections.
   The Action Service independently streams its effective policy through its generated facade.
 - `go/proxy/`: authenticated Electric shape forwarding with pinned Thread/projection scope.
   Native service RPCs use generated app-side HTTP gateways with request-bound credentials.
@@ -278,33 +278,24 @@ Staging runs two app replicas on separate nodes with `RollingUpdate` (`maxUnavai
 
 The shared Sandbox inventory uses the generated EnvironmentService watch through
 `/upstream/environments/v1/environments:watch`. Protobuf snapshot chunks replace the inventory
-when complete; subsequent upserts and UID-fenced removals update individual Sandboxes. `/live/sandboxes/{name}?sandbox_uid={uid}` is an authenticated SSE stream carrying a
-whole detail snapshot on change and a health frame through the quiet. It pushes one exact Sandbox incarnation's bindings with each reader's verdict. The Action Service watch separately streams the execution account's effective Action policy.
+when complete; subsequent upserts and UID-fenced removals update individual Sandboxes. The
+Action Service watch separately streams the execution account's effective Action policy.
 The Sandbox page reads UID-filtered app Thread metadata pages, joins History summaries, and uses them as its retained
 Session inventory; its harness and turn fields are last observed History values. Suspending or
 removing a runner Pod does not clear projected Threads, and the app does not claim their harnesses
 are still running. Archived Threads stay hidden unless the operator chooses **Show archived**. The archived count and page tokens follow the same Sandbox UID.
 
-The Egress log tab's decisions are their own stream, `/live/sandboxes/{name}/egress/decisions`: the
-app follows the proxy's authenticated `EgressAdmin.WatchDecisions` gRPC stream for the sandbox's
-ServiceAccount. Each message replaces the retained decisions; the app renews the stream when its
-authorization lease ends and reports outages in the browser stream. Its Egress system-status probe
-also uses gRPC health on the same admin endpoint. Runner availability affects operations that need a live Session and
+The Egress log watches `/upstream/egress/v1/decisions:watch` through the generated Egress facade.
+The browser follows the exact Environment target and selects its execution ServiceAccount, clearing
+the displayed window when either observation becomes stale. Each Egress snapshot replaces the recent
+window for that account, which can include older Sandbox incarnations. The app's Egress system-status
+probe uses gRPC health on the same admin endpoint. Runner availability affects operations that need a live Session and
 whether the page can open a new one; it does not determine whether a retained History Thread appears
 in the table. Session creation displays progress and prevents duplicate clicks while the request
 runs.
 
-Each `/live/sandboxes/{name}` snapshot is computed once per change for every stream with the
-same parameters and sent to all of them; a stream skips a snapshot identical to its last one.
-
-A snapshot is not a delta, and there is no resumable id: a relist replaces a kind wholesale and a
-`resourceVersion` expires, so a reconnecting tab is served a fresh snapshot instead. Each detail-stream frame
-carries the server's watch health: `healthy` once its informers have synced and while no kind's
-list or watch is failing, and each failing kind with its error and since when -- the same rule the
-egress proxy's readiness uses. A page whose server watch is failing says so rather than showing
-its data as live: the browser's connection and that verdict both feed the one connection
-indicator in the topbar, a spinner whose tooltip names each stream that is not current and why.
-Every stream, and the server's watch behind it, retries by itself.
+A reconnect starts with a fresh snapshot instead of a replay cursor. The browser reports a watch
+as unavailable while it reconnects rather than treating its old data as current.
 
 ## Authentication and authorization
 

@@ -144,7 +144,8 @@ ts_library(
     srcs = ["decision_groups.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/egress:egress_admin_pb",
     ],
 )
 
@@ -155,6 +156,7 @@ agentplane_vitest_test(
         ":decision_fixture",
         ":decision_groups",
         "//:node_modules/vitest",
+        "//agentplane/egress:egress_admin_pb",
     ],
 )
 
@@ -163,7 +165,10 @@ ts_library(
     testonly = True,
     srcs = ["decision_fixture.ts"],
     tsconfig = TSCONFIG,
-    deps = [":client"],
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/egress:egress_admin_pb",
+    ],
 )
 
 ts_library(
@@ -171,19 +176,18 @@ ts_library(
     srcs = ["egress.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
         ":decision_groups",
-        ":live",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
-        "//agentplane/app/frontend:live",
-        "//agentplane/app/frontend:live_stream",
         "//agentplane/app/frontend:stream_reader",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:time_ago",
-        "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/app/frontend:watch_stream",
+        "//agentplane/egress:egress_admin_pb",
+        "//agentplane/proto:identity_pb",
     ],
 )
 
@@ -395,6 +399,23 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/testing:sandbox",
         "//agentplane/app/frontend/testing:watch",
         "//agentplane/environments/v1:environment_service_pb",
+    ],
+)
+
+
+agentplane_vitest_test(
+    name = "egress_test",
+    srcs = ["egress.test.tsx"],
+    deps = [
+        ":egress",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend/testing:watch",
+        "//agentplane/proto:identity_pb",
     ],
 )
 

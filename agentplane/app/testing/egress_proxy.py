@@ -17,15 +17,10 @@ class FakeEgressAdmin(rpc.EgressAdminServicer):
         self.decisions: dict[tuple[str, str], list[pb.Decision]] = {}
         self.reachable = True
         self.changed = asyncio.Event()
-        self.end_stream = False
         self.tokens: list[str | None] = []
 
     def notify(self) -> None:
         self.changed.set()
-
-    def expire_lease(self) -> None:
-        self.end_stream = True
-        self.notify()
 
     @override
     async def WatchDecisions(
@@ -38,16 +33,13 @@ class FakeEgressAdmin(rpc.EgressAdminServicer):
         if not self.reachable:
             await context.abort(grpc.StatusCode.UNAVAILABLE, "egress proxy unavailable")
 
-        yield pb.WatchDecisionsResponse(decisions=self.decisions.get(subject, []))
+        yield pb.WatchDecisionsResponse(snapshot=pb.DecisionSnapshot(decisions=self.decisions.get(subject, [])))
         while True:
             await self.changed.wait()
             self.changed.clear()
             if not self.reachable:
                 await context.abort(grpc.StatusCode.UNAVAILABLE, "egress proxy unavailable")
-            if self.end_stream:
-                self.end_stream = False
-                return
-            yield pb.WatchDecisionsResponse(decisions=self.decisions.get(subject, []))
+            yield pb.WatchDecisionsResponse(snapshot=pb.DecisionSnapshot(decisions=self.decisions.get(subject, [])))
 
 
 def decision(

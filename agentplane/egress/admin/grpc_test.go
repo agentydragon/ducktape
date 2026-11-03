@@ -175,7 +175,7 @@ func TestListDecisionsReadsTheSelectedSubject(t *testing.T) {
 	refused := record(&subject)
 	refused.Outcome, refused.Reason = decision.Deny, &refusal
 	store := &fakeDecisions{records: []decision.Record{admitted, refused}}
-	client, _ := serveGRPC(t, ServiceOptions{Decisions: store, WatchLease: time.Hour})
+	client, _ := serveGRPC(t, ServiceOptions{Decisions: store})
 
 	response, err := client.ListDecisions(bearing(readerToken), &egressadminpb.ListDecisionsRequest{Filter: ofSubject("test-namespace", "test-workload")})
 	if err != nil {
@@ -211,7 +211,7 @@ func TestListDecisionsReadsTheSelectedSubject(t *testing.T) {
 
 func TestFilterMustSelectAWholeSubjectOrTheUnauthenticated(t *testing.T) {
 	store := &fakeDecisions{}
-	client, _ := serveGRPC(t, ServiceOptions{Decisions: store, WatchLease: time.Hour})
+	client, _ := serveGRPC(t, ServiceOptions{Decisions: store})
 
 	for name, filter := range map[string]*egressadminpb.DecisionFilter{
 		"absent":       nil,
@@ -233,7 +233,7 @@ func TestFilterMustSelectAWholeSubjectOrTheUnauthenticated(t *testing.T) {
 func TestHistoryFailureIsExplicitAndPrivate(t *testing.T) {
 	store := &fakeDecisions{err: errors.New("test private exception must not escape")}
 	ticks, settled := make(chan struct{}), make(chan struct{}, 4)
-	client, _ := serveGRPC(t, ServiceOptions{Decisions: store, Changes: followOnTicks(ticks, settled), WatchLease: time.Hour})
+	client, _ := serveGRPC(t, ServiceOptions{Decisions: store, Changes: followOnTicks(ticks, settled)})
 
 	_, listed := client.ListDecisions(bearing(readerToken), &egressadminpb.ListDecisionsRequest{Filter: unauthenticated})
 	stream, err := client.WatchDecisions(bearing(readerToken), &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
@@ -251,7 +251,7 @@ func TestHistoryFailureIsExplicitAndPrivate(t *testing.T) {
 func TestWatchSendsTheListOnSubscribingAndOnlyWhenItChanges(t *testing.T) {
 	store := &changingDecisions{}
 	ticks, settled := make(chan struct{}), make(chan struct{}, 4)
-	client, _ := serveGRPC(t, ServiceOptions{Decisions: store, Changes: followOnTicks(ticks, settled), WatchLease: time.Hour})
+	client, _ := serveGRPC(t, ServiceOptions{Decisions: store, Changes: followOnTicks(ticks, settled)})
 	ctx, cancel := context.WithCancel(bearing(readerToken))
 	defer cancel()
 	stream, err := client.WatchDecisions(ctx, &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
@@ -264,7 +264,7 @@ func TestWatchSendsTheListOnSubscribingAndOnlyWhenItChanges(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return response.GetDecisions()
+		return response.GetSnapshot().GetDecisions()
 	}
 
 	if got := receive(); len(got) != 0 {
@@ -281,27 +281,9 @@ func TestWatchSendsTheListOnSubscribingAndOnlyWhenItChanges(t *testing.T) {
 	}
 }
 
-func TestWatchEndsWhenItsLeaseDoes(t *testing.T) {
-	ticks, settled := make(chan struct{}), make(chan struct{}, 4)
-	client, _ := serveGRPC(t, ServiceOptions{Decisions: &changingDecisions{}, Changes: followOnTicks(ticks, settled), WatchLease: 20 * time.Millisecond})
-	stream, err := client.WatchDecisions(bearing(readerToken), &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// The lease may end before the first response is read; either way the stream ends cleanly.
-	var ended error
-	for ended == nil {
-		_, ended = stream.Recv()
-	}
-	if !errors.Is(ended, io.EOF) {
-		t.Fatalf("the lease ended the stream with %v, want a clean end", ended)
-	}
-}
-
 func TestDrainEndsOpenWatches(t *testing.T) {
 	ticks, settled := make(chan struct{}), make(chan struct{}, 4)
-	client, service := serveGRPC(t, ServiceOptions{Decisions: &changingDecisions{}, Changes: followOnTicks(ticks, settled), WatchLease: time.Hour})
+	client, service := serveGRPC(t, ServiceOptions{Decisions: &changingDecisions{}, Changes: followOnTicks(ticks, settled)})
 	stream, err := client.WatchDecisions(bearing(readerToken), &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
 	if err != nil {
 		t.Fatal(err)
@@ -335,25 +317,20 @@ func (w *blockedDecisionsWatch) Send(*egressadminpb.WatchDecisionsResponse) erro
 	return nil
 }
 
-func TestWatchDecisionsEndsBlockedWriteOnLeaseDrainOrCancellation(t *testing.T) {
+func TestWatchDecisionsEndsBlockedWriteOnDrainOrCancellation(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		end  string
 		want codes.Code
 	}{
-		{name: "lease", end: "lease", want: codes.OK},
 		{name: "drain", end: "drain", want: codes.OK},
 		{name: "caller cancellation", end: "cancel", want: codes.Canceled},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			lease := time.Hour
-			if tc.end == "lease" {
-				lease = 30 * time.Millisecond
-			}
 			changes := fakeChanges(func(_ context.Context, changed func() error) error {
 				return changed()
 			})
-			_, service := serveGRPC(t, ServiceOptions{Decisions: &changingDecisions{}, Changes: changes, WatchLease: lease})
+			_, service := serveGRPC(t, ServiceOptions{Decisions: &changingDecisions{}, Changes: changes})
 			base := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+readerToken))
 			ctx, cancel := context.WithCancel(base)
 			defer cancel()
@@ -363,7 +340,7 @@ func TestWatchDecisionsEndsBlockedWriteOnLeaseDrainOrCancellation(t *testing.T) 
 			}
 			done := make(chan error, 1)
 			go func() {
-				done <- service.WatchDecisions(&egressadminpb.WatchDecisionsRequest{Filter: unauthenticated}, stream)
+				done <- service.watchDecisions(&egressadminpb.WatchDecisionsRequest{Filter: unauthenticated}, stream, func(context.Context) error { return nil })
 			}()
 			select {
 			case <-stream.started:
@@ -383,7 +360,7 @@ func TestWatchDecisionsEndsBlockedWriteOnLeaseDrainOrCancellation(t *testing.T) 
 					t.Fatalf("WatchDecisions() error = %v, code %s; want %s", err, got, tc.want)
 				}
 			case <-time.After(5 * time.Second):
-				t.Fatal("lease, drain, or cancellation did not return the handler")
+				t.Fatal("drain or cancellation did not return the handler")
 			}
 
 			close(release)
@@ -393,5 +370,77 @@ func TestWatchDecisionsEndsBlockedWriteOnLeaseDrainOrCancellation(t *testing.T) 
 				t.Fatal("the blocked Send did not finish after release")
 			}
 		})
+	}
+}
+
+// recordingDecisionsWatch receives frames without a transport, for exercising the handler's
+// authorization and feed lifecycle independently of the token review cache.
+type recordingDecisionsWatch struct {
+	grpc.ServerStream
+	ctx    context.Context
+	frames chan *egressadminpb.WatchDecisionsResponse
+}
+
+func (w *recordingDecisionsWatch) Context() context.Context { return w.ctx }
+func (w *recordingDecisionsWatch) Send(frame *egressadminpb.WatchDecisionsResponse) error {
+	w.frames <- frame
+	return nil
+}
+
+func TestWatchRevalidatesWhileFeedIsQuiet(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	changes := fakeChanges(func(ctx context.Context, changed func() error) error {
+		if err := changed(); err != nil {
+			return err
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	service := NewService(ServiceOptions{Decisions: &changingDecisions{}, Changes: changes})
+	stream := &recordingDecisionsWatch{ctx: ctx, frames: make(chan *egressadminpb.WatchDecisionsResponse, 1)}
+	var reviews int
+	done := make(chan error, 1)
+	go func() {
+		done <- service.watchDecisions(&egressadminpb.WatchDecisionsRequest{Filter: unauthenticated}, stream, func(context.Context) error {
+			reviews++
+			if reviews > 1 {
+				return status.Error(codes.PermissionDenied, "revoked")
+			}
+			return nil
+		})
+	}()
+	select {
+	case frame := <-stream.frames:
+		if frame.GetSnapshot() == nil {
+			t.Fatalf("first frame = %v, want snapshot", frame)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no initial snapshot")
+	}
+	select {
+	case err := <-done:
+		if status.Code(err) != codes.PermissionDenied {
+			t.Fatalf("got %v, want permission denied", err)
+		}
+	case <-time.After(7 * time.Second):
+		t.Fatal("quiet watch did not revalidate")
+	}
+}
+
+func TestWatchFailsWhenHistoryFeedEnds(t *testing.T) {
+	changes := fakeChanges(func(_ context.Context, changed func() error) error { return changed() })
+	client, _ := serveGRPC(t, ServiceOptions{Decisions: &changingDecisions{}, Changes: changes})
+	stream, err := client.WatchDecisions(bearing(readerToken), &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := stream.Recv()
+	if err != nil || first.GetSnapshot() == nil {
+		t.Fatalf("first frame = %v, error %v", first, err)
+	}
+	_, err = stream.Recv()
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("feed ended with %v, want unavailable", err)
 	}
 }

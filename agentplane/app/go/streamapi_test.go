@@ -13,15 +13,10 @@ import (
 	"testing"
 	"time"
 
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
-	"github.com/agentydragon/ducktape/agentplane/app/go/liveinventory"
 	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
-	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
-	"github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
@@ -29,14 +24,12 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -62,190 +55,6 @@ func TestWriteSSEPreservesEventIDAndJSONData(t *testing.T) {
 	for _, want := range []string{"event: event\n", "id: 42\n", `data: {"kind":"tool","text":"hello"}`, "\n\n"} {
 		if !strings.Contains(response.Body.String(), want) {
 			t.Fatalf("SSE frame %q does not contain %q", response.Body.String(), want)
-		}
-	}
-}
-
-func TestDecisionViewsPreserveOptionalNullsAndOutcome(t *testing.T) {
-	reason, binding, policy, address := "no_rule", "binding-a", "policy-a", "192.0.2.1"
-	rule := int32(3)
-	got := decisionViews([]*egress_adminpb.Decision{
-		{
-			At:     timestamppb.New(time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)),
-			Method: "GET", Host: "example.test", Port: 443,
-			Outcome: egress_adminpb.Decision_OUTCOME_DENY,
-			Reason:  &reason, Binding: &binding, Policy: &policy, Rule: &rule,
-			Substituted: true, Address: &address,
-		},
-		{Method: "POST", Host: "other.test", Port: 80, Outcome: egress_adminpb.Decision_OUTCOME_ALLOW},
-	})
-	if len(got) != 2 || got[0].Outcome != "deny" || got[1].Outcome != "allow" {
-		t.Fatalf("decision outcomes = %#v", got)
-	}
-	if got[0].Reason == nil || *got[0].Reason != reason || got[0].Rule == nil || *got[0].Rule != rule {
-		t.Fatalf("decision optional fields = %#v", got[0])
-	}
-	if got[1].Reason != nil || got[1].Binding != nil || got[1].Policy != nil || got[1].Rule != nil || got[1].Address != nil {
-		t.Fatalf("absent decision fields were populated: %#v", got[1])
-	}
-}
-
-type streamTestLive struct {
-	mu        sync.Mutex
-	snapshots []liveinventory.Snapshot
-	reads     int
-	changes   chan struct{}
-}
-
-type streamTestEnvironments struct {
-	mu         sync.Mutex
-	descriptor *environmentpb.EnvironmentDescriptor
-	err        error
-	changes    chan struct{}
-}
-
-func (f *streamTestEnvironments) GetEnvironment(_ context.Context, request *environmentpb.GetEnvironmentRequest, _ ...grpc.CallOption) (*environmentpb.EnvironmentDescriptor, error) {
-	target := request.GetTarget()
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.err != nil {
-		return nil, f.err
-	}
-	if f.descriptor == nil || !proto.Equal(f.descriptor.GetTarget(), target) {
-		return nil, status.Error(codes.NotFound, "Environment target UID is no longer current")
-	}
-	return proto.Clone(f.descriptor).(*environmentpb.EnvironmentDescriptor), nil
-}
-
-func (f *streamTestEnvironments) Watch(ctx context.Context, target *identitypb.EnvironmentTarget) <-chan sandboxes.EnvironmentObservation {
-	observations := make(chan sandboxes.EnvironmentObservation)
-	go func() {
-		defer close(observations)
-		for {
-			f.mu.Lock()
-			var value *environmentpb.EnvironmentDescriptor
-			var err error
-			if f.err != nil {
-				err = f.err
-			} else if f.descriptor == nil || !proto.Equal(f.descriptor.GetTarget(), target) {
-				err = status.Error(codes.NotFound, "Environment not found")
-			} else {
-				value = proto.Clone(f.descriptor).(*environmentpb.EnvironmentDescriptor)
-			}
-			f.mu.Unlock()
-			select {
-			case observations <- sandboxes.EnvironmentObservation{Descriptor: value, Err: err}:
-			case <-ctx.Done():
-				return
-			}
-			if err != nil {
-				return
-			}
-			select {
-			case <-f.changes:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-	return observations
-}
-
-func (f *streamTestEnvironments) set(descriptor *environmentpb.EnvironmentDescriptor) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if descriptor == nil {
-		f.descriptor = nil
-		return
-	}
-	f.descriptor = proto.Clone(descriptor).(*environmentpb.EnvironmentDescriptor)
-}
-
-func (f *streamTestLive) Snapshot(context.Context) (liveinventory.Snapshot, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	index := f.reads
-	f.reads++
-	if index >= len(f.snapshots) {
-		index = len(f.snapshots) - 1
-	}
-	return f.snapshots[index], nil
-}
-
-func (f *streamTestLive) Health() watchhealth.Status {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.snapshots[len(f.snapshots)-1].Watch
-}
-
-func (f *streamTestLive) Subscribe() (<-chan struct{}, func()) {
-	return f.changes, func() {}
-}
-
-type decisionTestStream struct {
-	grpc.ServerStreamingClient[egress_adminpb.WatchDecisionsResponse]
-	messages []*egress_adminpb.WatchDecisionsResponse
-	err      error
-	index    int
-}
-
-func (f *decisionTestStream) Recv() (*egress_adminpb.WatchDecisionsResponse, error) {
-	if f.index < len(f.messages) {
-		message := f.messages[f.index]
-		f.index++
-		return message, nil
-	}
-	return nil, f.err
-}
-
-type decisionTestWatcher struct {
-	stream  *decisionTestStream
-	request *egress_adminpb.WatchDecisionsRequest
-}
-
-func (f *decisionTestWatcher) WatchDecisions(_ context.Context, request *egress_adminpb.WatchDecisionsRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[egress_adminpb.WatchDecisionsResponse], error) {
-	f.request = request
-	return f.stream, nil
-}
-
-func TestEgressDecisionStreamSnapshotsUpdatesAndDisconnect(t *testing.T) {
-	live := &streamTestLive{
-		snapshots: []liveinventory.Snapshot{{}},
-		changes:   make(chan struct{}),
-	}
-	watcher := &decisionTestWatcher{stream: &decisionTestStream{
-		messages: []*egress_adminpb.WatchDecisionsResponse{
-			{Decisions: []*egress_adminpb.Decision{{Method: "GET", Outcome: egress_adminpb.Decision_OUTCOME_ALLOW}}},
-			{Decisions: []*egress_adminpb.Decision{{Method: "POST", Outcome: egress_adminpb.Decision_OUTCOME_DENY}}},
-		},
-		err: status.Error(codes.Unavailable, "watch broke"),
-	}}
-	server := NewHTTPServer(nil)
-	environments := &streamTestEnvironments{descriptor: testEnvironment("tools", "demo", "sandbox-uid", "tools", "demo")}
-	routes := &streamingRoutes{server: server, deps: StreamingDependencies{SandboxNamespace: "tools", Live: live, Sandboxes: environments, Egress: watcher}}
-	ctx, cancel := context.WithCancel(context.Background())
-	request := httptest.NewRequest(http.MethodGet, "/live/sandboxes/demo/egress/decisions?sandbox_uid=sandbox-uid", nil).WithContext(ctx)
-	request.SetPathValue("name", "demo")
-	response := newStreamingRecorder()
-	done := make(chan struct{})
-	go func() {
-		routes.liveDecisions(response, request)
-		close(done)
-	}()
-	waitForStreamText(t, response, "Unavailable: watch broke")
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("egress decision stream did not stop after request cancellation")
-	}
-	if watcher.request == nil || watcher.request.GetFilter().GetSubject().GetNamespace() != "tools" || watcher.request.GetFilter().GetSubject().GetName() != "demo" {
-		t.Fatalf("decision watch was not scoped to the Sandbox ServiceAccount: %+v", watcher.request)
-	}
-	body := response.String()
-	for _, want := range []string{`"outcome":"allow"`, `"outcome":"deny"`, `"watching":false`} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("decision stream frame %q missing from %s", want, body)
 		}
 	}
 }
@@ -315,6 +124,7 @@ func TestOperatorStreamsAndProxyRoutesRejectWorkloadTokens(t *testing.T) {
 		"/upstream/actions/v1/items",
 		"/upstream/connections/v1/items",
 		"/upstream/egress/v1/credentials:watch",
+		"/upstream/egress/v1/decisions:watch",
 	} {
 		t.Run(path, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, path, nil)
@@ -1019,79 +829,6 @@ func waitForStreamTextAfter(t *testing.T, response *streamingRecorder, before, a
 		case <-deadline:
 			t.Fatalf("stream did not contain %q after %q; body: %s", after, before, body)
 		}
-	}
-}
-
-const liveFramesSandboxUID = "opaque-kubernetes-uid"
-
-func testEnvironment(namespace, name, uid, accountNamespace, accountName string) *environmentpb.EnvironmentDescriptor {
-	return &environmentpb.EnvironmentDescriptor{
-		Target:           &identitypb.EnvironmentTarget{Namespace: namespace, Name: name, Uid: uid},
-		ExecutionAccount: &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: accountNamespace, Name: accountName}},
-	}
-}
-
-type blockingDecisionWatch struct {
-	requests chan *egress_adminpb.WatchDecisionsRequest
-	stopped  chan struct{}
-}
-
-func (f *blockingDecisionWatch) WatchDecisions(ctx context.Context, request *egress_adminpb.WatchDecisionsRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[egress_adminpb.WatchDecisionsResponse], error) {
-	f.requests <- request
-	return &blockingDecisionStream{ctx: ctx, stopped: f.stopped}, nil
-}
-
-type blockingDecisionStream struct {
-	grpc.ServerStreamingClient[egress_adminpb.WatchDecisionsResponse]
-	ctx     context.Context
-	stopped chan struct{}
-}
-
-func (f *blockingDecisionStream) Recv() (*egress_adminpb.WatchDecisionsResponse, error) {
-	<-f.ctx.Done()
-	close(f.stopped)
-	return nil, status.FromContextError(f.ctx.Err()).Err()
-}
-
-func TestEgressDecisionWatchStopsWhenEnvironmentIsReplaced(t *testing.T) {
-	live := &streamTestLive{snapshots: []liveinventory.Snapshot{{}}, changes: make(chan struct{})}
-	environments := &streamTestEnvironments{descriptor: testEnvironment("tools", "demo", liveFramesSandboxUID, "tools", "account"), changes: make(chan struct{}, 1)}
-	watcher := &blockingDecisionWatch{requests: make(chan *egress_adminpb.WatchDecisionsRequest, 2), stopped: make(chan struct{})}
-	routes := newStreamingRoutes(NewHTTPServer(nil), StreamingDependencies{SandboxNamespace: "tools", Live: live, Sandboxes: environments, Egress: watcher})
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	request := httptest.NewRequest(http.MethodGet, "/live/sandboxes/demo/egress/decisions?sandbox_uid="+liveFramesSandboxUID, nil).WithContext(ctx)
-	request.SetPathValue("name", "demo")
-	response := newStreamingRecorder()
-	done := make(chan struct{})
-	go func() {
-		routes.liveDecisions(response, request)
-		close(done)
-	}()
-	select {
-	case opened := <-watcher.requests:
-		if opened.GetFilter().GetSubject().GetNamespace() != "tools" || opened.GetFilter().GetSubject().GetName() != "account" {
-			t.Fatalf("decision subject = %v", opened.GetFilter().GetSubject())
-		}
-	case <-time.After(time.Second):
-		t.Fatal("decision watch did not open")
-	}
-	environments.set(testEnvironment("tools", "demo", "replacement-uid", "tools", "replacement-account"))
-	environments.changes <- struct{}{}
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("decision route did not end after Environment replacement")
-	}
-	select {
-	case <-watcher.stopped:
-	case <-time.After(time.Second):
-		t.Fatal("Environment replacement did not cancel Egress watch")
-	}
-	select {
-	case opened := <-watcher.requests:
-		t.Fatalf("decision watch reopened after replacement: %v", opened)
-	default:
 	}
 }
 

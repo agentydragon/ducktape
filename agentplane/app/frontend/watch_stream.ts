@@ -16,6 +16,8 @@ export interface WatchHandlers {
   onConnection: (connection: StreamConnection) => void;
   /** Bounds a watch that opens but never sends its initial snapshot. */
   initialFrameTimeoutMs?: number;
+  /** Bounds a quiet stream whose contract promises periodic frames. */
+  idleTimeoutMs?: number;
 }
 
 interface Message {
@@ -43,7 +45,7 @@ function results(): TransformStream<string, unknown> {
 /** Follows `url` until the returned function is called. */
 export function followWatch(
   url: string,
-  { onOpen, onFrame, onConnection, initialFrameTimeoutMs }: WatchHandlers
+  { onOpen, onFrame, onConnection, initialFrameTimeoutMs, idleTimeoutMs }: WatchHandlers
 ): () => void {
   return followResponse(url, {
     accept: "application/x-ndjson",
@@ -52,5 +54,6 @@ export function followWatch(
     onFrame,
     onConnection,
     initialFrameTimeoutMs,
+    idleTimeoutMs,
   });
 }

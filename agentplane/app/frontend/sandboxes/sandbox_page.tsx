@@ -144,7 +144,10 @@ export function SandboxPage({
   const threadLive = useThreadsLive(threadRequest, null);
   // Never combine policy or thread data from an old incarnation with its same-name replacement.
   const observation = useEnvironmentWatch(target);
-  const sandbox = observation.stream.standing === "current" ? observation.environment : null;
+  const sandbox =
+    observation.stream.standing === "current" && observation.stream.connection.phase === "live"
+      ? observation.environment
+      : null;
   const policy = usePolicyResources(sandbox?.executionAccount?.account, target?.uid);
   const deleted = sandboxInventoryFresh(inventory) && !candidate;
   const vmConsoleAvailable = hasVmConsole(sandbox);
@@ -488,7 +491,13 @@ export function SandboxPage({
           {vmConsoleAvailable && <Tabs.Tab value="console">Console</Tabs.Tab>}
         </Tabs.List>
         <Tabs.Panel value="egress_log" pt="sm">
-          {target && <EgressLog key={`${target.namespace}/${target.name}/${target.uid}`} target={target} />}
+          {target && sandbox?.executionAccount?.account && (
+            <EgressLog
+              key={`${target.namespace}/${target.name}/${target.uid}/${sandbox.executionAccount.account.namespace}/${sandbox.executionAccount.account.name}/${sandbox.executionAccount.uid}`}
+              account={sandbox.executionAccount.account}
+              sandbox={target.name}
+            />
+          )}
         </Tabs.Panel>
         <Tabs.Panel value="policy" pt="sm">
           <Stack gap="md">

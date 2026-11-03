@@ -12,14 +12,15 @@ import httpx
 import pytest
 import pytest_bazel
 import yaml
-from google.protobuf.json_format import ParseDict
+from google.protobuf.json_format import MessageToDict, ParseDict
 from more_itertools import one
 
 from agentplane.app.testing.client import Client
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.mcp_edge import connection_service_pb2
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL
-from agentplane.proto import session_pb2
+from agentplane.proto import identity_pb2, session_pb2
+from agentplane.system_tests import egress_decisions
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.k3s.stack import Stack
 from agentplane.system_tests.mcp_connection import ExternalMCPSession, connected_session
@@ -267,8 +268,12 @@ async def _capture_egress_decisions(cluster: Cluster, token: str, name: str, uid
         Client(base_url=f"http://{endpoint}", token=token) as diagnostics_client,
     ):
         async with asyncio.timeout(20):
-            decisions = await diagnostics_client.decisions(name, uid)
-    return [decision.model_dump(mode="json") for decision in decisions]
+            environment = await diagnostics_client.get_environment(
+                identity_pb2.EnvironmentTarget(namespace=cluster.namespace, name=name, uid=uid)
+            )
+            async with egress_decisions.watch_client(cluster) as (stub, caller):
+                decisions = await egress_decisions.snapshot(stub, caller, environment.execution_account.account)
+    return [MessageToDict(decision, preserving_proto_field_name=True) for decision in decisions]
 
 
 @pytest.mark.scripted_model

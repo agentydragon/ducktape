@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
@@ -22,7 +21,7 @@ func TestWatchCredentialsRedactedUpdatesAndHealth(t *testing.T) {
 		UID: "uid-1", Name: "github", Description: "GitHub API access", Source: resources.SecretKey{Name: "private-secret", Key: "private-key"},
 		Targets: []resources.Target{resources.SchemeToken{Header: "Authorization", Scheme: "Bearer"}},
 	})
-	client, _ := serveGRPC(t, ServiceOptions{Credentials: index, Index: index.Health, WatchLease: time.Hour})
+	client, _ := serveGRPC(t, ServiceOptions{Credentials: index, Index: index.Health})
 	stream, err := client.WatchCredentials(bearing(readerToken), &egressadminpb.WatchCredentialsRequest{})
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +71,7 @@ func TestWatchCredentialsChunksInitialSnapshot(t *testing.T) {
 			Source: resources.AuthenticatedWorkloadToken{}, Targets: []resources.Target{resources.WholeValue{Header: "x-api-key"}},
 		})
 	}
-	client, _ := serveGRPC(t, ServiceOptions{Credentials: index, Index: index.Health, WatchLease: time.Hour})
+	client, _ := serveGRPC(t, ServiceOptions{Credentials: index, Index: index.Health})
 	stream, err := client.WatchCredentials(bearing(readerToken), &egressadminpb.WatchCredentialsRequest{})
 	if err != nil {
 		t.Fatal(err)

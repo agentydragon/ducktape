@@ -41,11 +41,10 @@ intended consequences.
 create, because they are one principal. The operation is closed: no chain gains authority.
 
 **Egress attribution collapses per principal in the app's view, not in the record.**
-The app's Go stream route (<../../app/go/streamapi.go>) asks the proxy for decisions _by ServiceAccount_
-and projects a `Decision` with no Pod field, so `GET /live/sandboxes/{name}/egress/decisions` returns
-one combined stream for every sandbox of one account. The proxy's own record does carry
-`source_pod_uid`, persisted with the rest (<../../egress/history/store.go>), so per-box attribution is
-a field the app's projection does not read rather than evidence nobody has. Accounts still differ
+The browser watches the proxy for decisions _by ServiceAccount_ through the app's generated Egress
+facade. Its decision messages contain no Pod field, so the view combines decisions for every sandbox
+of one account. The proxy's own record carries `source_pod_uid`, persisted with the rest
+(<../../egress/history/store.go>), but the API does not expose it. Accounts still differ
 from each other. This knowingly deviates from the [egress specification](../../egress/SPEC.md)'s
 "bind only an account dedicated to one workload".
 

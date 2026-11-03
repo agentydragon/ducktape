@@ -1,9 +1,9 @@
 import { expect, it } from "vitest";
+import { Decision_Outcome, type Decision } from "../../../egress/egress_admin_pb";
+import { decisionFixture } from "./decision_fixture";
+import { decisionAt, decisionOutcome, groupDecisions } from "./decision_groups";
 
-import { groupDecisions } from "./decision_groups";
-import { decisionFixture, type DecisionFixture } from "./decision_fixture";
-
-function decision(at: string, overrides: Partial<DecisionFixture> = {}) {
+function decision(at: string, overrides: Omit<Partial<Decision>, "at"> = {}): Decision {
   return decisionFixture({
     at,
     host: "api.example.test",
@@ -25,17 +25,17 @@ it("groups interleaved requests that were decided the same way, newest member fi
     ["api.example.test", 2],
     ["other.example.test", 1],
   ]);
-  expect(groups[0].members.map((member) => member.at)).toEqual(["2026-01-01T00:00:03Z", "2026-01-01T00:00:01Z"]);
+  expect(groups[0].members.map(decisionAt)).toEqual(["2026-01-01T00:00:03Z", "2026-01-01T00:00:01Z"]);
   expect([groups[0].firstAt, groups[0].lastAt]).toEqual(["2026-01-01T00:00:01Z", "2026-01-01T00:00:03Z"]);
 });
 
 it("keeps a refusal apart from an admission of the same destination, and lists it first", () => {
   const groups = groupDecisions([
-    decision("2026-01-01T00:00:01Z", { outcome: "deny", policy: null, reason: "no-rule" }),
+    decision("2026-01-01T00:00:01Z", { outcome: Decision_Outcome.DENY, policy: undefined, reason: "no-rule" }),
     decision("2026-01-01T00:00:02Z"),
   ]);
 
-  expect(groups.map((group) => [group.outcome, group.why])).toEqual([
+  expect(groups.map((group) => [decisionOutcome(group.members[0]), group.why])).toEqual([
     ["deny", "no-rule"],
     ["allow", "test-policy"],
   ]);
@@ -60,4 +60,17 @@ it("marks a group in which any request had a credential substituted", () => {
   ]);
 
   expect(group.substituted).toBe(true);
+});
+
+it("keeps an empty log empty and keeps an unspecified outcome distinct", () => {
+  expect(groupDecisions([])).toEqual([]);
+  const [group] = groupDecisions([
+    decision("2026-01-01T00:00:01Z", {
+      outcome: Decision_Outcome.UNSPECIFIED,
+      policy: undefined,
+      reason: "unknown-outcome",
+    }),
+  ]);
+  expect(decisionOutcome(group.members[0])).toBe("unknown");
+  expect(group.why).toBe("unknown-outcome");
 });

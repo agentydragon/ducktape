@@ -33,12 +33,12 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.egress.decisions import Decision, Outcome
+from agentplane.egress.egress_admin_pb2 import Decision
 from agentplane.environments.v1 import environment_service_pb2
-from agentplane.proto import session_pb2
+from agentplane.proto import identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
-from agentplane.system_tests import probe_credential, runtime_grant
+from agentplane.system_tests import egress_decisions, probe_credential, runtime_grant
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.sandbox import Sandboxes
@@ -109,21 +109,27 @@ class Probe(BaseModel):
 
 
 async def _decision_for(
-    client: Client, sandbox: str, uid: str, host: str, *, after: datetime | None = None
+    cluster: Cluster, client: Client, sandbox: str, uid: str, host: str, *, after: datetime | None = None
 ) -> Decision:
     """The newest decision about `host`, once the proxy has one later than `after`."""
     with tracer.start_as_current_span(
         "system_test.egress.proxy_decision", record_exception=False, set_status_on_exception=False
     ):
-        async for attempt in AsyncRetrying(stop=stop_after_delay(DECISION_SECONDS), wait=wait_fixed(1), reraise=True):
-            with attempt:
-                decisions = await client.decisions(sandbox, uid)
-                for decision in reversed(decisions):
-                    if decision.host == host and (after is None or decision.at > after):
-                        return decision
-                raise AssertionError(
-                    f"no decision about {host} after {after}; the history contains {[d.host for d in decisions]}"
-                )
+        target = identity_pb2.EnvironmentTarget(namespace=cluster.namespace, name=sandbox, uid=uid)
+        environment = await client.get_environment(target)
+        subject = environment.execution_account.account
+        async with egress_decisions.watch_client(cluster) as (stub, caller):
+            async for attempt in AsyncRetrying(
+                stop=stop_after_delay(DECISION_SECONDS), wait=wait_fixed(1), reraise=True
+            ):
+                with attempt:
+                    decisions = await egress_decisions.snapshot(stub, caller, subject)
+                    for decision in reversed(decisions):
+                        if decision.host == host and (after is None or decision.at.ToDatetime(tzinfo=UTC) > after):
+                            return decision
+                    raise AssertionError(
+                        f"no decision about {host} after {after}; the history contains {[d.host for d in decisions]}"
+                    )
     raise AssertionError("unreachable: reraise=True either returns a decision or raises")
 
 
@@ -157,13 +163,13 @@ async def a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     )
     assert probe.unlisted_refused, f"{UNLISTED_HOST} was reachable:\n{turn.transcript}"
 
-    admitted = await _decision_for(client, view.target.name, view.target.uid, probe_credential.HOST)
-    assert admitted.outcome is Outcome.ALLOW, f"{admitted!r}"
+    admitted = await _decision_for(cluster, client, view.target.name, view.target.uid, probe_credential.HOST)
+    assert admitted.outcome == Decision.OUTCOME_ALLOW, f"{admitted!r}"
     assert admitted.policy == probe_credential.POLICY_SET, f"{admitted!r}"
     assert admitted.substituted, f"the API call was admitted with no credential substituted: {admitted!r}"
 
-    refused = await _decision_for(client, view.target.name, view.target.uid, UNLISTED_HOST)
-    assert refused.outcome is Outcome.DENY, f"{refused!r}"
+    refused = await _decision_for(cluster, client, view.target.name, view.target.uid, UNLISTED_HOST)
+    assert refused.outcome == Decision.OUTCOME_DENY, f"{refused!r}"
     assert refused.reason == "no-rule", f"{refused!r}"
 
 
@@ -201,9 +207,9 @@ async def the_model_call_itself_goes_through_the_proxy(
     turn = answered.result()
 
     served = await _decision_for(
-        client, view.target.name, view.target.uid, f"llm-ingress.{cluster.namespace}.svc.cluster.local"
+        cluster, client, view.target.name, view.target.uid, f"llm-ingress.{cluster.namespace}.svc.cluster.local"
     )
-    assert served.outcome is Outcome.ALLOW, f"{served!r}\n{turn.transcript}"
+    assert served.outcome == Decision.OUTCOME_ALLOW, f"{served!r}\n{turn.transcript}"
     assert served.policy == BASIC_POLICY, f"the model call was admitted by another policy: {served!r}"
     assert served.substituted, (
         f"the model call was admitted with no credential substituted, so the sandbox did not present "
@@ -269,8 +275,8 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
     command = f"curl -sS -o /dev/null -w '%{{http_code}}\\n' http://{host}{path}"
 
     await agent.run_shell(model, command)
-    refused = await _decision_for(client, view.target.name, view.target.uid, host)
-    assert refused.outcome is Outcome.DENY, f"an unbound sandbox was admitted: {refused!r}"
+    refused = await _decision_for(cluster, client, view.target.name, view.target.uid, host)
+    assert refused.outcome == Decision.OUTCOME_DENY, f"an unbound sandbox was admitted: {refused!r}"
 
     # The app's grant route needs an operator login, which this agent-token suite does not hold, so
     # the binding is written as an operator would with kubectl, owned by the Sandbox.
@@ -283,8 +289,8 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
             with attempt:
                 after = datetime.now(UTC)
                 turn = await agent.run_shell(model, command)
-                admitted = await _decision_for(client, view.target.name, view.target.uid, host, after=after)
-                assert admitted.outcome is Outcome.ALLOW, f"{admitted!r}\n{turn.transcript}"
+                admitted = await _decision_for(cluster, client, view.target.name, view.target.uid, host, after=after)
+                assert admitted.outcome == Decision.OUTCOME_ALLOW, f"{admitted!r}\n{turn.transcript}"
                 assert admitted.policy == runtime_grant.POLICY_SET, f"{admitted!r}"
 
 

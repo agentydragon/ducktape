@@ -12,16 +12,8 @@ import { useStreamStatus } from "../stream_status";
 
 import { type Live } from "../live";
 
-import type { Decision } from "./client";
-
-export type DecisionsSnapshot = { watching: boolean; decisions: Decision[] | { detail: string } };
-
 export function liveSandboxesUrl(): string {
   return "/upstream/environments/v1/environments:watch";
-}
-
-export function liveEgressDecisionsUrl(target: EnvironmentTarget): string {
-  return `/live/sandboxes/${encodeURIComponent(target.name)}/egress/decisions?sandbox_uid=${encodeURIComponent(target.uid)}`;
 }
 
 const SandboxesLiveContext = createContext<Live<EnvironmentDescriptor[]> | null>(null);

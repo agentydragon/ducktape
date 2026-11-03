@@ -1,21 +1,18 @@
-import type { Decision } from "./client";
+/** Test-only builder for the generated egress decision carried by the browser watch. */
+import { create, fromJson } from "@bufbuild/protobuf";
+import { TimestampSchema } from "@bufbuild/protobuf/wkt";
 
-/** Shared test data for the current browser decision stream. */
-export type DecisionFixture = Omit<Partial<Decision>, "at" | "host"> & Pick<Decision, "at" | "host">;
+import { Decision_Outcome, DecisionSchema, type Decision } from "../../../egress/egress_admin_pb";
 
-export function decisionFixture({ at, host, ...fields }: DecisionFixture): Decision {
-  return {
-    at,
-    host,
+export type DecisionFixture = Omit<Partial<Decision>, "at" | "host"> & { at: string; host: string };
+
+export function decisionFixture({ at, ...fields }: DecisionFixture): Decision {
+  return create(DecisionSchema, {
     method: "GET",
     port: 443,
-    outcome: "allow",
-    address: null,
-    reason: null,
-    binding: null,
-    policy: null,
-    rule: null,
+    outcome: Decision_Outcome.ALLOW,
     substituted: false,
     ...fields,
-  };
+    at: fromJson(TimestampSchema, at),
+  });
 }

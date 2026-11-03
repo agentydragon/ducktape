@@ -1,10 +1,22 @@
-import type { Decision } from "./client";
+import { toJson } from "@bufbuild/protobuf";
+import { TimestampSchema } from "@bufbuild/protobuf/wkt";
+import { Decision_Outcome, type Decision } from "../../../egress/egress_admin_pb";
+
+/** An unrecognized outcome is neither an admission nor a refusal. */
+export function decisionOutcome(decision: Decision): "allow" | "deny" | "unknown" {
+  if (decision.outcome === Decision_Outcome.ALLOW) return "allow";
+  if (decision.outcome === Decision_Outcome.DENY) return "deny";
+  return "unknown";
+}
+
+export function decisionAt(decision: Decision): string {
+  return decision.at ? (toJson(TimestampSchema, decision.at) as string) : "0001-01-01T00:00:00Z";
+}
 
 /** The requests of one outcome to one destination by one method, decided the same way. */
 export interface DecisionGroup {
   /** Names the group in a URL; stable across refreshes while the group exists. */
   key: string;
-  outcome: Decision["outcome"];
   method: string;
   host: string;
   port: number;
@@ -19,7 +31,7 @@ export interface DecisionGroup {
 }
 
 function why(decision: Decision): string | null {
-  return (decision.outcome === "allow" ? decision.policy : decision.reason) ?? null;
+  return (decisionOutcome(decision) === "allow" ? decision.policy : decision.reason) ?? null;
 }
 
 /** Groups a log served oldest first. Refusals come first, so one cannot scroll away under allowed
@@ -27,28 +39,34 @@ function why(decision: Decision): string | null {
 export function groupDecisions(decisions: Decision[]): DecisionGroup[] {
   const groups = new Map<string, DecisionGroup>();
   for (const decision of decisions) {
-    const key = [decision.outcome, decision.method, `${decision.host}:${decision.port}`, why(decision) ?? ""].join("|");
+    const key = [
+      decisionOutcome(decision),
+      decision.method,
+      `${decision.host}:${decision.port}`,
+      why(decision) ?? "",
+    ].join("|");
     const group = groups.get(key);
     if (group === undefined) {
       groups.set(key, {
         key,
-        outcome: decision.outcome,
         method: decision.method,
         host: decision.host,
         port: decision.port,
         why: why(decision),
-        firstAt: decision.at,
-        lastAt: decision.at,
+        firstAt: decisionAt(decision),
+        lastAt: decisionAt(decision),
         substituted: decision.substituted,
         members: [decision],
       });
     } else {
-      group.lastAt = decision.at;
+      group.lastAt = decisionAt(decision);
       group.substituted ||= decision.substituted;
       group.members.unshift(decision);
     }
   }
   return [...groups.values()].sort(
-    (a, b) => Number(b.outcome === "deny") - Number(a.outcome === "deny") || b.lastAt.localeCompare(a.lastAt)
+    (a, b) =>
+      Number(decisionOutcome(a.members[0]) === "allow") - Number(decisionOutcome(b.members[0]) === "allow") ||
+      b.lastAt.localeCompare(a.lastAt)
   );
 }

@@ -194,13 +194,14 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 - Recent history is shared PostgreSQL state, not a per-replica ring. Replacing a proxy does not
   remove committed history. `ListDecisions` selects one subject (`at` is decision time) or the
   requests that never authenticated. A lookup spans every workload that has run as that account.
-- `WatchDecisions` sends that list on subscribing and again whenever it differs; a commit by
-  another subject sends nothing. It fails `UNAVAILABLE` when the proxy loses its database connection.
+- `WatchDecisions` sends a complete snapshot on subscribing and whenever the selected window changes.
+  A quiet, healthy history feed sends heartbeats; a lost feed or failed history read ends the stream
+  with `UNAVAILABLE`. A reconnect starts with a fresh snapshot, not a replay cursor.
 - The `EgressAdmin` gRPC service, when enabled, serves `ListDecisions`, `WatchDecisions`,
   `WatchCredentials`, and `GetHealth`. Every call requires an allowed ServiceAccount bearer. Decision
-  watches have a bounded lease. Credential watches revalidate authorization without a forced lease,
-  send an initial snapshot followed by upserts and UID-fenced removals, and end when informer health is unavailable or the proxy
-  drains. Their protobuf contains only public descriptions, placeholders and presentation targets;
+  and credential watches revalidate authorization without a forced lease and end on revocation or
+  proxy drain. Credential watches send an initial snapshot followed by upserts and UID-fenced removals,
+  and end when informer health is unavailable. Their protobuf contains only public descriptions, placeholders and presentation targets;
   it never exposes sources or Secret values. The standard gRPC health service beside it reports
   readiness (the empty service) and liveness (`livez`) to any caller.
 - Responses contain at most 200 recent records by default, ordered by decision time then event
