@@ -245,6 +245,9 @@ or stale assertions without silently expanding the promised scope.
   resolve readable graph names. A blank `bindings list` `minified` field for a
   structural selector does not prove the input identity is unavailable. Recover
   it through the matching native graph before proposing new selector support.
+  Check `query.kind`: a module basename takes precedence over a binding name.
+  For a collision, describe the current full owner path and select the intended
+  exported-name row instead of taking the module report's first binding.
 - Reuse matching cached analysis for spec changes the staged pipeline excludes
   from its analysis inputs. Refresh expensive analysis when those inputs or
   the engine change. Request full graphs and evidence streams when the
