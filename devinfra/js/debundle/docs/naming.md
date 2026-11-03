@@ -66,13 +66,17 @@ type. Prefer a short, specific name consistent with established siblings:
 | Component                 | `PascalCase`                       | `CommandButton`, `FilterPill`    |
 
 Avoid guesses, generic names such as `processData` or `helper`, names that only
-encode a type, and long names that restate the full call signature. A minified
-name is preferable to a confident-sounding but unsupported name.
+encode a type, and long names that restate the full call signature. Keep the
+existing identifier when source evidence does not support a more descriptive
+name; do not replace it with a confident-sounding guess.
 
 Use `bindings list --modules <modules-dir> --in <module-path>` to find the
-current editable token or explicit readable name. The [identifier reference](cli.md#name-and-identifier-resolution)
-distinguishes these from graph binding names and source-template locals.
-Then rename that spec entry:
+typed spec identity and optional explicit readable name. A direct selector
+identifier and source-match capture local are separate identity kinds; a
+capture local names the selector template and need not match the input binding.
+Structural members are addressed by their explicit readable name. The
+[identifier reference](cli.md#name-and-identifier-resolution) distinguishes
+these spec identities from graph input names. Then rename that spec entry:
 
 ```sh
 debundle bindings rename --modules <modules-dir> <current-name> <new-name>

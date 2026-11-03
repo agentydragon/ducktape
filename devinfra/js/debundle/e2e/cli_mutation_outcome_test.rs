@@ -79,7 +79,9 @@ fn names_only_rename_reports_its_file_and_binding() {
     );
     let report = parse_stdout_json(&out);
     assert_core(&report, "rename", "applied", "names_only");
-    assert_eq!(report["binding"], "alpha");
+    assert_eq!(report["identity"]["kind"], "direct_binding_identifier");
+    assert_eq!(report["identity"]["name"], "alpha");
+    assert!(report.get("binding").is_none());
     assert_eq!(report["new_readable"], "ReadableAlpha");
     assert_eq!(report["files_written"].as_array().unwrap().len(), 1);
     assert_eq!(report["files_deleted"].as_array().unwrap().len(), 0);

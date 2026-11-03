@@ -308,7 +308,7 @@ each verb prints **one outcome object** sharing a common schema core:
 | `files_deleted` | Files deleted (or, under `--dry-run`, that would be deleted)                                                                       |
 
 Verb-specific fields flatten in alongside the core: `moves_applied`
-(assign), `unassigned` (unassign), `binding` / `old_readable` /
+(assign), `unassigned` (unassign), `identity` / `old_readable` /
 `new_readable` (rename), `target` (single merge) / `targets` (merge batch). Gate rejections replace the
 success object with a structured rejection object — see "Rejection
 diagnostics" below.
@@ -346,18 +346,20 @@ file replacements are atomic; the batch is not a crash-atomic transaction.
 
 Binding names are resolved in the command's input view:
 
-| Commands                                                                     | Accepted binding names                                                                                            |
-| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Graph queries: `describe`, `inspect-source --id`, `cluster`, `scc --binding` | The saved graph's input binding or exported/readable name.                                                        |
-| Spec operations: `bindings rename`, `assign`, `unassign`, `comment`          | The current member's `selector.binding.name`, or source-match binding's `local`, or its explicit readable `name`. |
-| Raw source lookup: `inspect-source --around-binding`                         | The original input declaration's name, without spec-name resolution.                                              |
+| Commands                                                                     | Accepted binding names                                                                                                                    |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Graph queries: `describe`, `inspect-source --id`, `cluster`, `scc --binding` | The saved graph's input binding or exported/readable name.                                                                                |
+| Spec edits: `bindings rename`, `assign`, `comment`                           | A direct selector identifier, source-match capture local, or explicit readable name; structural members require a readable name.          |
+| `bindings unassign`                                                          | A direct selector identifier or explicit readable name; structural members require a readable name. Source-match entries are unsupported. |
+| Raw source lookup: `inspect-source --around-binding`                         | The original input declaration's name, without spec-name resolution.                                                                      |
 
 These names can differ. A source-match template may call a declaration
 `templateToken`, match the input binding `raw`, and export `readableValue`.
 Graph queries accept `raw` or `readableValue`; spec operations accept
-`templateToken` or `readableValue`. The template-local token is not inherently
-an input-bundle name. After an edit, a saved graph still reflects its pre-edit
-names until regeneration.
+`templateToken` or `readableValue`. The template-local token identifies a
+capture in the selector template; its spelling alone does not say whether it is
+stable or volatile, and it is not inherently an input-bundle name. After an
+edit, a saved graph still reflects its pre-edit names until regeneration.
 
 An imported name belongs to the provider's export namespace. Trace the
 importer's local binding through its import slot, any re-exports, and the
@@ -368,17 +370,24 @@ refer to `factory`, even if the provider also declares an unrelated local
 local. Preserve the complete identity chain when auditing a callee's effects.
 
 Use `bindings list --modules <modules-dir>` to discover current editable
-identifiers; `--in <module-path>` limits the owner. Its `minified` field is the
-selector binding token for a member and the template-local token for a
-source-match binding. It is empty for other structural member selectors and
-need not be the input binding's name. To recover the input identity, use
-`describe <readable-name> --graph <matching-graph> --modules <modules-dir>` and
-read `source_unit_ids` and `bindings[].binding`, or inspect it directly with
-`inspect-source --id <readable-name>` and the same graph/spec context. A blank
-`minified` field or a failed raw-name lookup does not establish an ambiguous or
-missing declaration. `bindings list` needs no saved graph. An ambiguous spec
-identifier is rejected with matching file/claim locations; choose an
-unambiguous identifier from that inventory.
+identities; `--in <module-path>` limits the owner. JSON rows carry a typed
+`identity` and, when explicitly configured, a separate `readable_name`. Text
+rows label each identity kind; `unrenamed` means no explicit readable name:
+
+- `direct_binding_identifier` has `name` from `selector.binding.name`.
+- `source_match_capture` has `local` from `source_matches[].bindings[].local`.
+- `structural_member` has `selector` from the typed member selector, such as
+  `members.cross_ref`; it has no direct binding identifier. An invalid
+  selector is reported as `members.selector`.
+
+Neither a direct identifier's spelling nor a capture's local spelling alone
+implies volatility. A source-match capture can use `Widget` in its template
+while matching the input binding `raw`; use `describe <readable-name> --graph
+<matching-graph> --modules <modules-dir>` and read `source_unit_ids` and
+`bindings[].binding`, or inspect it with `inspect-source --id <readable-name>`
+and the same graph/spec context, to recover the input identity. `bindings list`
+needs no saved graph. An ambiguous spec identity is rejected with matching
+file/claim locations; choose an unambiguous identity from that inventory.
 
 Graph queries resolve module paths and unambiguous module basenames before
 binding names. Check `query.kind` before interpreting a name lookup as a
@@ -875,9 +884,9 @@ annotation ownership and occupied or orphan target metadata reject the batch,
 even with `--no-verify`. Other annotation entries remain untouched.
 
 The aggregate outcome has `renames_applied` (changed bindings), canonical
-`renames` rows (`sym`, `module`, `binding`, `old_readable`, `new_readable`),
-and the shared mutation fields. `binding` is the member selector name or
-source-template local; `old_readable` includes the effective fallback name.
+`renames` rows (`sym`, `module`, `identity`, `old_readable`, `new_readable`),
+and the shared mutation fields. `identity` uses the same typed shape as
+`bindings list`; `old_readable` includes the effective fallback name.
 A verified nonempty batch reports `gate: names_only`; an empty array reports
 `action: noop`, `gate: not_required`. A requested current name reports
 `unchanged` without rewriting shorthand/default encoding, after collision checks.

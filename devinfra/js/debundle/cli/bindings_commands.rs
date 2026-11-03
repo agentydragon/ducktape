@@ -83,9 +83,9 @@ enum BindingsNsCommand {
     Comment(BindingCommentArgs),
     /// List every binding in the spec with home module + filters.
     ///
-    /// Per-row: spec identifier (`minified`: selector binding or source-match
-    /// template local; empty for other structural member selectors), home
-    /// module, readable name if any, and `orphan` (sole member of its module).
+    /// Per-row: typed identity (direct binding identifier, source-match capture,
+    /// or structural member), explicit readable name if any, home module, and
+    /// `orphan` (sole member of its module).
     /// Use `describe <readable-name>` with a matching graph to find input names.
     List(BindingsListNsArgs),
     /// Rename one or more bindings without moving them.
@@ -135,7 +135,7 @@ struct BindingsListNsArgs {
     /// Restrict to bindings whose home module equals this path.
     #[arg(long = "in")]
     pub in_module: Option<String>,
-    /// Restrict to bindings still using their minified name.
+    /// Restrict to bindings without an explicit readable name.
     #[arg(long)]
     pub unrenamed: bool,
     /// Restrict to bindings that are the only member of their module.
@@ -151,8 +151,8 @@ struct BindingsRenameArgs {
     /// Modules tree root.
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
     pub modules_root: PathBuf,
-    /// Current selector-binding, source-match template local, or readable name
-    /// (must not contain `:`).
+    /// Direct selector identifier, source-match capture local, or explicit
+    /// readable name (structural selectors require a readable name; no `:`).
     #[arg(
         required_unless_present = "batch",
         conflicts_with = "batch",
@@ -185,9 +185,9 @@ struct BindingsRenameArgs {
 struct BindingsUnassignArgs {
     #[command(flatten)]
     pub edit: GraphEditArgs,
-    /// Binding symbols (minified or readable) to remove from their
-    /// current modules. `source_matches[].bindings[]` entries are not
-    /// supported yet.
+    /// Direct selector identifiers or explicit readable names to remove from
+    /// their current modules. Structural selectors require a readable name.
+    /// `source_matches[].bindings[]` entries are not supported yet.
     #[arg(required = true)]
     pub syms: Vec<String>,
 }
@@ -199,10 +199,11 @@ struct BindingsAssignArgs {
     /// Positional `<sym>:<module>[:<readable>]` triples. May be empty
     /// when `--batch` is supplied.
     ///
-    /// `<sym>` accepts the minified or current readable name; the
-    /// optional third field sets the new readable `name:` (omitting it
-    /// preserves the current one). Neither `<sym>` nor `<readable>` may
-    /// contain `:` — use `--batch` JSON for such edge cases.
+    /// `<sym>` accepts a direct selector identifier, source-match capture
+    /// local, or explicit readable name; structural selectors require a
+    /// readable name. The optional third field sets the new readable `name:`
+    /// (omitting it preserves the current one). Neither `<sym>` nor
+    /// `<readable>` may contain `:` — use `--batch` JSON for such edge cases.
     pub triples: Vec<String>,
     /// Read additional moves from a JSON file (or `-` for stdin).
     /// Accepts explicit `{sym, module, readable?}` move arrays, plus
@@ -238,13 +239,13 @@ fn render_bindings_list_text(report: &crate::binding::BindingsListReport, out: &
         if entry.orphan {
             flags.push("orphan");
         }
-        if !entry.name.is_renamed() {
+        if !entry.label.is_renamed() {
             flags.push("unrenamed");
         }
-        let readable = entry.name.readable().unwrap_or("-");
+        let readable = entry.label.readable_name.as_deref().unwrap_or("-");
         out.push_str(&format!(
             "  {}  {}  [{}]  {}\n",
-            entry.name.minified(),
+            entry.label.identity.display(),
             entry.module,
             readable,
             flags.join(",")
@@ -292,11 +293,14 @@ fn run_bindings_rename_cmd(args: BindingsRenameArgs) -> Result<()> {
                 .first()
                 .map(|f| format!(" ({f})"))
                 .unwrap_or_default();
+            let previous_name = out
+                .old_readable
+                .as_deref()
+                .map(str::to_string)
+                .unwrap_or_else(|| out.identity.display());
             println!(
                 "{}: {} -> {}{file}",
-                out.outcome.action,
-                out.old_readable.as_deref().unwrap_or(&out.binding),
-                out.new_readable,
+                out.outcome.action, previous_name, out.new_readable,
             );
         }
         format => print_outcome_json(&out, format)?,
