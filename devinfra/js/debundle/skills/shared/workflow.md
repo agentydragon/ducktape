@@ -240,6 +240,11 @@ or stale assertions without silently expanding the promised scope.
 
 ### Keep the iteration loop cheap and informative
 
+- Use the command's [name-resolution view](../../docs/cli.md#name-and-identifier-resolution).
+  Raw source lookup takes input names; `describe` and `inspect-source --id`
+  resolve readable graph names. A blank `bindings list` `minified` field for a
+  structural selector does not prove the input identity is unavailable. Recover
+  it through the matching native graph before proposing new selector support.
 - Reuse matching cached analysis for spec changes the staged pipeline excludes
   from its analysis inputs. Refresh expensive analysis when those inputs or
   the engine change. Request full graphs and evidence streams when the

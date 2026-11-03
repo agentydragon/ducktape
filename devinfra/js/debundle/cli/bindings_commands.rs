@@ -84,8 +84,9 @@ enum BindingsNsCommand {
     /// List every binding in the spec with home module + filters.
     ///
     /// Per-row: spec identifier (`minified`: selector binding or source-match
-    /// template local), home module, readable name if any, and
-    /// `orphan` (sole member of its module) / `unrenamed` flags.
+    /// template local; empty for other structural member selectors), home
+    /// module, readable name if any, and `orphan` (sole member of its module).
+    /// Use `describe <readable-name>` with a matching graph to find input names.
     List(BindingsListNsArgs),
     /// Rename one or more bindings without moving them.
     ///
