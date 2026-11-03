@@ -404,7 +404,6 @@ go_test(
         "//agentplane/action_service/push",
         "//agentplane/action_service/store",
         "//agentplane/action_service/testing/oauthprovider",
-        "//agentplane/mcp_edge:connection_service_go_proto",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/reader",
         "//agentplane/postgres/probes",

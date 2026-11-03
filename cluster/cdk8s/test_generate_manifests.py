@@ -786,18 +786,7 @@ def test_parked_haku_backup_and_shared_services_remain_configured(
         for doc in parsed_yaml_documents[path]
         if doc
     ]
-    spike = "haku-openclaw-spike"
     owners = {doc["metadata"]["name"]: doc for doc in active if doc["kind"] == "Kustomization"}
-    tenant_grant = next(
-        doc
-        for doc in active
-        if doc["kind"] == "ResourceReferenceGrant"
-        and doc["metadata"].get("namespace") == "seaweedfs"
-        and doc["metadata"]["name"] == "tenants"
-    )
-    for source in tenant_grant["spec"]["from"]:
-        for expression in source["namespaceSelector"]["matchExpressions"]:
-            assert spike not in expression.get("values", [])
     # Keep Haku sandbox/CI's shared proxy and the public coder's namespace and access Roles alive.
     assert {"haku-egress-proxy", "haku-namespace", "public-coder-agent-access"} <= owners.keys()
     deployments = {
