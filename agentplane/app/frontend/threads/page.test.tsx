@@ -524,19 +524,20 @@ it("keeps distinct model activity and idle ages visible", async () => {
   expect(activity?.querySelector("time")?.getAttribute("title")).toBe("2026-01-01T11:54:00.000Z");
 });
 
-it("counts down from the controller deadline on the UI clock without another stream", async () => {
+it("counts down from the controller deadline on the UI clock without reconnecting inventory", async () => {
   vi.useFakeTimers();
   vi.setSystemTime(Date.parse("2026-01-01T12:00:00Z"));
   sandboxes = [autosuspendSandbox("2026-01-01T12:12:00Z")];
   const container = await render();
   const hint = container.querySelector(".agentplane-composer-autosuspend");
   expect(hint?.textContent).toBe("Sandbox autosuspends in ~12m");
-  const streams = eventStreamUrls.length;
+  const inventoryStreams = () => eventStreamUrls.filter((url) => url.startsWith("/upstream/environments/"));
+  const streams = inventoryStreams().length;
 
   await act(async () => vi.advanceTimersByTimeAsync(60_000));
 
   expect(hint?.textContent).toBe("Sandbox autosuspends in ~11m");
-  expect(eventStreamUrls).toHaveLength(streams);
+  expect(inventoryStreams()).toHaveLength(streams);
   expect(hint?.getAttribute("title")).toContain("Next suspension attempt: 2026-01-01T12:12:00.000Z");
 });
 
