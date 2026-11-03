@@ -1,14 +1,14 @@
 {
-  "source_devel_commit": "3d60fc34d66c284d55dfe89eb78858ebc8aeeb87",
+  "source_devel_commit": "ac20030ffa144497702b1fe908fc04bd2effe7eb",
   "window_start_utc": "2026-11-02T19:55:00Z",
-  "window_end_utc": "2026-11-02T22:54:15Z",
-  "published_at_utc": "2026-11-02T22:54:15.908253+00:00",
+  "window_end_utc": "2026-11-02T23:59:24Z",
+  "published_at_utc": "2026-11-03T00:00:13.062389+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "9a27a8fc9d",
-  "report_html_sha256": "9cbb5cc9817c78c9cbb14ad50095904d22d1678f565ae244ac4dcd3641007bd1",
-  "evidence_sha256": "1b885fea284000fac18e93b82c25e21143c47d1986ec056596690634934b509b",
+  "previous_report_commit": "b4e746ab6331c1bbb440f5b7cae895a168a5ba06",
+  "report_html_sha256": "9e06310b083b987fff85078ef08caa7a2edac21c509564b72679de4a3f2bf23b",
+  "evidence_sha256": "71b68aa1a3dcd451b35f0882fab773fe8847f4c250335900cdd2c716d2b608dd",
   "visual_validation": {
-    "invocation": "0baf6e36-4d3b-44ad-a2e3-15471d39373f",
+    "invocation": "e87557bd-73ef-4ed0-9b6a-0505810c1610",
     "result": "PASSED",
     "viewports": [
       {
@@ -22,32 +22,28 @@
         "height": 844
       }
     ],
-    "internal_links_checked": 40,
+    "internal_links_checked": 45,
     "interactive_controls_exercised": [
-      "Speed up",
-      "Process reduction"
+      "select:Speed up",
+      "select:Process reduction"
     ],
-    "manual_review": "Desktop and mobile first screens; critical-path graph, controls and tables; experimental comparison; mobile shared-stack evidence; desktop continuity. Reviewed minor spacing changes on mobile graph/resources.",
-    "reviewed_html_sha256": "9cbb5cc9817c78c9cbb14ad50095904d22d1678f565ae244ac4dcd3641007bd1"
+    "reviewed_html_sha256": "9e06310b083b987fff85078ef08caa7a2edac21c509564b72679de4a3f2bf23b",
+    "manual_review": "Desktop and mobile first screens, decisions and full VM lifecycle section; comparison table, boot producer evidence, links and no horizontal overflow."
   },
   "analysis_scope": {
-    "new_completed_mainline_context": 17,
-    "controlled_critical_set_sweeps": 3,
-    "targets_per_sweep": 10,
-    "physical_test_actions_per_sweep": 26,
-    "all_three_sweeps_passed": true,
-    "candidate_bazel_seconds": 415.2,
-    "control_bazel_seconds": [
-      466.089,
-      409.484
-    ],
-    "complete_sweep_gain_reproduced": false,
+    "post_merge_mainline_vm_samples": 1,
+    "full_vm_diagnostic_runs": 2,
+    "both_full_runs_passed": true,
+    "all_three_scenarios_boot_proofs_and_cleanup_retained": true,
+    "timed_child_command_seconds": 388.69,
+    "timed_rbe_execution_seconds": 422.07244,
+    "outside_command_bracket_seconds": 33.38244,
     "full_fleet_25_or_50_percent_speedup_established": false
   },
   "source_prs": {
-    "14013": "OPEN; required checks success after retry on unchanged head",
-    "14014": "OPEN; required checks success",
-    "14015": "MERGED; required checks success"
+    "14013": "MERGED",
+    "14014": "MERGED",
+    "14015": "MERGED"
   },
-  "deployment_state": "Report PR only; Pages redeploys when merged. Source PR state captured separately."
+  "deployment_state": "Report PR only; Pages redeploys after merge. No production optimization patch from these diagnostics."
 }
