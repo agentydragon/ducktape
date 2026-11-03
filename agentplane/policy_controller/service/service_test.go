@@ -142,7 +142,9 @@ func TestRevokedCredentialEndsWatchBeforeAnotherFrame(t *testing.T) {
 }
 
 func TestBindingWatchScopeAndChanges(t *testing.T) {
-	api, kube, _ := fixture(t, binding("one", "alice", "base"), binding("foreign", "bob", "private"))
+	otherNamespace := binding("other-namespace", "alice", "base")
+	otherNamespace.Namespace = "other-policies"
+	api, kube, _ := fixture(t, binding("one", "alice", "base"), binding("foreign", "bob", "private"), otherNamespace)
 	stream, err := api.WatchPolicyBindings(tokenContext(t, "alice"), &policypb.WatchPolicyBindingsRequest{})
 	if err != nil {
 		t.Fatal(err)
@@ -151,7 +153,7 @@ func TestBindingWatchScopeAndChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := first.GetSnapshot().GetBindings(); len(got) != 1 || got[0].GetIdentity().GetName() != "one" {
+	if got := first.GetSnapshot().GetBindings(); len(got) != 1 || got[0].GetIdentity().GetNamespace() != "policies" || got[0].GetIdentity().GetName() != "one" {
 		t.Fatalf("snapshot = %v", got)
 	}
 	if frame, err := stream.Recv(); err != nil || frame.GetSnapshotComplete() == nil {
@@ -177,7 +179,9 @@ func TestBindingWatchScopeAndChanges(t *testing.T) {
 }
 
 func TestSetWatchRemovesSetsWhenBindingIsRevoked(t *testing.T) {
-	api, kube, _ := fixture(t, binding("one", "alice", "base"), policySet("base"), policySet("private"))
+	otherNamespace := policySet("base")
+	otherNamespace.Namespace = "other-policies"
+	api, kube, _ := fixture(t, binding("one", "alice", "base"), policySet("base"), policySet("private"), otherNamespace)
 	stream, err := api.WatchPolicySets(tokenContext(t, "alice"), &policypb.WatchPolicySetsRequest{})
 	if err != nil {
 		t.Fatal(err)
@@ -186,7 +190,7 @@ func TestSetWatchRemovesSetsWhenBindingIsRevoked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := first.GetSnapshot().GetPolicySets(); len(got) != 1 || got[0].GetIdentity().GetName() != "base" {
+	if got := first.GetSnapshot().GetPolicySets(); len(got) != 1 || got[0].GetIdentity().GetNamespace() != "policies" || got[0].GetIdentity().GetName() != "base" {
 		t.Fatalf("snapshot = %v", got)
 	}
 	if frame, err := stream.Recv(); err != nil || frame.GetSnapshotComplete() == nil {
