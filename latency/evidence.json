@@ -1,37 +1,41 @@
 {
   "repository": "agentydragon/ducktape",
-  "source_devel_commit": "dfb5e25546554024a4f4d4cdf2202da8d5961f63",
+  "source_devel_commit": "5d050a313d6d7698495f3f2a6b5b79653b1125c0",
   "objective": "reduce the mean from first workflow creation to all three required checks green below 300 seconds",
-  "previous_report_commit": "f198f3595420a9e8739d29ee46cac4503a2a854b",
+  "previous_report_commit": "d0357a41285313c54bc114e5111043b5c7edd260",
   "population_windows": {
     "new_mainline": {
       "selection": "Completed CI/devel literal //... invocations created since19:55UTC and returned by update-time-bounded census through21:54UTC; non-atomic API capture",
-      "window_utc": [
-        "2026-11-02T19:55:00Z",
-        "2026-11-02T21:54:00Z"
-      ],
+      "window_utc": ["2026-11-02T19:55:00Z", "2026-11-02T21:54:00Z"],
       "completed": 17,
       "pass": 15,
       "failed": 2,
       "partial_at_capture": 1
     },
     "historical_actions": {
-      "window_utc": [
-        "2026-11-02T18:30:00Z",
-        "2026-11-02T19:55:00Z"
-      ],
+      "window_utc": ["2026-11-02T18:30:00Z", "2026-11-02T19:55:00Z"],
       "heads": 52,
       "green_proxy": 22,
       "canceled": 20,
       "failed": 9,
       "pending": 1,
-      "green_proxy_p50_p90_seconds": [
-        527,
-        735
-      ],
+      "green_proxy_p50_p90_seconds": [527, 735],
       "new_collection": false
     },
-    "controlled_experiments": "Separate from fleet census; fixed local source tree, patches and exact attempts recorded below. Test-result cache bypassed; remote action cache accepted."
+    "controlled_experiments": "Separate from fleet census; fixed local source tree, patches and exact attempts recorded below. Test-result cache bypassed; remote action cache accepted.",
+    "latest_required_pr_gate_sample": {
+      "window_utc": ["2026-11-03T00:55:00Z", "2026-11-03T03:00:00Z"],
+      "heads": 29,
+      "all_three_latest_attempt_success_proxy": 19,
+      "canceled": 6,
+      "failed": 4,
+      "mean_seconds": 798.8947368421053,
+      "p50_seconds": 502.0,
+      "p90_seconds": 2516.0,
+      "scope": "All 29 exact heads represented by required PR workflows created in window; latest attempts and retry waits. Not a post-merge soak sample.",
+      "collection_utc": ["2026-11-03T03:04:50Z", "2026-11-03T03:06:53.287430Z"],
+      "investigation_evidence_cutoff_utc": "2026-11-03T03:40:30Z"
+    }
   },
   "mainline_context": [
     {
@@ -563,7 +567,7 @@
         "depth": 4
       },
       {
-        "self_seconds": 7.7e-05,
+        "self_seconds": 7.7e-5,
         "cumulative_seconds": 4.015091,
         "module": "kubernetes_asyncio.client.api.well_known_api",
         "depth": 5
@@ -614,10 +618,7 @@
     "conditions": {
       "ref_name": {
         "exclude": [],
-        "include": [
-          "refs/heads/devel",
-          "refs/heads/main"
-        ]
+        "include": ["refs/heads/devel", "refs/heads/main"]
       }
     },
     "rules": [
@@ -637,11 +638,7 @@
           "require_last_push_approval": false,
           "required_review_thread_resolution": false,
           "require_extra_approval_for_unattributed_changes": true,
-          "allowed_merge_methods": [
-            "merge",
-            "squash",
-            "rebase"
-          ]
+          "allowed_merge_methods": ["merge", "squash", "rebase"]
         }
       },
       {
@@ -879,15 +876,9 @@
       "75a2aeab-e7cb-4d85-804a-fc46715b4501",
       "74621d30-6051-4347-89ce-24a4d0ee3046"
     ],
-    "profile_only_seconds": [
-      20.558,
-      1.242
-    ],
+    "profile_only_seconds": [20.558, 1.242],
     "profile_limit": "cProfile overhead; not full runtime savings",
-    "pod_safe_parse_seconds": [
-      0.693842,
-      0.032473
-    ],
+    "pod_safe_parse_seconds": [0.693842, 0.032473],
     "failed_controls": [
       {
         "invocation": "ec9df627-ce6b-4e29-8d9d-8b9592015d11",
@@ -1363,9 +1354,7 @@
             "skipped": "0",
             "time": "371.231"
           },
-          "case_names": [
-            "test_vm_scenarios"
-          ]
+          "case_names": ["test_vm_scenarios"]
         },
         "agentplane_system_tests_suites_test_dispatcher": {
           "case_count": 3,
@@ -1417,9 +1406,7 @@
             "skipped": "0",
             "time": "120.856"
           },
-          "case_names": [
-            "test_parent_session_delegates_through_the_action_cli"
-          ]
+          "case_names": ["test_parent_session_delegates_through_the_action_cli"]
         },
         "agentplane_system_tests_suites_mcp_test_actions": {
           "case_count": 5,
@@ -1870,9 +1857,7 @@
             "skipped": "0",
             "time": "351.307"
           },
-          "case_names": [
-            "test_vm_scenarios"
-          ]
+          "case_names": ["test_vm_scenarios"]
         },
         "agentplane_system_tests_suites_test_dispatcher": {
           "case_count": 3,
@@ -1924,9 +1909,7 @@
             "skipped": "0",
             "time": "104.911"
           },
-          "case_names": [
-            "test_parent_session_delegates_through_the_action_cli"
-          ]
+          "case_names": ["test_parent_session_delegates_through_the_action_cli"]
         },
         "agentplane_system_tests_suites_mcp_test_actions": {
           "case_count": 5,
@@ -2377,9 +2360,7 @@
             "skipped": "0",
             "time": "352.818"
           },
-          "case_names": [
-            "test_vm_scenarios"
-          ]
+          "case_names": ["test_vm_scenarios"]
         },
         "agentplane_system_tests_suites_test_dispatcher": {
           "case_count": 3,
@@ -2431,9 +2412,7 @@
             "skipped": "0",
             "time": "149.198"
           },
-          "case_names": [
-            "test_parent_session_delegates_through_the_action_cli"
-          ]
+          "case_names": ["test_parent_session_delegates_through_the_action_cli"]
         },
         "agentplane_system_tests_suites_mcp_test_actions": {
           "case_count": 5,
@@ -2669,31 +2648,16 @@
   "full_ci_25_or_50_percent_reduction_established": false,
   "new_critical_path_conclusion": {
     "candidate_seconds": 415.2,
-    "control_seconds": [
-      466.089,
-      409.484
-    ],
+    "control_seconds": [466.089, 409.484],
     "replicated_complete_sweep_gain": false,
     "critical_target": "//agentplane/system_tests/suites:test_vm",
-    "pod_case_window_seconds": [
-      233.132632,
-      179.869375,
-      238.191044
-    ],
+    "pod_case_window_seconds": [233.132632, 179.869375, 238.191044],
     "pod_candidate_vs_repeat_reduction_fraction": 0.24485248488184141,
-    "vm_manifest_parse_seconds": [
-      5.863669,
-      0.950502,
-      6.86265
-    ],
+    "vm_manifest_parse_seconds": [5.863669, 0.950502, 6.86265],
     "vm_cold_attachment_all_three": true,
     "vm_previous_fingerprint_prefix": "2b3619f103",
     "vm_expected_fingerprint_prefix": "8e5387507b",
-    "old_marker_states": [
-      "clean",
-      "clean",
-      "dirty"
-    ],
+    "old_marker_states": ["clean", "clean", "dirty"],
     "snapshot_selection_cause": "unknown; mixed source versions sharing family is hypothesis only"
   },
   "startup_gap": {
@@ -3005,9 +2969,7 @@
             "skipped": "0",
             "time": "403.206"
           },
-          "case_names": [
-            "test_vm_scenarios"
-          ]
+          "case_names": ["test_vm_scenarios"]
         }
       }
     },
@@ -3229,9 +3191,7 @@
               "skipped": "0",
               "time": "374.711"
             },
-            "case_names": [
-              "test_vm_scenarios"
-            ]
+            "case_names": ["test_vm_scenarios"]
           }
         }
       },
@@ -3308,18 +3268,13 @@
         "supported_platform_property": "enable-vfs",
         "related_property": {
           "name": "vfs-prefetch-mode",
-          "allowed_values": [
-            "all",
-            "none"
-          ],
+          "allowed_values": ["all", "none"],
           "meaning": "changes prefetch policy only after VFS is enabled; does not select or disable the VFS workspace implementation",
           "persistence_effect": "when VFS is enabled, Firecracker FUSE remains non-recyclable; changed Command Platform changes the platform snapshot hash"
         },
         "upstream_parse_default": false,
         "repo_rbe_platform_sets_enable_vfs": false,
-        "observed_platform_overrides": [
-          "use-oci-fetcher=true"
-        ],
+        "observed_platform_overrides": ["use-oci-fetcher=true"],
         "platform_overrides_semantics": "remote-header overrides only; not the full Command.platform",
         "current_action_effective_enable_vfs": "51c1 launcher Action+Command omit enable-vfs; remote-header override is only use-oci-fetcher=true; pinned parser defaults false, so 51c1 uses ext4. The separate f915 profile Command was not included and remains to be verified before assigning its workspace branch.",
         "if_enabled_for_firecracker": "guest VFS/FUSE path; input layout is prepared during DownloadInputs, then host VFS server and guest Prepare RPC run inside Firecracker Exec after executionStart",
@@ -3337,9 +3292,7 @@
           "recycle-runner=true",
           "init-dockerd=true"
         ],
-        "observed_remote_header_overrides_51c1": [
-          "use-oci-fetcher=true"
-        ],
+        "observed_remote_header_overrides_51c1": ["use-oci-fetcher=true"],
         "profile_execution_vfs_status": "unverified from this artifact bundle; exact f915 Command.platform not included"
       },
       "invocation_51c1_auxiliary_evidence": {
@@ -3624,10 +3577,7 @@
         "ready_span_end": 123.22
       },
       "predicate": "Sandbox helper watches exact UID; Ready requires live Gateway Lease with current incarnation Pod UID and runtime boot ID/first state. WorkloadReady alone means Pod Ready.",
-      "other_concurrent_ready_spans_seconds": [
-        96.437,
-        102.59
-      ],
+      "other_concurrent_ready_spans_seconds": [96.437, 102.59],
       "scope": "Milestones from retained matching console/launcher logs and driver lifecycle transition events; not CPU time or additive cost.",
       "clock_limits": "Cross-emitter offsets approximate; some condition timestamps are rounded to whole seconds.",
       "missing_boundary": "Raw subsecond first-state/Lease timestamp; downloaded launcher records lack the full Pod-UID owner chain. CreateEnvironment process spans lack Sandbox identity and cannot be assigned per VM.",
@@ -3696,79 +3646,6 @@
   },
   "current_goal": {
     "status": "active; objective not yet achieved",
-    "measurement": {
-      "clock": "first observed workflow creation to latest successful completion of all 3 required job contexts for an exact head repository and SHA; retry waits included",
-      "baseline_seconds": 547.054794520548,
-      "baseline_green_heads": 73,
-      "baseline_window": [
-        "2026-11-02T18:55:00Z",
-        "2026-11-03T00:55:00Z"
-      ],
-      "exclude": [
-        "failed",
-        "canceled",
-        "pending",
-        "incomplete"
-      ],
-      "required_gates": [
-        "bazel-ci / Test & Build",
-        "Pre-commit checks",
-        "Build artifacts + imports check"
-      ],
-      "completion_requirement": "Fresh representative PR observations after landed changes must demonstrate mean <300s on the same clock; no benchmark-only or selected fast-head success claim",
-      "baseline_p50_seconds": 531,
-      "baseline_p90_seconds": 839
-    },
-    "outcomes": {
-      "all_three_green": 73,
-      "canceled": 82,
-      "failed": 25,
-      "incomplete": 1,
-      "pending": 2,
-      "excluded_from_latency_mean": [
-        "canceled",
-        "failed",
-        "incomplete",
-        "pending"
-      ]
-    },
-    "last_gate_counts": {
-      "bazel-ci / Test & Build": 71,
-      "Build artifacts + imports check": 2
-    },
-    "by_gate": {
-      "bazel-ci / Test & Build": {
-        "n": 73,
-        "mean": 547.0,
-        "p50": 531.0,
-        "p90": 839.0
-      },
-      "Pre-commit checks": {
-        "n": 73,
-        "mean": 93.41095890410959,
-        "p50": 76.0,
-        "p90": 158.0
-      },
-      "Build artifacts + imports check": {
-        "n": 73,
-        "mean": 122.58904109589041,
-        "p50": 104.0,
-        "p90": 195.0
-      }
-    },
-    "source_and_window": {
-      "inspected_devel_commit": "dfb5e25546554024a4f4d4cdf2202da8d5961f63",
-      "benchmark_base_commit": "b2b7e3128278a6073b21ac522b42f9e151d5913b",
-      "window_utc": [
-        "2026-11-02T18:55:00Z",
-        "2026-11-03T00:55:00Z"
-      ],
-      "kernel_release": "6.12.115-2 merged",
-      "pki_repair_pr": {
-        "number": 14035,
-        "state_at_snapshot": "Fixture repair pushed at head f90a353c8b; focused RBE test and changed-file hooks passed; two-incarnation real-renewal probe passed; full new-head CI pending at cutoff"
-      }
-    },
     "pod_sharding_experiment": {
       "target": "//agentplane/system_tests/suites:test_pod",
       "configuration": "--config=ci --nocache_test_results; remote caches enabled",
@@ -3779,49 +3656,30 @@
           "arm": "one stack, two case slots",
           "invocation": "10595129-79f0-4e45-8e8e-1bd668501396",
           "result": "pass 14/14",
-          "action_seconds": [
-            257.304
-          ],
+          "action_seconds": [257.304],
           "bazel_critical_path_seconds": 265.32,
           "cpu_seconds": 680.7,
-          "peak_memory_gb": [
-            6.17
-          ]
+          "peak_memory_gb": [6.17]
         },
         {
           "arm": "two shards, two case slots each",
           "invocation": "a6c23f91-b59a-4154-ac51-01d688c246e5",
           "result": "failed memory admission on message/acknowledgement case after 300s readiness deadline",
-          "action_seconds": [
-            226.389,
-            447.0
-          ],
+          "action_seconds": [226.389, 447.0],
           "bazel_critical_path_seconds": 449.74,
           "cpu_seconds": 1054.3,
-          "peak_memory_gb": [
-            5.72,
-            5.67
-          ],
+          "peak_memory_gb": [5.72, 5.67],
           "coverage_note": "14 distinct selected cases across shards; the message/acknowledgement case failed because 0/1 nodes were available from insufficient memory."
         },
         {
           "arm": "two shards, one case slot each",
           "invocation": "cb2df10e-1efb-49a1-bbd6-b097c8bc7783",
           "result": "pass 14/14",
-          "action_seconds": [
-            201.1,
-            299.5
-          ],
+          "action_seconds": [201.1, 299.5],
           "bazel_critical_path_seconds": 303.01,
           "cpu_seconds": 969.9,
-          "peak_memory_gb": [
-            5.54,
-            5.68
-          ],
-          "setup_seconds_by_shard": [
-            64.81,
-            56.54
-          ]
+          "peak_memory_gb": [5.54, 5.68],
+          "setup_seconds_by_shard": [64.81, 56.54]
         }
       ],
       "interrupted_attempt": {
@@ -3840,11 +3698,7 @@
           "invocation": "450847f0-b539-495c-933c-a160c4232c6c",
           "receipt": "warm",
           "action_seconds": 323.628,
-          "setup_case_cleanup_seconds": [
-            70.32,
-            199.34,
-            25.8
-          ],
+          "setup_case_cleanup_seconds": [70.32, 199.34, 25.8],
           "bazel_critical_path_seconds": 330.83,
           "cpu_seconds": 1342.248,
           "units_times_action_wall_proxy": 2589.02
@@ -3854,11 +3708,7 @@
           "invocation": "7ef6829b-f28e-44c4-8875-80c4b2c009d5",
           "receipt": "cold; same fingerprint",
           "action_seconds": 501.329,
-          "setup_case_cleanup_seconds": [
-            230.41,
-            207.97,
-            30.98
-          ],
+          "setup_case_cleanup_seconds": [230.41, 207.97, 30.98],
           "bazel_critical_path_seconds": 505.11,
           "cpu_seconds": 2294.386,
           "units_times_action_wall_proxy": 8021.26
@@ -3868,11 +3718,7 @@
           "invocation": "a344fba3-36b4-4c99-bee7-ce675cd3631a",
           "receipt": "cold; same fingerprint",
           "action_seconds": 342.775,
-          "setup_case_cleanup_seconds": [
-            130.18,
-            163.17,
-            24.68
-          ],
+          "setup_case_cleanup_seconds": [130.18, 163.17, 24.68],
           "bazel_critical_path_seconds": 383.07,
           "cpu_seconds": 1372.024,
           "units_times_action_wall_proxy": 5484.4
@@ -3904,7 +3750,7 @@
         "outer_run": "canceled by CLI after the child Build Event Service connection disconnected",
         "source_or_test_verdict": "none"
       },
-      "rerun": "Attempt 2 failed in VM cleanup and Pod trust-bundle checks. Fixture repair head f90a353c8b passed focused test_render and changed-file hooks. A two-incarnation real-renewal probe passed at 2026-11-03T02:11:57Z; full new-head CI remained pending.",
+      "rerun": "The repaired PR head f90a353c8b passed all three required checks after an approved targeted cleanup of the exact failed baseline. VM recovery completed on a fresh boot; no all-gates latency benefit is attributed.",
       "manual_certificate_renewal_physical_actions": "both passed but were cold",
       "observer_recovery": {
         "issue": 13270,
@@ -3943,31 +3789,354 @@
       },
       "repair_at_snapshot": {
         "head": "f90a353c8b",
-        "commit_message": "Preserve stable sandbox trust bundle in PKI fixture",
-        "focused_target": "//agentplane/system_tests/k3s:test_render",
-        "focused_result": "passed",
-        "focused_action_seconds": 51.7,
-        "focused_buildbuddy_invocation": "11fd9486-b954-456c-a0fd-84bc12ff6d6c",
-        "changed_file_hooks": "passed after removing the temporary probe",
-        "full_new_head_ci": "pending at snapshot cutoff",
-        "temporary_probe": "passed; two real-renewal scenarios ran across two controller incarnations in one action",
-        "snapshot_cutoff_utc": "2026-11-03T02:11:57Z",
-        "separate_vm_cleanup_and_bad_snapshot_discard": "under investigation; no promoted fix",
-        "latency_attribution": "none",
-        "probe_evidence": {
-          "outer_invocation": "711a771f-a84f-4655-b4e4-8f1f8b017d91",
-          "test_runner_invocation": "34990344-709c-4267-868a-670f50f601b6",
-          "test_runner_action_seconds": 206.31,
-          "result": "passed; two real certificate-renewal scenarios, one per incarnation",
-          "receipts": "Both warm with same retained-infrastructure fingerprint d8068\u2026",
-          "reused_within_action": "same K3s boot/node/process and cert-manager, cainjector, webhook and trust-manager UIDs",
-          "fresh_per_incarnation": "namespace, root Certificate and root Secret UIDs",
-          "cleanup": "complete in both incarnations",
-          "validates": "controller reuse within one action",
-          "does_not_validate": "Firecracker snapshot restore"
+        "full_required_checks": "passed",
+        "focused_test_render": "passed",
+        "two_incarnation_real_renewal_probe": "passed; validates same-action controller reuse, not Firecracker snapshot restore",
+        "successful_rerun_completed_at_utc": "2026-11-03T02:49:03Z",
+        "targeted_cleanup_invocation": "c3dce867-79f5-44e3-8b1a-36e1078d64c3",
+        "separate_vm_cleanup_bad_snapshot_discard": "Merged guard PR #14043 prevents recycling the known failed VM lifecycle; the original corruption mechanism remains unresolved.",
+        "latency_attribution": "none"
+      },
+      "state_at_snapshot": "All three required checks green; PR remained open at last query.",
+      "successful_full_ci_rerun": {
+        "buildbuddy_invocation": "1f40bb63-b6e1-5b90-a5aa-124c71f87305",
+        "github_run_id": 41564000728,
+        "github_attempt": 2,
+        "completed_at_utc": "2026-11-03T02:49:03Z",
+        "result": "all three required contexts passed",
+        "targeted_cleanup_invocation": "c3dce867-79f5-44e3-8b1a-36e1078d64c3",
+        "cleanup_scope": "approved cleanup of the exactly matched failed baseline; requested marker was present",
+        "vm_action": {
+          "wall_seconds": 331.489,
+          "receipt": "cold",
+          "boot": "new VM boot verified",
+          "test_spans_seconds": {
+            "setup": 106.4,
+            "case_envelope": 170.87,
+            "cleanup": 25.82
+          },
+          "cleanup": "complete; three loop devices removed",
+          "limit": "Action wall and named lifecycle spans are distinct measures; this is recovery proof, not a causal workflow latency estimate."
+        },
+        "pull_request_state": "open at last query"
+      }
+    },
+    "latency_claim": "The under-five-minute goal remains unverified and unmet. Current 19-head latest-attempt success-proxy mean is 798.9s. Retry waits remain included; the 12-head first-attempt subset is selected, not causal. Only representative fresh post-merge PR observations can establish the goal.",
+    "historical_six_hour_snapshot": {
+      "measurement": {
+        "clock": "first observed workflow creation to latest successful completion of all 3 required job contexts for an exact head repository and SHA; retry waits included",
+        "baseline_seconds": 547.054794520548,
+        "baseline_green_heads": 73,
+        "baseline_window": ["2026-11-02T18:55:00Z", "2026-11-03T00:55:00Z"],
+        "exclude": ["failed", "canceled", "pending", "incomplete"],
+        "required_gates": [
+          "bazel-ci / Test & Build",
+          "Pre-commit checks",
+          "Build artifacts + imports check"
+        ],
+        "completion_requirement": "Fresh representative PR observations after landed changes must demonstrate mean <300s on the same clock; no benchmark-only or selected fast-head success claim",
+        "baseline_p50_seconds": 531,
+        "baseline_p90_seconds": 839
+      },
+      "outcomes": {
+        "all_three_green": 73,
+        "canceled": 82,
+        "failed": 25,
+        "incomplete": 1,
+        "pending": 2,
+        "excluded_from_latency_mean": [
+          "canceled",
+          "failed",
+          "incomplete",
+          "pending"
+        ]
+      },
+      "last_gate_counts": {
+        "bazel-ci / Test & Build": 71,
+        "Build artifacts + imports check": 2
+      },
+      "by_gate": {
+        "bazel-ci / Test & Build": {
+          "n": 73,
+          "mean": 547.0,
+          "p50": 531.0,
+          "p90": 839.0
+        },
+        "Pre-commit checks": {
+          "n": 73,
+          "mean": 93.41095890410959,
+          "p50": 76.0,
+          "p90": 158.0
+        },
+        "Build artifacts + imports check": {
+          "n": 73,
+          "mean": 122.58904109589041,
+          "p50": 104.0,
+          "p90": 195.0
+        }
+      },
+      "source_and_window": {
+        "inspected_devel_commit": "dfb5e25546554024a4f4d4cdf2202da8d5961f63",
+        "benchmark_base_commit": "b2b7e3128278a6073b21ac522b42f9e151d5913b",
+        "window_utc": ["2026-11-02T18:55:00Z", "2026-11-03T00:55:00Z"],
+        "kernel_release": "6.12.115-2 merged",
+        "pki_repair_pr": {
+          "number": 14035,
+          "state_at_snapshot": "Fixture repair pushed at head f90a353c8b; focused RBE test and changed-file hooks passed; two-incarnation real-renewal probe passed; full new-head CI pending at cutoff"
         }
       }
     },
-    "latency_claim": "The under-five-minute mean goal remains active and unachieved. No target-level experiment above is promoted to a causal fleet mean saving."
+    "measurement": {
+      "clock": "latest visible successful required-gate completion minus first observed PR workflow creation for the same head repository and SHA; retry waits included",
+      "window_utc": ["2026-11-03T00:55:00Z", "2026-11-03T03:00:00Z"],
+      "collection_finished_at_utc": "2026-11-03T03:06:53.287430Z",
+      "heads_in_scope": 29,
+      "latest_attempt_all_three_success_proxy_heads": 19,
+      "mean_seconds": 798.8947368421053,
+      "mean_display": "13m 19s",
+      "p50_seconds": 502.0,
+      "p90_seconds": 2516.0,
+      "last_gate_counts": {
+        "bazel-ci / Test & Build": 19
+      },
+      "retry_waits_included": true,
+      "required_gates": [
+        "bazel-ci / Test & Build",
+        "Pre-commit checks",
+        "Build artifacts + imports check"
+      ],
+      "selection_and_claim_limit": "Successful latest attempts are a green proxy for each required context; collected current attempts do not reconstruct all historical GitHub check states or prove auto-merge eligibility.",
+      "post_merge_soak_sample": false,
+      "completion_requirement": "A representative fresh post-merge PR sample must demonstrate mean <300s on the same all-gates clock; a selected first-attempt-success subset does not satisfy it.",
+      "collection_started_at_utc": "2026-11-03T03:04:50Z"
+    },
+    "outcomes": {
+      "all_three_latest_attempt_success_proxy": 19,
+      "canceled": 6,
+      "failed": 4,
+      "heads_in_scope": 29,
+      "included_in_primary_mean": "19 successful latest-attempt proxies",
+      "excluded_from_latency_mean": ["canceled", "failed"]
+    },
+    "last_gate_counts": {
+      "bazel-ci / Test & Build": 19
+    },
+    "collection_provenance": {
+      "window_workflow_enumeration_count": 495,
+      "selected_pr_required_workflow_run_count": 87,
+      "selected_job_attempt_count": 218,
+      "pagination_totals_checked": true,
+      "active_sweep": "Stopped when the in_progress enumeration returned 7 rows against reported total_count 15. Collection resumed only for job details of the 87 selected required PR workflow runs.",
+      "explicit_limits": [
+        "No complete old-active-run census",
+        "No complete runner-occupancy claim"
+      ],
+      "source_artifacts": "Sanitized counts derived from fresh-timings collection metadata; raw workflow and job payloads remain private.",
+      "collection_started_at_utc": "2026-11-03T03:04:50Z",
+      "collection_finished_at_utc": "2026-11-03T03:06:53.287430Z"
+    },
+    "first_attempt_green_subset": {
+      "heads": 12,
+      "mean_seconds": 292.9166666666667,
+      "label": "all three required contexts succeeded on first attempt",
+      "selection_limit": "Selected by first-attempt success; not a counterfactual for retry heads, not a causal repair estimate, and not the current primary mean."
+    },
+    "retry_paths": {
+      "heads": 7,
+      "total_feedback_seconds": 11664.0,
+      "mean_feedback_seconds": 1666.2857142857142,
+      "classification_status": "complete",
+      "interpretation": "All retry waits remain inside the primary mean. The audit classifies target failures and observer disconnects; it does not claim savings or a complete mitigation.",
+      "failed_target_outcomes": 10,
+      "classified_outcomes": {
+        "stale_k3s_baseline_cleanup": {
+          "target_failures": 6,
+          "jobs": 5,
+          "signature": "_baseline_stop_owned StopPodSandbox DeadlineExceeded/RST",
+          "repair_scope": "Merged guard PR #14043 prevents recycling the known failed VM lifecycle; the original corruption/initiating mechanism remains unresolved."
+        },
+        "other_explicit_target_failures": [
+          {
+            "target_failures": 1,
+            "cause": "The app:test_bridge [claude] case stalled in its second model-request await for 629.1667s; the target shard action lasted 839.6s. The cancellation stack at test_bridge.py:829 localizes the stalled second CONTINUED model request after harness kill/continuation; ClaudeModel.next_exchange is blocked in ModelEndpoint._pending.get while History ingress is fenced. Saved history was empty and native JSONL contained metadata but no events. Why the producer did not deliver the second request remains unproven."
+          },
+          {
+            "target_failures": 1,
+            "cause": "OOM cgroup-path assertion; the guest kernel killed only the intended awk process at adj=1000, not the app-server. A separate exec-server replacement followed three failed fresh-WebSocket health probes (5-second ticker, 3-second cap) and failed at HTTP Upgrade; starvation remains unproven."
+          },
+          {
+            "target_failures": 1,
+            "cause": "containerd image-import EOF with K3s CRI connection refused; underlying cause unproven"
+          },
+          {
+            "target_failures": 1,
+            "cause": "Kine/etcd KV transaction deadline followed by apiserver timeout listing PVC"
+          }
+        ],
+        "observer_disconnects_without_final_target_verdict": {
+          "jobs": 2,
+          "detail": "One disconnected job had two child TestRunner executions finish after client loss only as test.exited_prematurely; neither gives a target verdict."
+        },
+        "pki_signature_failures": 0
+      },
+      "failed_job_attempts_in_completed_histories": 10,
+      "explicit_target_failure_jobs": 8,
+      "observer_disconnect_jobs_without_final_target_verdict": 2,
+      "share_of_pooled_feedback_seconds_descriptive": 0.768,
+      "share_interpretation": "Descriptive decomposition of the pooled feedback sum; seven retry heads are selected and this is not a counterfactual estimate of retry savings.",
+      "bridge_failure_detail": "The app:test_bridge [claude] case stalled in its second model-request await for 629.1667s; the target shard action lasted 839.6s. The cancellation stack at test_bridge.py:829 localizes the stalled second CONTINUED model request after harness kill/continuation; ClaudeModel.next_exchange is blocked in ModelEndpoint._pending.get while History ingress is fenced. Saved history was empty and native JSONL contained metadata but no events. Why the producer did not deliver the second request remains unproven.",
+      "observer_failure_boundary": "The pinned CLI propagates an unhandled RST_STREAM and cancels the accepted outer Run; reconnecting after CLI exit cannot recover the invocation or final verdict. No tested repository-side fix exists; see issue 13270."
+    },
+    "source_and_window": {
+      "inspected_devel_commit": "5d050a313d6d7698495f3f2a6b5b79653b1125c0",
+      "controlled_experiment_source_commit": "b2b7e3128278a6073b21ac522b42f9e151d5913b",
+      "window_utc": ["2026-11-03T00:55:00Z", "2026-11-03T03:00:00Z"],
+      "collection_finished_at_utc": "2026-11-03T03:06:53.287430Z",
+      "kernel_release": "6.12.115-2 merged",
+      "publication_scope": "Sanitized aggregates and validation links only; raw head, workflow, job, runner and API records remain private.",
+      "collection_started_at_utc": "2026-11-03T03:04:50Z"
+    },
+    "current_investigations": {
+      "retry_audit": {
+        "scope": "Classify seven latest-window retry paths and their ten failed job attempts.",
+        "status": "complete",
+        "failed_job_attempts": 10,
+        "failed_target_outcomes": 10,
+        "classified_outcomes": {
+          "stale_k3s_baseline_cleanup": {
+            "target_failures": 6,
+            "jobs": 5,
+            "signature": "_baseline_stop_owned StopPodSandbox DeadlineExceeded/RST",
+            "repair_scope": "Merged guard PR #14043 prevents recycling the known failed VM lifecycle; the original corruption/initiating mechanism remains unresolved."
+          },
+          "other_explicit_target_failures": [
+            {
+              "target_failures": 1,
+              "cause": "The app:test_bridge [claude] case stalled in its second model-request await for 629.1667s; the target shard action lasted 839.6s. The cancellation stack at test_bridge.py:829 localizes the stalled second CONTINUED model request after harness kill/continuation; ClaudeModel.next_exchange is blocked in ModelEndpoint._pending.get while History ingress is fenced. Saved history was empty and native JSONL contained metadata but no events. Why the producer did not deliver the second request remains unproven."
+            },
+            {
+              "target_failures": 1,
+              "cause": "OOM cgroup-path assertion; the guest kernel killed only the intended awk process at adj=1000, not the app-server. A separate exec-server replacement followed three failed fresh-WebSocket health probes (5-second ticker, 3-second cap) and failed at HTTP Upgrade; starvation remains unproven."
+            },
+            {
+              "target_failures": 1,
+              "cause": "containerd image-import EOF with K3s CRI connection refused; snapshot cause unproven"
+            },
+            {
+              "target_failures": 1,
+              "cause": "Kine/etcd KV transaction deadline followed by apiserver timeout listing PVC"
+            }
+          ],
+          "observer_disconnects_without_final_target_verdict": {
+            "jobs": 2,
+            "detail": "Two RST_STREAM attempts have no final target verdict; one disconnected run had two child TestRunner executions finish after client loss only as test.exited_prematurely."
+          },
+          "pki_signature_failures": 0
+        },
+        "claim_limit": "Seven retry paths account for 76.8% of their pooled feedback sum descriptively; this is not a counterfactual savings estimate. PR #14043 covers stale-baseline cleanup failures but does not explain the initiating failures. The pinned CLI cancels an accepted outer Run after unhandled RST_STREAM; no tested repository-side reconnect fix exists.",
+        "explicit_target_failure_jobs": 8,
+        "observer_disconnect_jobs_without_final_target_verdict": 2
+      },
+      "vm_clock_source": {
+        "kernel_release": "6.12.115-2",
+        "successful_guest_journals": 3,
+        "finding": "All three rejected TSC in favor of acpi_pm; differences from refined-jiffies were 68, 102 and 165 ms over 480 ms.",
+        "known_mechanism": "Linux acpi_pm reads an I/O port.",
+        "unmeasured": "CPU share and runtime effect of this clock source.",
+        "kernel_inclusive_perf_invocation": "a5d1ea1c-58b3-4436-875b-d7a91481ed32",
+        "status": "kernel-inclusive profile completed; clock-source runtime effect remains unmeasured",
+        "limit": "No KVM test or cluster deployment.",
+        "kernel_inclusive_profile": {
+          "invocation": "a5d1ea1c-58b3-4436-875b-d7a91481ed32",
+          "target": "//agentplane/system_tests/suites:test_vm_profile",
+          "result": "passed",
+          "bazel_elapsed_seconds": 654.9,
+          "critical_path_seconds": 650.21,
+          "test_runner_wall_seconds": 435.9,
+          "recorded_phase_spans_seconds": {
+            "setup": 215.24,
+            "test_case": 168.895,
+            "stack_cleanup": 26.29
+          },
+          "overlapping_case_envelopes_seconds": [146.05, 168.06, 168.24],
+          "worker_cpu_seconds": 1829.059,
+          "cpu_clock_samples": 5838,
+          "lost_samples": 0,
+          "sampled_cpu_seconds": 119.142855594,
+          "guest_vcpus": 2,
+          "resolved_nested_callchain_branch": {
+            "path": [
+              "__x64_sys_clock_gettime",
+              "posix_get_monotonic_timespec",
+              "ktime_get_ts64",
+              "acpi_pm_read"
+            ],
+            "sample_weight_percent_at_acpi_pm_read": 1.1,
+            "interpretation": "One nested callchain branch, not aggregate clock-reading share or function-self time."
+          },
+          "app_server_only_capture": "Unavailable because the process ID was missing.",
+          "cold_profile_image_build": {
+            "worker_cpu_seconds_about": 102.752,
+            "chain_wall_seconds_about": 152
+          },
+          "claim_limit": "One profiled sample identifies a clock path but does not estimate its causal effect on PR feedback time; whole-action duration includes the cold profile image build.",
+          "execution_mode": "KubeVirt software emulation; guest log says kvm not present.",
+          "scenario_and_lifecycle_coverage": "All three VM scenarios passed with journal, shutdown, OOM, and cleanup assertions.",
+          "profile_guest_clock_selection": "Guest selected acpi_pm after 202 ms TSC skew over a 512 ms refined-jiffies watchdog interval.",
+          "phase_span_limit": "Setup, test-case, and cleanup spans are recorded intervals, not a complete additive decomposition of TestRunner wall.",
+          "profile_sample_context": {
+            "swapper_idle_sample_percent": 20.83,
+            "kernel_dso_percent_including_idle": 71.62,
+            "note": "Kernel DSO share includes swapper/idle and is not busy-kernel CPU share; callchain percentages are nested and non-additive.",
+            "other_resolved_nested_branches": [
+              {
+                "process": "tokio-rt-worker",
+                "branch": "clock_gettime",
+                "sample_weight_percent": 0.7
+              },
+              {
+                "process": "agentplane-cgro",
+                "branch": "clone to copy_process",
+                "sample_weight_percent": 1.15
+              },
+              {
+                "process": "systemd",
+                "branch": "openat/path lookup",
+                "sample_weight_percent": 1.25
+              },
+              {
+                "process": "awk",
+                "branch": "page fault chains",
+                "sample_weight_percent": [0.89, 0.67, 0.62]
+              },
+              {
+                "process": "khugepaged",
+                "branch": "clear_page_erms",
+                "sample_weight_percent": 0.6
+              }
+            ]
+          }
+        }
+      },
+      "bridge_followup": {
+        "buildbuddy_invocation": "1c9c7065-b9eb-4a94-b7ac-a33c083a11a6",
+        "repetitions": 3,
+        "result": "all passed without reproducing the stall",
+        "action_seconds_range": [55.9, 72.4],
+        "mean_action_seconds": 65.2,
+        "interpretation": "No root cause or repair established; the producer failure remains unresolved."
+      }
+    },
+    "guard_pr": {
+      "number": 14043,
+      "final_head": "f4fb873b96",
+      "required_checks": "all three passed",
+      "bazel_workflow_completed_at_utc": "2026-11-03T02:58:07Z",
+      "merged_commit": "5d050a313d6d7698495f3f2a6b5b79653b1125c0",
+      "merged_at_utc": "2026-11-03T02:59:21Z",
+      "source_change": "Adds immutable BuildBuddy source link for the guard diagnosis.",
+      "scope_limit": "No source change to the underlying stuck-shim diagnosis; no KVM/cluster work or coverage relaxation."
+    },
+    "investigation_evidence_cutoff_utc": "2026-11-03T03:40:30Z"
   }
 }

@@ -271,30 +271,31 @@
     <main>
       <header>
         <div class="eyebrow">Ducktape · CI latency · 3 November 2026</div>
-        <h1>All three required checks still average 9m 7s.</h1>
+        <h1>The latest all-gate cohort averages 13m 19s.</h1>
         <p class="lede">
-          The exact-head mean is 9m 7s (547.1 seconds), from the first observed
-          workflow creation to the latest successful completion of all three
-          required contexts, including retry waits. It covers 73 all-green heads
-          in the 18:55–00:55 UTC window; p90 is 13m 59s. The target is a mean
-          below five minutes and has not been met.
+          For 19 exact heads whose latest visible attempts succeeded on all
+          three required contexts, feedback averaged 798.9 seconds (13m 19s)
+          from first workflow creation through final required-check success,
+          including retry waits. This 00:55–03:00 UTC cohort has p50 8m 22s and
+          p90 41m 56s. The below-five-minute mean goal remains unmet.
         </p>
         <p class="meta">
-          Current inspected devel: dfb5e25546554024a4f4d4cdf2202da8d5961f63. The
-          controlled VM and Pod experiments below are frozen at
-          b2b7e3128278a6073b21ac522b42f9e151d5913b. Kernel 6.12.115-2 is merged;
-          PKI repair PR #14035 has a fixture fix on its current head; focused
-          validation and the two-incarnation probe passed while full CI remains
-          pending. Neither is credited with a causal change to this baseline.
+          Current inspected devel: 5d050a313d6d7698495f3f2a6b5b79653b1125c0;
+          controlled VM and Pod experiments remain frozen at
+          b2b7e3128278a6073b21ac522b42f9e151d5913b. PR #14035 has all three
+          required checks green after targeted cleanup and remains open at last
+          query. PR #14043 is merged. Neither recovery is credited with a causal
+          reduction in this feedback window.
         </p>
         <div class="cards">
           <div class="card">
-            <span>Mean to all three checks green</span><strong>9m 7s</strong>
-            <span>73 exact-head green observations · six-hour window.</span>
+            <span>Latest all-gate success proxy mean</span
+            ><strong>13m 19s</strong>
+            <span>19 of 29 heads · retry waits included.</span>
           </div>
           <div class="card">
-            <span>90th percentile</span><strong>13m 59s</strong>
-            <span>Retry waits remain inside the workflow-creation clock.</span>
+            <span>90th percentile</span><strong>41m 56s</strong>
+            <span>Median is 8m 22s; retries remain in both.</span>
           </div>
           <div class="card">
             <span>Mean target</span><strong>&lt;300 s</strong>
@@ -315,29 +316,30 @@
       <section id="under-five" aria-labelledby="under-five-title">
         <h2 id="under-five-title">Current goal: mean below five minutes</h2>
         <p class="note">
-          <strong>Status: active and not met.</strong> The baseline mean is
-          547.0548 seconds; the objective requires a representative mean below
-          300 seconds on the same all-gates clock after changes land.
-          Target-only benchmarks and a selected fast head do not satisfy that
-          requirement.
+          <strong>Status: active and not met.</strong> The current
+          latest-attempt success-proxy mean is 798.9 seconds (13m 19s). The
+          objective remains a representative post-merge mean below 300 seconds
+          on this same all-gates clock. A selected fast subset does not
+          establish that result.
         </p>
         <p>
-          The clock starts at the first observed workflow creation for an exact
-          repository/head SHA and ends when all three required job contexts have
-          their latest successful completion. Retry waits are included. Only
-          heads with all three contexts green enter the latency mean; failed,
-          canceled, pending and incomplete outcomes remain visible below.
+          The clock starts at the first observed PR workflow creation for an
+          exact head repository and SHA, then ends at the latest visible
+          successful completion of all three required job contexts. Retry waits
+          are included. A latest-attempt success proxy is not a reconstruction
+          of every historical GitHub check state or proof of auto-merge
+          eligibility.
         </p>
         <div
           class="table-scroll"
           role="region"
-          aria-label="All-gates and per-gate feedback metrics"
+          aria-label="Current and previous all-gate feedback windows"
           tabindex="0"
         >
           <table class="wide-6">
             <thead>
               <tr>
-                <th>Completion clock</th>
+                <th>Window</th>
                 <th>n</th>
                 <th>Mean</th>
                 <th>p50</th>
@@ -347,98 +349,198 @@
             </thead>
             <tbody>
               <tr>
-                <th scope="row">All three required checks</th>
+                <th scope="row">Current · 00:55–03:00 UTC</th>
+                <td>19</td>
+                <td>798.9 s</td>
+                <td>502 s</td>
+                <td>2,516 s</td>
+                <td>Bazel 19</td>
+              </tr>
+              <tr>
+                <th scope="row">Prior six-hour snapshot · historical</th>
                 <td>73</td>
-                <td>547.0548 s</td>
+                <td>547.1 s</td>
                 <td>531 s</td>
                 <td>839 s</td>
                 <td>Bazel 71 · artifacts 2</td>
-              </tr>
-              <tr>
-                <th scope="row">bazel-ci / Test &amp; Build</th>
-                <td>73</td>
-                <td>547.00 s</td>
-                <td>531 s</td>
-                <td>839 s</td>
-                <td>71 heads</td>
-              </tr>
-              <tr>
-                <th scope="row">Pre-commit checks</th>
-                <td>73</td>
-                <td>93.41 s</td>
-                <td>76 s</td>
-                <td>158 s</td>
-                <td>—</td>
-              </tr>
-              <tr>
-                <th scope="row">Build artifacts + imports check</th>
-                <td>73</td>
-                <td>122.59 s</td>
-                <td>104 s</td>
-                <td>195 s</td>
-                <td>2 heads</td>
               </tr>
             </tbody>
           </table>
         </div>
         <p class="muted">
-          Gate values are elapsed offsets from workflow creation. They overlap
-          and must not be summed. Bazel is the final required context on 71 of
-          the 73 green heads; the artifact check is last on the other two.
+          The latest cohort is 2h05m, not the previous six-hour population. Keep
+          the windows separate; neither their difference nor a selected
+          first-attempt subset estimates a causal change.
         </p>
         <div class="table-scroll">
           <table>
             <thead>
               <tr>
-                <th>Window outcome</th>
+                <th>Current window outcome</th>
                 <th>Heads</th>
                 <th>Use in mean</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <th scope="row">All three required checks green</th>
-                <td>73</td>
-                <td>Included</td>
+                <th scope="row">
+                  Latest attempts succeeded on all three contexts
+                </th>
+                <td>19</td>
+                <td>Included as success proxy</td>
               </tr>
               <tr>
                 <th scope="row">Canceled</th>
-                <td>82</td>
+                <td>6</td>
                 <td>Excluded</td>
               </tr>
               <tr>
                 <th scope="row">Failed</th>
-                <td>25</td>
-                <td>Excluded</td>
-              </tr>
-              <tr>
-                <th scope="row">Incomplete</th>
-                <td>1</td>
-                <td>Excluded</td>
-              </tr>
-              <tr>
-                <th scope="row">Pending</th>
-                <td>2</td>
+                <td>4</td>
                 <td>Excluded</td>
               </tr>
             </tbody>
           </table>
         </div>
+        <p class="muted">
+          Historical prior six-hour window (2 November 18:55–3 November 00:55
+          UTC): 73 green heads averaged 547.0548 seconds (p50 531, p90 839); 82
+          canceled, 25 failed, one incomplete and two pending heads were
+          excluded. Mean elapsed offsets were 93.41 seconds to Pre-commit,
+          122.59 seconds to Build artifacts, and 547.00 seconds to Bazel. These
+          gate clocks overlap and must not be added; Bazel finished last on 71
+          heads and the artifact check on two.
+        </p>
         <p>
           Window:
-          <time datetime="2026-11-02T18:55:00Z"
-            >2 November 2026, 18:55 UTC</time
+          <time datetime="2026-11-03T00:55:00Z"
+            >3 November 2026, 00:55 UTC</time
           >
-          to
-          <time datetime="2026-11-03T00:55:00Z">3 November 2026, 00:55 UTC</time
-          >. The full 40-character inspected devel SHA is
-          <code>dfb5e25546554024a4f4d4cdf2202da8d5961f63</code>. Controlled
-          experiment source is separately fixed at
-          <code>b2b7e3128278a6073b21ac522b42f9e151d5913b</code>. Summary
-          evidence is in <a href="evidence.json">evidence.json</a> and the
-          source/window pointer is in <a href="manifest.json">manifest.json</a>.
+          to <time datetime="2026-11-03T03:00:00Z">03:00 UTC</time>. Collection
+          finished at 03:06:53 UTC. Retry and profile findings below were
+          checked through 03:40:30 UTC. The 19 included heads had Bazel as the
+          final required gate; the prior six-hour window had 71 Bazel and two
+          artifact completions last. Sanitized summary evidence and collection
+          limits are in <a href="evidence.json">evidence.json</a>; source and
+          window are recorded in <a href="manifest.json">manifest.json</a>.
         </p>
-
+        <h3>Retry waits remain part of the primary mean</h3>
+        <p>
+          Twelve heads that succeeded on every required context at their first
+          attempt had a selected-subset mean of 292.9 seconds (4m 53s). Seven
+          retry paths contributed 11,664 seconds (3h 14m 24s), or 76.8% of the
+          pooled feedback total, as a descriptive decomposition only. They
+          included ten failed Test &amp; Build job attempts. Eight of the jobs
+          had explicit target failures (ten target failures total); two ended
+          after observer disconnects without a final target verdict. Retry waits
+          remain in the 798.9-second primary mean. The first-attempt subset is
+          selected by outcome, not a counterfactual or an estimate of savings;
+          the failure audit below reports mechanisms without attributing time
+          savings.
+        </p>
+        <h3>Recovery is not yet a latency result</h3>
+        <p class="callout">
+          <a href="https://github.com/agentydragon/ducktape/pull/14035"
+            >PR #14035</a
+          >'s PKI fixture repair has all three required checks green. After the
+          approved targeted cleanup of the exact failed baseline (<a
+            href="https://app.buildbuddy.io/invocation/c3dce867-79f5-44e3-8b1a-36e1078d64c3"
+            >cleanup proof</a
+          >), its successful full-CI rerun completed at 02:49:03 UTC (<a
+            href="https://app.buildbuddy.io/invocation/1f40bb63-b6e1-5b90-a5aa-124c71f87305"
+            >BuildBuddy invocation</a
+          >;
+          <a
+            href="https://github.com/agentydragon/ducktape/actions/runs/41564000728/attempts/2"
+            >GitHub run attempt 2</a
+          >). Its cold VM action took 331.489 seconds; recorded setup, case and
+          cleanup spans were 106.40, 170.87 and 25.82 seconds. It booted a new
+          VM and completed cleanup with three loop devices. These are recovery
+          checks, not a full-workflow latency win or a causal fleet-mean claim.
+          PR #14035 remained open at last query. Guard
+          <a href="https://github.com/agentydragon/ducktape/pull/14043"
+            >PR #14043</a
+          >
+          passed all required checks and merged as
+          <code>5d050a313d6d7698495f3f2a6b5b79653b1125c0</code>
+          at 02:59:21 UTC. Its marker comment links immutable BuildBuddy source
+          for snapshot invalidation; the initiating shim failure remains
+          unexplained.
+        </p>
+        <h3>Retry causes are classified; clock-source cost remains unproven</h3>
+        <p>
+          The seven retry paths contain ten failed Test &amp; Build job
+          attempts. Eight have explicit target failures, ten in total: six stale
+          K3s-baseline <code>_baseline_stop_owned</code>
+          <code>StopPodSandbox</code> deadline/RST failures across five jobs, a
+          bridge <code>[claude]</code> second-model-request await that blocked
+          for 629.2 seconds (the target shard action lasted 839.6 seconds), an
+          OOM cgroup-path assertion (the guest kernel killed only the intended
+          <code>awk</code> process at <code>adj=1000</code>, not the
+          app-server), an image-import EOF with K3s CRI connection refused
+          (snapshot cause unproven), and a Kine/etcd deadline followed by an API
+          timeout listing a PVC. A separate exec-server replacement followed
+          three failed fresh WebSocket probes (5-second ticker, 3-second cap)
+          and failed at HTTP Upgrade; starvation remains unproven. Merged guard
+          PR #14043 prevents recycling a known failed VM lifecycle; the original
+          corruption mechanism remains unresolved. The bridge stack localizes
+          the stalled await to the second <code>CONTINUED</code> model request
+          after harness kill and continuation; it is blocked in
+          <code>ModelEndpoint._pending.get</code> while History ingress is
+          fenced. Three focused fresh Claude lag/resume repetitions then passed
+          in 55.9–72.4 seconds (mean 65.2) without reproducing the stall; the
+          producer failure remains unproven. The remaining two jobs ended after
+          observer disconnects without a final target verdict; one had two child
+          TestRunner executions finish only as
+          <code>test.exited_prematurely</code>. The pinned CLI cancels the
+          accepted outer Run after an unhandled RST_STREAM; reconnecting after
+          CLI exit cannot recover that invocation or a target verdict. The
+          source audit found no tested repository-side fix; see
+          <a href="https://github.com/agentydragon/ducktape/issues/13270"
+            >issue #13270</a
+          >. No PKI-signature failure appeared among the explicit target
+          failures. All retry waits remain in the main mean; no retry savings
+          are attributed to PR #14043.
+        </p>
+        <p>
+          Three successful VM guest journals on kernel
+          <code>6.12.115-2</code> rejected TSC in favor of <code>acpi_pm</code>:
+          against refined-jiffies, the observed discrepancies were 68, 102 and
+          165 milliseconds over 480 milliseconds. The profiled guest also
+          selected <code>acpi_pm</code> after a 202-millisecond TSC skew over
+          512 milliseconds. A hosted RBE
+          <a
+            href="https://app.buildbuddy.io/invocation/a5d1ea1c-58b3-4436-875b-d7a91481ed32"
+            ><code>test_vm_profile</code></a
+          >
+          passed all three VM scenarios and lifecycle assertions with a
+          kernel-inclusive perf capture: 5,838 CPU-clock samples, no lost
+          samples, and about 119.14 sampled CPU-seconds across two guest CPUs.
+          One symbolized <code>agentplane-environment-runtime</code> branch runs
+          from <code>clock_gettime</code> through <code>ktime_get_ts64</code> to
+          <code>acpi_pm_read</code>, with 1.10% sample weight. That is not the
+          aggregate clock-reading share or a function-self measurement. The
+          TestRunner action took 435.9 seconds and used 1,829.06 worker
+          CPU-seconds. Recorded setup, test-case and cleanup spans were 215.24,
+          168.90 and 26.29 seconds; these are not a complete additive
+          decomposition. Three case envelopes overlapped at 146.05, 168.06 and
+          168.24 seconds. The full Bazel invocation took 654.9 seconds
+          (650.21-second critical path); its cold profile-image build added
+          about 102.75 worker CPU-seconds and 152 seconds of chain wall. This
+          single profiled run does not measure the clock path's causal effect on
+          PR feedback time. Its app-server-only capture did not run because the
+          process ID was unavailable. This diagnostic used KubeVirt software
+          emulation (`kvm not present`), with no KVM-backed workload or cluster
+          deployment.
+        </p>
+        <p class="muted">
+          The bounded workflow enumeration found 495 window runs. Job collection
+          covered all 87 selected required PR workflow runs (218 job attempts),
+          and pagination totals were checked. A separate old in-progress sweep
+          returned 7 entries against a reported total of 15 and was stopped;
+          collection resumed only for the scoped PR workflow jobs. This report
+          makes no complete old-active-run census or runner-occupancy claim.
+        </p>
         <h3>Two retained-stack Pod shards did not improve the gate</h3>
         <p>
           All arms used normal <code>--config=ci</code> with remote caches
@@ -681,16 +783,15 @@
           defects.
         </p>
         <p class="callout">
-          The fixture repair is now on PR #14035 head <code>f90a353c8b</code>:
-          preserve the namespace-local trust-bundle name while CA, issuer and
-          Secrets remain unique, and use a fresh namespace per fixture to
-          isolate the projected bundle. Focused RBE target
+          The fixture repair now preserves the namespace-local trust-bundle name
+          while CA, issuer and Secret identities remain unique and each fixture
+          uses a fresh namespace. Focused RBE target
           <code>//agentplane/system_tests/k3s:test_render</code>
           <a
             href="https://app.buildbuddy.io/invocation/11fd9486-b954-456c-a0fd-84bc12ff6d6c"
             >passed in 51.7 seconds</a
           >; changed-file hooks passed after removing the temporary probe. The
-          two-incarnation real-renewal probe then passed in outer invocation
+          two-incarnation real-renewal probe passed in outer invocation
           <a
             href="https://app.buildbuddy.io/invocation/711a771f-a84f-4655-b4e4-8f1f8b017d91"
             >711a771f…</a
@@ -702,19 +803,19 @@
           >), with a 206.310-second TestRunner action, warm matching
           infrastructure receipts, fresh namespaces and root certificate
           identities, and complete cleanup. It validates controller reuse within
-          one action, not Firecracker snapshot restore. Full CI on the new head
-          remained pending at the
-          <time datetime="2026-11-03T02:11:57Z">02:11:57 UTC</time> snapshot
-          cutoff. The separate VM cleanup / bad-snapshot discard remains under
-          investigation with no promoted fix. The remote observer path is
-          tracked in
+          one action, not Firecracker snapshot restore. The full new-head rerun
+          then passed all three required checks at 02:49:03 UTC after approved
+          cleanup of the exact failed baseline; VM recovery booted a new guest
+          and removed three loop devices. Merged guard PR #14043 prevents
+          recycling the known failed VM lifecycle; the original corruption
+          mechanism remains unresolved. The remote observer path is tracked in
           <a href="https://github.com/agentydragon/ducktape/issues/13270"
             >issue #13270</a
-          >; CLI 5.0.498 is already pinned, upstream has the same failure mode,
-          and no small safe repository-side observer fix was identified. Both
-          manual certificate-renewal physical actions passed but were cold. No
-          latency change is attributed to these reliability fixes or the merged
-          kernel update.
+          >; the pinned CLI cancels an accepted Run on unhandled RST_STREAM, and
+          reconnecting after CLI exit cannot recover it. No tested
+          repository-side observer fix exists. The two manual certificate
+          renewal actions passed but were cold. No latency change is attributed
+          to these reliability fixes or the merged kernel update.
         </p>
       </section>
       <section id="historical-vm-study">
