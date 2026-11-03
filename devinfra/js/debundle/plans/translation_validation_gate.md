@@ -249,23 +249,23 @@ effect-TV have been explained and the replacement has complete effect
 coverage. Bounded report examples are not proof inputs: comparisons must use
 the complete conflict enumeration.
 
-1. **Effect-set conflicts.** Switch the sweep to effect sets (needs
-   abstract-interpreter step 7) and report the differences against the
-   edge-based verdict per category. Classify each discrepancy from its source
+1. **Effect coverage and discrepancy audit.** Complete the missing effect
+   domains in abstract-interpreter step 7 and audit the existing effect-set
+   report's differences against the edge-based verdict per category.
+   Classify each discrepancy from its source
    and effect witnesses before changing authority. A new acceptance may expose
    conservative legacy edges or missing or understated effects; it requires proof
    that no conflicting cell was omitted. A new rejection may expose a conflict
    missed by legacy rules, conservative effect coverage, or an incorrect new
    effect. Verdict disagreement alone does not identify which checker is wrong.
-   - Forward edges move into the sweep here (§ Relation to today's gate).
+   - Discharge swapped forward reads (§ Relation to today's gate).
      The gate accepts some orders only by swapping a forward edge, which
      the edge-TV report lists as `forward_edges_swapped` outside its verdict.
      For each such case, prove the read cannot run at initialization or retain
      the conflict. Existing pair premises and legacy acceptance do not prove
      that a callback is deferred.
-2. **Search.** Seed from hard edges and add the refine loop. Report
-   side by side: today's verdict, TV's verdict, and swapped pairs per
-   category.
+2. **Search.** Seed from hard edges and add the refine loop. Preserve the
+   verdict and swapped-pair comparisons for each candidate order.
 3. **Flip.** TV decides; today's gate becomes a report section for one
    release, then goes, Pass 1's cycle verdict and Pass 2's degraded-order
    fallback with it. `commuting_statements` diagnostics move to the

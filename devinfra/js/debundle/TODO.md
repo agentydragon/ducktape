@@ -114,12 +114,6 @@ to one exact source/spec pair and held to the interactive budget in
   inspected. Add a bounded program-level summary with each processed chunk's
   outcome, rejection class, exact totals and report paths. Mark unprocessed
   chunks explicitly; the first fatal error is not the full inventory.
-- **F4 — Consume possible-getter witnesses in source-backed gate review.** A
-  saved private cut showed `possible_getter` fallback effects without the
-  lookup site or promoted lazy owner, so source inspection could only infer
-  their connection. Correlate the bounded lookup and owner witnesses with
-  source units in the existing review workflow; preserve exact gate totals and
-  keep private source, spec and binding details out of public artifacts.
 
 ### Pipeline performance and architecture cleanup
 
@@ -233,10 +227,6 @@ paths and source-unit IDs belong in the consuming repo.
   span, atomic-group membership, matching proposal (if any), immediate
   constraining neighbors, and the exact reason the owner is not
   landable today.
-- **Source roots.** `inspect-source --id <id> --source-root ...` depends on the
-  consuming target's source-tree layout. Runbooks and skills should make
-  that target-specific root explicit instead of assuming repository root
-  or working directory.
 - **Patch-plan naming.** `coverage` is useful for intersecting existing
   module YAML with atomic-group coverage, but it is not the only way to
   discover readable work: `atoms --readable-only` and `modules propose`
