@@ -5,6 +5,7 @@ option go_package = "github.com/agentydragon/ducktape/agentplane/policy/v1;polic
 
 import "agentplane/policy/api/v1alpha1/policy_types.proto";
 import "agentplane/proto/identity.proto";
+import "agentplane/proto/kubernetes.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 
@@ -30,18 +31,11 @@ message PolicyResourceIdentity {
   string name = 2;
   string uid = 3;
 }
-message PolicyOwnerReference {
-  string api_version = 1;
-  string kind = 2;
-  string name = 3;
-  string uid = 4;
-  bool controller = 5;
-}
 message PolicyBinding {
   PolicyResourceIdentity identity = 1;
   int64 generation = 2;
   map<string, string> labels = 3;
-  repeated PolicyOwnerReference owner_references = 4;
+  repeated agentplane.proto.OwnerReference owner_references = 4;
   agentplane.policy.resource.v1.PolicyBindingSpec spec = 5;
   agentplane.policy.resource.v1.Status status = 6;
 }

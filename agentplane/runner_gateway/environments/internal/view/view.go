@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	kubernetespb "github.com/agentydragon/ducktape/agentplane/proto/kubernetes"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
@@ -120,7 +121,7 @@ func sandboxPodView(pod *corev1.Pod) (*environmentpb.SandboxPod, error) {
 		view.NodeName = &nodeName
 	}
 	for _, owner := range pod.OwnerReferences {
-		view.OwnerReferences = append(view.OwnerReferences, &environmentpb.OwnerReference{
+		view.OwnerReferences = append(view.OwnerReferences, &kubernetespb.OwnerReference{
 			ApiVersion: owner.APIVersion, Kind: owner.Kind, Name: owner.Name,
 			Uid: string(owner.UID), Controller: owner.Controller != nil && *owner.Controller,
 		})

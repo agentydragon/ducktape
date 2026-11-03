@@ -11,6 +11,7 @@ go_library(
         "//agentplane/policy/api/v1alpha1:policy_types_go_proto",
         "//agentplane/policy/v1:policy_service_go_proto",
         "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:kubernetes_go_proto",
         "//agentplane/workload_auth/auth",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",

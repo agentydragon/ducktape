@@ -2,8 +2,6 @@
 
 - [ ] Consider loading the app config into protobuf messages and using a unified representation through config loading and the generated AppConfig API.
 
-- [ ] Move Kubernetes owner-reference metadata to a shared protobuf home; Environment and Policy
-      currently define the same fields separately.
 - [ ] Share and incrementally maintain PolicyService’s Kubernetes watches: each RPC currently opens
       its own watches and relists resources on changes. Preserve authorization and stale-data fencing.
 - [ ] Decide whether Sandbox presets are durable Environment metadata or app-owned creation and

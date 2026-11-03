@@ -35,6 +35,33 @@ go_proto_library(
 )
 
 proto_library(
+    name = "kubernetes_proto",
+    srcs = ["kubernetes.proto"],
+    visibility = ["//visibility:public"],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "kubernetes_pb2",
+    visibility = ["//visibility:public"],
+    deps = [":kubernetes_proto"],
+)
+
+ts_proto_library(
+    name = "kubernetes_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":kubernetes_proto",
+    visibility = ["//visibility:public"],
+)
+
+go_proto_library(
+    name = "kubernetes_go_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/kubernetes",
+    proto = ":kubernetes_proto",
+    visibility = ["//visibility:public"],
+)
+
+proto_library(
     name = "environment_lifecycle_proto",
     srcs = ["environment_lifecycle.proto"],
     visibility = ["//visibility:public"],

@@ -10,6 +10,7 @@ go_library(
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:kubernetes_go_proto",
         "//agentplane/sandboxes/api",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/meta",
