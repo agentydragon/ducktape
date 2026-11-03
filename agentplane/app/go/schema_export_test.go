@@ -94,9 +94,6 @@ func TestExportOpenAPIUsesHumaSchemasForThreadRoutes(t *testing.T) {
 		t.Fatal("ThreadView.last_cursor must be documented as an int64")
 	}
 	for schemaName, fields := range map[string][]string{
-		"BindingView":           {"subjects", "conditions", "policy_sets", "missing_policy_sets"},
-		"PolicySetView":         {"rules"},
-		"CredentialView":        {"targets"},
 		"SandboxFormOutputBody": {"policy_sets"},
 	} {
 		schema := document.Components.Schemas[schemaName]
@@ -127,6 +124,32 @@ func TestExportOpenAPIUsesHumaSchemasForThreadRoutes(t *testing.T) {
 	defaultsProperties, ok := defaultsSchema["properties"].(map[string]any)
 	if !ok || defaultsProperties["wake_on_send"] == nil || defaultsProperties["idle_suspend_after_seconds"] == nil {
 		t.Fatalf("NewSandboxDefaults.properties = %v, want wake and idle defaults", defaultsSchema["properties"])
+	}
+}
+
+func TestPolicyGrantOpenAPIHasNoJoinedView(t *testing.T) {
+	var output bytes.Buffer
+	if err := exportOpenAPI(&output); err != nil {
+		t.Fatal(err)
+	}
+	document := assertSaneOpenAPI(t, output.Bytes())
+	if _, ok := document.Paths["/sandboxes/{name}/egress"]; ok {
+		t.Error("OpenAPI still exposes joined Sandbox egress")
+	}
+	if _, ok := document.Components.Schemas["BindingView"]; ok {
+		t.Error("OpenAPI still exposes BindingView")
+	}
+	var operation struct {
+		Responses map[string]struct {
+			Content map[string]json.RawMessage `json:"content"`
+		} `json:"responses"`
+	}
+	if err := json.Unmarshal(document.Paths["/sandboxes/{name}/policy-bindings"]["post"], &operation); err != nil {
+		t.Fatal(err)
+	}
+	created, ok := operation.Responses["201"]
+	if !ok || len(created.Content) != 0 {
+		t.Fatalf("grant response = %#v, want 201 without a body", operation.Responses)
 	}
 }
 

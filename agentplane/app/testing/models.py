@@ -3,92 +3,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.egress.decisions import Decision
-from agentplane.egress.resources import Target
 from agentplane.env.runtime.harness import Harness
-from agentplane.policy_sets import ConditionStatus
-from agentplane.subjects import ServiceAccountRef
 
 SUBSET_ROW_LIMIT = 200
-
-
-class CredentialView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str
-    description: str
-    placeholder: str
-    secret: str | None = None
-    key: str | None = None
-    targets: list[Target]
-
-
-class EgressRuleView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    kind: Literal["egress"]
-    number: int
-    hosts: list[str]
-    methods: list[str] | None = None
-    paths: list[str] | None = None
-    credential: CredentialView | None = None
-    missing_credential: str | None = None
-
-
-class OtherRuleView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    kind: Literal["other"]
-    number: int
-    type: str
-    fields: dict[str, JsonValue]
-
-
-RuleView = Annotated[EgressRuleView | OtherRuleView, Field(discriminator="kind")]
-
-
-class PolicySetView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str
-    generation: int
-    rules: list[RuleView]
-    refused: str | None = None
-
-
-class BindingProvenance(StrEnum):
-    GIT = "git"
-    SANDBOX = "sandbox"
-    OPERATOR = "operator"
-
-
-class ConditionView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    type: str
-    status: ConditionStatus
-    reason: str
-    message: str
-    observed_generation: int | None = None
-
-
-class BindingView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str
-    provenance: BindingProvenance
-    generation: int
-    subjects: list[ServiceAccountRef]
-    expires_at: datetime | None = None
-    conditions: list[ConditionView]
-    policy_sets: list[PolicySetView]
-    missing_policy_sets: list[str]
 
 
 class ThreadView(BaseModel):

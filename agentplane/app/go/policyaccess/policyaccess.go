@@ -6,12 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"sync"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
-	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/policy"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -74,80 +72,6 @@ func (a *Access) ActionPolicySets(ctx context.Context) ([]ActionPolicySetView, e
 	return views, nil
 }
 
-// BindingsFor returns the subject's PolicyBindings by name, projecting every named set and each
-// policy reader's status without reading credential values.
-func (a *Access) BindingsFor(ctx context.Context, subject *identitypb.ServiceAccount) ([]BindingView, error) {
-	if subject == nil || subject.GetNamespace() == "" || subject.GetName() == "" {
-		return nil, errors.New("ServiceAccount namespace and name are required")
-	}
-	bindings, sets, credentials, err := a.listPolicySnapshot(ctx)
-	if err != nil {
-		return nil, err
-	}
-	setViews, err := credentialProjection(sets.Items, credentials.Items)
-	if err != nil {
-		return nil, err
-	}
-	return bindingViews(bindings.Items, setViews, policyapi.ServiceAccountRef{
-		Namespace: subject.GetNamespace(), Name: subject.GetName(),
-	}), nil
-}
-
-// BindingsFromSnapshot projects a subject's bindings from a caller-owned, deep-copied live
-// Kubernetes snapshot. It shares the same sanitization and refusal rules as BindingsFor without
-// performing a second set of API-server reads that could disagree with the watched frame.
-func BindingsFromSnapshot(
-	bindings []policyapi.PolicyBinding,
-	sets []policyapi.PolicySet,
-	credentials []egressapi.EgressCredential,
-	subject *identitypb.ServiceAccount,
-) ([]BindingView, error) {
-	if subject == nil || subject.GetNamespace() == "" || subject.GetName() == "" {
-		return nil, errors.New("ServiceAccount namespace and name are required")
-	}
-	setViews, err := credentialProjection(sets, credentials)
-	if err != nil {
-		return nil, err
-	}
-	return bindingViews(bindings, setViews, policyapi.ServiceAccountRef{
-		Namespace: subject.GetNamespace(), Name: subject.GetName(),
-	}), nil
-}
-
-func (a *Access) listPolicySnapshot(
-	ctx context.Context,
-) (policyapi.PolicyBindingList, policyapi.PolicySetList, egressapi.EgressCredentialList, error) {
-	var bindings policyapi.PolicyBindingList
-	var sets policyapi.PolicySetList
-	var credentials egressapi.EgressCredentialList
-	var errs [3]error
-	var group sync.WaitGroup
-	group.Add(len(errs))
-	go func() {
-		defer group.Done()
-		errs[0] = a.objects.List(ctx, &bindings, client.InNamespace(a.namespace))
-	}()
-	go func() {
-		defer group.Done()
-		errs[1] = a.objects.List(ctx, &sets, client.InNamespace(a.namespace))
-	}()
-	go func() {
-		defer group.Done()
-		errs[2] = a.objects.List(ctx, &credentials, client.InNamespace(a.namespace))
-	}()
-	group.Wait()
-	if errs[0] != nil {
-		return bindings, sets, credentials, fmt.Errorf("list PolicyBindings: %w", errs[0])
-	}
-	if errs[1] != nil {
-		return bindings, sets, credentials, fmt.Errorf("list PolicySets: %w", errs[1])
-	}
-	if errs[2] != nil {
-		return bindings, sets, credentials, fmt.Errorf("list EgressCredentials: %w", errs[2])
-	}
-	return bindings, sets, credentials, nil
-}
-
 // Grant creates a new generated-name binding owned by the Sandbox. Repeated grants create
 // independent bindings so each expiry and later revocation belongs to its own grant.
 func (a *Access) Grant(
@@ -155,7 +79,7 @@ func (a *Access) Grant(
 	sandbox *environmentpb.EnvironmentDescriptor,
 	policySets []string,
 	expiresAt *metav1.Time,
-) (*BindingView, error) {
+) error {
 	var target *identitypb.EnvironmentTarget
 	var account *identitypb.ServiceAccountIdentity
 	if sandbox != nil {
@@ -163,10 +87,10 @@ func (a *Access) Grant(
 	}
 	if target == nil || target.GetNamespace() != a.namespace || target.GetName() == "" || target.GetUid() == "" ||
 		account == nil || account.GetAccount() == nil || account.GetAccount().GetNamespace() == "" || account.GetAccount().GetName() == "" {
-		return nil, errors.New("Sandbox name, UID, and ServiceAccount are required")
+		return errors.New("Sandbox name, UID, and ServiceAccount are required")
 	}
 	if err := a.requireKnownPolicySets(ctx, policySets); err != nil {
-		return nil, err
+		return err
 	}
 	controller := false
 	blockOwnerDeletion := false
@@ -187,19 +111,7 @@ func (a *Access) Grant(
 			PolicySets: append([]string(nil), policySets...), ExpiresAt: expiresAt,
 		},
 	}
-	if err := a.objects.Create(ctx, binding); err != nil {
-		return nil, err
-	}
-	views, err := a.BindingsFor(ctx, &identitypb.ServiceAccount{Namespace: account.GetAccount().GetNamespace(), Name: account.GetAccount().GetName()})
-	if err != nil {
-		return nil, err
-	}
-	for index := range views {
-		if views[index].Name == binding.Name {
-			return &views[index], nil
-		}
-	}
-	return nil, &CreatedBindingNotVisibleError{Name: binding.Name}
+	return a.objects.Create(ctx, binding)
 }
 
 // Revoke deletes only an operator-owned binding. Git-owned resources are restored by Flux, and

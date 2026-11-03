@@ -22,12 +22,3 @@ type SandboxOwnedBindingError struct{ Name string }
 func (e *SandboxOwnedBindingError) Error() string {
 	return fmt.Sprintf("PolicyBinding name='%s' is the Sandbox's own; change the Sandbox's policy sets instead", e.Name)
 }
-
-// CreatedBindingNotVisibleError means the API accepted a grant but its binding was not in the
-// subsequent namespace read. Retrying the grant could create a second authority, so callers must
-// reconcile before trying again.
-type CreatedBindingNotVisibleError struct{ Name string }
-
-func (e *CreatedBindingNotVisibleError) Error() string {
-	return "Created PolicyBinding is no longer visible; reconcile before retrying"
-}

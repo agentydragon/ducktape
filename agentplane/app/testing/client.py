@@ -23,7 +23,6 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 
 from agentplane.app import app_service_pb2
 from agentplane.app.testing.models import (
-    BindingView,
     DecisionsSnapshot,
     DecisionsUnavailable,
     ThreadMetadata,
@@ -236,12 +235,6 @@ class Client:
         return (
             f"/upstream/environments/v1/environments/{quote(target.namespace, safe='')}/{quote(target.name, safe='')}"
         )
-
-    async def bindings(self, name: str, uid: str) -> list[BindingView]:
-        return [
-            BindingView.model_validate(row)
-            for row in await self._json("GET", f"/sandboxes/{name}/egress", params={"uid": uid})
-        ]
 
     async def decisions(self, name: str, uid: str) -> list[Decision]:
         """The first frame of the sandbox's egress decision stream, oldest first."""
