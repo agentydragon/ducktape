@@ -1163,7 +1163,7 @@ def running_stack(
                     ),
                     models,
                     mcp,
-                    pki_incarnation=uuid.uuid4().hex[:10],
+                    pki_incarnation=uuid.uuid4().hex,
                 )
                 if fixture.vm_sandboxes:
                     vm_sandboxes.select_boot_evidence(

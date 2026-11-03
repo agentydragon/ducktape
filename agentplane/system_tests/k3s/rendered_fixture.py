@@ -165,12 +165,7 @@ def fill(
             raise ValueError(f"{fixture.backend=} is not rendered for {models=}")
     objects = _replace(fixture.objects, replacements)
     if pki_incarnation is not None:
-        if (
-            not pki_incarnation.isascii()
-            or not pki_incarnation.isalnum()
-            or pki_incarnation != pki_incarnation.lower()
-            or len(pki_incarnation) > 12
-        ):
+        if not re.fullmatch(r"[0-9a-f]{32}", pki_incarnation):
             raise ValueError(f"invalid PKI incarnation suffix: {pki_incarnation!r}")
         # This test stack retains cert-manager across actions. Its cache keys are resource
         # names, so deleting and recreating same-named CAs and issuers can let an old signing

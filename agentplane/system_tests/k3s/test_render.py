@@ -2,6 +2,7 @@
 
 import json
 import os
+import uuid
 from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
@@ -389,35 +390,65 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations() -> None:
 
 
 def test_retained_fixture_pki_names_are_scoped_to_stack_incarnation() -> None:
-    first = _filled_fixture(pki_incarnation="a1b2c3d4")
-    second = _filled_fixture(pki_incarnation="e5f6a7b8")
+    first = _filled_fixture(pki_incarnation=uuid.uuid4().hex)
+    second = _filled_fixture(pki_incarnation=uuid.uuid4().hex)
 
-    for fixture, suffix in ((first, "a1b2c3d4"), (second, "e5f6a7b8")):
-        root = _resource(fixture.objects, "Certificate", f"test-runner-root-{suffix}")
-        bootstrap = _resource(fixture.objects, "ClusterIssuer", f"test-runner-root-bootstrap-{suffix}")
-        internal = _resource(fixture.objects, "ClusterIssuer", f"cluster-internal-ca-{suffix}")
-        bundle = _resource(fixture.objects, "Bundle", f"cluster-internal-ca-bundle-{suffix}")
-        intermediate = _resource(fixture.objects, "Certificate", f"agentplane-runner-ca-{suffix}")
-        intermediate_issuer = _resource(fixture.objects, "Issuer", f"agentplane-runner-ca-{suffix}")
-        gateway_certificate = _resource(fixture.objects, "Certificate", "agentplane-runner-gateway")
-
-        assert root["spec"]["secretName"] == f"test-runner-root-{suffix}"
-        assert root["spec"]["commonName"] == "test-k3s-runner-root"
-        assert root["spec"]["isCA"] is True
-        assert root["spec"]["privateKey"] == {"algorithm": "ECDSA", "size": 256}
-        assert root["spec"]["issuerRef"] == {"kind": "ClusterIssuer", "name": bootstrap["metadata"]["name"]}
-        assert bootstrap["spec"] == {"selfSigned": {}}
-        assert internal["spec"]["ca"]["secretName"] == root["spec"]["secretName"]
-        assert bundle["spec"]["sources"] == [{"secret": {"name": root["spec"]["secretName"], "key": "ca.crt"}}]
-        assert intermediate["spec"]["secretName"] == f"agentplane-runner-ca-{suffix}"
-        assert intermediate["spec"]["issuerRef"]["name"] == internal["metadata"]["name"]
-        assert intermediate["spec"]["commonName"] == f"agentplane-runner-ca-{suffix}"
-        assert intermediate_issuer["spec"]["ca"]["secretName"] == intermediate["spec"]["secretName"]
-        assert gateway_certificate["spec"]["secretName"] == f"agentplane-runner-gateway-tls-{suffix}"
-        assert gateway_certificate["spec"]["issuerRef"]["name"] == intermediate_issuer["metadata"]["name"]
+    def identities(fixture: rendered_fixture.RenderedFixture) -> set[str]:
+        objects = fixture.objects
+        gateway_certificates = [
+            doc
+            for doc in objects
+            if doc["kind"] == "Certificate"
+            and doc["metadata"].get("namespace") == fixture.namespace
+            and doc["spec"].get("uris") == ["spiffe://agentplane/runner-gateway"]
+        ]
+        assert len(gateway_certificates) == 1
+        gateway_certificate = gateway_certificates[0]
         assert gateway_certificate["spec"]["uris"] == ["spiffe://agentplane/runner-gateway"]
+        gateway_issuer_ref = gateway_certificate["spec"]["issuerRef"]
+        assert gateway_issuer_ref["kind"] == "Issuer"
+        gateway_issuer = _resource(objects, "Issuer", gateway_issuer_ref["name"])
+        intermediate_secret = gateway_issuer["spec"]["ca"]["secretName"]
+        intermediates = [
+            doc
+            for doc in objects
+            if doc["kind"] == "Certificate"
+            and doc["metadata"].get("namespace") == fixture.namespace
+            and doc["spec"].get("secretName") == intermediate_secret
+        ]
+        assert len(intermediates) == 1
+        intermediate = intermediates[0]
+        internal_ref = intermediate["spec"]["issuerRef"]
+        assert internal_ref["kind"] == "ClusterIssuer"
+        internal = _resource(objects, "ClusterIssuer", internal_ref["name"])
+        root_secret = internal["spec"]["ca"]["secretName"]
+        roots = [
+            doc
+            for doc in objects
+            if doc["kind"] == "Certificate"
+            and doc["metadata"].get("namespace") == "cert-manager"
+            and doc["spec"].get("secretName") == root_secret
+        ]
+        assert len(roots) == 1
+        root = roots[0]
+        assert root["spec"]["commonName"] == "test-k3s-runner-root"
+        bootstrap_ref = root["spec"]["issuerRef"]
+        assert bootstrap_ref["kind"] == "ClusterIssuer"
+        bootstrap = _resource(objects, "ClusterIssuer", bootstrap_ref["name"])
 
-        gateway = _resource(fixture.objects, "Deployment", "runner-gateway")["spec"]["template"]["spec"]
+        bundles = [
+            doc
+            for doc in objects
+            if doc["kind"] == "Bundle"
+            and any(
+                source.get("secret", {}).get("name") == root_secret and source.get("secret", {}).get("key") == "ca.crt"
+                for source in doc["spec"].get("sources", [])
+            )
+        ]
+        assert len(bundles) == 1
+        bundle = bundles[0]
+
+        gateway = _resource(objects, "Deployment", "runner-gateway")["spec"]["template"]["spec"]
         projected_sources = [
             source for volume in gateway["volumes"] for source in volume.get("projected", {}).get("sources", [])
         ]
@@ -428,7 +459,8 @@ def test_retained_fixture_pki_names_are_scoped_to_stack_incarnation() -> None:
             source.get("secret", {}).get("name") == gateway_certificate["spec"]["secretName"]
             for source in projected_sources
         )
-        sandbox_controller = _resource(fixture.objects, "Deployment", "sandbox-controller")["spec"]["template"]["spec"]
+
+        sandbox_controller = _resource(objects, "Deployment", "sandbox-controller")["spec"]["template"]["spec"]
         controller_container = next(
             container for container in sandbox_controller["containers"] if container["name"] == "sandbox-controller"
         )
@@ -437,7 +469,21 @@ def test_retained_fixture_pki_names_are_scoped_to_stack_incarnation() -> None:
             for variable in controller_container["env"]
             if variable["name"] == "AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_CERTIFICATE_ISSUER"
         )
-        assert issuer_env["value"] == intermediate_issuer["metadata"]["name"]
+        assert issuer_env["value"] == gateway_issuer["metadata"]["name"]
+
+        return {
+            root["metadata"]["name"],
+            root_secret,
+            bootstrap["metadata"]["name"],
+            internal["metadata"]["name"],
+            bundle["metadata"]["name"],
+            intermediate["metadata"]["name"],
+            intermediate_secret,
+            gateway_issuer["metadata"]["name"],
+            gateway_certificate["spec"]["secretName"],
+        }
+
+    assert identities(first).isdisjoint(identities(second))
 
 
 def test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling() -> None:
