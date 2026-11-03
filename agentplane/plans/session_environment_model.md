@@ -557,6 +557,33 @@ If the exact required environment UID is deleted, fence pending creation and del
 
 Where callers need progress, expose it through the existing get/watch mechanisms or an equivalent, with clear Dispatcher-accepted versus owner-accepted meaning; do not require a separate visible phase merely because an implementation has one. Show harness/setup readiness separately only where callers need it; avoid inventing a mandatory separate “start harness” API. A future explicit prepare/warm operation can be added if there is a real use case. Before removing the central Sandbox requirement, choose its independent execution principal, prompt context and optional attachment/setup semantics.
 
+### Open decision: forgetting a deleted Session
+
+The operator's intended meaning of deleting a Session's Dispatcher record was to forget that the
+Session existed in Dispatcher. This does not select a retention or UUID-reuse policy. Retaining a
+UUID marker is an alternative to discuss, not an agreed requirement. History remains a separate
+retained store; forgetting live state does not imply deleting historical evidence.
+
+**Current behavior, checked at `256a2a7d60`:** [cleanup](../runner_gateway/dispatcher/terminal.go)
+deletes openings and dispatches and retains an environment-UID admission fence. It retains no
+Session-UUID marker. [Opening retries](../runner_gateway/dispatcher/api.go) recover a retained
+receipt without live inventory, but after cleanup an absent UUID takes fresh admission. A request
+for the deleted environment UID is fenced; the same Session UUID with a different live environment
+UID can be admitted. [History](../history_service/storage/store.go) retains its own Session row and
+rejects conflicting principal, writer or environment attribution; accepting a reused UUID in
+Dispatcher therefore does not make it a fresh historical identity.
+
+| Option              | Dispatcher behavior after deletion                                        | Implications to decide                                                                                                                                                                                                                                                                         |
+| ------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Complete forgetting | Keep no Session record or marker; an absent UUID follows fresh admission. | Rely on callers minting globally unique UUIDs and define deliberate reuse/conflicting retries. Random collisions are unlikely, but a retry can deliberately carry an old UUID. Retained History can still reject the new writer.                                                               |
+| Minimal UUID marker | Keep enough evidence to reject reuse of a retired UUID.                   | Choose marker lifetime, fields and read authority. Existence alone cannot recover the exact creation receipt or authorize its read. Serialize marker creation with admission and cleanup; this is retained Dispatcher knowledge rather than complete forgetting.                               |
+| Consult History     | Check retained historical identity when Dispatcher has no live record.    | History may have no row for an accepted but unmaterialized or unexported Session, and retention may remove evidence. Choose behavior when History is unavailable and how to close the concurrent check/create gap across the two databases; a lookup alone cannot enforce lifetime uniqueness. |
+
+The public UUID remains the Session identity across stores. Decide whether uniqueness is a caller
+contract or a server-enforced lifetime guarantee, what an exact retry observes after deletion,
+and what absence means when Dispatcher and History disagree. Keep deletion races and unavailable
+History explicit under the selected option. No option is selected here.
+
 <a id="wake"></a>
 
 ## Should sending wake an environment?
@@ -857,6 +884,15 @@ follow-up tasks. The inventory distinguishes public Session addressing from nati
 execution fences, authorization and provenance. The plan removes the older compound-address
 recommendation and records completed prerequisites; the detailed central principal and attachment
 contracts remain open.
+
+**2026-11-03 · Deleting Dispatcher state means forgetting**
+
+The operator clarified that deleting a Session's Dispatcher record was conceived as forgetting that
+it existed there, and asked to discuss the options without selecting a retention or UUID-reuse
+policy. The proposal now compares complete forgetting, a minimal UUID marker and consulting
+History. It distinguishes today's environment-UID fence from a Session-UUID marker, and records
+the effects on retained History, exact retries, globally unique UUIDs, concurrent admission and
+availability. No marker, retention lifetime or UUID-reuse policy is agreed by this clarification.
 
 **Still open**
 
