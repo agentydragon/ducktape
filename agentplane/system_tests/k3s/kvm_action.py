@@ -37,10 +37,10 @@ def verify_acceleration(
 
     async def create(name: str, **kwargs: Any) -> environment_service_pb2.EnvironmentDescriptor:
         created = await sandboxes(name, **kwargs)
-        evidence = await asyncio.to_thread(vm_sandboxes.assert_kvm, kubectl, namespace, vmi_name=created.name)
+        evidence = await asyncio.to_thread(vm_sandboxes.assert_kvm, kubectl, namespace, vmi_name=created.target.name)
         directory = undeclared_outputs_dir() / "vm-artifacts/kvm"
         directory.mkdir(parents=True, exist_ok=True)
-        (directory / f"{created.name}.json").write_text(json.dumps(evidence, indent=2) + "\n")
+        (directory / f"{created.target.name}.json").write_text(json.dumps(evidence, indent=2) + "\n")
         return created
 
     return create
