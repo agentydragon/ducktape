@@ -16,21 +16,20 @@ finished implementation contract.
 **Chosen direction:** public, unscoped Session UUIDs distinct from harness-native IDs; one inherent
 required environment for today's environment-hosted native Sessions; central Sessions may have
 zero or more environment attachments; a Dispatcher PostgreSQL Session record establishes logical
-existence without starting a harness; History remains separately stored; app archive is not Session
-deletion; central Sessions persist indefinitely for now; and authorized unattended inbox notices
+existence without waiting for its owner or starting a harness; History remains separately stored;
+app archive is not Session deletion; central Sessions persist indefinitely for now; and authorized unattended inbox notices
 must be capable of waking an environment. Record all attachment transitions in History eventually;
 this is a correctness requirement, though not the highest priority. Existing systems do not yet
 implement all of this.
 
-**Low-regret work available now:**
+**Low-regret work and completed prerequisites:**
 
 1. The [task DAG](task_dag.md) now records that Dispatcher PostgreSQL and queue-backed admission
    are mandatory and retires the proposed queue-off mode. Delivery, fencing and the independently
    scoped database-free integration tier remain open.
-2. [Address the uncertain Session reservation write](https://github.com/agentydragon/ducktape/pull/14026):
-   fail closed when the COSI backing-store outcome is uncertain, and recover without replacing the
-   event source or replaying an uncertain native effect. Test retry, restart and conflicting requests.
-   This repairs today's Runtime contract independently of the new directory.
+2. [The uncertain Session reservation write was repaired](https://github.com/agentydragon/ducktape/pull/14026)
+   independently of the new directory: an uncertain COSI backing-store outcome fails closed and
+   recovers without replacing the event source or replaying an uncertain native effect.
 3. Use the [current opening and recovery inventory](session_opening_recovery.md) to specify one
    owner for each fact and the Dispatcher-to-backend handoff. The inventory traces stores, authority
    checks, retries and uncertain outcomes without committing to a new schema or API.
@@ -524,7 +523,15 @@ OpenSession {
 1. **Prepare when needed.** Reuse or start a shared Codex app-server, launch a per-Session Claude process, or create central sampler state as appropriate. The caller need not manage those processes. Report relevant progress and failure separately; opening does not promise native identity, setup, a ready process or provider output. The owner may perform safe work eagerly, but must preserve the same externally visible acknowledgement and idempotency semantics.
 1. **Send a command.** Submitting input is a separate durable operation. Reconcile its admission, execution and any uncertain effects using their own evidence. Do not automatically replay a native create or external action after an unknown result.
 
-**Setup and environment wake are explicit policy questions:** opening a central Session without an environment cannot run an environment setup script. If a script is supplied, require an explicit target and define when it runs, its readiness and failure status, and retry behavior. Native opening may remain queued for a suspended environment or trigger wake only under authorized wake policy. Do not assume central and native setup happen at the same time today.
+### Agreed behavior when the owner is unavailable
+
+Here the owner is the environment Runtime for an environment-hosted Session or the central sampler for a central Session; it is not the individual harness process. After request shape, placement and the applicable authorization have been validated, the Dispatcher database commit establishes logical existence. A successful opening does not wait for the owner to be reachable, an environment to wake, History to receive its projection, or a harness-native Session to be created. The Dispatcher must let callers find the accepted Session and observe its progress independently of History.
+
+Unavailable owners and suspended environments are wait and retry conditions. When work requires the Session, deliver it to the correct owner and materialize the Session there; wake an environment only under an authorized policy, which must support eligible unattended inbox notices. A later owner rejection is visible as a materialization error on the existing logical Session. How callers correct configuration or retry a rejected Session, including which fields can change, remains to be designed.
+
+Retry using the same public UUID and creation contract, and reconcile durable owner evidence before taking another action. A lost response does not justify blindly replaying an uncertain native creation or external effect. If the exact required environment UID is deleted, fence pending creation and delivery against that deletion and eventually retire its live Dispatcher records; preserve History under its existing retention. The precise terminal outcomes, cleanup and cross-database handoff still need a design.
+
+**Setup and environment wake are explicit policy questions:** opening a central Session without an environment cannot run an environment setup script. If a script is supplied, require an explicit target and define when it runs, its readiness and failure status, and retry behavior. Opening must not require wake for acknowledgement; whether an optional eager attempt may request wake and which component owns wake remain open. Do not assume central and native setup happen at the same time today.
 
 Where callers need progress, expose it through the existing get/watch mechanisms or an equivalent, with clear Dispatcher-accepted versus owner-accepted meaning; do not require a separate visible phase merely because an implementation has one. Show harness/setup readiness separately only where callers need it; avoid inventing a mandatory separate “start harness” API. A future explicit prepare/warm operation can be added if there is a real use case. Before removing the central Sandbox requirement, choose its independent execution principal, prompt context and optional attachment/setup semantics.
 
@@ -663,7 +670,7 @@ Only after the contracts work, assess whether to regroup services, expose a sepa
 
 **Priority A · Who can own and use a central Session with no environment?** Today the Dispatcher derives the Session execution principal from a Sandbox-owned ServiceAccount and History scopes normal reads to the retained execution principal. A central Session with zero environments needs a durable principal or ownership scope independent of any attached environment, plus explicit create, read, send and attachment authorization. Recommend retaining the real initiating principal separately from the sampler’s service identity and checking environment-specific permissions at each attachment and operation; choose the precise owner identity and lifetime before claiming zero-environment support.
 
-**Agreed · What Dispatcher reserves.** The Dispatcher’s committed Session row establishes logical existence, including for a suspended native environment. Its placement and request are authoritative; the backend creates runtime/continuation state on demand and retains the native ID where appropriate. Decide validation, backend creation failure and lost native-ID recovery without replay. No cross-database atomicity or mandatory backend wake is implied.
+**Agreed · What Dispatcher reserves.** The Dispatcher’s committed Session row establishes logical existence, including when the environment Runtime or central sampler is unavailable. Its placement and request are authoritative; the owner creates runtime/continuation state on demand and retains the native ID where appropriate. Report a later materialization rejection separately; decide how it is corrected or retried and how a lost native ID is recovered without replay. No cross-database atomicity or mandatory wake is implied.
 
 **Agreed · Attachment transitions in History.** Recording every attachment transition is a correctness requirement, but not high priority. Today History retains one Sandbox association, insufficient for a central Session with zero or many environments. Design durable, time-qualified provenance and historical read authority. If the History view is deferred, identify the temporary coverage gap and avoid claiming complete provenance; consider capturing transition evidence at mutation time because missed changes may not be reconstructible later.
 
@@ -675,7 +682,7 @@ Only after the contracts work, assess whether to regroup services, expose a sepa
 
 **Wake policy · Where should automatic wake live?** Required capability: unattended inbox notices can wake an eligible environment. Compare keeping the existing Dispatcher wake path with Notification-owned explicit wake orchestration; also decide ordinary human-send behavior, accepted-work races and queueing for starting/disconnected targets. Preserve policy and authority in either design.
 
-**OpenSession · What does opening promise?** Agreed: the Dispatcher row creates the logical Session for both placements; harness startup and native creation happen later with the owner. Decide setup timing, optional wake and any readiness/warmup API without requiring an executor for a central Session that does not use one.
+**OpenSession · What does opening promise?** Agreed: the Dispatcher row creates the logical Session for both placements without waiting for owner availability; harness startup and native creation may happen later with the owner. Decide setup timing, optional wake, correction of materialization failures and any readiness/warmup API without requiring an executor for a central Session that does not use one.
 
 **2 · Are central attachments durable by default?** I recommend durable desired attachments when explicitly added; reachability and active streams stay ephemeral. Ad hoc one-call environment access could remain a separate explicit capability rather than silently creating a lasting attachment. Native placement is a separate required relationship.
 
@@ -784,6 +791,10 @@ The operator suggested that Agentplane could own its identity model independentl
 **2026-11-02 · Standard identity provisioning patterns**
 
 The operator asked whether reconciling desired agent identities, accounts and roles across systems has an established name or implementation, noting examples of identity providers and downstream services. They clarified that the named products were incidental, not selected targets. The assistant identified identity lifecycle / governance and provisioning, SCIM for supported identity resources, OIDC/OAuth for authentication and authorization, and connector or Kubernetes-controller patterns as separate building blocks. The plan keeps product choice and the authority for identity and entitlement facts open.
+
+**2026-11-02 · Opening while the Session owner is unavailable**
+
+The operator asked what “backend” meant in the proposed opening contract. The assistant clarified that it means the responsible environment Runtime or central sampler, not necessarily a running harness process, and proposed acknowledging logical Session creation once the Dispatcher commits it even if that owner is unavailable. The operator agreed. Owner materialization and its errors remain observable separately, and work can wait for an authorized wake, including wake for unattended inbox notices. The discussion leaves error correction, wake ownership, uncertain-effect recovery, exact deletion cleanup and central Session authority open; it does not claim the proposed directory is implemented.
 
 **Still open**
 
