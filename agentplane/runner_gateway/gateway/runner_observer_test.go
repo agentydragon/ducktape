@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -533,6 +534,37 @@ func TestRunnerObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing.
 	stale := &fencedRunnerConn{conn: second.direct.conn, identity: first.direct.identity, connection: first}
 	if _, err := environmentruntimepb.NewEnvironmentRuntimeClient(stale).GetStatus(ctx, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("old boot remained usable after reconnect: %v", err)
+	}
+}
+
+func TestRunnerObserverKeepsUnchangedDestinationOnSandboxUpdate(t *testing.T) {
+	f := newSandboxFixture(t)
+	g := f.newGateway(t, "test-stable-gateway", "192.0.2.30")
+	destination, err := g.runnerDestination(t.Context(), f.sandbox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A status update causes another read of the same identity into a new protobuf value.
+	updated := f.sandbox.DeepCopy()
+	updated.Status.OperatingMode = sandboxapi.OperatingModeSuspended
+	updated.Status.StopStage = sandboxapi.StopStageQuiescing
+	if err := f.objects.Status().Update(t.Context(), updated); err != nil {
+		t.Fatal(err)
+	}
+	oldDone := make(chan struct{})
+	cancelled := false
+	active := map[string]runnerObserver{
+		f.sandbox.Name: {destination: destination, cancel: func() { cancelled = true }, done: oldDone},
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	var workers sync.WaitGroup
+	defer workers.Wait()
+	defer cancel()
+	if err := g.reconcileObserver(ctx, f.sandbox.Name, active, &workers); err != nil {
+		t.Fatal(err)
+	}
+	if cancelled || active[f.sandbox.Name].done != oldDone {
+		t.Fatal("an unchanged destination replaced the live runner observer")
 	}
 }
 

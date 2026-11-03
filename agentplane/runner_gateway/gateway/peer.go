@@ -26,6 +26,12 @@ type runnerDestination struct {
 	target   string
 }
 
+// equal compares identity by value: each Kubernetes read produces a new protobuf message.
+func (d runnerDestination) equal(other runnerDestination) bool {
+	return proto.Equal(d.identity, other.identity) && d.podUID == other.podUID &&
+		d.peerURI == other.peerURI && d.target == other.target
+}
+
 // runnerDestination derives identity and address from the active workload, never a caller's target.
 func (g *Gateway) runnerDestination(ctx context.Context, sandbox *sandboxapi.Sandbox) (runnerDestination, error) {
 	ref := sandbox.Status.Incarnation

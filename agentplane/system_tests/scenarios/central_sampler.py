@@ -386,7 +386,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
         snapshot = await deployed.sampler.GetSession(
             sampler_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
         )
-        assert snapshot.executor.sandbox_uid == deployed.sandbox_uid
+        assert snapshot.executor.target.uid == deployed.sandbox_uid
         assert snapshot.expected_incarnation_uid == deployed.incarnation_uid
         assert snapshot.attached.setup_state == session_pb2.SETUP_STATE_SUCCEEDED
         async with asyncio.timeout(60), aclosing(deployed.history.watch_session_summaries()) as changes:
@@ -620,7 +620,7 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         assert result["exit_code"] == 0, result
         assert result["output"].splitlines() == ["before-resume", "after-resume"]
 
-        assert snapshot.executor.sandbox_uid == deployed.sandbox_uid
+        assert snapshot.executor.target.uid == deployed.sandbox_uid
         assert snapshot.expected_incarnation_uid == resumed.kubernetes_diagnostics.pod.uid
         assert not snapshot.blocked
         (undeclared_outputs_dir() / "central-sampler-pod-resume.json").write_text(

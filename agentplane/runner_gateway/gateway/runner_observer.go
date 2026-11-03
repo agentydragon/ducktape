@@ -119,7 +119,7 @@ func (g *Gateway) reconcileObserver(ctx context.Context, name string, active map
 		select {
 		case <-current.done:
 		default:
-			if wanted != nil && current.destination == *wanted {
+			if wanted != nil && current.destination.equal(*wanted) {
 				return nil
 			}
 			current.cancel()
