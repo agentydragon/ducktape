@@ -37,6 +37,8 @@ It scopes existing Sessions and existing environments; it does not create enviro
 
 ## Session binding
 
+- `OpenSession` requires `session_id` to be a canonical lowercase UUID before reading Sandbox state or recording an
+  opening. Read RPCs remain unchanged and can still address retained rows by their stored IDs.
 - A normal `OpenSession` can target only the current Sandbox-owned ServiceAccount whose namespace, name and UID
   equal the authenticated caller's reviewed ServiceAccount. The Sandbox and account are read from Kubernetes;
   callers cannot choose a different principal by supplying strings.

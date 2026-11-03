@@ -14,6 +14,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
@@ -436,6 +437,9 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 	if err := required(request.GetSessionId(), request.GetSandbox(), request.GetSandboxUid()); err != nil {
 		return nil, err
 	}
+	if err := canonicalSessionID(request.GetSessionId()); err != nil {
+		return nil, err
+	}
 	current, err := s.sandbox(ctx, request.GetSandbox())
 	if err != nil {
 		return nil, err
@@ -482,6 +486,14 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 		return nil, apiError(err)
 	}
 	return &dispatcherpb.OpenSessionResponse{Opening: opening}, nil
+}
+
+func canonicalSessionID(value string) error {
+	parsed, err := uuid.Parse(value)
+	if err != nil || parsed.String() != value {
+		return status.Error(codes.InvalidArgument, "session_id must be a canonical UUID")
+	}
+	return nil
 }
 
 func (s *Service) GetSessionOpening(ctx context.Context, request *dispatcherpb.GetSessionOpeningRequest) (*dispatcherpb.GetSessionOpeningResponse, error) {

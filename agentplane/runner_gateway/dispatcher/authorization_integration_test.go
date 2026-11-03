@@ -198,21 +198,22 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 		"foreign-account": {account: auth.Account{Namespace: caller.Namespace, Name: "test-stranger"}, uid: "foreign-uid"},
 	}, hub)
 
+	sessionID := uuid.NewString()
 	opened, err := client.OpenSession(authorityContext(t, "owner-account"), &dispatcherpb.OpenSessionRequest{
-		SessionId: "authority-owned-session", Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Spec: &sessionpb.SessionSpec{},
+		SessionId: sessionID, Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Spec: &sessionpb.SessionSpec{},
 	})
 	if err != nil {
 		t.Fatalf("owner OpenSession: %v", err)
 	}
-	if opened.GetOpening().GetSessionId() != "authority-owned-session" {
+	if opened.GetOpening().GetSessionId() != sessionID {
 		t.Fatalf("OpenSession returned %#v", opened.GetOpening())
 	}
 	if _, err := client.SubmitInput(authorityContext(t, "owner-account"), &dispatcherpb.SubmitInputRequest{
-		CommandId: "authority-owned-input", SessionId: "authority-owned-session", Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Text: "owned",
+		CommandId: "authority-owned-input", SessionId: sessionID, Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Text: "owned",
 	}); err != nil {
 		t.Fatalf("same-owner SubmitInput: %v", err)
 	}
-	if _, err := client.GetSessionOpening(authorityContext(t, "owner-account"), &dispatcherpb.GetSessionOpeningRequest{SessionId: "authority-owned-session"}); err != nil {
+	if _, err := client.GetSessionOpening(authorityContext(t, "owner-account"), &dispatcherpb.GetSessionOpeningRequest{SessionId: sessionID}); err != nil {
 		t.Fatalf("same-owner GetSessionOpening: %v", err)
 	}
 	if _, err := client.GetDispatch(authorityContext(t, "owner-account"), &dispatcherpb.GetDispatchRequest{CommandId: "authority-owned-input"}); err != nil {
@@ -220,14 +221,14 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 	}
 
 	foreign := authorityContext(t, "foreign-account")
-	if _, err := client.GetSessionOpening(foreign, &dispatcherpb.GetSessionOpeningRequest{SessionId: "authority-owned-session"}); status.Code(err) != codes.NotFound {
+	if _, err := client.GetSessionOpening(foreign, &dispatcherpb.GetSessionOpeningRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
 		t.Fatalf("foreign GetSessionOpening = %v, want NotFound", err)
 	}
 	if _, err := client.GetDispatch(foreign, &dispatcherpb.GetDispatchRequest{CommandId: "authority-owned-input"}); status.Code(err) != codes.NotFound {
 		t.Fatalf("foreign GetDispatch = %v, want NotFound", err)
 	}
 	if _, err := client.SubmitInput(foreign, &dispatcherpb.SubmitInputRequest{
-		CommandId: "authority-foreign-input", SessionId: "authority-owned-session", Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Text: "foreign",
+		CommandId: "authority-foreign-input", SessionId: sessionID, Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Text: "foreign",
 	}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("foreign SubmitInput = %v, want PermissionDenied", err)
 	}
@@ -271,31 +272,31 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 	// The retained owner UID is immutable: a replacement ServiceAccount with the same name can
 	// neither read the existing Session nor act as its old principal.
 	replacement := authorityContext(t, "owner-replaced")
-	if _, err := client.GetSessionOpening(replacement, &dispatcherpb.GetSessionOpeningRequest{SessionId: "authority-owned-session"}); status.Code(err) != codes.NotFound {
+	if _, err := client.GetSessionOpening(replacement, &dispatcherpb.GetSessionOpeningRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
 		t.Fatalf("same-name replacement GetSessionOpening = %v, want NotFound", err)
 	}
 	inventory.setAccount(serviceAccountIdentityFor(Account(caller), "replacement-uid"))
 	inventory.failSandboxRead(errors.New("inventory unavailable for retained reads"))
-	if _, err := client.GetSessionOpening(authorityContext(t, "owner-account"), &dispatcherpb.GetSessionOpeningRequest{SessionId: "authority-owned-session"}); err != nil {
+	if _, err := client.GetSessionOpening(authorityContext(t, "owner-account"), &dispatcherpb.GetSessionOpeningRequest{SessionId: sessionID}); err != nil {
 		t.Fatalf("retained read required a live Sandbox after account replacement: %v", err)
 	}
 	if _, err := client.GetDispatch(authorityContext(t, "owner-account"), &dispatcherpb.GetDispatchRequest{CommandId: "authority-owned-input"}); err != nil {
 		t.Fatalf("retained Dispatch read required a live Sandbox: %v", err)
 	}
 	retained, err := client.ListDispatches(authorityContext(t, "owner-account"), &dispatcherpb.ListDispatchesRequest{Filter: &dispatcherpb.DispatchFilter{
-		Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: "authority-owned-session"},
+		Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: sessionID},
 	}})
 	if err != nil || len(retained.GetDispatches()) != 1 || retained.GetDispatches()[0].GetCommandId() != "authority-owned-input" {
 		t.Fatalf("retained list read required a live Sandbox or lost owner row: %#v %v", retained.GetDispatches(), err)
 	}
 	inventory.failSandboxRead(nil)
 	if _, err := client.SubmitInput(authorityContext(t, "owner-account"), &dispatcherpb.SubmitInputRequest{
-		CommandId: "authority-revoked-input", SessionId: "authority-owned-session", Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Text: "revoked",
+		CommandId: "authority-revoked-input", SessionId: sessionID, Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Text: "revoked",
 	}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("old principal write after ServiceAccount replacement = %v, want FailedPrecondition", err)
 	}
 	if _, err := client.SubmitInput(replacement, &dispatcherpb.SubmitInputRequest{
-		CommandId: "authority-replacement-input", SessionId: "authority-owned-session", Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Text: "replacement",
+		CommandId: "authority-replacement-input", SessionId: sessionID, Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Text: "replacement",
 	}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("replacement principal write into old Session = %v, want FailedPrecondition", err)
 	}
@@ -358,7 +359,7 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 		return delegatedAuthorityContext(t, "actions-token", effective, effectiveUID, requestID, executionID)
 	}
 
-	const sessionID = "delegated-owned-session"
+	sessionID := uuid.NewString()
 	spec := &sessionpb.SessionSpec{}
 	directOpening, err := client.OpenSession(authorityContext(t, "effective-token"), &dispatcherpb.OpenSessionRequest{
 		SessionId: sessionID, Sandbox: snapshot.Name, SandboxUid: snapshot.UID, Spec: spec,
