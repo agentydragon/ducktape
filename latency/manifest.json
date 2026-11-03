@@ -2,17 +2,17 @@
   "source_devel_commit": "dfb5e25546554024a4f4d4cdf2202da8d5961f63",
   "window_start_utc": "2026-11-02T18:55:00+00:00",
   "window_end_utc": "2026-11-03T00:55:00+00:00",
-  "published_at_utc": "2026-11-03T01:58:25.515852+00:00",
+  "published_at_utc": "2026-11-03T02:16:17.593918+00:00",
   "attribution": "not collected",
   "previous_report_commit": "f198f3595420a9e8739d29ee46cac4503a2a854b",
-  "report_html_sha256": "ecd59f0fd34799ac72b15deecc1690cdfe84cda5fd8b73bd7989ec3d81736c31",
-  "evidence_sha256": "cef03200ebbcbb3890c2b979ea0f3152f8b16284f27e0357831faea238ffe109",
+  "report_html_sha256": "ffe75108079351ec82f4384d1142e86b08138e457fb5f61c7bd8012c5911e7aa",
+  "evidence_sha256": "8cc5e0d1353c5a90b62cf4c3d236f1e6e06ac69154cf2ef5855ed4e8f3bbf32f",
   "visual_validation": {
     "target": "//x/ci_report_preview:visual_test",
     "result": "PASSED",
-    "bazel_invocation_id": "933cbe6c-9b13-4fc7-b510-cc9c55f29497",
-    "outer_remote_runner_invocation_id": "e6e7d68f-e7e3-496a-bb74-87828f3970b0",
-    "reviewed_html_sha256": "ecd59f0fd34799ac72b15deecc1690cdfe84cda5fd8b73bd7989ec3d81736c31",
+    "bazel_invocation_id": "c90fc0cc-873e-423e-96aa-28e72ff23561",
+    "outer_remote_runner_invocation_id": "a92e913f-b355-45b3-8aca-e5494885fe04",
+    "reviewed_html_sha256": "ffe75108079351ec82f4384d1142e86b08138e457fb5f61c7bd8012c5911e7aa",
     "viewports": [
       {
         "width": 1280,
@@ -23,13 +23,31 @@
         "height": 844
       }
     ],
-    "internal_link_count": 62,
+    "internal_link_count": 68,
     "details_expanded": 8,
     "controls_exercised": [
       "select:Speed up",
       "select:Process reduction"
     ],
     "horizontal_overflow": false,
-    "manual_review": "Reviewed final desktop and mobile captures. Summary tables and current evidence section fit the viewport; mobile tables wrap without document overflow."
+    "mobile_wide_table_scroll_regions": [
+      {
+        "label": "All-gates and per-gate feedback metrics",
+        "client_width": 324,
+        "scroll_width": 720
+      },
+      {
+        "label": "Pod sharding experiment results",
+        "client_width": 324,
+        "scroll_width": 720
+      },
+      {
+        "label": "VM resource experiment results",
+        "client_width": 324,
+        "scroll_width": 850
+      }
+    ],
+    "keyboard_scroll_test": "All three named, focusable mobile table regions responded to ArrowRight; the document stayed at 390px width.",
+    "manual_review": "Reviewed desktop/mobile page-top and current-goal captures. Mobile screenshot begins at the page header. The wide summary tables remain readable by scrolling within their labeled, focusable regions; the page itself does not overflow."
   }
 }

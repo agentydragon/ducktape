@@ -3715,7 +3715,9 @@
         "Pre-commit checks",
         "Build artifacts + imports check"
       ],
-      "completion_requirement": "Fresh representative PR observations after landed changes must demonstrate mean <300s on the same clock; no benchmark-only or selected fast-head success claim"
+      "completion_requirement": "Fresh representative PR observations after landed changes must demonstrate mean <300s on the same clock; no benchmark-only or selected fast-head success claim",
+      "baseline_p50_seconds": 531,
+      "baseline_p90_seconds": 839
     },
     "outcomes": {
       "all_three_green": 73,
@@ -3764,7 +3766,7 @@
       "kernel_release": "6.12.115-2 merged",
       "pki_repair_pr": {
         "number": 14035,
-        "state_at_snapshot": "awaiting full required checks"
+        "state_at_snapshot": "Fixture repair pushed at head f90a353c8b; focused RBE test and changed-file hooks passed; two-incarnation real-renewal probe passed; full new-head CI pending at cutoff"
       }
     },
     "pod_sharding_experiment": {
@@ -3829,6 +3831,7 @@
       "conclusion": "No latency win. The successful one-slot-per-shard arm had a 303.01s critical path versus 265.32s baseline and 42.5% more aggregate CPU; no PR candidate."
     },
     "outer_vm_units_experiment": {
+      "execution_environment": "Hosted BuildBuddy RBE using software emulation (QEMU TCG); no KVM hypothesis was selected or tested.",
       "coverage": "All three scenarios, journals, shutdown and loop-device cleanup, and OOM assertions passed once per invocation; no physical TestRunner retry.",
       "guest_cpus": 2,
       "arms": [
@@ -3890,7 +3893,8 @@
       },
       "outputs_identical": true,
       "output_sha256": "8c645108a7b9a56a003d0779dd6e2b738972c024c77874abf1bbab7243de8210",
-      "decision": "Rejected: wall time and CPU both regressed; this build-target comparison is not a full-CI latency claim."
+      "decision": "Rejected: wall time and CPU both regressed; this build-target comparison is not a full-CI latency claim.",
+      "instrumentation": "Both sequential and four-reader diagnostic variants ran with cProfile enabled; wall and CPU values include profiling instrumentation."
     },
     "pki_repair": {
       "pr": 14035,
@@ -3900,7 +3904,7 @@
         "outer_run": "canceled by CLI after the child Build Event Service connection disconnected",
         "source_or_test_verdict": "none"
       },
-      "rerun": "requested after outer terminal proof; full required checks incomplete at this snapshot",
+      "rerun": "Attempt 2 failed in VM cleanup and Pod trust-bundle checks. Fixture repair head f90a353c8b passed focused test_render and changed-file hooks. A two-incarnation real-renewal probe passed at 2026-11-03T02:11:57Z; full new-head CI remained pending.",
       "manual_certificate_renewal_physical_actions": "both passed but were cold",
       "observer_recovery": {
         "issue": 13270,
@@ -3909,7 +3913,60 @@
         "upstream": "same failure mode observed",
         "repo_repair": "no small safe repository-side repair identified; custom CLI/upstream change would be needed"
       },
-      "latency_attribution": "none; no causal all-gates mean change is claimed"
+      "latency_attribution": "none; no causal all-gates mean change is claimed",
+      "second_ci_attempt": {
+        "github_run_id": 41561624392,
+        "github_attempt": 2,
+        "github_job_id": 125675997518,
+        "required_check": "bazel-ci / Test & Build",
+        "buildbuddy_invocation": "50de3cc2-b127-5c79-be37-02e332dbcc8d",
+        "vm_check": {
+          "result": "failed before test cases during cleanup",
+          "phase": "baseline_open / cleanup_stopped",
+          "details": "During baseline_open / cleanup_stopped, the stale baseline K3s marker PID was no longer live. Cleanup started containerd and crictl rmp --all --force; StopPodSandbox timed out after 60 seconds waiting to kill volumekernel-boot-volume in prior pod e1f\u2026.",
+          "source_or_test_verdict": "none from VM; its cases were not reached",
+          "snapshot_continuity": "The same Firecracker snapshot chain carried the dirty baseline forward.",
+          "evidence_limit": "Process/cgroup evidence is missing, so the exact kill-wait mechanism is unknown."
+        },
+        "pod_check": {
+          "result": "failed due trust-bundle mount regression",
+          "root_cause": "Fixture renamed the bundle and target ConfigMap, but the production Sandbox controller uses RunnerTrustBundleName=cluster-internal-ca-bundle; dynamic Sandbox Pods could not mount the missing ConfigMap.",
+          "first_case": "Exclusive-storage case waited 300 seconds.",
+          "suite_effect": "All 14 parametrized cases were reported failed as a cascade from the setup failure, not 14 independent failures.",
+          "repair_in_progress": "Keep the namespace-local trust-bundle name stable while CA, issuer and Secrets remain unique; use a fresh namespace per fixture to isolate the projected bundle.",
+          "controller_source": "agentplane/sandbox_controller/environment_runtime_credential.go at dfb5e25546554024a4f4d4cdf2202da8d5961f63",
+          "controller_constant": "RunnerTrustBundleName = cluster-internal-ca-bundle",
+          "failure_chain": "The exclusive-storage first case waited 300s; this setup failure caused all 14 parametrized cases to be reported failed, not 14 independent failures."
+        },
+        "other_full_suites": "pending at last query",
+        "github_attempt_url": "https://github.com/agentydragon/ducktape/actions/runs/41561624392/attempts/2#job-125675997518"
+      },
+      "repair_at_snapshot": {
+        "head": "f90a353c8b",
+        "commit_message": "Preserve stable sandbox trust bundle in PKI fixture",
+        "focused_target": "//agentplane/system_tests/k3s:test_render",
+        "focused_result": "passed",
+        "focused_action_seconds": 51.7,
+        "focused_buildbuddy_invocation": "11fd9486-b954-456c-a0fd-84bc12ff6d6c",
+        "changed_file_hooks": "passed after removing the temporary probe",
+        "full_new_head_ci": "pending at snapshot cutoff",
+        "temporary_probe": "passed; two real-renewal scenarios ran across two controller incarnations in one action",
+        "snapshot_cutoff_utc": "2026-11-03T02:11:57Z",
+        "separate_vm_cleanup_and_bad_snapshot_discard": "under investigation; no promoted fix",
+        "latency_attribution": "none",
+        "probe_evidence": {
+          "outer_invocation": "711a771f-a84f-4655-b4e4-8f1f8b017d91",
+          "test_runner_invocation": "34990344-709c-4267-868a-670f50f601b6",
+          "test_runner_action_seconds": 206.31,
+          "result": "passed; two real certificate-renewal scenarios, one per incarnation",
+          "receipts": "Both warm with same retained-infrastructure fingerprint d8068\u2026",
+          "reused_within_action": "same K3s boot/node/process and cert-manager, cainjector, webhook and trust-manager UIDs",
+          "fresh_per_incarnation": "namespace, root Certificate and root Secret UIDs",
+          "cleanup": "complete in both incarnations",
+          "validates": "controller reuse within one action",
+          "does_not_validate": "Firecracker snapshot restore"
+        }
+      }
     },
     "latency_claim": "The under-five-minute mean goal remains active and unachieved. No target-level experiment above is promoted to a causal fleet mean saving."
   }

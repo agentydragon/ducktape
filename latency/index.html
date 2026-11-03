@@ -129,6 +129,17 @@
       .table-scroll {
         max-width: 100%;
         overflow-x: auto;
+        overscroll-behavior-x: contain;
+      }
+      .table-scroll:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .table-scroll > table.wide-6 {
+        min-width: 720px;
+      }
+      .table-scroll > table.wide-7 {
+        min-width: 850px;
       }
       table {
         border-collapse: collapse;
@@ -260,28 +271,29 @@
     <main>
       <header>
         <div class="eyebrow">Ducktape · CI latency · 3 November 2026</div>
-        <h1>All three required checks still average above five minutes.</h1>
+        <h1>All three required checks still average 9m 7s.</h1>
         <p class="lede">
-          The exact-head baseline is 547.0548 seconds from the first observed
+          The exact-head mean is 9m 7s (547.1 seconds), from the first observed
           workflow creation to the latest successful completion of all three
-          required contexts, including retry waits. It covers 73 all-green
-          heads in the 18:55–00:55 UTC window; p90 is 839 seconds. The current
-          mean target is below 300 seconds and has not been met.
+          required contexts, including retry waits. It covers 73 all-green heads
+          in the 18:55–00:55 UTC window; p90 is 13m 59s. The target is a mean
+          below five minutes and has not been met.
         </p>
         <p class="meta">
-          Current inspected devel: dfb5e25546554024a4f4d4cdf2202da8d5961f63.
-          The controlled VM and Pod experiments below are frozen at
+          Current inspected devel: dfb5e25546554024a4f4d4cdf2202da8d5961f63. The
+          controlled VM and Pod experiments below are frozen at
           b2b7e3128278a6073b21ac522b42f9e151d5913b. Kernel 6.12.115-2 is merged;
-          PKI repair PR #14035 is awaiting full checks. Neither is credited with
-          a causal change to this baseline.
+          PKI repair PR #14035 has a fixture fix on its current head; focused
+          validation and the two-incarnation probe passed while full CI remains
+          pending. Neither is credited with a causal change to this baseline.
         </p>
         <div class="cards">
           <div class="card">
-            <span>Mean to all three checks green</span><strong>547.1 s</strong>
+            <span>Mean to all three checks green</span><strong>9m 7s</strong>
             <span>73 exact-head green observations · six-hour window.</span>
           </div>
           <div class="card">
-            <span>90th percentile</span><strong>839 s</strong>
+            <span>90th percentile</span><strong>13m 59s</strong>
             <span>Retry waits remain inside the workflow-creation clock.</span>
           </div>
           <div class="card">
@@ -292,7 +304,7 @@
       </header>
       <nav aria-label="Report sections">
         <a href="#under-five">Under-five-minute goal</a>
-        <a href="#decisions">Prior VM study</a>
+        <a href="#historical-vm-study">Prior VM study</a>
         <a href="#decisions">Decisions</a><a href="#graph">Critical paths</a
         ><a href="#experiments">Experiments</a
         ><a href="#runtime">VM lifecycle</a><a href="#resources">Shared stack</a
@@ -305,8 +317,9 @@
         <p class="note">
           <strong>Status: active and not met.</strong> The baseline mean is
           547.0548 seconds; the objective requires a representative mean below
-          300 seconds on the same all-gates clock after changes land. Target-only
-          benchmarks and a selected fast head do not satisfy that requirement.
+          300 seconds on the same all-gates clock after changes land.
+          Target-only benchmarks and a selected fast head do not satisfy that
+          requirement.
         </p>
         <p>
           The clock starts at the first observed workflow creation for an exact
@@ -315,8 +328,13 @@
           heads with all three contexts green enter the latency mean; failed,
           canceled, pending and incomplete outcomes remain visible below.
         </p>
-        <div class="table-scroll">
-          <table>
+        <div
+          class="table-scroll"
+          role="region"
+          aria-label="All-gates and per-gate feedback metrics"
+          tabindex="0"
+        >
+          <table class="wide-6">
             <thead>
               <tr>
                 <th>Completion clock</th>
@@ -332,7 +350,7 @@
                 <th scope="row">All three required checks</th>
                 <td>73</td>
                 <td>547.0548 s</td>
-                <td>—</td>
+                <td>531 s</td>
                 <td>839 s</td>
                 <td>Bazel 71 · artifacts 2</td>
               </tr>
@@ -371,26 +389,54 @@
         <div class="table-scroll">
           <table>
             <thead>
-              <tr><th>Window outcome</th><th>Heads</th><th>Use in mean</th></tr>
+              <tr>
+                <th>Window outcome</th>
+                <th>Heads</th>
+                <th>Use in mean</th>
+              </tr>
             </thead>
             <tbody>
-              <tr><th scope="row">All three required checks green</th><td>73</td><td>Included</td></tr>
-              <tr><th scope="row">Canceled</th><td>82</td><td>Excluded</td></tr>
-              <tr><th scope="row">Failed</th><td>25</td><td>Excluded</td></tr>
-              <tr><th scope="row">Incomplete</th><td>1</td><td>Excluded</td></tr>
-              <tr><th scope="row">Pending</th><td>2</td><td>Excluded</td></tr>
+              <tr>
+                <th scope="row">All three required checks green</th>
+                <td>73</td>
+                <td>Included</td>
+              </tr>
+              <tr>
+                <th scope="row">Canceled</th>
+                <td>82</td>
+                <td>Excluded</td>
+              </tr>
+              <tr>
+                <th scope="row">Failed</th>
+                <td>25</td>
+                <td>Excluded</td>
+              </tr>
+              <tr>
+                <th scope="row">Incomplete</th>
+                <td>1</td>
+                <td>Excluded</td>
+              </tr>
+              <tr>
+                <th scope="row">Pending</th>
+                <td>2</td>
+                <td>Excluded</td>
+              </tr>
             </tbody>
           </table>
         </div>
         <p>
-          Window: <time datetime="2026-11-02T18:55:00Z">2 November 2026,
-          18:55 UTC</time> to <time datetime="2026-11-03T00:55:00Z">3 November
-          2026, 00:55 UTC</time>. The full 40-character inspected devel SHA is
+          Window:
+          <time datetime="2026-11-02T18:55:00Z"
+            >2 November 2026, 18:55 UTC</time
+          >
+          to
+          <time datetime="2026-11-03T00:55:00Z">3 November 2026, 00:55 UTC</time
+          >. The full 40-character inspected devel SHA is
           <code>dfb5e25546554024a4f4d4cdf2202da8d5961f63</code>. Controlled
           experiment source is separately fixed at
-          <code>b2b7e3128278a6073b21ac522b42f9e151d5913b</code>. Summary evidence
-          is in <a href="evidence.json">evidence.json</a> and the source/window
-          pointer is in <a href="manifest.json">manifest.json</a>.
+          <code>b2b7e3128278a6073b21ac522b42f9e151d5913b</code>. Summary
+          evidence is in <a href="evidence.json">evidence.json</a> and the
+          source/window pointer is in <a href="manifest.json">manifest.json</a>.
         </p>
 
         <h3>Two retained-stack Pod shards did not improve the gate</h3>
@@ -402,30 +448,46 @@
           14 parametrized cases, both Claude and Codex harnesses, and the
           storage-exclusive case on its assigned shard.
         </p>
-        <div class="table-scroll">
-          <table>
+        <div
+          class="table-scroll"
+          role="region"
+          aria-label="Pod sharding experiment results"
+          tabindex="0"
+        >
+          <table class="wide-6">
             <thead>
               <tr>
-                <th>Arm</th><th>Result</th><th>Test action wall</th>
-                <th>Bazel critical path</th><th>Test CPU</th><th>Peak memory/action</th>
+                <th>Arm</th>
+                <th>Result</th>
+                <th>Test action wall</th>
+                <th>Bazel critical path</th>
+                <th>Test CPU</th>
+                <th>Peak memory/action</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <th scope="row">One stack · two case slots</th>
                 <td>14/14 pass</td>
-                <td>257.3 s</td><td>265.32 s</td><td>680.7 s</td><td>6.17 GB</td>
+                <td>257.3 s</td>
+                <td>265.32 s</td>
+                <td>680.7 s</td>
+                <td>6.17 GB</td>
               </tr>
               <tr>
                 <th scope="row">Two shards · two case slots each</th>
                 <td>Failed memory admission</td>
-                <td>226.4 s + 447.0 s</td><td>449.74 s</td><td>1,054.3 s</td>
+                <td>226.4 s + 447.0 s</td>
+                <td>449.74 s</td>
+                <td>1,054.3 s</td>
                 <td>5.72 / 5.67 GB</td>
               </tr>
               <tr>
                 <th scope="row">Two shards · one case slot each</th>
                 <td>14/14 pass</td>
-                <td>201.1 s + 299.5 s</td><td>303.01 s</td><td>969.9 s</td>
+                <td>201.1 s + 299.5 s</td>
+                <td>303.01 s</td>
+                <td>969.9 s</td>
                 <td>5.54 / 5.68 GB</td>
               </tr>
             </tbody>
@@ -444,55 +506,101 @@
         </p>
         <p>
           The earlier one-slot attempt
-          <a href="https://app.buildbuddy.io/invocation/6badf3b1-1b2e-4838-8b52-82bbe32f51e0">was canceled</a>
+          <a
+            href="https://app.buildbuddy.io/invocation/6badf3b1-1b2e-4838-8b52-82bbe32f51e0"
+            >was canceled</a
+          >
           by the outer remote runner before either shard received a worker; its
           reattached outer log confirmed cancellation. It is not a test result.
           The completed invocations are
-          <a href="https://app.buildbuddy.io/invocation/10595129-79f0-4e45-8e8e-1bd668501396">baseline</a>,
-          <a href="https://app.buildbuddy.io/invocation/a6c23f91-b59a-4154-ac51-01d688c246e5">two slots per shard</a>, and
-          <a href="https://app.buildbuddy.io/invocation/cb2df10e-1efb-49a1-bbd6-b097c8bc7783">one slot per shard</a>.
-          The experiment preserves coverage but provides no latency win or PR
+          <a
+            href="https://app.buildbuddy.io/invocation/10595129-79f0-4e45-8e8e-1bd668501396"
+            >baseline</a
+          >,
+          <a
+            href="https://app.buildbuddy.io/invocation/a6c23f91-b59a-4154-ac51-01d688c246e5"
+            >two slots per shard</a
+          >, and
+          <a
+            href="https://app.buildbuddy.io/invocation/cb2df10e-1efb-49a1-bbd6-b097c8bc7783"
+            >one slot per shard</a
+          >. The experiment preserves coverage but provides no latency win or PR
           candidate.
         </p>
 
         <h3>More outer units did not establish a VM speedup</h3>
         <p>
-          Each run executed the same three VM scenarios once, with journal,
-          shutdown, loop-device cleanup and OOM assertions passing. Guest CPU
-          stayed at two. The 8-unit control was warm; both 16-unit inner
-          TestRunner receipts were cold despite the same fingerprint. The 16-unit
-          seed and repeat shared an outer runner VM, but selected different inner
-          TestRunner workers; inner snapshot IDs are unavailable. No matched warm
-          inner-worker comparison exists, so these runs do not support a causal
-          or fleet-mean claim.
+          These runs used hosted BuildBuddy RBE with software emulation (QEMU
+          TCG); no KVM hypothesis was selected or tested. Each run executed the
+          same three VM scenarios once, with journal, shutdown, loop-device
+          cleanup and OOM assertions passing. Guest CPU stayed at two. The
+          8-unit control was warm; both 16-unit inner TestRunner receipts were
+          cold despite the same fingerprint. The 16-unit seed and repeat shared
+          an outer runner VM, but selected different inner TestRunner workers;
+          inner snapshot IDs are unavailable. No matched warm inner-worker
+          comparison exists, so these runs do not support a causal or fleet-mean
+          claim.
         </p>
-        <div class="table-scroll">
-          <table>
+        <div
+          class="table-scroll"
+          role="region"
+          aria-label="VM resource experiment results"
+          tabindex="0"
+        >
+          <table class="wide-7">
             <thead>
               <tr>
-                <th>Arm / BuildBuddy invocation</th><th>Receipt</th>
-                <th>TestRunner action</th><th>Setup / case / cleanup</th>
-                <th>Bazel critical path</th><th>CPU</th><th>Units × action wall</th>
+                <th>Arm / BuildBuddy invocation</th>
+                <th>Receipt</th>
+                <th>TestRunner action</th>
+                <th>Setup / case / cleanup</th>
+                <th>Bazel critical path</th>
+                <th>CPU</th>
+                <th>Units × action wall</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <th scope="row"><a href="https://app.buildbuddy.io/invocation/450847f0-b539-495c-933c-a160c4232c6c">8-unit control</a></th>
-                <td>Warm · 8e538750…</td><td>323.628 s</td>
-                <td>70.32 / 199.34 / 25.80 s</td><td>330.83 s</td>
-                <td>1,342.248 s</td><td>2,589 EU·s</td>
+                <th scope="row">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/450847f0-b539-495c-933c-a160c4232c6c"
+                    >8-unit control</a
+                  >
+                </th>
+                <td>Warm · 8e538750…</td>
+                <td>323.628 s</td>
+                <td>70.32 / 199.34 / 25.80 s</td>
+                <td>330.83 s</td>
+                <td>1,342.248 s</td>
+                <td>2,589 EU·s</td>
               </tr>
               <tr>
-                <th scope="row"><a href="https://app.buildbuddy.io/invocation/7ef6829b-f28e-44c4-8875-80c4b2c009d5">16-unit seed</a></th>
-                <td>Cold · same fingerprint</td><td>501.329 s</td>
-                <td>230.41 / 207.97 / 30.98 s</td><td>505.11 s</td>
-                <td>2,294.386 s</td><td>8,021 EU·s</td>
+                <th scope="row">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/7ef6829b-f28e-44c4-8875-80c4b2c009d5"
+                    >16-unit seed</a
+                  >
+                </th>
+                <td>Cold · same fingerprint</td>
+                <td>501.329 s</td>
+                <td>230.41 / 207.97 / 30.98 s</td>
+                <td>505.11 s</td>
+                <td>2,294.386 s</td>
+                <td>8,021 EU·s</td>
               </tr>
               <tr>
-                <th scope="row"><a href="https://app.buildbuddy.io/invocation/a344fba3-36b4-4c99-bee7-ce675cd3631a">16-unit repeat</a></th>
-                <td>Cold · same fingerprint</td><td>342.775 s</td>
-                <td>130.18 / 163.17 / 24.68 s</td><td>383.07 s</td>
-                <td>1,372.024 s</td><td>5,484 EU·s</td>
+                <th scope="row">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/a344fba3-36b4-4c99-bee7-ce675cd3631a"
+                    >16-unit repeat</a
+                  >
+                </th>
+                <td>Cold · same fingerprint</td>
+                <td>342.775 s</td>
+                <td>130.18 / 163.17 / 24.68 s</td>
+                <td>383.07 s</td>
+                <td>1,372.024 s</td>
+                <td>5,484 EU·s</td>
               </tr>
             </tbody>
           </table>
@@ -510,31 +618,103 @@
 
         <h3>Threaded identity hashing regressed the measured build</h3>
         <p>
-          The four-reader hash candidate took 54.421 seconds versus 32.116
-          seconds for the sequential control; CPU rose from 23.932 to 63.657
-          seconds. Both generated source outputs are byte-identical (SHA-256
-          <code>8c645108a7b9a56a003d0779dd6e2b738972c024c77874abf1bbab7243de8210</code>).
-          The optimization is rejected: it adds wall and CPU time without
+          Both diagnostic variants ran with cProfile enabled, so these are
+          instrumented timings rather than clean production build timings. The
+          four-reader hash candidate took 54.421 seconds versus 32.116 seconds
+          for the sequential control; CPU rose from 23.932 to 63.657 seconds.
+          Both generated source outputs are byte-identical (SHA-256
+          <code
+            >8c645108a7b9a56a003d0779dd6e2b738972c024c77874abf1bbab7243de8210</code
+          >). The optimization is rejected: it adds wall and CPU time without
           changing output, and no full-CI effect is claimed. See the
-          <a href="https://app.buildbuddy.io/invocation/28d8695e-e62d-4e73-9435-605d64bf41d4">sequential profile</a>
-          and <a href="https://app.buildbuddy.io/invocation/1a149538-6c22-4533-9140-6210275b5005">four-reader run</a>.
+          <a
+            href="https://app.buildbuddy.io/invocation/28d8695e-e62d-4e73-9435-605d64bf41d4"
+            >sequential profile</a
+          >
+          and
+          <a
+            href="https://app.buildbuddy.io/invocation/1a149538-6c22-4533-9140-6210275b5005"
+            >four-reader run</a
+          >.
         </p>
         <p class="callout">
           Reliability and source context remain separate from the timing
           baseline: kernel <code>6.12.115-2</code> is merged. The
-          <a href="https://github.com/agentydragon/ducktape/actions/runs/41561624392">first CI attempt</a>
-          for <a href="https://github.com/agentydragon/ducktape/pull/14035">PKI repair PR #14035</a>
+          <a
+            href="https://github.com/agentydragon/ducktape/actions/runs/41561624392"
+            >first CI attempt</a
+          >
+          for
+          <a href="https://github.com/agentydragon/ducktape/pull/14035"
+            >PKI repair PR #14035</a
+          >
           ended when <code>bbremoteGetEventLog</code> returned
           <code>RST_STREAM INTERNAL_ERROR</code>; the CLI canceled the outer run
-          after the child Build Event Service connection disconnected. This is an
-          observer failure, not a source or test verdict. A rerun was requested
-          after proving the outer invocation terminal; full checks were still
-          incomplete at this snapshot. The remote observer path is tracked in
-          <a href="https://github.com/agentydragon/ducktape/issues/13270">issue #13270</a>;
-          the pinned CLI is already 5.0.498, upstream has the same failure mode,
-          and no small safe repository-side repair was identified. Both manual
-          certificate-renewal physical actions passed, but were cold. No latency change is attributed to this
-          repair or the merged kernel update.
+          after the child Build Event Service connection disconnected. That
+          attempt was an observer failure, not a source or test verdict. In
+          attempt 2, the VM and Pod checks failed in BuildBuddy invocation
+          <a
+            href="https://app.buildbuddy.io/invocation/50de3cc2-b127-5c79-be37-02e332dbcc8d"
+            >50de3cc2…</a
+          >; see
+          <a
+            href="https://github.com/agentydragon/ducktape/actions/runs/41561624392/attempts/2#job-125675997518"
+            >bazel-ci / Test &amp; Build</a
+          >. The VM check wedged before cases: the stale baseline's K3s marker
+          PID was not live, and cleanup's
+          <code>crictl rmp --all --force</code> hit a
+          <code>StopPodSandbox</code> timeout after 60 seconds waiting to kill
+          <code>volumekernel-boot-volume</code> in prior pod <code>e1f…</code>.
+          The dirty baseline came through the same Firecracker snapshot chain;
+          absent process/cgroup evidence leaves the exact kill-wait mechanism
+          unknown. The Pod check exposed a trust-bundle regression. Its fixture
+          renamed the bundle and target ConfigMap, but the production Sandbox
+          controller still uses the fixed
+          <code>cluster-internal-ca-bundle</code> name from
+          <code>RunnerTrustBundleName</code> in
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/dfb5e25546554024a4f4d4cdf2202da8d5961f63/agentplane/sandbox_controller/environment_runtime_credential.go"
+            >environment_runtime_credential.go</a
+          >. Dynamically created Sandbox Pods could not mount the missing
+          ConfigMap; the exclusive-storage first case waited 300 seconds and all
+          14 cases were reported failed as a setup cascade, not 14 independent
+          defects.
+        </p>
+        <p class="callout">
+          The fixture repair is now on PR #14035 head <code>f90a353c8b</code>:
+          preserve the namespace-local trust-bundle name while CA, issuer and
+          Secrets remain unique, and use a fresh namespace per fixture to
+          isolate the projected bundle. Focused RBE target
+          <code>//agentplane/system_tests/k3s:test_render</code>
+          <a
+            href="https://app.buildbuddy.io/invocation/11fd9486-b954-456c-a0fd-84bc12ff6d6c"
+            >passed in 51.7 seconds</a
+          >; changed-file hooks passed after removing the temporary probe. The
+          two-incarnation real-renewal probe then passed in outer invocation
+          <a
+            href="https://app.buildbuddy.io/invocation/711a771f-a84f-4655-b4e4-8f1f8b017d91"
+            >711a771f…</a
+          >
+          (child
+          <a
+            href="https://app.buildbuddy.io/invocation/34990344-709c-4267-868a-670f50f601b6"
+            >34990344…</a
+          >), with a 206.310-second TestRunner action, warm matching
+          infrastructure receipts, fresh namespaces and root certificate
+          identities, and complete cleanup. It validates controller reuse within
+          one action, not Firecracker snapshot restore. Full CI on the new head
+          remained pending at the
+          <time datetime="2026-11-03T02:11:57Z">02:11:57 UTC</time> snapshot
+          cutoff. The separate VM cleanup / bad-snapshot discard remains under
+          investigation with no promoted fix. The remote observer path is
+          tracked in
+          <a href="https://github.com/agentydragon/ducktape/issues/13270"
+            >issue #13270</a
+          >; CLI 5.0.498 is already pinned, upstream has the same failure mode,
+          and no small safe repository-side observer fix was identified. Both
+          manual certificate-renewal physical actions passed but were cold. No
+          latency change is attributed to these reliability fixes or the merged
+          kernel update.
         </p>
       </section>
       <section id="historical-vm-study">
@@ -1456,9 +1636,10 @@
         </p>
         <p class="continuity-status">
           <strong>Previous objective, retained as historical context:</strong> a
-          25–50% reduction in the complete <code>bazel test //...</code>
-          invocation was not established. The current all-three-check goal and
-          its baseline are documented in the <a href="#under-five">section above</a>.
+          25–50% reduction in the complete
+          <code>bazel test //...</code> invocation was not established. The
+          current all-three-check goal and its baseline are documented in the
+          <a href="#under-five">section above</a>.
         </p>
 
         <details>
@@ -1956,11 +2137,11 @@
         <ul>
           <li>
             <strong>Current source:</strong> inspected devel
-            <code>dfb5e25546554024a4f4d4cdf2202da8d5961f63</code>. The controlled
-            VM and Pod experiments are separately frozen at
+            <code>dfb5e25546554024a4f4d4cdf2202da8d5961f63</code>. The
+            controlled VM and Pod experiments are separately frozen at
             <code>b2b7e3128278a6073b21ac522b42f9e151d5913b</code>. Historical
-            source prototypes and their effective local trees remain recorded
-            in the previous-study narrative, separately from BuildBuddy checkout
+            source prototypes and their effective local trees remain recorded in
+            the previous-study narrative, separately from BuildBuddy checkout
             metadata.
           </li>
           <li>
@@ -2002,7 +2183,8 @@
           Decision threshold: a target-level win is not promoted to the current
           mean-below-300-second all-gates goal without representative exact-head
           evidence on the same workflow-creation clock. VM, Pod and dispatcher
-          can exchange the final position as cache/source/worker conditions change.
+          can exchange the final position as cache/source/worker conditions
+          change.
         </p>
       </section>
       <footer>
@@ -2015,6 +2197,15 @@
       </footer>
     </main>
     <script>
+      document.querySelectorAll(".table-scroll").forEach((region) => {
+        region.addEventListener("keydown", (event) => {
+          if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+            event.preventDefault();
+            region.scrollBy({ left: event.key === "ArrowRight" ? 120 : -120 });
+          }
+        });
+      });
+
       const data = {
         baseline_seconds: 376.884,
         fixed_tail_seconds: 4.284561999999994,
