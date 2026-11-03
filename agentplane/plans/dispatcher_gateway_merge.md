@@ -1,5 +1,13 @@
 # Dispatcher and Gateway as one service
 
+> **Historical proposal:** on 2026-11-02 the operator selected a mandatory Dispatcher database
+> and queue. All queue-off alternatives and rollout steps below are superseded, including the
+> assumption that a database-free K3s tier can include Dispatcher admission. Service topology,
+> delivery ownership and an immediate-or-fail request option remain separate decisions; this
+> document does not authorize implementing its former proposal. See the
+> [current Session/environment model](session_environment_model.md) and
+> [delivery decision](task_dag.md#dispatcher_persistence_model_design--choose-delivery-ownership-and-service-topology).
+
 Status: **proposed; ownership chosen, the rest not reviewed.** The operator asked for this write-up (2026-10-20
 07:14 UTC) and chose holder-owned delivery (07:34 UTC). Nothing here starts before they approve the whole design. It answers the open decision `DISPATCHER_PERSISTENCE_MODEL_DESIGN` in the
 [task DAG](task_dag.md). Read at `devel` dd032c46. The plan burns down: a step leaves when it lands, and the file
@@ -14,7 +22,7 @@ have separate binaries; leave this particular merge/reshuffle for later. The sin
 and audience unification below remain proposals. The earlier holder-owned delivery preference was
 scoped to that combined shape; revisit it when choosing a topology. The independently assignable Runner extractions in the
 [runtime plan](session_runtime_model.md#independently-assignable-extractions) do not wait for this
-decision or for optional queue mode. Retain existing dispatch ownership/fencing until a reviewed
+decision. Retain existing dispatch ownership/fencing until a reviewed
 change replaces it.
 
 ## Proposal
@@ -174,7 +182,7 @@ It removes the Gateway's database, not CNPG. The shared cluster's logical databa
 database-free only if it also omits every other consumer, as the tier in `CNPG_FREE_K3S_INTEGRATION_TIER` does for
 Notifications, History and Electric. The Gateway sheds the `session_dispatcher` database and Secret, its embedded queue migration path,
 the `LISTEN` connection, the delivery worker and the wake budget. That
-node's edge from `DISPATCHER_PERSISTENCE_MODEL_DESIGN` stays; its other blockers are unchanged.
+node's earlier edge from `DISPATCHER_PERSISTENCE_MODEL_DESIGN` is superseded; its independently scoped database-free flows remain to be specified.
 
 ## What callers see
 

@@ -407,9 +407,9 @@ Held until one is chosen:
   UID, and passes it to the Dispatcher for live actions.
 - **Commands and Session openings.** The `session_dispatcher` database, served by the Runner
   Gateway (`dispatch`, `session_opening`, `wake_attempt`, `sandbox_ownership`), every row carrying
-  the Sandbox UID and ended when the Sandbox is gone. Proposed: `DISPATCHER_PERSISTENCE_MODEL_DESIGN`
-  ([merge plan](dispatcher_gateway_merge.md)). Operator: the Dispatcher keeps no Session-to-Sandbox
-  registry (2026-10-17 03:53, 04:12).
+  the Sandbox UID and ended when the Sandbox is gone. Current opening rows are not a general Session directory. The operator now favors a Dispatcher-owned
+  logical Session directory; see the [Session/environment plan](session_environment_model.md) and
+  [opening and recovery inventory](session_opening_recovery.md).
 - **Inbox entries, peer messages, notices, subscriptions.** The Notification database; entries
   survive their inbox's retirement when the Sandbox is gone. The service split stays unscheduled;
   the operator may revisit the service with later "refactors/splits/reshuffles" (2026-10-17 04:18).

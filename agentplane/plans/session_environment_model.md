@@ -24,17 +24,16 @@ implement all of this.
 
 **Low-regret work available now:**
 
-1. Update the [task DAG](task_dag.md) to record that Dispatcher PostgreSQL and queue-backed
-   admission are mandatory, and retire the proposed queue-off mode. Preserve unresolved delivery,
-   fencing and integration-tier decisions rather than deleting the whole persistence decision node.
+1. The [task DAG](task_dag.md) now records that Dispatcher PostgreSQL and queue-backed admission
+   are mandatory and retires the proposed queue-off mode. Delivery, fencing and the independently
+   scoped database-free integration tier remain open.
 2. Fix the existing [uncertain Session reservation write](../env/TODO.md#fence-uncertain-session-reservation-writes):
    fail closed when the COSI backing-store outcome is uncertain, and recover without replacing the
    event source or replaying an uncertain native effect. Test retry, restart and conflicting requests.
    This repairs today's Runtime contract independently of the new directory.
-3. Produce an implementation-boundary inventory tracing current native and central openings,
-   their stores, authority checks, retry behavior and uncertain outcomes. Use it to specify one
-   owner for each fact and the Dispatcher-to-backend handoff. The discussion and source references
-   below supply a starting point; this audit makes no new schema or API commitment.
+3. Use the [current opening and recovery inventory](session_opening_recovery.md) to specify one
+   owner for each fact and the Dispatcher-to-backend handoff. The inventory traces stores, authority
+   checks, retries and uncertain outcomes without committing to a new schema or API.
 
 **Not ready to treat as mechanical refactors:** making the Dispatcher Session row authoritative
 across both backends; central Sessions with no environment or multiple attachments; moving or changing
