@@ -76,6 +76,7 @@ let
     pkgs.awscli2 # AWS CLI for Route 53 management
     pkgs.hcloud # Price-comparison helper only; cluster bootstrap does not consume HCloud creds
     pkgs.kyverno # Policy engine CLI (validate manifests, test policies)
+    pkgs.kubevirt # virtctl for KubeVirt VM consoles and lifecycle operations
     pkgs.nebula # Nebula mesh overlay (nebula-cert for PKI management)
     pkgs.ovhcloud-cli # OVH API CLI (Kimsufi server inventory, boot, IPMI)
     pkgs.python314Packages.ovh # OVH Python client for ad-hoc API scripts
