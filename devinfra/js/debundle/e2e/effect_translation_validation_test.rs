@@ -24,7 +24,7 @@ fn native_constructor_input(
         ),
         operation,
         audited_source_sha256,
-        note: Some("Neutral fixture audits one direct empty collection constructor.".to_string()),
+        note: Some("Neutral fixture audits one direct empty native constructor.".to_string()),
     }
 }
 
@@ -870,6 +870,181 @@ console.log(earlierMap === undefined, earlierSet === undefined, map.size + set.s
             serde_json::json!([])
         );
     }
+}
+
+#[test]
+fn text_encoder_initializer_covers_only_its_exact_root_owner() {
+    const SOURCE: &str = "const earlier = (void globalThis.TextEncoder, 1);\n\
+var encoder = new TextEncoder();\n\
+const later = encoder.encoding;\n\
+console.log(earlier, later);\n";
+    let input = native_constructor_input(
+        SOURCE,
+        "var encoder = new TextEncoder();",
+        "encoder",
+        NativeOperationKind::TextEncoderEmpty,
+    );
+    let fixture = run_fixture_with_args(
+        FixtureOpts::new(
+            SOURCE,
+            vec![logical_module("encoder", &[Member::new("encoder")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_native_operation_inputs("static/app", vec![input]),
+        &["--effect-conflicts-jsonl"],
+    );
+    assert_preserved_entry_output(&fixture, "1 utf-8\n");
+
+    let entry = std::fs::read_to_string(&fixture.entry_path).expect("generated entry source");
+    let import = entry.find("import ").expect("TextEncoder module import");
+    let earlier = entry
+        .find("const earlier")
+        .expect("residual constructor-global read");
+    assert!(
+        import < earlier,
+        "the certified initializer must move before the harmless residual read:\n{entry}"
+    );
+    assert!(
+        entry.contains("globalThis.TextEncoder"),
+        "the residual global read remains in the output:\n{entry}"
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/encoder.js",
+        &["var encoder = new TextEncoder();"],
+        &[],
+    );
+
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["legacy_gate_accepts"], true, "{report:#}");
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 3,
+            "only the direct TextEncoder initializer is covered; the sequence read, later property read, and console call remain uncovered: {report:#}"
+        );
+    }
+    assert_eq!(
+        report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 2,
+        "the wrapped global read and later property read retain their own refusals: {report:#}"
+    );
+}
+
+#[test]
+fn text_encoder_initializer_requires_identity_zero_arguments_and_root_shape() {
+    for (source, reason, unknown_statements) in [
+        (
+            "var encoder = new TextEncoder();\n\
+             globalThis.TextEncoder = function replacement() {};\n",
+            "initializer_result_unproved",
+            2,
+        ),
+        (
+            "var encoder = new TextEncoder('utf-8');\n",
+            "unsupported_initializer",
+            1,
+        ),
+        (
+            "var encoder = (void globalThis.marker, new TextEncoder());\n",
+            "unsupported_initializer",
+            1,
+        ),
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_output(&fixture, "");
+        let report = fixture.effect_translation_validation();
+        assert_eq!(
+            report["coverage"]["owner_coverage_refusals"][reason], 1,
+            "unproved TextEncoder initializer: {source}: {report:#}"
+        );
+        for domain in ["global_properties", "general_heap", "host_effects"] {
+            assert_eq!(
+                report["coverage"]["unknown_coverage"][domain], unknown_statements,
+                "unproved TextEncoder initializer remains opaque: {source}: {report:#}"
+            );
+        }
+    }
+
+    // A transfer from the prior direct initializer must not escape through a
+    // nested call or close a later transient initializer.
+    let source = "var encoder = new TextEncoder();\n\
+const transient = (() => new TextEncoder())();\n";
+    let input = native_constructor_input(
+        source,
+        "var encoder = new TextEncoder();",
+        "encoder",
+        NativeOperationKind::TextEncoderEmpty,
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![]).with_native_operation_inputs("static/app", vec![input]),
+    );
+    assert_preserved_entry_output(&fixture, "");
+    let report = fixture.effect_translation_validation();
+    assert_eq!(
+        report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 1,
+        "the nested/transient call keeps its own refusal: {report:#}"
+    );
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 1,
+            "only the direct initializer is covered: {report:#}"
+        );
+    }
+}
+
+#[test]
+fn text_encoder_owner_coverage_keeps_prior_var_binding_read_observed() {
+    const SOURCE: &str = "const earlier = encoder;\n\
+var encoder = new TextEncoder();\n\
+console.log(earlier === undefined, encoder.encoding);\n";
+    let input = native_constructor_input(
+        SOURCE,
+        "var encoder = new TextEncoder();",
+        "encoder",
+        NativeOperationKind::TextEncoderEmpty,
+    );
+    let opts = |members| {
+        FixtureOpts::new(SOURCE, vec![logical_module("encoder", members)])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_native_operation_inputs("static/app", vec![input.clone()])
+    };
+    let colocated = run_fixture(
+        FixtureOpts::new(
+            SOURCE,
+            vec![logical_module(
+                "all",
+                &[Member::new("earlier"), Member::new("encoder")],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_native_operation_inputs("static/app", vec![input.clone()]),
+    );
+    assert_preserved_entry_output(&colocated, "true utf-8\n");
+
+    let reordered = run_rejection_fixture_with_args(
+        opts(&[Member::new("encoder")]),
+        &["--effect-conflicts-jsonl"],
+        1,
+    );
+    let report = reordered.effect_translation_validation();
+    assert_eq!(report["legacy_gate_accepts"], false, "{report:#}");
+    let rows = read_jsonl(&reordered.report_path("effect_conflicts.jsonl"));
+    let pair = rows
+        .iter()
+        .find(|pair| {
+            pair["cells"].as_array().unwrap().iter().any(|cell| {
+                cell["cell"]["kind"] == "binding" && cell["cell"]["binding"] == "encoder"
+            })
+        })
+        .unwrap_or_else(|| panic!("reordered encoder read/write pair: {rows:#?}"));
+    let cell = pair["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|cell| cell["cell"]["kind"] == "binding" && cell["cell"]["binding"] == "encoder")
+        .unwrap();
+    assert_eq!(cell["first_write"]["kind"], "observed", "{cell:#}");
+    assert_eq!(cell["later_read"]["kind"], "observed", "{cell:#}");
+    assert_eq!(cell["observed_conflict"], true, "{cell:#}");
 }
 
 #[test]

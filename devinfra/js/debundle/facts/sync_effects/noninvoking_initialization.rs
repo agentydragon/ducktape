@@ -10,16 +10,33 @@ use std::collections::BTreeSet;
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::*;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum NativeConstructorKind {
+    Map,
+    Set,
+    TextEncoder,
+}
+
+impl NativeConstructorKind {
+    pub(super) fn global_name(self) -> &'static str {
+        match self {
+            Self::Map => "Map",
+            Self::Set => "Set",
+            Self::TextEncoder => "TextEncoder",
+        }
+    }
+}
+
 #[derive(Clone)]
 enum Leaf {
     Primitive(PrimKinds),
     Function(u32),
     Class(u32),
     Binding(Id),
-    NativeCollection {
+    NativeConstructor {
         callee: Id,
         call_site: CallSite,
-        kind: Kind,
+        kind: NativeConstructorKind,
     },
     Allocation {
         allocation: u32,
@@ -48,16 +65,16 @@ pub(super) struct EvaluatedInitializer {
 pub(super) struct NativeConstructorCandidate {
     owner: SourceUnitOrdinal,
     call_site: CallSite,
-    kind: Kind,
+    kind: NativeConstructorKind,
 }
 
 /// Evidence that the exact root New dispatch selected and applied the native
-/// empty collection row. This is not a value identity or a heap-shape fact.
+/// no-argument constructor row. This is not a value identity or a heap-shape fact.
 #[derive(Clone, Copy)]
 pub(super) struct NativeConstructorTransfer {
     owner: SourceUnitOrdinal,
     call_site: CallSite,
-    kind: Kind,
+    kind: NativeConstructorKind,
 }
 
 impl NativeConstructorTransfer {
@@ -77,11 +94,11 @@ impl NativeConstructorTransfer {
 }
 
 impl NativeConstructorCandidate {
-    pub(super) fn kind(self) -> Kind {
+    pub(super) fn kind(self) -> NativeConstructorKind {
         self.kind
     }
 
-    pub(super) fn matches_dispatch(self, call_site: CallSite, kind: Kind) -> bool {
+    pub(super) fn matches_dispatch(self, call_site: CallSite, kind: NativeConstructorKind) -> bool {
         self.call_site == call_site && self.kind == kind
     }
 }
@@ -327,7 +344,7 @@ fn allocation_inputs(expression: &Expr, reads: &mut BTreeSet<Id>) -> Option<()> 
     Some(())
 }
 
-fn empty_native_collection(expression: &Expr) -> Option<(Id, CallSite, Kind)> {
+fn empty_native_constructor(expression: &Expr) -> Option<(Id, CallSite, NativeConstructorKind)> {
     let Expr::New(construction) = expression.unwrap_parens() else {
         return None;
     };
@@ -343,8 +360,9 @@ fn empty_native_collection(expression: &Expr) -> Option<(Id, CallSite, Kind)> {
         return None;
     };
     let kind = match callee.sym.as_ref() {
-        "Map" => Kind::Map,
-        "Set" => Kind::Set,
+        "Map" => NativeConstructorKind::Map,
+        "Set" => NativeConstructorKind::Set,
+        "TextEncoder" => NativeConstructorKind::TextEncoder,
         _ => return None,
     };
     Some((callee.to_id(), CallSite::from(construction.span), kind))
@@ -384,10 +402,10 @@ impl OriginalInitializer {
         };
         let leaf = match initializer.unwrap_parens() {
             Expr::New(_) => {
-                let Some((callee, call_site, kind)) = empty_native_collection(initializer) else {
+                let Some((callee, call_site, kind)) = empty_native_constructor(initializer) else {
                     return Err(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer);
                 };
-                Leaf::NativeCollection {
+                Leaf::NativeConstructor {
                     callee,
                     call_site,
                     kind,
@@ -456,7 +474,7 @@ impl OriginalInitializer {
             Leaf::Primitive(_)
             | Leaf::Function(_)
             | Leaf::Class(_)
-            | Leaf::NativeCollection { .. } => true,
+            | Leaf::NativeConstructor { .. } => true,
         }
     }
 
@@ -464,7 +482,7 @@ impl OriginalInitializer {
         &self,
         expression: &ValueExpr,
     ) -> Option<NativeConstructorCandidate> {
-        let Leaf::NativeCollection {
+        let Leaf::NativeConstructor {
             callee: expected_callee,
             call_site,
             kind,
@@ -475,9 +493,6 @@ impl OriginalInitializer {
         let ValueExpr::New(callee, arguments, evaluated_site) = expression else {
             return None;
         };
-        if !matches!(kind, Kind::Map | Kind::Set) {
-            return None;
-        }
         if *call_site != *evaluated_site
             || !arguments.is_empty()
             || !matches!(callee.as_ref(), ValueExpr::Binding(binding) if binding == expected_callee)
@@ -509,7 +524,7 @@ impl OriginalInitializer {
             (Leaf::Binding(expected), ValueExpr::Binding(lowered), _) => {
                 expected == lowered && initialized_reads
             }
-            (Leaf::NativeCollection { .. }, _, AbstractValue::Value(Value::Top)) => self
+            (Leaf::NativeConstructor { .. }, _, AbstractValue::Value(Value::Top)) => self
                 .native_constructor_candidate(expression)
                 .zip(native_constructor_transfer)
                 .is_some_and(|(candidate, transfer)| {
