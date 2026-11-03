@@ -587,7 +587,7 @@ pub fn materialize_logical_modules(
         program_premises.intrinsics_never_written.as_ref(),
         declared_assumptions,
         &resolved_member_sites,
-    );
+    )?;
     let completed = |base: &AnalysisSpec| {
         base.clone().with_premises(
             projection.declared_assumptions.clone(),
@@ -863,7 +863,7 @@ pub fn analyze_program(
         spec.program_premises.intrinsics_never_written.as_ref(),
         spec.declared_assumptions.clone(),
         &spec.premise_members,
-    );
+    )?;
     let reparsed =
         cross_module::reparse_unretained_entries(&artifact, Some(&cross_module_chunk_closure));
     let cross_module = cross_module::collect_cross_module_imported_purities(

@@ -46,7 +46,7 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use super::analysis_projection::AnalysisProjection;
+use super::analysis_projection::{AnalysisProjection, resolve_premise_member_site};
 use super::materialize::ResolvedMemberSite;
 
 /// Resolve a one-binding `source_match` through the selector engine and
@@ -1028,23 +1028,13 @@ fn resolve_native_operation_inputs(
                     )
                 }
                 SourceUnitSelector::ResolvedMember(member) => {
-                    let sites = resolved_member_sites
-                        .get(&(member.module.clone(), member.name.clone()))
-                        .with_context(|| {
-                            format!("{request_id}.resolved_member names no logical module member")
-                        })?;
-                    let mut provider_sites = sites
-                        .iter()
-                        .filter(|site| site.provider_chunk == *chunk_name);
-                    let site = provider_sites.next().with_context(|| {
-                        format!(
-                            "{request_id}.resolved_member belongs to another provider, not {chunk_name}"
-                        )
-                    })?;
-                    ensure!(
-                        provider_sites.next().is_none(),
-                        "{request_id}.resolved_member is ambiguous in provider {chunk_name}"
-                    );
+                    let (_, site) = resolve_premise_member_site(
+                        resolved_member_sites,
+                        &request_id,
+                        chunk_name,
+                        &member.module,
+                        &member.name,
+                    )?;
                     let declaration = site.declaration.as_ref().with_context(|| {
                         format!(
                             "{request_id}.resolved_member has no unique original local declaration"
@@ -1505,7 +1495,8 @@ mod tests {
                     None,
                     BTreeMap::new(),
                     &BTreeMap::new(),
-                ),
+                )
+                .expect("empty projection is valid"),
                 CrossModuleAnalysisOptions {
                     graph_provenance: None,
                     replacement_packages: &BTreeMap::new(),
@@ -1567,7 +1558,8 @@ mod tests {
                     None,
                     BTreeMap::new(),
                     &BTreeMap::new(),
-                ),
+                )
+                .expect("empty projection is valid"),
                 CrossModuleAnalysisOptions {
                     graph_provenance: None,
                     replacement_packages: &BTreeMap::new(),

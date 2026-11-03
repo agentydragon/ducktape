@@ -23,6 +23,41 @@ use spec::{
 
 use super::materialize::ResolvedMemberSite;
 
+/// Resolve a premise member in the requesting provider chunk's namespace.
+/// Returns both the indexed sites (for the serialized projection) and the
+/// unique site owned by the requested chunk (for analysis).
+pub(super) fn resolve_premise_member_site<'a>(
+    resolved_member_sites: &'a BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
+    request_id: &str,
+    chunk_name: &str,
+    module: &str,
+    name: &str,
+) -> Result<(&'a [ResolvedMemberSite], &'a ResolvedMemberSite)> {
+    let key = (module.to_owned(), name.to_owned());
+    let sites = resolved_member_sites.get(&key).with_context(|| {
+        format!(
+            "{request_id}.resolved_member names no logical module member for requested provider chunk {chunk_name} (module {module}, member {name}); module names are chunk-relative, so declare the module under logical_modules[{chunk_name}]"
+        )
+    })?;
+    let mut provider_sites = sites
+        .iter()
+        .filter(|site| site.provider_chunk == chunk_name);
+    let site = provider_sites.next().with_context(|| {
+        let providers: BTreeSet<_> = sites
+            .iter()
+            .map(|site| site.provider_chunk.as_str())
+            .collect();
+        format!(
+            "{request_id}.resolved_member belongs to another provider chunk(s) {providers:?}, not requested provider chunk {chunk_name} (module {module}, member {name}); module names are chunk-relative, so use a module declared under logical_modules[{chunk_name}]"
+        )
+    })?;
+    ensure!(
+        provider_sites.next().is_none(),
+        "{request_id}.resolved_member is ambiguous in provider {chunk_name} (module {module}, member {name}); module names are chunk-relative to each provider chunk"
+    );
+    Ok((sites, site))
+}
+
 pub(super) struct AnalysisProjection<'a> {
     /// Analysis reads every field but `commuting_statements` and
     /// `dataflow_aware_s_chain`, which only the chunk graph build reads.
@@ -50,27 +85,35 @@ impl<'a> AnalysisProjection<'a> {
         intrinsics_never_written: Option<&'a IntrinsicsNeverWritten>,
         declared_assumptions: BTreeMap<String, AnalysisAssumptions>,
         resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
-    ) -> Self {
-        let premise_members = chunk_analysis_options
-            .values()
-            .flat_map(|options| &options.native_operation_inputs)
-            .filter_map(|input| match &input.selector {
-                SourceUnitSelector::ResolvedMember(member) => {
-                    let key = (member.module.clone(), member.name.clone());
-                    let sites = resolved_member_sites.get(&key)?.clone();
-                    Some((key, sites))
-                }
-                SourceUnitSelector::SourceMatch(_) => None,
-            })
-            .collect();
-        Self {
+    ) -> Result<Self> {
+        let mut premise_members = BTreeMap::new();
+        for (chunk_name, options) in chunk_analysis_options {
+            for (input_index, input) in options.native_operation_inputs.iter().enumerate() {
+                let SourceUnitSelector::ResolvedMember(member) = &input.selector else {
+                    continue;
+                };
+                let request_id = format!(
+                    "chunk_analysis_options.{chunk_name}.native_operation_inputs[{input_index}]"
+                );
+                let (sites, _) = resolve_premise_member_site(
+                    resolved_member_sites,
+                    &request_id,
+                    chunk_name,
+                    &member.module,
+                    &member.name,
+                )?;
+                premise_members
+                    .insert((member.module.clone(), member.name.clone()), sites.to_vec());
+            }
+        }
+        Ok(Self {
             chunk_analysis_options,
             chunk_export_purity,
             host_behavior,
             intrinsics_never_written,
             declared_assumptions,
             premise_members,
-        }
+        })
     }
 
     /// `purity: pure_new` annotations, the only declared assumptions the

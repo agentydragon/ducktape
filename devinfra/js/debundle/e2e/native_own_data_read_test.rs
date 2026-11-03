@@ -108,6 +108,40 @@ fn relational_input(source: &str, module: &str, name: &str) -> NativeOperationIn
     }
 }
 
+fn project_analysis(opts: FixtureOpts<'_>) -> CommandResult {
+    let fixture = write_validate_fixture_spec(opts);
+    let output = std::process::Command::new(debundler_path())
+        .args(["spec", "project-analysis", "--spec"])
+        .arg(&fixture.spec_path)
+        .arg("--out")
+        .arg(fixture.spec_path.with_extension("analysis.projection"))
+        .output()
+        .expect("spawn debundle spec project-analysis");
+    CommandResult {
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        status: output.status,
+    }
+}
+
+fn assert_project_analysis_rejected(opts: FixtureOpts<'_>, tokens: &[&str]) {
+    let result = project_analysis(opts);
+    assert_eq!(
+        result.status.code(),
+        Some(1),
+        "expected project-analysis to reject the premise\nstdout:\n{}\nstderr:\n{}",
+        result.stdout,
+        result.stderr,
+    );
+    for token in tokens {
+        assert!(
+            result.stderr.contains(token),
+            "project-analysis stderr missing {token:?}\nstderr:\n{}",
+            result.stderr,
+        );
+    }
+}
+
 #[test]
 fn resolved_member_certifies_only_the_selected_relational_alias() {
     let source = format!(
@@ -149,6 +183,59 @@ fn resolved_member_certifies_only_the_selected_relational_alias() {
         other["synchronous_execution"]["native_operation_input_uses"]
             .as_array()
             .is_none_or(Vec::is_empty)
+    );
+}
+
+#[test]
+fn project_analysis_rejects_missing_and_foreign_resolved_members() {
+    let source = format!(
+        "{}{}",
+        decorator_trio("a", "Alpha", "alpha role"),
+        decorator_trio("b", "Beta", "beta role")
+    );
+    let valid = project_analysis(relational_opts(
+        &source,
+        relational_input(&source, "alpha", "alphaDefine"),
+    ));
+    assert!(
+        valid.status.success(),
+        "valid resolved member failed project-analysis\nstdout:\n{}\nstderr:\n{}",
+        valid.stdout,
+        valid.stderr,
+    );
+
+    for (module, name) in [("missing", "alphaDefine"), ("alpha", "missing")] {
+        assert_project_analysis_rejected(
+            relational_opts(&source, relational_input(&source, module, name)),
+            &[
+                "chunk_analysis_options.static/app.native_operation_inputs[0]",
+                &format!("module {module}"),
+                &format!("member {name}"),
+                "chunk-relative",
+            ],
+        );
+    }
+
+    const CONSUMER: &str = "import { alias } from './peer.js';\nconsole.log(alias);\n";
+    const PROVIDER: &str = "var alias = Object.defineProperty;\nexport { alias };\n";
+    assert_project_analysis_rejected(
+        FixtureOpts::new(CONSUMER, vec![])
+            .with_extra_chunks(&[("static/peer", PROVIDER)])
+            .with_extra_chunk_logical_modules(&[(
+                "static/peer",
+                vec![logical_module("peer", &[Member::new("alias")])],
+            )])
+            .with_native_operation_inputs(
+                "static/app",
+                vec![relational_input(CONSUMER, "peer", "alias")],
+            ),
+        &[
+            "chunk_analysis_options.static/app.native_operation_inputs[0]",
+            "module peer",
+            "member alias",
+            "static/peer",
+            "chunk-relative",
+        ],
     );
 }
 

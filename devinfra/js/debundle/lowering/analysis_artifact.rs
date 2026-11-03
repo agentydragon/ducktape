@@ -205,7 +205,8 @@ mod tests {
                 None,
                 BTreeMap::new(),
                 &BTreeMap::new(),
-            ),
+            )
+            .expect("empty projection is valid"),
             CrossModuleAnalysisOptions {
                 graph_provenance: None,
                 replacement_packages: &BTreeMap::new(),
