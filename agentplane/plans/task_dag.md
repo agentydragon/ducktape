@@ -927,6 +927,12 @@ workload authentication, Dispatcher, Environment Service, Actions, Notification,
 ingress also use SA identity. See [egress identity and substitution](../egress/SPEC.md#identity),
 [PolicySets](../docs/adr_policy_sets.md), and [delegated authorization](../docs/delegated_authorization.md).
 
+Compare existing identity governance and provisioning tools and their connectors with a custom
+controller. Consider [SCIM](https://datatracker.ietf.org/doc/html/rfc7644) for supported user and
+group provisioning, and distinguish it from OAuth/OIDC authentication and service-specific grants.
+Evaluate which system is authoritative for each identity and entitlement, connector coverage,
+and non-human account support; no particular identity provider or downstream application is selected.
+
 **Recommendation for review:** evaluate a durable Agentplane principal and use verified workload
 identity and explicitly authorized delegation to resolve it; retain existing SAs as adapters where
 practical. Keep Session ID, principal, caller, workload and external account distinct. Preserve
