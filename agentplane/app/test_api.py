@@ -190,12 +190,8 @@ async def test_go_openapi_tracks_selected_python_http_contract_fields(http: http
     paths = document["paths"]
     schemas = document["components"]["schemas"]
 
-    assert "/sandboxes" not in paths
-    assert "/threads" not in paths
     assert "/threads/{thread_id}" in paths
     assert "/frontend-config" in paths
-    assert "/models" not in paths
-    assert "/presets" not in paths
 
     assert ThreadView.model_fields.keys() <= schemas["ThreadView"]["properties"].keys()
 

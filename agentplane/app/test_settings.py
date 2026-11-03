@@ -89,7 +89,6 @@ def test_the_two_settings_models_read_environment_and_config_without_colliding(
     assert settings.runner_gateway_lifecycle_timeout_s == 310
     assert (settings.listen_address, settings.token_audience) == ("127.0.0.1:8080", "agentplane")
     assert settings.session_dispatcher_target == "session-dispatcher.test:8080"
-    assert "session_dispatcher_http_url" not in Settings.model_fields
     assert str(settings.session_dispatcher_token_file) == "/var/run/secrets/agentplane-session-dispatcher/token"
     assert oidc.public_base_url == "https://app.test.invalid"
 

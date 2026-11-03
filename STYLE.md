@@ -154,7 +154,7 @@ Build `.ts`/`.tsx` with one `ts_library` (`//devinfra/js:ts_library.bzl`) per mo
   - A change detector guarding a constraint that can only break at one declaration → replace with a comment at the declaration. A relation to a second live artifact stays a test.
   - **Multi-site agreement:** prefer one generator for all sites (no test), then an integration test, then a test parsing both sites, then sync comments at every site.
   - **Pin defaults where they act:** assert resulting behavior or the boundary artifact's literal values, not `default == same constant`.
-  - **Removed stays removed:** delete a feature's tests with it; no "stays removed" tests (use a tombstone), except for auth/authz/approval boundaries.
+  - **Removed stays removed:** delete a feature's tests with it; don't retain tests whose only assertion is absence of a deleted route, schema entry, field, or config option. Use a tombstone when future action is still needed. Keep negative tests for current auth/authz/approval boundaries, supported 404/error behavior, data/no-secret invariants, and negative outcome behavior.
   - **Regression tests** fail on pre-fix code (PR says so) or aren't called regression tests; delete one that passes pre-fix or whose premise is gone.
 - No lint ignores or per-line silencing without approval.
 - `pre-commit run --all-files` over individual tools.
