@@ -2463,7 +2463,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if kind != CallKind::New
             || row.op != IntrinsicOp::Set
             || row.invocation != [Invocation::Construct]
-            || row.arity != (1..=1)
+            || row.arity != (0..=1)
             || row.coerces != [(ArgSel::Arg(0), CoerceOp::Iterate)]
             || row.allocates != Some(Kind::Set)
             || !row.mutates.is_empty()
@@ -8330,10 +8330,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         *span,
                     );
                 }
-                // This authored path historically stopped before native-row
-                // resolution. Keep its conservative value if the exact
-                // request payload and indexed SetIterableProof did not admit
-                // the native New row above.
+                // The iterable assertion does not bypass native-row checks:
+                // if this exact request and indexed SetIterableProof do not
+                // admit the Set New row, retain the conservative value.
                 if self
                     .inputs
                     .set_iterable_proof
