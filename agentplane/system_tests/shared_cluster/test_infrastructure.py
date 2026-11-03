@@ -2,7 +2,7 @@
 
 import os
 import tarfile
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import pytest_bazel
@@ -50,7 +50,7 @@ async def test_kvm_required_configuration_is_accepted_by_the_pinned_api_schema(
 
     async with kubernetes_apiserver() as server:
         crds = k8s.ApiextensionsV1Api(server.api)
-        await crds.create_custom_resource_definition(definition)
+        await crds.create_custom_resource_definition(cast(Any, definition))
         async for attempt in AsyncRetrying(stop=stop_after_delay(30), wait=wait_fixed(0.1), reraise=True):
             with attempt:
                 crd = await crds.read_custom_resource_definition(definition["metadata"]["name"])
