@@ -38,6 +38,8 @@ export interface ReaderHandlers<F> {
   onOpen?: () => void;
   /** Abort and retry if no first frame arrives within this many milliseconds. */
   initialFrameTimeoutMs?: number;
+  /** Abort and retry if an established stream stops delivering frames. */
+  idleTimeoutMs?: number;
   /** One frame, which makes the stream live. Throwing ends the connection. */
   onFrame: (frame: F) => void;
   /** Called with the opening `connecting` at once, then on every change. */
@@ -47,7 +49,7 @@ export interface ReaderHandlers<F> {
 /** Follows `url` until the returned function is called. */
 export function followResponse<F>(
   url: string,
-  { accept, frames, onOpen, initialFrameTimeoutMs, onFrame, onConnection }: ReaderHandlers<F>
+  { accept, frames, onOpen, initialFrameTimeoutMs, idleTimeoutMs, onFrame, onConnection }: ReaderHandlers<F>
 ): () => void {
   let connection: StreamConnection = { phase: "connecting", since: Date.now() };
   let retries = 0;
@@ -69,6 +71,7 @@ export function followResponse<F>(
             () => attempt.abort(new Error("stream did not send an initial frame")),
             initialFrameTimeoutMs
           );
+    let idleTimeout: number | undefined;
     try {
       const response = await fetchWithLogin(url, { signal: attempt.signal, headers: { Accept: accept } });
       if (!response.ok) throw new HttpError(response, await response.text());
@@ -84,9 +87,16 @@ export function followResponse<F>(
           report({ phase: "live", since: Date.now() });
         }
         onFrame(value);
+        window.clearTimeout(idleTimeout);
+        if (idleTimeoutMs !== undefined)
+          idleTimeout = window.setTimeout(
+            () => attempt.abort(new Error("stream stopped sending frames")),
+            idleTimeoutMs
+          );
       }
     } finally {
       window.clearTimeout(timeout);
+      window.clearTimeout(idleTimeout);
     }
   }
 

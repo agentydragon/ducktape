@@ -17,15 +17,12 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/federation"
-	"github.com/agentydragon/ducktape/agentplane/app/go/liveinventory"
 	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
-	"github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
-	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -35,8 +32,7 @@ import (
 )
 
 const (
-	liveHealthInterval = 15 * time.Second
-	maxNoticeThreads   = 200
+	maxNoticeThreads = 200
 )
 
 type streamingUpstream interface {
@@ -48,19 +44,8 @@ type sandboxNotificationWatcher interface {
 	WatchSessionNotices(context.Context, *notifications_operatorpb.WatchSessionNoticesRequest, ...grpc.CallOption) (grpc.ServerStreamingClient[notifications_operatorpb.WatchSessionNoticesResponse], error)
 }
 
-type egressDecisionWatcher interface {
-	WatchDecisions(context.Context, *egress_adminpb.WatchDecisionsRequest, ...grpc.CallOption) (grpc.ServerStreamingClient[egress_adminpb.WatchDecisionsResponse], error)
-}
-
-type streamLiveInventory interface {
-	Snapshot(context.Context) (liveinventory.Snapshot, error)
-	Health() watchhealth.Status
-	Subscribe() (<-chan struct{}, func())
-}
-
 type streamSandboxInventory interface {
 	GetEnvironment(context.Context, *environmentpb.GetEnvironmentRequest, ...grpc.CallOption) (*environmentpb.EnvironmentDescriptor, error)
-	Watch(context.Context, *identitypb.EnvironmentTarget) <-chan sandboxes.EnvironmentObservation
 }
 
 type streamHistoryStore interface {
@@ -79,7 +64,6 @@ type StreamingDependencies struct {
 	Updates          auth.ChangeSource
 	UpdatesConnected func() bool
 	SandboxNamespace string
-	Live             streamLiveInventory
 	Sandboxes        streamSandboxInventory
 	Threads          threadReadStore
 	History          streamHistoryStore
@@ -97,8 +81,6 @@ type StreamingDependencies struct {
 	NotificationHTTP streamingUpstream
 	Notifications    sandboxNotificationWatcher
 	NotificationWait time.Duration
-	Egress           egressDecisionWatcher
-	EgressWait       time.Duration
 	ThreadHeartbeat  time.Duration
 	Console          sandboxes.ConsoleSource
 	Logger           *slog.Logger
@@ -113,7 +95,6 @@ func RegisterStreamingRoutes(server *HTTPServer, dependencies StreamingDependenc
 	}
 	server.RegisterRawRoute("GET /upstream/policy/{path...}", http.HandlerFunc(routes.policyFacade), true)
 	server.RegisterRawRoute("GET /upstream/egress/{path...}", http.HandlerFunc(routes.egressFacade), true)
-	server.RegisterRawRoute("GET /live/sandboxes/{name}/egress/decisions", http.HandlerFunc(routes.liveDecisions), false)
 	server.RegisterRawRoute("GET /threads/{thread_id}/events/stream", http.HandlerFunc(routes.threadEvents), false)
 	server.RegisterRawRoute("GET /upstream/notifications/v1/operator/notices:watch", http.HandlerFunc(routes.notificationFacade), true)
 	server.RegisterRawRoute("GET /sandboxes/{name}/notifications/stream", http.HandlerFunc(routes.sandboxNotifications), true)
@@ -139,238 +120,11 @@ func newStreamingRoutes(server *HTTPServer, deps StreamingDependencies) *streami
 	return &streamingRoutes{server: server, deps: deps}
 }
 
-type liveDecisionsFrame struct {
-	Watching  bool `json:"watching"`
-	Decisions any  `json:"decisions"`
-}
-
-type decisionsUnavailable struct {
-	Detail string `json:"detail"`
-}
-
-type decisionView struct {
-	At          time.Time `json:"at"`
-	Method      string    `json:"method"`
-	Host        string    `json:"host"`
-	Port        int32     `json:"port"`
-	Outcome     string    `json:"outcome"`
-	Reason      *string   `json:"reason"`
-	Binding     *string   `json:"binding"`
-	Policy      *string   `json:"policy"`
-	Rule        *int32    `json:"rule"`
-	Substituted bool      `json:"substituted"`
-	Address     *string   `json:"address"`
-}
-
 func (r *streamingRoutes) logger() *slog.Logger {
 	if r.deps.Logger != nil {
 		return r.deps.Logger
 	}
 	return slog.Default()
-}
-
-func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Request) {
-	if r.deps.Live == nil || r.deps.Sandboxes == nil || r.deps.Egress == nil {
-		writeDetailError(w, http.StatusServiceUnavailable, "egress decision stream is unavailable")
-		return
-	}
-	uid := request.URL.Query().Get("sandbox_uid")
-	if uid == "" {
-		writeDetailError(w, http.StatusBadRequest, "sandbox_uid is required")
-		return
-	}
-	ctx, cancel := r.requestLifetime(request)
-	defer cancel()
-	changes, unsubscribe := r.deps.Live.Subscribe()
-	defer unsubscribe()
-	name := request.PathValue("name")
-	target := &identitypb.EnvironmentTarget{Namespace: r.deps.SandboxNamespace, Name: name, Uid: uid}
-	observations := r.deps.Sandboxes.Watch(ctx, target)
-	var descriptor *environmentpb.EnvironmentDescriptor
-	if err := startSSE(w); err != nil {
-		return
-	}
-	applyObservation := func(observation sandboxes.EnvironmentObservation, ok bool) bool {
-		if !ok {
-			return false
-		}
-		if observation.Err != nil {
-			_ = writeSSE(w, "snapshot", liveDecisionsFrame{Watching: false, Decisions: decisionsUnavailable{Detail: grpcFailure(observation.Err)}}, nil)
-			return false
-		}
-		descriptor = observation.Descriptor
-		return descriptor != nil && proto.Equal(descriptor.GetTarget(), target)
-	}
-	for {
-		// A disconnected or replaced Environment must be observed before reopening Egress.
-		select {
-		case observation, ok := <-observations:
-			if !applyObservation(observation, ok) {
-				return
-			}
-		default:
-		}
-		_, err := r.deps.Live.Snapshot(ctx)
-		if err != nil {
-			return
-		}
-		if descriptor == nil {
-			select {
-			case <-ctx.Done():
-				return
-			case observation, ok := <-observations:
-				if !applyObservation(observation, ok) {
-					return
-				}
-			}
-		}
-		account := descriptor.GetExecutionAccount()
-		if account == nil {
-			if writeSSE(w, "snapshot", liveDecisionsFrame{Watching: false, Decisions: decisionsUnavailable{Detail: "no sandbox " + name}}, nil) != nil {
-				return
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-changes:
-				continue
-			case observation, ok := <-observations:
-				if !applyObservation(observation, ok) {
-					return
-				}
-				continue
-			}
-		}
-		watchCtx, stopWatch := context.WithCancel(ctx)
-		stream, err := r.deps.Egress.WatchDecisions(watchCtx, decisionsRequest(&identitypb.ServiceAccount{Namespace: account.GetAccount().GetNamespace(), Name: account.GetAccount().GetName()}))
-		if err != nil {
-			stopWatch()
-			if writeSSE(w, "snapshot", liveDecisionsFrame{Watching: false, Decisions: decisionsUnavailable{Detail: grpcFailure(err)}}, nil) != nil {
-				return
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case observation, ok := <-observations:
-				if !applyObservation(observation, ok) {
-					return
-				}
-			case <-time.After(time.Second):
-			}
-			continue
-		}
-		type decisionResult struct {
-			message *egress_adminpb.WatchDecisionsResponse
-			err     error
-		}
-		received := make(chan decisionResult, 1)
-		go func() {
-			for {
-				message, recvErr := stream.Recv()
-				select {
-				case received <- decisionResult{message: message, err: recvErr}:
-				case <-watchCtx.Done():
-					return
-				}
-				if recvErr != nil {
-					return
-				}
-			}
-		}()
-		first := true
-		watching := false
-		wait := r.deps.EgressWait
-		if wait <= 0 {
-			wait = 5 * time.Second
-		}
-		timer := time.NewTimer(wait)
-		streamEnded := false
-		for {
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				stopWatch()
-				return
-			case <-changes:
-				// Policy changes restart the Egress stream using the observed account.
-				streamEnded = true
-				break
-			case observation, ok := <-observations:
-				if !applyObservation(observation, ok) {
-					timer.Stop()
-					stopWatch()
-					return
-				}
-				streamEnded = true
-				break
-			case <-timer.C:
-				if first {
-					_ = writeSSE(w, "snapshot", liveDecisionsFrame{Watching: false, Decisions: decisionsUnavailable{Detail: fmt.Sprintf("no initial snapshot within %s", compactDuration(wait))}}, nil)
-					streamEnded = true
-					break
-				}
-				if writeSSE(w, "health", struct {
-					Watching bool `json:"watching"`
-				}{watching}, nil) != nil {
-					timer.Stop()
-					stopWatch()
-					return
-				}
-				timer.Reset(liveHealthInterval)
-			case result := <-received:
-				if result.err != nil {
-					if errors.Is(result.err, io.EOF) {
-						streamEnded = true
-						break
-					}
-					if ctx.Err() != nil {
-						timer.Stop()
-						stopWatch()
-						return
-					}
-					if writeSSE(w, "snapshot", liveDecisionsFrame{Watching: false, Decisions: decisionsUnavailable{Detail: grpcFailure(result.err)}}, nil) != nil {
-						timer.Stop()
-						stopWatch()
-						return
-					}
-					streamEnded = true
-					break
-				}
-				first = false
-				watching = true
-				if !timer.Stop() {
-					select {
-					case <-timer.C:
-					default:
-					}
-				}
-				timer.Reset(liveHealthInterval)
-				if writeSSE(w, "snapshot", liveDecisionsFrame{Watching: true, Decisions: decisionViews(result.message.GetDecisions())}, nil) != nil {
-					timer.Stop()
-					stopWatch()
-					return
-				}
-			}
-			if streamEnded {
-				break
-			}
-		}
-		timer.Stop()
-		stopWatch()
-		if ctx.Err() != nil {
-			return
-		}
-		_ = watching
-		select {
-		case <-ctx.Done():
-			return
-		case observation, ok := <-observations:
-			if !applyObservation(observation, ok) {
-				return
-			}
-		case <-time.After(time.Second):
-		}
-	}
 }
 
 func (r *streamingRoutes) requestLifetime(request *http.Request) (context.Context, context.CancelFunc) {
@@ -1032,49 +786,6 @@ func (r *streamingRoutes) threadEvents(w http.ResponseWriter, request *http.Requ
 			return
 		}
 	}
-}
-
-func decisionsRequest(subject *identitypb.ServiceAccount) *egress_adminpb.WatchDecisionsRequest {
-	return &egress_adminpb.WatchDecisionsRequest{Filter: &egress_adminpb.DecisionFilter{Scope: &egress_adminpb.DecisionFilter_Subject{Subject: subject}}}
-}
-
-func decisionViews(rows []*egress_adminpb.Decision) []decisionView {
-	values := make([]decisionView, 0, len(rows))
-	for _, row := range rows {
-		if row == nil {
-			continue
-		}
-		outcome := "deny"
-		if row.GetOutcome() == egress_adminpb.Decision_OUTCOME_ALLOW {
-			outcome = "allow"
-		}
-		view := decisionView{Method: row.GetMethod(), Host: row.GetHost(), Port: row.GetPort(), Outcome: outcome, Substituted: row.GetSubstituted()}
-		if row.GetAt() != nil && row.GetAt().IsValid() {
-			view.At = row.GetAt().AsTime().UTC()
-		}
-		if row.Reason != nil {
-			value := row.GetReason()
-			view.Reason = &value
-		}
-		if row.Binding != nil {
-			value := row.GetBinding()
-			view.Binding = &value
-		}
-		if row.Policy != nil {
-			value := row.GetPolicy()
-			view.Policy = &value
-		}
-		if row.Rule != nil {
-			value := row.GetRule()
-			view.Rule = &value
-		}
-		if row.Address != nil {
-			value := row.GetAddress()
-			view.Address = &value
-		}
-		values = append(values, view)
-	}
-	return values
 }
 
 func grpcFailure(err error) string {

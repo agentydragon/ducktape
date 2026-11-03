@@ -10,6 +10,7 @@ import grpc
 import httpx
 import pytest
 import pytest_bazel
+from google.protobuf.json_format import ParseDict
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
@@ -17,12 +18,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.history import SessionHistory
-from agentplane.app.testing.models import DecisionsSnapshot, DecisionsUnavailable
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.runner_gateway import APP, DISPATCHER_AUDIENCE, GATEWAY, GATEWAY_AUDIENCE
 from agentplane.app.testing.thread_test_support import ThreadHTTP
-from agentplane.egress import egress_admin_pb2_grpc
-from agentplane.egress.decisions import Outcome
+from agentplane.egress import egress_admin_pb2, egress_admin_pb2_grpc
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
@@ -114,16 +113,6 @@ def namespace_gateway(gateway_service: GatewayProcess, app_token_file: Path) -> 
     return GatewayAccess(gateway_service.target, app_token_file)
 
 
-async def _snapshots(response: httpx.Response) -> AsyncIterator[str]:
-    response.raise_for_status()
-    event = ""
-    async for line in response.aiter_lines():
-        if line.startswith("event: "):
-            event = line.removeprefix("event: ")
-        elif line.startswith("data: ") and event == "snapshot":
-            yield line.removeprefix("data: ")
-
-
 async def _watch_results(response: httpx.Response) -> AsyncIterator[dict[str, object]]:
     response.raise_for_status()
     async for line in response.aiter_lines():
@@ -135,23 +124,11 @@ async def _watch_results(response: httpx.Response) -> AsyncIterator[dict[str, ob
             yield result
 
 
-async def _next_decisions(stream: AsyncIterator[str]) -> DecisionsSnapshot:
-    return DecisionsSnapshot.model_validate_json(await anext(stream))
-
-
-async def _environment_uid(http: httpx.AsyncClient, name: str) -> str:
-    response = await http.get("/upstream/environments/v1/environments", params={"limit": 100})
-    response.raise_for_status()
-    uid = next(item["target"]["uid"] for item in response.json()["items"] if item["target"]["name"] == name)
-    assert isinstance(uid, str)
-    return uid
-
-
 async def test_the_streams_need_a_caller(app: AppProcess) -> None:
     async with httpx.AsyncClient(base_url=app.url) as unauthenticated:
         for route in (
             "/upstream/environments/v1/environments:watch",
-            "/live/sandboxes/runner-1/egress/decisions",
+            "/upstream/egress/v1/decisions:watch",
             "/upstream/policy/v1/policy-bindings:watch",
             "/upstream/policy/v1/policy-sets:watch",
             "/upstream/app/v1/threads",
@@ -353,79 +330,37 @@ async def database_reconnect_gate(db_url: str) -> AsyncIterator[tuple[str, async
                     writer.close()
 
 
-async def test_egress_decision_stream_receives_snapshots_and_recovers(
-    http: httpx.AsyncClient, namespace: SandboxNamespace, seeded: None, egress_admin: FakeEgressAdmin
+async def test_generated_egress_watch_streams_decisions_and_rotates_token(
+    http: httpx.AsyncClient, namespace: SandboxNamespace, egress_admin: FakeEgressAdmin, egress_token_file: Path
 ) -> None:
     subject = (namespace.name, "runner-1")
     egress_admin.decisions[subject] = [decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "allow")]
-    uid = await _environment_uid(http, "runner-1")
-    async with (
-        asyncio.timeout(10),
-        http.stream("GET", "/live/sandboxes/runner-1/egress/decisions", params={"sandbox_uid": uid}) as response,
-    ):
-        stream = _snapshots(response)
-        first = await _next_decisions(stream)
-        assert isinstance(first.decisions, list)
-        assert first.watching
-        assert len(first.decisions) == 1
-        admitted = first.decisions[0]
+    path = "/upstream/egress/v1/decisions:watch"
+    params = {"filter.subject.namespace": subject[0], "filter.subject.name": subject[1]}
+    async with asyncio.timeout(10), http.stream("GET", path, params=params) as response:
+        stream = _watch_results(response)
+        first = ParseDict(await anext(stream), egress_admin_pb2.WatchDecisionsResponse())
+        assert first.WhichOneof("frame") == "snapshot"
+        (admitted,) = first.snapshot.decisions
         assert (admitted.method, admitted.host) == ("GET", "api.github.com")
-        assert admitted.at == datetime(2026, 9, 2, 10, 0, 1, tzinfo=UTC)
-        assert admitted.outcome is Outcome.ALLOW
+        assert admitted.at.ToDatetime(tzinfo=UTC) == datetime(2026, 9, 2, 10, 0, 1, tzinfo=UTC)
+        assert admitted.outcome == egress_admin_pb2.Decision.OUTCOME_ALLOW
+        assert admitted.HasField("rule")
         assert admitted.rule == 0
-        assert admitted.reason is None
+        assert not admitted.HasField("reason")
         egress_admin.decisions[subject].append(decision("2026-09-02T10:00:02Z", "POST", "pypi.org", "deny"))
         egress_admin.notify()
-        second = await _next_decisions(stream)
-        assert isinstance(second.decisions, list)
-        assert second.watching
-        assert [d.host for d in second.decisions] == ["api.github.com", "pypi.org"]
-        assert second.decisions[1].outcome is Outcome.DENY
-        assert second.decisions[1].reason is None
-        egress_admin.reachable = False
-        egress_admin.notify()
-        unavailable = await _next_decisions(stream)
-        assert not unavailable.watching
-        assert isinstance(unavailable.decisions, DecisionsUnavailable)
-        egress_admin.decisions[subject].append(decision("2026-09-02T10:00:03Z", "GET", "pypi.org", "allow"))
-        egress_admin.reachable = True
-        recovered = await _next_decisions(stream)
-        assert recovered.watching
-        assert isinstance(recovered.decisions, list)
-        assert [d.host for d in recovered.decisions] == ["api.github.com", "pypi.org", "pypi.org"]
-
-
-async def test_egress_decision_stream_reconnects_after_lease_with_rotated_token(
-    http: httpx.AsyncClient,
-    namespace: SandboxNamespace,
-    seeded: None,
-    egress_admin: FakeEgressAdmin,
-    egress_token_file: Path,
-) -> None:
-    subject = (namespace.name, "runner-1")
-    egress_admin.decisions[subject] = [decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "allow")]
-    uid = await _environment_uid(http, "runner-1")
-    async with (
-        asyncio.timeout(10),
-        http.stream("GET", "/live/sandboxes/runner-1/egress/decisions", params={"sandbox_uid": uid}) as response,
-    ):
-        stream = _snapshots(response)
-        assert (await _next_decisions(stream)).watching
-        assert egress_admin.tokens == ["Bearer fake-token"]
-        await asyncio.to_thread(egress_token_file.write_text, "rotated-token")
-        egress_admin.expire_lease()
-        assert (await _next_decisions(stream)).watching
-        assert egress_admin.tokens == ["Bearer fake-token", "Bearer rotated-token"]
-
-
-async def test_egress_decision_stream_says_a_sandbox_is_missing(http: httpx.AsyncClient) -> None:
-    async with (
-        asyncio.timeout(10),
-        http.stream("GET", "/live/sandboxes/nope/egress/decisions", params={"sandbox_uid": "missing"}) as response,
-    ):
-        missing = await _next_decisions(_snapshots(response))
-        assert not missing.watching
-        assert isinstance(missing.decisions, DecisionsUnavailable)
+        second = ParseDict(await anext(stream), egress_admin_pb2.WatchDecisionsResponse())
+        assert second.WhichOneof("frame") == "delta"
+        (refused,) = second.delta.added
+        assert refused.host == "pypi.org"
+        assert refused.outcome == egress_admin_pb2.Decision.OUTCOME_DENY
+    assert egress_admin.tokens == ["Bearer fake-token"]
+    await asyncio.to_thread(egress_token_file.write_text, "rotated-token")
+    async with asyncio.timeout(10), http.stream("GET", path, params=params) as response:
+        frame = ParseDict(await anext(_watch_results(response)), egress_admin_pb2.WatchDecisionsResponse())
+        assert len(frame.snapshot.decisions) == 2
+    assert egress_admin.tokens == ["Bearer fake-token", "Bearer rotated-token"]
 
 
 if __name__ == "__main__":

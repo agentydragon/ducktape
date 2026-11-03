@@ -25,7 +25,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/historyclient"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historywatch"
-	"github.com/agentydragon/ducktape/agentplane/app/go/liveinventory"
 	"github.com/agentydragon/ducktape/agentplane/app/go/migrations"
 	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
 	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
@@ -154,10 +153,6 @@ func run(ctx context.Context, config Config) error {
 	}
 	threadStore := threads.NewStore(db)
 	policies := policyaccess.New(config.SandboxNamespace, objects)
-	liveIndex, err := liveinventory.New(kubeConfig, config.SandboxNamespace)
-	if err != nil {
-		return fmt.Errorf("configure live Kubernetes inventory: %w", err)
-	}
 	runner, err := bridge.NewGatewayRunnerProxy(bridge.RunnerConfig{
 		Namespace: config.SandboxNamespace, TokenFile: config.RunnerGatewayTokenFile,
 		Timeout:        time.Duration(config.RunnerGatewayRequestTimeoutSeconds * float64(time.Second)),
@@ -306,12 +301,6 @@ func run(ctx context.Context, config Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Egress Service gRPC client: %w", err)
 	}
-	egressConn, err := bearer.Dial(egressTarget, config.EgressAdminTokenFile,
-		time.Duration(config.EgressAdminTimeoutSeconds*float64(time.Second)))
-	if err != nil {
-		return fmt.Errorf("configure Egress Service gRPC client: %w", err)
-	}
-	defer egressConn.Close()
 	egressFacade, err := facade.NewHandler(facadeContext, egressTarget,
 		time.Duration(config.EgressAdminTimeoutSeconds*float64(time.Second)), egress_adminpb.RegisterEgressAdminHandlerFromEndpoint)
 	if err != nil {
@@ -358,15 +347,13 @@ func run(ctx context.Context, config Config) error {
 	server.RegisterRawRoute("POST /telemetry/v1/traces", traceRelayHandler(), true)
 	RegisterStreamingRoutes(server, StreamingDependencies{
 		Auth: appAuth, Updates: wakeupHub, UpdatesConnected: wakeupHub.Connected,
-		SandboxNamespace: config.SandboxNamespace, Live: liveIndex, Sandboxes: environments, Threads: threadStore, History: history, HistoryFollower: historyReaderClient,
+		SandboxNamespace: config.SandboxNamespace, Sandboxes: environments, Threads: threadStore, History: history, HistoryFollower: historyReaderClient,
 		Federator:      federator,
 		DispatcherHTTP: dispatcherGateway, EnvironmentHTTP: dispatcherGateway, PolicyHTTP: policyGateway, EgressHTTP: egressGateway,
 		ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
 		HistoryHTTP: historyGateway, NotificationHTTP: notificationGateway,
 		Notifications:    notifications_operatorpb.NewNotificationsOperatorClient(notificationConn),
 		NotificationWait: time.Duration(config.NotificationsRequestTimeoutSeconds * float64(time.Second)),
-		Egress:           egress_adminpb.NewEgressAdminClient(egressConn),
-		EgressWait:       time.Duration(config.EgressAdminTimeoutSeconds * float64(time.Second)),
 		Console:          consoleConnector, Logger: logger,
 	})
 	if config.ElectricURL != "" {
@@ -379,7 +366,6 @@ func run(ctx context.Context, config Config) error {
 		server.RegisterRawRoute("/threads/{thread_id}/sync/{rest...}", electricHandler, false)
 	}
 	workers := []processWorker{
-		{name: "live-inventory", run: liveIndex.Run},
 		{name: "history-watch", run: historyWatch.Run},
 		{name: "session-openings", run: sessionOpenings.Run},
 	}

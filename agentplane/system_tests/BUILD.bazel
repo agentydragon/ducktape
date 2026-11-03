@@ -612,3 +612,18 @@ py_library(
         "@pypi//pydantic",
     ],
 )
+
+py_library(
+    name = "egress_decisions",
+    srcs = ["egress_decisions.py"],
+    deps = [
+        ":cluster",
+        ":dispatcher_transport",
+        ":port_forward",
+        "//agentplane/egress:egress_admin_pb2",
+        "//agentplane/egress:egress_admin_pb2_grpc",
+        "//agentplane/proto:identity_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)

@@ -27,20 +27,6 @@ import {
 } from "../../app_service_pb";
 import { SessionOpeningSchema, type SessionOpening } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
-/** A decision carried by the live egress stream. */
-export type Decision = {
-  at: string;
-  method: string;
-  host: string;
-  port: number;
-  outcome: "allow" | "deny";
-  reason: string | null;
-  binding: string | null;
-  policy: string | null;
-  rule: number | null;
-  substituted: boolean;
-  address: string | null;
-};
 /** Submit once; an uncertain response is reconciled by the caller-minted Session ID. */
 export async function openSession(
   target: EnvironmentTarget,

@@ -24,11 +24,14 @@ import {
   WatchPolicyBindingsResponseSchema,
   WatchPolicySetsResponseSchema,
 } from "../../../policy/v1/policy_service_pb";
-import { WatchCredentialsResponseSchema } from "../../../egress/egress_admin_pb";
+import {
+  Decision_Outcome,
+  WatchCredentialsResponseSchema,
+  WatchDecisionsResponseSchema,
+  type Decision,
+} from "../../../egress/egress_admin_pb";
 import { GetActionPolicyResponseSchema } from "../../../action_service/action_service_pb";
-import type { Decision } from "../sandboxes/client";
 import { decisionFixture, type DecisionFixture } from "../sandboxes/decision_fixture";
-import type { DecisionsSnapshot } from "../sandboxes/live";
 import { DurationSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { ServiceAccountIdentitySchema } from "../../../proto/identity_pb";
 import { OwnerReferenceSchema } from "../../../proto/kubernetes_pb";
@@ -453,7 +456,7 @@ function actionPolicy(namespace: string, name: string) {
 
 const GITHUB_ADMITTED = {
   host: "api.github.com",
-  outcome: "allow",
+  outcome: Decision_Outcome.ALLOW,
   address: "140.82.116.5",
   binding: "ready-sandbox-github-public",
   policy: "github-public",
@@ -462,7 +465,7 @@ const GITHUB_ADMITTED = {
 
 const PYPI_REFUSED = {
   host: "pypi.org",
-  outcome: "deny",
+  outcome: Decision_Outcome.DENY,
   reason: "no-rule",
 } satisfies Omit<DecisionFixture, "at">;
 
@@ -479,18 +482,10 @@ const DECISIONS: Decision[] = [
     at: ago(60_000),
     host: "example.invalid",
     method: "CONNECT",
-    outcome: "deny",
+    outcome: Decision_Outcome.DENY,
     reason: "no-binding",
   }),
 ];
-
-/** The phone fixture shows the proxy unreachable, the desktop one its decisions; both fit on a page. */
-function egressDecisions(): DecisionsSnapshot {
-  if (window.matchMedia("(max-width: 600px)").matches) {
-    return { watching: true, decisions: { detail: "the egress proxy did not answer: connection refused" } };
-  }
-  return { watching: true, decisions: DECISIONS };
-}
 
 const IDLE_THREAD = "5f1c4a2e-0000-4000-8000-000000000001";
 const UNNAMED_STOPPED_THREAD = "5f1c4a2e-0000-4000-8000-000000000000";
@@ -3310,9 +3305,6 @@ function historySummaryProtoJson(thread: ThreadView): Record<string, unknown> {
 
 /** What the live stream at `url` sends, when it opens and whenever a fixture publishes it again. */
 function liveEvents(url: URL): ServerSentEvent[] {
-  if (/^\/live\/sandboxes\/[^/]+\/egress\/decisions$/.test(url.pathname)) {
-    return [{ event: "snapshot", data: egressDecisions() }];
-  }
   if (url.pathname === "/upstream/notifications/v1/operator/notices:watch") {
     const states: Record<
       string,
@@ -3454,6 +3446,24 @@ routes.unshift([
 ]);
 
 routes.unshift(
+  [
+    "GET",
+    /^\/upstream\/egress\/v1\/decisions:watch$/,
+    (_match, _query, signal) =>
+      window.matchMedia("(max-width: 600px)").matches
+        ? Response.json({ code: 14, message: "the egress proxy did not answer: connection refused" }, { status: 503 })
+        : ndjsonWatch(
+            [
+              toJson(
+                WatchDecisionsResponseSchema,
+                create(WatchDecisionsResponseSchema, {
+                  frame: { case: "snapshot", value: { decisions: DECISIONS } },
+                })
+              ),
+            ],
+            signal
+          ),
+  ],
   [
     "GET",
     /^\/upstream\/egress\/v1\/credentials:watch$/,

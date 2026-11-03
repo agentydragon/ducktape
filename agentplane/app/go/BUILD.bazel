@@ -37,7 +37,6 @@ go_library(
         "//agentplane/app/go/historydata",
         "//agentplane/app/go/historywatch",
         "//agentplane/app/go/httperror",
-        "//agentplane/app/go/liveinventory",
         "//agentplane/app/go/migrations",
         "//agentplane/app/go/policyaccess",
         "//agentplane/app/go/proxy",
@@ -302,7 +301,6 @@ go_test(
     deps = [
         "//agentplane/app/go/auth",
         "//agentplane/app/go/historydata",
-        "//agentplane/app/go/liveinventory",
         "//agentplane/app/go/proxy",
         "//agentplane/app/go/sandboxes",
         "//agentplane/app/go/threads",

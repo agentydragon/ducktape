@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -55,7 +56,6 @@ type Service struct {
 	historyHealth HistoryHealth
 	index         Index
 	credentials   *policy.Index
-	lease         time.Duration
 	draining      context.Context
 	drain         context.CancelFunc
 }
@@ -67,9 +67,6 @@ type ServiceOptions struct {
 	HistoryHealth HistoryHealth
 	Index         Index
 	Credentials   *policy.Index
-	// WatchLease ends each watch after this long: a stream is admitted once, so the lease bounds how
-	// long a revoked token keeps reading.
-	WatchLease time.Duration
 }
 
 // Methods admits callers to every EgressAdmin RPC: each proves, by a bearer resolver reviews, one of callers.
@@ -87,7 +84,7 @@ func NewService(options ServiceOptions) *Service {
 	draining, drain := context.WithCancel(context.Background())
 	return &Service{
 		decisions: options.Decisions, changes: options.Changes, historyHealth: options.HistoryHealth,
-		index: options.Index, credentials: options.Credentials, lease: options.WatchLease, draining: draining, drain: drain,
+		index: options.Index, credentials: options.Credentials, draining: draining, drain: drain,
 	}
 }
 
@@ -137,45 +134,122 @@ func (s *Service) ListDecisions(ctx context.Context, request *egressadminpb.List
 	return &egressadminpb.ListDecisionsResponse{Decisions: decisionsOf(records)}, nil
 }
 
-// WatchDecisions sends the list on subscribing and again whenever it differs from the last one sent.
-// Changes only prompts the re-read, so a heartbeat of quiet or a commit by another subject sends nothing.
+// WatchDecisions sends an initial recent window, then changes to it. A quiet feed sends
+// heartbeats only after the history read succeeds. No watch lease interrupts a healthy stream.
 func (s *Service) WatchDecisions(request *egressadminpb.WatchDecisionsRequest, stream grpc.ServerStreamingServer[egressadminpb.WatchDecisionsResponse]) error {
+	return s.watchDecisions(request, stream, auth.RevalidateStream)
+}
+
+func (s *Service) watchDecisions(request *egressadminpb.WatchDecisionsRequest, stream grpc.ServerStreamingServer[egressadminpb.WatchDecisionsResponse], revalidate func(context.Context) error) error {
 	ctx := stream.Context()
 	subject, err := subjectOf(request.GetFilter())
 	if err != nil {
 		return err
 	}
-	leased, endLease := context.WithTimeout(ctx, s.lease)
-	defer endLease()
-	defer context.AfterFunc(s.draining, endLease)()
-	var last *egressadminpb.WatchDecisionsResponse
-	var sendFailure error
-	err = s.changes.Follow(leased, func() error {
-		records, err := s.decisions.Recent(leased, subject)
-		if err != nil {
-			return err
-		}
-		response := &egressadminpb.WatchDecisionsResponse{Decisions: decisionsOf(records)}
-		if last != nil && proto.Equal(last, response) {
-			return nil
-		}
-		last = response
-		sendFailure = streaming.SendWithin(leased, watchWriteTimeout, stream.Send, response)
-		return sendFailure
-	})
-	switch {
-	case ctx.Err() != nil:
-		return status.FromContextError(ctx.Err()).Err()
-	case leased.Err() != nil:
-		// The lease ended, or the server is draining; the caller subscribes again.
-		return nil
-	case errors.Is(sendFailure, streaming.ErrSendTimeout):
-		return status.Error(codes.DeadlineExceeded, "decision watch write deadline expired")
-	case sendFailure != nil:
-		return sendFailure
-	default:
-		return historyFailure(err)
+	watchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	defer context.AfterFunc(s.draining, cancel)()
+	type result struct {
+		records []decision.Record
+		err     error
+		done    bool
 	}
+	updates := make(chan result)
+	go func() {
+		err := s.changes.Follow(watchCtx, func() error {
+			records, err := s.decisions.Recent(watchCtx, subject)
+			if err != nil {
+				return err
+			}
+			select {
+			case updates <- result{records: records}:
+				return nil
+			case <-watchCtx.Done():
+				return watchCtx.Err()
+			}
+		})
+		select {
+		case updates <- result{err: err, done: true}:
+		case <-watchCtx.Done():
+		}
+	}()
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	var previous *egressadminpb.DecisionSnapshot
+	var lastSend time.Time
+	for {
+		select {
+		case <-ctx.Done():
+			return status.FromContextError(ctx.Err()).Err()
+		case <-s.draining.Done():
+			return nil
+		case <-ticker.C:
+			if err := revalidate(ctx); err != nil {
+				return err
+			}
+		case update := <-updates:
+			if update.done {
+				if update.err == nil {
+					update.err = errors.New("decision history change feed ended")
+				}
+				return historyFailure(update.err)
+			}
+			if err := revalidate(ctx); err != nil {
+				return err
+			}
+			snapshot := &egressadminpb.DecisionSnapshot{Decisions: decisionsOf(update.records)}
+			var frame *egressadminpb.WatchDecisionsResponse
+			if previous == nil {
+				frame = &egressadminpb.WatchDecisionsResponse{Frame: &egressadminpb.WatchDecisionsResponse_Snapshot{Snapshot: snapshot}}
+				previous = snapshot
+			} else if delta := decisionDelta(previous.GetDecisions(), snapshot.GetDecisions()); len(delta.Added) > 0 || len(delta.RemovedEventIds) > 0 {
+				frame = &egressadminpb.WatchDecisionsResponse{Frame: &egressadminpb.WatchDecisionsResponse_Delta{Delta: delta}}
+				previous = snapshot
+			} else if time.Since(lastSend) >= history.ChangesHeartbeat {
+				frame = &egressadminpb.WatchDecisionsResponse{Frame: &egressadminpb.WatchDecisionsResponse_Heartbeat{Heartbeat: &emptypb.Empty{}}}
+			} else {
+				continue
+			}
+			if err := streaming.SendWithin(watchCtx, watchWriteTimeout, stream.Send, frame); err != nil {
+				if ctx.Err() != nil {
+					return status.FromContextError(ctx.Err()).Err()
+				}
+				if s.draining.Err() != nil {
+					return nil
+				}
+				if errors.Is(err, streaming.ErrSendTimeout) {
+					return status.Error(codes.DeadlineExceeded, "decision watch write deadline expired")
+				}
+				return err
+			}
+			lastSend = time.Now()
+		}
+	}
+}
+
+// decisionDelta compares bounded windows by their durable event identity. This also reports
+// late commits and expiry, which cannot safely be represented by an advancing timestamp cursor.
+func decisionDelta(previous, current []*egressadminpb.Decision) *egressadminpb.DecisionDelta {
+	old := make(map[string]bool, len(previous))
+	fresh := make(map[string]bool, len(current))
+	for _, item := range previous {
+		old[item.GetEventId()] = true
+	}
+	for _, item := range current {
+		fresh[item.GetEventId()] = true
+	}
+	delta := &egressadminpb.DecisionDelta{}
+	for _, item := range current {
+		if !old[item.GetEventId()] {
+			delta.Added = append(delta.Added, item)
+		}
+	}
+	for _, item := range previous {
+		if !fresh[item.GetEventId()] {
+			delta.RemovedEventIds = append(delta.RemovedEventIds, item.GetEventId())
+		}
+	}
+	return delta
 }
 
 // subjectOf is the decisions' subject the filter selects; nil selects the refusals that never
@@ -198,7 +272,7 @@ func decisionsOf(records []decision.Record) []*egressadminpb.Decision {
 	decisions := make([]*egressadminpb.Decision, len(records))
 	for i, record := range records {
 		decisions[i] = &egressadminpb.Decision{
-			At: timestamppb.New(record.At), Method: record.Method, Host: record.Host, Port: int32(record.Port),
+			EventId: record.EventID.String(), At: timestamppb.New(record.At), Method: record.Method, Host: record.Host, Port: int32(record.Port),
 			Outcome: outcomeOf(record.Outcome), Binding: record.Binding, Policy: record.Policy,
 			Substituted: record.Substituted, Address: record.Address,
 		}

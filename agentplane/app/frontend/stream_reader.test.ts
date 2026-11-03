@@ -96,6 +96,27 @@ it("reconnects when a watch never sends its first frame, then leaves a live watc
   expect(frames).toEqual(["snapshot"]);
 });
 
+it("reconnects after an established stream stops sending frames, resetting the deadline on each frame", async () => {
+  stop = followResponse("/test/stream", {
+    accept: "text/plain",
+    frames: (body) => body,
+    idleTimeoutMs: 5_000,
+    onFrame: (frame) => frames.push(frame),
+    onConnection: (connection) => connections.push(connection),
+  });
+  await settle();
+  served(0).write("snapshot");
+  await settle();
+  await vi.advanceTimersByTimeAsync(4_000);
+  served(0).write("heartbeat");
+  await settle();
+  await vi.advanceTimersByTimeAsync(4_000);
+  expect(served(0).signal?.aborted).toBe(false);
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(served(0).signal?.aborted).toBe(true);
+  expect(connections.at(-1)).toMatchObject({ phase: "reconnecting", lastError: "stream stopped sending frames" });
+});
+
 it("sends the browser to log in when the login has expired, and connects no more", async () => {
   const replace = vi.fn();
   vi.stubGlobal("location", { pathname: "/", hash: "#/actions", replace });

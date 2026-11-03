@@ -25,8 +25,10 @@ class Caller:
         return (("authorization", f"Bearer {self.token}"),)
 
 
-async def bound_caller(cluster: Cluster, service_account: str) -> tuple[Caller, str, str]:
-    """Mint a Dispatcher-audience token bound to an existing service Pod."""
+async def bound_caller(
+    cluster: Cluster, service_account: str, *, audience: str = TOKEN_AUDIENCE
+) -> tuple[Caller, str, str]:
+    """Mint an audience-scoped token bound to an existing service Pod."""
     with tracer.start_as_current_span("system_test.dispatcher.caller"):
         pods = json.loads(
             await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={service_account}", "-o", "json")
@@ -38,7 +40,7 @@ async def bound_caller(cluster: Cluster, service_account: str) -> tuple[Caller, 
             "create",
             "token",
             service_account,
-            f"--audience={TOKEN_AUDIENCE}",
+            f"--audience={audience}",
             "--duration=1800s",
             "--bound-object-kind=Pod",
             f"--bound-object-name={name}",
@@ -65,7 +67,7 @@ async def forward(cluster: Cluster, resource: str = f"service/{SERVICE}") -> Asy
 @asynccontextmanager
 async def native_client(cluster: Cluster, token_file: Path) -> AsyncIterator[SessionDispatcherClient]:
     """Own a native channel using the existing backend-authorized test principal."""
-    caller, _, _ = await bound_caller(cluster, "app")
+    caller, _, _ = await bound_caller(cluster, "app", audience=TOKEN_AUDIENCE)
     await asyncio.to_thread(token_file.write_text, caller.token)
     async with (
         forward(cluster) as target,

@@ -56,8 +56,8 @@ Also here:
 - `sidecar_config.py` and `platform_routes.py`: Python settings and route models cdk8s renders each
   Sandbox template's sidecar settings ConfigMap from. The process entry point and both forwarding
   paths live in Go; `platform_routes.py` does not serve traffic.
-- `../app/go/streamapi.go`: the integration app's authenticated `EgressAdmin.WatchDecisions` client
-  and browser stream projection. `decisions.py` remains the Python value model used by system tests.
+- `../app/go/streamapi.go`: the integration app's authenticated Egress HTTP facade
+  for the generated Egress API.
 - `testing/`: the throwaway CAs and process launchers `test_proxy.py` runs the built binaries with.
   It drives the real binaries against envtest API servers (<../testing/kubernetes_apiserver.py>) and
   a PostgreSQL container; the package tests beside the code cover the decision itself.
@@ -208,8 +208,8 @@ other calls in flight finish within the drain deadline.
 Every `EgressAdmin` call admits only the ServiceAccounts in `admin_grpc_callers`, each proving itself by
 a bearer of audience `admin_grpc_audience` that is reviewed for every call (an acceptance is reused
 for 30 s), before anything is read
-(<../docs/grpc_services.md>). A watch is admitted once, so it ends after ten minutes and when the proxy
-drains; the caller subscribes again and is admitted afresh.
+(<../docs/grpc_services.md>). Watches periodically revalidate authorization and end on revocation or when the proxy drains;
+reconnecting callers are admitted afresh.
 
 The health service is always mounted. `EgressAdmin` is mounted only when `admin_grpc_audience` and
 `admin_grpc_callers` (`namespace/name` entries) are both set; without them the admin listener serves
