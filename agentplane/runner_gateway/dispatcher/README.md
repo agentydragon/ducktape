@@ -24,7 +24,7 @@ The manual queue, replica and wake probes are documented in the
   `POST /v1/dispatches/{command_id}:cancel`. Both transports use the same ServiceAccount TokenReview and
   per-Session owner checks; a browser reaches it through the app's authenticated command facade.
 - **Delivery states** say where a command is: `QUEUED_IN_DISPATCHER`, `DELIVERING_TO_RUNNER`,
-  `RUNNER_ADMITTED`, `HARNESS_CONFIRMED`, `NO_OP`, `FAILED`, `CANCELLED_IN_DISPATCHER`, `UNKNOWN` (a deleted Sandbox's).
+  `RUNNER_ADMITTED`, `HARNESS_CONFIRMED`, `NO_OP`, `FAILED`, `CANCELLED_IN_DISPATCHER`, `UNKNOWN` (an unconfirmed native opening or a deleted Sandbox's command).
   The `reason` describes queue or terminal state; `delivery_blocker` and `wake_assessment` separately
   expose the current environment blocker and latest typed wake observation. A denied or disabled wake
   leaves delivery queued.
@@ -44,7 +44,9 @@ The manual queue, replica and wake probes are documented in the
   matching runner retry returns its durable Session reservation; native preparation waits for work.
   A reservation does not assert a running harness; `ALREADY_EXISTS` means a requested spec or
   setup conflicts, which the Dispatcher records as a failed opening.
-  Openings follow the rules of commands below for deleted Sandboxes, runner statuses and retention.
+  Native opening rejection and unconfirmed outcomes fence dependent queued commands; see
+  [the outcome contract](SPEC.md#native-opening-outcomes-and-dependent-commands).
+  Openings follow the deletion and retention rules below.
 - **Discovering openings**: `ListSessionOpenings` (`GET /v1/session-openings`) returns one bounded
   page of the current Dispatcher opening records, including queued and failed materialization before
   any Runtime or History record exists. It uses the same retained-owner read scope as
@@ -93,7 +95,8 @@ The manual queue, replica and wake probes are documented in the
   only that Sandbox's in-flight work, preserving at-least-once redelivery with the same command IDs.
 - **Runner statuses**: `ABORTED` (quiescing) returns the command to the queue until the Sandbox has a new
   incarnation; `UNAVAILABLE` and deadline retry with backoff;
-  anything else is `FAILED` with the runner's status. The runner deduplicates redelivery on `command_id`.
+  other command errors are `FAILED` with the runner's status. The runner deduplicates redelivery on `command_id`.
+  Native openings use the separate outcome contract above; an arbitrary error is not proof of rejection.
 - **Automatic wake**: `wakeOnSend` opts a Sandbox into wake attempts; it is not a permission grant.
   Before each automatic attempt, the shared lifecycle service checks the live target UID, current
   execution ServiceAccount UID and `resumePolicy`, or the separately configured trusted wake broker

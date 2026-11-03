@@ -36,13 +36,14 @@ const (
 )
 
 var (
-	ErrCommandConflict = errors.New("command_id was used for other work")
-	ErrOpeningConflict = errors.New("session_id was opened with another request")
-	ErrQueueFull       = errors.New("session queue is full")
-	ErrNotFound        = errors.New("dispatch not found")
-	ErrNotCancellable  = errors.New("delivery already began")
-	ErrNotAuthorized   = errors.New("caller does not own the Session")
-	ErrSandboxDeleted  = errors.New("sandbox was deleted")
+	ErrCommandConflict    = errors.New("command_id was used for other work")
+	ErrOpeningConflict    = errors.New("session_id was opened with another request")
+	ErrQueueFull          = errors.New("session queue is full")
+	ErrNotFound           = errors.New("dispatch not found")
+	ErrNotCancellable     = errors.New("delivery already began")
+	ErrNotAuthorized      = errors.New("caller does not own the Session")
+	ErrSandboxDeleted     = errors.New("sandbox was deleted")
+	ErrOpeningUnconfirmed = errors.New("Session opening is not confirmed")
 )
 
 type Account = auth.Account
@@ -518,6 +519,13 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
+		}
+		opening, err := scanOpening(tx.QueryRowContext(ctx, "SELECT "+openingColumns+" FROM session_opening WHERE session_id=$1", sessionID))
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if opening != nil && !centralSpec(opening.Spec) && (opening.State == FailedState || opening.State == UnknownState) {
+			return ErrOpeningUnconfirmed
 		}
 		var count int
 		err = tx.QueryRowContext(ctx, "SELECT count(*) FROM dispatch WHERE session_id=$1 AND state=$2", sessionID, QueueState).Scan(&count)
@@ -1204,8 +1212,23 @@ func nullIfEmpty(s string) any {
 func pqStringArray(values []string) any { return pq.Array(values) }
 
 func (s *Store) SettleOpening(ctx context.Context, id string, owner Owner, from []string, to, reason string) (*Opening, error) {
+	return s.settleOpening(ctx, id, owner, from, to, reason, false)
+}
+
+// RejectOpening records a proven native rejection and fails only commands that have
+// not left the queue. An older FAILED row alone cannot supply this evidence.
+func (s *Store) RejectOpening(ctx context.Context, id string, owner Owner, from []string, reason string) (*Opening, error) {
+	return s.settleOpening(ctx, id, owner, from, FailedState, reason, true)
+}
+
+func (s *Store) settleOpening(ctx context.Context, id string, owner Owner, from []string, to, reason string, rejectQueued bool) (*Opening, error) {
 	var result *Opening
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
+		// Enqueue holds the same Session lock, so it either precedes rejection and
+		// is failed below, or observes the terminal opening before storing work.
+		if err := sessionLock(ctx, tx, id); err != nil {
+			return err
+		}
 		current, err := ownerMatch(ctx, tx, owner)
 		if err != nil || !current {
 			return err
@@ -1219,10 +1242,13 @@ func (s *Store) SettleOpening(ctx context.Context, id string, owner Owner, from 
 		if err != nil {
 			return err
 		}
-		if result != nil {
-			return notify(ctx, tx)
+		if rejectQueued {
+			if _, err := tx.ExecContext(ctx, `UPDATE dispatch SET state=$3,reason='session_opening_rejected',updated_at=now()
+				WHERE session_id=$1 AND sandbox_uid=$2 AND state=$4`, id, owner.SandboxUID, FailedState, QueueState); err != nil {
+				return err
+			}
 		}
-		return nil
+		return notify(ctx, tx)
 	})
 	return result, err
 }

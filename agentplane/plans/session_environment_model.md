@@ -33,7 +33,10 @@ the exact Sandbox UID for new message inboxes. These do not implement the genera
 [`GetSessionOpening`](../runner_gateway/dispatcher/session_dispatcher.proto), exposed to the browser
 through the operator-authenticated app facade and used by test callers through
 [`SessionDispatcherClient.get_session_opening`](../runner_gateway/dispatcher/testing_client.py).
-The [address inventory](#session-address-inventory) records this completed migration.
+The [address inventory](#session-address-inventory) records this completed migration. The
+[Dispatcher outcome contract](../runner_gateway/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands)
+defines native rejection, unconfirmed owner outcomes and dependent-command fencing. Cleanup's
+Session-identity retention and UUID-reuse policy remains a decision; this does not complete the directory.
 
 **Ready next:** a [native-first Dispatcher Session authority](task_dag.md#session_directory_native--dispatcher-authority-for-environment-hosted-sessions)
 using existing authorization. Specify deletion and uncertain-outcome fencing as part of that slice;
