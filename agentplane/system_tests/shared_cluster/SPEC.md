@@ -30,13 +30,13 @@ mount or container-runtime socket. Its privileged status is an infrastructure tr
 boundary: compromising the trusted node or an inner privileged operator can compromise
 wyrm2. This design does not provide VM isolation for inner containers.
 
-The entrypoint requires cgroup v2, finite CPU and memory limits on the current CRI
-container cgroup, and a fresh cgroup containing only its own process. It creates private
-mount and cgroup namespaces, verifies the same limits through the new mount, and moves
-the K3s process into `control`. The kubelet uses `/workloads`. Both remain descendants
-of the bounded outer container cgroup. Unexpected layout, absent controllers, existing
-children or unbounded limits stop startup. Mount propagation becomes recursively shared
-only after the mount tree has been made private from the outer host.
+The entrypoint starts as PID 1, creates private mount and cgroup namespaces, and verifies
+finite CPU and memory limits through the new cgroup mount. It creates `/workloads` for
+the kubelet, then execs K3s. K3s itself evacuates its process to `/init` and delegates
+controllers through its existing `EvacuateCgroup2` startup helper. Both remain descendants
+of the bounded outer container cgroup. Missing or unbounded limits stop startup. Mount
+propagation becomes recursively shared only after the mount tree has been made private
+from the outer host.
 The aggregate process/thread limit is at most 8192, preserving any stricter outer
 kubelet limit. It covers both the control plane and inner workloads.
 
