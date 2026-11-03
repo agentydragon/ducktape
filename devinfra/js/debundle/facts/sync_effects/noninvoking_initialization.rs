@@ -312,6 +312,16 @@ impl OriginalInitializer {
         };
         let leaf = match initializer.unwrap_parens() {
             Expr::Ident(binding) => Leaf::Binding(binding.to_id()),
+            Expr::Lit(Lit::Regex(regex)) => {
+                // ECMA-262 evaluates a validated literal through RegExpCreate
+                // with its source text; this does not resolve the mutable
+                // global RegExp binding or invoke source-defined code. Later
+                // reads and calls on the RegExp remain outside this proof.
+                Leaf::Allocation {
+                    allocation: regex.span.lo.0,
+                    reads: BTreeSet::new(),
+                }
+            }
             Expr::Object(_) | Expr::Array(_) => {
                 let mut reads = BTreeSet::new();
                 allocation_inputs(initializer, &mut reads)
