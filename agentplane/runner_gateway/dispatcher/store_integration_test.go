@@ -1078,6 +1078,10 @@ func (c testCatalog) GetSandbox(_ context.Context, name string) (SandboxSnapshot
 func (c testCatalog) ListSandboxes(context.Context) ([]SandboxSnapshot, error) {
 	return []SandboxSnapshot{c.sandbox}, nil
 }
+
+func (c testCatalog) CurrentSandboxUIDs(context.Context) (map[string]struct{}, error) {
+	return map[string]struct{}{c.sandbox.UID: {}}, nil
+}
 func (testCatalog) Changes() <-chan struct{}        { return nil }
 func (testCatalog) WaitSynced(context.Context) bool { return true }
 
@@ -1094,6 +1098,14 @@ func (c *growingCatalog) GetSandbox(_ context.Context, name string) (SandboxSnap
 
 func (c *growingCatalog) ListSandboxes(context.Context) ([]SandboxSnapshot, error) {
 	return c.sandboxes, nil
+}
+
+func (c *growingCatalog) CurrentSandboxUIDs(context.Context) (map[string]struct{}, error) {
+	result := make(map[string]struct{}, len(c.sandboxes))
+	for _, sandbox := range c.sandboxes {
+		result[sandbox.UID] = struct{}{}
+	}
+	return result, nil
 }
 func (*growingCatalog) Changes() <-chan struct{}        { return nil }
 func (*growingCatalog) WaitSynced(context.Context) bool { return true }
@@ -2160,5 +2172,70 @@ func TestSandboxCleanupWaitsForInFlightOpening(t *testing.T) {
 	}
 	if _, err := store.GetOpening(ctx, sessionID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cleanup missed the in-flight opening: %v", err)
+	}
+}
+
+type deletionCheckCatalog struct {
+	growingCatalog
+	afterSnapshot func()
+	currentError  error
+}
+
+func (c *deletionCheckCatalog) ListSandboxes(context.Context) ([]SandboxSnapshot, error) {
+	before := slices.Clone(c.sandboxes)
+	c.afterSnapshot()
+	return before, nil
+}
+
+func (c *deletionCheckCatalog) CurrentSandboxUIDs(ctx context.Context) (map[string]struct{}, error) {
+	if c.currentError != nil {
+		return nil, c.currentError
+	}
+	return c.growingCatalog.CurrentSandboxUIDs(ctx)
+}
+
+func TestCleanupConfirmsAbsenceAfterReadingStoredWork(t *testing.T) {
+	for _, currentState := range []string{"live", "absent", "unavailable"} {
+		t.Run(currentState, func(t *testing.T) {
+			store := testStore(t, 3)
+			ctx := t.Context()
+			uid, sessionID := uuid.NewString(), uuid.NewString()
+			catalog := &deletionCheckCatalog{}
+			catalog.afterSnapshot = func() {
+				// A live environment and its opening appear after the worker's first
+				// inventory snapshot, before it enumerates the database's stored UIDs.
+				if currentState == "live" {
+					catalog.sandboxes = []SandboxSnapshot{{Name: "new-sandbox", UID: uid}}
+				}
+				if _, err := store.OpenSession(ctx, sessionID, "new-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if currentState == "unavailable" {
+				catalog.currentError = errors.New("inventory unavailable")
+			}
+			worker := &DeliveryWorker{Store: store, Catalog: catalog}
+			worker.init()
+			defer worker.queue.ShutDown()
+			err := worker.reconcile(ctx, false)
+			if !errors.Is(err, catalog.currentError) {
+				t.Fatalf("reconcile: got %v, want %v", err, catalog.currentError)
+			}
+			if currentState == "absent" {
+				if _, err := store.GetOpening(ctx, sessionID); !errors.Is(err, ErrNotFound) {
+					t.Fatalf("absent environment opening retained: %v", err)
+				}
+				if _, err := store.OpenSession(ctx, uuid.NewString(), "new-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil); !errors.Is(err, ErrSandboxDeleted) {
+					t.Fatalf("absent environment not fenced: %v", err)
+				}
+				return
+			}
+			if _, err := store.GetOpening(ctx, sessionID); err != nil {
+				t.Fatalf("live opening removed: %v", err)
+			}
+			if _, err := store.OpenSession(ctx, uuid.NewString(), "new-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+				t.Fatalf("live environment admission fenced: %v", err)
+			}
+		})
 	}
 }

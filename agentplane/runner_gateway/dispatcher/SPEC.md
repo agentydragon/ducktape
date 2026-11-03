@@ -117,8 +117,10 @@ included in cleanup; cleanup that commits first prevents admission. Existing ter
 notifications remain in the cleanup transaction. This fence neither cancels already issued native
 effects nor replays them, and it does not delete native stores, sampler Sessions or retained History.
 
-Cleanup is driven by a synchronized inventory scan of UIDs with stored work. This is not an atomic
-commit with Kubernetes deletion: if a removed environment has no stored work, a first admission
+Cleanup collects candidate UIDs from stored work absent from the synchronized inventory. It then
+confirms absence with a complete uncached Kubernetes API read, after fixing the candidate set: a
+new live environment omitted by the earlier snapshot cannot be permanently fenced. Failure to
+confirm absence aborts cleanup. This is not an atomic commit with Kubernetes deletion: if a removed environment has no stored work, a first admission
 using stale inventory can still commit before cleanup observes its row. The next reconciliation
 removes it and closes admission permanently. During a rolling upgrade, the fence applies only after
 all admitting/cleanup Gateway replicas use this protocol; the additive migration alone does not

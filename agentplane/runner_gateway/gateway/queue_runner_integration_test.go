@@ -31,6 +31,10 @@ func (c queueCatalog) GetSandbox(_ context.Context, name string) (dispatcher.San
 func (c queueCatalog) ListSandboxes(context.Context) ([]dispatcher.SandboxSnapshot, error) {
 	return []dispatcher.SandboxSnapshot{c.sandbox}, nil
 }
+
+func (c queueCatalog) CurrentSandboxUIDs(context.Context) (map[string]struct{}, error) {
+	return map[string]struct{}{c.sandbox.UID: {}}, nil
+}
 func (queueCatalog) Changes() <-chan struct{}        { return nil }
 func (queueCatalog) WaitSynced(context.Context) bool { return true }
 
