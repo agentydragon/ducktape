@@ -121,3 +121,42 @@ The downloaded old and fresh process artifacts have SHA-256 `013f76b3ad63ae08855
 The old run's missing VM spans are a real visibility gap, but the compared artifacts do not prove which export or collection stage lost them. Source config uses `parentbased_always_on` sampling and directs guest OTLP to the launcher relay at `10.0.2.1:3132`, then Alloy. The fresh guest TCP probe reached that listener, and retained relay logs show it listening with the Alloy upstream configured; those facts refute a systemic route or sampler failure. The old run did not retain launcher relay logs, so its route state cannot be reconstructed. A delayed final SDK flush may lose terminal spans when the relay exits, but cannot by itself explain the absence of all earlier VM spans without exporter queue/receiver evidence. Do not infer a source regression or attribute this intermittent gap to the later Pod-sidecar lifecycle change from these two artifacts.
 
 The narrow fixture change now retains per-launcher relay logs alongside guest consoles and compute logs. It adds no exporter or guest instrumentation. The [focused retention test](https://app.buildbuddy.io/invocation/83775b76-26ba-45a1-8964-6d63d0caa132) and fresh VM suite both passed. The diagnostic guest command was temporary and is not part of the published source. A future gap should be joined by Sandbox name and Session ID across driver, native, guest console, launcher relay, and process spans before changing the telemetry path.
+
+## Keep the launcher relay alive through guest shutdown, 2026-11-03
+
+The ordinary launcher relay can receive SIGTERM alongside compute, closing the guest's OTLP
+route while KubeVirt is powering it off. The candidate retains the Runner relay's native sidecar
+form (`initContainers` with `restartPolicy: Always`), after KubeVirt's existing initializers.
+[Kubernetes native sidecar shutdown ordering](https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/#sidecar-containers-and-pod-lifecycle)
+keeps it alive until compute exits. Image pins still transform the relay template before Kyverno
+injects it; token mounts remain restricted to the named relay.
+
+A fresh [control VM suite](https://app.buildbuddy.io/invocation/c66c04be-90b9-4f8c-8c9d-a1fee527bbd6)
+at `8740e3eb668c8bc40822c7941f10d976ac677057` and the fresh
+[candidate VM suite](https://app.buildbuddy.io/invocation/abd73499-bfb5-4491-8567-09067928377f)
+at `495bb2abd4c1b5298e61105d6542048ad57de9a7` atop that same base both passed the unchanged
+command, OOM, full-journal, poweroff and trace assertions. Both used the regular VM suite, with
+no KVM. All three guests retained full journals and clean poweroff consoles in each run.
+
+| Guest        | Control Runtime unit stop | Candidate Runtime unit stop |
+| ------------ | ------------------------: | --------------------------: |
+| Codex VM     |                   4.852 s |                     0.492 s |
+| Codex OOM VM |                   5.191 s |                     0.263 s |
+| Claude VM    |                   5.185 s |                     0.256 s |
+
+These intervals use each guest journal's monotonic timestamps from systemd's stopping message to
+the Runtime unit's successful deactivation. All three control guests logged the OTLP shutdown
+`context deadline exceeded` warning; none of the three candidate guests did. The candidate
+retained 61 Runtime spans versus 47 in the control, including the required tool-start spans.
+This pair demonstrates removal of the repeated flush warning and roughly five-second service
+stop under these conditions. It does not prove the cause of a historical individual missing
+span: that failing run did not retain the relay's termination timestamp.
+
+The control and candidate test actions lasted 313.504 s and 287.720 s. Their driver stack setup
+spans differed substantially (99.990 s versus 43.242 s), so the action delta is not a causal
+whole-suite saving. One pair does not establish fleet latency or flake-rate improvement.
+Real Kyverno mutation/security tests and Kustomize image transformation passed together in
+[cbacb2be](https://app.buildbuddy.io/invocation/cbacb2be-be24-45c2-9513-4276bbb7b98e);
+the [generated manifest snapshot](https://app.buildbuddy.io/invocation/f94341dd-42be-42d1-81a7-6924fb2f6e76)
+and [named-library lint/aspects](https://app.buildbuddy.io/invocation/512ee544-86cd-44cd-8a47-605f47aa7110)
+also passed. A merged change still needs a representative soak with retry waits retained.

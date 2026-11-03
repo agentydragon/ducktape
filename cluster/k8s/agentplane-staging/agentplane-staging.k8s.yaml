@@ -5241,7 +5241,7 @@ spec:
               - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
                 operator: NotEquals
                 value: 0
-              - key: "{{ length((request.object.spec.initContainers || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
+              - key: "{{ length((request.object.spec.initContainers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
                 operator: NotEquals
                 value: 0
               - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
@@ -5342,53 +5342,6 @@ spec:
           spec:
             +(initContainers): []
             automountServiceAccountToken: false
-            containers:
-              - env:
-                  - name: AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE
-                    value: /etc/agentplane-egress-sidecar/settings.yaml
-                  - name: OTEL_SERVICE_NAME
-                    value: agentplane-egress-sidecar
-                  - name: OTEL_RESOURCE_ATTRIBUTES
-                    value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
-                  - name: OTEL_TRACES_EXPORTER
-                    value: otlp
-                  - name: OTEL_EXPORTER_OTLP_PROTOCOL
-                    value: grpc
-                  - name: OTEL_EXPORTER_OTLP_ENDPOINT
-                    value: http://alloy.monitoring.svc.cluster.local:4317
-                  - name: OTEL_TRACES_SAMPLER
-                    value: parentbased_always_on
-                image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
-                name: egress-sidecar
-                readinessProbe:
-                  failureThreshold: 1
-                  httpGet:
-                    path: /readyz
-                    port: 3129
-                  periodSeconds: 2
-                  timeoutSeconds: 1
-                resources:
-                  limits:
-                    cpu: 100m
-                    memory: 128Mi
-                  requests:
-                    cpu: 10m
-                    memory: 32Mi
-                securityContext:
-                  allowPrivilegeEscalation: false
-                  capabilities:
-                    drop:
-                      - ALL
-                  runAsGroup: 1000
-                  runAsNonRoot: true
-                  runAsUser: 1000
-                volumeMounts:
-                  - mountPath: /var/run/agentplane-egress
-                    name: egress-token
-                    readOnly: true
-                  - mountPath: /etc/agentplane-egress-sidecar
-                    name: egress-sidecar-settings
-                    readOnly: true
             imagePullSecrets:
               - name: forgejo-images-creds
             serviceAccountName: "{{account.metadata.name}}"
@@ -5420,6 +5373,80 @@ spec:
                   name: launcher-relay-egress-sidecar
                 name: egress-sidecar-settings
       name: inject-relay
+    - context:
+        - name: relay
+          variable:
+            value:
+              env:
+                - name: AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE
+                  value: /etc/agentplane-egress-sidecar/settings.yaml
+                - name: OTEL_SERVICE_NAME
+                  value: agentplane-egress-sidecar
+                - name: OTEL_RESOURCE_ATTRIBUTES
+                  value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
+                - name: OTEL_TRACES_EXPORTER
+                  value: otlp
+                - name: OTEL_EXPORTER_OTLP_PROTOCOL
+                  value: grpc
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: http://alloy.monitoring.svc.cluster.local:4317
+                - name: OTEL_TRACES_SAMPLER
+                  value: parentbased_always_on
+              image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
+              name: egress-sidecar
+              readinessProbe:
+                failureThreshold: 1
+                httpGet:
+                  path: /readyz
+                  port: 3129
+                periodSeconds: 2
+                timeoutSeconds: 1
+              resources:
+                limits:
+                  cpu: 100m
+                  memory: 128Mi
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+              restartPolicy: Always
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                runAsGroup: 1000
+                runAsNonRoot: true
+                runAsUser: 1000
+              volumeMounts:
+                - mountPath: /var/run/agentplane-egress
+                  name: egress-token
+                  readOnly: true
+                - mountPath: /etc/agentplane-egress-sidecar
+                  name: egress-sidecar-settings
+                  readOnly: true
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - agentplane-staging
+              operations:
+                - CREATE
+              selector:
+                matchLabels:
+                  kubevirt.io: virt-launcher
+      mutate:
+        patchesJson6902: |
+          - op: add
+            path: /spec/initContainers/-
+            value: {{ to_string(relay) }}
+      name: append-native-relay
+      preconditions:
+        all:
+          - key: "{{ (request.object.spec.initContainers || `[]`)[?name=='egress-sidecar'] | length(@) }}"
+            operator: Equals
+            value: 0
     - context:
         - name: vmiOwner
           variable:
@@ -5520,14 +5547,20 @@ spec:
                 value: false
               - key: "{{ length(request.object.spec.containers[?name=='egress-sidecar']) }}"
                 operator: NotEquals
+                value: 0
+              - key: "{{ length(request.object.spec.initContainers[?name=='egress-sidecar']) }}"
+                operator: NotEquals
+                value: 1
+              - key: "{{ length(request.object.spec.initContainers[?name=='egress-sidecar' && restartPolicy=='Always']) }}"
+                operator: NotEquals
                 value: 1
               - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
                 operator: NotEquals
                 value: 0
-              - key: "{{ length((request.object.spec.initContainers || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
+              - key: "{{ length((request.object.spec.initContainers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
                 operator: NotEquals
                 value: 0
-        message: The launcher's relay identity must stay out of the compute and init containers.
+        message: The launcher must have exactly one native relay init sidecar.
   validationFailureAction: enforce
   webhookConfiguration:
     matchConditions:
