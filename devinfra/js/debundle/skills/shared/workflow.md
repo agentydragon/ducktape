@@ -45,6 +45,7 @@ Before starting a round, the project adapter should identify:
 - dependency graph, root/chunk reports, directory reports, and cycle report
   locations
 - gate, regen, uniqueness-check, and smoke-test commands
+- residual-only baseline config or reproducible derivation, and its normal gate command
 - project convention docs and taxonomy docs
 - architecture notes and module reorg paths
 - worktree policy, base branch, commit/push policy, and scratch paths
@@ -103,6 +104,92 @@ Keep private inputs, concrete spec audits and project-specific progress in
 [gaffer-private](https://github.com/agentydragon/gaffer-private). Public engine
 changes and examples use neutral synthetic shapes.
 
+### Combine forward and repair work
+
+Choose tactics for the current obstacle. An obvious selector or ownership fix
+can be handled directly. A difficult rejecting spec can be reduced to a passing
+subset; a mysterious engine behavior can be reduced to a small JavaScript
+regression case. Use these as composable heuristics without requiring every
+task to follow a fixed sequence or repeat already established baselines.
+
+In **forward work**, start with a JavaScript capture and a passing partial spec,
+then extract and name coherent modules incrementally. Infer responsibilities
+and architectural layers from behavior and call sites. Keep modules cohesive
+and usefully sized; current paths and boundaries can change as understanding
+improves. Retain a passing candidate as coverage grows.
+
+In **repair work**, start with a rejected spec or a regression, including a
+previously accepted layout exposed by stricter validation. Identify what
+changed and classify the failure: invalid spec/selectors, a real unsafe split,
+analysis imprecision, an engine regression, or unsupported reconstruction.
+Compare matching source/spec/engine revisions and relevant assumptions. A
+historical pass is evidence to investigate; it does not establish correctness
+under the current contract or justify relaxing the validator. Preserve useful
+reverse-engineered structure while choosing spec edits, inference, recognition
+or annotations to repair the actual cause.
+
+These approaches can interleave within one task. While extending a passing
+partial spec, isolate a rejecting claim subset, minimize the relevant JavaScript
+into a neutral regression fixture, repair the engine or spec, and continue
+extraction. Use the [bug reproduction workflow](../../docs/bug_reproductions.md)
+for that source reduction. Residual-baseline and subset reduction support both
+approaches. Preserve useful reverse-engineered structure during repair, and
+describe each probe's intended result without imposing an exclusive session
+mode or global phase. Both approaches require correct, readable output and a
+cheap iteration loop.
+
+### Start from passing residual output and isolate failing assignments
+
+Every configured bundle needs an empty extraction spec that passes the normal
+pipeline: retain the complete captured input/import context, assign no source
+units to named modules, and use `inline_in_entry` for every chunk. All source
+then stays residual in its original chunk and source order. Run and retain this
+baseline for the matching engine and inputs; do not infer acceptance from its
+trivial shape. If it fails, isolate the tool/input reconstruction defect before
+treating a requested module boundary as the cause. Rejected readable output
+cannot serve as the passing baseline.
+
+Use divide-and-conquer when a large spec rejects or the next semantic repair
+has an uncertain payoff. Work in a scratch spec, preserving the authored target:
+
+1. Reduce the rejecting spec by returning suspected groups of claims to
+   residual until a useful subset passes. That candidate is a known passing
+   lower bound. Alternatively start from an existing passing partial spec or
+   the residual-only baseline. Include anonymous statements and complete
+   atomic units in each group.
+2. Restore groups, run the normal gate, and split failing additions against
+   the same passing base. Keep passing groups and continue on rejected
+   combinations. If both halves
+   pass separately but their union fails, isolate their interaction; there may
+   be several independent conflicts and no single bad module.
+3. Retain the largest useful passing partial extraction found and a small
+   failing addition that explains the next blocker. Use that addition to choose
+   inference, specific recognition, an audited annotation, or a different
+   coherent boundary. Report partial coverage and residual code explicitly.
+
+Removal can change module cycles and selector dependencies, so do not assume
+acceptance is monotone or prune untried subsets from one failing result. A
+branch-and-bound search needs an explicit objective and justified bounds; a
+budgeted reduction yields a locally reduced conflict and a best-known passing
+spec, not proof of a globally maximal extraction or minimum removal set.
+
+Hold source, package roots, engine, vendor substitutions and analysis policy
+fixed while isolating ownership. Keep author assertions fixed too: annotations
+and `resolved_member` selectors may depend on removed claims. Preserve their
+exact scope through supported spec operations, or classify the probe as invalid
+and report the missing capability. A truly empty spec with no optional author
+assertions is a separate baseline if removing them changes analysis inputs.
+Reuse cached analysis only when native projection/provenance checks accept it;
+never bypass those checks to make a subset cheap.
+
+Record each tried subset, exact input/spec/engine identity, actual gate result,
+failing reports and termination budget. A selector/configuration failure is not
+a semantic rejection. Bound the probes, reuse completed results and matching
+analysis, and record missing subset/baseline tooling instead of building a
+private graph reader or spending an open-ended round on manual edits. Gate and
+runtime evidence for a partial spec applies to that spec; the full authored
+spec remains a separate target.
+
 ### Select an observable capability
 
 Maintain a short ranked plan in the owning project's `plans/` directory. Repair
@@ -139,6 +226,9 @@ does not establish runtime identity or behavior. The
 retention, result and identity obligations; assert only the facts the audit
 supports. Document a new annotation's contract in `SPEC.md` and retain existing
 approved contracts unless a changed assertion is explicitly justified.
+
+Use standing user authorization for scoped model and annotation decisions;
+do not request fresh approval for each choice already within that authority.
 
 All routes feed the same typed facts, value/effect semantics and validator,
 retaining the distinction between source proof and author assumption. A

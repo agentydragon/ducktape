@@ -15,6 +15,13 @@ inspection, residual, decomposition, or selector recipe. The planning guide owns
 query selection, atomic coverage, selector anchors, and the distinction between
 heuristic proposals and source-backed facts.
 
+For a broadly rejecting spec, plan a
+[residual-only baseline and divide-and-conquer probes](references/skills/shared/workflow.md#start-from-passing-residual-output-and-isolate-failing-assignments).
+Identify a useful passing subset and a small conflicting addition. Preserve
+assertions and input identity, and distinguish assignment rejection from an
+invalid probe. This read-only role returns the probe plan and evidence to a
+worker; it does not remove canonical claims.
+
 Return scoped units/proposals, semantic destinations, source evidence, candidate
 verdicts, input identity, and unresolved questions in the form described there.
 Send residual proposals to intake; reviewed existing-module maps go directly to
