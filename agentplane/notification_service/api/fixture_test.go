@@ -18,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -180,6 +181,22 @@ type fakeHistory struct {
 	asked     []string
 }
 
+type fakeOpenings struct {
+	placements map[string]*dispatcherpb.SessionOpening
+	err        error
+}
+
+func (o *fakeOpenings) GetSessionOpening(_ context.Context, request *dispatcherpb.GetSessionOpeningRequest, _ ...grpc.CallOption) (*dispatcherpb.GetSessionOpeningResponse, error) {
+	if o.err != nil {
+		return nil, o.err
+	}
+	opening := o.placements[request.GetSessionId()]
+	if opening == nil {
+		return nil, status.Error(codes.NotFound, "opening not found")
+	}
+	return &dispatcherpb.GetSessionOpeningResponse{Opening: opening}, nil
+}
+
 func (h *fakeHistory) GetSessionSummary(_ context.Context, request *historypb.GetSessionSummaryRequest, _ ...grpc.CallOption) (*historypb.SessionSummary, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -226,8 +243,9 @@ type testServer struct {
 	actions       *fakeActions
 	github        *fakeGitHub
 	// policy is current and grants nothing until a test grants.
-	policy  *inboxaccess.Policy
-	history *fakeHistory
+	policy   *inboxaccess.Policy
+	history  *fakeHistory
+	openings *fakeOpenings
 	// kube holds the Sandboxes the service reads.
 	kube   client.Client
 	config serverConfig
@@ -290,12 +308,16 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 			testSession: {Namespace: testNamespace, Name: sandboxName, Uid: proto.String(sandboxUID)},
 		}},
 		kube: kube,
+		openings: &fakeOpenings{placements: map[string]*dispatcherpb.SessionOpening{
+			testSession:       {SessionId: testSession, Sandbox: sandboxName, SandboxUid: sandboxUID},
+			"missing-session": {SessionId: "missing-session", Sandbox: sandboxName, SandboxUid: sandboxUID},
+		}},
 	}
 	server.policy.Health.MarkSynced()
 	options := Options{
 		Store: server.store, Wakeups: hub, Resolver: resolver, Namespace: testNamespace, Sandboxes: sandboxes,
 		Runner: server.runner, Actions: server.actions, OperatorReader: config.operatorReader,
-		SendPolicy: server.policy, History: server.history, MessageBodyLimit: config.messageBodyLimit,
+		SendPolicy: server.policy, History: server.history, Openings: server.openings, MessageBodyLimit: config.messageBodyLimit,
 		Debounce: config.debounce, RequestTimeout: config.requestTimeout,
 	}
 	if !config.githubDisabled {
@@ -350,7 +372,7 @@ func actionsSource(requestID uuid.UUID, afterSequence int32) *notificationspb.So
 // createRequest follows a new Action request for the test Session of the test Sandbox.
 func createRequest(key string) *notificationspb.CreateSubscriptionRequest {
 	return &notificationspb.CreateSubscriptionRequest{
-		DestinationRef: sandboxRef(), SessionId: testSession, IdempotencyKey: key, Source: actionsSource(uuid.New(), 0),
+		SessionId: testSession, IdempotencyKey: key, Source: actionsSource(uuid.New(), 0),
 	}
 }
 
@@ -360,6 +382,7 @@ func (s testServer) subscribe(t *testing.T, key string, sessionID ...string) *no
 	request := createRequest(key)
 	if len(sessionID) > 0 {
 		request.SessionId = sessionID[0]
+		s.openings.placements[sessionID[0]] = &dispatcherpb.SessionOpening{SessionId: sessionID[0], Sandbox: sandboxName, SandboxUid: sandboxUID}
 		s.runner.mu.Lock()
 		s.runner.sessions[sandboxName] = append(s.runner.sessions[sandboxName], sessionID[0])
 		s.runner.mu.Unlock()
@@ -380,6 +403,7 @@ func (s testServer) recreateSandbox(t *testing.T) {
 	if err := s.kube.Create(t.Context(), &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: sandboxName, UID: successorUID}}); err != nil {
 		t.Fatal(err)
 	}
+	s.openings.placements["another-session"] = &dispatcherpb.SessionOpening{SessionId: "another-session", Sandbox: sandboxName, SandboxUid: successorUID}
 }
 
 // grantSend binds a set of one rule, allowing send_message to the targets, to the account of the given name.

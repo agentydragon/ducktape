@@ -17,6 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
@@ -37,6 +38,10 @@ type Actions interface {
 // SessionHistory reads the Sandbox the History Service recorded as writing a Session.
 type SessionHistory interface {
 	GetSessionSummary(ctx context.Context, in *historypb.GetSessionSummaryRequest, opts ...grpc.CallOption) (*historypb.SessionSummary, error)
+}
+
+type SessionOpenings interface {
+	GetSessionOpening(context.Context, *dispatcherpb.GetSessionOpeningRequest, ...grpc.CallOption) (*dispatcherpb.GetSessionOpeningResponse, error)
 }
 
 // GitHub authorizes a GitHub source: it returns the access the service's GitHub App reads the source under, or
@@ -62,7 +67,8 @@ type Options struct {
 	// SendPolicy is the grants a message is checked against.
 	SendPolicy *inboxaccess.Policy
 	// History confirms a Session before a message opens an inbox for it.
-	History SessionHistory
+	History  SessionHistory
+	Openings SessionOpenings
 	// MessageBodyLimit is the most UTF-8 bytes a message body may hold, at most store.MessageBodyCeiling.
 	MessageBodyLimit int
 	// OperatorReader is the name, in Namespace, of the ServiceAccount that can read Session diagnostics for the namespace.

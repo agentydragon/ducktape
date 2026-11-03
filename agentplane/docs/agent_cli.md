@@ -58,7 +58,7 @@ group, so another service joins as one more group under them.
 | `environments list [--limit N] [--after TOKEN]`                                                                                                    | `EnvironmentService.ListEnvironments`                                   |
 | `environments get NAMESPACE NAME UID`                                                                                                              | `EnvironmentService.GetEnvironment`                                     |
 | `environments resume NAMESPACE NAME UID --resume-token TOKEN`                                                                                      | `EnvironmentService.ResumeEnvironment`                                  |
-| `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY] [--destination JSON]`     | `POST /v1/subscriptions`                                                |
+| `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY] [--session ID]`           | `POST /v1/subscriptions`                                                |
 | `notifications inbox read ID [--after CURSOR] [--limit N]`                                                                                         | `GET /v1/inboxes/{id}/entries`, one page                                |
 | `notifications inbox ack ID --through CURSOR`                                                                                                      | `PUT /v1/inboxes/{id}/acknowledgement`                                  |
 | `notifications subscriptions`                                                                                                                      | `GET /v1/subscriptions`, paged                                          |
@@ -209,9 +209,10 @@ the Action-backed delegation tools use the Actions service's configured peers in
 The HTTP clients use `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` and `SSL_CERT_FILE` from the harness. The
 Action and Session gRPC clients use `HTTPS_PROXY` for proxy resolution even when their configured service URL is
 `http`; they open an HTTP CONNECT tunnel, carrying h2c to the egress proxy. `NO_PROXY` excludes targets
-from both clients. `subscribe` also accepts `--destination JSON` (the same object, and it wins over the
-variable) for a Session started without the variable. The object holds
-`destination_ref` (`namespace`, `name`, `uid`) and `session_id` and nothing else; anything else is exit `2`.
+from both clients. `subscribe` also accepts `--session ID`, which wins over the metadata variable.
+Only that Session ID is sent to the subscription API; the service resolves its exact native placement.
+The metadata envelope still contains `destination_ref` and `session_id`, including for retained central
+Sessions; it is not the subscription request.
 
 Credential scope:
 

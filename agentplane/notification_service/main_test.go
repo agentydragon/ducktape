@@ -145,7 +145,7 @@ func restart(t *testing.T, tune func(*config)) running {
 		historypb.RegisterHistoryServiceServer(s, historypb.UnimplementedHistoryServiceServer{})
 	})
 	dispatcherAddress := serveGRPC(t, func(s *grpc.Server) {
-		dispatcherpb.RegisterSessionDispatcherServer(s, dispatcherpb.UnimplementedSessionDispatcherServer{})
+		dispatcherpb.RegisterSessionDispatcherServer(s, openingDispatcher{})
 	})
 
 	c := defaultConfig()
@@ -255,8 +255,7 @@ func TestTheServiceAnswersHealthChecksAndCallsAndStopsWhenTold(t *testing.T) {
 func TestAWorkerThatStopsEndsTheServiceWithoutSayingWhy(t *testing.T) {
 	service := start(t, nil)
 	_, err := service.notifications.CreateSubscription(bearing(t, sandboxToken), &notificationspb.CreateSubscriptionRequest{
-		DestinationRef: &notificationspb.DestinationRef{Namespace: testNamespace, Name: sandboxName, Uid: sandboxUID},
-		SessionId:      testSession, IdempotencyKey: "test-key",
+		SessionId: testSession, IdempotencyKey: "test-key",
 		Source: &notificationspb.Source{Provider: &notificationspb.Source_Actions{
 			Actions: &notificationspb.ActionsSource{RequestId: uuid.NewString()},
 		}},

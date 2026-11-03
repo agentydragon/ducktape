@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -15,6 +16,21 @@ import (
 // subscribe creates the owner's subscription once the Session and the source are known to be the owner's to
 // follow. The source is authorized before anything is persisted, even when replay starts after the last event.
 func (s *Notifications) subscribe(ctx context.Context, owner model.ServiceAccount, body model.Subscribe) (store.Subscription, error) {
+	opening, err := s.openings.GetSessionOpening(ctx, &dispatcherpb.GetSessionOpeningRequest{SessionId: body.SessionID})
+	if status.Code(err) == codes.NotFound {
+		return store.Subscription{}, errNoSession
+	}
+	if err != nil {
+		return store.Subscription{}, unavailable("session opening", err)
+	}
+	ref := opening.GetOpening()
+	if ref.GetSessionId() != body.SessionID || ref.GetSandbox() == "" || ref.GetSandboxUid() == "" {
+		return store.Subscription{}, unavailable("session opening", errors.New("incomplete Session placement"))
+	}
+	body.DestinationRef = model.DestinationRef{Namespace: s.namespace, Name: ref.GetSandbox(), UID: ref.GetSandboxUid()}
+	if err := body.Validate(); err != nil {
+		return store.Subscription{}, err
+	}
 	sandbox, err := s.destination(ctx, owner, body.DestinationRef)
 	if err != nil {
 		return store.Subscription{}, err

@@ -236,6 +236,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		},
 		// The Action Service source authorizes a subscription the same way it reads one.
 		Actions: actionsSource, GitHub: githubAPI, SendPolicy: sendPolicy, History: history,
+		Openings:         dispatcherpb.NewSessionDispatcherClient(dispatcherConnection),
 		MessageBodyLimit: c.MessageBodyLimitBytes, OperatorReader: c.OperatorReaderAccount,
 		Debounce:       c.NoticeDebounce.Debounce(),
 		RequestTimeout: seconds(c.RequestTimeoutSeconds),

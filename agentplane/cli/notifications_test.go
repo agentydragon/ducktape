@@ -197,8 +197,8 @@ func TestSubscribeToAPullRequest(t *testing.T) {
 		t.Fatalf("exit %d, %d creations, stdout %q, stderr %q", code, len(sent), stdout, stderr)
 	}
 	got := sent[0]
-	if ref := got.GetDestinationRef(); ref.GetNamespace() != "test-ns" || ref.GetName() != "test-sandbox" || ref.GetUid() != "test-uid" || got.GetSessionId() != "test-session" {
-		t.Errorf("destination = %v %q, want the environment's", ref, got.GetSessionId())
+	if got.GetSessionId() != "test-session" {
+		t.Errorf("Session = %q, want the environment's", got.GetSessionId())
 	}
 	github := got.GetSource().GetGithub()
 	if github.GetRepository() != "owner/repo" || github.GetSubject().GetPullRequest().GetNumber() != 7 {
@@ -302,13 +302,13 @@ func TestSubscribeOnlyToMergeabilityReplacesTheDefaultEvents(t *testing.T) {
 	}
 }
 
-func TestSubscribeDestinationFlagWinsOverTheEnvironment(t *testing.T) {
+func TestSubscribeSessionFlagWinsOverTheEnvironment(t *testing.T) {
 	servicer := answering(pullRequestSubscription(1, false))
 	env := notificationsEnv(serveNotifications(t, servicer))
-	flag := `{"destination_ref":{"namespace":"n","name":"s","uid":"u"},"session_id":"from-flag"}`
-	invoke(env, subscribeArgs("--destination", flag)...)
+	flag := "from-flag"
+	invoke(env, subscribeArgs("--session", flag)...)
 	delete(env, "AGENTPLANE_DESTINATION")
-	invoke(env, subscribeArgs("--destination", flag)...)
+	invoke(env, subscribeArgs("--session", flag)...)
 	code, _, _ := invoke(env, subscribeArgs()...)
 	sent := received[*notificationspb.CreateSubscriptionRequest](servicer)
 	if len(sent) != 2 || sent[0].GetSessionId() != "from-flag" || sent[1].GetSessionId() != "from-flag" || code != 2 {
@@ -476,10 +476,12 @@ func TestDestinationIsStrictAboutItsFields(t *testing.T) {
 	for _, destination := range []string{
 		`{"destination_ref":{"namespace":"n","name":"s","uid":"u"},"session_id":"x","source":{}}`,
 		`{"destination_ref":{"namespace":"n","name":"s"},"session_id":"x"}`,
-		`{"destination_ref":{"namespace":"n","name":"s","uid":"u"}}`,
+		`{"session_id":""}`,
+		`{}`,
 		`not json`,
 	} {
-		if code, stdout, _ := invoke(env, subscribeArgs("--destination", destination)...); code != 2 || stdout != "" {
+		env["AGENTPLANE_DESTINATION"] = destination
+		if code, stdout, _ := invoke(env, subscribeArgs()...); code != 2 || stdout != "" {
 			t.Errorf("destination %s: exit %d, stdout %q; want exit 2", destination, code, stdout)
 		}
 	}

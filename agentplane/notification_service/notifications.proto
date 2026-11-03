@@ -27,8 +27,9 @@ service Notifications {
   // Subscribes a Session's inbox to a source. The inbox is the Session's inbox for the caller's account; it is
   // created with its first subscription.
   //
-  // `destination_ref` must name an existing Sandbox with that UID owned by the caller's ServiceAccount, else
-  // `NOT_FOUND`. A creation is identified by `idempotency_key` within the inbox: an identical retry answers with
+  // `session_id` must have a Dispatcher opening whose exact Sandbox UID belongs to the caller and whose Runtime
+  // currently holds the Session, else `NOT_FOUND`. Direct Runtime-only Sessions have no Dispatcher opening.
+  // A creation is identified by `idempotency_key` within the inbox: an identical retry answers with
   // the same subscription, the key reused for other arguments fails `ALREADY_EXISTS`, and the key of a cancelled
   // subscription answers with that cancelled subscription rather than creating a replacement. An Action request
   // source must belong to the caller, else `PERMISSION_DENIED`; so must a GitHub repository the service's
@@ -145,9 +146,9 @@ service Notifications {
 }
 
 message CreateSubscriptionRequest {
-  // The Session's Sandbox.
-  DestinationRef destination_ref = 1;
-  // The Session whose inbox receives the events: 1 to 200 characters.
+  reserved 1;
+  reserved "destination_ref";
+  // The globally addressed Session whose inbox receives the events: 1 to 200 characters.
   string session_id = 2;
   // Chosen by the caller, unique within the inbox: 1 to 200 characters. Identical retries return the existing
   // subscription.
