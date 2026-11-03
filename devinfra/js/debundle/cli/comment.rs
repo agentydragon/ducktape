@@ -1,5 +1,5 @@
 //! CLI binding and module comment workflows. Binding comments live in the
-//! canonical `annotations.<readable-or-minified-name>.comment` field; module
+//! canonical `annotations.<effective-binding-name>.comment` field; module
 //! comments live in `comment`. Read, literal replacement, `$EDITOR`, and clear
 //! modes share one transition function. Changed YAML is reserialized; textual
 //! layout and YAML comments are not an editing contract.
@@ -21,7 +21,8 @@ use yaml_edit::write_yaml_atomic;
 /// Args for `debundle bindings comment <sym> [...]`.
 #[derive(Debug, ClapArgs)]
 pub struct BindingCommentArgs {
-    /// Binding identifier, in minified or readable form.
+    /// Direct selector identifier, source-match capture, or explicit readable
+    /// name (structural members require a readable name).
     sym: String,
     #[command(flatten)]
     comment: CommentArgs,
@@ -189,7 +190,7 @@ pub fn apply_binding_comment(
     let hit = resolve_unambiguous(modules_root, sym)?;
     let file = hit.file;
     let mut doc = read_module_file(&file)?;
-    let name = hit.name.readable().unwrap_or_else(|| hit.name.minified());
+    let name = hit.label.effective_name();
     let current = doc.annotations.get(name).and_then(|a| a.comment.clone());
     let (action, comment, dirty) = edit_comment(current, mode)?;
     if dirty {

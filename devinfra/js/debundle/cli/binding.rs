@@ -22,11 +22,12 @@ use std::path::{Path, PathBuf};
 use analysis::{DependencyGraphReport, ModuleDestinationKind, SourceUnitId, StatementKind};
 use anonymous_resolution::resolve_source_claims;
 use anyhow::{Context, Result, anyhow, bail};
+use selector_outcome::SelectorKind;
 use serde::Deserialize;
 
 use spec::{
-    AnonymousStatement, BindingAnnotation, LogicalModule, Member, ModulePath, SourceMatchBinding,
-    SourceMatchBindingDetail, SourceMatchClaim, is_residual_namespace_path,
+    AnonymousStatement, BindingAnnotation, LogicalModule, Member, MemberSelectorSpec, ModulePath,
+    SourceMatchBinding, SourceMatchBindingDetail, SourceMatchClaim, is_residual_namespace_path,
 };
 use spec_modules::{
     coalesce_source_match_claims, collect_module_files, module_path_from_file, read_module_file,
@@ -42,53 +43,75 @@ use crate::edit_gate::{
 };
 use crate::outcome::{GateOutcome, MutationOutcome};
 
-/// A spec binding identifier plus its optional readable `name:`.
+/// The source of a binding's current spec identity.
 ///
-/// The wire field `minified` holds `selector.binding.name` for members or the
-/// template-local identifier for source-match bindings; the latter need not
-/// equal the original bundle's binding name.
-///
-/// Serializes internally-tagged so CLI JSON consumers can branch on
-/// `.kind` (`"minified"` | `"readable"`) and always read `.minified`.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// A direct selector identifier and a source-match capture are both names used
+/// by the spec; neither spelling by itself says whether the name is volatile.
+/// Structural members have no direct binding identifier.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum BindingName {
-    /// No explicit readable name.
-    Minified { minified: String },
-    /// Carries the spec identifier and its explicit readable name.
-    Readable { minified: String, name: String },
+pub enum BindingIdentity {
+    DirectBindingIdentifier { name: String },
+    SourceMatchCapture { local: String },
+    StructuralMember { selector: SelectorKind },
 }
 
-impl BindingName {
-    pub fn new(minified: String, readable: Option<String>) -> Self {
-        match readable {
-            Some(name) => Self::Readable { minified, name },
-            None => Self::Minified { minified },
-        }
-    }
-
-    /// The spec selector-binding or template-local identifier.
-    pub fn minified(&self) -> &str {
+impl BindingIdentity {
+    fn selector_identifier(&self) -> Option<&str> {
         match self {
-            Self::Minified { minified } | Self::Readable { minified, .. } => minified,
+            Self::DirectBindingIdentifier { name } => Some(name),
+            Self::SourceMatchCapture { local } => Some(local),
+            Self::StructuralMember { .. } => None,
         }
     }
 
-    /// The readable name, if one was assigned.
-    pub fn readable(&self) -> Option<&str> {
+    pub(crate) fn display(&self) -> String {
         match self {
-            Self::Minified { .. } => None,
-            Self::Readable { name, .. } => Some(name),
+            Self::DirectBindingIdentifier { name } => {
+                format!("direct binding identifier {name:?}")
+            }
+            Self::SourceMatchCapture { local } => {
+                format!("source-match capture {local:?}")
+            }
+            Self::StructuralMember { selector } => {
+                format!("structural member ({selector:?})")
+            }
+        }
+    }
+}
+
+/// A spec identity and its optional explicitly configured readable name.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct BindingLabel {
+    pub identity: BindingIdentity,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readable_name: Option<String>,
+}
+
+impl BindingLabel {
+    fn new(identity: BindingIdentity, readable_name: Option<String>) -> Self {
+        Self {
+            identity,
+            readable_name,
         }
     }
 
-    pub fn is_renamed(&self) -> bool {
-        matches!(self, Self::Readable { .. })
+    pub(crate) fn effective_name(&self) -> &str {
+        self.readable_name
+            .as_deref()
+            .or_else(|| self.identity.selector_identifier())
+            .expect("a listed binding has an identity or readable name")
     }
 
-    /// Match a current spec identifier or explicit readable name.
-    pub fn matches(&self, query: &str) -> bool {
-        self.minified() == query || self.readable() == Some(query)
+    pub(crate) fn is_renamed(&self) -> bool {
+        self.readable_name.is_some()
+    }
+
+    /// Match a direct selector identifier, a source-match capture, or an
+    /// explicit readable name. Structural members match only by readable name.
+    fn matches(&self, query: &str) -> bool {
+        self.identity.selector_identifier() == Some(query)
+            || self.readable_name.as_deref() == Some(query)
     }
 }
 
@@ -99,7 +122,7 @@ pub struct BindingMatch {
     pub file: PathBuf,
     pub module_path: String,
     pub location: BindingLocation,
-    pub name: BindingName,
+    pub label: BindingLabel,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -162,21 +185,58 @@ fn binding_matches_in_doc(
     doc: &LogicalModule,
 ) -> Vec<BindingMatch> {
     let mut out = Vec::new();
-    let mut add = |location, name| {
+    let mut add = |location, label| {
         out.push(BindingMatch {
             file: file.to_path_buf(),
             module_path: module_path.to_string(),
             location,
-            name,
+            label,
         })
     };
     for (member_index, member) in doc.members.iter().enumerate() {
-        let minified = member_minified_name(member);
-        if minified.is_some() || member.name.is_some() {
-            add(
-                BindingLocation::Member { member_index },
-                BindingName::new(minified.unwrap_or_default(), member.name.clone()),
-            );
+        let identity = match member.selector.selected() {
+            Ok(MemberSelectorSpec::Binding(binding)) => {
+                BindingIdentity::DirectBindingIdentifier { name: binding.name }
+            }
+            Ok(MemberSelectorSpec::CrossRef(_)) => BindingIdentity::StructuralMember {
+                selector: SelectorKind::CrossRef,
+            },
+            Ok(MemberSelectorSpec::ReadsMember(_)) => BindingIdentity::StructuralMember {
+                selector: SelectorKind::ReadsMember,
+            },
+            Ok(MemberSelectorSpec::MemberOfModule(_)) => BindingIdentity::StructuralMember {
+                selector: SelectorKind::MemberOfModule,
+            },
+            Ok(MemberSelectorSpec::PassedToCall(_)) => BindingIdentity::StructuralMember {
+                selector: SelectorKind::PassedToCall,
+            },
+            Ok(MemberSelectorSpec::MakesDecorateCall(_)) => BindingIdentity::StructuralMember {
+                selector: SelectorKind::MakesDecorateCall,
+            },
+            Ok(MemberSelectorSpec::IntrinsicAlias(_)) => BindingIdentity::StructuralMember {
+                selector: SelectorKind::IntrinsicAlias,
+            },
+            // Keep the CLI's prior lookup behavior for an invalid selector:
+            // `bindings list` and edit resolution historically used a present
+            // `selector.binding.name`, even when another selector field made
+            // the member invalid. Otherwise its readable name remains usable.
+            Err(_) if let Some(binding) = &member.selector.binding => {
+                BindingIdentity::DirectBindingIdentifier {
+                    name: binding.name.clone(),
+                }
+            }
+            Err(_) => BindingIdentity::StructuralMember {
+                selector: SelectorKind::UnparsedMember,
+            },
+        };
+        let label = BindingLabel::new(identity, member.name.clone());
+        if label
+            .identity
+            .selector_identifier()
+            .is_some_and(|name| !name.is_empty())
+            || label.readable_name.is_some()
+        {
+            add(BindingLocation::Member { member_index }, label);
         }
     }
     for (claim_index, claim) in doc.source_matches.iter().enumerate() {
@@ -187,7 +247,12 @@ fn binding_matches_in_doc(
                         claim_index,
                         binding_index,
                     },
-                    BindingName::new(binding.local().to_string(), source_match_readable(binding)),
+                    BindingLabel::new(
+                        BindingIdentity::SourceMatchCapture {
+                            local: binding.local().to_string(),
+                        },
+                        source_match_readable(binding),
+                    ),
                 );
             }
         }
@@ -195,8 +260,8 @@ fn binding_matches_in_doc(
     out
 }
 
-fn binding_effective_name(name: &BindingName) -> &str {
-    name.readable().unwrap_or_else(|| name.minified())
+fn binding_effective_name(label: &BindingLabel) -> &str {
+    label.effective_name()
 }
 
 fn source_match_readable(binding: &SourceMatchBinding) -> Option<String> {
@@ -207,9 +272,13 @@ fn source_match_readable(binding: &SourceMatchBinding) -> Option<String> {
 }
 
 pub(crate) fn matches_in_docs(docs: &ModuleDocs, sym: &str) -> Vec<BindingMatch> {
-    docs.iter()
-        .flat_map(|(module, (file, doc))| binding_matches_in_doc(file, module, doc))
-        .filter(|binding| binding.name.matches(sym))
+    let mut matches = Vec::new();
+    for (module, (file, doc)) in docs {
+        matches.extend(binding_matches_in_doc(file, module, doc));
+    }
+    matches
+        .into_iter()
+        .filter(|binding| binding.label.matches(sym))
         .collect()
 }
 
@@ -237,11 +306,11 @@ fn resolve_in_docs(modules_root: &Path, docs: &ModuleDocs, sym: &str) -> Result<
                 .iter()
                 .map(|m| {
                     format!(
-                        "  {}#{} (binding={}, name={})",
+                        "  {}#{} (identity={}, readable_name={})",
                         m.file.display(),
                         m.location.describe(),
-                        m.name.minified(),
-                        m.name.readable().unwrap_or("-")
+                        m.label.identity.display(),
+                        m.label.readable_name.as_deref().unwrap_or("-")
                     )
                 })
                 .collect();
@@ -265,13 +334,10 @@ pub struct BindingsListReport {
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct BindingEntry {
-    /// The binding's identity (minified, plus readable name if set).
-    /// Flattened into the entry, so JSON carries `kind`/`minified`/
-    /// (`name`) alongside `module`/`orphan`. The renamed/unrenamed
-    /// distinction is `name.kind`; there is no separate `unrenamed`
-    /// bool (it was a redundant restatement of `kind == "minified"`).
+    /// Direct binding identifiers, source-match captures, or structural members,
+    /// with an optional explicit readable name.
     #[serde(flatten)]
-    pub name: BindingName,
+    pub label: BindingLabel,
     pub module: String,
     /// `true` when this binding is the only member of its module.
     pub orphan: bool,
@@ -295,18 +361,25 @@ pub fn run_bindings_list(
         let bindings = binding_matches_in_doc(&file, &module_path, &doc);
         let orphan = bindings.len() == 1;
         entries.extend(bindings.into_iter().map(|binding| BindingEntry {
-            name: binding.name,
+            label: binding.label,
             module: module_path.clone(),
             orphan,
         }));
     }
     entries.retain(|e| {
         (filters.in_module.as_deref().is_none_or(|m| e.module == m))
-            && (!filters.unrenamed || !e.name.is_renamed())
+            && (!filters.unrenamed || !e.label.is_renamed())
             && (!filters.orphan || e.orphan)
     });
     entries.sort_by(|a, b| {
-        (a.module.as_str(), a.name.minified()).cmp(&(b.module.as_str(), b.name.minified()))
+        (
+            a.module.as_str(),
+            a.label.identity.selector_identifier().unwrap_or(""),
+        )
+            .cmp(&(
+                b.module.as_str(),
+                b.label.identity.selector_identifier().unwrap_or(""),
+            ))
     });
     Ok(BindingsListReport { bindings: entries })
 }
@@ -322,8 +395,8 @@ pub fn run_bindings_list(
 pub struct RenameOutcome {
     #[serde(flatten)]
     pub outcome: MutationOutcome,
-    /// Minified binding name of the renamed member.
-    pub binding: String,
+    /// Typed spec identity of the renamed member.
+    pub identity: BindingIdentity,
     pub old_readable: Option<String>,
     pub new_readable: String,
 }
@@ -358,10 +431,8 @@ pub fn rename_binding(
         .get_mut(&hit.module_path)
         .expect("resolved module is loaded");
     let original_doc = doc.clone();
-    let old_readable = hit.name.readable().map(str::to_string);
-    let old_effective = old_readable
-        .clone()
-        .unwrap_or_else(|| hit.name.minified().to_string());
+    let old_readable = hit.label.readable_name.clone();
+    let old_effective = hit.label.effective_name().to_string();
     let annotation = doc.annotations.remove(&old_effective);
     set_readable_name(doc, &hit.location, new);
     insert_annotation(doc, new, annotation)?;
@@ -389,7 +460,7 @@ pub fn rename_binding(
             },
             files_deleted: Vec::new(),
         },
-        binding: hit.name.minified().to_string(),
+        identity: hit.label.identity.clone(),
         old_readable,
         new_readable: new.to_string(),
     })
@@ -407,7 +478,7 @@ pub struct Rename {
 pub struct RenameResult {
     pub sym: String,
     pub module: String,
-    pub binding: String,
+    pub identity: BindingIdentity,
     pub old_readable: String,
     pub new_readable: String,
 }
@@ -467,7 +538,7 @@ pub fn rename_bindings(
                     let final_name = resolved
                         .get(&other)
                         .map(|(rename, _)| rename.readable.as_str())
-                        .unwrap_or_else(|| binding_effective_name(&binding.name));
+                        .unwrap_or_else(|| binding_effective_name(&binding.label));
                     if final_name == request.readable {
                         bail!(
                             "name collision: \"{}\" used by {}#{}",
@@ -485,7 +556,7 @@ pub fn rename_bindings(
     // Remove every moving key before inserting any target key. Metadata belongs
     // to a binding only when that old effective name has one owner in its module.
     for (identity, (request, hit)) in &resolved {
-        let old = binding_effective_name(&hit.name);
+        let old = binding_effective_name(&hit.label);
         if old == request.readable {
             continue;
         }
@@ -493,7 +564,7 @@ pub fn rename_bindings(
         if original.annotations.contains_key(old) {
             let owners = binding_matches_in_doc(file, &hit.module_path, original)
                 .into_iter()
-                .filter(|binding| binding_effective_name(&binding.name) == old)
+                .filter(|binding| binding_effective_name(&binding.label) == old)
                 .count();
             if owners != 1 {
                 bail!(
@@ -510,7 +581,7 @@ pub fn rename_bindings(
     let mut renames = Vec::new();
     let mut renames_applied = 0;
     for (identity, (request, hit)) in &resolved {
-        let old = binding_effective_name(&hit.name);
+        let old = binding_effective_name(&hit.label);
         if old != request.readable {
             let (_, doc) = docs
                 .get_mut(&hit.module_path)
@@ -533,7 +604,7 @@ pub fn rename_bindings(
         renames.push(RenameResult {
             sym: request.sym.clone(),
             module: hit.module_path.clone(),
-            binding: hit.name.minified().to_string(),
+            identity: hit.label.identity.clone(),
             old_readable: old.to_string(),
             new_readable: request.readable.clone(),
         });
@@ -579,12 +650,12 @@ fn find_readable_collisions(
             if file == self_file && &binding.location == self_location {
                 continue;
             }
-            if binding_effective_name(&binding.name) == new_readable {
+            if binding_effective_name(&binding.label) == new_readable {
                 clashes.push(format!(
-                    "  {}#{} (binding={}, module={})",
+                    "  {}#{} (identity={}, module={})",
                     file.display(),
                     binding.location.describe(),
-                    binding.name.minified(),
+                    binding.label.identity.display(),
                     module_path
                 ));
             }
@@ -815,7 +886,7 @@ pub fn run_bindings_assign(
             },
             source_module: hit.module_path.clone(),
             source_location: hit.location,
-            source_effective_name: binding_effective_name(&hit.name).to_string(),
+            source_effective_name: binding_effective_name(&hit.label).to_string(),
         };
         match by_identity.entry((hit.module_path, hit.location)) {
             std::collections::btree_map::Entry::Vacant(slot) => {
@@ -910,8 +981,8 @@ pub fn run_bindings_assign(
     }
 
     // Step 4: collision detection for renames, sharing the same
-    // effective-identity predicate `bindings rename` uses: an
-    // unrenamed member's minified binding name is its public
+    // effective-identity predicate `bindings rename` uses: an entry without
+    // an explicit readable name keeps its current spec identity as its public
     // identity, so a rename target that matches it is a clash.
     if gate.verify_names() {
         for p in &plan {
@@ -923,13 +994,14 @@ pub fn run_bindings_assign(
             let mut hits = Vec::new();
             for (mp, (file, doc)) in &docs {
                 for binding in binding_matches_in_doc(file, mp, doc) {
-                    if binding
-                        .name
-                        .readable()
+                    let effective_name = binding
+                        .label
+                        .readable_name
+                        .as_deref()
                         .filter(|name| !name.is_empty())
-                        .unwrap_or_else(|| binding.name.minified())
-                        == new_readable
-                    {
+                        .or_else(|| binding.label.identity.selector_identifier())
+                        .unwrap_or("");
+                    if effective_name == new_readable {
                         hits.push(format!(
                             "  {} ({}@{})",
                             file.display(),
@@ -1349,9 +1421,13 @@ pub fn run_source_unit_refine(
                     "source-match split did not isolate one binding"
                 );
                 let binding = &claim.bindings[0];
-                let name =
-                    BindingName::new(binding.local().to_string(), source_match_readable(binding));
-                let effective_name = binding_effective_name(&name).to_string();
+                let label = BindingLabel::new(
+                    BindingIdentity::SourceMatchCapture {
+                        local: binding.local().to_string(),
+                    },
+                    source_match_readable(binding),
+                );
+                let effective_name = binding_effective_name(&label).to_string();
                 moved_names_by_destination
                     .entry(movement.destination.clone())
                     .or_default()
@@ -1402,7 +1478,7 @@ pub fn run_source_unit_refine(
             module,
         ) {
             *counts
-                .entry(binding_effective_name(&binding.name).to_string())
+                .entry(binding_effective_name(&binding.label).to_string())
                 .or_default() += 1;
         }
         for name in moved_names {
@@ -1746,15 +1822,15 @@ pub(crate) fn canonical_module_path(raw: &str) -> Result<String> {
 }
 
 /// A member's effective public identity: the readable `name:` when
-/// set, else the minified `selector.binding.name`. `bindings rename`
-/// and `bindings assign` share this predicate so both treat an
-/// unrenamed member's minified name as a claimed identity.
+/// set, else the direct `selector.binding.name`. `bindings rename` and
+/// `bindings assign` share this predicate so both treat the current spec
+/// identity as a claimed name.
 fn member_effective_name(member: &Member) -> Option<String> {
     member
         .name
         .clone()
         .filter(|name| !name.is_empty())
-        .or_else(|| member_minified_name(member))
+        .or_else(|| member_selector_binding_name(member))
 }
 
 fn insert_annotation(
@@ -1775,7 +1851,7 @@ fn insert_annotation(
     }
 }
 
-fn member_minified_name(member: &Member) -> Option<String> {
+fn member_selector_binding_name(member: &Member) -> Option<String> {
     member
         .selector
         .binding
@@ -1914,7 +1990,7 @@ fn bail_source_match_unassign<T>(hit: &BindingMatch) -> Result<T> {
         "bindings unassign does not yet support canonical source_matches[] bindings; `{}` resolved to \
          {}#{}. Use bindings assign to move this binding; removing its claim requires \
          source-match unassign support.",
-        hit.name.minified(),
+        hit.label.identity.display(),
         hit.file.display(),
         hit.location.describe()
     )
@@ -1948,8 +2024,8 @@ pub struct UnassignOutcome {
 /// Contract:
 ///   * Each sym must resolve to exactly one member via
 ///     [`resolve_unambiguous`]; syms are deduplicated on the resolved
-///     member identity (warn on duplicates), so the minified and
-///     readable spelling of one member collapse to one removal.
+///     member identity (warn on duplicates), so its spec identifier and
+///     readable name collapse to one removal.
 ///   * Only modules that were sources of a removal in THIS batch are
 ///     swept after draining.
 ///   * [`Gate::Run`] gates the in-memory post-batch spec; cycle or

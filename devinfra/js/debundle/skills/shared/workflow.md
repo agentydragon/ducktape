@@ -173,6 +173,12 @@ branch-and-bound search needs an explicit objective and justified bounds; a
 budgeted reduction yields a locally reduced conflict and a best-known passing
 spec, not proof of a globally maximal extraction or minimum removal set.
 
+A source-match capture can also be an anchor referenced by surviving typed
+selectors. Preserving its emitted name with a plain chunk rename does not
+recreate that selector anchor. When reducing ownership, retain source-match
+owners referenced by surviving selectors or rewrite those selectors using a
+supported equivalent. Validate selector resolution before running the gate.
+
 Hold source, package roots, engine, vendor substitutions and analysis policy
 fixed while isolating ownership. Keep author assertions fixed too: annotations
 and `resolved_member` selectors may depend on removed claims. Preserve their
@@ -242,9 +248,11 @@ or stale assertions without silently expanding the promised scope.
 
 - Use the command's [name-resolution view](../../docs/cli.md#name-and-identifier-resolution).
   Raw source lookup takes input names; `describe` and `inspect-source --id`
-  resolve readable graph names. A blank `bindings list` `minified` field for a
-  structural selector does not prove the input identity is unavailable. Recover
-  it through the matching native graph before proposing new selector support.
+  resolve readable graph names. `bindings list` labels direct selector
+  identifiers, source-match captures, and structural member selectors
+  separately; a source-match capture's local token is not an input-name pin.
+  Recover the input identity through the matching native graph before proposing
+  new selector support.
   Check `query.kind`: a module basename takes precedence over a binding name.
   For a collision, describe the current full owner path and select the intended
   exported-name row instead of taking the module report's first binding.

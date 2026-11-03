@@ -3,7 +3,7 @@
 use std::fs;
 
 use debundle_e2e_support::{GraphFixture, write_text_file};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 fn module(fixture: &GraphFixture, path: &str) -> serde_yaml::Value {
     serde_yaml::from_slice(&fs::read(fixture.modules.join(path)).unwrap()).unwrap()
@@ -50,32 +50,44 @@ fn module_readers_agree_on_invalid_yaml() {
 #[test]
 fn list_filters_cover_members_and_source_match_bindings() {
     let fixture = GraphFixture::new(
-        "const a = 1; const b = 2; const c = 3; console.log(a + b + c);",
+        "const rawValue = 1; const rawOther = 2; const finalValue = 3; console.log(rawValue + rawOther + finalValue);",
         &[
             (
                 "pair.yaml",
-                "source_matches: [{match: 'const a = 1; const b = 2;', bindings: [a, {local: b, name: Beta}]}]",
+                "source_matches: [{match: 'const Widget = 1; const Other = 2;', bindings: [Widget, {local: Other, name: Beta}]}]",
             ),
             (
                 "solo.yaml",
-                "members: [{name: Solo, selector: {binding: {name: c}}}]",
+                "members: [{name: Solo, selector: {binding: {name: finalValue}}}]",
             ),
         ],
     );
     let all = fixture.json(&["bindings", "list"]);
-    assert_eq!(all["bindings"].as_array().unwrap().len(), 3);
-    assert_eq!(all["bindings"][0]["minified"], "a");
-    assert_eq!(all["bindings"][1]["name"], "Beta");
-    assert_eq!(all["bindings"][0]["kind"], "minified");
-    assert!(all["bindings"][0].get("name").is_none());
-    assert_eq!(all["bindings"][1]["kind"], "readable");
-    assert_eq!(all["bindings"][1]["minified"], "b");
+    let bindings = all["bindings"].as_array().unwrap();
+    assert_eq!(bindings.len(), 3);
+    let widget = bindings
+        .iter()
+        .find(|binding| binding["identity"]["local"] == "Widget")
+        .unwrap();
+    let other = bindings
+        .iter()
+        .find(|binding| binding["identity"]["local"] == "Other")
+        .unwrap();
+    let direct = bindings
+        .iter()
+        .find(|binding| binding["identity"]["name"] == "finalValue")
+        .unwrap();
+    assert_eq!(widget["identity"]["kind"], "source_match_capture");
+    assert!(widget.get("readable_name").is_none());
+    assert_eq!(other["readable_name"], "Beta");
+    assert_eq!(direct["identity"]["kind"], "direct_binding_identifier");
+    assert_eq!(direct["identity"]["name"], "finalValue");
     let orphan = fixture.json(&["bindings", "list", "--orphan"]);
     assert_eq!(orphan["bindings"].as_array().unwrap().len(), 1);
-    assert_eq!(orphan["bindings"][0]["minified"], "c");
+    assert_eq!(orphan["bindings"][0]["identity"]["name"], "finalValue");
     let unrenamed = fixture.json(&["bindings", "list", "--unrenamed"]);
     assert_eq!(unrenamed["bindings"].as_array().unwrap().len(), 1);
-    assert_eq!(unrenamed["bindings"][0]["minified"], "a");
+    assert_eq!(unrenamed["bindings"][0]["identity"]["local"], "Widget");
     assert_eq!(
         fixture.json(&["bindings", "list", "--in", "pair"])["bindings"]
             .as_array()
@@ -95,8 +107,12 @@ fn source_template_identifiers_have_a_spec_inventory_on_lookup_miss() {
         )],
     );
     let listed = fixture.json(&["bindings", "list"]);
-    assert_eq!(listed["bindings"][0]["minified"], "templateToken");
-    assert_eq!(listed["bindings"][0]["name"], "readableValue");
+    assert_eq!(
+        listed["bindings"][0]["identity"]["kind"],
+        "source_match_capture"
+    );
+    assert_eq!(listed["bindings"][0]["identity"]["local"], "templateToken");
+    assert_eq!(listed["bindings"][0]["readable_name"], "readableValue");
     assert_eq!(
         fixture.json(&["describe", "raw"])["source_units"],
         fixture.json(&["describe", "readableValue"])["source_units"]
@@ -111,18 +127,101 @@ fn source_template_identifiers_have_a_spec_inventory_on_lookup_miss() {
         &["bindings", "rename", "raw", "renamedValue"],
         &["bindings list --modules", fixture.modules.to_str().unwrap()],
     );
-    assert_eq!(
-        fixture.json(&[
-            "bindings",
-            "rename",
-            "templateToken",
-            "renamedValue",
-            "--dry-run"
-        ])["action"],
-        "dry-run"
-    );
+    let rename = fixture.json(&[
+        "bindings",
+        "rename",
+        "templateToken",
+        "renamedValue",
+        "--dry-run",
+    ]);
+    assert_eq!(rename["action"], "dry-run");
+    assert_eq!(rename["identity"]["kind"], "source_match_capture");
+    assert_eq!(rename["identity"]["local"], "templateToken");
+    assert!(rename.get("binding").is_none());
     fixture.json(&["bindings", "rename", "readableValue", "renamedValue"]);
     fixture.assert_runs("7\n");
+}
+
+#[test]
+fn list_reports_source_capture_direct_and_structural_identities_separately() {
+    let fixture = GraphFixture::new(
+        "const rawValue = 7; class Anchor { value() { return 8; } } const helper = Anchor; console.log(rawValue, new helper().value()); export { Anchor, helper };",
+        &[
+            (
+                "values.yaml",
+                "source_matches: [{match: 'const Widget = 7;', bindings: [Widget]}]",
+            ),
+            (
+                "anchor.yaml",
+                "members: [{name: AnchorClass, selector: {binding: {name: Anchor}}}]",
+            ),
+            (
+                "helper.yaml",
+                "members: [{name: Helper, selector: {cross_ref: {aliases: AnchorClass}}}]",
+            ),
+        ],
+    );
+
+    let listed = fixture.json(&["bindings", "list"]);
+    let entries = listed["bindings"].as_array().unwrap();
+    let direct = entries
+        .iter()
+        .find(|entry| entry["module"] == "anchor")
+        .unwrap();
+    let structural = entries
+        .iter()
+        .find(|entry| entry["module"] == "helper")
+        .unwrap();
+    let capture = entries
+        .iter()
+        .find(|entry| entry["module"] == "values")
+        .unwrap();
+
+    assert_eq!(
+        direct,
+        &json!({
+            "identity": {"kind": "direct_binding_identifier", "name": "Anchor"},
+            "readable_name": "AnchorClass",
+            "module": "anchor",
+            "orphan": true,
+        })
+    );
+    assert_eq!(
+        structural,
+        &json!({
+            "identity": {"kind": "structural_member", "selector": "members.cross_ref"},
+            "readable_name": "Helper",
+            "module": "helper",
+            "orphan": true,
+        })
+    );
+    assert_eq!(
+        capture,
+        &json!({
+            "identity": {"kind": "source_match_capture", "local": "Widget"},
+            "module": "values",
+            "orphan": true,
+        })
+    );
+    assert_ne!(capture["identity"]["local"], "rawValue");
+
+    let text = String::from_utf8(
+        fixture
+            .command(&["bindings", "list", "--format", "text"])
+            .stdout,
+    )
+    .unwrap();
+    assert!(
+        text.contains("direct binding identifier \"Anchor\""),
+        "{text}"
+    );
+    assert!(text.contains("structural member (CrossRef)"), "{text}");
+    assert!(text.contains("source-match capture \"Widget\""), "{text}");
+
+    let rename = fixture.json(&["bindings", "rename", "Helper", "RenamedHelper"]);
+    assert_eq!(rename["identity"]["kind"], "structural_member");
+    assert_eq!(rename["identity"]["selector"], "members.cross_ref");
+    assert!(rename.get("binding").is_none());
 }
 
 #[test]
@@ -266,7 +365,10 @@ fn rename_batch_chains_noops_and_alias_replay() {
     assert_eq!(doc["annotations"]["Gamma"]["note"], "second");
     // Current aliases are resolved anew: Beta now denotes the first binding.
     let replay = rename_batch(&fixture, r#"[{"sym":"Beta","readable":"Delta"}]"#);
-    assert_eq!(replay["renames"][0]["binding"], "a");
+    assert_eq!(
+        replay["renames"][0]["identity"],
+        json!({"kind": "direct_binding_identifier", "name": "a"})
+    );
     let before = fs::read(fixture.modules.join("m.yaml")).unwrap();
     assert_eq!(
         rename_batch(&fixture, r#"[{"sym":"a","readable":"Delta"}]"#)["action"],

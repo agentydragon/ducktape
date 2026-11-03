@@ -348,7 +348,7 @@ pub fn run_modules_apply(
                 }
                 if binding.local() == runtime && readable != runtime {
                     bail!(
-                        "source_match override for {runtime:?} retains its minified local name; use a neutral selector-local name"
+                        "source_match override for {runtime:?} retains its capture local; use a neutral selector-local name"
                     );
                 }
                 selector_reviews.push(SelectorReview::SourceMatch {
