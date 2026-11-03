@@ -607,6 +607,7 @@ py_library(
     srcs = ["vm_sandboxes.py"],
     deps = [
         ":release_manifests",
+        "//agentplane/system_tests:operator_releases",
         "//agentplane/system_tests:tracing",
         "//agentplane/system_tests:vm_configuration",
         "//util/bazel:runfiles",

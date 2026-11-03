@@ -163,6 +163,11 @@ def _deployment(chart: Chart, *, image: str) -> None:
                             security_context=k8s.SecurityContext(
                                 privileged=True, allow_privilege_escalation=True, run_as_user=0, run_as_group=0
                             ),
+                            lifecycle=k8s.Lifecycle(
+                                post_start=k8s.LifecycleHandler(
+                                    exec=k8s.ExecAction(command=["/bin/sh", "/opt/agentplane-test-cluster/bootstrap"])
+                                )
+                            ),
                             volume_mounts=[
                                 k8s.VolumeMount(
                                     name="k3s-config",

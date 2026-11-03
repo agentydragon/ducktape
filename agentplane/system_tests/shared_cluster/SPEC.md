@@ -47,6 +47,29 @@ outer egress permits only that cache and cluster DNS. The API is a ClusterIP ser
 with ingress limited to the executor namespace. Authentication and authorization are
 still required; network access does not grant Kubernetes permissions.
 
+## Inner infrastructure bootstrap
+
+The node image packages the same pinned KubeVirt, Kyverno admission controller,
+cert-manager and trust-manager releases used by the disposable K3s tests, plus the
+Agentplane CRDs. The persistent KubeVirt configuration disables emulation: missing KVM
+must fail rather than silently select software emulation. Operator manifests are image
+files, outside the persistent data directory, so upgrades use the new image's bundle
+without copying large releases into ConfigMaps or retaining old manifest files on the PVC.
+
+The outer node container's fixed `postStart` hook applies the bundle to the inner API
+using its inner admin kubeconfig. It waits for CRDs, controller availability and PKI
+webhook admission before completing. Hook failure fails container startup; the log is
+`/var/log/agentplane-infrastructure-bootstrap.log` on the node's bounded PVC. The hook
+may run again after a restart, so application uses server-side apply with a dedicated
+field manager and never deletes or recreates the existing infrastructure. Changes that
+conflict with another manager fail instead of forcing ownership. This is startup
+readiness; the existing readiness probe checks the API, not ongoing operator health.
+
+Tenant namespaces and admission rules still come from the separately generated security
+seed. The infrastructure bundle does not deploy the application, grant a test an admin
+credential, or create a test driver. The outer Flux owner remains suspended pending live
+runtime verification.
+
 ## Tenant access
 
 Infrastructure owns the inner system namespaces and admission configuration. The fixed

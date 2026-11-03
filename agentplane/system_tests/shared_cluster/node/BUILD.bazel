@@ -38,7 +38,10 @@ oci_image(
     cmd = [],
     entrypoint = ["/usr/local/bin/entrypoint"],
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [":entrypoint_layer"],
+    tars = [
+        ":entrypoint_layer",
+        "//agentplane/system_tests/shared_cluster:infrastructure_layer",
+    ],
     user = "0:0",
     visibility = ["//visibility:public"],
 )

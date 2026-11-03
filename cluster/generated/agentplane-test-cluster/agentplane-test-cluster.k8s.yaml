@@ -312,6 +312,12 @@ spec:
       automountServiceAccountToken: false
       containers:
         - image: git.allegedly.works/ducktape-ci/agentplane-test-node:unset
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - /opt/agentplane-test-cluster/bootstrap
           name: node
           ports:
             - containerPort: 6443
