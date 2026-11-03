@@ -526,12 +526,9 @@ lifecycle status. A Connection's name is edited in place, like a Thread's name: 
 away commits, Escape restores, and a blank name keeps the stored one.
 
 Each current account has a **View grants** disclosure, reusing the Sandbox bindings list and Action-policy
-renderer. The operator-only `GET /caller-grants/{namespace}/{name}` composes existing account-scoped
-CR views and the Action Service's effective-policy answer; no Sandbox, Connection record or active
-caller-admission label is required for that read. The UI is a manually refreshable snapshot, not a
-watch. Missing references, expiry and unsynced/unavailable Action policy stay visible; an unavailable
-Action Service does not hide bindings. The disclosure is read-only and does not calculate
-arbitrary Kubernetes RBAC. Existing Sandbox grant editing and live updates are unchanged.
+renderer. It watches PolicyBindings for the account and PolicySets through the app's generated
+PolicyService facade. The disclosure is read-only and does not calculate arbitrary Kubernetes RBAC.
+Egress credential metadata is unavailable until an Egress-owned read API is available.
 
 The browser reads and updates Connections through the app's authenticated BFF under
 `/upstream/connections/v1/operator/`: list, watch, rename, rebind, unbind, caller accounts, and consent.

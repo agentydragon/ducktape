@@ -190,9 +190,3 @@ class SubsetRequest(BaseModel):
     params: dict[str, str] | None = None
     order_by: str | None = None
     limit: int | None = None
-
-
-class CallerGrantView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    bindings: list[BindingView]

@@ -4,8 +4,8 @@
 
 - [ ] Expose public EgressCredential metadata from an Egress-owned read/watch API, so the policy
       view can show credential descriptions and target methods without accessing Secret values.
-- [ ] Retire the app’s legacy caller-grants response and its bespoke binding views after remaining
-      Python clients migrate to PolicyService resource watches.
+- [ ] Migrate the Sandbox egress Python test client from its joined BindingView response to
+      PolicyService resources and Egress-owned credential metadata.
 - [ ] Move Kubernetes owner-reference metadata to a shared protobuf home; Environment and Policy
       currently define the same fields separately.
 - [ ] Share and incrementally maintain PolicyService’s Kubernetes watches: each RPC currently opens

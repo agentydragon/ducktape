@@ -1,7 +1,6 @@
 import { create, fromJson, toJson, type JsonObject } from "@bufbuild/protobuf";
 import { DurationSchema, ValueSchema } from "@bufbuild/protobuf/wkt";
 
-import type { components } from "../schema";
 import { fetchWithLogin, HttpError } from "../client";
 import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
 import {
@@ -28,25 +27,7 @@ import {
 } from "../../app_service_pb";
 import { SessionOpeningSchema, type SessionOpening } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
-type OtherRuleView = {
-  kind: "other";
-  number: number;
-  type: string;
-  fields: Record<string, unknown>;
-};
-type PolicyRuleView = EgressRuleView | OtherRuleView;
-export type PolicySetView = Omit<components["schemas"]["PolicySetView"], "rules"> & { rules: PolicyRuleView[] };
-export type BindingView = Omit<components["schemas"]["BindingView"], "policy_sets"> & { policy_sets: PolicySetView[] };
-export type EgressRuleView = {
-  kind: "egress";
-  number: number;
-  hosts: string[];
-  methods: string[] | null;
-  paths: string[] | null;
-  credential: components["schemas"]["CredentialView"] | null;
-  missing_credential: string | null;
-};
-/** Views carried by the raw live egress stream and the sandbox stream's Action policy field. */
+/** A decision carried by the live egress stream. */
 export type Decision = {
   at: string;
   method: string;
