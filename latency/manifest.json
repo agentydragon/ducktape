@@ -1,42 +1,42 @@
 {
-  "source_devel_commit": "d24f6f09df178b476d6becf215e6be054bcdcc4a",
-  "window_start_utc": "2026-11-03T02:59:22Z",
-  "window_end_utc": "2026-11-03T04:25:00Z",
-  "published_at_utc": "2026-11-03T04:40:17.837668+00:00",
+  "source_devel_commit": "25b59b0d02b16b50ecc1a56296881c1a117b977e",
+  "window_start_utc": "2026-11-03T05:08:21Z",
+  "window_end_utc": "2026-11-03T05:44:22Z",
+  "published_at_utc": "2026-11-03T06:41:36.986139+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "adcc17872d7b2c2a92f7ad6f9b75c230caa8c3d7",
-  "report_html_sha256": "f19e3ec5cebcc4b469f56efd7aac8259ca344db44a910736fbd158f6728479bf",
-  "evidence_sha256": "4a5ff15caa75c313d00124de8c4de9154a3b0a0c9595da89deb68c4b7c2a278f",
+  "previous_report_commit": "479e3ef0e09f16991a854e23ccb501861e9b34da",
+  "report_html_sha256": "16e234728d16908f6adc9e7f493dabe9d1a1a471cca4c6aff42477bd1a490b07",
+  "evidence_sha256": "551ccaa93ad4aa3ab1451a90b27a3c108fa58b25afe9ba56669fec2d79a336c6",
   "visual_validation": {
     "target": "//x/ci_report_preview:visual_test",
     "result": "PASSED",
-    "bazel_invocation_id": "fdb806be-5c2b-4a8e-b126-5f454a344ab8",
-    "outer_remote_runner_invocation_id": "fa354015-db43-41d1-aa5e-ff144adf2c97",
-    "invocation_url": "https://app.buildbuddy.io/invocation/fdb806be-5c2b-4a8e-b126-5f454a344ab8",
-    "reviewed_html_sha256": "f19e3ec5cebcc4b469f56efd7aac8259ca344db44a910736fbd158f6728479bf",
+    "bazel_invocation_id": "56bfc5da-290f-4c66-96af-05b0cc756618",
+    "outer_remote_runner_invocation_id": "ae25869d-5ee5-4cd1-ab80-b7799132cd47",
+    "invocation_url": "https://app.buildbuddy.io/invocation/56bfc5da-290f-4c66-96af-05b0cc756618",
+    "reviewed_html_sha256": "16e234728d16908f6adc9e7f493dabe9d1a1a471cca4c6aff42477bd1a490b07",
     "viewports": [
       {
+        "name": "desktop",
         "width": 1280,
         "height": 900
       },
       {
+        "name": "mobile",
         "width": 390,
         "height": 844
       }
     ],
-    "internal_link_count": 82,
+    "internal_link_count": 90,
     "details_expanded": 8,
     "controls_exercised": ["select:Speed up", "select:Process reduction"],
     "horizontal_overflow": false,
     "document_dimensions_with_details_open": [
       {
-        "viewport": "desktop",
         "viewport_width": 1280,
         "document_width": 1280,
         "body_width": 1280
       },
       {
-        "viewport": "mobile",
         "viewport_width": 390,
         "document_width": 390,
         "body_width": 390
@@ -44,57 +44,69 @@
     ],
     "mobile_wide_table_scroll_regions": [
       {
+        "wrapper_index": 0,
         "label": "Current and previous all-gate feedback windows",
-        "client_width": 324,
-        "scroll_width": 720,
-        "min_width": "720px"
+        "role": "region",
+        "tab_index": 0,
+        "wrapper_client_width": 324,
+        "wrapper_scroll_width": 720,
+        "table_scroll_width": 720,
+        "table_min_width": "720px"
       },
       {
+        "wrapper_index": 2,
         "label": "Bridge sharding experiment results",
-        "client_width": 324,
-        "scroll_width": 720,
-        "min_width": "720px"
+        "role": "region",
+        "tab_index": 0,
+        "wrapper_client_width": 324,
+        "wrapper_scroll_width": 720,
+        "table_scroll_width": 720,
+        "table_min_width": "720px"
       },
       {
+        "wrapper_index": 3,
         "label": "Pod sharding experiment results",
-        "client_width": 324,
-        "scroll_width": 720,
-        "min_width": "720px"
+        "role": "region",
+        "tab_index": 0,
+        "wrapper_client_width": 324,
+        "wrapper_scroll_width": 720,
+        "table_scroll_width": 720,
+        "table_min_width": "720px"
       },
       {
+        "wrapper_index": 4,
         "label": "VM resource experiment results",
-        "client_width": 324,
-        "scroll_width": 850,
-        "min_width": "850px"
+        "role": "region",
+        "tab_index": 0,
+        "wrapper_client_width": 324,
+        "wrapper_scroll_width": 850,
+        "table_scroll_width": 850,
+        "table_min_width": "850px"
       }
     ],
-    "keyboard_scroll_test": "All four labeled, focusable mobile wide-table regions scrolled horizontally on ArrowRight; the document remained 390px wide.",
+    "keyboard_scroll_test": "All4namedfocusableregionsscrolledwithArrowRightat390pxwithoutdocumentoverflow.",
     "manual_review": {
-      "result": "Reviewed exact RBE screenshots at both viewports, including the first screen and current-goal section. The summary text is legible, the mobile tables retain horizontal scroll, and the whole page has no horizontal overflow.",
+      "result": "Reviewed exact RBE desktop/mobile first screens at native viewport size and long goal-section overview captures; headline/cohort limits and cards are legible. Automated checks cover links, expanded details, chart controls and keyboard table scrolling. Tall section captures are overviews rather than a claim every text line was inspected at native size.",
       "captures": [
         {
-          "label": "desktop first screen",
-          "checkpoint": "latency-desktop-first-screen",
-          "artifact": "40ba8f06ed9d83bf49f3af2d7a6540b47f2e5933e021ca2220cd024d69e61869.png",
-          "sha256": "92b9101fa7dcb2a944ebd431657e04f301a2d38b1b0ac5c388081c50f4b9a617"
+          "name": "40ba8f06ed9d83bf49f3af2d7a6540b47f2e5933e021ca2220cd024d69e61869.png",
+          "sha256": "65973183532a6efc2040b0c78526350e7187a900845711a007fb0762059a6119",
+          "viewport": "desktop"
         },
         {
-          "label": "desktop current goal",
-          "checkpoint": "latency-desktop-under-five",
-          "artifact": "4c8d3e9b5c9a4700be9e8974d191a2886813696ef91737208b9f9741f94429cc.png",
-          "sha256": "a01890228889070f51ad8c12c8a562b7d93f3cc6f86295df574fd9551b043ff7"
+          "name": "4c8d3e9b5c9a4700be9e8974d191a2886813696ef91737208b9f9741f94429cc.png",
+          "sha256": "007865d723c289a57f20d706ac1fcfae91bd6357d619cf9057b976e40e1ef7af",
+          "viewport": "desktop"
         },
         {
-          "label": "mobile first screen",
-          "checkpoint": "latency-mobile-first-screen",
-          "artifact": "f006af65800ae92fe3da277595701ba20d5cbb6d50c0c85d968fae7bbd26b18f.png",
-          "sha256": "dd2f2d438238b27484adaec8ce8a7c9efccd6a40e9c804f8fc326532ba2ada60"
+          "name": "f006af65800ae92fe3da277595701ba20d5cbb6d50c0c85d968fae7bbd26b18f.png",
+          "sha256": "d6be068f4f5723d3680384e99c48e67a084d77908b2f8d6b231b243160c0a27c",
+          "viewport": "mobile"
         },
         {
-          "label": "mobile current goal",
-          "checkpoint": "latency-mobile-under-five",
-          "artifact": "add623294f279a84c52f14a07e8785cf21d44e40028eb4daee87edc005da4e5e.png",
-          "sha256": "86561a55c960c3a09df36d4161de298e99221fa8b2d55b0c28da17785e296e9e"
+          "name": "add623294f279a84c52f14a07e8785cf21d44e40028eb4daee87edc005da4e5e.png",
+          "sha256": "89e4155916e814a248088fbf448fe6198e831abb47614520018c8e8ae665bc23",
+          "viewport": "mobile"
         }
       ]
     }
