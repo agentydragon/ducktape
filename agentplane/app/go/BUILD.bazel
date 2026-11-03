@@ -10,7 +10,6 @@ go_library(
         "appservice.go",
         "config.go",
         "frontend_config.go",
-        "liveframes.go",
         "main.go",
         "operatorapi.go",
         "policyapi.go",
@@ -56,6 +55,7 @@ go_library(
         "//agentplane/observability",
         "//agentplane/policy",
         "//agentplane/policy/api/v1alpha1",
+        "//agentplane/policy/v1:policy_service_go_proto",
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/wakeups",
         "//agentplane/proto:event_go_proto",
@@ -150,6 +150,20 @@ go_test(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/emptypb",
+    ],
+)
+
+go_test(
+    name = "policy_facade_test",
+    srcs = ["policy_facade_test.go"],
+    embed = [":main_lib"],
+    deps = [
+        "//agentplane/app/go/proxy",
+        "//agentplane/grpc/facade",
+        "//agentplane/policy/v1:policy_service_go_proto",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//types/known/emptypb",
     ],
 )

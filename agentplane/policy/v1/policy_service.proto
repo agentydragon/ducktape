@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package agentplane.policy.v1;
+option go_package = "github.com/agentydragon/ducktape/agentplane/policy/v1;policypb";
+
+import "agentplane/policy/api/v1alpha1/policy_types.proto";
+import "agentplane/proto/identity.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+
+// PolicyService exposes observed PolicyBindings and PolicySets. A watch starts with a snapshot,
+// then reports resource changes; reconnecting starts a new snapshot.
+service PolicyService {
+  rpc WatchPolicyBindings(WatchPolicyBindingsRequest) returns (stream WatchPolicyBindingsResponse) {
+    option (google.api.http) = {get: "/v1/policy-bindings:watch"};
+  }
+  rpc WatchPolicySets(WatchPolicySetsRequest) returns (stream WatchPolicySetsResponse) {
+    option (google.api.http) = {get: "/v1/policy-sets:watch"};
+  }
+}
+
+message WatchPolicyBindingsRequest {
+  // Absent selects the authenticated caller. Broad readers may select another subject.
+  agentplane.proto.ServiceAccount subject = 1;
+}
+message WatchPolicySetsRequest {}
+
+message PolicyResourceIdentity {
+  string namespace = 1;
+  string name = 2;
+  string uid = 3;
+}
+message PolicyOwnerReference {
+  string api_version = 1;
+  string kind = 2;
+  string name = 3;
+  string uid = 4;
+  bool controller = 5;
+}
+message PolicyBinding {
+  PolicyResourceIdentity identity = 1;
+  int64 generation = 2;
+  map<string, string> labels = 3;
+  repeated PolicyOwnerReference owner_references = 4;
+  agentplane.policy.resource.v1.PolicyBindingSpec spec = 5;
+  agentplane.policy.resource.v1.Status status = 6;
+}
+message PolicySet {
+  PolicyResourceIdentity identity = 1;
+  int64 generation = 2;
+  agentplane.policy.resource.v1.PolicySetSpec spec = 3;
+}
+message PolicyBindingChunk { repeated PolicyBinding bindings = 1; }
+message PolicySetChunk { repeated PolicySet policy_sets = 1; }
+message WatchPolicyBindingsResponse {
+  oneof frame {
+    PolicyBindingChunk snapshot = 1;
+    google.protobuf.Empty snapshot_complete = 2;
+    PolicyBinding upsert = 3;
+    PolicyResourceIdentity removed = 4;
+  }
+}
+message WatchPolicySetsResponse {
+  oneof frame {
+    PolicySetChunk snapshot = 1;
+    google.protobuf.Empty snapshot_complete = 2;
+    PolicySet upsert = 3;
+    PolicyResourceIdentity removed = 4;
+  }
+}

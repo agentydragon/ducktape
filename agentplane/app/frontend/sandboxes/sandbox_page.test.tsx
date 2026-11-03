@@ -25,7 +25,6 @@ import type { Live } from "../live";
 import { SandboxRoute } from "../app";
 import { SandboxPage } from "./sandbox_page";
 import { TopbarContext } from "../topbar";
-import type { SandboxPolicySnapshot } from "./live";
 import type * as SandboxLiveModule from "./live";
 import {
   EnvironmentRuntimeLifecycleMode,
@@ -59,13 +58,14 @@ const live = vi.hoisted(
         stalled: null,
         standing: "current",
       },
-    }) satisfies Live<
-      SandboxPolicySnapshot & {
-        thread_snapshot_uid: string | null;
-        threads: ThreadView[] | { kind: "unavailable"; code: string };
-        updates_connected: boolean;
-      }
-    >
+    }) satisfies Live<{
+      sandbox_uid: string | null;
+      bindings: never[];
+      watch: { healthy: boolean; failing: Record<string, never> };
+      thread_snapshot_uid: string | null;
+      threads: ThreadView[] | { kind: "unavailable"; code: string };
+      updates_connected: boolean;
+    }>
 );
 vi.mock("../live", async (importOriginal) => ({
   ...(await importOriginal<typeof LiveModule>()),
@@ -73,6 +73,10 @@ vi.mock("../live", async (importOriginal) => ({
     url?.includes("/other-test")
       ? { ...live, snapshot: { ...live.snapshot, sandbox_uid: "00000000-0000-4000-8000-000000000002" } }
       : live,
+}));
+
+vi.mock("../policy/watch", () => ({
+  usePolicyResources: () => ({ resources: { bindings: [], sets: [] }, error: null }),
 }));
 
 vi.mock("../threads/live", () => ({

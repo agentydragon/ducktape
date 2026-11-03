@@ -16,10 +16,13 @@ type config struct {
 	SubjectNamespaces      []string `mapstructure:"subject_namespaces"`
 	MetricsBindAddress     string   `mapstructure:"metrics_bind_address"`
 	HealthProbeBindAddress string   `mapstructure:"health_probe_bind_address"`
+	GRPCBindAddress        string   `mapstructure:"grpc_bind_address"`
+	GRPCAudience           string   `mapstructure:"grpc_audience"`
+	ReaderAccounts         []string `mapstructure:"reader_accounts"`
 }
 
 func defaultConfig() config {
-	return config{MetricsBindAddress: ":8080", HealthProbeBindAddress: ":8081"}
+	return config{MetricsBindAddress: ":8080", HealthProbeBindAddress: ":8081", GRPCBindAddress: ":8082", GRPCAudience: "agentplane-policy"}
 }
 
 func loadConfig() (config, error) {

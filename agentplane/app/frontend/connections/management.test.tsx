@@ -3,10 +3,18 @@ import { act } from "react";
 import { MemoryRouter } from "react-router";
 import { expect, it, vi } from "vitest";
 
-import type { CallerGrantReader, Connection } from "./models";
+import type { Connection } from "./models";
 import { answerConnectionFacade, mountConnectionService, type Sent } from "./testing/test_support";
 import { Connections } from "./management";
 import { sampleConnection } from "./testing/fixture";
+
+vi.mock("./caller_grants", () => ({
+  CallerGrants: ({ account }: { account: { namespace: string; name: string } }) => (
+    <div>
+      Grants for {account.namespace}/{account.name}
+    </div>
+  ),
+}));
 
 const OTHER = { namespace: "agentplane-test", name: "other" };
 const ROOT = "/upstream/connections/v1/operator";
@@ -93,10 +101,10 @@ const reads = (sent: Sent[]): number => sent.filter(({ path }) => path === CONNE
 const unbinds = (sent: Sent[]): Sent[] => sent.filter(({ path }) => path.endsWith("/unbind"));
 const renames = (sent: Sent[]): Sent[] => sent.filter(({ method }) => method === "PATCH");
 
-async function render(readGrants?: CallerGrantReader): Promise<HTMLDivElement> {
+async function render(): Promise<HTMLDivElement> {
   const container = await mountConnectionService(
     <MemoryRouter>
-      <Connections readGrants={readGrants} />
+      <Connections />
     </MemoryRouter>
   );
   await vi.waitFor(() => expect(container.textContent).not.toContain("Loading OAuth clients"));
@@ -266,14 +274,9 @@ it("distinguishes loading failures from an empty inventory", async () => {
 });
 
 it("expands grants for the current caller even when its admission label is missing", async () => {
-  const read = vi.fn<CallerGrantReader>(async () => ({
-    bindings: [],
-  }));
   serve();
-  const container = await render(read);
-  expect(read).not.toHaveBeenCalled();
+  const container = await render();
   await act(async () => button(container, "View grants").click());
-  expect(read.mock.calls[0][0]).toEqual(sampleConnection().bound_caller);
   expect(container.textContent).toContain("Grants for agentplane-test/personal");
   await act(async () => button(container, "Hide grants").click());
   expect(container.textContent).not.toContain("Grants for agentplane-test/personal");

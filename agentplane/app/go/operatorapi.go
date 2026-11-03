@@ -11,9 +11,6 @@ import (
 	"reflect"
 	"strings"
 
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-
-	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
 	"github.com/danielgtaylor/huma/v2"
 )
@@ -32,21 +29,7 @@ type actionPolicySetsOutput struct {
 	Body []policyaccess.ActionPolicySetView
 }
 
-type callerGrantsInput struct {
-	Namespace string `path:"namespace" minLength:"1"`
-	Name      string `path:"name" minLength:"1"`
-}
-
-type callerGrantsOutput struct {
-	Body callerGrantsView
-}
-
-type callerGrantsView struct {
-	Bindings []policyaccess.BindingView `json:"bindings"`
-}
-
-// RegisterOperatorRoutes installs the caller-readable Action policy inventory, operator-only
-// account grants view, and public MCP OAuth callback bridge. The callback is handled here because
+// RegisterOperatorRoutes installs the caller-readable Action policy inventory and public MCP OAuth callback bridge. The callback is handled here because
 // it is a third-party redirect endpoint without a generated Action Service RPC.
 func RegisterOperatorRoutes(
 	server *HTTPServer,
@@ -63,10 +46,6 @@ func RegisterOperatorRoutes(
 		OperationID: "listActionPolicySets", Method: http.MethodGet, Path: "/action-policy/sets", Tags: []string{"action-policy"},
 		Summary: "List Action PolicySets and their parser verdicts",
 	}, routes.listActionPolicySets)
-	huma.Register[callerGrantsInput, callerGrantsOutput](api, huma.Operation{
-		OperationID: "getCallerGrants", Method: http.MethodGet, Path: "/caller-grants/{namespace}/{name}", Tags: []string{"operator"},
-		Summary: "Inspect policy bindings for a ServiceAccount",
-	}, routes.callerGrants)
 	// Keep the public OAuth callback as a raw route: Huma's normal JSON response machinery
 	// interprets Location/body fields as an API response and cannot preserve the redirect status
 	// plus HTML body contract used by the browser callback.
@@ -82,44 +61,6 @@ func (routes *operatorRoutes) listActionPolicySets(ctx context.Context, _ *struc
 		return nil, huma.Error503ServiceUnavailable("Action policy inventory is unavailable")
 	}
 	return &actionPolicySetsOutput{Body: views}, nil
-}
-
-func (routes *operatorRoutes) callerGrants(ctx context.Context, input *callerGrantsInput) (*callerGrantsOutput, error) {
-	caller, ok := auth.CallerFromContext(ctx)
-	if !ok || caller.Kind != auth.CallerOperator {
-		return nil, huma.Error403Forbidden("Operator session required")
-	}
-	view, err := routes.readCallerGrants(ctx, caller, input.Namespace, input.Name)
-	if err != nil {
-		return nil, err
-	}
-	return &callerGrantsOutput{Body: *view}, nil
-}
-
-func (routes *operatorRoutes) readCallerGrants(
-	ctx context.Context,
-	caller auth.Caller,
-	namespace string,
-	name string,
-) (*callerGrantsView, error) {
-	if caller.Kind != auth.CallerOperator {
-		return nil, huma.Error403Forbidden("Operator session required")
-	}
-	if namespace == "" || name == "" {
-		return nil, huma.Error422UnprocessableEntity("subject must set both namespace and name")
-	}
-	if routes.policies == nil {
-		return nil, huma.Error503ServiceUnavailable("Policy access is unavailable")
-	}
-	subject := &identitypb.ServiceAccount{Namespace: namespace, Name: name}
-	bindings, err := routes.policies.BindingsFor(ctx, subject)
-	if err != nil {
-		return nil, huma.Error503ServiceUnavailable("Policy access is unavailable")
-	}
-	if bindings == nil {
-		bindings = []policyaccess.BindingView{}
-	}
-	return &callerGrantsView{Bindings: bindings}, nil
 }
 
 func (routes *operatorRoutes) completeMCPLinkage(w http.ResponseWriter, request *http.Request) {

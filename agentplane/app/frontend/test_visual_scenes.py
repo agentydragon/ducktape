@@ -431,7 +431,7 @@ async def test_sandbox_policy_rules(view: VisualPage, app: AgentplaneFixture) ->
     open_rules = "ready-sandbox-k2m9x,ready-sandbox-github-public,ready-sandbox-push-afternoon"
     await app.mount_app(f"/sandboxes/ready-sandbox?tab=policy&rules={open_rules}")
     await expect(view.page.get_by_role("button", name="Hide rules")).to_have_count(3)
-    await expect(view.page.get_by_text("harness-release: no such PolicySet")).to_be_visible()
+    await expect(view.page.get_by_text("harness-release: not present in the current PolicySet view")).to_be_visible()
     await view.capture(target=view.page.locator("#app"))
 
 

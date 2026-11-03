@@ -9,17 +9,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
-
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-
-	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
-	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
-	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 type operatorAPICallback struct {
@@ -46,34 +35,6 @@ type operatorAPICloseTracker struct{ closed bool }
 
 func (c *operatorAPICloseTracker) Read([]byte) (int, error) { return 0, io.EOF }
 func (c *operatorAPICloseTracker) Close() error             { c.closed = true; return nil }
-
-func newOperatorPolicyAccess(t *testing.T, objects ...client.Object) *policyaccess.Access {
-	t.Helper()
-	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{policyapi.AddToScheme, egressapi.AddToScheme} {
-		if err := add(scheme); err != nil {
-			t.Fatal(err)
-		}
-	}
-	objectsClient := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
-	return policyaccess.New("policy", objectsClient)
-}
-
-func TestCallerGrantsReadBindings(t *testing.T) {
-	subject := &identitypb.ServiceAccount{Namespace: "team-a", Name: "worker"}
-	access := newOperatorPolicyAccess(t, &policyapi.PolicyBinding{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "policy", Name: "binding-a"},
-		Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.ServiceAccountRef{Namespace: subject.Namespace, Name: subject.Name}, PolicySets: []string{"read-only"}},
-	})
-	routes := &operatorRoutes{policies: access}
-	view, err := routes.readCallerGrants(t.Context(), auth.Caller{Kind: auth.CallerOperator}, subject.Namespace, subject.Name)
-	if err != nil || len(view.Bindings) != 1 || view.Bindings[0].Name != "binding-a" {
-		t.Fatalf("bindings = %v, %v", view, err)
-	}
-	if _, err := routes.readCallerGrants(t.Context(), auth.Caller{Kind: auth.CallerToken}, subject.Namespace, subject.Name); err == nil {
-		t.Fatal("non-operator read succeeded")
-	}
-}
 
 func TestPublicMCPCallbackForwardsQueryAndRedirects(t *testing.T) {
 	body := &operatorAPICloseTracker{}

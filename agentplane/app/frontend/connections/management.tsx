@@ -4,14 +4,7 @@ import { type StreamConnection } from "../stream_reader";
 import { Fragment, type JSX, useCallback, useEffect, useState } from "react";
 
 import { displayableError, HttpError } from "../client";
-import {
-  isEligibleCaller,
-  serviceAccountKey,
-  type CallerServiceAccount,
-  type CallerGrantReader,
-  type Connection,
-} from "./models";
-import { readCallerGrants } from "./caller_grants_client";
+import { isEligibleCaller, serviceAccountKey, type CallerServiceAccount, type Connection } from "./models";
 import {
   adaptConnectionWatchFrame,
   connectionServiceAccounts,
@@ -36,7 +29,7 @@ function currentGrant(connection: Connection): Grant | undefined {
   );
 }
 
-export function Connections({ readGrants = readCallerGrants }: { readGrants?: CallerGrantReader }): JSX.Element {
+export function Connections(): JSX.Element {
   const [expandedGrants, setExpandedGrants] = useState<string | null>(null);
   const [snapshot, setRows] = useState<Connection[] | null>(null);
   const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
@@ -348,7 +341,7 @@ export function Connections({ readGrants = readCallerGrants }: { readGrants?: Ca
                     <Table.Tr>
                       <Table.Td colSpan={3}>
                         <div id={`caller-grants-${row.id}`}>
-                          <CallerGrants key={currentKey} account={row.bound_caller} read={readGrants} />
+                          <CallerGrants key={currentKey} account={row.bound_caller} />
                         </div>
                       </Table.Td>
                     </Table.Tr>

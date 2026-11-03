@@ -35,6 +35,7 @@ from cluster.cdk8s.agentplane import (
     egress,
     history_service,
     notifications,
+    policy_controller,
     runner_gateway,
     session_dispatcher,
     telemetry,
@@ -231,6 +232,7 @@ class App(Construct):
                 session_dispatcher_target=(
                     f"{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
                 ),
+                policy_service_target=f"{policy_controller.service(namespace).fqdn}:{policy_controller.service(namespace).port.number}",
                 notifications_url=f"http://{notifications.service(namespace).fqdn}:{notifications.service(namespace).port.number}",
                 notifications_token_file="/var/run/secrets/agentplane-notifications/token",
                 listen_address=f"0.0.0.0:{self.service.pod_port}",
@@ -274,6 +276,7 @@ class App(Construct):
                 "/var/run/secrets/agentplane-session-dispatcher",
             ),
             ("notifications-token", notifications.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-notifications"),
+            ("policy-token", policy_controller.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-policy"),
         ]:
             workload.project_tokens(volume, mount_path, {"token": audience})
         return workload
@@ -318,6 +321,7 @@ class App(Construct):
                 session_dispatcher.http_service(namespace).egress(),
                 history_service.service(namespace).egress(),
                 notifications.service(namespace).egress(),
+                policy_controller.service(namespace).egress(),
                 egress.admin(namespace).egress(),
                 # Separate BFF/operator transport boundary. The Action Service
                 # still requires its own configured operator authenticator;
