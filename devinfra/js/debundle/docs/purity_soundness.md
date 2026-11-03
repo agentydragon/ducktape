@@ -354,7 +354,8 @@ heap barrier. Unselected calls use the ordinary guards.
 
 `chunk_analysis_options.<chunk>.native_operation_inputs` is a source-selected
 author premise for one exact direct native initializer. The schema admits
-`operation: text_encoder_empty`, `operation: symbol`, `operation: symbol_for`, `operation: promise_resolve`,
+`operation: text_encoder_empty`, `operation: map_empty`, `operation: set_empty`,
+`operation: symbol`, `operation: symbol_for`, `operation: promise_resolve`,
 `operation: set_from_primitive_array`,
 `operation: set_from_set_spread`, `operation: object_own_data_function_read`,
 and `operation: array_spread_from_primitive_arrays`.
@@ -400,6 +401,20 @@ CommonJS behavior and ordering remain on the normal conservative paths. The
 premise grants no whole-lifetime purity, general receiver guarantee or native
 integrity outside analyzed code; the external A11 identity obligation still
 applies.
+
+For `map_empty` and `set_empty`, the exact direct bare zero-argument initializer
+must read the original standard constructor through its ordinary global data
+binding in every admitted initialization schedule. The
+[Map](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-map-iterable)
+and [Set](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-set-iterable)
+constructor algorithms return before an adder lookup or iteration when the
+iterable is absent. Direct construction keeps the original `NewTarget` and its
+fixed own prototype data property. The existing empty-construction rows supply
+the operation semantics; the exact-site premise discharges only the global
+binding's identity and data read. Known writes to that slot anywhere in the
+program reject the assertion. Later property reads, methods, iteration and
+publication require their own ordinary proofs. Arguments, spreads, aliases,
+qualified callees, shadowing and wrapper expressions are not admitted.
 
 For `text_encoder_empty`, the checked initializer is exactly a direct bare
 zero-argument `new TextEncoder()` through the unshadowed global identifier.

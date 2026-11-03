@@ -1848,6 +1848,8 @@ location, selected binding and site.
 | Input                                | Selected source                                                                                                                                                            | Asserted slots                                                              |
 | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | `text_encoder_empty`                 | Top-level simple binding initialized by direct bare zero-argument `new TextEncoder()`                                                                                      | Original global `TextEncoder` data binding                                  |
+| `map_empty`                          | Top-level simple binding initialized by direct bare zero-argument `new Map()`                                                                                              | Original global `Map` data binding                                          |
+| `set_empty`                          | Top-level simple binding initialized by direct bare zero-argument `new Set()`                                                                                              | Original global `Set` data binding                                          |
 | `symbol`                             | Top-level simple binding initialized by a direct `Symbol(...)` call with zero or one syntactically primitive argument                                                      | `%Symbol%`                                                                  |
 | `symbol_for`                         | The same with `Symbol.for(...)`                                                                                                                                            | `%Symbol%`, `%Symbol.for%`                                                  |
 | `promise_resolve`                    | Top-level simple binding initialized by a zero-argument `Promise.resolve()`                                                                                                | `%Promise%`, `%Promise.resolve%`                                            |
@@ -1892,6 +1894,16 @@ to the native write census, but is outside `program_premises`'
 `intrinsics_never_written` family vocabulary, including `families: all`. Syntactic purity requires this
 exact-site input and records its dependency; an unannotated construction keeps
 conservative purity even when the ordinary census proves its callback timing.
+
+`map_empty` and `set_empty` use the same exact direct-constructor shape and
+global data-binding assertion for `Map` and `Set`. A known write to the selected
+global constructor binding in any analyzed chunk rejects the input. Zero-argument
+standard construction returns its fresh empty collection before looking up an
+adder or iterator; its existing builtin row supplies timing and purity. The
+input does not certify later collection methods, property reads, iteration,
+callback retention or mutations. Aliases, shadowing, arguments, spreads,
+qualified callees and sequence or assignment wrappers remain unsupported.
+Each selected declarator carries its own assertion, including comma declarations.
 
 ### Bundle-owned globals
 

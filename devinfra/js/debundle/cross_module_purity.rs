@@ -870,6 +870,8 @@ pub fn resolve_imported_callable_summaries(
                         | spec::NativeOperationKind::SymbolFor
                         | spec::NativeOperationKind::PromiseResolve
                         | spec::NativeOperationKind::TextEncoderEmpty
+                        | spec::NativeOperationKind::MapEmpty
+                        | spec::NativeOperationKind::SetEmpty
                 )
             )
         })
@@ -888,6 +890,8 @@ pub fn resolve_imported_callable_summaries(
                     ) => "Symbol",
                     NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty) =>
                         "TextEncoder",
+                    NativeInputKind::Operation(spec::NativeOperationKind::MapEmpty) => "Map",
+                    NativeInputKind::Operation(spec::NativeOperationKind::SetEmpty) => "Set",
                     _ => "Promise",
                 },
                 owner.0

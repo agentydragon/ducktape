@@ -506,7 +506,11 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_new_expr(&mut self, node: &NewExpr) {
-        if self.native_facts.text_encoder_empty_proof(node).is_some() {
+        if self
+            .native_facts
+            .empty_native_constructor_proof(node)
+            .is_some()
+        {
             // Its exact global data binding and empty operand list are checked;
             // the platform result remains opaque to every subsequent use.
             return;
