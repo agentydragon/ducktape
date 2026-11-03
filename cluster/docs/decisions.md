@@ -94,8 +94,8 @@ the hdd tier (<cnpg_conventions.md> § R2).
 
 **Proxmox-dependent services** (tolerate downtime by design): Ollama,
 ActivityWatch (central store on wyrm2, `piraeus-hdd-local`; device-side
-importers buffer and re-push through downtime), and — both currently suspended —
-BuildBuddy executor and InvenTree. Not the Nix cache: attic runs pinned to
+importers buffer and re-push through downtime), the opt-in BuildBuddy KVM executor
+on wyrm2, and suspended InvenTree. Not the Nix cache: attic runs pinned to
 `hil-ovh`, `attic-db` is CNPG OVH-HA, and chunks live in OVH SeaweedFS S3.
 
 ### Proxmox CSI removed (2026-07-16)
@@ -413,9 +413,6 @@ applications").
   legacy VM is retired; the VM and its local disk stay untouched until explicitly
   deleted.
 - **gecko**: `cluster/parked/gecko/` — same legacy-VM retirement hold as agent-box.
-- **BuildBuddy Executor**: `cluster/parked/buildbuddy-executor/` — scaled to 0;
-  Proxmox-pinned, and atlas/wyrm2 being back (both returned 2026-08) removes that
-  blocker — re-enable when needed.
 - **sdr**: `cluster/parked/sdr/` — suspended pending the radio re-set-up
   post-relocation (not unblocked by atlas/wyrm2 returning).
 - **manifold-mcp**: `cluster/parked/manifold-mcp/` — decommissioned; third-party npm

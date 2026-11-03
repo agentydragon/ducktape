@@ -28,6 +28,11 @@ spec:
       name: monitoring-stack
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/k8s/buildbuddy-executor/**"
+          to: "@artifact/cluster/k8s/buildbuddy-executor/"
+      name: buildbuddy-executor
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/ntfy/**"
           to: "@artifact/cluster/k8s/ntfy/"
       name: ntfy

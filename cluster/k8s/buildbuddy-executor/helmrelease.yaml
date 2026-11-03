@@ -4,11 +4,8 @@ kind: Namespace
 metadata:
   name: buildbuddy-executor
   labels:
-    # TODO: check if privileged PSA is actually necessary for buildbuddy executor.
-    # Chart defaults to enable_oci=true which uses crun to create child containers
-    # for build isolation. This needs privileged mode. The only non-privileged
-    # option (bare runner) provides zero isolation and no container image support,
-    # which breaks our RBE platform.
+    # The OCI executor needs privilege to create its isolated action containers.
+    # Actions receive /dev/kvm through executor.oci.devices, not privileged mode.
     pod-security.kubernetes.io/enforce: privileged
 
 ---
@@ -36,6 +33,7 @@ spec:
   chart:
     spec:
       chart: buildbuddy-executor
+      version: "0.0.485"
       sourceRef:
         kind: HelmRepository
         name: buildbuddy
@@ -45,8 +43,6 @@ spec:
       name: buildbuddy-api-key
       valuesKey: api-key
       targetPath: config.executor.api_key
-  # Chart template uses `{{ .Values.replicas | default 1 }}` — Go template
-  # treats 0 as falsy, so replicas=0 renders as 1. Use postRenderers to force 0.
   postRenderers:
     - kustomize:
         patches:
@@ -54,24 +50,37 @@ spec:
               kind: Deployment
               name: buildbuddy-executor
             patch: |
-              - op: replace
-                path: /spec/replicas
-                value: 0
+              - op: add
+                path: /spec/template/spec/automountServiceAccountToken
+                value: false
   values:
-    # If self-hosted execution is re-enabled, consider KEDA only with a verified
-    # BuildBuddy queue/lease signal and a tight privileged-executor cap.
-    replicas: 0
+    replicas: 1
+    poolName: wyrm2-kvm
+    strategy:
+      type: Recreate
     resources:
       requests:
-        cpu: 1
-        memory: 4Gi
-      limits:
         cpu: 2
+        memory: 4Gi
+        ephemeral-storage: 10Gi
+        devices.kubevirt.io/kvm: "1"
+      limits:
+        cpu: 4
         memory: 8Gi
+        ephemeral-storage: 30Gi
+        devices.kubevirt.io/kvm: "1"
     nodeSelector:
-      topology.kubernetes.io/region: "proxmox"
-    podAnnotations:
-      reloader.stakater.com/auto: "true"
+      kubernetes.io/hostname: wyrm2
     config:
       executor:
         app_target: "grpcs://remote.buildbuddy.io:443"
+        enable_oci: true
+        local_cache_size_bytes: 8000000000
+        oci:
+          devices:
+            - path: /dev/kvm
+              type: c
+              major: 10
+              minor: 232
+              # os.FileMode is decimal; 438 = 0666.
+              filemode: 438

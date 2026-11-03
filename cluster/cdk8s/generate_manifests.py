@@ -17,6 +17,7 @@ from cluster.cdk8s import (
     aiquota,
     airlock,
     alloy_otlp_bearer,
+    buildbuddy_executor,
     claude_sandbox_secrets,
     cnpg_operator,
     crossplane,
@@ -393,7 +394,6 @@ def generate_manifests(root: Path) -> None:
     nvidia_runtimeclass.nvidia_runtimeclass(
         flux_chart, write_directory(root, nvidia_runtimeclass_artifact, nvidia_runtimeclass.chart)
     )
-    parked_flux_kustomizations.buildbuddy_executor(flux_chart)
     gecko_namespace_artifact = artifact("gecko-namespace", f"{PARKED_ROOT}/gecko/namespace")
     gecko_namespace_kustomization = parked_flux_kustomizations.gecko_namespace(flux_chart, gecko_namespace_artifact)
     reflector_artifact = artifact("reflector", reflector.OUTPUT_DIR)
@@ -445,6 +445,10 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         write_directory(root, descheduler_artifact, descheduler.chart, descheduler.rbac_chart),
         kyverno_kustomization,
+    )
+    buildbuddy_executor_artifact = artifact("buildbuddy-executor", buildbuddy_executor.OUTPUT_DIR)
+    buildbuddy_executor.buildbuddy_executor(
+        flux_chart, buildbuddy_executor_artifact, kubevirt_kustomization, kyverno_kustomization
     )
     kyverno_policies_artifact = artifact("kyverno-policies", kyverno_policies.OUTPUT_DIR)
     kyverno_policies_kustomization = kyverno_policies.kyverno_policies(
@@ -1951,6 +1955,7 @@ def generate_manifests(root: Path) -> None:
             agentplane_staging_delivery_artifact,
             agentplane_staging_db_backups_artifact,
             monitoring_stack_artifact,
+            buildbuddy_executor_artifact,
             ntfy_artifact,
             claude_rbac_artifact,
             authentik_artifact,

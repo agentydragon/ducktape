@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.manifest_roots import PARKED_ROOT
 
 
 def agent_box(
@@ -34,23 +32,6 @@ def agent_box(
             # Kyverno's failurePolicy: Fail webhooks admit the Namespace.
             kyverno,
         ),
-    )
-
-
-def buildbuddy_executor(chart: Chart) -> Kustomization:
-    name = "buildbuddy-executor"
-    return flux_kustomization(
-        chart,
-        name,
-        # Not flux-system's source: its sparse checkout (gotk-sync.yaml) omits the parked tree.
-        KustomizationSpecSourceRef(
-            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
-        ),
-        annotations={"ducktape.org/parked": "true"},
-        suspend=True,
-        timeout="5m",
-        path=f"./{PARKED_ROOT}/buildbuddy-executor",
-        decryption=SOPS_DECRYPTION,
     )
 
 
