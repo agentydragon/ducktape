@@ -20,8 +20,9 @@ on:
 # Each called workflow carries its own group instead, and the polarity differs according
 # to what the work is worth once it has been superseded:
 #
-#   bazel-ci.yml                  cancels only PR runs — a test result for a PR head
-#                                 nobody will merge is worthless. A push run is for a
+#   bazel-ci.yml                  admits same-repo PR runs independently; the trusted
+#                                 cancel-obsolete-pr-ci controller retires older runs.
+#                                 Fork PRs retain their separate policy. A push run is for a
 #                                 commit that ships, so it queues behind the run in
 #                                 flight; GitHub keeps one pending run per group, so a
 #                                 merge burst costs the run in flight plus the newest.

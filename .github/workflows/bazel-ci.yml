@@ -54,14 +54,11 @@ on:
         value: ${{ jobs.bazel-ci.outputs.test_source_commit }}
   workflow_dispatch:
 
-# A PR run is superseded by the next push to that PR, so it is cancelled. A push run is
-# for a commit that ships, so it queues behind the run in flight instead; GitHub keeps one
-# pending run per group, so a merge burst costs the run in flight plus the newest commit's.
-# Cancelling push runs is what starved devel of images (see ci.yml).
+# Same-repository PR replacements start independently of obsolete-run teardown.
+# cancel-obsolete-pr-ci.yml retires older ordinary PR runs asynchronously.
+# Fork PR and non-PR groups retain their existing serialization/cancel policy.
 concurrency:
-  # PR numbers stay stable across pushes, so a new head cancels the old run.
-  # Non-PR runs keep their branch ref as the group identity.
-  group: bazel-ci-${{ github.event.pull_request.number || github.ref }}
+  group: bazel-ci-${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && format('pr-run-{0}', github.run_id) || github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || inputs.pr_head_sha != '' }}
 
 permissions:
