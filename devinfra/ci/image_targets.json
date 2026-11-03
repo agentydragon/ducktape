@@ -1,5 +1,10 @@
 {
   "images": {
+    "agentplane-test-node": {
+      "target": "//agentplane/system_tests/shared_cluster/node:image",
+      "test": "//agentplane/system_tests/shared_cluster/node/...",
+      "registry": "forgejo"
+    },
     "ai-session-archive-importer": {
       "target": "//x/ai_session_archive:ingest_image",
       "test": "//x/ai_session_archive/...",
