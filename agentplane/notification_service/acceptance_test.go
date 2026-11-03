@@ -143,8 +143,9 @@ func (j *journal) GetSessionSummary(_ context.Context, in *historypb.GetSessionS
 	if in.GetSessionId() != testSession {
 		return nil, status.Error(codes.NotFound, "test-unrecorded-session")
 	}
+	uid := sandboxUID
 	return &historypb.SessionSummary{
-		SessionId: testSession, Sandbox: &historypb.SandboxRef{Namespace: testNamespace, Name: sandboxName},
+		SessionId: testSession, Sandbox: &historypb.SandboxRef{Namespace: testNamespace, Name: sandboxName, Uid: &uid},
 	}, nil
 }
 

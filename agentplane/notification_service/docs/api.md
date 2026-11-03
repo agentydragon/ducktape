@@ -119,9 +119,11 @@ service pins the UID of the Sandbox it finds and refuses a missing Sandbox, one 
 incarnation than a given `uid` as `NOT_FOUND`; it never retargets. A suspended Sandbox accepts messages; its
 notice waits until the Sandbox runs again unless wake-on-send is enabled and authorized for this
 service. The inbox belongs to the Sandbox ServiceAccount for that Session. Creating a recipient inbox
-requires retained Session history associated with that Sandbox; missing or unrelated history returns
-`NOT_FOUND`. This association checks the Sandbox name, so a Session of a deleted predecessor with
-the same name can pass. Sending to an existing inbox does not repeat the history check.
+requires retained Session history whose Sandbox namespace, name and nonempty immutable UID all match the
+current Sandbox; missing history, a missing History UID, or a different Sandbox incarnation returns
+`NOT_FOUND`. This prevents a Session written by a deleted predecessor from opening an inbox for a new
+Sandbox with the same name. An already-existing inbox is keyed by destination UID and Session ID, so a
+replacement Sandbox has a different inbox; sends to an existing inbox do not repeat the History check.
 
 A message is an inbox entry like any other, with the same cursors, notices, acknowledgement, payload expiry and
 purge. Its event identity is the message ID and the sender ServiceAccount the service authenticated; its payload
