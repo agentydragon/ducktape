@@ -20,12 +20,13 @@ import {
   type EnvironmentRuntimeStatus,
   type SessionSpec,
 } from "../../../proto/session_pb";
+import { GetEnvironmentRuntimeStatusRequestSchema, OpenSessionRequestSchema } from "../../app_service_pb";
 import {
-  GetEnvironmentRuntimeStatusRequestSchema,
-  OpenSessionRequestSchema,
   GetSessionOpeningRequestSchema,
-} from "../../app_service_pb";
-import { SessionOpeningSchema, type SessionOpening } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+  GetSessionOpeningResponseSchema,
+  SessionOpeningSchema,
+  type SessionOpening,
+} from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
 /** Submit once; an uncertain response is reconciled by the caller-minted Session ID. */
 export async function openSession(
@@ -52,11 +53,22 @@ export async function openSession(
   });
 }
 
-export async function getSessionOpening(sandbox: string, sessionId: string): Promise<SessionOpening> {
-  const request = create(GetSessionOpeningRequestSchema, { name: sandbox, sessionId });
-  return sessionOpeningJson(
-    `/sandboxes/${encodeURIComponent(request.name)}/sessions/${encodeURIComponent(request.sessionId)}/opening`
+export async function getSessionOpening(sessionId: string): Promise<SessionOpening> {
+  const request = create(GetSessionOpeningRequestSchema, { sessionId });
+  const response = await fetchWithLogin(
+    `/upstream/dispatcher/v1/sessions/${encodeURIComponent(request.sessionId)}/opening`
   );
+  const body: unknown = await response.json();
+  if (!response.ok) throw new HttpError(response, body);
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    throw new Error("Dispatcher opening response must be a JSON object");
+  }
+  const opening = fromJson(GetSessionOpeningResponseSchema, body as JsonObject).opening;
+  if (!opening) throw new Error("Dispatcher returned no Session opening");
+  if (opening.sessionId !== request.sessionId) {
+    throw new Error(`Dispatcher returned Session ${opening.sessionId} for requested Session ${request.sessionId}`);
+  }
+  return opening;
 }
 
 async function sessionOpeningJson(path: string, init?: RequestInit): Promise<SessionOpening> {

@@ -32,7 +32,6 @@ import (
 
 type sessionOpener interface {
 	OpenSession(context.Context, string, string, uuid.UUID, *sessionpb.SessionSpec, *string) (*dispatcherpb.SessionOpening, error)
-	SessionOpening(context.Context, string, uuid.UUID) (*dispatcherpb.SessionOpening, error)
 }
 
 type sessionEnvironmentReader interface {
@@ -59,7 +58,6 @@ func RegisterSessionRoutes(server *HTTPServer, service *appService) error {
 		return err
 	}
 	server.RegisterRawRoute("POST /sandboxes/{name}/sessions", mux, false)
-	server.RegisterRawRoute("GET /sandboxes/{name}/sessions/{session_id}/opening", mux, false)
 	return nil
 }
 
@@ -128,18 +126,6 @@ func (s *appService) OpenSession(ctx context.Context, request *apppb.OpenSession
 		return nil, sessionRPCError(err)
 	}
 	return &apppb.OpenSessionResponse{Opening: opening}, nil
-}
-
-func (s *appService) GetSessionOpening(ctx context.Context, request *apppb.GetSessionOpeningRequest) (*apppb.GetSessionOpeningResponse, error) {
-	id, err := validateSessionOpeningIdentity(request.GetName(), request.GetSessionId())
-	if err != nil {
-		return nil, err
-	}
-	opening, err := s.bridge.SessionOpening(ctx, request.GetName(), id)
-	if err != nil {
-		return nil, sessionRPCError(err)
-	}
-	return &apppb.GetSessionOpeningResponse{Opening: opening}, nil
 }
 
 func sessionRPCError(err error) error {

@@ -288,6 +288,7 @@ async function render(
     if (/^\/upstream\/history\/v1\/sessions\/[^/]+\/summary$/.test(path)) {
       return Promise.resolve(Response.json({ detail: "not found" }, { status: 404 }));
     }
+    if (/^\/upstream\/dispatcher\/v1\/sessions\/[^/]+\/opening$/.test(path)) return sessions(request);
     const threadPath = /^\/threads\/([^/]+)$/.exec(path);
     if (threadPath && request.method === "GET") {
       const threads = Array.isArray(live.snapshot.threads) ? live.snapshot.threads : [];
@@ -833,6 +834,7 @@ it("does not retry an Open the runner has not reported", async () => {
   const paths = fetchMock.mock.calls.map(([input, init]) => new URL(requestFromFetchInput(input, init).url).pathname);
   expect(paths).toContain(`/upstream/app/v1/threads/${first.session_id}`);
   expect(paths).toContain(`/upstream/history/v1/sessions/${first.session_id}/summary`);
+  expect(paths).toContain(`/upstream/dispatcher/v1/sessions/${first.session_id}/opening`);
 });
 
 it("recovers a lost Open from its Thread without sending a second Open", async () => {

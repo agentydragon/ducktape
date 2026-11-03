@@ -51,15 +51,4 @@ func (c *DispatcherClient) OpenSession(ctx context.Context, request *dispatcherp
 	return response, err
 }
 
-// GetSessionOpening fetches one durable opening by its caller-minted UUID.
-func (c *DispatcherClient) GetSessionOpening(ctx context.Context, request *dispatcherpb.GetSessionOpeningRequest) (*dispatcherpb.GetSessionOpeningResponse, error) {
-	var response *dispatcherpb.GetSessionOpeningResponse
-	err := c.connection(ctx, func(ctx context.Context, client dispatcherpb.SessionDispatcherClient) error {
-		var err error
-		response, err = client.GetSessionOpening(ctx, request)
-		return err
-	})
-	return response, err
-}
-
 var _ Dispatcher = (*DispatcherClient)(nil)

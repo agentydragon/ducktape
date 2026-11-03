@@ -29,11 +29,16 @@ writes; [#14030](https://github.com/agentydragon/ducktape/pull/14030) requires c
 new Dispatcher openings; and [#14031](https://github.com/agentydragon/ducktape/pull/14031) checks
 the exact Sandbox UID for new message inboxes. These do not implement the general directory.
 
-**Ready next:** [Session-ID opening lookup](task_dag.md#session_opening_lookup--read-an-opening-by-session-id)
-and a [native-first Dispatcher Session authority](task_dag.md#session_directory_native--dispatcher-authority-for-environment-hosted-sessions)
+**Implemented:** opening reads use the globally unique Session ID through Dispatcher
+[`GetSessionOpening`](../runner_gateway/dispatcher/session_dispatcher.proto), exposed to the browser
+through the operator-authenticated app facade and used by test callers through
+[`SessionDispatcherClient.get_session_opening`](../runner_gateway/dispatcher/testing_client.py).
+The [address inventory](#session-address-inventory) records this completed migration.
+
+**Ready next:** a [native-first Dispatcher Session authority](task_dag.md#session_directory_native--dispatcher-authority-for-environment-hosted-sessions)
 using existing authorization. Specify deletion and uncertain-outcome fencing as part of that slice;
-do not add a second competing writable directory. The [address inventory](#session-address-inventory)
-links the remaining API and consumer changes to their owning DAG tasks.
+do not add a second competing writable directory. The current opening table is not a general
+Session directory.
 
 **Still require design:** central Sessions with no environment or multiple attachments, the central
 principal and its authority, moving or changing wake orchestration, and cross-store deletion and
@@ -149,9 +154,12 @@ Current behavior: [native Sessions](https://github.com/agentydragon/ducktape/blo
 
 Selected direction: callers name a Session by one globally unique, unscoped public UUID. A durable Session directory resolves it to the current Session owner and placement. Dispatcher PostgreSQL owns that directory and live Session records, separate from History’s database; the directory does not require a separate Deployment. Whether placement generations are needed and their precise representation remain implementation questions.
 
-The [app's Session opening lookup TODO](../app/TODO.md#session-opening-lookup) applies this direction:
-target the Session ID and use Session Dispatcher, rather than requiring a Sandbox-scoped app route.
-The existing Dispatcher opening lookup does not by itself implement the proposed Session directory.
+Opening reads now target the Session ID through Dispatcher
+[`GET /v1/sessions/{session_id}/opening`](../runner_gateway/dispatcher/session_dispatcher.proto).
+The [browser adapter](../app/frontend/sandboxes/client.ts) calls that endpoint through the
+operator-authenticated app facade; test callers use
+[`SessionDispatcherClient.get_session_opening`](../runner_gateway/dispatcher/testing_client.py).
+This lookup does not by itself implement the proposed Session directory.
 
 ```text
 public address:  session_id = UUID
@@ -709,16 +717,17 @@ Only after the contracts work, assess whether to regroup services, expose a sepa
 
 ## Session address inventory and follow-up work
 
-Inventory of checked-in consumers at `9b44c17e60`. A Session ID is the public address; an exact
-environment UID remains meaningful for native placement, queued-work and execution fencing,
-authorization, and historical provenance. An environment-scoped operation or list can still name
-an environment. Selecting an environment when creating a native Session is placement, not a
-compound Session address. No change below removes History or actual harness state.
+Inventory of checked-in consumers at `9b44c17e60`, with the opening-lookup row updated for this
+implementation. A Session ID is the public address; an exact environment UID remains meaningful
+for native placement, queued-work and execution fencing, authorization, and historical provenance.
+An environment-scoped operation or list can still name an environment. Selecting an environment
+when creating a native Session is placement, not a compound Session address. No change below
+removes History or actual harness state.
 
 | Surface and current behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Follow-up and owning task                                                                                                                                                                                                                                                                                                                                          |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [Dispatcher opening and command API](../runner_gateway/dispatcher/session_dispatcher.proto) requires Sandbox name and UID on open and on submit, model, effort and interrupt even though reads already use Session ID. [Opening storage](../runner_gateway/dispatcher/store.go) is keyed by Session ID but couples identity to a required Sandbox and delivery state; [deletion](../runner_gateway/dispatcher/terminal.go) removes openings by Sandbox UID.                                    | Establish [native Session authority](task_dag.md#session_directory_native--dispatcher-authority-for-environment-hosted-sessions); switch existing-Session commands to [Session-ID addressing](task_dag.md#delivery_destination_contract--send-commands-to-a-session-id), keeping the resolved UID as an internal fence. Typed creation placement remains explicit. |
-| [App opening route](../app/app_service.proto) and [browser client](../app/frontend/sandboxes/client.ts) add a Sandbox-scoped opening read even though Dispatcher already reads by Session ID. The opening route also composes app presets and Thread metadata.                                                                                                                                                                                                                                 | Migrate the read via [opening lookup](task_dag.md#session_opening_lookup--read-an-opening-by-session-id). Review creation separately: a Sandbox can remain a selected native placement without defining Session identity.                                                                                                                                          |
+| The [browser client](../app/frontend/sandboxes/client.ts) reads openings by global Session ID through the app's operator-authenticated Dispatcher facade. The wire endpoint is [`GET /v1/sessions/{session_id}/opening`](../runner_gateway/dispatcher/session_dispatcher.proto); test callers use [`SessionDispatcherClient.get_session_opening`](../runner_gateway/dispatcher/testing_client.py). App creation still composes presets and Thread metadata.                                    | **Implemented in this change:** the Sandbox-scoped AppService lookup is removed in favor of Dispatcher by Session ID. Review creation separately: a Sandbox can remain a selected native placement without defining Session identity.                                                                                                                              |
 | [App command delivery](../app/frontend/threads/command_delivery.ts) derives a Sandbox name and UID from the Thread and persists the command destination; the [Session CLI](../cli/sessions.go) requires them for send/interrupt. Session read, opening lookup and History read in the CLI already use Session ID.                                                                                                                                                                              | Update writers and retry state under [Session-ID command addressing](task_dag.md#delivery_destination_contract--send-commands-to-a-session-id); preserve the original resolved fence for accepted work and no-replay recovery.                                                                                                                                     |
 | [Session Actions](../action_service/session_delegation/contract/inputs.go), their [executor](../action_service/session_delegation/executor.go), and [orchestration](../action_service/orchestration_v1/sessions.go) carry a target environment for opening and Session commands.                                                                                                                                                                                                               | Update command schemas, delegates and callers in [Session-ID command addressing](task_dag.md#delivery_destination_contract--send-commands-to-a-session-id); retain creation placement and delegated actor/effective-caller checks.                                                                                                                                 |
 | [Notification subscription and message APIs](../notification_service/notifications.proto) take `destination_ref` plus `session_id`; [inbox storage](../notification_service/migrations/notifications/00010_final_schema.sql) stores both, and the [worker](../notification_service/worker/deliver.go) sends with that environment. [Notification CLI](../cli/notifications.go), [Session instructions](../session_instructions/instructions.go), and `AGENTPLANE_DESTINATION` carry the tuple. | Readdress inboxes, subscriptions, delivery, instructions and clients in [Session-addressed notifications](task_dag.md#session_notification_address--address-inboxes-and-notices-by-session-id). Retain permission checks, unread messages, and authorized unattended wake.                                                                                         |

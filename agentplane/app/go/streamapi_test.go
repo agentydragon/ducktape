@@ -197,6 +197,13 @@ func TestDispatcherFacadeRejectsWorkloadCommandPOSTs(t *testing.T) {
 			t.Fatalf("workload-token %s status = %d %s, want 403", method, response.Code, response.Body.String())
 		}
 	}
+	openingRequest := httptest.NewRequest(http.MethodGet, prefix+"/opening", nil)
+	openingRequest.Header.Set("Authorization", "Bearer accepted")
+	openingResponse := httptest.NewRecorder()
+	server.Handler(authentication).ServeHTTP(openingResponse, openingRequest)
+	if openingResponse.Code != http.StatusForbidden {
+		t.Fatalf("workload-token opening read status = %d %s, want 403", openingResponse.Code, openingResponse.Body.String())
+	}
 	if forwarded != 0 {
 		t.Fatalf("workload request reached Dispatcher %d times", forwarded)
 	}

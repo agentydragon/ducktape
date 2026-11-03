@@ -279,7 +279,7 @@ export function SandboxPage({
         await openThread(threadId, threadId);
       } else {
         try {
-          const opening = await withinSessionCreate(threadId, () => getSessionOpening(name, threadId));
+          const opening = await withinSessionCreate(threadId, () => getSessionOpening(threadId));
           rememberOpen({ threadId, state: opening.state, reason: opening.reason });
           if (opening.state === DeliveryState.FAILED) finishSessionCreate(threadId, "failed");
           setError(`${openingStateLabel(opening.state)}${opening.reason ? `: ${opening.reason}` : "."}`);

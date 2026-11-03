@@ -17,6 +17,7 @@ from typing import Any, Self
 from urllib.parse import quote
 from uuid import UUID
 
+import grpc
 import httpx
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
@@ -24,8 +25,10 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 from agentplane.app import app_service_pb2
 from agentplane.app.testing.models import ThreadMetadata, ThreadView, thread_view_from_proto_json
 from agentplane.environments.v1 import environment_service_pb2
+from agentplane.grpc.calls import ServiceError
 from agentplane.proto import event_log_pb2, identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -234,18 +237,19 @@ class Client:
         name: str,
         session_id: UUID,
         *,
+        dispatcher: SessionDispatcherClient,
         sandbox_uid: str,
         overrides: dict[str, object] | None = None,
         setup_script: str | None = None,
     ) -> None:
-        """Open a Session from configured preset defaults plus proto-JSON overrides.
+        """Open a Session, then wait for the Dispatcher admission by its global ID.
 
         Retrying with the same Session ID and overrides answers the same Session.
         """
         opening = await self.open_session(
             name, session_id, sandbox_uid=sandbox_uid, overrides=overrides, setup_script=setup_script
         )
-        return await self.wait_for_session_admission(name, session_id, opening=opening)
+        await self.wait_for_session_admission(dispatcher, session_id, opening=opening)
 
     async def open_session(
         self,
@@ -271,14 +275,9 @@ class Client:
         self.opened_sandbox_uids.add(opening.sandbox_uid)
         return opening
 
-    async def session_opening(self, name: str, session_id: UUID) -> session_dispatcher_pb2.SessionOpening:
-        """Read the durable opening state for a Sandbox Session."""
-        answered = await self._json("GET", f"/sandboxes/{name}/sessions/{session_id}/opening")
-        return ParseDict(answered, session_dispatcher_pb2.SessionOpening())
-
     async def wait_for_session_admission(
         self,
-        name: str,
+        dispatcher: SessionDispatcherClient,
         session_id: UUID,
         *,
         opening: session_dispatcher_pb2.SessionOpening,
@@ -297,7 +296,15 @@ class Client:
             if time.monotonic() >= deadline:
                 raise TimeoutError(f"Session opening {opening.session_id} remained {opening.state}: {opening.reason}")
             await asyncio.sleep(0.2)
-            opening = await self.session_opening(name, session_id)
+            try:
+                opening = await dispatcher.get_session_opening(str(session_id))
+                if opening.session_id != str(session_id):
+                    raise RuntimeError(
+                        f"Dispatcher returned Session {opening.session_id} while waiting for Session {session_id}"
+                    )
+            except ServiceError as error:
+                if error.code != grpc.StatusCode.UNAVAILABLE:
+                    raise
 
     async def wait_for_thread_feed(self, thread_id: UUID, *, timeout_s: float) -> ThreadView:
         """Wait until History has folded the runner's first feed announcement into the Thread."""

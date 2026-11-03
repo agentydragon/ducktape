@@ -2051,7 +2051,6 @@ beyond the transport track nodes the operator dispatched.
 flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: delivery ownership and service topology]
     SESSION_DIRECTORY_NATIVE[Ready: Dispatcher Session directory for native placement]
-    SESSION_OPENING_LOOKUP[Ready: opening lookup by Session ID]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: send authority and internal fencing]
     DELIVERY_DESTINATION_CONTRACT[Blocked: Session-ID command addressing]
     SESSION_NOTIFICATION_ADDRESS[Blocked: Session-addressed inboxes and notices]
@@ -2110,16 +2109,6 @@ independently usable direct Runtime or other flows and retain their real authori
 The existing `agentplane/system_tests/k3s` suite already runs without the CNPG operator, Cilium or cert-manager (and KubeVirt outside its VM rendering),
 against one plain PostgreSQL Deployment and the Runner Gateway; this node is about removing the PostgreSQL dependency
 itself. New sender grants remain a separate decision.
-
-### `SESSION_OPENING_LOOKUP` — read an opening by Session ID
-
-**Ready; selected public address.** Replace the app's Sandbox-scoped opening-read wrapper and its
-browser/test consumers with the generated Session Dispatcher `GetSessionOpening(session_id)` API.
-The Dispatcher already provides this lookup and checks retained read authority. Preserve the app's
-actual authentication and authorization at the new facade, response/error semantics, and same-ID
-recovery after uncertain opening. This is opening lookup, not a claim that the complete live Session
-directory exists. [Inventory](session_environment_model.md#session-address-inventory) ·
-[App TODO](../app/TODO.md#session-opening-lookup).
 
 ### `SESSION_DIRECTORY_NATIVE` — Dispatcher authority for environment-hosted Sessions
 

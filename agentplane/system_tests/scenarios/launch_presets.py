@@ -59,9 +59,7 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
             opening.sandbox,
             opening.created_at,
         )
-        await client.wait_for_session_admission(
-            view.target.name, first_id, opening=opening, timeout_s=RUNNER_ANSWERS_SECONDS
-        )
+        await client.wait_for_session_admission(dispatcher, first_id, opening=opening, timeout_s=RUNNER_ANSWERS_SECONDS)
         first = await client.wait_for_thread_feed(first_id, timeout_s=RUNNER_ANSWERS_SECONDS)
     expected_reasoning_effort = (
         preset.session_defaults.reasoning_effort if preset.session_defaults.HasField("reasoning_effort") else None
@@ -126,7 +124,7 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         assert suspended_opening.wake_assessment.state == environment_lifecycle_pb2.WAKE_STATE_NOT_EVALUATED
         opening_deadline = time.monotonic() + RUNNER_ANSWERS_SECONDS
         while True:
-            suspended_opening = await client.session_opening(view.target.name, suspended_id)
+            suspended_opening = await dispatcher.get_session_opening(str(suspended_id))
             assert suspended_opening.state == session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
             if (
                 suspended_opening.HasField("delivery_blocker")
@@ -153,7 +151,7 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         assert resumed.kubernetes_diagnostics.HasField("pod")
         assert resumed.kubernetes_diagnostics.pod.uid != previous_incarnation
         await client.wait_for_session_admission(
-            view.target.name, suspended_id, opening=suspended_opening, timeout_s=RUNNER_ANSWERS_SECONDS
+            dispatcher, suspended_id, opening=suspended_opening, timeout_s=RUNNER_ANSWERS_SECONDS
         )
         await client.wait_for_thread_projection(suspended_id, timeout_s=RUNNER_ANSWERS_SECONDS)
 
@@ -161,12 +159,16 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         "system_test.launch_preset.session_defaults", record_exception=False, set_status_on_exception=False
     ):
         inherited_id = uuid4()
-        await client.create_session(view.target.name, inherited_id, sandbox_uid=view.target.uid)
+        await client.create_session(view.target.name, inherited_id, dispatcher=dispatcher, sandbox_uid=view.target.uid)
         inherited = await client.wait_for_thread_feed(inherited_id, timeout_s=RUNNER_ANSWERS_SECONDS)
         local_model = "systest-local-model-override"
         local_id = uuid4()
         await client.create_session(
-            view.target.name, local_id, sandbox_uid=view.target.uid, overrides={"model": local_model}
+            view.target.name,
+            local_id,
+            dispatcher=dispatcher,
+            sandbox_uid=view.target.uid,
+            overrides={"model": local_model},
         )
         local = await client.wait_for_thread_feed(local_id, timeout_s=RUNNER_ANSWERS_SECONDS)
         assert inherited.model == preset.session_defaults.model

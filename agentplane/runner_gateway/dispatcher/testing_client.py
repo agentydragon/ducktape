@@ -46,12 +46,16 @@ class SessionDispatcherClient:
         )
         return response.dispatch
 
-    async def session_target(self, session_id: str) -> tuple[str, str]:
-        """Read the opening's immutable destination, never the current Sandbox by name."""
+    async def get_session_opening(self, session_id: str) -> session_dispatcher_pb2.SessionOpening:
+        """Read one durable opening by its globally unique Session ID."""
         response = await self.unary(
             self.stub.GetSessionOpening, session_dispatcher_pb2.GetSessionOpeningRequest(session_id=session_id)
         )
-        opening = response.opening
+        return response.opening
+
+    async def session_target(self, session_id: str) -> tuple[str, str]:
+        """Read the opening's immutable destination, never the current Sandbox by name."""
+        opening = await self.get_session_opening(session_id)
         if not opening.sandbox or not opening.sandbox_uid:
             raise ValueError(f"Session {session_id} has no recorded Sandbox destination")
         return opening.sandbox, opening.sandbox_uid

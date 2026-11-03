@@ -96,7 +96,6 @@ func TestSessionRoutesRequireCallerAuthentication(t *testing.T) {
 		path   string
 	}{
 		{http.MethodPost, "/sandboxes/demo/sessions"},
-		{http.MethodGet, "/sandboxes/demo/sessions/" + uuid.NewString() + "/opening"},
 	} {
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, httptest.NewRequest(test.method, test.path, nil))
@@ -151,11 +150,6 @@ func (p *sessionTestPeer) OpenSession(ctx context.Context, name, uid string, id 
 		return nil, p.failOpen
 	}
 	return &dispatcherpb.SessionOpening{SessionId: id.String(), Sandbox: name, SandboxUid: uid, State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER}, nil
-}
-
-func (p *sessionTestPeer) SessionOpening(_ context.Context, name string, id uuid.UUID) (*dispatcherpb.SessionOpening, error) {
-	p.calls = append(p.calls, "lookup")
-	return &dispatcherpb.SessionOpening{SessionId: id.String(), Sandbox: name, SandboxUid: p.sandbox.GetTarget().GetUid()}, nil
 }
 
 type sessionTokenReviewer struct{}
@@ -264,17 +258,7 @@ func TestSessionOpeningGatewayPreservesPresetPresenceAndWireContract(t *testing.
 			if peer.spec.GetHarness() != test.wantHarness || peer.spec.GetModel() != test.wantModel || peer.spec.GetInstructions() != test.wantInstructions || peer.spec.GetReasoningEffort() != test.wantEffort || peer.spec.GetCwd() != "/work/"+id || !reflect.DeepEqual(peer.setup, test.wantSetup) {
 				t.Fatalf("spec %v setup %v", peer.spec, peer.setup)
 			}
-			response = sessionTestRequest(handler, http.MethodGet, "/sandboxes/demo/sessions/"+id+"/opening", "")
-			if response.Code != http.StatusOK {
-				t.Fatalf("GET status %d: %s", response.Code, response.Body.String())
-			}
-			if err := protojson.Unmarshal(response.Body.Bytes(), opening); err != nil {
-				t.Fatal(err)
-			}
-			if opening.GetSessionId() != id || opening.GetSandbox() != "demo" {
-				t.Fatalf("unexpected lookup %v", opening)
-			}
-			if !reflect.DeepEqual(peer.calls, []string{"thread", "dispatch", "lookup"}) {
+			if !reflect.DeepEqual(peer.calls, []string{"thread", "dispatch"}) {
 				t.Fatalf("calls %v", peer.calls)
 			}
 		})
@@ -406,15 +390,11 @@ func TestSessionOpeningCanonicalizesAcceptedUUIDSpelling(t *testing.T) {
 	if response.Code != http.StatusCreated {
 		t.Fatalf("status %d: %s", response.Code, response.Body.String())
 	}
-	response = sessionTestRequest(handler, http.MethodGet, "/sandboxes/demo/sessions/B351B316-FDC4-4F50-A642-758992AE3323/opening", "")
-	if response.Code != http.StatusOK {
-		t.Fatalf("status %d: %s", response.Code, response.Body.String())
-	}
 	opening := &dispatcherpb.SessionOpening{}
 	if err := protojson.Unmarshal(response.Body.Bytes(), opening); err != nil {
 		t.Fatal(err)
 	}
 	if opening.GetSessionId() != "b351b316-fdc4-4f50-a642-758992ae3323" {
-		t.Fatalf("noncanonical backend identity: %v", opening)
+		t.Fatalf("noncanonical opening identity: %v", opening)
 	}
 }

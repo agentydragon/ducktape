@@ -166,7 +166,11 @@ class Agent:
             async for attempt in environment_runtime_startup_retries():
                 with attempt:
                     await client.create_session(
-                        sandbox, session_id, sandbox_uid=sandbox_uid, overrides=MessageToDict(spec)
+                        sandbox,
+                        session_id,
+                        dispatcher=dispatcher,
+                        sandbox_uid=sandbox_uid,
+                        overrides=MessageToDict(spec),
                     )
                     thread = await client.wait_for_thread_projection(session_id, timeout_s=RUNNER_ANSWERS_SECONDS)
                     return cls(

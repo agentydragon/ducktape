@@ -54,6 +54,7 @@ async def session_setup_is_supervised(
     cwd = f"/state/workspaces/{session_id}/nested"
     stdout, stderr = await run_setup(
         client,
+        dispatcher,
         sandbox_name=sandbox_name,
         sandbox_uid=sandbox_uid,
         session_id=session_id,
@@ -111,6 +112,7 @@ async def session_setup_is_supervised(
     # Checking the kernel domain also catches descendants missed by a PID-only assertion.
     checked, errors = await run_setup(
         client,
+        dispatcher,
         sandbox_name=sandbox_name,
         sandbox_uid=sandbox_uid,
         session_id=uuid4(),

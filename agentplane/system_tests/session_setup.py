@@ -7,6 +7,7 @@ from google.protobuf.json_format import MessageToDict
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.tracing import tracer
 
 BOUND_SECONDS = 300
@@ -14,6 +15,7 @@ BOUND_SECONDS = 300
 
 async def run_setup(
     client: Client,
+    dispatcher: SessionDispatcherClient,
     *,
     sandbox_name: str,
     sandbox_uid: str,
@@ -31,7 +33,12 @@ async def run_setup(
         set_status_on_exception=False,
     ):
         await client.create_session(
-            sandbox_name, session_id, sandbox_uid=sandbox_uid, overrides=MessageToDict(spec), setup_script=setup_script
+            sandbox_name,
+            session_id,
+            dispatcher=dispatcher,
+            sandbox_uid=sandbox_uid,
+            overrides=MessageToDict(spec),
+            setup_script=setup_script,
         )
         thread_id = session_id
         # Runner admission precedes History's Thread projection, which owns the event stream.

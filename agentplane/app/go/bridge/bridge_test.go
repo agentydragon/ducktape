@@ -51,13 +51,6 @@ func (f *fakeDispatcher) OpenSession(_ context.Context, request *dispatcherpb.Op
 	return &dispatcherpb.OpenSessionResponse{Opening: f.opening}, nil
 }
 
-func (f *fakeDispatcher) GetSessionOpening(_ context.Context, _ *dispatcherpb.GetSessionOpeningRequest) (*dispatcherpb.GetSessionOpeningResponse, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	return &dispatcherpb.GetSessionOpeningResponse{Opening: f.opening}, nil
-}
-
 type fakeRunner struct {
 	list   *sessionpb.ListSessionsResponse
 	status *sessionpb.EnvironmentRuntimeStatus
@@ -171,28 +164,6 @@ func TestOpenSessionTimeoutCarriesStableIdempotencyKey(t *testing.T) {
 	var timeout *DispatcherRequestTimeoutError
 	if !errors.As(err, &timeout) || timeout.SessionID != sessionID || !strings.Contains(err.Error(), sessionID.String()) {
 		t.Fatalf("timeout = %#v, error = %v", timeout, err)
-	}
-}
-
-func TestSessionOpeningHidesWrongSandboxAndSession(t *testing.T) {
-	sessionID := uuid.New()
-	for _, opening := range []*dispatcherpb.SessionOpening{
-		{SessionId: sessionID.String(), Sandbox: "another-sandbox"},
-		{SessionId: uuid.NewString(), Sandbox: "operator-sandbox"},
-		{},
-	} {
-		bridge, err := New("operators", &fakeSandboxGetter{}, nil, &fakeDispatcher{opening: opening})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := bridge.SessionOpening(context.Background(), "operator-sandbox", sessionID); err == nil {
-			t.Fatalf("opening %v was returned for the wrong identity", opening)
-		} else {
-			var notFound *SessionOpeningNotFoundError
-			if !errors.As(err, &notFound) {
-				t.Fatalf("error = %T %v, want SessionOpeningNotFoundError", err, err)
-			}
-		}
 	}
 }
 
@@ -343,11 +314,6 @@ func (s *dispatcherTestServer) OpenSession(ctx context.Context, request *dispatc
 	}}, nil
 }
 
-func (s *dispatcherTestServer) GetSessionOpening(ctx context.Context, request *dispatcherpb.GetSessionOpeningRequest) (*dispatcherpb.GetSessionOpeningResponse, error) {
-	s.capture(ctx)
-	return &dispatcherpb.GetSessionOpeningResponse{Opening: &dispatcherpb.SessionOpening{SessionId: request.GetSessionId(), Sandbox: "operator-sandbox"}}, nil
-}
-
 func TestDispatcherClientUsesRotatingBearerAndMapsDeadline(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -371,16 +337,13 @@ func TestDispatcherClientUsesRotatingBearerAndMapsDeadline(t *testing.T) {
 	if _, err := client.OpenSession(context.Background(), &dispatcherpb.OpenSessionRequest{SessionId: id, Sandbox: "operator-sandbox", SandboxUid: "sandbox-uid"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.GetSessionOpening(context.Background(), &dispatcherpb.GetSessionOpeningRequest{SessionId: id}); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.WriteFile(tokenFile, []byte("token-two\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.GetSessionOpening(context.Background(), &dispatcherpb.GetSessionOpeningRequest{SessionId: id}); err != nil {
+	if _, err := client.OpenSession(context.Background(), &dispatcherpb.OpenSessionRequest{SessionId: id, Sandbox: "operator-sandbox", SandboxUid: "sandbox-uid"}); err != nil {
 		t.Fatal(err)
 	}
-	if len(service.seenBearer) != 3 || service.seenBearer[0] != "Bearer token-one" || service.seenBearer[2] != "Bearer token-two" {
+	if len(service.seenBearer) != 2 || service.seenBearer[0] != "Bearer token-one" || service.seenBearer[1] != "Bearer token-two" {
 		t.Fatalf("dispatcher bearer values = %v", service.seenBearer)
 	}
 
