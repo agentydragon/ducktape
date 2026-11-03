@@ -35,5 +35,11 @@ fixtures. Focused verification passed with
 --test_output=errors` on RBE (BuildBuddy invocation
 `0a5e59ae-6b3c-4772-bcc4-03d32a24b12a`).
 
+The first published CI run caught a relative link from the shared SPEC to
+`docs/design.md`, which is not shipped in the standalone skill archives.
+The proof reference uses the public repository URL instead. Changes to shared
+documentation must also pass the skill archive's relative-link check; a
+repository-valid link need not be valid in an installed skill.
+
 Sources: [ECMA-262 §13.2.7](https://tc39.es/ecma262/2026/multipage/ecmascript-language-expressions.html#sec-regexp-literals),
 [§22.2.3.1](https://tc39.es/ecma262/2026/multipage/text-processing.html#sec-regexpcreate).

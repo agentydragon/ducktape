@@ -388,7 +388,7 @@ does not establish RegExp internal slots, prototype/method integrity,
 `lastIndex` behavior, or effects of later property reads, getters or calls.
 `RegExp(...)` and `new RegExp(...)` remain unsupported because they evaluate a
 mutable constructor binding and can invoke user code. Under the existing
-[A6 input contract](docs/design.md) that the original chunk runs to
+[A6 input contract](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md) that the original chunk runs to
 completion, its literals satisfy ECMAScript's early-error rules and use the
 non-abrupt `RegExpCreate` completion. This does not assert that our input parser
 independently validates every regexp grammar or flag restriction.
