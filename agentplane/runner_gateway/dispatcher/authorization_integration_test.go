@@ -250,8 +250,8 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 	}
 	if _, err := client.SubmitInput(foreign, &dispatcherpb.SubmitInputRequest{
 		CommandId: "authority-foreign-input", SessionId: sessionID, Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Text: "foreign",
-	}); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("foreign SubmitInput = %v, want PermissionDenied", err)
+	}); status.Code(err) != codes.NotFound {
+		t.Fatalf("foreign SubmitInput = %v, want NotFound", err)
 	}
 
 	legacy, err := store.OpenSession(ctx, "authority-legacy-session", caller.Name, authoritySandboxUID, &sessionpb.SessionSpec{}, nil, nil)
@@ -263,8 +263,8 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 	}
 	if _, err := client.SubmitInput(authorityContext(t, "owner-account"), &dispatcherpb.SubmitInputRequest{
 		CommandId: "authority-legacy-normal-input", SessionId: legacy.SessionID, Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Text: "must remain unowned",
-	}); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("normal write to ownerless legacy Session = %v, want PermissionDenied", err)
+	}); status.Code(err) != codes.NotFound {
+		t.Fatalf("normal write to ownerless legacy Session = %v, want NotFound", err)
 	}
 	if _, err := client.GetSessionOpening(authorityContext(t, "owner-pod"), &dispatcherpb.GetSessionOpeningRequest{SessionId: legacy.SessionID}); err != nil {
 		t.Fatalf("configured Pod-bound backend read of legacy Session: %v", err)
