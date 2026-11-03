@@ -289,10 +289,7 @@ py_library(
         "//agentplane/system_tests:__subpackages__",
     ],
     deps = [
-        "//agentplane:policy_sets",
-        "//agentplane:subjects",
         "//agentplane/egress:decisions",
-        "//agentplane/egress:resources",
         "//agentplane/env/runtime:harness",
         "@pypi//pydantic",
     ],

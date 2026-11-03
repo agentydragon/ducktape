@@ -99,7 +99,6 @@ func TestPolicyRoutesArePublishedAndCallerProtected(t *testing.T) {
 
 	for _, path := range []string{
 		"/sandboxes/form",
-		"/sandboxes/demo/egress",
 		"/sandboxes/demo/policy-bindings",
 		"/policy-bindings/demo",
 	} {

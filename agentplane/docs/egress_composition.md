@@ -193,7 +193,7 @@ the sets it was created with. One binding per grant keeps each lifetime its own,
 over a subject's bindings composes them. Revocation follows the same seam: deleting one grant's
 binding takes back that grant and nothing else.
 
-The app writes it at `POST /sandboxes/{name}/egress`, which refuses a set name the namespace does
+The app writes it at `POST /sandboxes/{name}/policy-bindings`, which refuses a set name the namespace does
 not hold. A dangling name is not corruption — the CRD admits any string and the proxy reports it
 as `EgressReady=False` (`PolicySetUnavailable`) while the binding's other sets still grant — so
 the refusal is a guard on the typo at the moment of writing, not a guarantee: a set deleted after

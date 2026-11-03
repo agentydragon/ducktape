@@ -2,8 +2,6 @@
 
 - [ ] Consider loading the app config into protobuf messages and using a unified representation through config loading and the generated AppConfig API.
 
-- [ ] Migrate the Sandbox egress Python test client from its joined BindingView response to
-      PolicyService resources and Egress-owned credential metadata.
 - [ ] Move Kubernetes owner-reference metadata to a shared protobuf home; Environment and Policy
       currently define the same fields separately.
 - [ ] Share and incrementally maintain PolicyService’s Kubernetes watches: each RPC currently opens

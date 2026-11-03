@@ -23,14 +23,6 @@ type sandboxFormOutput struct {
 	}
 }
 
-type sandboxEgressOutput struct {
-	Body []policyaccess.BindingView `nullable:"false"`
-}
-
-type policyBindingOutput struct {
-	Body policyaccess.BindingView
-}
-
 type sandboxPolicyGrantInput struct {
 	Name string `path:"name" minLength:"1" maxLength:"57" pattern:"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"`
 	Body struct {
@@ -40,17 +32,11 @@ type sandboxPolicyGrantInput struct {
 	}
 }
 
-type sandboxEgressInput struct {
-	Name string `path:"name" minLength:"1" maxLength:"57" pattern:"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"`
-	UID  string `query:"uid" minLength:"1" required:"true"`
-}
-
 type policyBindingNameInput struct {
 	Name string `path:"name" minLength:"1"`
 }
 
-// RegisterPolicyRoutes installs the caller-readable Egress views and operator-only grant/revoke
-// operations. Access uses the existing typed PolicyBinding, PolicySet, and EgressCredential CRDs.
+// RegisterPolicyRoutes installs the Sandbox form and operator-only policy grant/revoke operations.
 func RegisterPolicyRoutes(server *HTTPServer, config Config, environments *sandboxes.EnvironmentReader, policies *policyaccess.Access) {
 	readAPI := server.ProtectedAPI()
 	huma.Register[struct{}, sandboxFormOutput](readAPI, huma.Operation{
@@ -66,31 +52,11 @@ func RegisterPolicyRoutes(server *HTTPServer, config Config, environments *sandb
 		output.Body.NewSandboxDefaults = config.NewSandboxDefaults
 		return output, nil
 	})
-	huma.Register[sandboxEgressInput, sandboxEgressOutput](readAPI, huma.Operation{
-		OperationID: "listSandboxEgress", Method: http.MethodGet, Path: "/sandboxes/{name}/egress", Tags: []string{"sandboxes"},
-		Summary: "List policy bindings for a Sandbox's ServiceAccount",
-	}, func(ctx context.Context, input *sandboxEgressInput) (*sandboxEgressOutput, error) {
-		sandbox, err := environments.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &identitypb.EnvironmentTarget{Namespace: config.SandboxNamespace, Name: input.Name, Uid: input.UID}})
-		if err != nil {
-			return nil, sandboxHTTPError(err)
-		}
-		account := sandbox.GetExecutionAccount()
-		if account == nil || account.GetAccount() == nil || account.GetAccount().GetNamespace() == "" || account.GetAccount().GetName() == "" {
-			return nil, policyHTTPError(errors.New("Environment has no execution account"))
-		}
-		bindings, err := policies.BindingsFor(ctx, &identitypb.ServiceAccount{
-			Namespace: account.GetAccount().GetNamespace(), Name: account.GetAccount().GetName(),
-		})
-		if err != nil {
-			return nil, policyHTTPError(err)
-		}
-		return &sandboxEgressOutput{Body: bindings}, nil
-	})
 	operatorAPI := server.OperatorAPI()
-	huma.Register[sandboxPolicyGrantInput, policyBindingOutput](operatorAPI, huma.Operation{
+	huma.Register[sandboxPolicyGrantInput, struct{}](operatorAPI, huma.Operation{
 		OperationID: "grantSandboxPolicySets", Method: http.MethodPost, Path: "/sandboxes/{name}/policy-bindings", Tags: []string{"sandboxes"},
 		Summary: "Grant policy sets to a running Sandbox", DefaultStatus: http.StatusCreated,
-	}, func(ctx context.Context, input *sandboxPolicyGrantInput) (*policyBindingOutput, error) {
+	}, func(ctx context.Context, input *sandboxPolicyGrantInput) (*struct{}, error) {
 		sandbox, err := environments.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &identitypb.EnvironmentTarget{Namespace: config.SandboxNamespace, Name: input.Name, Uid: input.Body.UID}})
 		if err != nil {
 			return nil, sandboxHTTPError(err)
@@ -104,11 +70,10 @@ func RegisterPolicyRoutes(server *HTTPServer, config Config, environments *sandb
 			value := metav1.NewTime(parsed.UTC())
 			expiresAt = &value
 		}
-		binding, err := policies.Grant(ctx, sandbox, input.Body.PolicySets, expiresAt)
-		if err != nil {
+		if err := policies.Grant(ctx, sandbox, input.Body.PolicySets, expiresAt); err != nil {
 			return nil, policyHTTPError(err)
 		}
-		return &policyBindingOutput{Body: *binding}, nil
+		return nil, nil
 	})
 	huma.Register[policyBindingNameInput, struct{}](operatorAPI, huma.Operation{
 		OperationID: "revokePolicyBinding", Method: http.MethodDelete, Path: "/policy-bindings/{name}", Tags: []string{"policy-bindings"},
@@ -126,7 +91,6 @@ func policyHTTPError(err error) error {
 	var missingSets *policy.UnknownPolicySetError
 	var fromGit *policyaccess.FluxOwnedBindingError
 	var fromSandbox *policyaccess.SandboxOwnedBindingError
-	var notVisible *policyaccess.CreatedBindingNotVisibleError
 	switch {
 	case errors.As(err, &notFound):
 		return huma.Error404NotFound(err.Error())
@@ -134,8 +98,6 @@ func policyHTTPError(err error) error {
 		return huma.Error422UnprocessableEntity(err.Error())
 	case errors.As(err, &fromGit), errors.As(err, &fromSandbox):
 		return huma.Error409Conflict(err.Error())
-	case errors.As(err, &notVisible):
-		return huma.Error503ServiceUnavailable(err.Error())
 	default:
 		return huma.Error503ServiceUnavailable("Policy access is unavailable")
 	}

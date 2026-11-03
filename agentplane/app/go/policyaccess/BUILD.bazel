@@ -12,7 +12,6 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/app/go/policyaccess",
     deps = [
         "//agentplane/action_service/policies",
-        "//agentplane/egress/api/v1alpha1",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/policy",
         "//agentplane/policy/api/v1alpha1",

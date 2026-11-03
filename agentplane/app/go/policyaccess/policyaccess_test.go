@@ -2,7 +2,6 @@ package policyaccess
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -44,10 +43,6 @@ func newAccess(t *testing.T, objects ...client.Object) (*Access, client.Client) 
 	t.Helper()
 	objectsClient := clientfake.NewClientBuilder().WithScheme(policyScheme(t)).WithObjects(objects...).Build()
 	return New(testNamespace, objectsClient), objectsClient
-}
-
-func account(namespace, name string) *identitypb.ServiceAccount {
-	return &identitypb.ServiceAccount{Namespace: namespace, Name: name}
 }
 
 func policySet(name string, generation int64, rules ...policyapi.Rule) *policyapi.PolicySet {
@@ -100,172 +95,16 @@ func TestActionPolicySetsSortAndExposeOnlyActionRuleRefusals(t *testing.T) {
 	}
 }
 
-func TestBindingsForProjectsRulesCredentialsConditionsAndProvenance(t *testing.T) {
-	secretCredential := &egressapi.EgressCredential{
-		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "github-token"},
-		Spec: egressapi.EgressCredentialSpec{
-			Description: "test bot token",
-			Source:      egressapi.CredentialSource{SecretRef: &egressapi.SecretKeyRef{Name: "github-secret", Key: "token"}},
-			Targets:     []egressapi.Target{{Method: egressapi.SchemeToken, Header: "Authorization", Scheme: "Bearer"}},
-		},
-	}
-	workloadCredential := &egressapi.EgressCredential{
-		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "caller-token"},
-		Spec: egressapi.EgressCredentialSpec{
-			Description: "the authenticated workload",
-			Source:      egressapi.CredentialSource{AuthenticatedWorkloadToken: &egressapi.AuthenticatedWorkloadTokenSource{}},
-			Targets:     []egressapi.Target{{Method: egressapi.WholeValue, Header: "X-Caller"}},
-		},
-	}
-	mixed := policySet(
-		"mixed", 7,
-		policyapi.Rule{
-			Type: "action_auto_approve",
-			Policy: &policyapi.ActionPolicy{
-				Type: "exact_actions", Actions: map[string]policyapi.ActionNames{"test_review": {"record"}},
-			},
-		},
-		policyapi.Rule{
-			Type: "egress", Hosts: []string{"api.github.com"}, Methods: []string{"GET", "POST"},
-			CredentialRef: &policyapi.CredentialRef{Name: "github-token"},
-		},
-		policyapi.Rule{
-			Type: "egress", Hosts: []string{"api.example.test"},
-			CredentialRef: &policyapi.CredentialRef{Name: "missing-token"},
-		},
-		policyapi.Rule{
-			Type: "egress", Hosts: []string{"identity.example.test"},
-			CredentialRef: &policyapi.CredentialRef{Name: "caller-token"},
-		},
-	)
-	broken := policySet("broken", 2, policyapi.Rule{Type: "egress", Hosts: []string{}})
-	git := binding("a-git", policyapi.ServiceAccountRef{Namespace: testNamespace, Name: "live"}, "mixed")
-	git.Labels = map[string]string{fluxKustomizationLabel: "agentplane-staging"}
-	sandboxOwned := binding("b-sandbox", policyapi.ServiceAccountRef{Namespace: testNamespace, Name: "live"}, "broken")
-	controller := true
-	sandboxOwned.OwnerReferences = []metav1.OwnerReference{{Kind: sandboxapi.SandboxKind, Controller: &controller}}
-	operator := binding("c-operator", policyapi.ServiceAccountRef{Namespace: testNamespace, Name: "live"}, "mixed", "vanished")
-	operator.Spec.ExpiresAt = &metav1.Time{Time: time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)}
-	operator.Status.Conditions = []metav1.Condition{
-		{Type: "EgressReady", Status: metav1.ConditionFalse, Reason: "Test", Message: "egress pending", ObservedGeneration: 3},
-		{Type: "ActionsReady", Status: metav1.ConditionTrue, Reason: "Ready", Message: "actions ready", ObservedGeneration: 3},
-	}
-	otherNamespace := binding("d-other-namespace", policyapi.ServiceAccountRef{Namespace: "elsewhere", Name: "live"}, "mixed")
-	access, _ := newAccess(t, secretCredential, workloadCredential, mixed, broken, git, sandboxOwned, operator, otherNamespace)
-
-	views, err := access.BindingsFor(context.Background(), account(testNamespace, "live"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(views) != 3 || views[0].Name != "a-git" || views[1].Name != "b-sandbox" || views[2].Name != "c-operator" {
-		t.Fatalf("BindingsFor names = %#v", views)
-	}
-	if views[0].Provenance != BindingFromGit || views[1].Provenance != BindingFromSandbox ||
-		views[2].Provenance != BindingFromOperator {
-		t.Fatalf("binding provenance = %q, %q, %q", views[0].Provenance, views[1].Provenance, views[2].Provenance)
-	}
-	operatorView := views[2]
-	if operatorView.Generation != 3 || operatorView.ExpiresAt == nil ||
-		!operatorView.ExpiresAt.Time.Equal(operator.Spec.ExpiresAt.Time) {
-		t.Fatalf("binding metadata projection = %#v", operatorView)
-	}
-	if len(operatorView.Conditions) != 2 || operatorView.Conditions[0].Type != "ActionsReady" ||
-		operatorView.Conditions[1].Type != "EgressReady" || operatorView.Conditions[1].ObservedGeneration == nil ||
-		*operatorView.Conditions[1].ObservedGeneration != 3 {
-		t.Fatalf("condition projection = %#v", operatorView.Conditions)
-	}
-	if !reflect.DeepEqual(operatorView.MissingPolicySets, []string{"vanished"}) || len(operatorView.PolicySets) != 1 {
-		t.Fatalf("PolicySet projection = %#v / missing %v", operatorView.PolicySets, operatorView.MissingPolicySets)
-	}
-	set := operatorView.PolicySets[0]
-	if set.Name != "mixed" || set.Generation != 7 || set.Refused != nil || len(set.Rules) != 4 {
-		t.Fatalf("mixed PolicySet projection = %#v", set)
-	}
-	other := set.Rules[0]
-	if other.Kind != "other" || other.Number != 0 || other.Type != "action_auto_approve" || other.Fields["policy"] == nil {
-		t.Fatalf("other rule projection = %#v", set.Rules[0])
-	}
-	firstEgress := set.Rules[1]
-	if firstEgress.Kind != "egress" || firstEgress.Number != 1 || !reflect.DeepEqual(firstEgress.Hosts, []string{"api.github.com"}) ||
-		!reflect.DeepEqual(firstEgress.Methods, []string{"GET", "POST"}) || firstEgress.Paths != nil {
-		t.Fatalf("first egress projection = %#v", set.Rules[1])
-	}
-	if firstEgress.Credential == nil || firstEgress.Credential.Placeholder != "agentplane-credential-github-token" ||
-		firstEgress.Credential.Secret == nil || *firstEgress.Credential.Secret != "github-secret" ||
-		firstEgress.Credential.Key == nil || *firstEgress.Credential.Key != "token" ||
-		firstEgress.Credential.Targets[0].Method != egressapi.SchemeToken {
-		t.Fatalf("safe credential projection = %#v", firstEgress.Credential)
-	}
-	missing := set.Rules[2]
-	if missing.Kind != "egress" || missing.Credential != nil || missing.MissingCredential == nil || *missing.MissingCredential != "missing-token" {
-		t.Fatalf("missing credential projection = %#v", set.Rules[2])
-	}
-	workload := set.Rules[3]
-	if workload.Kind != "egress" || workload.Credential == nil || workload.Credential.Secret != nil || workload.Credential.Key != nil {
-		t.Fatalf("workload token projection = %#v", set.Rules[3])
-	}
-	encoded, err := json.Marshal(set.Rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var serialized []map[string]json.RawMessage
-	if err := json.Unmarshal(encoded, &serialized); err != nil {
-		t.Fatal(err)
-	}
-	if len(serialized) != 4 || serialized[0]["type"] == nil || serialized[0]["fields"] == nil || serialized[0]["hosts"] != nil ||
-		serialized[1]["hosts"] == nil || serialized[1]["credential"] == nil || serialized[1]["fields"] != nil {
-		t.Fatalf("serialized rule variants = %s", encoded)
-	}
-	refused := views[1].PolicySets[0]
-	if refused.Name != "broken" || len(refused.Rules) != 0 || refused.Refused == nil || *refused.Refused == "" {
-		t.Fatalf("invalid egress rule was not refused as a whole: %#v", refused)
-	}
-}
-
-func TestBindingsFromSnapshotMatchesDirectProjection(t *testing.T) {
-	set := policySet("egress", 2, policyapi.Rule{Type: "egress", Hosts: []string{"api.example.test"}})
-	item := binding("operator-grant", policyapi.ServiceAccountRef{Namespace: testNamespace, Name: "worker"}, "egress", "missing")
-	access, _ := newAccess(t, set, item)
-	direct, err := access.BindingsFor(context.Background(), account(testNamespace, "worker"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	snapshot, err := BindingsFromSnapshot([]policyapi.PolicyBinding{*item}, []policyapi.PolicySet{*set}, nil,
-		account(testNamespace, "worker"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(snapshot, direct) {
-		t.Fatalf("snapshot projection = %#v, direct = %#v", snapshot, direct)
-	}
-}
-
-func TestBindingsForRejectsInvalidCredentialProjection(t *testing.T) {
-	invalid := &egressapi.EgressCredential{
-		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "invalid"},
-		Spec: egressapi.EgressCredentialSpec{
-			Description: "test credential",
-			Source:      egressapi.CredentialSource{AuthenticatedWorkloadToken: &egressapi.AuthenticatedWorkloadTokenSource{}},
-			Targets:     []egressapi.Target{{Method: egressapi.JSONField, Header: "Authorization"}},
-		},
-	}
-	set := policySet("uses-invalid", 1, policyapi.Rule{
-		Type: "egress", Hosts: []string{"api.example.test"},
-		CredentialRef: &policyapi.CredentialRef{Name: "invalid"},
-	})
-	access, _ := newAccess(t, invalid, set, binding("grant", policyapi.ServiceAccountRef{
-		Namespace: testNamespace, Name: "worker",
-	}, "uses-invalid"))
-
-	_, err := access.BindingsFor(context.Background(), account(testNamespace, "worker"))
-	if err == nil || !strings.Contains(err.Error(), `EgressCredential "invalid"`) {
-		t.Fatalf("BindingsFor invalid credential = %v", err)
-	}
-}
-
 type generatedNameClient struct {
 	client.Client
 	created int
+}
+
+func (c *generatedNameClient) List(ctx context.Context, list client.ObjectList, options ...client.ListOption) error {
+	if _, ok := list.(*policyapi.PolicySetList); !ok {
+		return fmt.Errorf("unexpected list after grant: %T", list)
+	}
+	return c.Client.List(ctx, list, options...)
 }
 
 func (c *generatedNameClient) Create(ctx context.Context, object client.Object, options ...client.CreateOption) error {
@@ -288,19 +127,14 @@ func TestGrantValidatesPolicySetsAndCreatesIndependentSandboxOwnedBindings(t *te
 		ExecutionAccount: &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "worker"}},
 	}
 	expiresAt := &metav1.Time{Time: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)}
-	first, err := access.Grant(context.Background(), sandbox, []string{"known"}, expiresAt)
-	if err != nil {
+	if err := access.Grant(context.Background(), sandbox, []string{"known"}, expiresAt); err != nil {
 		t.Fatal(err)
 	}
-	second, err := access.Grant(context.Background(), sandbox, []string{"known"}, nil)
-	if err != nil {
+	if err := access.Grant(context.Background(), sandbox, []string{"known"}, nil); err != nil {
 		t.Fatal(err)
-	}
-	if first.Name != "worker-00001" || second.Name != "worker-00002" {
-		t.Fatalf("generated grant names = %q, %q", first.Name, second.Name)
 	}
 	stored := &policyapi.PolicyBinding{}
-	if err := base.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: first.Name}, stored); err != nil {
+	if err := base.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: "worker-00001"}, stored); err != nil {
 		t.Fatal(err)
 	}
 	if stored.GenerateName != "worker-" || stored.Spec.Subject != (policyapi.ServiceAccountRef{Namespace: testNamespace, Name: "worker"}) ||
@@ -314,14 +148,11 @@ func TestGrantValidatesPolicySetsAndCreatesIndependentSandboxOwnedBindings(t *te
 		owner.BlockOwnerDeletion == nil || *owner.BlockOwnerDeletion {
 		t.Fatalf("Sandbox owner reference = %#v", owner)
 	}
-	if first.Provenance != BindingFromOperator || first.PolicySets[0].Name != "known" {
-		t.Fatalf("returned grant view = %#v", first)
+	second := &policyapi.PolicyBinding{}
+	if err := base.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: "worker-00002"}, second); err != nil {
+		t.Fatalf("second independent binding missing: %v", err)
 	}
-	views, err := access.BindingsFor(context.Background(), account(testNamespace, "worker"))
-	if err != nil || len(views) != 2 {
-		t.Fatalf("repeated grant changed existing binding rather than adding one: %#v, %v", views, err)
-	}
-	_, err = access.Grant(context.Background(), sandbox, []string{"z-missing", "a-missing", "z-missing"}, nil)
+	err := access.Grant(context.Background(), sandbox, []string{"z-missing", "a-missing", "z-missing"}, nil)
 	var unknown *policy.UnknownPolicySetError
 	if !errors.As(err, &unknown) || !reflect.DeepEqual(unknown.Names, []string{"a-missing", "z-missing"}) {
 		t.Fatalf("Grant with missing sets = %v", err)
