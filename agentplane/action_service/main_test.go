@@ -24,7 +24,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/testing/oauthprovider"
-	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -78,8 +77,6 @@ type running struct {
 	health    healthpb.HealthClient
 	actions   action_servicepb.ActionServiceClient
 	operators operator_action_servicepb.OperatorActionServiceClient
-	// connections targets the retired service to assert that it is no longer registered.
-	connections connection_servicepb.ConnectionServiceClient
 	// url is the base URL of the service's HTTP routes.
 	url string
 	// store is the service's database, and updates is signalled on every Event committed to it.
@@ -151,9 +148,8 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 	t.Cleanup(func() { connection.Close() })
 	return running{
 		health: healthpb.NewHealthClient(connection), actions: action_servicepb.NewActionServiceClient(connection),
-		operators:   operator_action_servicepb.NewOperatorActionServiceClient(connection),
-		connections: connection_servicepb.NewConnectionServiceClient(connection),
-		url:         "http://" + listener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
+		operators: operator_action_servicepb.NewOperatorActionServiceClient(connection),
+		url:       "http://" + listener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
 	}
 }
 
@@ -531,34 +527,6 @@ func TestTheServiceGatesTheOperatorServicesOverGRPCAndHTTP(t *testing.T) {
 		response.Body.Close()
 		if response.StatusCode != http.StatusUnauthorized {
 			t.Errorf("a reader's %s %s over HTTP: %d", route.method, route.path, response.StatusCode)
-		}
-	}
-}
-
-func TestLegacyIntegratedConnectionEndpointsAreAbsentByDefault(t *testing.T) {
-	service := start(t, kube.Config, &catalog.Catalog{})
-	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
-	defer cancel()
-	if _, err := service.connections.ListConnections(ctx, &connection_servicepb.ListConnectionsRequest{}); status.Code(err) != codes.Unimplemented {
-		t.Errorf("legacy ConnectionService over gRPC: %v", err)
-	}
-	for _, path := range []string{
-		"/v1/operator/connections",
-		"/mcp",
-		"/.well-known/oauth-authorization-server",
-		"/.well-known/oauth-protected-resource/mcp",
-	} {
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, service.url+path, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		response, err := http.DefaultClient.Do(request)
-		if err != nil {
-			t.Fatal(err)
-		}
-		response.Body.Close()
-		if response.StatusCode != http.StatusNotFound {
-			t.Errorf("retired endpoint %s returned HTTP %d", path, response.StatusCode)
 		}
 	}
 }
