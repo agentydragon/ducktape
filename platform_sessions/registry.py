@@ -29,6 +29,7 @@ class InstanceConfig(BaseModel):
     id: str
     type: str
     enabled: bool = True
+    runtime: Literal["local"] = "local"
     upstream_base_url: str | None = None
     state_dir: str | None = None
     verification: VerificationConfig = Field(default_factory=VerificationConfig)
@@ -62,6 +63,7 @@ class IntegrationInstance:
     id: str
     type: str
     enabled: bool
+    runtime: Literal["local"]
     upstream_base_url: str
     state_dir: PurePosixPath
     verification: VerificationConfig
@@ -129,6 +131,7 @@ class IntegrationRegistry:
                     id=item.id,
                     type=item.type,
                     enabled=item.enabled,
+                    runtime=item.runtime,
                     upstream_base_url=_upstream_url(
                         item.upstream_base_url
                         if item.upstream_base_url is not None
