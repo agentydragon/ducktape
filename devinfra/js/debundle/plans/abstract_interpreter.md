@@ -459,10 +459,14 @@ ArgumentNoEscape, DescriptorCopy*}` → the
 
 ### Step 7 — statement cell summaries and taint
 
-- Derive statement cells (`Binding`, `GlobalProp`, heap cells) from the
-  interpreter's effect set, including alias writes and semantic coverage of
-  callee effects. Migrate syntactic/indexed sources and completeness proofs
-  together; indexed possible accesses alone do not prove complete coverage.
+- Extend statement-cell derivation (`Binding`, `GlobalProp`, heap cells)
+  beyond the covered local-call family, including alias writes and semantic
+  coverage of callee effects. The initial global-property, heap and host
+  receipts compose through child outcomes and invocation memos; only an exact,
+  normally completed root seals them. Migrate remaining syntactic/indexed
+  sources and completeness proofs together; indexed possible accesses alone
+  do not prove complete coverage, and these receipts do not establish lexical
+  read/rebind closure or justify removing fallback.
 - Reduce `collector.rs` to syntax collection (declarations, lazy boundaries,
   TLA). Compare canonical results: this changes precision in both directions,
   and `needed` grows to every eagerly read binding. Preserve conservative

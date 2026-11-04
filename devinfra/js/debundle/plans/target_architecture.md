@@ -69,7 +69,8 @@ source, analysis projection and engine (`staged_analysis/analysis_projection.rs`
 
 ### 4. Validate
 
-Validation is translation validation (<translation_validation_gate.md>).
+Validation combines translation validation (<translation_validation_gate.md>)
+with structural placement obligations.
 
 - **Swapped pairs.** Diff the emitted order against source order. A sweep
   retains ordered reader/writer participants per cell. Full conflict reporting
@@ -82,10 +83,10 @@ Validation is translation validation (<translation_validation_gate.md>).
   - the fix options: co-locate, state a premise, or the construct is refused.
 - **Premises.** `commuting_statements` premises apply only to pairs that
   swap and conflict.
-- **One conflict check.** Validation has no pass-level components. TDZ, the
-  commuting-premise check and the vendor strip's split-brain and
-  observable-effect checks (`vendor/strip.rs`) are all this check, applied to
-  the reordering each one performs.
+- **Separate obligations.** An effect-based relocation verdict must also
+  satisfy structural placement and rebinding checks. Vendor stripping can use
+  the same effect facts, but retains its replacement, privacy and singleton
+  obligations; a reordering check alone cannot establish those properties.
 
 ### 5. Emit
 
@@ -117,14 +118,14 @@ Validation is translation validation (<translation_validation_gate.md>).
 
 ## From today
 
-| Today                                                                | Target                                                  |
-| -------------------------------------------------------------------- | ------------------------------------------------------- |
-| Pass 1 rejects cycles among globally materialized constraining edges | Retired; only swapped pairs are checked                 |
-| Pass 2 simulates on a `ModuleId` order when Pass 1 is cyclic         | Exact loader model on the real order, no verdict        |
-| Atomic groups decide acceptance (`atomic_group_conflicts.json`)      | At most a planning aid                                  |
-| Purity classifier, heap-barrier chain, fallback edges                | Effect sets plus `Havoc` reach                          |
-| Separate checks: strip split-brain/privacy, commuting gate, TDZ      | One conflict check                                      |
-| Premises carry `audited_source_sha256` and evidence in reports       | Premises carry an engine audit list and a runtime probe |
+| Today                                                                | Target                                                                 |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Pass 1 rejects cycles among globally materialized constraining edges | Retired; only swapped pairs are checked                                |
+| Pass 2 simulates on a `ModuleId` order when Pass 1 is cyclic         | Exact loader model on the real order, no verdict                       |
+| Atomic groups decide acceptance (`atomic_group_conflicts.json`)      | Ordering groups guide planning; structural constraints remain enforced |
+| Purity classifier, heap-barrier chain, fallback edges                | Effect sets plus `Havoc` reach                                         |
+| Separate relocation and strip checks                                 | Shared effect facts, with placement and strip obligations retained     |
+| Premises carry `audited_source_sha256` and evidence in reports       | Premises carry an engine audit list and a runtime probe                |
 
 ## Plans as steps
 

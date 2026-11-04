@@ -6,8 +6,9 @@ validation of the candidate emit:
 
 1. compute the order the emitted modules actually evaluate statements in;
 2. find the statement pairs whose relative order differs from source order;
-3. accept iff every such pair commutes, judged from the interpreter's effect
-   facts, with TDZ as an ordinary effect conflict.
+3. assess whether every such pair commutes, judged from the interpreter's
+   effect facts, with TDZ as an ordinary effect conflict; and
+4. check the independent structural placement obligations of the same candidate.
 
 Neither pass survives as a verdict. Cycle detection becomes at most a hint to
 the order search. The ESM loader model becomes a plain, exact component: it
@@ -15,8 +16,9 @@ evaluates the emitted import lists as ECMA-262 does, cyclic or not, and it
 always runs on the real emitted order, never on a fallback order.
 
 The architecture this serves is <target_architecture.md>. This plan contains
-the remaining migration; the existing report-only checkers do not decide
-acceptance.
+the remaining migration; the shared candidate assessment reports effects and
+typed placement together but does not decide acceptance. Four lowering checks
+remain uncovered, and the legacy gate remains authoritative.
 
 ## Problem
 
@@ -57,7 +59,8 @@ read-before-`var`-initializer are the same rule, not a separate check.
 
 - every swapped pair commutes or is covered by a `commuting_statements`
   premise;
-- no rebinding write crosses a module boundary (unchanged clause 2);
+- all structural placement checks succeed, including cross-module rebinding,
+  declarator grouping and destination projection;
 - the existing entry guard holds: nothing at-init reads from entry, which
   evaluates last.
 
@@ -270,11 +273,14 @@ the complete conflict enumeration.
    release, then goes, Pass 1's cycle verdict and Pass 2's degraded-order
    fallback with it. `commuting_statements` diagnostics move to the
    effect-set definition of "unused".
-   - TV needs the emitted import order, which only `AssignmentAnalysis`
-     (`debundle run`) builds. Peel's `gate::validate_assignment` callers
-     (`peel/propose.rs` decomposition validation) have none, so they get
-     no TV verdict. Before the flip they need that order, or keep today's
-     gate as their verdict.
+   - Final-candidate edit assessments and emission already use the same
+     `AssignmentAnalysis` import order. Graph-only decomposition validation
+     in `peel/propose.rs` still uses the legacy gate without that order; retain
+     that boundary until an appropriate search/validation contract is proved.
+   - Close the four reported structural coverage gaps: destructuring
+     declarator grouping, source-unit/body mapping, binding/shared-var
+     destination projection and whole-statement destination projection. Keep
+     semantic-order SCC vetoes separate from structural blockers.
 4. **Slim.** The graph build materializes hard edges only, and the full edge
    set moves behind the tooling queries that still need it.
 
