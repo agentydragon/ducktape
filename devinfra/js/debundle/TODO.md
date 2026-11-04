@@ -115,6 +115,12 @@ to one exact source/spec pair and held to the interactive budget in
   inspected. Add a bounded program-level summary with each processed chunk's
   outcome, rejection class, exact totals and report paths. Mark unprocessed
   chunks explicitly; the first fatal error is not the full inventory.
+- **F4 — Trace bounded publication to its retained seed.** First class-member
+  publication records identify the actual writer and containing owner, but a
+  bounded fallback can join several retained seeds without a lexical span.
+  Carry the incoming retained path or invocation seed into the diagnostic when
+  available, and preserve unknown provenance otherwise. An owner-wide location
+  or its first precision loss does not identify the publishing expression.
 - **Distinguish uninitialized observations from lexical direct reads.** The
   graph keeps promoted uninitialized observations under its non-droppable
   `Direct` edge role, and `gate describe` labels them `direct at-init read`.

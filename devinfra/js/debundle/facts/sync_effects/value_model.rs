@@ -334,6 +334,13 @@ pub(super) struct SymbolicInputId {
     pub(super) input: ProviderInput,
 }
 
+/// Provenance of a local class capability; neither variant proves allocation identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) enum InstanceOrigin {
+    Constructed,
+    Projected,
+}
+
 /// The interpreter's values: the shared lattice plus carriers for the
 /// callable and heap summaries the lattice does not express yet.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -346,9 +353,11 @@ pub(super) enum AbstractValue {
     /// A class's static or prototype surface can expose its deferred methods.
     /// Merely creating the class does not execute those methods.
     ClassMembers(u32),
-    /// A constructed local class instance retains its class methods and the
-    /// callback values stored by its proven constructor.
-    Instance(u32, Captured<Values>),
+    /// A constructed local class instance, or an opaque value read from one,
+    /// retains its class methods and constructor argument capabilities. Only
+    /// Constructed proves the value itself has the class's instance kind.
+    /// Neither origin identifies a unique runtime allocation.
+    Instance(u32, Captured<Values>, InstanceOrigin),
     CallbackFactory,
     InlineCallbackFactory,
     /// An opaque returned capability retaining live input values. Its capture
