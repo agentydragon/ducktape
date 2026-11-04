@@ -18,7 +18,7 @@ import {
   EnvironmentRuntimeLifecycleBlockerKind,
   EnvironmentRuntimeLifecycleMode,
   EnvironmentRuntimeLifecycleStage,
-  Harness as ProtoHarness,
+  type Harness as ProtoHarness,
   ProcessState,
   SessionExecutionState,
   type EnvironmentRuntimeLifecycleStatus,

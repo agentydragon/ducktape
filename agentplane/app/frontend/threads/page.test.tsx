@@ -4,6 +4,7 @@ import {
   ThreadPayloadField,
   ThreadCommandOutcome,
   ThreadFeedStatus,
+  FeedStatus,
   type ThreadEntity,
 } from "../../../history_service/history_service_pb";
 import { AutosuspendBlockerSchema } from "../../../proto/environment_lifecycle_pb";
@@ -33,7 +34,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
-import { FeedStatus } from "../../../history_service/history_service_pb";
 import { HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
 import type * as ModelCatalogModule from "../model_catalog";
 import type * as SandboxClientModule from "../sandboxes/client";

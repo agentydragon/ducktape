@@ -2,7 +2,7 @@
 import { SandboxPhase, OperatingMode, ReadinessState } from "../../../environments/v1/environment_service_pb";
 import { toJson } from "@bufbuild/protobuf";
 import { ThreadMetadataSchema } from "../../app_service_pb";
-import { SessionSummarySchema } from "../../../history_service/history_service_pb";
+import { FeedStatus, SessionSummarySchema } from "../../../history_service/history_service_pb";
 
 import { readySandbox as makeReadySandbox } from "../testing/sandbox";
 import { MantineProvider } from "@mantine/core";
@@ -39,7 +39,6 @@ import {
   SetupState,
   SessionExecutionState,
 } from "../../../proto/session_pb";
-import { FeedStatus } from "../../../history_service/history_service_pb";
 import { threadView } from "../threads/testing/state";
 
 const fetchMock = vi.hoisted(() => {

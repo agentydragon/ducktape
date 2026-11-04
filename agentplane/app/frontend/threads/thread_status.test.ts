@@ -3,8 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { FeedStatus } from "../../../history_service/history_service_pb";
 import { TurnStatus } from "../../../proto/event_pb";
 import { Harness, HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
-import type { ThreadViewInit } from "./testing/state";
-import { threadView } from "./testing/state";
+import { threadView, type ThreadViewInit } from "./testing/state";
 import { readySandbox, suspendedSandbox } from "../testing/sandbox";
 import { threadStatusFromSnapshot } from "./thread_status";
 
