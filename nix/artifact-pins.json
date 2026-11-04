@@ -117,8 +117,8 @@
       "sha256": "Uqy2dX/Mgbitjwoe7gAI67PDa6ePtKIf848P5yoIyB4="
     },
     "skill-debundle_mint_names": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_mint_names-b301c68b0825/debundle_mint_names.skill",
-      "sha256": "swHGiwglz9BqvTqFoMRrcIabHzNtv3SKg+ha4cwhGvk="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_mint_names-4a72bc395efa/debundle_mint_names.skill",
+      "sha256": "SnK8OV763ON3MMKdnhr/D3nsrm8h9PgnyAfCHoGqYbY="
     },
     "skill-debundle_orchestrator": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_orchestrator-5f392de5f214/debundle_orchestrator.skill",
