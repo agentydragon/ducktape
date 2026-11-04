@@ -1,11 +1,8 @@
-# gazelle:resolve py agentplane.env.firecracker.management_pb2 //agentplane/env/firecracker:management_pb2
-# gazelle:resolve py agentplane.env.firecracker.management_pb2_grpc //agentplane/env/firecracker:management_pb2_grpc
-load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
-load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "config",
@@ -17,72 +14,33 @@ py_library(
     deps = ["@pypi//pydantic"],
 )
 
-py_library(
-    name = "credentials",
-    srcs = ["credentials.py"],
-)
-
-py_library(
-    name = "firecracker_api",
-    srcs = ["firecracker_api.py"],
-)
-
-py_library(
-    name = "network",
-    srcs = ["network.py"],
-)
-
-py_library(
-    name = "storage",
-    srcs = ["storage.py"],
+go_library(
+    name = "firecracker",
+    srcs = glob(
+        ["*.go"],
+        exclude = ["*_test.go"],
+    ),
+    importpath = "github.com/agentydragon/ducktape/agentplane/firecracker",
+    visibility = ["//agentplane:__subpackages__"],
     deps = [
-        ":config",
-        ":credentials",
-        "@pypi//pydantic",
+        "//agentplane/env/firecracker:management_go_proto",
+        "//util/vsock/firecracker",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
     ],
 )
 
-py_library(
-    name = "guest_management",
-    srcs = ["guest_management.py"],
+go_test(
+    name = "firecracker_test",
+    srcs = glob(["*_test.go"]),
+    embed = [":firecracker"],
     deps = [
-        ":credentials",
-        "//agentplane/env/firecracker:management_pb2",
-        "//agentplane/env/firecracker:management_pb2_grpc",
-        "@pypi//grpcio",
-        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
-        "@pypi//types_grpcio",  # keep: mypy follows generated gRPC interfaces
-        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+        "//agentplane/env/firecracker:management_go_proto",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
     ],
-)
-
-py_library(
-    name = "supervisor",
-    srcs = ["supervisor.py"],
-    deps = [
-        ":config",
-        ":firecracker_api",
-        ":guest_management",
-        ":network",
-        ":storage",
-    ],
-)
-
-py_binary(
-    name = "supervisor_bin",
-    main_module = "agentplane.firecracker.supervisor",
-    deps = [":supervisor"],
-)
-
-aspect_py_binary(
-    name = "launcher_image_bin",
-    main = "supervisor.py",
-    deps = [":supervisor"],
-)
-
-py_image_layer(
-    name = "layers",
-    binary = ":launcher_image_bin",
 )
 
 pkg_tar(
@@ -103,8 +61,8 @@ pkg_tar(
 )
 
 pkg_tar(
-    name = "vsock_bridge_layer",
-    srcs = ["//agentplane/firecracker/vsock_bridge:agentplane-firecracker-vsock-bridge"],
+    name = "launcher_layer",
+    srcs = ["//agentplane/firecracker/cmd/launcher"],
     mode = "0755",
     package_dir = "/usr/local/bin",
 )
@@ -112,22 +70,14 @@ pkg_tar(
 oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("launcher_image_bin"),
-    env = py_image_env(
-        binary_name = "launcher_image_bin",
-        extra_env = {
-            "PATH": "/agentplane/firecracker/launcher_image_bin.runfiles/.launcher_image_bin.venv/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-            "RUNFILES_DIR": "/agentplane/firecracker/launcher_image_bin.runfiles",
-            "RUNFILES_MANIFEST_FILE": "",
-        },
-    ),
+    entrypoint = ["/usr/local/bin/launcher"],
+    env = {"PATH": "/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [
         "@trixie_agentplane_firecracker//:flat",
-        ":layers",
         ":firecracker_layer",
         ":runtime_tool_links",
-        ":vsock_bridge_layer",
+        ":launcher_layer",
     ],
 )
 
@@ -160,72 +110,5 @@ py_test(
         "//:conftest",
         "//util:oci",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_credentials",
-    srcs = ["test_credentials.py"],
-    deps = [
-        ":credentials",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_network",
-    srcs = ["test_network.py"],
-    deps = [
-        ":network",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_storage",
-    srcs = ["test_storage.py"],
-    deps = [
-        ":config",
-        ":storage",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_supervisor",
-    srcs = ["test_supervisor.py"],
-    deps = [
-        ":config",
-        ":network",
-        ":storage",
-        ":supervisor",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_guest_management",
-    srcs = ["test_guest_management.py"],
-    data = ["//agentplane/firecracker/vsock_bridge:agentplane-firecracker-vsock-bridge"],
-    env = {"VSOCK_BRIDGE": "$(rlocationpath //agentplane/firecracker/vsock_bridge:agentplane-firecracker-vsock-bridge)"},
-    deps = [
-        ":guest_management",
-        "//:conftest",
-        "//agentplane/env/firecracker:management_pb2",
-        "//agentplane/env/firecracker:management_pb2_grpc",
-        "//util/bazel:runfiles",
-        "@pypi//grpcio",
-        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )

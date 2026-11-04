@@ -1,8 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
-load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
-load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -52,15 +50,4 @@ go_proto_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/env/firecracker/managementpb",
     proto = ":management_proto",
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "management_pb2",
-    deps = [":management_proto"],
-)
-
-py_grpc_service_library(
-    name = "management_pb2_grpc",
-    proto = ":management_proto",
-    py_proto = ":management_pb2",
 )

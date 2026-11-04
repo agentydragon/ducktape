@@ -26,7 +26,7 @@ Three artifacts have separate release boundaries:
 - `agentplane-runner-disk`: existing independently built runner image, including the root-only
   Firecracker thaw agent. `/disk/runner.img` is the read-only EROFS device used by the guest.
 - `agentplane-firecracker-launcher`: `//agentplane/firecracker:image`, with the pinned Firecracker
-  VMM, disk tooling and Python supervisor. It never exposes the Firecracker API socket over TCP.
+  VMM, disk tooling and Go supervisor. It never exposes the Firecracker API socket over TCP.
 
 The guest device order is fixed by
 [`firecracker_guest_contract.json`](../env/images/firecracker_guest_contract.json): root, runner,
@@ -108,10 +108,10 @@ the root-only guest agent writes private tmpfs credentials. On each start/restor
 sends the current certificate, key, CA and host wall time through the typed `GuestManagement`
 gRPC service over vsock port 52. The guest accepts only host CID 2 and checks the expected boot
 identity before applying changes. The root service binds a privileged port so an unprivileged
-guest process cannot impersonate it and receive private keys. The Python supervisor uses the generated gRPC stub through a private Unix socket. A thin launcher
-binary forwards opaque streams using [`util/vsock/firecracker`](../../util/vsock/firecracker/README.md),
-which owns Firecracker's CONNECT handshake and transport lifecycle without depending on Agentplane
-or protobuf. The guest uses `github.com/mdlayher/vsock` for its native listener; host-CID authorization
+guest process cannot impersonate it and receive private keys. The Go supervisor uses its generated gRPC client with a custom context dialer from
+[`util/vsock/firecracker`](../../util/vsock/firecracker/README.md). The dialer performs the
+Firecracker `CONNECT 52` handshake and returns the stream directly to gRPC in the same process.
+The guest uses `github.com/mdlayher/vsock` for its native listener; host-CID authorization
 remains in the management service. Runtime reloads TLS files on a new handshake without restarting
 its process.
 The public egress CA disk and Runtime trust are distinct.

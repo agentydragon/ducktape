@@ -35,11 +35,11 @@ network admission follows the typed `GuestManagement.Synchronize` gRPC response 
 port `52`. The host first reads `GetStatus`, then sends the current clock, TLS certificate, key,
 CA bundle and expected boot ID; the guest rejects a mismatched identity before changing state.
 The host client retries transport establishment within a bounded deadline while the guest boots.
-The Python supervisor calls the generated gRPC stub over a private Unix socket. A transport-only
-bridge performs Firecracker's `CONNECT 52` handshake and forwards the gRPC byte stream to vsock;
-it never decodes RPC messages. gRPC owns serialization, message limits, deadlines and cancellation.
-There is no protobuf request/response protocol on subprocess stdin or stdout. Each synchronization
-owns its bridge process and private socket directory, and closes both on success or failure.
+The Go supervisor uses the generated gRPC client directly with a custom context dialer from
+`util/vsock/firecracker`. The dialer performs Firecracker's `CONNECT 52` handshake on the VMM's
+Unix socket and returns the connection to gRPC. There is no intermediate process or private
+listening socket. gRPC owns serialization, message limits, deadlines and cancellation; each
+synchronization closes its client connection on success or failure.
 The root guest service accepts only host CID `2` and holds `CAP_SYS_TIME` and
 `CAP_NET_BIND_SERVICE`. Keeping its listener below port `1024` prevents an unprivileged guest
 process from replacing the service and receiving Runtime private keys. It exposes no TCP listener.
@@ -50,3 +50,7 @@ The Pod template currently grants the launcher root and privileged access for KV
 construction, and firewall setup. The VMM uses its built-in seccomp filters, but this launcher
 does not yet use Firecracker's jailer. The image and rule tests do not establish a KVM runtime
 boot or an end-to-end isolated tenant boundary; those require the live Pod acceptance run.
+
+Launcher configuration digests are domain-separated by implementation version. Checkpoints from
+the earlier experimental Python launcher are rejected; replace its disposable proof Pod before
+using the Go launcher. This does not enable Firecracker in staging.

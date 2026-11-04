@@ -282,7 +282,7 @@ const longLivedProcessScript = `IFS= read -r marker < /proc/sys/kernel/random/uu
 child_pid=$!
 counter=0
 while :; do
-  printf 'marker=%s counter=%s main_pid=%s child_pid=%s\n' "$marker" "$counter" "$$" "$child_pid"
+  printf 'marker=%s counter=%s main_pid=%s child_pid=%s wall_ns=%s\n' "$marker" "$counter" "$$" "$child_pid" "$(/run/current-system/sw/bin/date +%s%N)"
   counter=$((counter + 1))
   /run/current-system/sw/bin/sleep 1
 done`

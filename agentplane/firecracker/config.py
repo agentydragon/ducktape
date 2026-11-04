@@ -1,7 +1,5 @@
 """Validated launcher inputs supplied by the Sandbox controller and Pod environment."""
 
-import json
-import os
 from enum import StrEnum
 from pathlib import Path
 
@@ -36,25 +34,3 @@ class Config(BaseModel):
         if len(ports) != len(set(ports)) or any(port < 1 or port > 65535 or port in {9090, 9092} for port in ports):
             raise ValueError("platform route ports must be unique, valid, and distinct from control ports")
         return ports
-
-
-ENV_FIELDS = {
-    "POD_UID": "pod_uid",
-    "SANDBOX_UID": "sandbox_uid",
-    "FIRECRACKER_VCPU_COUNT": "vcpu_count",
-    "FIRECRACKER_MEMORY_MIB": "memory_mib",
-    "FIRECRACKER_BOOT_IMAGE": "boot_image",
-    "FIRECRACKER_RUNNER_IMAGE": "runner_image",
-    "WORKSPACE_KIND": "workspace_kind",
-}
-
-
-def load(path: Path, environ: dict[str, str] | None = None) -> Config:
-    data = json.loads(path.read_text())
-    if not isinstance(data, dict):
-        raise ValueError("launcher configuration must be a JSON object")
-    source = os.environ if environ is None else environ
-    for name, field in ENV_FIELDS.items():
-        if name in source:
-            data[field] = source[name]
-    return Config.model_validate(data)
