@@ -21,9 +21,9 @@ def probe_session(
         identity["instance"] = instance_id
     try:
         session, imported_ns = store.snapshot()
-    except OSError, ValueError:
+    except (OSError, ValueError) as exc:
         event = {"event": "session_probe", **identity, "outcome": "storage_error", "source": source}
-        logger.error("%s", json.dumps(event))  # noqa: TRY400 - validation errors may include session data
+        logger.error("%s", json.dumps(event), exc_info=isinstance(exc, OSError))  # noqa: TRY400 - validation errors may include session data
         return event
     if session is None or imported_ns is None:
         event = {"event": "session_probe", **identity, "outcome": "uninitialized", "source": source}
@@ -48,9 +48,9 @@ def probe_session(
     try:
         if store.snapshot() != (session, imported_ns):
             return {"event": "session_probe", **identity, "outcome": "superseded", "source": source}
-    except OSError, ValueError:
+    except (OSError, ValueError) as exc:
         event = {"event": "session_probe", **identity, "outcome": "storage_error", "source": source}
-        logger.error("%s", json.dumps(event))  # noqa: TRY400 - validation errors may include session data
+        logger.error("%s", json.dumps(event), exc_info=isinstance(exc, OSError))  # noqa: TRY400 - validation errors may include session data
         return event
     checked_at = datetime.datetime.now(datetime.UTC)
     imported_at = datetime.datetime.fromtimestamp(imported_ns / 1e9, datetime.UTC)
