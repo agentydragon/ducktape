@@ -191,15 +191,14 @@ impl TransformContextArgs {
 impl TransformContextAuxArgs {
     pub fn has_explicit_inputs(&self) -> bool {
         self.tree_vendor_marks.is_some()
-            || differs_from_environment(&self.tree_source_root, "DEBUNDLE_TREE_SOURCE_ROOT")
-            || differs_from_environment(&self.out_root, "DEBUNDLE_OUT")
+            || self.out_root.is_some()
             || !self.package_roots.is_empty()
             || self.packages_root.is_some()
     }
 
     /// Whether any transform input is present, including environment values.
-    /// `modules refine` disables these two env defaults, so presence there
-    /// means the caller explicitly supplied the input.
+    /// `modules refine` separately uses this to check all caller-supplied inputs,
+    /// after its command disables the source/output environment defaults.
     pub fn has_any_inputs(&self) -> bool {
         self.tree_vendor_marks.is_some()
             || self.tree_source_root.is_some()
@@ -207,13 +206,6 @@ impl TransformContextAuxArgs {
             || !self.package_roots.is_empty()
             || self.packages_root.is_some()
     }
-}
-
-fn differs_from_environment(value: &Option<PathBuf>, variable: &str) -> bool {
-    let Some(value) = value else {
-        return false;
-    };
-    std::env::var_os(variable).as_deref() != Some(value.as_os_str())
 }
 
 /// Run-only output and diagnostic flags layered over transform inputs.
