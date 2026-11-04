@@ -1,0 +1,21 @@
+diff --git a/python/private/common.bzl b/python/private/common.bzl
+--- a/python/private/common.bzl
++++ b/python/private/common.bzl
+@@ -412,10 +412,14 @@
+     for target in ctx.attr.pyi_deps:
+         # PyInfo may not be present e.g. cc_library rules.
+         if PyInfo in target or (BuiltinPyInfo != None and BuiltinPyInfo in target):
+-            py_info.merge(_get_py_info(target))
+-
++            info = _get_py_info(target)
++            # pyi_deps are available to type checkers, not runnable programs.
++            # Preserve only their transitive stub files.
++            if hasattr(info, "transitive_pyi_files"):
++                py_info.transitive_pyi_files.add(info.transitive_pyi_files)
++
+     py_info.transitive_sources.add(required_py_files)
+-
++
+     # We only look at data to calculate uses_shared_libraries, if it's already
+     # true, then we don't need to waste time looping over it.
+     if not py_info.get_uses_shared_libraries():

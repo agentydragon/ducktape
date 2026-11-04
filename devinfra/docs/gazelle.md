@@ -33,9 +33,11 @@ tree.
 No root `map_kind py_binary py_library` directive: gazelle applies map_kind to
 existing rules too, rewriting hand-written binaries' kind.
 
-`python_generate_pyi_deps` stays `false` (root BUILD): rules_python keeps `pyi_deps`
-out of runtime runfiles and the mypy aspect does not traverse them, so `TYPE_CHECKING`
-and lazy imports belong in `deps`.
+`python_generate_pyi_deps` stays `false` by default; packages may opt in locally when
+type-only imports can be classified reliably. The repository's rules_python and rules_mypy
+patches keep `pyi_deps` out of runtime closures while making their stubs available to mypy.
+Runtime and lazy imports still belong in `deps`; vendor stub reexports may need explicit
+`pyi_deps`.
 
 ## Escape hatches
 
