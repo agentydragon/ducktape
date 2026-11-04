@@ -195,12 +195,17 @@ edges between the pair inert (`EdgeReason::constrains_init_order` is the one
 predicate every gate, quotient, linker-order and atomic-group consumer reads,
 so no walker special-cases the premise) and keeping the edges in the graph
 with their premise as provenance. The decision reads each `Sequenced` edge's
-retained `SequencedCause` plus the endpoints' recorded effect summaries
+retained `SequencedCause` plus the endpoints' composed premise effect summaries
 (`graph/build.rs::premise_verdict`): a cell relation, a shared `var`, a shared
 written cell, or a binding timeline, shared-`var` access or uninitialized
 observation between two observed effects contradicts the premise and fails the
-build; a pair with no inertable edge after preservation is unused and fails the build. The
-premise therefore covers only orderings the analysis emitted because an
+build; a pair with no inertable edge after preservation is unused and fails the build. Each
+premise summary adds source-known callee heap reads and writes only when the
+invocation path is non-assumed. The interpreter retains all callee heap cells
+for conservative ordering, including opaque callback and fallback paths; each
+invocation outcome and memo carries the non-assumed subset through nested calls.
+These are modeled may-accesses, not claims of runtime execution. Allocations
+remain separate from content writes. The premise therefore covers only orderings the analysis emitted because an
 endpoint's effects were not summarizable (barrier relations of `cell_order`, a
 `strict_chain` edge with an opaque endpoint, a binding-ordering edge with an
 assumed effect), or a preserved path through such an ordering, and never

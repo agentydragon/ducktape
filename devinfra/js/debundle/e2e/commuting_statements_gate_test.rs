@@ -443,6 +443,143 @@ fn known_global_property_conflict_rejects_the_pair() {
     );
 }
 
+/// A callee's contents write must reject the premise even when the strict
+/// S-chain claimed the pair before the heap timeline could name its cell.
+#[test]
+fn callee_heap_contents_conflict_rejects_the_pair() {
+    const SOURCE: &str = "const cells = [];\nfunction append() { cells.push(1); }\nconst first = (append(), 1);\nconst second = (cells.push(2), 2);\nexport { first, second };\n";
+    expect_rejected(
+        || {
+            FixtureOpts::new(
+                SOURCE,
+                vec![logical_module(
+                    "all",
+                    &[
+                        Member::new("cells"),
+                        Member::new("append"),
+                        Member::new("first"),
+                        Member::new("second"),
+                    ],
+                )],
+            )
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_commuting_statements(
+                "static/app",
+                vec![commuting_pair(
+                    member_source_unit("all", "first"),
+                    member_source_unit("all", "second"),
+                )],
+            )
+        },
+        "contradicted",
+        &[ENTRY, CONTRADICTION, "array contents"],
+    );
+}
+
+/// The direct nested invocation keeps its modeled cell through the parent
+/// outcome, including a repeated call that can reuse an invocation memo.
+#[test]
+fn nested_callee_heap_contents_conflict_rejects_the_pair() {
+    const SOURCE: &str = "const cells = [];\nfunction append() { cells.push(1); }\nfunction nested() { append(); }\nconst first = (nested(), nested(), 1);\nconst second = (cells.push(2), 2);\nexport { first, second };\n";
+    expect_rejected(
+        || {
+            FixtureOpts::new(
+                SOURCE,
+                vec![logical_module(
+                    "all",
+                    &[
+                        Member::new("cells"),
+                        Member::new("append"),
+                        Member::new("nested"),
+                        Member::new("first"),
+                        Member::new("second"),
+                    ],
+                )],
+            )
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_commuting_statements(
+                "static/app",
+                vec![commuting_pair(
+                    member_source_unit("all", "first"),
+                    member_source_unit("all", "second"),
+                )],
+            )
+        },
+        "contradicted",
+        &[ENTRY, CONTRADICTION, "array contents"],
+    );
+}
+
+/// An opaque host call's possible callback is an assumed path. Its body cell
+/// still orders conservatively, but the assertion may discharge that order.
+#[test]
+fn assumed_callee_heap_contents_remain_inertable() {
+    const SOURCE: &str = "const cells = [];\nfunction append() { cells.push(1); }\nconst serialize = JSON.stringify;\nconst first = (serialize([append]), 1);\nconst second = (cells.push(2), 2);\nexport { first, second };\n";
+    let fixture = write_validate_fixture_spec(
+        FixtureOpts::new(
+            SOURCE,
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("cells"),
+                    Member::new("append"),
+                    Member::new("serialize"),
+                    Member::new("first"),
+                    Member::new("second"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_commuting_statements(
+            "static/app",
+            vec![commuting_pair(
+                member_source_unit("all", "first"),
+                member_source_unit("all", "second"),
+            )],
+        ),
+    );
+    let validate = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
+    let report: serde_json::Value = serde_json::from_str(&validate.stdout).unwrap();
+    assert_eq!(report["validation"]["success"], true, "{report:#}");
+}
+
+/// The same body can be reached both through an assumed host callback and a
+/// direct call. Either source order must retain the direct cell as non-assumed.
+#[test]
+fn direct_callee_heap_contents_win_over_assumed_path_in_both_orders() {
+    const ASSUMED_FIRST: &str = "const cells = [];\nfunction append() { cells.push(1); }\nconst serialize = JSON.stringify;\nconst first = (serialize([append]), append(), 1);\nconst second = (cells.push(2), 2);\nexport { first, second };\n";
+    const DIRECT_FIRST: &str = "const cells = [];\nfunction append() { cells.push(1); }\nconst serialize = JSON.stringify;\nconst first = (append(), serialize([append]), 1);\nconst second = (cells.push(2), 2);\nexport { first, second };\n";
+    for source in [ASSUMED_FIRST, DIRECT_FIRST] {
+        expect_rejected(
+            || {
+                FixtureOpts::new(
+                    source,
+                    vec![logical_module(
+                        "all",
+                        &[
+                            Member::new("cells"),
+                            Member::new("append"),
+                            Member::new("serialize"),
+                            Member::new("first"),
+                            Member::new("second"),
+                        ],
+                    )],
+                )
+                .with_unassigned_mode(unassigned_mode_inline())
+                .with_commuting_statements(
+                    "static/app",
+                    vec![commuting_pair(
+                        member_source_unit("all", "first"),
+                        member_source_unit("all", "second"),
+                    )],
+                )
+            },
+            "contradicted",
+            &[ENTRY, CONTRADICTION, "array contents"],
+        );
+    }
+}
+
 /// A binding's write/read timeline is a derived conflict in either S-chain
 /// mode.
 #[test]
