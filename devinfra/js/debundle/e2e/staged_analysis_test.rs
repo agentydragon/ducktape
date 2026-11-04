@@ -879,9 +879,19 @@ fn invocation_tree(invocation: &StagedInvocation) -> BTreeMap<PathBuf, Vec<u8>> 
             *bytes = normalize_invocation_gate_banner(invocation, bytes);
             continue;
         }
-        let Ok(mut report) = serde_json::from_slice::<Value>(bytes) else {
-            continue;
+        // Gzipped reports are JSON payloads. Decode them so exact spec-path
+        // metadata can be normalized without skipping any report fields.
+        let mut report = if relative.extension().is_some_and(|ext| ext == "gz") {
+            read_gzip_json::<Value>(&output_root.join(relative))
+        } else {
+            let Ok(report) = serde_json::from_slice::<Value>(bytes) else {
+                continue;
+            };
+            report
         };
+        if let Value::Object(fields) = &mut report {
+            fields.remove("provenance");
+        }
         if let Some(spec_path) = spec_path {
             normalize_invocation_spec_locations(&mut report, spec_path);
         }
