@@ -82,9 +82,10 @@ The app-server dials each exec-server over WebSocket; a bearer needs `wss://` or
 direction, the exec-server registering itself, either uses a Noise relay to OpenAI's environment
 registry or, in "direct" mode, requires AWS SigV4 ([exec-server README][es-readme]). Neither fits
 Agentplane, whose runners expose private mTLS gRPC servers ([runner control](../docs/runner_control.md)).
-What fits is a byte tunnel: the Runner Gateway serves a per-Sandbox WebSocket endpoint, carries it over
-the runner's existing outbound connection to the loopback exec-server, and the central harness
-`environment/add`s that endpoint with a per-Sandbox bearer.
+A candidate is a byte tunnel: the Runner Gateway serves a per-Sandbox WebSocket endpoint, carries
+it through a new runner RPC over the existing Gateway-to-runner mTLS connection to the loopback
+exec-server, and the central harness `environment/add`s that endpoint with a per-Sandbox bearer.
+This tunnel is a proposal; the current connection does not supply it.
 
 ## Code mode
 

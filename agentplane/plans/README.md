@@ -22,10 +22,10 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   objects and data live, the operator's workflows through each, what Agentplane borrows from
   Kubernetes and what each direction keeps or replaces, what is right under every direction, and the
   experiments that would narrow the choice; no direction chosen
-- [Dispatcher and Gateway as one service](dispatcher_gateway_merge.md) — proposed merge of the Session
-  Dispatcher and the Runner Gateway's proxy into one gRPC service with an optional PostgreSQL queue: the command
-  states in both modes, ownership and order of work; dispatch binary grouping and this reshuffle are
-  deferred for later review and do not gate the Runner extractions
+- [Dispatcher and Gateway as one service](dispatcher_gateway_merge.md) — historical proposal; the
+  optional queue mode is superseded by the mandatory Dispatcher database and queue. Delivery ownership,
+  service topology and an immediate-or-fail option remain separate decisions and do not gate the
+  Runner extractions
 - [History tags and History's Sandbox records](sandbox_tags.md) — agreed design for history tags
   on the Sandbox and History's own record of each Sandbox, which outlives it
 - [Native session discovery](native_session_discovery.md) — remaining harness characterization and

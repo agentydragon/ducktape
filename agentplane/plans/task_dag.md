@@ -35,7 +35,7 @@ authorized work; the priority list does not dispatch the other tracks.
 **Component boundaries:** the [Environment Runtime](../env/runtime/SPEC.md),
 [Execution service](../env/runtime/execution/SPEC.md) and their Session and native process components
 have distinct responsibilities within the combined management process
-([current topology](../env/README.md#layout-and-entrypoints)). Session and Environment dispatch remain
+([current topology](../env/README.md)). Session and Environment dispatch remain
 distinct roles whose binary grouping is for later; the broader
 runtime-model decision does not gate these reliability or delegation slices.
 
@@ -723,7 +723,7 @@ History's readers, and no launcher grant matches argument shapes.
 
 **Placement decision remains open; lifecycle ownership approved (operator, 2026-10-17).** The runner
 owns harness processes. Provisional process and Session diagnostics, including a frontend Sandbox-page
-view, are selected in the [lifecycle contract](../docs/runner_delivery_and_harness_design.md#harness-host-lifecycle); their exact shape may change. No public process
+view, are selected in the [lifecycle contract](../docs/runner_delivery_and_harness_design.md#runtime-lifecycle); their exact shape may change. No public process
 kill/restart API is introduced. Decide placement/store policy separately; expose a store API only if
 its public need is selected.
 Use the merged Codex multi-thread test and Claude's separate-store single-root characterization
@@ -1746,7 +1746,7 @@ and is an additive target rather than a second release pipeline.
 
 **Partially accepted by the operator (2026-10-17 PDT); remaining VM drive belongs to the operator.**
 The operator test-drove the five-minute idle suspension and message-to-wake successfully with Codex;
-see [UI acceptance](../docs/runner_delivery_and_harness_design.md#harness-host-lifecycle).
+see [UI acceptance](../docs/runner_delivery_and_harness_design.md#rollout-and-rollback).
 Do not repeat that accepted path as a rollout gate. The report does not identify a VM test.
 
 The remaining check is the same experience through the staging web app with a VM Sandbox: idle
@@ -1991,8 +1991,8 @@ PRs of their own; this node leaves with the last of them.
 
 ## 10. Runner ingress and control split
 
-The runner dials out to two endpoints its Sandbox names: an ingress it pushes its journal's Events to (the History
-Service when history is kept) and the Runner Gateway control endpoint. Contract:
+The runner pushes its journal's Events to the History ingress. For control, the Runner Gateway dials
+the runner's private gRPC listener; the two routes are independent. Contract:
 [runner control § Event ingress](../docs/runner_control.md#event-ingress).
 
 ```mermaid
