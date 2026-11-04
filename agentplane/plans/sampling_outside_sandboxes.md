@@ -138,7 +138,7 @@ Only the app-server's client changes it: `cwd` on `thread/start`, `thread/resume
 ([thread.rs][cwd-thread]), `cwd` or a per-environment cwd on `turn/start`, for that turn and later ones
 ([turn.rs][cwd-turn]), and `thread/settings/update` ([thread.rs][cwd-settings]). A `cd` inside a command,
 the paths of an `apply_patch` or a file a cell reads leave it alone. The Runner sends the Session spec's
-`cwd` once, on `thread/start` (`runner/codex/adapter.go`), and a Session's spec never changes
+`cwd` once, on `thread/start` (`env/runtime/codex/adapter.go`), and a Session's spec never changes
 ([Harness Host session protocol](../env/runtime/docs/session_protocol.md)), so each Session has one cwd and one chain for its whole life.
 
 Before every sampling step Codex re-reads the global file, but re-reads the project chain only when the

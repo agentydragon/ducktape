@@ -60,7 +60,7 @@ use. Candidates, from the options as written:
 - **Bodies by immutable reference.** The window poll, the moving window and SSE push all fetch
   content the same way: a batch of references plus how many chunks the client holds, answered with
   the missing chunks. One endpoint and one client-side body cache would serve all three.
-- **The range and delta read** above, which is already in the shared layer.
+- **The range and delta read** above: range reads exist in History; a delta read remains to be designed.
 - **A client row store** keyed by `(entity_kind, entity_id)` and ordered by `entity_index`, which
   any non-Electric implementation needs to merge windows and revisions.
 
@@ -98,9 +98,9 @@ a dynamic `import()` already keeps it off the page.
 2. **Electric costs something when nobody picks it.** Its replication slot retains WAL and its shape
    storage holds state regardless of traffic, and the app cannot run without it today: turning it
    off needs the deploy-time choice above.
-3. **The interface must not be Electric-shaped.** Extracted from today's `electric_sync.tsx` props,
-   it would hand every other implementation shape and subset concepts it has no use for. It is
-   written from the list above, and Electric is adapted to it.
+3. **The interface must not be Electric-shaped.** The existing `ThreadSync` interface abstracts the
+   frontend from Electric; review it against the second implementation before assuming it covers
+   every needed behavior.
 4. **The schema is shared.** An implementation that needs a column or index adds it to the fold
    for everyone. Additive changes are fine, and under **C3** there is no migration to stage, but no
    implementation may change what another reads.

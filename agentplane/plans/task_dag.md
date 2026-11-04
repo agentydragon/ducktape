@@ -1003,6 +1003,11 @@ environment access, partial-output failures and recovery after JS host loss. Res
 rightsizing and Claude workload placement are independent follow-ups in the brief. Decide concrete
 capabilities, lifecycle, authority and attribution; reuse the existing versioned Codex environment
 API evidence without claiming unsupported modes work.
+Operations on an existing Session should address the Session, without making callers choose or supply an
+environment just to send, observe or otherwise act on it. Resolve placement at the responsible
+boundary only when an operation actually needs it; environment lifecycle and execution operations
+still address their environment. Preserve backend-specific native placement constraints, explicit
+attachment authority and exact-incarnation fences.
 Exit: reviewed vocabulary and lifecycle/API examples that represent both a CLI inside its required
 environment and a central sampler with zero, one or multiple attached environments, including
 shared-host/multiple-Session operation, environment loss and host restart. Include a data-preserving
@@ -1038,7 +1043,7 @@ does not block current thread work or authorize implementation.
 **Unscheduled; operator, 2026-10-21 07:11 UTC: "fidelity improvements like images for Claude let's put on task
 dag".** Tool results become ordered parts (text, image) in the harness-neutral vocabulary instead of one string.
 Today `event.proto` carries `ToolResult.output`, `ToolOutputDelta.text` and `RecoveredContent.output` as strings,
-the Claude adapter's `resultText()` (`runner/claude/protocol.go`) joins text blocks and drops images, and the
+the Claude adapter's `resultText()` (`env/runtime/claude/protocol.go`) joins text blocks and drops images, and the
 History fold's `THREAD_PAYLOAD_FIELD_OUTPUT` is one text field that deltas append to. Scope: the proto, both
 runner adapters, the History fold with its storage and reads, the app API, the frontend tool cards, and the fold,
 span and visual fixtures. Archived event logs and History rows hold `output` strings and sealed archives cannot be rewritten; the
@@ -2079,9 +2084,15 @@ longer a candidate. This does not require every Environment Service operation to
 Whether to offer an explicit immediate-or-fail send within the mandatory queue contract remains open.
 See the [Session/environment model](session_environment_model.md#where-should-live-control-live).
 
-Session dispatch and Environment dispatch are distinct responsibilities; whether their services
-or binary boundaries should change remains a later decision. Decide delivery ownership, fencing,
-replica failure, ordering and recovery for the selected topology before changing existing guarantees.
+Session dispatch and Environment management/routing are distinct responsibilities. Today the
+Runner Gateway binary serves both SessionDispatcher and EnvironmentService; Sandbox Controller is
+separate. Revisit whether to keep that packaging, split Session and Environment responsibilities
+into separate binaries and deployments, group Environment management or routing with Sandbox
+Controller, or choose another arrangement. Separate API and state ownership from process placement:
+an Environment controller merge is an option to evaluate, not a selected design. Compare
+authorization, database and Kubernetes access, watches, scaling, availability, failure and rollout
+boundaries. Decide delivery ownership, fencing, replica failure, ordering and recovery for the
+selected topology before changing existing guarantees.
 The former [Dispatcher/Gateway merge proposal](dispatcher_gateway_merge.md) is historical for its
 queue-off and holder-owned-delivery choices, not an implementation authorization. Independent
 Runtime restructuring does not wait for this decision.
