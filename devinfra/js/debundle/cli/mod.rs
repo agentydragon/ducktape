@@ -355,7 +355,8 @@ pub(crate) struct RunArgs {
     /// JSON {"modules":[{"chunk":"app","module":"features/view"}]}:
     /// retain only these modules after resolving the complete spec and its
     /// contracts. An empty list retains no named modules. Requires
-    /// inline_in_entry or per_atomic_group for every materialized chunk.
+    /// inline_in_entry, per_atomic_group, or coarse_atomic_groups for every
+    /// materialized chunk.
     /// Omitted members keep their source names in entry or generated residual
     /// modules; normal gates and emission still run.
     #[arg(long, conflicts_with = "graphs", value_name = "JSON")]

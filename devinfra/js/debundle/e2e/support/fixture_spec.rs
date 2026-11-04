@@ -708,8 +708,9 @@ pub struct FixtureOpts<'a> {
     /// declare an explicit mode (the spec validator enforces this).
     /// Renders as a YAML object with `kind: <discriminant>` plus
     /// any variant-specific fields. Use [`unassigned_mode_inline`],
-    /// [`unassigned_mode_catchall_file`], or
-    /// [`unassigned_mode_per_atomic_group`] to build typical bodies.
+    /// [`unassigned_mode_catchall_file`],
+    /// [`unassigned_mode_per_atomic_group`], or
+    /// [`unassigned_mode_coarse_atomic_groups`] to build typical bodies.
     pub unassigned_mode: UnassignedMode,
     /// Opt into the dataflow-aware S-chain emission in `graph/` for
     /// this chunk. Default `false` — leaves the strictly-conservative
@@ -774,7 +775,8 @@ impl<'a> FixtureOpts<'a> {
         // `static/app/modules/residual/unhandled.js` being written.
         // Tests that exercise `InlineInEntry` semantics override with
         // [`unassigned_mode_inline`]; tests that exercise per-group modules
-        // override with [`unassigned_mode_per_atomic_group`].
+        // override with [`unassigned_mode_per_atomic_group`] or
+        // [`unassigned_mode_coarse_atomic_groups`].
         Self {
             host_behavior: spec::HostBehavior::default(),
             program_premises: spec::ProgramPremises::default(),
@@ -1041,6 +1043,11 @@ pub fn unassigned_mode_catchall_file(target: Option<&str>) -> UnassignedMode {
 /// Build an `unassigned_mode: per_atomic_group` entry.
 pub fn unassigned_mode_per_atomic_group() -> UnassignedMode {
     UnassignedMode::PerAtomicGroup
+}
+
+/// Build an `unassigned_mode: coarse_atomic_groups` entry.
+pub fn unassigned_mode_coarse_atomic_groups() -> UnassignedMode {
+    UnassignedMode::CoarseAtomicGroups
 }
 
 /// Fluent wrapper for building a `(chunk, ChunkExportPurity)` tuple with the

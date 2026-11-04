@@ -157,11 +157,15 @@ cannot serve as the passing baseline.
 Use divide-and-conquer when a large spec rejects or the next semantic repair
 has an uncertain payoff. Work in a scratch spec, preserving the authored target:
 
-For ownership-only probes with `inline_in_entry` or `per_atomic_group`, prefer
+For ownership-only probes with `inline_in_entry`, `per_atomic_group`, or
+`coarse_atomic_groups`, prefer
 [`run --ownership-subset`](../../docs/cli.md#ownership-subsets-with-full-selector-context)
 with the complete canonical tree and its matching analysis. This retains joint
 selector anchors and assertions while returning omitted claims to the selected
-residual policy. An empty `modules` list is the no-extraction assignment under
+residual policy. Coarse grouping merges wholly unclaimed atomic units with
+equal strict constraining reachability to existing owners; it is a placement
+heuristic, and the normal gate still decides the selected assignment. An empty
+`modules` list is the no-extraction assignment under
 that full contract;
 the separate empty spec above remains the baseline without optional assertions.
 Record the selected chunk-local module paths and inspect the resulting ordinary

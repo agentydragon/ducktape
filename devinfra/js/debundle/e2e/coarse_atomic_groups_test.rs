@@ -1,0 +1,182 @@
+//! `coarse_atomic_groups` merges wholly-unclaimed atomic groups that share
+//! strict constraining reachability to existing owners. The normal gate and
+//! Node execution still decide whether the final placement is valid.
+
+use debundle_e2e_support::*;
+use std::path::{Path, PathBuf};
+
+const ORDER_SOURCE: &str = r#"globalThis.trace = [];
+export const left = (globalThis.trace.push("left"), 1);
+globalThis.trace.push("anonymous");
+export const right = (globalThis.trace.push("right"), 2);
+export const anchor = (globalThis.trace.push("anchor"), 3);
+console.log(globalThis.trace.join("|"));
+"#;
+
+fn ordering_fixture(mode: spec::UnassignedMode) -> Fixture {
+    run_fixture(
+        FixtureOpts::new(
+            ORDER_SOURCE,
+            vec![logical_module("features/anchor", &[Member::new("anchor")])],
+        )
+        .with_unassigned_mode(mode),
+    )
+}
+
+fn js_files_under(out_root: &Path, directory: &str) -> Vec<PathBuf> {
+    let mut files: Vec<_> = std::fs::read_dir(out_root.join(directory))
+        .unwrap_or_else(|error| panic!("read {directory}: {error}"))
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "js"))
+        .collect();
+    files.sort();
+    files
+}
+
+fn module_containing(out_root: &Path, directory: &str, needle: &str) -> PathBuf {
+    let matches: Vec<_> = js_files_under(out_root, directory)
+        .into_iter()
+        .filter(|path| std::fs::read_to_string(path).unwrap().contains(needle))
+        .collect();
+    assert_eq!(
+        matches.len(),
+        1,
+        "expected one module under {directory} containing {needle:?}; found {matches:?}"
+    );
+    matches.into_iter().next().unwrap()
+}
+
+#[test]
+fn coarse_residuals_reduce_files_and_preserve_named_anonymous_placement_and_order() {
+    let fine = ordering_fixture(unassigned_mode_per_atomic_group());
+    let coarse = ordering_fixture(unassigned_mode_coarse_atomic_groups());
+    let fine_files = js_files_under(&fine.out_root, "static/app/modules/__auto/atomic_groups");
+    let coarse_files = js_files_under(
+        &coarse.out_root,
+        "static/app/modules/__auto/residual_groups",
+    );
+    assert!(
+        coarse_files.len() < fine_files.len(),
+        "coarse routing should reduce residual files: fine={fine_files:?}, coarse={coarse_files:?}"
+    );
+
+    assert_preserved_entry_output(&fine, "left|anonymous|right|anchor\n");
+    assert_preserved_entry_output(&coarse, "left|anonymous|right|anchor\n");
+    let fine_authored =
+        std::fs::read_to_string(fine.out_root.join("static/app/modules/features/anchor.js"))
+            .expect("read fine authored anchor module");
+    let authored = std::fs::read_to_string(
+        coarse
+            .out_root
+            .join("static/app/modules/features/anchor.js"),
+    )
+    .expect("read authored anchor module");
+    assert_export_named_specifiers(&fine_authored, "anchor", &[None]);
+    assert_export_named_specifiers(&fine_authored, "left", &[]);
+    assert_export_named_specifiers(&fine_authored, "right", &[]);
+    assert_export_named_specifiers(&authored, "anchor", &[None]);
+    assert_export_named_specifiers(&authored, "left", &[]);
+    assert_export_named_specifiers(&authored, "right", &[]);
+
+    let fine_left_module = module_containing(
+        &fine.out_root,
+        "static/app/modules/__auto/atomic_groups",
+        "const left",
+    );
+    let fine_right_module = module_containing(
+        &fine.out_root,
+        "static/app/modules/__auto/atomic_groups",
+        "const right",
+    );
+    assert_export_named_specifiers(
+        &std::fs::read_to_string(fine_left_module).unwrap(),
+        "left",
+        &[None],
+    );
+    assert_export_named_specifiers(
+        &std::fs::read_to_string(fine_right_module).unwrap(),
+        "right",
+        &[None],
+    );
+
+    let left_module = module_containing(
+        &coarse.out_root,
+        "static/app/modules/__auto/residual_groups",
+        "const left",
+    );
+    let right_module = module_containing(
+        &coarse.out_root,
+        "static/app/modules/__auto/residual_groups",
+        "const right",
+    );
+    let left_source = std::fs::read_to_string(&left_module).unwrap();
+    let right_source = std::fs::read_to_string(&right_module).unwrap();
+    assert_export_named_specifiers(&left_source, "left", &[None]);
+    assert_export_named_specifiers(&right_source, "right", &[None]);
+    assert_export_named_specifiers(&left_source, "anchor", &[]);
+    assert_export_named_specifiers(&right_source, "anchor", &[]);
+    assert_eq!(
+        left_module, right_module,
+        "equal strict-owner signatures share one generated residual group"
+    );
+    let anonymous_module = module_containing(
+        &coarse.out_root,
+        "static/app/modules/__auto/residual_groups",
+        "trace.push(\"anonymous\")",
+    );
+    assert!(
+        coarse_files.contains(&anonymous_module),
+        "the anonymous statement must be placed in a generated residual module"
+    );
+}
+
+const ASYMMETRIC_SOURCE: &str = r#"const readNamed = () => namedReader;
+const namedReader = readNamed;
+const residualAlias = namedReader;
+console.log(residualAlias() === readNamed);
+export { readNamed, namedReader, residualAlias };
+"#;
+
+fn asymmetric_fixture(mode: spec::UnassignedMode) -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        ASYMMETRIC_SOURCE,
+        vec![logical_module(
+            "features/named_reader",
+            &[Member::new("namedReader")],
+        )],
+    )
+    .with_unassigned_mode(mode)
+}
+
+#[test]
+fn strict_signatures_leave_asymmetric_lazy_eager_shape_for_final_gate() {
+    // This actual source shape has a lazy function read and eager initializers.
+    // Strict signatures keep the residual declarations separate; the complete
+    // I-graph still reaches the ordinary gate, which rejects this observed
+    // non-rescued Pass 2 case without inventing a strict Pass 1 cycle.
+    let rejected =
+        run_emit_on_rejection_fixture(asymmetric_fixture(unassigned_mode_coarse_atomic_groups()));
+    let cycles = rejected.cycles();
+    assert!(
+        cycles
+            .iter()
+            .any(|cycle| cycle["rejection"] == "esm_evaluation_tdz"),
+        "the final normal gate should reject this shape in Pass 2: {cycles:#?}"
+    );
+    assert!(
+        !cycles
+            .iter()
+            .any(|cycle| cycle["rejection"] == "mutual_constraining_cycle"),
+        "strict candidate routing must not introduce a Pass 1 constraining cycle: {cycles:#?}"
+    );
+    assert_gate_rejected_banner(&rejected.entry_path(), &rejected.report_path("cycles.json"));
+
+    let directory = "static/app/modules/__auto/residual_groups";
+    let app_root = rejected.app_root();
+    let read_named = module_containing(&app_root, directory, "const readNamed");
+    let residual_alias = module_containing(&app_root, directory, "const residualAlias");
+    assert_ne!(
+        read_named, residual_alias,
+        "strict constraining reachability distinguishes the two candidate groups"
+    );
+}

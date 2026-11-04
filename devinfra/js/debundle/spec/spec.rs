@@ -8,8 +8,8 @@
 //!
 //! A third per-chunk map, `unassigned_mode`, decides what happens to
 //! top-level statements that no `logical_modules` entry explicitly
-//! claims (catch-all to entry, catch-all to a separate file, or one
-//! synthetic atomic-group module per atomic group). See [`UnassignedMode`].
+//! claims (entry, catchall file, one module per unclaimed atomic group, or
+//! coarser residual groups). See [`UnassignedMode`].
 //!
 //! Pipeline stages run in a fixed canonical order; each stage is either
 //! always-on or gated by the contents of those maps / by the presence of a
@@ -1370,7 +1370,7 @@ pub enum VendorLevel {
 /// minimal co-location groups; this enum decides what destination
 /// each *unclaimed* atomic group lands in.
 ///
-/// The three variants are mutually exclusive — every chunk picks
+/// The variants are mutually exclusive — every chunk picks
 /// exactly one destination policy.
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case", tag = "kind", deny_unknown_fields)]
@@ -1399,6 +1399,11 @@ pub enum UnassignedMode {
     /// be peeled (typically empty for clean chunks). See
     /// `docs/design.md` §"Layered mental model" + §"Two classes of atom".
     PerAtomicGroup,
+    /// Merge wholly-unclaimed atomic groups with equal reachable fixed-owner
+    /// sets in the strict constraining module projection. Output paths use
+    /// `__auto/residual_groups/NNNN`. The final assignment still goes through
+    /// the ordinary realizability gate.
+    CoarseAtomicGroups,
 }
 
 impl UnassignedMode {

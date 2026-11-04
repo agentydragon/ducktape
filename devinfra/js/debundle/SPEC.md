@@ -107,13 +107,15 @@ re-exports, destructuring companions and anonymous statements use the same
 normal assignment assembly, gate, translation validation and emission.
 Omitted claims follow the selected residual policy: they return to entry under
 `inline_in_entry`, or move into generated atomic-group modules under
-`per_atomic_group`. Selected module names and explicit `chunk_renames` remain
-intact; omitted members retain original source names. The authored spec is
-unchanged.
+`per_atomic_group`. Under `coarse_atomic_groups`, wholly unclaimed atomic
+groups with equal reachable fixed-owner sets in the strict constraining
+projection share generated modules under `__auto/residual_groups/NNNN`.
+Selected module names and explicit `chunk_renames` remain intact; omitted
+members retain original source names. The authored spec is unchanged.
 
-Ownership subsets require `inline_in_entry` or `per_atomic_group` for every
-materialized chunk. `catchall_file` and full graph export are unsupported with
-this option.
+Ownership subsets require `inline_in_entry`, `per_atomic_group`, or
+`coarse_atomic_groups` for every materialized chunk. `catchall_file` and full
+graph export are unsupported with this option.
 Each chunk's graph summary and module report records its retained module paths
 in `ownership_subset`, including an empty list. Acceptance is for that selected
 assignment only; it does not establish acceptance of the full canonical
@@ -827,16 +829,19 @@ matching section before truncation.
 
 Every configured chunk selects one `unassigned_mode` destination policy:
 
-| `kind`             | Destination of unclaimed source                                                   |
-| ------------------ | --------------------------------------------------------------------------------- |
-| `inline_in_entry`  | Keep it in the chunk entry.                                                       |
-| `catchall_file`    | Collect it in `target`, defaulting to `residual/unhandled`.                       |
-| `per_atomic_group` | Emit one module at `__auto/atomic_groups/NNNN` per wholly unclaimed atomic group. |
+| `kind`                 | Destination of unclaimed source                                                                                                                       |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inline_in_entry`      | Keep it in the chunk entry.                                                                                                                           |
+| `catchall_file`        | Collect it in `target`, defaulting to `residual/unhandled`.                                                                                           |
+| `per_atomic_group`     | Emit one module at `__auto/atomic_groups/NNNN` per wholly unclaimed atomic group.                                                                     |
+| `coarse_atomic_groups` | Merge wholly unclaimed atomic groups with equal reachable fixed-owner sets in the strict constraining projection under `__auto/residual_groups/NNNN`. |
 
 An atomic group contains source units that must stay together. Explicit claims
 are retained; selecting a destination policy does not relax the complete
-assignment's realizability checks. The per-group policy decomposes unassigned
-source deterministically and does not infer semantic module names.
+assignment's realizability checks. The generated-module policies preserve
+every binding and anonymous statement in its source unit. Coarse grouping is a
+deterministic placement heuristic; the normal complete-assignment gate remains
+authoritative and can reject the resulting plan.
 
 ## Entities
 
