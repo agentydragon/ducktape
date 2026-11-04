@@ -17,8 +17,8 @@ use super::super::noninvoking_initialization::{
 use super::super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataRead};
 use super::super::value_model::{
     AbstractValue, ArrayIteration, CallSite, CaptureInterner, Captured, CapturedContext, Context,
-    DenseArray, DenseArrayIterationTransfer, FrozenNamespaceProof, LexicalCaptures, LexicalCellId,
-    MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr, Values,
+    DenseArray, DenseArrayIterationTransfer, FrozenNamespaceProof, InstanceOrigin, LexicalCaptures,
+    LexicalCellId, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr, Values,
 };
 use super::runtime_callbacks::{CallbackOperation, CallbackResult};
 use super::runtime_heap::{
@@ -1039,7 +1039,7 @@ impl<'a> CellTrace<'a> {
                             }
                         }
                     }
-                    AbstractValue::Instance(_, captured)
+                    AbstractValue::Instance(_, captured, _)
                     | AbstractValue::DeferredCallbacks(captured)
                     | AbstractValue::AuditedRetainedResult(_, captured) => self.retained(captured),
                     AbstractValue::Value(_)
@@ -3665,7 +3665,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 // These carriers already projected their retained capabilities
                 // through Member. Preserve that policy without reevaluation.
-                AbstractValue::Instance(_, _)
+                AbstractValue::Instance(_, _, _)
                 | AbstractValue::DeferredCallbacks(_)
                 | AbstractValue::ForeignDeferredRecord
                 | AbstractValue::ArrayIntrinsic => {
@@ -3688,6 +3688,29 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
         }
         selected
+    }
+
+    fn known_local_instance_member(&self, key: u32, property: Option<&str>) -> bool {
+        !self.state.tainted_classes.contains(&key)
+            && property.is_some_and(|property| {
+                self.inputs
+                    .index
+                    .class_values
+                    .get(&key)
+                    .is_some_and(|class| {
+                        class.ordinary_instance_methods.contains(property)
+                            || class
+                                .instance_fields
+                                .get(property)
+                                .is_some_and(|value| !matches!(value, ValueExpr::Unknown))
+                    })
+                    || self
+                        .inputs
+                        .index
+                        .local_constructors
+                        .get(&key)
+                        .is_some_and(|constructor| constructor.own_fields.contains(property))
+            })
     }
 
     fn ordinary_data_properties(
@@ -3960,6 +3983,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     }
                     AbstractValue::Value(Value::Alloc(Kind::Function, key))
                     | AbstractValue::Closure(key, _) => self.state.tainted_functions.contains(key),
+                    AbstractValue::Instance(key, _, InstanceOrigin::Constructed) => {
+                        self.class_may_run_on_borrowed_receiver(*key)
+                    }
                     value if value.is_primitive() => false,
                     _ => true,
                 })
@@ -4141,6 +4167,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let unsupported = self.state.array_iteration_unsupported;
             self.state.array_iteration_unsupported |= previous_unsupported;
             let returned = nested.returns.clone();
+            let callback_executed_completely = nested.body_invoked && nested.complete;
             self.merge_array_effects(outcome, nested);
             let current_source = self.evaluate(&proof.source, env, captures);
             let current_source = self.dense_array_iteration_transfer(&current_source, || {
@@ -4150,14 +4177,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 DenseArrayIterationTransfer::Yielded { source: current_object, slots }
                     if current_object == source && slots == dense.slots)
                 && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, object)) if !self.state.object_properties_are_settled(object)))
-                && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Function, key)) | AbstractValue::Closure(key, _) if self.state.tainted_functions.contains(key)));
+                && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Function, key)) | AbstractValue::Closure(key, _) if self.state.tainted_functions.contains(key)))
+                && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Instance(key, _, InstanceOrigin::Constructed) if self.class_may_run_on_borrowed_receiver(*key)));
             let valid = valid
-                && (!matches!(
-                    row.result,
-                    IterationResult::Mapped | IterationResult::FlatMapped
-                ) || returned
-                    .iter()
-                    .all(|value| self.retainable_iteration_value(value)));
+                && (row.result != IterationResult::Mapped
+                    || returned.iter().all(|value| {
+                        self.retainable_iteration_value(value)
+                            || matches!(value, AbstractValue::Instance(_, _, _))
+                    }))
+                && (row.result != IterationResult::Mapped
+                    || returned
+                        .iter()
+                        .all(|value| self.retainable_iteration_value(value))
+                    || callback_executed_completely)
+                && (row.result != IterationResult::FlatMapped
+                    || returned
+                        .iter()
+                        .all(|value| self.retainable_iteration_value(value)));
             if !valid {
                 let callback_owner = self.inputs.index.callables[&key].owner;
                 let effect_owner = self.state.current_top_owner.unwrap_or(callback_owner);
@@ -4196,8 +4232,51 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             match row.result {
                 IterationResult::Mapped => {
-                    if let Some(slots) = &mut slots {
-                        slots.push(returned);
+                    let contents = self
+                        .state
+                        .prefix_object_properties
+                        .entry(result)
+                        .or_default()
+                        .entry(None)
+                        .or_default();
+                    let before = contents.len();
+                    contents.extend(returned.iter().cloned());
+                    if contents.len() != before {
+                        self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                    }
+                    if returned
+                        .iter()
+                        .all(|value| self.retainable_iteration_value(value))
+                    {
+                        if let Some(slots) = &mut slots {
+                            slots.push(returned);
+                        }
+                    } else {
+                        slots = None;
+                        // A projected instance capability can retain the
+                        // receiver's callbacks. Keep those source roots
+                        // reachable from the result's unknown contents.
+                        let contents = self
+                            .state
+                            .prefix_object_properties
+                            .entry(result)
+                            .or_default()
+                            .entry(None)
+                            .or_default();
+                        let before = contents.len();
+                        contents.extend(original_callbacks.iter().cloned());
+                        if contents.len() != before {
+                            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                        }
+                        // The same allocation site may have a prior exact result.
+                        // Revoke it before the next callback can read that site.
+                        self.literal_heap().invalidate_dense_array(result);
+                        let primitive_removed =
+                            self.state.primitive_arrays.remove(&result).is_some();
+                        let newly_tainted = self.state.tainted_objects.insert(result);
+                        if primitive_removed || newly_tainted {
+                            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                        }
                     }
                 }
                 IterationResult::Filtered => {
@@ -4255,7 +4334,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 match slots {
                     Some(slots) => self.retain_dense_array(result, slots),
                     None => {
-                        self.state.tainted_objects.insert(result);
+                        self.literal_heap().invalidate_dense_array(result);
+                        let primitive_removed =
+                            self.state.primitive_arrays.remove(&result).is_some();
+                        let newly_tainted = self.state.tainted_objects.insert(result);
+                        if primitive_removed || newly_tainted {
+                            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                        }
                     }
                 }
             }
@@ -6159,7 +6244,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     }
                 }
             }
-            AbstractValue::Instance(_, captured) => {
+            AbstractValue::Instance(_, captured, _) => {
                 for value in captured.values.iter() {
                     visit(value);
                 }
@@ -6214,9 +6299,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 | AbstractValue::ClassMembers(key) => {
                     callbacks.insert(AbstractValue::ClassMembers(*key));
                 }
-                AbstractValue::Instance(key, _) => {
+                AbstractValue::Instance(key, captured, _) => {
                     callbacks.insert(AbstractValue::ClassMembers(*key));
-                    expand_stored_references = callbacks.insert(value.clone());
+                    // Capability reach never needs the constructed-kind receipt.
+                    // Coalesce a constructed instance and a projected member
+                    // with the same class and retained arguments in the pool.
+                    expand_stored_references = callbacks.insert(AbstractValue::Instance(
+                        *key,
+                        captured.clone(),
+                        InstanceOrigin::Projected,
+                    ));
                 }
                 AbstractValue::ForeignDeferredRecord => {
                     callbacks.insert(value.clone());
@@ -6793,7 +6885,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             );
                         }
                     }
-                    AbstractValue::Instance(key, captured) => {
+                    AbstractValue::Instance(key, captured, _) => {
                         self.state.tainted_classes.insert(key);
                         self.taint_objects(&captured.values);
                         self.taint_objects(&values);
@@ -6955,7 +7047,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     | AbstractValue::ForeignDeferredRecord
                     | AbstractValue::DeferredCallbacks(_)
                     | AbstractValue::AuditedRetainedResult(_, _)
-                    | AbstractValue::Instance(_, _) => true,
+                    | AbstractValue::Instance(_, _, _) => true,
                     _ => false,
                 })
         {
@@ -7477,7 +7569,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         );
         self.state.checked_constructor_inputs = previous_inputs;
         let values: Values = args.iter().flatten().cloned().collect();
-        let instance = AbstractValue::Instance(key, self.intern_callback_set(values));
+        let instance = AbstractValue::Instance(
+            key,
+            self.intern_callback_set(values),
+            InstanceOrigin::Constructed,
+        );
         Ok((outcome, instance))
     }
 
@@ -7510,7 +7606,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             if let AbstractValue::Value(Value::Alloc(Kind::Class, key))
             | AbstractValue::ClassMembers(key)
-            | AbstractValue::Instance(key, _) = &value
+            | AbstractValue::Instance(key, _, _) = &value
             {
                 self.state.escaped_class_capabilities.insert(*key);
             }
@@ -7648,7 +7744,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Class, key))
                 | AbstractValue::ClassMembers(key)
-                | AbstractValue::Instance(key, _) => {
+                | AbstractValue::Instance(key, _, _) => {
                     if self.class_may_run_on_borrowed_receiver(*key) {
                         return global(GlobalReachCause::BorrowedReceiver);
                     }
@@ -9473,11 +9569,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         | AbstractValue::ClassMembers(key) => {
                             values.insert(AbstractValue::ClassMembers(key));
                         }
-                        AbstractValue::Instance(key, captured) => {
+                        AbstractValue::Instance(key, captured, _) => {
                             if matches!(property.as_deref(), Some("constructor" | "__proto__")) {
                                 self.state.tainted_classes.insert(key);
                             }
-                            values.insert(AbstractValue::Instance(key, captured));
+                            values.insert(AbstractValue::Instance(
+                                key,
+                                captured,
+                                InstanceOrigin::Projected,
+                            ));
                         }
                         AbstractValue::Value(Value::Alloc(Kind::Object, object_id)) => {
                             if !self.state.object_properties_are_settled(&object_id) {
@@ -10196,6 +10296,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                         |properties| properties.contains_key(&property),
                                     )
                             }
+                            AbstractValue::Instance(key, _, InstanceOrigin::Constructed) => {
+                                self.class_may_run_on_borrowed_receiver(*key)
+                                    || !self.known_local_instance_member(*key, property.as_deref())
+                            }
                             _ => true,
                         })
                     {
@@ -10848,23 +10952,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 {
                     true
                 }
-                AbstractValue::Instance(key, _) => {
-                    self.state.tainted_classes.contains(key)
-                        || !property.as_ref().is_some_and(|property| {
-                            self.inputs
-                                .index
-                                .class_values
-                                .get(key)
-                                .is_some_and(|class| {
-                                    class.ordinary_instance_methods.contains(property)
-                                        || class.instance_fields.get(property).is_some_and(
-                                            |value| !matches!(value, ValueExpr::Unknown),
-                                        )
-                                })
-                                || self.inputs.index.local_constructors.get(key).is_some_and(
-                                    |constructor| constructor.own_fields.contains(property),
-                                )
-                        })
+                AbstractValue::Instance(key, _, _) => {
+                    !self.known_local_instance_member(*key, property.as_deref())
                 }
                 AbstractValue::DeferredCallbacks(_)
                 | AbstractValue::AuditedRetainedResult(_, _) => true,
@@ -11306,7 +11395,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         | AbstractValue::DeferredCallbacks(_)
                         | AbstractValue::AuditedRetainedResult(_, _)
                         | AbstractValue::ClassMembers(_)
-                        | AbstractValue::Instance(_, _)
+                        | AbstractValue::Instance(_, _, _)
                 )
             })
         {
@@ -11473,7 +11562,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         outcome,
                     );
                 }
-                AbstractValue::Instance(key, captured) => {
+                AbstractValue::Instance(key, captured, _) => {
                     outcome.lose_call_target(call.owner, call.span);
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);

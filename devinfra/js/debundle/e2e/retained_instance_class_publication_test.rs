@@ -39,6 +39,147 @@ console.log("ready");
 
 const OPAQUE_CHUNK: &str = "export function retain(value) { globalThis.saved = value; }\n";
 
+const PROJECTED_SOURCE: &str = r#"class Box {
+  callback = () => this.record.value;
+  constructor(record) { this.record = record; }
+}
+function create(record) { return new Box(record); }
+const first = create({ value: 7 });
+const projected = first.record.value;
+const retained = [projected];
+const selected = retained.map(item => item.callback);
+const again = create({ value: 8 });
+console.log(typeof selected[0], again.callback());
+"#;
+
+const ALIASED_SOURCE: &str = r#"class Box {
+  callback = () => this.record.value;
+  constructor(record) { this.record = record; }
+}
+function create(record) { return new Box(record); }
+const first = create({ value: 7 });
+const retained = [first, first];
+const selected = retained.map(item => item.callback);
+const again = create({ value: 8 });
+console.log(selected[0](), selected[1](), again.callback());
+"#;
+
+const OPAQUE_MAPPED_RESULT_SOURCE: &str = r#"import { retain } from "./opaque.js";
+class Box {
+  callback = () => this.record.value;
+  constructor(record) { this.record = record; }
+}
+function create(record) { return new Box(record); }
+const first = create({ value: 7 });
+const retained = [first];
+const selected = retained.map(item => item.callback);
+retain(selected);
+const again = create({ value: 8 });
+console.log(selected[0](), again.callback());
+"#;
+
+const INVOKED_MAPPED_RESULT_SOURCE: &str = r#"class Box {
+  callback = () => this.record.value;
+  constructor(record) { this.record = record; }
+}
+function create(record) { return new Box(record); }
+const first = create({ value: 7 });
+const retained = [first];
+const selected = retained.map(item => item.callback);
+const invoked = selected[0]();
+const again = create({ value: 8 });
+console.log(invoked, again.callback());
+"#;
+
+const MUTATED_SOURCE: &str = r#"class Box {
+  callback = () => this.record.value;
+  constructor(record) { this.record = record; }
+}
+function create(record) { return new Box(record); }
+const first = create({ value: 7 });
+const retained = [first, first];
+const selected = retained.map((item, index) => {
+  if (index === 0) item.callback = () => 10;
+  return item.callback;
+});
+const again = create({ value: 8 });
+console.log(selected[0](), selected[1](), again.callback());
+"#;
+
+const REPLACED_MAP_SOURCE: &str = r#"class Box {
+  callback = () => this.record.value;
+  constructor(record) { this.record = record; }
+}
+function create(record) { return new Box(record); }
+const first = create({ value: 7 });
+const retained = [first];
+Array.prototype.map = function(callback) { globalThis.saved = this[0]; return [callback(this[0])]; };
+const selected = retained.map(item => item.callback);
+const again = create({ value: 8 });
+console.log(selected[0](), again.callback());
+"#;
+
+const GETTER_SOURCE: &str = r#"globalThis.reads = 0;
+class Box {
+  get callback() { globalThis.reads++; return () => this.record.value; }
+  constructor(record) { this.record = record; }
+}
+function create(record) { return new Box(record); }
+const first = create({ value: 7 });
+const retained = [first];
+const selected = retained.map(item => item.callback);
+const again = create({ value: 8 });
+console.log(selected[0](), again.callback(), globalThis.reads);
+"#;
+
+const MUTATED_ARRAY_SOURCE: &str = r#"class Box {
+  callback = () => this.record.value;
+  constructor(record) { this.record = record; }
+}
+function create(record) { return new Box(record); }
+const first = create({ value: 7 });
+const retained = [first, first];
+const selected = retained.map((item, index) => {
+  if (index === 0) retained[1] = { callback: () => 99 };
+  return item.callback;
+});
+const again = create({ value: 8 });
+console.log(selected[0](), selected[1](), again.callback());
+"#;
+
+const UNKNOWN_SOURCE: &str = r#"import { make } from "./opaque.js";
+class Box {
+  callback = () => this.record.value;
+  constructor(record) { this.record = record; }
+}
+function create(record) { return new Box(record); }
+const first = create({ value: 7 });
+const retained = [first, make()];
+const selected = retained.map(item => item.callback);
+const again = create({ value: 8 });
+console.log(selected[0](), selected[1](), again.callback());
+"#;
+
+const UNKNOWN_CHUNK: &str = "export function make() { return { callback: () => 19 }; }\n";
+
+const MUTATED_CLASS_SOURCE: &str = r#"globalThis.seen = 0;
+class Box {
+  callback = () => this.record.value;
+  constructor(record) { this.record = record; }
+}
+function create(record) { return new Box(record); }
+const first = create({ value: 7 });
+const retained = [first, first];
+const selected = retained.map((item, index) => {
+  if (index === 0) Object.setPrototypeOf(Box.prototype, {
+    set record(value) { globalThis.seen = value.value; }
+  });
+  return item.callback;
+});
+const again = create({ value: 8 });
+console.log(selected[0](), globalThis.seen);
+"#;
+
 fn module(bindings: &[&'static str], statements: &[&str]) -> LogicalModuleEntry {
     let members = bindings
         .iter()
@@ -113,7 +254,7 @@ fn assert_class_members_escape_refusal(graph: &analysis::DependencyGraphReport, 
 }
 
 #[test]
-fn mapping_a_retained_instance_publishes_class_members_conservatively() {
+fn mapping_a_retained_instance_does_not_publish_class_members() {
     let fixture = run_fixture(FixtureOpts::new(
         MAP_SOURCE,
         modules(&["Box", "create", "first", "retained", "selected", "again"]),
@@ -127,10 +268,10 @@ fn mapping_a_retained_instance_publishes_class_members_conservatively() {
         .synchronous_execution
         .as_ref()
         .expect("map execution report");
-    assert!(!selected.complete, "{selected:#?}");
-    assert!(!selected.precision_losses.is_empty(), "{selected:#?}");
+    assert!(selected.complete, "{selected:#?}");
+    assert!(selected.precision_losses.is_empty(), "{selected:#?}");
 
-    assert_class_members_escape_refusal(&graph, "again");
+    assert_factory_complete(&graph, "again");
 }
 
 #[test]
@@ -163,4 +304,214 @@ fn opaque_consumer_of_an_instance_still_blocks_later_construction() {
     let graph = fixture.dependency_graph();
     assert_factory_complete(&graph, "first");
     assert_class_members_escape_refusal(&graph, "again");
+}
+
+#[test]
+fn projected_primitive_does_not_gain_constructed_instance_kind() {
+    let fixture = run_fixture(FixtureOpts::new(
+        PROJECTED_SOURCE,
+        modules(&[
+            "Box",
+            "create",
+            "first",
+            "projected",
+            "retained",
+            "selected",
+            "again",
+        ]),
+    ));
+    assert_preserved_entry_output(&fixture, "undefined 8\n");
+    let graph = fixture.dependency_graph();
+    assert_factory_complete(&graph, "first");
+    let selected = source_unit(&graph, "selected")
+        .synchronous_execution
+        .as_ref()
+        .expect("map execution report");
+    assert!(!selected.complete, "{selected:#?}");
+    assert_class_members_escape_refusal(&graph, "again");
+}
+
+#[test]
+fn repeated_aliases_are_iterated_without_claiming_unique_instances() {
+    let fixture = run_fixture(FixtureOpts::new(
+        ALIASED_SOURCE,
+        modules(&["Box", "create", "first", "retained", "selected", "again"]),
+    ));
+    assert_preserved_entry_output(&fixture, "7 7 8\n");
+    let graph = fixture.dependency_graph();
+    let selected = source_unit(&graph, "selected")
+        .synchronous_execution
+        .as_ref()
+        .expect("map execution report");
+    assert!(selected.complete, "{selected:#?}");
+    assert_factory_complete(&graph, "again");
+}
+
+#[test]
+fn opaque_consumer_of_mapped_callbacks_still_publishes_class_capabilities() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            OPAQUE_MAPPED_RESULT_SOURCE,
+            vec![module(
+                &["Box", "create", "first", "retained", "selected", "again"],
+                &["retain(selected);"],
+            )],
+        )
+        .with_extra_chunks(&[("static/opaque", OPAQUE_CHUNK)]),
+    );
+    assert_preserved_entry_output(&fixture, "7 8\n");
+    let graph = fixture.dependency_graph();
+    let selected = source_unit(&graph, "selected")
+        .synchronous_execution
+        .as_ref()
+        .expect("map execution report");
+    assert!(selected.complete, "{selected:#?}");
+    assert_class_members_escape_refusal(&graph, "again");
+}
+
+#[test]
+fn invoking_an_opaque_mapped_element_preserves_callback_reach() {
+    let fixture = run_fixture(FixtureOpts::new(
+        INVOKED_MAPPED_RESULT_SOURCE,
+        modules(&[
+            "Box", "create", "first", "retained", "selected", "invoked", "again",
+        ]),
+    ));
+    assert_preserved_entry_output(&fixture, "7 8\n");
+    let graph = fixture.dependency_graph();
+    let selected = source_unit(&graph, "selected")
+        .synchronous_execution
+        .as_ref()
+        .expect("map execution report");
+    assert!(selected.complete, "{selected:#?}");
+    let invoked = source_unit(&graph, "invoked")
+        .synchronous_execution
+        .as_ref()
+        .expect("element invocation report");
+    assert!(!invoked.complete, "{invoked:#?}");
+    assert_class_members_escape_refusal(&graph, "again");
+}
+
+#[test]
+fn mutation_during_iteration_invalidates_the_instance_read_proof() {
+    let fixture = run_fixture(FixtureOpts::new(
+        MUTATED_SOURCE,
+        modules(&["Box", "create", "first", "retained", "selected", "again"]),
+    ));
+    assert_preserved_entry_output(&fixture, "10 10 8\n");
+    let graph = fixture.dependency_graph();
+    let selected = source_unit(&graph, "selected")
+        .synchronous_execution
+        .as_ref()
+        .expect("map execution report");
+    assert!(!selected.complete, "{selected:#?}");
+    let again = source_unit(&graph, "again")
+        .synchronous_execution
+        .as_ref()
+        .expect("later factory report");
+    assert!(
+        !again.local_record_factory_rejections.is_empty(),
+        "{again:#?}"
+    );
+}
+
+#[test]
+fn replaced_array_map_keeps_the_opaque_callback_path() {
+    let fixture = run_fixture(FixtureOpts::new(
+        REPLACED_MAP_SOURCE,
+        vec![module(
+            &["Box", "create", "first", "retained", "selected", "again"],
+            &[
+                "Array.prototype.map = function(callback) { globalThis.saved = this[0]; return [callback(this[0])]; };",
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "7 8\n");
+    let graph = fixture.dependency_graph();
+    let selected = source_unit(&graph, "selected")
+        .synchronous_execution
+        .as_ref()
+        .expect("map execution report");
+    assert!(!selected.complete, "{selected:#?}");
+    assert_class_members_escape_refusal(&graph, "again");
+}
+
+#[test]
+fn instance_getter_runs_and_refuses_the_own_data_read_proof() {
+    let fixture = run_fixture(FixtureOpts::new(
+        GETTER_SOURCE,
+        vec![module(
+            &["Box", "create", "first", "retained", "selected", "again"],
+            &["globalThis.reads = 0;"],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "7 8 2\n");
+    let graph = fixture.dependency_graph();
+    let selected = source_unit(&graph, "selected")
+        .synchronous_execution
+        .as_ref()
+        .expect("map execution report");
+    assert!(!selected.complete, "{selected:#?}");
+    assert_class_members_escape_refusal(&graph, "again");
+}
+
+#[test]
+fn array_slot_mutation_during_iteration_invalidates_the_source_receipt() {
+    let fixture = run_fixture(FixtureOpts::new(
+        MUTATED_ARRAY_SOURCE,
+        modules(&["Box", "create", "first", "retained", "selected", "again"]),
+    ));
+    assert_preserved_entry_output(&fixture, "7 99 8\n");
+    let graph = fixture.dependency_graph();
+    let selected = source_unit(&graph, "selected")
+        .synchronous_execution
+        .as_ref()
+        .expect("map execution report");
+    assert!(!selected.complete, "{selected:#?}");
+    assert_class_members_escape_refusal(&graph, "again");
+}
+
+#[test]
+fn unknown_array_slot_prevents_instance_only_iteration() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            UNKNOWN_SOURCE,
+            modules(&["Box", "create", "first", "retained", "selected", "again"]),
+        )
+        .with_extra_chunks(&[("static/opaque", UNKNOWN_CHUNK)]),
+    );
+    assert_preserved_entry_output(&fixture, "7 19 8\n");
+    let graph = fixture.dependency_graph();
+    let selected = source_unit(&graph, "selected")
+        .synchronous_execution
+        .as_ref()
+        .expect("map execution report");
+    assert!(!selected.complete, "{selected:#?}");
+    assert_class_members_escape_refusal(&graph, "again");
+}
+
+#[test]
+fn class_prototype_mutation_during_iteration_revokes_constructor_proof() {
+    let fixture = run_fixture(FixtureOpts::new(
+        MUTATED_CLASS_SOURCE,
+        vec![module(
+            &["Box", "create", "first", "retained", "selected", "again"],
+            &["globalThis.seen = 0;"],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "7 8\n");
+    let graph = fixture.dependency_graph();
+    let selected = source_unit(&graph, "selected")
+        .synchronous_execution
+        .as_ref()
+        .expect("map execution report");
+    assert!(!selected.complete, "{selected:#?}");
+    let again = source_unit(&graph, "again")
+        .synchronous_execution
+        .as_ref()
+        .expect("later factory report");
+    assert!(
+        !again.local_record_factory_rejections.is_empty(),
+        "{again:#?}"
+    );
 }

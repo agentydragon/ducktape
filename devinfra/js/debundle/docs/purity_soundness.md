@@ -769,14 +769,20 @@ over-approximate. `flatMap` spreads a callback result only when it is one
 untainted dense array; otherwise the result keeps the values as unordered
 contents and is tainted. Each callback result a fresh array retains must be a
 primitive, a tracked function, or an untainted retained ordinary or dense array
-object, the same condition `map` checks.
+object. `map` also retains an instance capability as unknown contents after a
+completed callback, revoking exact slots and primitive-array receipts before
+another callback runs. Other unrepresentable results use conservative effects.
 
 The source must resolve at the current prefix to one untainted dense ordinary
-array. Elements must be primitives, retained ordinary data objects, or tracked
-function values. Every iteration recertifies the source and element identities;
-mutation, unsupported member access, implicit `arguments`, unsupported callback
-parameters, or budget exhaustion uses conservative whole effects. Array
-identity, element containment, publication, and property writes use the same
+array. Elements must be primitives, retained ordinary data objects, tracked
+function values, or checked local base-class constructions. The last category
+proves a class kind, not allocation identity: arbitrary member projections
+retain possible callbacks but are not certified receivers. Class, receiver,
+array protocol and known member-read effects must remain valid. Every iteration
+recertifies the source and element values; mutation, unsupported member access,
+implicit `arguments`, unsupported callback parameters, or budget exhaustion
+uses conservative whole effects. Array identity, element containment,
+publication, and property writes use the same
 object-origin and taint lanes as other values. Results from repeated evaluations
 of one call site join monotonically, including missing slots. Complete call
 spans distinguish nested calls with the same start position.

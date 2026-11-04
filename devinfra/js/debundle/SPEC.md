@@ -3907,6 +3907,19 @@ writes, coercions and publication are observed effects of the statement.
   later. `find` returns an element or `undefined`; `reduce` returns the last
   accumulator, and on an empty array without an initial value it throws.
   Iteration and spread of a result do not invoke stored functions.
+- **Constructed class inputs.** A dense input slot may carry a checked local
+  base-class construction while its class, receiver and array protocol remain
+  untainted and unpublished. This proves the receiver's class kind, not a
+  distinct allocation. A value projected from an arbitrary instance member
+  carries possible callbacks without inheriting that kind proof. Member-read
+  effects and source and element validity are checked before each callback.
+- **Opaque mapped values.** When a completed `map` callback returns an instance
+  capability whose exact result position cannot be represented, the fresh
+  result retains returned and source callback capabilities as unknown contents.
+  It loses exact slots and primitive-array receipts before another callback
+  runs; an opaque consumer can still publish those capabilities. `Top`,
+  unavailable and other unrepresentable returns take conservative effects.
+  Completion and result values alone do not establish whole-owner coverage.
 - **The array as an argument.** The source array reaches the callback as its
   last argument under its own allocation, so a write through that parameter
   is a write to the source.
