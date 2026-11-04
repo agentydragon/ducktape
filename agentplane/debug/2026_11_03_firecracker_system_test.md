@@ -182,3 +182,16 @@ fixture retains its policy check, while Firecracker waits for infrastructure and
 The refused API connection observed afterward was fixture teardown, not another k3s crash.
 The [rebased launcher OCI startup test](https://app.buildbuddy.io/invocation/16e551ec-09e0-4208-911b-d76ce6249170)
 passed in 14.4 seconds with the generated image descriptor.
+
+The [ninth run](https://app.buildbuddy.io/invocation/a43b7a17-ff74-4c83-8832-552650a0476b)
+reached device allocation after all app Deployments became Available. Kubernetes serialized KVM's
+1000 available devices as `1k`, which the fixture incorrectly passed to `int`. The readiness check
+now uses the Kubernetes client's quantity parser. The production boot import was cached (1.5 seconds).
+
+A further rebase onto `b227dabb9a` incorporates devel's protection of imported fixture image IDs
+before CRI publishes their tags. The merge conflict retained that protection for every image group
+and the Firecracker virtualization condition. Devel also replaced `oci_image_py` with
+`oci_layout_py` and digest-derived Docker references; the launcher image test follows that API.
+[Focused checks on the rebased code](https://app.buildbuddy.io/invocation/42dba61c-12a1-4c9e-b235-fadffba5bf64)
+passed: launcher OCI startup (17.1 seconds), fixture rendering (29.3 seconds), and retained guest logs
+(cached pass). These are separate from the still-unproved full RAM continuation scenario.
