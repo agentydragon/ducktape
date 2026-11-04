@@ -429,11 +429,7 @@ func TestWaitCancellationDoesNotCancelAttemptAndDurableSuccessDoesNotRerun(t *te
 	if err := first.host.Wait(ctx); err != nil {
 		t.Fatalf("wait for admitted bootstrap: %v", err)
 	}
-	log, err := OpenLog(ctx, first.state)
-	if err != nil {
-		t.Fatal(err)
-	}
-	events, err := log.Since(ctx, 0)
+	events, err := readEvents(ctx, first.state)
 	if err != nil {
 		t.Fatal(err)
 	}

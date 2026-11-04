@@ -404,22 +404,19 @@ func validateScript(script string) error {
 }
 
 func bootstrapErrorForLog(ctx context.Context, log *Log) error {
-	if !log.Ended() {
-		return errors.New(operationHasNoOutcome)
-	}
-	last, err := log.Since(ctx, log.LastSequence()-1)
+	terminal, err := log.terminalEvent(ctx)
 	if err != nil {
 		return err
 	}
-	if len(last) != 1 {
+	if terminal == nil {
 		return errors.New(operationHasNoOutcome)
 	}
 	switch {
-	case last[0].GetInterrupted() != nil:
+	case terminal.GetInterrupted() != nil:
 		return ErrInterrupted
-	case last[0].GetResult() == nil:
+	case terminal.GetResult() == nil:
 		return errors.New(operationHasNoOutcome)
-	case last[0].GetResult().ExitCode != 0:
+	case terminal.GetResult().ExitCode != 0:
 		return errors.New(failedMessage)
 	default:
 		return nil

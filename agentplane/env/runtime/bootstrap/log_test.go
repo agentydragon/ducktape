@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime"
 	"testing"
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -47,7 +46,7 @@ func TestBootstrapLogPersistsOrderedOutputAndTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	events, err := replayed.Since(t.Context(), 0)
+	events, err := readEvents(t.Context(), restored)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,13 +65,184 @@ func TestBootstrapLogPersistsOrderedOutputAndTerminal(t *testing.T) {
 	if !replayed.Ended() {
 		t.Fatal("restored successful result is not terminal")
 	}
+}
 
-	suffix, err := replayed.Since(t.Context(), 1)
+type bootstrapLogReadCountingState struct {
+	state.State
+	lists int
+	gets  int
+}
+
+func (s *bootstrapLogReadCountingState) List(ctx context.Context, kind resource.Kind, opts ...state.ListOption) (resource.List, error) {
+	s.lists++
+	return s.State.List(ctx, kind, opts...)
+}
+
+func (s *bootstrapLogReadCountingState) Get(ctx context.Context, pointer resource.Pointer, opts ...state.GetOption) (resource.Resource, error) {
+	s.gets++
+	return s.State.Get(ctx, pointer, opts...)
+}
+
+func assertBootstrapOutcome(t *testing.T, got error, wantMessage string, wantInterrupted bool) {
+	t.Helper()
+	if wantInterrupted {
+		if got != ErrInterrupted {
+			t.Fatalf("bootstrap outcome = %v, want ErrInterrupted", got)
+		}
+		return
+	}
+	if wantMessage == "" {
+		if got != nil {
+			t.Fatalf("bootstrap outcome = %v, want nil", got)
+		}
+		return
+	}
+	if got == nil || got.Error() != wantMessage {
+		t.Fatalf("bootstrap outcome = %v, want %q", got, wantMessage)
+	}
+}
+
+func TestBootstrapLogRetainsTerminalOutcomeWithoutRescanning(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		append          func(context.Context, *Log) (*sessionpb.InitializeResult, error)
+		wantError       string
+		wantExitCode    int32
+		wantInterrupted bool
+	}{
+		{
+			name: "success",
+			append: func(ctx context.Context, log *Log) (*sessionpb.InitializeResult, error) {
+				return log.AppendResult(ctx, 1, 0)
+			},
+			wantExitCode: 0,
+		},
+		{
+			name: "failure",
+			append: func(ctx context.Context, log *Log) (*sessionpb.InitializeResult, error) {
+				return log.AppendResult(ctx, 1, 7)
+			},
+			wantError:    failedMessage,
+			wantExitCode: 7,
+		},
+		{
+			name: "interrupted",
+			append: func(ctx context.Context, log *Log) (*sessionpb.InitializeResult, error) {
+				return nil, log.AppendInterrupted(ctx, 1)
+			},
+			wantInterrupted: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, closer, err := openTestState(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer closer.Close()
+			counting := &bootstrapLogReadCountingState{State: store}
+			log, err := OpenLog(t.Context(), counting)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if counting.lists != 1 || counting.gets != 0 {
+				t.Fatalf("reads during OpenLog = list %d, get %d, want list 1, get 0", counting.lists, counting.gets)
+			}
+			result, err := tc.append(t.Context(), log)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result != nil {
+				result.ExitCode = 99
+			}
+
+			snapshot, err := log.terminalEvent(t.Context())
+			if err != nil || snapshot == nil {
+				t.Fatalf("terminal event = (%v, %v), want event", snapshot, err)
+			}
+			if snapshot.GetSequence() != 1 {
+				t.Fatalf("terminal sequence = %d, want 1", snapshot.GetSequence())
+			}
+			if !tc.wantInterrupted && snapshot.GetResult().GetExitCode() != tc.wantExitCode {
+				t.Fatalf("retained result exit code = %d, want %d", snapshot.GetResult().GetExitCode(), tc.wantExitCode)
+			}
+			snapshot.Observation = nil
+			assertBootstrapOutcome(t, bootstrapErrorForLog(t.Context(), log), tc.wantError, tc.wantInterrupted)
+			if counting.lists != 1 || counting.gets != 0 {
+				t.Fatalf("reads after append/outcome lookup = list %d, get %d, want list 1, get 0", counting.lists, counting.gets)
+			}
+
+			cancelled, cancel := context.WithCancel(t.Context())
+			cancel()
+			if err := bootstrapErrorForLog(cancelled, log); !errors.Is(err, context.Canceled) {
+				t.Fatalf("cancelled terminal lookup = %v, want context.Canceled", err)
+			}
+
+			reopened, err := OpenLog(t.Context(), counting)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertBootstrapOutcome(t, bootstrapErrorForLog(t.Context(), reopened), tc.wantError, tc.wantInterrupted)
+			if counting.lists != 2 || counting.gets != 0 {
+				t.Fatalf("reads after replay outcome lookup = list %d, get %d, want list 2, get 0", counting.lists, counting.gets)
+			}
+			if reopened.LastSequence() != 1 || !reopened.Ended() {
+				t.Fatalf("reopened terminal state = sequence %d ended %t, want 1 and true", reopened.LastSequence(), reopened.Ended())
+			}
+		})
+	}
+}
+
+func TestBootstrapLogFailsClosedAfterUncertainTerminalWrite(t *testing.T) {
+	store, closer, err := openTestState(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(suffix) != 2 || suffix[0].GetSequence() != 2 || suffix[1].GetSequence() != 3 {
-		t.Fatalf("replayed suffix after cursor 1 = %v, want [2 3]", eventSequences(suffix))
+	defer closer.Close()
+	writeErr := errors.New("backing store returned after terminal commit")
+	uncertain := &uncertainBootstrapEventState{State: store, err: writeErr}
+	log, err := OpenLog(t.Context(), uncertain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result, err := log.AppendResult(t.Context(), 2, 7); result != nil || err == nil {
+		t.Fatalf("invalid attempt result append = (%v, %v), want nil and error", result, err)
+	}
+	if uncertain.eventCreates != 0 || log.LastSequence() != 0 || log.Ended() {
+		t.Fatalf("state after invalid attempt = creates %d, sequence %d, ended %t, want 0, 0, false", uncertain.eventCreates, log.LastSequence(), log.Ended())
+	}
+	if result, err := log.AppendResult(t.Context(), 1, 7); result != nil || !errors.Is(err, writeErr) {
+		t.Fatalf("uncertain result append = (%v, %v), want nil and %v", result, err, writeErr)
+	}
+	if log.Ended() || log.LastSequence() != 0 {
+		t.Fatalf("in-memory state after uncertain result = sequence %d ended %t, want 0 and false", log.LastSequence(), log.Ended())
+	}
+	if event, err := log.terminalEvent(t.Context()); event != nil || err != nil {
+		t.Fatalf("terminal lookup after uncertain write = (%v, %v), want nil and nil for absent in-memory terminal", event, err)
+	}
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := bootstrapErrorForLog(cancelled, log); err == nil || err.Error() != operationHasNoOutcome {
+		t.Fatalf("cancelled lookup without terminal = %v, want %q", err, operationHasNoOutcome)
+	}
+	if err := log.AppendInterrupted(t.Context(), 1); !errors.Is(err, writeErr) {
+		t.Fatalf("append after uncertain result = %v, want wrapped write error", err)
+	}
+	if uncertain.eventCreates != 1 {
+		t.Fatalf("event creates after uncertain result = %d, want 1", uncertain.eventCreates)
+	}
+
+	if err := store.Create(t.Context(), uncertain.committed, state.WithCreateOwner(HostOwner)); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := OpenLog(t.Context(), store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !recovered.Ended() || recovered.LastSequence() != 1 {
+		t.Fatalf("recovered uncertain log = sequence %d ended %t, want 1 and true", recovered.LastSequence(), recovered.Ended())
+	}
+	if err := bootstrapErrorForLog(t.Context(), recovered); err == nil || err.Error() != failedMessage {
+		t.Fatalf("recovered terminal error = %v, want %q", err, failedMessage)
 	}
 }
 
@@ -97,7 +267,10 @@ func TestBootstrapLogOrdersReplayBySequenceNotListOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	events, err := log.Since(t.Context(), 0)
+	if log.LastSequence() != 2 {
+		t.Fatalf("replayed last sequence = %d, want 2", log.LastSequence())
+	}
+	events, err := readEvents(t.Context(), store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +317,7 @@ func TestBootstrapLogRejectsSequenceGapsAndEventsAfterTerminal(t *testing.T) {
 	}
 }
 
-func TestBootstrapLogReplayCursorDoesNotMissConcurrentAppends(t *testing.T) {
+func TestBootstrapLogConcurrentAppendsRemainDense(t *testing.T) {
 	store, closer, err := openTestState(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -162,52 +335,25 @@ func TestBootstrapLogReplayCursorDoesNotMissConcurrentAppends(t *testing.T) {
 				writeErr <- err
 				return
 			}
-			runtime.Gosched()
 		}
 		writeErr <- nil
 	}()
-
-	cursor := uint64(0)
-	var replayed []*sessionpb.InitializationEvent
-	for {
-		suffix, err := log.Since(t.Context(), cursor)
-		if err != nil {
-			t.Fatal(err)
+	if err := <-writeErr; err != nil {
+		t.Fatal(err)
+	}
+	events, err := readEvents(t.Context(), store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != count {
+		t.Fatalf("persisted event count = %d, want %d", len(events), count)
+	}
+	for i, event := range events {
+		if event.GetSequence() != uint64(i+1) {
+			t.Fatalf("event at index %d has sequence %d, want %d", i, event.GetSequence(), i+1)
 		}
-		for _, event := range suffix {
-			if event.GetSequence() != cursor+1 {
-				t.Fatalf("replay cursor jumped from %d to %d", cursor, event.GetSequence())
-			}
-			cursor = event.GetSequence()
-			replayed = append(replayed, event)
-		}
-		select {
-		case err := <-writeErr:
-			if err != nil {
-				t.Fatal(err)
-			}
-			final, err := log.Since(t.Context(), cursor)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, event := range final {
-				if event.GetSequence() != cursor+1 {
-					t.Fatalf("final replay cursor jumped from %d to %d", cursor, event.GetSequence())
-				}
-				cursor = event.GetSequence()
-				replayed = append(replayed, event)
-			}
-			if cursor != count || len(replayed) != count {
-				t.Fatalf("replayed %d events through cursor %d, want %d", len(replayed), cursor, count)
-			}
-			for i, event := range replayed {
-				if got := event.GetOutput().GetData(); len(got) != 1 || got[0] != byte(i) {
-					t.Fatalf("event %d output = %v", event.GetSequence(), got)
-				}
-			}
-			return
-		default:
-			runtime.Gosched()
+		if got := event.GetOutput().GetData(); len(got) != 1 || got[0] != byte(i) {
+			t.Fatalf("event %d output = %v", event.GetSequence(), got)
 		}
 	}
 }
@@ -272,7 +418,7 @@ func TestBootstrapLogFailsClosedAfterUncertainCommittedWrite(t *testing.T) {
 	if err := recovered.AppendInterrupted(t.Context(), 1); err != nil {
 		t.Fatalf("record interruption after restart: %v", err)
 	}
-	events, err := recovered.Since(t.Context(), 0)
+	events, err := readEvents(t.Context(), store)
 	if err != nil {
 		t.Fatal(err)
 	}
