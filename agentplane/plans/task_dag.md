@@ -844,7 +844,7 @@ app/Sandbox Service database changes requires its own migration safety review.
 ```mermaid
 flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
-    SESSION_LAUNCH_FRICTION[Alongside: fewer clicks on reused environments]
+    SESSION_LAUNCH_FRICTION[Alongside: reused-environment launch proposal]
     VM_STARTUP_LATENCY[Next: measure production VM startup]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
     EGRESS_RELAY_RENAME[TODO: rename egress sidecar to relay]
@@ -889,11 +889,12 @@ Do not lengthen the test timeout or automatically replay executor effects as a s
 
 ### `SESSION_LAUNCH_FRICTION` — fewer clicks to start useful work
 
-**Selected alongside P0/P1; operator, 2026-10-30 PDT.** Make opening a Session on an existing
-environment with its own working directory a short path with useful defaults. Preserve explicit
-harness/model/access choices without requiring users to reconstruct ordinary settings each time.
-Separate this flow from provisioning a fresh environment. Review the actual click path and
-candidate UX first; do not require new agent/conversation entities to improve it.
+**Selected alongside P0/P1; operator, 2026-10-30 PDT. Proposal ready for review:** [reused-Sandbox
+Thread launch](session_launch_friction.md). Make opening a Session on an existing environment with
+its own working directory a short path with useful defaults. Preserve explicit harness/model/access
+choices without requiring users to reconstruct ordinary settings each time. Separate this flow from
+provisioning a fresh environment. Review the actual click path and candidate UX first; do not require
+new agent/conversation entities to improve it.
 
 Exit: the agreed common path needs fewer decisions/clicks and opens a useful Session in the chosen
 directory, with intended defaults and override behavior visible. Include the normal visual review.
