@@ -4,7 +4,7 @@
 # gazelle:resolve py flux_receiver_crds //cluster/cdk8s/providers/flux:receiver
 # gazelle:resolve py cilium_envoyconfig_crds //cluster/cdk8s/providers/cilium:ciliumenvoyconfig
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//cluster/cdk8s:__subpackages__"])
 
@@ -133,6 +133,20 @@ py_library(
         "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_test(
+    name = "test_runner",
+    srcs = ["test_runner.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":runner",
+        "//:conftest",
+        "//cluster/cdk8s:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
     ],
 )
 
