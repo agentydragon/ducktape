@@ -15,17 +15,14 @@ const runtimeLifecycleControllerName = "environment-runtime-lifecycle"
 
 var errSessionComponentLost = errors.New("Session component became unavailable before shutdown")
 
-// The controller owns Runtime's Close and epoch transition sequences. Each
-// blocking boundary runs in a worker; its single event loop stays free to
-// observe either completion and gives Close reconciliation priority.
-type runtimeLifecycleController struct {
+// The controller owns only Runtime's Close sequence. Transition requests have
+// a separate Go owner so a failed COSI engine cannot wait for their workers.
+type runtimeCloseController struct {
 	r          *Runtime
-	transition runtimeTransitionSequence
 	stage      runtimeCloseStage
 	generation uint64
 	plan       closePlan
 	op         *closeOperation
-	requests   chan *runtimeTransitionRequest
 	stopped    chan struct{}
 }
 
@@ -44,9 +41,9 @@ type closeOperation struct {
 	err  error
 }
 
-func (*runtimeLifecycleController) Name() string { return runtimeLifecycleControllerName }
+func (*runtimeCloseController) Name() string { return runtimeLifecycleControllerName }
 
-func (*runtimeLifecycleController) Inputs() []controller.Input {
+func (*runtimeCloseController) Inputs() []controller.Input {
 	return []controller.Input{
 		{Namespace: lifecycle.Namespace, Type: lifecycle.EnvironmentDesiredStateType, Kind: controller.InputWeak},
 		{Namespace: lifecycle.Namespace, Type: bootstrap.RequestType, Kind: controller.InputWeak},
@@ -55,52 +52,37 @@ func (*runtimeLifecycleController) Inputs() []controller.Input {
 	}
 }
 
-func (*runtimeLifecycleController) Outputs() []controller.Output {
+func (*runtimeCloseController) Outputs() []controller.Output {
 	return []controller.Output{{Type: runtimeCloseStatusType, Kind: controller.OutputExclusive}}
 }
 
-func (c *runtimeLifecycleController) Run(ctx context.Context, r controller.Runtime, _ *zap.Logger) error {
+func (c *runtimeCloseController) Run(ctx context.Context, r controller.Runtime, _ *zap.Logger) error {
 	select {
 	case <-c.stopped:
 		return nil
 	default:
 	}
-	c.transition.engineCtx = ctx
 	// Close stages share this Run lifetime, independent of the Close caller.
 	// Cancel on any controller exit, including reconciliation failure.
 	closeCtx, cancelClose := context.WithCancel(context.Background())
 	defer func() {
-		// A transition caller holds transitionMu until its accepted work settles.
-		// Wake it before joining workers so a Close Prepare worker cannot remain
-		// blocked behind that mutex when the engine exits unexpectedly.
-		c.r.mu.Lock()
-		if (c.op != nil || c.r.activeTransitionCancel != nil) && c.r.lifecycleControllerErr == nil {
-			c.r.lifecycleControllerErr = errors.New("Runtime lifecycle coordinator exited before active work settled")
-			c.r.changedLocked()
-		}
-		c.r.mu.Unlock()
+		// This controller's first exit ends Runtime's lifecycle ownership.
+		// Cancel the Go operation owner here, without relying on Run's fatal
+		// loop or waiting for COSI's engine to finish joining controllers.
+		c.r.lifecycleCancel()
 		close(c.stopped)
 		if c.plan.cancelFence != nil {
 			c.plan.cancelFence()
 		}
-		if c.transition.cancel != nil {
-			c.transition.cancel()
-		}
 		cancelClose()
-		if c.transition.worker != nil {
-			<-c.transition.worker.done
-		}
 		if c.op != nil {
 			<-c.op.done
 		}
 	}()
 	for {
-		var closeDone, transitionDone, nativeDeadline <-chan struct{}
+		var closeDone, nativeDeadline <-chan struct{}
 		if c.op != nil {
 			closeDone = c.op.done
-		}
-		if c.transition.worker != nil {
-			transitionDone = c.transition.worker.done
 		}
 		if c.stage == runtimeCloseNativeStopping && c.op == nil {
 			nativeDeadline = c.plan.fenceCtx.Done()
@@ -108,13 +90,8 @@ func (c *runtimeLifecycleController) Run(ctx context.Context, r controller.Runti
 		select {
 		case <-ctx.Done():
 			return nil
-		case request := <-c.requests:
-			if err := c.transition.begin(request); err != nil {
-				return err
-			}
 		case <-r.EventCh():
 		case <-closeDone:
-		case <-transitionDone:
 		case <-nativeDeadline:
 		}
 		if err := c.reconcile(ctx, closeCtx, r); err != nil {
@@ -125,12 +102,11 @@ func (c *runtimeLifecycleController) Run(ctx context.Context, r controller.Runti
 			c.r.fail(fmt.Errorf("reconcile Runtime Close: %w", err))
 			return err
 		}
-		c.transition.reconcile()
 		r.ResetRestartBackoff()
 	}
 }
 
-func (c *runtimeLifecycleController) reconcile(ctx, closeCtx context.Context, r controller.Runtime) error {
+func (c *runtimeCloseController) reconcile(ctx, closeCtx context.Context, r controller.Runtime) error {
 	desired, found, err := lifecycle.ReadEnvironmentDesired(ctx, r)
 	if err != nil || !found || desired.Mode != lifecycle.Closing {
 		return err
@@ -215,7 +191,7 @@ func (c *runtimeLifecycleController) reconcile(ctx, closeCtx context.Context, r 
 
 // Bootstrap status is the host's cleanup outcome. Both inputs are subscribed
 // before Run starts, so a change concurrent with these reads wakes reconciliation.
-func (c *runtimeLifecycleController) bootstrapSettled(ctx context.Context, r controller.Runtime) (bool, error) {
+func (c *runtimeCloseController) bootstrapSettled(ctx context.Context, r controller.Runtime) (bool, error) {
 	if c.r.bootstrapHost == nil || !c.r.bootstrapHost.Configured() {
 		return true, nil
 	}
@@ -235,7 +211,7 @@ func (c *runtimeLifecycleController) bootstrapSettled(ctx context.Context, r con
 
 // Observe the exact-generation COSI proof before the shared fence deadline.
 // Native cleanup errors are saved so Execution fencing still runs first.
-func (c *runtimeLifecycleController) nativeStopSettled(ctx context.Context, reader controller.Reader) (bool, error) {
+func (c *runtimeCloseController) nativeStopSettled(ctx context.Context, reader controller.Reader) (bool, error) {
 	if !c.plan.sessionsStarted {
 		return true, nil
 	}
@@ -266,18 +242,18 @@ func nextRuntimeCloseStage(stage runtimeCloseStage) (runtimeCloseStage, error) {
 	}
 }
 
-func (c *runtimeLifecycleController) publish(ctx context.Context, writer controller.Writer, failure error) error {
+func (c *runtimeCloseController) publish(ctx context.Context, writer controller.Writer, failure error) error {
 	return writeRuntimeCloseStatus(ctx, writer, RuntimeCloseStatus{Generation: c.generation, Stage: c.stage, Failure: failure})
 }
 
-func (c *runtimeLifecycleController) stopSessions(ctx context.Context) error {
+func (c *runtimeCloseController) stopSessions(ctx context.Context) error {
 	if err := c.r.stopSessions(ctx); err != nil {
 		return err
 	}
 	return c.r.waitSessionsClosed(ctx)
 }
 
-func (c *runtimeLifecycleController) runStage(ctx context.Context, stage runtimeCloseStage) error {
+func (c *runtimeCloseController) runStage(ctx context.Context, stage runtimeCloseStage) error {
 	p := &c.plan
 	switch stage {
 	case runtimeClosePreparing:
@@ -305,10 +281,12 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage runtime
 	}
 }
 
-func (c *runtimeLifecycleController) prepare() error {
+func (c *runtimeCloseController) prepare() error {
 	r := c.r
-	r.transitionMu.Lock()
-	defer r.transitionMu.Unlock()
+	// Close published its generation under transitionMu after the accepted
+	// transition settled. No new transition can start after closing was set.
+	// Avoid taking transitionMu here: engine failure must be able to join this
+	// controller without waiting for a Go operation worker to settle.
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.transitionUnsafe != nil {

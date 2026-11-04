@@ -2,7 +2,9 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -19,9 +21,69 @@ import (
 
 type heldSuccessorDemand struct {
 	state.State
-	armed   atomic.Bool
-	entered chan struct{}
-	release chan struct{}
+	armed           atomic.Bool
+	failDesiredRead atomic.Bool
+	entered         chan struct{}
+	release         chan struct{}
+	failWatch       <-chan struct{}
+	watchOnce       sync.Once
+	watchMu         sync.Mutex
+	desiredWatch    chan<- []state.Event
+	holdAfterCancel bool
+}
+
+func (s *heldSuccessorDemand) Get(ctx context.Context, ptr resource.Pointer, opts ...state.GetOption) (resource.Resource, error) {
+	if ptr.Type() == lifecycle.EnvironmentDesiredStateType && s.failDesiredRead.Load() {
+		return nil, errors.New("injected Close controller desired read failure")
+	}
+	return s.State.Get(ctx, ptr, opts...)
+}
+
+func (s *heldSuccessorDemand) WatchKindAggregated(ctx context.Context, kind resource.Kind, ch chan<- []state.Event, opts ...state.WatchKindOption) error {
+	if err := s.State.WatchKindAggregated(ctx, kind, ch, opts...); err != nil {
+		return err
+	}
+	if kind.Type() == lifecycle.EnvironmentDesiredStateType {
+		s.watchMu.Lock()
+		s.desiredWatch = ch
+		s.watchMu.Unlock()
+	}
+	if s.failWatch != nil {
+		s.watchOnce.Do(func() {
+			go func() {
+				select {
+				case <-s.failWatch:
+					select {
+					case ch <- []state.Event{{Type: state.Errored, Error: errors.New("injected COSI watch failure")}}:
+					case <-ctx.Done():
+					}
+				case <-ctx.Done():
+				}
+			}()
+		})
+	}
+	return nil
+}
+
+func (s *heldSuccessorDemand) failCloseDesiredRead(t *testing.T) {
+	t.Helper()
+	ptr := resource.NewMetadata(lifecycle.Namespace, lifecycle.EnvironmentDesiredStateType, lifecycle.EnvironmentResourceID, resource.VersionUndefined)
+	current, err := s.State.Get(t.Context(), ptr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.watchMu.Lock()
+	ch := s.desiredWatch
+	s.watchMu.Unlock()
+	if ch == nil {
+		t.Fatal("Close controller desired watch was not registered")
+	}
+	s.failDesiredRead.Store(true)
+	select {
+	case ch <- []state.Event{{Type: state.Updated, Resource: current}}:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("failed to wake Close controller")
+	}
 }
 
 func (s *heldSuccessorDemand) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
@@ -37,6 +99,10 @@ func (s *heldSuccessorDemand) Modify(ctx context.Context, value resource.Resourc
 	}
 	if found && current.IncarnationUID == "successor" && current.Mode == lifecycle.Running && s.armed.CompareAndSwap(true, false) {
 		close(s.entered)
+		if s.holdAfterCancel {
+			<-s.release
+			return nil
+		}
 		select {
 		case <-s.release:
 		case <-ctx.Done():
@@ -131,5 +197,131 @@ func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 	}
 	if err := owner.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEngineWatchFailureWakesBlockedAdoptionBeforeWorkerJoin(t *testing.T) {
+	failWatch := make(chan struct{})
+	store := &heldSuccessorDemand{State: state.WrapCore(namespaced.NewState(inmem.Build)), entered: make(chan struct{}), release: make(chan struct{}), failWatch: failWatch, holdAfterCancel: true}
+	workspace := t.TempDir()
+	config := lifecycleConfig(t, modelConfigServer(t).URL, workspace, nil, "/bin/false")
+	config.CodexExecServer = &codexexecserver.Config{URL: "ws://unused"}
+	config.CodexBinary = "/bin/false"
+	config.HarnessEnvironment = map[string]string{}
+	config.expectCloseError = true
+	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
+		return newControllerExecutionHandle(nil), nil
+	}
+	r := newLifecycleRunnerWithState(t, config, store)
+	client := startDirectExecutionTestClient(t, r, "test-incarnation")
+	if _, err := client.runner.OpenSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+		t.Fatal(err)
+	}
+	var release sync.Once
+	t.Cleanup(func() { release.Do(func() { close(store.release) }) })
+	store.armed.Store(true)
+	adoptionDone := make(chan error, 1)
+	go func() { adoptionDone <- r.adoptIncarnation(context.Background(), "successor") }()
+	select {
+	case <-store.entered:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("successor Running preparation did not block")
+	}
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- r.Close(context.Background()) }()
+	waitRuntime(t, r, r.isClosing, "Close to revoke admission")
+	close(failWatch)
+	select {
+	case <-r.operationCoordinator.stopped:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("engine watch failure did not stop operation owner")
+	}
+	if err := waitClose(t, adoptionDone); err == nil {
+		t.Fatal("adoption succeeded after engine watch failure")
+	}
+	if err := waitClose(t, closeDone); err == nil {
+		t.Fatal("Close released ownership after engine watch failure")
+	}
+	select {
+	case <-r.lifecycleDone:
+		t.Fatal("engine joined before the accepted preparation worker settled")
+	default:
+	}
+	release.Do(func() { close(store.release) })
+	select {
+	case <-r.lifecycleDone:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("engine did not join operation owner after blocked worker settled")
+	}
+	r.mu.Lock()
+	runErr := r.lifecycleRunErr
+	r.mu.Unlock()
+	if runErr == nil || !strings.Contains(runErr.Error(), "injected COSI watch failure") {
+		t.Fatalf("engine failure = %v, want injected watch failure", runErr)
+	}
+}
+
+func TestCloseControllerFailureStopsBlockedOperationWithoutRuntimeRun(t *testing.T) {
+	store := &heldSuccessorDemand{State: state.WrapCore(namespaced.NewState(inmem.Build)), entered: make(chan struct{}), release: make(chan struct{}), holdAfterCancel: true}
+	workspace := t.TempDir()
+	config := lifecycleConfig(t, modelConfigServer(t).URL, workspace, nil, "/bin/false")
+	config.CodexExecServer = &codexexecserver.Config{URL: "ws://unused"}
+	config.CodexBinary = "/bin/false"
+	config.HarnessEnvironment = map[string]string{}
+	config.expectCloseError = true
+	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
+		return newControllerExecutionHandle(nil), nil
+	}
+	r := newLifecycleRunnerWithState(t, config, store)
+	client := startDirectExecutionTestClient(t, r, "test-incarnation")
+	if _, err := client.runner.OpenSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+		t.Fatal(err)
+	}
+	var release sync.Once
+	t.Cleanup(func() { release.Do(func() { close(store.release) }) })
+	store.armed.Store(true)
+	adoptionDone := make(chan error, 1)
+	go func() { adoptionDone <- r.adoptIncarnation(context.Background(), "successor") }()
+	select {
+	case <-store.entered:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("successor Running preparation did not block")
+	}
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- r.Close(context.Background()) }()
+	waitRuntime(t, r, r.isClosing, "Close to revoke admission")
+	store.failCloseDesiredRead(t)
+	select {
+	case <-r.lifecycleCoordinator.stopped:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("Close controller did not exit after desired read failure")
+	}
+	select {
+	case <-r.operationCoordinator.stopped:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("Close controller exit did not stop operation owner")
+	}
+	if err := waitClose(t, adoptionDone); err == nil {
+		t.Fatal("adoption succeeded after Close controller failure")
+	}
+	if err := waitClose(t, closeDone); err == nil {
+		t.Fatal("Close released ownership after Close controller failure")
+	}
+	select {
+	case <-r.lifecycleDone:
+		t.Fatal("engine joined before blocked preparation settled")
+	default:
+	}
+	release.Do(func() { close(store.release) })
+	select {
+	case <-r.lifecycleDone:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("engine did not join operation owner after Close controller failure")
+	}
+	r.mu.Lock()
+	controllerErr := r.lifecycleControllerErr
+	r.mu.Unlock()
+	if controllerErr == nil || !strings.Contains(controllerErr.Error(), "injected Close controller desired read failure") {
+		t.Fatalf("Close controller error = %v, want injected desired read failure", controllerErr)
 	}
 }

@@ -110,7 +110,8 @@ type Runtime struct {
 	lifecycleInitErr       error
 	lifecycleContext       context.Context
 	lifecycleWorkers       sync.WaitGroup
-	lifecycleCoordinator   *runtimeLifecycleController
+	operationCoordinator   *runtimeOperationCoordinator
+	lifecycleCoordinator   *runtimeCloseController
 	lifecycleControllerErr error
 	processes              *supervision.Host
 	scripts                *scripts.Runner
@@ -327,7 +328,8 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 	if err := engine.RegisterQController(r.bootstrapHost.Controller()); err != nil {
 		return err
 	}
-	r.lifecycleCoordinator = &runtimeLifecycleController{r: r, transition: runtimeTransitionSequence{r: r}, requests: make(chan *runtimeTransitionRequest), stopped: make(chan struct{})}
+	r.operationCoordinator = &runtimeOperationCoordinator{r: r, transition: runtimeTransitionSequence{r: r}, requests: make(chan *runtimeTransitionRequest), stopped: make(chan struct{}), done: make(chan struct{})}
+	r.lifecycleCoordinator = &runtimeCloseController{r: r, stopped: make(chan struct{})}
 	if err := engine.RegisterController(r.lifecycleCoordinator); err != nil {
 		return err
 	}
@@ -348,13 +350,20 @@ func (r *Runtime) startLifecycleEngine() {
 // Caller holds lifecycleStartMu, which excludes Session controller registration from Close.
 func (r *Runtime) startLifecycleEngineLocked() {
 	r.lifecycleStartOnce.Do(func() {
+		// The Go operation owner starts with the engine even for Close-before-Run.
+		// The engine goroutine cancels and joins it on every exit, including an
+		// unexpected COSI failure, before reporting lifecycleDone.
+		go r.operationCoordinator.run(r.lifecycleContext)
 		go func() {
 			defer close(r.lifecycleDone)
-			// A dead engine cannot advance process finalizers. Cancel its host
-			// lifetime so managed process waiters fail instead of waiting forever;
-			// the outer Runtime retains ownership when cleanup is unproven.
-			defer r.lifecycleCancel()
-			if err := r.lifecycleEngine.Run(r.lifecycleContext); r.lifecycleContext.Err() == nil {
+			defer func() {
+				// A dead engine cannot advance process finalizers. Cancel its
+				// host and operation owner, then join that owner before leaving.
+				// The outer Runtime retains ownership if cleanup is unproven.
+				r.lifecycleCancel()
+				<-r.operationCoordinator.done
+			}()
+			if err := r.lifecycleEngine.Run(r.lifecycleContext); r.lifecycleContext.Err() == nil || err != nil && !errors.Is(err, context.Canceled) {
 				if err == nil {
 					err = errors.New("engine returned without shutdown")
 				}

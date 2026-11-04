@@ -77,13 +77,13 @@ func (r *Runtime) requestTransition(ctx context.Context, kind runtimeTransitionK
 		request.IdleSinceMicros = idleSince.AsTime().UnixMicro()
 	}
 	select {
-	case r.lifecycleCoordinator.requests <- request:
+	case r.operationCoordinator.requests <- request:
 	case <-opCtx.Done():
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		return status.FromContextError(opCtx.Err()).Err()
-	case <-r.lifecycleCoordinator.stopped:
+	case <-r.operationCoordinator.stopped:
 		return r.coordinatorFailure("transition admission")
 	case <-r.lifecycleDone:
 		return r.coordinatorFailure("transition admission")
@@ -104,7 +104,7 @@ func (r *Runtime) requestTransition(ctx context.Context, kind runtimeTransitionK
 			return err
 		}
 		return request.err
-	case <-r.lifecycleCoordinator.stopped:
+	case <-r.operationCoordinator.stopped:
 		return r.coordinatorFailure("transition completion")
 	case <-r.lifecycleDone:
 		return r.coordinatorFailure("transition completion")

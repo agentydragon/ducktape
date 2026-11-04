@@ -95,7 +95,7 @@ func TestCloseNativeStopObservationPreservesStatusAndDeadlineOrdering(t *testing
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			probe := &nativeStopReadProbe{State: r.lifecycleState, value: statusValue(tc.status), err: tc.readErr}
-			c := &runtimeLifecycleController{r: r, plan: closePlan{generation: tc.generation, sessionsStarted: tc.sessionsStarted, fenceCtx: tc.fenceCtx}}
+			c := &runtimeCloseController{r: r, plan: closePlan{generation: tc.generation, sessionsStarted: tc.sessionsStarted, fenceCtx: tc.fenceCtx}}
 			settled, err := c.nativeStopSettled(ctx, probe)
 			if settled != tc.wantSettled {
 				t.Fatalf("settled = %t, want %t; err=%v", settled, tc.wantSettled, err)
@@ -118,7 +118,7 @@ func TestCloseNativeStopObservationPreservesStatusAndDeadlineOrdering(t *testing
 	release := make(chan struct{})
 	probe := &nativeStopReadProbe{State: r.lifecycleState, value: statusValue(lifecycle.Status{Generation: generation})}
 	probe.onGet = func() { close(entered); <-release }
-	c := &runtimeLifecycleController{r: r, plan: closePlan{generation: generation, sessionsStarted: true, fenceCtx: expired}}
+	c := &runtimeCloseController{r: r, plan: closePlan{generation: generation, sessionsStarted: true, fenceCtx: expired}}
 	result := make(chan struct {
 		settled bool
 		err     error
@@ -435,6 +435,17 @@ func TestRuntimeCloseBeforeRunStartsAndJoinsLifecycleEngine(t *testing.T) {
 	case <-r.lifecycleDone:
 	default:
 		t.Fatal("Runtime released owner before joining lifecycle engine")
+	}
+	select {
+	case <-r.operationCoordinator.done:
+	default:
+		t.Fatal("Runtime released owner before joining operation coordinator")
+	}
+	r.mu.Lock()
+	runErr := r.lifecycleRunErr
+	r.mu.Unlock()
+	if runErr != nil {
+		t.Fatalf("graceful Close recorded lifecycle engine failure: %v", runErr)
 	}
 	owner, err := openTestRuntimeStore(config.StateDir)
 	if err != nil {
@@ -762,7 +773,7 @@ func TestEngineExitDuringCanceledExecutionStartJoinsTransitionAndRetainsOwner(t 
 			waitRuntime(t, r, r.isClosing, "Close to cancel accepted adoption")
 			r.lifecycleCancel()
 			select {
-			case <-r.lifecycleCoordinator.stopped:
+			case <-r.operationCoordinator.stopped:
 			case <-time.After(lifecycleTestTimeout):
 				t.Fatal("Runtime coordinator did not announce exit before joining workers")
 			}

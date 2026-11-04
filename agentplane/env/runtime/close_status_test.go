@@ -23,7 +23,7 @@ func TestRuntimeCloseStatusRequiresExactGeneration(t *testing.T) {
 	r := &Runtime{
 		lifecycleState:       store,
 		lifecycleDone:        make(chan struct{}),
-		lifecycleCoordinator: &runtimeLifecycleController{stopped: make(chan struct{})},
+		lifecycleCoordinator: &runtimeCloseController{stopped: make(chan struct{})},
 	}
 	t.Cleanup(func() { close(r.lifecycleCoordinator.stopped) })
 	stale := RuntimeCloseStatus{Generation: 4, Stage: runtimeCloseReadyToJoin}
