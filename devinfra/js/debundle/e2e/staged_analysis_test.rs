@@ -847,21 +847,6 @@ fn tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     files
 }
 
-fn assert_same_trees(direct: &Path, staged: &Path) {
-    let (direct, staged) = (tree(direct), tree(staged));
-    assert_eq!(
-        direct.keys().collect::<Vec<_>>(),
-        staged.keys().collect::<Vec<_>>()
-    );
-    for (file, bytes) in &direct {
-        assert!(
-            staged[file] == *bytes,
-            "{} differs between direct and staged runs",
-            file.display()
-        );
-    }
-}
-
 fn assert_same_invocation_trees(direct: &StagedInvocation, staged: &StagedInvocation) {
     let direct = invocation_tree(direct);
     let staged = invocation_tree(staged);
@@ -934,21 +919,25 @@ fn normalize_invocation_rejection_marker(invocation: &StagedInvocation, marker: 
 fn normalize_invocation_gate_banner(invocation: &StagedInvocation, code: &[u8]) -> Vec<u8> {
     let code = std::str::from_utf8(code).expect("emitted JavaScript is UTF-8");
     let lines: Vec<_> = code.split_inclusive('\n').collect();
-    let leading_comments: Vec<_> = lines
-        .iter()
-        .take_while(|line| line.trim_end_matches(['\r', '\n']).starts_with("//"))
-        .collect();
-    if !leading_comments
-        .iter()
-        .any(|line| line.contains("GATE_REJECTED: NOT RUNNABLE"))
-    {
+    let first_line = lines
+        .first()
+        .map(|line| line.trim_end_matches(['\r', '\n']))
+        .unwrap_or_default();
+    if !first_line.starts_with("// GATE_REJECTED: NOT RUNNABLE.") {
         return code.as_bytes().to_vec();
     }
+    let banner_end = lines
+        .iter()
+        .position(|line| {
+            line.trim_end_matches(['\r', '\n'])
+                == "// See the GATE_REJECTED marker at the output root."
+        })
+        .expect("generated gate banner has its closing marker line");
 
     let mut normalized = String::with_capacity(code.len());
     for (index, raw_line) in lines.iter().enumerate() {
         let line = raw_line.trim_end_matches(['\r', '\n']);
-        if index < leading_comments.len()
+        if index <= banner_end
             && let Some(path) = line.strip_prefix("// Evidence: ")
         {
             normalized.push_str("// Evidence: ");
