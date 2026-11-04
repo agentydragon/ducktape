@@ -8,6 +8,15 @@ or prove Runtime readiness. Add production-guest coverage that waits for Runtime
 verifies the serial console shows a login prompt when `console_autologin` is disabled and a root
 shell when it is enabled.
 
+## Explore keeping control services outside Firecracker guests
+
+Consider keeping the runner/Environment Runtime, Codex exec-server and other control services
+outside Firecracker, with the guest limited to workload execution and its filesystem environment.
+Map process ownership and choose a minimal guest agent and gRPC/vsock boundary; determine which
+parts of Codex exec-server can move given its current ownership of native sessions and processes.
+Preserve RAM-resumable guest processes, host/guest state coordination, identity fencing and no
+replay, with explicit session parking, reattachment and terminal cleanup.
+
 ## Simplify Environment Runtime reconciliation and coordination
 
 - Systemd observations are typed; process start, exit and stop still use a revision wakeup and
