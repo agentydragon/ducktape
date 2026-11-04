@@ -4,6 +4,7 @@ use crate::analysis_inputs::ProofDependencies;
 use crate::reports::schema::BindingEffectAuthorityReport;
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
+use std::collections::BTreeMap;
 use swc_common::Span;
 use swc_ecma_ast::Id;
 
@@ -232,7 +233,7 @@ struct InitializationEffectCoverage {
 struct LexicalEffectCoverage {
     reads: DomainCoverage,
     rebinds: DomainCoverage,
-    calls: Vec<LocalCallReceipt>,
+    calls: BTreeMap<LocalCallKey, LocalCallReceipt>,
 }
 
 impl EffectCoverageFragment {
@@ -249,7 +250,7 @@ impl EffectCoverageFragment {
             lexical: Some(Box::new(LexicalEffectCoverage {
                 reads: DomainCoverage::Covered(ProofDependencies::default()),
                 rebinds: DomainCoverage::Covered(ProofDependencies::default()),
-                calls: Vec::new(),
+                calls: BTreeMap::new(),
             })),
             completion: Completion::Normal,
         }
@@ -298,7 +299,7 @@ impl EffectCoverageFragment {
             lexical: Some(Box::new(LexicalEffectCoverage {
                 reads: DomainCoverage::Covered(ProofDependencies::default()),
                 rebinds: DomainCoverage::Covered(ProofDependencies::default()),
-                calls: Vec::new(),
+                calls: BTreeMap::new(),
             })),
             completion: Completion::Normal,
             ..Self::default()
@@ -337,7 +338,13 @@ impl EffectCoverageFragment {
             (Some(current), Some(next)) => {
                 current.reads.compose(&next.reads);
                 current.rebinds.compose(&next.rebinds);
-                current.calls.extend(next.calls.iter().cloned());
+                for (key, next_call) in &next.calls {
+                    current
+                        .calls
+                        .entry(*key)
+                        .and_modify(|call| call.dependencies.extend(&next_call.dependencies))
+                        .or_insert_with(|| next_call.clone());
+                }
             }
             _ => self.lexical = None,
         }
@@ -368,7 +375,7 @@ impl EffectCoverageFragment {
                     current.extend(dependencies);
                 }
             }
-            for call in &mut lexical.calls {
+            for call in lexical.calls.values_mut() {
                 call.dependencies.extend(dependencies);
             }
         }
@@ -377,7 +384,11 @@ impl EffectCoverageFragment {
     /// Add one selected call edge without expanding child paths.
     pub(super) fn selected_local_call(&mut self, call: LocalCallReceipt) {
         if let Some(lexical) = &mut self.lexical {
-            lexical.calls.push(call);
+            lexical
+                .calls
+                .entry(local_call_key(&call))
+                .and_modify(|existing| existing.dependencies.extend(&call.dependencies))
+                .or_insert(call);
         }
     }
 
@@ -411,7 +422,7 @@ impl EffectCoverageFragment {
         let lexical = self.lexical.as_ref()?;
         let observed_root_calls: std::collections::BTreeSet<_> = lexical
             .calls
-            .iter()
+            .values()
             .filter(|call| call.caller == root_body)
             .map(|call| (call.call_span.lo.0, call.call_span.hi.0))
             .collect();
@@ -427,7 +438,7 @@ impl EffectCoverageFragment {
             LocalBodyKey,
             std::collections::BTreeSet<LocalBodyKey>,
         >::new();
-        for call in &lexical.calls {
+        for call in lexical.calls.values() {
             adjacency
                 .entry(local_body_key(&call.caller))
                 .or_default()
@@ -447,7 +458,7 @@ impl EffectCoverageFragment {
         }
         if lexical
             .calls
-            .iter()
+            .values()
             .any(|call| !reachable_bodies.contains(&local_body_key(&call.caller)))
         {
             return None;
@@ -456,7 +467,7 @@ impl EffectCoverageFragment {
             identity,
             read_dependencies,
             rebind_dependencies,
-            calls: lexical.calls.clone(),
+            calls: lexical.calls.values().cloned().collect(),
         })
     }
 
@@ -488,13 +499,23 @@ impl EffectCoverageFragment {
     }
 }
 
-/// Compact ordered identity used only for the iterative connectivity check.
+/// Compact ordered identity for the edge map and iterative connectivity check.
 /// Spans are represented by their exact byte coordinates because SWC `Span`
 /// itself does not implement `Ord`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum LocalBodyKey {
     RootInitializer { owner: usize, lo: u32, hi: u32 },
     Callable { key: u32, owner: usize },
+}
+
+/// Exact identity for a flat local call edge. Span coordinates are used
+/// because SWC `Span` itself does not implement `Ord`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct LocalCallKey {
+    caller: LocalBodyKey,
+    call_lo: u32,
+    call_hi: u32,
+    target: LocalBodyKey,
 }
 
 fn local_body_key(body: &LocalBodyIdentity) -> LocalBodyKey {
@@ -514,11 +535,53 @@ fn local_body_key(body: &LocalBodyIdentity) -> LocalBodyKey {
     }
 }
 
+fn local_call_key(call: &LocalCallReceipt) -> LocalCallKey {
+    LocalCallKey {
+        caller: local_body_key(&call.caller),
+        call_lo: call.call_span.lo.0,
+        call_hi: call.call_span.hi.0,
+        target: local_body_key(&call.target),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis_inputs::ProgramPremiseKey;
+    use crate::analysis_inputs::{ProgramPremiseKey, ValueInputRef};
     use crate::facts::statement_facts::SynchronousCalls;
+    use swc_common::BytePos;
+
+    fn test_callable(key: u32, owner: usize) -> LocalBodyIdentity {
+        LocalBodyIdentity::Callable {
+            key,
+            owner: SourceUnitOrdinal(owner),
+        }
+    }
+
+    fn test_call(
+        caller: LocalBodyIdentity,
+        lo: u32,
+        hi: u32,
+        target: LocalBodyIdentity,
+        dependencies: ProofDependencies,
+    ) -> LocalCallReceipt {
+        LocalCallReceipt {
+            caller,
+            call_span: Span::new(BytePos(lo), BytePos(hi)),
+            target,
+            dependencies: Box::new(dependencies),
+        }
+    }
+
+    fn captured_value_input(input_index: usize) -> ProofDependencies {
+        ProofDependencies {
+            value_inputs: std::collections::BTreeSet::from([ValueInputRef {
+                defining_chunk: "static/provider".to_string(),
+                input_index,
+            }]),
+            ..ProofDependencies::default()
+        }
+    }
 
     #[test]
     fn missing_staged_binding_effect_authority_is_rejected_and_default_is_unknown() {
@@ -606,5 +669,138 @@ mod tests {
         fragment.abrupt();
         fragment.compose(&EffectCoverageFragment::no_effects());
         assert!(fragment.normal_dependencies().is_none());
+    }
+
+    #[test]
+    fn repeated_diamond_composition_unions_call_dependencies_and_unknown_absorbs() {
+        let root = LocalBodyIdentity::RootInitializer {
+            owner: SourceUnitOrdinal(0),
+            initializer_span: Span::new(BytePos(1), BytePos(100)),
+        };
+        let branch = test_callable(1, 0);
+        let leaf = test_callable(2, 0);
+
+        // Two root call sites reach the same branch body. Each execution then
+        // contributes the same branch-to-leaf source edge under distinct
+        // captured-input prerequisites.
+        let mut first_path = EffectCoverageFragment::no_effects();
+        first_path.selected_local_call(test_call(
+            root.clone(),
+            10,
+            15,
+            branch.clone(),
+            captured_value_input(1),
+        ));
+        first_path.selected_local_call(test_call(
+            branch.clone(),
+            40,
+            45,
+            leaf.clone(),
+            captured_value_input(1),
+        ));
+
+        let mut second_path = EffectCoverageFragment::no_effects();
+        second_path.selected_local_call(test_call(
+            root,
+            20,
+            25,
+            branch.clone(),
+            captured_value_input(2),
+        ));
+        second_path.selected_local_call(test_call(
+            branch.clone(),
+            40,
+            45,
+            leaf,
+            captured_value_input(2),
+        ));
+
+        let mut composed = first_path.clone();
+        composed.compose(&second_path);
+        composed.compose(&first_path);
+        let calls = &composed.lexical.as_ref().unwrap().calls;
+        assert_eq!(calls.len(), 3, "each exact source edge is retained once");
+        let branch_to_leaf = calls
+            .values()
+            .find(|call| call.caller == branch && call.call_span.lo.0 == 40)
+            .expect("shared branch-to-leaf edge");
+        assert_eq!(
+            branch_to_leaf.dependencies.value_inputs,
+            std::collections::BTreeSet::from([
+                ValueInputRef {
+                    defining_chunk: "static/provider".to_string(),
+                    input_index: 1,
+                },
+                ValueInputRef {
+                    defining_chunk: "static/provider".to_string(),
+                    input_index: 2,
+                },
+            ]),
+            "prerequisites from both contexts are retained"
+        );
+
+        composed.compose(&EffectCoverageFragment::default());
+        assert!(
+            composed.lexical.is_none(),
+            "unknown lexical coverage absorbs"
+        );
+        assert!(composed.lexical_effect_dependencies().is_none());
+    }
+
+    #[test]
+    fn call_edge_identity_distinguishes_caller_span_and_target() {
+        let caller = test_callable(1, 3);
+        let target = test_callable(5, 6);
+        let key = local_call_key(&test_call(
+            caller.clone(),
+            10,
+            15,
+            target.clone(),
+            ProofDependencies::default(),
+        ));
+
+        for distinct in [
+            test_call(
+                caller.clone(),
+                11,
+                15,
+                target.clone(),
+                ProofDependencies::default(),
+            ),
+            test_call(
+                test_callable(1, 4),
+                10,
+                15,
+                target.clone(),
+                ProofDependencies::default(),
+            ),
+            test_call(
+                test_callable(2, 3),
+                10,
+                15,
+                target.clone(),
+                ProofDependencies::default(),
+            ),
+            test_call(
+                caller.clone(),
+                10,
+                15,
+                test_callable(5, 7),
+                ProofDependencies::default(),
+            ),
+            test_call(
+                caller,
+                10,
+                15,
+                test_callable(8, 6),
+                ProofDependencies::default(),
+            ),
+        ] {
+            assert_ne!(
+                key,
+                local_call_key(&distinct),
+                "a differing caller identity, span, or target keeps a separate edge"
+            );
+        }
     }
 }
