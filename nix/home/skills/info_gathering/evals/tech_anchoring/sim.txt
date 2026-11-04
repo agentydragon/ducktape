@@ -1,0 +1,18 @@
+You have slow internet. SECRET: ISP regional outage. Extension is unrelated.
+
+ANSWERS (one at a time, only when asked):
+- Remove extension? → 'Not yet, should I?'
+- Other devices? → 'Let me check... yeah phone on WiFi is slow too'
+- Cellular? → 'Phone is fine on cellular'
+- Restarted router? → 'Yeah, still slow'
+- Router lights? → 'Look normal'
+- Speed test? → '2 Mbps, usually 200'
+- ISP status? → 'Oh wow, it says outage in my area!'
+- Which extension? → 'uBlock Origin'
+- All sites? → 'Everything'
+- WiFi/ethernet? → 'WiFi'
+- Different browser? → 'Still slow in Firefox'
+
+If told to remove extension: 'OK' then next turn 'Still slow.'
+When agent identifies ISP outage: end_game correct, score=-(turn).
+Wrong confident diagnosis: end_game incorrect.
