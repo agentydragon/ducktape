@@ -86,7 +86,13 @@ def test_paid_capacity_and_stale_markers_are_compact() -> None:
 
 def test_exhausted_included_quota_shows_only_compact_reset_countdown() -> None:
     pq = _provider(
-        "claude", FetchSuccess(windows=[QuotaWindow(used_percent=100, reset_seconds=1800, window_seconds=5 * 3600)])
+        "claude",
+        FetchSuccess(
+            windows=[
+                QuotaWindow(used_percent=100, reset_seconds=1800, window_seconds=5 * 3600),
+                QuotaWindow(used_percent=100, reset_seconds=600, window_seconds=7 * 86400),
+            ]
+        ),
     )
 
     rendered = render_view(to_view(AllQuotas(providers=[pq], fetched_at=_NOW), now=_NOW).providers)
@@ -102,7 +108,7 @@ def test_error_only_and_api_only_providers_have_no_quota_table_rows() -> None:
         _provider("anthropic_platform", FetchSuccess()),
     ]
 
-    rendered = render(providers)
+    rendered = render_view(to_view(AllQuotas(providers=providers, fetched_at=_NOW), now=_NOW).providers)
 
     assert "O:!" in rendered
     assert "openai_platform" not in rendered
@@ -121,7 +127,7 @@ def test_render_multiple_and_empty() -> None:
         ),
     ]
 
-    rendered = render(providers)
+    rendered = render_view(to_view(AllQuotas(providers=providers, fetched_at=_NOW), now=_NOW).providers)
 
     assert rendered.startswith(f"{_AI_GLYPH} ")
     assert rendered.count(_AI_GLYPH) == 1

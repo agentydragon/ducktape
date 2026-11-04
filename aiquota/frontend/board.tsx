@@ -6,9 +6,11 @@
 import { type JSX } from "react";
 
 import type { AllQuotasView, BalanceView, BurnStatus, GrantView, ProviderView, WindowView } from "./schema";
-import { formatUsd, formatUsdWhole } from "./format";
 import {
   formatAge,
+  formatExtraSpend,
+  refreshWindowTiming,
+  staleObservationAt,
   formatClock,
   formatDeadline,
   formatDuration,
@@ -84,12 +86,9 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
   const label = providerLabel(provider);
   const errorSummary = provider.error_summary ?? (quota.error === null ? null : "Provider update failed");
   const errorDetail = provider.error_detail ?? quota.error;
-  const observedAt = provider.display.observed_at ?? null;
-  const staleSince = provider.stale_since ?? quota.staleSince;
-  const staleAt = provider.stale_at ?? null;
-  const isStale = staleSince !== null || (staleAt !== null && now >= Date.parse(staleAt));
-  const staleAgeAt = staleSince ?? observedAt;
-  const windows = quota.windows.map((window) => presentWindow(window, now));
+  const staleSince = providerStaleSince(provider, quota, now);
+  const isStale = staleSince !== null;
+  const windows = quota.windows.map((window) => presentWindow(window, now, isStale));
   const resetPending = windows.some(({ resetPending }) => resetPending);
   const status = resetPending ? "Reset time passed · awaiting updated usage" : (provider.status ?? null);
   const hasReadings =
@@ -108,9 +107,9 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
           {label}
         </h3>
         <div className="aiquota-card-status">
-          {isStale && staleAgeAt !== null ? (
+          {staleSince !== null ? (
             <span className="aiquota-badge aiquota-badge-stale">
-              Data stale · {formatAge((now - Date.parse(staleAgeAt)) / 1000)}
+              Data stale · {formatAge((now - staleSince) / 1000)}
             </span>
           ) : null}
           {errorSummary !== null && <span className="aiquota-badge aiquota-badge-error">{errorSummary}</span>}
@@ -126,8 +125,7 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
       {provider.burn && hasReadings && <BurnSummary burn={provider.burn} now={now} />}
       {quota.extraSpend && provider.extra_status !== "none" && (
         <p className="aiquota-extra-usage">
-          Extra usage this month: {formatUsd(quota.extraSpend.used_usd)} of{" "}
-          {formatUsdWhole(quota.extraSpend.monthly_limit_usd)} limit
+          {formatExtraSpend(quota.extraSpend.used_usd, quota.extraSpend.monthly_limit_usd)}
         </p>
       )}
 
@@ -246,26 +244,39 @@ function ErrorDetails({ summary, detail }: { summary: string; detail: string | n
   );
 }
 
-function presentWindow(window: WindowView, now: number): { window: WindowView; resetPending: boolean } {
-  const resetAt = window.reset_at ?? null;
-  const resetDeadline = resetAt === null ? Number.NaN : Date.parse(resetAt);
-  const deadlinePassed = Number.isFinite(resetDeadline) && now >= resetDeadline;
-  const resetPending = (window.reset_pending ?? false) || deadlinePassed;
+function presentWindow(window: WindowView, now: number, stale = false): { window: WindowView; resetPending: boolean } {
+  const timing = refreshWindowTiming(
+    {
+      resetAtMs: window.reset_at ? Date.parse(window.reset_at) : null,
+      resetSeconds: window.reset_seconds,
+      resetPending: window.reset_pending ?? false,
+      reset: window.reset,
+      pace: window.pace,
+      forecast: window.forecast,
+    },
+    now,
+    stale
+  );
   return {
     window: {
       ...window,
-      reset: resetPending
-        ? "awaiting update"
-        : Number.isFinite(resetDeadline)
-          ? formatDuration((resetDeadline - now) / 1000)
-          : window.reset,
-      pace: resetPending ? null : window.pace,
-      forecast: resetPending ? null : window.forecast,
-      tint: resetPending ? "stale" : window.tint,
-      exhausted: resetPending ? false : window.exhausted,
+      reset: timing.reset,
+      pace: timing.pace,
+      forecast: timing.forecast,
+      tint: timing.resetPending || stale ? "stale" : window.tint,
     },
-    resetPending,
+    resetPending: timing.resetPending,
   };
+}
+
+function providerStaleSince(provider: ProviderView, quota: EffectiveQuota, now: number): number | null {
+  const since = provider.stale_since ?? quota.staleSince;
+  return staleObservationAt(
+    provider.display.observed_at ? Date.parse(provider.display.observed_at) : null,
+    since ? Date.parse(since) : null,
+    provider.stale_at ? Date.parse(provider.stale_at) : null,
+    now
+  );
 }
 
 function WindowRow({
@@ -389,18 +400,9 @@ function ConnectionError({ error }: { error: string }): JSX.Element {
 }
 
 function providerTint(provider: ProviderView, quota: EffectiveQuota, now: number): Tint | "error" {
-  const resetPending = quota.windows.some((window) => {
-    const resetAt = window.reset_at ?? null;
-    return (
-      (window.reset_pending ?? false) ||
-      (resetAt !== null && Number.isFinite(Date.parse(resetAt)) && now >= Date.parse(resetAt))
-    );
-  });
-  const staleAt = provider.stale_at ?? null;
   if (
-    resetPending ||
-    (provider.stale_since ?? quota.staleSince) !== null ||
-    (staleAt !== null && now >= Date.parse(staleAt))
+    quota.windows.some((window) => presentWindow(window, now).resetPending) ||
+    providerStaleSince(provider, quota, now) !== null
   ) {
     return "stale";
   }

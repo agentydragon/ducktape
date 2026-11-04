@@ -24,6 +24,9 @@ separate pools. Dates use `format_deadline` / `formatDeadline`; never add local 
 clock to it without inventing an age threshold. A passed reset deadline means awaiting a
 new reading, never a refilled bucket.
 
+GNOME and web consume <shared/presentation.ts> for dates, money, reset timing and freshness
+deadlines; keep these helpers free of React and GNOME imports.
+
 The API emits time-refreshed window presentation views on the event stream. Python computes
 pace, forecast, tint and meter position once in the shared view model; the CLI, browser and
 GNOME extension render those fields. Presentation updates do not poll providers. The desktop

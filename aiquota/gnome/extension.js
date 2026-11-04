@@ -10,6 +10,9 @@ import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
 import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
 import {
   formatAge as sharedFormatAge,
+  formatExtraSpend as sharedFormatExtraSpend,
+  refreshWindowTiming,
+  staleObservationAt,
   formatClock,
   formatDuration as sharedFormatDuration,
   formatDeadline,
@@ -71,18 +74,8 @@ function formatDuration(seconds) {
   return sharedFormatDuration(seconds);
 }
 
-function withLiveReset(state) {
-  if (!state || state.resetAtMs == null || !Number.isFinite(state.resetAtMs)) return state;
-  const resetSeconds = Math.max(0, (state.resetAtMs - nowMs()) / 1000);
-  const resetPending = state.resetPending || resetSeconds === 0;
-  return {
-    ...state,
-    resetSeconds,
-    resetPending,
-    reset: resetPending ? "awaiting update" : formatDuration(resetSeconds),
-    pace: resetPending ? null : state.pace,
-    forecast: resetPending ? null : state.forecast,
-  };
+function withLiveReset(state, stale = false) {
+  return state ? refreshWindowTiming(state, nowMs(), stale) : state;
 }
 
 function formatAge(seconds) {
@@ -92,8 +85,7 @@ function formatAge(seconds) {
 
 // The server selects the display snapshot; the desktop only formats its age.
 function effectiveState(state) {
-  const staleSince =
-    state.staleSince ?? (state.staleAtMs != null && nowMs() >= state.staleAtMs ? state.observedAtMs : null);
+  const staleSince = staleObservationAt(state.observedAtMs, state.staleSince, state.staleAtMs, nowMs());
   const staleAge = staleSince != null ? Math.max(0, (nowMs() - staleSince) / 1000) : null;
   return { ...state, staleAge };
 }
@@ -112,9 +104,7 @@ function formatCompactDollars(usd) {
 // reintroduce a local copy: see aiquota/AGENTS.md.
 function formatExtraSpend(extra) {
   if (!extra || !extra.is_enabled || !(extra.used_usd > 0)) return null;
-  const used = extra.used_usd;
-  const limit = extra.monthly_limit_usd;
-  return `Extra spend: $${roundHalfToEven(used)} / $${roundHalfToEven(limit)} this month`;
+  return sharedFormatExtraSpend(extra.used_usd, extra.monthly_limit_usd);
 }
 
 function formatBankedResets(count, expiries, expiryLookupFailed, now, details = false) {
@@ -1011,7 +1001,7 @@ const QuotaIndicator = GObject.registerClass(
       }
       details.push(...state.grants.map((grant) => formatGrant(grant, true)));
       const { staleAge } = effectiveState(state);
-      for (const window of state.windows.map(withLiveReset)) {
+      for (const window of state.windows.map((window) => withLiveReset(window))) {
         if (staleAge == null && window.pace) details.push(`${window.label} pace: ${window.pace}`);
       }
       if (state.windows.length) {
@@ -1034,7 +1024,7 @@ const QuotaIndicator = GObject.registerClass(
 
     _renderPopupRow(item, state, staleAgeSeconds) {
       item._bars.visible = true;
-      const liveState = withLiveReset(state);
+      const liveState = withLiveReset(state, staleAgeSeconds != null);
       const parts = [
         `${liveState.used}%`,
         liveState.reset === "awaiting update" ? liveState.reset : `resets in ${liveState.reset}`,

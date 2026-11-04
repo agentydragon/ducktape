@@ -287,6 +287,7 @@ def test_reset_boundary_keeps_last_usage_without_predicting_renewal() -> None:
     )
     refreshed = refresh_view(to_view(quotas, _NOW), _NOW + timedelta(minutes=2)).providers[0]
     shown = refreshed.display_windows[0]
+    assert refreshed.summary_index == 0
     assert (shown.used, shown.exhausted, shown.reset_pending, shown.reset) == (100, True, True, "awaiting update")
     assert (shown.pace, shown.forecast) == (None, None)
     assert refreshed.status == "Reset time passed · awaiting updated usage"

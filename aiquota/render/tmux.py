@@ -39,7 +39,8 @@ def _render_provider(pq: ProviderView) -> str:
         value = "⚡"
         color = pq.summary_tint
     elif summary is not None and summary.exhausted:
-        value = f"↻{summary.reset}"
+        last_reset = max((window for window in windows if window.exhausted), key=lambda window: window.reset_seconds)
+        value = f"↻{last_reset.reset.replace(' ', '')}"
         color = summary.tint
     elif summary is not None:
         value = f"{summary.used}%"

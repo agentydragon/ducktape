@@ -10,6 +10,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   formatDuration,
+  formatExtraSpend,
+  refreshWindowTiming,
+  staleObservationAt,
   formatDeadline,
   formatResetCreditSummary,
   formatPrepaidBalance,
@@ -96,5 +99,44 @@ describe("formatDeadline", () => {
 
   it("returns null for an invalid deadline", () => {
     expect(formatDeadline("not a timestamp", now)).toBeNull();
+  });
+});
+
+describe("shared live presentation", () => {
+  const now = Date.parse("2026-01-15T12:00:00Z");
+  const window = {
+    used_percent: 100,
+    resetAtMs: now + 7200_000,
+    resetSeconds: 7200,
+    resetPending: false,
+    reset: "2h",
+    pace: "+5 pp",
+    forecast: "exhausts early",
+  };
+
+  it("advances reset countdowns and marks a passed deadline without changing the last reported usage", () => {
+    expect(refreshWindowTiming(window, now + 60_000).reset).toBe("1h 59m");
+    const pending = refreshWindowTiming(window, now + 7200_000);
+    expect(pending.resetPending).toBe(true);
+    expect(pending.reset).toBe("awaiting update");
+    expect(pending.used_percent).toBe(100);
+    expect(pending.pace).toBeNull();
+    expect(pending.forecast).toBeNull();
+    expect(window.resetPending).toBe(false);
+  });
+
+  it("suppresses projections at the server freshness deadline while preserving the original observation", () => {
+    expect(staleObservationAt(now, null, now + 600_000, now + 599_999)).toBeNull();
+    expect(staleObservationAt(now, null, now + 600_000, now + 600_000)).toBe(now);
+    expect(staleObservationAt(now, now - 60_000, null, now)).toBe(now - 60_000);
+    const stale = refreshWindowTiming(window, now + 60_000, true);
+    expect(stale.reset).toBe("1h 59m");
+    expect(stale.resetPending).toBe(false);
+    expect(stale.pace).toBeNull();
+    expect(stale.forecast).toBeNull();
+  });
+
+  it("renders monthly spend identically for browser and GNOME", () => {
+    expect(formatExtraSpend(2324.85, 4600)).toBe("Extra spend this month: $2,324.85 of $4,600 limit");
   });
 });

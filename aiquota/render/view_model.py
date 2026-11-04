@@ -187,7 +187,7 @@ def _provider_view(
     ]
     tint: Tint = "unknown"
     for window in display_windows:
-        if TINT_RANK[window.tint] > TINT_RANK[tint]:
+        if tint == "unknown" or TINT_RANK[window.tint] > TINT_RANK[tint]:
             tint = window.tint
     preferred = next((i for i in reversed(range(len(windows))) if windows[i].name is None), len(windows) - 1)
     index = None

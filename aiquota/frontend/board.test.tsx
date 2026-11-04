@@ -150,7 +150,7 @@ describe("QuotaBoard", () => {
     expect(container.textContent).toContain("$25.75 remaining");
     expect(container.textContent).toContain("Scope: Codex API");
     expect(container.textContent).toContain("scheduled");
-    expect(container.textContent).toContain("Extra usage this month: $25.50 of $100 limit");
+    expect(container.textContent).toContain("Extra spend this month: $25.50 of $100 limit");
     expect(container.textContent).toContain("Research org");
 
     const grantDetails = container.querySelector(".aiquota-reading-row .aiquota-details");
@@ -190,14 +190,17 @@ describe("QuotaBoard", () => {
     codex.error_detail = null;
     codex.last_output = {
       fetched_at: "2026-01-15T12:00:00Z",
-      result: { kind: "success", windows: [] },
-    } as ProviderView["last_output"];
+      result: { kind: "success", windows: [], reset_credit_expiry_lookup_failed: false },
+    };
     render(quotas, Date.parse("2026-01-15T12:11:00Z"));
 
     expect(container.querySelector('.aiquota-card[aria-label="Codex quota"] .aiquota-badge-stale')?.textContent).toBe(
       "Data stale · 11m"
     );
-    expect(container.querySelector('.aiquota-card[aria-label="Codex quota"] .aiquota-error-details')).toBeNull();
+    const card = container.querySelector('.aiquota-card[aria-label="Codex quota"]');
+    expect(card?.querySelector(".aiquota-error-details")).toBeNull();
+    expect(card?.textContent).not.toContain("On pace");
+    expect(card?.textContent).not.toContain("Numeric pace");
   });
 
   it("shows a zero reset balance when an included quota window is exhausted", () => {

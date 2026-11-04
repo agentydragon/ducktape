@@ -15,11 +15,11 @@
   Claude
     burst (5h)    :  60% used  ↻ 2h 30m  exhausts ~50m before reset
     weekly (7d)   :  15% used  ↻ 4d 21h  leaves ~50% unused at reset
-
+  
   Codex
     primary (5h)  :  30% used  ↻ 3h 30m  on pace
     secondary (7d):  48% used  ↻ 4d 21h  exhausts ~2d 15h before reset
-
+  
   z.ai
     1x burn — next 3x window in 18h
     burst (5h)    :  15% used  ↻ 3h 30m  leaves ~50% unused at reset
@@ -54,10 +54,10 @@
   '''
   Claude
     No quota or credit data available
-
+  
   Codex
     No quota or credit data available
-
+  
   z.ai
     No quota or credit data available
   '''
@@ -67,10 +67,10 @@
   Claude
     5h:   0% used  ↻ 0m
     7d:  88% used  ↻ 3d 15h  exhausts ~3d 3h before reset
-
+  
   Codex
     7d:  36% used  ↻ 5d 21h  exhausts ~3d 21h before reset
-
+  
   z.ai
     Included quota exhausted
     1x burn — next 3x window in 18h
@@ -84,11 +84,11 @@
     5h:   6% used  ↻ 2h      leaves ~90% unused at reset
     7d:   2% used  ↻ 5d      leaves ~93% unused at reset
     Extra spend this month: $2,324.85 of $4,600 limit
-
+  
   Codex
     5h:  30% used  ↻ 3h 30m  on pace
     7d:  30% used  ↻ 5d      exhausts ~8h before reset
-
+  
   z.ai
     1x burn — next 3x window in 18h
     5h:  20% used  ↻ 3h 30m  leaves ~33% unused at reset
@@ -102,12 +102,12 @@
     5h:  50% used  ↻ 3h 30m  exhausts ~2h before reset
     7d: 100% used  ↻ 4d 21h  exhausted
     Extra spend this month: $3,141.59 of $5,000 limit
-
+  
   Codex
     Banked resets: 2 · next known expiry Sep 20 · 1 expiry unknown
     5h:  30% used  ↻ 3h 30m  on pace
     7d:  30% used  ↻ 4d 21h  on pace
-
+  
   z.ai
     1x burn — next 3x window in 18h
     7d:  40% used  ↻ 4d 21h  exhausts ~1d 18h before reset
@@ -134,23 +134,23 @@
 # name: test_renders_shared_fixture[platform_credits_with_subscription_resets]
   '''
   Subscriptions
-
+  
   Claude
     Prepaid balance: $25.75
     5h:  45% used  ↻ 2h  leaves ~25% unused at reset
     7d:  32% used  ↻ 4d  leaves ~25% unused at reset
-
+  
   Codex
     Banked resets: 3 · next known expiry Jan 29, 12:00 UTC · 1 expiry unknown
     5h:  36% used  ↻ 2h  leaves ~40% unused at reset
     7d:  42% used  ↻ 4d  on pace
-
+  
   API balances
-
+  
   OpenAI API
     Available balance: $60.00
     Grant: $60.00 remaining · expires Jun 1
-
+  
   Anthropic API
     Shared org
       Available balance: $75.00
@@ -183,11 +183,11 @@
     Reset time passed · awaiting updated usage
     5h:  35% used  ↻ awaiting update
     7d:  72% used  ↻ 4d 3h
-
+  
   Codex
     5h:  30% used  ↻ 3h 30m           on pace
     7d:  30% used  ↻ 4d 21h           on pace
-
+  
   z.ai
     No quota or credit data available
   '''
@@ -204,11 +204,11 @@
   '''
   Claude
     Authentication failed
-
+  
   Codex
     5h:  60% used  ↻ 2h 30m  exhausts ~50m before reset
     7d:  15% used  ↻ 4d 21h  leaves ~50% unused at reset
-
+  
   z.ai
     1x burn — next 3x window in 18h
     5h:  90% used  ↻ 2h 30m  exhausts ~2h 13m before reset

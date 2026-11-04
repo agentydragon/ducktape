@@ -97,3 +97,53 @@ export function formatResetCreditSummary(
 export function formatMultiplier(value: number): string {
   return `${value}x`;
 }
+
+export function formatUsd(amount: number): string {
+  return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+export function formatUsdWhole(amount: number): string {
+  return `$${roundHalfToEven(amount).toLocaleString("en-US")}`;
+}
+
+export function formatExtraSpend(usedUsd: number, limitUsd: number): string {
+  return `Extra spend this month: ${formatUsd(usedUsd)} of ${formatUsdWhole(limitUsd)} limit`;
+}
+
+export function staleObservationAt(
+  observedAt: number | null,
+  staleSince: number | null,
+  staleAt: number | null,
+  now: number
+): number | null {
+  return staleSince ?? (staleAt !== null && now >= staleAt ? observedAt : null);
+}
+
+export type WindowTiming = {
+  resetAtMs: number | null;
+  resetSeconds: number | null;
+  resetPending: boolean;
+  reset: string;
+  pace: string | null;
+  forecast: string | null;
+};
+
+/** Advance deadlines without replacing provider-reported usage or inferring a refilled bucket. */
+export function refreshWindowTiming<T extends WindowTiming>(window: T, now: number, stale = false): T {
+  const deadline = window.resetAtMs;
+  const hasDeadline = deadline !== null && Number.isFinite(deadline);
+  const resetSeconds = hasDeadline ? Math.max(0, (deadline - now) / 1000) : window.resetSeconds;
+  const resetPending = window.resetPending || (hasDeadline && now >= deadline);
+  return {
+    ...window,
+    resetSeconds,
+    resetPending,
+    reset: resetPending
+      ? "awaiting update"
+      : hasDeadline && resetSeconds !== null
+        ? formatDuration(resetSeconds)
+        : window.reset,
+    pace: resetPending || stale ? null : window.pace,
+    forecast: resetPending || stale ? null : window.forecast,
+  };
+}
