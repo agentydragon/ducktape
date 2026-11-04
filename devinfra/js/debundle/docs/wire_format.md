@@ -33,12 +33,14 @@ engine must be recomputed before this field can be read.
 ## Native input identity in saved analysis
 
 The staged analysis projection stores native operation premises separately from
-`chunk_analysis_options`. A resolved-member selector becomes a typed
+`chunk_analysis_inputs`. This is the source-analysis view of the authored
+`chunk_analysis_options` map; graph-only settings remain in graph construction
+and do not enter the saved analysis identity. A resolved-member selector becomes a typed
 `declaration` with the original `binding` and `body_index`, keyed by provider
 chunk. Saved native input evidence uses the same source-only declaration;
 rendered reports restore the current `resolved_member` selector. Structural
 selectors remain `source_match`. Fresh analysis is required after this compiled
-schema change.
+schema change. The authored YAML field and its values are unchanged.
 
 ## Convention: `Atom`-only on the wire
 

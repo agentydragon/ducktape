@@ -11,21 +11,11 @@ use crate::analysis_inputs::ResolvedCommutingStatements;
 use crate::facts::{EffectCell, SourceUnitReadClosure};
 use crate::{SourceLocation, StatementEffectSummary, StatementFacts, StatementKind};
 
-/// The per-chunk options dependency-graph construction reads. Every other
-/// `chunk_analysis_options` field is consumed by analysis before the graph is
-/// built (`spec::DependencyGraphOptions`).
+/// The per-chunk options dependency-graph construction reads.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct GraphOptions {
     /// `chunk_analysis_options.<chunk>.dataflow_aware_s_chain`.
     pub dataflow_aware_s_chain: bool,
-}
-
-impl From<&spec::DependencyGraphOptions> for GraphOptions {
-    fn from(options: &spec::DependencyGraphOptions) -> Self {
-        Self {
-            dataflow_aware_s_chain: options.dataflow_aware_s_chain,
-        }
-    }
 }
 
 use super::dependency_graph::{AppliedCommutingPremise, DependencyGraph, SourceUnit, SourceUnitId};

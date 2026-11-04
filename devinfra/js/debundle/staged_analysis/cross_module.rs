@@ -38,7 +38,6 @@ use program_analysis::analyze_program_shallow;
 use selector_outcome::Outcome as SelectorOutcome;
 use selector_resolve::{Chunk as SelectorChunk, EntityIndex};
 use source_match::source_match_claim_member_selectors;
-use spec::DependencyGraphOptions;
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::{
     ArrowExpr, CallExpr, Callee, Constructor, Decl, Function, GetterProp, MemberProp, Module,
@@ -47,7 +46,8 @@ use swc_ecma_ast::{
 use swc_ecma_visit::{Visit, VisitWith};
 
 use super::analysis_projection::{
-    AnalysisNativeOperationInput, AnalysisProjection, NativeOperationSourceSelector,
+    AnalysisNativeOperationInput, AnalysisProjection, ChunkAnalysisInputs,
+    NativeOperationSourceSelector,
 };
 
 /// Resolve a one-binding `source_match` through the selector engine and
@@ -347,7 +347,7 @@ pub fn collect_cross_module_imported_purities(
         replacement_packages,
     } = options;
     let chunk_export_purity = projection.chunk_export_purity;
-    let chunk_analysis_options = projection.chunk_analysis_options.as_ref();
+    let chunk_analysis_inputs = projection.chunk_analysis_inputs.as_ref();
     let predefined_globals = projection.host_behavior.predefined_globals;
     let declared_pure_new_bindings = &projection.declared_pure_new();
     // Pass 2: assemble each chunk's oracle inputs from whichever body is
@@ -516,14 +516,14 @@ pub fn collect_cross_module_imported_purities(
     let value_inputs = resolve_value_inputs(
         artifact,
         &modules,
-        chunk_analysis_options,
+        chunk_analysis_inputs,
         graph_provenance,
         chunk_filter,
     )?;
     let native_operation_inputs = resolve_native_operation_inputs(
         artifact,
         &modules,
-        chunk_analysis_options,
+        chunk_analysis_inputs,
         graph_provenance,
         chunk_filter,
         &projection.native_operation_inputs,
@@ -531,14 +531,14 @@ pub fn collect_cross_module_imported_purities(
     let argument_inputs = resolve_argument_inputs(
         artifact,
         &modules,
-        chunk_analysis_options,
+        chunk_analysis_inputs,
         graph_provenance,
         chunk_filter,
     )?;
     let no_accessor_install_callables = resolve_no_accessor_install_callables(
         artifact,
         &modules,
-        chunk_analysis_options,
+        chunk_analysis_inputs,
         chunk_filter,
     )?;
     let asserted_pure: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
@@ -759,7 +759,7 @@ pub fn collect_cross_module_imported_purities(
 fn resolve_value_inputs(
     artifact: &ChunkBundle,
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
-    options: &BTreeMap<String, DependencyGraphOptions>,
+    options: &BTreeMap<String, ChunkAnalysisInputs>,
     graph_provenance: Option<&GraphProvenance>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> Result<BTreeMap<String, Vec<SelectedBindingValueInput>>> {
@@ -926,7 +926,7 @@ fn resolve_value_inputs(
 fn resolve_native_operation_inputs(
     artifact: &ChunkBundle,
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
-    options: &BTreeMap<String, DependencyGraphOptions>,
+    options: &BTreeMap<String, ChunkAnalysisInputs>,
     graph_provenance: Option<&GraphProvenance>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
     projected_inputs: &BTreeMap<String, Vec<AnalysisNativeOperationInput>>,
@@ -1073,7 +1073,7 @@ fn resolve_native_operation_inputs(
 fn resolve_argument_inputs(
     artifact: &ChunkBundle,
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
-    options: &BTreeMap<String, DependencyGraphOptions>,
+    options: &BTreeMap<String, ChunkAnalysisInputs>,
     graph_provenance: Option<&GraphProvenance>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> Result<BTreeMap<String, Vec<ResolvedArgumentInput>>> {
@@ -1208,7 +1208,7 @@ fn resolve_argument_inputs(
 fn resolve_no_accessor_install_callables(
     artifact: &ChunkBundle,
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
-    options: &BTreeMap<String, DependencyGraphOptions>,
+    options: &BTreeMap<String, ChunkAnalysisInputs>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> Result<BTreeMap<String, Vec<ResolvedNoAccessorInstall>>> {
     let mut resolved = BTreeMap::new();

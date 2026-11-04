@@ -16,7 +16,7 @@ use staged_analysis::chunk_facts::{
 };
 use staged_analysis::progress::emit_debundle_progress;
 
-use super::analysis_projection::AnalysisProjection;
+use super::analysis_projection::{AnalysisProjection, ChunkGraphInputs};
 use super::commuting_statements::resolve_chunk_commuting_statements;
 use super::io::{JsonlReport, ProgramGraphOutput, chunk_report_path, write_chunk_report_json};
 use super::util::{render_atomic_group_cause_guidance, target_file_for_request};
@@ -39,8 +39,8 @@ use crate::{
 };
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis::{
-    AnalysisAssumptions, BindingId, DependencyGraphAndAtomicGroups, EntryDestination, GraphOptions,
-    ModuleId, ModuleRole, PlacementProjectionInput, PlannedModule, SourceUnitLayout, top_level_id,
+    AnalysisAssumptions, BindingId, DependencyGraphAndAtomicGroups, EntryDestination, ModuleId,
+    ModuleRole, PlacementProjectionInput, PlannedModule, SourceUnitLayout, top_level_id,
 };
 use anyhow::{Context, Result, bail, ensure};
 use artifact::paths::join_module_path;
@@ -393,7 +393,7 @@ impl ClaimedLogicalChunk<'_> {
 /// the spec path its evidence names and the resolved logical-module members a
 /// `resolved_member` endpoint may name.
 pub(super) struct GraphConstructionContext<'a> {
-    pub(super) options: &'a BTreeMap<String, spec::DependencyGraphOptions>,
+    pub(super) chunk_inputs: &'a BTreeMap<String, ChunkGraphInputs>,
     pub(super) graph_provenance: Option<&'a GraphProvenance>,
     pub(super) resolved_member_sites: &'a BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
 }
@@ -455,16 +455,16 @@ pub(super) fn finish_logical_chunk(
         ..
     } = ast_analysis;
     let chunk_top_level_mark = runtime_ast.top_level_mark;
-    let dependency_graph_options = graph_context
-        .options
+    let graph_inputs = graph_context
+        .chunk_inputs
         .get(chunk_id)
         .cloned()
         .unwrap_or_default();
-    let graph_options = GraphOptions::from(&dependency_graph_options);
+    let graph_options = graph_inputs.options;
     let commuting_statements = resolve_chunk_commuting_statements(
         chunk_id,
         &runtime_ast.module.body,
-        &dependency_graph_options.commuting_statements,
+        &graph_inputs.commuting_statements,
         graph_context.graph_provenance,
         graph_context.resolved_member_sites,
     )?;

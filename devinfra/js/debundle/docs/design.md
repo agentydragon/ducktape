@@ -2712,15 +2712,17 @@ not a spec problem.
 The per-chunk pipeline is two halves with sharply different
 dependencies:
 
-- **Chunk analysis** (spec-independent): parse → per-statement facts →
+- **Chunk analysis** (assignment-independent): parse → per-statement facts →
   dependency graph → structural atomic groups, in two steps.
   `chunk_analysis::compute_chunk_facts` is a pure function of
-  `(source bytes, analysis hints, admission overrides)` returning
+  `(source bytes, source-analysis inputs, admission overrides)` returning
   `ChunkFactAnalysis` (facts, top-level-await detection, redundant-hint
-  warnings). `chunk_analysis::build_chunk_graph` derives the
-  `DependencyGraphAndAtomicGroups` from those facts, `GraphOptions` and the
-  chunk's resolved `commuting_statements`; no graph input reaches the
-  facts.
+  warnings). The authored `chunk_analysis_options` fields are mapped
+  exhaustively into stage inputs: source premises and fact policies go through
+  `AnalysisProjection`; `GraphOptions` and authored `commuting_statements` go
+  to graph construction with report context. `chunk_analysis::build_chunk_graph`
+  derives `DependencyGraphAndAtomicGroups` from those facts, `GraphOptions` and
+  the chunk's resolved commuting contracts; graph inputs do not reach facts.
 - **Materialization** (spec-dependent): assemble the assignment from the
   spec's binding claims, run the realizability gate, lower to ESM. This is
   `lowering::materialize_logical_modules`; `spec_resolution` compiles claims
@@ -2735,9 +2737,9 @@ pass and each chunk's facts) reads the spec only through
 solve, so it can also run in another process:
 
 - `debundle spec project-analysis` writes the projection as canonical bytes
-  (`AnalysisSpec`): the spec sections analysis reads, notes and graph-only
-  options removed, source paths relative to the source root, premises
-  resolved to bindings.
+  (`AnalysisSpec`): source-analysis inputs only, with notes and graph inputs
+  kept in their owning contexts, source paths relative to the source root, and
+  premises resolved to bindings.
 - `debundle analyze --projection` computes the analysis from the projection
   and the sources alone and writes an analysis artifact
   (`staged_analysis::analysis_artifact`): a header naming the engine, the projection

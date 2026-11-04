@@ -508,8 +508,14 @@ pub fn materialize_logical_modules(
                 .push(site);
         }
     }
+    let projected_chunk_options =
+        analysis_projection::project_chunk_options(chunk_analysis_options)?;
+    let graph_inputs = projected_chunk_options
+        .iter()
+        .map(|(chunk, options)| (chunk.clone(), options.graph.clone()))
+        .collect::<BTreeMap<_, _>>();
     let projection = AnalysisProjection::new(
-        chunk_analysis_options,
+        &projected_chunk_options,
         chunk_export_purity,
         host_behavior,
         program_premises.intrinsics_never_written.as_ref(),
@@ -586,7 +592,7 @@ pub fn materialize_logical_modules(
                             facts,
                             &program_graph,
                             GraphConstructionContext {
-                                options: chunk_analysis_options,
+                                chunk_inputs: &graph_inputs,
                                 graph_provenance: options.graph_provenance.as_ref(),
                                 resolved_member_sites: &resolved_member_sites,
                             },
