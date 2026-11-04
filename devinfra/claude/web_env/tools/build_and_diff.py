@@ -12,10 +12,10 @@ Usage:
 import argparse
 import logging
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -106,17 +106,19 @@ def capture_live_manifest() -> dict[str, Entry]:
 def capture_built_manifest() -> dict[str, Entry]:
     logger.info("Capturing built manifest...")
     subprocess.run(["docker", "rm", "-f", CONTAINER_NAME], check=False, capture_output=True)
-    run(["docker", "create", "--name", CONTAINER_NAME, IMAGE_NAME, "/bin/true"])
+    with ExitStack() as stack:
+        run(["docker", "create", "--name", CONTAINER_NAME, IMAGE_NAME, "/bin/true"])
+        stack.callback(run, ["docker", "rm", "-f", CONTAINER_NAME])
+        tmpdir = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="built_rootfs_")))
+        logger.info("Extracting built image filesystem to %s...", tmpdir)
+        with subprocess.Popen(["docker", "export", CONTAINER_NAME], stdout=subprocess.PIPE) as export_proc:
+            assert export_proc.stdout is not None
+            run(["tar", "-x", "--numeric-owner", "-C", str(tmpdir)], stdin=export_proc.stdout)
+            export_proc.stdout.close()
+            if exit_code := export_proc.wait():
+                raise subprocess.CalledProcessError(exit_code, export_proc.args)
 
-    tmpdir = Path(tempfile.mkdtemp(prefix="built_rootfs_"))
-    logger.info("Extracting built image filesystem to %s...", tmpdir)
-    export_proc = subprocess.Popen(["docker", "export", CONTAINER_NAME], stdout=subprocess.PIPE)
-    run(["tar", "-x", "--numeric-owner", "-C", str(tmpdir)], stdin=export_proc.stdout)
-    export_proc.wait()
-    run(["docker", "rm", CONTAINER_NAME])
-
-    entries = capture(root=tmpdir)
-    shutil.rmtree(tmpdir)
+        entries = capture(root=tmpdir)
     logger.info("Built manifest: %s entries", f"{len(entries):,}")
     return entries
 

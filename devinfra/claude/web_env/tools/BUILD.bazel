@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
     name = "manifest",
@@ -82,4 +82,17 @@ py_binary(
     name = "build_and_diff_bin",
     main_module = "devinfra.claude.web_env.tools.build_and_diff",
     deps = [":build_and_diff"],
+)
+
+py_test(
+    name = "build_and_diff_test",
+    srcs = ["build_and_diff_test.py"],
+    requires_docker = True,
+    deps = [
+        ":build_and_diff",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
