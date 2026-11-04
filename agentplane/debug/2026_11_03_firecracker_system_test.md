@@ -2,47 +2,53 @@
 
 This follows the [launcher proof](2026_11_03_firecracker_environment.md) with an app-integrated,
 disposable k3s acceptance target: `//agentplane/system_tests/suites:test_firecracker`.
-The implementation branch was initially rebased onto `devel` commit `e397149010`, then onto
-`194ba5aa0d` for CRI image cleanup, `d2247659d0` for the managed worker keyring policy,
-and `3473e3fd82` for the landed OCI descriptor API and current Session command clients.
+The accepted code is `760367f0aa18437549b073631ca8269ac4502be0`, rebased onto
+`devel` commit `2c86bf3bd1c09c1e3ccc4c1bc38cf323db41caf2`. The runner now lives on
+`ovh-ns104963`; earlier attempts below ran on wyrm2.
 
-## Accepted RAM continuation
+## Full hardware acceptance passed
 
-The [hardware run](https://app.buildbuddy.io/invocation/4c4ebb53-f4c8-4fc4-a7d1-2a3ec179e083)
-used clean source `36160a6dce635e784b15cb3fa8d018481e17554a` on the existing wyrm2 VM. Its
-functional scenario completed both real Codex tool turns and app-driven suspend/resume. Pytest recorded
-`1 passed, 1 error`: the functional case passed, but teardown failed after disk-pressure eviction. The [retained continuation JSON](2026_11_03_firecracker_system_test_continuation.json)
-records the assertions' inputs:
+The [hardware run](https://app.buildbuddy.io/invocation/418f4407-9b83-47df-be8d-fb28df43b15e)
+passed the complete target, including teardown: Bazel reports `PASSED in 804.5s`, and pytest
+reports `1 passed in 794.65s`. It used the production guest and real Codex harness with a scripted
+model, without live changes to the disposable cluster. All ordinary PR checks were green at the
+same code head. The [retained continuation JSON](2026_11_03_firecracker_system_test_continuation.json)
+contains the assertions' exact inputs:
 
 | Evidence                        | Before and after resume                            |
 | ------------------------------- | -------------------------------------------------- |
-| Sandbox UID                     | `e4e5317c-fa14-44e9-add3-ebaa025d5848`             |
-| Same Pod, no container restarts | `1c8c9cbf-c8b8-449d-9b27-5ede0295221e`             |
-| Kernel boot ID                  | `2a5340db-87f0-4a5d-a630-8d799fb94b28`             |
-| Runtime boot ID                 | `13dc241c-8670-4df9-8ec5-3fb3f72c2102`             |
-| Managed native process ID       | `ec81ccc7-9459-4b12-9aa4-065080a3e08c`             |
-| Native session ID               | `01a1a59e-fa51-7703-9596-5c129dea9d14`             |
-| Child PID / start ticks         | `582` / `6031`                                     |
-| Child counter                   | `2` → `70`                                         |
-| Random marker held in the child | `452e8902b0c758d9b3752270966aad3c4c807af1ef9afdd1` |
+| Sandbox UID                     | `398abd01-7c1a-4852-8847-3a98496e5089`             |
+| Same Pod, no container restarts | `32e4ba7c-a052-46c6-b1dc-0ac8c6335b90`             |
+| Kernel boot ID                  | `7294f4b2-df22-4f9f-bbc8-7d4d57968873`             |
+| Runtime boot ID                 | `cab612b0-f312-4af1-87c6-adc3c67b2d5a`             |
+| Managed native process ID       | `eb2950c2-6195-42d3-85f8-c0ffc426a64f`             |
+| Native session ID               | `01a1a656-6529-7360-88cb-85f0ad7031bb`             |
+| Child PID / start ticks         | `553` / `1783`                                     |
+| Child counter                   | `2` → `29`                                         |
+| Random marker held in the child | `8df2516686096d2ed81f2d7a5f25fb6631be36c13f6b4d0b` |
 
-The second probe never starts a replacement child. It observes a fresh counter increment and
-checks the live PID/start ticks before reporting the retained marker. The two observations are
-464.784 seconds apart in wall time. PID 1 is systemd; root, state and workspace are separate ext4
+The second probe never starts a replacement child. It observes fresh counter progress and checks
+the live PID/start ticks before reporting the retained marker. The observations are 257.070083203
+seconds apart in wall time. PID 1 remains systemd; root, state and workspace are separate ext4
 mounts, the runner is EROFS, and config/launch/trust are ISO9660. The canonical projected
 ServiceAccount token path is absent in both observations. The launcher's suspended phase was
-observed only after checkpoint commit and VMM reap, before the app requested resume.
+observed after checkpoint commit and VMM reap, before app-driven resume.
 
-In this run Firecracker acknowledged the first full RAM snapshot in 3.55 seconds, at 08:13:55 UTC.
-The replacement VMM started at 08:16:41; disk verification and restoration preceded the guest's
-second thaw acknowledgement at 08:21:23, with the same boot ID. Copying/verifying backing disks
-dominates this unoptimized implementation. These single-fixture observations are not a comparative
-latency benchmark. Follow-up storage work is recorded in `agentplane/env/TODO.md`.
+The functional scenario ran from 11:32:39.104 to 11:38:21.982 UTC. Firecracker acknowledged its
+first full RAM snapshot at 11:34:08.168 (2.91 seconds for the API call), and the resumed guest
+acknowledged thaw at 11:38:17.091 with the same boot ID. Disk verification and checkpoint copying
+dominate this implementation; these observations are not a comparative latency benchmark.
 
-Before the new test container started, logs from the previous failed attempt were retained and
-its two disposable volume directories were removed. No action container was running at deletion. No source, CRD or configuration
-was patched in the running acceptance cluster. Ordinary PR checks were all green at this source
-head; the hardware target is manual and was run separately.
+Cleanup ran from 11:38:21.990 to 11:42:46.824 UTC (264.834 seconds), within its existing 300-second
+budget. Deletion was accepted at 11:38:22.112, the cleanup checkpoint acknowledged at 11:38:25.864,
+and the final thaw acknowledged at 11:42:43.233. The restored Runtime reconnected, sessions were
+sealed, and the Sandbox was deleted by 11:42:46.824. This exercises both deletion corrections
+below: waiting for a verified connection before Quiesce, and completing finalization after the
+sealed launcher is deliberately deleted. No readiness, cleanup or overall deadline was increased.
+
+The worker was idle and healthy after output upload. The new fixture's image-store reset avoided
+obsolete boot layers; the work disk still had about 35 GiB free during final restore. Historical
+functional passes and failures remain below; this is the first complete target pass.
 
 ## Execution path
 
@@ -96,16 +102,17 @@ or changed by this work, and its later cancellation is not a successful full-sui
 
 ## Boot artifact
 
-`nix build .#agentplane-environment-firecracker-image` at source commit
-`ff14e8bd057d51591be67f5d94a085bb5f3f6f91` reused the accepted production derivation in 19 seconds.
-This is cache reuse, not a cold-build measurement. The archive is 2,266,443,551 bytes with SHA-256
-`a0334c39979b4766cdd8276ca50c7d6ca4cafac9bf5071099b0493a5e6e872e0`.
+The accepted production Nix output was built with inputs committed at
+`57efc97b8c315ababd4046cd40f2bb7f58926dcf`, including the agent-owned `/state/codex` directory.
+Its archive has 2,266,441,114 bytes and SHA-256
+`c008dc2ec34e17ebf396f15d889e5e1b5646444363e0f916dbcbab512362cdd7`. It is pinned from the existing
+workflow-owned Forgejo repository under nondeployable tag
+`spike-firecracker-57efc97b8c315ababd4046cd40f2bb7f58926dcf`, manifest digest
+`sha256:79cec82bc56731b75128797df9e9d2ef9fd954b60fbed089c5348493b58d1a97`.
 
-It was published to the existing workflow-owned Forgejo repository under the nondeployable tag
-`spike-firecracker-ff14e8bd057d51591be67f5d94a085bb5f3f6f91`, manifest digest
-`sha256:f1465053413c073aa5aa9c75d4c3e9fa6225021b94f48cc8cceb2a30271a05e1`.
 The boot layout is a declared Bazel input; the test does not read this host's Nix store. Registry
-credentials stay in a temporary Docker config on the Bazel client, outside test runfiles.
+credentials stay in a temporary Docker config on the Bazel client, outside test runfiles. The
+experimental tag does not enable Firecracker in staging.
 
 ## Checks
 
@@ -119,7 +126,9 @@ credentials stay in a temporary Docker config on the Bazel client, outside test 
   producing an 8,280,714-byte hash file. Both private-image input targets are tagged `manual`.
 - [Post-rebase fixture checks](https://app.buildbuddy.io/invocation/86ae21db-00f3-499c-bc70-c2e4d9330670):
   render, determinism, retained logs and all six changed library aspects passed.
-- Full Firecracker functional scenario: passed at `36160a6dce`; the enclosing target failed during teardown, as described above.
+- [Complete Firecracker acceptance](https://app.buildbuddy.io/invocation/418f4407-9b83-47df-be8d-fb28df43b15e): passed at `760367f0aa`, including teardown.
+- [Post-rebase adapter and fixture checks](https://app.buildbuddy.io/invocation/d6d5a00d-fab8-4041-a489-de42008b9aae): five tests and both explicitly named library builds passed.
+- [OVH nested-KVM smoke](https://app.buildbuddy.io/invocation/0707f7db-1bce-4051-a165-5ddee411123a): passed uncached in 5.9 seconds.
 
 ## Acceptance attempts
 
@@ -387,7 +396,7 @@ launcher Pod, the next reconciliation mistook the missing Pod for an unsealed lo
 retained the finalizer. The lost-launcher guard now applies only before sessions are recorded as
 quiesced. The [regression tests](https://app.buildbuddy.io/invocation/c59e2f7b-1831-4b61-8a6a-e327f8571453)
 pass both the sealed deletion through Sandbox removal and unsealed launcher loss retaining its
-checkpoint and finalizer. This correction still requires the full hardware rerun below.
+checkpoint and finalizer. The complete hardware rerun above subsequently passed with this correction.
 
 ## OVH runner placement and current rerun
 
@@ -432,12 +441,14 @@ first stopping or relocating the disposable runner while idle, then restoring th
 The branch was rebased onto `2c86bf3bd1c09c1e3ccc4c1bc38cf323db41caf2`. The Firecracker adapter
 now lives in `system_tests/firecracker`, using the shared `deployment`, `driver`, `k3s` and `vm`
 ownership introduced by devel. Production Firecracker Go, controller logic, guest Nix and worker
-placement configuration are unchanged by this rebase. The current hardware run uses clean code
-head `52bd6dbf413e36c0736dc39aff3e05a968f8ce4c`; its result is pending.
+placement configuration are unchanged by this rebase. The first submission at clean code head `52bd6dbf413e36c0736dc39aff3e05a968f8ce4c`
+failed analysis because the production launcher image still granted visibility to the old
+fixture package. No hardware action ran. Its visibility now names the new Firecracker package.
 
 The uncached [KVM smoke](https://app.buildbuddy.io/invocation/0707f7db-1bce-4051-a165-5ddee411123a)
 passed on the OVH worker in 5.9 seconds. The [post-rebase focused checks](https://app.buildbuddy.io/invocation/d6d5a00d-fab8-4041-a489-de42008b9aae)
 passed all five tests (Firecracker adapter, rendered fixture, stack lifecycle, baseline and guest
 logs), plus the explicitly named stack and plugin builds. The
-[full acceptance invocation](https://app.buildbuddy.io/invocation/1dcf0f5a-7e83-4e51-8461-fa3266ef851b)
-is separate from these checks.
+[analysis-only submission](https://app.buildbuddy.io/invocation/1dcf0f5a-7e83-4e51-8461-fa3266ef851b)
+is separate from these checks. The [hardware rerun](https://app.buildbuddy.io/invocation/418f4407-9b83-47df-be8d-fb28df43b15e)
+used clean head `760367f0aa` and passed, including teardown, as detailed above.
