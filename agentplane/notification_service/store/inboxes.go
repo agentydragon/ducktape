@@ -456,7 +456,7 @@ func (s *Store) Cleanup(ctx context.Context, afterID *uuid.UUID) (*uuid.UUID, er
 	return last, err
 }
 
-// expirePayloads drops the payloads of the inbox's oldest unexpired entries, at most 1000, up to the first one
+// expirePayloads drops the oldest acknowledged payloads, at most 1000, up to the first one
 // created since the cutoff, and moves the inbox's expired prefix over them.
 func expirePayloads(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, expiredThrough, acknowledged int64, cutoff time.Time) error {
 	rows, err := tx.QueryContext(ctx,

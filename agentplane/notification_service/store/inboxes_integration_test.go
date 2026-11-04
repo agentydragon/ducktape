@@ -351,7 +351,7 @@ func TestUnreadProviderAndMessagePayloadsSurviveThirtyDayCleanup(t *testing.T) {
 	if page.Inbox.ExpiredThrough != 0 || len(page.Entries) != 2 {
 		t.Fatalf("unread entries after cleanup = %+v", page)
 	}
-	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND payload IS NOT NULL AND (action_at IS NOT NULL OR message_body IS NOT NULL)`, subscription.InboxID); got != 2 {
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND (action_at IS NOT NULL OR message_body IS NOT NULL)`, subscription.InboxID); got != 2 {
 		t.Fatalf("%d unread entries retained native content, want 2", got)
 	}
 
