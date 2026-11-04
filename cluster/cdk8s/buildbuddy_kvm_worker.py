@@ -127,7 +127,9 @@ def chart(app: App) -> Chart:
                 "memory": VirtualMachineSpecTemplateSpecDomainResourcesLimits.from_string("24Gi"),
             },
         ),
-        node_selector={},
+        # Keep a nonempty selector: deleting the last key via server-side apply can
+        # present nodeSelector: null to KubeVirt's admission webhook.
+        node_selector={"kubernetes.io/os": "linux"},
         affinity=VirtualMachineSpecTemplateSpecAffinity(
             node_affinity=VirtualMachineSpecTemplateSpecAffinityNodeAffinity(
                 required_during_scheduling_ignored_during_execution=VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
