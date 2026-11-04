@@ -8,18 +8,13 @@ from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
 _ID_PATTERN = r"[A-Za-z0-9][A-Za-z0-9._-]*"
 
 
 class IntegrationConfigError(ValueError):
     """Configuration is invalid; error messages never contain settings values."""
-
-
-class VerificationConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
-    interval_seconds: int = Field(default=3600, gt=0)
 
 
 class InstanceConfig(BaseModel):
@@ -31,7 +26,7 @@ class InstanceConfig(BaseModel):
     enabled: bool = True
     upstream_base_url: str | None = None
     state_dir: str | None = None
-    verification: VerificationConfig = Field(default_factory=VerificationConfig)
+    poll_interval_seconds: int = Field(default=900, gt=0)
     settings: dict[str, Any] = Field(default_factory=dict, repr=False)
 
 
@@ -56,7 +51,7 @@ class IntegrationInstance:
     enabled: bool
     upstream_base_url: str
     state_dir: PurePosixPath
-    verification: VerificationConfig
+    poll_interval_seconds: int
     settings: BaseModel = field(repr=False)
 
 
@@ -109,10 +104,7 @@ class IntegrationRegistry:
             if not state_dir.is_absolute() or ".." in state_dir.parts or state_dir in directories:
                 raise IntegrationConfigError("Invalid or duplicate integration state directory")
             directories.add(state_dir)
-            try:
-                settings = integration_type.settings_model.model_validate(item.settings)
-            except ValidationError:
-                raise IntegrationConfigError("Invalid integration settings") from None
+            settings = integration_type.settings_model.model_validate(item.settings)
             instances.append(
                 IntegrationInstance(
                     id=item.id,
@@ -124,7 +116,7 @@ class IntegrationRegistry:
                         else integration_type.default_upstream_base_url
                     ),
                     state_dir=state_dir,
-                    verification=item.verification,
+                    poll_interval_seconds=item.poll_interval_seconds,
                     settings=settings,
                 )
             )
