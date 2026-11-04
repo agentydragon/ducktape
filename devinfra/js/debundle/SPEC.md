@@ -3728,7 +3728,8 @@ binding, escaped callback pool, named export binding, or default/runtime export
 callback roots. An argument position is not proof of a runtime caller argument:
 ordinary fallback uses its abstract invocation inputs, while callback-pool
 fallback uses the original opaque-operation inputs rather than the synthetic
-flattened callback-set argument.
+flattened callback-set argument. Opaque-operation inputs can include the method
+receiver appended after explicit arguments.
 Duplicate abstract values keep the first seed in argument, captured-binding,
 escaped-pool, then export order. Typed path edges reuse the callback walk's
 stored-reference carriers; array elements are reported only for canonical
