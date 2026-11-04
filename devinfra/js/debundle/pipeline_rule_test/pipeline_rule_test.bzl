@@ -65,6 +65,21 @@ def _pipeline_report_flags_test_impl(ctx):
     )
     groups = target[OutputGroupInfo]
     asserts.equals(env, 2, len(groups.analysis.to_list()))
+    analyzed = actions["DebundleAnalyze"].outputs.to_list()[0]
+    native_inputs = groups.native_inputs.to_list()
+    pipeline_inputs = actions["DebundlePipeline"].inputs.to_list()
+    expected_native_inputs = [
+        file
+        for file in pipeline_inputs
+        if file != analyzed and file.basename not in ["debundle", "debundle.runfiles"]
+    ]
+    asserts.equals(
+        env,
+        sorted([file.path for file in expected_native_inputs]),
+        sorted([file.path for file in native_inputs]),
+    )
+    asserts.false(env, analyzed in native_inputs)
+    asserts.false(env, any([file.basename == "debundle" for file in native_inputs]))
     if ctx.attr.readable:
         export = actions["DebundleExportGraphs"]
         asserts.true(env, "--graphs --reports-only" in export.argv[-1])

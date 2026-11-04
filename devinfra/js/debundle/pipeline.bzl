@@ -9,7 +9,9 @@ into the source tree.
 Three actions: `DebundleProjectAnalysis` writes what analysis reads from the
 spec, `DebundleAnalyze` computes the analysis from that projection and the
 sources alone, and `DebundlePipeline` runs against the stored analysis. The
-`analysis` output group holds the projection and the analysis artifact.
+`analysis` output group holds the projection and the analysis artifact. The
+`native_inputs` output group exposes the spec, source and package inputs without
+selecting analysis or pipeline actions.
 When split_dependency_graphs is enabled, a separate DebundleExportGraphs action
 loads that exact artifact on demand; default outputs never serialize full graphs.
 """
@@ -65,6 +67,7 @@ def _debundle_pipeline_impl(ctx):
     output_groups = {
         "analysis": depset([projection, analysis]),
         "debundler": depset([ctx.executable.debundler]),
+        "native_inputs": depset(ctx.files.ownership_subset, transitive = [plan.inputs]),
     }
     _run_debundler(
         ctx,
