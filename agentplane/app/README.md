@@ -556,7 +556,7 @@ group becomes available is the Action Service's contract
 
 `listen_address` selects the HTTP listener: a TCP address such as `127.0.0.1:8080`, or
 `fd:N` to consume an inherited, already-listening TCP socket. It follows the shared
-[`util/netlistener`](../../util/netlistener/README.md) contract. App subprocess fixtures hold
+[`agentplane/net/listener`](../net/listener/README.md) contract. App subprocess fixtures hold
 `util.net.listen_tcp()` across startup and put `fd:N` in configuration, including while
 constructing OIDC callback URLs, so there is no released-port allocation window.
 

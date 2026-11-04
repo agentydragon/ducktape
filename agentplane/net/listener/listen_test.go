@@ -1,4 +1,4 @@
-package netlistener
+package listener
 
 import (
 	"errors"

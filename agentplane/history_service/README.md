@@ -225,7 +225,7 @@ Bazel targets: `:history-service` and `:service_image`. Settings come from `AGEN
 variables or the YAML file named by `AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE` (`config.go`, `settings.py`).
 The read API listens on `listen_address`, where `grpc.health.v1.Health` reports process liveness only.
 Both listener settings accept TCP addresses or inherited descriptors as documented by
-[`util/netlistener`](../../util/netlistener/README.md).
+[`agentplane/net/listener`](../net/listener/README.md).
 
 ## Optional central producers
 

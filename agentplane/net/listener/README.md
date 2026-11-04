@@ -1,6 +1,6 @@
 # TCP listeners at process boundaries
 
-`netlistener.Open(spec)` accepts a TCP `host:port` address or `fd:N` for an inherited,
+`listener.Open(spec)` accepts a TCP `host:port` address or `fd:N` for an inherited,
 already-listening TCP socket. `N` is a descriptor in the child process, at least 3.
 The function consumes an inherited descriptor and returns an owned `net.Listener`.
 Invalid descriptors fail startup; there is no fallback bind.

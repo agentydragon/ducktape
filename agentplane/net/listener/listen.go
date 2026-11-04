@@ -1,5 +1,5 @@
-// Package netlistener acquires owned TCP listeners from addresses or inherited descriptors.
-package netlistener
+// Package listener acquires owned TCP listeners from addresses or inherited descriptors.
+package listener
 
 import (
 	"fmt"
