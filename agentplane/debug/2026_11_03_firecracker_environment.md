@@ -108,8 +108,8 @@ changed. After saving the focused evidence, the disposable
 
 ## Generated-client transport decomposition (2026-11-04 UTC)
 
-The launcher now uses the generated Python `GuestManagement` stub directly over a private Unix
-socket. Its small Go bridge owns no protobuf messages: it uses the separately reviewed
+This preceding launcher implementation used the generated Python `GuestManagement` stub directly over a private Unix
+socket. Its small Go bridge owned no protobuf messages: it used the separately reviewed
 [`util/vsock/firecracker`](../../util/vsock/firecracker/README.md) stream transport from PR #14136.
 Agentplane owns port 52, private socket permissions, boot-ID checks and credential policy. The guest
 uses `github.com/mdlayher/vsock` for its native listener and keeps host-CID authorization in the
@@ -154,3 +154,54 @@ or projected ServiceAccount token rotation.
 are retained. The proof still uses manually supplied launcher inputs and a synthetic Gateway-protocol
 client, not a deployed Sandbox controller/Gateway/Session test. The disposable namespace was deleted
 after saving evidence; no VM disks, RAM snapshots or private keys are retained in Git.
+
+## Go supervisor and direct vsock gRPC (2026-11-04 UTC)
+
+The current launcher is Go. Its generated `GuestManagement` client uses
+`grpc.WithContextDialer` and the independent `util/vsock/firecracker.Dial` library directly.
+The Python launcher runtime, intermediate bridge executable and private listening socket are
+removed. The transport PR retains only the stream dialer. Firecracker's own control API remains
+HTTP over its Unix socket.
+
+[The integrated Go launcher and guest tests](https://app.buildbuddy.io/invocation/898bc023-0052-4d62-a1ed-50a66e0840cb)
+passed. [The broader run](https://app.buildbuddy.io/invocation/1ea13874-fe40-4b3c-ad8f-a8cce774f4ae)
+passed the actual launcher OCI startup, guest/transport and chart checks, but found a helper-process
+test readiness race: a file existed before the helper wrote its arguments. After waiting for the
+file's contents, [the full launcher Go suite passed](https://app.buildbuddy.io/invocation/1c144d69-65df-47ee-b23c-0e493b194ca1).
+These tests cover coherent projected-Secret reads, direct gRPC startup, deadlines/cancellation,
+identity checks before transmitting keys, no Synchronize replay, network guard ordering,
+conservative workspace initialization, checkpoint integrity and VMM exit ordering.
+
+The [launcher/probe artifacts](https://app.buildbuddy.io/invocation/10bdc42c-f798-47a7-8b61-b37096d79481)
+were built from `4303939f11c1a7397d3f9541809290fac4515bf4`, above transport commit
+`b77131876dd241d252365387195ddc936e66b33a`. The later readiness change is test-only.
+The unmodified Go launcher OCI root and the previously verified immutable guest/runner artifacts
+ran in a fresh disposable Pod on wyrm2. An initial chroot-harness launch could not open its log
+because the host-side log directory was missing; no launcher or VMM had started. After verifying
+there was no active marker or VMM, the harness created the directory and started the launcher.
+This was a harness setup error; no uncertain VM start or native StartProcess was replayed.
+
+The Pod UID remained `1c7900b6-6d72-4b87-8304-864cc47538f9`. The guest boot ID
+`5b0b1d6c-0f02-4b0a-9d4f-00b53657aeab` and Runtime boot ID
+`b4053167-114b-4ff6-a747-0213759329f1` survived full checkpoint/restore. Checkpoint
+`checkpoint-9a04bf25-06cd-49a4-ba54-f106dc9677a7` contains 1,073,741,824 bytes of RAM.
+The native execution session stayed `1b0c530d-5dd6-4125-95d1-f152768d9343`, with marker
+`7c4770a8-184d-49ba-abc4-7e20dd238cdb`, shell PID 486 and child PID 487. Its counter advanced
+from 0 to 1 after restore, then to 6 after a five-second observation and another cursor-based
+reattachment. Output wall timestamps exceed the host's thaw-request timestamp, proving new
+post-resume execution rather than only buffered pre-freeze output. The probe called StartProcess
+once; both resumes required the existing session ID and output cursor.
+
+While suspended, a complete synthetic projected-Secret generation replaced the Runtime leaf
+certificate. After restoring RAM, the direct vsock gRPC synchronization refreshed credentials
+before network admission. Runtime served the expected new certificate fingerprint
+`2d30c945b278d05cae78117447ce4dfdf8ab254741886a838bf8a4d43f7dd302`, replacing
+`391d0d47130b27e8d7d5874f4c0845f9f899f681627808e003c12ddaf80d79e5`.
+
+[Selected events, manifests, thaw acknowledgements and artifact hashes](2026_11_03_firecracker_environment/go_supervisor_evidence.json)
+are retained without credentials, RAM or disk contents. This repeats the manual Runtime-protocol
+RAM/TLS proof; it does not test a deployed Sandbox controller/Gateway/Session/harness, projected
+ServiceAccount-token rotation, the real egress proxy, k3s, cross-Pod recovery or a jailer. The Go
+firewall policy has rule/order tests and the running guest accepted real mTLS Runtime ingress;
+this run did not repeat the primitive spike's external proxy/direct-egress experiments. The
+backend remains disabled in staging. The disposable proof namespace was deleted and verified absent.
