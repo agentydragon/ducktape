@@ -5,6 +5,7 @@ syntax = "proto3";
 package agentplane.runner_gateway.dispatcher;
 
 import "agentplane/proto/event_log.proto";
+import "agentplane/proto/identity.proto";
 import "agentplane/proto/environment_lifecycle.proto";
 import "agentplane/proto/session.proto";
 import "google/api/annotations.proto";
@@ -250,6 +251,9 @@ message Session {
   reserved "harness", "initial_executor", "environment_hosted", "central_sampler_v1";
   // Read-only projection of the placement stored in SessionSpec, without exposing instructions.
   agentplane.proto.SessionPlacement placement = 12;
+  // The exact ServiceAccount bound to this Session, if established. Absence means its identity
+  // is not yet known, not that a current account with the same name owns it.
+  agentplane.proto.ServiceAccountIdentity execution_identity = 15;
 }
 
 message CreateSessionResponse {
