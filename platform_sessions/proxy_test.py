@@ -57,6 +57,7 @@ def test_authorization_and_provider_specific_header_filtering():
         (
             (b"content-type", b"text/plain"),
             (b"set-cookie", b"session=secret"),
+            (b"authentication-info", b"secret"),
             (b"x-private-response", b"secret"),
             (b"x-kept", b"yes"),
             (b"cache-control", b"max-age=5"),
@@ -79,6 +80,7 @@ def test_authorization_and_provider_specific_header_filtering():
     assert response.headers["x-kept"] == "yes"
     assert response.headers["cache-control"] == "max-age=5"
     assert "set-cookie" not in response.headers
+    assert "authentication-info" not in response.headers
     assert "x-private-response" not in response.headers
     forwarded = transport.requests[-1]
     assert forwarded.url == "https://upstream.test/api/orders/one"

@@ -30,8 +30,10 @@ _HOP = frozenset(
         b"upgrade",
     }
 )
-_REQUEST_PRIVATE = frozenset({b"authorization", b"cookie", b"host"})
-_RESPONSE_PRIVATE = frozenset({b"set-cookie"})
+_REQUEST_PRIVATE = frozenset({b"authorization", b"cookie", b"cookie2", b"host"})
+_RESPONSE_PRIVATE = frozenset(
+    {b"authorization", b"authentication-info", b"proxy-authentication-info", b"set-cookie", b"set-cookie2"}
+)
 
 
 @dataclass(frozen=True)
@@ -67,7 +69,11 @@ class ProxyResponse:
 
 
 class SessionTransport(Protocol):
-    """Send once with the provider-owned session; return undecoded response bytes."""
+    """Send once with the owned session; do not retry or follow redirects.
+
+    Forward the raw query unchanged, capture any rotated session state, and
+    return response bytes without decoding them.
+    """
 
     async def request(self, request: ProxyRequest) -> ProxyResponse: ...
 
