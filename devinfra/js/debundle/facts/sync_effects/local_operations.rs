@@ -1,6 +1,6 @@
 //! Source-covered local operations collected before value lowering erases writes.
 
-use super::value_model::{ValueExpr, object_data_property_name};
+use super::value_model::{ValueExpr, object_data_property_name, static_property_name};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use swc_common::Span;
@@ -27,6 +27,8 @@ pub(super) enum LocalCallee {
 #[derive(Debug, Clone)]
 pub(super) enum LocalExpression {
     Value(ValueExpr),
+    /// The fresh receiver supplied by a checked constructor query.
+    This,
     Sequence(Arc<[Self]>),
     Record {
         allocation: u32,
@@ -53,6 +55,14 @@ pub(super) enum LocalExpression {
         property: String,
         value: Arc<Self>,
         span: Span,
+    },
+    /// Class field definition and declared private-field assignment both
+    /// contribute weak containment to the fresh-instance retention projection.
+    /// This does not model public/private descriptor identity or authorize a
+    /// later field read.
+    DefineThisField {
+        property: String,
+        value: Arc<Self>,
     },
 }
 
@@ -89,6 +99,13 @@ fn simple_binding(pattern: &Pat) -> Option<Id> {
 fn unconditional_value(value: &ValueExpr) -> bool {
     match value {
         ValueExpr::Binding(_) | ValueExpr::NonCallable(_) | ValueExpr::Undefined => true,
+        ValueExpr::New(callee, arguments, _)
+            if arguments.is_empty()
+                && matches!(callee.as_ref(), ValueExpr::Binding(binding)
+                    if matches!(binding.0.as_ref(), "Map" | "Set" | "WeakMap" | "WeakSet")) =>
+        {
+            true
+        }
         ValueExpr::ObjectLiteral(_, properties) => properties
             .iter()
             .all(|(_, value)| unconditional_value(value)),
@@ -102,14 +119,14 @@ fn unconditional_value(value: &ValueExpr) -> bool {
 }
 
 impl LocalExpression {
-    fn optional(expression: Option<&Expr>) -> Option<Option<Self>> {
+    fn optional(expression: Option<&Expr>, class_template: bool) -> Option<Option<Self>> {
         match expression {
-            Some(expression) => Some(Some(Self::lower(expression)?)),
+            Some(expression) => Some(Some(Self::lower(expression, class_template)?)),
             None => Some(None),
         }
     }
 
-    fn lower(expression: &Expr) -> Option<Self> {
+    fn lower(expression: &Expr, class_template: bool) -> Option<Self> {
         match expression.unwrap_parens() {
             Expr::Object(object) => {
                 let properties = object
@@ -132,7 +149,35 @@ impl LocalExpression {
                             {
                                 Some((
                                     object_data_property_name(&pair.key)?,
-                                    Self::lower(&pair.value)?,
+                                    Self::lower(&pair.value, class_template)?,
+                                ))
+                            }
+                            Prop::Method(method)
+                                if class_template
+                                    && method.function.decorators.is_empty()
+                                    && object_data_property_name(&method.key).is_some() =>
+                            {
+                                Some((
+                                    object_data_property_name(&method.key)?,
+                                    Self::Closure(method.function.span.lo.0),
+                                ))
+                            }
+                            Prop::Getter(getter)
+                                if class_template
+                                    && object_data_property_name(&getter.key).is_some() =>
+                            {
+                                Some((
+                                    object_data_property_name(&getter.key)?,
+                                    Self::Closure(getter.function.span.lo.0),
+                                ))
+                            }
+                            Prop::Setter(setter)
+                                if class_template
+                                    && object_data_property_name(&setter.key).is_some() =>
+                            {
+                                Some((
+                                    object_data_property_name(&setter.key)?,
+                                    Self::Closure(setter.span.lo.0),
                                 ))
                             }
                             _ => None,
@@ -160,7 +205,7 @@ impl LocalExpression {
                 sequence
                     .exprs
                     .iter()
-                    .map(|expression| Self::lower(expression))
+                    .map(|expression| Self::lower(expression, class_template))
                     .collect::<Option<Arc<[_]>>>()?,
             )),
             Expr::Call(call) if !call.args.iter().any(|argument| argument.spread.is_some()) => {
@@ -192,7 +237,7 @@ impl LocalExpression {
                     arguments: call
                         .args
                         .iter()
-                        .map(|argument| Self::lower(&argument.expr))
+                        .map(|argument| Self::lower(&argument.expr, class_template))
                         .collect::<Option<Arc<[_]>>>()?,
                     span: call.span,
                 })
@@ -211,7 +256,7 @@ impl LocalExpression {
                 })
             }
             Expr::Assign(assignment) if assignment.op == AssignOp::Assign => {
-                let value = Arc::new(Self::lower(&assignment.right)?);
+                let value = Arc::new(Self::lower(&assignment.right, class_template)?);
                 match &assignment.left {
                     AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
                         Some(Self::Assign {
@@ -221,6 +266,15 @@ impl LocalExpression {
                         })
                     }
                     AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
+                        if class_template
+                            && matches!(member.obj.unwrap_parens(), Expr::This(_))
+                            && let MemberProp::PrivateName(private) = &member.prop
+                        {
+                            return Some(Self::DefineThisField {
+                                property: private.name.to_string(),
+                                value,
+                            });
+                        }
                         let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
                             return None;
                         };
@@ -237,16 +291,27 @@ impl LocalExpression {
                     _ => None,
                 }
             }
+            Expr::This(_) if class_template => Some(Self::This),
             _ => {
                 let (value, covered) = ValueExpr::from_expr_with_coverage(expression);
-                (covered && unconditional_value(&value)).then_some(Self::Value(value))
+                let class_native_constructor = class_template
+                    && matches!(
+                        &value,
+                        ValueExpr::New(callee, arguments, _)
+                            if arguments.is_empty()
+                                && matches!(callee.as_ref(), ValueExpr::Binding(binding)
+                                    if matches!(binding.0.as_ref(), "Map" | "Set" | "WeakMap" | "WeakSet"))
+                    );
+                (covered || class_native_constructor)
+                    .then(|| unconditional_value(&value).then_some(Self::Value(value)))
+                    .flatten()
             }
         }
     }
 
     fn local_targets(&self, bindings: &BTreeMap<Id, LocalBinding>) -> bool {
         match self {
-            Self::Value(_) | Self::ReadField { .. } | Self::Closure(_) => true,
+            Self::Value(_) | Self::This | Self::ReadField { .. } | Self::Closure(_) => true,
             Self::Record { properties, .. } => properties
                 .iter()
                 .all(|(_, value)| value.local_targets(bindings)),
@@ -260,6 +325,7 @@ impl LocalExpression {
             Self::AssignField {
                 receiver, value, ..
             } => bindings.contains_key(receiver) && value.local_targets(bindings),
+            Self::DefineThisField { value, .. } => value.local_targets(bindings),
         }
     }
 
@@ -280,7 +346,7 @@ impl LocalExpression {
                 reads.insert(binding.clone());
                 value.reads(reads);
             }
-            Self::Closure(_) => {}
+            Self::Closure(_) | Self::This => {}
             Self::Call {
                 callee, arguments, ..
             } => {
@@ -302,6 +368,7 @@ impl LocalExpression {
                 reads.insert(receiver.clone());
                 value.reads(reads);
             }
+            Self::DefineThisField { value, .. } => value.reads(reads),
         }
     }
 
@@ -317,8 +384,10 @@ impl LocalExpression {
             Self::Assign { binding, value, .. } => {
                 bindings.contains_key(binding) && value.allocation_only_syntax(bindings)
             }
-            Self::AssignField { value, .. } => value.allocation_only_syntax(bindings),
-            Self::Value(_) | Self::ReadField { .. } => true,
+            Self::AssignField { value, .. } | Self::DefineThisField { value, .. } => {
+                value.allocation_only_syntax(bindings)
+            }
+            Self::Value(_) | Self::This | Self::ReadField { .. } => true,
         }
     }
 
@@ -343,8 +412,10 @@ impl LocalExpression {
                     argument.writes(writes);
                 }
             }
-            Self::AssignField { value, .. } => value.writes(writes),
-            Self::Value(_) | Self::ReadField { .. } | Self::Closure(_) => {}
+            Self::AssignField { value, .. } | Self::DefineThisField { value, .. } => {
+                value.writes(writes)
+            }
+            Self::Value(_) | Self::This | Self::ReadField { .. } | Self::Closure(_) => {}
         }
     }
 }
@@ -384,7 +455,7 @@ impl LocalBody {
                                 bindings.insert(binding.clone(), kind);
                             }
                         }
-                        let value = LocalExpression::optional(declarator.init.as_deref())?;
+                        let value = LocalExpression::optional(declarator.init.as_deref(), false)?;
                         if kind == LocalBinding::Const && value.is_none() {
                             return None;
                         }
@@ -392,17 +463,19 @@ impl LocalBody {
                     }
                 }
                 Stmt::Expr(expression) => operations.push(LocalOperation::Evaluate(
-                    LocalExpression::lower(&expression.expr)?,
+                    LocalExpression::lower(&expression.expr, false)?,
                 )),
                 Stmt::Return(statement) => {
                     operations.push(LocalOperation::Return(LocalExpression::optional(
                         statement.arg.as_deref(),
+                        false,
                     )?));
                     terminal = true;
                 }
                 Stmt::Throw(statement) => {
                     operations.push(LocalOperation::Throw(LocalExpression::lower(
                         &statement.arg,
+                        false,
                     )?));
                     terminal = true;
                 }
@@ -421,9 +494,156 @@ impl LocalBody {
         Self::from_operations(
             Self::parameter_bindings(parameters)?,
             vec![LocalOperation::Return(Some(LocalExpression::lower(
-                expression,
+                expression, false,
             )?))],
         )
+    }
+
+    /// Canonically lower the allocation effects of a base class constructor.
+    /// The caller still proves binding stability and native identity; this
+    /// collector retains every constructor-time field operation in order.
+    pub(super) fn lower_class_constructor(class: &Class) -> Option<(Self, Vec<Id>)> {
+        if class.super_class.is_some() || !class.decorators.is_empty() {
+            return None;
+        }
+
+        let mut constructor = None;
+        let mut private_fields = BTreeSet::new();
+        let mut field_operations = Vec::new();
+        for member in &class.body {
+            match member {
+                ClassMember::Constructor(definition) if constructor.is_none() => {
+                    constructor = Some(definition);
+                }
+                ClassMember::Constructor(_) => return None,
+                ClassMember::PrivateProp(field) => {
+                    if !field.decorators.is_empty() {
+                        return None;
+                    }
+                    if !field.is_static {
+                        let property = field.key.name.to_string();
+                        private_fields.insert(property.clone());
+                        if let Some(value) = field.value.as_deref() {
+                            field_operations.push(LocalOperation::Evaluate(
+                                LocalExpression::DefineThisField {
+                                    property,
+                                    value: Arc::new(LocalExpression::lower(value, true)?),
+                                },
+                            ));
+                        }
+                    }
+                }
+                ClassMember::ClassProp(field) => {
+                    if !field.decorators.is_empty() {
+                        return None;
+                    }
+                    if !field.is_static {
+                        if !matches!(
+                            field.key,
+                            PropName::Ident(_) | PropName::Str(_) | PropName::Num(_)
+                        ) {
+                            return None;
+                        }
+                        if let Some(value) = field.value.as_deref() {
+                            field_operations.push(LocalOperation::Evaluate(
+                                LocalExpression::DefineThisField {
+                                    property: static_property_name(&field.key)?,
+                                    value: Arc::new(LocalExpression::lower(value, true)?),
+                                },
+                            ));
+                        }
+                    }
+                }
+                ClassMember::AutoAccessor(accessor) if !accessor.is_static => return None,
+                ClassMember::Method(method) if !method.function.decorators.is_empty() => {
+                    return None;
+                }
+                ClassMember::PrivateMethod(method) if !method.function.decorators.is_empty() => {
+                    return None;
+                }
+                _ => {}
+            }
+        }
+
+        let mut bindings = BTreeMap::new();
+        let mut parameters = Vec::new();
+        let mut constructor_operations = Vec::new();
+        if let Some(constructor) = constructor {
+            for parameter in &constructor.params {
+                let ParamOrTsParamProp::Param(parameter) = parameter else {
+                    return None;
+                };
+                if !parameter.decorators.is_empty() {
+                    return None;
+                }
+                let Pat::Ident(binding) = &parameter.pat else {
+                    return None;
+                };
+                if bindings
+                    .insert(binding.id.to_id(), LocalBinding::Parameter)
+                    .is_some()
+                {
+                    return None;
+                }
+                parameters.push(binding.id.to_id());
+            }
+
+            for statement in &constructor.body.as_ref()?.stmts {
+                match statement {
+                    Stmt::Empty(_) => {}
+                    Stmt::Decl(Decl::Var(declaration)) if !declaration.declare => {
+                        let kind = match declaration.kind {
+                            VarDeclKind::Var => LocalBinding::Var,
+                            VarDeclKind::Let => LocalBinding::Let,
+                            VarDeclKind::Const => LocalBinding::Const,
+                        };
+                        for declarator in &declaration.decls {
+                            if declarator.definite {
+                                return None;
+                            }
+                            let binding = simple_binding(&declarator.name)?;
+                            match bindings.get(&binding) {
+                                Some(LocalBinding::Var | LocalBinding::Parameter)
+                                    if kind == LocalBinding::Var => {}
+                                Some(_) => return None,
+                                None => {
+                                    bindings.insert(binding.clone(), kind);
+                                }
+                            }
+                            let value =
+                                LocalExpression::optional(declarator.init.as_deref(), true)?;
+                            if kind == LocalBinding::Const && value.is_none() {
+                                return None;
+                            }
+                            constructor_operations.push(LocalOperation::Initialize(binding, value));
+                        }
+                    }
+                    Stmt::Expr(expression) => {
+                        let operation = LocalExpression::lower(&expression.expr, true)?;
+                        let LocalExpression::DefineThisField { property, .. } = &operation else {
+                            return None;
+                        };
+                        if !private_fields.contains(property) {
+                            return None;
+                        }
+                        constructor_operations.push(LocalOperation::Evaluate(operation));
+                    }
+                    Stmt::Return(statement) => {
+                        constructor_operations.push(LocalOperation::Return(
+                            LocalExpression::optional(statement.arg.as_deref(), true)?,
+                        ));
+                        break;
+                    }
+                    _ => return None,
+                }
+            }
+        }
+
+        field_operations.extend(constructor_operations);
+        Some((
+            Self::from_operations(bindings, field_operations)?,
+            parameters,
+        ))
     }
 
     fn parameter_bindings<'a>(

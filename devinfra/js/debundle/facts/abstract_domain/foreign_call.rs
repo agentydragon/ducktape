@@ -22,13 +22,15 @@ use std::ops::Range;
 
 use swc_ecma_ast::*;
 
-use crate::analysis_inputs::{ForeignInvocation, ForeignReturn, NativeIntrinsic};
+use crate::analysis_inputs::{
+    ForeignInvocation, ForeignReturn, NativeIntrinsic, ProofDependencies,
+};
 
 /// The exported declaration or initializer being summarized.
 pub(crate) enum ForeignBody<'a> {
     Function(&'a Function),
     Arrow(&'a ArrowExpr),
-    Class(&'a Class),
+    Class,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +40,7 @@ pub(crate) struct DerivedForeignCall {
     pub(crate) retained_arguments: BTreeSet<usize>,
     pub(crate) retained_provider_captures: BTreeSet<String>,
     pub(crate) native_constructions: BTreeSet<NativeIntrinsic>,
+    pub(crate) dependencies: ProofDependencies,
     /// Set for a parameterless call that always returns one fresh record.
     pub(crate) record: Option<Vec<RecordMember>>,
     /// The source range of the closure literal every call returns a fresh
@@ -96,10 +99,6 @@ impl Value {
 struct Evaluator<'a, F> {
     env: BTreeMap<Id, Value>,
     parameters: usize,
-    /// Arguments the fresh `this` can reach; `None` outside a constructor.
-    this: Option<BTreeSet<usize>>,
-    /// Declared private fields (not methods or accessors) of the class.
-    private_fields: BTreeSet<&'a str>,
     collection_intact: F,
     shadowed: &'a BTreeSet<&'static str>,
     native_constructions: BTreeSet<NativeIntrinsic>,
@@ -114,7 +113,7 @@ fn all_parameters(count: usize) -> BTreeSet<usize> {
 /// Summarize an unmigrated `body` or return `None` (the call stays unknown).
 /// The canonical index routes covered direct-return and ordered local bodies
 /// to the shared transfer consumer first, with no retry after a failed query.
-/// Literal expression operations remain needed by multi-statement/class bodies.
+/// Literal expression operations remain needed by unmigrated function bodies.
 /// The caller
 /// establishes stable binding identity and dynamic-scope absence;
 /// `collection_intact` answers the closed census for an empty keyed
@@ -127,7 +126,9 @@ pub(crate) fn derive_unmigrated_foreign_call(
     match body {
         ForeignBody::Function(function) => derive_function(function, shadowed, collection_intact),
         ForeignBody::Arrow(arrow) => derive_arrow(arrow, shadowed, collection_intact),
-        ForeignBody::Class(class) => derive_class(class, shadowed, collection_intact),
+        // Exported classes are admitted only through the shared constructor
+        // operation plan in `sync_effects::strict_provider`.
+        ForeignBody::Class => None,
     }
 }
 
@@ -156,14 +157,8 @@ fn derive_function(
         return None;
     }
     let parameters = simple_parameters(function.params.iter().map(|param| &param.pat))?;
-    let mut evaluator = Evaluator::new(
-        &parameters,
-        None,
-        BTreeSet::new(),
-        shadowed,
-        collection_intact,
-    );
-    let returned = evaluator.block(&function.body.as_ref()?.stmts, false)?;
+    let mut evaluator = Evaluator::new(&parameters, shadowed, collection_intact);
+    let returned = evaluator.block(&function.body.as_ref()?.stmts)?;
     Some(call_summary(
         &parameters,
         returned,
@@ -180,15 +175,9 @@ fn derive_arrow(
         return None;
     }
     let parameters = simple_parameters(arrow.params.iter())?;
-    let mut evaluator = Evaluator::new(
-        &parameters,
-        None,
-        BTreeSet::new(),
-        shadowed,
-        collection_intact,
-    );
+    let mut evaluator = Evaluator::new(&parameters, shadowed, collection_intact);
     let returned = match arrow.body.as_ref() {
-        ArrowFunctionBody::FunctionBody(body) => evaluator.block(&body.stmts, false)?,
+        ArrowFunctionBody::FunctionBody(body) => evaluator.block(&body.stmts)?,
         ArrowFunctionBody::Expr(expression) => evaluator.expr(expression)?,
     };
     Some(call_summary(
@@ -224,122 +213,14 @@ fn call_summary(
         retained_arguments,
         retained_provider_captures: BTreeSet::new(),
         native_constructions,
+        dependencies: ProofDependencies::default(),
         record: returned.record.filter(|_| parameters.is_empty()),
         closure: returned.closure,
     }
 }
 
-fn derive_class(
-    class: &Class,
-    shadowed: &BTreeSet<&'static str>,
-    collection_intact: impl Fn(NativeIntrinsic) -> bool,
-) -> Option<DerivedForeignCall> {
-    // A derived constructor runs the superclass constructor; decorators run
-    // arbitrary code at definition or construction.
-    if class.super_class.is_some() || !class.decorators.is_empty() {
-        return None;
-    }
-    let mut constructor = None;
-    let mut private_fields = BTreeSet::new();
-    let mut instance_fields = Vec::new();
-    for member in &class.body {
-        match member {
-            ClassMember::Constructor(definition) => constructor = Some(definition),
-            ClassMember::PrivateProp(field) => {
-                if !field.decorators.is_empty() {
-                    return None;
-                }
-                if !field.is_static {
-                    private_fields.insert(field.key.name.as_ref());
-                    instance_fields.push(field.value.as_deref());
-                }
-            }
-            ClassMember::ClassProp(field) => {
-                if !field.decorators.is_empty() {
-                    return None;
-                }
-                if !field.is_static {
-                    // A computed key is evaluated at class definition; the
-                    // field is still defined with CreateDataPropertyOrThrow.
-                    // A literal key keeps the definition free of coercion.
-                    if !matches!(
-                        field.key,
-                        PropName::Ident(_) | PropName::Str(_) | PropName::Num(_)
-                    ) {
-                        return None;
-                    }
-                    instance_fields.push(field.value.as_deref());
-                }
-            }
-            // Instance accessors run when initialized, i.e. at construction.
-            ClassMember::AutoAccessor(accessor) if !accessor.is_static => return None,
-            // Methods are installed at class definition; static members and
-            // blocks already ran when the provider evaluated.
-            ClassMember::Method(method) if !method.function.decorators.is_empty() => {
-                return None;
-            }
-            ClassMember::PrivateMethod(method) if !method.function.decorators.is_empty() => {
-                return None;
-            }
-            _ => {}
-        }
-    }
-    let parameters = match constructor {
-        Some(constructor) => {
-            let mut patterns = Vec::new();
-            for param in &constructor.params {
-                // Parameter properties write public fields through [[Set]].
-                let ParamOrTsParamProp::Param(param) = param else {
-                    return None;
-                };
-                if !param.decorators.is_empty() {
-                    return None;
-                }
-                patterns.push(&param.pat);
-            }
-            simple_parameters(patterns.into_iter())?
-        }
-        None => Vec::new(),
-    };
-    let mut evaluator = Evaluator::new(
-        &parameters,
-        Some(BTreeSet::new()),
-        private_fields,
-        shadowed,
-        collection_intact,
-    );
-    // Base-class construction initializes fields before the constructor body.
-    for initializer in instance_fields.into_iter().flatten() {
-        let value = evaluator.expr(initializer)?;
-        evaluator.store_on_this(&value);
-    }
-    if let Some(constructor) = constructor {
-        let returned = evaluator.block(&constructor.body.as_ref()?.stmts, true)?;
-        // `return` in a constructor can replace the result; only the implicit
-        // completion is admitted.
-        if returned != Value::primitive() {
-            return None;
-        }
-    }
-    Some(DerivedForeignCall {
-        invocation: ForeignInvocation::Construct,
-        returns: BTreeSet::from([ForeignReturn::FreshAllocation]),
-        retained_arguments: evaluator.this.unwrap_or_default(),
-        retained_provider_captures: BTreeSet::new(),
-        native_constructions: evaluator.native_constructions,
-        record: None,
-        closure: None,
-    })
-}
-
 impl<'a, F: Fn(NativeIntrinsic) -> bool> Evaluator<'a, F> {
-    fn new(
-        parameters: &[Id],
-        this: Option<BTreeSet<usize>>,
-        private_fields: BTreeSet<&'a str>,
-        shadowed: &'a BTreeSet<&'static str>,
-        collection_intact: F,
-    ) -> Self {
+    fn new(parameters: &[Id], shadowed: &'a BTreeSet<&'static str>, collection_intact: F) -> Self {
         Self {
             parameters: parameters.len(),
             env: parameters
@@ -355,8 +236,6 @@ impl<'a, F: Fn(NativeIntrinsic) -> bool> Evaluator<'a, F> {
                     )
                 })
                 .collect(),
-            this,
-            private_fields,
             collection_intact,
             shadowed,
             native_constructions: BTreeSet::new(),
@@ -367,15 +246,9 @@ impl<'a, F: Fn(NativeIntrinsic) -> bool> Evaluator<'a, F> {
         self.parameters
     }
 
-    fn store_on_this(&mut self, value: &Value) {
-        if let Some(this) = &mut self.this {
-            this.extend(value.reaches());
-        }
-    }
-
     /// Straight-line statements up to the first `return`. Returns the
     /// completion value (`undefined` when the block falls through).
-    fn block(&mut self, statements: &[Stmt], constructor: bool) -> Option<Value> {
+    fn block(&mut self, statements: &[Stmt]) -> Option<Value> {
         for statement in statements {
             match statement {
                 Stmt::Empty(_) => {}
@@ -408,38 +281,10 @@ impl<'a, F: Fn(NativeIntrinsic) -> bool> Evaluator<'a, F> {
                         }
                     }
                 }
-                Stmt::Expr(ExprStmt { expr, .. }) if constructor => {
-                    self.private_field_write(expr)?;
-                }
                 _ => return None,
             }
         }
         Some(Value::primitive())
-    }
-
-    /// `this.#field = value` on a declared private field of the fresh
-    /// instance (PrivateFieldSet: no setter, no proxy trap).
-    fn private_field_write(&mut self, expression: &Expr) -> Option<()> {
-        let Expr::Assign(AssignExpr {
-            op: AssignOp::Assign,
-            left: AssignTarget::Simple(SimpleAssignTarget::Member(member)),
-            right,
-            ..
-        }) = expression.unwrap_parens()
-        else {
-            return None;
-        };
-        let MemberProp::PrivateName(name) = &member.prop else {
-            return None;
-        };
-        if !matches!(member.obj.unwrap_parens(), Expr::This(_))
-            || !self.private_fields.contains(name.name.as_ref())
-        {
-            return None;
-        }
-        let value = self.expr(right)?;
-        self.store_on_this(&value);
-        Some(())
     }
 
     fn expr(&mut self, expression: &Expr) -> Option<Value> {
@@ -453,10 +298,6 @@ impl<'a, F: Fn(NativeIntrinsic) -> bool> Evaluator<'a, F> {
                 arg,
                 ..
             }) if matches!(arg.unwrap_parens(), Expr::Lit(_)) => Some(Value::primitive()),
-            Expr::This(_) => self
-                .this
-                .as_ref()
-                .map(|reaches| Value::fresh(reaches.clone())),
             Expr::Arrow(arrow) if !arrow.is_async && !arrow.is_generator => Some(Value {
                 closure: Some(arrow.span.lo.0..arrow.span.hi.0),
                 ..Value::fresh(all_parameters(self.parameter_count()))
@@ -602,7 +443,7 @@ mod tests {
             ModuleItem::Stmt(Stmt::Decl(Decl::Class(declaration)))
                 if declaration.ident.sym.as_ref() == export =>
             {
-                Some(ForeignBody::Class(&declaration.class))
+                Some(ForeignBody::Class)
             }
             ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration))) => {
                 let [declarator] = declaration.decls.as_slice() else {
@@ -627,6 +468,7 @@ mod tests {
             retained_arguments: retained.iter().copied().collect(),
             retained_provider_captures: BTreeSet::new(),
             native_constructions: BTreeSet::new(),
+            dependencies: ProofDependencies::default(),
             record: None,
             closure: None,
         })
@@ -672,15 +514,8 @@ mod tests {
                     "class Box { #callback; #cache = new WeakMap(); constructor(callback, label) { this.#callback = callback; } of(key) { return this.#callback(key); } }",
                     "Box"
                 ),
-                Some(DerivedForeignCall {
-                    invocation: ForeignInvocation::Construct,
-                    returns: BTreeSet::from([ForeignReturn::FreshAllocation]),
-                    retained_arguments: BTreeSet::from([0]),
-                    retained_provider_captures: BTreeSet::new(),
-                    native_constructions: BTreeSet::from([NativeIntrinsic::WeakMap]),
-                    record: None,
-                    closure: None,
-                })
+                None,
+                "classes are admitted only by the shared operation transfer"
             );
         });
     }

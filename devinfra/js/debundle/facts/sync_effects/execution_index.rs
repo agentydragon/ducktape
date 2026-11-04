@@ -5696,6 +5696,8 @@ struct ExecutionIndex {
     inline_callback_entries: BTreeMap<u32, callback_arguments::InlineCallbackEntry>,
     native_guarded_regions: Vec<callback_arguments::GuardedRegion>,
     local_constructors: BTreeMap<u32, LocalConstructor>,
+    /// Source-covered constructor operations for exported provider summaries.
+    class_provider_bodies: BTreeMap<u32, (LocalBody, Vec<Id>)>,
     local_class_construction_shapes: LocalClassConstructionShapes,
     local_class_construction_proof: LocalClassConstructionProof,
     semantic_facts: Option<Arc<SemanticFacts>>,
@@ -5895,6 +5897,7 @@ impl Default for ExecutionIndex {
             inline_callback_entries: BTreeMap::new(),
             native_guarded_regions: Vec::new(),
             local_constructors: BTreeMap::new(),
+            class_provider_bodies: BTreeMap::new(),
             local_class_construction_shapes: LocalClassConstructionShapes::default(),
             local_class_construction_proof: LocalClassConstructionProof::default(),
             semantic_facts: None,
@@ -10633,6 +10636,9 @@ impl Visit for ExecutionIndex {
         }
         self.class_values
             .insert(class.span.lo.0, collect_class_value_facts(class));
+        if let Some(body) = LocalBody::lower_class_constructor(class) {
+            self.class_provider_bodies.insert(class.span.lo.0, body);
+        }
         if let Some(constructor) = local_constructor(class, &self.local_class_construction_shapes) {
             self.local_constructors.insert(class.span.lo.0, constructor);
         }
@@ -13242,7 +13248,7 @@ fn infer_foreign_calls<'f>(
                 ),
                 Decl::Class(class) => (
                     &class.ident,
-                    ForeignBody::Class(&class.class),
+                    ForeignBody::Class,
                     class.class.span.lo.0,
                     true,
                 ),
@@ -13278,24 +13284,29 @@ fn infer_foreign_calls<'f>(
         .into_iter()
         .filter(|(binding, ..)| !index.reassigned_bindings.contains(&binding.to_id()))
         .filter_map(|(binding, declaration, declaration_start, hoisted)| {
-            let derived = if matches!(
-                &declaration,
+            let derived = match &declaration {
+                ForeignBody::Class => {
+                    // Class construction has its own source-covered ordered
+                    // operation plan. Refusal never retries the private AST evaluator.
+                    strict_provider::derive_class(index, declaration_start, &shadowed)?
+                }
                 ForeignBody::Function(_) | ForeignBody::Arrow(_)
-            ) && index
-                .callables
-                .get(&declaration_start)
-                .is_some_and(|callable| {
-                    callable.allocation_return.is_some()
-                        || callable
-                            .local_body
-                            .as_ref()
-                            .is_some_and(LocalBody::allocation_only_syntax)
-                }) {
-                // This migrated slice consumes the central value/operation transfers.
-                // A failed access/coverage judgment must not retry the AST evaluator.
-                strict_provider::derive(index, declaration_start)?
-            } else {
-                derive_unmigrated_foreign_call(declaration, &shadowed, &collection_intact)?
+                    if index
+                        .callables
+                        .get(&declaration_start)
+                        .is_some_and(|callable| {
+                            callable.allocation_return.is_some()
+                                || callable
+                                    .local_body
+                                    .as_ref()
+                                    .is_some_and(LocalBody::allocation_only_syntax)
+                        }) =>
+                {
+                    // This migrated slice consumes the central value/operation transfers.
+                    // A failed access/coverage judgment must not retry the AST evaluator.
+                    strict_provider::derive(index, declaration_start, &shadowed)?
+                }
+                _ => derive_unmigrated_foreign_call(declaration, &shadowed, &collection_intact)?,
             };
             Some((
                 binding,
@@ -13339,7 +13350,7 @@ fn foreign_call(
     declaration_start: u32,
     hoisted: bool,
 ) -> InferredForeignCall {
-    let mut dependencies = ProofDependencies::default();
+    let mut dependencies = derived.dependencies.clone();
     for family in &derived.native_constructions {
         dependencies.extend(
             &index

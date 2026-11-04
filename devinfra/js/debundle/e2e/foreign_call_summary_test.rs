@@ -66,6 +66,68 @@ fn derived_constructor_retains_its_callback_until_instance_use() {
 }
 
 #[test]
+fn class_fields_keep_typed_empty_keyed_collection_constructions() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { Collections } from './peer.js';\nconst collections = new Collections();\nconsole.log(collections instanceof Collections);\n",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export class Collections { #map = new Map(); #set = new Set(); #weakMap = new WeakMap(); #weakSet = new WeakSet(); }\n",
+        )]),
+    );
+    assert_preserved_entry_output(&fixture, "true\n");
+    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    let summary = &report["imported_callables"]["Collections"]["foreign_call"];
+    assert_eq!(summary["invocation"], "construct");
+    assert_eq!(
+        summary["native_constructions"],
+        serde_json::json!(["map", "set", "weak_map", "weak_set"])
+    );
+}
+
+#[test]
+fn class_constructor_does_not_treat_a_getter_as_a_data_field() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { GetterReader } from './peer.js';\nglobalThis.getterCalls = 0;\nconst reader = new GetterReader();\nconsole.log(globalThis.getterCalls, reader.invoke());\n",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export class GetterReader { #read; constructor() { const record = { get value() { globalThis.getterCalls++; return () => 42; } }; this.#read = record.value; } invoke() { return this.#read(); } }\n",
+        )]),
+    );
+    assert_preserved_entry_output(&fixture, "1 42\n");
+    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    assert!(
+        report["imported_callables"]["GetterReader"]["foreign_call"].is_null(),
+        "an accessor read is not a data-field read"
+    );
+}
+
+#[test]
+fn a_constructor_returning_this_keeps_the_legacy_admission_boundary() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { SelfReturning } from './peer.js';\nconst value = new SelfReturning();\nconsole.log(value instanceof SelfReturning);\n",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export class SelfReturning { constructor() { return this; } }\n",
+        )]),
+    );
+    assert_preserved_entry_output(&fixture, "true\n");
+    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    assert!(
+        report["imported_callables"]["SelfReturning"]["foreign_call"].is_null(),
+        "the former class evaluator rejected object-valued constructor returns"
+    );
+}
+
+#[test]
 fn a_public_field_write_keeps_the_constructor_unknown() {
     reject(
         "import { Box } from './peer.js';\nconst wrapped = new Box(() => later);\nconst later = 42;\nconsole.log(wrapped.invoke());\n",
