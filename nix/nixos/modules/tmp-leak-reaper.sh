@@ -10,6 +10,9 @@ find /tmp -mindepth 1 -maxdepth 1 -ignore_readdir_race \( -type d -o -type f \) 
   -o -name 'pip-*' -o -name 'pyright-*' -o -name 'bun-*' -o -name 'uv-setuptools-*' \
   \) -exec rm -rf --one-file-system {} +
 
+# bb run leaves its generated launcher behind after builds succeed or fail.
+find /tmp -mindepth 1 -maxdepth 1 -ignore_readdir_race -type f -mmin +1440 -name 'bb-run-*' -delete
+
 # Empty only: a nix shell open for over a day keeps a stale-mtime dir in use.
 find /tmp -mindepth 1 -maxdepth 1 -ignore_readdir_race -type d -mmin +1440 -empty \( \
   -name 'nix-shell.*' -o -name 'nix-develop-*' \
