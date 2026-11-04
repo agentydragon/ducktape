@@ -377,12 +377,12 @@ file replacements are atomic; the batch is not a crash-atomic transaction.
 
 Binding names are resolved in the command's input view:
 
-| Commands                                                                     | Accepted binding names                                                                                                                    |
-| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Graph queries: `describe`, `inspect-source --id`, `cluster`, `scc --binding` | The saved graph's input binding or exported/readable name.                                                                                |
-| Spec edits: `bindings rename`, `assign`, `comment`                           | A direct selector identifier, source-match capture local, or explicit readable name; structural members require a readable name.          |
-| `bindings unassign`                                                          | A direct selector identifier or explicit readable name; structural members require a readable name. Source-match entries are unsupported. |
-| Raw source lookup: `inspect-source --around-binding`                         | The original input declaration's name, without spec-name resolution.                                                                      |
+| Commands                                                                      | Accepted binding names                                                                                                                    |
+| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Graph queries: `describe`, `inspect-source --id`, `cluster`, `scc --binding`  | The saved graph's input binding or exported/readable name.                                                                                |
+| Spec edits: `bindings rename`, `assign`, `comment`                            | A direct selector identifier, source-match capture local, or explicit readable name; structural members require a readable name.          |
+| `bindings unassign`                                                           | A direct selector identifier or explicit readable name; structural members require a readable name. Source-match entries are unsupported. |
+| Raw source lookup: `inspect-source --around-binding` / `--declarator-binding` | The original input declaration's name, without spec-name resolution.                                                                      |
 
 These names can differ. A source-match template may call a declaration
 `templateToken`, match the input binding `raw`, and export `readableValue`.
@@ -823,6 +823,7 @@ debundle inspect-source --source-file app.js
 debundle inspect-source --source-root extracted --chunk static/app.js \
   --statements 12..16 --format json
 debundle inspect-source --source-file app.js --around-binding XOe
+debundle inspect-source --source-file app.js --declarator-binding alias --view raw
 debundle inspect-source --id atomic:17 --graph dependency_graph.json.gz --modules spec/modules \
   --source-root extracted
 debundle inspect-source --id runtime/plugins --view raw --context-statements 1
@@ -833,6 +834,12 @@ range. With no selector it starts at the first item and prints up to the
 configured statement limit. `--around-binding NAME` locates
 the unique top-level item that declares that raw input name and includes two neighboring
 items on each side by default; set `--context-statements` to change that count.
+For one variable in a large comma-separated declaration, use
+`--declarator-binding NAME`. It selects that unique variable declarator without
+rendering siblings or surrounding items. Its `index` still names the enclosing
+raw item; `declarator_index` names the selected fragment, whose coordinates and
+raw source are exact. Pretty view renders it as a standalone declaration.
+This selector cannot be combined with `--context-statements`.
 For a readable spec name, use `--id NAME` with a matching graph and modules;
 see [name and identifier resolution](#name-and-identifier-resolution).
 The range, binding, and ID options are mutually exclusive. A missing or
