@@ -199,7 +199,10 @@ as known-unsent; a requeued possibly-forwarded command becomes `UNKNOWN` on envi
 
 Deletion snapshots are transactional PostgreSQL notifications to connected `WatchDispatches`
 listeners. Cleanup then removes the command and opening receipts. These notifications provide no
-durable outcome read for a later subscriber. Runtime journals and History remain separate evidence
+durable outcome read for a later subscriber. An already-terminal row is not included in cleanup
+snapshots: a connected watcher delayed behind its earlier invalidation can miss that outcome when
+cleanup removes the row. Broadcasting all retained receipts is not a bounded solution: terminal
+subscription buffers can overflow, and reconnect has no retained receipt to recover. Runtime journals and History remain separate evidence
 owners; cleanup neither deletes retained History nor converts missing evidence into failure.
 
 Treating an unmarked claim as known-unsent requires a cutover with no old command writers still
