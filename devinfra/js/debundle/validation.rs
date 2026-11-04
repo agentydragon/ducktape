@@ -196,6 +196,12 @@ pub struct CycleEdge {
     pub from: ModulePath,
     /// Target module, by canonical [`ModulePath`].
     pub to: ModulePath,
+    /// Source endpoint's actual source-unit ID (`unit:N`).
+    pub from_source_unit_id: String,
+    /// Target endpoint's actual source-unit ID (`unit:N`).
+    pub to_source_unit_id: String,
+    /// Edge-reason provenance. This ordinal can differ from either endpoint's
+    /// source-unit ordinal, so it must not be used to infer endpoint identity.
     pub statement_ordinal: SourceUnitOrdinal,
     /// Target binding being read (declared in `to`'s module). `None`
     /// for sequenced edges (no symbol).
@@ -862,6 +868,8 @@ fn cycle_edges_for(
             CycleEdge {
                 from: module_path(from),
                 to: module_path(to),
+                from_source_unit_id: analysis::reports::source_unit_key(edge.from),
+                to_source_unit_id: analysis::reports::source_unit_key(edge.to),
                 statement_ordinal: edge.reason.statement_ordinal,
                 binding: edge.reason.binding.as_ref().map(|id| id.0.clone()),
                 from_binding: from_binding_by_ordinal

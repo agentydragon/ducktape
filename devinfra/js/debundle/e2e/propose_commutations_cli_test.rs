@@ -251,12 +251,14 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
     );
     let needs = array(&report, "needs_co_location");
     assert_eq!(needs.len(), 2, "{report:#}");
+    let graph = rejected.dependency_graph();
     let positions: Vec<Value> = needs
         .iter()
         .map(|need| {
             assert_eq!(need["edge"]["kind"], "eager_use", "{need:#}");
             assert_eq!(need["edge"]["binding"], "trace", "{need:#}");
             assert_eq!(need["edge"]["from_binding"], "beta", "{need:#}");
+            assert_cycle_edge_source_units(&graph, &need["edge"]);
             need["edge"]["explanation"]["position"].clone()
         })
         .collect();
