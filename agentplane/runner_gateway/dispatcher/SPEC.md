@@ -179,3 +179,27 @@ cancellable. Automatic resolution of those held openings is not provided.
 These rules apply to native openings after all Dispatcher replicas run this protocol. Central
 sampler admission retains its existing behavior; new commands require a Dispatcher Session record.
 Deletion cleanup, retained History and UUID reuse policy are unchanged.
+
+## Possible command forwarding and deletion outcomes
+
+Before a queued command RPC leaves Dispatcher, its current fenced worker commits a sticky
+`delivery_attempted` fact under the same ownership lock used by environment cleanup. A removed row
+or stale owner cannot acquire that permission. Storage uncertainty is retried before forwarding;
+cancellation or ownership loss prevents forwarding. A worker crash, requeue or owner recovery
+retains the fact. Only an original command ID and payload may be reconciled; this is never permission
+to replay unknown native effects or target a replacement environment.
+
+Cancellation is available only before possible forwarding. A later identity/policy/wake failure or
+bare RPC error cannot prove that a prior attempt had no effects. Unavailable/deadline replies keep
+the existing same-ID journal reconciliation; other unproven terminal RPC errors become `UNKNOWN`.
+An actual returned Runtime admission remains admission evidence. A pristine queued command can fail
+as known-unsent; a requeued possibly-forwarded command becomes `UNKNOWN` on environment deletion.
+
+Deletion snapshots are transactional PostgreSQL notifications to connected `WatchDispatches`
+listeners. Cleanup then removes the command and opening receipts. These notifications provide no
+durable outcome read for a later subscriber. Runtime journals and History remain separate evidence
+owners; cleanup neither deletes retained History nor converts missing evidence into failure.
+
+The new marker requires all command writers to use this protocol before its guarantee applies.
+The migration adds the column without altering authored data or History. A rollback to old writers
+loses the forwarding-evidence guarantee even if the column remains present.
