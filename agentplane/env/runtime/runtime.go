@@ -500,33 +500,6 @@ func (r *Runtime) joinClose() error {
 	return sessionLossErr
 }
 
-func (r *Runtime) waitBootstrapSettled(ctx context.Context) error {
-	if r.bootstrapHost == nil || !r.bootstrapHost.Configured() {
-		return nil
-	}
-	request, found, err := bootstrap.ReadRequest(ctx, r.lifecycleState)
-	if err != nil {
-		return fmt.Errorf("read accepted bootstrap state during shutdown: %w", err)
-	}
-	if !found || !request.Requested {
-		return nil
-	}
-	// A terminal bootstrap error is its durable outcome, not a failure to fence the
-	// Runtime-owned process. Settled checks that the accepted operation and cleanup ended.
-	_ = r.bootstrapHost.Wait(ctx)
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	settled, err := r.bootstrapHost.Settled(ctx)
-	if err != nil {
-		return fmt.Errorf("observe accepted bootstrap cleanup: %w", err)
-	}
-	if !settled {
-		return errors.New("accepted bootstrap did not settle before Runtime shutdown")
-	}
-	return nil
-}
-
 func (r *Runtime) changed() {
 	r.mu.Lock()
 	r.changedLocked()
@@ -651,7 +624,7 @@ func hasAutosuspendReason(blockers []*environmentlifecyclepb.AutosuspendBlocker,
 }
 
 func bootstrapIsActive(request bootstrap.Request, requestFound bool, status bootstrap.Status, statusFound bool) bool {
-	terminal := statusFound && (status.Phase == bootstrap.Succeeded || status.Phase == bootstrap.Failed || status.Phase == bootstrap.Interrupted)
+	terminal := statusFound && status.Phase.IsTerminal()
 	return (statusFound && status.Phase == bootstrap.Running) || (requestFound && request.Requested && !terminal)
 }
 

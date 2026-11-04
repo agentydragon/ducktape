@@ -116,7 +116,7 @@ func publishSelection(ctx context.Context, writer state.State, script string) er
 	}, state.WithUpdateOwner(HostOwner))
 }
 
-func isTerminal(phase Phase) bool {
+func (phase Phase) IsTerminal() bool {
 	return phase == Succeeded || phase == Failed || phase == Interrupted
 }
 

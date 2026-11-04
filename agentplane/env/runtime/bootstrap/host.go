@@ -191,7 +191,7 @@ func (h *Host) Wait(ctx context.Context) error {
 			if !ok {
 				return false, fmt.Errorf("unexpected bootstrap status resource %T", value)
 			}
-			return isTerminal(current.TypedSpec().Phase), nil
+			return current.TypedSpec().Phase.IsTerminal(), nil
 		}),
 	); err != nil {
 		return err
@@ -239,7 +239,7 @@ func (h *Host) Settled(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return found && isTerminal(bootstrapStatus.Phase), nil
+	return found && bootstrapStatus.Phase.IsTerminal(), nil
 }
 
 func (h *Host) Status(ctx context.Context) (Status, bool, error) {
