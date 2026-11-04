@@ -352,7 +352,7 @@ py_test(
         "//loom/wayback/proxy:fake_ia",
         "//loom/wayback/proxy:wayback_proxy_image",
         "//third_party/containers:python_3_14_slim",
-        "//util/testing:undeclared_outputs",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//inspect_ai",
         "@pypi//more_itertools",
         "@pypi//pytest",

@@ -38,9 +38,9 @@ from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_clus
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.electric_role import ensure_electric_role
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.postgres import create_temporary_database
 from util.testing.sqlalchemy_engines import postgres_async_engine
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 @pytest.fixture

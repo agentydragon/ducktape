@@ -19,7 +19,7 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 
 from devinfra.pr_visuals.artifacts import ListedArtifact, Runner, list_ci_artifacts
-from util.testing.output_records import OutputRecord
+from devinfra.testing.output_records import OutputRecord
 
 _PREFIX = "test.outputs/test-outputs/"
 _RECORDS = _PREFIX + "records/"

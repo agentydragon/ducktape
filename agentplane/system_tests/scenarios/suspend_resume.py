@@ -36,7 +36,7 @@ from agentplane.system_tests.tracing import tracer
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Text
 from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf

@@ -5,7 +5,7 @@ Trusted publisher for PR visual reviews. The "Publish PR visuals" workflow
 (same-repo or agent fork) and `devel` Bazel CI runs, including failed ones. A
 cancelled CI run stops visual publication and closes any announced check. For
 completed runs, it finds the commit's Bazel invocations, collects targets whose undeclared
-outputs contain structured records under `test-outputs/records/` (schema `util/testing/output_records.py`),
+outputs contain structured records under `test-outputs/records/` (schema `devinfra/testing/output_records.py`),
 publishes an immutable review bundle and shared PNGs to
 `s3.allegedly.works/pr-visuals`, and upserts a singleton review comment on the PR.
 Cache-hit tests still report undeclared outputs, so a bundle covers every visual
@@ -35,7 +35,7 @@ Automatic with a shared harness:
 - Other Python image producers (e.g. GNOME shell captures):
   the `test_outputs` pytest fixture binds each output to its full pytest node ID.
 - Other frameworks and languages can write the same versioned records and payloads
-  directly; Python callers can use `util.testing.output_writer.publish_output`
+  directly; Python callers can use `devinfra.testing.output_writer.publish_output`
   with UTF-8 text or bytes, or `open_output` for file-style writes.
 
 ## Determinism checks

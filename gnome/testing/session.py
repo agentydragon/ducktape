@@ -17,8 +17,8 @@ from PIL import Image
 from testcontainers.core.container import DockerContainer
 
 from devinfra.bazel.runfiles import get_required_path
-from util.testing.output_writer import BoundTestOutputs
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.output_writer import BoundTestOutputs
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 def exec_output(result: ExecResult) -> tuple[bytes, bytes]:

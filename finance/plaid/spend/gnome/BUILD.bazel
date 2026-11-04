@@ -62,7 +62,7 @@ py_test(
         "//gnome/test_image:gnome_shell_test",
         "//gnome/testing:fake_daemon",
         "//gnome/testing:session",
-        "//util/testing:output_writer",
+        "//devinfra/testing:output_writer",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -22,7 +22,7 @@ from agentplane.history_service.testing.electric_service import electric_service
 from agentplane.history_service.testing.history import History
 from agentplane.history_service.testing.protojson import thread_entity_from_record
 from agentplane.proto import event_pb2
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 

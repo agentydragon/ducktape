@@ -24,13 +24,13 @@ import pytest_bazel
 from playwright.async_api import Playwright, ViewportSize
 
 from devinfra.bazel.runfiles import get_required_path
+from devinfra.testing.output_writer import BoundTestOutputs
 from study_casino.app import create_app
 from study_casino.changelog import LATEST_CHANGELOG_ID
 from study_casino.config import Settings
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual.capture import VisualPage, open_visual_page
 from util.testing.frontend_visual.context import deterministic_browser_context
-from util.testing.output_writer import BoundTestOutputs
 from util.testing.postgres import DatabaseNames, PostgresDatabaseTemplate
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.

@@ -93,7 +93,7 @@ Operator review is the scarce resource. Split into small, independently approvab
 - pytest-asyncio auto mode is on; a test using a session-scoped async fixture (e.g. `playwright_driver`) needs `@pytest.mark.asyncio(loop_scope="session")` or browser startup can hang.
 - Never skip for missing tools; they come from runfiles or the RBE image.
 - Docker tests: `py_test` from `//devinfra/python:defs.bzl` with `requires_docker = True`; they run on RBE.
-- Diagnostics (container logs, HAR dumps) go to `util.testing.undeclared_outputs.undeclared_outputs_dir()`, not stdout.
+- Diagnostics (container logs, HAR dumps) go to `devinfra.testing.undeclared_outputs.undeclared_outputs_dir()`, not stdout.
 - **A timeout means a wedge, not slowness** — usually waiting on something that never arrives. Trace it (`--test_output=streamed --test_arg=-s`, fixture logs, `docker ps`); don't raise `size`/`timeout`. Raise size (default `small`, 60s) only with evidence the test was actively working: `bbapi target history` timings plus a local pass.
 - Localize breakages with `bbapi target history` (`buildbuddy_api` skill), not bisect.
 - Syrupy snapshots: `uses_syrupy = True`, `.ambr` in `data`; <devinfra/docs/syrupy_snapshots.md>.

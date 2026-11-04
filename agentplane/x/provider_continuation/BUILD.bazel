@@ -17,7 +17,7 @@ live_openai_py_test(
     tags = ["manual"],
     deps = [
         "//:conftest",  # keep: macro owns the test's conftest chain
-        "//util/testing:undeclared_outputs",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

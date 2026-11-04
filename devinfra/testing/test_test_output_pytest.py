@@ -6,13 +6,13 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from util.testing.output_writer import BoundTestOutputs
-from util.testing.pytest_outputs import case_id_for_pytest_item
+from devinfra.testing.output_writer import BoundTestOutputs
+from devinfra.testing.pytest_outputs import case_id_for_pytest_item
 
 
 def test_bound_fixture_uses_repository_relative_node_id(test_outputs: BoundTestOutputs) -> None:
     assert test_outputs.case_id == (
-        "util/testing/test_test_output_pytest.py::test_bound_fixture_uses_repository_relative_node_id"
+        "devinfra/testing/test_test_output_pytest.py::test_bound_fixture_uses_repository_relative_node_id"
     )
 
 

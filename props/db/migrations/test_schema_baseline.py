@@ -9,10 +9,10 @@ import pytest_bazel
 from sqlalchemy import create_engine, text
 from testcontainers.postgres import PostgresContainer
 
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from props.db.config import DatabaseConfig
 from props.db.setup import upgrade_database
 from util.testing.postgres import DatabaseNames, create_temporary_database
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 def _schema(container: PostgresContainer, database: str) -> str:

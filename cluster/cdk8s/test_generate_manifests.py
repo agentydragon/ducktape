@@ -18,7 +18,7 @@ import yaml
 from cluster.cdk8s.generate_manifests import generate_manifests
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
 from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 _REGENERATE = "regenerate with `bb run //cluster/cdk8s:generate_manifests` and commit the result"
 

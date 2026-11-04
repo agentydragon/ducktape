@@ -7,11 +7,11 @@ import pytest
 import pytest_asyncio
 from playwright.async_api import Playwright, async_playwright, expect
 
+from devinfra.testing.output_writer import BoundTestOutputs
+from devinfra.testing.pytest_outputs import test_outputs
 from util.testing.frontend_visual.capture import HarnessConfig, VisualHarness, VisualPage
 from util.testing.frontend_visual.page_capture import WAIT_TIMEOUT_MS
 from util.testing.frontend_visual.viewports import Viewport
-from util.testing.output_writer import BoundTestOutputs
-from util.testing.pytest_outputs import test_outputs
 
 __all__ = ["test_outputs"]
 

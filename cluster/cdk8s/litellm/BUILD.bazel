@@ -20,7 +20,7 @@ py_test(
     deps = [
         ":upstream_test_image",
         "//devinfra/oci",
-        "//util/testing:undeclared_outputs",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest_bazel",
     ],
 )

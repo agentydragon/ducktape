@@ -10,8 +10,8 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.trace import StatusCode
 
 from agentplane.system_tests import tracing
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.otel import JsonlSpanExporter
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 async def test_concurrent_scenarios_keep_parentage_and_record_failures() -> None:

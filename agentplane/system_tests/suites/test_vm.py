@@ -20,7 +20,7 @@ from agentplane.system_tests.scenarios import vm_sandbox
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.tracing import traced_scenario
 from agentplane.system_tests.vm_configuration import SUPERVISION_TEMPLATE
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # session_pb2.pyi imports protobuf stubs directly during mypy's dependency traversal.
 # gazelle:include_dep @pypi//protobuf

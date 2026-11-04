@@ -22,8 +22,8 @@ from agentplane.central_sampler.testing import METADATA, open_request, service, 
 from agentplane.central_sampler.testing_store import IntentSnapshot, Store
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.proto import event_pb2
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.sqlalchemy_engines import postgres_async_engine
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # A live turn samples the model several times and runs a nested command; generous but bounded.
 TURN_TIMEOUT_SECONDS = 240

@@ -21,7 +21,7 @@ from google.protobuf.json_format import MessageToDict
 
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.proto import event_log_pb2
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
 

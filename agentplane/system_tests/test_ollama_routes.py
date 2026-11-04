@@ -16,7 +16,7 @@ from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.ollama_catalog import ollama_cases
 from agentplane.system_tests.sandbox import Sandboxes
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 

@@ -15,7 +15,7 @@ from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import session_pb2
 from agentplane.testing.scripted_model import ScriptedModel, Text
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

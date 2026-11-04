@@ -16,7 +16,7 @@ from agentplane.central_sampler.testing import METADATA, Endpoint, Request, open
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.native.codex.testing.responses_sse import Message, response_stream
 from agentplane.proto import event_pb2, session_pb2
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 class SetupEndpoint(Endpoint):

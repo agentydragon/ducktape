@@ -20,8 +20,8 @@ import pytest_asyncio
 import pytest_timeout
 
 # Dynamic pytest plugin import needs a Bazel dependency in every test's runfiles.
-# gazelle:include_dep //util/testing:pytest_outputs
-pytest_plugins = ("util.testing.pytest_outputs",)
+# gazelle:include_dep //devinfra/testing:pytest_outputs
+pytest_plugins = ("devinfra.testing.pytest_outputs",)
 
 _STARTED = time.monotonic()
 

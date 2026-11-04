@@ -39,9 +39,17 @@ def test_wheel_contains_import_closure_templates_and_runnable_entry_points(tmp_p
             "devinfra/pr_visuals/pr_visuals.html.j2",
             "devinfra/buildbuddy/ci/invocation_ids.py",
             "devinfra/pr_visuals/visual_diff.py",
-            "util/testing/output_records.py",
+            "devinfra/testing/output_records.py",
         } <= files
         assert "devinfra/pr_visuals/determinism.py" not in files
+        assert {
+            "devinfra/testing/bazel_snapshot_extension.py",
+            "devinfra/testing/output_writer.py",
+            "devinfra/testing/pytest_outputs.py",
+            "devinfra/testing/sharding.py",
+            "devinfra/testing/undeclared_outputs.py",
+        }.isdisjoint(files)
+        assert not any(name.startswith("devinfra/testing/test_") for name in files)
 
         entry_points_files = [name for name in files if name.endswith(".dist-info/entry_points.txt")]
         assert len(entry_points_files) == 1

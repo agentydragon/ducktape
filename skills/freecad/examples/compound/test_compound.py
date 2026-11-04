@@ -6,9 +6,9 @@ import pytest
 import pytest_bazel
 
 from devinfra.bazel.runfiles import get_required_path
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from skills.freecad.conftest import assert_run_ok, copy_outputs
 from skills.freecad.testing.compare import assert_dxf_equal, assert_pdf_equal, assert_svg_equal
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # The scripts below are driven by runfiles path; gazelle cannot see the dependency.
 # gazelle:include_dep //skills/freecad/examples/compound:build

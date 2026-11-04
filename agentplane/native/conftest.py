@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 @pytest.fixture

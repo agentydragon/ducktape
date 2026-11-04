@@ -40,8 +40,8 @@ from devinfra.oci.oci import load_oci_image
 from gnome.test_image import gnome_shell_test
 from gnome.testing.fake_daemon import fake_daemon
 from gnome.testing.session import GnomeMenuCapture, GnomeSession, gnome_session, string_reply, wait_until
-from util.testing.output_writer import BoundTestOutputs
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.output_writer import BoundTestOutputs
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 _EXTENSION_ZIP = "_main/aiquota/gnome/aiquota.zip"
 _EXTENSION_UUID = "aiquota@allegedly.works"

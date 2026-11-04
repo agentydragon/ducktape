@@ -9,6 +9,6 @@ py_library(
     deps = [
         "//devinfra/pr_visuals:artifacts",
         "//devinfra/pr_visuals:collection",
-        "//util/testing:output_records",
+        "//devinfra/testing:output_records",
     ],
 )

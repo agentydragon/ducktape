@@ -32,8 +32,8 @@ from agentplane.native.codex.testing.responses_sse import (
 from agentplane.native.testing.model_endpoint import SseEvent
 from agentplane.proto import event_pb2
 from agentplane.testing.codex_fixtures import ExecutorServer
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.sqlalchemy_engines import postgres_async_engine
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 async def completed(

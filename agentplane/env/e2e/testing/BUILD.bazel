@@ -27,7 +27,7 @@ py_library(
     deps = [
         ":process",
         "//agentplane/proto:event_log_pb2",
-        "//util/testing:undeclared_outputs",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest",
     ],

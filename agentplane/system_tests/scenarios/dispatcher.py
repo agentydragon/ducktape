@@ -33,7 +33,7 @@ from agentplane.system_tests.sandbox import (
 )
 from agentplane.system_tests.tracing import tracer
 from devinfra.bazel.runfiles import get_required_path
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 WORKLOAD = "runner-gateway"
 BOUND_SECONDS = 300

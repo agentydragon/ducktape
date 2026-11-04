@@ -26,7 +26,7 @@ from finance.plaid.spend.testing import dashboard
 from gnome.test_image import gnome_shell_test
 from gnome.testing.fake_daemon import fake_daemon
 from gnome.testing.session import GnomeMenuCapture, GnomeSession, gnome_session, string_reply, wait_until
-from util.testing.output_writer import BoundTestOutputs
+from devinfra.testing.output_writer import BoundTestOutputs
 
 _EXTENSION_ZIP = "_main/finance/plaid/spend/gnome/plaid-spend-desktop.zip"
 _EXTENSION_UUID = "plaid-spend@allegedly.works"

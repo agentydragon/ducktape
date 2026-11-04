@@ -24,6 +24,7 @@ import pytest_bazel
 from playwright.async_api import Page, Playwright, ViewportSize
 
 from devinfra.bazel.runfiles import get_required_path
+from devinfra.testing.output_writer import BoundTestOutputs
 from finance.augur.api.config import Config
 from finance.augur.api.server import static_price_clients
 from finance.augur.calibration.catalog import MarketCatalog
@@ -34,7 +35,6 @@ from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual.capture import VisualPage, open_visual_page
 from util.testing.frontend_visual.context import deterministic_browser_context
 from util.testing.frontend_visual.page_capture import wait_for_stable
-from util.testing.output_writer import BoundTestOutputs
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright

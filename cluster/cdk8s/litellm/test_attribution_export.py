@@ -8,7 +8,7 @@ import pytest_bazel
 
 from cluster.cdk8s.litellm import upstream_test_image
 from devinfra.oci.oci import load_oci_image
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 def test_verified_baggage_reaches_exported_litellm_span() -> None:

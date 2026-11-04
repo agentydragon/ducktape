@@ -39,7 +39,7 @@ from util.testing.postgres import (
     migrated_database_template,
 )
 from util.testing.sqlalchemy_engines import postgres_async_engine
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # SQLAlchemy loads the psycopg dialect from the URL scheme at runtime.
 # gazelle:include_dep @pypi//psycopg

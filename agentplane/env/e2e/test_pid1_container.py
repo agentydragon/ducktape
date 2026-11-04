@@ -28,7 +28,7 @@ from devinfra.bazel.runfiles import get_required_path
 from devinfra.oci.oci import load_oci_image
 from third_party.containers import debian_slim, ryuk
 from util.testing.container_logs import LoggedContainer
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 def _load_images() -> str:

@@ -1902,7 +1902,7 @@ py_test(
         ":generate_manifests_lib",
         ":manifest_roots",
         "//devinfra/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

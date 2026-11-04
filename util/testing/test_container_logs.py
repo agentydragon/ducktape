@@ -8,7 +8,7 @@ import pytest_bazel
 from devinfra.oci.oci import load_oci_image
 from third_party.containers import debian_slim
 from util.testing.container_logs import LoggedContainer
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 @pytest.fixture(scope="module")

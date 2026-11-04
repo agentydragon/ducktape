@@ -33,7 +33,7 @@ from agentplane.system_tests.sandbox import (
 )
 from agentplane.system_tests.scenarios.dispatcher import container_mount_sources, opening_until
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 @asynccontextmanager

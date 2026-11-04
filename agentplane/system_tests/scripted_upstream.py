@@ -26,7 +26,7 @@ from agentplane.proto import session_pb2
 from agentplane.testing.claude_model import ClaudeModel
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import ScriptedModel
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf

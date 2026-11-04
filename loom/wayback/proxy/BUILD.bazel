@@ -142,7 +142,7 @@ py_test(
         "//devinfra/oci",
         "//loom/wayback/proxy:wayback_proxy_image",
         "//third_party/containers:python_3_14_slim",
-        "//util/testing:undeclared_outputs",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

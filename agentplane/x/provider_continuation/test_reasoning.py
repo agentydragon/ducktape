@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 PROMPT = (
     "Find the unique three-digit positive integer n satisfying n % 7 = 3, n % 11 = 5, "

@@ -10,8 +10,8 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from devinfra.bazel.runfiles import get_required_path
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.net import listen_tcp
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 @contextmanager

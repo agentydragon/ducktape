@@ -24,7 +24,7 @@ from devinfra.bazel.runfiles import get_required_path
 from devinfra.oci.oci import load_oci_image
 from loom.wayback.proxy import fake_ia, wayback_proxy_image
 from third_party.containers import python_3_14_slim
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 COMPOSE_RLOCATION = "_main/loom/wayback/proxy/compose.yaml"
 
