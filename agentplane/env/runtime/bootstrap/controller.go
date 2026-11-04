@@ -75,7 +75,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		h.consumeOperation(op)
 		return nil
 	}
-	if isTerminal(current.Phase) || !input.Requested {
+	if current.Phase.IsTerminal() || !input.Requested {
 		return write()
 	}
 	if current.Phase == Dormant {

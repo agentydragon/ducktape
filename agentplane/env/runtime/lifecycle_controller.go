@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"go.uber.org/zap"
@@ -51,6 +52,8 @@ func (*runtimeLifecycleController) Name() string { return runtimeLifecycleContro
 func (*runtimeLifecycleController) Inputs() []controller.Input {
 	return []controller.Input{
 		{Namespace: lifecycle.Namespace, Type: lifecycle.EnvironmentDesiredStateType, Kind: controller.InputWeak},
+		{Namespace: lifecycle.Namespace, Type: bootstrap.RequestType, Kind: controller.InputWeak},
+		{Namespace: lifecycle.Namespace, Type: bootstrap.StatusType, Kind: controller.InputWeak},
 	}
 }
 
@@ -157,11 +160,32 @@ func (c *runtimeLifecycleController) reconcile(ctx, closeCtx context.Context, r 
 			return nil
 		}
 	}
+	if c.stage == runtimeCloseBootstrapSettling {
+		settled, err := c.bootstrapSettled(ctx, r)
+		if err != nil {
+			c.stage = runtimeCloseFailed
+			c.failure = err
+			if c.plan.cancelFence != nil {
+				c.plan.cancelFence()
+			}
+			c.publish()
+			return nil
+		}
+		if settled {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			c.stage = runtimeCloseReadyToJoin
+		}
+	}
 	c.publish()
 	if c.stage == runtimeCloseReadyToJoin || c.stage == runtimeCloseFailed {
 		if c.plan.cancelFence != nil {
 			c.plan.cancelFence()
 		}
+		return nil
+	}
+	if c.stage == runtimeCloseBootstrapSettling {
 		return nil
 	}
 	op := &closeOperation{done: make(chan struct{})}
@@ -172,6 +196,26 @@ func (c *runtimeLifecycleController) reconcile(ctx, closeCtx context.Context, r 
 		close(op.done)
 	}()
 	return nil
+}
+
+// Bootstrap status is the host's cleanup outcome. Both inputs are subscribed
+// before Run starts, so a change concurrent with these reads wakes reconciliation.
+func (c *runtimeLifecycleController) bootstrapSettled(ctx context.Context, r controller.Runtime) (bool, error) {
+	if c.r.bootstrapHost == nil || !c.r.bootstrapHost.Configured() {
+		return true, nil
+	}
+	request, found, err := bootstrap.ReadRequest(ctx, r)
+	if err != nil {
+		return false, fmt.Errorf("read accepted bootstrap state during shutdown: %w", err)
+	}
+	if !found || !request.Requested {
+		return true, nil
+	}
+	status, found, err := bootstrap.ReadStatus(ctx, r)
+	if err != nil {
+		return false, fmt.Errorf("observe accepted bootstrap cleanup: %w", err)
+	}
+	return found && status.Phase.IsTerminal(), nil
 }
 
 // A completed worker advances to the next shutdown barrier. Keep the sequence
@@ -188,8 +232,6 @@ func nextRuntimeCloseStage(stage runtimeCloseStage) (runtimeCloseStage, error) {
 		return runtimeCloseSessionsJoining, nil
 	case runtimeCloseSessionsJoining:
 		return runtimeCloseBootstrapSettling, nil
-	case runtimeCloseBootstrapSettling:
-		return runtimeCloseReadyToJoin, nil
 	default:
 		return 0, fmt.Errorf("unexpected completed Runtime Close stage %d", stage)
 	}
@@ -251,8 +293,6 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage runtime
 			return c.stopSessions(p.fenceCtx)
 		}
 		return nil
-	case runtimeCloseBootstrapSettling:
-		return c.r.waitBootstrapSettled(ctx)
 	default:
 		return fmt.Errorf("unexpected Runtime Close stage %d", stage)
 	}

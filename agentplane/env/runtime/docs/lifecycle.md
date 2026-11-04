@@ -107,6 +107,9 @@ it cannot depend on journal sealing because sealing waits for the global Executi
 Runtime-domain attempts keep their own bootstrap/Execution barriers. An old
 component status cannot satisfy a successor revision. Execution fencing associates its own attempt
 generation with the lifecycle generation; a successor cannot start before its predecessor is fenced.
+Close observes the accepted bootstrap request and terminal status directly through COSI. A pending
+request holds the bootstrap settlement stage until a status change wakes reconciliation; a terminal
+failure or interruption is settled because the bootstrap owner has completed cleanup.
 
 A seal request waits for native cleanup and the exact Execution fence before journals seal. The
 Session lifecycle controller closes the final admission gate, settles accepted commands, commits
