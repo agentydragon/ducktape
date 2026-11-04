@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
@@ -42,13 +44,19 @@ type ownedActions struct {
 	owners map[string]string
 }
 
-func (a ownedActions) GetActionRequest(_ context.Context, request *actionpb.GetActionRequestRequest) (*actionpb.GetActionRequestResponse, error) {
+func (a ownedActions) GetActionRequest(ctx context.Context, request *actionpb.GetActionRequestRequest) (*actionpb.GetActionRequestResponse, error) {
 	owner, known := a.owners[request.GetRequestId()]
 	if !known {
 		return nil, status.Error(codes.NotFound, "test-action-not-found")
 	}
+	account, err := kube.ServiceAccount(ctx, auth.Account{Namespace: testNamespace, Name: owner})
+	if err != nil {
+		return nil, err
+	}
+	uid := string(account.UID)
 	return &actionpb.GetActionRequestResponse{ActionRequest: &actionpb.ActionRequest{
-		Caller: &identitypb.ServiceAccount{Namespace: testNamespace, Name: owner},
+		CallerUid: &uid,
+		Caller:    &identitypb.ServiceAccount{Namespace: testNamespace, Name: owner},
 	}}, nil
 }
 
@@ -106,12 +114,17 @@ type openingDispatcher struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
 }
 
-func (openingDispatcher) GetSession(_ context.Context, request *dispatcherpb.GetSessionRequest) (*dispatcherpb.GetSessionResponse, error) {
+func (openingDispatcher) GetSession(ctx context.Context, request *dispatcherpb.GetSessionRequest) (*dispatcherpb.GetSessionResponse, error) {
 	if request.GetSessionId() != testSession {
 		return nil, status.Error(codes.NotFound, "opening not found")
 	}
+	account, err := kube.ServiceAccount(ctx, auth.Account{Namespace: testNamespace, Name: sandboxName})
+	if err != nil {
+		return nil, err
+	}
 	return &dispatcherpb.GetSessionResponse{Session: &dispatcherpb.Session{
-		SessionId: testSession, Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandboxName, Uid: sandboxUID}}}},
+		ExecutionIdentity: &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: sandboxName}, Uid: string(account.UID)},
+		SessionId:         testSession, Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandboxName, Uid: sandboxUID}}}},
 	}}, nil
 }
 

@@ -10,7 +10,7 @@ removed in a cutover.
 ## Agent API
 
 Workload calls require a Pod-bound Kubernetes ServiceAccount bearer token with the configured
-audience. Owner authority is the verified ServiceAccount, shared by its workloads. Subscription creation
+audience. Owner authority is the verified ServiceAccount namespace, name and UID, shared by its workloads. Subscription creation
 addresses a Session by `session_id`. The service reads its existing Dispatcher Session, checks the exact
 Sandbox UID and caller ownership, and confirms current Runtime membership before source authorization.
 It reads the required environment from `environment_hosted` or the fixed `executor_environment` from
@@ -23,11 +23,17 @@ service resolves the Session placement and checks the sender's scoped grant agai
 Inbox and subscription IDs identify subsequent operations.
 The caller's inboxes and subscriptions are those opened for the Sandbox that runs as its account now: a Sandbox
 recreated under a deleted one's name sees none of the deleted one's, and an account no Sandbox runs as has none.
+A ServiceAccount recreated under the same name also sees none of its predecessor's inboxes,
+subscriptions or sent-message receipts. Missing original owner UIDs stay inaccessible to workloads
+unless the exact Dispatcher Session establishes them; retained operator reads remain available.
+Action sources require a nonempty recorded `caller_uid` matching the inbox owner. Missing Action
+provenance refuses new subscriptions and stops source reads without discarding retained entries.
 The placement wire change is a coordinated cutover with the Dispatcher and sampler; pre-cutover
 Sandbox/service binaries are not a supported compatibility tier. Existing subscription, inbox and
 retained History data remain subject to their current retention rules. A missing or replaced
 Sandbox does not retire an existing inbox or cancel its subscriptions. Its sources continue
-to be read, while runner notice delivery waits for the exact original UID.
+to be read while the Dispatcher still proves its exact owner identity; runner notice delivery waits
+for the exact original Sandbox UID. Unknown or inconsistent owner identity pauses both.
 
 - `POST /v1/subscriptions`: immutable provider-owned source/filter and `idempotency_key`; identical retries return
   the same subscription, conflicting reuse returns 409. Actions replay defaults to sequence zero;

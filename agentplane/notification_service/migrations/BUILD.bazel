@@ -20,9 +20,9 @@ go_test(
     name = "baseline_integration_test",
     size = "medium",
     srcs = ["baseline_integration_test.go"],
+    embed = [":migrations"],
     tags = ["requires_docker"],
     deps = [
-        ":migrations",
         "//agentplane/notification_service/model",
         "//agentplane/notification_service/store",
         "//agentplane/testing/postgres",

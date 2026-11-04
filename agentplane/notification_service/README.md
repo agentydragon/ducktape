@@ -19,7 +19,15 @@ Sessions created only through Runtime have no Dispatcher Session and cannot crea
 receive new messages. Message sends also resolve the Session, then evaluate the sender's current
 scoped grant against its exact Sandbox. Persisted subscriptions, inbox cursors and notices remain
 intact through the placement migration.
-For UID-pinned destinations, a missing Sandbox or different UID leaves the inbox and
+Inbox ownership pins the reviewed ServiceAccount UID as well as the Sandbox UID. A recreated
+ServiceAccount cannot read or mutate its predecessor's inboxes, subscriptions or sent-message receipts.
+An unknown inbox owner UID is established only from the Dispatcher Session's recorded execution identity
+and exact placement; current same-name accounts and History Sandbox references are insufficient.
+Unproven inboxes retain their contents and operator read access. Workers pause source reads and notices
+until the Session proves the original owner; an Action source also requires its recorded `caller_uid`.
+An unknown or different sender UID cannot reuse a previously accepted message key.
+
+For UID-pinned destinations with an established Session identity, a missing Sandbox or different UID leaves the inbox and
 subscriptions active. Workers continue reconciling subscription sources and store unread
 entries and prepared notices, but do not submit notices until the original UID is found.
 The configured `unavailable_destination_retry_s` controls the retry interval for an unavailable

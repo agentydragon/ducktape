@@ -37,11 +37,11 @@ type Quotas struct {
 	UnacknowledgedMessagesPerSender int `mapstructure:"unacknowledged_messages_per_sender"`
 }
 
-// Owner is whom an inbox and its subscriptions belong to: the account, as the Sandbox incarnation the inbox was
-// opened for. A Sandbox runs as the model.ServiceAccount of its own name, so a Sandbox recreated under a deleted one's
-// name is the same account but another incarnation, and the deleted one's inboxes are not its own.
+// Owner pins both the authenticated ServiceAccount incarnation and the Sandbox incarnation
+// the inbox was opened for. Recreating either resource does not transfer ownership.
 type Owner struct {
 	Account    model.ServiceAccount
+	AccountUID string
 	SandboxUID string
 }
 

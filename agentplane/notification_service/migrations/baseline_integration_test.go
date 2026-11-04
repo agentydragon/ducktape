@@ -1,4 +1,4 @@
-package migrations_test
+package migrations
 
 import (
 	"context"
@@ -10,9 +10,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
+	"github.com/pressly/goose/v3"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
@@ -23,7 +25,7 @@ import (
 var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTests(migrations.Up, func(database *postgres.Database) int {
+	os.Exit(postgres.RunIntegrationTests(Up, func(database *postgres.Database) int {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 		if err := database.PrepareCloneTemplate(ctx); err != nil {
@@ -55,7 +57,7 @@ func resetSchema(t *testing.T, db *sql.DB) {
 
 func markVersion12History(t *testing.T, db *sql.DB) {
 	t.Helper()
-	if _, err := db.ExecContext(t.Context(), `DELETE FROM notification_service_goose_version WHERE version_id = 13`); err != nil {
+	if _, err := db.ExecContext(t.Context(), `DELETE FROM notification_service_goose_version WHERE version_id >= 13`); err != nil {
 		t.Fatal(err)
 	}
 	for version := 10; version <= 12; version++ {
@@ -77,7 +79,7 @@ func seedSubscription(t *testing.T, db *sql.DB, sessionID string) (model.Service
 		DestinationRef: model.DestinationRef{Namespace: owner.Namespace, Name: owner.Name, UID: "adoption-uid"},
 		SessionID:      sessionID, IdempotencyKey: "adoption-subscription",
 		Source: model.ActionsSource{RequestID: uuid.New()}, LifetimeDays: 7,
-	}, nil)
+	}, nil, "test-account-uid")
 	if err != nil {
 		t.Fatal("seed subscription:", err)
 	}
@@ -87,11 +89,14 @@ func seedSubscription(t *testing.T, db *sql.DB, sessionID string) (model.Service
 func TestFreshBaselineSupportsNotificationStore(t *testing.T) {
 	db := cloneDatabase(t)
 	owner, subscription := seedSubscription(t, db, "fresh-session")
-	inboxes, err := newStore(db).ListInboxes(t.Context(), store.Owner{Account: owner, SandboxUID: "adoption-uid"})
+	inboxes, err := newStore(db).ListInboxes(t.Context(), store.Owner{Account: owner, AccountUID: "test-account-uid", SandboxUID: "adoption-uid"})
 	if err != nil || len(inboxes) != 1 || inboxes[0].ID != subscription.InboxID {
 		t.Fatalf("fresh inboxes = %+v, error %v", inboxes, err)
 	}
-	assertApplied(t, db, 13)
+	assertApplied(t, db, 14)
+	if err := applyBaseline(t.Context(), db); err != nil {
+		t.Fatal("previous binary baseline provider on expanded schema:", err)
+	}
 }
 
 func TestAdoptVersion12PreservesStoredDataAndHistory(t *testing.T) {
@@ -130,7 +135,7 @@ func TestAdoptVersion12PreservesStoredDataAndHistory(t *testing.T) {
 	if err := db.QueryRowContext(t.Context(), `SELECT 'inbox'::regclass::oid`).Scan(&inboxNodeBefore); err != nil {
 		t.Fatal(err)
 	}
-	if err := migrations.Up(t.Context(), db); err != nil {
+	if err := applyBaseline(t.Context(), db); err != nil {
 		t.Fatal("adopt version 12:", err)
 	}
 	if got := readBytes(t, db, `SELECT creation_proto FROM subscription WHERE id = $1`, subscription.ID); !reflect.DeepEqual(got, creationBefore) {
@@ -154,7 +159,7 @@ func TestAdoptVersion12PreservesStoredDataAndHistory(t *testing.T) {
 		t.Fatal("adoption rewrote prior Goose history")
 	}
 	assertApplied(t, db, 13)
-	page, err := newStore(db).Read(t.Context(), store.Owner{Account: owner, SandboxUID: "adoption-uid"}, subscription.InboxID, 0, 10)
+	page, err := newStore(db).Read(t.Context(), store.Owner{Account: owner, AccountUID: "test-account-uid", SandboxUID: "adoption-uid"}, subscription.InboxID, 0, 10)
 	if err != nil || len(page.Entries) != 1 || page.Entries[0].Event != event {
 		t.Fatalf("adopted entries = %+v, error %v", page, err)
 	}
@@ -195,7 +200,7 @@ func TestBaselineRejectsPartialAndInvalidPredecessors(t *testing.T) {
 			db := cloneDatabase(t)
 			markVersion12History(t, db)
 			tc.mutate(t, db)
-			err := migrations.Up(t.Context(), db)
+			err := applyBaseline(t.Context(), db)
 			if err == nil || !strings.Contains(err.Error(), tc.message) {
 				t.Fatalf("Up error = %v, want %q", err, tc.message)
 			}
@@ -217,7 +222,7 @@ func TestBaselineAdoptsCompletePreBaselineHistory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := migrations.Up(t.Context(), db); err != nil {
+	if err := applyBaseline(t.Context(), db); err != nil {
 		t.Fatal("adopt complete 1–12 history:", err)
 	}
 	assertApplied(t, db, 13)
@@ -229,7 +234,7 @@ func TestBaselineRejectsUnknownObjectsOnFreshHistory(t *testing.T) {
 	if _, err := db.ExecContext(t.Context(), `CREATE TABLE retained_user_data (id int)`); err != nil {
 		t.Fatal(err)
 	}
-	err := migrations.Up(t.Context(), db)
+	err := Up(t.Context(), db)
 	if err == nil || !strings.Contains(err.Error(), "unrecognized objects") {
 		t.Fatalf("Up error = %v", err)
 	}
@@ -247,7 +252,7 @@ func TestConcurrentUpSerializesFreshBaseline(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 2 {
 		wg.Add(1)
-		go func() { defer wg.Done(); <-start; errors <- migrations.Up(t.Context(), db) }()
+		go func() { defer wg.Done(); <-start; errors <- Up(t.Context(), db) }()
 	}
 	close(start)
 	wg.Wait()
@@ -305,4 +310,19 @@ func assertApplied(t *testing.T, db *sql.DB, version int64) {
 		}
 	}
 	t.Fatalf("Goose version %d is not applied", version)
+}
+
+// applyBaseline isolates the current baseline's adoption guard from later additive migrations.
+func applyBaseline(ctx context.Context, db *sql.DB) error {
+	script, err := scripts.ReadFile("notifications/00013_baseline.sql")
+	if err != nil {
+		return err
+	}
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, fstest.MapFS{"00013_baseline.sql": &fstest.MapFile{Data: script}},
+		goose.WithTableName("notification_service_goose_version"), goose.WithDisableGlobalRegistry(true))
+	if err != nil {
+		return err
+	}
+	_, err = provider.Up(ctx)
+	return err
 }

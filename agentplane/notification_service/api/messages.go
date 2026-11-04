@@ -7,10 +7,12 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/sessionidentity"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -49,12 +51,17 @@ func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAcc
 	if err != nil {
 		return nil, unavailable("Session", err)
 	}
-	target := sessionTarget(session.GetSession(), request.GetSessionId())
+	target := sessionidentity.Target(session.GetSession(), request.GetSessionId())
 	if target == nil {
 		return nil, unavailable("Session", errors.New("incomplete Session placement"))
 	}
+	principal, err := auth.Caller(ctx)
+	if err != nil {
+		return nil, admissionRefused{err}
+	}
 	message := store.Message{
-		Sender: sender,
+		SenderUID: principal.ServiceAccountUID,
+		Sender:    sender,
 		DestinationRef: model.DestinationRef{
 			Namespace: s.namespace, Name: target.GetName(), UID: target.GetUid(),
 		},
@@ -75,12 +82,19 @@ func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAcc
 	message.DestinationRef.UID = sandbox.Uid
 	// A Sandbox runs as the ServiceAccount of its own name.
 	message.Recipient = model.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}
+	message.RecipientUID, err = sessionidentity.AccountUID(session.GetSession(), message.SessionID, message.DestinationRef, message.Recipient)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.store.EstablishInboxOwner(ctx, message.Recipient, message.DestinationRef, message.SessionID, message.RecipientUID); err != nil {
+		return nil, err
+	}
 	sent, err := s.store.Send(ctx, message)
 	if errors.Is(err, store.ErrNoInbox) {
 		if err := s.confirmSession(ctx, sandbox, message.SessionID); err != nil {
 			return nil, err
 		}
-		if err := s.store.OpenInbox(ctx, message.Recipient, message.DestinationRef, message.SessionID); err != nil {
+		if err := s.store.OpenInbox(ctx, message.Recipient, message.DestinationRef, message.SessionID, message.RecipientUID); err != nil {
 			return nil, err
 		}
 		sent, err = s.store.Send(ctx, message)
@@ -122,7 +136,11 @@ func (s *Notifications) getMessage(ctx context.Context, sender model.ServiceAcco
 	if err != nil {
 		return nil, err
 	}
-	sent, err := s.store.SentMessage(ctx, sender, id)
+	principal, err := auth.Caller(ctx)
+	if err != nil {
+		return nil, admissionRefused{err}
+	}
+	sent, err := s.store.SentMessage(ctx, sender, id, principal.ServiceAccountUID)
 	if err != nil {
 		return nil, err
 	}

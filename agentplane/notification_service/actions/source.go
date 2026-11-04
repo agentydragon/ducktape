@@ -44,7 +44,7 @@ var _ worker.Provider = (*Source)(nil)
 //
 // The subscription servicer calls it when a subscription is created and shows an access denied failure as
 // PERMISSION_DENIED: authorization precedes persistence even when replay starts after the last event.
-func (s *Source) Events(ctx context.Context, owner model.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]storagecodec.ActionEvent, error) {
+func (s *Source) Events(ctx context.Context, owner model.ServiceAccount, requestID uuid.UUID, afterSequence int64, ownerUID string) ([]storagecodec.ActionEvent, error) {
 	request, err := s.Service.GetActionRequest(ctx, &action_servicepb.GetActionRequestRequest{RequestId: requestID.String()})
 	if err != nil {
 		return nil, rpcFailure(ctx, err)
@@ -56,7 +56,7 @@ func (s *Source) Events(ctx context.Context, owner model.ServiceAccount, request
 	if err != nil {
 		return nil, err
 	}
-	if caller != owner {
+	if caller != owner || ownerUID == "" || request.GetActionRequest().GetCallerUid() != ownerUID {
 		return nil, &worker.ProviderError{Kind: store.FailureAccessDenied, Message: "SourceNotOwnedError"}
 	}
 	if afterSequence < 0 || afterSequence > maxEventSequence {
@@ -88,7 +88,11 @@ func (s *Source) Reconcile(ctx context.Context, claim store.Claim, due store.Due
 	if !ok || due.ActionsAfterSequence == nil {
 		return fmt.Errorf("subscription %s is not an Actions subscription", due.ID)
 	}
-	events, err := s.Events(ctx, claim.Owner, request.RequestID, *due.ActionsAfterSequence)
+	ownerUID := ""
+	if claim.OwnerUID != nil {
+		ownerUID = *claim.OwnerUID
+	}
+	events, err := s.Events(ctx, claim.Owner, request.RequestID, *due.ActionsAfterSequence, ownerUID)
 	if err != nil {
 		return err
 	}

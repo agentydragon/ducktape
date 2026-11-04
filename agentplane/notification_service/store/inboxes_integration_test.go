@@ -71,7 +71,7 @@ func TestOverlappingSubscriptionsCommitOnePrefixAndReadDoesNotAcknowledge(t *tes
 	if _, err := f.Acknowledge(t.Context(), f.incarnation(), a.InboxID, 4); !errors.Is(err, ErrCursorOutOfRange) {
 		t.Fatalf("error = %v, want ErrCursorOutOfRange", err)
 	}
-	if _, err := f.Acknowledge(t.Context(), Owner{Account: newOwner(), SandboxUID: testSandboxUID}, a.InboxID, 1); !errors.Is(err, ErrNotFound) {
+	if _, err := f.Acknowledge(t.Context(), Owner{Account: newOwner(), AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, a.InboxID, 1); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("error = %v, want ErrNotFound", err)
 	}
 }
@@ -214,7 +214,7 @@ func TestRetirementStopsWorkWithoutErasingEntries(t *testing.T) {
 	event := model.ActionsEvent{RequestID: creation.Source.(model.ActionsSource).RequestID, Sequence: 1}
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
 
-	if err := f.Retire(t.Context(), Owner{Account: newOwner(), SandboxUID: testSandboxUID}, subscription.InboxID); !errors.Is(err, ErrNotFound) {
+	if err := f.Retire(t.Context(), Owner{Account: newOwner(), AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, subscription.InboxID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another account retired the inbox: %v", err)
 	}
 	if err := f.Retire(t.Context(), f.incarnation(), subscription.InboxID); err != nil {
@@ -239,10 +239,10 @@ func TestRetirementStopsWorkWithoutErasingEntries(t *testing.T) {
 
 	later := creation
 	later.IdempotencyKey = "later"
-	if _, err := f.Subscribe(t.Context(), f.owner, later, nil); !errors.Is(err, ErrInboxRetired) {
+	if _, err := f.Subscribe(t.Context(), f.owner, later, nil, "test-account-uid"); !errors.Is(err, ErrInboxRetired) {
 		t.Fatalf("subscribe: error = %v, want ErrInboxRetired", err)
 	}
-	if _, err := f.Subscribe(t.Context(), f.owner, creation, nil); !errors.Is(err, ErrInboxRetired) {
+	if _, err := f.Subscribe(t.Context(), f.owner, creation, nil, "test-account-uid"); !errors.Is(err, ErrInboxRetired) {
 		t.Fatalf("replayed subscribe: error = %v, want ErrInboxRetired", err)
 	}
 	if _, err := f.Renew(t.Context(), f.incarnation(), subscription.ID, 2, 7); !errors.Is(err, ErrInboxRetired) {
@@ -401,7 +401,7 @@ func TestASandboxRecreatedUnderTheNameOwnsNoneOfItsPredecessorsInboxes(t *testin
 	quotas.InboxesPerAccount = 1
 	f := newFixture(t, quotas)
 	predecessor := f.subscribe(t, f.body("predecessor"))
-	successor := Owner{Account: f.owner, SandboxUID: "test-successor-uid"}
+	successor := Owner{Account: f.owner, AccountUID: "test-account-uid", SandboxUID: "test-successor-uid"}
 
 	if inboxes, err := f.ListInboxes(t.Context(), successor); err != nil || len(inboxes) != 0 {
 		t.Fatalf("listed %+v, %v", inboxes, err)
@@ -429,5 +429,67 @@ func TestASandboxRecreatedUnderTheNameOwnsNoneOfItsPredecessorsInboxes(t *testin
 	subscription := f.subscribe(t, creation)
 	if inboxes, err := f.ListInboxes(t.Context(), successor); err != nil || len(inboxes) != 1 || inboxes[0].ID != subscription.InboxID {
 		t.Fatalf("listed %+v, %v; want only the successor's inbox", inboxes, err)
+	}
+}
+
+func TestServiceAccountUIDFencesRetainedInboxAndSubscriptions(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	subscription := f.subscribe(t, f.body("uid-owner"))
+	owner := f.incarnation()
+	owner.AccountUID = "replacement-account-uid"
+	inboxes, err := f.ListInboxes(t.Context(), owner)
+	if err != nil || len(inboxes) != 0 {
+		t.Fatalf("replacement inboxes = %v, %v", inboxes, err)
+	}
+	subscriptions, err := f.ListSubscriptions(t.Context(), owner, nil)
+	if err != nil || len(subscriptions) != 0 {
+		t.Fatalf("replacement subscriptions = %v, %v", subscriptions, err)
+	}
+	for name, access := range map[string]func() error{
+		"read":         func() error { _, err := f.Read(t.Context(), owner, subscription.InboxID, 0, 10); return err },
+		"acknowledge":  func() error { _, err := f.Acknowledge(t.Context(), owner, subscription.InboxID, 0); return err },
+		"retire":       func() error { return f.Retire(t.Context(), owner, subscription.InboxID) },
+		"subscription": func() error { _, err := f.GetSubscription(t.Context(), owner, subscription.ID); return err },
+		"Session":      func() error { _, err := f.InboxIDForSession(t.Context(), owner, f.sessionID); return err },
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := access(); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("replacement access = %v", err)
+			}
+		})
+	}
+	if _, err := f.Read(t.Context(), f.incarnation(), subscription.InboxID, 0, 10); err != nil {
+		t.Fatal(err)
+	}
+	body := f.body("replacement-create")
+	if _, err := f.Subscribe(t.Context(), f.owner, body, nil, owner.AccountUID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("replacement creation = %v", err)
+	}
+}
+
+func TestEstablishInboxOwnerRequiresEveryOriginalIdentityComponent(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	subscription := f.subscribe(t, f.body("establish-owner"))
+	f.exec(t, `UPDATE inbox SET owner_uid = NULL WHERE id = $1`, subscription.InboxID)
+	if _, err := f.Read(t.Context(), f.incarnation(), subscription.InboxID, 0, 10); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown owner access = %v", err)
+	}
+	ref := f.body("unused").DestinationRef
+	replaced := ref
+	replaced.UID = "recreated-sandbox-uid"
+	if err := f.EstablishInboxOwner(t.Context(), f.owner, replaced, f.sessionID, "test-account-uid"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("wrong destination = %v", err)
+	}
+	if err := f.EstablishInboxOwner(t.Context(), newOwner(), ref, f.sessionID, "test-account-uid"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("wrong account = %v", err)
+	}
+	if err := f.EstablishInboxOwner(t.Context(), f.owner, ref, f.sessionID, "test-account-uid"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.EstablishInboxOwner(t.Context(), f.owner, ref, f.sessionID, "replacement-account-uid"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("rebind owner = %v", err)
+	}
+	if _, err := f.Read(t.Context(), f.incarnation(), subscription.InboxID, 0, 10); err != nil {
+		t.Fatal(err)
 	}
 }

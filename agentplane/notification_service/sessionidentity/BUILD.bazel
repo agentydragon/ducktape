@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
+
+go_library(
+    name = "sessionidentity",
+    srcs = ["session.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/sessionidentity",
+    deps = [
+        "//agentplane/notification_service/model",
+        "//agentplane/notification_service/store",
+        "//agentplane/proto:session_go_proto",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
+    ],
+)

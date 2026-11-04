@@ -21,6 +21,8 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/google/uuid"
@@ -39,7 +41,7 @@ const (
 var testOwner = model.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
 
 // testIncarnation is testOwner as the Sandbox the destinations name.
-var testIncarnation = store.Owner{Account: testOwner, SandboxUID: testSandboxUID}
+var testIncarnation = store.Owner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}
 
 func ptr[T any](v T) *T { return &v }
 
@@ -155,9 +157,10 @@ func (h *fakeHistory) readRequests() []*historypb.ReadSessionEventsRequest {
 
 // fakeDispatcher records what is submitted to it, and says the command is queued unless a test says otherwise.
 type fakeDispatcher struct {
-	mu       sync.Mutex
-	requests []*dispatcherpb.SubmitInputRequest
-	respond  func(context.Context, *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error)
+	accountUID string
+	mu         sync.Mutex
+	requests   []*dispatcherpb.SubmitInputRequest
+	respond    func(context.Context, *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error)
 }
 
 func (d *fakeDispatcher) SubmitInput(ctx context.Context, in *dispatcherpb.SubmitInputRequest, _ ...grpc.CallOption) (*dispatcherpb.SubmitInputResponse, error) {
@@ -256,7 +259,7 @@ func newHarnessWithDatabaseURL(t *testing.T, databaseURL string, settings Settin
 	t.Cleanup(func() { db.Close() })
 	h := &harness{
 		db: db, settings: settings, sandboxes: &fakeSandboxes{view: matchingSandbox()},
-		history: &fakeHistory{}, dispatcher: &fakeDispatcher{}, actions: newFakeProvider(),
+		history: &fakeHistory{}, dispatcher: &fakeDispatcher{accountUID: "test-account-uid"}, actions: newFakeProvider(),
 	}
 	h.exec(t, `TRUNCATE inbox CASCADE`)
 	h.restart()
@@ -300,7 +303,7 @@ func (h *harness) subscribeTo(t *testing.T, key string, request uuid.UUID) store
 	subscription, err := h.store.Subscribe(t.Context(), testOwner, model.Subscribe{
 		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: key,
 		Source: model.ActionsSource{RequestID: request}, LifetimeDays: 7,
-	}, nil)
+	}, nil, "test-account-uid")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -543,4 +546,14 @@ func unrelatedEntry(cursor uint64) *eventlogpb.EventEntry {
 	return &eventlogpb.EventEntry{Cursor: cursor, Event: &eventpb.Event{Observation: &eventpb.Event_HarnessLost{
 		HarnessLost: &eventpb.HarnessLost{},
 	}}}
+}
+
+func (d *fakeDispatcher) GetSession(_ context.Context, request *dispatcherpb.GetSessionRequest, _ ...grpc.CallOption) (*dispatcherpb.GetSessionResponse, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return &dispatcherpb.GetSessionResponse{Session: &dispatcherpb.Session{
+		SessionId:         request.GetSessionId(),
+		ExecutionIdentity: &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: testSandbox}, Uid: d.accountUID},
+		Placement:         &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: testSandbox, Uid: testSandboxUID}}}},
+	}}, nil
 }

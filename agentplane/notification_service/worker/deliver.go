@@ -19,6 +19,7 @@ type History interface {
 
 // Dispatcher stores a command for the Session Dispatcher to deliver to a Sandbox's runner.
 type Dispatcher interface {
+	GetSession(context.Context, *dispatcherpb.GetSessionRequest, ...grpc.CallOption) (*dispatcherpb.GetSessionResponse, error)
 	SubmitInput(ctx context.Context, in *dispatcherpb.SubmitInputRequest, opts ...grpc.CallOption) (*dispatcherpb.SubmitInputResponse, error)
 }
 

@@ -6,9 +6,11 @@ import (
 	"slices"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/sessionidentity"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -23,11 +25,25 @@ func (s *Notifications) subscribe(ctx context.Context, owner model.ServiceAccoun
 	if err != nil {
 		return store.Subscription{}, unavailable("Session", err)
 	}
-	target := sessionTarget(session.GetSession(), body.SessionID)
+	target := sessionidentity.Target(session.GetSession(), body.SessionID)
 	if target == nil {
 		return store.Subscription{}, unavailable("Session", errors.New("incomplete Session placement"))
 	}
 	body.DestinationRef = model.DestinationRef{Namespace: s.namespace, Name: target.GetName(), UID: target.GetUid()}
+	ownerUID, err := sessionidentity.AccountUID(session.GetSession(), body.SessionID, body.DestinationRef, owner)
+	if err != nil {
+		return store.Subscription{}, err
+	}
+	principal, err := auth.Caller(ctx)
+	if err != nil {
+		return store.Subscription{}, admissionRefused{err}
+	}
+	if principal.ServiceAccountUID != ownerUID {
+		return store.Subscription{}, store.ErrNotFound
+	}
+	if err := s.store.EstablishInboxOwner(ctx, owner, body.DestinationRef, body.SessionID, ownerUID); err != nil {
+		return store.Subscription{}, err
+	}
 	if err := body.Validate(); err != nil {
 		return store.Subscription{}, err
 	}
@@ -44,10 +60,10 @@ func (s *Notifications) subscribe(ctx context.Context, owner model.ServiceAccoun
 	}
 	switch source := body.Source.(type) {
 	case model.ActionsSource:
-		if _, err := s.actions.Events(ctx, owner, source.RequestID, source.AfterSequence); err != nil {
+		if _, err := s.actions.Events(ctx, owner, source.RequestID, source.AfterSequence, ownerUID); err != nil {
 			return store.Subscription{}, err
 		}
-		return s.store.Subscribe(ctx, owner, body, nil)
+		return s.store.Subscribe(ctx, owner, body, nil, ownerUID)
 	case model.GitHubSource:
 		if s.github == nil {
 			return store.Subscription{}, errGitHubDisabled
@@ -56,7 +72,7 @@ func (s *Notifications) subscribe(ctx context.Context, owner model.ServiceAccoun
 		if err != nil {
 			return store.Subscription{}, err
 		}
-		return s.store.Subscribe(ctx, owner, body, &access)
+		return s.store.Subscribe(ctx, owner, body, &access, ownerUID)
 	default:
 		return store.Subscription{}, errors.New("a validated source is an Action request or a GitHub subject")
 	}

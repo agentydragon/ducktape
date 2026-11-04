@@ -8,6 +8,7 @@ import (
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/sessionidentity"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -255,9 +256,9 @@ func TestSessionTargetUsesTypedPlacement(t *testing.T) {
 		{"wrong Session", nativeSession("other", sandboxName, sandboxUID), false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			target := sessionTarget(test.opening, testSession)
+			target := sessionidentity.Target(test.opening, testSession)
 			if (target != nil) != test.want {
-				t.Fatalf("sessionTarget(%v) = %v, want present %t", test.opening, target, test.want)
+				t.Fatalf("sessionidentity.Target(%v) = %v, want present %t", test.opening, target, test.want)
 			}
 			if test.want && (target.GetName() != sandboxName || target.GetUid() != sandboxUID) {
 				t.Fatalf("wrong exact target: %v", target)

@@ -32,7 +32,7 @@ type Runner interface {
 // Actions reads the next page of an Action request's events after a sequence, if the account submitted the
 // request. A subscription is refused when it cannot, so a caller cannot follow another account's requests.
 type Actions interface {
-	Events(ctx context.Context, owner model.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]storagecodec.ActionEvent, error)
+	Events(ctx context.Context, owner model.ServiceAccount, requestID uuid.UUID, afterSequence int64, ownerUID string) ([]storagecodec.ActionEvent, error)
 }
 
 // SessionHistory reads the Sandbox the History Service recorded as writing a Session.

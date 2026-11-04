@@ -45,7 +45,7 @@ func TestOnlyActiveSubscriptionsConsumeInboxQuota(t *testing.T) {
 					subscriptions = append(subscriptions, f.subscribe(t, keyed(fmt.Sprintf("slot-%d", i))))
 				}
 				extra := keyed("extra")
-				_, err := f.Subscribe(t.Context(), f.owner, extra, nil)
+				_, err := f.Subscribe(t.Context(), f.owner, extra, nil, "test-account-uid")
 				requireQuota(t, err, ActiveSubscriptionsPerInbox, limit)
 				// An idempotent replay and the renewal of an active subscription need no other slot.
 				requireEqual(t, f.subscribe(t, keyed("slot-0")), subscriptions[0])
@@ -74,10 +74,10 @@ func TestOnlyActiveSubscriptionsConsumeInboxQuota(t *testing.T) {
 				requireEqual(t, f.subscribe(t, keyed("slot-0")), retained)
 				differing := keyed("slot-0")
 				differing.LifetimeDays = 30
-				if _, err := f.Subscribe(t.Context(), f.owner, differing, nil); !errors.Is(err, ErrIdempotencyKeyReused) {
+				if _, err := f.Subscribe(t.Context(), f.owner, differing, nil, "test-account-uid"); !errors.Is(err, ErrIdempotencyKeyReused) {
 					t.Fatalf("error = %v, want ErrIdempotencyKeyReused", err)
 				}
-				_, err = f.Subscribe(t.Context(), f.owner, keyed("overflow"), nil)
+				_, err = f.Subscribe(t.Context(), f.owner, keyed("overflow"), nil, "test-account-uid")
 				requireQuota(t, err, ActiveSubscriptionsPerInbox, limit)
 
 				if inactive == "expired" {
@@ -118,7 +118,7 @@ func TestCreationAndExpiredRenewalShareTheLastActiveSlot(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, results[0] = f.Subscribe(t.Context(), f.owner, last, nil)
+		_, results[0] = f.Subscribe(t.Context(), f.owner, last, nil, "test-account-uid")
 	}()
 	go func() {
 		defer wg.Done()
@@ -150,12 +150,12 @@ func TestConfiguredInboxAndEntryQuotas(t *testing.T) {
 	subscription := f.subscribe(t, first)
 	second := first
 	second.SessionID = "second"
-	_, err := f.Subscribe(t.Context(), f.owner, second, nil)
+	_, err := f.Subscribe(t.Context(), f.owner, second, nil, "test-account-uid")
 	requireQuota(t, err, InboxesPerAccount, 1)
 	// Another account has its own capacity under the same configuration.
 	otherAccount := first
 	otherAccount.SessionID = uuid.NewString()
-	if _, err := f.Subscribe(t.Context(), newOwner(), otherAccount, nil); err != nil {
+	if _, err := f.Subscribe(t.Context(), newOwner(), otherAccount, nil, "test-account-uid"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -184,7 +184,7 @@ func TestOwnerIdempotenceCancelAndVersion(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			var err error
-			results[i], err = f.Subscribe(t.Context(), f.owner, first, nil)
+			results[i], err = f.Subscribe(t.Context(), f.owner, first, nil, "test-account-uid")
 			if err != nil {
 				t.Error(err)
 			}
@@ -213,14 +213,14 @@ func TestOwnerIdempotenceCancelAndVersion(t *testing.T) {
 	afterSequence := first
 	afterSequence.Source = model.ActionsSource{RequestID: first.Source.(model.ActionsSource).RequestID, AfterSequence: 1}
 	for _, creation := range []model.Subscribe{otherRequest, afterSequence} {
-		if _, err := f.Subscribe(t.Context(), f.owner, creation, nil); !errors.Is(err, ErrIdempotencyKeyReused) {
+		if _, err := f.Subscribe(t.Context(), f.owner, creation, nil, "test-account-uid"); !errors.Is(err, ErrIdempotencyKeyReused) {
 			t.Fatalf("error = %v, want ErrIdempotencyKeyReused", err)
 		}
 	}
-	if _, err := f.Read(t.Context(), Owner{Account: newOwner(), SandboxUID: testSandboxUID}, subscription.InboxID, 0, 128); !errors.Is(err, ErrNotFound) {
+	if _, err := f.Read(t.Context(), Owner{Account: newOwner(), AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, subscription.InboxID, 0, 128); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another account read the inbox: %v", err)
 	}
-	if _, err := f.GetSubscription(t.Context(), Owner{Account: newOwner(), SandboxUID: testSandboxUID}, subscription.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := f.GetSubscription(t.Context(), Owner{Account: newOwner(), AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, subscription.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another account read the subscription: %v", err)
 	}
 	if _, err := f.GetSubscription(t.Context(), f.incarnation(), uuid.New()); !errors.Is(err, ErrNotFound) {
@@ -286,12 +286,12 @@ func TestSubscriptionsAreListedInPagesInIDOrder(t *testing.T) {
 func TestACreationBeyondItsBoundsIsRefused(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	creation := f.body("")
-	if _, err := f.Subscribe(t.Context(), f.owner, creation, nil); !errors.Is(err, model.ErrInvalid) {
+	if _, err := f.Subscribe(t.Context(), f.owner, creation, nil, "test-account-uid"); !errors.Is(err, model.ErrInvalid) {
 		t.Fatalf("error = %v, want model.ErrInvalid", err)
 	}
 	creation = f.body("lifetime")
 	creation.LifetimeDays = 31
-	if _, err := f.Subscribe(t.Context(), f.owner, creation, nil); !errors.Is(err, model.ErrInvalid) {
+	if _, err := f.Subscribe(t.Context(), f.owner, creation, nil, "test-account-uid"); !errors.Is(err, model.ErrInvalid) {
 		t.Fatalf("error = %v, want model.ErrInvalid", err)
 	}
 	subscription := f.subscribe(t, f.body("renewed"))

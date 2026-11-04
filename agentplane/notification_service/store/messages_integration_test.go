@@ -21,7 +21,7 @@ func messageQuotas() Quotas {
 func (f fixture) message(sender model.ServiceAccount, key, text string) Message {
 	creation := f.body(key)
 	return Message{
-		Sender: sender, Recipient: f.owner, DestinationRef: creation.DestinationRef, SessionID: creation.SessionID,
+		Sender: sender, SenderUID: "test-sender-uid", Recipient: f.owner, RecipientUID: "test-account-uid", DestinationRef: creation.DestinationRef, SessionID: creation.SessionID,
 		IdempotencyKey: key, Body: text,
 	}
 }
@@ -29,7 +29,7 @@ func (f fixture) message(sender model.ServiceAccount, key, text string) Message 
 func (f fixture) openInbox(t *testing.T) {
 	t.Helper()
 	creation := f.body("unused")
-	if err := f.OpenInbox(t.Context(), f.owner, creation.DestinationRef, creation.SessionID); err != nil {
+	if err := f.OpenInbox(t.Context(), f.owner, creation.DestinationRef, creation.SessionID, "test-account-uid"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -45,7 +45,7 @@ func (f fixture) send(t *testing.T, message Message) SentMessage {
 
 func (f fixture) sentMessage(t *testing.T, sender model.ServiceAccount, id uuid.UUID) SentMessage {
 	t.Helper()
-	sent, err := f.SentMessage(t.Context(), sender, id)
+	sent, err := f.SentMessage(t.Context(), sender, id, "test-sender-uid")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestAMessageIsAnEntryOfItsSessionsInboxThatItsSenderFollows(t *testing.T) {
 		sender model.ServiceAccount
 		id     uuid.UUID
 	}{"the recipient": {f.owner, sent.ID}, "another account": {newOwner(), sent.ID}, "an unknown ID": {sender, uuid.New()}} {
-		if _, err := f.SentMessage(t.Context(), lookup.sender, lookup.id); !errors.Is(err, ErrNotFound) {
+		if _, err := f.SentMessage(t.Context(), lookup.sender, lookup.id, "test-sender-uid"); !errors.Is(err, ErrNotFound) {
 			t.Errorf("%s: error = %v, want ErrNotFound", name, err)
 		}
 	}
@@ -138,7 +138,7 @@ func TestARetiredInboxTakesNoNewMessageAndItsPurgeEndsTheReceipts(t *testing.T) 
 
 	f.exec(t, `UPDATE inbox SET updated_at = now() - interval '31 days' WHERE id = $1`, inbox.ID)
 	f.cleanAll(t)
-	if _, err := f.SentMessage(t.Context(), sender, sent.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := f.SentMessage(t.Context(), sender, sent.ID, "test-sender-uid"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("error = %v after the purge, want ErrNotFound", err)
 	}
 }
@@ -205,5 +205,35 @@ func TestTheDatabaseHoldsNoBodyBeyondTheCeiling(t *testing.T) {
 	_, err := f.Send(t.Context(), f.message(newOwner(), "beyond-ceiling", strings.Repeat("é", MessageBodyCeiling/2)+"x"))
 	if refused := (*pq.Error)(nil); !errors.As(err, &refused) || refused.Constraint != "entry_message_body_bytes" {
 		t.Fatalf("error = %v, want the native body ceiling's constraint", err)
+	}
+}
+
+func TestMessageSenderUIDFencesReceiptsAndUncertainRetries(t *testing.T) {
+	f := newFixture(t, messageQuotas())
+	f.openInbox(t)
+	sender := newOwner()
+	message := f.message(sender, "exact-sender", "one message")
+	sent := f.send(t, message)
+	if _, err := f.SentMessage(t.Context(), sender, sent.ID, "replacement-sender-uid"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("replacement receipt = %v", err)
+	}
+	retry := message
+	retry.SenderUID = "replacement-sender-uid"
+	if _, err := f.Send(t.Context(), retry); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("replacement retry = %v", err)
+	}
+	f.exec(t, `UPDATE message SET sender_uid = NULL WHERE id = $1`, sent.ID)
+	if _, err := f.Send(t.Context(), message); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown original identity retry = %v", err)
+	}
+	if _, err := f.SentMessage(t.Context(), sender, sent.ID, message.SenderUID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown sender receipt = %v", err)
+	}
+	f.send(t, f.message(sender, "second", "second message"))
+	_, err := f.Send(t.Context(), f.message(sender, "overflow", "third message"))
+	requireQuota(t, err, UnacknowledgedMessagesPerSender, 2)
+	page, err := f.Read(t.Context(), f.incarnation(), f.recipientInbox(t).ID, 0, 10)
+	if err != nil || len(page.Entries) != 2 {
+		t.Fatalf("retained entries = %+v, %v", page.Entries, err)
 	}
 }

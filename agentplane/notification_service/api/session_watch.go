@@ -9,7 +9,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	pb "github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/sessionidentity"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -41,12 +43,24 @@ func (s *Notifications) sessionOwner(ctx context.Context, sessionID string) (*st
 	if err != nil {
 		return nil, err
 	}
-	owner := &store.Owner{Account: caller, SandboxUID: sandbox.Identity.Uid}
+	currentOwner, err := s.owner(ctx, caller, sandbox.Identity.Uid)
+	if err != nil {
+		return nil, err
+	}
+	owner := &currentOwner
 	found, _, err := s.store.SessionStatus(ctx, s.namespace, sessionID, owner, s.debounce, false, false)
 	if err != nil {
 		return nil, err
 	}
 	if found == nil {
+		response, err := s.sessions.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: sessionID})
+		if err != nil {
+			return nil, store.ErrNotFound
+		}
+		uid, err := sessionidentity.AccountUID(response.GetSession(), sessionID, model.DestinationRef{Namespace: caller.Namespace, Name: caller.Name, UID: sandbox.Identity.Uid}, caller)
+		if err != nil || uid != owner.AccountUID {
+			return nil, store.ErrNotFound
+		}
 		if err := s.confirmSession(ctx, sandbox.Identity, sessionID); err != nil {
 			return nil, err
 		}
