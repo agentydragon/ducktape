@@ -139,6 +139,15 @@ rebuilds, codegen cache), and materialize-stage performance work lives in
    The residual-item helper now returns `Option<ModuleItem>` (no temporary
    result vector or fictitious error path). Profile the remaining required
    copies before redesigning source ownership.
+3. **Reuse analysis for unaffected chunks after an assertion edit.**
+   `pipeline.bzl` keys one `DebundleAnalyze` action on the entire projection;
+   `pipeline::analyze_cli` runs the cross-module pass and all analyzed chunks.
+   An exact initializer assertion therefore invalidates whole-program analysis,
+   even when source and ownership are unchanged. Define the cross-module and
+   transitive contract invalidation rules before introducing chunk reuse;
+   engine identity changes must still invalidate affected analysis. This is
+   separate from the lowering/codegen cache above. A combined engine/assertion
+   refresh is not an isolated measurement of the assertion's cost.
 
 ### Read-off minimizer polish
 
