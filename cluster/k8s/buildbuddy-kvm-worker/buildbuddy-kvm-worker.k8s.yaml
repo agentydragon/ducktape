@@ -321,7 +321,8 @@ spec:
       networks:
         - name: default
           pod: {}
-      nodeSelector: {}
+      nodeSelector:
+        kubernetes.io/os: linux
       volumes:
         - containerDisk:
             image: quay.io/containerdisks/ubuntu:24.04@sha256:ea164c514b308286bdc179b403298efd2d8ae549af518a82a029e1bbb027f3a4

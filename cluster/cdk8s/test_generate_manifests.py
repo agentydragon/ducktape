@@ -79,6 +79,8 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     )
     guest = worker["spec"]["template"]["spec"]
     assert worker["spec"]["runStrategy"] == "Always"
+    # An empty selector removes its last SSA key and KubeVirt rejects the resulting null.
+    assert guest.get("nodeSelector")
     assert "kubernetes.io/hostname" not in guest.get("nodeSelector", {})
     assert guest["domain"]["cpu"]["model"] == "host-passthrough"
     cpu_features = {
