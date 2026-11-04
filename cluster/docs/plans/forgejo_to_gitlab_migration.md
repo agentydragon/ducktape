@@ -17,7 +17,8 @@ consumers before retiring the old installation; do not assume it is disposable.
 - GitLab documents Praefect on Kubernetes as beta and not recommended for production; standalone Gitaly on Kubernetes is
   generally available but does not provide repository-level failover. The GitLab-recommended production-HA alternative
   is a hybrid deployment with Praefect/Gitaly outside Kubernetes. This is a support/maturity trade-off, not a technical
-  requirement for VMs. Start with the current spike and assess whether accepting the risk fits the desired service.
+  requirement for VMs. The operator is comfortable proceeding with the in-cluster Praefect topology despite that
+  maturity status; failure handling, upgrade behavior and the other migration gates still need evaluation.
   [GitLab deployment options](https://docs.gitlab.com/administration/gitaly/kubernetes/)
 - Existing evidence: a private project, Authentik OIDC, managed user, Kubernetes Runner, push -> registry -> Flux ->
   app, and one controlled Gitaly primary partition were demonstrated. One push failed during that fault before a retry
@@ -212,9 +213,9 @@ inconsistencies without separate evidence.
 
 ## Open decisions and immediate next work
 
-- Accept in-cluster Praefect's documented beta status, use standalone Kubernetes Gitaly with lower availability, or
-  revisit the supported hybrid topology. Track the proposed object-storage backend separately until its production
-  readiness, license, SeaweedFS compatibility and migration path are established.
+- Proceed with in-cluster Praefect as the working topology, subject to the failure-handling and migration gates above.
+  Track the proposed object-storage backend separately until its production readiness, license, SeaweedFS compatibility
+  and migration path are established.
 - Promote the spike versus reproduce it as a production instance; whether to retain Forgejo read-only temporarily after
   cutover; explicit outage and data-loss objectives; production Git and registry hostname layout; per-image or shared
   registry project layout; and mirror policy.
