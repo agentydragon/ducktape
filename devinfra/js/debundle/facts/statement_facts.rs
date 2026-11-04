@@ -246,6 +246,10 @@ pub(crate) struct SynchronousCalls {
     pub(crate) global_object_aliases: Option<BTreeSet<Id>>,
     /// Heap-content cells of the callables this statement invoked.
     pub(crate) heap_contents: HeapContentCells,
+    /// Heap reads and writes reached without an assumed callback or fallback
+    /// path. This is a subset of `heap_contents` and is used only to check
+    /// explicit commuting premises; the conservative heap order uses all cells.
+    pub(crate) non_assumed_heap_accesses: HeapContentAccesses,
     pub precision_losses: Vec<crate::reports::schema::ExecutionPrecisionLoss>,
     pub native_integrity_checks: Vec<crate::reports::schema::NativeIntegrityCheck>,
     pub native_prototype_property_checks: Vec<crate::reports::schema::NativePrototypePropertyCheck>,
@@ -273,6 +277,27 @@ pub(crate) struct FallbackOnlyEffects {
 }
 
 impl SynchronousCalls {
+    pub(crate) fn record_heap_contents(&mut self, cells: &HeapContentCells, non_assumed: bool) {
+        self.heap_contents.extend(cells);
+        if non_assumed {
+            self.non_assumed_heap_accesses.extend_cells(cells);
+        }
+    }
+
+    pub(crate) fn record_heap_read(&mut self, cell: EffectCell, non_assumed: bool) {
+        self.heap_contents.reads.insert(cell.clone());
+        if non_assumed {
+            self.non_assumed_heap_accesses.reads.insert(cell);
+        }
+    }
+
+    pub(crate) fn record_heap_write(&mut self, cell: EffectCell, non_assumed: bool) {
+        self.heap_contents.writes.insert(cell.clone());
+        if non_assumed {
+            self.non_assumed_heap_accesses.writes.insert(cell);
+        }
+    }
+
     /// Coverage of this summary's lexical component, independent of heap,
     /// host, value and whole-initialization coverage.
     pub(crate) fn binding_effects_complete(&self) -> bool {
@@ -477,6 +502,26 @@ impl HeapContentCells {
         self.reads.extend(other.reads.iter().cloned());
         self.writes.extend(other.writes.iter().cloned());
         self.opaque |= other.opaque;
+    }
+}
+
+/// Source-known heap may-accesses whose invocation path was not assumed.
+/// Allocations are excluded: a fresh birth is not a content write.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct HeapContentAccesses {
+    pub reads: BTreeSet<EffectCell>,
+    pub writes: BTreeSet<EffectCell>,
+}
+
+impl HeapContentAccesses {
+    pub(crate) fn extend(&mut self, other: &Self) {
+        self.reads.extend(other.reads.iter().cloned());
+        self.writes.extend(other.writes.iter().cloned());
+    }
+
+    pub(crate) fn extend_cells(&mut self, cells: &HeapContentCells) {
+        self.reads.extend(cells.reads.iter().cloned());
+        self.writes.extend(cells.writes.iter().cloned());
     }
 }
 

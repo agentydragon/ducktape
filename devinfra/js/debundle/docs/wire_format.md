@@ -21,6 +21,15 @@ group. Their schema and provenance checks remain authoritative for graph-backed
 queries; a summary is not a substitute graph. This selection is independent of
 full diagnostic evidence and effect-conflict JSONL.
 
+The staged per-chunk `SynchronousCalls` fact now carries
+`non_assumed_heap_accesses` as typed `reads` and `writes` sets of heap-content
+cells. It is analysis input to the commuting-premise check, not a new public
+report field. `dependency_graph.json.gz` retains the existing
+`premise_verdict.conflict` shape with `kind: shared_cell` when the verdict is
+`known`; the cell
+may now come from a directly invoked callee. Saved analysis from an earlier
+engine must be recomputed before this field can be read.
+
 ## Convention: `Atom`-only on the wire
 
 Every JSON file carries binding identities as `Atom`s (interned

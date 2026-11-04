@@ -2390,16 +2390,23 @@ counts and cyclic memberships as incomplete. An acyclic prediction requires
 completed preservation. These predictions do not certify an author's assertion.
 
 An entry applies to ordering whose effect analysis is opaque at an endpoint
-or on the preserved path. It is rejected as contradicting a source fact when the
-analysis derived that the two source units definitely conflict, read from each
-`sequenced` edge's retained cause (§ Realizability cut explanations) and the
-two recorded effect summaries: a `cell_order` edge with a `read_after_write`,
+or on the preserved path. It is rejected when the analysis derived a source-known
+effect-set conflict, read from each `sequenced` edge's retained cause
+(§ Realizability cut explanations) and the two recorded effect summaries: a
+`cell_order` edge with a `read_after_write`,
 `write_after_write`, `write_after_read` or `use_after_allocation` relation; a
 `binding_timeline`, `shared_var_access` or `uninitialized_observation` edge
 whose two binding effects are both `observed`; two summaries sharing a cell (a
 binding, a static `globalThis` property, array or Set contents) with at least
-one write; or a shared `var` declaration. A
-`cell_order` edge carrying only barrier relations (`after_barrier`,
+one write; or a shared `var` declaration.
+For this premise check, each summary includes the statement's own effect cells
+and heap-content reads and writes of callees invoked on non-assumed paths.
+These are modeled may-accesses; the check does not assert that every call or
+access executes at runtime. Callee cells contributed only by an assumed
+callback or fallback path remain conservative ordering evidence and do not
+contradict a premise. Fresh allocations are separate from content writes.
+
+A `cell_order` edge carrying only barrier relations (`after_barrier`,
 `barrier_after_prior`, `frontier_after_cell`), a `strict_chain` edge with
 an endpoint that is not dataflow-summarizable, and a binding-ordering edge
 with a `fallback` effect exist because an effect is

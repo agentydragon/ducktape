@@ -101,6 +101,9 @@ fn unknown() -> Values {
 #[derive(Debug, Clone, Default)]
 pub(super) struct Outcome {
     effects: SynchronousCalls,
+    /// The callable body was entered, rather than only conservatively
+    /// summarized by a recursion or invocation-budget fallback.
+    body_invoked: bool,
     /// Nonterminal operation receipts, never a whole-owner certificate.
     effect_coverage: EffectCoverageFragment,
     returns: Values,
@@ -227,14 +230,19 @@ impl Outcome {
         }
     }
 
-    /// Union nested heap may-cells and move its binding effects. Under an
-    /// `assumption` the binding effects inherit that provenance; otherwise
-    /// each keeps the provenance `nested` recorded. Observed wins.
+    /// Union all nested heap may-cells for conservative ordering, but admit
+    /// their explicit-premise subset only from a non-assumed invocation.
+    /// Binding effects retain their separate fallback provenance.
     fn absorb_call_effects(
         &mut self,
         nested: &mut SynchronousCalls,
         assumption: Option<&AssumedEffectReason>,
     ) {
+        if assumption.is_none() {
+            self.effects
+                .non_assumed_heap_accesses
+                .extend(&nested.non_assumed_heap_accesses);
+        }
         self.effects
             .heap_contents
             .extend(&std::mem::take(&mut nested.heap_contents));
@@ -784,8 +792,9 @@ pub(super) struct ExecutionState {
     /// Fresh object literals a parameter-mutation initializer filled with
     /// primitive data properties (`fresh_data_writes`).
     parameter_initialized_objects: BTreeSet<u32>,
-    /// Callables the current top-level owner invoked, memoized invocations
-    /// included; their bodies' heap-content cells are the statement's.
+    /// All invoked callable keys, including outcomes a proof probe discards.
+    /// The root union preserves the conservative heap order independently of
+    /// the per-invocation non-assumed premise subset.
     statement_invoked_callables: BTreeSet<u32>,
     accepted_deferred_global_writes: BTreeSet<SourceUnitOrdinal>,
     frozen_namespace_calls: BTreeSet<CallSite>,
@@ -1639,10 +1648,14 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         self.executor.literal_heap()
     }
     fn record_property_read(&mut self, cell: crate::facts::EffectCell) {
-        self.outcome.effects.heap_contents.reads.insert(cell);
+        self.outcome
+            .effects
+            .record_heap_read(cell, self.executor.state.assumption.is_none());
     }
     fn record_property_write(&mut self, cell: crate::facts::EffectCell) {
-        self.outcome.effects.heap_contents.writes.insert(cell);
+        self.outcome
+            .effects
+            .record_heap_write(cell, self.executor.state.assumption.is_none());
     }
     fn unproved_field_read(
         &mut self,
@@ -1656,7 +1669,9 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         if matches!(self.scope, LocalExecutionScope::RootInitializer)
             && let Some(read) = self.executor.present_own_data_read(receivers, property)
         {
-            self.outcome.effects.heap_contents.reads.insert(read.cell);
+            self.outcome
+                .effects
+                .record_heap_read(read.cell, self.executor.state.assumption.is_none());
             return Some(super::super::allocation_transfer::AllocationValue::opaque(
                 read.values,
             ));
@@ -1874,6 +1889,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // This executor owns only this invocation's child ledger. A memo
         // must never capture the caller's accumulated effects.
         let mut memo = outcome.clone();
+        self.record_callable_heap_contents(signature.callable, &mut memo);
         memo.effects
             .evaluation_effects
             .extend(&self.evaluation_effects);
@@ -1888,6 +1904,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && previous != point
         {
             self.queries.retire_invocation_memo(previous);
+        }
+    }
+
+    /// Static first-order body cells belong to this invocation, including
+    /// when it is memoized. The caller later decides whether its path was
+    /// assumed; a statement-wide callable set loses that distinction.
+    fn record_callable_heap_contents(&self, key: u32, outcome: &mut Outcome) {
+        if let Some(cells) = self.inputs.callable_heap_contents.get(&key) {
+            outcome
+                .effects
+                .record_heap_contents(cells, outcome.body_invoked);
         }
     }
 
@@ -9333,7 +9360,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .map(|context| context.values.cells.clone())
                 .unwrap_or_default(),
         );
-        let outcome = self.invoke_with_cells(key, args, captured, fresh_checked_constructor);
+        let mut outcome = self.invoke_with_cells(key, args, captured, fresh_checked_constructor);
+        self.record_callable_heap_contents(key, &mut outcome);
         if !outcome.complete || outcome.unknown_call {
             let cells: Vec<_> = self.state.active_cells.values().copied().collect();
             self.havoc_cells(cells);
@@ -9545,6 +9573,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 if !covered_prologue {
                     outcome.effect_coverage = EffectCoverageFragment::default();
                 }
+                outcome.body_invoked = true;
                 self.state.active.remove(&active_invocation);
                 self.state.invocation_depth -= 1;
                 self.remember_invocation(signature, &outcome);
@@ -9600,6 +9629,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.remember_invocation(signature, &outcome);
             return outcome;
         }
+        outcome.body_invoked = true;
         if callable.opaque {
             outcome.unsupported(
                 ExecutionOperation::OpaqueExecution,
@@ -10027,7 +10057,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 return CallTransfer::EffectsOnly;
             }
             if let Some(read) = self.root_own_data_read(&call.callee) {
-                outcome.effects.heap_contents.reads.insert(read.cell);
+                outcome
+                    .effects
+                    .record_heap_read(read.cell, self.state.assumption.is_none());
                 return CallTransfer::EffectsOnly;
             }
             if object_own_data_read_property(&call.callee, |id| self.inputs.flow.is_declared(id))
@@ -10164,10 +10196,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if let Some(receipt) =
                 self.native_iterable(NativeIterableUse::ArraySpread(call.span), &values)
             {
-                outcome
-                    .effects
-                    .heap_contents
-                    .extend(&receipt.external_heap_contents());
+                outcome.effects.record_heap_contents(
+                    &receipt.external_heap_contents(),
+                    self.state.assumption.is_none(),
+                );
                 outcome.effect_coverage.compose(&receipt.coverage);
                 return CallTransfer::EffectsOnly;
             }
@@ -10318,10 +10350,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             )
         {
             if let Some(receipt) = &resolution.iterable {
-                outcome
-                    .effects
-                    .heap_contents
-                    .extend(&receipt.external_heap_contents());
+                outcome.effects.record_heap_contents(
+                    &receipt.external_heap_contents(),
+                    self.state.assumption.is_none(),
+                );
                 outcome.effect_coverage.compose(&receipt.coverage);
             }
             if resolution
@@ -11749,8 +11781,8 @@ pub(crate) fn annotate_synchronous_calls(
         checking_record_factory_contract: false,
         prior_effect_owners: BTreeSet::new(),
         statement_executed_owners: BTreeSet::new(),
-        statement_invoked_callables: BTreeSet::new(),
         parameter_initialized_objects: BTreeSet::new(),
+        statement_invoked_callables: BTreeSet::new(),
         accepted_deferred_global_writes: BTreeSet::new(),
         frozen_namespace_calls: BTreeSet::new(),
         reachability: ReachabilityState::default(),

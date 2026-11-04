@@ -98,8 +98,8 @@ pub struct ContradictingEdge {
     pub conflict: KnownConflict,
 }
 
-/// A `commuting_statements` entry whose endpoints the analysis derived to
-/// definitely conflict (SPEC.md § Commuting statements).
+/// A `commuting_statements` entry whose endpoints have a modeled effect-set
+/// conflict (SPEC.md § Commuting statements).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommutingStatementsContradiction {
     pub spec_location: String,
@@ -131,7 +131,7 @@ impl fmt::Display for CommutingStatementsContradiction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{} contradicts a source fact: source units {} and {} definitely conflict: ",
+            "{} contradicts a source fact: source units {} and {} have a modeled effect conflict: ",
             self.spec_location,
             source_unit_label(self.a, &self.a_binding),
             source_unit_label(self.b, &self.b_binding),
@@ -667,15 +667,30 @@ pub fn build_dependency_graph_with(
             reason,
         })
         .collect();
-    retain_premise_verdicts(&mut edges, &stmt_by_source_unit);
+    let premise_effects: HashMap<_, _> = stmt_by_source_unit
+        .iter()
+        .map(|(id, stmt)| {
+            let mut effects = stmt.effects();
+            if let Some(calls) = &stmt.synchronous_calls {
+                effects
+                    .reads
+                    .extend(calls.non_assumed_heap_accesses.reads.iter().cloned());
+                effects
+                    .writes
+                    .extend(calls.non_assumed_heap_accesses.writes.iter().cloned());
+            }
+            (*id, effects)
+        })
+        .collect();
+    retain_premise_verdicts(&mut edges, &stmt_by_source_unit, &premise_effects);
     let analyzed_edge_count = edges.len();
-    let commuting_premises = apply_commuting_statements(
-        &nodes,
-        &mut edges,
-        commuting_statements,
+    let commuting_premises =
+        apply_commuting_statements(&nodes, &mut edges, commuting_statements, &premise_effects)?;
+    retain_premise_verdicts(
+        &mut edges[analyzed_edge_count..],
         &stmt_by_source_unit,
-    )?;
-    retain_premise_verdicts(&mut edges[analyzed_edge_count..], &stmt_by_source_unit);
+        &premise_effects,
+    );
     Ok(DependencyGraph::from_parts(
         nodes,
         edges,
@@ -697,7 +712,7 @@ pub enum PremiseVerdict {
     /// The analysis already knows the two effects are unordered; the edge
     /// exists only as strict-chain adjacency.
     Summarized,
-    /// The analysis derived a definite conflict the premise contradicts.
+    /// The analysis derived a modeled conflict the premise contradicts.
     Known { conflict: KnownConflict },
 }
 
@@ -730,12 +745,13 @@ pub enum PremiseVerdict {
 /// - A missing cause is treated as known, so the premise never widens
 ///   through an unclassified edge.
 ///
-/// Not covered: heap effects a barrier *target* inherited from a resolved
-/// callee are not in its recorded summary, so a premise over such a pair is
-/// accepted on the barrier relation alone.
+/// The premise cell view also includes source-known callee heap accesses on
+/// non-assumed invocation paths. Assumed callback and fallback cells remain
+/// conservative ordering barriers, not contradictions to author assertions.
 fn premise_verdict(
     edge: &DependencyEdge,
     stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
+    premise_effects: &HashMap<SourceUnitId, StatementEffectSummary>,
 ) -> Option<PremiseVerdict> {
     let from = stmt_by_source_unit[&edge.from];
     let to = stmt_by_source_unit[&edge.to];
@@ -795,11 +811,14 @@ fn premise_verdict(
     // Recorded cells are facts even on an unsummarizable statement (its
     // unknown effects come on top), so a shared written cell wins.
     Some(
-        conflicting_cell(&from.effects(), &to.effects()).map_or(verdict, |cell| {
-            known(KnownConflict::SharedCell {
-                cell: EffectCellReport::from(&cell),
-            })
-        }),
+        conflicting_cell(&premise_effects[&edge.from], &premise_effects[&edge.to]).map_or(
+            verdict,
+            |cell| {
+                known(KnownConflict::SharedCell {
+                    cell: EffectCellReport::from(&cell),
+                })
+            },
+        ),
     )
 }
 
@@ -809,9 +828,11 @@ fn premise_verdict(
 fn retain_premise_verdicts(
     edges: &mut [DependencyEdge],
     stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
+    premise_effects: &HashMap<SourceUnitId, StatementEffectSummary>,
 ) {
     for edge in edges.iter_mut() {
-        edge.reason.premise_verdict = premise_verdict(edge, stmt_by_source_unit).map(Box::new);
+        edge.reason.premise_verdict =
+            premise_verdict(edge, stmt_by_source_unit, premise_effects).map(Box::new);
     }
 }
 
@@ -827,7 +848,7 @@ fn conflicting_cell(a: &StatementEffectSummary, b: &StatementEffectSummary) -> O
 /// Apply the chunk's `commuting_statements` premises (SPEC.md § Commuting
 /// statements). For each pair, every `Sequenced` edge between the two source
 /// units (either direction) becomes inert — unless the edge's retained
-/// [`PremiseVerdict`] is a definite conflict, in which case the entry
+/// [`PremiseVerdict`] is a modeled conflict, in which case the entry
 /// contradicts a source fact and the build fails. `EagerUse` edges are never
 /// touched: an at-init read is a dataflow dependence, not an ordering of
 /// effects. A pair with no inertable edge is unused and the build fails so
@@ -836,7 +857,7 @@ fn apply_commuting_statements(
     nodes: &[SourceUnit],
     edges: &mut Vec<DependencyEdge>,
     commuting_statements: &[ResolvedCommutingStatements],
-    stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
+    premise_effects: &HashMap<SourceUnitId, StatementEffectSummary>,
 ) -> Result<Vec<AppliedCommutingPremise>, DependencyGraphBuildError> {
     let mut applied = Vec::with_capacity(commuting_statements.len());
     let mut summarized_endpoints = Vec::with_capacity(commuting_statements.len());
@@ -864,10 +885,7 @@ fn apply_commuting_statements(
         // A pair may first acquire a direct edge during order preservation.
         // Its explicit cells still contradict commutation even before then.
         if conflicts.is_empty()
-            && let Some(cell) = conflicting_cell(
-                &stmt_by_source_unit[&a].effects(),
-                &stmt_by_source_unit[&b].effects(),
-            )
+            && let Some(cell) = conflicting_cell(&premise_effects[&a], &premise_effects[&b])
         {
             conflicts.push(ContradictingEdge {
                 from: premise.a.source_unit,
