@@ -5879,6 +5879,9 @@ struct ExecutionIndex {
     no_sync_callback_members: BTreeMap<String, BTreeSet<String>>,
     callback_factory_imports: BTreeSet<Id>,
     callback_factory_summaries: BTreeMap<Id, crate::analysis_inputs::CallableSummary>,
+    /// The existing canonical call-shape check accepted one syntactic inline
+    /// callback. Lowered values cannot establish this source prerequisite.
+    direct_inline_callback_calls: BTreeMap<CallSite, Id>,
     foreign_call_imports: BTreeMap<Id, crate::analysis_inputs::ForeignCallSummary>,
     inline_callback_factory_imports: BTreeSet<Id>,
     callback_factory_members: BTreeMap<Id, BTreeSet<String>>,
@@ -6063,6 +6066,7 @@ impl Default for ExecutionIndex {
             foreign_call_imports: BTreeMap::new(),
             callback_factory_imports: BTreeSet::new(),
             callback_factory_summaries: BTreeMap::new(),
+            direct_inline_callback_calls: BTreeMap::new(),
             inline_callback_factory_imports: BTreeSet::new(),
             callback_factory_members: BTreeMap::new(),
             audited_factory_members: BTreeMap::new(),
@@ -10664,14 +10668,24 @@ impl ExecutionIndex {
             && matches!(member.prop, MemberProp::Ident(_))
     }
 
-    fn inline_factory_callback_argument(&self, call: &CallExpr) -> Option<usize> {
-        if call.args.len() != 1 || call.args[0].spread.is_some() {
+    fn inline_callback_callee(call: &CallExpr) -> Option<&Expr> {
+        if call.args.len() != 1
+            || call.args[0].spread.is_some()
+            || !matches!(
+                call.args[0].expr.unwrap_parens(),
+                Expr::Fn(_) | Expr::Arrow(_)
+            )
+        {
             return None;
         }
         let Callee::Expr(callee) = &call.callee else {
             return None;
         };
-        let is_factory = match callee.unwrap_parens() {
+        Some(callee.unwrap_parens())
+    }
+
+    fn inline_factory_callback_argument(&self, call: &CallExpr) -> Option<usize> {
+        let is_factory = match Self::inline_callback_callee(call)? {
             Expr::Ident(callee) => self.callback_factory_imports.contains(&callee.to_id()),
             Expr::Member(member) => {
                 let (Expr::Ident(namespace), MemberProp::Ident(property)) =
@@ -10685,12 +10699,7 @@ impl ExecutionIndex {
             }
             _ => false,
         };
-        (is_factory
-            && matches!(
-                call.args[0].expr.unwrap_parens(),
-                Expr::Fn(_) | Expr::Arrow(_)
-            ))
-        .then_some(0)
+        is_factory.then_some(0)
     }
 
     fn retained_callback_call(&self, call: &CallExpr) -> Option<RetainedCallbackCall> {
@@ -12821,6 +12830,12 @@ impl Visit for ExecutionIndex {
         }
 
         let callback_argument = self.inline_factory_callback_argument(call);
+        if self.current.is_none()
+            && let Some(Expr::Ident(callee)) = Self::inline_callback_callee(call)
+        {
+            self.direct_inline_callback_calls
+                .insert(call.span.into(), callee.to_id());
+        }
         let retained_call = self.retained_callback_call(call);
         let no_reentry_call = self.no_reentry_callback_call(call);
         let no_reentry_accessor_call = no_reentry_call
