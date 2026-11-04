@@ -22,6 +22,9 @@ from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 
+# gazelle:include_dep //agentplane/app:integration_fixtures
+pytest_plugins = ("agentplane.app.integration_fixtures",)
+
 WATCH = "/upstream/dispatcher/v1/dispatches:watch"
 # gazelle:include_dep @pypi//protobuf
 

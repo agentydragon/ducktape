@@ -21,6 +21,9 @@ from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from util.net import listen_tcp
 from util.testing.postgres import DatabaseNames, create_temporary_database
 
+# gazelle:include_dep //agentplane/app:integration_fixtures
+pytest_plugins = ("agentplane.app.integration_fixtures",)
+
 
 async def test_go_app_serves_a_parent_owned_listener(
     postgres_admin_url: str, database_names: DatabaseNames, sandbox: SandboxCluster

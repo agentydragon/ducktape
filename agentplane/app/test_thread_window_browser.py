@@ -31,7 +31,8 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 
-pytest_plugins = ("agentplane.app.testing.thread_browser",)
+# gazelle:include_dep //agentplane/app:integration_fixtures
+pytest_plugins = ("agentplane.app.testing.thread_browser", "agentplane.app.integration_fixtures")
 
 
 @pytest.fixture

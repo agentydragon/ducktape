@@ -68,7 +68,6 @@ py_test(
     requires_docker = True,
     deps = [
         "//:conftest",
-        "//agentplane/app:conftest",
         "//agentplane/app/frontend/serving/testing:image",
         "//devinfra/oci",
         "@pypi//httpx",

@@ -74,7 +74,8 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.frontend_visual.capture import VisualPage
 from util.testing.frontend_visual.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
 
-pytest_plugins = ("agentplane.app.testing.thread_browser",)
+# gazelle:include_dep //agentplane/app:integration_fixtures
+pytest_plugins = ("agentplane.app.testing.thread_browser", "agentplane.app.integration_fixtures")
 
 
 async def route_once(page: Page, url: str, handler: Callable[[Route], Awaitable[None]]) -> None:

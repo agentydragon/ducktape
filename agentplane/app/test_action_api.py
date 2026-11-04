@@ -35,6 +35,9 @@ from agentplane.app.testing.replication_process import (
 )
 from agentplane.history_service.client import HistoryServiceClient
 
+# gazelle:include_dep //agentplane/app:integration_fixtures
+pytest_plugins = ("agentplane.app.integration_fixtures",)
+
 ACTION_AUDIENCE = "test-actions"
 ACTION_REQUESTS = "/upstream/actions/v1/action-requests"
 

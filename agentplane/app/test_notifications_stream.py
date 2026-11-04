@@ -22,6 +22,10 @@ from agentplane.notification_service import notifications_pb2 as pb, notificatio
 # gazelle:include_dep @pypi//protobuf
 
 
+# gazelle:include_dep //agentplane/app:integration_fixtures
+pytest_plugins = ("agentplane.app.integration_fixtures",)
+
+
 def watch(session_id: str) -> str:
     return f"/upstream/notifications/v1/sessions/{session_id}/inbox:watch"
 

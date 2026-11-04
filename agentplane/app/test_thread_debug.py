@@ -15,6 +15,10 @@ from agentplane.proto import command_pb2, event_pb2
 # gazelle:include_dep @pypi//protobuf
 
 
+# gazelle:include_dep //agentplane/app:integration_fixtures
+pytest_plugins = ("agentplane.app.integration_fixtures",)
+
+
 async def test_lazy_scoped_evidence_and_native_expansion(
     app: AppProcess,
     store: ThreadHTTP,

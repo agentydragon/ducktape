@@ -26,6 +26,10 @@ from agentplane.testing.scripted_model import ScriptedModel, Text
 # gazelle:include_dep @pypi//grpcio
 
 
+# gazelle:include_dep //agentplane/app:integration_fixtures
+pytest_plugins = ("agentplane.app.integration_fixtures",)
+
+
 async def test_production_bridge_reads_runner_history_across_gateway_restarts(
     sandbox: SandboxCluster,
     gateway_service: GatewayProcess,
