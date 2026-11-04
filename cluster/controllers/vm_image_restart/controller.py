@@ -20,8 +20,8 @@ from kubernetes_asyncio import client, config
 from kubernetes_asyncio.client import ApiException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from cluster.controllers.vm_image_restart.kubernetes_watch import ListWatch, WatchedKind, apply_to
 from cluster.controllers.vm_image_restart.settings import Settings
-from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
 
 CONTROLLER = "vm-image-restart"
 OPT_IN_ANNOTATION = "ducktape.org/auto-restart-template-changes"
