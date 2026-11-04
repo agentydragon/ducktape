@@ -413,6 +413,7 @@ async def deployed_session_command_cannot_cross_deletion(
                 persist()
                 assert refused.value.code() == grpc.StatusCode.FAILED_PRECONDITION, refused.value
                 assert evidence["runtime_handler_result"] == "FailedPrecondition", evidence
+                assert refused.value.details() == "journal is sealed", evidence
                 assert await _read_sealed_history(history, history_caller, session) == before
                 evidence["sealed_cursor_unchanged"] = before[0]
                 persist()
