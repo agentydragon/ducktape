@@ -29,12 +29,12 @@ recreated under a deleted one's name sees none of the deleted one's, and an acco
 - `GET`, `PATCH`, `DELETE /v1/subscriptions/{id}`: inspect, renew with an expected version,
   or idempotently cancel. Cancelling never cancels an Action or erases accepted entries.
 - `GET /v1/inboxes`: the account's qualified session inboxes.
-- `GET /v1/inboxes/{id}/entries?after_cursor=0&limit=128`: non-destructive, contiguous paging, prefix
+- `GET /v1/sessions/{session_id}/inbox/entries?after_cursor=0&limit=128`: non-destructive, contiguous paging, prefix
   metadata, and the latest notice's admission/confirmation state. Payloads are stored provider event
   snapshots, not fetched at read time or promoted to operator instructions.
-- `PUT /v1/inboxes/{id}/acknowledgement` with `through_cursor`: monotonically acknowledge the handled
+- `PUT /v1/sessions/{session_id}/inbox/acknowledgement` with `through_cursor`: monotonically acknowledge the handled
   prefix. Future cursors are refused. Delivery and reads never acknowledge.
-- `DELETE /v1/inboxes/{id}`: explicit retirement; no future matching, messages or delivery. An already
+- `DELETE /v1/sessions/{session_id}/inbox`: explicit retirement; no future matching, messages or delivery. An already
   submitted runner command cannot be withdrawn. Missing endpoints or transient lookup failures are not retirement.
 - `POST /v1/messages`, `GET /v1/messages/{id}`: send a message to a Session's inbox, and follow one the caller
   sent ([Messages](#messages)).

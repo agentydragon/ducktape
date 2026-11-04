@@ -110,6 +110,35 @@ func (s *notificationsServer) GetMessage(ctx context.Context, request *notificat
 	return &notificationspb.GetMessageResponse{Message: message}, err
 }
 
+func (s *notificationsServer) ReadInbox(ctx context.Context, request *notificationspb.ReadInboxRequest) (*notificationspb.ReadInboxResponse, error) {
+	s.record(ctx, request)
+	return &notificationspb.ReadInboxResponse{Inbox: &notificationspb.Inbox{Id: "inbox", SessionId: request.GetSessionId()}}, nil
+}
+
+func (s *notificationsServer) AcknowledgeInbox(ctx context.Context, request *notificationspb.AcknowledgeInboxRequest) (*notificationspb.AcknowledgeInboxResponse, error) {
+	s.record(ctx, request)
+	return &notificationspb.AcknowledgeInboxResponse{Inbox: &notificationspb.Inbox{Id: "inbox", SessionId: request.GetSessionId(), Acknowledged: request.GetThroughCursor()}}, nil
+}
+
+func TestInboxCommandsAddressTheSession(t *testing.T) {
+	s := answering(pullRequestSubscription(1, false))
+	env := notificationsEnv(serveNotifications(t, s))
+	if code, _, stderr := invoke(env, "notifications", "inbox", "read", "session-1", "--after", "2", "--limit", "5"); code != 0 {
+		t.Fatalf("read: %d %s", code, stderr)
+	}
+	if code, _, stderr := invoke(env, "notifications", "inbox", "ack", "session-1", "--through", "4"); code != 0 {
+		t.Fatalf("ack: %d %s", code, stderr)
+	}
+	reads := received[*notificationspb.ReadInboxRequest](s)
+	acks := received[*notificationspb.AcknowledgeInboxRequest](s)
+	if len(reads) != 1 || reads[0].GetSessionId() != "session-1" || reads[0].GetAfterCursor() != 2 || reads[0].GetLimit() != 5 {
+		t.Errorf("reads: %v", reads)
+	}
+	if len(acks) != 1 || acks[0].GetSessionId() != "session-1" || acks[0].GetThroughCursor() != 4 {
+		t.Errorf("acks: %v", acks)
+	}
+}
+
 // serveNotifications runs the servicer behind the gateway and returns the facade's base URL.
 func serveNotifications(t *testing.T, servicer *notificationsServer) string {
 	t.Helper()

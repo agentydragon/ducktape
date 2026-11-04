@@ -21,9 +21,9 @@ func TestTheOperatorHasNoAgentInboxAuthority(t *testing.T) {
 	if err != nil || len(subscriptions.GetSubscriptions()) != 0 {
 		t.Errorf("listed %v, %v", subscriptions, err)
 	}
-	_, err = server.client.ReadInbox(bearing(t, operatorToken), &pb.ReadInboxRequest{InboxId: subscription.GetInboxId()})
+	_, err = server.client.ReadInbox(bearing(t, operatorToken), &pb.ReadInboxRequest{SessionId: testSession})
 	requireCode(t, err, codes.NotFound)
-	_, err = server.client.AcknowledgeInbox(bearing(t, operatorToken), &pb.AcknowledgeInboxRequest{InboxId: subscription.GetInboxId(), ThroughCursor: 1})
+	_, err = server.client.AcknowledgeInbox(bearing(t, operatorToken), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1})
 	requireCode(t, err, codes.NotFound)
 }
 

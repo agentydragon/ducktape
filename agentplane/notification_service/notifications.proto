@@ -97,21 +97,21 @@ service Notifications {
   // reader that continues from the last cursor it saw misses none. Payloads are provider snapshots stored when
   // the event arrived, not fetched at read time, and are not instructions from the operator.
   rpc ReadInbox(ReadInboxRequest) returns (ReadInboxResponse) {
-    option (google.api.http) = {get: "/v1/inboxes/{inbox_id}/entries"};
+    option (google.api.http) = {get: "/v1/sessions/{session_id}/inbox/entries"};
   }
 
   // Acknowledges the handled prefix of the inbox up to `through_cursor`. Never moves backwards, so a lower
   // cursor changes nothing; a cursor beyond the inbox's last fails `OUT_OF_RANGE`. Delivery and reads never
   // acknowledge.
   rpc AcknowledgeInbox(AcknowledgeInboxRequest) returns (AcknowledgeInboxResponse) {
-    option (google.api.http) = {put: "/v1/inboxes/{inbox_id}/acknowledgement" body: "*"};
+    option (google.api.http) = {put: "/v1/sessions/{session_id}/inbox/acknowledgement" body: "*"};
   }
 
   // Retires an inbox: its subscriptions are cancelled and nothing more is matched, sent or delivered to it. A
   // command already submitted to the runner cannot be withdrawn. Idempotent. A missing endpoint or a transient
   // lookup failure is not retirement.
   rpc RetireInbox(RetireInboxRequest) returns (RetireInboxResponse) {
-    option (google.api.http) = {delete: "/v1/inboxes/{inbox_id}"};
+    option (google.api.http) = {delete: "/v1/sessions/{session_id}/inbox"};
   }
 
   // Sends a message to a Session's inbox, which notices it to the Session as it does any entry. The answer is
@@ -264,8 +264,10 @@ message WatchSubscriptionsResponse {
 }
 
 message ReadInboxRequest {
-  // UUID.
-  string inbox_id = 1;
+  reserved 1;
+  reserved "inbox_id";
+  // The Session whose inbox is addressed.
+  string session_id = 4;
   // Only entries with a larger cursor; 0 reads from the start.
   int64 after_cursor = 2;
   // At most this many entries, 1 to 128; 128 when absent.
@@ -280,8 +282,10 @@ message ReadInboxResponse {
 }
 
 message AcknowledgeInboxRequest {
-  // UUID.
-  string inbox_id = 1;
+  reserved 1;
+  reserved "inbox_id";
+  // The Session whose inbox is addressed.
+  string session_id = 3;
   // The highest cursor handled; every entry up to it must have been.
   int64 through_cursor = 2;
 }
@@ -291,8 +295,10 @@ message AcknowledgeInboxResponse {
 }
 
 message RetireInboxRequest {
-  // UUID.
-  string inbox_id = 1;
+  reserved 1;
+  reserved "inbox_id";
+  // The Session whose inbox is addressed.
+  string session_id = 2;
 }
 
 message RetireInboxResponse {}

@@ -2211,12 +2211,12 @@ stores. This does not decide central attachment policy.
 
 ### `SESSION_NOTIFICATION_ADDRESS` — address inboxes and notices by Session ID
 
-**Remaining delivery and inbox-operation cutover is blocked on `SESSION_DIRECTORY_NATIVE`, `DELIVERY_DESTINATION_CONTRACT`, and reviewed send authority.**
+**Remaining delivery cutover is blocked on `SESSION_DIRECTORY_NATIVE`, `DELIVERY_DESTINATION_CONTRACT`, and reviewed send authority.**
 [Session inbox diagnostics](../notification_service/docs/api.md#session-inbox-diagnostics) already
 read and watch by Session ID; inbox storage enforces one inbox per Session while retaining existing
-destination keys and state. Public message sends and their CLI use Session ID and resolve exact
+destination keys and state. Inbox reads, acknowledgement and retirement address the owning Session. Public message sends and their CLI use Session ID and resolve exact
 placement through Dispatcher; stored destination fences and output provenance remain. Migrate the
-remaining inbox-ID operations, delivery worker, Action-facing guidance and
+remaining delivery worker, Action-facing guidance and
 `AGENTPLANE_DESTINATION` to Session UUID addressing. Resolve an environment only when an actual
 placement, authorization or wake decision needs it. Preserve subscription and message idempotency,
 inbox cursors, actor attribution, cross-Session denial, authorized unattended wake, and exact UID
