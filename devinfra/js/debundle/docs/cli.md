@@ -622,8 +622,10 @@ module names and explicit entry renames stay intact. Omitted members keep their
 source names in entry with `inline_in_entry`, in one module per atomic group
 with `per_atomic_group`, or in generated residual groups with
 `coarse_atomic_groups`. Coarse groups merge wholly unclaimed atomic groups
-with equal reachable fixed-owner sets in the strict constraining projection;
-their paths use `__auto/residual_groups/NNNN`. Authored names remain in the
+with equal reachable fixed-owner sets in the strict constraining projection
+within intervals between fixed owners in the fine layout's simulated
+evaluation order. Simulator-omitted groups remain separate. Their paths use
+`__auto/residual_groups/NNNN`. Authored names remain in the
 complete spec. Invalid full-spec selectors or duplicate/unmatched claims still
 fail even when their modules are omitted.
 

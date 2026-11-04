@@ -2961,8 +2961,12 @@ including anonymous statements, into a generated plan.
 after the named and rebind-fold destinations are known. It assigns each
 candidate atom a temporary destination using the borrowed graph and ownership
 catalogue, then groups atoms with equal reachable nonvirtual owners in the
-canonical strict constraining module projection. Entry and retained residual
-plans count as fixed owners only when they own source units. Groups sort by
+canonical strict constraining module projection and the same interval between
+fixed-owner evaluations in the fine layout. The shared ESM simulator supplies
+that evaluation order from the borrowed canonical quotient. Its temporary
+module and entry IDs match fine lowering's domain and tie breaks. Isolated
+modules omitted by the simulator remain separate atomic groups. Entry and
+retained residual plans count as fixed owners only when they own source units. Groups sort by
 their smallest `SourceUnitId` and use `__auto/residual_groups/NNNN`. The
 projection is only a placement heuristic: final assignment analysis still
 checks the complete I-graph and may reject a lazy or hoisted cycle.

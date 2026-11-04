@@ -40,7 +40,7 @@ use rustc_hash::FxHashMap;
 use analysis::graph::{
     ChunkConstrainingEdgeSet, DependencyEdgeId, DependencyGraph, chunk_constraining_module_edges,
 };
-use analysis::ids::ModuleId;
+use analysis::ids::{EntryDestination, ModuleId};
 use analysis::module_assignment::ModuleAssignment;
 use analysis::reports::SccCore;
 use source_identity::SourceUnitId;
@@ -413,20 +413,21 @@ pub fn check_realizability_touching(
 
 /// Simulator-predicted ECMA-262 Phase-2 evaluation post-order for a
 /// assignment's emitted module tree: lower index = body evaluates
-/// earlier; modules unreachable from entry are absent. Exposed for
+/// earlier; modules unreachable from entry are absent. Consumes the canonical
+/// quotient for the same assignment as `entry_destination`. Used by coarse
+/// residual planning and
 /// Node-differential pins (`e2e/simulator_node_differential_sweep_test`)
 /// that compare this prediction against the evaluation order Node
 /// actually produces for the emitted tree.
 pub fn simulated_evaluation_post_order(
-    dependency_graph: &DependencyGraph,
-    assignment: &ModuleAssignment,
+    canonical: &ChunkConstrainingEdgeSet,
+    entry_destination: EntryDestination,
 ) -> BTreeMap<ModuleId, usize> {
-    let canonical = chunk_constraining_module_edges(dependency_graph, assignment);
     let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
     EsmEvaluationSimulator::build(
         &canonical.i_successors,
         &constraining_pairs,
-        assignment.entry_destination().module_id(),
+        entry_destination.module_id(),
     )
     .post_order
 }
