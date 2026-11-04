@@ -2056,7 +2056,7 @@ flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: delivery ownership and service topology]
     SESSION_DIRECTORY_NATIVE[Ready: Dispatcher Session directory for native placement]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: send authority and internal fencing]
-    SESSION_DELETION_FENCE[In progress: managed deletion proof and outcome evidence]
+    SESSION_DELETION_FENCE[In progress: bounded deletion outcome delivery]
     DELIVERY_DESTINATION_CONTRACT[Blocked: Session-ID command addressing]
     SESSION_NOTIFICATION_ADDRESS[Blocked: remaining Session notification addressing]
     SESSION_HISTORY_PRESENTATION[Blocked: Session history and environment presentation]
@@ -2162,7 +2162,7 @@ that prerequisite for queued commands and interrupts; the Gateway limits direct 
 to the combined Gateway/Dispatcher workload. See the [Dispatcher contract](../runner_gateway/dispatcher/SPEC.md#method-scope)
 and [Gateway proxy contract](../runner_gateway/gateway/SPEC.md). On deletion, fail commands known not to
 have left Dispatcher, report unknown when in-flight admission or effects cannot be established, and never
-redirect accepted work. `SESSION_DELETION_FENCE` tracks the missing enforcement proof and outcome-evidence
+redirect accepted work. `SESSION_DELETION_FENCE` tracks the remaining bounded outcome-evidence
 boundary; central-Session authority remains separate. The
 [older delivery note](../docs/runner_delivery_and_harness_design.md#destination-checks-and-authority)
 is historical where it requires callers to provide `(Sandbox UID, Session ID)`; its authority and
@@ -2171,25 +2171,28 @@ fencing questions remain applicable. Exit: a reviewed authority and race contrac
 
 ### `SESSION_DELETION_FENCE` — prove and enforce the Session deletion fence
 
-**In progress; managed-protocol boundaries traced, 2026-11-03.** The authoritative receiver
+**In progress; managed receiver fence covered, bounded outcome delivery unresolved.** The authoritative receiver
 barrier for ordinary managed deletion is completed exact-incarnation Runtime quiescence, after
 final Session admission cutoff, journal sealing and History acknowledgement. The controller waits
 for that barrier before deleting the workload. Runtime lameduck alone still admits exact-turn
 interrupts. Kubernetes `deletionTimestamp`, Gateway cache observation and Dispatcher's post-absence
 DB tombstone are distinct asynchronous events; no instantaneous cross-store boundary is claimed.
-Gateway Session mutations now use write routing, while diagnostics and controller sealing remain
-available. Deterministic component coverage holds an old control RPC at the Runtime receiver across
-final quiescence and races automatic wake's guarded patch with deletion.
+Gateway Session mutations use write routing, while diagnostics and controller sealing remain
+available. [The routing and receiver change](https://github.com/agentydragon/ducktape/pull/14134)
+includes deterministic component coverage across final quiescence and automatic wake's guarded patch.
 
-Remaining: a bounded test composing the actual Gateway, Runtime and controller through deletion
-and a delayed pre-boundary forward, including same-name replacement; the existing deployed
-Dispatcher suite covers queued deletion notification but does not hold that receiver race. Preserve
-the finalizer and exact-incarnation seal handshake in this scenario. Manual finalizer removal and
-foreground deletion bypass it and cannot be cited as a completed managed fence.
+The deployed [Session deletion suite](../system_tests/suites/test_session_deletion.py) composes
+Gateway, Runtime and controller: it holds an interrupt for an observed active exact turn after
+routing, completes managed quiescence, then verifies the actual receiver rejects it because its
+journal is sealed. Sealed History remains unchanged, and the old UID cannot address a healthy
+same-name replacement. This preserves the finalizer and exact-incarnation seal handshake. Manual
+finalizer removal and foreground deletion bypass that handshake and are outside this proof.
 
 Fail work proven unsent, expose unresolved in-flight outcomes as unknown, and never redirect or
-replay uncertain effects. A lost reply can currently requeue a possibly-forwarded command; cleanup
-must not classify that row as known-unsent. Deletion terminal events currently reach connected
+replay uncertain effects. [Delivery accounting](https://github.com/agentydragon/ducktape/pull/14135)
+now retains sticky possible-forwarding evidence across requeue and deletion; cleanup preserves
+unknown outcomes and actual admission entries/cursors instead of classifying attempted work as
+known-unsent. Deletion terminal events currently reach connected
 `WatchDispatches` listeners through transactional PostgreSQL notifications, then receipts are
 removed. They are not durable future reads. Cleanup does not snapshot already-terminal rows: a
 connected watcher delayed behind an earlier invalidation can miss that outcome after cleanup.

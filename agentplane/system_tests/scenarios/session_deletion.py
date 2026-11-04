@@ -4,7 +4,7 @@
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -183,19 +183,6 @@ async def _retain_quiesced_pod(cluster: Cluster, name: str, uid: str, artifact: 
             )
 
 
-async def _wait_for_gate(
-    path: Path, expected: str, *, check_failure: Callable[[], Awaitable[None]] | None = None
-) -> None:
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(120), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
-    ):
-        with attempt:
-            if check_failure is not None:
-                await check_failure()
-            assert await asyncio.to_thread(path.exists), path
-            assert await asyncio.to_thread(path.read_text) == expected
-
-
 async def _read_sealed_history(
     history: history_service_pb2_grpc.HistoryServiceAsyncStub, caller: Caller, session: str
 ) -> tuple[int, set[str], set[str]]:
@@ -347,13 +334,17 @@ async def deployed_session_command_cannot_cross_deletion(
             timeout=180,
         )
 
-        async def check_call() -> None:
-            if call.done():
-                await call
-                raise RuntimeError("Command completed before the admission gate was entered")
-
         try:
-            await _wait_for_gate(gate / "entered", delayed, check_failure=check_call)
+            async for attempt in AsyncRetrying(
+                stop=stop_after_delay(120), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
+            ):
+                with attempt:
+                    if call.done():
+                        await call
+                        raise RuntimeError("Command completed before the admission gate was entered")
+                    entered = gate / "entered"
+                    assert await asyncio.to_thread(entered.exists), entered
+                    assert await asyncio.to_thread(entered.read_text) == delayed
             assert not call.done()
             evidence.update({"sandbox_uid": uid, "pod_uid": incarnation["uid"], "routed_before_deletion": True})
             persist()
