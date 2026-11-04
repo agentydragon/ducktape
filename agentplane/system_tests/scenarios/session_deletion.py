@@ -80,14 +80,21 @@ async def _sandbox(cluster: Cluster, name: str, policies: list[str]) -> AsyncIte
 
 
 @asynccontextmanager
-async def _retain_quiesced_pod(cluster: Cluster, name: str, uid: str) -> AsyncIterator[None]:
+async def _retain_quiesced_pod(cluster: Cluster, name: str, uid: str, artifact: Path) -> AsyncIterator[None]:
     """Keep the receiver alive after QUIESCED without changing controller or Runtime behavior."""
     policy = f"systest-retain-{uuid4().hex[:12]}"
+
+    async def capture_policy() -> None:
+        value = await cluster.kubectl("get", "validatingadmissionpolicy", policy, "-o", "json")
+        (artifact / "retention-policy.json").write_text(value)
+
     async with cluster.api_client() as client:
         pods = k8s.CoreV1Api(client)
-        options = k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=uid))
+        # With a DeleteOptions body, the body owns dryRun; a query-only dryRun can delete the Pod.
+        options = k8s.V1DeleteOptions(dry_run=["All"], preconditions=k8s.V1Preconditions(uid=uid))
         # Establish that the same dry-run delete succeeds before the admission policy exists.
-        await pods.delete_namespaced_pod(name, cluster.namespace, body=options, dry_run="All")
+        await pods.delete_namespaced_pod(name, cluster.namespace, body=options)
+        assert (await pods.read_namespaced_pod(name, cluster.namespace)).metadata.uid == uid
         try:
             await cluster.kubectl(
                 "create",
@@ -113,7 +120,9 @@ async def _retain_quiesced_pod(cluster: Cluster, name: str, uid: str) -> AsyncIt
                                         }
                                     ]
                                 },
-                                "validations": [{"expression": f"oldObject.metadata.uid != '{uid}'"}],
+                                "validations": [
+                                    {"expression": f"oldObject.metadata.uid != '{uid}'", "reason": "Forbidden"}
+                                ],
                             },
                         },
                         {
@@ -131,12 +140,39 @@ async def _retain_quiesced_pod(cluster: Cluster, name: str, uid: str) -> AsyncIt
                 with attempt:
                     refusal = None
                     try:
-                        await pods.delete_namespaced_pod(name, cluster.namespace, body=options, dry_run="All")
+                        await pods.delete_namespaced_pod(name, cluster.namespace, body=options)
                     except k8s.ApiException as error:
-                        refusal = error.status
-                    assert refusal == 403
+                        if error.body is None:
+                            raise
+                        refusal = {"status": error.status, "body": json.loads(error.body)}
+                    (artifact / "retention-dry-run.json").write_text(json.dumps(refusal, indent=2))
+                    if refusal is not None and refusal["status"] != 403:
+                        raise RuntimeError(f"Unexpected Pod retention result: {refusal}")
+                    assert refusal is not None
                     break
+            await capture_policy()
+            checked = json.loads((artifact / "retention-policy.json").read_text())
+            assert not checked.get("status", {}).get("typeChecking", {}).get("expressionWarnings", [])
+            # An evaluation error must not turn the test's UID-specific hold into a blanket denial.
+            (unrelated,) = (
+                await pods.list_namespaced_pod(
+                    cluster.namespace, label_selector="app.kubernetes.io/name=runner-gateway"
+                )
+            ).items
+            await pods.delete_namespaced_pod(
+                unrelated.metadata.name,
+                cluster.namespace,
+                body=k8s.V1DeleteOptions(
+                    dry_run=["All"], preconditions=k8s.V1Preconditions(uid=unrelated.metadata.uid)
+                ),
+            )
+            assert (
+                await pods.read_namespaced_pod(unrelated.metadata.name, cluster.namespace)
+            ).metadata.uid == unrelated.metadata.uid
             yield
+        except Exception as error:
+            await capture_without_masking(error, capture_policy)
+            raise
         finally:
             await cluster.kubectl(
                 "delete",
@@ -146,7 +182,9 @@ async def _retain_quiesced_pod(cluster: Cluster, name: str, uid: str) -> AsyncIt
             )
 
 
-async def _file(path: Path, expected: str, *, check_failure: Callable[[], Awaitable[None]] | None = None) -> None:
+async def _wait_for_gate(
+    path: Path, expected: str, *, check_failure: Callable[[], Awaitable[None]] | None = None
+) -> None:
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(120), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
     ):
@@ -157,7 +195,7 @@ async def _file(path: Path, expected: str, *, check_failure: Callable[[], Awaita
             assert await asyncio.to_thread(path.read_text) == expected
 
 
-async def _history(
+async def _read_sealed_history(
     history: history_service_pb2_grpc.HistoryServiceAsyncStub, caller: Caller, session: str
 ) -> tuple[int, set[str]]:
     cursor = 0
@@ -286,11 +324,11 @@ async def deployed_session_command_cannot_cross_deletion(crictl_command: tuple[s
                 raise RuntimeError("Command completed before the admission gate was entered")
 
         try:
-            await _file(gate / "entered", delayed, check_failure=check_call)
+            await _wait_for_gate(gate / "entered", delayed, check_failure=check_call)
             assert not call.done()
             evidence.update({"sandbox_uid": uid, "pod_uid": incarnation["uid"], "routed_before_deletion": True})
             persist()
-            async with _retain_quiesced_pod(cluster, incarnation["name"], incarnation["uid"]):
+            async with _retain_quiesced_pod(cluster, incarnation["name"], incarnation["uid"], artifact):
                 async with cluster.api_client() as client:
                     deleting = await k8s.CustomObjectsApi(client).delete_namespaced_custom_object(
                         GROUP,
@@ -329,7 +367,7 @@ async def deployed_session_command_cannot_cross_deletion(crictl_command: tuple[s
                 pod = json.loads(await cluster.kubectl("get", "pod", incarnation["name"], "-o", "json"))
                 assert pod["metadata"]["uid"] == incarnation["uid"]
                 assert not pod["metadata"].get("deletionTimestamp")
-                before = await _history(history, history_caller, session)
+                before = await _read_sealed_history(history, history_caller, session)
                 assert positive in before[1]
                 assert delayed not in before[1]
                 assert observed not in before[1]
@@ -340,8 +378,8 @@ async def deployed_session_command_cannot_cross_deletion(crictl_command: tuple[s
                 with pytest.raises(grpc.aio.AioRpcError) as refused:
                     await call
                 assert refused.value.code() == grpc.StatusCode.FAILED_PRECONDITION
-                await _file(gate / "result", "FailedPrecondition")
-                assert await _history(history, history_caller, session) == before
+                await _wait_for_gate(gate / "result", "FailedPrecondition")
+                assert await _read_sealed_history(history, history_caller, session) == before
                 evidence["runtime_handler_result"] = "FailedPrecondition"
                 evidence["sealed_cursor_unchanged"] = before[0]
                 persist()
