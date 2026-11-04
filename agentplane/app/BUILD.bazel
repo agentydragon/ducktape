@@ -374,6 +374,7 @@ py_test(
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/app/frontend/testing:history_interactions",
+        "//agentplane/app/testing:browser_certificate",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:http2_proxy",
         "//agentplane/app/testing:replication_process",

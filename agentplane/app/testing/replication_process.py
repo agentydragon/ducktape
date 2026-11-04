@@ -27,7 +27,7 @@ from starlette.types import Receive, Scope, Send
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.oidc import OIDCSettings
-from agentplane.app.testing.http2_proxy import BrowserCertificate, browser_certificate
+from agentplane.app.testing.browser_certificate import BrowserCertificate, browser_certificate
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.notifications import FakeNotifications
 from agentplane.grpc.serving import serving
