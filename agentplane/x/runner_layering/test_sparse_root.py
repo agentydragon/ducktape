@@ -73,6 +73,7 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     child_exec = get_required_path(own_repo_rlocation("agentplane/x/runner_layering/child_exec_/child_exec"))
     first_runner = await start_runner(
         codex_binary=child_exec,
+        allow_user_namespaces=True,  # The sparse-root experiment creates its own user and mount namespaces.
         harness_env=[
             f"AGENTPLANE_CHILD_ROOT={child_root}",
             f"AGENTPLANE_CHILD_WORKSPACE={spec.cwd}",
@@ -82,6 +83,7 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
 
     session = await driver.attach("sparse-child-root", spec=child_spec)
     await session.submit_input("input-1", "Reply with exactly: SPARSE_ROOT_TURN_OK")
+    await session.until(events.is_kind("harness_started"))
     request = await model.request()
     await model.reply(request, Text("SPARSE_ROOT_TURN_OK"))
     await session.until(events.turn_completed)
@@ -106,11 +108,11 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     assert tool_done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
 
     (started,) = events.of_kind(session.seen, "harness_started")
-    os.kill(started.event.harness_started.pid, signal.SIGKILL)
+    os.kill(await first_runner.host_pid(started.event.harness_started.pid), signal.SIGKILL)
     exited = await session.until(events.is_kind("harness_exited"))
     assert exited.cursor > fence.cursor
     assert not exited.event.harness_exited.stopped_by_runner
-    assert first_runner.process.returncode is None, "a native child exit must not terminate the runner"
+    assert first_runner.exit_code is None, "a native child exit must not terminate the runner"
     await session.drain_until_end()
 
     second = await driver.attach("sparse-child-root", spec=child_spec, after_cursor=exited.cursor)

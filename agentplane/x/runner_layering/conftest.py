@@ -1,10 +1,12 @@
 """Register runner subprocess fixtures for the image-layering experiment."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
 
 import pytest
 
 from agentplane.env.e2e.testing.driver import RunnerDriver
+from agentplane.env.e2e.testing.failure_journal import FailureEvidence, pytest_runtest_makereport
 from agentplane.env.e2e.testing.fixtures import endpoint, gateway, harness, model, runner_gateway, spec, workspace
 from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.env.e2e.testing.process_fixtures import start_runner
@@ -23,6 +25,13 @@ from util.testing.postgres_fixtures import (
     postgres_container,
     postgres_image,
 )
+
+
+@pytest.fixture(autouse=True)
+def retain_failed_journal(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[None]:
+    yield
+    if (evidence := FailureEvidence.for_failed_call(request)) is not None:
+        evidence.capture_retained_journals(tmp_path / "state")
 
 
 @pytest.fixture

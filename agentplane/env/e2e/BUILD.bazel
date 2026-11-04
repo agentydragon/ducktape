@@ -114,6 +114,7 @@ py_test(
         "//:conftest",
         "//agentplane/env/e2e/testing:driver",
         "//agentplane/env/e2e/testing:events",
+        "//agentplane/env/e2e/testing:failure_journal",
         "//agentplane/env/e2e/testing:gateway",
         "//agentplane/env/e2e/testing:process_fixtures",
         "//agentplane/history_service/testing:go_service",

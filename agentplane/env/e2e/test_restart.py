@@ -8,7 +8,7 @@ import json
 import os
 import shlex
 import shutil
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +17,7 @@ import pytest_bazel
 
 from agentplane.env.e2e.testing import events
 from agentplane.env.e2e.testing.driver import RunnerDriver, runner_test_session_id
+from agentplane.env.e2e.testing.failure_journal import FailureEvidence
 from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess
 from agentplane.history_service.testing.go_service import GoHistoryService
@@ -27,6 +28,13 @@ from agentplane.testing.scripted_model import Reasoning, ScriptedModel, ShellCal
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
+
+
+@pytest.fixture(autouse=True)
+def retain_failed_journal(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[None]:
+    yield
+    if (evidence := FailureEvidence.for_failed_call(request)) is not None:
+        evidence.capture_retained_journals(tmp_path / "state")
 
 
 async def _wait_for_session_ready(driver: RunnerDriver, session_id: str) -> None:
@@ -50,6 +58,37 @@ def _native_frames(entries: Sequence[Any], direction: int) -> list[dict[str, Any
         for entry in events.of_kind(entries, "native")
         if entry.event.native.direction == direction
     ]
+
+
+async def _wait_for_claude_transcript(
+    spec: session_pb2.SessionSpec, session_id: str, entries: Sequence[Any], state_dir: Path, text: str
+) -> None:
+    """Resume tests require the native transcript to exist before the abrupt container death."""
+    if spec.harness != session_pb2.HARNESS_CLAUDE:
+        return
+    inits = [
+        frame
+        for frame in _native_frames(entries, event_pb2.DIRECTION_FROM_HARNESS)
+        if frame.get("type") == "system" and frame.get("subtype") == "init"
+    ]
+    native_id = inits[-1]["session_id"]
+    directory = state_dir / "sessions" / session_id / "claude" / "projects"
+
+    def recorded() -> bool:
+        for path in directory.glob(f"*/{native_id}.jsonl"):
+            for line in path.read_text().splitlines():
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue  # Claude may be writing the last line.
+                if entry.get("type") == "assistant" and text in json.dumps(entry.get("message")):
+                    return True
+        return False
+
+    async with asyncio.timeout(10):
+        # Claude owns the file and does not publish a flush notification.
+        while not await asyncio.to_thread(recorded):  # noqa: ASYNC110
+            await asyncio.sleep(0.01)
 
 
 def _codex_history_items(
@@ -208,7 +247,7 @@ def contend() -> Callable[[Path], Awaitable[None]]:
     """A competing nonblocking flock must fail while the runner owns its state directory."""
 
     async def attempt(state_dir: Path) -> None:
-        descriptor = os.open(state_dir / ".agentplane-environment-runtime-owner", os.O_RDONLY)
+        descriptor = os.open(state_dir / "runtime-resources.db", os.O_RDONLY)
         try:
             try:
                 fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -332,6 +371,7 @@ async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
     model: ScriptedModel,
     spec: session_pb2.SessionSpec,
     driver: RunnerDriver,
+    tmp_path: Path,
 ) -> None:
     first_runner = await start_runner()
     first = await driver.attach("restart-1", spec=spec)
@@ -339,6 +379,7 @@ async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
     request = await model.request()
     await model.reply(request, Text("SEED_OK"))
     await first.until(events.turn_completed)
+    await _wait_for_claude_transcript(spec, first.attached.session_id, first.seen, tmp_path / "state", "SEED_OK")
     harness_pids = [entry.event.harness_started.pid for entry in events.of_kind(first.seen, "harness_started")]
     await first_runner.crash(harness_pids)
 
@@ -841,9 +882,14 @@ async def test_a_reasoning_item_cut_off_by_a_harness_kill_is_reported_absent_and
     model: ScriptedModel,
     spec: session_pb2.SessionSpec,
     driver: RunnerDriver,
+    tmp_path: Path,
 ) -> None:
     first_runner = await start_runner()
     first = await driver.attach("cut-off-reasoning-1", spec=spec)
+    await first.submit_input("seed", "Reply with exactly: SEED_OK")
+    await model.reply(await model.request(), Text("SEED_OK"))
+    await first.until(events.turn_completed)
+    await _wait_for_claude_transcript(spec, first.attached.session_id, first.seen, tmp_path / "state", "SEED_OK")
     await first.submit_input("input-1", "Reply with exactly: SEED_OK")
     await model.hold_after_first_delta(await model.request(), Reasoning("CUT_OFF_THOUGHT"))
     cut_off = (await first.until(events.is_kind("item_started"))).event.item_started.item_id
@@ -855,7 +901,12 @@ async def test_a_reasoning_item_cut_off_by_a_harness_kill_is_reported_absent_and
     second = await driver.attach("cut-off-reasoning-1", spec=spec, after_cursor=first.cursor)
     await second.until(events.is_kind("harness_started"))
     # The reconciliation the resumed harness makes is the last word on the lost turn's items.
-    reconciled = await second.until(events.is_kind("conversation_reconciled"))
+    reconciled = await second.until(
+        lambda entry: (
+            events.kind(entry) == "conversation_reconciled"
+            and any(item.item_id == cut_off for item in entry.event.conversation_reconciled.items)
+        )
+    )
     assert [(item.item_id, item.disposition) for item in reconciled.event.conversation_reconciled.items] == [
         (cut_off, event_pb2.RECOVERY_DISPOSITION_ABSENT)
     ]
@@ -864,6 +915,47 @@ async def test_a_reasoning_item_cut_off_by_a_harness_kill_is_reported_absent_and
     assert request.reasoning_texts == []
     await model.reply(request, Text("RESUMED_OK"))
     await second.until(events.turn_completed)
+
+
+@pytest.mark.parametrize("harness", [session_pb2.HARNESS_CLAUDE], ids=["claude"])
+async def test_missing_claude_transcript_after_crash_is_not_replayed(
+    start_runner: Callable[..., Awaitable[RunnerProcess]],
+    model: ScriptedModel,
+    spec: session_pb2.SessionSpec,
+    driver: RunnerDriver,
+    tmp_path: Path,
+) -> None:
+    first_runner = await start_runner()
+    first = await driver.attach("missing-native-transcript", spec=spec)
+    await first.submit_input("input-1", "Begin an interrupted turn")
+    await model.hold_after_first_delta(await model.request(), Reasoning("CUT_OFF_THOUGHT"))
+    await first.until(events.is_kind("text_delta"))
+    native_init = next(
+        frame
+        for frame in _native_frames(first.seen, event_pb2.DIRECTION_FROM_HARNESS)
+        if frame.get("type") == "system" and frame.get("subtype") == "init"
+    )
+    harness_pids = [entry.event.harness_started.pid for entry in events.of_kind(first.seen, "harness_started")]
+    await first_runner.crash(harness_pids)
+    # Claude can lose a not-yet-written transcript when PID 1 is killed. Make that
+    # observed case deterministic even if this run happened to flush the file.
+    directory = tmp_path / "state" / "sessions" / first.attached.session_id / "claude" / "projects"
+
+    def remove_transcript() -> None:
+        for transcript in directory.glob(f"*/{native_init['session_id']}.jsonl"):
+            transcript.unlink()
+
+    await asyncio.to_thread(remove_transcript)
+
+    await start_runner()
+    second = await driver.attach("missing-native-transcript", spec=spec, after_cursor=first.cursor)
+    lost = await second.until(events.is_kind("turn_completed"))
+    assert lost.event.turn_completed.status == event_pb2.TURN_STATUS_PROCESS_LOST
+    reconciled = await second.until(events.is_kind("conversation_reconciled"))
+    assert reconciled.event.conversation_reconciled.items[0].disposition == event_pb2.RECOVERY_DISPOSITION_UNKNOWN
+    failure = await second.until(events.is_kind("harness_launch_failed"))
+    assert "No conversation found" in failure.event.harness_launch_failed.reason
+    assert model.request_count == 1
 
 
 @pytest.mark.timeout(60)
