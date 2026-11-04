@@ -236,6 +236,23 @@ include an optional refusal and existing source location for each endpoint;
 JSONL carries the same refusal inside each endpoint's opacity record. Reasons
 identify only the refused proof boundary, never source bindings or expressions.
 They explain the report and do not change the certificate or coverage.
+
+`dependency_graph.json.gz.nodes[].synchronous_execution.binding_effect_authority`
+is a diagnostic projection of the graph's decision to skip the syntactic
+at-init call fallback. Its report DTO is internally tagged by `authority` and
+has `unclassified`, `legacy_execution` (with the existing `complete` value),
+`author_source_only`, `ordered_root_initializer_uncovered`, and
+`operation_receipt` forms. The receipt reports the exact root owner, binding
+and initializer span, separate read/rebind prerequisites, and flat local call
+edges with caller/target bodies and merged conditions. The analyzer verifies
+that those edges connect to the root body. This DTO is output-only; it cannot
+be loaded as engine authority.
+Staged analysis artifacts instead carry the engine-owned, externally tagged
+`BindingEffectCoverage` fact. That field is required: older or incomplete
+artifacts missing it fail to decode, and the normal analysis-engine and source
+provenance checks still apply. `legacy_execution` is a temporary decision for
+owners outside ordered-root execution, not evidence of covered operations.
+
 `examples` retains at most twenty deterministic pairs, each with at
 most twenty conflicting cells and their access provenance. Each sampled pair
 retains its exact `cell_count` and `cells_truncated` marker;

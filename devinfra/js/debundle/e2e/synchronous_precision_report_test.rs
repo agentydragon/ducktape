@@ -36,6 +36,9 @@ fn complete_execution_has_no_precision_loss() {
     assert_eq!(
         execution(&fixture, "result"),
         serde_json::json!({
+            "binding_effect_authority": {
+                "authority": "legacy_execution", "complete": true
+            },
             "complete": true, "precision_losses": []
         })
     );
@@ -55,7 +58,12 @@ console.log(selected[0]);
     assert_preserved_entry_output(&fixture, "ready\n");
     assert_eq!(
         execution(&fixture, "selected"),
-        serde_json::json!({"complete": true, "precision_losses": []})
+        serde_json::json!({
+            "binding_effect_authority": {
+                "authority": "legacy_execution", "complete": true
+            },
+            "complete": true, "precision_losses": []
+        })
     );
 }
 
@@ -72,7 +80,12 @@ console.log(selected[0]);
     assert_preserved_entry_output(&fixture, "ready\n");
     assert_eq!(
         execution(&fixture, "selected"),
-        serde_json::json!({"complete": true, "precision_losses": []})
+        serde_json::json!({
+            "binding_effect_authority": {
+                "authority": "legacy_execution", "complete": true
+            },
+            "complete": true, "precision_losses": []
+        })
     );
 
     let graph = fixture.dependency_graph();
@@ -506,7 +519,12 @@ fn multichunk_acyclic_call_chain_below_depth_bound_remains_complete() {
     assert_entry_output(&fixture, "3\n");
     assert_eq!(
         execution(&fixture, "result"),
-        serde_json::json!({"complete": true, "precision_losses": []})
+        serde_json::json!({
+            "binding_effect_authority": {
+                "authority": "legacy_execution", "complete": true
+            },
+            "complete": true, "precision_losses": []
+        })
     );
 }
 
@@ -524,6 +542,9 @@ fn finite_recursive_function_reports_cycle_without_changing_runtime_result() {
     assert_eq!(
         execution(&fixture, "following"),
         serde_json::json!({
+            "binding_effect_authority": {
+                "authority": "legacy_execution", "complete": true
+            },
             "complete": true, "precision_losses": []
         })
     );
@@ -743,7 +764,12 @@ fn wide_acyclic_execution_below_the_expansion_bound_remains_complete() {
     assert_entry_output(&fixture, "3\n");
     assert_eq!(
         execution(&fixture, "result"),
-        serde_json::json!({"complete": true, "precision_losses": []})
+        serde_json::json!({
+            "binding_effect_authority": {
+                "authority": "legacy_execution", "complete": true
+            },
+            "complete": true, "precision_losses": []
+        })
     );
 }
 

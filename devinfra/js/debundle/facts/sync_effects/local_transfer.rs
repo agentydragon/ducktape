@@ -47,7 +47,11 @@ impl LocalFrame {
 #[derive(Clone)]
 pub(super) enum EvaluatedCallee {
     Direct(Values),
-    Member { receiver: Values, targets: Values },
+    Member {
+        receiver: Values,
+        targets: Values,
+        selection_dependencies: Option<Box<ProofDependencies>>,
+    },
 }
 
 impl EvaluatedCallee {
@@ -80,11 +84,23 @@ pub(super) trait LocalContext: OwnDataContext {
     fn instantiate_bindings(&mut self, _frame: &mut LocalFrame) {}
     fn local_binding_stored(&mut self, _binding: &Id, _frame: &LocalFrame) {}
     fn read_binding(&mut self, binding: &Id, frame: &mut LocalFrame) -> Option<LocalValueResult>;
+    /// Whether this exact evaluated receiver came from an initialized,
+    /// non-imported module binding at the current prefix. Strict provider
+    /// queries keep the default false and require fresh-local ownership.
+    fn module_prefix_receiver(&self, _binding: &Id, _receivers: &Values) -> bool {
+        false
+    }
+    /// Conditions under which the current settled prefix is valid. The
+    /// application adapter snapshots these at an actual read/write transfer;
+    /// strict provider queries do not need application prerequisites.
+    fn selection_prerequisites(&self) -> Box<ProofDependencies> {
+        Box::default()
+    }
     fn closure(
         &mut self,
         frame: &mut LocalFrame,
         creation: DeferredCallableCreation,
-    ) -> Option<AllocationValue>;
+    ) -> Option<LocalValueResult>;
     fn assign_capture(
         &mut self,
         frame: &mut LocalFrame,
@@ -266,19 +282,41 @@ fn read_field(
     receivers: &Values,
     property: &str,
     span: Span,
-) -> Option<AllocationValue> {
-    match own_data_field(context, receivers, property, frame) {
+) -> Option<LocalValueResult> {
+    let module_prefix = context.module_prefix_receiver(receiver, receivers);
+    let slot = if module_prefix {
+        own_data_transfer::resolve_slot(
+            context,
+            receivers,
+            property,
+            OwnDataOwnership::CurrentPrefix,
+        )
+    } else {
+        own_data_field(context, receivers, property, frame)
+    };
+    match slot {
         Ok(slot) => {
+            let selection_dependencies = module_prefix.then(|| context.selection_prerequisites());
             let read = slot.read(context);
             context.record_property_read(read.cell);
-            Some(AllocationValue {
-                values: read.values,
-                judgment: AllocationJudgment::CoveredAllocationOnly(Default::default()),
+            let mut effects = EffectCoverageFragment::lexical_operation();
+            if let Some(dependencies) = selection_dependencies {
+                effects.depend_on(dependencies.as_ref());
+            }
+            Some(LocalValueResult {
+                allocation: AllocationValue {
+                    values: read.values,
+                    judgment: AllocationJudgment::CoveredAllocationOnly(Default::default()),
+                },
+                effects,
             })
         }
-        Err(refusal) => {
-            context.unproved_field_read(frame, receiver, receivers, property, span, refusal)
-        }
+        Err(refusal) => context
+            .unproved_field_read(frame, receiver, receivers, property, span, refusal)
+            .map(|allocation| LocalValueResult {
+                allocation,
+                effects: EffectCoverageFragment::default(),
+            }),
     }
 }
 
@@ -294,6 +332,12 @@ fn expression(
             let result = value(context, node, frame)?;
             judgment.compose(&result.judgment);
             Some(completing(result.values, frame))
+        }
+        LocalExpression::PrimitiveLiteral(kind) => {
+            frame
+                .effect_coverage
+                .compose(&EffectCoverageFragment::lexical_operation());
+            Some(Values::from([AbstractValue::Value(Value::Prim(*kind))]))
         }
         LocalExpression::This => {
             frame
@@ -374,12 +418,10 @@ fn expression(
             Some(completing(result.values, frame))
         }
         LocalExpression::Closure(callable) => {
-            frame
-                .effect_coverage
-                .compose(&EffectCoverageFragment::default());
             let result = context.closure(frame, *callable)?;
-            judgment.compose(&result.judgment);
-            Some(completing(result.values, frame))
+            frame.effect_coverage.compose(&result.effects);
+            judgment.compose(&result.allocation.judgment);
+            Some(completing(result.allocation.values, frame))
         }
         LocalExpression::Assign {
             binding,
@@ -433,9 +475,6 @@ fn expression(
                     property,
                     span,
                 } => {
-                    frame
-                        .effect_coverage
-                        .compose(&EffectCoverageFragment::default());
                     let result = value(context, &ValueExpr::Binding(receiver.clone()), frame)?;
                     judgment.compose(&result.judgment);
                     let receivers = completing(result.values, frame);
@@ -443,11 +482,20 @@ fn expression(
                         return Some(Values::new());
                     }
                     frame.inputs.extend(receivers.iter().cloned());
+                    let module_prefix = context.module_prefix_receiver(receiver, &receivers);
                     let result = read_field(context, frame, receiver, &receivers, property, *span)?;
-                    judgment.compose(&result.judgment);
+                    let selection_dependencies = module_prefix
+                        .then(|| result.effects.lexical_selection_dependencies())
+                        .flatten();
+                    // Selection/GetValue is an executed lexical operation and
+                    // is composed now, before any argument can throw or mutate
+                    // the selected property.
+                    frame.effect_coverage.compose(&result.effects);
+                    judgment.compose(&result.allocation.judgment);
                     EvaluatedCallee::Member {
                         receiver: receivers,
-                        targets: completing(result.values, frame),
+                        targets: completing(result.allocation.values, frame),
+                        selection_dependencies,
                     }
                 }
             };
@@ -474,9 +522,6 @@ fn expression(
             property,
             span,
         } => {
-            frame
-                .effect_coverage
-                .compose(&EffectCoverageFragment::default());
             let receivers = value(context, &ValueExpr::Binding(receiver.clone()), frame)?;
             judgment.compose(&receivers.judgment);
             let receivers = completing(receivers.values, frame);
@@ -484,8 +529,9 @@ fn expression(
                 return Some(Values::new());
             }
             let result = read_field(context, frame, receiver, &receivers, property, *span)?;
-            judgment.compose(&result.judgment);
-            Some(completing(result.values, frame))
+            frame.effect_coverage.compose(&result.effects);
+            judgment.compose(&result.allocation.judgment);
+            Some(completing(result.allocation.values, frame))
         }
         LocalExpression::AssignField {
             receiver,
@@ -493,9 +539,6 @@ fn expression(
             value: node,
             span,
         } => {
-            frame
-                .effect_coverage
-                .compose(&EffectCoverageFragment::default());
             // Capture the LHS reference before the RHS can replace its binding.
             let receivers = value(context, &ValueExpr::Binding(receiver.clone()), frame)?;
             judgment.compose(&receivers.judgment);
@@ -503,18 +546,43 @@ fn expression(
             if receivers.is_empty() {
                 return Some(Values::new());
             }
+            // Capture the applicable module-prefix lane alongside the LHS
+            // reference. The RHS may rebind the source cell, but JavaScript
+            // has already evaluated the original receiver value.
+            let module_prefix = context.module_prefix_receiver(receiver, &receivers);
             let values = expression(context, node, body, frame, judgment)?;
             if values.is_empty() {
                 return Some(values);
             }
-            let Ok(slot) = own_data_field(context, &receivers, property, frame) else {
+            let slot = if module_prefix {
+                own_data_transfer::resolve_writable_slot(context, &receivers, property)
+            } else {
+                own_data_field(context, &receivers, property, frame).ok()
+            };
+            let Some(slot) = slot else {
                 context.unproved_field_write(frame, &receivers, &values, *span);
                 return None;
             };
+            let writable = context.property_is_writable(slot.object, property);
+            let write_dependencies = writable.then(|| context.selection_prerequisites());
             context.record_property_write(slot.cell());
             context
                 .heap()
                 .write_property(slot.object, Some(property.clone()), &values);
+            if writable {
+                let mut effects = EffectCoverageFragment::lexical_operation();
+                effects.depend_on(
+                    write_dependencies
+                        .as_ref()
+                        .expect("writable proof captures its prefix dependencies")
+                        .as_ref(),
+                );
+                frame.effect_coverage.compose(&effects);
+            } else {
+                frame
+                    .effect_coverage
+                    .compose(&EffectCoverageFragment::default());
+            }
             Some(values)
         }
         LocalExpression::DefineThisField {

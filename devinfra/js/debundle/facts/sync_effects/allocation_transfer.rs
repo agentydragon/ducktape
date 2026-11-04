@@ -14,7 +14,7 @@ use crate::facts::abstract_domain::builtins::{
 use crate::facts::abstract_domain::integrity::IntrinsicSlot;
 use crate::facts::abstract_domain::value::{Kind, PrimKinds, Value};
 use imbl::OrdMap;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Id;
 
 #[derive(Clone)]
@@ -124,9 +124,55 @@ pub(super) struct LiteralHeap<'a> {
     pub(super) properties: &'a mut OrdMap<u32, BTreeMap<Option<String>, Values>>,
     pub(super) arrays: &'a mut OrdMap<u32, DenseArray>,
     pub(super) revision: &'a mut u64,
+    pub(super) writable_prefix: Option<&'a mut OrdMap<u32, WritablePrefixState>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum WritablePrefixState {
+    InProgress,
+    Proven(BTreeSet<String>),
+    Unknown,
 }
 
 impl LiteralHeap<'_> {
+    /// A source allocation site can seed writability only on its first
+    /// execution and only while its pooled heap has no prior object state.
+    /// Reentry, a prior value, or any later execution permanently loses the
+    /// per-site proof because the heap does not distinguish allocation
+    /// generations.
+    pub(super) fn begin_record(&mut self, allocation: u32) {
+        let Some(writable_prefix) = self.writable_prefix.as_deref_mut() else {
+            return;
+        };
+        let next = if !self.properties.contains_key(&allocation)
+            && !writable_prefix.contains_key(&allocation)
+        {
+            WritablePrefixState::InProgress
+        } else {
+            WritablePrefixState::Unknown
+        };
+        if writable_prefix.get(&allocation) != Some(&next) {
+            writable_prefix.insert(allocation, next);
+            *self.revision = self.revision.wrapping_add(1);
+        }
+    }
+
+    /// Complete only an uninterrupted first record execution. The sticky
+    /// Unknown state is never restored by a later execution of this site.
+    pub(super) fn complete_record(
+        &mut self,
+        allocation: u32,
+        writable_properties: BTreeSet<String>,
+    ) {
+        let Some(writable_prefix) = self.writable_prefix.as_deref_mut() else {
+            return;
+        };
+        if writable_prefix.get(&allocation) == Some(&WritablePrefixState::InProgress) {
+            writable_prefix.insert(allocation, WritablePrefixState::Proven(writable_properties));
+            *self.revision = self.revision.wrapping_add(1);
+        }
+    }
+
     pub(super) fn record(&mut self, allocation: u32, properties: BTreeMap<Option<String>, Values>) {
         let current = self.properties.entry(allocation).or_default();
         let mut changed = false;
@@ -429,10 +475,30 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
     mut child: impl FnMut(&mut C, &'a E) -> Option<AllocationValue>,
 ) -> Option<AllocationValue> {
     context.unmodeled_effect_operation();
+    let properties: Vec<_> = properties.into_iter().collect();
+    let mut writable_properties = BTreeSet::new();
+    let mut non_writable_properties = BTreeSet::new();
+    for definition in &properties {
+        let property = definition.name().map(str::to_owned);
+        if let Some(property) = property {
+            match definition.kind() {
+                LiteralPropertyKind::Data | LiteralPropertyKind::Method
+                    if !non_writable_properties.contains(&property) =>
+                {
+                    writable_properties.insert(property);
+                }
+                _ => {
+                    writable_properties.remove(&property);
+                    non_writable_properties.insert(property);
+                }
+            }
+        }
+    }
+    context.heap().begin_record(allocation);
     let mut evaluated = BTreeMap::<Option<String>, Values>::new();
     let mut may_throw = false;
     let mut can_complete = true;
-    for (position, definition) in properties.into_iter().enumerate() {
+    for (position, definition) in properties.iter().enumerate() {
         let expected = context.literal_property_kind(allocation, position);
         if expected != LiteralPropertyKind::Opaque && expected != definition.kind() {
             return None;
@@ -451,7 +517,9 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
         evaluated.entry(property).or_default().extend(values);
     }
     if can_complete {
-        context.heap().record(allocation, evaluated);
+        let mut heap = context.heap();
+        heap.record(allocation, evaluated);
+        heap.complete_record(allocation, writable_properties);
     }
     let mut values = Values::new();
     if can_complete {
@@ -542,4 +610,65 @@ pub(super) fn closed_binding(
         values: values.clone(),
         judgment: AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repeated_pooled_literal_site_cannot_restore_writable_prefix() {
+        let mut properties = OrdMap::new();
+        let mut arrays = OrdMap::new();
+        let mut writable_prefix = OrdMap::new();
+        let mut revision = 0;
+        let allocation = 7;
+        let stored = BTreeMap::from([(
+            Some("value".to_owned()),
+            Values::from([AbstractValue::PRIMITIVE]),
+        )]);
+
+        {
+            let mut heap = LiteralHeap {
+                properties: &mut properties,
+                arrays: &mut arrays,
+                revision: &mut revision,
+                writable_prefix: Some(&mut writable_prefix),
+            };
+            heap.begin_record(allocation);
+            assert_eq!(
+                heap.writable_prefix.as_deref().unwrap().get(&allocation),
+                Some(&WritablePrefixState::InProgress)
+            );
+            heap.record(allocation, stored.clone());
+            heap.complete_record(allocation, BTreeSet::from(["value".to_owned()]));
+        }
+        assert_eq!(
+            writable_prefix.get(&allocation),
+            Some(&WritablePrefixState::Proven(BTreeSet::from([
+                "value".to_owned()
+            ])))
+        );
+        let proven_revision = revision;
+
+        {
+            let mut heap = LiteralHeap {
+                properties: &mut properties,
+                arrays: &mut arrays,
+                revision: &mut revision,
+                writable_prefix: Some(&mut writable_prefix),
+            };
+            heap.begin_record(allocation);
+            assert_eq!(
+                heap.writable_prefix.as_deref().unwrap().get(&allocation),
+                Some(&WritablePrefixState::Unknown)
+            );
+            heap.complete_record(allocation, BTreeSet::from(["value".to_owned()]));
+        }
+        assert_eq!(
+            writable_prefix.get(&allocation),
+            Some(&WritablePrefixState::Unknown)
+        );
+        assert_eq!(revision, proven_revision + 1);
+    }
 }

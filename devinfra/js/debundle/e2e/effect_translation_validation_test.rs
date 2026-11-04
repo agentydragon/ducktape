@@ -672,6 +672,36 @@ fn local_cell_read_effects_compose_without_an_allocation_result() {
             .complete,
         "the missing proof concerns effect domains, not execution: {result:#?}"
     );
+    let execution = serde_json::to_value(result.synchronous_execution.as_ref().unwrap()).unwrap();
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "the lexical domains are certified by executed local-call receipts: {execution:#}"
+    );
+    assert_eq!(
+        execution["binding_effect_authority"]["receipt"]["calls"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2,
+        "both source call-sites contribute to the root receipt: {execution:#}"
+    );
+    let seed = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "seed")
+        })
+        .expect("seed source unit");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == result.id
+                && edge.target == seed.id
+                && edge.binding.as_deref() == Some("seed")
+        }),
+        "the observed seed read remains a graph edge: {graph:#?}"
+    );
     let report = fixture.effect_translation_validation();
     for domain in ["global_properties", "general_heap", "host_effects"] {
         assert_eq!(
@@ -679,6 +709,86 @@ fn local_cell_read_effects_compose_without_an_allocation_result() {
             "only the output call remains uncovered: {report:#}"
         );
     }
+}
+
+#[test]
+fn complete_aliased_local_calls_without_a_receipt_keep_fallback_authority() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const seed = 41;\nconst later = 99;\nfunction readSeed() { return seed; }\nconst alias = { run: readSeed, dormant: () => later }.run;\nvar result = (alias(), alias());\nconsole.log(result);\n",
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("seed"),
+                Member::new("later"),
+                Member::new("readSeed"),
+                Member::new("alias"),
+                Member::new("result"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "41\n");
+    let graph = fixture.dependency_graph();
+    let result = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "result")
+        })
+        .expect("aliased local-call root");
+    let execution = serde_json::to_value(
+        result
+            .synchronous_execution
+            .as_ref()
+            .expect("root execution report"),
+    )
+    .unwrap();
+    assert_eq!(execution["complete"], true, "{execution:#}");
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
+        "the alias executes but has no selected direct-call receipt, so complete cannot skip fallback: {execution:#}"
+    );
+    let later = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "later")
+        })
+        .expect("deferred closure's later binding source unit");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == result.id
+                && edge.target == later.id
+                && edge.binding.as_deref() == Some("later")
+                && edge.role.as_ref().is_some_and(|role| {
+                    serde_json::to_value(role).is_ok_and(|role| {
+                        role["kind"] == "promoted_at_init"
+                            && role["callee_source_unit"].as_str() == Some(result.id.as_str())
+                    })
+                })
+        }),
+        "the dead deferred closure contributes a fallback-only later dependency; the caller role identifies unresolved-call closure promotion: {graph:#?}"
+    );
+    let seed = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "seed")
+        })
+        .expect("seed source unit");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == result.id
+                && edge.target == seed.id
+                && edge.binding.as_deref() == Some("seed")
+        }),
+        "known seed access stays in the graph when the receipt is absent: {graph:#?}"
+    );
 }
 
 #[test]
@@ -919,7 +1029,7 @@ fn local_call_effect_receipts_refuse_unmodeled_operations_and_prologues() {
         ),
         (
             "41",
-            "function readSeed() { return seed; }",
+            "function readSeed(unused) { return seed; }",
             "readSeed(seed)",
         ),
         (
@@ -929,7 +1039,7 @@ fn local_call_effect_receipts_refuse_unmodeled_operations_and_prologues() {
         ),
         (
             "({value: 41})",
-            "function readSeed() { return seed.value; }",
+            "function readSeed() { return seed.value.toString(); }",
             "readSeed()",
         ),
         (
@@ -965,6 +1075,28 @@ fn local_call_effect_receipts_refuse_unmodeled_operations_and_prologues() {
                 "the initializer and output call must remain unknown for {helper} / {invocation}: {report:#}"
             );
         }
+        let graph = fixture.dependency_graph();
+        let result = graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|binding| binding.binding == "result")
+            })
+            .expect("result owner for refused local-call receipt");
+        let execution = serde_json::to_value(
+            result
+                .synchronous_execution
+                .as_ref()
+                .expect("execution report"),
+        )
+        .unwrap();
+        assert_eq!(
+            execution["binding_effect_authority"]["authority"],
+            "ordered_root_initializer_uncovered",
+            "parameters, members, getters and unknown nested calls cannot mint whole-owner evidence: {helper} / {invocation}: {execution:#}"
+        );
     }
 }
 
@@ -1076,6 +1208,27 @@ fn refused_call_receipts_preserve_actual_argument_evaluation() {
             "{report:#}"
         );
     }
+    let graph = fixture.dependency_graph();
+    let result = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "result")
+        })
+        .expect("result owner");
+    let execution = serde_json::to_value(
+        result
+            .synchronous_execution
+            .as_ref()
+            .expect("execution report"),
+    )
+    .unwrap();
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
+        "actual call arguments remain observed without sealing unsupported nested effects: {execution:#}"
+    );
 }
 
 #[test]
@@ -1092,6 +1245,27 @@ fn abrupt_local_call_receipt_cannot_complete_root_initialization() {
         )],
     ));
     assert_preserved_entry_error(&fixture, "41");
+    let graph = fixture.dependency_graph();
+    let result = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "result")
+        })
+        .expect("result owner");
+    let execution = serde_json::to_value(
+        result
+            .synchronous_execution
+            .as_ref()
+            .expect("execution report"),
+    )
+    .unwrap();
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
+        "an abrupt operation never seals lexical coverage: {execution:#}"
+    );
     let report = fixture.effect_translation_validation();
     for domain in ["global_properties", "general_heap", "host_effects"] {
         assert_eq!(

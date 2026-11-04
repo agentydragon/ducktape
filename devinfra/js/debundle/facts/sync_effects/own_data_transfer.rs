@@ -10,6 +10,8 @@ pub(super) trait OwnDataContext {
     fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape>;
     fn object_properties_are_settled(&self, allocation: u32) -> bool;
     fn property_values(&self, allocation: u32, property: &str) -> Option<&Values>;
+    fn property_is_accessor(&self, allocation: u32, property: &str) -> bool;
+    fn property_is_writable(&self, allocation: u32, property: &str) -> bool;
 }
 
 /// Ordered local mutation needs stronger ownership than a read from an
@@ -89,6 +91,9 @@ pub(super) fn resolve_slot(
     if !matches!(descriptor, OwnPropertyDescriptorSyntax::Data) {
         return Err(OrderedFieldReadRefusal::NonDataField);
     }
+    if context.property_is_accessor(*object, property) {
+        return Err(OrderedFieldReadRefusal::NonDataField);
+    }
     if context.property_values(*object, property).is_none() {
         return Err(OrderedFieldReadRefusal::MissingHeapValue);
     }
@@ -96,4 +101,24 @@ pub(super) fn resolve_slot(
         object: *object,
         property: property.to_owned(),
     })
+}
+
+/// Resolve the same canonical slot as a read, then consume the independent
+/// current-prefix writable witness. A present Data slot alone never proves a
+/// normally completing write.
+pub(super) fn resolve_writable_slot(
+    context: &impl OwnDataContext,
+    receivers: &Values,
+    property: &str,
+) -> Option<OwnDataSlot> {
+    let slot = resolve_slot(
+        context,
+        receivers,
+        property,
+        OwnDataOwnership::CurrentPrefix,
+    )
+    .ok()?;
+    context
+        .property_is_writable(slot.object, property)
+        .then_some(slot)
 }
