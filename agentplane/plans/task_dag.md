@@ -2044,6 +2044,7 @@ beyond the transport track nodes the operator dispatched.
 ```mermaid
 flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: delivery ownership and service topology]
+    SESSION_DATA_OWNERSHIP_DESIGN[Later decision: Session data and service boundaries]
     SESSION_DIRECTORY_NATIVE[Ready: Dispatcher Session directory for native placement]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: send authority and internal fencing]
     SESSION_DELETION_FENCE[In progress: bounded deletion outcome delivery]
@@ -2085,6 +2086,31 @@ The former [Dispatcher/Gateway merge proposal](dispatcher_gateway_merge.md) is h
 queue-off and holder-owned-delivery choices, not an implementation authorization. Independent
 Runtime restructuring does not wait for this decision.
 `DELIVERY_DESTINATION_AUTHORITY_DESIGN` remains independent.
+
+### `SESSION_DATA_OWNERSHIP_DESIGN` — review Session data, services and databases
+
+**Later design decision; operator requested review, 2026-11-04.** Agentplane now owns globally
+addressed Session records, and Session-keyed data is spread across Dispatcher openings and commands,
+History ingress and projections, Notification inboxes, central sampler state, and environment-local
+Runtime records and journals. Inventory each fact, its authoritative writer, readers, lifetime and
+recovery boundary; include the command and ingress ends separately.
+
+Compare retaining modular services and stores, moving selected Session state from Environment
+Runtime to Dispatcher or another Session owner, using one database with linked Session-keyed tables,
+and other service/database groupings. Distinguish a shared PostgreSQL database from a shared service,
+write ownership and transaction boundaries; none follows automatically from a common Session UUID.
+The existing decision to use Dispatcher PostgreSQL and keep History separate remains the working
+implementation direction until explicitly reconsidered. Evaluate isolation, availability, scale,
+authorization, schema migrations, native continuation and lost/uncertain effects in each option.
+
+Coordinate with `SESSION_AND_INBOX_LIFETIME` on the candidate independent Session create/delete
+lifecycle and the treatment of inbox, History and other Session data. A shared database alone does
+not settle deletion or justify deleting authored data. Do not treat this later review as a
+prerequisite for unrelated safe native-first work. See the
+[Session data review](session_environment_model.md#session-keyed-data-and-storage-boundaries).
+
+**Exit:** an evidence-backed inventory and comparison, a reviewed ownership and database direction,
+and appropriately scoped follow-up work. This node authorizes no service move or data migration.
 
 ### `CNPG_FREE_K3S_INTEGRATION_TIER` — add a narrow database-independent integration tier
 
@@ -2218,18 +2244,23 @@ openings for a deleted Sandbox UID. Independently, Notification's stale-destinat
 inbox and cancels subscriptions after confirming that its recorded Sandbox is absent or replaced.
 Neither transition is a cross-service transaction; central Sessions currently still depend on their
 original Sandbox. The selected central Session lifetime is indefinite, independent of attachments;
-app archive is separate and complete forgetting applies when a Session is actually deleted.
+app archive is separate. The selected Dispatcher identity policy is to forget its live record when
+the Session is deleted; the treatment of other services' data remains open.
 
 Compare ending an environment-hosted Session and retiring its inbox on deletion of its required
 environment with retaining an unavailable Session and inbox for an explicit lifetime or until an
-explicit end. For central Sessions, environment loss or detachment must not by itself end the
+explicit end. The operator's 2026-11-04 candidate is an independent Session create/delete lifecycle:
+deleting the required environment leaves the Session and inbox present but its native harness
+unavailable; an explicit Session delete could instead coordinate cleanup of Session-associated data.
+Compare this with the other alternatives before selecting retention and deletion semantics. For central Sessions, environment loss or detachment must not by itself end the
 Session; decide whether its inbox likewise remains active, with that as the initial recommendation.
 Decide the owning signals and reconciliation, pending messages and
 subscriptions, read/admin authority after a Sandbox-owned ServiceAccount disappears, History handoff,
 and deletion, reattachment and same-name-replacement races. Preserve exact UID fences, unread data,
 no-replay recovery and authorized unattended wake; suspension and temporary unavailability are not
 Session deletion. Command-receipt retention is separately tracked in `SESSION_DELETION_FENCE` and
-is deferred; do not choose a period here. See the [Session and inbox lifetime discussion](session_environment_model.md#decision-session-and-inbox-lifetimes-after-environment-deletion).
+is deferred; do not choose a period here. Coordinate data ownership and store boundaries with
+`SESSION_DATA_OWNERSHIP_DESIGN`. See the [Session and inbox lifetime discussion](session_environment_model.md#decision-session-and-inbox-lifetimes-after-environment-deletion).
 
 **Exit:** a reviewed lifecycle and authority contract for both Session kinds, with owners and
 cross-service failure behavior identified before implementing central Session inbox lifetime changes.
