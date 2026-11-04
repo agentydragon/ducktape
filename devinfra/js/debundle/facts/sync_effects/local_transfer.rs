@@ -7,7 +7,8 @@ use super::local_operations::{
     LocalBinding, LocalBody, LocalCallee, LocalExpression, LocalOperation,
 };
 use super::value_model::{
-    AbstractValue, Context, OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr, Values,
+    AbstractValue, CallSite, Context, OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr,
+    Values,
 };
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::abstract_domain::value::{Kind, Value};
@@ -24,6 +25,9 @@ pub(super) struct LocalFrame {
     pub(super) borrowed_records: BTreeSet<u32>,
     pub(super) fresh_records: BTreeSet<u32>,
     pub(super) returns: Values,
+    /// Set only by a checked constructor provider query. Other local calls do
+    /// not acquire a receiver just because their syntax mentions `this`.
+    pub(super) this_values: Option<Values>,
 }
 
 impl LocalFrame {
@@ -34,6 +38,7 @@ impl LocalFrame {
             borrowed_records: BTreeSet::new(),
             fresh_records: BTreeSet::new(),
             returns: Values::new(),
+            this_values: None,
         }
     }
 }
@@ -106,6 +111,15 @@ pub(super) trait LocalContext {
         span: Span,
     );
     fn publish_throw(&mut self, values: &Values);
+    fn keyed_collection_new(
+        &mut self,
+        _frame: &mut LocalFrame,
+        _callee: &ValueExpr,
+        _arguments: &[ValueExpr],
+        _site: CallSite,
+    ) -> Option<AllocationValue> {
+        None
+    }
 }
 
 struct LocalValueContext<'a, C> {
@@ -128,6 +142,15 @@ impl<C: LocalContext> AllocationContext for LocalValueContext<'_, C> {
     }
     fn heap(&mut self) -> LiteralHeap<'_> {
         self.context.heap()
+    }
+    fn keyed_collection_new(
+        &mut self,
+        callee: &ValueExpr,
+        arguments: &[ValueExpr],
+        site: CallSite,
+    ) -> Option<AllocationValue> {
+        self.context
+            .keyed_collection_new(self.frame, callee, arguments, site)
     }
 }
 
@@ -199,6 +222,9 @@ fn own_data_field(
     if !context.object_properties_are_settled(*object) {
         return Err(OrderedFieldReadRefusal::UnsettledReceiver);
     }
+    // The heap alone records containment. Requiring canonical ordinary-record
+    // descriptor syntax keeps class fields and accessors from being read as
+    // data properties in this provider query.
     let Some(shape) = context.ordinary_record_shape(*object) else {
         return Err(OrderedFieldReadRefusal::UnsupportedRecordShape);
     };
@@ -260,6 +286,7 @@ fn expression(
             judgment.compose(&result.judgment);
             Some(completing(result.values, frame))
         }
+        LocalExpression::This => frame.this_values.clone(),
         LocalExpression::Record {
             allocation,
             properties,
@@ -433,6 +460,38 @@ fn expression(
             context
                 .heap()
                 .write_property(object, Some(property.clone()), &values);
+            Some(values)
+        }
+        LocalExpression::DefineThisField {
+            property,
+            value: node,
+            ..
+        } => {
+            let values = expression(context, node, body, frame, judgment)?;
+            if values.is_empty() {
+                return Some(values);
+            }
+            if values.contains(&AbstractValue::Value(Value::Unavailable)) {
+                return None;
+            }
+            let Some(this_values) = frame.this_values.as_ref() else {
+                return None;
+            };
+            let Some(AbstractValue::Value(Value::Alloc(Kind::Object, object))) =
+                this_values.first()
+            else {
+                return None;
+            };
+            if this_values.len() != 1 {
+                return None;
+            }
+            // Constructor summaries use this heap entry only to walk values
+            // retained by the fresh instance. `ordinary_record_shape` remains
+            // the prerequisite for reads, so class slots never become
+            // ordinary data fields by being recorded here.
+            context
+                .heap()
+                .write_property(*object, Some(property.clone()), &values);
             Some(values)
         }
     }

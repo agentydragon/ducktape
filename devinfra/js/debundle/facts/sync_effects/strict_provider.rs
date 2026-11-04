@@ -5,12 +5,14 @@ use super::super::allocation_transfer::{
 };
 use super::super::local_transfer::{self, EvaluatedCallee, LocalContext, LocalFrame};
 use super::super::value_model::{
-    AbstractValue, Context, DenseArray, OwnPropertyShape, ProviderInput, ProviderScopeId,
+    AbstractValue, CallSite, Context, DenseArray, OwnPropertyShape, ProviderInput, ProviderScopeId,
     SymbolicInputId, ValueExpr, Values,
 };
 use super::ExecutionIndex;
-use crate::analysis_inputs::{ForeignInvocation, ForeignReturn};
+use crate::analysis_inputs::{ForeignInvocation, ForeignReturn, NativeIntrinsic};
+use crate::facts::abstract_domain::builtins::{self, Invocation};
 use crate::facts::abstract_domain::foreign_call::DerivedForeignCall;
+use crate::facts::abstract_domain::integrity::Integrity;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::reports::schema::OrderedFieldReadRefusal;
 use imbl::OrdMap;
@@ -22,6 +24,11 @@ struct ProviderContext<'a> {
     index: &'a ExecutionIndex,
     scope: ProviderScopeId,
     bindings: Context,
+    argument_values: Values,
+    closure_captures: BTreeMap<u32, Values>,
+    local_bindings: BTreeSet<Id>,
+    shadowed: BTreeSet<&'static str>,
+    native_constructions: BTreeSet<NativeIntrinsic>,
     properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
     arrays: OrdMap<u32, DenseArray>,
     revision: u64,
@@ -47,11 +54,79 @@ impl AllocationContext for ProviderContext<'_> {
             revision: &mut self.revision,
         }
     }
+    fn keyed_collection_new(
+        &mut self,
+        callee: &ValueExpr,
+        arguments: &[ValueExpr],
+        site: CallSite,
+    ) -> Option<AllocationValue> {
+        self.construct_empty_collection(callee, arguments, site)
+    }
+}
+
+impl ProviderContext<'_> {
+    fn construct_empty_collection(
+        &mut self,
+        callee: &ValueExpr,
+        arguments: &[ValueExpr],
+        site: CallSite,
+    ) -> Option<AllocationValue> {
+        if !arguments.is_empty() {
+            return None;
+        }
+        let ValueExpr::Binding(binding) = callee else {
+            return None;
+        };
+        let (name, family) = match binding.0.as_ref() {
+            "Map" => ("Map", NativeIntrinsic::Map),
+            "Set" => ("Set", NativeIntrinsic::Set),
+            "WeakMap" => ("WeakMap", NativeIntrinsic::WeakMap),
+            "WeakSet" => ("WeakSet", NativeIntrinsic::WeakSet),
+            _ => return None,
+        };
+        if self.shadowed.contains(name)
+            || self
+                .local_bindings
+                .iter()
+                .any(|binding| binding.0.as_ref() == name)
+        {
+            return None;
+        }
+        let row = builtins::lookup(name, None, Invocation::Construct)?;
+        let Integrity::Intact(dependencies) = self.index.integrity.require(row.requires, None)
+        else {
+            return None;
+        };
+        let result = allocation_transfer::keyed_collection_new(row, site, dependencies.clone())?;
+        self.native_constructions.insert(family);
+        Some(result)
+    }
 }
 
 impl LocalContext for ProviderContext<'_> {
-    fn closure(&mut self, _frame: &mut LocalFrame, _callable: u32) -> Option<AllocationValue> {
-        None
+    fn closure(&mut self, frame: &mut LocalFrame, callable: u32) -> Option<AllocationValue> {
+        let body = self.index.callables.get(&callable)?;
+        let parameters: BTreeSet<_> = body
+            .params
+            .iter()
+            .filter_map(|parameter| parameter.binding.as_ref())
+            .collect();
+        if body.reads.iter().any(|binding| {
+            !body.declared_locals.contains(binding)
+                && !parameters.contains(binding)
+                && !self.local_bindings.contains(binding)
+        }) {
+            return None;
+        }
+        let mut captures = self.argument_values.clone();
+        if body.implicit_capture {
+            captures.extend(frame.this_values.as_ref()?.iter().cloned());
+        }
+        self.closure_captures.insert(callable, captures);
+        Some(AllocationValue {
+            values: Values::from([AbstractValue::Value(Value::Alloc(Kind::Function, callable))]),
+            judgment: AllocationJudgment::CoveredAllocationOnly(Default::default()),
+        })
     }
     fn assign_capture(
         &mut self,
@@ -121,12 +196,26 @@ impl LocalContext for ProviderContext<'_> {
     fn publish_throw(&mut self, _values: &Values) {
         // The shared abrupt result makes the allocation judgment opaque.
     }
+
+    fn keyed_collection_new(
+        &mut self,
+        _frame: &mut LocalFrame,
+        callee: &ValueExpr,
+        arguments: &[ValueExpr],
+        site: CallSite,
+    ) -> Option<AllocationValue> {
+        self.construct_empty_collection(callee, arguments, site)
+    }
 }
 
 /// The canonical source collector retained whole-body syntax coverage before
 /// value lowering. Direct returns and ordered bodies share their transfers
 /// with application execution; refusal never retries the legacy AST evaluator.
-pub(super) fn derive(index: &ExecutionIndex, callable: u32) -> Option<DerivedForeignCall> {
+pub(super) fn derive(
+    index: &ExecutionIndex,
+    callable: u32,
+    shadowed: &BTreeSet<&'static str>,
+) -> Option<DerivedForeignCall> {
     let body = index.callables.get(&callable)?;
     let scope = ProviderScopeId::fresh()?;
     let mut bindings = body
@@ -174,6 +263,15 @@ pub(super) fn derive(index: &ExecutionIndex, callable: u32) -> Option<DerivedFor
         index,
         scope,
         bindings,
+        argument_values: Values::new(),
+        closure_captures: BTreeMap::new(),
+        local_bindings: body
+            .local_body
+            .as_ref()
+            .map(|body| body.bindings.keys().cloned().collect())
+            .unwrap_or_default(),
+        shadowed: shadowed.clone(),
+        native_constructions: BTreeSet::new(),
         properties: OrdMap::new(),
         arrays: OrdMap::new(),
         revision: 0,
@@ -192,9 +290,10 @@ pub(super) fn derive(index: &ExecutionIndex, callable: u32) -> Option<DerivedFor
     let AllocationJudgment::CoveredAllocationOnly(dependencies) = result.judgment else {
         return None;
     };
-    // This tranche needs only closed inputs and literal semantics. A future
-    // premise-dependent transfer must first carry its dependencies through
-    // DerivedForeignCall; never silently discard a child's proof conditions.
+    // Generic function and arrow summaries remain limited to closed inputs
+    // and literal semantics. Constructor summaries carry checked native-row
+    // dependencies through DerivedForeignCall; this query does not widen its
+    // admission policy to premise-dependent transfers.
     if !dependencies.is_empty() {
         return None;
     }
@@ -252,7 +351,112 @@ pub(super) fn derive(index: &ExecutionIndex, callable: u32) -> Option<DerivedFor
         returns,
         retained_arguments,
         retained_provider_captures,
+        native_constructions: context.native_constructions,
+        dependencies,
+        record: None,
+        closure: None,
+    })
+}
+
+/// Derive the constructor result with the same ordered allocation operations
+/// used by ordinary local execution. Class syntax admission is collected once
+/// in `ExecutionIndex`; a refused query never retries the private AST evaluator.
+pub(super) fn derive_class(
+    index: &ExecutionIndex,
+    class: u32,
+    shadowed: &BTreeSet<&'static str>,
+) -> Option<DerivedForeignCall> {
+    let (body, parameters) = index.class_provider_bodies.get(&class)?;
+    let local_bindings: BTreeSet<_> = body.bindings.keys().cloned().collect();
+    if body.free_reads().iter().any(|binding| {
+        !matches!(binding.0.as_ref(), "Map" | "Set" | "WeakMap" | "WeakSet")
+            || shadowed.contains(binding.0.as_ref())
+            || local_bindings.iter().any(|local| local.0 == binding.0)
+    }) || !body.captured_writes().is_empty()
+    {
+        return None;
+    }
+    let scope = ProviderScopeId::fresh()?;
+    let mut bindings = Context::new();
+    let mut argument_values = Values::new();
+    for (parameter, binding) in parameters.iter().enumerate() {
+        let value = AbstractValue::SymbolicInput(SymbolicInputId {
+            scope,
+            input: ProviderInput::Argument(parameter),
+        });
+        bindings.insert(binding.clone(), Values::from([value.clone()]));
+        argument_values.insert(value);
+    }
+    let mut context = ProviderContext {
+        index,
+        scope,
+        bindings,
+        argument_values,
+        closure_captures: BTreeMap::new(),
+        local_bindings: body.bindings.keys().cloned().collect(),
+        shadowed: shadowed.clone(),
         native_constructions: BTreeSet::new(),
+        properties: OrdMap::new(),
+        arrays: OrdMap::new(),
+        revision: 0,
+    };
+    let mut frame = LocalFrame::new(std::mem::take(&mut context.bindings));
+    frame.this_values = Some(Values::from([AbstractValue::Value(Value::Alloc(
+        Kind::Object,
+        class,
+    ))]));
+    let judgment = local_transfer::execute(&mut context, body, &mut frame)?;
+    if !frame
+        .returns
+        .iter()
+        .all(|value| matches!(value, AbstractValue::Value(Value::Prim(_))))
+    {
+        return None;
+    }
+    let AllocationJudgment::CoveredAllocationOnly(dependencies) = judgment else {
+        return None;
+    };
+    let mut retained_arguments = BTreeSet::new();
+    let mut pending_values = vec![AbstractValue::Value(Value::Alloc(Kind::Object, class))];
+    let mut visited_objects = BTreeSet::new();
+    let mut visited_closures = BTreeSet::new();
+    while let Some(value) = pending_values.pop() {
+        match value {
+            AbstractValue::SymbolicInput(input) if input.scope == scope => match input.input {
+                ProviderInput::Argument(index) => {
+                    retained_arguments.insert(index);
+                }
+                ProviderInput::Capture(_) => return None,
+            },
+            AbstractValue::Value(Value::Alloc(Kind::Object, allocation)) => {
+                if !visited_objects.insert(allocation) {
+                    continue;
+                }
+                if let Some(properties) = context.properties.get(&allocation) {
+                    pending_values.extend(properties.values().flatten().cloned());
+                }
+            }
+            AbstractValue::Value(Value::Alloc(Kind::Function, callable)) => {
+                if visited_closures.insert(callable) {
+                    pending_values.extend(context.closure_captures.get(&callable)?.iter().cloned());
+                }
+            }
+            // The shared keyed-collection constructor transfer admits only
+            // empty, zero-argument constructors here. Their native storage
+            // has no user argument references to traverse; keep their typed
+            // identity as a leaf rather than treating them as records.
+            AbstractValue::Value(Value::Alloc(kind, _)) if kind.is_keyed_collection() => {}
+            AbstractValue::Value(Value::Prim(_)) => {}
+            _ => return None,
+        }
+    }
+    Some(DerivedForeignCall {
+        invocation: ForeignInvocation::Construct,
+        returns: BTreeSet::from([ForeignReturn::FreshAllocation]),
+        retained_arguments,
+        retained_provider_captures: BTreeSet::new(),
+        native_constructions: context.native_constructions,
+        dependencies,
         record: None,
         closure: None,
     })
@@ -294,7 +498,7 @@ mod tests {
             syntax_covered,
             "{source}"
         );
-        derive(&prepared.index, key)
+        derive(&prepared.index, key, &BTreeSet::new())
     }
 
     #[test]

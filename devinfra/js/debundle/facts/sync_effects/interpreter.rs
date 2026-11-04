@@ -2754,11 +2754,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// it; an allocation with no tracked contents is unknown.
     fn fresh_allocation_values(
         &mut self,
-        row: &Row,
+        row: &'static Row,
         args: &[Values],
         site: CallSite,
         mut own_property_projection: Option<OwnPropertyProof>,
     ) -> Values {
+        if args.is_empty()
+            && super::super::allocation_transfer::keyed_collection_new(
+                row,
+                site,
+                ProofDependencies::default(),
+            )
+            .is_some()
+        {
+            // The operation kernel proves the row's fresh empty-construction
+            // semantics. This interpreter has no keyed-collection heap lane,
+            // so keep its established conservative value projection.
+            return unknown();
+        }
         let mut values = Values::new();
         for mutation in row.mutates {
             match *mutation {

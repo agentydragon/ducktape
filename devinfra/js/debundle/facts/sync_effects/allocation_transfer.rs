@@ -3,8 +3,14 @@
 //! A covered result additionally requires complete canonical source coverage.
 //! Lowered values alone can have erased calls, writes or coercions.
 
-use super::value_model::{AbstractValue, Context, DenseArray, ProviderScopeId, ValueExpr, Values};
-use crate::analysis_inputs::ProofDependencies;
+use super::value_model::{
+    AbstractValue, CallSite, Context, DenseArray, ProviderScopeId, ValueExpr, Values,
+};
+use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
+use crate::facts::abstract_domain::builtins::{
+    ArgSel, IntrinsicOp, Invocation, Return, Row, Throws,
+};
+use crate::facts::abstract_domain::integrity::IntrinsicSlot;
 use crate::facts::abstract_domain::value::{Kind, PrimKinds, Value};
 use imbl::OrdMap;
 use std::collections::BTreeMap;
@@ -56,6 +62,55 @@ pub(super) trait AllocationContext {
     fn child(&mut self, expression: &ValueExpr) -> Option<AllocationValue>;
     fn literal_layout(&self, allocation: u32) -> LiteralLayout;
     fn heap(&mut self) -> LiteralHeap<'_>;
+    /// The adapter proves original constructor identity for this canonical New
+    /// expression. The operation's row and result semantics are shared.
+    fn keyed_collection_new(
+        &mut self,
+        _callee: &ValueExpr,
+        _arguments: &[ValueExpr],
+        _site: CallSite,
+    ) -> Option<AllocationValue> {
+        None
+    }
+}
+
+/// Transfer the exact zero-argument keyed-collection constructor row. Provider
+/// and application adapters both use this kernel after proving callee identity.
+pub(super) fn keyed_collection_new(
+    row: &'static Row,
+    site: CallSite,
+    dependencies: ProofDependencies,
+) -> Option<AllocationValue> {
+    let (family, kind) = match row.op {
+        IntrinsicOp::Map => (NativeIntrinsic::Map, Kind::Map),
+        IntrinsicOp::Set => (NativeIntrinsic::Set, Kind::Set),
+        IntrinsicOp::WeakMap => (NativeIntrinsic::WeakMap, Kind::WeakMap),
+        IntrinsicOp::WeakSet => (NativeIntrinsic::WeakSet, Kind::WeakSet),
+        _ => return None,
+    };
+    if row.family() != Some(family)
+        || row.invocation != [Invocation::Construct]
+        || !row.arity.contains(&0)
+        || row.requires != [IntrinsicSlot::Global(family)]
+        || row
+            .coerces
+            .iter()
+            .any(|(operand, _)| !matches!(operand, ArgSel::Arg(_)))
+        || !row.invokes.is_empty()
+        || row.allocates != Some(kind)
+        || !row.mutates.is_empty()
+        || row.returns != Return::Fresh
+        || row.throws != Throws::Never
+    {
+        return None;
+    }
+    Some(AllocationValue {
+        values: Values::from([AbstractValue::Value(Value::Alloc(
+            kind,
+            site.allocation_id(),
+        ))]),
+        judgment: AllocationJudgment::CoveredAllocationOnly(dependencies),
+    })
 }
 
 /// The real shared allocation store; neither consumer supplies app/native facts.
@@ -154,6 +209,9 @@ pub(super) fn transfer(
             let mut value = context.binding(binding)?;
             value.judgment.compose(&judgment);
             return Some(value);
+        }
+        ValueExpr::New(callee, arguments, site) if context.source_covered() => {
+            return context.keyed_collection_new(callee, arguments, *site);
         }
         ValueExpr::Undefined => Values::from([AbstractValue::UNDEFINED]),
         ValueExpr::NonCallable(kinds) => Values::from([AbstractValue::Value(Value::Prim(*kinds))]),
