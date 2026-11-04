@@ -90,7 +90,7 @@ fn two_trees_share_one_chunk() {
 
 /// A module in one chunk's tree uses a binding the chunk imports from another
 /// mapped chunk: the import is rebuilt relative to the module's own file and
-/// keeps the legacy local name, while the other chunk's entry exports its
+/// uses the readable local name, while the other chunk's entry exports its
 /// binding under both names. Each mapped chunk writes its `modules.json` report.
 #[test]
 fn tree_module_imports_from_another_mapped_chunk() {
@@ -140,8 +140,8 @@ fn tree_module_imports_from_another_mapped_chunk() {
     assert_module_source(
         &run.out_root,
         "app/cli/runtime/session.js",
-        &["import { printFeature } from \"../../print/entry.js\""],
-        &["PrintFeature"],
+        &["import { PrintFeature } from \"../../print/entry.js\""],
+        &["printFeature"],
     );
     // Loading the module resolves its `../../print/entry.js` import.
     assert_module_exports(
