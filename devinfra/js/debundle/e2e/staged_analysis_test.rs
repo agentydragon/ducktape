@@ -1932,8 +1932,10 @@ fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
 
     // Apply the identical move through the ordinary graph-backed edit path,
     // then compare the assessment with run --analysis over that candidate YAML.
-    let applied = staged.assign(Some("second:a_earlier"), None, false);
-    assert_ok(&applied, "ordinary graph-backed bindings assign");
+    let applied = staged.assign(Some("second:a_earlier"), Some(&staged.artifact), false);
+    assert_ok(&applied, "bindings assign --analysis");
+    let applied: Value = serde_json::from_str(&applied.stdout).unwrap();
+    assert_eq!(applied["effect_relocation_assessment"], *assessment);
     assert!(staged.modules.join("a_earlier.yaml").is_file());
     assert_candidate_assessment_matches_run(assessment, &staged, "candidate", true, false);
     assert_node_output(
@@ -2088,10 +2090,14 @@ fn modules_apply_assessment_matches_the_selected_residual_candidate() {
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let applied = staged.apply(&batch, None, false, false, false);
-    assert_ok(&applied, "ordinary graph-backed modules apply");
+    let applied = staged.apply(&batch, Some(&staged.artifact), false, true, false);
+    assert_ok(&applied, "modules apply --analysis");
     let applied: Value = serde_json::from_str(&applied.stdout).unwrap();
-    assert!(applied.get("effect_relocation_assessment").is_none());
+    assert_eq!(
+        applied["effect_relocation_assessment"], *assessment,
+        "the written candidate must use the same canonical assessment as its preview"
+    );
+    assert!(applied.get("effect_assessment_unavailable").is_none());
     assert!(staged.modules.join("a_earlier.yaml").is_file());
     assert_candidate_assessment_matches_run(assessment, &staged, "apply-candidate", true, false);
     assert_node_output(
@@ -2139,7 +2145,7 @@ fn modules_apply_assessment_accepts_a_closed_no_swap_candidate() {
 }
 
 #[test]
-fn modules_apply_assessment_refuses_stale_partial_scoped_and_non_dry_inputs_before_writes() {
+fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
     let staged = staged_tree(
         &[(
             "main",
@@ -2171,13 +2177,8 @@ fn modules_apply_assessment_refuses_stale_partial_scoped_and_non_dry_inputs_befo
     assert_eq!(partial.status.code(), Some(1), "{}", partial.stderr);
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let not_dry = staged.apply(&batch, Some(&staged.artifact), false, true, false);
+    let not_dry = staged.apply(&batch, Some(&foreign.artifact), false, true, false);
     assert_eq!(not_dry.status.code(), Some(1), "{}", not_dry.stderr);
-    assert!(
-        not_dry.stderr.contains("requires --dry-run"),
-        "{}",
-        not_dry.stderr
-    );
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let scoped = staged_tree_with_module_roots(
@@ -3006,6 +3007,10 @@ export { a, b };\n";
         "destructuring_destination_split",
         "bindings assign --dry-run --analysis for split destructuring",
     );
+    let before = module_snapshot(&staged.modules);
+    let write = staged.assign(Some("b:zz_right"), Some(&staged.artifact), false);
+    assert_eq!(write.status.code(), Some(1), "{}", write.stderr);
+    assert_eq!(module_snapshot(&staged.modules), before);
     assert_normal_run_refuses_with_projection_violation(
         &invalid,
         "DestructuringDestinationSplit",

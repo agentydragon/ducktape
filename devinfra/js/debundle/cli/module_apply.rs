@@ -15,7 +15,9 @@ use spec::LogicalModule;
 use spec_tree::ModuleTreeScope;
 
 use crate::binding::{apply_doc_changes, canonical_module_path, load_module_docs, matches_in_docs};
-use crate::candidate_assessment::CandidateEffectAssessmentExistingTreeArgs;
+use crate::candidate_assessment::{
+    CandidateEffectAssessmentExistingTreeArgs, EffectAssessmentUnavailable,
+};
 use crate::edit_gate::{ExpectedResolvedMember, Gate, GraphEditArgs, post_edit_spec_from_docs};
 use crate::outcome::{MutationOutcome, emit_gate_rejection_json, print_outcome_json};
 
@@ -36,8 +38,8 @@ pub struct ModulesApplyArgs {
     /// Root for the chunk's source file.
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
     pub(super) source_root: PathBuf,
-    /// Report-only relocation assessment from the full tree transform context.
-    /// Requires `--dry-run` and a staged `--analysis` artifact.
+    /// Report-only relocation assessment of the exact candidate before an
+    /// optional write, using a staged `--analysis` artifact.
     #[command(flatten)]
     effect_assessment: CandidateEffectAssessmentExistingTreeArgs,
     /// Match the size cap used when generating the proposal IDs.
@@ -109,6 +111,10 @@ struct ApplyOutcome {
     selector_reviews: Vec<SelectorReview>,
     #[serde(skip_serializing_if = "Option::is_none")]
     effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
+    /// Why the canonical effect verdict was unavailable for this graph-only
+    /// edit. The legacy gate still decides whether the edit can be written.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effect_assessment_unavailable: Option<EffectAssessmentUnavailable>,
 }
 
 pub fn run_modules_apply(
@@ -123,9 +129,11 @@ pub fn run_modules_apply(
         source_root: Some(args.source_root.clone()),
         format: args.format,
     };
-    let effect_context =
-        args.effect_assessment
-            .resolve(&edit, source_context, args.tree_config.as_deref())?;
+    let effect_context = args.effect_assessment.resolve_for_verified_write(
+        &edit,
+        source_context,
+        args.tree_config.as_deref(),
+    )?;
     let json = if args.batch == "-" {
         let mut text = String::new();
         std::io::stdin().read_to_string(&mut text)?;
@@ -427,6 +435,9 @@ pub fn run_modules_apply(
             context.assess(&args.modules_root, &candidate_modules)
         })
         .transpose()?;
+    if let Some(assessment) = &effect_relocation_assessment {
+        pipeline::ensure_candidate_emittable_for_write(assessment, args.dry_run)?;
+    }
     let (files_written, files_deleted) =
         apply_doc_changes(&original_docs, &docs, &deleted, args.dry_run)?;
     let out = ApplyOutcome {
@@ -440,6 +451,9 @@ pub fn run_modules_apply(
         proposals_applied: requests.len(),
         bindings_claimed,
         selector_reviews,
+        effect_assessment_unavailable: effect_relocation_assessment
+            .is_none()
+            .then_some(EffectAssessmentUnavailable::AnalysisNotSupplied),
         effect_relocation_assessment,
     };
     match OutputFormat::resolve(args.format) {

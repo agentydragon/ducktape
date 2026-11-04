@@ -475,16 +475,21 @@ still requires `--force`; full-tree single-chunk scope, `--modules` /
 match the other opt-in edit assessments. Omitting `--analysis` preserves the
 ordinary deletion and gate behavior.
 
-`modules apply --dry-run --analysis <artifact>` assesses the exact typed module
+`modules apply --analysis <artifact>` assesses the exact typed module
 documents after selected residual proposals and their selectors are applied in
 memory. It uses the existing `--modules` and `--tree-config` arguments as the
 transform root and config, then runs after the expected-member and realizability
 gates pass but before YAML writes. The assessment requires a verified staged
 artifact, full-tree context for exactly one materialized graph chunk, and
 explicit auxiliary tree inputs (`modules apply` does not inherit the
-`DEBUNDLE_TREE_SOURCE_ROOT` or `DEBUNDLE_OUT` defaults). It reports
-statement-order commutation only; the ordinary graph gate remains authoritative,
-and omitting `--analysis` preserves ordinary and scoped apply behavior.
+`DEBUNDLE_TREE_SOURCE_ROOT` or `DEBUNDLE_OUT` defaults). Its effect commutation
+result remains report-only and the ordinary graph gate remains authoritative.
+When `--analysis` is supplied on an actual write, the canonical placement
+projection must yield emitter maps; otherwise the command leaves YAML untouched.
+Omitting `--analysis` preserves ordinary and scoped apply behavior and explicitly
+reports that the effect assessment was unavailable.
+`bindings assign --analysis <artifact>` uses the same final-candidate placement
+decision before writing. Its ordinary graph-only path remains available.
 
 `coverage.owner_coverage_refusals` counts typed reasons why an original
 owner's whole-initialization certificate was not sealed. Bounded examples

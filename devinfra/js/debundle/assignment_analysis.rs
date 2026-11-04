@@ -19,10 +19,10 @@ use crate::AssignmentInputs;
 use crate::esm_import_order::EsmImportOrder;
 use crate::realizability::CrossRebindEdge;
 use crate::realizability::{
-    EffectConflictDiagnosticRow, EffectRelocationAssessment, EffectTranslationValidationInputs,
-    EffectTranslationValidationResult, SccRejection, TranslationValidationEvidenceReport,
-    TranslationValidationReport, TranslationValidationResult, effect_translation_assess,
-    translation_validate,
+    CandidateEmittedOrder, EffectConflictDiagnosticRow, EffectRelocationAssessment,
+    EffectTranslationValidationInputs, EffectTranslationValidationResult, SccRejection,
+    TranslationValidationEvidenceReport, TranslationValidationReport, TranslationValidationResult,
+    effect_translation_assess, translation_validate,
 };
 use crate::validation::{AssignmentReport, AssignmentValidation, validate_assignment_with_verdict};
 
@@ -200,8 +200,12 @@ impl<'a> CandidateEvaluation<'a> {
             Ok(assignment) => &assignment.validation,
             Err(rejected) => rejected.validation.as_ref(),
         };
-        let translation_validation = assignment_analysis
-            .translation_validation(assignment_validation, translation_validation_visitor)?;
+        let emitted_order = assignment_analysis.candidate_emitted_order();
+        let translation_validation = assignment_analysis.translation_validation(
+            assignment_validation,
+            &emitted_order,
+            translation_validation_visitor,
+        )?;
         let candidate_assessment = match selection {
             CandidateAssessmentSelection::Omit => None,
             CandidateAssessmentSelection::Include => {
@@ -209,6 +213,7 @@ impl<'a> CandidateEvaluation<'a> {
                     assignment_validation,
                     facts,
                     &translation_validation,
+                    &emitted_order,
                     projection,
                     effect_visitor,
                 )?)
@@ -270,6 +275,9 @@ impl StructuralPlacementCoverage {
 #[derive(Debug, Clone, Serialize)]
 pub struct StructuralPlacementAssessment {
     pub status: StructuralPlacementStatus,
+    /// Reads the same typed outcome that `EmissionPlacement::from_projection`
+    /// uses; diagnostic counts do not reconstruct the emitter's decision.
+    pub emission_mappable: bool,
     pub coverage: StructuralPlacementCoverage,
     pub projection_violations: Vec<analysis::PlacementProjectionViolation>,
     pub cross_destination_rebinds: Vec<CrossDestinationRebindObligation>,
@@ -366,7 +374,7 @@ fn has_legacy_gate_ordering_veto(placement: &StructuralPlacementAssessment) -> b
 fn structural_placement_assessment(
     graph: &analysis::DependencyGraph,
     validation: &AssignmentValidation,
-    projection: &analysis::PlacementProjectionAssessment,
+    projection: &analysis::PlacementProjection<'_>,
 ) -> StructuralPlacementAssessment {
     let cross_destination_rebinds: Vec<CrossDestinationRebindObligation> = validation
         .verdict
@@ -409,7 +417,7 @@ fn structural_placement_assessment(
                 .collect(),
         })
         .collect();
-    let blocked = projection.has_blockers()
+    let blocked = projection.assessment().has_blockers()
         || !cross_destination_rebinds.is_empty()
         || atomic_group_obligations.iter().any(|obligation| {
             obligation.classification != AtomicGroupPlacementClass::SemanticOrderScc
@@ -420,10 +428,11 @@ fn structural_placement_assessment(
         } else {
             StructuralPlacementStatus::NoKnownBlocker
         },
+        emission_mappable: projection.emission_maps().is_some(),
         coverage: StructuralPlacementCoverage {
-            unresolved_checks: projection.unresolved_checks().clone(),
+            unresolved_checks: projection.assessment().unresolved_checks().clone(),
         },
-        projection_violations: projection.violations().to_vec(),
+        projection_violations: projection.assessment().violations().to_vec(),
         cross_destination_rebinds,
         atomic_group_obligations,
         semantic_order_sccs,
@@ -607,6 +616,20 @@ impl AssignmentAnalysis {
         validation
     }
 
+    /// Project one immutable candidate through the emitter's exact ESM loader
+    /// order before either translation sweep consumes it.
+    fn candidate_emitted_order(&self) -> CandidateEmittedOrder {
+        CandidateEmittedOrder::from_assignment(
+            self.inputs.dependency_graph(),
+            &self.assignment,
+            &emitted_modules(
+                self.inputs.planned_modules().len(),
+                self.assignment.entry_destination().module_id(),
+            ),
+            &self.import_order,
+        )
+    }
+
     /// Translation validation of the emitted order beside the gate's verdict
     /// in `report`. The gate stays authoritative. With conflicts read off the
     /// gate's ordering edges the two must agree, so with `DEBUNDLE_TV_ORACLE`
@@ -615,6 +638,7 @@ impl AssignmentAnalysis {
     fn translation_validation<E>(
         &self,
         validation: &AssignmentValidation,
+        emitted_order: &CandidateEmittedOrder,
         mut visitor: Option<&mut impl FnMut(&TranslationValidationEvidenceReport) -> Result<(), E>>,
     ) -> Result<TranslationValidationResult, E> {
         let dependency_graph = self.inputs.dependency_graph();
@@ -632,11 +656,7 @@ impl AssignmentAnalysis {
         let verdict = translation_validate(
             dependency_graph,
             &self.assignment,
-            &emitted_modules(
-                self.inputs.planned_modules().len(),
-                self.assignment.entry_destination().module_id(),
-            ),
-            &self.import_order,
+            emitted_order,
             exporting.then_some(&mut project),
         )?;
         let wire = TranslationValidationReport::new(
@@ -667,6 +687,7 @@ impl AssignmentAnalysis {
         validation: &AssignmentValidation,
         facts: &[analysis::facts::StatementFacts],
         legacy: &TranslationValidationResult,
+        emitted_order: &CandidateEmittedOrder,
         projection: &analysis::PlacementProjection<'_>,
         visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
     ) -> Result<CandidateRelocationAssessment, E> {
@@ -678,11 +699,7 @@ impl AssignmentAnalysis {
             EffectTranslationValidationInputs {
                 graph: self.inputs.dependency_graph(),
                 assignment: &self.assignment,
-                emitted_modules: &emitted_modules(
-                    self.inputs.planned_modules().len(),
-                    self.assignment.entry_destination().module_id(),
-                ),
-                import_order: &self.import_order,
+                emitted_order,
                 facts,
                 legacy,
                 module_path: &|id| self.module_path(id),
@@ -693,7 +710,7 @@ impl AssignmentAnalysis {
             placement: structural_placement_assessment(
                 self.inputs.dependency_graph(),
                 validation,
-                projection.assessment(),
+                projection,
             ),
             effect,
         })
@@ -800,6 +817,7 @@ mod placement_classification_tests {
         let conflict = conflict([DepKind::EagerUse, DepKind::Sequenced]);
         let placement = StructuralPlacementAssessment {
             status: StructuralPlacementStatus::NoKnownBlocker,
+            emission_mappable: false,
             coverage: StructuralPlacementCoverage {
                 unresolved_checks: [StructuralPlacementCheck::SourceUnitToBodyMapping]
                     .into_iter()
@@ -842,6 +860,7 @@ mod placement_classification_tests {
         let conflict = conflict([DepKind::EagerUse, DepKind::Sequenced]);
         let placement = StructuralPlacementAssessment {
             status: StructuralPlacementStatus::NoKnownBlocker,
+            emission_mappable: true,
             coverage: StructuralPlacementCoverage {
                 unresolved_checks: BTreeSet::new(),
             },
