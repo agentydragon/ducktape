@@ -31,12 +31,16 @@ Connection = Callable[[int, asyncio.StreamWriter], Awaitable[None]]
     ("spec", "historical_harness", "want"),
     [
         (
-            {"environmentHosted": {"environment": {"name": "sandbox", "uid": "uid"}, "harness": "HARNESS_CODEX"}},
+            {
+                "placement": {
+                    "environmentHosted": {"environment": {"name": "sandbox", "uid": "uid"}, "harness": "HARNESS_CODEX"}
+                }
+            },
             None,
             NamedHarness.CODEX,
         ),
         (
-            {"centralSamplerV1": {"executorEnvironment": {"name": "sandbox", "uid": "uid"}}},
+            {"placement": {"centralSamplerV1": {"executorEnvironment": {"name": "sandbox", "uid": "uid"}}}},
             None,
             NamedHarness.CENTRAL_SAMPLER,
         ),
@@ -159,7 +163,7 @@ async def test_open_session_preserves_override_presence(
             json.dumps(
                 {
                     "sessionId": str(session_id),
-                    "environmentHosted": {"environment": {"name": "demo", "uid": sandbox_uid}},
+                    "placement": {"environmentHosted": {"environment": {"name": "demo", "uid": sandbox_uid}}},
                 }
             ).encode(),
             "application/json",
@@ -533,7 +537,7 @@ async def test_open_session_rejects_a_different_sandbox_uid() -> None:
         await _respond(
             writer,
             "201 Created",
-            b'{"environmentHosted":{"environment":{"name":"box","uid":"different-uid"}}}',
+            b'{"placement":{"environmentHosted":{"environment":{"name":"box","uid":"different-uid"}}}}',
             "application/json",
         )
 

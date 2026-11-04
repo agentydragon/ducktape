@@ -71,6 +71,7 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/history_service/reads",
         "//agentplane/history_service/storage",
         "//agentplane/proto:session_go_proto",
         "//agentplane/testing/postgres",

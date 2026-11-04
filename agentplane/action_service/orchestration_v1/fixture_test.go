@@ -271,10 +271,10 @@ func (d *recordingDispatcher) OpenSession(_ context.Context, request *dispatcher
 	opening := &dispatcherpb.SessionOpening{
 		SessionId: request.GetSessionId(), State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
 	}
-	if request.GetSpec().GetCentralSamplerV1() != nil {
-		opening.Placement = &dispatcherpb.SessionOpening_CentralSamplerV1{CentralSamplerV1: request.GetSpec().GetCentralSamplerV1()}
+	if request.GetSpec().GetPlacement().GetCentralSamplerV1() != nil {
+		opening.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: request.GetSpec().GetPlacement().GetCentralSamplerV1()}}
 	} else {
-		opening.Placement = &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: request.GetSpec().GetEnvironmentHosted()}
+		opening.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: request.GetSpec().GetPlacement().GetEnvironmentHosted()}}
 	}
 	return &dispatcherpb.OpenSessionResponse{Opening: opening}, nil
 }

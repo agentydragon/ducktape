@@ -3,7 +3,9 @@ package dispatcher
 import (
 	"fmt"
 
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -78,14 +80,10 @@ func DescribeOpening(row *Opening) (*dispatcherpb.SessionOpening, error) {
 		State:     state, CreatedAt: timestamppb.New(row.CreatedAt), UpdatedAt: timestamppb.New(row.UpdatedAt),
 		DeliveryBlocker: row.DeliveryBlocker, WakeAssessment: row.WakeAssessment,
 	}
-	switch row.Placement {
-	case EnvironmentHosted:
-		result.Placement = &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: row.Spec.GetEnvironmentHosted()}
-	case CentralSampler:
-		result.Placement = &dispatcherpb.SessionOpening_CentralSamplerV1{CentralSamplerV1: row.Spec.GetCentralSamplerV1()}
-	default:
-		return nil, fmt.Errorf("stored Session has no placement")
+	if !row.Placement.matchesSpec(row.Spec) {
+		return nil, fmt.Errorf("stored Session placement disagrees with its spec")
 	}
+	result.Placement = proto.Clone(row.Spec.GetPlacement()).(*sessionpb.SessionPlacement)
 	if row.Reason != "" {
 		result.Reason = &row.Reason
 	}

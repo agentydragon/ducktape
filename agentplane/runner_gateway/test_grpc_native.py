@@ -55,10 +55,10 @@ async def inspect(runner: SandboxRunner, session_id: str) -> session_pb2.Session
 def _spec_at_target(spec: session_pb2.SessionSpec, target: SandboxDestination) -> session_pb2.SessionSpec:
     exact = session_pb2.SessionSpec()
     exact.CopyFrom(spec)
-    if exact.WhichOneof("placement") != "environment_hosted":
+    if exact.placement.WhichOneof("kind") != "environment_hosted":
         raise ValueError("Native runner tests require an environment-hosted Session")
-    exact.environment_hosted.environment.name = target.target.name
-    exact.environment_hosted.environment.uid = target.target.uid
+    exact.placement.environment_hosted.environment.name = target.target.name
+    exact.placement.environment_hosted.environment.uid = target.target.uid
     return exact
 
 
@@ -287,8 +287,8 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     invalid_spec = session_pb2.SessionSpec()
     invalid_spec.CopyFrom(launch_spec)
     invalid_spec.model = ""
-    invalid_spec.environment_hosted.environment.name = sandbox.destination.target.name
-    invalid_spec.environment_hosted.environment.uid = sandbox.destination.target.uid
+    invalid_spec.placement.environment_hosted.environment.name = sandbox.destination.target.name
+    invalid_spec.placement.environment_hosted.environment.uid = sandbox.destination.target.uid
     await rejected_opening(session_dispatcher, sandbox.destination, invalid_spec)
     assert [summary.session_id for summary in await destination.list_sessions()] == [session]
     assert bootstrap_marker.read_text() == "B"
@@ -351,8 +351,10 @@ async def test_invalid_launch_never_creates(
     invalid_specs = [
         session_pb2.SessionSpec(),
         session_pb2.SessionSpec(
-            environment_hosted=session_pb2.EnvironmentHostedPlacement(
-                environment=session_pb2.ExactEnvironment(), harness=session_pb2.HARNESS_CODEX
+            placement=session_pb2.SessionPlacement(
+                environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                    environment=session_pb2.ExactEnvironment(), harness=session_pb2.HARNESS_CODEX
+                )
             ),
             model="m",
         ),

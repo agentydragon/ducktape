@@ -259,8 +259,8 @@ func listing(summary *historypb.SessionSummary) SessionListing {
 		l.LastTurnStatus = new(summary.GetLastTurnStatus().String())
 	}
 	if attached := summary.GetAttached(); attached != nil {
-		harness := attached.GetSpec().GetEnvironmentHosted().GetHarness()
-		if attached.GetSpec().GetCentralSamplerV1() != nil {
+		harness := attached.GetSpec().GetPlacement().GetEnvironmentHosted().GetHarness()
+		if attached.GetSpec().GetPlacement().GetCentralSamplerV1() != nil {
 			harness = sessionpb.Harness_HARNESS_CENTRAL_SAMPLER
 		} else if harness == sessionpb.Harness_HARNESS_UNSPECIFIED {
 			harness = attached.GetHistoricalHarness()
@@ -306,9 +306,9 @@ func (e *Executor) sessionForRead(ctx context.Context, ref contract.SandboxRef, 
 	// The incarnations the Session's opening and its history tie it to, as far as each is known.
 	var tied []string
 	if opening != nil {
-		target := opening.GetOpening().GetEnvironmentHosted().GetEnvironment()
-		if opening.GetOpening().GetCentralSamplerV1() != nil {
-			target = opening.GetOpening().GetCentralSamplerV1().GetExecutorEnvironment()
+		target := opening.GetOpening().GetPlacement().GetEnvironmentHosted().GetEnvironment()
+		if opening.GetOpening().GetPlacement().GetCentralSamplerV1() != nil {
+			target = opening.GetOpening().GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
 		}
 		tied = append(tied, target.GetUid())
 	}

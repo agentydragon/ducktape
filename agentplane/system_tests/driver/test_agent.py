@@ -44,7 +44,7 @@ async def test_agent_open_retries_unavailable_without_creating_another_session()
     assert first.kwargs["sandbox_uid"] == "00000000-0000-4000-8000-000000000001"
     assert isinstance(first.args[1], UUID)
     assert first.kwargs["overrides"]["model"] == "test-model"
-    assert first.kwargs["overrides"]["environmentHosted"] == {
+    assert first.kwargs["overrides"]["placement"]["environmentHosted"] == {
         "environment": {"name": "test-sandbox", "uid": "00000000-0000-4000-8000-000000000001"},
         "harness": "HARNESS_CODEX",
     }

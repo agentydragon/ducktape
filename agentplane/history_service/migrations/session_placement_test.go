@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/history_service/reads"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
@@ -155,9 +156,9 @@ func TestSessionPlacementMigrationAllowsSameCursorRetainedAnnouncement(t *testin
 			fresh := &sessionpb.SessionSpec{Cwd: "/retained"}
 			target := &sessionpb.ExactEnvironment{Name: "executor", Uid: targetUID}
 			if test.harness == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
-				fresh.Placement = &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: target}}
+				fresh.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: target}}}
 			} else {
-				fresh.Placement = &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: target, Harness: test.harness}}
+				fresh.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: target, Harness: test.harness}}}
 			}
 			var feedWire, summaryWire []byte
 			if err := db.QueryRowContext(t.Context(), `SELECT feed_state FROM session_history WHERE id=$1`, id).Scan(&feedWire); err != nil {
@@ -177,6 +178,14 @@ func TestSessionPlacementMigrationAllowsSameCursorRetainedAnnouncement(t *testin
 			if !proto.Equal(feed.GetAttached().GetSpec(), fresh) || !proto.Equal(summary.GetSpec(), fresh) ||
 				feed.GetAttached().GetHistoricalHarness() != sessionpb.Harness_HARNESS_UNSPECIFIED || summary.GetHistoricalHarness() != sessionpb.Harness_HARNESS_UNSPECIFIED {
 				t.Fatalf("retained %s placement differs between feed and summary: %v %v", test.name, &feed, &summary)
+			}
+			visible, err := (&reads.Reader{DB: db, History: storage.NewStore(db, true)}).GetSessionSummary(t.Context(),
+				&historypb.GetSessionSummaryRequest{SessionId: id.String()})
+			if err != nil {
+				t.Fatalf("read migrated summary: %v", err)
+			}
+			if !proto.Equal(visible.GetAttached().GetSpec().GetPlacement(), fresh.GetPlacement()) {
+				t.Fatalf("read summary placement = %v, want %v", visible.GetAttached().GetSpec().GetPlacement(), fresh.GetPlacement())
 			}
 			// The retained writer can reannounce at its existing cursor after the coordinated cutover.
 			if err := storage.NewStore(db, true).RecordFeedState(t.Context(), id, &historypb.SessionFeedState{Attached: &sessionpb.Attached{SessionId: id.String(), Spec: fresh}}); err != nil {

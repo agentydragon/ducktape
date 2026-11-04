@@ -112,9 +112,9 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 	}}
 	f := newSandboxFixture(t)
 	sandboxUID := string(f.sandbox.UID)
-	spec, err := proto.Marshal(&sessionpb.SessionSpec{Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
+	spec, err := proto.Marshal(&sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
 		Environment: &sessionpb.ExactEnvironment{Name: testSandbox, Uid: sandboxUID}, Harness: sessionpb.Harness_HARNESS_CODEX,
-	}}})
+	}}}})
 	if err != nil {
 		t.Fatal(err)
 	}

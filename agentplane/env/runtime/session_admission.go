@@ -52,7 +52,7 @@ func (r *Runtime) OpenSession(ctx context.Context, request *environmentruntimepb
 	}
 	spec := proto.Clone(request.Spec).(*sessionpb.SessionSpec)
 	spec.Instructions = r.config.Launch.Instructions(request.SessionId, spec.Instructions)
-	placement := spec.GetEnvironmentHosted()
+	placement := spec.GetPlacement().GetEnvironmentHosted()
 	if placement == nil || (placement.GetHarness() != sessionpb.Harness_HARNESS_CLAUDE && placement.GetHarness() != sessionpb.Harness_HARNESS_CODEX) ||
 		placement.GetEnvironment().GetName() != r.config.Launch.Sandbox.Name || placement.GetEnvironment().GetUid() != r.config.Launch.Sandbox.UID {
 		return nil, status.Error(codes.InvalidArgument, "spec.environment_hosted must select this exact environment and a native harness")

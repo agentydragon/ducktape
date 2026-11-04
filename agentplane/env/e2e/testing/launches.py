@@ -47,8 +47,10 @@ def spec(harness: session_pb2.Harness, cwd: Path) -> session_pb2.SessionSpec:
     else:
         raise ValueError(f"unsupported {harness=}")
     return session_pb2.SessionSpec(
-        environment_hosted=session_pb2.EnvironmentHostedPlacement(
-            environment=session_pb2.ExactEnvironment(name=SANDBOX.name, uid=SANDBOX.uid), harness=harness
+        placement=session_pb2.SessionPlacement(
+            environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                environment=session_pb2.ExactEnvironment(name=SANDBOX.name, uid=SANDBOX.uid), harness=harness
+            )
         ),
         cwd=str(cwd),
         model=model,

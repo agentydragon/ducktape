@@ -46,10 +46,12 @@ These checks do not by themselves prove the remaining deletion-outcome fence. Pu
 address the Session by ID; Dispatcher resolves and fences its placement.
 
 **In-progress placement cutover (reported 2026-11-04 PDT; not a deployment claim):** the live
-contract moves backend selection and placement into the `SessionSpec.placement` oneof.
+contract moves backend selection and placement into the shared `SessionPlacement` message at
+`SessionSpec.placement`. Its oneof selects the placement variant.
 `environment_hosted` carries an exact environment and native harness selection;
 `central_sampler_v1` carries one exact `executor_environment`. Dispatcher opening reads project that
-same placement. Central sampler V1 retains the existing Sandbox-backed identity, admission,
+same message at `SessionOpening.placement`, without exposing instructions. Central sampler V1
+retains the existing Sandbox-backed identity, admission,
 notification, wake and deletion behavior. It still requires one fixed executor environment; it does
 not add attachments or permit environment-free central Sessions. Native harness store selection and
 harness-native ID mapping remain future work, and the central principal remains unresolved.

@@ -159,8 +159,10 @@ class Agent:
             attributes={"sandbox.name": sandbox, "harness": session_pb2.Harness.Name(harness)},
         ):
             spec = session_pb2.SessionSpec(
-                environment_hosted=session_pb2.EnvironmentHostedPlacement(
-                    environment=session_pb2.ExactEnvironment(name=sandbox, uid=sandbox_uid), harness=harness
+                placement=session_pb2.SessionPlacement(
+                    environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                        environment=session_pb2.ExactEnvironment(name=sandbox, uid=sandbox_uid), harness=harness
+                    )
                 ),
                 cwd=cwd,
                 model=model,

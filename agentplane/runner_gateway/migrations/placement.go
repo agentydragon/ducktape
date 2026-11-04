@@ -45,9 +45,9 @@ var sessionPlacementMigration = goose.NewGoMigration(11,
 			target := &sessionpb.ExactEnvironment{Name: name, Uid: uid}
 			switch harness {
 			case sessionpb.Harness_HARNESS_CLAUDE, sessionpb.Harness_HARNESS_CODEX:
-				spec.Placement = &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: target, Harness: harness}}
+				spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: target, Harness: harness}}}
 			case sessionpb.Harness_HARNESS_CENTRAL_SAMPLER:
-				spec.Placement = &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: target}}
+				spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: target}}}
 			default:
 				rows.Close()
 				return fmt.Errorf("opening %s has no known retained harness", id)

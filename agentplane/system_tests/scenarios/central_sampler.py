@@ -214,8 +214,10 @@ async def dispatcher_central_setup_tool_and_retained_answer(
         model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
         session_spec = session_pb2.SessionSpec(
-            central_sampler_v1=session_pb2.CentralSamplerV1Placement(
-                executor_environment=session_pb2.ExactEnvironment(name=deployed.sandbox, uid=deployed.sandbox_uid)
+            placement=session_pb2.SessionPlacement(
+                central_sampler_v1=session_pb2.CentralSamplerV1Placement(
+                    executor_environment=session_pb2.ExactEnvironment(name=deployed.sandbox, uid=deployed.sandbox_uid)
+                )
             ),
             cwd=cwd,
             model=MODEL,
@@ -227,7 +229,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
             metadata=deployed.metadata,
             timeout=15,
         )
-        assert interrupted_opening.opening.central_sampler_v1.executor_environment.uid == deployed.sandbox_uid
+        assert interrupted_opening.opening.placement.central_sampler_v1.executor_environment.uid == deployed.sandbox_uid
         interrupted_input = await deployed.dispatcher.SubmitInput(
             session_dispatcher_pb2.SubmitInputRequest(
                 session_id=interrupted_session_id,
@@ -284,7 +286,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
             metadata=deployed.metadata,
             timeout=15,
         )
-        assert opening.opening.central_sampler_v1.executor_environment.uid == deployed.sandbox_uid
+        assert opening.opening.placement.central_sampler_v1.executor_environment.uid == deployed.sandbox_uid
         submitted = await deployed.dispatcher.SubmitInput(
             session_dispatcher_pb2.SubmitInputRequest(
                 session_id=session_id, expected_sandbox_uid=deployed.sandbox_uid, command_id=command_id, text=prompt
@@ -489,8 +491,10 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
         session_spec = session_pb2.SessionSpec(
-            central_sampler_v1=session_pb2.CentralSamplerV1Placement(
-                executor_environment=session_pb2.ExactEnvironment(name=deployed.sandbox, uid=deployed.sandbox_uid)
+            placement=session_pb2.SessionPlacement(
+                central_sampler_v1=session_pb2.CentralSamplerV1Placement(
+                    executor_environment=session_pb2.ExactEnvironment(name=deployed.sandbox, uid=deployed.sandbox_uid)
+                )
             ),
             cwd=cwd,
             model=MODEL,
@@ -500,7 +504,7 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
             metadata=deployed.metadata,
             timeout=15,
         )
-        assert opening.opening.central_sampler_v1.executor_environment.uid == deployed.sandbox_uid
+        assert opening.opening.placement.central_sampler_v1.executor_environment.uid == deployed.sandbox_uid
         submitted = await deployed.dispatcher.SubmitInput(
             session_dispatcher_pb2.SubmitInputRequest(
                 session_id=session_id,

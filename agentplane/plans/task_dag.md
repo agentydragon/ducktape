@@ -2484,7 +2484,9 @@ read API as implementation details, and link its contract from the
 ### `SESSION_SPEC_PLACEMENT_CUTOVER` — move Session placement into SessionSpec
 
 **In progress (Codex; coordinated hard cutover, 2026-11-04 PDT).** Replace the flat harness field and
-Dispatcher-level placement inputs with one `SessionSpec.placement` oneof. `environment_hosted`
+Dispatcher-level placement inputs with one shared `SessionPlacement` message used by
+`SessionSpec.placement` and the read-only `SessionOpening.placement`. Its oneof selects
+`environment_hosted`, which
 contains the exact environment name and UID plus native harness selection. `central_sampler_v1`
 contains one explicit, fixed required executor environment. V1 central Sessions retain Sandbox
 identity, admission, wake, notifications and deletion behavior; they have no optional attachments

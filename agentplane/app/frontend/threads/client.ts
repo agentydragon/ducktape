@@ -455,8 +455,8 @@ function validateThread(metadata: ThreadMetadata, summary: SessionSummary): void
   if (!metadata.createdAt) throw new Error("App returned Thread metadata without created_at");
   const attachment = summary.attached;
   const spec = attachment?.spec;
-  if (spec?.placement.case === "environmentHosted") {
-    const harness = spec.placement.value.harness;
+  if (spec?.placement?.kind.case === "environmentHosted") {
+    const harness = spec.placement.kind.value.harness;
     assertKnownEnum(harness, HarnessSchema, "Harness");
     if (harness === Harness.UNSPECIFIED) throw new Error("History Service returned an unspecified Harness");
   } else if (attachment && attachment.historicalHarness !== Harness.UNSPECIFIED) {

@@ -221,9 +221,10 @@ export function NewThreadForm({
                   target &&
                   onCreate(
                     fromJson(SessionSpecSchema, {
-                      ...(harness === "HARNESS_CENTRAL_SAMPLER"
-                        ? { centralSamplerV1: { executorEnvironment: { name: target.name, uid: target.uid } } }
-                        : { environmentHosted: { environment: { name: target.name, uid: target.uid }, harness } }),
+                      placement:
+                        harness === "HARNESS_CENTRAL_SAMPLER"
+                          ? { centralSamplerV1: { executorEnvironment: { name: target.name, uid: target.uid } } }
+                          : { environmentHosted: { environment: { name: target.name, uid: target.uid }, harness } },
                       cwd: cwdTemplate, // The app resolves {session_id} before it opens the Session.
                       model,
                       reasoningEffort: effort,

@@ -50,7 +50,7 @@ func TestPlacementMigrationPreservesRetainedCentralRetryAndUnknownFields(t *test
 	if err := proto.Unmarshal(retained.Configuration, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if !proto.Equal(decoded.GetSpec().GetCentralSamplerV1().GetExecutorEnvironment(), request.GetSpec().GetCentralSamplerV1().GetExecutorEnvironment()) ||
+	if !proto.Equal(decoded.GetSpec().GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment(), request.GetSpec().GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()) ||
 		!bytes.Equal(decoded.GetSpec().ProtoReflect().GetUnknown(), futureSpec) ||
 		!bytes.Equal(decoded.ProtoReflect().GetUnknown(), futureRequest) {
 		t.Fatalf("migrated central configuration lost placement or unrelated fields: %v", &decoded)

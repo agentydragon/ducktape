@@ -61,12 +61,19 @@ message SessionSpec {
   string instructions = 5;
   reserved 6;
   reserved "central_sampler";
-  // This is the sole live Session placement and backend selection. A native Session belongs to
-  // exactly one environment. Central sampler V1 owns its Session but currently requires one fixed
-  // executor environment; attachment/detachment is not supported by this field.
-  oneof placement {
-    EnvironmentHostedPlacement environment_hosted = 7;
-    CentralSamplerV1Placement central_sampler_v1 = 8;
+  // This is the sole live Session placement and backend selection.
+  SessionPlacement placement = 7;
+  reserved 8;
+  reserved "environment_hosted", "central_sampler_v1";
+}
+
+// A native Session belongs to exactly one environment. Central sampler V1 owns its Session but
+// currently requires one fixed executor environment. Attachment/detachment is not supported here.
+// The same message is projected into SessionOpening without exposing other SessionSpec fields.
+message SessionPlacement {
+  oneof kind {
+    EnvironmentHostedPlacement environment_hosted = 1;
+    CentralSamplerV1Placement central_sampler_v1 = 2;
   }
 }
 

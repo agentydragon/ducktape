@@ -57,8 +57,10 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
         return session_dispatcher_pb2.GetSessionOpeningResponse(
             opening=session_dispatcher_pb2.SessionOpening(
                 session_id=request.session_id,
-                environment_hosted=session_pb2.EnvironmentHostedPlacement(
-                    environment=session_pb2.ExactEnvironment(name="original", uid="original-uid")
+                placement=session_pb2.SessionPlacement(
+                    environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                        environment=session_pb2.ExactEnvironment(name="original", uid="original-uid")
+                    )
                 ),
             )
         )
@@ -77,8 +79,8 @@ async def test_native_submission_preserves_identity_and_rotates_service_credenti
         opening = await client.get_session_opening("session")
         assert (
             opening.session_id,
-            opening.environment_hosted.environment.name,
-            opening.environment_hosted.environment.uid,
+            opening.placement.environment_hosted.environment.name,
+            opening.placement.environment_hosted.environment.uid,
         ) == ("session", "original", "original-uid")
         sandbox, uid = await client.session_target("session")
         first = await client.submit_input("session", "same-command", sandbox, uid, "original input")

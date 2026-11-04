@@ -2,9 +2,10 @@ import { Harness, type Attached } from "../../proto/session_pb";
 
 /** Read-only harness projection; the SessionSpec placement remains the live backend authority. */
 export function attachedHarness(attached: Attached | undefined): Harness | undefined {
-  switch (attached?.spec?.placement.case) {
+  const placement = attached?.spec?.placement?.kind;
+  switch (placement?.case) {
     case "environmentHosted":
-      return attached.spec.placement.value.harness;
+      return placement.value.harness;
     case "centralSamplerV1":
       return Harness.CENTRAL_SAMPLER;
     default:

@@ -704,8 +704,10 @@ function visualNativeSpec(harness: Harness, sandboxName: string) {
   if (!target) throw new Error(`Missing Sandbox fixture ${sandboxName}`);
   return create(SessionSpecSchema, {
     placement: {
-      case: "environmentHosted",
-      value: { environment: { name: target.name, uid: target.uid }, harness },
+      kind: {
+        case: "environmentHosted",
+        value: { environment: { name: target.name, uid: target.uid }, harness },
+      },
     },
     model: harness === Harness.CODEX ? "harness-codex-model" : "harness-claude-model",
     cwd: "/state/work",
@@ -2925,11 +2927,15 @@ routes.push(
       const request = JSON.parse(body) as { session_id?: string; spec?: JsonValue };
       if (!request.session_id || !request.spec) throw new Error("Open request has no Session ID or spec");
       const spec = fromJson(SessionSpecSchema, request.spec);
-      if (spec.placement.case !== "environmentHosted") throw new Error("Queued fixture requires native placement");
+      if (spec.placement?.kind.case !== "environmentHosted") {
+        throw new Error("Queued fixture requires native placement");
+      }
       queuedOpenSessionId = request.session_id;
       return {
         sessionId: request.session_id,
-        environmentHosted: toJson(EnvironmentHostedPlacementSchema, spec.placement.value),
+        placement: {
+          environmentHosted: toJson(EnvironmentHostedPlacementSchema, spec.placement.kind.value),
+        },
         state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
         reason: "waiting for runner admission",
       };
@@ -3704,8 +3710,12 @@ const visualHarness = {
       uid: target.uid,
     });
     spec.placement = {
-      case: "centralSamplerV1",
-      value: create(CentralSamplerV1PlacementSchema, { executorEnvironment: { name: target.name, uid: target.uid } }),
+      kind: {
+        case: "centralSamplerV1",
+        value: create(CentralSamplerV1PlacementSchema, {
+          executorEnvironment: { name: target.name, uid: target.uid },
+        }),
+      },
     };
     spec.model = "harness-codex-model";
   },

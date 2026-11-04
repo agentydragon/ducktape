@@ -874,9 +874,11 @@ it("resolves a queued Open from the live matching Thread projection exactly once
     const { session_id: sessionId } = await request.clone().json();
     return Response.json({
       sessionId,
-      environmentHosted: {
-        environment: { name: "startup-test", uid: readySandbox.target!.uid },
-        harness: "HARNESS_CODEX",
+      placement: {
+        environmentHosted: {
+          environment: { name: "startup-test", uid: readySandbox.target!.uid },
+          harness: "HARNESS_CODEX",
+        },
       },
       state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
       reason: "waiting for runner",
@@ -964,9 +966,11 @@ it("opens the client-minted Session ID returned by the opening", async () => {
     live.snapshot.threads = [threadView({ metadata: { threadId: publicId } })];
     return Response.json({
       sessionId: publicId,
-      environmentHosted: {
-        environment: { name: "startup-test", uid: readySandbox.target!.uid },
-        harness: "HARNESS_CODEX",
+      placement: {
+        environmentHosted: {
+          environment: { name: "startup-test", uid: readySandbox.target!.uid },
+          harness: "HARNESS_CODEX",
+        },
       },
       state: "DELIVERY_STATE_RUNNER_ADMITTED",
     });
@@ -1062,9 +1066,11 @@ it("defaults new threads to an offered harness while retaining existing Claude t
           {
             sessionId: "old-session",
             spec: {
-              environmentHosted: {
-                environment: { name: readySandbox.target!.name, uid: readySandbox.target!.uid },
-                harness: "HARNESS_CLAUDE",
+              placement: {
+                environmentHosted: {
+                  environment: { name: readySandbox.target!.name, uid: readySandbox.target!.uid },
+                  harness: "HARNESS_CLAUDE",
+                },
               },
             },
           },
@@ -1085,7 +1091,7 @@ it("defaults new threads to an offered harness while retaining existing Claude t
   await act(async () => harness.click());
   await submitNewThread();
   const body = await postedBody(sessions);
-  expect(body.spec.environmentHosted).toEqual({
+  expect(body.spec.placement.environmentHosted).toEqual({
     environment: { name: readySandbox.target!.name, uid: readySandbox.target!.uid },
     harness: "HARNESS_CODEX",
   });
@@ -1270,7 +1276,7 @@ it("launches a configured central sampler while preserving the native offerings"
   );
   await submitNewThread();
   const body = await postedBody(sessions);
-  expect(body.spec.centralSamplerV1).toEqual({
+  expect(body.spec.placement.centralSamplerV1).toEqual({
     executorEnvironment: { name: readySandbox.target!.name, uid: readySandbox.target!.uid },
   });
   expect(body.setup_script).toBe("echo executor-setup");

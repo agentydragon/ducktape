@@ -245,9 +245,9 @@ prints the Dispatcher opening record; it does not wait for History.`,
 			request := &dispatcherpb.OpenSessionRequest{
 				SessionId: args[0], Spec: spec,
 			}
-			target := spec.GetEnvironmentHosted().GetEnvironment()
-			if spec.GetCentralSamplerV1() != nil {
-				target = spec.GetCentralSamplerV1().GetExecutorEnvironment()
+			target := spec.GetPlacement().GetEnvironmentHosted().GetEnvironment()
+			if spec.GetPlacement().GetCentralSamplerV1() != nil {
+				target = spec.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
 			}
 			if target.GetName() != sandbox || target.GetUid() != sandboxUID {
 				return usageFailure("--spec placement must match --sandbox and --sandbox-uid")
@@ -525,9 +525,9 @@ func sessionOpeningLine(raw json.RawMessage) (string, error) {
 	if opening.GetSessionId() == "" {
 		return "", invalidResponse("no session ID in the opening")
 	}
-	target := opening.GetEnvironmentHosted().GetEnvironment()
-	if opening.GetCentralSamplerV1() != nil {
-		target = opening.GetCentralSamplerV1().GetExecutorEnvironment()
+	target := opening.GetPlacement().GetEnvironmentHosted().GetEnvironment()
+	if opening.GetPlacement().GetCentralSamplerV1() != nil {
+		target = opening.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
 	}
 	line := fields(
 		opening.GetSessionId(),

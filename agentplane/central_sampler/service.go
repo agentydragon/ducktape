@@ -101,9 +101,9 @@ func (s *Sampler) OpenSession(ctx context.Context, request *samplerpb.OpenSessio
 			return invalid()
 		}
 	}
-	if len(spec.GetInstructions()) > 1024*1024 || len(spec.GetCwd()) > 4096 || len(request.GetSetupScript()) > 65536 || spec.GetCentralSamplerV1() == nil ||
-		spec.GetCentralSamplerV1().GetExecutorEnvironment().GetName() != executor.GetTarget().GetName() ||
-		spec.GetCentralSamplerV1().GetExecutorEnvironment().GetUid() != executor.GetTarget().GetUid() ||
+	if len(spec.GetInstructions()) > 1024*1024 || len(spec.GetCwd()) > 4096 || len(request.GetSetupScript()) > 65536 || spec.GetPlacement().GetCentralSamplerV1() == nil ||
+		spec.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment().GetName() != executor.GetTarget().GetName() ||
+		spec.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment().GetUid() != executor.GetTarget().GetUid() ||
 		!strings.HasPrefix(spec.GetCwd(), "/") {
 		return invalid()
 	}

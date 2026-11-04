@@ -100,10 +100,10 @@ func (c *pushCall) run(ctx context.Context, writer storage.Writer, account auth.
 		}
 		announce = sampler.GetSession()
 		executor := sampler.GetExecutor()
-		if announce == nil || announce.GetSpec().GetCentralSamplerV1() == nil ||
+		if announce == nil || announce.GetSpec().GetPlacement().GetCentralSamplerV1() == nil ||
 			executor.GetTarget().GetNamespace() == "" || executor.GetTarget().GetName() == "" ||
-			announce.GetSpec().GetCentralSamplerV1().GetExecutorEnvironment().GetName() != executor.GetTarget().GetName() ||
-			announce.GetSpec().GetCentralSamplerV1().GetExecutorEnvironment().GetUid() != executor.GetTarget().GetUid() ||
+			announce.GetSpec().GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment().GetName() != executor.GetTarget().GetName() ||
+			announce.GetSpec().GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment().GetUid() != executor.GetTarget().GetUid() ||
 			executor.GetOwner().GetNamespace() == "" || executor.GetOwner().GetName() == "" || executor.GetTarget().GetNamespace() != executor.GetOwner().GetNamespace() {
 			return status.Error(codes.InvalidArgument, "central sampler announcement is incomplete")
 		}
@@ -115,7 +115,7 @@ func (c *pushCall) run(ctx context.Context, writer storage.Writer, account auth.
 		if announce == nil {
 			return status.Error(codes.InvalidArgument, "the first frame is not an announcement")
 		}
-		if announce.GetSpec().GetCentralSamplerV1() != nil {
+		if announce.GetSpec().GetPlacement().GetCentralSamplerV1() != nil {
 			return status.Error(codes.PermissionDenied, "central Sessions require a sampler announcement")
 		}
 		if c.service.SandboxUIDs != nil {

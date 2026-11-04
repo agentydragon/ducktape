@@ -47,7 +47,8 @@ any other launch of a taken name is refused. `open_session` and each command car
 `open_session` accepts `HARNESS_CENTRAL_SAMPLER`. The Dispatcher selects its sampler service
 from deployment configuration; Actions and launch presets do not accept routing fields. This
 tool-facing harness choice and the exact `sandbox` identity compile to the current
-`SessionSpec.placement` oneof: central sampler selects `central_sampler_v1` with that Sandbox as its
+shared `SessionPlacement` message in `SessionSpec.placement`: central sampler selects
+`central_sampler_v1` with that Sandbox as its
 fixed executor environment. This action does not create optional attachments or an
 environment-independent central Session.
 

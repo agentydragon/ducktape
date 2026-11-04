@@ -239,9 +239,9 @@ func TestAMessageNeedsACompleteDispatcherOpening(t *testing.T) {
 func TestOpeningTargetUsesTypedPlacement(t *testing.T) {
 	central := &dispatcherpb.SessionOpening{
 		SessionId: testSession,
-		Placement: &dispatcherpb.SessionOpening_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
+		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
 			ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: sandboxName, Uid: sandboxUID},
-		}},
+		}}},
 	}
 	for _, test := range []struct {
 		name    string
@@ -251,7 +251,7 @@ func TestOpeningTargetUsesTypedPlacement(t *testing.T) {
 		{"native environment", nativeOpening(testSession, sandboxName, sandboxUID), true},
 		{"central initial executor", central, true},
 		{"missing placement", &dispatcherpb.SessionOpening{SessionId: testSession}, false},
-		{"missing central executor", &dispatcherpb.SessionOpening{SessionId: testSession, Placement: &dispatcherpb.SessionOpening_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{}}}, false},
+		{"missing central executor", &dispatcherpb.SessionOpening{SessionId: testSession, Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{}}}}, false},
 		{"wrong Session", nativeOpening("other", sandboxName, sandboxUID), false},
 	} {
 		t.Run(test.name, func(t *testing.T) {

@@ -32,7 +32,9 @@ The manual queue, replica and wake probes are documented in the
 - **Order**: commands, including `InterruptTurn`, are delivered first in, first out per Session.
   The Runtime checks the interrupt’s exact target at admission; it never interrupts a successor turn.
   A delayed or uncertain delivery follows the same receipt and recovery rules as other commands.
-- **Opening a Session**: `SessionSpec.placement` is the single source of backend and placement.
+- **Opening a Session**: the shared `SessionPlacement` message in `SessionSpec.placement` is the
+  single source of backend and placement, and `SessionOpening.placement` projects that message
+  without exposing Session instructions.
   `environment_hosted` carries one exact environment and the native Claude/Codex harness selection;
   `central_sampler_v1` carries one exact `executor_environment`. Central sampler V1 still uses the
   existing Sandbox-backed identity, admission, notification, wake and deletion behavior. Its

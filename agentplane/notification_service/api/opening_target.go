@@ -13,10 +13,10 @@ func openingTarget(opening *dispatcherpb.SessionOpening, sessionID string) *sess
 	}
 	var target *sessionpb.ExactEnvironment
 	switch opening.GetPlacement().(type) {
-	case *dispatcherpb.SessionOpening_EnvironmentHosted:
-		target = opening.GetEnvironmentHosted().GetEnvironment()
-	case *dispatcherpb.SessionOpening_CentralSamplerV1:
-		target = opening.GetCentralSamplerV1().GetExecutorEnvironment()
+	case *sessionpb.SessionPlacement_EnvironmentHosted:
+		target = opening.GetPlacement().GetEnvironmentHosted().GetEnvironment()
+	case *sessionpb.SessionPlacement_CentralSamplerV1:
+		target = opening.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
 	}
 	if target.GetName() == "" || target.GetUid() == "" {
 		return nil

@@ -55,7 +55,7 @@ func TestSessionDefaultsMergeExplicitFieldsAndHonorSetupPresence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if defaults.GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CODEX || defaults.GetModel() != "model-a" || defaults.GetReasoningEffort() != "high" || setup == nil || *setup != "setup" {
+	if defaults.GetPlacement().GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CODEX || defaults.GetModel() != "model-a" || defaults.GetReasoningEffort() != "high" || setup == nil || *setup != "setup" {
 		t.Fatalf("unexpected preset defaults: spec=%v setup=%v", defaults, setup)
 	}
 	merged, err := bridge.ParseSessionSpec(defaults, map[string]any{"model": "", "instructions": "request"})
@@ -149,7 +149,7 @@ func (p *sessionTestPeer) OpenSession(ctx context.Context, name, uid string, id 
 	if p.failOpen != nil {
 		return nil, p.failOpen
 	}
-	return &dispatcherpb.SessionOpening{SessionId: id.String(), Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: name, Uid: uid}}}, State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER}, nil
+	return &dispatcherpb.SessionOpening{SessionId: id.String(), Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: name, Uid: uid}}}}, State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER}, nil
 }
 
 type sessionTokenReviewer struct{}
@@ -253,7 +253,7 @@ func TestSessionOpeningGatewayPreservesPresetPresenceAndWireContract(t *testing.
 			if opening.GetSessionId() != id || opening.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER {
 				t.Fatalf("unexpected response %v", opening)
 			}
-			if peer.spec.GetEnvironmentHosted().GetHarness() != test.wantHarness || peer.spec.GetModel() != test.wantModel || peer.spec.GetInstructions() != test.wantInstructions || peer.spec.GetReasoningEffort() != test.wantEffort || peer.spec.GetCwd() != "/work/"+id || !reflect.DeepEqual(peer.setup, test.wantSetup) {
+			if peer.spec.GetPlacement().GetEnvironmentHosted().GetHarness() != test.wantHarness || peer.spec.GetModel() != test.wantModel || peer.spec.GetInstructions() != test.wantInstructions || peer.spec.GetReasoningEffort() != test.wantEffort || peer.spec.GetCwd() != "/work/"+id || !reflect.DeepEqual(peer.setup, test.wantSetup) {
 				t.Fatalf("spec %v setup %v", peer.spec, peer.setup)
 			}
 			if !reflect.DeepEqual(peer.calls, []string{"thread", "dispatch"}) {

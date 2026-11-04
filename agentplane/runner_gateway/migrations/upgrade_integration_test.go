@@ -51,14 +51,14 @@ func TestSessionPlacementUpgradePreservesRetainedCentralOwner(t *testing.T) {
 			t.Fatal(err)
 		}
 		got := "environment_hosted"
-		if spec.GetCentralSamplerV1() != nil {
+		if spec.GetPlacement().GetCentralSamplerV1() != nil {
 			got = "central_sampler"
 		}
 		var target *sessionpb.ExactEnvironment
 		if got == "environment_hosted" {
-			target = spec.GetEnvironmentHosted().GetEnvironment()
+			target = spec.GetPlacement().GetEnvironmentHosted().GetEnvironment()
 		} else {
-			target = spec.GetCentralSamplerV1().GetExecutorEnvironment()
+			target = spec.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
 		}
 		if got != test.want || target.GetName() != "sandbox" || target.GetUid() != "00000000-0000-0000-0000-000000000001" ||
 			!bytes.Equal(spec.ProtoReflect().GetUnknown(), protowire.AppendBytes(protowire.AppendTag(nil, 99, protowire.BytesType), []byte("unrelated"))) {

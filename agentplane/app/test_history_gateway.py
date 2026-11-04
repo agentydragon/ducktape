@@ -33,10 +33,10 @@ pytest_plugins = ("agentplane.app.integration_fixtures",)
 def _exact_session_spec(spec: session_pb2.SessionSpec, sandbox: str, sandbox_uid: str) -> session_pb2.SessionSpec:
     exact = session_pb2.SessionSpec()
     exact.CopyFrom(spec)
-    if exact.WhichOneof("placement") != "environment_hosted":
+    if exact.placement.WhichOneof("kind") != "environment_hosted":
         raise ValueError("History gateway tests require an environment-hosted Session")
-    exact.environment_hosted.environment.name = sandbox
-    exact.environment_hosted.environment.uid = sandbox_uid
+    exact.placement.environment_hosted.environment.name = sandbox
+    exact.placement.environment_hosted.environment.uid = sandbox_uid
     return exact
 
 

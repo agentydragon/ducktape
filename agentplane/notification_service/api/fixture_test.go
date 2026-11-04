@@ -188,9 +188,9 @@ type fakeOpenings struct {
 }
 
 func nativeOpening(sessionID, name, uid string) *dispatcherpb.SessionOpening {
-	return &dispatcherpb.SessionOpening{SessionId: sessionID, Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{
+	return &dispatcherpb.SessionOpening{SessionId: sessionID, Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{
 		EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: name, Uid: uid}},
-	}}
+	}}}
 }
 
 func (o *fakeOpenings) GetSessionOpening(_ context.Context, request *dispatcherpb.GetSessionOpeningRequest, _ ...grpc.CallOption) (*dispatcherpb.GetSessionOpeningResponse, error) {

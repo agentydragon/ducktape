@@ -247,8 +247,10 @@ async def deployed_session_command_cannot_cross_deletion(
         await stack.enter_async_context(scripted.case_scope())
         uid = await stack.enter_async_context(_sandbox(cluster, name, config["environment_default_policy_sets"]))
         spec = session_pb2.SessionSpec(
-            environment_hosted=session_pb2.EnvironmentHostedPlacement(
-                environment=session_pb2.ExactEnvironment(name=name, uid=uid), harness=session_pb2.HARNESS_CODEX
+            placement=session_pb2.SessionPlacement(
+                environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                    environment=session_pb2.ExactEnvironment(name=name, uid=uid), harness=session_pb2.HARNESS_CODEX
+                )
             ),
             model="chatgpt-sub/oai-responses/gpt-6-luna",
             cwd="/state",
@@ -424,7 +426,7 @@ async def deployed_session_command_cannot_cross_deletion(
         replacement_session = str(uuid4())
         replacement_spec = session_pb2.SessionSpec()
         replacement_spec.CopyFrom(spec)
-        replacement_spec.environment_hosted.environment.uid = replacement
+        replacement_spec.placement.environment_hosted.environment.uid = replacement
         # Use a fresh Session ID: the test imposes no retention policy on old Session UUIDs.
         await dispatcher.OpenSession(
             session_dispatcher_pb2.OpenSessionRequest(session_id=replacement_session, spec=replacement_spec),

@@ -594,9 +594,9 @@ func TestCentralSamplerWriterAndExecutorAreSeparate(t *testing.T) {
 	executorUID := uuid.NewString()
 	announcement := &session_ingresspb.SamplerAnnouncement{
 		Session: &sessionpb.Attached{SessionId: sessionID, Spec: &sessionpb.SessionSpec{
-			Placement: &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
+			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
 				ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "test-execution-sandbox", Uid: executorUID},
-			}}, Model: "test-model", Cwd: "/test-workspace",
+			}}}, Model: "test-model", Cwd: "/test-workspace",
 		}},
 		Executor: &identitypb.SandboxDestination{
 			Target: &identitypb.EnvironmentTarget{Namespace: testNamespace, Name: "test-execution-sandbox", Uid: executorUID}, Owner: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "test-execution-sandbox"},
@@ -623,7 +623,7 @@ func TestCentralSamplerWriterAndExecutorAreSeparate(t *testing.T) {
 	}
 	changed := proto.Clone(announcement).(*session_ingresspb.SamplerAnnouncement)
 	changed.Executor.Target.Uid = uuid.NewString()
-	changed.Session.Spec.GetCentralSamplerV1().ExecutorEnvironment.Uid = changed.Executor.Target.Uid
+	changed.Session.Spec.GetPlacement().GetCentralSamplerV1().ExecutorEnvironment.Uid = changed.Executor.Target.Uid
 	next := ingress.open(t, token)
 	next.send(&session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_SamplerAnnounce{SamplerAnnounce: changed}})
 	if _, err := next.stream.Recv(); status.Code(err) != codes.PermissionDenied {

@@ -47,10 +47,12 @@ export function threadView({ metadata = {}, summary = {} }: ThreadViewInit = {})
   const sandboxInit = Object.hasOwn(summary, "sandbox") ? summary.sandbox : sandbox;
   const spec = {
     placement: {
-      case: "environmentHosted" as const,
-      value: {
-        environment: { name: sandboxInit?.name ?? sandbox.name, uid: sandboxInit?.uid ?? sandbox.uid },
-        harness: Harness.CLAUDE,
+      kind: {
+        case: "environmentHosted" as const,
+        value: {
+          environment: { name: sandboxInit?.name ?? sandbox.name, uid: sandboxInit?.uid ?? sandbox.uid },
+          harness: Harness.CLAUDE,
+        },
       },
     },
     model: "test-model",

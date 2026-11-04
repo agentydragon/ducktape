@@ -51,8 +51,10 @@ it("keeps app metadata and History SessionSummary in their generated message sha
       sessionId: "thread-id",
       spec: {
         placement: {
-          case: "environmentHosted",
-          value: { environment: { name: "sandbox", uid: "sandbox-uid" }, harness: Harness.CLAUDE },
+          kind: {
+            case: "environmentHosted",
+            value: { environment: { name: "sandbox", uid: "sandbox-uid" }, harness: Harness.CLAUDE },
+          },
         },
         model: "model",
       },

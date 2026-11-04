@@ -345,7 +345,7 @@ func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionR
 		executor.GetTarget().GetNamespace() != executor.GetOwner().GetNamespace() {
 		return nil, protocol.ErrInvalid
 	}
-	placement := request.GetSpec().GetCentralSamplerV1()
+	placement := request.GetSpec().GetPlacement().GetCentralSamplerV1()
 	if placement == nil || placement.GetExecutorEnvironment().GetName() != executor.GetTarget().GetName() ||
 		placement.GetExecutorEnvironment().GetUid() != executor.GetTarget().GetUid() {
 		return nil, protocol.ErrInvalid

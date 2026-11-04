@@ -36,9 +36,9 @@ func openStoreSession(t *testing.T, store *Store, request *samplerpb.OpenSession
 		}
 	}
 	if request.GetSpec() != nil && request.GetSpec().GetPlacement() == nil {
-		request.Spec.Placement = &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
+		request.Spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
 			ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: request.GetExecutor().GetTarget().GetName(), Uid: request.GetExecutor().GetTarget().GetUid()},
-		}}
+		}}}
 	}
 	platformInstructions := fixturePlatformInstructions
 	return store.OpenSession(t.Context(), request, ownerUID, api, &platformInstructions)
@@ -67,7 +67,7 @@ func TestStoreOpeningFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 	request := &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
-			Placement: &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "fixture-executor", Uid: "fixture-executor-uid"}}},
+			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "fixture-executor", Uid: "fixture-executor-uid"}}}},
 			Cwd:       "/fixture", Model: "fixture-model", Instructions: briefing,
 		},
 		Executor: &identitypb.SandboxDestination{
@@ -165,7 +165,7 @@ func TestStoreOpeningWithoutPlatformGuidanceKeepsCallerPromptAcrossActivation(t 
 	request := &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
-			Placement: &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "fixture-executor", Uid: "fixture-executor-uid"}}},
+			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "fixture-executor", Uid: "fixture-executor-uid"}}}},
 			Cwd:       "/fixture", Model: "fixture-model", Instructions: "\n  Fixture raw caller prompt.\n",
 		},
 		Executor: &identitypb.SandboxDestination{

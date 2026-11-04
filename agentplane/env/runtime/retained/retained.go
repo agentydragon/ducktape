@@ -91,14 +91,14 @@ func WriteDurable(path string, data []byte) error {
 type Record = persistencepb.SessionRecordSpec
 
 func NewRecord(spec *sessionpb.SessionSpec, setupScript string, totalContextBudgetTokens *int) (*Record, error) {
-	if spec == nil || spec.GetEnvironmentHosted() == nil {
+	if spec == nil || spec.GetPlacement().GetEnvironmentHosted() == nil {
 		return nil, errors.New("native session placement is required")
 	}
 	if totalContextBudgetTokens != nil && *totalContextBudgetTokens <= 0 {
 		return nil, errors.New("total context budget must be positive")
 	}
 	record := &Record{
-		Placement: proto.Clone(spec.GetEnvironmentHosted()).(*sessionpb.EnvironmentHostedPlacement), Cwd: spec.GetCwd(), InitialModel: spec.GetModel(),
+		Placement: proto.Clone(spec.GetPlacement().GetEnvironmentHosted()).(*sessionpb.EnvironmentHostedPlacement), Cwd: spec.GetCwd(), InitialModel: spec.GetModel(),
 		InitialReasoningEffort: spec.GetReasoningEffort(), Instructions: spec.GetInstructions(),
 		SetupScript: []byte(setupScript), EventSourceId: uuid.NewString(),
 	}
@@ -120,7 +120,7 @@ func HasSetupScript(record *Record) bool { return len(record.SetupScript) != 0 }
 
 func ReservationSpec(record *Record) *sessionpb.SessionSpec {
 	return &sessionpb.SessionSpec{
-		Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: proto.Clone(record.Placement).(*sessionpb.EnvironmentHostedPlacement)}, Cwd: record.Cwd, Model: record.InitialModel,
+		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: proto.Clone(record.Placement).(*sessionpb.EnvironmentHostedPlacement)}}, Cwd: record.Cwd, Model: record.InitialModel,
 		ReasoningEffort: record.InitialReasoningEffort, Instructions: record.Instructions,
 	}
 }

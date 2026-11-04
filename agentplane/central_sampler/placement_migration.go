@@ -48,7 +48,7 @@ var sessionPlacementMigration = goose.NewGoMigration(10,
 				rows.Close()
 				return fmt.Errorf("retained central Session %s has invalid harness: %w", id, err)
 			}
-			if existing := spec.GetCentralSamplerV1(); existing != nil {
+			if existing := spec.GetPlacement().GetCentralSamplerV1(); existing != nil {
 				if harness != sessionpb.Harness_HARNESS_UNSPECIFIED || existing.GetExecutorEnvironment().GetName() != executor.GetName() ||
 					existing.GetExecutorEnvironment().GetUid() != executor.GetUid() {
 					rows.Close()
@@ -60,9 +60,9 @@ var sessionPlacementMigration = goose.NewGoMigration(10,
 				rows.Close()
 				return fmt.Errorf("retained central Session %s has invalid harness %v", id, harness)
 			}
-			spec.Placement = &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
+			spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
 				ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: executor.GetName(), Uid: executor.GetUid()},
-			}}
+			}}}
 			spec.ProtoReflect().SetUnknown(other)
 			converted, err := proto.MarshalOptions{Deterministic: true}.Marshal(request)
 			if err != nil {

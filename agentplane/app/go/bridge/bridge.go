@@ -73,9 +73,9 @@ func (b *RunnerBridge) OpenSession(
 	request := &dispatcherpb.OpenSessionRequest{
 		SessionId: sessionID.String(), Spec: proto.Clone(spec).(*sessionpb.SessionSpec),
 	}
-	target := spec.GetEnvironmentHosted().GetEnvironment()
-	if spec.GetCentralSamplerV1() != nil {
-		target = spec.GetCentralSamplerV1().GetExecutorEnvironment()
+	target := spec.GetPlacement().GetEnvironmentHosted().GetEnvironment()
+	if spec.GetPlacement().GetCentralSamplerV1() != nil {
+		target = spec.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
 	}
 	if target.GetName() != sandbox || target.GetUid() != sandboxUID {
 		return nil, errors.New("Session placement does not match requested Sandbox")
@@ -97,9 +97,9 @@ func (b *RunnerBridge) OpenSession(
 	opening := response.GetOpening()
 	var returnedTarget *sessionpb.ExactEnvironment
 	if opening != nil {
-		returnedTarget = opening.GetEnvironmentHosted().GetEnvironment()
-		if opening.GetCentralSamplerV1() != nil {
-			returnedTarget = opening.GetCentralSamplerV1().GetExecutorEnvironment()
+		returnedTarget = opening.GetPlacement().GetEnvironmentHosted().GetEnvironment()
+		if opening.GetPlacement().GetCentralSamplerV1() != nil {
+			returnedTarget = opening.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
 		}
 	}
 	if opening == nil || opening.GetSessionId() != sessionID.String() || returnedTarget.GetName() != sandbox ||

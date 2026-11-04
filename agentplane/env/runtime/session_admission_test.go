@@ -201,9 +201,9 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "setup-ran")
 	setupScript := fmt.Sprintf("touch %s", shellQuote(marker))
 	spec := &sessionpb.SessionSpec{
-		Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
+		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
 			Environment: &sessionpb.ExactEnvironment{Name: config.Launch.Sandbox.Name, Uid: config.Launch.Sandbox.UID}, Harness: sessionpb.Harness_HARNESS_CLAUDE,
-		}}, Cwd: filepath.Join(workspace, "project"), Model: "test-model",
+		}}}, Cwd: filepath.Join(workspace, "project"), Model: "test-model",
 		Instructions: config.Launch.Instructions(sessionID, ""),
 	}
 	if err := retained.EnsureDirectory(config.StateDir); err != nil {

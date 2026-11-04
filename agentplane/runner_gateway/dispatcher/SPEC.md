@@ -38,11 +38,12 @@ It scopes existing Sessions and existing environments; it does not create enviro
 ## Session binding
 
 - The committed opening is Dispatcher's live Session reservation and placement authority. Its
-  immutable `SessionSpec.placement` oneof is the single source of backend and placement. The
+  immutable `SessionSpec.placement` is a shared `SessionPlacement` message whose oneof is the
+  single source of backend and placement. The
   `environment_hosted` variant contains one exact environment and the native Claude/Codex harness
   selection. The `central_sampler_v1` variant contains one exact `executor_environment`. Dispatcher
-  validates and routes from the stored spec; `SessionOpening` exposes a read-only projection of the
-  same placement under retained-owner policy. Native harness store identity and harness-native ID
+  validates and routes from the stored spec; `SessionOpening.placement` projects that same message
+  under retained-owner policy without exposing instructions. Native harness store identity and harness-native ID
   are not represented by this cutover and remain future work.
 - Central sampler V1 keeps today's Sandbox-backed identity, admission, notification, wake and deletion
   semantics. Its executor environment is required and fixed for the Session. This is not an optional

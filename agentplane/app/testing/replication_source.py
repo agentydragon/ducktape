@@ -22,9 +22,11 @@ from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_pb2
 SANDBOX = "test-replication-sandbox"
 SESSION = "test-replication-session"
 SPEC = session_pb2.SessionSpec(
-    environment_hosted=session_pb2.EnvironmentHostedPlacement(
-        environment=session_pb2.ExactEnvironment(name=SANDBOX, uid="test-sandbox-uid"),
-        harness=session_pb2.HARNESS_CODEX,
+    placement=session_pb2.SessionPlacement(
+        environment_hosted=session_pb2.EnvironmentHostedPlacement(
+            environment=session_pb2.ExactEnvironment(name=SANDBOX, uid="test-sandbox-uid"),
+            harness=session_pb2.HARNESS_CODEX,
+        )
     ),
     model="test-model-before",
     cwd="/test-workspace",

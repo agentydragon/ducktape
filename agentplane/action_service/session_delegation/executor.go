@@ -184,9 +184,9 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		}
 		target := &sessionpb.ExactEnvironment{Name: args.Target.Name, Uid: args.Target.UID}
 		if harness == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
-			request.Spec.Placement = &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: target}}
+			request.Spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: target}}}
 		} else {
-			request.Spec.Placement = &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: target, Harness: harness}}
+			request.Spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: target, Harness: harness}}}
 		}
 		response, err := e.dispatcher.OpenSession(ctx, request)
 		if err != nil {

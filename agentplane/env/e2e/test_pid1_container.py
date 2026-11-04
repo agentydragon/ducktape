@@ -258,9 +258,11 @@ async def test_production_pid1_embedded_host_reaps_setup(
             environment_runtime_pb2.OpenSessionRequest(
                 session_id=str(uuid.uuid4()),
                 spec=session_pb2.SessionSpec(
-                    environment_hosted=session_pb2.EnvironmentHostedPlacement(
-                        environment=session_pb2.ExactEnvironment(name="pid1-host", uid="pid1-host-uid"),
-                        harness=session_pb2.HARNESS_CODEX,
+                    placement=session_pb2.SessionPlacement(
+                        environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                            environment=session_pb2.ExactEnvironment(name="pid1-host", uid="pid1-host-uid"),
+                            harness=session_pb2.HARNESS_CODEX,
+                        )
                     ),
                     cwd="/proof/state/workspaces/project",
                     model="pid1-proof-model",

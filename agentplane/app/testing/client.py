@@ -270,11 +270,11 @@ class Client:
             "POST", f"/sandboxes/{name}/sessions", json=MessageToDict(body, preserving_proto_field_name=True)
         )
         opening = ParseDict(answered, session_dispatcher_pb2.SessionOpening())
-        match opening.WhichOneof("placement"):
+        match opening.placement.WhichOneof("kind"):
             case "environment_hosted":
-                target = opening.environment_hosted.environment
+                target = opening.placement.environment_hosted.environment
             case "central_sampler_v1":
-                target = opening.central_sampler_v1.executor_environment
+                target = opening.placement.central_sampler_v1.executor_environment
             case _:
                 raise RuntimeError("Session opening omitted its exact Environment placement")
         if target.name != name or not sandbox_uid or target.uid != sandbox_uid:

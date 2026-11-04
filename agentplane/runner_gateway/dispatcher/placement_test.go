@@ -8,9 +8,9 @@ import (
 
 func testPlacement(spec *sessionpb.SessionSpec, sandboxName, sandboxUID string) SessionPlacement {
 	if placementOf(spec) == "" {
-		spec.Placement = &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
+		spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
 			Environment: &sessionpb.ExactEnvironment{Name: sandboxName, Uid: sandboxUID}, Harness: sessionpb.Harness_HARNESS_CODEX,
-		}}
+		}}}
 	}
 	return placementOf(spec)
 }

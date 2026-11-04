@@ -68,9 +68,11 @@ it.each([undefined, null, "", "setup"])(
         {
           sessionId: id,
           state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
-          environmentHosted: {
-            environment: { name: "test", uid: "uid" },
-            harness: "HARNESS_CODEX",
+          placement: {
+            environmentHosted: {
+              environment: { name: "test", uid: "uid" },
+              harness: "HARNESS_CODEX",
+            },
           },
         },
         { status: 201 }
@@ -82,8 +84,10 @@ it.each([undefined, null, "", "setup"])(
       id,
       create(SessionSpecSchema, {
         placement: {
-          case: "environmentHosted",
-          value: { environment: { name: target.name, uid: target.uid }, harness: Harness.CODEX },
+          kind: {
+            case: "environmentHosted",
+            value: { environment: { name: target.name, uid: target.uid }, harness: Harness.CODEX },
+          },
         },
         model: "test-model",
       }),
@@ -96,9 +100,11 @@ it.each([undefined, null, "", "setup"])(
       session_id: id,
       sandbox_uid: "uid",
       spec: {
-        environmentHosted: {
-          environment: { name: "test", uid: "uid" },
-          harness: "HARNESS_CODEX",
+        placement: {
+          environmentHosted: {
+            environment: { name: "test", uid: "uid" },
+            harness: "HARNESS_CODEX",
+          },
         },
         model: "test-model",
       },
@@ -118,7 +124,9 @@ it("looks up the same Session identity without repeating an uncertain Open", asy
         opening: {
           sessionId: id,
           state: "DELIVERY_STATE_RUNNER_ADMITTED",
-          environmentHosted: { environment: { name: "test", uid: "uid" }, harness: "HARNESS_CODEX" },
+          placement: {
+            environmentHosted: { environment: { name: "test", uid: "uid" }, harness: "HARNESS_CODEX" },
+          },
         },
       })
     );
@@ -137,7 +145,9 @@ it("rejects an opening for a different Session ID", async () => {
     Response.json({
       opening: {
         sessionId: "different-session",
-        environmentHosted: { environment: { name: "test", uid: "uid" }, harness: "HARNESS_CODEX" },
+        placement: {
+          environmentHosted: { environment: { name: "test", uid: "uid" }, harness: "HARNESS_CODEX" },
+        },
       },
     })
   );

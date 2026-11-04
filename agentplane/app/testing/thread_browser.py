@@ -244,8 +244,8 @@ def thread_browser_session(
             http2_proxy(app.url, certificate) as ingress,
         ):
             exact_spec = session_pb2.SessionSpec()
-            thread_source.attached.spec.environment_hosted.environment.name = SANDBOX
-            thread_source.attached.spec.environment_hosted.environment.uid = sandbox.uid
+            thread_source.attached.spec.placement.environment_hosted.environment.name = SANDBOX
+            thread_source.attached.spec.placement.environment_hosted.environment.uid = sandbox.uid
             exact_spec.CopyFrom(thread_source.attached.spec)
             await session_dispatcher.unary(
                 session_dispatcher.stub.OpenSession,

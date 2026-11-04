@@ -137,8 +137,10 @@ it("keeps a central sampler turn visible when the execution Sandbox is unavailab
       attached: {
         spec: {
           placement: {
-            case: "centralSamplerV1",
-            value: { executorEnvironment: { name: READY_SANDBOX.target!.name, uid: SANDBOX_UID } },
+            kind: {
+              case: "centralSamplerV1",
+              value: { executorEnvironment: { name: READY_SANDBOX.target!.name, uid: SANDBOX_UID } },
+            },
           },
         },
         activeTurnId: "turn-central",

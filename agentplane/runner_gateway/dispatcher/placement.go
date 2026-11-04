@@ -16,10 +16,14 @@ const (
 )
 
 func placementOf(spec *sessionpb.SessionSpec) SessionPlacement {
-	switch spec.GetPlacement().(type) {
-	case *sessionpb.SessionSpec_EnvironmentHosted:
+	placement := spec.GetPlacement()
+	if placement == nil {
+		return ""
+	}
+	switch placement.Kind.(type) {
+	case *sessionpb.SessionPlacement_EnvironmentHosted:
 		return EnvironmentHosted
-	case *sessionpb.SessionSpec_CentralSamplerV1:
+	case *sessionpb.SessionPlacement_CentralSamplerV1:
 		return CentralSampler
 	default:
 		return ""
@@ -33,14 +37,14 @@ func placementFromRequest(request *dispatcherpb.OpenSessionRequest) (SessionPlac
 	spec := request.GetSpec()
 	switch placementOf(spec) {
 	case EnvironmentHosted:
-		if !validExactEnvironment(spec.GetEnvironmentHosted().GetEnvironment()) ||
-			(spec.GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CLAUDE &&
-				spec.GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CODEX) {
+		if !validExactEnvironment(spec.GetPlacement().GetEnvironmentHosted().GetEnvironment()) ||
+			(spec.GetPlacement().GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CLAUDE &&
+				spec.GetPlacement().GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CODEX) {
 			return "", status.Error(codes.InvalidArgument, "environment_hosted requires one exact environment and a native harness")
 		}
 		return EnvironmentHosted, nil
 	case CentralSampler:
-		if !validExactEnvironment(spec.GetCentralSamplerV1().GetExecutorEnvironment()) {
+		if !validExactEnvironment(spec.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()) {
 			return "", status.Error(codes.InvalidArgument, "central_sampler_v1 currently requires one exact executor environment")
 		}
 		return CentralSampler, nil
@@ -58,10 +62,10 @@ func validExactEnvironment(target *sessionpb.ExactEnvironment) bool {
 }
 
 func requestTarget(request *dispatcherpb.OpenSessionRequest) *sessionpb.ExactEnvironment {
-	if request.GetSpec().GetEnvironmentHosted() != nil {
-		return request.GetSpec().GetEnvironmentHosted().GetEnvironment()
+	if request.GetSpec().GetPlacement().GetEnvironmentHosted() != nil {
+		return request.GetSpec().GetPlacement().GetEnvironmentHosted().GetEnvironment()
 	}
-	return request.GetSpec().GetCentralSamplerV1().GetExecutorEnvironment()
+	return request.GetSpec().GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
 }
 
 func (p SessionPlacement) requiresReadyExecutor() bool { return p == EnvironmentHosted }

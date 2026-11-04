@@ -215,7 +215,7 @@ func TestSessionCommandsReachTheDispatcherForTheLaunchedIncarnationOnly(t *testi
 		&dispatcherpb.OpenSessionRequest{
 			SessionId: session, SetupScript: new("true"),
 			Spec: &sessionpb.SessionSpec{
-				Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: launched.Name, Uid: string(launched.UID)}, Harness: sessionpb.Harness_HARNESS_CODEX}}, Model: "test-model", Cwd: "/test/" + session, Instructions: "test",
+				Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: launched.Name, Uid: string(launched.UID)}, Harness: sessionpb.Harness_HARNESS_CODEX}}}, Model: "test-model", Cwd: "/test/" + session, Instructions: "test",
 			},
 		},
 		&dispatcherpb.SubmitInputRequest{
@@ -250,7 +250,7 @@ func TestCentralSamplerHarnessReachesDispatcher(t *testing.T) {
 	want := &dispatcherpb.OpenSessionRequest{
 		SessionId: session,
 		Spec: &sessionpb.SessionSpec{
-			Placement: &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: launched.Name, Uid: string(launched.UID)}}}, Model: "test-model", Cwd: "/test/" + session,
+			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: launched.Name, Uid: string(launched.UID)}}}}, Model: "test-model", Cwd: "/test/" + session,
 		},
 	}
 	if got := f.dispatcher.received(); len(got) != 1 || !proto.Equal(got[0], want) {

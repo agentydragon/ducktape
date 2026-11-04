@@ -26,8 +26,10 @@ async def run_setup(
     setup_script: str,
 ) -> tuple[str, str]:
     spec = session_pb2.SessionSpec(
-        environment_hosted=session_pb2.EnvironmentHostedPlacement(
-            environment=session_pb2.ExactEnvironment(name=sandbox_name, uid=sandbox_uid), harness=harness
+        placement=session_pb2.SessionPlacement(
+            environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                environment=session_pb2.ExactEnvironment(name=sandbox_name, uid=sandbox_uid), harness=harness
+            )
         ),
         cwd=cwd,
         model=model,

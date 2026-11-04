@@ -121,7 +121,7 @@ func (o Observation) Status() (*sessionpb.SessionStatus, *sessionpb.HarnessProce
 	if o.processID == "" || o.shared {
 		return row, nil
 	}
-	return row, &sessionpb.HarnessProcessStatus{ProcessId: o.processID, Harness: o.spec.GetEnvironmentHosted().GetHarness(), State: o.processState, AssignedSessionIds: []string{o.id}, Pid: copied(o.pid)}
+	return row, &sessionpb.HarnessProcessStatus{ProcessId: o.processID, Harness: o.spec.GetPlacement().GetEnvironmentHosted().GetHarness(), State: o.processState, AssignedSessionIds: []string{o.id}, Pid: copied(o.pid)}
 }
 
 func (s *Session) Attached() *sessionpb.Attached { return s.Observe().Attached() }

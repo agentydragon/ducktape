@@ -59,11 +59,13 @@ def thread_view_from_proto_json(metadata: dict[str, object], summary: dict[str, 
     spec = spec_value if isinstance(spec_value, dict) else {}
     sandbox_value = summary.get("sandbox")
     sandbox = sandbox_value if isinstance(sandbox_value, dict) else {}
-    native_value = spec.get("environmentHosted")
+    placement_value = spec.get("placement")
+    placement = placement_value if isinstance(placement_value, dict) else {}
+    native_value = placement.get("environmentHosted")
     native = native_value if isinstance(native_value, dict) else None
     if native is not None:
         harness = native.get("harness")
-    elif isinstance(spec.get("centralSamplerV1"), dict):
+    elif isinstance(placement.get("centralSamplerV1"), dict):
         harness = Harness.CENTRAL_SAMPLER
     else:
         harness = attachment.get("historicalHarness")

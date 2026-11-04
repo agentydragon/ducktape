@@ -56,9 +56,9 @@ var sessionPlacement = goose.NewGoMigration(8,
 				target := &sessionpb.ExactEnvironment{Name: sandboxName.String, Uid: sandboxUID.String}
 				switch harness {
 				case sessionpb.Harness_HARNESS_CLAUDE, sessionpb.Harness_HARNESS_CODEX:
-					attached.Spec.Placement = &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: target, Harness: harness}}
+					attached.Spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: target, Harness: harness}}}
 				case sessionpb.Harness_HARNESS_CENTRAL_SAMPLER:
-					attached.Spec.Placement = &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: target}}
+					attached.Spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: target}}}
 				default:
 					attached.HistoricalHarness = harness
 				}
@@ -91,13 +91,13 @@ var sessionPlacement = goose.NewGoMigration(8,
 				CASE
 					WHEN history.sandbox_name <> '' AND history.sandbox_uid <> '' AND
 						jsonb_extract_path_text(summary.attached, 'spec', 'harness') IN ('HARNESS_CLAUDE', 'HARNESS_CODEX') THEN
-						jsonb_build_object('environmentHosted', jsonb_build_object(
+						jsonb_build_object('placement', jsonb_build_object('environmentHosted', jsonb_build_object(
 							'environment', jsonb_build_object('name', history.sandbox_name, 'uid', history.sandbox_uid),
-							'harness', jsonb_extract_path(summary.attached, 'spec', 'harness')))
+							'harness', jsonb_extract_path(summary.attached, 'spec', 'harness'))))
 					WHEN history.sandbox_name <> '' AND history.sandbox_uid <> '' AND
 						jsonb_extract_path_text(summary.attached, 'spec', 'harness') = 'HARNESS_CENTRAL_SAMPLER' THEN
-						jsonb_build_object('centralSamplerV1', jsonb_build_object(
-							'executorEnvironment', jsonb_build_object('name', history.sandbox_name, 'uid', history.sandbox_uid)))
+						jsonb_build_object('placement', jsonb_build_object('centralSamplerV1', jsonb_build_object(
+							'executorEnvironment', jsonb_build_object('name', history.sandbox_name, 'uid', history.sandbox_uid))))
 					ELSE '{}'::jsonb
 				END) ||
 			CASE

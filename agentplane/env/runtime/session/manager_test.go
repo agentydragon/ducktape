@@ -55,7 +55,7 @@ func TestSessionOwnerReconcilesRetainedRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	record, err := retained.NewRecord(&sessionpb.SessionSpec{
-		Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}, Cwd: root, Model: "test-model",
+		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}}, Cwd: root, Model: "test-model",
 	}, "echo interrupted", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -114,7 +114,7 @@ func TestSessionOwnerReportsRecoveryFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	record, err := retained.NewRecord(&sessionpb.SessionSpec{
-		Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}, Cwd: filepath.Dir(root), Model: "test-model",
+		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}}, Cwd: filepath.Dir(root), Model: "test-model",
 	}, "", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -211,7 +211,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	record, err := retained.NewRecord(&sessionpb.SessionSpec{
-		Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}, Cwd: root, Model: "test-model",
+		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}}, Cwd: root, Model: "test-model",
 	}, "echo setup", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -309,7 +309,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 		t.Fatalf("durable setup recovery not recorded: %v", entries)
 	}
 	freshRecord, err := retained.NewRecord(&sessionpb.SessionSpec{
-		Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}, Cwd: root, Model: "test-model",
+		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}}, Cwd: root, Model: "test-model",
 	}, "echo fresh setup", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -394,7 +394,7 @@ func TestReopenRetryKeepsCOSIIngressAcknowledgementAfterJournalReopened(t *testi
 		t.Fatal(err)
 	}
 	record, err := retained.NewRecord(&sessionpb.SessionSpec{
-		Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}, Cwd: root, Model: "test-model",
+		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}}, Cwd: root, Model: "test-model",
 	}, "echo retained setup", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -529,7 +529,7 @@ func TestCodexExitBeforeProcessInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	record, err := retained.NewRecord(&sessionpb.SessionSpec{
-		Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CODEX}}, Cwd: root, Model: "test-model",
+		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CODEX}}}, Cwd: root, Model: "test-model",
 	}, "", nil)
 	if err != nil {
 		t.Fatal(err)

@@ -209,9 +209,9 @@ func (f samplerExportFixture) openSession(t *testing.T) *centralsampler.Session 
 	session, err := f.sampler.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
-			Placement: &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
+			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
 				ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "test-execution-sandbox", Uid: executorUID},
-			}},
+			}}},
 			Model: "test-model-initial",
 			Cwd:   "/test-workspace",
 		},
