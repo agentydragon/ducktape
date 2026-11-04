@@ -114,7 +114,7 @@ enum BindingsNsCommand {
     /// of a claim splits that claim across modules. The post-batch gate
     /// rejects any split of a source statement's atomic source_unit.
     /// Contract details: docs/cli.md § "Batch atomicity".
-    Assign(BindingsAssignArgs),
+    Assign(Box<BindingsAssignArgs>),
     /// Remove one or more bindings from their current modules
     /// atomically; they fall through to residual.
     ///
@@ -454,7 +454,7 @@ pub(super) fn run(
         BindingsNsCommand::Comment(c) => run_binding_comment_cmd(c),
         BindingsNsCommand::List(l) => run_bindings_list_cmd(l),
         BindingsNsCommand::Rename(r) => run_bindings_rename_cmd(r),
-        BindingsNsCommand::Assign(a) => run_bindings_assign_cmd(a, source_context),
+        BindingsNsCommand::Assign(a) => run_bindings_assign_cmd(*a, source_context),
         BindingsNsCommand::Unassign(u) => run_bindings_unassign_cmd(u, source_context),
     }
 }

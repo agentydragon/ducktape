@@ -792,7 +792,7 @@ fn prepare_transform(
 /// [`AnalysisMode::Project`], which stops after the selector solve.
 enum PreparedTransformResult {
     Completed,
-    Projected(AnalysisSpec),
+    Projected(Box<AnalysisSpec>),
     EffectAssessed(Vec<(String, EffectRelocationAssessment)>),
 }
 
@@ -941,7 +941,7 @@ fn run_prepared_transform(
                 return Ok(PreparedTransformResult::EffectAssessed(assessments));
             }
             Materialized::Projected(projection) => {
-                return Ok(PreparedTransformResult::Projected(projection));
+                return Ok(PreparedTransformResult::Projected(Box::new(projection)));
             }
             Materialized::Lowered(result) if !assessment_only => result,
             Materialized::Lowered(_) => {
