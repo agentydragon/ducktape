@@ -93,9 +93,17 @@ func TestDialHandshakeHonorsContextDeadline(t *testing.T) {
 		t.Fatal("Firecracker socket did not accept the connection")
 	}
 	defer peer.Close()
+	peerReader := bufio.NewReader(peer)
+	request, err := peerReader.ReadString('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request != "CONNECT 1234\n" {
+		t.Fatalf("vsock request = %q", request)
+	}
 	_ = peer.SetReadDeadline(time.Now().Add(time.Second))
-	if _, err := peer.Read(make([]byte, 1)); err == nil {
-		t.Fatal("Dial left its connection open after the context expired")
+	if _, err := peerReader.ReadByte(); !errors.Is(err, io.EOF) {
+		t.Fatalf("Firecracker-side read after the CONNECT line = %v, want EOF", err)
 	}
 }
 
