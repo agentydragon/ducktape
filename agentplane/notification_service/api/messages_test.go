@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -232,6 +233,25 @@ func TestAMessageNeedsACompleteDispatcherOpening(t *testing.T) {
 	server.requireNoInbox(t)
 	if asked := server.history.questions(); len(asked) != 0 {
 		t.Errorf("History asked about %v without a valid opening", asked)
+	}
+}
+
+func TestAnOldWireDestinationFenceIsRejectedBeforeSending(t *testing.T) {
+	server := newServer(t)
+	server.grantSend(otherSandboxName, toSandbox)
+	oldRef, err := proto.Marshal(&notificationspb.DestinationRef{
+		Namespace: testNamespace, Name: sandboxName, Uid: "test-former-sandbox-uid",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := sendRequest("old-wire")
+	request.ProtoReflect().SetUnknown(protowire.AppendBytes(protowire.AppendTag(nil, 1, protowire.BytesType), oldRef))
+	_, err = server.client.SendMessage(bearing(t, otherSandboxToken), request)
+	requireCode(t, err, codes.InvalidArgument)
+	server.requireNoInbox(t)
+	if asked := server.history.questions(); len(asked) != 0 {
+		t.Errorf("History asked about %v after an old wire request", asked)
 	}
 }
 

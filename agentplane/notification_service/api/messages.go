@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -23,6 +24,18 @@ func (s *Notifications) SendMessage(ctx context.Context, request *notificationsp
 // sendMessage resolves the Session's live placement before checking the sender's grant against its exact Sandbox.
 // Revoking a grant later never withdraws an accepted message.
 func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAccount, request *notificationspb.SendMessageRequest) (*notificationspb.SendMessageResponse, error) {
+	// Native gRPC retains unknown fields. Reject the retired Sandbox address so an old client's
+	// explicit name or UID fence cannot be silently discarded by the new Session-only request.
+	for unknown := request.ProtoReflect().GetUnknown(); len(unknown) > 0; {
+		field, _, size := protowire.ConsumeField(unknown)
+		if size < 0 {
+			return nil, invalidRequest("invalid message request")
+		}
+		if field == 1 {
+			return nil, invalidRequest("destination_ref is no longer accepted; address the Session by ID")
+		}
+		unknown = unknown[size:]
+	}
 	if err := model.CheckText("session_id", request.GetSessionId(), 1, 200); err != nil {
 		return nil, err
 	}

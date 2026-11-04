@@ -454,6 +454,11 @@ func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgem
 	if code, refused := agentCall(t, service, http.MethodPost, "/v1/messages", sandboxToken, message("ungranted")); code != http.StatusForbidden {
 		t.Fatalf("a send no binding grants = %d %v, want 403", code, refused)
 	}
+	oldRequest := message("old-http")
+	oldRequest["destinationRef"] = map[string]any{"namespace": testNamespace, "name": sandboxName, "uid": "former-uid"}
+	if code, refused := agentCall(t, service, http.MethodPost, "/v1/messages", otherToken, oldRequest); code != http.StatusBadRequest {
+		t.Fatalf("a retired destinationRef in HTTP = %d %v, want 400", code, refused)
+	}
 	code, sent := agentCall(t, service, http.MethodPost, "/v1/messages", otherToken, message("review"))
 	if code != http.StatusOK {
 		t.Fatalf("send = %d %v", code, sent)
