@@ -412,7 +412,7 @@ fn strip_nth_paren_expr(module: &mut Module, target: usize) {
 /// produces. Mirrors the dependency-graph source-unit view: `var x = ..., y
 /// = ...;` is one body item but two statement ordinals; other
 /// top-level items count as one.
-fn post_split_top_level_count(item: &ModuleItem) -> usize {
+pub fn post_split_top_level_count(item: &ModuleItem) -> usize {
     split_var_declarators(item).map_or(1, <[VarDeclarator]>::len)
 }
 

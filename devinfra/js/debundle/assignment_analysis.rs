@@ -13,7 +13,7 @@ use analysis::graph::{
 use analysis::module_assignment::ModuleAssignment;
 use analysis::{
     BindingCatalogue, BindingScopeError, ChunkId, DependencyGraphReport, EntryDestination,
-    ModuleId, ModuleQuotient, PlannedModule,
+    ModuleId, ModuleQuotient, PlannedModule, StructuralPlacementCheck,
 };
 
 use crate::AssignmentInputs;
@@ -114,12 +114,14 @@ impl ValidatedAssignment<'_> {
         &self,
         facts: &[analysis::facts::StatementFacts],
         legacy: &TranslationValidationResult,
+        projection: &analysis::PlacementProjection<'_>,
         visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
     ) -> Result<CandidateRelocationAssessment, E> {
         self.assignment_analysis.candidate_relocation_assessment(
             &self.validation,
             facts,
             legacy,
+            projection,
             visitor,
         )
     }
@@ -159,12 +161,14 @@ impl RejectedAssignment<'_> {
         &self,
         facts: &[analysis::facts::StatementFacts],
         legacy: &TranslationValidationResult,
+        projection: &analysis::PlacementProjection<'_>,
         visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
     ) -> Result<CandidateRelocationAssessment, E> {
         self.assignment_analysis.candidate_relocation_assessment(
             &self.validation,
             facts,
             legacy,
+            projection,
             visitor,
         )
     }
@@ -204,18 +208,6 @@ pub enum StructuralPlacementStatus {
     NoKnownBlocker,
 }
 
-/// Exact source-structure checks that the common candidate pass does not yet
-/// execute. Each is an explicit coverage gap; an empty set is the only
-/// complete representation.
-#[derive(Debug, Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum StructuralPlacementCheck {
-    DestructuringDeclaratorGrouping,
-    SourceUnitToBodyMapping,
-    BindingAndSharedVarDestinationProjection,
-    WholeStatementDestinationProjection,
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct StructuralPlacementCoverage {
     pub unresolved_checks: BTreeSet<StructuralPlacementCheck>,
@@ -231,6 +223,7 @@ impl StructuralPlacementCoverage {
 pub struct StructuralPlacementAssessment {
     pub status: StructuralPlacementStatus,
     pub coverage: StructuralPlacementCoverage,
+    pub projection_violations: Vec<analysis::PlacementProjectionViolation>,
     pub cross_destination_rebinds: Vec<CrossDestinationRebindObligation>,
     pub atomic_group_obligations: Vec<AtomicGroupPlacementObligation>,
     pub semantic_order_sccs: Vec<SemanticOrderSccObligation>,
@@ -273,6 +266,7 @@ pub enum CandidateRelocationStatus {
     BlockedByPlacement,
     BlockedByEffectAndPlacement,
     Incomplete,
+    AcceptedWithinCheckedScope,
 }
 
 impl CandidateRelocationAssessment {
@@ -281,8 +275,12 @@ impl CandidateRelocationAssessment {
             self.effect.assessment.decision,
             crate::realizability::EffectRelocationDecision::Conflict { .. }
         );
+        let effect_accepted = matches!(
+            self.effect.assessment.decision,
+            crate::realizability::EffectRelocationDecision::Accepted { .. }
+        );
         CandidateRelocationAssessmentReport {
-            status: candidate_relocation_status(effect_blocked, &self.placement),
+            status: candidate_relocation_status(effect_blocked, effect_accepted, &self.placement),
             legacy_gate_accepts: self.effect.report.legacy_gate_accepts,
             legacy_gate_ordering_veto: has_legacy_gate_ordering_veto(&self.placement),
             effect: self.effect.assessment.clone(),
@@ -293,6 +291,7 @@ impl CandidateRelocationAssessment {
 
 fn candidate_relocation_status(
     effect_blocked: bool,
+    effect_accepted: bool,
     placement: &StructuralPlacementAssessment,
 ) -> CandidateRelocationStatus {
     match (
@@ -302,7 +301,10 @@ fn candidate_relocation_status(
         (true, true) => CandidateRelocationStatus::BlockedByEffectAndPlacement,
         (true, false) => CandidateRelocationStatus::BlockedByEffect,
         (false, true) => CandidateRelocationStatus::BlockedByPlacement,
-        (false, false) => CandidateRelocationStatus::Incomplete,
+        (false, false) if !effect_accepted || !placement.coverage.is_complete() => {
+            CandidateRelocationStatus::Incomplete
+        }
+        (false, false) => CandidateRelocationStatus::AcceptedWithinCheckedScope,
     }
 }
 
@@ -316,6 +318,7 @@ fn has_legacy_gate_ordering_veto(placement: &StructuralPlacementAssessment) -> b
 fn structural_placement_assessment(
     graph: &analysis::DependencyGraph,
     validation: &AssignmentValidation,
+    projection: &analysis::PlacementProjectionAssessment,
 ) -> StructuralPlacementAssessment {
     let cross_destination_rebinds: Vec<CrossDestinationRebindObligation> = validation
         .verdict
@@ -358,7 +361,8 @@ fn structural_placement_assessment(
                 .collect(),
         })
         .collect();
-    let blocked = !cross_destination_rebinds.is_empty()
+    let blocked = projection.has_blockers()
+        || !cross_destination_rebinds.is_empty()
         || atomic_group_obligations.iter().any(|obligation| {
             obligation.classification != AtomicGroupPlacementClass::SemanticOrderScc
         });
@@ -369,15 +373,9 @@ fn structural_placement_assessment(
             StructuralPlacementStatus::NoKnownBlocker
         },
         coverage: StructuralPlacementCoverage {
-            unresolved_checks: [
-                StructuralPlacementCheck::DestructuringDeclaratorGrouping,
-                StructuralPlacementCheck::SourceUnitToBodyMapping,
-                StructuralPlacementCheck::BindingAndSharedVarDestinationProjection,
-                StructuralPlacementCheck::WholeStatementDestinationProjection,
-            ]
-            .into_iter()
-            .collect(),
+            unresolved_checks: projection.unresolved_checks().clone(),
         },
+        projection_violations: projection.violations().to_vec(),
         cross_destination_rebinds,
         atomic_group_obligations,
         semantic_order_sccs,
@@ -621,8 +619,13 @@ impl AssignmentAnalysis {
         validation: &AssignmentValidation,
         facts: &[analysis::facts::StatementFacts],
         legacy: &TranslationValidationResult,
+        projection: &analysis::PlacementProjection<'_>,
         visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
     ) -> Result<CandidateRelocationAssessment, E> {
+        assert!(
+            std::ptr::eq(&self.assignment, projection.assignment()),
+            "candidate placement projection must belong to this immutable assignment"
+        );
         let effect = effect_translation_assess(
             EffectTranslationValidationInputs {
                 graph: self.inputs.dependency_graph(),
@@ -639,7 +642,11 @@ impl AssignmentAnalysis {
             visitor,
         )?;
         Ok(CandidateRelocationAssessment {
-            placement: structural_placement_assessment(self.inputs.dependency_graph(), validation),
+            placement: structural_placement_assessment(
+                self.inputs.dependency_graph(),
+                validation,
+                projection.assessment(),
+            ),
             effect,
         })
     }
@@ -750,6 +757,7 @@ mod placement_classification_tests {
                     .into_iter()
                     .collect(),
             },
+            projection_violations: Vec::new(),
             cross_destination_rebinds: Vec::new(),
             atomic_group_obligations: vec![AtomicGroupPlacementObligation {
                 classification: classify_atomic_group_conflict(&conflict),
@@ -760,7 +768,7 @@ mod placement_classification_tests {
 
         assert!(has_legacy_gate_ordering_veto(&placement));
         assert_eq!(
-            candidate_relocation_status(false, &placement),
+            candidate_relocation_status(false, false, &placement),
             CandidateRelocationStatus::Incomplete,
             "a semantic-order-only legacy veto is not an effect or structural block",
         );
@@ -779,5 +787,29 @@ mod placement_classification_tests {
 
         assert!(!incomplete.is_complete());
         assert!(complete.is_complete());
+    }
+
+    #[test]
+    fn complete_scoped_candidate_can_pass_while_legacy_ordering_veto_remains() {
+        let conflict = conflict([DepKind::EagerUse, DepKind::Sequenced]);
+        let placement = StructuralPlacementAssessment {
+            status: StructuralPlacementStatus::NoKnownBlocker,
+            coverage: StructuralPlacementCoverage {
+                unresolved_checks: BTreeSet::new(),
+            },
+            projection_violations: Vec::new(),
+            cross_destination_rebinds: Vec::new(),
+            atomic_group_obligations: vec![AtomicGroupPlacementObligation {
+                classification: classify_atomic_group_conflict(&conflict),
+                conflict,
+            }],
+            semantic_order_sccs: Vec::new(),
+        };
+
+        assert!(has_legacy_gate_ordering_veto(&placement));
+        assert_eq!(
+            candidate_relocation_status(false, true, &placement),
+            CandidateRelocationStatus::AcceptedWithinCheckedScope,
+        );
     }
 }

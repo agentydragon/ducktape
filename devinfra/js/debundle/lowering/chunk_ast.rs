@@ -12,7 +12,10 @@ use selector_outcome::{Declaration, DeclarationKind};
 use source_identity::StatementId;
 
 use crate::imports::{RuntimeImportFacts, RuntimeImportInfo, record_runtime_imports};
+use analysis::{DestructuringDeclaratorGroup, NestedVarStatement, SourceUnitSyntaxLocation};
 use anyhow::{Context, Result, bail};
+use js_ast::post_split_top_level_count;
+use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use swc_ecma_ast::*;
 
@@ -43,6 +46,12 @@ pub(super) struct ChunkAstAnalysis {
     /// `split_var_decl` moves a destructuring declarator as one
     /// atomic group.
     pub(super) destructure_siblings: BTreeMap<String, BTreeSet<String>>,
+    /// Exact AST identities retained during the same single pass as the
+    /// legacy name-keyed sibling map. These are projection evidence, not
+    /// reconstructed from names or diagnostics.
+    pub(super) source_unit_syntax_locations: Vec<SourceUnitSyntaxLocation>,
+    pub(super) destructuring_groups: Vec<DestructuringDeclaratorGroup>,
+    pub(super) nested_var_statements: Vec<NestedVarStatement>,
     /// Bindings that the source chunk's entry already exports (via
     /// `export { foo, bar }` re-exports of local bindings, or
     /// `export const foo = …` style declarations). The materializer
@@ -71,11 +80,15 @@ pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
     let mut pre_existing_entry_exports = HashSet::<Id>::new();
     let mut pre_existing_public_export_names = HashSet::<String>::new();
     let mut destructure_siblings = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut source_unit_syntax_locations = Vec::new();
+    let mut destructuring_groups = Vec::new();
+    let mut nested_var_statements = Vec::new();
+    let mut next_source_unit_ordinal = 0usize;
     for (ordinal, item) in module.body.iter().enumerate() {
         let (names, exported) = top_level_declaration_names(item);
         let ids = top_level_declaration_ids(item);
         if !names.is_empty() {
-            let bindings: Vec<(String, Id)> = names.into_iter().zip(ids).collect();
+            let bindings: Vec<(String, Id)> = names.into_iter().zip(ids.iter().cloned()).collect();
             if exported {
                 pre_existing_entry_exports.extend(bindings.iter().map(|(_, id)| id.clone()));
                 // `export const foo = …` / `export function foo()` /
@@ -91,6 +104,35 @@ pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
             });
         }
         record_destructure_sibling_groups(item, &mut destructure_siblings);
+        record_exact_destructuring_groups(
+            item,
+            StatementId(ordinal),
+            SourceUnitOrdinal(next_source_unit_ordinal),
+            &mut destructuring_groups,
+        );
+        let count = post_split_top_level_count(item);
+        let variable_declaration = matches!(
+            item,
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(_)))
+                | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                    decl: Decl::Var(_),
+                    ..
+                }))
+        );
+        source_unit_syntax_locations.extend((0..count).map(|offset| SourceUnitSyntaxLocation {
+            ordinal: SourceUnitOrdinal(next_source_unit_ordinal + offset),
+            statement: StatementId(ordinal),
+            declarator_offset: variable_declaration.then_some(offset),
+        }));
+        next_source_unit_ordinal += count;
+        if matches!(item, ModuleItem::Stmt(statement) if !matches!(statement, Stmt::Decl(_)))
+            && !ids.is_empty()
+        {
+            nested_var_statements.push(NestedVarStatement {
+                statement: StatementId(ordinal),
+                bindings: ids,
+            });
+        }
         record_runtime_imports(item, &mut imports);
         record_pre_existing_named_exports(
             item,
@@ -112,8 +154,39 @@ pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
         declarations,
         declaration_by_name,
         destructure_siblings,
+        source_unit_syntax_locations,
+        destructuring_groups,
+        nested_var_statements,
         pre_existing_entry_exports,
         pre_existing_public_export_names,
+    }
+}
+
+fn record_exact_destructuring_groups(
+    item: &ModuleItem,
+    statement: StatementId,
+    first_ordinal: SourceUnitOrdinal,
+    out: &mut Vec<DestructuringDeclaratorGroup>,
+) {
+    let decl = match item {
+        ModuleItem::Stmt(Stmt::Decl(decl)) => decl,
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => &export_decl.decl,
+        _ => return,
+    };
+    let Decl::Var(var) = decl else {
+        return;
+    };
+    for (declarator_offset, declarator) in var.decls.iter().enumerate() {
+        let bindings = binding_ids(&declarator.name);
+        if bindings.len() < 2 {
+            continue;
+        }
+        out.push(DestructuringDeclaratorGroup {
+            ordinal: SourceUnitOrdinal(first_ordinal.0 + declarator_offset),
+            statement,
+            declarator_offset,
+            bindings,
+        });
     }
 }
 

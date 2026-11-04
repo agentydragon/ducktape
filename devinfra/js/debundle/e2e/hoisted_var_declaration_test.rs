@@ -60,6 +60,21 @@ export { reader };
     assert_entry_output(&fixture, "primary-read\n");
 }
 
+/// A nested `var` statement that remains in the entry is already mapped by
+/// its source-unit owner; it does not need a separate whole-statement claim.
+#[test]
+fn unclaimed_nested_var_stays_in_entry_with_lazy_reader() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"try { var impl = "primary"; } catch (e) { var impl = "fallback"; }
+function reader() { return impl; }
+console.log(reader());
+export { reader };
+"#,
+        vec![logical_module("mod_reader", &[Member::new("reader")])],
+    ));
+    assert_entry_output(&fixture, "primary\n");
+}
+
 /// A8 shadowing: `try { var Math = shim; } catch {}` makes every
 /// unqualified `Math.<prop>` in the chunk a read of the shim, not the
 /// global. `Math` is chunk-declared, so `const out = Math.PI` is not

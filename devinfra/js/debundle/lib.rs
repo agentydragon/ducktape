@@ -26,6 +26,7 @@ pub mod ids;
 mod inference;
 pub mod loader_closure;
 pub mod module_assignment;
+pub mod placement_projection;
 pub mod purity;
 pub mod reports;
 mod swc_parallel;
@@ -62,6 +63,12 @@ pub use ids::{
     EntryDestination, LocalBindings, ModuleId, ModuleRole, PlannedModule, top_level_id,
 };
 pub use module_assignment::ModuleAssignment;
+pub use placement_projection::{
+    DestructuringDeclaratorGroup, NestedVarStatement, PlacementEmissionMaps, PlacementProjection,
+    PlacementProjectionAssessment, PlacementProjectionInput, PlacementProjectionOutcome,
+    PlacementProjectionViolation, SourceUnitLayout, SourceUnitLayoutIssue, SourceUnitLocation,
+    SourceUnitSyntaxLocation, StructuralPlacementCheck, project_placement,
+};
 pub use purity::{
     Purity, PurityReason, PurityRule, RedundantPureMemberHint, RedundantPureMemberReason,
     RedundantPurityHint, RedundantPurityReason,

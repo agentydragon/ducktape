@@ -39,7 +39,7 @@ use crate::{
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis::{
     AnalysisAssumptions, BindingId, DependencyGraphAndAtomicGroups, EntryDestination, GraphOptions,
-    ModuleId, ModuleRole, PlannedModule, top_level_id,
+    ModuleId, ModuleRole, PlacementProjectionInput, PlannedModule, SourceUnitLayout, top_level_id,
 };
 use anyhow::{Context, Result, bail, ensure};
 use artifact::paths::join_module_path;
@@ -51,7 +51,7 @@ use gate::{
     render_atomic_group_conflict_summary, render_cycle_summary,
 };
 use graph_provenance::GraphProvenance;
-use js_ast::{ParsedJsModule, format_comment_block_lines, source_unit_ordinal_for_statement};
+use js_ast::{ParsedJsModule, format_comment_block_lines};
 use output_layout::{
     ATOMIC_GROUP_CONFLICTS_REPORT, CANDIDATE_RELOCATION_ASSESSMENT_REPORT,
     COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, CYCLES_REPORT, DEPENDENCY_GRAPH_REPORT,
@@ -514,6 +514,11 @@ pub(super) fn finish_logical_chunk(
             }
         };
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");
+    let source_unit_layout = SourceUnitLayout::checked(
+        &precomputed.dependency_graph,
+        &ast_analysis.source_unit_syntax_locations,
+        runtime_ast.module.body.len(),
+    );
     // Selector outcomes, resolved-member anchors, and analysis assumptions
     // have already been collected from the complete authored ownership.
     let ownership_subset = ownership_subset.map(|subset| subset.module_paths(chunk_id));
@@ -522,11 +527,11 @@ pub(super) fn finish_logical_chunk(
     }
     apply_rebind_folds_from_chunk_analysis(&mut builder, &precomputed);
     if matches!(chunk_unassigned_mode, UnassignedMode::PerAtomicGroup) {
-        builder.synthesize_per_atomic_group(&precomputed, &runtime_ast.module.body, target_dir)?;
+        builder.synthesize_per_atomic_group(&precomputed, &source_unit_layout, target_dir)?;
     }
     builder.route_nested_var_statements(&runtime_ast.module.body, &declarations)?;
     if matches!(chunk_unassigned_mode, UnassignedMode::CatchallFile { .. }) {
-        builder.route_unclaimed_anonymous_to_catchall(&precomputed, &runtime_ast.module.body);
+        builder.route_unclaimed_anonymous_to_catchall(&precomputed, &source_unit_layout)?;
     }
     if let Some(report_out_dir) = report_emission.rejection_dir() {
         write_selector_diagnostics(&builder, report_out_dir, chunk_id)?;
@@ -559,11 +564,8 @@ pub(super) fn finish_logical_chunk(
         ledger.seal(&SealValidation::default())
     }?;
     let chunk_renames_map = sealed_renames.chunk_renames_by_name();
-    let (planned_modules, entry_destination) = project_planned_modules(
-        &module_plans,
-        &runtime_ast.module.body,
-        chunk_top_level_mark,
-    );
+    let (planned_modules, entry_destination) =
+        project_planned_modules(&module_plans, &source_unit_layout, chunk_top_level_mark)?;
     let redundant_purity_hints = analysis.redundant_purity_hints;
     let assignment_chunk_renames: HashMap<Id, swc_atoms::Atom> = chunk_renames_map
         .iter()
@@ -583,6 +585,28 @@ pub(super) fn finish_logical_chunk(
         assignment_chunk_renames,
         entry_destination,
     )?;
+    let stable_set_intervals = cross_module_purities
+        .stable_set_spreads
+        .get(chunk_id)
+        .map(|intervals| intervals.values().cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    let assignment = assignment_analysis.assignment();
+    let graph = assignment_analysis.inputs().dependency_graph();
+    let local_bindings = assignment_analysis
+        .inputs()
+        .local_bindings(chunk_id_interned)?;
+    let placement_projection = analysis::project_placement(PlacementProjectionInput {
+        graph,
+        assignment,
+        local_bindings,
+        body: &runtime_ast.module.body,
+        layout: &source_unit_layout,
+        whole_statements: &whole_statement_assignment,
+        module_count: module_plans.len(),
+        destructuring_groups: &ast_analysis.destructuring_groups,
+        nested_var_statements: &ast_analysis.nested_var_statements,
+        stable_set_intervals: &stable_set_intervals,
+    });
     if assessment_only {
         let validation = assignment_analysis.validate_for_emission();
         let legacy = match &validation {
@@ -608,6 +632,7 @@ pub(super) fn finish_logical_chunk(
                 .candidate_relocation_assessment::<std::convert::Infallible>(
                     &analysis.facts,
                     &legacy,
+                    &placement_projection,
                     None::<
                         &mut fn(
                             &gate::EffectConflictDiagnosticRow<'_>,
@@ -618,6 +643,7 @@ pub(super) fn finish_logical_chunk(
             Err(rejected) => rejected.candidate_relocation_assessment::<std::convert::Infallible>(
                 &analysis.facts,
                 &legacy,
+                &placement_projection,
                 None::<
                     &mut fn(
                         &gate::EffectConflictDiagnosticRow<'_>,
@@ -653,33 +679,18 @@ pub(super) fn finish_logical_chunk(
         program_graph,
         &assignment_analysis,
         &analysis.facts,
+        &placement_projection,
         &export_reentry_reports[&chunk_id_interned],
     )?;
 
-    let (placement, header_lines, linker_order, gate_rejection) = match &gate_outcome {
-        GateOutcome::Accepted(validated) => (
-            EmissionPlacement::from_validated(
-                validated,
-                chunk_id_interned,
-                &runtime_ast.module.body,
-                module_plans.len(),
-                &whole_statement_assignment,
-            )?,
-            header_lines,
-            validated.report().linker_order.clone(),
-            None,
-        ),
+    let (header_lines, linker_order, gate_rejection) = match &gate_outcome {
+        GateOutcome::Accepted(validated) => {
+            (header_lines, validated.report().linker_order.clone(), None)
+        }
         GateOutcome::Rejected {
             assignment,
             rejection,
         } => (
-            EmissionPlacement::from_rejected(
-                assignment,
-                chunk_id_interned,
-                &runtime_ast.module.body,
-                module_plans.len(),
-                &whole_statement_assignment,
-            )?,
             // The banner leads the entry file so a reader (or a loader) meets
             // it before any code; the chunk's own header follows.
             [gate_rejected_banner_lines(rejection), header_lines].concat(),
@@ -687,29 +698,8 @@ pub(super) fn finish_logical_chunk(
             Some(rejection.clone()),
         ),
     };
-    // A certified Set spread is analysed as one stable interval: the seed,
-    // every intervening Set constructor and the spread stay in one output
-    // module. Analysis does not read the assignment, so the gate stage
-    // refuses a placement that splits the interval.
-    if let Some(spreads) = cross_module_purities.stable_set_spreads.get(chunk_id) {
-        for stable in spreads.values() {
-            let destinations: BTreeSet<_> = stable
-                .interval_bindings
-                .iter()
-                .map(|binding| placement.bindings().get(binding))
-                .collect();
-            ensure!(
-                destinations.len() == 1,
-                "chunk {chunk_id}: certified Set spread interval {} spans several output modules; assign the seed, every intervening Set constructor and the spread to one module",
-                stable
-                    .interval_bindings
-                    .iter()
-                    .map(|binding| format!("`{}`", binding.0))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-        }
-    }
+    let placement =
+        EmissionPlacement::from_projection(&assignment_analysis, &placement_projection)?;
 
     let lowered = lower_chunk(LowerChunkInputs {
         context: LowerChunkContext {
@@ -846,12 +836,26 @@ fn apply_rebind_folds_from_chunk_analysis(
 /// `PlannedModule`; its wire label is chosen only when constructing reports.
 fn project_planned_modules(
     module_plans: &[ModulePlan],
-    body: &[ModuleItem],
+    source_unit_layout: &SourceUnitLayout,
     chunk_top_level_mark: swc_common::Mark,
-) -> (Vec<PlannedModule>, EntryDestination) {
-    let planned_modules: Vec<PlannedModule> = module_plans
-        .iter()
-        .map(|plan| PlannedModule {
+) -> Result<(Vec<PlannedModule>, EntryDestination)> {
+    let mut planned_modules = Vec::with_capacity(module_plans.len());
+    for plan in module_plans {
+        let mut anonymous_source_unit_ordinals = Vec::new();
+        for statement in &plan.anonymous_statements {
+            let locations = source_unit_layout.for_statement(*statement);
+            if locations.is_empty() {
+                bail!(
+                    "source statement at body index {statement} has no checked source-unit layout"
+                );
+            }
+            // Preserve the existing assignment-assembly contract: one
+            // anonymous request points at the raw statement's first ordinal.
+            // The shared projection checks every source unit for that body
+            // item before emission and reports any split as a blocker.
+            anonymous_source_unit_ordinals.push(locations[0].ordinal);
+        }
+        planned_modules.push(PlannedModule {
             id: plan.id.clone(),
             target_file: plan.target_file.clone(),
             role: plan.role,
@@ -871,15 +875,11 @@ fn project_planned_modules(
             // the corresponding source unit. Anonymous body items are single
             // post-split positions, but earlier comma-list declarations shift
             // the source-unit ordinal.
-            anonymous_source_unit_ordinals: plan
-                .anonymous_statements
-                .iter()
-                .map(|body_idx| source_unit_ordinal_for_statement(body, *body_idx))
-                .collect(),
-        })
-        .collect();
+            anonymous_source_unit_ordinals,
+        });
+    }
     let entry_destination = EntryDestination::after_planned_modules(planned_modules.len());
-    (planned_modules, entry_destination)
+    Ok((planned_modules, entry_destination))
 }
 
 /// Collect `AnalysisAssumptions` from binding annotations. These are semantic
@@ -1287,6 +1287,7 @@ fn validate_and_emit_reports<'a>(
     program_graph: &ProgramGraphOutput<'_>,
     assignment_analysis: &'a AssignmentAnalysis,
     facts: &[analysis::facts::StatementFacts],
+    placement_projection: &analysis::PlacementProjection<'_>,
     export_reentry_report: &ExportReentryReport,
 ) -> Result<GateOutcome<'a>> {
     let ChunkReportContext {
@@ -1394,11 +1395,13 @@ fn validate_and_emit_reports<'a>(
                 Ok(assignment) => assignment.candidate_relocation_assessment(
                     facts,
                     &translation_validation,
+                    placement_projection,
                     effect_conflicts_jsonl.then_some(&mut write_row),
                 )?,
                 Err(rejected) => rejected.candidate_relocation_assessment(
                     facts,
                     &translation_validation,
+                    placement_projection,
                     effect_conflicts_jsonl.then_some(&mut write_row),
                 )?,
             }
