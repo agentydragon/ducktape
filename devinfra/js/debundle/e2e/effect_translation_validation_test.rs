@@ -645,6 +645,403 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
 }
 
 #[test]
+fn local_cell_read_effects_compose_without_an_allocation_result() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const seed = 41;\nfunction readSeed() { return seed; }\nvar result = (readSeed(), readSeed());\nconsole.log(result);\n",
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("seed"),
+                Member::new("readSeed"),
+                Member::new("result"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "41\n");
+    let graph = fixture.dependency_graph();
+    let result = graph
+        .nodes
+        .iter()
+        .find(|node| node.statement_ordinal.0 == 2)
+        .expect("compound local-call initializer");
+    assert!(
+        result
+            .synchronous_execution
+            .as_ref()
+            .expect("execution summary")
+            .complete,
+        "the missing proof concerns effect domains, not execution: {result:#?}"
+    );
+    let report = fixture.effect_translation_validation();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 1,
+            "only the output call remains uncovered: {report:#}"
+        );
+    }
+}
+
+#[test]
+fn local_call_receipts_retain_conditional_prefix_dependencies_when_reordered() {
+    const SOURCE: &str = "const native = new Map();\nconst seed = 41;\nfunction readSeed() { return seed; }\nconst marker = 1;\nvar result = (readSeed(), readSeed());\nconsole.log(result, marker, native.size);\n";
+    let input = native_constructor_input(
+        SOURCE,
+        "const native = new Map();",
+        "native",
+        NativeOperationKind::MapEmpty,
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            SOURCE,
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("native"),
+                    Member::new("seed"),
+                    Member::new("readSeed"),
+                    Member::new("result"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_native_operation_inputs("static/app", vec![input]),
+    );
+    assert_preserved_entry_output(&fixture, "41 1 0\n");
+    let report = fixture.effect_translation_validation();
+    assert_eq!(
+        report["swapped_pairs"], 1,
+        "only result crosses marker; the native owner stays first: {report:#}"
+    );
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+    assert_eq!(
+        report["relocation_dependencies"]["native_operation_inputs"],
+        serde_json::json!([{ "defining_chunk": "static/app", "input_index": 0 }]),
+        "the reordered result needs the established prefix conditions, including memoized child use: {report:#}"
+    );
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 1,
+            "{report:#}"
+        );
+    }
+}
+
+#[test]
+fn local_call_receipts_retain_consumed_host_prefix_prerequisites_when_reordered() {
+    // A static import links before evaluation even at this later source
+    // position; keeping its ordinal later isolates result crossing marker.
+    const SOURCE: &str = "const native = new Map();\nconst gate = Promise.resolve();\nconst seed = 41;\nfunction readSeed() { return seed; }\nconst marker = 1;\nvar result = (readSeed(), readSeed());\nimport { reflect } from './reflect.js';\nconsole.log(result, marker, Boolean(gate), native.size);\n";
+    const REFLECT_SOURCE: &str = "export function reflect(receiver, key) { Object.defineProperty(Object.getPrototypeOf(receiver), key, { value: 'changed', configurable: true }); }\n";
+    let map_input = native_constructor_input(
+        SOURCE,
+        "const native = new Map();",
+        "native",
+        NativeOperationKind::MapEmpty,
+    );
+    let promise_input = NativeOperationInputContract {
+        selector: declared_source_unit("const gate = Promise.resolve();", "gate"),
+        operation: NativeOperationKind::PromiseResolve,
+        audited_source_sha256: Sha256::digest(SOURCE.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
+        note: Some("Neutral fixture audits this exact empty Promise.resolve call.".to_string()),
+    };
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            SOURCE,
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("native"),
+                    Member::new("gate"),
+                    Member::new("seed"),
+                    Member::new("readSeed"),
+                    Member::new("result"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_extra_chunks(&[("static/reflect", REFLECT_SOURCE)])
+        .with_extra_files(&[("static/reflect.js", REFLECT_SOURCE)])
+        .with_native_operation_inputs("static/app", vec![map_input, promise_input])
+        .with_host_behavior(HostBehavior {
+            reentry_free_operations: [ReentryFreeOperation::PromiseResolve].into_iter().collect(),
+            ..HostBehavior::default()
+        }),
+    );
+    assert_preserved_entry_output_with_bun(&fixture, "41 1 true 0\n");
+    let graph = fixture.dependency_graph();
+    let gate = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "gate")
+        })
+        .expect("selected host initializer");
+    assert!(!gate.purity.is_pure(), "host timing does not grant purity");
+    let execution = serde_json::to_value(
+        gate.synchronous_execution
+            .as_ref()
+            .expect("host execution report"),
+    )
+    .unwrap();
+    let native_uses = execution["native_operation_input_uses"]
+        .as_array()
+        .expect("actual selected native input use");
+    assert_eq!(native_uses.len(), 1, "{execution:#}");
+    assert_eq!(
+        native_uses[0]["evidence"]["operation"], "promise_resolve",
+        "{execution:#}"
+    );
+    assert_eq!(
+        native_uses[0]["evidence"]["selected_binding"], "gate",
+        "{execution:#}"
+    );
+    assert_eq!(
+        native_uses[0]["evidence"]["reference"]["input_index"], 1,
+        "{execution:#}"
+    );
+    assert!(
+        execution["native_integrity_checks"]
+            .as_array()
+            .is_some_and(|checks| checks.iter().any(|check| {
+                check["guard"] == "host_promise_resolve"
+                    && check["affected_roots"]
+                        .as_array()
+                        .is_some_and(|roots| roots.iter().any(|root| root == "global_object"))
+            })),
+        "the reflective source must make same-site native identity necessary: {execution:#}"
+    );
+    let host_uses = execution["author_host_contract_uses"]
+        .as_array()
+        .expect("actual host contract use");
+    assert_eq!(host_uses.len(), 1, "{execution:#}");
+    assert_eq!(
+        host_uses[0]["operation"], "promise_resolve",
+        "{execution:#}"
+    );
+    let result = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "result")
+        })
+        .expect("local-call result");
+    assert!(
+        result
+            .synchronous_execution
+            .as_ref()
+            .expect("result execution")
+            .complete
+    );
+    let report = fixture.effect_translation_validation();
+    assert_eq!(
+        report["swapped_pairs"], 1,
+        "only result crosses marker; both native/host owners stay earlier: {report:#}"
+    );
+    assert_eq!(
+        report["decision"]["status"], "accepted",
+        "the result must already have positive receipts: {report:#}"
+    );
+    let native_prerequisites = report["relocation_dependencies"]["native_operation_inputs"]
+        .as_array()
+        .expect("known Map prerequisite proves nonempty result relocation evidence");
+    assert!(
+        native_prerequisites
+            .iter()
+            .any(|input| input["defining_chunk"] == "static/app" && input["input_index"] == 0),
+        "{report:#}"
+    );
+    assert_eq!(
+        report["relocation_dependencies"],
+        serde_json::json!({
+            "native_operation_inputs": [
+                { "defining_chunk": "static/app", "input_index": 0 },
+                { "defining_chunk": "static/app", "input_index": 1 },
+            ],
+            "host_behavior": [{ "reentry_free_operation": "promise_resolve" }],
+        }),
+        "the result's positive/memoized call receipts must retain the actually consumed host and same-site native prerequisites: {report:#}"
+    );
+}
+
+#[test]
+fn later_rebinding_does_not_erase_an_earlier_local_call_receipt() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const seed = 41;\nfunction readSeed() { return seed; }\nvar result = (readSeed(), readSeed());\nreadSeed = () => 0;\nconsole.log(result, readSeed());\n",
+        vec![logical_module_with_anon(
+            "all",
+            &[
+                Member::new("seed"),
+                Member::new("readSeed"),
+                Member::new("result"),
+            ],
+            &["readSeed = () => 0;"],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "41 0\n");
+    let report = fixture.effect_translation_validation();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 2,
+            "only later rebinding and output remain uncovered: {report:#}"
+        );
+    }
+}
+
+#[test]
+fn local_call_effect_receipts_refuse_unmodeled_operations_and_prologues() {
+    for (seed, helper, invocation) in [
+        (
+            "41",
+            "function readSeed(unused) { return seed; }",
+            "readSeed()",
+        ),
+        (
+            "41",
+            "function readSeed(unused = seed) { return seed; }",
+            "readSeed()",
+        ),
+        (
+            "41",
+            "function readSeed(...unused) { return seed; }",
+            "readSeed()",
+        ),
+        (
+            "41",
+            "function readSeed() { void arguments; return seed; }",
+            "readSeed()",
+        ),
+        (
+            "41",
+            "function readSeed() { return seed; }",
+            "readSeed(seed)",
+        ),
+        (
+            "41",
+            "function readSeed() { const local = seed; return local; }",
+            "readSeed()",
+        ),
+        (
+            "({value: 41})",
+            "function readSeed() { return seed.value; }",
+            "readSeed()",
+        ),
+        (
+            "41",
+            "function readSeed() { return Math.abs(-41); }",
+            "readSeed()",
+        ),
+        (
+            "41",
+            "function readSeed() { return globalThis.Number(41); }",
+            "readSeed()",
+        ),
+    ] {
+        let source = format!(
+            "const seed = {seed};\n{helper}\nvar result = ({invocation}, {invocation});\nconsole.log(result);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("seed"),
+                    Member::new("readSeed"),
+                    Member::new("result"),
+                ],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, "41\n");
+        let report = fixture.effect_translation_validation();
+        for domain in ["global_properties", "general_heap", "host_effects"] {
+            assert_eq!(
+                report["coverage"]["unknown_coverage"][domain], 2,
+                "the initializer and output call must remain unknown for {helper} / {invocation}: {report:#}"
+            );
+        }
+    }
+}
+
+#[test]
+fn imported_cell_reads_do_not_receive_local_module_cell_receipts() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "import { sep as seed } from 'node:path';\nfunction readSeed() { return seed; }\nvar result = (readSeed(), readSeed());\nconsole.log(result);\n",
+        vec![logical_module(
+            "all",
+            &[Member::new("readSeed"), Member::new("result")],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "/\n");
+    let report = fixture.effect_translation_validation();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert!(
+            report["coverage"]["unknown_coverage"][domain]
+                .as_u64()
+                .unwrap()
+                >= 2,
+            "{report:#}"
+        );
+    }
+    assert_eq!(
+        report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 1,
+        "{report:#}"
+    );
+}
+
+#[test]
+fn refused_call_receipts_preserve_actual_argument_evaluation() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const seed = 41;\nfunction readSeed() { return seed; }\nfunction actual() { console.log('argument'); return seed; }\nvar result = (readSeed(actual()), readSeed(actual()));\nconsole.log(result);\n",
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("seed"),
+                Member::new("readSeed"),
+                Member::new("actual"),
+                Member::new("result"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "argument\nargument\n41\n");
+    let report = fixture.effect_translation_validation();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 2,
+            "{report:#}"
+        );
+    }
+}
+
+#[test]
+fn abrupt_local_call_receipt_cannot_complete_root_initialization() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const seed = 41;\nfunction readSeed() { throw seed; }\nvar result = (readSeed(), readSeed());\nconsole.log(result);\n",
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("seed"),
+                Member::new("readSeed"),
+                Member::new("result"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_error(&fixture, "41");
+    let report = fixture.effect_translation_validation();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 2,
+            "{report:#}"
+        );
+    }
+}
+
+#[test]
 fn composed_initializer_coverage_retains_discarded_reads_and_child_results() {
     for prefix in ["", "export "] {
         let source = format!(

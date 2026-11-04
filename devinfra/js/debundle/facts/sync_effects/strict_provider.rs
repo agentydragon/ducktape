@@ -3,7 +3,9 @@
 use super::super::allocation_transfer::{
     self, AllocationContext, AllocationJudgment, AllocationValue, LiteralHeap, LiteralLayout,
 };
-use super::super::local_transfer::{self, EvaluatedCallee, LocalContext, LocalFrame};
+use super::super::local_transfer::{
+    self, EvaluatedCallee, LocalContext, LocalFrame, LocalValueResult,
+};
 use super::super::own_data_transfer::OwnDataContext;
 use super::super::value_model::{
     AbstractValue, CallSite, Context, DenseArray, OwnPropertyShape, ProviderInput, ProviderScopeId,
@@ -182,12 +184,15 @@ impl LocalContext for ProviderContext<'_> {
     ) -> Option<AllocationValue> {
         None
     }
-    fn read_binding(&mut self, binding: &Id, frame: &mut LocalFrame) -> Option<AllocationValue> {
+    fn read_binding(&mut self, binding: &Id, frame: &mut LocalFrame) -> Option<LocalValueResult> {
         // The frame starts with scoped arguments and checked private var
         // captures. Other entries come from the covered local operations.
-        Some(AllocationValue {
-            values: frame.environment.get(binding)?.clone(),
-            judgment: AllocationJudgment::CoveredAllocationOnly(Default::default()),
+        Some(LocalValueResult {
+            allocation: AllocationValue {
+                values: frame.environment.get(binding)?.clone(),
+                judgment: AllocationJudgment::CoveredAllocationOnly(Default::default()),
+            },
+            effects: Default::default(),
         })
     }
     fn call(
@@ -196,7 +201,7 @@ impl LocalContext for ProviderContext<'_> {
         _callee: &EvaluatedCallee,
         _arguments: &[Values],
         _span: Span,
-    ) -> Option<AllocationValue> {
+    ) -> Option<LocalValueResult> {
         // An allocation-only query has no invocation certificate. Forwarding
         // a symbolic callable does not prove its execution or result shape.
         None
@@ -466,7 +471,7 @@ pub(super) fn derive(
         allocation_transfer::transfer(&mut context, expression)?
     } else {
         let mut frame = LocalFrame::new(std::mem::take(&mut context.bindings));
-        let judgment = local_transfer::execute(&mut context, local_body?, &mut frame)?;
+        let judgment = local_transfer::execute(&mut context, local_body?, &mut frame)?.allocation;
         context.final_environment = Some(frame.environment.clone());
         AllocationValue {
             values: frame.returns,
@@ -602,7 +607,7 @@ pub(super) fn derive_class(
         Kind::Object,
         class,
     ))]));
-    let judgment = local_transfer::execute(&mut context, body, &mut frame)?;
+    let judgment = local_transfer::execute(&mut context, body, &mut frame)?.allocation;
     if !frame
         .returns
         .iter()

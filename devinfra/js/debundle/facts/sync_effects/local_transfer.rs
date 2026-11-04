@@ -3,6 +3,7 @@
 use super::allocation_transfer::{
     self, AllocationContext, AllocationJudgment, AllocationValue, LiteralHeap, LiteralLayout,
 };
+use super::effect_coverage::EffectCoverageFragment;
 use super::local_operations::{
     LocalBinding, LocalBody, LocalCallee, LocalExpression, LocalOperation,
 };
@@ -17,6 +18,7 @@ use swc_ecma_ast::Id;
 
 pub(super) struct LocalFrame {
     pub(super) environment: Context,
+    effect_coverage: EffectCoverageFragment,
     /// Entry arguments/captures and external values read while executing.
     /// Retained for a truncated remainder even after local aliases change.
     pub(super) inputs: Values,
@@ -33,6 +35,7 @@ impl LocalFrame {
         Self {
             inputs: environment.values().flatten().cloned().collect(),
             environment,
+            effect_coverage: EffectCoverageFragment::no_effects(),
             borrowed_records: BTreeSet::new(),
             fresh_records: BTreeSet::new(),
             returns: Values::new(),
@@ -62,10 +65,20 @@ impl EvaluatedCallee {
     }
 }
 
+pub(super) struct LocalValueResult {
+    pub(super) allocation: AllocationValue,
+    pub(super) effects: EffectCoverageFragment,
+}
+
+pub(super) struct LocalTransferResult {
+    pub(super) allocation: AllocationJudgment,
+    pub(super) effects: EffectCoverageFragment,
+}
+
 pub(super) trait LocalContext: OwnDataContext {
     fn instantiate_bindings(&mut self, _frame: &mut LocalFrame) {}
     fn local_binding_stored(&mut self, _binding: &Id, _frame: &LocalFrame) {}
-    fn read_binding(&mut self, binding: &Id, frame: &mut LocalFrame) -> Option<AllocationValue>;
+    fn read_binding(&mut self, binding: &Id, frame: &mut LocalFrame) -> Option<LocalValueResult>;
     fn closure(&mut self, frame: &mut LocalFrame, callable: u32) -> Option<AllocationValue>;
     fn assign_capture(
         &mut self,
@@ -82,7 +95,7 @@ pub(super) trait LocalContext: OwnDataContext {
         callee: &EvaluatedCallee,
         arguments: &[Values],
         span: Span,
-    ) -> Option<AllocationValue>;
+    ) -> Option<LocalValueResult>;
     fn literal_layout(&self, allocation: u32) -> LiteralLayout;
     fn heap(&mut self) -> LiteralHeap<'_>;
     fn record_property_read(&mut self, cell: crate::facts::EffectCell);
@@ -130,7 +143,14 @@ impl<C: LocalContext> AllocationContext for LocalValueContext<'_, C> {
         true
     }
     fn binding(&mut self, binding: &Id) -> Option<AllocationValue> {
-        self.context.read_binding(binding, self.frame)
+        let result = self.context.read_binding(binding, self.frame)?;
+        self.frame.effect_coverage.compose(&result.effects);
+        Some(result.allocation)
+    }
+    fn unmodeled_effect_operation(&mut self) {
+        self.frame
+            .effect_coverage
+            .compose(&EffectCoverageFragment::default());
     }
     fn child(&mut self, expression: &ValueExpr) -> Option<AllocationValue> {
         value(self.context, expression, self.frame)
@@ -255,11 +275,19 @@ fn expression(
             judgment.compose(&result.judgment);
             Some(completing(result.values, frame))
         }
-        LocalExpression::This => frame.this_values.clone(),
+        LocalExpression::This => {
+            frame
+                .effect_coverage
+                .compose(&EffectCoverageFragment::default());
+            frame.this_values.clone()
+        }
         LocalExpression::Record {
             allocation,
             properties,
         } => {
+            frame
+                .effect_coverage
+                .compose(&EffectCoverageFragment::default());
             if !matches!(context.literal_layout(*allocation), LiteralLayout::Record) {
                 return None;
             }
@@ -305,6 +333,9 @@ fn expression(
             Some(completing(result.values, frame))
         }
         LocalExpression::Closure(callable) => {
+            frame
+                .effect_coverage
+                .compose(&EffectCoverageFragment::default());
             let result = context.closure(frame, *callable)?;
             judgment.compose(&result.judgment);
             Some(completing(result.values, frame))
@@ -314,6 +345,9 @@ fn expression(
             value: node,
             span,
         } => {
+            frame
+                .effect_coverage
+                .compose(&EffectCoverageFragment::default());
             let values = expression(context, node, body, frame, judgment)?;
             if values.is_empty() {
                 return Some(values);
@@ -358,6 +392,9 @@ fn expression(
                     property,
                     span,
                 } => {
+                    frame
+                        .effect_coverage
+                        .compose(&EffectCoverageFragment::default());
                     let result = value(context, &ValueExpr::Binding(receiver.clone()), frame)?;
                     judgment.compose(&result.judgment);
                     let receivers = completing(result.values, frame);
@@ -387,14 +424,18 @@ fn expression(
                 inputs.push(values);
             }
             let result = context.call(frame, &callee, &inputs, *span)?;
-            judgment.compose(&result.judgment);
-            Some(completing(result.values, frame))
+            frame.effect_coverage.compose(&result.effects);
+            judgment.compose(&result.allocation.judgment);
+            Some(completing(result.allocation.values, frame))
         }
         LocalExpression::ReadField {
             receiver,
             property,
             span,
         } => {
+            frame
+                .effect_coverage
+                .compose(&EffectCoverageFragment::default());
             let receivers = value(context, &ValueExpr::Binding(receiver.clone()), frame)?;
             judgment.compose(&receivers.judgment);
             let receivers = completing(receivers.values, frame);
@@ -411,6 +452,9 @@ fn expression(
             value: node,
             span,
         } => {
+            frame
+                .effect_coverage
+                .compose(&EffectCoverageFragment::default());
             // Capture the LHS reference before the RHS can replace its binding.
             let receivers = value(context, &ValueExpr::Binding(receiver.clone()), frame)?;
             judgment.compose(&receivers.judgment);
@@ -437,6 +481,9 @@ fn expression(
             value: node,
             ..
         } => {
+            frame
+                .effect_coverage
+                .compose(&EffectCoverageFragment::default());
             let values = expression(context, node, body, frame, judgment)?;
             if values.is_empty() {
                 return Some(values);
@@ -471,7 +518,7 @@ pub(super) fn execute(
     context: &mut impl LocalContext,
     body: &LocalBody,
     frame: &mut LocalFrame,
-) -> Option<AllocationJudgment> {
+) -> Option<LocalTransferResult> {
     let mut judgment = AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default());
     for (binding, kind) in &body.bindings {
         match kind {
@@ -490,10 +537,20 @@ pub(super) fn execute(
             }
         }
     }
+    if !body.bindings.is_empty() {
+        // Activation-local cell creation and parameter prologues have no
+        // operation receipts in this first module-cell-only family.
+        frame
+            .effect_coverage
+            .compose(&EffectCoverageFragment::default());
+    }
     context.instantiate_bindings(frame);
     for operation in body.operations.iter() {
         match operation {
             LocalOperation::Initialize(binding, node) => {
+                frame
+                    .effect_coverage
+                    .compose(&EffectCoverageFragment::default());
                 let values = match node {
                     Some(node) => expression(context, node, body, frame, &mut judgment)?,
                     None if matches!(
@@ -525,6 +582,10 @@ pub(super) fn execute(
                 return Some(finish(frame, judgment));
             }
             LocalOperation::Throw(node) => {
+                frame
+                    .effect_coverage
+                    .compose(&EffectCoverageFragment::default());
+                frame.effect_coverage.abrupt();
                 let values = expression(context, node, body, frame, &mut judgment)?;
                 context.publish_throw(&values);
                 frame
@@ -538,12 +599,21 @@ pub(super) fn execute(
     Some(finish(frame, judgment))
 }
 
-fn finish(frame: &LocalFrame, mut judgment: AllocationJudgment) -> AllocationJudgment {
+fn finish(frame: &LocalFrame, mut judgment: AllocationJudgment) -> LocalTransferResult {
+    let mut effects = frame.effect_coverage.clone();
     if frame
         .returns
         .contains(&AbstractValue::Value(Value::Unavailable))
     {
         judgment = AllocationJudgment::Opaque;
+        if frame.returns.len() == 1 {
+            effects.abrupt();
+        } else {
+            effects.uncertain_completion();
+        }
     }
-    judgment
+    LocalTransferResult {
+        allocation: judgment,
+        effects,
+    }
 }

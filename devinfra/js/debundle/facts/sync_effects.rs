@@ -1,6 +1,7 @@
 //! Synchronous call-effect analysis.
 
 mod allocation_transfer;
+mod effect_coverage;
 pub(crate) mod execution_index;
 mod local_operations;
 mod local_transfer;

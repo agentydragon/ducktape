@@ -57,6 +57,9 @@ pub(super) enum LiteralLayout {
 pub(super) trait AllocationContext {
     /// Source coverage is necessary because ValueExpr may erase syntax.
     fn source_covered(&self) -> bool;
+    /// No effect receipt exists for this executed value operation yet. The
+    /// allocation channel remains independent, including successful transfers.
+    fn unmodeled_effect_operation(&mut self) {}
     /// Resolve an actual closed input, or return opaque access evidence.
     fn binding(&mut self, binding: &Id) -> Option<AllocationValue>;
     fn child(&mut self, expression: &ValueExpr) -> Option<AllocationValue>;
@@ -211,6 +214,7 @@ pub(super) fn transfer(
             return Some(value);
         }
         ValueExpr::Alloc(Kind::RegExp, allocation) => {
+            context.unmodeled_effect_operation();
             // A validated literal evaluates through RegExpCreate without
             // looking up the mutable global binding. Track only its fresh
             // allocation-site identity; prototype and internal-slot behavior
@@ -221,11 +225,19 @@ pub(super) fn transfer(
             ))])
         }
         ValueExpr::New(callee, arguments, site) if context.source_covered() => {
+            context.unmodeled_effect_operation();
             return context.keyed_collection_new(callee, arguments, *site);
         }
-        ValueExpr::Undefined => Values::from([AbstractValue::UNDEFINED]),
-        ValueExpr::NonCallable(kinds) => Values::from([AbstractValue::Value(Value::Prim(*kinds))]),
+        ValueExpr::Undefined => {
+            context.unmodeled_effect_operation();
+            Values::from([AbstractValue::UNDEFINED])
+        }
+        ValueExpr::NonCallable(kinds) => {
+            context.unmodeled_effect_operation();
+            Values::from([AbstractValue::Value(Value::Prim(*kinds))])
+        }
         ValueExpr::StrictEquality(left, right) => {
+            context.unmodeled_effect_operation();
             return primitive_operation(
                 context,
                 [left.as_ref(), right.as_ref()],
@@ -234,6 +246,7 @@ pub(super) fn transfer(
             );
         }
         ValueExpr::Void(child) => {
+            context.unmodeled_effect_operation();
             return primitive_operation(
                 context,
                 [child.as_ref()],
@@ -242,6 +255,7 @@ pub(super) fn transfer(
             );
         }
         ValueExpr::LogicalNot(child) => {
+            context.unmodeled_effect_operation();
             return primitive_operation(
                 context,
                 [child.as_ref()],
@@ -250,6 +264,7 @@ pub(super) fn transfer(
             );
         }
         ValueExpr::Sequence(expressions) => {
+            context.unmodeled_effect_operation();
             return sequence(
                 context,
                 expressions.iter(),
@@ -258,6 +273,7 @@ pub(super) fn transfer(
             );
         }
         ValueExpr::Conditional { test, alternatives } => {
+            context.unmodeled_effect_operation();
             // Decide support before evaluating any child: application children
             // have real effects and cannot be rolled back before a fallback.
             if !alternatives.iter().all(|arm| {
@@ -295,6 +311,7 @@ pub(super) fn transfer(
             values
         }
         ValueExpr::ObjectLiteral(allocation, properties) => {
+            context.unmodeled_effect_operation();
             let layout = context.literal_layout(*allocation);
             let mut may_throw = false;
             let mut can_complete = true;
@@ -356,7 +373,10 @@ pub(super) fn transfer(
             }
             values
         }
-        _ => return None,
+        _ => {
+            context.unmodeled_effect_operation();
+            return None;
+        }
     };
     Some(AllocationValue { values, judgment })
 }
