@@ -345,6 +345,101 @@ fn factory_identity_refusals_report_the_first_guard() {
 }
 
 #[test]
+fn escaped_class_members_report_the_first_global_member_write() {
+    use analysis::reports::schema::{
+        ClassMembersPublicationWriter as Writer, ConstructionRejection,
+        RecordFactoryRejectionReason,
+    };
+
+    let factory = FACTORY.replace("() => later", "() => 42");
+    let source = format!(
+        "{HOLDER}{factory}const first = create({{}});\nglobalThis.saved = first;\nconst command = create({{}});\nconsole.log(typeof command.run);\n"
+    );
+    let fixture = run_fixture(FixtureOpts::new(
+        &source,
+        vec![logical_module_with_anon(
+            "all",
+            &[
+                Member::new("Holder"),
+                Member::new("create").with_retained_record_factory(),
+                Member::new("first"),
+                Member::new("command"),
+            ],
+            &[
+                "globalThis.saved = first;",
+                "console.log(typeof command.run);",
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "function\n");
+
+    let graph = fixture.dependency_graph();
+    let command = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == "command")
+        })
+        .expect("command source unit");
+    let execution = command
+        .synchronous_execution
+        .as_ref()
+        .expect("command synchronous execution report");
+    let [rejection] = execution.local_record_factory_rejections.as_slice() else {
+        panic!("expected one local constructor-factory rejection: {execution:#?}");
+    };
+    assert_eq!(
+        rejection.reason,
+        RecordFactoryRejectionReason::ConstructorProof
+    );
+    assert_eq!(
+        rejection.construction,
+        Some(ConstructionRejection::ClassMembersEscaped)
+    );
+    let publication = rejection
+        .first_class_members_publication
+        .as_ref()
+        .expect("first actual class-members publication");
+    assert_eq!(publication.writer, Writer::GlobalOrIntrinsicMemberWrite);
+    let publication_owner = publication.top_level_owner.expect("publication owner");
+    let start = publication
+        .span_start
+        .expect("publication span start")
+        .checked_sub(1)
+        .expect("SWC source starts at BytePos(1)") as usize;
+    let end = publication
+        .span_end
+        .expect("publication span end")
+        .checked_sub(1)
+        .expect("SWC source starts at BytePos(1)") as usize;
+    assert!(start < end);
+    assert_eq!(&source[start..end], "globalThis.saved = first");
+    let publication_node = graph
+        .nodes
+        .iter()
+        .find(|node| node.statement_ordinal == publication_owner)
+        .expect("publication owner source unit");
+    let publication_location = publication
+        .source_location
+        .as_ref()
+        .expect("publication source location");
+    assert_eq!(
+        publication_node.source_location.as_ref(),
+        Some(publication_location)
+    );
+    assert_eq!(
+        publication_location.start_line,
+        source
+            .lines()
+            .position(|line| line == "globalThis.saved = first;")
+            .expect("publication line")
+            + 1
+    );
+}
+
+#[test]
 fn incomplete_terminal_forwarding_does_not_publish_the_called_factory() {
     let before_command = "const make = label => create({ label: () => label, values: [Flags.FIRST], execute: async () => {} });\nconst first = make(\"a\");\nconst second = make(\"b\");\n";
     let fixture = forwarding_fixture(FACTORY, before_command, &[]);
