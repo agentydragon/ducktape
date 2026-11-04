@@ -508,6 +508,8 @@ impl MemberKey {
 #[derive(Debug, Clone)]
 pub(super) enum ValueExpr {
     Binding(Id),
+    /// A source allocation site. RegExp literals use this form but do not
+    /// imply ordinary own properties, prototype methods, or protocol behavior.
     Alloc(Kind, u32),
     ObjectLiteral(u32, Arc<[(Option<String>, Self)]>),
     Undefined,
@@ -687,7 +689,12 @@ impl ValueExpr {
                 | Expr::Cond(_)
                 | Expr::Seq(_)
                 | Expr::Lit(
-                    Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_)
+                    Lit::Str(_)
+                        | Lit::Num(_)
+                        | Lit::Bool(_)
+                        | Lit::Null(_)
+                        | Lit::BigInt(_)
+                        | Lit::Regex(_)
                 )
         ) && !matches!(expr.unwrap_parens(), Expr::Bin(bin)
             if matches!(bin.op, BinaryOp::EqEqEq | BinaryOp::NotEqEq))
@@ -945,7 +952,7 @@ impl ValueExpr {
                 }
             }
             Expr::Assign(assign) => Self::lower(&assign.right, covered),
-            Expr::Lit(Lit::Regex(regex)) => Self::ObjectLiteral(regex.span.lo.0, Arc::default()),
+            Expr::Lit(Lit::Regex(regex)) => Self::Alloc(Kind::RegExp, regex.span.lo.0),
             Expr::Lit(literal) => Self::NonCallable(match literal {
                 Lit::Str(_) => PrimKinds::STRING,
                 Lit::Num(_) => PrimKinds::NUMBER,

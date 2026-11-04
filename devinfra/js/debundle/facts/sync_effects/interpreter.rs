@@ -5194,25 +5194,31 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         mut visit: impl FnMut(&AbstractValue),
     ) {
         match value {
-            AbstractValue::Value(
-                Value::Alloc(Kind::Object, object) | Value::Alloc(Kind::Set, object),
-            ) => {
-                if include_object_properties
-                    && let Some(properties) = self.state.prefix_object_properties.get(object)
-                {
-                    for value in properties.values().flatten() {
-                        visit(value);
-                    }
-                }
-                if let Some(accessors) = self.state.applied_accessors.get(object) {
-                    for accessor in accessors.values() {
-                        for getter in &accessor.getter {
-                            visit(getter);
-                        }
-                        for setter in &accessor.setter {
-                            visit(setter);
+            AbstractValue::Value(Value::Alloc(kind, object)) => {
+                if kind.tracks_prefix_references() {
+                    // RegExp identity is retained so references stored on a
+                    // literal remain reachable. This is containment only; it
+                    // does not make regex properties or prototype behavior
+                    // an ordinary-record fact.
+                    if include_object_properties
+                        && let Some(properties) = self.state.prefix_object_properties.get(object)
+                    {
+                        for value in properties.values().flatten() {
+                            visit(value);
                         }
                     }
+                    if let Some(accessors) = self.state.applied_accessors.get(object) {
+                        for accessor in accessors.values() {
+                            for getter in &accessor.getter {
+                                visit(getter);
+                            }
+                            for setter in &accessor.setter {
+                                visit(setter);
+                            }
+                        }
+                    }
+                } else if !matches!(kind, Kind::Function | Kind::Class) {
+                    unreachable!("unsupported retained-reference allocation kind");
                 }
             }
             AbstractValue::Closure(_, captured) => {
@@ -5245,12 +5251,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             // Keep the carrier inventory exhaustive: when AbstractValue gains
             // another retained-reference shape, this visitor must classify it.
-            AbstractValue::Value(
-                Value::Alloc(Kind::Function | Kind::Class, _)
-                | Value::Prim(_)
-                | Value::Unavailable
-                | Value::Top,
-            )
+            AbstractValue::Value(Value::Prim(_) | Value::Unavailable | Value::Top)
             | AbstractValue::ClassMembers(_)
             | AbstractValue::CallbackFactory
             | AbstractValue::InlineCallbackFactory
@@ -5259,16 +5260,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             | AbstractValue::ArrayIntrinsic
             | AbstractValue::GlobalObject
             | AbstractValue::SymbolicInput(_) => {}
-            AbstractValue::Value(Value::Alloc(
-                Kind::Array
-                | Kind::Map
-                | Kind::WeakMap
-                | Kind::WeakSet
-                | Kind::RegExp
-                | Kind::Registry
-                | Kind::Proxy,
-                _,
-            )) => unreachable!("the interpreter identifies allocations as Object or Set"),
         }
     }
 
@@ -5852,12 +5843,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
                         }
                     }
-                    AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
+                    AbstractValue::Value(Value::Alloc(kind, object))
+                        if kind.tracks_prefix_own_properties() =>
+                    {
                         let may_be_published = self.state.tainted_objects.contains(&object)
                             || self.state.unsettled_objects.contains(&object);
                         if !certified_data_receivers.contains(&object) {
                             self.state.tainted_objects.insert(object);
                         }
+                        // RegExp slots share this heap only for callback
+                        // containment. Ordinary-record shape and member-read
+                        // proofs remain restricted to `Kind::Object`.
                         self.literal_heap()
                             .write_property(object, property.clone(), &values);
                         if may_be_published {
@@ -6010,7 +6006,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .iter()
                 .chain(root_values)
                 .any(|receiver| match receiver {
-                    AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
+                    AbstractValue::Value(Value::Alloc(kind, object))
+                        if kind.tracks_prefix_own_properties() =>
+                    {
                         self.state.tainted_objects.contains(object)
                             || self.state.unsettled_objects.contains(object)
                     }
@@ -6025,7 +6023,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.publish_values(&values);
         }
         for receiver in receivers {
-            if let AbstractValue::Value(Value::Alloc(Kind::Object, object)) = receiver {
+            if let AbstractValue::Value(Value::Alloc(kind, object)) = receiver
+                && kind.tracks_prefix_own_properties()
+            {
                 let stored = self
                     .state
                     .prefix_object_properties
@@ -6189,7 +6189,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 | AbstractValue::AuditedRetainedResult(_, captured) => {
                     self.revoke_audited_result(captured);
                 }
-                AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
+                AbstractValue::Value(Value::Alloc(kind, object))
+                    if kind.tracks_prefix_own_properties() =>
+                {
                     changed |= self.state.unsettled_objects.insert(*object);
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
@@ -6235,7 +6237,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::ArrayIntrinsic => {
                     self.state.array_intrinsic_mutated = true;
                 }
-                AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
+                AbstractValue::Value(Value::Alloc(kind, object))
+                    if kind.tracks_prefix_own_properties() =>
+                {
                     if !self.state.tainted_objects.insert(*object) {
                         expand_stored_references = false;
                     }
@@ -6588,8 +6592,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::ForeignDeferredRecord => {
                     return global(GlobalReachCause::ForeignRecord);
                 }
-                AbstractValue::Value(Value::Alloc(Kind::Object, object))
-                    if !self.state.object_properties_are_settled(object) =>
+                AbstractValue::Value(Value::Alloc(kind, object))
+                    if kind.tracks_prefix_own_properties()
+                        && !self.state.object_properties_are_settled(object) =>
                 {
                     return global(GlobalReachCause::TaintedInput);
                 }
@@ -6598,7 +6603,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 {
                     return global(GlobalReachCause::TaintedInput);
                 }
-                AbstractValue::Value(Value::Alloc(Kind::Object | Kind::Set, _)) => {}
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
                 | AbstractValue::Closure(key, _) => {
                     if self.state.tainted_functions.contains(key) {
@@ -6625,16 +6629,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     };
                     roots.push(class_owner);
                 }
-                AbstractValue::Value(Value::Alloc(
-                    Kind::Array
-                    | Kind::Map
-                    | Kind::WeakMap
-                    | Kind::WeakSet
-                    | Kind::RegExp
-                    | Kind::Registry
-                    | Kind::Proxy,
-                    _,
-                )) => unreachable!("the interpreter identifies allocations as Object or Set"),
+                AbstractValue::Value(Value::Alloc(kind, _)) => {
+                    if !kind.tracks_prefix_references() {
+                        unreachable!("unsupported retained-reference allocation kind");
+                    }
+                }
             }
             self.visit_stored_references(&value, true, |reference| {
                 pending.push(reference.clone());
