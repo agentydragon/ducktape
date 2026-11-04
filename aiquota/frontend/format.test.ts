@@ -77,7 +77,7 @@ describe("formatResetCreditSummary", () => {
   });
 
   it("keeps a zero reset count concise when the lookup succeeds", () => {
-    expect(formatResetCreditSummary(0, [], false, now)).toBe("0");
+    expect(formatResetCreditSummary(0, [firstExpiry], false, now)).toBe("0");
   });
 });
 

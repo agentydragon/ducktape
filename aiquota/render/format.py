@@ -90,7 +90,9 @@ def format_reset_credit_summary(
     *,
     details: bool = False,
 ) -> str:
-    # The detail endpoint may be capped; the count is authoritative.
+    # The detail endpoint may be capped or lag the authoritative count.
+    if count == 0:
+        return "0"
     parts = [str(count)]
     known = sorted(expiries)
     if known:

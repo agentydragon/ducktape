@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AllQuotasView, ProviderView, WindowView } from "./schema";
+import type { AllQuotasView, WindowView } from "./schema";
 import { QuotaBoard } from "./board";
 
 let root: Root;

@@ -167,6 +167,7 @@ def test_reset_credit_summary_is_compact_by_default_and_lists_all_expiries_in_de
         "3 · known expiries 2026-01-20 09:00 UTC, 2026-02-02 12:34 UTC · 1 expiry unknown"
     )
     assert format_reset_credit_summary(2, [], True, _NOW, UTC) == "2 · expiry lookup failed"
+    assert format_reset_credit_summary(0, expiries, False, _NOW, UTC) == "0"
 
 
 @pytest.mark.parametrize("fixture_name", FIXTURE_NAMES)

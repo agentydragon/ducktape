@@ -75,6 +75,7 @@ export function formatResetCreditSummary(
   now: Date,
   details = false
 ): string {
+  if (count === 0) return "0";
   const parts = [String(count)];
   const known = expiries
     .map((expiry) => new Date(expiry))
