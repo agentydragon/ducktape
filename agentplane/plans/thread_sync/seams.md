@@ -23,14 +23,13 @@ Electric sits behind one module on each side:
 
 ## Backend
 
-- **Shared, below the seam:** the fold tables; `historydata.Store`;
-  `threads.Store`; the app's `wakeups.Hub` subscription to `threads.UpdatesChannel` for thread
-  metadata updates. The `/threads` routes for thread metadata and commands
-  (the five typed command POST routes under `/threads/{thread_id}`) stay shared: commands are writes,
-  not sync.
-- **One new shared read**, which every non-Electric option needs: rows by `entity_index` range, and
-  the delta — rows in a range with `revision_cursor > since`. It is a read of the fold rather than a
-  protocol, so it belongs beside `historydata.Store`.
+- **Shared, below the seam:** History owns the fold tables and its generated read APIs. The app
+  owns Thread metadata and its generated `AppService` facade; command writes go through the
+  generated Dispatcher facade. These contracts are shared by sync implementations: commands are
+  writes, not sync.
+- **Shared reads:** History's `ReadThreadEntities` already reads a bounded range or explicit keys.
+  The non-Electric options also need a delta — rows in a range with `revision_cursor > since`.
+  This is a read of the fold rather than a sync protocol, so History should own that contract.
 - **Per implementation:** a package `agentplane/app/go/threadsync/<name>/` owning handlers mounted at
   `/threads/{thread_id}/sync/<name>/…` through the same `HTTPServer.RegisterRawRoute` authorization
   (**C2**), and its own settings. Electric moves there.
@@ -61,7 +60,7 @@ use. Candidates, from the options as written:
 - **Bodies by immutable reference.** The window poll, the moving window and SSE push all fetch
   content the same way: a batch of references plus how many chunks the client holds, answered with
   the missing chunks. One endpoint and one client-side body cache would serve all three.
-- **The range and delta read** above, which is already in the shared layer.
+- **The range and delta read** above: range reads exist in History; a delta read remains to be designed.
 - **A client row store** keyed by `(entity_kind, entity_id)` and ordered by `entity_index`, which
   any non-Electric implementation needs to merge windows and revisions.
 
@@ -99,9 +98,9 @@ a dynamic `import()` already keeps it off the page.
 2. **Electric costs something when nobody picks it.** Its replication slot retains WAL and its shape
    storage holds state regardless of traffic, and the app cannot run without it today: turning it
    off needs the deploy-time choice above.
-3. **The interface must not be Electric-shaped.** Extracted from today's `electric_sync.tsx` props,
-   it would hand every other implementation shape and subset concepts it has no use for. It is
-   written from the list above, and Electric is adapted to it.
+3. **The interface must not be Electric-shaped.** The existing `ThreadSync` interface abstracts the
+   frontend from Electric; review it against the second implementation before assuming it covers
+   every needed behavior.
 4. **The schema is shared.** An implementation that needs a column or index adds it to the fold
    for everyone. Additive changes are fine, and under **C3** there is no migration to stage, but no
    implementation may change what another reads.

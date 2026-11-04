@@ -6,8 +6,8 @@ decisions, unresolved questions, and implementation readiness.
 Operator-requested future design, 2026-10-28 PDT; discussion directions updated 2026-10-30 PDT.
 The broader object model is a long-term north star; concrete object types, storage and protocols
 remain open. Current component names, source ownership and runnable entrypoints live in the
-[environment layout](../env/README.md#layout-and-entrypoints); Runtime, Harness Host and Execution
-contracts live in their component specifications.
+[environment layout](../env/README.md#layout-and-entrypoints); Runtime and Execution contracts live
+in their component specifications.
 Session/Environment dispatch regrouping remains for later;
 its service roles may share a binary or have separate binaries.
 Prefer the LLM agent loop outside the execution environment when capabilities are otherwise equal:
@@ -71,16 +71,16 @@ evidence destination remain open; preserve the ability to record harness traces.
 
 ## Role boundaries and routing
 
-Operator direction, 2026-11-01 UTC: use the following responsibilities and names. Environment
-Runtime, Execution and native Harness Host are components of one environment management process;
-Execution also remains independently runnable. The central sampler is a separate control-plane
-implementation.
+Environment Runtime owns native Session and harness management directly; the separate embedded
+Harness Host object and its lifecycle protocol were removed in
+[#13931](https://github.com/agentydragon/ducktape/pull/13931). Execution runs within Runtime and
+also remains independently runnable. The central sampler is a separate control-plane implementation.
 
 | Component                      | Runnable target                  | Responsibility                                                                                                             |
 | ------------------------------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Environment Runtime            | `agentplane-environment-runtime` | Environment identity, bootstrap, component discovery, health and coordinated drain.                                        |
 | Execution service              | `agentplane-execution-service`   | Typed process/filesystem API, execution sessions, handles, output and cancellation; initially backed by Codex exec-server. |
-| Environment Harness Host       | Runtime component                | Native Claude/Codex Session admission, protocol adaptation, continuation state, journals and History export.               |
+| Native harness management      | Runtime                          | Native Claude/Codex Session admission, protocol adaptation, continuation state, journals and History export.               |
 | Central sampler                | `agentplane-central-sampler`     | Independent control-plane LLM agent loop; may call the environment Execution service.                                      |
 | Environment dispatch / gateway | Binary grouping deferred         | Authenticated access to environment endpoints, connection ownership and incarnation fencing.                               |
 | Session dispatcher             | Binary grouping deferred         | Durable Session command admission/delivery and routing to its owning harness, which may be environment-bound.              |
@@ -90,14 +90,14 @@ its responsibility broadens to shared environment provisioning. The native `code
 `codex exec-server` and Claude binaries remain distinctly named subprocesses.
 
 The environment-level successor to Runner is Environment Runtime. Session/harness code belongs to
-Environment Harness Host; the execution adapter and executor lifecycle belong to Execution service.
+Environment Runtime; the execution adapter and executor lifecycle belong to Execution service.
 Support an execution-only environment, a local native harness, and a central sampler with zero
 execution environments. A shared app-server serving N Sessions and a separate Execution service
 process within the same environment remain supported. Direct-executing Claude belongs in an
 explicit workload resource domain; sharing one with Codex execution is a deployment choice.
 
-`env/` groups software specific to operating execution environments. Runtime, Harness Host and
-Execution share the implemented management process; Host and Execution live under `env/runtime/`.
+`env/` groups software specific to operating execution environments. Runtime and Execution share
+the implemented management process and live under `env/runtime/`.
 Shared supervision is under `env/runtime/supervision`, while one-shot bookkeeping remains in
 `env/oneoff`. The [source layout](../env/README.md#layout-and-entrypoints) owns the full map.
 The central sampler lives at `agentplane/central_sampler`, outside `env/`; it may use the Executor
@@ -106,9 +106,17 @@ when their calls are in-process.
 Use “execution environment” in APIs/docs to distinguish it from a deployment such as staging.
 Existing experimental implementations retain their status when relocated.
 
-Session dispatch and Environment dispatch are distinct responsibilities. Their process, binary and
-Deployment grouping remain open for later, as the operator clarified after discussing possible
-separate binaries. Names such as `agentplane-session-dispatcher` and
+Operations on an existing Session should address it without requiring an environment from the
+caller. Resolve an environment only when placement, authorization, wake or execution needs one;
+keep exact-incarnation fences and the native harness's required placement. Environment-facing
+operations address their environment.
+
+Session dispatch and Environment management/routing are distinct responsibilities. The current
+Runner Gateway serves both services, while Sandbox Controller is separate. Process, binary and
+Deployment grouping remains open: consider keeping the current grouping, separating Session and
+Environment services, combining Environment responsibilities with Sandbox Controller, or another
+arrangement. Review authority and failure boundaries rather than assuming a package determines them.
+Names such as `agentplane-session-dispatcher` and
 `agentplane-environment-gateway` are available if standalone entrypoints are selected. The earlier
 [combined-service proposal](dispatcher_gateway_merge.md) is an option awaiting review, not the
 selected topology. That decision is independent of the environment process layout.
@@ -120,7 +128,7 @@ flowchart LR
     caller[Session command] --> dispatcher[Session dispatcher]
     dispatcher -->|central owner| central[Central sampler]
     dispatcher -->|owner inside an environment| gateway[Environment gateway]
-    gateway --> local[Environment Harness Host]
+    gateway --> local[Environment Runtime native harness management]
     tool[Execution call] --> gateway
     gateway --> execution[Execution service]
 ```
@@ -132,8 +140,8 @@ with the harness backend; Codex exec-server adaptation belongs with the executio
 owns authenticated routing/fencing. This records ownership, not a new transport or authority policy.
 
 Current ownership and lifecycle guarantees are defined by the
-[Environment Runtime](../env/runtime/SPEC.md), [Harness Host](../env/runtime/SPEC.md) and
-[Execution service](../env/runtime/execution/SPEC.md). Pod/VM packaging lives under `env/images`.
+[Environment Runtime](../env/runtime/SPEC.md) and [Execution service](../env/runtime/execution/SPEC.md).
+Pod/VM packaging lives under `env/images`.
 Use those contracts when changing admission, drain, state locks, process generations, fencing or
 failure settlement. Rightsizing, future laptop support, a JS-host replacement and the broader
 Session/environment object model remain separate work. The [task DAG](task_dag.md) owns their

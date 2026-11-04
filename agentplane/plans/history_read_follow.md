@@ -7,6 +7,7 @@ The browser reads snapshots through the generated History facade and follows its
 ## Remaining consumers and decisions
 
 - Move the Notification Service's outcome scan only if `NOTIFICATION_COMMAND_OUTCOME_DESIGN` still
-  requires History reads. The app's raw debug reads stay on `ReadSessionEvents`.
+  requires History reads. The app's raw debug view also uses History's observation and native-frame
+  reads alongside `ReadSessionEvents`.
 - Decide whether `ReadSessionEvents` can later become `FollowSession` with `follow = false`, once
   its callers need nothing else from it.

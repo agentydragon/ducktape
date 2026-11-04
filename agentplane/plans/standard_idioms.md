@@ -18,10 +18,13 @@ standard shape.
 
 ### `DISPATCHER_KEYED_DELIVERY`
 
-Blocked on the [merge design](dispatcher_gateway_merge.md). The Dispatcher turns any Sandbox event into
-one signal and on each one, and every 10 s, lists all Sandboxes, scans pending work and acquires a
-Lease per busy Sandbox (`runner_gateway/dispatcher/delivery.go`), detecting deletions by diffing UIDs.
-In the merged service, key delivery by Sandbox on a work queue fed by informer events.
+Blocked on the [delivery ownership decision](task_dag.md#dispatcher_persistence_model_design--choose-delivery-ownership-and-service-topology).
+Dispatcher already runs delivery through a rate-limited queue keyed by Session ID. Its reconciliation
+still turns Sandbox and database changes into unkeyed signals and, on each signal and every 10 s,
+lists the Sandbox inventory and pending work (`runner_gateway/dispatcher/delivery.go`), detecting
+deletions by diffing UIDs. Replace those full scans with appropriately keyed notifications and
+reconciliation under the reviewed ownership and recovery contract; retain safe recovery after missed
+notifications and Sandbox deletion.
 
 ## PostgreSQL
 

@@ -659,8 +659,10 @@ Revisit when selecting fresh-environment creation, not as a gate on Session dele
 ### `ENVIRONMENT_MANAGEMENT` — dedicated environment tools and creation
 
 **Deferred by the operator, 2026-10-31; template ownership is intentionally postponed.**
-When selected, implement full published template discovery and typed creation/status/recovery
-with a dedicated `environments/create` Action, initially human-approved. Creation requires
+When selected, implement full published template discovery and creation/status/recovery under
+the caller's shared account with a dedicated `environments/create` Action, initially human-approved.
+`EnvironmentService` already provides typed create and basic runtime-template listing RPCs, but its
+template names are not the full published catalogue. This new workflow requires
 `ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN` and `ENVIRONMENT_SHARED_ACCOUNT`; use the durable verified
 Action caller UID rather than adopting a same-name replacement account or guessing legacy identity.
 Existing-environment list/get is already available through backend Discovery and does not wait for
@@ -702,7 +704,7 @@ may allow its launched sandboxes to do": the templates, PolicySets and tags a la
 
 **Blocked on launch policy.** Enforce the reviewed
 effective spec and delegation server-side. Test allowed and forbidden launch parameters and
-concurrent retries. Reuse the app's create path (the shared Sandbox inventory), not harness-native agent tools. Launch alone
+concurrent retries. Reuse the EnvironmentService create path and shared inventory. Launch alone
 does not grant history read, messaging, credentials or execution of another principal's Actions.
 
 ### `ORCHESTRATION_V1_BACKEND_GRANTS` — `orchestration_v1` operations on backend grants
@@ -1014,6 +1016,11 @@ environment access, partial-output failures and recovery after JS host loss. Res
 rightsizing and Claude workload placement are independent follow-ups in the brief. Decide concrete
 capabilities, lifecycle, authority and attribution; reuse the existing versioned Codex environment
 API evidence without claiming unsupported modes work.
+Operations on an existing Session should address the Session, without making callers choose or supply an
+environment just to send, observe or otherwise act on it. Resolve placement at the responsible
+boundary only when an operation actually needs it; environment lifecycle and execution operations
+still address their environment. Preserve backend-specific native placement constraints, explicit
+attachment authority and exact-incarnation fences.
 Exit: reviewed vocabulary and lifecycle/API examples that represent both a CLI inside its required
 environment and a central sampler with zero, one or multiple attached environments, including
 shared-host/multiple-Session operation, environment loss and host restart. Include a data-preserving
@@ -1049,7 +1056,7 @@ does not block current thread work or authorize implementation.
 **Unscheduled; operator, 2026-10-21 07:11 UTC: "fidelity improvements like images for Claude let's put on task
 dag".** Tool results become ordered parts (text, image) in the harness-neutral vocabulary instead of one string.
 Today `event.proto` carries `ToolResult.output`, `ToolOutputDelta.text` and `RecoveredContent.output` as strings,
-the Claude adapter's `resultText()` (`runner/claude/protocol.go`) joins text blocks and drops images, and the
+the Claude adapter's `resultText()` (`env/runtime/claude/protocol.go`) joins text blocks and drops images, and the
 History fold's `THREAD_PAYLOAD_FIELD_OUTPUT` is one text field that deltas append to. Scope: the proto, both
 runner adapters, the History fold with its storage and reads, the app API, the frontend tool cards, and the fold,
 span and visual fixtures. Archived event logs and History rows hold `output` strings and sealed archives cannot be rewritten; the
@@ -1760,8 +1767,8 @@ no longer runs, and whether its workspace survived depends on where it lived (th
 VM-local disk is not, until `VM_RAM_SUSPEND`). Tell the agent when a new incarnation of its Sandbox
 started, how long it was down, what was kept (state PVC, workspace) and what was lost (processes,
 terminals). The runner knows the incarnation change; what survives is a fact of the Sandbox's kind and
-volumes, and a suspend ends background processes and terminals, which do not count as busy
-(`RUNNER_BUSY_TRACKING`). Open: whether the notice is a runner
+volumes, and a suspend ends processes and terminals that are not protected by an active execution
+connection (`RUNNER_BUSY_TRACKING`). Open: whether the notice is a runner
 platform instruction added at harness start, an event the History Service folds into the Session, or a
 message through the Dispatcher; and the wording agents act on. Test a suspend and resume with a
 background process, a terminal and workspace files, and a crash restart (no suspend) that reads
@@ -1794,10 +1801,11 @@ claiming a whole-Pod restart, lost files or a cause that was not observed. Relat
 ### `RUNNER_BUSY_TRACKING` — the runner counts terminals and background processes as busy
 
 **Unscheduled; operator, 2026-10-14: not now, an open TODO that may be looked at later.** The runner
-publishes `idle_since` (`EnvironmentRuntimeFacts`), busy while a delivery is under way, the bootstrap runs, or any
-Session has a turn, an unfinished command or a setup script. A background or durable process or an
-attached terminal or console does not make the Sandbox busy, so an idle suspend ends them. The runner
-does not supervise these, so who would report them (the harness adapters, the VM console) is open.
+publishes `idle_since` (`EnvironmentRuntimeFacts`), busy while a delivery is under way, the bootstrap runs, any
+Session has a turn, an unfinished command or a setup script, or an Execution connection is active.
+An active Execution connection therefore blocks suspension, but detached processes and the VM
+console do not have a general busy-lifetime contract. Decide which surviving background work and
+attached terminals should block idle suspension and who reports them.
 Test an attached terminal that detaches, a background process that outlives a turn, and a runner
 restart. `AGENT_RESUME_NOTICE` tells the agent what a suspend ended.
 
@@ -1975,8 +1983,7 @@ Thread for its projection; no "hub", "follow" or "shadow" left); READMEs, `SPEC.
 `docs/` describing the code as it is, without cutover narration; no compatibility branch,
 optional-with-fallback setting or `CLEANUP` tombstone whose condition is met; the system diagram in
 `agentplane/docs/system_overview.md` showing exactly the deployed services and the traffic between them in
-`cluster/cdk8s/agentplane`. Known now: egress and app test support each build a throwaway CA;
-`docs/operator_federation.md` says "Event & Notification Hub";
+`cluster/cdk8s/agentplane`. Known now: `docs/operator_federation.md` says "Event & Notification Hub";
 `cluster/cdk8s/agentplane/test_sandbox_service.py` is named for the retired Sandbox Service. Findings are fixed in
 PRs of their own; this node leaves with the last of them.
 
@@ -2092,9 +2099,15 @@ longer a candidate. This does not require every Environment Service operation to
 Whether to offer an explicit immediate-or-fail send within the mandatory queue contract remains open.
 See the [Session/environment model](session_environment_model.md#where-should-live-control-live).
 
-Session dispatch and Environment dispatch are distinct responsibilities; whether their services
-or binary boundaries should change remains a later decision. Decide delivery ownership, fencing,
-replica failure, ordering and recovery for the selected topology before changing existing guarantees.
+Session dispatch and Environment management/routing are distinct responsibilities. Today the
+Runner Gateway binary serves both SessionDispatcher and EnvironmentService; Sandbox Controller is
+separate. Revisit whether to keep that packaging, split Session and Environment responsibilities
+into separate binaries and deployments, group Environment management or routing with Sandbox
+Controller, or choose another arrangement. Separate API and state ownership from process placement:
+an Environment controller merge is an option to evaluate, not a selected design. Compare
+authorization, database and Kubernetes access, watches, scaling, availability, failure and rollout
+boundaries. Decide delivery ownership, fencing, replica failure, ordering and recovery for the
+selected topology before changing existing guarantees.
 The former [Dispatcher/Gateway merge proposal](dispatcher_gateway_merge.md) is historical for its
 queue-off and holder-owned-delivery choices, not an implementation authorization. Independent
 Runtime restructuring does not wait for this decision.
@@ -2378,13 +2391,12 @@ the MCP edge extraction leaves Web Push in Actions.
 
 ### `HARNESS_IDENTITY_DESIGN` — decide private Session-to-store and native mapping
 
-**Current destination and process boundary (operator direction updated 2026-11-02).** The current API still carries
-`(Sandbox UID, Agentplane Session ID)` with no store field. The selected public address is a
-globally unique Session UUID; Dispatcher resolves placement; see the [Session/environment model](session_environment_model.md).
-The existing Runtime maps a public Session durably
-to its private store/native ID; selecting a default store by requested harness kind remains a
-candidate policy. Namespace/name may locate the Sandbox, but request syntax and UID resolver are
-undecided.
+**Current destination and process boundary (operator direction updated 2026-11-02).** Dispatcher
+command requests address a globally unique Session UUID and resolve placement; broker APIs may
+still carry an exact Sandbox target as an authorization precondition. Opening still names an exact
+Sandbox. See the [Session/environment model](session_environment_model.md). Runtime retains Session
+and native identity without exposing a store field; selecting a default store by requested harness
+kind remains a candidate policy.
 Process allocation/routing stays internal; there is no create-Session-on-process API or refusal.
 Process incarnations may be diagnostic objects, never durable addresses. Neither the number of
 stores/processes per Runner, at-most-one process per store nor shared-store concurrent safety is
@@ -2419,7 +2431,7 @@ one-versus-many store or shared-store safety decision is made here.
 
 Feed the reviewed process-diagnostic shape into
 [`RUNNER_HARNESS_OBJECTS_DESIGN`](#runner_harness_objects_design--decide-process-diagnostics-and-placement-policy).
-The current destination contract remains in force until its replacement, authority and locator are
+The current destination and authority contracts remain in force while their remaining questions are
 reviewed; private runner mapping can be implemented independently. Neither design node authorizes runtime changes.
 
 ### `RUNNER_STORE_SESSION_IDENTITY` — implement durable store and public Session mapping
@@ -2466,7 +2478,7 @@ Kubernetes clients for state envtest can hold:
 
 Go `clientfake` or `kubernetes/fake`: `notification_service/api/fixture_test.go` (Sandboxes, inbox tags,
 `recreateSandbox`), `notification_service/main_test.go`, `runner_gateway/gateway/records_test.go`,
-`runner_gateway/dispatcher/sandbox_kubernetes_test.go`, `sandboxes/sandboxreader/reader_test.go`.
+`sandboxes/sandboxreader/reader_test.go`.
 
 One PR per file. Exit: each reads from `testing/kubeapiserver`, or keeps only a fault it injects, named at the fake.
 
