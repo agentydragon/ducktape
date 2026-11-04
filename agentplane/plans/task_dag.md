@@ -2254,8 +2254,11 @@ deleting the required environment leaves the Session and inbox present but its n
 unavailable; an explicit Session delete could instead coordinate cleanup of Session-associated data.
 Compare this with the other alternatives before selecting retention and deletion semantics. For central Sessions, environment loss or detachment must not by itself end the
 Session; decide whether its inbox likewise remains active, with that as the initial recommendation.
-Decide the owning signals and reconciliation, pending messages and
-subscriptions, read/admin authority after a Sandbox-owned ServiceAccount disappears, History handoff,
+The operator's direction after a Sandbox-owned ServiceAccount disappears is human-operator-only
+inspection and administration through an operator-authenticated entry point, such as the app, and
+explicitly privileged service credentials; do not transfer authority to a same-name replacement or other workload.
+Define the precise backend permissions and narrowly scoped service reconciliation separately.
+Decide the owning signals and reconciliation, pending messages and subscriptions, History handoff,
 and deletion, reattachment and same-name-replacement races. Preserve exact UID fences, unread data,
 no-replay recovery and authorized unattended wake; suspension and temporary unavailability are not
 Session deletion. Command-receipt retention is separately tracked in `SESSION_DELETION_FENCE` and
