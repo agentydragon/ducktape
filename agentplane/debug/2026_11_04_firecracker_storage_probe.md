@@ -3,15 +3,17 @@
 The operator requested a storage probe alongside the full acceptance rerun of PR #14029 at
 `d110313300cc63e59f7b36cf514de06e57763adc`. This probe changes neither the deployed worker nor
 the PR's production guest configuration. The first phase built a smaller system closure;
-a subsequent isolated boot and RAM-resume probe is recorded below.
+subsequent isolated NixOS and Bazel-built CI guest boot/RAM-resume proofs are recorded below.
 
 ## Sparse copying is already present
 
 `agentplane/firecracker/storage.go` uses `cp --reflink=auto --sparse=always` for regular files.
 Its block-device path scans 1 MiB chunks, seeks over all-zero chunks, and truncates the result
-to the original logical size. Both paths sync the resulting file and compute a full SHA-256.
+to the original logical size. Both paths sync the resulting file. Checkpoint's `copyDurable`
+adds a full SHA-256; the later copy-path change described below removes only hashes that callers
+discarded during initial preparation and restore repair.
 
-The built current-head guest's root image has:
+The production guest used for the baseline has:
 
 | File                                         | Logical bytes | Allocated bytes |
 | -------------------------------------------- | ------------: | --------------: |
@@ -238,6 +240,93 @@ with the production guest's 288.956-second cleanup.
 This proves the reduced tool bundle can boot and resume this workload. It does not
 establish tool parity for arbitrary agent tasks, reduced guest RAM requirements, or a
 controlled latency improvement. The production guest remains unchanged.
+
+## Bazel-built CI guest
+
+The ordinary `//agentplane/system_tests/suites:test_firecracker` target now builds its guest
+with Bazel and runs automatically on the dedicated KVM worker. The previous published NixOS
+image remains available through the manual `test_firecracker_production` target. Both use
+`scenarios/firecracker.py` with the same mount, projected-token absence, native harness and
+RAM/process-continuity assertions.
+
+The CI guest combines the pinned Debian cloud kernel, a BusyBox initramfs, and a small ext4
+root containing systemd, Codex, Python and basic shell tools. The current-source runner disk
+still supplies the Runtime and guest management agent. Systemd remains because the Runtime
+uses its transient units and resource slices. This is a test workload closure, not production
+tool parity, and the guest's 1536 MiB RAM reservation is unchanged.
+
+The kernel's virtio MMIO/block/network/vsock, EROFS and ISO9660 drivers are modular. The
+initramfs loads their dependencies before mounting `/dev/vda` and switching to systemd.
+Firecracker 1.17 accepts the packaged bzImage directly; the artifact retains the existing
+`vmlinux` filename. The stock kernel has ACPI enabled and command-line MMIO registration
+disabled, so device discovery uses Firecracker's ACPI tables. The build checks that prerequisite.
+The launcher stages optional `initramfs.cpio` alongside the boot files and includes it in
+checkpoint restoration, including after launcher restart.
+
+| CI artifact             |       Bytes |
+| ----------------------- | ----------: |
+| Root source files       | 610,732,316 |
+| Ext4 root disk, logical | 732,880,896 |
+| Kernel bzImage          |  11,737,024 |
+| Initramfs               |   3,367,984 |
+
+The logical root is 91.9% smaller than the earlier 9,073,119,232-byte NixOS baseline. The
+kernel artifact replaces the probe's 413,271,304-byte debug ELF; this is a file-size comparison,
+not a claim about loaded kernel RAM. The [complete OCI build](https://app.buildbuddy.io/invocation/8d97a015-bae0-48be-833c-19511989b1df)
+passed with the rootfs-builder Python library explicitly checked by lint aspects. It took
+406.712 seconds including repository resolution; this is not a controlled build-latency comparison.
+The first attempt hit Debian snapshot download timeouts. Its retry exposed an archive conflict
+between Debian's `/var/run` and `/var/lock` directories and the guest's required symlinks;
+the builder now replaces those empty directories after extraction, refusing nonempty directories.
+The outer client's artifact retrieval subsequently missed a 240-byte manifest blob despite the
+successful Bazel build. The hardware CI action below built, imported and used the actual image.
+
+The [ordinary CI invocation](https://app.buildbuddy.io/invocation/29bc1034-65a8-5a23-a707-3bb1ea13bbcd)
+passed on synthetic merge `7a138ff28d37713488892023264a833e65cc0e44`, containing PR head
+`31f4cf0567b2585d5f7aab0c8b761f0e7b319bad`. The full Firecracker scenario reports
+**1 passed in 523.88 seconds**, including teardown. The existing OpenTelemetry span records
+**51.124799 seconds** of Sandbox cleanup, within the unchanged 300-second limit. Importing
+the guest image took 19.01 seconds. These are observations from this run, not a controlled
+comparison with the earlier production-guest acceptance.
+
+The captured continuation retained:
+
+| Identity / evidence     | Before and after resume                |
+| ----------------------- | -------------------------------------- |
+| Pod UID                 | `09299566-aae1-430f-b7aa-e04f830c8781` |
+| Kernel boot ID          | `dadf88b2-a680-4902-8a4e-0c1bdb0389df` |
+| Runtime boot ID         | `fd2a1a61-998c-4f8c-afc2-df2e962bfca2` |
+| Native session          | `01a1a76b-1848-73b2-9ab5-7baeee2ad9df` |
+| Child PID / start ticks | `364` / `4219`                         |
+| Child counter           | `2` to `52`                            |
+
+The child kept its randomly generated memory marker. Both real Codex turns completed, all
+required mount types matched, and the projected ServiceAccount token was absent before and
+after resume. The retained VMM log identifies Debian kernel
+`6.12.115+deb13.1-cloud-amd64` and reports `/dev/vda` as 1,431,408 sectors of 512 bytes,
+matching the 732,880,896-byte root artifact. The production guest and staging configuration
+remain unchanged.
+
+An independent uncached action at source `31f4cf0567` also completed with exit code `0`:
+its JUnit result has one test, no errors/failures/skips, and reports **519.10 seconds**.
+Cleanup took **56.12 seconds**, and guest image import **14.77 seconds**. Remote execution
+metadata records `skipCacheLookup: true`, worker execution from
+`2026-11-04T16:38:38.013813095Z` to `2026-11-04T16:47:26.588677566Z`, and successful output
+upload. The worker had only its executor container after the action finished.
+
+The enclosing [invocation](https://app.buildbuddy.io/invocation/71bb3525-76d6-439e-9537-402fb8bacd2d)
+is **disconnected**, rather than a successful Bazel invocation: its event-log stream reported
+`ResourceExhausted: Log index limit exceeded`, and the outer client lost its run-result stream
+while the action remained claimed. The live action was observed and allowed to finish without
+resubmission. Its completed remote ActionResult, stdout and JUnit XML were recovered directly
+with `bb execution get` and `bbapi blob download`. The execution ID is:
+
+```text
+/uploads/780ddd33-dabe-47cc-a9c4-de86bd88e5d9/blobs/8a1bf0666fed08a94a068e7ee45231142a802b4276133cca4e53fad476463bc6/558
+```
+
+This separate transport failure does not change the green ordinary CI invocation above. Neither
+acceptance run is a controlled latency comparison with the production NixOS guest.
 
 ## Follow-on experiments
 

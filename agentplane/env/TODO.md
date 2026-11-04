@@ -15,8 +15,9 @@ the backing disks, including the 8.5 GiB root image. Sparse copies and sparse-aw
 allocating and reading holes, while still hashing their logical zeroes. The
 [storage probe](../debug/2026_11_04_firecracker_storage_probe.md) measured the worker's I/O and
 built and booted a variant without the pre-commit bundle, reducing closure bytes by 67.2%, with
-reduced tool availability. Measure remaining populated-disk copy/sync latency and choose the
-content-integrity policy explicitly. Establish required tools before selecting the smaller guest;
+reduced tool availability. The separate Bazel-built CI guest now passes RAM-resume acceptance
+with a 733 MB root disk; production remains unchanged. Measure remaining populated-disk copy/sync
+latency and choose the content-integrity policy explicitly. Establish required tools before selecting a smaller production guest;
 consider keeping heavy tools in an immutable disk. In every case,
 preserve the paused disk/RAM boundary, durable manifest commit and identity fencing. The
 [hardware acceptance report](../debug/2026_11_03_firecracker_system_test.md) records the observed phases.
