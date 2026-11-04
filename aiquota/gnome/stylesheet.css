@@ -76,11 +76,6 @@
   font-feature-settings: "tnum";
 }
 
-.quota-popup-row.quota-credit-active {
-  color: #e01b24;
-  font-weight: bold;
-}
-
 .quota-popup-bar-item {
   padding-top: 5px;
   padding-bottom: 5px;
@@ -153,11 +148,7 @@
   font-size: 0.9em;
 }
 
-.quota-popup-header-stale {
-  color: #f5c211;
-}
-
-.quota-popup-header-error {
+.quota-popup-status-warning {
   color: #f5c211;
 }
 

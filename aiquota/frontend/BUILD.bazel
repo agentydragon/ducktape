@@ -60,14 +60,6 @@ openapi_js_library(
 )
 
 ts_library(
-    name = "format",
-    srcs = ["format.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = ["//aiquota/shared:presentation"],
-)
-
-ts_library(
     name = "quotas",
     srcs = ["quotas.ts"],
     isolated_typecheck = True,
@@ -83,7 +75,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":format",
         ":quotas",
         ":schema",
         "//:node_modules/@types/react",
@@ -99,7 +90,6 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":board",
-        ":format",
         ":quotas",
         ":schema",
         "//:node_modules/@types/react",
@@ -198,7 +188,6 @@ aiquota_vitest_test(
     isolated_typecheck = True,
     deps = [
         ":fixtures",
-        ":format",
         "//:node_modules/vitest",
         "//aiquota/shared:presentation",
     ],
@@ -211,6 +200,21 @@ aiquota_vitest_test(
     deps = [
         ":quotas",
         ":schema",
+        "//:node_modules/vitest",
+    ],
+)
+
+aiquota_vitest_test(
+    name = "board_test",
+    srcs = ["board.test.tsx"],
+    isolated_typecheck = True,
+    deps = [
+        ":board",
+        ":schema",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
         "//:node_modules/vitest",
     ],
 )

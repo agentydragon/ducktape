@@ -121,79 +121,119 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
     try:
         session.close_menu()
         session.reload(f"/fixtures/{fixture_name}.json")
+        assert string_reply(session.call("GetStreamStatus")) == "Connected"
         if fixture_name == "claude_prepaid_balance":
             header = string_reply(session.call("GetHeaderText", "claude"))
-            assert "Claude" in header
-            assert "$123.45 prepaid balance" in header
-            assert string_reply(session.call("GetPrepaidText", "claude")) == ""
+            balances = string_reply(session.call("GetBalanceText", "claude"))
+            assert header == "Claude"
+            assert "Prepaid balance: $123.45" in balances
         elif fixture_name == "claude_prepaid_balance_unavailable":
             header = string_reply(session.call("GetHeaderText", "claude"))
-            assert "Claude" in header
-            assert "prepaid balance unavailable" in header
-            assert string_reply(session.call("GetPrepaidText", "claude")) == ""
+            balances = string_reply(session.call("GetBalanceText", "claude"))
+            assert header == "Claude"
+            assert "Prepaid balance: unavailable" in balances
         elif fixture_name == "claude_prepaid_balance_stale":
-            header = string_reply(session.call("GetHeaderText", "claude"))
-            assert "Claude" in header
-            assert "$123.45 prepaid balance" in header
-            assert "prepaid stale 1h00m" in header
-            assert "Quota stream" not in header
+            balances = string_reply(session.call("GetBalanceText", "claude"))
+            assert "Prepaid balance: $123.45" in balances
+            assert "stale 1h ago" in balances
         elif fixture_name == "stale_fallback":
             header = string_reply(session.call("GetHeaderText", "claude"))
-            assert "Claude" in header
-            assert "$123.45 prepaid balance" in header
-            assert "last refresh failed" in header
-            assert "(stale 1d0h)" in header
+            status = string_reply(session.call("GetStatusText", "claude"))
+            details = string_reply(session.call("GetDetailsText", "claude"))
+            assert header == "Claude"
+            assert "Prepaid balance: $123.45" in string_reply(session.call("GetBalanceText", "claude"))
+            assert "Refresh failed" in status
+            assert "Stale · observation" in status
+            assert "HTTP 503 Service Unavailable" in details
         elif fixture_name == "openai_platform_credits":
             header = string_reply(session.call("GetHeaderText", "openai_platform"))
-            credits = string_reply(session.call("GetPrepaidText", "openai_platform"))
-            assert "OpenAI" in header
-            assert "$125.75 API credit" in header
-            assert "$100 expires" in header
-            assert "$25.75 expires" in header
-            assert "\n" not in header
-            assert credits == ""
+            balances = string_reply(session.call("GetBalanceText", "openai_platform"))
+            grants = string_reply(session.call("GetGrantText", "openai_platform"))
+            details = string_reply(session.call("GetDetailsText", "openai_platform"))
+            assert header == "OpenAI API"
+            assert "Available balance: $125.75" in balances
+            assert "Grant: $100.00" in grants
+            assert "Grant: $25.75" in grants
+            assert "expires" in grants
+            assert "original $100.00" in details
+            assert string_reply(session.call("GetEmptyLabelText")) == "AI quota"
         elif fixture_name == "anthropic_platform_credits":
-            credits = string_reply(session.call("GetPrepaidText", "anthropic_platform"))
-            assert "Main org" in credits
-            assert "Anthropic API credit balance" in credits
-            assert "$123.45 available" in credits
-            assert "$123.45" in credits
-            assert "API credit grant" in credits
-            assert "API promo credit grant" in credits
-            assert "scope: claude_api (sonnet), claude_code" in credits
-            assert "scope: unscoped" not in credits
-            assert "Expired grant" not in credits
+            balances = string_reply(session.call("GetBalanceText", "anthropic_platform"))
+            grants = string_reply(session.call("GetGrantText", "anthropic_platform"))
+            assert "Main org · Available balance: $123.45" in balances
+            assert "Grant: $85.00" in grants
+            assert "Promo grant" in grants
+            assert "scope: Claude API (Sonnet), Claude Code" in grants
+            assert "scope: unscoped" not in grants
+            assert "Expired grant" not in grants
         elif fixture_name == "platform_credits_with_subscription_resets":
-            claude_header = string_reply(session.call("GetHeaderText", "claude"))
-            assert "$25.75 prepaid balance" in claude_header
+            claude_balances = string_reply(session.call("GetBalanceText", "claude"))
+            assert "Prepaid balance: $25.75" in claude_balances
             assert len(json.loads(string_reply(session.call("GetWindowRows", "claude")))) == 2
 
-            codex_header = string_reply(session.call("GetHeaderText", "codex"))
-            assert "3 resets (expiry: Jan 29, 12:00, Feb 1" in codex_header
-            assert "1 unknown" in codex_header
+            codex_resets = string_reply(session.call("GetResetText", "codex"))
+            codex_details = string_reply(session.call("GetDetailsText", "codex"))
+            assert "Banked resets: 3 · next known expiry" in codex_resets
+            assert "1 expiry unknown" in codex_resets
+            assert "known expiries" in codex_details
             assert len(json.loads(string_reply(session.call("GetWindowRows", "codex")))) == 2
 
-            openai_header = string_reply(session.call("GetHeaderText", "openai_platform"))
-            assert "$60.00 API credit" in openai_header
-            assert "$60 expires Jun 1, 2026" in openai_header
-            assert string_reply(session.call("GetPrepaidText", "openai_platform")) == ""
+            openai_balance = string_reply(session.call("GetBalanceText", "openai_platform"))
+            openai_grants = string_reply(session.call("GetGrantText", "openai_platform"))
+            assert "Available balance: $60.00" in openai_balance
+            assert "Grant: $60.00" in openai_grants
+            assert "Jun 1" in openai_grants
 
-            anthropic_header = string_reply(session.call("GetHeaderText", "anthropic_platform"))
-            anthropic_credits = string_reply(session.call("GetPrepaidText", "anthropic_platform"))
-            assert "Anthropic API" in anthropic_header
-            assert "Shared org" in anthropic_credits
-            assert "Anthropic API credit balance" in anthropic_credits
-            assert "$75.00 available" in anthropic_credits
-            assert "API credit grant $50.00 / $100.00" in anthropic_credits
-            assert "API promo credit grant $25.00 / $50.00" in anthropic_credits
-            assert "scope: claude_api (sonnet)" in anthropic_credits
+            anthropic_balance = string_reply(session.call("GetBalanceText", "anthropic_platform"))
+            anthropic_grants = string_reply(session.call("GetGrantText", "anthropic_platform"))
+            assert "Shared org · Available balance: $75.00" in anthropic_balance
+            assert "Shared org · Grant: $50.00" in anthropic_grants
+            assert "Shared org · Promo grant: $25.00" in anthropic_grants
+            assert "scope: Claude API (Sonnet)" in anthropic_grants
         elif fixture_name == "wire_fields":
             rows = json.loads(string_reply(session.call("GetWindowRows", "codex")))
             assert len(rows) == 1
             assert rows[0].startswith("visible (5h):")
             assert "45m" in rows[0]
-            assert "-55%" in rows[0]
+            assert "pp" not in rows[0]
+            assert "-55 pp" in string_reply(session.call("GetDetailsText", "codex"))
             assert "internal-only" not in "\n".join(rows)
+        elif fixture_name == "binding_summary":
+            assert "+10 pp" in string_reply(session.call("GetPanelText", "claude"))
+            assert "+18 pp" in string_reply(session.call("GetPanelText", "codex"))
+            assert "-15 pp" in string_reply(session.call("GetPanelText", "zai"))
+            assert "Forecasts use average usage since the window started." in string_reply(
+                session.call("GetDetailsText", "claude")
+            )
+        elif fixture_name == "reset_pending":
+            rows = json.loads(string_reply(session.call("GetWindowRows", "codex")))
+            panel = string_reply(session.call("GetPanelText", "codex"))
+            assert len(rows) == 1
+            assert "awaiting update" in rows[0]
+            assert "exhausted" not in rows[0]
+            assert panel.startswith("↻?")
+            assert "⚡" not in panel
+            assert "Reset time passed · awaiting updated usage" in string_reply(session.call("GetStatusText", "codex"))
+        elif fixture_name == "stale_observation":
+            status = string_reply(session.call("GetStatusText", "claude"))
+            panel = string_reply(session.call("GetPanelText", "claude"))
+            rows = json.loads(string_reply(session.call("GetWindowRows", "claude")))
+            assert "Stale · observation" in status
+            assert panel.startswith("~")
+            assert len(rows) == 1
+            assert "pace:" not in rows[0]
+            session.call("SetStreamStatus", "disconnected", "cached view retained")
+            assert "Stale · observation" in string_reply(session.call("GetStatusText", "claude"))
+            assert string_reply(session.call("GetPanelText", "claude")).startswith("~")
+            assert "cached view retained" in string_reply(session.call("GetConnectionDetails"))
+        elif fixture_name == "paid_credits":
+            rows = json.loads(string_reply(session.call("GetWindowRows", "codex")))
+            balances = string_reply(session.call("GetBalanceText", "codex"))
+            resets = string_reply(session.call("GetResetText", "codex"))
+            assert len(rows) == 2
+            assert "Paid credits:" in balances
+            assert "Banked resets: 0" in resets
+            assert "⚡" in string_reply(session.call("GetPanelText", "codex"))
         geometry = session.open_menu()
         try:
             capture_menu.capture(geometry, label=fixture_name.replace("_", " "))
@@ -210,17 +250,18 @@ def test_render_distinct_prepaid_and_quota_staleness(
     try:
         data = json.loads((fixture_json_dir / "claude_prepaid_balance_stale.json").read_text())
         claude = next(provider for provider in data["providers"] if provider["provider"] == "claude")
-        claude["display"]["source"] = "last_success"
-        claude["display"]["observed_at"] = "2026-01-15T11:00:00Z"
-        claude["display"]["prepaid_stale_since"] = "2026-01-15T10:00:00Z"
+        claude["stale_since"] = "2026-01-15T11:00:00Z"
+        claude["stale_at"] = "2026-01-15T11:10:00Z"
+        claude["balances"][0]["stale_since"] = "2026-01-15T10:00:00Z"
         fixture_path = fixture_json_dir / "claude_distinct_staleness.json"
         fixture_path.write_text(json.dumps(data, indent=2) + "\n")
         session.close_menu()
         session.reload("/fixtures/claude_distinct_staleness.json")
 
-        header = string_reply(session.call("GetHeaderText", "claude"))
-        assert "(stale 1h00m)" in header
-        assert "(prepaid stale 2h00m)" in header
+        status = string_reply(session.call("GetStatusText", "claude"))
+        balances = string_reply(session.call("GetBalanceText", "claude"))
+        assert "Stale · observation 1h old" in status
+        assert "Prepaid balance: $123.45 · stale 2h ago" in balances
 
         geometry = session.open_menu()
         try:
@@ -243,13 +284,14 @@ def test_render_disconnected_stream(
         session.wait_for_paint()
         stream_status = string_reply(session.call("GetStreamStatus")).lower()
         assert "\n" not in stream_status
-        assert "desktop sync attempt 42s ago" in stream_status
+        assert "last attempt 42s ago" in stream_status
         assert "retry in 19s" in stream_status
-        assert "connection to quota api was lost" in stream_status
+        assert "connection to quota api was lost" not in stream_status
+        assert "connection to quota api was lost" in string_reply(session.call("GetConnectionDetails")).lower()
         session.call("SetSyncState", "958", "1019", "1001")
         stream_status = string_reply(session.call("GetStreamStatus")).lower()
         assert "\n" not in stream_status
-        assert "desktop sync attempt 43s ago" in stream_status
+        assert "last attempt 43s ago" in stream_status
         assert "retry in 18s" in stream_status
         session.call("SetSyncState", "958", "1019", "1000")
         session.wait_for_paint()
@@ -321,6 +363,20 @@ def test_view_signal_wins_getter_and_owner_restart_invalidates_reply(session: Gn
             "extension did not adopt restarted daemon's current view",
         )
         assert daemon.counters() == (3, 3, 0)
+
+
+def test_client_freshness_deadline_suppresses_cached_projections(session: GnomeSession, fixture_json_dir: Path) -> None:
+    data = json.loads((fixture_json_dir / "binding_summary.json").read_text())
+    provider = next(item for item in data["providers"] if item["provider"] == "codex")
+    assert any(window["forecast"] for window in provider["display_windows"])
+    provider["stale_at"] = data["fetched_at"]
+    session.close_menu()
+    session.reload("/fixtures/binding_summary.json")
+    session.call("SetViewForTest", json.dumps(data))
+    rows = string_reply(session.call("GetWindowRows", "codex"))
+    assert "exhausts" not in rows
+    assert "on pace" not in rows
+    assert " pace:" not in string_reply(session.call("GetDetailsText", "codex"))
 
 
 if __name__ == "__main__":

@@ -46,57 +46,71 @@ async def view(
 )
 async def test_dashboard(view: VisualPage, scene: str) -> None:
     await expect(view.page.locator(".aiquota-card").first).to_be_attached()
-    await expect(view.page.get_by_role("status")).to_have_text("Quota stream live")
+    await expect(view.page.get_by_role("status")).to_have_text("Live updates connected")
     if scene == "reset_credit_expiry_unavailable":
         await expect(view.page.locator(".aiquota-strip-resets .aiquota-strip-line")).to_have_text(
-            "2 resets (expiry lookup failed)"
+            "Banked resets: 2 · expiry lookup failed"
         )
     if scene == "openai_platform_credits":
-        await expect(view.page.get_by_role("heading", name="OpenAI API · $125.75 API credit")).to_be_visible()
-        grants = view.page.get_by_text("API credit grants:", exact=False).first
-        await expect(grants).to_contain_text("$100.00 expires")
-        await expect(grants).to_contain_text("$25.75 expires")
-        await expect(grants).not_to_contain_text("/ $100.00")
+        card = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
+        await expect(card.get_by_role("heading", name="OpenAI API")).to_be_visible()
+        await expect(card.get_by_text("Available balance", exact=True)).to_be_visible()
+        await expect(card.get_by_text("$125.75", exact=True)).to_be_visible()
+        await expect(card.get_by_text("$100.00 remaining", exact=True)).to_be_visible()
+        await expect(card.get_by_text("$25.75 remaining", exact=True)).to_be_visible()
     if scene == "claude_prepaid_balance":
-        await expect(view.page.get_by_role("heading", name="Claude · $123.45 prepaid balance")).to_be_visible()
-        await expect(view.page.get_by_text("Claude prepaid balance", exact=False)).to_have_count(0)
+        card = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
+        await expect(card.get_by_role("heading", name="Claude")).to_be_visible()
+        await expect(card.get_by_text("Prepaid balance", exact=True)).to_be_visible()
+        await expect(card.get_by_text("$123.45", exact=True)).to_be_visible()
     if scene == "claude_prepaid_balance_unavailable":
-        await expect(view.page.get_by_role("heading", name="Claude · prepaid balance unavailable")).to_be_visible()
-        await expect(view.page.get_by_text("Claude prepaid balance", exact=False)).to_have_count(0)
+        card = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
+        await expect(card.get_by_role("heading", name="Claude")).to_be_visible()
+        await expect(card.get_by_text("Prepaid balance", exact=True)).to_be_visible()
+        await expect(card.get_by_text("unavailable", exact=True)).to_be_visible()
     if scene == "claude_prepaid_balance_stale":
-        await expect(
-            view.page.get_by_role("heading", name="Claude · $123.45 prepaid balance (stale 1h00m)")
-        ).to_be_visible()
-        await expect(view.page.locator('.aiquota-card[aria-label="claude quota"] .aiquota-badge-stale')).to_have_count(
-            0
-        )
+        card = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
+        await expect(card.get_by_role("heading", name="Claude")).to_be_visible()
+        await expect(card.get_by_text("Balance stale · 1h", exact=True)).to_be_visible()
+        await expect(card.locator(".aiquota-badge-stale")).to_have_count(0)
     if scene == "stale_fallback":
-        claude = view.page.locator('.aiquota-card[aria-label="claude quota"]')
-        await expect(claude.get_by_role("heading")).to_contain_text("$123.45 prepaid balance")
-        await expect(claude.get_by_text("Stale · 1d0h", exact=False)).to_be_visible()
+        claude = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
+        await expect(claude.get_by_role("heading")).to_have_text("Claude")
+        await expect(claude.get_by_text("Data stale · 1d", exact=True)).to_be_visible()
     if scene == "anthropic_platform_credits":
-        await expect(
-            view.page.get_by_text("Main org · Anthropic API credit balance · $123.45 available", exact=True)
-        ).to_be_visible()
-        await expect(view.page.get_by_text("API promo credit grant", exact=False).first).to_be_visible()
+        card = view.page.locator('.aiquota-card[aria-label="Anthropic API quota"]')
+        await expect(card.get_by_role("heading", name="Anthropic API")).to_be_visible()
+        await expect(card.get_by_text("Main org", exact=True)).to_be_visible()
+        await expect(card.get_by_text("$123.45", exact=True)).to_be_visible()
+        await expect(card.get_by_text("Promo grant", exact=True).first).to_be_visible()
+        await expect(card.get_by_text("$25.00 remaining", exact=True)).to_be_visible()
     if scene == "platform_credits_with_subscription_resets":
-        claude = view.page.locator('.aiquota-card[aria-label="claude quota"]')
-        await expect(claude.get_by_role("heading")).to_contain_text("Claude · $25.75 prepaid balance")
+        claude = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
+        await expect(claude.get_by_role("heading")).to_have_text("Claude")
+        await expect(claude.get_by_text("$25.75", exact=True)).to_be_visible()
         await expect(claude.locator(".aiquota-window")).to_have_count(2)
-        codex = view.page.locator('.aiquota-card[aria-label="codex quota"]')
+        codex = view.page.locator('.aiquota-card[aria-label="Codex quota"]')
         await expect(codex.get_by_role("heading")).to_contain_text("Codex")
         await expect(codex.locator(".aiquota-strip-resets .aiquota-strip-line")).to_contain_text(
-            "3 resets (expiry: Jan 29, 12:00, Feb 1, 1 unknown)"
+            "Banked resets: 3 · next known expiry"
         )
         await expect(codex.locator(".aiquota-window")).to_have_count(2)
-        openai = view.page.locator('.aiquota-card[aria-label="openai_platform quota"]')
-        await expect(openai.get_by_role("heading", name="OpenAI API · $60.00 API credit")).to_be_visible()
-        await expect(openai.get_by_text("$60.00 expires", exact=False)).to_be_visible()
-        anthropic = view.page.locator('.aiquota-card[aria-label="anthropic_platform quota"]')
-        await expect(
-            anthropic.get_by_text("Shared org · Anthropic API credit balance · $75.00 available")
-        ).to_be_visible()
-        await expect(anthropic.get_by_text("API promo credit grant", exact=False)).to_contain_text("$25.00")
+        openai = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
+        await expect(openai.get_by_role("heading", name="OpenAI API")).to_be_visible()
+        await expect(openai.get_by_text("$60.00", exact=True)).to_be_visible()
+        anthropic = view.page.locator('.aiquota-card[aria-label="Anthropic API quota"]')
+        await expect(anthropic.get_by_text("Shared org", exact=True)).to_be_visible()
+        await expect(anthropic.get_by_text("$75.00", exact=True)).to_be_visible()
+        await expect(anthropic.get_by_text("$25.00 remaining", exact=True)).to_be_visible()
+    if scene == "reset_pending":
+        codex = view.page.locator('.aiquota-card[aria-label="Codex quota"]')
+        await expect(codex.get_by_text("Reset time passed · awaiting updated usage", exact=True)).to_be_visible()
+        await expect(codex.get_by_text("Awaiting updated usage", exact=True)).to_be_visible()
+        await expect(codex.get_by_text("Numeric pace", exact=False)).to_have_count(0)
+    if scene == "stale_observation":
+        claude = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
+        await expect(claude.get_by_text("Data stale", exact=False)).to_be_visible()
+        await expect(claude.locator(".aiquota-error-details")).to_have_count(0)
     await view.capture(target=view.page.locator("#app"))
 
 
@@ -117,10 +131,10 @@ async def test_live_subscription(visual: VisualHarness) -> None:
         )
         await expect(page.locator(".aiquota-card").first).to_be_visible()
         await expect(page.get_by_role("button", name="Reconnect")).to_be_enabled()
-        await expect(page.get_by_role("status")).to_have_text("Quota stream live")
+        await expect(page.get_by_role("status")).to_have_text("Live updates connected")
         await page.evaluate("window.dispatchEvent(new Event('quota-fixture-error'))")
-        await expect(page.get_by_text("Connection interrupted. Reconnecting to live updates…")).to_be_visible()
-        await expect(page.get_by_role("status")).to_have_text("Quota stream unavailable")
+        await expect(page.get_by_text("Live updates are interrupted; the browser is retrying.")).to_be_visible()
+        await expect(page.get_by_role("status")).to_have_text("Live updates unavailable")
         await expect(page.locator(".aiquota-card").first).to_be_visible()
         await view.capture("live-reconnecting", target=page.locator("#app"))
         await page.evaluate(
@@ -128,7 +142,7 @@ async def test_live_subscription(visual: VisualHarness) -> None:
             _FIXTURES["paid_credits"],
         )
         await expect(page.locator(".aiquota-notice")).to_have_count(0)
-        await expect(page.get_by_text("credits left", exact=False).first).to_be_visible()
+        await expect(page.get_by_text("Paid credits", exact=True).first).to_be_visible()
         await view.capture("live-recovered", target=page.locator("#app"))
         await page.get_by_role("button", name="Reconnect").click()
         await expect(page.get_by_role("button", name="Reconnect")).to_be_disabled()
@@ -138,7 +152,7 @@ async def test_live_subscription(visual: VisualHarness) -> None:
             _FIXTURES["hot"],
         )
         await expect(page.get_by_role("button", name="Reconnect")).to_be_enabled()
-        await expect(page.get_by_role("status")).to_have_text("Quota stream live")
+        await expect(page.get_by_role("status")).to_have_text("Live updates connected")
 
 
 if __name__ == "__main__":

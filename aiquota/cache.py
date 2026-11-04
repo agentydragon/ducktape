@@ -3,6 +3,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import httpx
 from platformdirs import user_cache_dir
 
 from aiquota.config import Config
@@ -23,7 +24,7 @@ from aiquota.providers.codex import CodexProvider
 from aiquota.providers.openai_platform import OpenAIPlatformProvider
 from aiquota.providers.zai import ZaiProvider
 from aiquota.remote import QuotaAPIClient
-from aiquota.render.view_model import AllQuotasView, to_view
+from aiquota.render.view_model import AllQuotasView, refresh_view, to_view
 
 CACHE_TTL = timedelta(seconds=120)
 
@@ -67,19 +68,19 @@ class QuotaCache:
             raw = self.read()
             cached = to_view(raw) if raw is not None else None
         if not force_refresh and cached is not None and datetime.now(UTC) - cached.fetched_at < self.ttl:
-            return cached
+            return refresh_view(cached)
         try:
             fresh = await fetcher()
-        except Exception:
+        except (httpx.HTTPError, OSError, ValueError) as exc:
             if cached is None:
                 raise
-            return cached
+            return refresh_view(cached, connection_error=str(exc))
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self.path.write_text(fresh.model_dump_json())
         except OSError:
             pass
-        return fresh
+        return refresh_view(fresh)
 
 
 class QuotaService:

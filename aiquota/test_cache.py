@@ -137,7 +137,9 @@ async def test_remote_refresh_falls_back_to_stale_local_snapshot(tmp_path: Path)
     async def unavailable() -> AllQuotasView:
         raise OSError("offline")
 
-    assert await cache.fetch_remote_view(unavailable, force_refresh=True) == to_view(cached)
+    view = await cache.fetch_remote_view(unavailable, force_refresh=True)
+    assert view.connection_error == "offline"
+    assert view.fetched_at == cached.fetched_at
 
 
 def _success(
@@ -219,10 +221,37 @@ async def test_remote_view_cache_preserves_server_selection(tmp_path: Path) -> N
     async def fetch_view() -> AllQuotasView:
         return view
 
-    assert await cache.fetch_remote_view(fetch_view, force_refresh=True) == view
+    fetched = await cache.fetch_remote_view(fetch_view, force_refresh=True)
+    assert fetched.providers[0].display == view.providers[0].display
 
     async def unavailable() -> AllQuotasView:
         raise OSError("offline")
 
-    assert await cache.fetch_remote_view(unavailable, force_refresh=True) == view
+    offline = await cache.fetch_remote_view(unavailable, force_refresh=True)
+    assert offline.connection_error == "offline"
+    assert offline.providers[0].display == view.providers[0].display
+    assert offline.providers[0].display_windows == []
     assert cache.read() is not None  # the desktop's raw-cache reader remains compatible
+
+
+async def test_cached_view_recomputes_deadlines_without_rewriting_observations(tmp_path: Path) -> None:
+    now = datetime.now(UTC)
+    observed = now - timedelta(seconds=90)
+    cache = QuotaCache(path=tmp_path / "cache.json")
+    window = QuotaWindow(
+        used_percent=100, reset_seconds=60, window_seconds=18000, reset_at=observed + timedelta(seconds=60)
+    )
+    fetch = _success(observed, short_window=window)
+    view = to_view(
+        AllQuotas(providers=[ProviderQuota(provider="codex", last_output=fetch)], fetched_at=observed), observed
+    )
+    original = view.model_dump_json()
+    cache.path.write_text(original)
+
+    async def unexpected_fetch() -> AllQuotasView:
+        raise AssertionError("fresh cache must not contact server")
+
+    refreshed = await cache.fetch_remote_view(unexpected_fetch)
+    assert refreshed.providers[0].display_windows[0].reset_pending
+    assert refreshed.providers[0].display.result == view.providers[0].display.result
+    assert cache.path.read_text() == original

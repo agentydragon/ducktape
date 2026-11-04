@@ -105,8 +105,9 @@ class GnomeSession:
         )
 
     def dbus_call(self, destination: str, object_path: str, method: str, *args: str) -> bytes:
+        # gdbus replaces non-ASCII text with '?' in the container's default C locale.
         result = self.exec(
-            f"gdbus call --session --timeout 10 --dest {shlex.quote(destination)} "
+            f"LC_ALL=C.UTF-8 gdbus call --session --timeout 10 --dest {shlex.quote(destination)} "
             f"--object-path {shlex.quote(object_path)} --method {shlex.quote(destination + '.' + method)} "
             + " ".join(shlex.quote(arg) for arg in args)
         )
