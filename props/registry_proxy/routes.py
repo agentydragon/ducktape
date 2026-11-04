@@ -17,8 +17,8 @@ from uuid import UUID
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
-from sqlalchemy import text
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import cast, text
+from sqlalchemy.dialects.postgresql import ENUM, insert
 from starlette.background import BackgroundTask
 
 from props.backend.auth import (
@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _OCI_VERSION_HEADER = {"Docker-Distribution-API-Version": "registry/2.0"}
+_AGENT_TYPE_DB_ENUM = ENUM(*(agent_type.value for agent_type in AgentType), name="agent_type_enum", create_type=False)
 
 
 def _get_upstream() -> UpstreamRegistryConfig:
@@ -177,7 +178,9 @@ async def _record_manifest_push(
             insert(AgentDefinition)
             .values(
                 digest=digest,
-                agent_type=agent_type,
+                # The deployed column is a PostgreSQL enum while the ORM model
+                # declares String; asyncpg needs an explicit cast for its bind.
+                agent_type=cast(agent_type.value, _AGENT_TYPE_DB_ENUM),
                 created_by_agent_run_id=agent_run_id,
                 base_digest=metadata.base_digest,
                 display_name=metadata.display_name,
