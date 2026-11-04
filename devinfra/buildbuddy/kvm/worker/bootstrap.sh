@@ -11,6 +11,7 @@ test "$(findmnt --noheadings --output FSTYPE --target /buildbuddy)" = ext4
 
 install -Dm0644 "$config_dir/executor.yaml" /etc/buildbuddy/executor.yaml
 install -Dm0644 "$config_dir/daemon.json" /etc/docker/daemon.json
+install -Dm0644 "$config_dir/docker-seccomp.json" /etc/docker/buildbuddy-seccomp.json
 install -Dm0644 "$config_dir/containerd.toml" /etc/containerd/config.toml
 install -Dm0644 "$config_dir/containerd-mounts.conf" /etc/systemd/system/containerd.service.d/10-buildbuddy-work.conf
 install -Dm0644 "$config_dir/executor.service" /etc/systemd/system/buildbuddy-executor.service

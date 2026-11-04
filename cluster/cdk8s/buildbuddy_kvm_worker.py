@@ -45,6 +45,7 @@ _GUEST_FILES = (
     "executor.yaml",
     "executor.service",
     "daemon.json",
+    "docker-seccomp.json",
     "modules-load.conf",
     "modprobe.conf",
     "sysctl.conf",
