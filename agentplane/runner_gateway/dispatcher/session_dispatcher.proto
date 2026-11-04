@@ -60,8 +60,8 @@ service SessionDispatcher {
   rpc ListDispatches(ListDispatchesRequest) returns (ListDispatchesResponse) {
     option (google.api.http) = {get: "/v1/dispatches"};
   }
-  // Only while the Dispatch is `DELIVERY_STATE_QUEUED_IN_DISPATCHER`: once a delivery began its outcome
-  // is the runner's.
+  // Only before possible forwarding. QUEUED alone is insufficient: a lost reply or recovery
+  // can requeue an attempted command. Such cancellation fails FAILED_PRECONDITION.
   rpc CancelDispatch(CancelDispatchRequest) returns (CancelDispatchResponse) {
     option (google.api.http) = {post: "/v1/dispatches/{command_id}:cancel" body: "*"};
   }
@@ -70,14 +70,14 @@ service SessionDispatcher {
 // Where a Dispatch is. The one vocabulary of every dispatch.
 enum DeliveryState {
   DELIVERY_STATE_UNSPECIFIED = 0;
-  DELIVERY_STATE_QUEUED_IN_DISPATCHER = 1;     // stored, not sent; `reason` says what it waits for
+  DELIVERY_STATE_QUEUED_IN_DISPATCHER = 1;     // awaiting delivery or same-ID reconciliation; not proof of non-admission
   DELIVERY_STATE_DELIVERING_TO_RUNNER = 2;     // a call to the runner is in flight
   DELIVERY_STATE_RUNNER_ADMITTED = 3;          // the runner journaled it
   DELIVERY_STATE_HARNESS_CONFIRMED = 4;        // it reached the model's context
   DELIVERY_STATE_NO_OP = 5;                    // nothing to do; `reason` says where that was decided
   DELIVERY_STATE_FAILED = 6;                   // terminal; `reason` names where it failed
   DELIVERY_STATE_CANCELLED_IN_DISPATCHER = 7;  // cancelled before delivery began; `reason` says by whom
-  DELIVERY_STATE_UNKNOWN = 8;                  // the owner outcome is unconfirmed, or deletion made it unreadable
+  DELIVERY_STATE_UNKNOWN = 8;                  // execution/effect is unconfirmed; any known journal admission is retained
 }
 
 enum Operation {
@@ -98,7 +98,8 @@ message Dispatch {
   Operation operation = 5;
   DeliveryState state = 6;
   optional string reason = 7;
-  // The runner journal's `CommandAdmitted` entry, once the runner admitted it.
+  // The runner journal's `CommandAdmitted` entry, once observed; retained even if state becomes
+  // UNKNOWN because later execution/effects could not be established.
   optional agentplane.proto.EventEntry admission = 8;
   google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp updated_at = 10;

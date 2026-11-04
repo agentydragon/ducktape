@@ -415,10 +415,10 @@ func (a *app) getDispatchCommand() *cobra.Command {
 func (a *app) cancelInputCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "cancel-input COMMAND_ID",
-		Short: "Cancel a queued input",
+		Short: "Cancel an input before delivery begins",
 		Long: `Calls SessionDispatcher.CancelDispatch for the caller-held input COMMAND_ID. It only cancels while the
-Dispatcher still has the input queued; once delivery starts, the runner owns the outcome. After an
-unknown outcome, use get-dispatch with the same COMMAND_ID.`,
+Dispatcher has not begun forwarding the input. QUEUED alone does not prove cancellability after a
+lost reply. After an unknown outcome, use get-dispatch with the same COMMAND_ID.`,
 		Args: cobra.ExactArgs(1),
 		RunE: a.sessionCommand(func(ctx context.Context, client dispatcherpb.SessionDispatcherClient, args []string) error {
 			if args[0] == "" {

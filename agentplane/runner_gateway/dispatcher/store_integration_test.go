@@ -3035,3 +3035,27 @@ func TestFirstCommandAttemptDoesNotInferNonAdmissionFromRPCCode(t *testing.T) {
 		})
 	}
 }
+
+func TestDeletedAdmittedInputKeepsKnownAdmissionInUnknownEffectSnapshot(t *testing.T) {
+	ctx := t.Context()
+	store := testStore(t, 3)
+	head, err := enqueueWithSession(t, store, ctx, "admitted-effect-session", "sandbox-worker", sandboxUID, input("admitted-effect-input", "hello"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := store.ClaimSandboxOwner(ctx, sandboxUID, "admitted-effect-lease", 1, "replica-a", 0)
+	if err != nil || owner == nil {
+		t.Fatalf("owner: %+v %v", owner, err)
+	}
+	admission := &eventlogpb.EventEntry{Cursor: 17}
+	if _, err := store.Settle(ctx, head.CommandID, *owner, []string{QueueState}, AdmittedState, "", admission); err != nil {
+		t.Fatal(err)
+	}
+	events, err := store.EndSandbox(ctx, sandboxUID)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("terminal snapshot: %+v %v", events, err)
+	}
+	if events[0].Dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN || !proto.Equal(events[0].Dispatch.GetAdmission(), admission) {
+		t.Fatalf("unknown effects erased known admission: %+v", events[0])
+	}
+}

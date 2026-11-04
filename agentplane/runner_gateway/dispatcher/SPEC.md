@@ -160,8 +160,8 @@ a new Session UUID. Runtime admission reserves a Session, not a running native h
 
 A native `OpenSession` response of `INVALID_ARGUMENT` proves validation rejected the request before
 reservation; `ALREADY_EXISTS` reports a conflicting retained request. Dispatcher records these as
-`FAILED` and, in the same transaction, fails commands still `QUEUED_IN_DISPATCHER` with
-`session_opening_rejected`. It does not alter delivering or admitted commands. Admission and
+`FAILED` and, in the same transaction, fails commands still `QUEUED_IN_DISPATCHER` and never forwarded with
+`session_opening_rejected`; a previously attempted command becomes `UNKNOWN`. It does not alter delivering or admitted commands. Admission and
 settlement serialize on the Session ID, and settlement checks the current owner generation.
 A command admitted first is included; a later new queued command is refused with
 `FAILED_PRECONDITION` without a stored receipt. Exact existing-command retries still return the
@@ -192,7 +192,9 @@ to replay unknown native effects or target a replacement environment.
 Cancellation is available only before possible forwarding. A later identity/policy/wake failure or
 bare RPC error cannot prove that a prior attempt had no effects. Unavailable/deadline replies keep
 the existing same-ID journal reconciliation; other unproven terminal RPC errors become `UNKNOWN`.
-An actual returned Runtime admission remains admission evidence. A pristine queued command can fail
+An actual returned Runtime admission remains admission evidence. An admitted input can have an
+unknown later execution/effect outcome on deletion; its terminal snapshot retains the admission
+entry and cursor. `UNKNOWN` does not negate that proven journal acceptance. A pristine queued command can fail
 as known-unsent; a requeued possibly-forwarded command becomes `UNKNOWN` on environment deletion.
 
 Deletion snapshots are transactional PostgreSQL notifications to connected `WatchDispatches`
