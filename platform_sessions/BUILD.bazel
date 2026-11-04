@@ -125,6 +125,7 @@ py_library(
         ":host",
         ":probe",
         ":registry",
+        ":session_store",
         "@pypi//httpx2",
         "@pypi//starlette",
     ],
@@ -188,6 +189,21 @@ py_test(
         ":session_store",
         "//:conftest",
         "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "integration_runtime_test",
+    srcs = ["integration_runtime_test.py"],
+    deps = [
+        ":host",
+        ":integration_runtime",
+        ":registry",
+        ":session_store",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

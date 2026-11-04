@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -13,16 +14,14 @@ from starlette.concurrency import run_in_threadpool
 from platform_sessions.host import IntegrationError
 from platform_sessions.probe import probe_session
 from platform_sessions.registry import IntegrationInstance
+from platform_sessions.session_store import ProviderSessionStore
 
 
 @dataclass
-class IntegrationRuntime:
+class IntegrationRuntime[T](ABC):
     config: IntegrationInstance
-    decoder: Any = None
+    store: ProviderSessionStore[T]
     instructions: Any = None
-    store: Any = None
-    checker: Any = None
-    fetcher: Any = None
     periodic: bool = True
     candidate_verification: bool = True
     observation: dict = field(default_factory=lambda: {"outcome": "not_checked"})
@@ -38,7 +37,7 @@ class IntegrationRuntime:
                     self.store,
                     transport=transport,
                     source=source,
-                    checker=self.checker,
+                    checker=self.verify,
                     provider=self.config.type,
                     instance_id=self.config.id,
                 )
@@ -91,12 +90,17 @@ class IntegrationRuntime:
             "candidate_verification": self.candidate_verification,
         }
 
-    def parse(self, body):
-        return self.decoder(body)
+    @abstractmethod
+    def parse(self, body: bytes) -> T:
+        """Decode a provider's session transfer."""
+
+    @abstractmethod
+    def verify(self, candidate: T, *, transport=None) -> None:
+        """Check a session against the provider without installing it."""
 
     async def check_candidate(self, candidate, transport=None):
         try:
-            await run_in_threadpool(self.checker, candidate, transport=transport)
+            await run_in_threadpool(self.verify, candidate, transport=transport)
         except httpx2.HTTPStatusError as exc:
             code = "reauth_required" if exc.response.status_code == 401 else "upstream_rejected"
             raise IntegrationError(code, 400) from None
@@ -110,7 +114,8 @@ class IntegrationRuntime:
     async def install(self, candidate, transport=None):
         async with self.lock:
             try:
-                await run_in_threadpool(self.store.install, candidate, transport=transport)
+                await run_in_threadpool(self.verify, candidate, transport=transport)
+                await run_in_threadpool(self.store.save, candidate)
             except httpx2.HTTPError, ValueError, TypeError:
                 raise IntegrationError("verification_failed", 400) from None
             except OSError:
