@@ -427,11 +427,13 @@ fn forwarding_fixture(
 
 #[test]
 fn nonterminal_forwarding_retains_publication_from_the_caller_suffix() {
-    let before_command = "const make = label => { const result = create({ label: () => label, values: [Flags.FIRST], execute: async () => {} }); globalThis.retained = create; return result; };\nconst first = make(\"a\");\nconst second = make(\"b\");\n";
+    let before_command = "const make = label => { const result = create({ label: () => label, values: [Flags.FIRST], execute: async () => {} }); return result; };\nconst first = make(\"a\");\nconst second = make(\"b\");\n";
     assert_forwarding_factory_refused(
         &forwarding_fixture(FACTORY, before_command, &[]),
         Some("first"),
     );
+    let publishing_suffix = "const make = label => { const result = create({ label: () => label, values: [Flags.FIRST], execute: async () => {} }); globalThis.retained = create; return result; };\nconst first = make(\"a\");\nconst second = make(\"b\");\n";
+    assert_forwarding_factory_refused(&forwarding_fixture(FACTORY, publishing_suffix, &[]), None);
 }
 
 #[test]
