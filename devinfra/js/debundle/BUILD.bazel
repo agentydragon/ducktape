@@ -36,6 +36,8 @@ rust_library(
     srcs = [":analysis_identity_source"],
     crate_root = ":analysis_identity_source",
     edition = "2024",
+    rustc_env = {"RUSTC_BOOTSTRAP": "1"},
+    zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
 )
 
 rust_library(
@@ -637,7 +639,9 @@ rust_library(
     compile_data = [":standard_globals_json"],
     crate_root = "lib.rs",
     edition = "2024",
+    rustc_env = {"RUSTC_BOOTSTRAP": "1"},
     rustc_env = {"STANDARD_GLOBALS_JSON": "$(execpath :standard_globals_json)"},
+    zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":analysis_codec",
         ":binding_targets",
@@ -972,6 +976,8 @@ rust_library(
     srcs = glob(["staged_analysis/*.rs"]),
     crate_root = "staged_analysis/mod.rs",
     edition = "2024",
+    rustc_env = {"RUSTC_BOOTSTRAP": "1"},
+    zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":analysis",
         ":analysis_codec",
@@ -1223,6 +1229,8 @@ rust_library(
     crate_name = "debundle_cli",
     crate_root = "cli/mod.rs",
     edition = "2024",
+    rustc_env = {"RUSTC_BOOTSTRAP": "1"},
+    zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":analysis",
         ":analysis_identity",
@@ -1279,6 +1287,8 @@ rust_library(
     srcs = ["selectors/resolution/selector_ir.rs"],
     crate_root = "selectors/resolution/selector_ir.rs",
     edition = "2024",
+    rustc_env = {"RUSTC_BOOTSTRAP": "1"},
+    zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":analysis",
         ":source_identity",
@@ -1297,6 +1307,8 @@ rust_library(
     srcs = ["selectors/resolution/selector_constraint_backend.rs"],
     crate_root = "selectors/resolution/selector_constraint_backend.rs",
     edition = "2024",
+    rustc_env = {"RUSTC_BOOTSTRAP": "1"},
+    zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":analysis",
         ":selector_ir",
@@ -1317,6 +1329,8 @@ rust_library(
     srcs = ["selectors/resolution/selector_constraint_model_builder.rs"],
     crate_root = "selectors/resolution/selector_constraint_model_builder.rs",
     edition = "2024",
+    rustc_env = {"RUSTC_BOOTSTRAP": "1"},
+    zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":analysis",
         ":selector_constraint_backend",
@@ -1356,6 +1370,8 @@ rust_library(
     srcs = ["selectors/resolution/selector_backend_solver.rs"],
     crate_root = "selectors/resolution/selector_backend_solver.rs",
     edition = "2024",
+    rustc_env = {"RUSTC_BOOTSTRAP": "1"},
+    zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":analysis",
         ":selector_constraint_backend",
@@ -1469,6 +1485,8 @@ rust_library(
     srcs = ["selectors/resolution/selector_runtime.rs"],
     crate_root = "selectors/resolution/selector_runtime.rs",
     edition = "2024",
+    rustc_env = {"RUSTC_BOOTSTRAP": "1"},
+    zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":selector_backend_solver",
         ":selector_ir",
@@ -1487,6 +1505,8 @@ rust_library(
     ],
     crate_root = "selectors/resolution/selector_resolve.rs",
     edition = "2024",
+    rustc_env = {"RUSTC_BOOTSTRAP": "1"},
+    zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":analysis",
         ":chunk_facts",
@@ -1510,6 +1530,8 @@ rust_library(
     srcs = ["spec_resolution.rs"],
     crate_root = "spec_resolution.rs",
     edition = "2024",
+    rustc_env = {"RUSTC_BOOTSTRAP": "1"},
+    zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":analysis",
         ":selector_resolve",
@@ -1600,8 +1622,10 @@ rust_binary(
     crate_name = "debundle",
     crate_root = "main.rs",
     edition = "2024",
+    rustc_env = {"RUSTC_BOOTSTRAP": "1"},
     rustc_flags = ["-Cstrip=symbols"],
     visibility = ["//devinfra/js/debundle/e2e:__pkg__"],
+    zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":cli",
         ":gate",

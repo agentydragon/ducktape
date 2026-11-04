@@ -60,6 +60,7 @@ let
     # Materialize the runner-layering spike's read-only tools and harness filesystems for its
     # local Firecracker probe; this is not used by Bazel actions or CI.
     pkgs.squashfsTools
+    pkgs.measureme # Temporary compiler profile analysis.
   ]
   ++ [
     # llvm-addr2line: drop-in for GNU addr2line used by `perf report` for

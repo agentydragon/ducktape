@@ -1,5 +1,6 @@
 """Hash declared configured engine inputs into a Rust constant."""
 
+import cProfile
 import hashlib
 import json
 import sys
@@ -37,4 +38,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    profiler = cProfile.Profile()
+    profiler.runcall(main)
+    profiler.dump_stats(str(Path(sys.argv[2]).with_suffix(".cprofile")))
