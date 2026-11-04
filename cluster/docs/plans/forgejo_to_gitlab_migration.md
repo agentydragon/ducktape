@@ -1,155 +1,191 @@
-# Forgejo → GitLab migration considerations
+# Plan: move the cluster from Forgejo to GitLab
 
-Pre-think for replacing the in-cluster Forgejo with GitLab. Motivated by
-[the git-write latency + HA investigation](../../../cluster/debug/git_storage_latency_and_ha.md):
-GitLab's **Gitaly Cluster (Praefect)** could address the git storage single-node
-dependency that the Forgejo multi-replica RWX share cannot. Its Kubernetes
-deployment maturity is a gating question, not an established HA solution here.
-This note scopes what a migration touches and what is actually in **Free/CE**
-versus paid tiers.
+Status: draft proposal, 2026-11-03. Production Forgejo remains authoritative. User scope: migrate Git repositories and
+current configuration; importing old Forgejo issues and pull requests is unnecessary. Inventory non-Git data and
+consumers before retiring the old installation; do not assume it is disposable.
 
-Not a decision to migrate; a map of the surface and the gotchas.
+## Starting point and architecture
 
-## What Forgejo does for us today (the replacement surface)
+- Use the existing in-cluster GitLab spike as the starting point, not an automatic deployment of a new VM-based Git
+  service. GitLab web, registry, Shell, Sidekiq and Toolbox are up; three Gitaly and three Praefect replicas are Ready.
+  Its Flux stages and demo source are Ready at the time of the inventory. Decide separately whether to harden the spike
+  in place or deploy a clean production instance: the former saves effort; the latter gives a clean bootstrap and
+  restore rehearsal. Preserve existing spike data until inventoried.
+- The spike has three independent 50 GiB Piraeus local-HDD Gitaly PVCs, one per OVH worker, and replication at the
+  application level; database PVCs are local SSD. It is not using the SeaweedFS CSI mount for Gitaly, but GitLab object
+  storage uses SeaweedFS S3.
+- GitLab documents Praefect on Kubernetes as beta and not recommended for production; standalone Gitaly on Kubernetes is
+  generally available but does not provide repository-level failover. The GitLab-recommended production-HA alternative
+  is a hybrid deployment with Praefect/Gitaly outside Kubernetes. This is a support/maturity trade-off, not a technical
+  requirement for VMs. Start with the current spike and assess whether accepting the risk fits the desired service.
+  [GitLab deployment options](https://docs.gitlab.com/administration/gitaly/kubernetes/)
+- Existing evidence: a private project, Authentik OIDC, managed user, Kubernetes Runner, push -> registry -> Flux ->
+  app, and one controlled Gitaly primary partition were demonstrated. One push failed during that fault before a retry
+  succeeded; the acknowledged commit survived. This does not prove general zero data loss or a production restore.
+  Repository restore, real private repo import, human SSH access, membership revocation, and existing agent workflows
+  remain gates. Synthetic Git/LFS and scoped SSH round trips passed; see the
+  [preflight report](../../debug/gitlab_spike/2026-11-03-migration-preflight.md). The spike's initial Rails database
+  seed needed manual recovery. See `cluster/debug/gitlab_spike/2026-10-25-live.md` and
+  `cluster/x/gitlab_spike/README.md`.
+- The spike measured 9.895 GiB namespace working set in a quiet period after tuning and 15.31 GiB under the earlier
+  benchmark; the earlier Forgejo comparison was 1.31 GiB under load. These windows and configurations differ; neither is
+  a capacity forecast. Rails startup showed long I/O stalls with container image files on a busy HDD. Measure current
+  peak capacity and restart behavior, including application image storage, before committing production workloads.
 
-From `cluster/k8s/forgejo/*` and `tf/gitops/*`:
+## Phase 1: inventory and contract
 
-- **Private git hosting** — `ducktape` (pull-mirror of GitHub), `gaffer-private`,
-  `cpap-data`, `budget-ledger`, `augur-evidence`, `props`, `haku-state`.
-- **Declarative access via the `svalabs/forgejo` Terraform provider**: 24 users, 30
-  collaborators, 8 SSH keys, 14 repos, 4 Actions secrets, 2 webhooks, 2 branch-protection
-  rules.
-- **Forgejo Actions CI** — notably `haku-ci`: a warm, **egress-fenced, in-cluster-only**
-  runner that builds Haku's UI image from `haku-state` and pushes to the in-cluster
-  registry, and must **never** touch BuildBuddy/RBE or external CI (see
-  `cluster/cdk8s/haku_ci/README.md`). Plus CI in props / budget-ledger / augur-evidence /
-  cpap-data. Runner tokens are fetched from the API by TF because the Forgejo provider has
-  no runner-token resource.
-- **In-cluster container registry** (`forgejo-images`) + **Flux image automation** reading
-  Forgejo registry tags.
-- **Authentik SSO**, **RWX git PVC**, a **seaweedfs LFS bucket**.
-- **Not touched:** Flux's GitOps source is **GitHub** (`gotk-sync.yaml`), not Forgejo.
-  Forgejo hosts only secondary/private repos; that split stays.
+1. Inventory every Forgejo repository by owner, default branch, visibility, branches/tags, wikis and LFS use, active
+   writers, mirror direction, Git/HTTP/SSH clients, credentials, branch policies, hooks, and CI workflows. Extend the
+   initial Forgejo API and Git-ref inventory with per-repo LFS manifests; distinguish private user data from disposable
+   mirrors. Git repository metadata, issue/PR history, wikis, releases, and CI artifacts are separate categories; do not
+   promise to import or delete them without an explicit disposition.
+2. Inventory registry images by OCI repository, full tag set, manifest digest, platform/index, signatures/referrers
+   where relevant, producers, deployed digest references, GitOps and rollback history, dormant configurations and
+   external users. Record live Flux ImageRepositories, ImagePolicies, pull secrets, namespace secret stores, receivers,
+   and writers. Current snapshot: nine private repositories were discoverable with the Forgejo admin API, and all nine
+   advertised refs; 69 Flux ImageRepositories reference `git.allegedly.works`. Three private Flux GitRepository objects
+   refer to Forgejo: `ducktape-flux/finance-agent`, `flux-system/haku-state` and `haku-sandbox/haku-state-write`.
+3. Map Terraform/Crossplane ownership, secret rotation and ESO copies, Authentik identities, egress proxy credential
+   injection, agent Git/Forgejo API calls, SSH keys, scheduled tasks, backup/restore dependencies, and bootstrap
+   ordering. Include Haku's state writer, UI/Anki writers, Flux image automation and jobs. Preserve ownership of
+   existing resources; never destroy old provider-managed repos by accidentally removing their state.
+4. Agree on per-service write freeze duration, acceptable data loss and recovery objectives, which paths need stable
+   URLs, and proof of a rollback. Do not claim RPO/RTO values until measured.
 
-## Tooling parity
+Gate: an owner and migration method for each data class, writer, reader, credential, workflow and image; no unknown
+critical bootstrap dependency.
 
-**Terraform provider — yes, and strictly nicer.** Official `gitlabhq/gitlab` provider,
-mature. Our resources map cleanly, and the runner-token wiring gets _simpler_:
+## Declarative resource mapping
 
-| Forgejo (`svalabs/forgejo`)         | GitLab (`gitlabhq/gitlab`)                               |
-| ----------------------------------- | -------------------------------------------------------- |
-| `forgejo_repository`                | `gitlab_project`                                         |
-| `forgejo_user`                      | `gitlab_user`                                            |
-| `forgejo_collaborator`              | `gitlab_project_membership`                              |
-| `forgejo_ssh_key`                   | `gitlab_user_sshkey`                                     |
-| `forgejo_repository_action_secret`  | `gitlab_project_variable`                                |
-| `forgejo_repository_webhook`        | `gitlab_project_hook`                                    |
-| `forgejo_branch_protection`         | `gitlab_branch_protection`                               |
-| _(API-fetch hack for runner token)_ | **`gitlab_user_runner`** — mints the auth token natively |
+Port each owner independently and verify its plan and credentials; these resource names are a starting point, not a
+claim of equivalent security semantics.
 
-**Operator — available, with limits.** The official **GitLab Operator** wraps the cloud-native chart with a
-`GitLab` CR and [sequences version-upgrade DB migrations](https://docs.gitlab.com/operator/gitlab_upgrades/).
-It inherits chart limitations and requires external PostgreSQL, Redis, and object storage;
-its default zero-downtime path advances one minor release at a time
-([operator limitations](https://docs.gitlab.com/operator/)). Heavier + assumes
-nginx-ingress; on our Talos/Cilium/Gateway-API stack
-we'd disable that and wire an `HTTPRoute` (the bench already used the ingress-off shape).
-For our scale a **Flux `HelmRelease` on the chart directly** may be simpler; the operator's
-real value is managed upgrade sequencing, subject to those limits.
+| Forgejo resource or function                       | Candidate GitLab resource                                                                         |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Repository and owner                               | `gitlab_group`, `gitlab_project`, `gitlab_user`                                                   |
+| Collaborators and SSH keys                         | `gitlab_project_membership`, `gitlab_group_membership`, `gitlab_user_sshkey`, `gitlab_deploy_key` |
+| Actions secrets and workflows                      | `gitlab_project_variable`, GitLab CI and project-scoped `gitlab_user_runner`                      |
+| Webhook and branch protection                      | `gitlab_project_hook`, `gitlab_branch_protection`                                                 |
+| Repo-scoped service access and registry credential | Project/group access tokens or deploy tokens, with independently verified scopes and rotation     |
 
-**GitLab Agent for Kubernetes (`agentk`/KAS) — optional.** Native secure CI→cluster access
-without exposing the kube API. We'd likely keep Flux-from-GitHub for GitOps, but `agentk`
-is worth it for CI that needs cluster access.
+GitLab Free does not provide
+[required MR approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/#required-approvals). Check
+whether any existing policy depends on them. GitLab evaluates
+[overlapping protected-branch rules](https://docs.gitlab.com/user/project/repository/branches/protection_rules/) using
+the most permissive rule for most settings, so test the resulting permissions rather than checking rules individually.
 
-## What changes operationally
+## Phase 2: make GitLab a safe destination
 
-- **CI rewrite is the real labor.** `.forgejo/workflows/*` (a GitHub-Actions clone) →
-  `.gitlab-ci.yml` (different model). GitLab CI is far more capable; the **Kubernetes
-  executor** runs each job as a pod, which maps directly onto the `haku-ci` containment
-  model (dedicated egress-fenced namespace + NetworkPolicy, no external CI, push only to the
-  in-cluster registry). Requirements transfer; the YAML does not.
-- **Registry / packages / mirroring / SSO** are built in: Container + Package registry,
-  Dependency Proxy (Docker Hub cache — could cut external pulls), Authentik via OmniAuth
-  OIDC. Flux image automation reads GitLab's OCI registry fine.
-- **Heavier stack.** ~10 pods, external **PostgreSQL 16** (CNPG), Redis, and object storage
-  (seaweedfs S3 / MinIO); ~13-min fresh migrations; slow Puma boot. A real step up from a
-  single Go binary on el-cheapo OVH — the central "does it earn its footprint?" question.
+1. Produce separately reviewable declarative cdk8s/Flux, OpenTofu/Crossplane, Authentik, ESO and network changes for the
+   chosen in-cluster topology. Decide whether to promote the spike or build a clean instance. Configure production
+   DNS/TLS/SSH, PostgreSQL/Valkey, object buckets, backups, resource requests/placement, monitoring, quotas and upgrade
+   sequencing. Keep container image and recovery dependencies outside a circular dependency on the new registry or old
+   Forgejo.
+2. Establish SSO and least-privilege users, groups, projects, keys, tokens, webhook secrets and branch protections.
+   Exercise first login, repeat login, service credentials, revocation, rotation, Terraform no-drift and clean
+   bootstrap, including interrupted database initialization recovery. GitLab's project and registry permissions must be
+   tested rather than assumed equivalent to Forgejo.
+3. Prove readiness and failure handling for each Gitaly failure domain, Praefect quorum, DB failover, pod and node loss,
+   network interruption, recovery and replica verification. The prior single partition experiment is a starting point
+   only. Resolve the
+   [backup preflight skips](../../debug/gitlab_spike/2026-11-03-migration-preflight.md#backup-preflight) and rehearse a
+   complete backup and restore to an isolated instance with the same GitLab version, Rails secrets, repositories and
+   LFS, object buckets, registry, DB and any Praefect metadata needed for the chosen method; verify application access
+   and checksums. Follow the chart's actual backup/restore guidance and account for separately managed object storage.
+   [GitLab restore requirements](https://docs.gitlab.com/administration/backup_restore/restore_gitlab/)
+4. Prove existing agents' least-privilege review proposal flow: Forgejo AGit `refs/for/*` and read-only source access
+   cannot be assumed to work in GitLab. Prototype an appropriately scoped fork/MR or equivalent; test protected-branch
+   enforcement, SSH, HTTP and injected credentials. Maintain Haku's allowed direct writes to its state while preserving
+   branch protection.
+5. Implement GitHub -> GitLab mirror for each needed mirror. GitLab Free lacks built-in pull mirroring; either drop
+   unused mirrors or run a narrowly credentialed, monitored fetch/push job. Define ref deletion and force-update
+   behavior and prevent it from overwriting GitLab-owned refs. Native pull mirroring is Premium/Ultimate.
+   [GitLab pull mirror](https://docs.gitlab.com/user/project/repository/mirror/pull/)
 
-## CE (Free) vs paid — checked against GitLab docs (2026-07; HA caveat rechecked 2026-10-28)
+Gate: supported or consciously accepted deployment trade-off, successful clean rebuild and full restore, threat-model
+parity and a tested production data path. Operator owns the HA/availability decision.
 
-Most of the current Forgejo setup maps to **Free**; its GitHub → Forgejo pull
-mirror is a paid-tier exception. Other paid gates affect optional workflow
-features. Checked per feature against `docs.gitlab.com`:
+## Phase 3: prepare production integrations in parallel
 
-| Capability                                                              | Tier                                                       |
-| ----------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Git hosting, projects, groups, SSH/deploy keys                          | **Free**                                                   |
-| **Gitaly Cluster (Praefect)** — HA storage capability                   | **Free** (self-managed; GitLab _support_ is Premium+ only) |
-| GitLab CI + GitLab Runner (Kubernetes executor)                         | **Free**                                                   |
-| Merge-request pipelines                                                 | **Free**                                                   |
-| Container Registry, Package Registry                                    | **Free**                                                   |
-| **Dependency Proxy** (Docker Hub cache)                                 | **Free**                                                   |
-| GitLab Pages                                                            | **Free**                                                   |
-| CI/CD components / Catalog, `agentk`/KAS                                | **Free**                                                   |
-| **Push mirroring** (GitLab → elsewhere)                                 | **Free**                                                   |
-| Optional (non-blocking) MR approvals                                    | **Free**                                                   |
-| Secret Detection analyzer (runs in CI)                                  | **Free**                                                   |
-| Security-scan analyzers (SAST/container/dep) run in CI                  | **Free** (jobs run)                                        |
-| **Pull mirroring** (GitHub → GitLab)                                    | **Premium** ⚠️                                             |
-| **Enforced approval rules** (required approvers, prevent self-approval) | **Premium**                                                |
-| **Code-owner _required_ approval**                                      | **Premium** (a `CODEOWNERS` file displays in Free)         |
-| Merged-results pipelines                                                | **Premium**                                                |
-| **Merge trains**                                                        | **Premium**                                                |
-| MR / code-review analytics                                              | **Premium**                                                |
-| Security Dashboard, MR vulnerability widgets, vulnerability management  | **Ultimate**                                               |
+1. Reproduce Haku CI on project-scoped GitLab Runner using the Kubernetes executor, preserving its actual trust
+   contract: in-cluster execution; no BuildBuddy or external CI for private `haku-state`; fenced egress; per-job
+   isolation; scoped Git/registry credentials; no job service-account token; no arbitrary cross-project jobs; node
+   placement; and no scale-down deletion of running builds. Preserve existing necessary dependency-fetch allowlist,
+   rather than assuming zero network access. The
+   [preflight](../../debug/gitlab_spike/2026-11-03-migration-preflight.md#runner-manager-policy-gap) found that the
+   spike manager's Cilium policy does not select its Pod; correct and verify realized enforcement before production use.
+   Runner-manager RBAC must be separate from job-pod credentials. Exercise a real representative build, concurrent/long
+   builds, failures, revocation, cancellation and malicious egress tests; do not assume the demo's ko build covers
+   Haku's Dockerfile. Assess privileged DIND risk and aim for a tested unprivileged build if compatible.
+   [Runner security](https://docs.gitlab.com/runner/security/)
+2. Port the remaining Forgejo Actions workflows to GitLab pipelines independently, using fixtures and appropriate secret
+   boundaries. Mirror pipeline status and artifact behavior explicitly, not workflow YAML line for line.
+3. Design GitLab registry namespace/project mapping before copying: GitLab registry images are tied to a project path,
+   so `git.allegedly.works/ducktape-ci/<image>` cannot simply be assumed to map to the same authorization and namespace.
+   Options include per-image projects or a shared image project with updated paths. Test scoped pushes, pulls, isolation
+   and image-policy matching. [GitLab registry naming](https://docs.gitlab.com/user/packages/container_registry/)
+4. Publish to the new registry alongside the old only where this does not create multiple authoritative writers. Copy
+   referenced tags and digest-pinned versions, all platforms and required signatures/referrers, checking manifest
+   digests and fresh pulls. Test new registry credentials, ESO fanout, namespace allowlist, CI image publishing, Flux
+   tag scanning, selection and webhook -> reconciliation. Keep old registry alive for old pinned deployments and
+   rollback until all consumers are accounted for.
+5. Prepare GitLab private Flux sources, kubelet pull credentials, Haku/finance consumers and all Forgejo-specific API
+   adapters and agent credential rotation in reviewable changes. Prove token rotation and repo-specific permissions.
+   Preserve GitHub as the root Flux source; separately migrate its private secondary sources. Sequence Flux owners to
+   avoid races or reconciliation against absent credentials.
 
-The tier table describes licensing, not production support for this topology.
-[Gitaly Cluster on Kubernetes is beta](https://docs.gitlab.com/administration/gitaly/kubernetes/),
-and GitLab calls its [Praefect Helm chart experimental and unsuitable for
-production](https://docs.gitlab.com/charts/charts/gitlab/praefect/). The
-[configuration guide](https://docs.gitlab.com/administration/gitaly/praefect/configure/)
-still says Gitaly Cluster is not yet supported in Kubernetes. A Kubernetes
-GitLab migration cannot claim the planned git-storage HA win without a
-supported topology or an explicit decision to accept these limitations.
+Gate: representative end-to-end build and deployment, private source reconciliation, image digest pulls and denied
+unauthorized access all work on the new stack without altering production ownership.
 
-### The one gotcha that hits our current setup
+## Phase 4: migrate incrementally and cut over
 
-**Pull mirroring is Premium.** Our `ducktape` on Forgejo is a _pull_ mirror of the GitHub
-repo. On GitLab CE that mirror direction is gated. Options on Free: keep GitHub as the
-source and don't mirror into GitLab; or run a tiny scheduled CI job that `git fetch`es
-GitHub and `git push`es into the GitLab project (a poor-man's pull mirror). **Push**
-mirroring (GitLab → GitHub) is Free but is the wrong direction for this case.
+1. For each repository seed GitLab using a method tested with private and protected refs. Compare all intended branch
+   and tag object IDs; push/fetch LFS and compare object IDs; compare repository visibility, access and configuration.
+   Preserve the source `refs/pull/*` in a backup and assess whether they retain otherwise unreachable commits; they are
+   not automatically equivalent to GitLab merge-request refs. Do not blindly `--mirror` over protected or GitLab-owned
+   refs. Historical issues/PRs are outside scope.
+2. Pilot a low-impact repo with one owner and a tested rollback. For active repos, set one authoritative writer and use
+   a bounded write freeze: stop or fence all application writers, CI pushes, automated mirrors and GitOps mutations;
+   confirm no in-flight work; final sync; compare refs and LFS; enable GitLab permissions and integrations; switch
+   readers and writers declaratively; run a representative end-to-end write and read. Record the cutover SHA and
+   event/queue checkpoint. Avoid replaying uncertain writes; reconcile exact outcomes before retries.
+3. Cut over Haku and other private state separately, explicitly identifying and fencing scan jobs, UI writes, scheduled
+   agents and Flux image commits. Resume in a controlled order, then verify state updates, branch protections, CI,
+   registry publish, Flux image update, deployed application and credentials. Inventory and switch finance's private
+   Flux source separately. Verify local and outside-cluster clients.
+4. Switch image publishers and consumers in small batches; ensure the destination contains both current and rollback
+   digests before pointing workloads or Flux at it. Keep the old registry serving images while any image path or
+   rollback depends on it. A separate GitLab hostname allows both services to coexist; changing `git.allegedly.works`
+   also changes the existing registry entry point, so do not flip that hostname until all HTTP/SSH and OCI routing,
+   image pulls and legacy clients are explicitly handled.
+5. For rollback before GitLab accepts writes, re-enable Forgejo against the untouched source. After GitLab accepts
+   writes, first fence GitLab writers, inventory and export all acknowledged commits plus relevant configuration or
+   generated image/tag state, reconcile them into Forgejo with verified protection and no overwrite, and only then
+   switch back. If safe reconciliation cannot be proven, hold writes and make an operator decision; DNS reversal alone
+   loses/diverges data. Record each cutover and rollback checkpoint.
 
-## Nice things GitLab would let us add (Free-tier)
+Gate: compare final ref/LFS inventories, permissions, SSH and API behavior, working CI, signed-in users, private Flux
+revisions and images by digest, plus monitored failure-free observation for an agreed period. All differences need an
+explicit disposition.
 
-- **Gitaly Cluster** — the motivating HA/latency win, data-backed.
-- **Dependency Proxy** — cache Docker Hub pulls (complements the RBE image caching).
-- **GitLab Pages** — could host the website/docs.
-- **Package Registry** — npm/pypi/etc. in-cluster (we already use seaweedfs S3 for some).
-- Richer CI (DAG pipelines, child pipelines, CI/CD components, scheduled pipelines,
-  environments) — all Free.
+## Phase 5: retire Forgejo
 
-Paid-only polish we'd forgo on CE: merge trains, enforced approval rules, security
-dashboards. For a low-contention personal/agent forge, MR pipelines + branch protection
-already cover the 99% case, so the Premium gates are mostly cosmetic here.
+Only after every consumer, dormant/rollback image, host reference, Forgejo-specific API client, secret rotator,
+workflow, webhook, runner, root state owner and object-store dependency is migrated or explicitly retained: take and
+test an independent restorable Forgejo backup; preserve user-authored repo and package data and all required
+cryptographic keys; establish a retention period; and remove controllers/dependencies in a separately reviewed sequence.
+Prevent Terraform or Flux prune from deleting resources or credentials still in use. Retire the SeaweedFS CSI Git PVC
+only after its data and the old service's recovery obligations are satisfied. Do not delete volume replicas to resolve
+prior index inconsistencies without separate evidence.
 
-## Migration order (sketch, if we do it)
+## Open decisions and immediate next work
 
-1. Decide on a supported git-storage topology and its HA requirement; then
-   stand up GitLab (CNPG PG16 + Redis + seaweedfs-S3 object storage +
-   `HTTPRoute` + Authentik OIDC), no ingress, bench-shaped values as a base.
-2. Port `tf/gitops` Forgejo resources to the GitLab provider (users/projects/membership/
-   variables/hooks/runners) — mostly mechanical.
-3. Migrate repos (push or import) + LFS + registry images.
-4. Rewrite `.forgejo/workflows` → `.gitlab-ci.yml`; rebuild `haku-ci` as a contained
-   GitLab Runner (egress-fenced namespace, in-cluster registry only).
-5. Repoint Flux image automation at the GitLab registry; repoint the `ducktape` mirror
-   (scheduled-job or drop it on CE).
-6. Cut SSO over; decommission Forgejo.
-
-## Open questions
-
-- Does GitLab earn its operational weight on this hardware vs. Forgejo + single-writer git
-  - app-layer mirror (the other arm of the benchmark's recommendation)?
-- Object storage: reuse seaweedfs S3 gateway for GitLab (LFS/registry/artifacts) or MinIO?
-- Is losing pull-mirror-on-Free acceptable, or worth the scheduled-job workaround?
+- Accept in-cluster Praefect's documented beta status, use standalone Kubernetes Gitaly with lower availability, or
+  revisit the supported hybrid topology.
+- Promote the spike versus reproduce it as a production instance; whether to retain Forgejo read-only temporarily after
+  cutover; explicit outage and data-loss objectives; production Git and registry hostname layout; per-image or shared
+  registry project layout; and mirror policy.
+- First execution work: extend the [initial preflights](../../debug/gitlab_spike/2026-11-03-migration-preflight.md) into
+  a complete repo/registry/writer/credential inventory; rehearse isolated restore and a real private-repo/registry
+  migration; prototype Haku's fenced runner and review flow; then sequence the resulting independent implementation PRs.
+  None of these authorize cutover by themselves.
