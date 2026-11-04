@@ -12610,6 +12610,10 @@ impl Executor<'_, '_> {
         let mut prior_effect_owners = outcome.executed_owners.clone();
         prior_effect_owners
             .retain(|owner| !self.state.private_constructor_result_owners.contains(owner));
+        // Ordered execution records the root too; the completed private-result proof covers it.
+        if outcome.effects.local_record_factory_purity.is_some() {
+            prior_effect_owners.remove(&fact.ordinal);
+        }
         if !self.queries.completed_statement_is_pure(fact.ordinal)
             && self.state.private_constructor_result_owners.is_empty()
         {
