@@ -13,15 +13,15 @@ from more_itertools import one
 from agentplane.app.testing.client import Client
 from agentplane.mcp_edge import connection_service_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.executor import Executor
-from agentplane.system_tests.harness_pair import run_harness_pair
-from agentplane.system_tests.k3s.stack import Stack
-from agentplane.system_tests.mcp_connection import connected_session
-from agentplane.system_tests.operator_login import OperatorCredentials
-from agentplane.system_tests.sandbox import POD_TEMPLATE, Sandboxes
+from agentplane.system_tests.deployment.stack import Stack
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.executor import Executor
+from agentplane.system_tests.driver.harness_pair import run_harness_pair
+from agentplane.system_tests.driver.mcp_connection import connected_session
+from agentplane.system_tests.driver.operator_login import OperatorCredentials
+from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes
+from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.scenarios import central_sampler, dcr, mcp
-from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 
 
 async def test_deployed_discovery_and_registration(pytestconfig: pytest.Config, deployment: Stack) -> None:

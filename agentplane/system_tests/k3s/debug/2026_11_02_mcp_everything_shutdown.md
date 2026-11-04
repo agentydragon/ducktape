@@ -54,9 +54,9 @@ bbr test //agentplane/system_tests/suites/mcp:test_actions \
   //agentplane/system_tests/suites/mcp:test_services \
   //agentplane/system_tests/suites/mcp:test_delegation \
   //agentplane/system_tests/suites/mcp:test_parent_delegation \
-  //agentplane/system_tests/k3s:test_render \
-  //agentplane/system_tests/k3s:mcp_fixture_servers \
-  //agentplane/system_tests/k3s:stack \
+  //agentplane/system_tests/deployment:test_render \
+  //agentplane/system_tests/deployment:mcp_fixture_servers \
+  //agentplane/system_tests/deployment:stack \
   --nocache_test_results --runs_per_test=2
 ```
 

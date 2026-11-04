@@ -38,12 +38,13 @@ from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
-from agentplane.system_tests import egress_decisions, probe_credential, runtime_grant
-from agentplane.system_tests.agent import Agent
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.sandbox import Sandboxes
-from agentplane.system_tests.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.tracing import tracer
+from agentplane.system_tests.deployment import probe_credential, runtime_grant
+from agentplane.system_tests.driver import egress_decisions
+from agentplane.system_tests.driver.agent import Agent
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.sandbox import Sandboxes
+from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.scripted_model import Text
 
 # Anonymous `git` fetches from github.com (cluster/cdk8s/agentplane/egress.py, `GITHUB_CLONE_POLICY`).

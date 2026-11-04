@@ -61,7 +61,7 @@ The cold invocation comparison does not establish an end-to-end CI speedup.
 
 Run `bbr test //agentplane/system_tests/suites:test_vm --nocache_test_results
 --test_output=errors`. The candidate also explicitly built
-`//agentplane/system_tests/k3s/guest:hwdb` for its Python lint aspects.
+`//agentplane/system_tests/vm/guest:hwdb` for its Python lint aspects.
 
 Use the target's Bazel `TestResult.testAttemptDuration` for test-action time and
 `k3s-timeline.jsonl` for stack readiness. `vm-phases.jsonl` supplies enclosing

@@ -1738,7 +1738,7 @@ reserve and service caps, and native workloads and the executor keep their separ
 Deliver a lean bootable guest: a bare root filesystem with the runner and harnesses available from
 their chosen layer, and the tools-heavy environment separate. The layering decision still owns exact
 disk placement. This work does not gate resource acceptance on the existing guest. The k3s test guest
-(`agentplane/system_tests/k3s/guest`)
+(`agentplane/system_tests/vm/guest`)
 shows a guest root filesystem can be an `oci_image` target: a candidate runtime then needs no Nix or Attic
 and is an additive target rather than a second release pipeline.
 
@@ -1755,7 +1755,7 @@ Record only observed gaps and what survived; VM-local disks and processes are lo
 while retained state/workspace volumes survive. No claim of a completed VM UI drive follows from
 the automated Pod/VM lifecycle coverage.
 
-Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-coverage), and `VM_RAM_SUSPEND` for
+Related: [lifecycle coverage](../system_tests/deployment/README.md#sandbox-lifecycle-coverage), and `VM_RAM_SUSPEND` for
 resuming with memory retained.
 
 ### `AGENT_RESUME_NOTICE` — tell agents when their Sandbox was suspended and resumed
@@ -1776,7 +1776,7 @@ message through the Dispatcher; and the wording agents act on. Test a suspend an
 background process, a terminal and workspace files, and a crash restart (no suspend) that reads
 differently.
 
-Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-coverage).
+Related: [lifecycle coverage](../system_tests/deployment/README.md#sandbox-lifecycle-coverage).
 
 ### `ENVIRONMENT_READINESS_WAIT` — wait for environment readiness in client adapters
 
@@ -2658,7 +2658,7 @@ One PR per file. Exit: each reads from `testing/kubeapiserver`, or keeps only a 
 
 ### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 
-**Blocked on `RUNNER_LAYERING_VM`.** The system tests' `_vm` targets boot a Bazel-built test guest under `system_tests/k3s/guest`, a
+**Blocked on `RUNNER_LAYERING_VM`.** The system tests' `_vm` targets boot a Bazel-built test guest under `system_tests/vm/guest`, a
 second implementation of `agentplane/env/images/vm.nix`'s guest boot contract (disks by serial, workspace format,
 harness and tool paths). The two guests share the static runner/slice units and native supervision backend. Delete it once the production guest is Bazel-built and boots in seconds under
 emulation, and point the k3s VM scenarios at that guest.

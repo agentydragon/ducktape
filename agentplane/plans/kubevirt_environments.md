@@ -21,7 +21,7 @@ arbitrary user-supplied VM specifications are out of scope.
   creation.
 - **Admission outage.** The launcher policy's failure scope is designed to block only VM launches.
   In the k3s VM stack, which runs Kyverno's admission controller and the launcher relay policy
-  ([fixture](../system_tests/k3s/README.md)), scale the admission controller to zero and show that a VM launch
+  ([fixture](../system_tests/deployment/README.md)), scale the admission controller to zero and show that a VM launch
   fails while unrelated Pods still schedule and running VMs keep running.
 - **Relay restart.** The relay is now a native launcher sidecar, selected to outlive compute during
   guest shutdown ([#14087](https://github.com/agentydragon/ducktape/pull/14087)). Check restart

@@ -11,15 +11,15 @@ import pytest_bazel
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.k3s.vm_trace_contract import assert_vm_process_trace_contract
-from agentplane.system_tests.offered_models import models_offered_for
-from agentplane.system_tests.sandbox import VM_TEMPLATE
-from agentplane.system_tests.scenario import ScenarioResources
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.offered_models import models_offered_for
+from agentplane.system_tests.driver.sandbox import VM_TEMPLATE
+from agentplane.system_tests.driver.scenario import ScenarioResources
+from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.driver.tracing import traced_scenario
 from agentplane.system_tests.scenarios import vm_sandbox
-from agentplane.system_tests.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.tracing import traced_scenario
-from agentplane.system_tests.vm_configuration import SUPERVISION_TEMPLATE
+from agentplane.system_tests.vm.configuration import SUPERVISION_TEMPLATE
+from agentplane.system_tests.vm.trace_contract import assert_vm_process_trace_contract
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # session_pb2.pyi imports protobuf stubs directly during mypy's dependency traversal.

@@ -68,8 +68,8 @@ existing Sandbox lifecycle tests passed. CI passed on the implementation head.
 
 Run the full suite with `bbr test //agentplane/system_tests/suites:test_vm
 --nocache_test_results --test_output=errors`. For ownership and lifecycle checks,
-run `bbr test //agentplane/system_tests:test_scenario
-//agentplane/system_tests:test_sandbox`.
+run `bbr test //agentplane/system_tests/driver:test_scenario
+//agentplane/system_tests/driver:test_sandbox`.
 
 - Baseline: `013375be4156cf5e9471e166914fa206b3611757`,
   [invocation `42c598db`](https://app.buildbuddy.io/invocation/42c598db-032a-4702-a70f-25043641171d).

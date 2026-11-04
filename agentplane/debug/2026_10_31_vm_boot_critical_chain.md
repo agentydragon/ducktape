@@ -76,6 +76,6 @@ systemd clock origins and per-unit ExecMain timestamps on its OOM guest. Service
 identity and the command line come from the copied full native journal. Successful teardown requires
 the monitor-ready receipt, every required report section and a
 complete report receipt across rotated logs for that launcher UID. See
-[`system_tests/k3s/README.md`](../system_tests/k3s/README.md). Check the exact-head PR CI artifact
+[`system_tests/deployment/README.md`](../system_tests/deployment/README.md). Check the exact-head PR CI artifact
 before drawing the absolute clock mapping or assigning the remaining time to kernel, udevd,
 coldplug, or service execution.

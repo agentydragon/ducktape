@@ -13,11 +13,11 @@ from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import environment_lifecycle_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests import launch_preset
-from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, Agent
-from agentplane.system_tests.sandbox import SANDBOX_READY_SECONDS, Sandboxes, wait_until_running
-from agentplane.system_tests.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.tracing import tracer
+from agentplane.system_tests.deployment import launch_preset
+from agentplane.system_tests.driver.agent import RUNNER_ANSWERS_SECONDS, Agent
+from agentplane.system_tests.driver.sandbox import SANDBOX_READY_SECONDS, Sandboxes, wait_until_running
+from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.scripted_model import ShellCall, Text
 
 INSTRUCTIONS = "Test instructions that override the preset's for this session."

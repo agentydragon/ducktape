@@ -23,8 +23,8 @@ from typing import Any
 
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
+from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.k3s import bootstrap, iptables_rule, pki_infrastructure, release_manifests
-from agentplane.system_tests.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)

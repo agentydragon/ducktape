@@ -6,7 +6,8 @@ from typing import Any
 
 import pytest
 
-from agentplane.system_tests.k3s import baseline, stack
+from agentplane.system_tests.deployment import stack
+from agentplane.system_tests.k3s import baseline
 
 
 @pytest.mark.parametrize(

@@ -17,22 +17,22 @@ import pytest_bazel
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests import scenario
-from agentplane.system_tests.case_batch import CASE_RESULT, Case, CaseBatch, Result
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.dispatcher_transport import native_client
-from agentplane.system_tests.harness_pair import run_harness_pair
-from agentplane.system_tests.k3s.stack import Stack
-from agentplane.system_tests.operator_login import (
+from agentplane.system_tests.deployment.stack import Stack
+from agentplane.system_tests.driver import scenario
+from agentplane.system_tests.driver.case_batch import CASE_RESULT, Case, CaseBatch, Result
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.dispatcher_transport import native_client
+from agentplane.system_tests.driver.harness_pair import run_harness_pair
+from agentplane.system_tests.driver.operator_login import (
     LoginBlockedError,
     OperatorCredentials,
     operator_bff_client,
     read_operator_credentials,
 )
-from agentplane.system_tests.sandbox import Sandboxes
+from agentplane.system_tests.driver.sandbox import Sandboxes
+from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.scenarios import mcp
-from agentplane.system_tests.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.tracing import tracer
 from util.net import Listener
 
 # gazelle:include_dep @pypi//protobuf

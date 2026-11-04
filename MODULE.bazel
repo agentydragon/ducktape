@@ -312,7 +312,7 @@ oci.pull(
 )
 
 # Bare-k3s fixture: the Dex and `mcp-everything` images
-# (//agentplane/system_tests/k3s:{dex,mcp_fixture_servers}) for MCP scenarios.
+# (//agentplane/system_tests/deployment:{dex,mcp_fixture_servers}) for MCP scenarios.
 oci.pull(
     name = "dex",
     digest = "sha256:8499afd690c437f52301efd2b05b2455da5bd2dfc20332cd697dc9937f808462",
@@ -1483,7 +1483,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/kyverno/kyverno.io_cleanuppolicies.yaml"],
 )
 
-# The k3s fixture's Kyverno (agentplane/system_tests/k3s/vm_sandboxes.py); keep the `kyverno_*` images'
+# The k3s fixture's Kyverno (agentplane/system_tests/vm/sandboxes.py); keep the `kyverno_*` images'
 # tags equal.
 artifact_pins.file(
     name = "kyverno_install",
@@ -1764,7 +1764,7 @@ http_archive(
 )
 
 # The Debian trixie stable-security cloud kernel of the k3s fixture's VM test guest
-# (agentplane/system_tests/k3s/guest), which builds virtio-pci, virtiofs and ext4 in.
+# (agentplane/system_tests/vm/guest), which builds virtio-pci, virtiofs and ext4 in.
 http_file(
     name = "vm_guest_kernel_deb",
     downloaded_file_path = "linux-image-cloud-amd64.deb",

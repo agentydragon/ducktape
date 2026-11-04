@@ -145,7 +145,7 @@ The commands used the repository Nix devshell and ordinary RBE/cache configurati
 ```bash
 # Cold seed, including changed-library lint/type checks:
 bbr test //agentplane/system_tests/suites:test_vm \
-  //agentplane/system_tests/k3s:vm_sandboxes --nocache_test_results \
+  //agentplane/system_tests/vm:sandboxes --nocache_test_results \
   --test_output=errors --test_env=AGENTPLANE_TEST_REFRESH_HANDLER=0
 # Control and candidate, respectively; original VM coverage in both:
 bbr test //agentplane/system_tests/suites:test_vm --nocache_test_results \

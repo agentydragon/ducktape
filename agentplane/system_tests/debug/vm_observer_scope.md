@@ -103,7 +103,7 @@ improvement. This verbosity change is not selected either.
 
 ```bash
 bbr test //agentplane/system_tests/suites:test_vm \
-  //agentplane/system_tests/k3s:test_render \
+  //agentplane/system_tests/deployment:test_render \
   --nocache_test_results --test_output=errors
 bbapi artifact list INVOCATION --kind test --json
 bbapi execution INVOCATION --json

@@ -3,10 +3,10 @@
 import pytest
 import pytest_bazel
 
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.k3s.stack import Stack
+from agentplane.system_tests.deployment.stack import Stack
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.scenarios.session_deletion import deployed_session_command_cannot_cross_deletion
-from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 
 
 @pytest.mark.timeout(600)

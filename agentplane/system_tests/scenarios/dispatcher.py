@@ -23,15 +23,19 @@ from agentplane.grpc.calls import dial
 from agentplane.proto import environment_lifecycle_pb2 as lifecycle_pb, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
-from agentplane.system_tests.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.dispatcher_transport import Caller, bound_caller as _bound_caller, forward as _forward
-from agentplane.system_tests.sandbox import (
+from agentplane.system_tests.driver.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.dispatcher_transport import (
+    Caller,
+    bound_caller as _bound_caller,
+    forward as _forward,
+)
+from agentplane.system_tests.driver.sandbox import (
     ENVIRONMENT_RUNTIME_CONTAINER,
     ENVIRONMENT_RUNTIME_LEASE_SUFFIX,
     POD_TEMPLATE,
 )
-from agentplane.system_tests.tracing import tracer
+from agentplane.system_tests.driver.tracing import tracer
 from devinfra.bazel.runfiles import get_required_path
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -160,7 +164,7 @@ async def _archive_runner_data(
     # A separate process lets timeout/cancellation stop SQLite backup and filesystem traversal
     # before cleanup removes their sources; cancelling a worker thread would leave them running.
     process = await asyncio.create_subprocess_exec(
-        str(get_required_path("_main/agentplane/system_tests/runner_data_archive_bin")),
+        str(get_required_path("_main/agentplane/system_tests/driver/runner_data_archive_bin")),
         str(plan_path),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,

@@ -19,15 +19,15 @@ from agentplane.native.codex import wire
 from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests.agent import TURN_SECONDS, Agent, Turn, scripted_turn_with_admission_and_history
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.k3s.guest_logs import check_boot, systemd_supervision_passed
-from agentplane.system_tests.sandbox import VM_WORKING_DIRECTORY, Sandboxes
+from agentplane.system_tests.driver.agent import TURN_SECONDS, Agent, Turn, scripted_turn_with_admission_and_history
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.sandbox import VM_WORKING_DIRECTORY, Sandboxes
+from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.scenarios import runner_credentials
-from agentplane.system_tests.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.tracing import tracer
-from agentplane.system_tests.vm_configuration import OOM_TEMPLATE, SUPERVISION_TEMPLATE
-from agentplane.system_tests.vm_supervision import session_setup_is_supervised
+from agentplane.system_tests.vm.configuration import OOM_TEMPLATE, SUPERVISION_TEMPLATE
+from agentplane.system_tests.vm.guest_logs import check_boot, systemd_supervision_passed
+from agentplane.system_tests.vm.supervision import session_setup_is_supervised
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Text
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir

@@ -20,15 +20,15 @@ from agentplane.environments.v1 import environment_service_pb2
 from agentplane.mcp_edge import connection_service_pb2
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL
 from agentplane.proto import identity_pb2, session_pb2
-from agentplane.system_tests import egress_decisions
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.k3s.stack import Stack
-from agentplane.system_tests.mcp_connection import ExternalMCPSession, connected_session
-from agentplane.system_tests.operator_login import OperatorCredentials
-from agentplane.system_tests.port_forward import PortForward, async_port_forward
-from agentplane.system_tests.sandbox import POD_TEMPLATE, suspend_and_delete, wait_until_running
+from agentplane.system_tests.deployment.stack import Stack
+from agentplane.system_tests.driver import egress_decisions
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.mcp_connection import ExternalMCPSession, connected_session
+from agentplane.system_tests.driver.operator_login import OperatorCredentials
+from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
+from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, suspend_and_delete, wait_until_running
+from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.scenarios import mcp
-from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import Text
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
