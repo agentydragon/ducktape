@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 import asyncpg
 import pytest
@@ -12,7 +14,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, SyncAlreadyRunningError
+from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, SyncAlreadyRunningError, SyncLeaseLostError
+from finance.plaid.db.models import ItemSyncQueueRow
+from finance.plaid.db.testing import ensure_test_sync_run
 from util.db_url import render_postgresql_url
 
 
@@ -100,6 +104,7 @@ async def test_spend_changed_notifies_after_commit_and_on_link_removal(
         await assert_no_notification()
 
         await storage.apply_accounts(
+            run_id=await ensure_test_sync_run(storage, item_id="item-investments"),
             item_id="item-investments",
             accounts=[{"account_id": "account-investments", "name": "Brokerage", "type": "investment"}],
             captured_at=datetime.now(UTC),
@@ -107,6 +112,7 @@ async def test_spend_changed_notifies_after_commit_and_on_link_removal(
         assert await asyncio.wait_for(notifications.get(), timeout=5) == ("plaid_spend_changed", "")
         event_id = await _record_holdings_event(storage, "item-investments")
         await storage.apply_holdings(
+            run_id=await ensure_test_sync_run(storage, item_id="item-investments"),
             item_id="item-investments",
             accounts=[{"account_id": "account-investments", "name": "Brokerage", "type": "investment"}],
             securities=[],
@@ -134,6 +140,7 @@ async def test_transaction_delta_commits_changes_and_cursor_together(
     storage: PlaidLinkStorage, engine: AsyncEngine
 ) -> None:
     await storage.upsert_link(
+        run_id=None,
         item_id="item-transactions",
         access_token_secret="item-transactions-token",
         products_requested=["transactions"],
@@ -143,12 +150,14 @@ async def test_transaction_delta_commits_changes_and_cursor_together(
     )
 
     await storage.apply_accounts(
+        run_id=await ensure_test_sync_run(storage, item_id="item-transactions"),
         item_id="item-transactions",
         accounts=[{"account_id": "account-transactions", "name": "Checking", "type": "depository", "balances": {}}],
         captured_at=datetime(2026, 5, 31, 12, 0, tzinfo=UTC),
     )
     captured_at = datetime(2026, 5, 31, 12, 0, tzinfo=UTC)
     await storage.apply_transaction_delta(
+        run_id=await ensure_test_sync_run(storage, item_id="item-transactions"),
         item_id="item-transactions",
         added=[
             {
@@ -174,6 +183,7 @@ async def test_transaction_delta_commits_changes_and_cursor_together(
         captured_at=captured_at,
     )
     await storage.apply_transaction_delta(
+        run_id=await ensure_test_sync_run(storage, item_id="item-transactions"),
         item_id="item-transactions",
         added=[],
         modified=[
@@ -212,6 +222,7 @@ async def test_transaction_foreign_key_rejects_account_from_another_item(
     await add_link("item-account-owner")
     await add_link("item-transaction-owner")
     await storage.apply_accounts(
+        run_id=await ensure_test_sync_run(storage, item_id="item-account-owner"),
         item_id="item-account-owner",
         accounts=[{"account_id": "account-owned", "name": "Checking", "type": "depository"}],
         captured_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
@@ -234,6 +245,7 @@ async def test_transaction_numeric_check_rejects_nonfinite_direct_sql_values(
     amount: str, storage: PlaidLinkStorage, engine: AsyncEngine
 ) -> None:
     await storage.upsert_link(
+        run_id=None,
         item_id="item-nonfinite-amount",
         access_token_secret="item-nonfinite-amount-token",
         products_requested=["transactions"],
@@ -242,6 +254,7 @@ async def test_transaction_numeric_check_rejects_nonfinite_direct_sql_values(
         label=None,
     )
     await storage.apply_accounts(
+        run_id=await ensure_test_sync_run(storage, item_id="item-nonfinite-amount"),
         item_id="item-nonfinite-amount",
         accounts=[{"account_id": "account-nonfinite-amount", "name": "Checking", "type": "depository"}],
         captured_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
@@ -268,6 +281,7 @@ async def test_apply_holdings_records_empty_capture_and_covered_empty_account(
     await add_link("item-covered-holdings")
     empty_event_id = await _record_holdings_event(storage, "item-empty-holdings")
     await storage.apply_holdings(
+        run_id=await ensure_test_sync_run(storage, item_id="item-empty-holdings"),
         item_id="item-empty-holdings",
         api_event_id=empty_event_id,
         accounts=[],
@@ -277,6 +291,7 @@ async def test_apply_holdings_records_empty_capture_and_covered_empty_account(
     )
 
     await storage.apply_accounts(
+        run_id=await ensure_test_sync_run(storage, item_id="item-covered-holdings"),
         item_id="item-covered-holdings",
         accounts=[
             {"account_id": "account-no-positions", "name": "Retirement", "type": "investment"},
@@ -291,6 +306,7 @@ async def test_apply_holdings_records_empty_capture_and_covered_empty_account(
     )
     covered_event_id = await _record_holdings_event(storage, "item-covered-holdings")
     await storage.apply_holdings(
+        run_id=await ensure_test_sync_run(storage, item_id="item-covered-holdings"),
         item_id="item-covered-holdings",
         api_event_id=covered_event_id,
         accounts=[
@@ -339,6 +355,7 @@ async def test_apply_holdings_rolls_back_if_a_snapshot_row_is_invalid(
     captured_at = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
     await add_link("item-invalid-holdings")
     await storage.apply_accounts(
+        run_id=await ensure_test_sync_run(storage, item_id="item-invalid-holdings"),
         item_id="item-invalid-holdings",
         accounts=[{"account_id": "account-invalid-holdings", "name": "Brokerage", "type": "investment"}],
         captured_at=captured_at,
@@ -347,6 +364,7 @@ async def test_apply_holdings_rolls_back_if_a_snapshot_row_is_invalid(
 
     with pytest.raises(IntegrityError):
         await storage.apply_holdings(
+            run_id=await ensure_test_sync_run(storage, item_id="item-invalid-holdings"),
             item_id="item-invalid-holdings",
             api_event_id=event_id,
             accounts=[{"account_id": "account-invalid-holdings", "name": "Brokerage", "type": "investment"}],
@@ -386,9 +404,15 @@ async def test_delete_detached_account_removes_its_capture_rows_and_keeps_item_p
         {"account_id": "account-detached", "name": "Old Brokerage", "type": "investment"},
         {"account_id": "account-retained", "name": "Current Brokerage", "type": "investment"},
     ]
-    await storage.apply_accounts(item_id=item_id, accounts=first_accounts, captured_at=first_observation)
+    await storage.apply_accounts(
+        run_id=await ensure_test_sync_run(storage, item_id=item_id),
+        item_id=item_id,
+        accounts=first_accounts,
+        captured_at=first_observation,
+    )
     event_id = await _record_holdings_event(storage, item_id)
     await storage.apply_holdings(
+        run_id=await ensure_test_sync_run(storage, item_id=item_id),
         item_id=item_id,
         api_event_id=event_id,
         accounts=first_accounts,
@@ -402,7 +426,13 @@ async def test_delete_detached_account_removes_its_capture_rows_and_keeps_item_p
         ],
         captured_at=first_observation,
     )
-    await storage.apply_accounts(item_id=item_id, accounts=[first_accounts[1]], captured_at=later_observation)
+    await storage.apply_accounts(
+        run_id=await ensure_test_sync_run(storage, item_id=item_id),
+        item_id=item_id,
+        accounts=[first_accounts[1]],
+        captured_at=later_observation,
+    )
+    await storage.finish_sync_run(await ensure_test_sync_run(storage, item_id=item_id), status="succeeded")
     preview = await storage.get_account_deletion_preview(item_id=item_id, account_id="account-detached")
 
     await storage.delete_detached_account(item_id=item_id, account_id="account-detached", expected_preview=preview)
@@ -483,8 +513,104 @@ async def test_sync_run_claim_recovers_a_stale_run(
     assert new_status == "running"
 
 
+async def test_recovered_sync_cannot_rewind_transaction_cursor(
+    storage: PlaidLinkStorage, add_link: Callable[[str], Awaitable[None]], engine: AsyncEngine
+) -> None:
+    await add_link("item-investments")
+    stale_run_id = await storage.begin_sync_run(trigger="cron", item_id="item-investments", configured_windows={})
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE sync_runs SET started_at = :started_at WHERE run_id = :run_id"),
+            {"started_at": datetime.now(UTC) - timedelta(hours=3), "run_id": stale_run_id},
+        )
+    recovered_run_id = await storage.begin_sync_run(
+        trigger="webhook", item_id="item-investments", configured_windows={}
+    )
+    await storage.apply_transaction_delta(
+        run_id=recovered_run_id,
+        item_id="item-investments",
+        added=[],
+        modified=[],
+        removed=[],
+        next_cursor="fresh",
+        captured_at=datetime.now(UTC),
+    )
+    with pytest.raises(SyncLeaseLostError):
+        await storage.apply_transaction_delta(
+            run_id=stale_run_id,
+            item_id="item-investments",
+            added=[],
+            modified=[],
+            removed=[],
+            next_cursor="stale",
+            captured_at=datetime.now(UTC),
+        )
+    with pytest.raises(SyncLeaseLostError):
+        await storage.finish_sync_run(stale_run_id, status="succeeded")
+    link = await storage.get_link("item-investments")
+    assert link is not None
+    assert link.transactions_cursor == "fresh"
+    async with engine.connect() as conn:
+        assert (
+            await conn.execute(text("SELECT status FROM sync_runs WHERE run_id = :run_id"), {"run_id": stale_run_id})
+        ).scalar_one() == "failed"
+
+
+async def test_api_receipt_commits_before_takeover_waiting_on_same_item_lock(
+    storage: PlaidLinkStorage,
+    add_link: Callable[[str], Awaitable[None]],
+    engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await add_link("item-receipt")
+    stale_run_id = await storage.begin_sync_run(trigger="cron", item_id="item-receipt", configured_windows={})
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE sync_runs SET started_at = :started_at WHERE run_id = :run_id"),
+            {"started_at": datetime.now(UTC) - timedelta(hours=3), "run_id": stale_run_id},
+        )
+    commit_entered = asyncio.Event()
+    allow_commit = asyncio.Event()
+    original_commit = AsyncSession.commit
+
+    async def paused_commit(session: AsyncSession) -> None:
+        commit_entered.set()
+        await allow_commit.wait()
+        await original_commit(session)
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(AsyncSession, "commit", paused_commit)
+        receipt_task = asyncio.create_task(
+            storage.record_api_event(
+                ApiEvent(
+                    sync_run_id=stale_run_id,
+                    endpoint="investments/holdings/get",
+                    item_id="item-receipt",
+                    status="ok",
+                    request_json={},
+                    response_json={},
+                )
+            )
+        )
+        await asyncio.wait_for(commit_entered.wait(), timeout=5)
+        successor_task = asyncio.create_task(
+            storage.begin_sync_run(trigger="webhook", item_id="item-receipt", configured_windows={})
+        )
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(asyncio.shield(successor_task), timeout=0.05)
+        allow_commit.set()
+        event_id = await receipt_task
+        await successor_task
+
+    async with engine.connect() as conn:
+        assert (
+            await conn.execute(text("SELECT status FROM plaid_api_events WHERE id = :id"), {"id": event_id})
+        ).scalar_one() == "ok"
+
+
 async def test_item_sync_queue_coalesces_events_during_a_claim(storage: PlaidLinkStorage) -> None:
     await storage.upsert_link(
+        run_id=None,
         item_id="item-transactions",
         access_token_secret="item-transactions-token",
         products_requested=["transactions"],
@@ -503,6 +629,56 @@ async def test_item_sync_queue_coalesces_events_during_a_claim(storage: PlaidLin
     assert second_claim.generation == first_claim.generation + 1
     await storage.finish_item_sync(second_claim)
     assert await storage.claim_item_sync() is None
+
+
+async def test_queue_retry_cannot_release_a_reclaimed_claim(
+    storage: PlaidLinkStorage,
+    add_link: Callable[[str], Awaitable[None]],
+    engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await add_link("item-queue-race")
+    await storage.enqueue_item_sync("item-queue-race")
+    first_claim = await storage.claim_item_sync()
+    assert first_claim is not None
+    await storage.enqueue_item_sync("item-queue-race")
+    old_claimed_at = datetime.now(UTC) - timedelta(minutes=31)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE item_sync_queue SET claimed_at = :claimed_at WHERE item_id = :item_id"),
+            {"claimed_at": old_claimed_at, "item_id": first_claim.item_id},
+        )
+    first_claim = replace(first_claim, claimed_at=old_claimed_at)
+    retry_read = asyncio.Event()
+    allow_retry = asyncio.Event()
+    original_get = AsyncSession.get
+
+    async def paused_get(session: AsyncSession, entity: Any, ident: Any, **kwargs: Any) -> Any:
+        row = await original_get(session, entity, ident, **kwargs)
+        if entity is ItemSyncQueueRow and ident == first_claim.item_id:
+            retry_read.set()
+            await allow_retry.wait()
+        return row
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(AsyncSession, "get", paused_get)
+        retry_task = asyncio.create_task(storage.retry_item_sync(first_claim))
+        await asyncio.wait_for(retry_read.wait(), timeout=5)
+        try:
+            assert await storage.claim_item_sync() is None
+        finally:
+            allow_retry.set()
+        await retry_task
+        successor_claim = await storage.claim_item_sync()
+
+    assert successor_claim is not None
+    async with engine.connect() as conn:
+        assert (
+            await conn.execute(
+                text("SELECT claimed_at FROM item_sync_queue WHERE item_id = :item_id"),
+                {"item_id": first_claim.item_id},
+            )
+        ).scalar_one() == successor_claim.claimed_at
 
 
 async def test_plaid_webhook_delivery_keeps_full_body_and_dispatch_metadata(
@@ -550,6 +726,7 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
     await storage.enqueue_item_sync("item-purge")
 
     await storage.apply_accounts(
+        run_id=await ensure_test_sync_run(storage, item_id="item-purge"),
         item_id="item-purge",
         accounts=[
             {
@@ -562,6 +739,7 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
         captured_at=captured_at,
     )
     await storage.apply_accounts(
+        run_id=await ensure_test_sync_run(storage, item_id="item-keep"),
         item_id="item-keep",
         accounts=[
             {
@@ -574,6 +752,7 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
         captured_at=captured_at,
     )
     await storage.apply_transaction_delta(
+        run_id=await ensure_test_sync_run(storage, item_id="item-purge"),
         item_id="item-purge",
         added=[
             {
@@ -592,6 +771,7 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
     )
     purge_holding_event_id = await _record_holdings_event(storage, "item-purge")
     await storage.apply_holdings(
+        run_id=await ensure_test_sync_run(storage, item_id="item-purge"),
         item_id="item-purge",
         api_event_id=purge_holding_event_id,
         accounts=[
@@ -614,6 +794,7 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
     )
     keep_holding_event_id = await _record_holdings_event(storage, "item-keep")
     await storage.apply_holdings(
+        run_id=await ensure_test_sync_run(storage, item_id="item-keep"),
         item_id="item-keep",
         api_event_id=keep_holding_event_id,
         accounts=[
@@ -629,6 +810,7 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
         captured_at=captured_at,
     )
     await storage.upsert_investment_transactions(
+        run_id=await ensure_test_sync_run(storage, item_id="item-purge"),
         item_id="item-purge",
         transactions=[
             {
@@ -641,6 +823,7 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
         captured_at=captured_at,
     )
     await storage.append_liability_snapshots(
+        run_id=await ensure_test_sync_run(storage, item_id="item-purge"),
         item_id="item-purge",
         liabilities={
             "credit": [{"account_id": "account-purge", "raw_json": {"kind": "credit"}}],
@@ -649,7 +832,7 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
         },
         captured_at=captured_at,
     )
-    run_id = await storage.begin_sync_run(trigger="manual", item_id="item-purge", configured_windows={})
+    run_id = await ensure_test_sync_run(storage, item_id="item-purge")
     await storage.record_api_event(
         ApiEvent(
             sync_run_id=run_id,

@@ -91,6 +91,20 @@ know.
   sync). Duplicates coalesce per Item; other types are recorded, acknowledged and ignored.
 - The cursor and all added/modified/removed transactions commit together after pagination; a
   mutation reported mid-pagination restarts from the saved cursor.
+- Each sync mirror write and terminal run transition verifies the run still owns the Item while
+  holding the Item's database row lock. Recovery uses that same lock, so a resumed run cannot
+  commit another cursor, account observation, holding capture, investment transaction, liability
+  snapshot, or success after its successor is admitted. API receipts serialize on that lock too:
+  a late response is audited as `ok_superseded` or `error_superseded` according to Plaid's
+  outcome, retaining its payload without invalidating a successor's holdings capture.
+- This fence applies to upgraded writers. During an image rollout, an old web process or an
+  already-running CronJob can still write after its two-hour run is recovered. Complete coverage
+  begins only when the Deployment uses the fenced image and every Job created from an older
+  CronJob template is terminal, with no retry Pod left to start. Inspect Job templates as well
+  as active Pods: an old Job can retry with its original image after the CronJob pin changes. The
+  `/item/webhook/update` API call is outside the database transaction; the rollout must keep the
+  configured webhook URL the same across overlapping writers so a late call cannot restore an
+  older URL.
 - The daily CronJob is the missed-webhook backstop and also refreshes accounts, holdings,
   investment transactions (the only date-window read) and liabilities.
 - Transactions webhooks are configured per Item; other products may differ.

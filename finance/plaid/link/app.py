@@ -455,6 +455,7 @@ def create_app(
         await require_secrets().write_access_token(secret_name, exchange.access_token)
         requested = body.products
         link = await require_storage().upsert_link(
+            run_id=None,
             item_id=exchange.item_id,
             access_token_secret=secret_name,
             products_requested=requested,
