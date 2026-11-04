@@ -362,6 +362,26 @@ func (s *Service) sandbox(ctx context.Context, name string) (SandboxSnapshot, er
 	return current, nil
 }
 
+// commandTarget verifies the caller's expected placement against both the live Sandbox and
+// Dispatcher's authoritative Session record before a command may be admitted or delivered.
+func (s *Service) commandTarget(ctx context.Context, sessionID, sandbox, sandboxUID string, caller CallerIdentity) (*Opening, SandboxSnapshot, error) {
+	current, err := s.sandbox(ctx, sandbox)
+	if err != nil {
+		return nil, SandboxSnapshot{}, err
+	}
+	if current.UID != sandboxUID {
+		return nil, SandboxSnapshot{}, status.Error(codes.FailedPrecondition, "sandbox identity changed")
+	}
+	opening, err := s.Store.GetOpeningForCaller(ctx, sessionID, caller)
+	if err != nil {
+		return nil, SandboxSnapshot{}, apiError(err)
+	}
+	if err := s.requireLiveExecution(ctx, opening, current, caller); err != nil {
+		return nil, SandboxSnapshot{}, err
+	}
+	return opening, current, nil
+}
+
 func (s *Service) enqueue(ctx context.Context, commandID, sessionID, sandbox, sandboxUID string, command *commandpb.Command) (dispatch *dispatcherpb.Dispatch, resultErr error) {
 	ctx, span := observability.Start(
 		ctx, "Dispatcher Enqueue",
@@ -375,18 +395,8 @@ func (s *Service) enqueue(ctx context.Context, commandID, sessionID, sandbox, sa
 	if err := required(commandID, sessionID, sandbox, sandboxUID); err != nil {
 		return nil, err
 	}
-	current, err := s.sandbox(ctx, sandbox)
+	_, current, err := s.commandTarget(ctx, sessionID, sandbox, sandboxUID, caller)
 	if err != nil {
-		return nil, err
-	}
-	if current.UID != sandboxUID {
-		return nil, status.Error(codes.FailedPrecondition, "sandbox identity changed")
-	}
-	opening, err := s.Store.GetOpeningForCaller(ctx, sessionID, caller)
-	if err != nil {
-		return nil, apiError(err)
-	}
-	if err := s.requireLiveExecution(ctx, opening, current, caller); err != nil {
 		return nil, err
 	}
 	row, err := s.Store.EnqueueForCaller(ctx, sessionID, sandbox, current.UID, command, nil, caller)
@@ -682,22 +692,12 @@ func (s *Service) InterruptTurn(ctx context.Context, request *dispatcherpb.Inter
 	if err := required(request.GetCommandId(), request.GetSessionId(), request.GetSandbox(), request.GetSandboxUid(), request.GetTurnId()); err != nil {
 		return nil, err
 	}
-	current, err := s.sandbox(ctx, request.GetSandbox())
-	if err != nil {
-		return nil, err
-	}
-	if current.UID != request.GetSandboxUid() {
-		return nil, status.Error(codes.FailedPrecondition, "sandbox identity changed")
-	}
 	caller, err := s.caller(ctx)
 	if err != nil {
 		return nil, err
 	}
-	opening, err := s.Store.GetOpeningForCaller(ctx, request.GetSessionId(), caller)
+	opening, current, err := s.commandTarget(ctx, request.GetSessionId(), request.GetSandbox(), request.GetSandboxUid(), caller)
 	if err != nil {
-		return nil, apiError(err)
-	}
-	if err := s.requireLiveExecution(ctx, opening, current, caller); err != nil {
 		return nil, err
 	}
 	requiresReady := sessionRequiresReadyExecutor(opening.Spec)
