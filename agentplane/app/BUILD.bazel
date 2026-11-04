@@ -120,6 +120,8 @@ py_test(
         "//agentplane/app/testing:fake_action_service",
         "//agentplane/app/testing:replication_process",
         "//agentplane/history_service:client",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/testing:kubernetes_apiserver",
         "@pypi//httpx",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pyjwt",
