@@ -549,11 +549,7 @@ pub(super) fn ordered_own_property_names(creation_order: &[String]) -> Vec<Strin
         if !seen.insert(name.as_str()) {
             continue;
         }
-        let array_index = name
-            .parse::<u32>()
-            .ok()
-            .filter(|index| *index != u32::MAX && index.to_string() == name.as_str());
-        if let Some(index) = array_index {
+        if let Some(index) = canonical_array_index(name) {
             indices.push((index, name.clone()));
         } else {
             strings.push(name.clone());
@@ -565,6 +561,14 @@ pub(super) fn ordered_own_property_names(creation_order: &[String]) -> Vec<Strin
         .map(|(_, name)| name)
         .chain(strings)
         .collect()
+}
+
+/// Whether a property name has the canonical spelling and range of an ECMAScript
+/// array index. `u32::MAX` is reserved and is not an array index.
+pub(super) fn canonical_array_index(name: &str) -> Option<u32> {
+    name.parse::<u32>()
+        .ok()
+        .filter(|index| *index != u32::MAX && index.to_string() == name)
 }
 
 /// How a member read names its property.

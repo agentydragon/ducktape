@@ -198,6 +198,12 @@ fn build_source_unit_nodes_and_edges(
                             .top_level_owner
                             .and_then(|owner| source_units_by_ordinal.get(&owner))
                             .and_then(|source_unit| source_unit.source_location.clone());
+                        if let Some(callsite) = &mut publication.bounded_fallback_callsite {
+                            callsite.source_location = callsite
+                                .top_level_owner
+                                .and_then(|owner| source_units_by_ordinal.get(&owner))
+                                .and_then(|source_unit| source_unit.source_location.clone());
+                        }
                     }
                 }
                 author_inputs.render_synchronous_execution(&mut report);

@@ -19,8 +19,12 @@ use super::super::value_model::{
     AbstractValue, ArrayIteration, CallSite, CaptureInterner, Captured, CapturedContext, Context,
     DenseArray, DenseArrayIterationTransfer, FrozenNamespaceProof, InstanceOrigin, LexicalCaptures,
     LexicalCellId, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr, Values,
+    canonical_array_index,
 };
-use super::runtime_callbacks::{CallbackOperation, CallbackResult};
+use super::runtime_callbacks::{
+    BoundedInvocationFallbackDiagnostics, BoundedInvocationFallbackRequest, CallbackOperation,
+    CallbackResult,
+};
 use super::runtime_heap::{
     HeapOperation, HeapResult, NativeIterableInput, NativeIterableReceipt, NativeIterableUse,
     NativeIterableYields,
@@ -71,13 +75,15 @@ use crate::facts::{
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::{ChunkCodeGraph, Effects};
 use crate::reports::schema::{
-    AssumedEffectReason, CallbackFactoryUseKind, ClassMembersPublicationWriter,
-    ConstructionRejection, ExecutionOperation, ExecutionPrecisionLoss,
-    ExecutionPrecisionLossReason, FirstClassMembersPublication, GlobalReachCause, HavocReach,
-    InferenceRule, LocalRecordFactoryRejection, NativeIntegrityCheck, NativeIntegrityGuard,
-    NativePrefixObservation, NativePrototypePropertyCheck, OrderedCallAdmissionRefusal,
-    OrderedFieldReadRefusal, PossibleGetterLookupSite, PossibleGetterPromotion,
-    RecordFactoryRejectionReason,
+    AssumedEffectReason, BoundedInvocationFallbackCallSite, BoundedInvocationFallbackInputPath,
+    BoundedInvocationFallbackPathEdge, BoundedInvocationFallbackSeed,
+    BoundedInvocationFallbackUnknownPathReason, CallbackFactoryUseKind,
+    ClassMembersPublicationWriter, ConstructionRejection, ExecutionOperation,
+    ExecutionPrecisionLoss, ExecutionPrecisionLossReason, FirstClassMembersPublication,
+    GlobalReachCause, HavocReach, InferenceRule, LocalRecordFactoryRejection, NativeIntegrityCheck,
+    NativeIntegrityGuard, NativePrefixObservation, NativePrototypePropertyCheck,
+    OrderedCallAdmissionRefusal, OrderedFieldReadRefusal, PossibleGetterLookupSite,
+    PossibleGetterPromotion, RecordFactoryRejectionReason,
 };
 use imbl::OrdMap;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -505,6 +511,142 @@ impl PartialEq for CallbackPoolObservation {
 struct ActiveInvocation {
     callable: u32,
     top_owner: Option<SourceUnitOrdinal>,
+}
+
+struct BoundedFallbackPublicationDiagnostic {
+    input_paths: BTreeMap<u32, BoundedInvocationFallbackInputPath>,
+    callsite: Option<BoundedInvocationFallbackCallSite>,
+}
+
+#[derive(Clone, Copy)]
+enum StoredReferenceEdge<'a> {
+    ObjectProperty(Option<&'a str>),
+    ArrayProperty(Option<&'a str>),
+    AppliedGetter(&'a str),
+    AppliedSetter(&'a str),
+    ClosureHomeObject,
+    ClosureSnapshot(&'a str),
+    ClosureCell(&'a str),
+    InstanceRetainedValue,
+    DeferredCallbackRetainedValue,
+    AuditedResultRetainedValue,
+    DescriptorMapRetainedValue,
+    EscapedCallbackPoolExpansion,
+}
+
+trait CallbackTraversalItem: Sized {
+    fn value(&self) -> &AbstractValue;
+
+    fn retained_child(&self, value: &AbstractValue, edge: StoredReferenceEdge<'_>) -> Self;
+
+    fn class_members_path(&self) -> Option<BoundedInvocationFallbackInputPath>;
+}
+
+impl CallbackTraversalItem for AbstractValue {
+    fn value(&self) -> &AbstractValue {
+        self
+    }
+
+    fn retained_child(&self, value: &AbstractValue, _edge: StoredReferenceEdge<'_>) -> Self {
+        value.clone()
+    }
+
+    fn class_members_path(&self) -> Option<BoundedInvocationFallbackInputPath> {
+        None
+    }
+}
+
+struct TracedCallbackValue {
+    value: AbstractValue,
+    path: BoundedInvocationFallbackInputPath,
+}
+
+impl CallbackTraversalItem for TracedCallbackValue {
+    fn value(&self) -> &AbstractValue {
+        &self.value
+    }
+
+    fn retained_child(&self, value: &AbstractValue, edge: StoredReferenceEdge<'_>) -> Self {
+        let mut path = self.path.clone();
+        if let BoundedInvocationFallbackInputPath::Retained { edges, .. } = &mut path {
+            edges.push(path_edge_report(edge));
+        }
+        Self {
+            value: value.clone(),
+            path,
+        }
+    }
+
+    fn class_members_path(&self) -> Option<BoundedInvocationFallbackInputPath> {
+        let mut path = self.path.clone();
+        if let BoundedInvocationFallbackInputPath::Retained { edges, .. } = &mut path {
+            edges.push(BoundedInvocationFallbackPathEdge::ClassMembersCapability);
+        }
+        Some(path)
+    }
+}
+
+fn path_edge_report(edge: StoredReferenceEdge<'_>) -> BoundedInvocationFallbackPathEdge {
+    match edge {
+        StoredReferenceEdge::ObjectProperty(Some(property)) => {
+            BoundedInvocationFallbackPathEdge::ObjectProperty {
+                property: property.to_owned(),
+            }
+        }
+        StoredReferenceEdge::ObjectProperty(None) => {
+            BoundedInvocationFallbackPathEdge::UnknownObjectProperty
+        }
+        StoredReferenceEdge::ArrayProperty(Some(property)) => {
+            if let Some(index) = canonical_array_index(property) {
+                BoundedInvocationFallbackPathEdge::ArrayElement { index }
+            } else {
+                BoundedInvocationFallbackPathEdge::ObjectProperty {
+                    property: property.to_owned(),
+                }
+            }
+        }
+        StoredReferenceEdge::ArrayProperty(None) => {
+            BoundedInvocationFallbackPathEdge::UnknownArrayProperty
+        }
+        StoredReferenceEdge::AppliedGetter(property) => {
+            BoundedInvocationFallbackPathEdge::AppliedGetter {
+                property: Some(property.to_owned()),
+            }
+        }
+        StoredReferenceEdge::AppliedSetter(property) => {
+            BoundedInvocationFallbackPathEdge::AppliedSetter {
+                property: Some(property.to_owned()),
+            }
+        }
+        StoredReferenceEdge::ClosureHomeObject => {
+            BoundedInvocationFallbackPathEdge::ClosureHomeObject
+        }
+        StoredReferenceEdge::ClosureSnapshot(binding) => {
+            BoundedInvocationFallbackPathEdge::ClosureSnapshot {
+                binding: binding.to_owned(),
+            }
+        }
+        StoredReferenceEdge::ClosureCell(binding) => {
+            BoundedInvocationFallbackPathEdge::ClosureCell {
+                binding: binding.to_owned(),
+            }
+        }
+        StoredReferenceEdge::InstanceRetainedValue => {
+            BoundedInvocationFallbackPathEdge::InstanceRetainedValue
+        }
+        StoredReferenceEdge::DeferredCallbackRetainedValue => {
+            BoundedInvocationFallbackPathEdge::DeferredCallbackRetainedValue
+        }
+        StoredReferenceEdge::AuditedResultRetainedValue => {
+            BoundedInvocationFallbackPathEdge::AuditedResultRetainedValue
+        }
+        StoredReferenceEdge::DescriptorMapRetainedValue => {
+            BoundedInvocationFallbackPathEdge::DescriptorMapRetainedValue
+        }
+        StoredReferenceEdge::EscapedCallbackPoolExpansion => {
+            BoundedInvocationFallbackPathEdge::EscapedCallbackPoolExpansion
+        }
+    }
 }
 
 // Callable cycles can keep changing their argument/capture snapshots and thus
@@ -6209,6 +6351,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         include_object_properties: bool,
         mut visit: impl FnMut(&AbstractValue),
     ) {
+        self.visit_stored_references_with_edges(
+            value,
+            include_object_properties,
+            |reference, _| {
+                visit(reference);
+            },
+        );
+    }
+
+    /// The single inventory of retained-reference carriers. Edge labels are
+    /// borrowed and inexpensive for ordinary callback, taint and exposure
+    /// walks; diagnostic paths allocate labels only when explicitly collected.
+    fn visit_stored_references_with_edges(
+        &self,
+        value: &AbstractValue,
+        include_object_properties: bool,
+        mut visit: impl FnMut(&AbstractValue, StoredReferenceEdge<'_>),
+    ) {
         match value {
             AbstractValue::Value(Value::Alloc(kind, object)) => {
                 if kind.tracks_prefix_references() {
@@ -6219,17 +6379,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     if include_object_properties
                         && let Some(properties) = self.state.prefix_object_properties.get(object)
                     {
-                        for value in properties.values().flatten() {
-                            visit(value);
+                        for (property, values) in properties {
+                            let edge = if matches!(kind, Kind::Array) {
+                                StoredReferenceEdge::ArrayProperty(property.as_deref())
+                            } else {
+                                StoredReferenceEdge::ObjectProperty(property.as_deref())
+                            };
+                            for value in values {
+                                visit(value, edge);
+                            }
                         }
                     }
                     if let Some(accessors) = self.state.applied_accessors.get(object) {
-                        for accessor in accessors.values() {
+                        for (property, accessor) in accessors {
                             for getter in &accessor.getter {
-                                visit(getter);
+                                visit(getter, StoredReferenceEdge::AppliedGetter(property));
                             }
                             for setter in &accessor.setter {
-                                visit(setter);
+                                visit(setter, StoredReferenceEdge::AppliedSetter(property));
                             }
                         }
                     }
@@ -6239,35 +6406,44 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             AbstractValue::Closure(_, captured) => {
                 if let Some(home_object) = captured.values.home_object {
-                    visit(&AbstractValue::Value(Value::Alloc(
-                        Kind::Object,
-                        home_object,
-                    )));
+                    visit(
+                        &AbstractValue::Value(Value::Alloc(Kind::Object, home_object)),
+                        StoredReferenceEdge::ClosureHomeObject,
+                    );
                 }
-                for value in captured.values.snapshots.values().flatten() {
-                    visit(value);
+                for (binding, values) in &captured.values.snapshots {
+                    for value in values {
+                        visit(
+                            value,
+                            StoredReferenceEdge::ClosureSnapshot(binding.0.as_ref()),
+                        );
+                    }
                 }
-                for cell in captured.values.cells.values() {
+                for (binding, cell) in &captured.values.cells {
                     for value in &self.state.lexical_cells[cell.0].values {
-                        visit(value);
+                        visit(value, StoredReferenceEdge::ClosureCell(binding.0.as_ref()));
                     }
                 }
             }
             AbstractValue::Instance(_, captured, _) => {
                 for value in captured.values.iter() {
-                    visit(value);
+                    visit(value, StoredReferenceEdge::InstanceRetainedValue);
                 }
             }
-            AbstractValue::DeferredCallbacks(captured)
-            | AbstractValue::AuditedRetainedResult(_, captured) => {
+            AbstractValue::DeferredCallbacks(captured) => {
                 for value in captured.values.iter() {
-                    visit(value);
+                    visit(value, StoredReferenceEdge::DeferredCallbackRetainedValue);
+                }
+            }
+            AbstractValue::AuditedRetainedResult(_, captured) => {
+                for value in captured.values.iter() {
+                    visit(value, StoredReferenceEdge::AuditedResultRetainedValue);
                 }
             }
             AbstractValue::OwnDescriptorMap(site) => {
                 if let Some(map) = self.state.own_descriptor_maps.get(site) {
                     for value in &map.retained_values {
-                        visit(value);
+                        visit(value, StoredReferenceEdge::DescriptorMapRetainedValue);
                     }
                 }
             }
@@ -6286,15 +6462,50 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn callback_values(&self, values: &Values) -> Values {
+        let pending: Vec<_> = values.iter().cloned().collect();
+        self.walk_callback_values(pending, None).0
+    }
+
+    fn callback_values_with_paths(
+        &self,
+        values: &Values,
+        seeds: &BTreeMap<AbstractValue, BoundedInvocationFallbackSeed>,
+        targets: &BTreeSet<u32>,
+    ) -> (Values, BTreeMap<u32, BoundedInvocationFallbackInputPath>) {
+        let pending = values
+            .iter()
+            .cloned()
+            .map(|value| TracedCallbackValue {
+                path: seeds.get(&value).cloned().map_or(
+                    BoundedInvocationFallbackInputPath::Unknown {
+                        reason: BoundedInvocationFallbackUnknownPathReason::SeedUnavailable,
+                    },
+                    |seed| BoundedInvocationFallbackInputPath::Retained {
+                        seed,
+                        edges: Vec::new(),
+                    },
+                ),
+                value,
+            })
+            .collect();
+        self.walk_callback_values(pending, Some(targets))
+    }
+
+    fn walk_callback_values<T: CallbackTraversalItem>(
+        &self,
+        mut pending: Vec<T>,
+        trace_targets: Option<&BTreeSet<u32>>,
+    ) -> (Values, BTreeMap<u32, BoundedInvocationFallbackInputPath>) {
         let mut callbacks = Values::new();
-        let mut pending: Vec<_> = values.iter().cloned().collect();
+        let mut paths = BTreeMap::new();
         let mut visited_objects = BTreeSet::new();
         let mut visited_descriptor_maps = BTreeSet::new();
         let mut expanded_escaped = false;
-        while let Some(value) = pending.pop() {
+        while let Some(work) = pending.pop() {
+            let value = work.value();
             let mut expand_stored_references = true;
             let mut expand_object_properties = true;
-            match &value {
+            match value {
                 AbstractValue::Value(Value::Alloc(Kind::Function, _)) => {
                     callbacks.insert(value.clone());
                 }
@@ -6306,10 +6517,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Class, key))
                 | AbstractValue::ClassMembers(key) => {
-                    callbacks.insert(AbstractValue::ClassMembers(*key));
+                    if callbacks.insert(AbstractValue::ClassMembers(*key))
+                        && trace_targets.is_some_and(|targets| targets.contains(key))
+                        && let Some(path) = work.class_members_path()
+                    {
+                        paths.entry(*key).or_insert(path);
+                    }
                 }
                 AbstractValue::Instance(key, captured, _) => {
-                    callbacks.insert(AbstractValue::ClassMembers(*key));
+                    if callbacks.insert(AbstractValue::ClassMembers(*key))
+                        && trace_targets.is_some_and(|targets| targets.contains(key))
+                        && let Some(path) = work.class_members_path()
+                    {
+                        paths.entry(*key).or_insert(path);
+                    }
                     // Capability reach never needs the constructed-kind receipt.
                     // Coalesce a constructed instance and a projected member
                     // with the same class and retained arguments in the pool.
@@ -6340,23 +6561,29 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     // separately at opaque call sites, and known object
                     // identities are expanded through their property maps.
                     expanded_escaped = true;
-                    pending.extend(
-                        self.state
-                            .global_escaped_callbacks
-                            .iter()
-                            .filter(|value| !matches!(value, AbstractValue::Value(Value::Top)))
-                            .cloned(),
-                    );
+                    for escaped in self
+                        .state
+                        .global_escaped_callbacks
+                        .iter()
+                        .filter(|value| !matches!(value, AbstractValue::Value(Value::Top)))
+                    {
+                        pending.push(work.retained_child(
+                            escaped,
+                            StoredReferenceEdge::EscapedCallbackPoolExpansion,
+                        ));
+                    }
                 }
                 _ => {}
             }
             if expand_stored_references {
-                self.visit_stored_references(&value, expand_object_properties, |reference| {
-                    pending.push(reference.clone());
-                });
+                self.visit_stored_references_with_edges(
+                    value,
+                    expand_object_properties,
+                    |reference, edge| pending.push(work.retained_child(reference, edge)),
+                );
             }
         }
-        callbacks
+        (callbacks, paths)
     }
 
     /// A direct call or construction of an imported callable carrying a
@@ -6871,6 +7098,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             &callbacks,
                             ClassMembersPublicationWriter::GlobalOrIntrinsicMemberWrite,
                             Some(write.site.source_span()),
+                            None,
                         );
                     }
                     AbstractValue::Value(Value::Alloc(kind, object))
@@ -6903,6 +7131,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             &callbacks,
                             ClassMembersPublicationWriter::InstanceMemberWrite,
                             Some(write.site.source_span()),
+                            None,
                         );
                     }
                     AbstractValue::OwnDescriptorMap(site) => {
@@ -6913,6 +7142,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             &callbacks,
                             ClassMembersPublicationWriter::OwnDescriptorMapMemberWrite,
                             Some(write.site.source_span()),
+                            None,
                         );
                     }
                     AbstractValue::Value(Value::Top)
@@ -6928,6 +7158,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             &callbacks,
                             ClassMembersPublicationWriter::UntrackedReceiverMemberWrite,
                             Some(write.site.source_span()),
+                            None,
                         );
                     }
                     _ => {}
@@ -7159,7 +7390,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
         }
-        self.insert_escaped_callback_values(&callbacks, writer, span);
+        self.insert_escaped_callback_values(&callbacks, writer, span, None);
     }
 
     /// The only mutation point for the prefix-wide escaped callback set.
@@ -7169,6 +7400,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         callbacks: &Values,
         writer: ClassMembersPublicationWriter,
         span: Option<Span>,
+        fallback_diagnostic: Option<&BoundedFallbackPublicationDiagnostic>,
     ) {
         let source_span = span.filter(|span| *span != DUMMY_SP);
         for callback in callbacks {
@@ -7181,6 +7413,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let top_level_owner = self.state.current_top_owner;
             let span_start = source_span.map(|span| span.lo.0);
             let span_end = source_span.map(|span| span.hi.0);
+            let bounded_fallback_input_path = (writer
+                == ClassMembersPublicationWriter::BoundedInvocationFallback)
+            .then(|| {
+                fallback_diagnostic
+                    .and_then(|diagnostic| diagnostic.input_paths.get(key))
+                    .cloned()
+                    .unwrap_or(BoundedInvocationFallbackInputPath::Unknown {
+                        reason:
+                            BoundedInvocationFallbackUnknownPathReason::RetainedReferencePathUnavailable,
+                    })
+            });
+            let bounded_fallback_callsite = (writer
+                == ClassMembersPublicationWriter::BoundedInvocationFallback)
+                .then(|| fallback_diagnostic.and_then(|diagnostic| diagnostic.callsite.clone()))
+                .flatten();
             self.state
                 .first_class_members_publications
                 .entry(*key)
@@ -7190,6 +7437,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     span_start,
                     span_end,
                     source_location: None,
+                    bounded_fallback_input_path,
+                    bounded_fallback_callsite,
                 });
         }
         let before = self.state.global_escaped_callbacks.len();
@@ -8302,23 +8551,46 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // unknown values, and shared objects must not each re-expand the same
         // escaped callback/capture graph independently.
         let mut values = Values::new();
+        self.visit_export_surface_callback_roots(bindings, default, |_, value| {
+            values.insert(value);
+        });
+        self.callback_values(&values)
+    }
+
+    fn visit_export_surface_callback_roots(
+        &self,
+        bindings: &BTreeSet<Id>,
+        default: bool,
+        mut visit: impl FnMut(Option<&Id>, AbstractValue),
+    ) {
         for binding in bindings {
             if let Some(exported) = self.state.prefix_values.get(binding) {
-                values.extend(exported.iter().cloned());
+                for value in exported {
+                    visit(Some(binding), value.clone());
+                }
             }
         }
         if default {
-            values.extend(
-                self.inputs
-                    .index
-                    .exported_hoisted_functions
-                    .iter()
-                    .copied()
-                    .map(|key| AbstractValue::Value(Value::Alloc(Kind::Function, key))),
-            );
-            values.extend(self.state.exported_runtime_values.iter().cloned());
+            for key in &self.inputs.index.exported_hoisted_functions {
+                visit(
+                    None,
+                    AbstractValue::Value(Value::Alloc(Kind::Function, *key)),
+                );
+            }
+            for value in &self.state.exported_runtime_values {
+                visit(None, value.clone());
+            }
         }
-        self.callback_values(&values)
+    }
+
+    fn visit_available_export_callback_roots(&self, visit: impl FnMut(Option<&Id>, AbstractValue)) {
+        if self.inputs.export_reentry_enabled {
+            self.visit_export_surface_callback_roots(
+                &self.inputs.reentry_bindings,
+                self.inputs.reentry_default,
+                visit,
+            );
+        }
     }
 
     fn invoke_possible_callbacks(
@@ -8375,8 +8647,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 outcome,
             );
             let before = self.callback_pool_observation();
-            if self.invoke_callback_pool_once(&callbacks, outcome)
-                || self.callback_pool_observation() == before
+            if self.invoke_callback_pool_once(
+                &callbacks,
+                args,
+                no_sync_arguments,
+                publication_span,
+                outcome,
+            ) || self.callback_pool_observation() == before
             {
                 break;
             }
@@ -8394,6 +8671,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             &callbacks,
             ClassMembersPublicationWriter::PossibleCallbackRetention,
             publication_span,
+            None,
         );
     }
 
@@ -8465,7 +8743,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     /// Runs every pool member once against the evolving state. Returns whether
     /// the bounded fallback summarized the pool instead.
-    fn invoke_callback_pool_once(&mut self, callbacks: &Values, outcome: &mut Outcome) -> bool {
+    fn invoke_callback_pool_once(
+        &mut self,
+        callbacks: &Values,
+        source_arguments: &[Values],
+        no_sync_arguments: bool,
+        diagnostic_callsite_span: Option<Span>,
+        outcome: &mut Outcome,
+    ) -> bool {
         // Unknown host code may invoke any callback it received with another
         // currently available callback, so each formal gets the conservative
         // callback set plus a non-callable/unknown possibility.
@@ -8524,18 +8809,28 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         limit: MAX_SYNCHRONOUS_INVOCATION_DEPTH,
                     }
                 };
-                let mut nested = self.bounded_invocation_fallback(
-                    self.state
-                        .current_top_owner
-                        .expect("callback call has a top owner"),
-                    std::slice::from_ref(callbacks),
-                    &Context::new(),
-                    reason,
-                    HavocReach::Global {
-                        cause: GlobalReachCause::EscapedCallbackPool,
-                    },
-                    DUMMY_SP,
-                );
+                let mut nested =
+                    self.bounded_invocation_fallback(BoundedInvocationFallbackRequest {
+                        owner: self
+                            .state
+                            .current_top_owner
+                            .expect("callback call has a top owner"),
+                        arguments: std::slice::from_ref(callbacks).to_vec(),
+                        captured: Context::new(),
+                        reason,
+                        reach: HavocReach::Global {
+                            cause: GlobalReachCause::EscapedCallbackPool,
+                        },
+                        span: DUMMY_SP,
+                        diagnostics: BoundedInvocationFallbackDiagnostics {
+                            callsite_span: diagnostic_callsite_span,
+                            arguments: Some(if no_sync_arguments {
+                                Vec::new()
+                            } else {
+                                source_arguments.to_vec()
+                            }),
+                        },
+                    });
                 self.apply_rebind_effects(&nested.effects.rebinds);
                 outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
                 outcome.executed_owners.extend(nested.executed_owners);
@@ -8598,22 +8893,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     fn bounded_invocation_fallback(
         &mut self,
-        owner: SourceUnitOrdinal,
-        args: &[Values],
-        captured: &Context,
-        reason: ExecutionPrecisionLossReason,
-        reach: HavocReach,
-        span: Span,
+        request: BoundedInvocationFallbackRequest,
     ) -> Outcome {
-        let result =
-            self.request_callback_operation(CallbackOperation::BoundedInvocationFallback {
-                owner,
-                arguments: args.to_vec(),
-                captured: captured.clone(),
-                reason,
-                reach,
-                span,
-            });
+        let result = self
+            .request_callback_operation(CallbackOperation::BoundedInvocationFallback { request });
         let CallbackResult::Outcome(result) = result else {
             unreachable!("bounded callback fallback returns an outcome");
         };
@@ -8622,13 +8905,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     pub(super) fn bounded_invocation_fallback_transfer(
         &mut self,
-        owner: SourceUnitOrdinal,
-        args: &[Values],
-        captured: &Context,
-        reason: ExecutionPrecisionLossReason,
-        reach: HavocReach,
-        span: Span,
+        request: BoundedInvocationFallbackRequest,
     ) -> Outcome {
+        let BoundedInvocationFallbackRequest {
+            owner,
+            arguments,
+            captured,
+            reason,
+            reach,
+            span,
+            diagnostics,
+        } = request;
+        let args = &arguments;
+        let BoundedInvocationFallbackDiagnostics {
+            callsite_span: diagnostic_callsite_span,
+            arguments: diagnostic_arguments,
+        } = diagnostics;
+        let captured = &captured;
         let effect_owner = self.state.current_top_owner.unwrap_or(owner);
         if self.state.array_iteration_depth > 0 {
             self.state.array_iteration_unsupported = true;
@@ -8651,8 +8944,88 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let mut possible_values: Values = args.iter().flatten().cloned().collect();
         possible_values.extend(captured.values().flatten().cloned());
         possible_values.extend(self.state.global_escaped_callbacks.iter().cloned());
-        possible_values.extend(self.available_export_callbacks());
+        let export_callbacks = self.available_export_callbacks();
+        possible_values.extend(export_callbacks.iter().cloned());
+
         let callbacks = self.callback_values(&possible_values);
+        let first_class_candidates: BTreeSet<_> = callbacks
+            .iter()
+            .filter_map(|callback| match callback {
+                AbstractValue::ClassMembers(key)
+                    if !self.state.global_escaped_callbacks.contains(callback) =>
+                {
+                    Some(*key)
+                }
+                _ => None,
+            })
+            .collect();
+        let input_paths = if first_class_candidates.is_empty() {
+            BTreeMap::new()
+        } else {
+            // Only the first-publication diagnostic needs seed labels. Keep
+            // this path-only work out of fallback calls with no new class
+            // capability, and do not change the deduplicated value union.
+            // Callback-pool truncation passes a synthetic `[callbacks]` value
+            // to the semantic fallback; trace from the original call inputs
+            // instead so the report never calls that synthetic vector arg 0.
+            let path_arguments = diagnostic_arguments.as_deref().unwrap_or(args);
+            let mut path_roots = Values::new();
+            let mut fallback_seeds = BTreeMap::new();
+            for (position, values) in path_arguments.iter().enumerate() {
+                for value in values {
+                    path_roots.insert(value.clone());
+                    fallback_seeds
+                        .entry(value.clone())
+                        .or_insert(BoundedInvocationFallbackSeed::Argument { position });
+                }
+            }
+            for (binding, values) in captured {
+                for value in values {
+                    path_roots.insert(value.clone());
+                    fallback_seeds.entry(value.clone()).or_insert_with(|| {
+                        BoundedInvocationFallbackSeed::CapturedBinding {
+                            binding: binding.0.to_string(),
+                        }
+                    });
+                }
+            }
+            for value in &self.state.global_escaped_callbacks {
+                path_roots.insert(value.clone());
+                fallback_seeds
+                    .entry(value.clone())
+                    .or_insert(BoundedInvocationFallbackSeed::EscapedCallbackPool);
+            }
+            self.visit_available_export_callback_roots(|binding, value| {
+                path_roots.insert(value.clone());
+                fallback_seeds
+                    .entry(value.clone())
+                    .or_insert_with(|| match binding {
+                        Some(binding) => BoundedInvocationFallbackSeed::AvailableExportBinding {
+                            binding: binding.0.to_string(),
+                        },
+                        None => BoundedInvocationFallbackSeed::AvailableExportCallbacks,
+                    });
+            });
+            let (_, paths) = self.callback_values_with_paths(
+                &path_roots,
+                &fallback_seeds,
+                &first_class_candidates,
+            );
+            paths
+        };
+        let diagnostic_callsite = diagnostic_callsite_span
+            .filter(|span| *span != DUMMY_SP)
+            .map(|span| BoundedInvocationFallbackCallSite {
+                top_level_owner: self.state.current_top_owner,
+                span_start: span.lo.0,
+                span_end: span.hi.0,
+                source_location: None,
+            });
+        let publication_diagnostic = BoundedFallbackPublicationDiagnostic {
+            input_paths,
+            callsite: diagnostic_callsite,
+        };
+
         if callbacks.contains(&AbstractValue::ForeignDeferredRecord) {
             self.promote_foreign_record(&mut outcome);
         }
@@ -8805,6 +9178,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             &callbacks,
             ClassMembersPublicationWriter::BoundedInvocationFallback,
             Some(span),
+            Some(&publication_diagnostic),
         );
         if outcome.effects.rebinds.len() != rebinds_before {
             self.apply_rebind_effects(&outcome.effects.rebinds);
@@ -9965,16 +10339,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             ClassMembersPublicationWriter::LocalOperationFallback,
             Some(span),
         );
-        let mut fallback = self.bounded_invocation_fallback(
+        let mut fallback = self.bounded_invocation_fallback(BoundedInvocationFallbackRequest {
             owner,
-            &[reached],
-            &frame.environment,
+            arguments: vec![reached],
+            captured: frame.environment.clone(),
             reason,
-            HavocReach::Global {
+            reach: HavocReach::Global {
                 cause: GlobalReachCause::UnmodelledOperation,
             },
             span,
-        );
+            diagnostics: BoundedInvocationFallbackDiagnostics::default(),
+        });
         outcome.absorb_call_effects(&mut fallback.effects, self.state.assumption.as_ref());
         outcome.executed_owners.extend(fallback.executed_owners);
         outcome.unknown_call |= fallback.unknown_call;
@@ -10226,14 +10601,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             };
             let reach = self.invocation_reach(key, callable_owner, &args, &captured_context);
-            return self.bounded_invocation_fallback(
-                callable_owner,
-                &args,
-                &captured_context,
+            return self.bounded_invocation_fallback(BoundedInvocationFallbackRequest {
+                owner: callable_owner,
+                arguments: args,
+                captured: captured_context,
                 reason,
                 reach,
-                DUMMY_SP,
-            );
+                span: DUMMY_SP,
+                diagnostics: BoundedInvocationFallbackDiagnostics::default(),
+            });
         }
         self.state.active.insert(active_invocation);
         self.state.invocation_depth += 1;
@@ -11214,6 +11590,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 &callbacks,
                 ClassMembersPublicationWriter::NoReentryCallRetention,
                 Some(call.span),
+                None,
             );
             return CallTransfer::EffectsOnly;
         }
