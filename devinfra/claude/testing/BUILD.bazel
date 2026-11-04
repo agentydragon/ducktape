@@ -10,7 +10,7 @@ py_library(
         "//devinfra/bazel:runfiles",
         "//devinfra/claude/claude_hook/container_e2e:e2e_container_descriptor",
         "//devinfra/oci",
-        "//util/testing:undeclared_outputs",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//docker",
         "@pypi//pytest",
     ],

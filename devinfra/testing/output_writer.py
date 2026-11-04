@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, Literal
 
-from util.testing.output_records import (
+from devinfra.testing.output_records import (
     FILES_DIR,
     LOCKS_DIR,
     RECORDS_DIR,

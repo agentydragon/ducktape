@@ -30,7 +30,7 @@ from agentplane.system_tests.sandbox import POD_TEMPLATE, suspend_and_delete, wa
 from agentplane.system_tests.scenarios import mcp
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import Text
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 _REQUIRED_TOOLS = {
     "environments__list",

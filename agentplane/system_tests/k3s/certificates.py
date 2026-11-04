@@ -11,7 +11,7 @@ from tenacity import Retrying, retry_if_exception, retry_if_exception_type, stop
 from agentplane.system_tests.k3s.release_manifests import load_release_manifest
 from agentplane.system_tests.tracing import tracer
 from devinfra.bazel.runfiles import get_required_path
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 Kubectl = Callable[..., str]
 NAMESPACE = "cert-manager"

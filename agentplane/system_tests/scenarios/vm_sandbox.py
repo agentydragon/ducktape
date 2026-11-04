@@ -30,7 +30,7 @@ from agentplane.system_tests.vm_configuration import OOM_TEMPLATE, SUPERVISION_T
 from agentplane.system_tests.vm_supervision import session_setup_is_supervised
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Text
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 PING = "Run a shell command, then say exactly PING."
 

@@ -7,7 +7,7 @@ from contextlib import aclosing
 from google.protobuf.json_format import MessageToDict
 
 from agentplane.app.testing.client import Client
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 async def capture(client: Client, *, sandbox_uid: str) -> None:

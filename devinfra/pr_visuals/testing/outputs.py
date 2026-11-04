@@ -14,7 +14,7 @@ from devinfra.pr_visuals.artifacts import (
     BuildBuddyArtifact,
 )
 from devinfra.pr_visuals.collection import OutputKey, OutputObservation, ResultKey, SourceSummary
-from util.testing.output_records import SCHEMA, OutputRecord
+from devinfra.testing.output_records import SCHEMA, OutputRecord
 
 
 @dataclass(frozen=True)

@@ -6,8 +6,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from gnome.testing.session import GnomeSession, exec_output, wait_until
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 @dataclass(frozen=True)

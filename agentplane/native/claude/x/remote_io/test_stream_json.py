@@ -15,7 +15,7 @@ from agentplane.native.claude.testing.harness import ClaudeLauncher
 from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.claude.testing.model import MODEL
 from devinfra.bazel.runfiles import get_required_path
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 @pytest.mark.parametrize("scenario", ["clean-completed", "crash-completed", "crash-active"])

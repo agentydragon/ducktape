@@ -24,6 +24,7 @@ from playwright.async_api import BrowserContext, Locator, Page, Playwright, Rout
 from pydantic import JsonValue, TypeAdapter
 
 from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.testing.output_writer import BoundTestOutputs
 from util.testing.frontend_visual.context import DISABLE_ANIMATIONS_CSS, FROZEN_NOW_MS, deterministic_browser_context
 from util.testing.frontend_visual.page_capture import (
     WAIT_TIMEOUT_MS,
@@ -35,7 +36,6 @@ from util.testing.frontend_visual.page_capture import (
     wait_for_stable,
 )
 from util.testing.frontend_visual.viewports import Viewport
-from util.testing.output_writer import BoundTestOutputs
 
 # `document.fonts.check` is true for a family no `@font-face` declares, so on its own it passes when the
 # stylesheet declaring the font never arrived (or the name is misspelled) and the page renders in a fallback.

@@ -10,8 +10,8 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from testcontainers.postgres import PostgresContainer
 
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from haku.console.database_migrate import apply_migrations, sync_database_url
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 def _schema(container: PostgresContainer, database: str) -> str:

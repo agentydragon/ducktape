@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 @pytest.hookimpl(tryfirst=True)

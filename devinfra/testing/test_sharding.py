@@ -3,14 +3,14 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-# gazelle:include_dep //util/testing:sharding
+# gazelle:include_dep //devinfra/testing:sharding
 
 pytest_plugins = ["pytester"]
 
 
 def _run_shard(pytester: pytest.Pytester, shard_id: int, *args: str) -> list[str]:
     pytester.makepyfile("\n".join(f"def test_{i}(): pass" for i in range(7)))
-    reprec = pytester.inline_run("-p", "util.testing.sharding", f"--shard-id={shard_id}", "--num-shards=3", *args)
+    reprec = pytester.inline_run("-p", "devinfra.testing.sharding", f"--shard-id={shard_id}", "--num-shards=3", *args)
     passed, _, _ = reprec.listoutcomes()
     return [report.nodeid.rpartition("::")[2] for report in passed]
 
@@ -36,7 +36,7 @@ def test_a_filter_matching_nothing_fails_on_every_shard(pytester: pytest.Pyteste
     pytester.makepyfile("\n".join(f"def test_{i}(): pass" for i in range(7)))
 
     reprec = pytester.inline_run(
-        "-p", "util.testing.sharding", f"--shard-id={shard_id}", "--num-shards=3", "-k", "no_such_test"
+        "-p", "devinfra.testing.sharding", f"--shard-id={shard_id}", "--num-shards=3", "-k", "no_such_test"
     )
 
     assert reprec.ret == pytest.ExitCode.USAGE_ERROR

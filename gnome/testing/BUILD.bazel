@@ -11,8 +11,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//devinfra/bazel:runfiles",
-        "//util/testing:output_writer",
-        "//util/testing:undeclared_outputs",
+        "//devinfra/testing:output_writer",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//docker",
         "@pypi//pillow",
         "@pypi//testcontainers",
@@ -25,7 +25,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":session",
-        "//util/testing:undeclared_outputs",
+        "//devinfra/testing:undeclared_outputs",
     ],
 )
 

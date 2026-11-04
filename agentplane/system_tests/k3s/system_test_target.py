@@ -15,8 +15,8 @@ from agentplane.system_tests.k3s import guest_logs, rendered_fixture
 from agentplane.system_tests.k3s.rendered_fixture import Backend, LocalModel, PublicLiteLLM
 from agentplane.system_tests.k3s.stack import Stack, StackInputs, node_ip, running_stack
 from devinfra.bazel.runfiles import get_required_path
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.net import Listener, listen_tcp
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 @pytest.fixture(scope="session")

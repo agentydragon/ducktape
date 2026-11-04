@@ -15,7 +15,7 @@ from kubernetes_asyncio.config import new_client_from_config
 
 from agentplane.subjects import ServiceAccountRef
 from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 @dataclass(frozen=True)

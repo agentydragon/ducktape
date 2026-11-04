@@ -47,7 +47,7 @@ checkpoint.
 Python tests can use the `test_outputs` pytest fixture to bind the full
 repository-relative node ID automatically. `VisualPage.capture()` uses that
 binding and takes an optional checkpoint. Python code outside pytest can call
-`util.testing.output_writer.publish_output` with an explicit case ID. Other
+`devinfra.testing.output_writer.publish_output` with an explicit case ID. Other
 frameworks and languages may implement the same record format; no pytest naming
 convention is required by the collector.
 Use `publish_file` (or the fixture's `publish_file` method) for an existing

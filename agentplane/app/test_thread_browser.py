@@ -68,10 +68,10 @@ from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_clus
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
+from devinfra.testing.output_writer import BoundTestOutputs
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.frontend_visual.capture import VisualPage
 from util.testing.frontend_visual.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
-from util.testing.output_writer import BoundTestOutputs
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 pytest_plugins = ("agentplane.app.testing.thread_browser",)
 

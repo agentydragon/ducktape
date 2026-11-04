@@ -338,7 +338,7 @@ py_visual_test(
     ],
     harness = ":visual_harness_js",
     test_deps = [
-        "//util/testing:undeclared_outputs",
+        "//devinfra/testing:undeclared_outputs",
         "//util/testing/frontend_visual:capture",
         "//util/testing/frontend_visual:page_capture",
         "//util/testing/frontend_visual:viewports",

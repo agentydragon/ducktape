@@ -279,6 +279,7 @@ py_test(
     deps = [
         "//:conftest",
         "//devinfra/bazel:runfiles",
+        "//devinfra/testing:output_writer",
         "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:conftest",
         "//finance/plaid/spend:models",
@@ -289,7 +290,6 @@ py_test(
         "//finance/plaid/spend/ui/testing:transactions",
         "//util:playwright",
         "//util/testing:asgi",
-        "//util/testing:output_writer",
         "//util/testing/frontend_visual:capture",
         "//util/testing/frontend_visual:context",
         "@pypi//fastapi",

@@ -19,7 +19,7 @@ import pytest
 from devinfra.bazel.runfiles import get_required_path
 from devinfra.claude.claude_hook.container_e2e import e2e_container_descriptor
 from devinfra.oci.oci import load_oci_image
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 _RUST_BINARY_RLOC = "_main/devinfra/claude/claude_hook/claude_hook"
 

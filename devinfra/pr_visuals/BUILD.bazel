@@ -35,7 +35,7 @@ py_library(
     visibility = ["//devinfra/pr_visuals/testing:__pkg__"],
     deps = [
         ":artifacts",
-        "//util/testing:output_records",
+        "//devinfra/testing:output_records",
     ],
 )
 
@@ -192,7 +192,7 @@ py_test(
         "//:conftest",
         "//devinfra/buildbuddy/ci:invocation_ids",
         "//devinfra/pr_visuals/testing:outputs",
-        "//util/testing:output_writer",
+        "//devinfra/testing:output_writer",
         "@pypi//botocore",
         "@pypi//pillow",
         "@pypi//pytest",
@@ -255,8 +255,7 @@ py_package(
     packages = [
         "devinfra.buildbuddy.ci",
         "devinfra.pr_visuals",
-        "util",
-        "util.testing",
+        "devinfra.testing",
     ],
     deps = [":publisher"],
 )
@@ -311,7 +310,7 @@ py_library(
         ":publisher",
         ":visual_diff",
         "//devinfra/buildbuddy/ci:invocation_ids",
-        "//util/testing:output_records",
+        "//devinfra/testing:output_records",
         "@pypi//pillow",
     ],
 )
@@ -336,7 +335,7 @@ py_test(
         ":collection",
         "//:conftest",
         "//devinfra/pr_visuals/testing:outputs",
-        "//util/testing:output_records",
+        "//devinfra/testing:output_records",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

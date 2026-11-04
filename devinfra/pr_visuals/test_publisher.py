@@ -61,7 +61,7 @@ from devinfra.pr_visuals.publisher import (
 )
 from devinfra.pr_visuals.pull_request import PullRequestRef
 from devinfra.pr_visuals.testing.outputs import Blob, output_observation, result_artifact
-from util.testing.output_writer import BoundTestOutputs
+from devinfra.testing.output_writer import BoundTestOutputs
 
 
 def _png(path: Path, color: tuple[int, int, int, int] = (10, 20, 30, 255), size: tuple[int, int] = (8, 8)) -> Path:

@@ -17,7 +17,7 @@ from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.testing.scripted_model import ScriptedModel, Text
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 

@@ -19,7 +19,7 @@ from devinfra.pr_visuals.collection import (
     local_output_result,
 )
 from devinfra.pr_visuals.testing.outputs import Blob, result_artifact
-from util.testing.output_records import SCHEMA, OutputRecord
+from devinfra.testing.output_records import SCHEMA, OutputRecord
 
 
 def _artifact(

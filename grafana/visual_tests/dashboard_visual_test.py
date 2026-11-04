@@ -16,15 +16,15 @@ import pytest_bazel
 from playwright.async_api import async_playwright, expect
 
 from devinfra.bazel.runfiles import get_required_path
+from devinfra.testing.output_writer import BoundTestOutputs
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from grafana.visual_tests.recorded import replay_query, validate_fixture
 from grafana.visual_tests.visual_browser import capture_dashboard
 from grafana.visual_tests.visual_harness import grafana_dashboard, record_stage
 from util.testing.frontend_visual.capture import VisualPage
 from util.testing.frontend_visual.context import FROZEN_NOW_MS, deterministic_browser_context
-from util.testing.output_writer import BoundTestOutputs
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-pytest_plugins = ("util.testing.pytest_outputs",)
+pytest_plugins = ("devinfra.testing.pytest_outputs",)
 
 
 @pytest.mark.asyncio

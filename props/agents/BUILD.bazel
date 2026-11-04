@@ -88,12 +88,12 @@ py_test(
         ":conftest",
         ":runtime",
         "//:conftest",
+        "//devinfra/testing:undeclared_outputs",
         "//props:conftest",
         "//props/core:agent_types",
         "//props/core:ids",
         "//props/core/models:examples",
         "//props/db:database",
-        "//util/testing:undeclared_outputs",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],

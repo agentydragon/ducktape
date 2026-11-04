@@ -27,7 +27,7 @@ from agentplane.history_service.testing.electric_service import ElectricService
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 

@@ -23,7 +23,7 @@ from agentplane.system_tests.k3s import guest_logs
 from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
 from agentplane.system_tests.sandbox import ENVIRONMENT_RUNTIME_CONTAINER
 from agentplane.system_tests.tracing import tracer
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 BOUND_SECONDS = 300
 RECORD = "agentplane.allegedly.works/workspace-record"

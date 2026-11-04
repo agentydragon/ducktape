@@ -23,8 +23,8 @@ from agentplane.central_sampler.testing_store import Store
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.native.testing.model_endpoint import SseEvent
 from agentplane.proto import event_pb2
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.sqlalchemy_engines import postgres_async_engine
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 ROUTE = "anthropic-native-test"
 SESSION_ID = "079bd706-77b3-4b71-8c7e-605a7e19324c"

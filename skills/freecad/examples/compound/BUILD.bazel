@@ -33,11 +33,11 @@ py_test(
     deps = [
         "//:conftest",
         "//devinfra/bazel:runfiles",
+        "//devinfra/testing:undeclared_outputs",
         "//skills/freecad:conftest",
         "//skills/freecad/examples:export_page",
         "//skills/freecad/examples/compound:build",
         "//skills/freecad/testing:compare",
-        "//util/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

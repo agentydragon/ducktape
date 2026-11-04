@@ -99,7 +99,7 @@ k3s_suite(
         "//agentplane/system_tests/scenarios:mcp",
         "//agentplane/system_tests/suites:conftest",
         "//agentplane/testing:scripted_model",
-        "//util/testing:undeclared_outputs",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//httpx",
         "@pypi//more_itertools",
         "@pypi//protobuf",

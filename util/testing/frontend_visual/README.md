@@ -85,7 +85,7 @@ writes the default screenshot (`checkpoint=None`) for that case. Use readable pa
 App-owned fixtures call `visual.open()` without passing an ID. Outside pytest, construct
 `VisualHarness(..., outputs=BoundTestOutputs(output_dir, case_id))` with an explicit case identity.
 
-`VisualPage.outputs` is a `BoundTestOutputs` writer from `util.testing.output_writer`,
+`VisualPage.outputs` is a `BoundTestOutputs` writer from `devinfra.testing.output_writer`,
 bound to the page's output directory and case ID. Use `view.outputs.publish(...)` for
 additional roles or checkpoints alongside `view.capture()`; both publish under the same
 case identity. The writer is independent of pytest, so real-server pages can use it too.
@@ -137,7 +137,7 @@ where the page is served:
   `with VisualPage(page, ...) as view:`, entered before navigating. Exiting the context checks
   for uncaught page errors, including errors after the last screenshot. If another error is
   already propagating, the page error is attached to it as a note.
-- Native UI (GNOME shell, ...): `publish_output()` (`util/testing/output_writer.py`), as
+- Native UI (GNOME shell, ...): `publish_output()` (`devinfra/testing/output_writer.py`), as
   `gnome/testing/session.py` does.
 
 Traps, each of which renders differently from one execution to the next or hides a failure:

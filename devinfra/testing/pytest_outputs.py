@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from util.testing.output_writer import BoundTestOutputs
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.output_writer import BoundTestOutputs
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 def case_id_for_pytest_item(test_path: Path, nodeid: str, *, repo_root: Path) -> str:

@@ -25,10 +25,10 @@ from agentplane.runner_gateway.settings import Settings
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
 from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.db_url import render_postgresql_url
 from util.net import listen_tcp
 from util.settings_contract import env_name
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 

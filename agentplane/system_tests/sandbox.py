@@ -22,7 +22,7 @@ from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.tracing import tracer
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 POD_TEMPLATE = "environment-tools"
 ENVIRONMENT_RUNTIME_CONTAINER = "environment-runtime"

@@ -25,7 +25,7 @@ from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.tracing import tracer
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Reasoning, ShellCall, Text
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 def _verify_pod_executor(output: str) -> None:

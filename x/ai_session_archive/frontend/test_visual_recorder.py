@@ -7,9 +7,9 @@ import pytest
 import pytest_bazel
 from playwright.async_api import expect
 
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.frontend_visual.capture import VisualHarness
 from util.testing.frontend_visual.viewports import Viewport
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 pytest_plugins = ("util.testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")

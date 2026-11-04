@@ -52,7 +52,7 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
         env: Extra env vars.
         env_inherit: Extra env vars to inherit.
         shard_count: Split the test's cases across this many Bazel shards, item i of
-            the collection on shard i mod shard_count. Loads util/testing/sharding.py,
+            the collection on shard i mod shard_count. Loads devinfra/testing/sharding.py,
             which is what reads the --shard-id/--num-shards pytest_bazel derives from
             Bazel's shard environment; without it pytest rejects those flags and the
             test fails at startup rather than sharding.
@@ -85,17 +85,17 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
         base_tags = base_tags + ["requires_docker"]
         env = {"RYUK_CONTAINER_IMAGE": RYUK_TAG} | env
     if shard_count != None:
-        base_args = base_args + ["-p", "util.testing.sharding"]
-        base_deps = base_deps + ["//util/testing:sharding"]
+        base_args = base_args + ["-p", "devinfra.testing.sharding"]
+        base_deps = base_deps + ["//devinfra/testing:sharding"]
         kwargs["shard_count"] = shard_count
     if uses_syrupy:
         base_args = base_args + [
-            "--snapshot-default-extension=util.testing.bazel_snapshot_extension.BazelAmberExtension",
+            "--snapshot-default-extension=devinfra.testing.bazel_snapshot_extension.BazelAmberExtension",
             "-p",
-            "util.testing.bazel_snapshot_extension",
+            "devinfra.testing.bazel_snapshot_extension",
         ]
         base_deps = base_deps + [
-            "//util/testing:bazel_snapshot_extension",
+            "//devinfra/testing:bazel_snapshot_extension",
         ]
 
     _py_test(

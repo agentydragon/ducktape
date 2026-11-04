@@ -12,6 +12,8 @@ import pytest_bazel
 from playwright.async_api import BrowserContext, Page, Playwright, expect
 
 from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.testing.output_records import output_key
+from devinfra.testing.output_writer import BoundTestOutputs
 from util.testing.frontend_visual.capture import (
     HarnessConfig,
     InlinePage,
@@ -21,8 +23,6 @@ from util.testing.frontend_visual.capture import (
     playwright_trace,
 )
 from util.testing.frontend_visual.viewports import Viewport
-from util.testing.output_records import output_key
-from util.testing.output_writer import BoundTestOutputs
 
 # gazelle:include_dep //util:playwright
 # gazelle:include_dep //util/testing/frontend_visual:fixtures

@@ -17,7 +17,7 @@ from devinfra.js.debundle.skills.shared.examples.isolated_edit import (
     merge_and_regenerate,
     recorded_run,
 )
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 def run(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:

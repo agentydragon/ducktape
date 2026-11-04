@@ -28,8 +28,8 @@ from agentplane.grpc.serving import serving
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, FunctionCall, Message, response_stream
 from agentplane.native.testing.model_endpoint import JsonResponse, SseEvent
 from agentplane.proto import event_pb2
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.sqlalchemy_engines import postgres_async_engine
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 ResponseT = TypeVar("ResponseT")
 
