@@ -21,6 +21,12 @@ and its BuildBuddy key; this is a trusted-code worker.
 Actions receive all guest Linux capabilities: nested runc needs `SYS_RESOURCE` to set
 pod OOM scores, and KubeVirt's privileged node agents need the full capability set.
 Docker packages the action's filesystem; the VM provides isolation from the outer cluster.
+Nested runc needs `keyctl(KEYCTL_JOIN_SESSION_KEYRING)` to create pod session keyrings.
+The guest's Docker seccomp profile allows that operation; other `keyctl` operations remain
+blocked. It is based on Docker 29.1.3's [default profile](https://github.com/moby/moby/blob/docker-v29.1.3/vendor/github.com/moby/profiles/seccomp/default.json).
+When the Docker package is upgraded, compare its default profile and update our copy so
+other seccomp policy changes are retained. The profile applies to every container in this
+dedicated guest.
 
 The Kustomization is enabled, so Flux deploys the VM when this configuration lands.
 First boot configures the dedicated guest for nested KVM and reboots once before the
