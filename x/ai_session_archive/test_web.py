@@ -3,6 +3,7 @@
 import base64
 import json
 import time
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -12,6 +13,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.testclient import TestClient
 from itsdangerous import TimestampSigner
 from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from x.ai_session_archive.database import (
@@ -25,7 +27,7 @@ from x.ai_session_archive.database import (
     SnapshotFileRow,
     make_session_factory,
 )
-from x.ai_session_archive.web import create_app
+from x.ai_session_archive.web import _archive_session, create_app
 from x.ai_session_archive.web_settings import WebSettings
 
 
@@ -328,6 +330,21 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
             {"id": "progress-host", "display_name": "Progress host"},
         ]
     }
+    alternate_engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(alternate_engine)
+    alternate_factory = make_session_factory(alternate_engine)
+    with alternate_factory() as db:
+        db.add(MachineRow(id="override-host", display_name="Override host"))
+        db.commit()
+
+    def alternate_session() -> Iterator[Session]:
+        with alternate_factory() as db:
+            yield db
+
+    client.app.dependency_overrides[_archive_session] = alternate_session
+    assert client.get("/api/machines").json() == {"data": [{"id": "override-host", "display_name": "Override host"}]}
+    del client.app.dependency_overrides[_archive_session]
+    alternate_engine.dispose()
     progress = client.get("/api/import-progress")
     assert progress.headers["cache-control"] == "no-store"
     assert progress.json()["data"] == [
