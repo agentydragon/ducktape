@@ -5,14 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 var (
@@ -38,48 +35,28 @@ func New(reader Reader) (*Store, error) {
 	return &Store{reader: reader}, nil
 }
 
-type FeedEnd struct{ Message string }
-
-type FeedSnapshot struct {
-	Status   historypb.FeedStatus
-	Attached *sessionpb.Attached
-	End      *FeedEnd
-}
-
-type FoldSummary struct {
-	Present             bool
-	Sandbox             string
-	SandboxUID          string
-	ProjectionEpoch     *string
-	CommittedCursor     uint64
-	FoldedThrough       uint64
-	FirstEventAt        *time.Time
-	LastEventAt         *time.Time
-	LastModelActivityAt *time.Time
-	IdleSince           *time.Time
-	LastTurnStatus      *int32
-	Feed                *FeedSnapshot
-}
-
-func (s *Store) GetSummary(ctx context.Context, id uuid.UUID) (FoldSummary, error) {
+// GetSummary returns nil when the Session has no recorded History.
+func (s *Store) GetSummary(ctx context.Context, id uuid.UUID) (*historypb.SessionSummary, error) {
 	message, err := s.reader.GetSessionSummary(ctx, &historypb.GetSessionSummaryRequest{SessionId: id.String()})
 	if status.Code(err) == codes.NotFound {
-		return FoldSummary{}, nil
+		return nil, nil
 	}
 	if err != nil {
-		return FoldSummary{}, err
+		return nil, err
 	}
-	return foldSummary(message)
+	if err := validateSummary(message); err != nil {
+		return nil, err
+	}
+	return message, nil
 }
 
-func (s *Store) BatchGetSummaries(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]FoldSummary, error) {
-	result := make(map[uuid.UUID]FoldSummary, len(ids))
+func (s *Store) BatchGetSummaries(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*historypb.SessionSummary, error) {
+	result := make(map[uuid.UUID]*historypb.SessionSummary, len(ids))
 	for start := 0; start < len(ids); start += 200 {
 		end := min(start+200, len(ids))
 		batch := make([]string, 0, end-start)
 		for _, id := range ids[start:end] {
 			batch = append(batch, id.String())
-			result[id] = FoldSummary{}
 		}
 		response, err := s.reader.BatchGetSessionSummaries(ctx, &historypb.BatchGetSessionSummariesRequest{SessionIds: batch})
 		if err != nil {
@@ -90,11 +67,10 @@ func (s *Store) BatchGetSummaries(ctx context.Context, ids []uuid.UUID) (map[uui
 			if err != nil {
 				return nil, err
 			}
-			view, err := foldSummary(message)
-			if err != nil {
+			if err := validateSummary(message); err != nil {
 				return nil, err
 			}
-			result[id] = view
+			result[id] = message
 		}
 	}
 	return result, nil
@@ -138,49 +114,19 @@ func canonicalUUID(value string) (uuid.UUID, error) {
 	return id, nil
 }
 
-func foldSummary(message *historypb.SessionSummary) (FoldSummary, error) {
+func validateSummary(message *historypb.SessionSummary) error {
 	if message == nil {
-		return FoldSummary{}, fmt.Errorf("%w: empty summary", ErrInvalidPage)
-	}
-	view := FoldSummary{Present: true, CommittedCursor: message.GetCommittedCursor(), FoldedThrough: message.GetFoldedThrough()}
-	if message.ProjectionEpoch != nil {
-		epoch := message.GetProjectionEpoch()
-		view.ProjectionEpoch = &epoch
-	}
-	if sandbox := message.GetSandbox(); sandbox != nil {
-		view.Sandbox = sandbox.GetName()
-		view.SandboxUID = sandbox.GetUid()
-	}
-	view.FirstEventAt = timestamp(message.GetFirstEventAt())
-	view.LastEventAt = timestamp(message.GetLastEventAt())
-	view.LastModelActivityAt = timestamp(message.GetLastModelActivityAt())
-	view.IdleSince = timestamp(message.GetIdleSince())
-	if message.LastTurnStatus != nil {
-		value := int32(message.GetLastTurnStatus())
-		view.LastTurnStatus = &value
+		return fmt.Errorf("%w: empty summary", ErrInvalidPage)
 	}
 	if message.GetAttached() != nil {
-		feed := &FeedSnapshot{Status: message.GetFeedStatus(), Attached: message.GetAttached()}
 		switch message.GetFeedStatus() {
-		case historypb.FeedStatus_FEED_STATUS_ACTIVE:
-		case historypb.FeedStatus_FEED_STATUS_ENDED:
-			feed.End = &FeedEnd{}
-		case historypb.FeedStatus_FEED_STATUS_FAILED:
-			feed.End = &FeedEnd{Message: message.GetFeedError()}
+		case historypb.FeedStatus_FEED_STATUS_UNSPECIFIED, historypb.FeedStatus_FEED_STATUS_ACTIVE,
+			historypb.FeedStatus_FEED_STATUS_ENDED, historypb.FeedStatus_FEED_STATUS_FAILED:
 		default:
-			return FoldSummary{}, fmt.Errorf("%w: attached Session summary has unspecified feed status", ErrInvalidPage)
+			return fmt.Errorf("%w: unknown feed status %d", ErrInvalidPage, message.GetFeedStatus())
 		}
-		view.Feed = feed
 	}
-	return view, nil
-}
-
-func timestamp(value *timestamppb.Timestamp) *time.Time {
-	if value == nil || !value.IsValid() {
-		return nil
-	}
-	converted := value.AsTime().UTC()
-	return &converted
+	return nil
 }
 
 func (s *Store) ReadWatermark(ctx context.Context, id uuid.UUID) (uint64, error) {

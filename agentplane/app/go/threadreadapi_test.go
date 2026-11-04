@@ -19,13 +19,15 @@ import (
 
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
-	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -104,7 +106,7 @@ func (f *threadReadStoreFake) Unarchive(_ context.Context, id uuid.UUID) (thread
 }
 
 type threadReadHistoryFake struct {
-	summaries   map[uuid.UUID]historydata.FoldSummary
+	summaries   map[uuid.UUID]*historypb.SessionSummary
 	sandboxes   map[uuid.UUID]string
 	sandboxUIDs map[uuid.UUID]string
 	err         error
@@ -121,7 +123,7 @@ func TestListThreadMetadataScopesPagesAndArchiveCountToSandboxUID(t *testing.T) 
 		uuid.MustParse("00000000-0000-4000-8000-000000000005"),
 		uuid.MustParse("00000000-0000-4000-8000-000000000006"),
 	}
-	unknownTurnStatus := int32(999)
+	unknownTurnStatus := eventpb.TurnStatus(999)
 	store := &threadReadStoreFake{rows: []threads.Thread{
 		{ID: ids[0], CreatedAt: time.Unix(4, 0), Archived: true},
 		{ID: ids[1], CreatedAt: time.Unix(3, 0)},
@@ -131,13 +133,12 @@ func TestListThreadMetadataScopesPagesAndArchiveCountToSandboxUID(t *testing.T) 
 		{ID: ids[4], CreatedAt: time.Unix(0, 0), Archived: true},
 	}}
 	history := &threadReadHistoryFake{
-		summaries: map[uuid.UUID]historydata.FoldSummary{
-			ids[0]: {Present: true, Sandbox: "reused", SandboxUID: oldUID},
-			ids[1]: {Present: true, Sandbox: "reused", SandboxUID: currentUID, LastTurnStatus: &unknownTurnStatus},
-			ids[2]: {Present: true, Sandbox: "reused", SandboxUID: currentUID},
-			ids[3]: {Present: true, Sandbox: "reused", SandboxUID: currentUID},
-			ids[4]: {Present: false, Sandbox: "reused", SandboxUID: currentUID},
-			ids[5]: {Present: true, Sandbox: "reused", SandboxUID: oldUID},
+		summaries: map[uuid.UUID]*historypb.SessionSummary{
+			ids[0]: {Sandbox: &historypb.SandboxRef{Name: "reused", Uid: proto.String(oldUID)}},
+			ids[1]: {Sandbox: &historypb.SandboxRef{Name: "reused", Uid: proto.String(currentUID)}, LastTurnStatus: &unknownTurnStatus},
+			ids[2]: {Sandbox: &historypb.SandboxRef{Name: "reused", Uid: proto.String(currentUID)}},
+			ids[3]: {Sandbox: &historypb.SandboxRef{Name: "reused", Uid: proto.String(currentUID)}},
+			ids[5]: {Sandbox: &historypb.SandboxRef{Name: "reused", Uid: proto.String(oldUID)}},
 		},
 		sandboxes:   map[uuid.UUID]string{ids[0]: "reused", ids[1]: "reused", ids[2]: "reused", ids[3]: "reused", ids[4]: "reused", ids[5]: "reused"},
 		sandboxUIDs: map[uuid.UUID]string{ids[0]: oldUID, ids[1]: currentUID, ids[2]: currentUID, ids[3]: currentUID, ids[4]: currentUID, ids[5]: currentUID},
@@ -310,15 +311,15 @@ func (f *threadReadEnvironmentRuntimeFake) EnvironmentRuntimeStatus(_ context.Co
 	return f.status, f.err
 }
 
-func (f *threadReadHistoryFake) GetSummary(_ context.Context, id uuid.UUID) (historydata.FoldSummary, error) {
+func (f *threadReadHistoryFake) GetSummary(_ context.Context, id uuid.UUID) (*historypb.SessionSummary, error) {
 	return f.summaries[id], nil
 }
 
-func (f *threadReadHistoryFake) BatchGetSummaries(_ context.Context, ids []uuid.UUID) (map[uuid.UUID]historydata.FoldSummary, error) {
+func (f *threadReadHistoryFake) BatchGetSummaries(_ context.Context, ids []uuid.UUID) (map[uuid.UUID]*historypb.SessionSummary, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
-	result := make(map[uuid.UUID]historydata.FoldSummary, len(ids))
+	result := make(map[uuid.UUID]*historypb.SessionSummary, len(ids))
 	for _, id := range ids {
 		result[id] = f.summaries[id]
 	}
@@ -376,7 +377,8 @@ func TestEnsureThreadArchivableRejectsBusyEnvironmentRuntime(t *testing.T) {
 	}
 	inventory := &threadReadInventoryFake{sandbox: sandbox}
 	environmentRuntime := &threadReadEnvironmentRuntimeFake{status: &sessionpb.EnvironmentRuntimeStatus{Sessions: []*sessionpb.SessionStatus{{SessionId: id.String(), Busy: true}}}}
-	if err := ensureThreadArchivable(context.Background(), "tools", thread, historydata.FoldSummary{Sandbox: "sandbox", SandboxUID: "sandbox-uid"}, inventory, environmentRuntime); !errors.Is(err, errThreadBusy) {
+	summary := &historypb.SessionSummary{Sandbox: &historypb.SandboxRef{Name: "sandbox", Uid: proto.String("sandbox-uid")}}
+	if err := ensureThreadArchivable(context.Background(), "tools", thread, summary, inventory, environmentRuntime); !errors.Is(err, errThreadBusy) {
 		t.Fatalf("busy Environment Runtime archive check = %v, want errThreadBusy", err)
 	}
 	if inventory.exactName != "sandbox" || inventory.exactUID != "sandbox-uid" {
@@ -386,20 +388,20 @@ func TestEnsureThreadArchivableRejectsBusyEnvironmentRuntime(t *testing.T) {
 		t.Fatalf("runtime status target = %v, want exact Sandbox UID", environmentRuntime.target)
 	}
 	environmentRuntime.status.Sessions[0].Busy = false
-	if err := ensureThreadArchivable(context.Background(), "tools", thread, historydata.FoldSummary{Sandbox: "sandbox", SandboxUID: "sandbox-uid"}, inventory, environmentRuntime); err != nil {
+	if err := ensureThreadArchivable(context.Background(), "tools", thread, summary, inventory, environmentRuntime); err != nil {
 		t.Fatalf("idle Environment Runtime archive check = %v, want nil", err)
 	}
 	sandbox.ObservedState.OperatingMode = environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED
-	if err := ensureThreadArchivable(context.Background(), "tools", thread, historydata.FoldSummary{Sandbox: "sandbox", SandboxUID: "sandbox-uid"}, inventory, environmentRuntime); !errors.Is(err, errThreadEnvironmentRuntimeUnready) {
+	if err := ensureThreadArchivable(context.Background(), "tools", thread, summary, inventory, environmentRuntime); !errors.Is(err, errThreadEnvironmentRuntimeUnready) {
 		t.Fatalf("unready Environment Runtime archive check = %v, want errThreadEnvironmentRuntimeUnready", err)
 	}
 }
 
 func TestEnsureThreadArchivableRequiresSandboxIdentity(t *testing.T) {
 	thread := threads.Thread{ID: uuid.New()}
-	for _, summary := range []historydata.FoldSummary{
-		{SandboxUID: "uid"},
-		{Sandbox: "sandbox"},
+	for _, summary := range []*historypb.SessionSummary{
+		{Sandbox: &historypb.SandboxRef{Uid: proto.String("uid")}},
+		{Sandbox: &historypb.SandboxRef{Name: "sandbox"}},
 	} {
 		inventory := &threadReadInventoryFake{sandbox: &environmentpb.EnvironmentDescriptor{
 			Target: &identitypb.EnvironmentTarget{Name: "sandbox", Uid: "uid"},
@@ -428,7 +430,7 @@ func TestRenameThreadRequiresHistorySessionButNotSandboxIdentity(t *testing.T) {
 	id := uuid.New()
 	store := &threadReadStoreFake{rows: []threads.Thread{{ID: id}}}
 	service := &appService{threadReader: store, threadHistory: &threadReadHistoryFake{
-		summaries: map[uuid.UUID]historydata.FoldSummary{id: {Present: true}},
+		summaries: map[uuid.UUID]*historypb.SessionSummary{id: {}},
 	}}
 	name := "renamed"
 	metadata, err := service.RenameThread(context.Background(), &apppb.RenameThreadRequest{ThreadId: id.String(), Name: &name})
@@ -440,9 +442,9 @@ func TestRenameThreadRequiresHistorySessionButNotSandboxIdentity(t *testing.T) {
 func TestThreadMutationGateway(t *testing.T) {
 	id := uuid.New()
 	store := &threadReadStoreFake{rows: []threads.Thread{{ID: id, CreatedAt: time.Now()}}}
-	unknownTurnStatus := int32(999)
-	history := &threadReadHistoryFake{summaries: map[uuid.UUID]historydata.FoldSummary{id: {
-		Present: true, Sandbox: "sandbox", SandboxUID: "uid", LastTurnStatus: &unknownTurnStatus,
+	unknownTurnStatus := eventpb.TurnStatus(999)
+	history := &threadReadHistoryFake{summaries: map[uuid.UUID]*historypb.SessionSummary{id: {
+		Sandbox: &historypb.SandboxRef{Name: "sandbox", Uid: proto.String("uid")}, LastTurnStatus: &unknownTurnStatus,
 	}}}
 	inventory := &threadReadInventoryFake{sandbox: &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: "sandbox", Uid: "uid"}}}
 	authentication, err := auth.New(auth.Config{TokenReviews: threadReadAcceptedTokenReviewer{}, TokenAudience: "agentplane", TokenSubjects: []string{"system:serviceaccount:tools:runner"}})

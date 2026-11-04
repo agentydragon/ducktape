@@ -20,6 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -44,8 +45,8 @@ type threadReadStore interface {
 }
 
 type threadReadHistory interface {
-	GetSummary(context.Context, uuid.UUID) (historydata.FoldSummary, error)
-	BatchGetSummaries(context.Context, []uuid.UUID) (map[uuid.UUID]historydata.FoldSummary, error)
+	GetSummary(context.Context, uuid.UUID) (*historypb.SessionSummary, error)
+	BatchGetSummaries(context.Context, []uuid.UUID) (map[uuid.UUID]*historypb.SessionSummary, error)
 	FindSessions(context.Context, *string, *string, *string) (map[uuid.UUID]string, error)
 }
 
@@ -119,11 +120,11 @@ func (s *appService) RenameThread(ctx context.Context, request *apppb.RenameThre
 			name = &trimmed
 		}
 	}
-	summary, err := readThreadSummary(ctx, s.threadHistory, id)
+	summary, err := s.threadHistory.GetSummary(ctx, id)
 	if err != nil {
 		return nil, threadMutationRPCError(err)
 	}
-	if !summary.Present {
+	if summary == nil {
 		return nil, status.Errorf(codes.NotFound, "no thread %s", id)
 	}
 	thread, err := s.threadReader.Rename(ctx, id, name)
@@ -145,11 +146,11 @@ func (s *appService) ArchiveThread(ctx context.Context, request *apppb.ThreadMet
 	if thread == nil {
 		return nil, status.Errorf(codes.NotFound, "no thread %s", id)
 	}
-	summary, err := readThreadSummary(ctx, s.threadHistory, id)
+	summary, err := s.threadHistory.GetSummary(ctx, id)
 	if err != nil {
 		return nil, threadMutationRPCError(err)
 	}
-	if !summary.Present {
+	if summary == nil {
 		return nil, status.Errorf(codes.NotFound, "no thread %s", id)
 	}
 	if err := ensureThreadArchivable(ctx, s.config.SandboxNamespace, *thread, summary, s.environments, s.threadRuntime); err != nil {
@@ -248,7 +249,7 @@ func (s *appService) ListThreadMetadata(ctx context.Context, request *apppb.List
 				return nil, status.Error(codes.Unavailable, "count archived Environment Threads")
 			}
 			for _, id := range ids {
-				if summary, present := summaries[id]; present && summary.Present && summary.SandboxUID == *listing.SandboxUID {
+				if summary := summaries[id]; summary != nil && summary.GetSandbox().GetUid() == *listing.SandboxUID {
 					response.ArchivedCount++
 				}
 			}
@@ -361,9 +362,9 @@ func listEnvironmentThreads(ctx context.Context, store threadReadStore, history 
 			return threads.Page{}, err
 		}
 		for _, thread := range stored.Threads {
-			summary, ok := summaries[thread.ID]
+			summary := summaries[thread.ID]
 			_, matchesSandboxUID := sandboxUIDMatches[thread.ID]
-			if !ok || !summary.Present || !matchesSandboxUID || summary.SandboxUID != *listing.SandboxUID {
+			if summary == nil || !matchesSandboxUID || summary.GetSandbox().GetUid() != *listing.SandboxUID {
 				continue
 			}
 			if len(page.Threads) == limit {
@@ -446,23 +447,20 @@ func equalOptionalString(left, right *string) bool {
 	return *left == *right
 }
 
-func readThreadSummary(ctx context.Context, history threadReadHistory, id uuid.UUID) (historydata.FoldSummary, error) {
-	return history.GetSummary(ctx, id)
-}
-
 func stringPointer(value string) *string { return &value }
 
-func ensureThreadArchivable(ctx context.Context, namespace string, thread threads.Thread, summary historydata.FoldSummary, inventory sessionEnvironmentReader, environmentRuntime threadEnvironmentRuntimeStatusReader) error {
-	if summary.Sandbox == "" {
+func ensureThreadArchivable(ctx context.Context, namespace string, thread threads.Thread, summary *historypb.SessionSummary, inventory sessionEnvironmentReader, environmentRuntime threadEnvironmentRuntimeStatusReader) error {
+	sandboxRef := summary.GetSandbox()
+	if sandboxRef.GetName() == "" {
 		return errors.New("Thread has no Sandbox identity; its Environment cannot be identified")
 	}
 	if inventory == nil {
 		return errors.New("Sandbox inventory is unavailable")
 	}
-	if summary.SandboxUID == "" {
+	if sandboxRef.GetUid() == "" {
 		return errors.New("Thread has no Sandbox UID; its Environment cannot be identified")
 	}
-	sandbox, err := inventory.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &identitypb.EnvironmentTarget{Namespace: namespace, Name: summary.Sandbox, Uid: summary.SandboxUID}})
+	sandbox, err := inventory.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &identitypb.EnvironmentTarget{Namespace: namespace, Name: sandboxRef.GetName(), Uid: sandboxRef.GetUid()}})
 	if status.Code(err) == codes.NotFound {
 		return nil // This exact Environment is gone, so it cannot have a running harness.
 	}
