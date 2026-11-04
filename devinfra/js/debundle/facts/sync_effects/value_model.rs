@@ -64,10 +64,6 @@ impl Values {
     pub(super) fn is_disjoint(&self, other: &Self) -> bool {
         self.iter().all(|value| !other.contains(value))
     }
-
-    pub(super) fn is_subset(&self, other: &Self) -> bool {
-        self.iter().all(|value| other.contains(value))
-    }
 }
 
 impl std::ops::Deref for Values {

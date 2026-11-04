@@ -6947,11 +6947,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     source_location: None,
                 });
         }
-        let added_callbacks = !callbacks.is_subset(&self.state.global_escaped_callbacks);
+        let before = self.state.global_escaped_callbacks.len();
         self.state
             .global_escaped_callbacks
             .extend(callbacks.iter().cloned());
-        if added_callbacks {
+        if self.state.global_escaped_callbacks.len() != before {
             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
         }
     }
