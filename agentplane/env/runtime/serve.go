@@ -156,7 +156,9 @@ func (r *Runtime) stopIngress(ctx context.Context) error {
 func (r *Runtime) ingressSupervisor(endpoint configuration.Endpoint, onWorkerFailure func(error)) *ingress.Supervisor {
 	return ingress.NewSupervisor(ingress.SupervisorConfig{
 		Target: endpoint.Target, Bearer: endpoint.Bearer, Store: r.store,
-		Changes: r.changesSince, Inventory: r.ingressSources, OnWorkerFailure: onWorkerFailure,
+		InventoryChanges: r.sessions.InventoryChangesSince, Inventory: r.ingressSources, OnWorkerFailure: onWorkerFailure,
+		// Acknowledgements still change Runtime facts and lifecycle observations. Ingress
+		// inventory discovery has its own narrower signal.
 		OnAcknowledgement: func(_ string, _ retained.Acknowledgement) error { r.changed(); return nil },
 	})
 }

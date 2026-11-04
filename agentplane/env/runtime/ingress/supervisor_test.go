@@ -46,7 +46,7 @@ func TestSupervisorStartsOneWorkerPerUnsealedSessionAndJoinsOnCancel(t *testing.
 		}
 		return []Source{active, active, sealed}
 	}
-	supervisor := NewSupervisor(SupervisorConfig{Store: store, Inventory: inventory, Changes: changes})
+	supervisor := NewSupervisor(SupervisorConfig{Store: store, Inventory: inventory, InventoryChanges: changes})
 	started := make(chan string, 8)
 	exiting := make(chan string, 8)
 	release := make(chan struct{})
@@ -105,10 +105,10 @@ func TestSupervisorReportsDeliveryFailureAndRetriesUntilCancel(t *testing.T) {
 	failure := make(chan error, 1)
 	started := make(chan int, 2)
 	supervisor := NewSupervisor(SupervisorConfig{
-		Store:           store,
-		Inventory:       func() []Source { return []Source{{ID: "failure-session"}} },
-		Changes:         func() <-chan struct{} { return make(chan struct{}) },
-		OnWorkerFailure: func(err error) { failure <- err },
+		Store:            store,
+		Inventory:        func() []Source { return []Source{{ID: "failure-session"}} },
+		InventoryChanges: func() <-chan struct{} { return make(chan struct{}) },
+		OnWorkerFailure:  func(err error) { failure <- err },
 	})
 	var calls atomic.Int32
 	deliver := func(ctx context.Context, _ Source) error {
@@ -153,7 +153,7 @@ func TestSupervisorReportsFailureBeforeBlockedSiblingJoinsAndIgnoresCancellation
 		Inventory: func() []Source {
 			return []Source{{ID: "failing-session"}, {ID: "blocked-session"}}
 		},
-		Changes: func() <-chan struct{} { return make(chan struct{}) },
+		InventoryChanges: func() <-chan struct{} { return make(chan struct{}) },
 		OnWorkerFailure: func(err error) {
 			failures <- err
 			cancel()
@@ -187,5 +187,80 @@ func TestSupervisorReportsFailureBeforeBlockedSiblingJoinsAndIgnoresCancellation
 	case err := <-failures:
 		t.Fatalf("ordinary cancellation reported as worker failure: %v", err)
 	default:
+	}
+}
+
+func TestSupervisorDiscoversAddedAndReopenedSessions(t *testing.T) {
+	waitCtx, timeout := context.WithTimeout(context.Background(), 5*time.Second)
+	defer timeout()
+	runCtx, cancel := context.WithCancel(waitCtx)
+	defer cancel()
+	store := newTestStore(t)
+	reopened := Source{ID: "reopened-session"}
+	if err := store.WriteAcknowledgement(reopened.ID, retained.Acknowledgement{Sealed: true}); err != nil {
+		t.Fatal(err)
+	}
+	added := Source{ID: "added-session"}
+
+	var mu sync.Mutex
+	changed := make(chan struct{})
+	var inventory []Source
+	var scans int
+	changes := func() <-chan struct{} {
+		mu.Lock()
+		defer mu.Unlock()
+		return changed
+	}
+	signalChange := func() {
+		mu.Lock()
+		old := changed
+		changed = make(chan struct{})
+		close(old)
+		mu.Unlock()
+	}
+	inventory = []Source{reopened}
+	snapshot := func() []Source {
+		mu.Lock()
+		current := append([]Source(nil), inventory...)
+		scans++
+		first := scans == 1
+		mu.Unlock()
+		if first {
+			// Change membership after the snapshot but before the supervisor starts
+			// waiting. Its already-subscribed channel must retain this wakeup.
+			mu.Lock()
+			inventory = append(inventory, added)
+			mu.Unlock()
+			signalChange()
+		}
+		return current
+	}
+	supervisor := NewSupervisor(SupervisorConfig{
+		Store: store, Inventory: snapshot, InventoryChanges: changes,
+		OnWorkerFailure: func(err error) { t.Errorf("delivery failed: %v", err) },
+	})
+	started := make(chan string, 4)
+	deliver := func(ctx context.Context, source Source) error {
+		started <- source.ID
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	runDone := make(chan error, 1)
+	go func() { runDone <- supervisor.supervise(runCtx, deliver) }()
+
+	if id := await(t, waitCtx, started, "the newly added Session worker"); id != added.ID {
+		t.Fatalf("started Session = %q, want %q", id, added.ID)
+	}
+	if err := store.WriteAcknowledgement(reopened.ID, retained.Acknowledgement{}); err != nil {
+		t.Fatal(err)
+	}
+	signalChange()
+	if id := await(t, waitCtx, started, "the reopened Session worker"); id != reopened.ID {
+		t.Fatalf("started Session = %q, want %q", id, reopened.ID)
+	}
+
+	cancel()
+	if err := await(t, waitCtx, runDone, "worker cancellation and join"); err != nil {
+		t.Fatalf("supervisor shutdown: %v", err)
 	}
 }

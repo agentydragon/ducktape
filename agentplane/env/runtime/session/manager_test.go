@@ -247,6 +247,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	inventoryChanged := m.InventoryChangesSince()
 	startSessionOwner(t, ctx, resources, m)
 	const loaders = 8
 	loaded := make([]*Session, loaders)
@@ -279,6 +280,11 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 		if session != loaded[0] {
 			t.Fatal("concurrent durable loads opened different Session owners")
 		}
+	}
+	select {
+	case <-inventoryChanged:
+	default:
+		t.Fatal("loading a Session did not wake inventory observers")
 	}
 	publicationMu.Lock()
 	retainedPublications := append([]sessionpb.SetupState(nil), publications["one-session"]...)
@@ -479,6 +485,27 @@ func TestReopenRetryKeepsCOSIIngressAcknowledgementAfterJournalReopened(t *testi
 	}
 	if reopened != 1 || interrupted != 1 || s.journal.SealState() != nil {
 		t.Fatalf("reopen evidence: events=%v, seal=%+v", entries, s.journal.SealState())
+	}
+	sealCursor, err = s.journal.Seal(ctx, "previous-successor")
+	if err != nil {
+		t.Fatalf("seal reopened Session: %v", err)
+	}
+	if err := store.WriteAcknowledgement(s.ID(), retained.Acknowledgement{Cursor: sealCursor, Sealed: true}); err != nil {
+		t.Fatalf("persist sealed acknowledgement: %v", err)
+	}
+	environment = Environment{IncarnationUID: "next-incarnation"}
+	inventoryChanged := m.InventoryChangesSince()
+	if err := m.Reopen(ctx, s); err != nil {
+		t.Fatalf("reopen sealed Session: %v", err)
+	}
+	select {
+	case <-inventoryChanged:
+	default:
+		t.Fatal("reopening a sealed Session did not wake inventory observers")
+	}
+	ack, err = store.ReadAcknowledgement(s.ID())
+	if err != nil || ack == nil || ack.Cursor != sealCursor || ack.Sealed {
+		t.Fatalf("reopened durable acknowledgement = %+v, err=%v; want exact cursor unsealed", ack, err)
 	}
 	badAck := retained.Acknowledgement{Cursor: s.journal.LastCursor() + 1, Sealed: true}
 	if err := store.WriteAcknowledgement("reopen-session", badAck); err != nil {

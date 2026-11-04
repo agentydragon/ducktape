@@ -36,6 +36,7 @@ type Manager struct {
 	mu                   sync.Mutex
 	loadMu               sync.Mutex
 	sessions             map[string]*Session
+	inventoryChanges     chan struct{}
 	ownerErrors          map[string]error
 	ownerFailuresChanged chan struct{}
 	// loadMu guards freshReservations; those records have not completed their first publication.
@@ -58,7 +59,7 @@ func NewManager(config Config) (*Manager, error) {
 		ctx: config.Context, state: config.State, store: config.Store,
 		workspaceRoot: config.WorkspaceRoot, environment: config.Environment,
 		changed: config.OnChange, fail: config.OnError,
-		workers: config.ReconcileConcurrency, sessions: map[string]*Session{}, freshReservations: map[string]struct{}{},
+		workers: config.ReconcileConcurrency, sessions: map[string]*Session{}, inventoryChanges: make(chan struct{}), freshReservations: map[string]struct{}{},
 		ownerErrors: map[string]error{}, ownerFailuresChanged: make(chan struct{}),
 	}
 	m.dependencies = sessionDependencies{
@@ -96,6 +97,25 @@ func (m *Manager) Inventory() []*Session {
 	}
 	sort.Slice(sessions, func(i, j int) bool { return sessions[i].id < sessions[j].id })
 	return sessions
+}
+
+// InventoryChangesSince returns the signal for Session inventory membership or
+// ingress eligibility changes. Callers subscribe before taking an inventory snapshot.
+func (m *Manager) InventoryChangesSince() <-chan struct{} {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.inventoryChanges
+}
+
+func (m *Manager) inventoryChangedLocked() {
+	close(m.inventoryChanges)
+	m.inventoryChanges = make(chan struct{})
+}
+
+func (m *Manager) inventoryChanged() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.inventoryChangedLocked()
 }
 
 func (m *Manager) Startup(ctx context.Context) error {
@@ -266,6 +286,7 @@ func (m *Manager) loadLocked(ctx context.Context, id string, recoverRetained boo
 	// The Session controller resolves each published ReconcileSnapshot through Get.
 	m.mu.Lock()
 	m.sessions[id] = s
+	m.inventoryChangedLocked()
 	m.mu.Unlock()
 	// Once visible to controllers, retain ownership of the journal even if
 	// publication fails; shutdown must not close it under an active controller.
@@ -390,6 +411,9 @@ func (m *Manager) Reopen(ctx context.Context, s *Session) error {
 	}
 	s.admitMu.Unlock()
 	if reopening || writeAck {
+		if m.Get(s.id) == s {
+			m.inventoryChanged()
+		}
 		m.changed()
 	}
 	return nil
