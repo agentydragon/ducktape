@@ -46,6 +46,12 @@ py_library(
 )
 
 py_library(
+    name = "kubernetes",
+    srcs = ["kubernetes.py"],
+    deps = ["@pypi//kubernetes_asyncio"],
+)
+
+py_library(
     name = "kubernetes_apiserver",
     srcs = ["kubernetes_apiserver.py"],
     data = [
