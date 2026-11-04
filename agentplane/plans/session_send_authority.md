@@ -3,9 +3,11 @@
 Status: **directory membership selected; remaining authority and fencing details need review.**
 The selected public command address is a globally unique Session UUID. The native Session directory
 in Dispatcher PostgreSQL is the authority for its placement. This note specifies the native send
-path and the remaining decisions after the initial Session-ID cutover. [SESSION_DIRECTORY_NATIVE](task_dag.md#session_directory_native--dispatcher-authority-for-environment-hosted-sessions)
-tracks the remaining native directory and private harness mapping work. It does not select a principal or send
-policy for a central Session without an environment.
+path and the remaining decisions after the initial Session-ID cutover. The landed
+[Session resource and placement contract](../runner_gateway/dispatcher/SPEC.md#sessionspec-placement-cutover)
+provides the current directory; [`HARNESS_IDENTITY_DESIGN`](task_dag.md#harness_identity_design--decide-private-session-to-store-and-native-mapping)
+tracks the remaining private harness-store and native-ID mapping work. It does not select a principal
+or send policy for a central Session without an environment.
 
 ## Current boundaries
 
@@ -131,7 +133,8 @@ The outcome and initial caller/wake rules above are selected. Remaining design a
 1. **Complete bounded outcome visibility.** The managed receiver fence is covered; durable
    post-deletion outcomes and bounded watcher delivery remain unresolved as described above.
    Session movement remains a separate decision; a local cached generation alone is not a fence.
-   After deletion Dispatcher forgets the Session, so callers must not deliberately reuse its UUID.
+   After required-Environment deletion Dispatcher retains the Session and exact placement. Explicit
+   Session deletion is not implemented; callers must not deliberately reuse its UUID if added later.
    Ordinary managed deletion waits for the exact Runtime incarnation's final Session cutoffs,
    journal seals and History acknowledgements before removing its workload. The initial lameduck
    is earlier and still permits exact-turn interrupts. Gateway refuses Session mutation after its

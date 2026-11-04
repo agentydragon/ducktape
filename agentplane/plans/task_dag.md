@@ -1044,11 +1044,17 @@ Represent Sandbox-local native harnesses/state and central Sessions whose option
 execution in one shared domain vocabulary. A native harness's required local environment is a
 capability constraint of that harness, not a universal Session attachment requirement. Keep
 Session identity, durable harness stores, running hosts, placement and execution attachments distinct.
-The in-progress [SessionSpec placement cutover](#session-spec-placement-cutover) makes the owner
-variant explicit in the spec: `environment_hosted` carries the exact native environment and harness,
-and `central_sampler_v1` carries one exact required executor environment. Central V1 remains
-Sandbox-backed and does not implement optional attachments, environment-free admission, independent
-central lifetime after executor deletion, or the unresolved principal and harness-store contracts.
+The landed [SessionSpec placement contract](../runner_gateway/dispatcher/SPEC.md#sessionspec-placement-cutover)
+makes the owner variant explicit: `environment_hosted` carries the exact native environment and
+harness, and `central_sampler_v1` carries one exact required executor environment. #14314 retains
+the Dispatcher Session row when that required Environment is deleted, but central V1 still has no
+optional attachments, environment-free admission or alternate executor. The principal and
+harness-store contracts remain unresolved.
+The [Dispatcher outcome contract](../runner_gateway/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands)
+also leaves unconfirmed native owner admission explicit: `UNKNOWN` outcomes hold dependent queued
+commands without forwarding or waking, and those commands remain cancellable. Automatic resolution
+is not provided; decide whether an authorized caller or operator can resolve the hold from durable
+owner evidence, without replaying uncertain native effects or discarding their outcomes.
 Preserve harness-specific constraints: Claude
 Code naturally runs in the environment it acts in; a shared vocabulary must not pretend every
 backend supports independent placement or executor replacement.
@@ -1067,7 +1073,8 @@ external placement when capabilities are otherwise equal, for isolation and inde
 Characterize complete per-feature placement; OpenClaw's historical partial remote support is a
 counterexample to equating remote shell forwarding with a fully separated harness.
 Support Sandbox-first native CLI use and Session-first central use with 0..N environments and later
-attachment/detachment. Central Session data must survive execution-Sandbox deletion. The 2026-10-30
+attachment/detachment. Preserve central Session identity and continuation data after executor
+deletion; retained Dispatcher identity alone does not make V1 environment-independent. The 2026-10-30
 discussion adds durable harness stores versus running hosts, dispatcher/gateway role boundaries,
 caller-SA provisioning, agent-facing environment context and unresolved skills delivery, programmatic
 environment access, partial-output failures and recovery after JS host loss. Resource visibility,
@@ -1558,8 +1565,8 @@ Dispatcher first. A future `Session` CRD, potentially with declarative subscript
 option, not a prerequisite or a second concurrent authority. If revisited, compare Kubernetes-owned
 desired state reconciled into Dispatcher with an explicit reviewed replacement of that authority;
 first inventory the current runner, Dispatcher, History and app responsibilities rather than
-assuming one database owns every Session fact. Coordinate with `SESSION_DIRECTORY_NATIVE` and
-`SESSION_AND_INBOX_LIFETIME` on identities, create/delete and recovery. Recommend evaluating Kubernetes-owned desired state with
+assuming one database owns every Session fact. Coordinate with the implemented Dispatcher Session
+authority and `SESSION_AND_INBOX_LIFETIME` on identities, create/delete and recovery. Recommend evaluating Kubernetes-owned desired state with
 existing services retaining execution/history and Notification Service retaining subscription/inbox
 ownership. The operator must choose the resource boundaries and source of truth; no CRD or database
 replacement is selected by this task.
@@ -2123,8 +2130,6 @@ beyond the transport track nodes the operator dispatched.
 flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: delivery ownership and service topology]
     SESSION_DATA_OWNERSHIP_DESIGN[Later decision: Session data and service boundaries]
-    SESSION_DIRECTORY_NATIVE[Ready: Dispatcher Session directory for native placement]
-    SESSION_SPEC_PLACEMENT_CUTOVER[In progress: SessionSpec placement hard cutover]
     SESSION_IDENTITY_CONTRACT[Decision: Session identity and shared-Environment admission]
     SESSION_ACCESS_GROUPING_DESIGN[Decision: Session access grouping and tags]
     CENTRAL_SESSION_CREATION_CONTRACT[Decision: central Session creation without an Environment]
@@ -2142,8 +2147,6 @@ flowchart LR
     SESSION_AND_INBOX_LIFETIME[Decision: Session and inbox lifetimes after environment deletion]
     DELIVERY_DESTINATION_CONTRACT[In progress: Session-ID command addressing]
     SESSION_HISTORY_PRESENTATION[Blocked: Session history and environment presentation]
-    SESSION_DIRECTORY_NATIVE --> DELIVERY_DESTINATION_CONTRACT
-    SESSION_SPEC_PLACEMENT_CUTOVER --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     CENTRAL_SESSION_CREATION_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     SESSION_ATTACHMENT_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
@@ -2160,7 +2163,6 @@ flowchart LR
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> SESSION_HISTORY_PRESENTATION
     SESSION_ENV_ATTACHMENTS -. multiple attachments .-> SESSION_HISTORY_PRESENTATION
     SESSION_AND_INBOX_LIFETIME --> SESSION_LIFETIME_IMPLEMENTATION
-    SESSION_AND_INBOX_LIFETIME -. avoid locking cleanup behavior .-> SESSION_DIRECTORY_NATIVE
     SESSION_IDENTITY_CONTRACT -. independent identity .-> SESSION_LIFETIME_IMPLEMENTATION
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT -. central lifecycle .-> SESSION_LIFETIME_IMPLEMENTATION
     SESSION_DELETION_FENCE -. disposing receipts .-> SESSION_LIFETIME_IMPLEMENTATION
@@ -2359,8 +2361,10 @@ yet need to exist: `SESSION_ENV_ATTACHMENTS` must integrate and test this gate b
 and `SESSION_AND_INBOX_LIFETIME`.** Before implementation, settle the central principal and create/read/send
 authority without an Environment; Dispatcher logical admission and owner materialization when no
 executor exists; whether optional zero-to-many attachments ship in this cutover or later; notification
-subscription, pending inbox and authorized wake behavior without an attachment; and Session, inbox and
-History retention when an Environment is deleted. Coordinate notification semantics with
+subscription, pending inbox and authorized wake behavior without an attachment; and the remaining
+inbox and History behavior when an Environment is deleted. PR #14314 already retains the Dispatcher
+Session record and exact required-environment placement for current central V1; it does not provide
+an alternate executor or environment-free admission. Coordinate notification semantics with
 `CENTRAL_SESSION_NOTIFICATIONS` and attachment implementation with `SESSION_ENV_ATTACHMENTS`.
 Then implement the reviewed zero-Environment create, resolve, command and provider-only execution
 path through Dispatcher and central Sampler. Today both creation requests require a Sandbox/executor;
@@ -2418,14 +2422,14 @@ work, not a prerequisite for the initial zero-Environment Session path or attach
 ### `SESSION_LIFETIME_IMPLEMENTATION` — implement reviewed Session and inbox lifetimes
 
 **Blocked on `SESSION_AND_INBOX_LIFETIME`; an independent-principal implementation also needs
-`SESSION_IDENTITY_CONTRACT`.** Implement the chosen Session/environment deletion relationship,
-operator access after account disappearance, and coordinated inbox/History/receipt behavior at
-their authoritative owners. Do not silently delete authored or unread data, invent an automatic
-reattachment or equate app archive with Session deletion. If explicit deletion disposes of command
-receipts, resolve the relevant bounded-outcome gap in `SESSION_DELETION_FENCE` first. A native-only
-safe slice need not wait for central multi-attachment support; central lifecycle changes use the
-central no-Environment path. Test lost replies, deletion races, inaccessible principals and
-same-name replacements.
+`SESSION_IDENTITY_CONTRACT`.** Dispatcher Session retention after required-Environment deletion is
+implemented in #14314. Implement the remaining operator access after account disappearance and
+coordinated inbox, History and receipt behavior at their authoritative owners. Do not silently delete
+authored or unread data, invent automatic reattachment or equate app archive with Session deletion.
+If explicit deletion disposes of command receipts, resolve the bounded-outcome gap in
+`SESSION_DELETION_FENCE` first. A native-only safe slice need not wait for central multi-attachment
+support; central lifecycle changes use the central no-Environment path. Test lost replies, deletion
+races, inaccessible principals and same-name replacements.
 
 ### `CENTRAL_SESSION_NOTIFICATIONS` — inboxes for Sessions without Environments
 
@@ -2458,81 +2462,6 @@ independently usable direct Runtime or other flows and retain their real authori
 The existing `agentplane/system_tests/k3s` suite already runs without the CNPG operator, Cilium or cert-manager (and KubeVirt outside its VM rendering),
 against one plain PostgreSQL Deployment and the Runner Gateway; this node is about removing the PostgreSQL dependency
 itself. New sender grants remain a separate decision.
-
-### `SESSION_DIRECTORY_NATIVE` — Dispatcher authority for environment-hosted Sessions
-
-**Ready for a native-first implementation; public identity and database selected.** The coordinated
-Session-resource cutover renames the existing `session_opening` row to `session` in a new migration;
-that relation remains the single Dispatcher PostgreSQL authority for live Session ID and native
-placement. Do not add a competing writable mapping. `CreateSession` with a new UUID durably
-establishes logical existence independently of owner readiness; retain the immutable creation
-request and exact required environment UID separately from owner materialization and command
-delivery. `GetSession` and `ListSessions` return the minimal authorized Session projection, not the
-full spec or instructions. Its materialization status is owner progress, not harness state, and
-owner acceptance is not native readiness. Reuse existing native authorization for native Sessions;
-do not infer a central principal from it. Central sampler V1 remains Sandbox-backed under the
-in-progress placement cutover; environment-free central admission is tracked separately.
-
-The [native opening outcome contract](../runner_gateway/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands)
-separates proven rejection from unconfirmed owner outcomes and fences dependent queued work.
-Exact-ID creation retry, logical Session discovery, harness lookup, placement-checked routing and
-post-cleanup environment-UID admission fencing are implemented. On cleanup Dispatcher currently forgets the
-Session; callers must not deliberately reuse a UUID, and History can retain a conflicting identity.
-This is current behavior, not a decision that Environment deletion must delete the Session: reconcile
-that boundary with `SESSION_AND_INBOX_LIFETIME`. A native-first slice may proceed, but must not
-foreclose a retained Session or silently choose its lifetime. Dispatcher is the current first owner;
-`DECLARATIVE_SESSIONS_DESIGN` retains a future CRD as an option, not a competing authority.
-The current [SessionSpec placement cutover](#session-spec-placement-cutover) keeps the owner variant
-explicit: `environment_hosted` carries the exact environment and native harness selection;
-`central_sampler_v1` carries one exact required executor environment. Both still use the existing
-Sandbox identity, admission, wake, notification and deletion behavior. This is not an attachment,
-environment-independent Session, or lifetime implementation.
-Remaining: specify how held unconfirmed openings are explicitly resolved and how the owner selects
-and retains the specific harness store and native Session ID. Preserve authority and retained History across service-store boundaries;
-never automatically replay an uncertain native effect. The caller can select an exact
-environment _at creation_; later Session addressing uses the UUID. Choose the minimum schema and
-read API as implementation details, and link its contract from the
-[Session/environment plan](session_environment_model.md#session-address-inventory).
-
-<a id="session-spec-placement-cutover"></a>
-
-### `SESSION_SPEC_PLACEMENT_CUTOVER` — move Session placement into SessionSpec
-
-**In progress (Codex; coordinated hard cutover, 2026-11-04 PDT).** Replace the flat harness field and
-Dispatcher-level placement inputs with one shared `SessionPlacement` message used by
-`SessionSpec.placement` and the minimal read-only `Session.placement`. Its oneof selects
-`environment_hosted`, which contains the exact environment name and UID plus native harness
-selection. `central_sampler_v1` contains one explicit, fixed required executor environment. V1
-central Sessions retain Sandbox identity, admission, wake, notifications and deletion behavior; they
-have no optional attachments and are not independent of an environment. Native store identity and
-harness-native Session ID selection remain future work under `HARNESS_IDENTITY_DESIGN`.
-
-The coordinated logical API uses `CreateSession`, `GetSession` and `ListSessions` across Dispatcher,
-App, Environment Runtime and central Sampler. `Session` contains only its ID, materialization status,
-timestamps and placement, not the immutable spec or instructions. `WAITING`, `IN_PROGRESS`,
-`ACCEPTED`, `FAILED` and `UNKNOWN` report placement-owner materialization; `ACCEPTED` means durable
-owner admission, not harness readiness or History completion. An uncertain create is reconciled by
-the same caller-chosen Session ID, never by replaying uncertain native or external effects. The
-distinct streaming `Executor.OpenSession` remains an execution-connection API. Former logical Session
-RPCs, `SessionOpening`, old CLI aliases and old Sandbox callers have no compatibility path; coordinate
-all logical Session callers and runtime images as one hard cutover.
-
-The data cutover preserves Dispatcher, central sampler and History records: Dispatcher migration 11
-converts placement and migration 12 renames `session_opening` to `session`; central sampler migration
-10 converts its stored request; History migration 8 retains `historical_harness` where exact placement cannot be reconstructed, and
-migration 9 renames the persisted ordinal `opened_position` to `recorded_position` without changing
-values, sequence ownership, ordering or indexes. History's watch cursor becomes `recorded_after` and
-its frame becomes `SessionRecorded/session_recorded`; the former wire names have no compatibility
-path. Existing IDs, commands, cursors, events, ordering and effect evidence remain intact. Do not
-delete/recreate central or History data, requeue commands, replay notifications or other effects, or
-treat a schema migration as proof that an uncertain effect is safe. See the
-[Dispatcher cutover contract](../runner_gateway/dispatcher/SPEC.md#sessionspec-placement-cutover)
-and the [Session/environment plan](session_environment_model.md#central-session-environment-independence).
-
-Exit: all callers and services use the placement oneof and logical Session API, existing records
-migrate without changing their identities or effect/history records, and no compatibility path
-accepts the former RPCs, resource projection or flat placement fields. The later removal of the
-required central executor environment is tracked by `CENTRAL_SESSION_WITHOUT_ENVIRONMENT` above.
 
 ### `DELIVERY_DESTINATION_AUTHORITY_DESIGN` — assign Session send authority and internal fences
 
@@ -2596,7 +2525,10 @@ removed. They are not durable future reads. Cleanup does not snapshot already-te
 connected watcher delayed behind an earlier invalidation can miss that outcome after cleanup.
 Broadcasting every retained receipt can overflow bounded terminal subscriptions and leaves no
 receipt for reconnect; close this gap with a reviewed bounded delivery design, not an unbounded
-broadcast. Dispatcher forgets deleted Session records; callers must not deliberately reuse UUIDs.
+broadcast. #14314 retains the Session row and exact placement after required-Environment deletion,
+but cleanup still removes command receipts after its existing terminal snapshots. The Session
+retention change does not make command outcomes durable for reconnect or choose UUID reuse after a
+future explicit Session deletion; callers must not deliberately reuse Session UUIDs.
 The [command authority plan](session_send_authority.md#recovery-and-decisions-for-review)
 keeps these outcome-evidence and authority decisions explicit.
 
@@ -2620,35 +2552,37 @@ stores. This does not decide central attachment policy.
 
 ### `SESSION_AND_INBOX_LIFETIME` — decide Session and inbox lifetimes
 
-**Decision; operator requested joint review, 2026-11-03 PDT.** Dispatcher currently removes Session
-openings for a deleted Sandbox UID. Independently, Notification's stale-destination check retires the
-inbox and cancels subscriptions after confirming that its recorded Sandbox is absent or replaced.
-Neither transition is a cross-service transaction; central Sessions currently still depend on their
-original Sandbox. The selected central Session lifetime is indefinite, independent of attachments;
-app archive is separate. The selected Dispatcher identity policy is to forget its live record when
-the Session is deleted; the treatment of other services' data remains open.
+**Decision; Dispatcher row retention implemented, inbox lifetime still open.** [#14314](https://github.com/agentydragon/ducktape/pull/14314)
+retains the Dispatcher Session row and exact placement for native and current central V1 Sessions
+after the required Sandbox UID is deleted. Cleanup tombstones the deleted UID and exposes
+`required_environment=DELETED` separately from materialization: `WAITING` becomes `FAILED`,
+`IN_PROGRESS` becomes `UNKNOWN`, and accepted or terminal evidence remains. A replacement cannot
+receive the retained Session's work. Central V1 still requires its exact executor Environment;
+retaining its Session row does not provide environment-free admission or an alternate target.
+Notification's stale-destination check still retires the inbox and cancels subscriptions after
+confirming that its recorded Sandbox is absent or replaced. Those transitions are not a cross-service
+transaction. The central Session lifetime direction is indefinite, and app archive is separate. The
+selected Dispatcher identity policy is to forget a Session only upon a future explicit Session
+deletion; that API is not implemented. The treatment of other services' data remains open.
 
-The operator selected an independent Session lifecycle: when a native Session's required
-Environment disappears, keep its Session and inbox until explicit Session deletion, and report the
-native harness unavailable. Do not silently bind a replacement or claim lost native state is
-recoverable. Keep subscriptions active and continue collecting authorized events and messages while
-delivery is unavailable; preserve unread contents and do not deliver to a replacement without a
-separately authorized recovery path. TODO: evaluate efficiency of collecting for an unavailable
-Session when sustained accumulation or source polling cost warrants optimization; preserve the
-selected collection semantics. For central Sessions, Environment loss or detachment likewise does
-not end the Session or retire its inbox. App archive remains separate. Explicit Session deletion
-ends the Session; deletion of inbox contents and History is deferred for separate review and is not
-implied by Session deletion. Details of subscription and inbox lifecycle on explicit Session
-deletion remain to be designed.
+The selected remaining policy is to keep the inbox and subscriptions until explicit Session
+deletion, even when a required Environment disappears. Notification still retires stale-destination
+inboxes and cancels subscriptions; #14314 does not change that behavior. Do not silently bind a
+replacement or claim lost native state is recoverable. The intended inbox behavior is to keep
+collecting authorized events and messages while delivery is unavailable and preserve unread contents,
+but that behavior remains unimplemented. Revisit sustained collection cost only if evidence warrants
+it. App archive remains separate. Explicit Session deletion is not implemented; whether it deletes
+inbox contents or History remains deferred, and inbox/subscription behavior after deletion needs
+design.
 The operator's direction after a Sandbox-owned ServiceAccount disappears is human-operator-only
 inspection and administration through an operator-authenticated entry point, such as the app, and
 explicitly privileged service credentials; do not transfer authority to a same-name replacement or other workload.
 Define the precise backend permissions and narrowly scoped service reconciliation separately.
 Decide the owning signals and reconciliation, pending messages and subscriptions, History handoff,
-and deletion, reattachment and same-name-replacement races. Preserve exact UID fences, unread data,
-no-replay recovery and authorized unattended wake; suspension and temporary unavailability are not
-Session deletion. Command-receipt retention is separately tracked in `SESSION_DELETION_FENCE` and
-is deferred; do not choose a period here. Coordinate data ownership and store boundaries with
+and explicit-deletion, reattachment and same-name-replacement races. Preserve exact UID fences,
+unread data, no-replay recovery and authorized unattended wake; suspension and temporary
+unavailability are not Session deletion. Command-receipt retention is separately tracked in
+`SESSION_DELETION_FENCE` and is deferred; do not choose a period here. Coordinate data ownership and store boundaries with
 `SESSION_DATA_OWNERSHIP_DESIGN`. See the [Session and inbox lifetime discussion](session_environment_model.md#decision-session-and-inbox-lifetimes-after-environment-deletion).
 
 **Exit:** a reviewed lifecycle and authority contract for both Session kinds, with owners and
