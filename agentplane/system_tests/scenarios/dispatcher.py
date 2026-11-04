@@ -63,7 +63,7 @@ async def _delete(cluster: Cluster, kind: str, name: str, uid: str) -> None:
     await cluster.kubectl("wait", f"{kind}/{name}", "--for=delete", "--timeout=120s")
 
 
-async def _container_mount_sources(
+async def container_mount_sources(
     crictl_command: tuple[str, ...], cluster: Cluster, name: str, artifact_dir: Path
 ) -> dict[str, Path]:
     pod = json.loads(await cluster.kubectl("get", "pod", name, "-o", "json"))
@@ -122,7 +122,7 @@ async def _archive_runner_data(
     mount_sources: dict[str, Path] | None = None,
     extra_backups: tuple[tuple[str, Path], ...] = (),
 ) -> dict[str, Any]:
-    sources = mount_sources or await _container_mount_sources(crictl_command, cluster, name, artifact_dir)
+    sources = mount_sources or await container_mount_sources(crictl_command, cluster, name, artifact_dir)
     archive = artifact_dir / "runner-data.tar"
     partial_archive = artifact_dir / "runner-data.tar.partial"
     journal_dir = artifact_dir / "consistent-journals"
@@ -919,7 +919,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                 capture_id = uuid4().hex
                 archive_dir = undeclared_outputs_dir() / f"dispatcher-data-proof-{sandbox}-{capture_id}"
                 archive_dir.mkdir(parents=True)
-                mount_sources = await _container_mount_sources(crictl_command, cluster, sandbox, archive_dir)
+                mount_sources = await container_mount_sources(crictl_command, cluster, sandbox, archive_dir)
                 state_session = mount_sources["/state"] / "sessions" / session
                 early_payload = f"EARLY_ARCHIVE_PAYLOAD_{sandbox}".encode()
                 late_payload = f"LATE_ARCHIVE_PAYLOAD_{sandbox}".encode()

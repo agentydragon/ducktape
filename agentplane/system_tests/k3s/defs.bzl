@@ -80,6 +80,7 @@ _TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_instal
 # uses the pod preset in a dedicated suite because it mutates shared controller Deployments.
 _STACKS = {
     "pod": struct(fixture = _FIXTURE, vm = False, real_model = False, images = [_HARNESSES_LAYOUT]),
+    "deletion": struct(fixture = _FIXTURE, vm = False, real_model = False, images = [_HARNESSES_LAYOUT]),
     "mcp": struct(fixture = _MCP_FIXTURE, vm = False, real_model = False, images = [_HARNESSES_LAYOUT, _MCP_IMAGES]),
     "vm": struct(fixture = _VM_FIXTURE, vm = True, real_model = False, images = []),
     "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, real_model = True, images = [_HARNESSES_LAYOUT]),
@@ -99,7 +100,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
     images = {
         "fixture": [
             "//agentplane/system_tests/k3s:service_images",
-            "//agentplane/system_tests/k3s:vm_runner_disk_image" if config.vm else "//agentplane/system_tests/k3s:runner_disk_image",
+            "//agentplane/system_tests/k3s:deletion_test_disk" if stack == "deletion" else "//agentplane/system_tests/k3s:vm_runner_disk_image" if config.vm else "//agentplane/system_tests/k3s:runner_disk_image",
         ] + config.images,
         "pki": ["//agentplane/system_tests/k3s/pki:images"],
         "vm": [],

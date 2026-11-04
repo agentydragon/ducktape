@@ -37,6 +37,7 @@ const (
 )
 
 type Config struct {
+	Interceptor   grpc.UnaryServerInterceptor
 	SandboxUID    string
 	BootID        string
 	ListenAddress string
@@ -107,6 +108,9 @@ func (s *Server) Listen(executor executorpb.ExecutorServer) (net.Listener, *grpc
 			}
 			if _, err := s.Authorize(ctx); err != nil {
 				return nil, err
+			}
+			if s.config.Interceptor != nil {
+				return s.config.Interceptor(ctx, request, info, handler)
 			}
 			return handler(ctx, request)
 		}),

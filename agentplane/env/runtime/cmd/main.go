@@ -116,7 +116,7 @@ func runService(ctx context.Context, args []string) error {
 	if settings.Codex != nil {
 		codexBinary = settings.Codex.Binary
 	}
-	instance, err := runtime.New(runtime.Config{
+	instance, err := newRuntime(runtime.Config{
 		Control: settings.Control, StateDir: settings.StateDir, Launch: settings.Launch,
 		Supervision: settings.Supervision, PodPID1: settings.PodPID1, VMProcessLauncher: settings.VMProcessLauncher,
 		CodexExecServer: settings.CodexExecServer, CodexBinary: codexBinary,

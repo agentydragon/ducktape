@@ -6,13 +6,14 @@ cross-component behavior and durable system evidence. They are not unit tests wi
 they are the checks that the deployed system does what <../egress/SPEC.md> says it does and that a
 session's standing instructions reach the model that serves it.
 
-The eight CI suites each start one [disposable k3s stack](k3s/README.md) in an RBE action.
+The CI suites each start one [disposable k3s stack](k3s/README.md) in an RBE action.
 The session-scoped `deployment` fixture exposes its cluster handle, app URL, token, and MCP access
 ([`system_test_target.py`](k3s/system_test_target.py)). Compatible scenarios share a stack:
 
 | Target                                                        | Scenarios                                                                                                    |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `//agentplane/system_tests/suites:test_pod`                   | egress, messaging, presets, session instructions, suspend/resume, thread stream, Pod credentials and storage |
+| `//agentplane/system_tests/suites:test_session_deletion`      | Delayed Session mutation, controller quiescence and same-name replacement UID fencing                        |
 | `//agentplane/system_tests/suites:test_dispatcher`            | Dispatcher queue, wake and replica behavior                                                                  |
 | `//agentplane/system_tests/suites/mcp:test_actions`           | MCP Action execution, BFF decisions, launcher ownership and OAuth linkage                                    |
 | `//agentplane/system_tests/suites/mcp:test_services`          | Dynamic client registration, external MCP Connection, policy binding and Pod central sampler                 |
