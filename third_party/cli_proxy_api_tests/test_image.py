@@ -7,10 +7,11 @@ import httpx
 import pytest
 import pytest_bazel
 
-from util.oci import OciImage, load_oci_image
+from third_party.cli_proxy_api_tests import cli_proxy_api_image
+from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 
-IMAGE = OciImage("_main/third_party/cli_proxy_api_tests/image_layout.rloc", "cli-proxy-api:test")
+IMAGE = cli_proxy_api_image.IMAGE
 CLIENT_KEY = "synthetic-model-client-key"
 MANAGEMENT_KEY = "synthetic-management-key"
 

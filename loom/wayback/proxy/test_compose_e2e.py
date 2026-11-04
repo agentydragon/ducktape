@@ -21,12 +21,12 @@ import pytest
 import pytest_bazel
 
 from devinfra.bazel.runfiles import get_required_path
-from loom.wayback.proxy import fake_ia
+from loom.wayback.proxy import fake_ia, wayback_proxy_image
 from third_party.containers import python_3_14_slim
-from util.oci import OciImage, load_oci_image
+from util.oci import load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-WAYBACK_PROXY_IMAGE = OciImage("_main/loom/wayback/proxy/image_info.rloc", "wayback-proxy:latest")
+WAYBACK_PROXY_IMAGE = wayback_proxy_image.IMAGE
 COMPOSE_RLOCATION = "_main/loom/wayback/proxy/compose.yaml"
 
 

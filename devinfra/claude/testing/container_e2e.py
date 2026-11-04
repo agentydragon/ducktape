@@ -17,11 +17,12 @@ import docker.models.containers
 import pytest
 
 from devinfra.bazel.runfiles import get_required_path
-from util.oci import OciImage, load_oci_image
+from devinfra.claude.claude_hook.container_e2e import e2e_container_descriptor
+from util.oci import load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 _RUST_BINARY_RLOC = "_main/devinfra/claude/claude_hook/claude_hook"
-E2E_IMAGE = OciImage("_main/devinfra/claude/claude_hook/container_e2e/e2e_container.rloc", "e2e-container:pinned")
+E2E_IMAGE = e2e_container_descriptor.IMAGE
 
 
 @dataclass

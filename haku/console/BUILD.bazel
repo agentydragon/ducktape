@@ -3,7 +3,7 @@ load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_b
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/oci:defs.bzl", "oci_image_py")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -339,21 +339,22 @@ oci_image(
     visibility = ["//visibility:public"],
 )
 
-oci_layout_rloc(
+oci_image_py(
     name = "static_test_image",
     testonly = True,
     image = ":static_image",
+    tag = "haku-console-static:test",
 )
 
 py_test(
     name = "test_static_image",
     size = "medium",
     srcs = ["test_static_image.py"],
-    data = [":static_test_image"],
     requires_docker = True,
     deps = [
         ":conftest",
         "//:conftest",
+        "//haku/console:static_test_image",
         "//util:oci",
         "@pypi//httpx",
         "@pypi//pytest_bazel",

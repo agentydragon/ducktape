@@ -8,8 +8,8 @@ go_library(
         "postgres.go",
     ],
     data = [
-        "//third_party/containers:postgres_18",
-        "//third_party/containers:ryuk",
+        "//third_party/containers:postgres_18_rloc",
+        "//third_party/containers:ryuk_rloc",
         "//util:oci_load_bin",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/testing/postgres",

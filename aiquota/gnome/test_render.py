@@ -36,13 +36,13 @@ import pytest_bazel
 
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_view_fixture
 from devinfra.bazel.runfiles import get_required_path
+from gnome.test_image import gnome_shell_test
 from gnome.testing.fake_daemon import fake_daemon
 from gnome.testing.session import GnomeMenuCapture, GnomeSession, gnome_session, string_reply, wait_until
-from util.oci import OciImage, load_oci_image
+from util.oci import load_oci_image
 from util.testing.output_writer import BoundTestOutputs
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-_GNOME_SHELL_TEST = OciImage("_main/gnome/test_image/gnome_shell_test.rloc", "gnome-shell-test:pinned")
 _EXTENSION_ZIP = "_main/aiquota/gnome/aiquota.zip"
 _EXTENSION_UUID = "aiquota@allegedly.works"
 
@@ -63,7 +63,7 @@ def test_extension_metadata_supports_gnome_50() -> None:
 
 @pytest.fixture(scope="module")
 def gnome_shell_test_image() -> str:
-    return load_oci_image(_GNOME_SHELL_TEST)
+    return load_oci_image(gnome_shell_test.IMAGE)
 
 
 @pytest.fixture(scope="module")

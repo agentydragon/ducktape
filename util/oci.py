@@ -64,14 +64,10 @@ async def push_bazel_image(
 
 @dataclass(frozen=True)
 class OciImage:
-    """An OCI image bundled in Bazel runfiles.
+    """An OCI layout in runfiles and its destination tag."""
 
-    rloc_file: runfiles path to the .rloc file produced by oci_tarball / oci_layout_rloc.
-    tag: Docker image tag to load as (e.g. "postgres:18").
-    """
-
-    rloc_file: str
     tag: str
+    layout_rlocation: str
 
 
 # ---------------------------------------------------------------------------
@@ -187,8 +183,7 @@ def load_oci_image(image: OciImage) -> str:
     `docker image inspect`, and once **inside** it, so the first waiter behind a loader finds the
     image already there and skips the load just done for it.
     """
-    layout_rloc = runfiles.get_required_path(image.rloc_file).read_text().strip()
-    oci_layout = runfiles.get_required_path(layout_rloc)
+    oci_layout = runfiles.get_required_path(image.layout_rlocation)
     wanted = read_oci_layout_digest(oci_layout)
     if _already_loaded(image.tag, wanted):
         return image.tag
@@ -273,7 +268,8 @@ def main() -> None:
     parser.add_argument("rloc_file", help="Bazel runfiles path to the image's .rloc file")
     parser.add_argument("tag", help="Docker image tag to load")
     args = parser.parse_args()
-    load_oci_image(OciImage(args.rloc_file, args.tag))
+    layout_rlocation = runfiles.get_required_path(args.rloc_file).read_text().strip()
+    load_oci_image(OciImage(tag=args.tag, layout_rlocation=layout_rlocation))
 
 
 if __name__ == "__main__":

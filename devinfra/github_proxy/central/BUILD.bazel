@@ -1,6 +1,6 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/oci:defs.bzl", "oci_image_py")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -42,9 +42,10 @@ oci_load(
     repo_tags = ["github-api-proxy:test"],
 )
 
-oci_layout_rloc(
-    name = "image_layout",
+oci_image_py(
+    name = "github_api_proxy_image",
     image = ":image",
+    tag = "github-api-proxy:test",
 )
 
 py_test(
@@ -52,12 +53,12 @@ py_test(
     size = "medium",
     srcs = ["test_image.py"],
     data = [
-        ":image_layout",
         "@crane",
     ],
     requires_docker = True,
     deps = [
         "//:conftest",
+        "//devinfra/github_proxy/central:github_api_proxy_image",
         "//devinfra/github_proxy/central/testing:certificates",
         "//util:oci",
         "//util/testing:container_logs",
