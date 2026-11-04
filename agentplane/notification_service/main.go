@@ -254,7 +254,10 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	// finish while draining.
 	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacade()
-	agentFacade, err := facade.NewHandler(facadeContext, grpcListener.Addr().String(), 0, notificationspb.RegisterNotificationsHandlerFromEndpoint)
+	agentFacade, err := facade.NewHandlerWithOptions(
+		facadeContext, grpcListener.Addr().String(), 0,
+		facade.HandlerOptions{RejectUnknownJSONFields: true}, notificationspb.RegisterNotificationsHandlerFromEndpoint,
+	)
 	if err != nil {
 		return err
 	}

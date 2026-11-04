@@ -4,6 +4,8 @@ The API is defined by [`notifications.proto`](../notifications.proto); its HTTP 
 served at `/openapi.json`. Setup and configuration belong
 in the [service README](../README.md); internal delivery and storage design is in
 [architecture](architecture.md).
+The HTTP/JSON facade rejects request fields absent from this protobuf contract, including fields
+removed in a cutover.
 
 ## Agent API
 

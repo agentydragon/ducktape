@@ -281,9 +281,10 @@ func run(ctx context.Context, config Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Notification Service gRPC client: %w", err)
 	}
-	notificationFacade, err := facade.NewHandler(
+	notificationFacade, err := facade.NewHandlerWithOptions(
 		facadeContext, notificationTarget,
 		time.Duration(config.NotificationsRequestTimeoutSeconds*float64(time.Second)),
+		facade.HandlerOptions{RejectUnknownJSONFields: true},
 		notificationspb.RegisterNotificationsHandlerFromEndpoint,
 	)
 	if err != nil {

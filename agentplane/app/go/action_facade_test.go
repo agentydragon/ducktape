@@ -138,6 +138,12 @@ type generatedNotificationService struct {
 	notificationpb.UnimplementedNotificationsServer
 	sessionID     string
 	authorization []string
+	sendCalled    bool
+}
+
+func (s *generatedNotificationService) SendMessage(_ context.Context, _ *notificationpb.SendMessageRequest) (*notificationpb.SendMessageResponse, error) {
+	s.sendCalled = true
+	return &notificationpb.SendMessageResponse{}, nil
 }
 
 func (s *generatedNotificationService) WatchInbox(request *notificationpb.WatchInboxRequest, stream grpc.ServerStreamingServer[notificationpb.WatchInboxResponse]) error {
@@ -165,7 +171,10 @@ func TestGeneratedNotificationWatchBindsSessionIDAndServiceToken(t *testing.T) {
 		_ = listener.Close()
 		<-serveDone
 	})
-	handler, err := facade.NewHandler(t.Context(), listener.Addr().String(), 10*time.Second, notificationpb.RegisterNotificationsHandlerFromEndpoint)
+	handler, err := facade.NewHandlerWithOptions(
+		t.Context(), listener.Addr().String(), 10*time.Second,
+		facade.HandlerOptions{RejectUnknownJSONFields: true}, notificationpb.RegisterNotificationsHandlerFromEndpoint,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,6 +195,17 @@ func TestGeneratedNotificationWatchBindsSessionIDAndServiceToken(t *testing.T) {
 	}
 	if len(service.authorization) != 1 || service.authorization[0] != "Bearer service-token" {
 		t.Fatalf("notification authorization = %v", service.authorization)
+	}
+	oldRequest := httptest.NewRequest(http.MethodPost, "/upstream/notifications/v1/messages", strings.NewReader(
+		`{"destinationRef":{"namespace":"agentplane","name":"sandbox","uid":"old-uid"},"sessionId":"session","idempotencyKey":"key","body":"hello"}`,
+	))
+	oldRequest.Header.Set("Content-Type", "application/json")
+	oldResponse := httptest.NewRecorder()
+	if err := proxy.NewHandlerUpstream(handler, tokenFile).ForwardHTTP(oldResponse, oldRequest, oldRequest.Context(), "v1/messages", ""); err != nil {
+		t.Fatal(err)
+	}
+	if oldResponse.Code != http.StatusBadRequest || service.sendCalled {
+		t.Fatalf("old Notification request status=%d sent=%v body=%s", oldResponse.Code, service.sendCalled, oldResponse.Body.String())
 	}
 }
 
