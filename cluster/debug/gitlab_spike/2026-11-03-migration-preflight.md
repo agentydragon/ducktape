@@ -62,23 +62,33 @@ so the log and the separate listing are the evidence for the archive, not a know
 attempted.
 
 During the run, a Rails process was observed in Linux uninterruptible I/O sleep (`folio_wait_bit_common`). A 403 does
-not distinguish an absent bucket from an identity that lacks access. Check the effective enabled feature set, bucket
-names and backup identity grants; make every required category explicit and demonstrate a complete backup and restore
-before migration. Do not treat an archive or a zero exit status by itself as proof that skipped categories were
-captured.
+not distinguish an absent bucket from an identity that lacks access.
+
+### Follow-up: effective feature configuration
+
+A later read of the Toolbox's effective `gitlab.yml` found all six skipped categories had their main `enabled` flag set
+to `false`. Pages' object-storage subsetting was enabled even though Pages itself was disabled. The backup log reported
+that the enabled packages bucket was empty. The registry metadata database was explicitly disabled, and no OpenBao
+Deployment or StatefulSet was found in the spike namespace. Recheck coverage before enabling any skipped feature; the
+403s alone do not establish missing active data.
+
+The operator chose not to rehearse a backup restore. The archive and CNPG backup records therefore do not establish
+recoverability; retain that limitation in the migration decision.
 
 ## Runner-manager policy gap
 
-The spike's `gitlab-spike-runner-manager` CiliumNetworkPolicy selects `app=gitlab-spike-runner`, while the live manager
-Pod has `app=gitlab-spike-runner-gitlab-runner`. The namespaced policy does not select that Pod. At this snapshot there
-were no Kubernetes NetworkPolicies in the namespace and the two cluster-wide Cilium policies selected Haku namespaces,
-not `gitlab-spike-ci`. The node-local `cilium-dbg endpoint get` for the manager reported `policy-enabled: none` and
-unrestricted egress identity 0.
+At the initial preflight, the spike's `gitlab-spike-runner-manager` CiliumNetworkPolicy selected
+`app=gitlab-spike-runner`, while the manager Pod had `app=gitlab-spike-runner-gitlab-runner`. The namespaced policy did
+not select that Pod. At this snapshot there were no Kubernetes NetworkPolicies in the namespace and the two cluster-wide
+Cilium policies selected Haku namespaces, not `gitlab-spike-ci`. The node-local `cilium-dbg endpoint get` for the
+manager reported `policy-enabled: none` and unrestricted egress identity 0.
 
-This establishes that the intended manager Cilium policy was not enforced; it is not a test of every possible network
-path or proof of an exploitation. The runner-job policy has a separate selector. Correct and verify the manager selector
-and realized policy before treating this spike as a contained production runner. This preflight did not change any
-policy.
+This established that the intended manager Cilium policy was not enforced at the time of the preflight; it is not a test
+of every possible network path or proof of an exploitation. The runner-job policy has a separate selector.
+
+PR [#14225](https://github.com/agentydragon/ducktape/pull/14225) later corrected the selector. After merge, Flux applied
+it and Cilium reported egress enforcement on the live manager. A synthetic job then succeeded, and its test branch was
+removed.
 
 ## Synthetic Git, LFS, SSH and CI tests
 
