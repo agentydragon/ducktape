@@ -7,8 +7,9 @@ import pytest
 import pytest_bazel
 from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
+from platform_sessions.auth import Bearer, BearerAuth
 from platform_sessions.host import IntegrationError, create_app
 from platform_sessions.registry import IntegrationInstance
 
@@ -53,22 +54,22 @@ class FakeIntegration:
 
 
 def owner(request: Request):
-    if request.headers.get("authorization") != "Bearer owner":
+    if request.cookies.get("owner") != "yes":
         raise HTTPException(status_code=401)
 
 
 def test_owner_api_and_candidate_verification():
     integration = FakeIntegration()
-    app = create_app([integration], "https://service.test", require_owner=owner)
+    app = create_app([integration], "https://service.test", require_owner=owner, auth=BearerAuth([]))
     with TestClient(app, base_url="https://service.test") as client:
         assert client.get("/api/integrations").status_code == 401
-        headers = {"authorization": "Bearer owner", "origin": "https://service.test"}
+        headers = {"cookie": "owner=yes", "origin": "https://service.test"}
         response = client.get("/api/integrations", headers=headers)
         assert response.json() == [{"id": "example", "type": "example", "instructions": []}]
         assert response.headers["cache-control"] == "no-store"
         assert (
             client.post(
-                "/api/integrations/example/session", headers={"authorization": "Bearer owner"}, json={"token": "x"}
+                "/api/integrations/example/session", headers={"cookie": "owner=yes"}, json={"token": "x"}
             ).status_code
             == 403
         )
@@ -93,8 +94,10 @@ def test_owner_api_and_candidate_verification():
 def test_candidate_limits_and_unsupported_verification():
     integration = FakeIntegration()
     integration.candidate_verification = False
-    with TestClient(create_app([integration], "https://service.test", require_owner=owner)) as client:
-        headers = {"authorization": "Bearer owner", "origin": "https://service.test"}
+    with TestClient(
+        create_app([integration], "https://service.test", require_owner=owner, auth=BearerAuth([]))
+    ) as client:
+        headers = {"cookie": "owner=yes", "origin": "https://service.test"}
         assert (
             client.post("/api/integrations/example/session/verify", headers=headers, json={"token": "x"}).status_code
             == 404
@@ -104,6 +107,31 @@ def test_candidate_limits_and_unsupported_verification():
             == 400
         )
         assert client.post("/api/integrations/unknown/session", headers=headers, json={"token": "x"}).status_code == 404
+
+
+def test_owner_and_limited_bearer_privileges():
+    integration = FakeIntegration()
+    auth = BearerAuth([Bearer(SecretStr("owner-token"), owner=True), Bearer(SecretStr("consumer-token"))])
+    app = create_app([integration], "https://service.test", require_owner=owner, auth=auth)
+    with TestClient(app, base_url="https://service.test") as client:
+        owner_auth = {"authorization": "Bearer owner-token"}
+        limited = {"authorization": "Bearer consumer-token", "cookie": "owner=yes"}
+        assert client.get("/api/integrations", headers=limited).status_code == 403
+        assert client.get("/api/integrations", headers=owner_auth).status_code == 200
+        path = "/api/integrations/example/session"
+        assert client.post(path, headers=owner_auth, json={"token": "ok"}).status_code == 200
+        assert (
+            client.post(path, headers=owner_auth | {"origin": "https://evil.test"}, json={"token": "x"}).status_code
+            == 403
+        )
+        assert (
+            client.post(path, headers=owner_auth | {"sec-fetch-site": "cross-site"}, json={"token": "x"}).status_code
+            == 403
+        )
+        assert client.post(path, headers=limited, json={"token": "x"}).status_code == 403
+        assert integration.session == "ok"
+    with pytest.raises(ValueError, match="duplicate"):
+        BearerAuth([Bearer(SecretStr("same")), Bearer(SecretStr("same"), owner=True)])
 
 
 def test_failed_start_still_stops_owner():
@@ -116,7 +144,7 @@ def test_failed_start_still_stops_owner():
     async def stop():
         calls.append("stop")
 
-    app = create_app([], "https://service.test", require_owner=owner, start=start, stop=stop)
+    app = create_app([], "https://service.test", require_owner=owner, auth=BearerAuth([]), start=start, stop=stop)
     with pytest.raises(RuntimeError, match="startup failed"), TestClient(app):
         pass
     assert calls == ["start", "stop"]

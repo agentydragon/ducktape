@@ -74,14 +74,14 @@ class MappedRoute:
     upstream_url: str
 
 
-def authorize_route(method: str, raw_path: str, base_url: str, routes: tuple[Route, ...]) -> MappedRoute | None:
+def authorize_route(method: str, raw_path: str, base_url: str, routes: tuple[Route, ...] | None) -> MappedRoute | None:
     """Authorize the request path and map that same interpretation upstream.
 
     The caller supplies the raw URL path without query; query bytes are handled
     separately and do not participate in route matching.
     """
     segments = _segments(raw_path)
-    if not any(route.matches(method, segments) for route in routes):
+    if routes is not None and not any(route.matches(method, segments) for route in routes):
         return None
     parsed = urlsplit(_upstream_url(base_url))
     prefix = _segments(parsed.path) if parsed.path else ()
