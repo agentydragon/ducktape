@@ -1294,8 +1294,8 @@ fn nested_repeated_factory_use_keeps_lexical_site_and_top_level_owner() {
 fn private_factory_result_records_reachability_exemption() {
     let fixture = run_fixture(
         FixtureOpts::new(
-            "import { factory } from './peer.js';\n\
-         const wrapped = factory(() => later);\n\
+            "const wrapped = factory(() => later);\n\
+         import { factory } from './peer.js';\n\
          const later = 42;\n\
          console.log(wrapped());\n",
             vec![],
@@ -1325,6 +1325,157 @@ fn private_factory_result_records_reachability_exemption() {
             .iter()
             .any(|proof_use| proof_use.kind == CallbackFactoryUseKind::ClosedResultRoot)
     );
+}
+
+#[test]
+fn private_factory_result_requires_an_exact_initializer_and_retains_summary_evidence() {
+    let mut actual = Vec::new();
+    let mut expected = Vec::new();
+    for (initializer, private, marker) in [
+        ("factory(() => later)", true, 0),
+        ("(factory(() => later))", true, 0),
+        ("((factory)((() => later)))", false, 0),
+        ("(0, factory(() => later))", true, 0),
+        ("(0, factory)(() => later)", false, 0),
+        ("(globalThis.marker = 1, factory(() => later))", false, 1),
+        ("(globalThis.marker = 1, factory)(() => later)", false, 1),
+        ("factory((globalThis.marker = 1, () => later))", false, 1),
+        (
+            "({get current() { globalThis.marker = 1; return factory; }}).current(() => later)",
+            false,
+            1,
+        ),
+    ] {
+        let source = format!(
+            "import {{ factory }} from './peer.js';\n\
+             globalThis.marker = 0;\nconst wrapped = {initializer};\n\
+             const later = 42;\nconsole.log(globalThis.marker, wrapped());\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]).with_extra_chunks(&[(
+            "static/peer",
+            "export function factory(callback) { return () => callback(); }\n",
+        )]));
+        assert_preserved_entry_output(&fixture, &format!("{marker} 42\n"));
+        let graph = fixture.dependency_graph();
+        let wrapped = graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|binding| binding.binding == "wrapped")
+            })
+            .unwrap();
+        let uses: Vec<_> = wrapped
+            .synchronous_execution
+            .as_ref()
+            .unwrap()
+            .callback_factory_uses
+            .iter()
+            .filter(|proof| proof.kind == CallbackFactoryUseKind::ClosedResultRoot)
+            .collect();
+        actual.push((initializer, uses.len()));
+        expected.push((initializer, usize::from(private)));
+        if let [proof] = uses.as_slice() {
+            assert_eq!(proof.summary_ref, graph.imported_callable_summaries[0].id);
+            assert!(
+                !graph.imported_callable_summaries[0]
+                    .callback_factory_evidence
+                    .is_empty()
+            );
+        }
+    }
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn callback_factory_privacy_does_not_cover_throwing_operands() {
+    for initializer in [
+        "((() => { throw new Error('operand'); })(), factory)(() => 42)",
+        "factory((() => { throw new Error('operand'); })())",
+        "({get current() { throw new Error('operand'); }}).current(() => 42)",
+    ] {
+        let source =
+            format!("import {{ factory }} from './peer.js';\nconst wrapped = {initializer};\n");
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]).with_extra_chunks(&[(
+            "static/peer",
+            "export function factory(callback) { return () => callback(); }\n",
+        )]));
+        assert_preserved_entry_error(&fixture, "Error: operand");
+        assert!(fixture.dependency_graph().nodes.iter().all(|node| {
+            node.synchronous_execution.as_ref().is_none_or(|execution| {
+                execution
+                    .callback_factory_uses
+                    .iter()
+                    .all(|proof| proof.kind != CallbackFactoryUseKind::ClosedResultRoot)
+            })
+        }));
+    }
+}
+
+#[test]
+fn private_factory_result_retains_the_audited_summary() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { factory } from './peer.js';\nconst wrapped = factory(() => later);\nconst later = 42;\nconsole.log(wrapped.invoke());\n",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export function factory(callback) { return { invoke: () => callback() }; }\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factories(&["factory"])
+            .with_pure_exports(&["factory"])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "42\n");
+    let graph = fixture.dependency_graph();
+    let uses: Vec<_> = graph
+        .nodes
+        .iter()
+        .filter_map(|node| node.synchronous_execution.as_ref())
+        .flat_map(|execution| &execution.callback_factory_uses)
+        .filter(|proof| proof.kind == CallbackFactoryUseKind::ClosedResultRoot)
+        .collect();
+    assert_eq!(uses.len(), 1);
+    assert_eq!(
+        graph
+            .imported_callable_summaries
+            .iter()
+            .find(|summary| summary.id == uses[0].summary_ref)
+            .unwrap()
+            .callback_factory_evidence,
+        vec![analysis::CallbackFactoryEvidence::AuthorAssertion {
+            defining_module: "static/peer".into(),
+            export: "factory".into(),
+        }]
+    );
+}
+
+#[test]
+fn exported_factory_result_does_not_record_a_private_root_exemption() {
+    for declaration in [
+        "export const wrapped = factory(() => later);",
+        "const wrapped = factory(() => later);\nexport { wrapped };",
+    ] {
+        let source = format!(
+            "import {{ factory }} from './peer.js';\n{declaration}\nconst later = 42;\nconsole.log(wrapped());\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]).with_extra_chunks(&[(
+            "static/peer",
+            "export function factory(callback) { return () => callback(); }\n",
+        )]));
+        assert_preserved_entry_output(&fixture, "42\n");
+        assert!(fixture.dependency_graph().nodes.iter().all(|node| {
+            node.synchronous_execution.as_ref().is_none_or(|execution| {
+                execution
+                    .callback_factory_uses
+                    .iter()
+                    .all(|proof| proof.kind != CallbackFactoryUseKind::ClosedResultRoot)
+            })
+        }));
+    }
 }
 
 #[test]

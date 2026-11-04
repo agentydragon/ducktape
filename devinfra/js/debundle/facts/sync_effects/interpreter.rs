@@ -416,6 +416,13 @@ struct NonInvokingClassHeritageRead<'a> {
     dependencies: ProofDependencies,
 }
 
+/// A checked non-publication decision, independent of owner completion and
+/// timing coverage. Both root suppression and use reporting consume it.
+struct PrivateCallbackFactoryResult {
+    proof_use: CallbackFactoryUseFact,
+    dependencies: ProofDependencies,
+}
+
 #[derive(Debug, Clone, Default)]
 struct ReachabilityState {
     unknown_call_seen: bool,
@@ -2127,6 +2134,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             source_location: None,
             span,
         };
+        self.record_callback_factory_use_fact(proof_use);
+    }
+
+    fn record_callback_factory_use_fact(&mut self, proof_use: CallbackFactoryUseFact) {
         if !self.state.proof_uses.contains(&proof_use) {
             self.state.proof_uses.push(proof_use);
         }
@@ -4624,7 +4635,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         metadata_target: Option<SourceUnitOrdinal>,
         private_constructor_result_owners: &BTreeSet<SourceUnitOrdinal>,
         frozen_namespace: Option<&FrozenNamespaceProof>,
-        closed_callback_factory_result: bool,
+        closed_callback_factory_result: Option<&PrivateCallbackFactoryResult>,
     ) -> BTreeSet<SourceUnitOrdinal> {
         let mut roots = BTreeSet::new();
         // Storing a known callable in an author-certified inert global data
@@ -4642,6 +4653,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if self.inputs.index.linkage_owners.contains(&fact.ordinal) {
             return roots;
         }
+        if let Some(proof) = closed_callback_factory_result {
+            self.consume_proof_dependencies(&proof.dependencies);
+        }
         // The full metadata timing proof covers this whole statement. Its
         // local mutation still contributes graph edges, but the call does not
         // publish an executable capability through the target or its result.
@@ -4649,11 +4663,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // synchronous owner closure and undo the target filter below.
         if metadata_target.is_none()
             && (self.inputs.exported_owners.contains(&fact.ordinal)
-                || !((self.queries.prepared_statement_is_pure(fact.ordinal)
-                    && (fact.declares_direct_function
-                        || matches!(fact.kind, StatementKind::ClassDecl)
-                        || closed_callback_factory_result
-                        || self.closed_local_record_factory_result(fact)))
+                || !(closed_callback_factory_result.is_some()
+                    || (self.queries.prepared_statement_is_pure(fact.ordinal)
+                        && (fact.declares_direct_function
+                            || matches!(fact.kind, StatementKind::ClassDecl)
+                            || self.closed_local_record_factory_result(fact)))
                     || frozen_namespace.is_some()
                     || !private_constructor_result_owners.is_empty()))
         {
@@ -4693,14 +4707,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// A validated factory retains the inline callback only in its fresh
     /// returned graph. Creating that graph does not publish the callback;
     /// later calls, writes, and exports still flow through the value model.
-    fn closed_callback_factory_result(&self, fact: &StatementFacts) -> Option<(Id, Span)> {
+    fn private_callback_factory_result(
+        &self,
+        fact: &StatementFacts,
+    ) -> Option<PrivateCallbackFactoryResult> {
         if !matches!(fact.kind, StatementKind::VarDecl)
             || fact.declared.len() != 1
+            || self.inputs.exported_owners.contains(&fact.ordinal)
             || self.inputs.index.opaque_top.contains(&fact.ordinal)
         {
             return None;
         }
-        let [(binding, ValueExpr::Call(callee, args, site))] =
+        let [(binding, ValueExpr::Call(callee, _, site))] =
             self.inputs.index.top_assignments[fact.ordinal.0].as_slice()
         else {
             return None;
@@ -4708,17 +4726,48 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let [call] = self.inputs.index.top_calls[fact.ordinal.0].as_slice() else {
             return None;
         };
+        let source = self
+            .inputs
+            .index
+            .initialization_source_identities
+            .get(&fact.ordinal)?;
         let ValueExpr::Binding(factory) = callee.as_ref() else {
             return None;
         };
-        (self.inputs.index.callback_factory_imports.contains(factory)
-            && matches!(args.as_ref(), [ValueExpr::Alloc(Kind::Function, _)])
-            && fact.declared.contains(binding)
-            && self.inputs.index.top_definite_initializers[fact.ordinal.0].contains(binding)
-            && call.kind == CallKind::Call
-            && !call.has_spread
-            && CallSite::from(call.span) == *site)
-            .then(|| (factory.clone(), call.span))
+        let summary = self.inputs.index.callback_factory_summaries.get(factory)?;
+        if source.owner() != fact.ordinal
+            || source.binding() != binding
+            || !fact.declared.contains(binding)
+            || !self.inputs.index.top_definite_initializers[fact.ordinal.0].contains(binding)
+            || !summary.supports_callback_factory()
+            || call.kind != CallKind::Call
+            || call.has_spread
+            || CallSite::from(call.span) != *site
+            || source.initializer_span().lo > call.span.lo
+            || source.initializer_span().hi < call.span.hi
+            || self.inputs.index.direct_inline_callback_calls.get(site) != Some(factory)
+            // The retention summary permits provider-private effects and is
+            // not an evaluation-purity proof. Keep this classifier obligation
+            // until an independent exact evaluation proof can replace it.
+            || !self.queries.prepared_statement_is_pure(fact.ordinal)
+        {
+            return None;
+        }
+        Some(PrivateCallbackFactoryResult {
+            proof_use: CallbackFactoryUseFact {
+                imported_local: factory.0.to_string(),
+                evidence: summary
+                    .callback_factory_evidence()
+                    .iter()
+                    .cloned()
+                    .collect(),
+                kind: CallbackFactoryUseKind::ClosedResultRoot,
+                lexical_statement_ordinal: fact.ordinal,
+                source_location: None,
+                span: call.span,
+            },
+            dependencies: self.settled_prefix_dependencies(),
+        })
     }
 
     /// A return-only local function can put its arguments into a fresh
@@ -12602,28 +12651,16 @@ impl Executor<'_, '_> {
             self.state.frozen_namespace_calls.insert(proof.freeze_site);
             self.state.frozen_namespace_calls.insert(proof.define_site);
         }
-        let closed_result = self.closed_callback_factory_result(fact);
+        let closed_result = self.private_callback_factory_result(fact);
         let fact_roots = self.fact_roots(
             fact,
             prevalidated_metadata.map(|validated| validated.target_owner),
             &self.state.private_constructor_result_owners,
             frozen_namespace.as_ref(),
-            closed_result.is_some(),
+            closed_result.as_ref(),
         );
-        if let Some((factory, span)) = closed_result
-            && !fact_roots.contains(&fact.ordinal)
-            && !self.inputs.exported_owners.contains(&fact.ordinal)
-            && self.queries.prepared_statement_is_pure(fact.ordinal)
-            && !fact.declares_direct_function
-            && frozen_namespace.is_none()
-            && self.state.private_constructor_result_owners.is_empty()
-        {
-            self.record_callback_factory_use(
-                &factory,
-                CallbackFactoryUseKind::ClosedResultRoot,
-                fact.ordinal,
-                span,
-            );
+        if let Some(proof) = closed_result {
+            self.record_callback_factory_use_fact(proof.proof_use);
         }
         if self.state.reachability.unknown_call_seen {
             self.extend_reachable_owners(fact_roots.iter().copied());

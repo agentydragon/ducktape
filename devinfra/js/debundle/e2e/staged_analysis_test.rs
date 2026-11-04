@@ -874,6 +874,29 @@ fn accepted_split_matches_a_direct_run() {
 }
 
 #[test]
+fn callback_factory_privacy_decision_matches_saved_analysis() {
+    for initializer in [
+        "factory(() => later)",
+        "((factory)((() => later)))",
+        "(0, factory(() => later))",
+        "factory((globalThis.marker = 1, () => later))",
+        "({get current() { return factory; }}).current(() => later)",
+    ] {
+        let source = format!(
+            "import {{ factory }} from './peer.js';\n\
+             const wrapped = {initializer};\nconst later = 42;\nconsole.log(wrapped());\n"
+        );
+        assert_staged_run_matches(
+            FixtureOpts::new(&source, vec![]).with_extra_chunks(&[(
+                "static/peer",
+                "export function factory(callback) { return () => callback(); }\n",
+            )]),
+            &["--effect-conflicts-jsonl"],
+        );
+    }
+}
+
+#[test]
 fn lexical_and_compound_class_heritage_match_saved_analysis() {
     for heritage in ["Core", "(globalThis.saved = Core, Core)", "holder.Base"] {
         let source = format!(
