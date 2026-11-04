@@ -3,7 +3,7 @@
 This follows the [launcher proof](2026_11_03_firecracker_environment.md) with an app-integrated,
 disposable k3s acceptance target: `//agentplane/system_tests/suites:test_firecracker`.
 The implementation branch was initially rebased onto `devel` commit `e397149010`, then onto
-`194ba5aa0d` to pick up the landed CRI image-cleanup fix during acceptance debugging.
+`194ba5aa0d` for the landed CRI image-cleanup fix and `d2247659d0` for the managed worker keyring policy.
 
 ## Execution path
 
@@ -90,10 +90,10 @@ session key: operation not permitted` for every infrastructure Pod. This was a c
 failure rather than a certificate timeout or a Firecracker boot failure.
 
 The outer [Docker default seccomp profile](https://docs.docker.com/engine/security/seccomp/)
-blocks keyring syscalls. The KVM Docker fixture now sets containerd's documented
+blocks keyring syscalls. That attempt set containerd's documented
 [`NoNewKeyring` runc option](https://github.com/containerd/containerd/blob/release/2.1/docs/cri/config.md)
-so nested test containers inherit the action's session keyring. This drop-in applies only when
-`AGENTPLANE_K3S_REQUIRE_KVM=1`; it does not change the worker configuration or production runtime.
+so nested test containers inherited the action's session keyring. That temporary KVM-only drop-in
+was subsequently removed in favor of the managed worker policy described below.
 
 The [next scheduling attempt](https://app.buildbuddy.io/invocation/1028f860-0bc5-44bb-8720-10d2fee5773d)
 executed no tests: the scheduler reported no registered executors in `wyrm2-kvm-vm`. Independently
@@ -140,5 +140,29 @@ An independent restart to apply PR #14207 then deleted VMI `753a973e-5f9d-4e59-a
 at 05:17:11 UTC, replacing it with `64876921-7368-43df-9064-e7256266af4b`. Its disposable work disk
 and the guest-local experimental profile were lost. The [fifth scheduling attempt](https://app.buildbuddy.io/invocation/fa701f63-849b-45bb-b5d3-34b4e988eb44)
 ran no tests because the replacement executor was not registered yet. The operator confirmed the
-other session's restart. The pivot extension must be applied and tested on this replacement;
-no acceptance pass is implied by the earlier syscall probe.
+other session's restart. The pivot extension was then applied to the replacement while it was idle, preserving the landed
+keyring rules. Docker and the executor restarted and registered healthy. This live guest change
+precedes merge: recreating the worker before the PR lands loses this extension.
+
+The [replacement-worker smoke check](https://app.buildbuddy.io/invocation/d02a7c27-e28d-481e-a1fe-1d604d975910)
+passed all three Go tests: KVM VM/vCPU creation, runc's restricted keyring operations and a
+`pivot_root` permission probe using intentionally absent paths. Execution took 7.703 seconds after
+698.302 seconds in the single-slot queue. The outer `bbr` completion-log RPC disconnected after
+inner Bazel exited zero; the durable test summary independently records PASSED.
+
+The [sixth acceptance attempt](https://app.buildbuddy.io/invocation/5ac7046b-9301-470a-9364-63c5f33d3bef)
+used normal runc keyrings and pivot-root and successfully started infrastructure and app containers.
+It still failed before Sandbox creation, during the production boot-image import. K3s logged slow
+SQLite writes and finally `Transaction commit failed: sql: transaction has already been committed
+or rolled back` at 05:50:22 UTC; the import then reported EOF from containerd. The boot-image import
+span lasted 384.34 seconds before failure. No OOM or full filesystem was observed: afterward the
+worker had 21 GiB available memory and 54 GiB available disk, while IO pressure remained elevated.
+This is a fixture/control-plane failure, not a Firecracker guest result.
+
+Live read-only Pod inspection also found a separate fixture recovery defect: PostgreSQL completed
+its bootstrap SQL, but its shutdown checkpoint took 112.820 seconds, exceeding pg_ctl's wait. The
+container restarted with PG_VERSION present and skipped the client-access rule that the script had
+placed after shutdown. The app then received `no pg_hba.conf entry` permanently. The rule now goes
+before shutdown so that restart remains usable. The Firecracker fixture also joins the cold boot
+image import before starting app workloads, avoiding overlap with PostgreSQL initialization and
+its additional control-plane writes. No readiness or test timeout was increased.

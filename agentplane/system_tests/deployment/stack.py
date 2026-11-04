@@ -487,6 +487,10 @@ def running_stack(
                         k3s.profile_containerd("trace", 5, outputs / "containerd-import.runtime.trace")
                     )
                 guest_import = importing.submit(contextvars.copy_context().run, k3s.import_images, guest_images)
+                if fixture.firecracker_sandboxes:
+                    # The raw boot disk's cold unpack competes with PostgreSQL initialization and
+                    # k3s SQLite writes on the KVM worker. Finish it before starting app workloads.
+                    guest_import.result()
                 with tracer.start_as_current_span("system_test.crds.apply"):
                     for crd in crds:
                         k3s.kubectl("apply", "-f", str(crd))
